@@ -21,6 +21,59 @@ final class GutterTextView: NSTextView {
         // Сдвигаем текст вправо на ширину гуттера, вниз на 8pt для отступа сверху
         NSPoint(x: gutterInset, y: 8)
     }
+
+    // MARK: - Auto-indent
+
+    /// Символы, после которых увеличиваем отступ
+    private static let indentOpeners: Set<Character> = ["{", "(", ":"]
+    /// Символы, перед которыми уменьшаем отступ
+    private static let indentClosers: Set<Character> = ["}", ")"]
+
+    override func insertNewline(_ sender: Any?) {
+        let source = string as NSString
+        let cursorLocation = selectedRange().location
+
+        // Находим текущую строку
+        let lineRange = source.lineRange(for: NSRange(location: cursorLocation, length: 0))
+        let currentLine = source.substring(with: lineRange)
+
+        // Извлекаем ведущие пробелы/табы
+        let leadingWhitespace = String(currentLine.prefix(while: { $0 == " " || $0 == "\t" }))
+
+        // Проверяем последний непробельный символ перед курсором в текущей строке
+        let textBeforeCursor = source.substring(with: NSRange(
+            location: lineRange.location,
+            length: cursorLocation - lineRange.location
+        ))
+        let lastNonSpace = textBeforeCursor.last(where: { !$0.isWhitespace })
+
+        // Проверяем первый непробельный символ после курсора в текущей строке
+        let textAfterCursor = source.substring(with: NSRange(
+            location: cursorLocation,
+            length: NSMaxRange(lineRange) - cursorLocation
+        ))
+        let firstNonSpaceAfter = textAfterCursor.first(where: { !$0.isWhitespace && $0 != "\n" })
+
+        var indent = leadingWhitespace
+
+        // Увеличиваем отступ после { ( :
+        if let last = lastNonSpace, Self.indentOpeners.contains(last) {
+            indent += "    "
+        }
+
+        // Если курсор между { и } — добавляем дополнительную строку с уменьшенным отступом
+        if let last = lastNonSpace, let first = firstNonSpaceAfter,
+           Self.indentOpeners.contains(last) && Self.indentClosers.contains(first) {
+            let closingIndent = leadingWhitespace
+            insertText("\n\(indent)\n\(closingIndent)", replacementRange: selectedRange())
+            // Ставим курсор на среднюю строку (с увеличенным отступом)
+            let newCursorPos = cursorLocation + 1 + indent.count
+            setSelectedRange(NSRange(location: newCursorPos, length: 0))
+            return
+        }
+
+        insertText("\n\(indent)", replacementRange: selectedRange())
+    }
 }
 
 struct CodeEditorView: NSViewRepresentable {
