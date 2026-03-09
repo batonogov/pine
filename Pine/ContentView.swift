@@ -326,6 +326,11 @@ struct SidebarView: View {
                 }
             }
         }
+        .onChange(of: viewModel.selectedFile) { _, newFile in
+            if let file = newFile {
+                viewModel.selectFile(file)
+            }
+        }
         .listStyle(.sidebar)
         .navigationTitle("Files")
         .frame(minWidth: 180, idealWidth: 220)
@@ -369,7 +374,6 @@ struct FileNodeRow: View {
         } else {
             Label(node.name, systemImage: iconForFile(node.name))
                 .tag(node)
-                .onTapGesture { viewModel.selectFile(node) }
         }
     }
 
