@@ -25,21 +25,29 @@ final class LineNumberView: NSView {
         self.textView = textView
         super.init(frame: .zero)
 
+        // Скролл — подписываемся без object, чтобы не зависеть от конкретного clipView
         NotificationCenter.default.addObserver(
-            self, selector: #selector(needsRedraw),
+            self, selector: #selector(handleBoundsChange(_:)),
             name: NSView.boundsDidChangeNotification,
-            object: textView.enclosingScrollView?.contentView
+            object: nil
         )
+        // Изменение текста/фрейма
         NotificationCenter.default.addObserver(
-            self, selector: #selector(needsRedraw),
+            self, selector: #selector(contentDidChange),
             name: NSText.didChangeNotification,
             object: textView
         )
         NotificationCenter.default.addObserver(
-            self, selector: #selector(needsRedraw),
+            self, selector: #selector(contentDidChange),
             name: NSView.frameDidChangeNotification,
             object: textView
         )
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        // Гарантируем что clipView шлёт уведомления о скролле
+        textView?.enclosingScrollView?.contentView.postsBoundsChangedNotifications = true
     }
 
     @available(*, unavailable)
@@ -49,7 +57,14 @@ final class LineNumberView: NSView {
         NotificationCenter.default.removeObserver(self)
     }
 
-    @objc private func needsRedraw() {
+    @objc private func handleBoundsChange(_ notification: Notification) {
+        // Реагируем только на скролл нашего scroll view
+        guard let clipView = notification.object as? NSClipView,
+              clipView == textView?.enclosingScrollView?.contentView else { return }
+        display()
+    }
+
+    @objc private func contentDidChange() {
         needsDisplay = true
     }
 
