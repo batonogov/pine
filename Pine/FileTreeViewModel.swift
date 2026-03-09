@@ -120,7 +120,6 @@ final class FileTreeViewModel {
 
     func selectFile(_ node: FileNode) {
         guard !node.isDirectory else { return }
-        selectedFile = node
 
         // Если файл уже открыт — просто переключаемся на его вкладку
         if openTabs.contains(where: { $0.id == node.url }) {
