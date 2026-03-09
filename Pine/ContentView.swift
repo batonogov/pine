@@ -10,7 +10,7 @@ import SwiftUI
 struct ContentView: View {
     @State private var viewModel = FileTreeViewModel()
     @State private var columnVisibility: NavigationSplitViewVisibility = .all
-    @State private var isTerminalVisible = true
+    @State private var isTerminalVisible = false
 
     var body: some View {
         NavigationSplitView(columnVisibility: $columnVisibility) {
@@ -47,6 +47,7 @@ struct ContentView: View {
             // Панель вкладок — показываем только когда есть открытые файлы
             if !viewModel.openTabs.isEmpty {
                 EditorTabBar(viewModel: viewModel)
+                    .zIndex(1) // Поверх редактора
             }
 
             // Содержимое редактора
@@ -111,6 +112,7 @@ struct EditorTabBar: View {
         }
         .background(.bar)
         .frame(height: 30)
+        .fixedSize(horizontal: false, vertical: true) // Не позволяем сжать по вертикали
     }
 }
 

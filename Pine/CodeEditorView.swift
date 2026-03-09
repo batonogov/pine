@@ -8,26 +8,56 @@
 import SwiftUI
 import AppKit
 
-/// NSViewRepresentable-обёртка для редактора кода.
-/// Использует NSTextView + SyntaxHighlighter для подсветки из JSON-грамматик.
+// MARK: - NSTextView с отступом слева для номеров строк
+
+/// Подкласс NSTextView, который сдвигает текстовый контейнер вправо,
+/// освобождая место для гуттера с номерами строк.
+/// textContainerOrigin смещает текст только слева, не затрагивая правый край.
+final class GutterTextView: NSTextView {
+    /// Ширина гуттера — задаётся извне.
+    var gutterInset: CGFloat = 44
+
+    override var textContainerOrigin: NSPoint {
+        // Сдвигаем текст вправо на ширину гуттера, вниз на 8pt для отступа сверху
+        NSPoint(x: gutterInset, y: 8)
+    }
+}
+
 struct CodeEditorView: NSViewRepresentable {
     @Binding var text: String
-    var language: String   // Расширение файла ("swift", "py", "go")
-    var fileName: String?  // Полное имя файла ("Dockerfile") — для грамматик по имени
+    var language: String
+    var fileName: String?
 
-    /// Шрифт редактора — вынесен в константу, чтобы не создавать каждый раз.
     private let editorFont = NSFont.monospacedSystemFont(ofSize: 13, weight: .regular)
 
-    // MARK: - NSViewRepresentable
-
     func makeNSView(context: Context) -> NSScrollView {
-        let scrollView = NSTextView.scrollableTextView()
+        let gutterWidth: CGFloat = 40
 
-        guard let textView = scrollView.documentView as? NSTextView else {
-            return scrollView
-        }
+        // ── ScrollView ──
+        let scrollView = NSScrollView()
+        scrollView.hasVerticalScroller = true
+        scrollView.hasHorizontalScroller = false
+        scrollView.autohidesScrollers = true
+        scrollView.drawsBackground = true
+        scrollView.backgroundColor = NSColor(white: 0.12, alpha: 1.0)
 
-        // Настройка NSTextView
+        // ── Текстовый стек: Storage → LayoutManager → Container → TextView ──
+        // Создаём вручную, чтобы всё было корректно инициализировано
+        let textStorage = NSTextStorage()
+        let layoutManager = NSLayoutManager()
+        textStorage.addLayoutManager(layoutManager)
+
+        let textContainer = NSTextContainer(containerSize: NSSize(
+            width: scrollView.contentSize.width,
+            height: CGFloat.greatestFiniteMagnitude
+        ))
+        textContainer.widthTracksTextView = true
+        textContainer.lineFragmentPadding = 5
+        layoutManager.addTextContainer(textContainer)
+
+        let textView = GutterTextView(frame: scrollView.bounds, textContainer: textContainer)
+        textView.gutterInset = gutterWidth + 4
+
         textView.isEditable = true
         textView.isSelectable = true
         textView.allowsUndo = true
@@ -43,11 +73,24 @@ struct CodeEditorView: NSViewRepresentable {
         textView.textColor = NSColor(white: 0.9, alpha: 1.0)
         textView.insertionPointColor = .white
 
-        textView.textContainer?.widthTracksTextView = true
+        textView.isVerticallyResizable = true
         textView.isHorizontallyResizable = false
-        textView.textContainerInset = NSSize(width: 4, height: 8)
+        textView.autoresizingMask = [.width]
+        textView.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude,
+                                   height: CGFloat.greatestFiniteMagnitude)
 
         textView.delegate = context.coordinator
+        scrollView.documentView = textView
+
+        // ── Номера строк ──
+        let lineNumberView = LineNumberView(textView: textView)
+        lineNumberView.gutterWidth = gutterWidth
+        lineNumberView.frame = NSRect(x: 0, y: 0, width: gutterWidth, height: scrollView.frame.height)
+        lineNumberView.autoresizingMask = [.height]
+
+        // Добавляем поверх scroll view — фиксируется при скролле
+        scrollView.addSubview(lineNumberView)
+        context.coordinator.lineNumberView = lineNumberView
 
         textView.string = text
         applyHighlighting(to: textView)
@@ -64,16 +107,25 @@ struct CodeEditorView: NSViewRepresentable {
             textView.selectedRanges = selectedRanges
             applyHighlighting(to: textView)
         }
+
+        // Обновляем позицию и размер LineNumberView
+        if let lineNumberView = context.coordinator.lineNumberView {
+            lineNumberView.frame = NSRect(
+                x: 0, y: 0,
+                width: lineNumberView.gutterWidth,
+                height: scrollView.frame.height
+            )
+            lineNumberView.needsDisplay = true
+        }
     }
 
     func makeCoordinator() -> Coordinator {
         Coordinator(parent: self)
     }
 
-    // MARK: - Coordinator
-
     class Coordinator: NSObject, NSTextViewDelegate {
         var parent: CodeEditorView
+        var lineNumberView: LineNumberView?
 
         init(parent: CodeEditorView) {
             self.parent = parent
@@ -86,13 +138,8 @@ struct CodeEditorView: NSViewRepresentable {
         }
     }
 
-    // MARK: - Подсветка
-
-    /// Делегирует подсветку в SyntaxHighlighter.
-    /// Вся логика (загрузка грамматик, компиляция regex, применение цветов) — там.
     private func applyHighlighting(to textView: NSTextView) {
         guard let storage = textView.textStorage else { return }
-
         SyntaxHighlighter.shared.highlight(
             textStorage: storage,
             language: language,
