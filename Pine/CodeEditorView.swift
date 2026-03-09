@@ -22,6 +22,44 @@ final class GutterTextView: NSTextView {
         NSPoint(x: gutterInset, y: 8)
     }
 
+    // MARK: - Highlight current line
+
+    private let currentLineColor = NSColor(name: nil) { appearance in
+        if appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua {
+            return NSColor.white.withAlphaComponent(0.06)
+        } else {
+            return NSColor.black.withAlphaComponent(0.06)
+        }
+    }
+
+    override func drawBackground(in rect: NSRect) {
+        super.drawBackground(in: rect)
+
+        guard let layoutManager = layoutManager,
+              let textContainer = textContainer else { return }
+
+        let cursorRange = selectedRange()
+        // Подсвечиваем только когда нет выделения (просто курсор)
+        guard cursorRange.length == 0 else { return }
+
+        let glyphIndex = layoutManager.glyphIndexForCharacter(at: cursorRange.location)
+        var lineRect = layoutManager.lineFragmentRect(forGlyphAt: glyphIndex, effectiveRange: nil)
+
+        // Растягиваем на всю ширину view
+        lineRect.origin.x = 0
+        lineRect.size.width = bounds.width
+        // Учитываем textContainerOrigin
+        lineRect.origin.y += textContainerOrigin.y
+
+        currentLineColor.setFill()
+        lineRect.fill()
+    }
+
+    override func setSelectedRanges(_ ranges: [NSValue], affinity: NSSelectionAffinity, stillSelecting: Bool) {
+        super.setSelectedRanges(ranges, affinity: affinity, stillSelecting: stillSelecting)
+        needsDisplay = true
+    }
+
     // MARK: - Auto-indent
 
     /// Символы, после которых увеличиваем отступ
