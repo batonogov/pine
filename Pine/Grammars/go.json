@@ -1,0 +1,59 @@
+{
+    "name": "Go",
+    "extensions": ["go"],
+    "rules": [
+        {
+            "pattern": "//.*$",
+            "scope": "comment",
+            "options": ["anchorsMatchLines"]
+        },
+        {
+            "pattern": "/\\*[\\s\\S]*?\\*/",
+            "scope": "comment"
+        },
+        {
+            "pattern": "\"(?:[^\"\\\\]|\\\\.)*\"",
+            "scope": "string"
+        },
+        {
+            "pattern": "`[^`]*`",
+            "scope": "string"
+        },
+        {
+            "pattern": "'(?:[^'\\\\]|\\\\.)'",
+            "scope": "string"
+        },
+        {
+            "pattern": "\\b(package|import|func|return|var|const|if|else|for|range|switch|case|default|break|continue|go|defer|select|chan|map|struct|interface|type|fallthrough|goto)\\b",
+            "scope": "keyword"
+        },
+        {
+            "pattern": "\\b(true|false|nil|iota)\\b",
+            "scope": "keyword"
+        },
+        {
+            "pattern": "\\b(int|int8|int16|int32|int64|uint|uint8|uint16|uint32|uint64|float32|float64|complex64|complex128|string|bool|byte|rune|error|any)\\b",
+            "scope": "type"
+        },
+        {
+            "pattern": "\\b(fmt|log|os|io|net|http|json|context|sync|time|strings|strconv|errors)\\b",
+            "scope": "type"
+        },
+        {
+            "pattern": "\\b(make|len|cap|append|copy|delete|close|new|panic|recover|print|println)\\b",
+            "scope": "function"
+        },
+        {
+            "pattern": "\\b\\d+(\\.\\d+)?([eE][+-]?\\d+)?\\b",
+            "scope": "number"
+        },
+        {
+            "pattern": "0x[0-9a-fA-F]+",
+            "scope": "number"
+        },
+        {
+            "pattern": ":=|<-",
+            "scope": "keyword"
+        }
+    ]
+}

@@ -1,0 +1,47 @@
+{
+    "name": "TypeScript",
+    "extensions": ["ts", "tsx"],
+    "rules": [
+        {
+            "pattern": "//.*$",
+            "scope": "comment",
+            "options": ["anchorsMatchLines"]
+        },
+        {
+            "pattern": "/\\*[\\s\\S]*?\\*/",
+            "scope": "comment"
+        },
+        {
+            "pattern": "\"(?:[^\"\\\\]|\\\\.)*\"",
+            "scope": "string"
+        },
+        {
+            "pattern": "'(?:[^'\\\\]|\\\\.)*'",
+            "scope": "string"
+        },
+        {
+            "pattern": "`(?:[^`\\\\]|\\\\.)*`",
+            "scope": "string"
+        },
+        {
+            "pattern": "\\b(const|let|var|function|return|if|else|for|while|do|switch|case|break|continue|class|extends|new|this|super|import|export|from|default|try|catch|finally|throw|async|await|of|in|typeof|instanceof|true|false|null|undefined|void|delete|yield|interface|type|enum|implements|readonly|as|is|keyof|infer|declare|namespace|module|abstract|override)\\b",
+            "scope": "keyword"
+        },
+        {
+            "pattern": "\\b(string|number|boolean|any|never|unknown|void|null|undefined|object|symbol|bigint)\\b",
+            "scope": "type"
+        },
+        {
+            "pattern": "\\b[A-Z][a-zA-Z0-9]*\\b",
+            "scope": "type"
+        },
+        {
+            "pattern": "\\b\\d+(\\.\\d+)?([eE][+-]?\\d+)?\\b",
+            "scope": "number"
+        },
+        {
+            "pattern": "=>",
+            "scope": "keyword"
+        }
+    ]
+}

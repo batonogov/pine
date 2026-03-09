@@ -1,0 +1,40 @@
+{
+    "name": "YAML",
+    "extensions": ["yml", "yaml"],
+    "rules": [
+        {
+            "pattern": "#.*$",
+            "scope": "comment",
+            "options": ["anchorsMatchLines"]
+        },
+        {
+            "pattern": "\"(?:[^\"\\\\]|\\\\.)*\"",
+            "scope": "string"
+        },
+        {
+            "pattern": "'[^']*'",
+            "scope": "string"
+        },
+        {
+            "pattern": "^[\\w.-]+(?=\\s*:)",
+            "scope": "attribute",
+            "options": ["anchorsMatchLines"]
+        },
+        {
+            "pattern": "\\b(true|false|yes|no|null|~)\\b",
+            "scope": "keyword"
+        },
+        {
+            "pattern": "\\b\\d+(\\.\\d+)?([eE][+-]?\\d+)?\\b",
+            "scope": "number"
+        },
+        {
+            "pattern": "---",
+            "scope": "keyword"
+        },
+        {
+            "pattern": "&\\w+|\\*\\w+",
+            "scope": "attribute"
+        }
+    ]
+}

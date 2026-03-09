@@ -1,0 +1,59 @@
+{
+    "name": "Python",
+    "extensions": ["py", "pyw"],
+    "rules": [
+        {
+            "pattern": "#.*$",
+            "scope": "comment",
+            "options": ["anchorsMatchLines"]
+        },
+        {
+            "pattern": "\"\"\"[\\s\\S]*?\"\"\"",
+            "scope": "string"
+        },
+        {
+            "pattern": "'''[\\s\\S]*?'''",
+            "scope": "string"
+        },
+        {
+            "pattern": "\"(?:[^\"\\\\]|\\\\.)*\"",
+            "scope": "string"
+        },
+        {
+            "pattern": "'(?:[^'\\\\]|\\\\.)*'",
+            "scope": "string"
+        },
+        {
+            "pattern": "\\b(def|class|if|elif|else|for|while|return|import|from|as|try|except|finally|with|raise|pass|break|continue|in|not|and|or|is|lambda|yield|global|nonlocal|assert|del|async|await|match|case)\\b",
+            "scope": "keyword"
+        },
+        {
+            "pattern": "\\b(True|False|None)\\b",
+            "scope": "keyword"
+        },
+        {
+            "pattern": "\\bself\\b",
+            "scope": "attribute"
+        },
+        {
+            "pattern": "\\b(int|float|str|bool|list|dict|tuple|set|bytes|type|object|Exception|ValueError|TypeError|KeyError|IndexError|RuntimeError|print|len|range|enumerate|zip|map|filter|sorted|isinstance|hasattr|getattr|setattr|super)\\b",
+            "scope": "type"
+        },
+        {
+            "pattern": "\\b\\d+(\\.\\d+)?([eE][+-]?\\d+)?j?\\b",
+            "scope": "number"
+        },
+        {
+            "pattern": "0x[0-9a-fA-F]+",
+            "scope": "number"
+        },
+        {
+            "pattern": "@[a-zA-Z_][a-zA-Z0-9_.]*",
+            "scope": "attribute"
+        },
+        {
+            "pattern": "\\bdef\\s+([a-zA-Z_][a-zA-Z0-9_]*)",
+            "scope": "function"
+        }
+    ]
+}

@@ -1,0 +1,37 @@
+{
+    "name": "Dockerfile",
+    "extensions": ["dockerfile"],
+    "fileNames": ["Dockerfile", "Containerfile"],
+    "rules": [
+        {
+            "pattern": "#.*$",
+            "scope": "comment",
+            "options": ["anchorsMatchLines"]
+        },
+        {
+            "pattern": "\"(?:[^\"\\\\]|\\\\.)*\"",
+            "scope": "string"
+        },
+        {
+            "pattern": "'(?:[^'\\\\]|\\\\.)*'",
+            "scope": "string"
+        },
+        {
+            "pattern": "^(FROM|RUN|CMD|LABEL|MAINTAINER|EXPOSE|ENV|ADD|COPY|ENTRYPOINT|VOLUME|USER|WORKDIR|ARG|ONBUILD|STOPSIGNAL|HEALTHCHECK|SHELL)\\b",
+            "scope": "keyword",
+            "options": ["anchorsMatchLines"]
+        },
+        {
+            "pattern": "\\b(AS)\\b",
+            "scope": "keyword"
+        },
+        {
+            "pattern": "\\$\\{[^}]+\\}|\\$[a-zA-Z_][a-zA-Z0-9_]*",
+            "scope": "attribute"
+        },
+        {
+            "pattern": "\\b\\d+(\\.\\d+)*\\b",
+            "scope": "number"
+        }
+    ]
+}

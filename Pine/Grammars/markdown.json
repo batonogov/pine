@@ -1,0 +1,61 @@
+{
+    "name": "Markdown",
+    "extensions": ["md", "markdown"],
+    "rules": [
+        {
+            "pattern": "```[\\s\\S]*?```",
+            "scope": "string"
+        },
+        {
+            "pattern": "`[^`\\n]+`",
+            "scope": "string"
+        },
+        {
+            "pattern": "^#{1,6}\\s+.*$",
+            "scope": "keyword",
+            "options": ["anchorsMatchLines"]
+        },
+        {
+            "pattern": "\\*\\*[^*\\n]+\\*\\*",
+            "scope": "keyword"
+        },
+        {
+            "pattern": "__[^_\\n]+__",
+            "scope": "keyword"
+        },
+        {
+            "pattern": "(?<=\\s|^)\\*[^*\\n]+\\*(?=\\s|$|[.,;:!?])",
+            "scope": "attribute",
+            "options": ["anchorsMatchLines"]
+        },
+        {
+            "pattern": "(?<=\\s|^)_[^_\\n]+_(?=\\s|$|[.,;:!?])",
+            "scope": "attribute",
+            "options": ["anchorsMatchLines"]
+        },
+        {
+            "pattern": "\\[[^\\]]+\\]\\([^)]+\\)",
+            "scope": "function"
+        },
+        {
+            "pattern": "^\\s*[-*+]\\s",
+            "scope": "number",
+            "options": ["anchorsMatchLines"]
+        },
+        {
+            "pattern": "^\\s*\\d+\\.\\s",
+            "scope": "number",
+            "options": ["anchorsMatchLines"]
+        },
+        {
+            "pattern": "^>\\s.*$",
+            "scope": "comment",
+            "options": ["anchorsMatchLines"]
+        },
+        {
+            "pattern": "^---+$",
+            "scope": "comment",
+            "options": ["anchorsMatchLines"]
+        }
+    ]
+}

@@ -1,0 +1,22 @@
+{
+    "name": "JSON",
+    "extensions": ["json"],
+    "rules": [
+        {
+            "pattern": "\"(?:[^\"\\\\]|\\\\.)*\"\\s*(?=:)",
+            "scope": "attribute"
+        },
+        {
+            "pattern": "\"(?:[^\"\\\\]|\\\\.)*\"",
+            "scope": "string"
+        },
+        {
+            "pattern": "\\b\\d+(\\.\\d+)?([eE][+-]?\\d+)?\\b",
+            "scope": "number"
+        },
+        {
+            "pattern": "\\b(true|false|null)\\b",
+            "scope": "keyword"
+        }
+    ]
+}

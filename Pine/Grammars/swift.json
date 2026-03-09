@@ -1,0 +1,47 @@
+{
+    "name": "Swift",
+    "extensions": ["swift"],
+    "rules": [
+        {
+            "pattern": "//.*$",
+            "scope": "comment",
+            "options": ["anchorsMatchLines"]
+        },
+        {
+            "pattern": "/\\*[\\s\\S]*?\\*/",
+            "scope": "comment"
+        },
+        {
+            "pattern": "\"(?:[^\"\\\\]|\\\\.)*\"",
+            "scope": "string"
+        },
+        {
+            "pattern": "#\"(?:[^\"]|\"(?!#))*\"#",
+            "scope": "string"
+        },
+        {
+            "pattern": "\\b(import|struct|class|enum|protocol|extension|func|var|let|if|else|guard|return|switch|case|default|for|in|while|repeat|break|continue|self|Self|super|init|deinit|nil|true|false|try|catch|throw|throws|async|await|some|any|where|is|as|private|public|internal|fileprivate|open|static|final|override|mutating|nonmutating|lazy|weak|unowned|inout|typealias|associatedtype|do|defer|subscript|operator|precedencegroup|indirect|convenience|required|optional|dynamic|nonisolated|consuming|borrowing|sending)\\b",
+            "scope": "keyword"
+        },
+        {
+            "pattern": "@[A-Za-z_][A-Za-z0-9_]*",
+            "scope": "attribute"
+        },
+        {
+            "pattern": "\\b\\d+(\\.\\d+)?([eE][+-]?\\d+)?\\b",
+            "scope": "number"
+        },
+        {
+            "pattern": "0x[0-9a-fA-F_]+",
+            "scope": "number"
+        },
+        {
+            "pattern": "\\b[A-Z][a-zA-Z0-9]*\\b",
+            "scope": "type"
+        },
+        {
+            "pattern": "\\bfunc\\s+([a-zA-Z_][a-zA-Z0-9_]*)",
+            "scope": "function"
+        }
+    ]
+}

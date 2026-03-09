@@ -1,0 +1,39 @@
+{
+    "name": "Shell",
+    "extensions": ["sh", "bash", "zsh", "fish"],
+    "rules": [
+        {
+            "pattern": "#.*$",
+            "scope": "comment",
+            "options": ["anchorsMatchLines"]
+        },
+        {
+            "pattern": "\"(?:[^\"\\\\]|\\\\.)*\"",
+            "scope": "string"
+        },
+        {
+            "pattern": "'[^']*'",
+            "scope": "string"
+        },
+        {
+            "pattern": "\\b(if|then|else|elif|fi|for|while|until|do|done|case|esac|in|function|return|exit|local|export|source|alias|unalias|set|unset|shift|break|continue|eval|exec|trap|readonly|declare|typeset)\\b",
+            "scope": "keyword"
+        },
+        {
+            "pattern": "\\$\\{[^}]+\\}|\\$\\([^)]+\\)|\\$[a-zA-Z_][a-zA-Z0-9_]*|\\$[0-9@#?!$*-]",
+            "scope": "attribute"
+        },
+        {
+            "pattern": "\\b(echo|printf|cd|ls|cp|mv|rm|mkdir|rmdir|cat|grep|sed|awk|find|chmod|chown|curl|wget|tar|git|docker|kubectl|npm|yarn|pip|brew)\\b",
+            "scope": "function"
+        },
+        {
+            "pattern": "\\b\\d+\\b",
+            "scope": "number"
+        },
+        {
+            "pattern": "\\|\\||&&|;;|<<|>>",
+            "scope": "keyword"
+        }
+    ]
+}

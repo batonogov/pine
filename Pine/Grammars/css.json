@@ -1,0 +1,51 @@
+{
+    "name": "CSS",
+    "extensions": ["css", "scss", "less"],
+    "rules": [
+        {
+            "pattern": "/\\*[\\s\\S]*?\\*/",
+            "scope": "comment"
+        },
+        {
+            "pattern": "//.*$",
+            "scope": "comment",
+            "options": ["anchorsMatchLines"]
+        },
+        {
+            "pattern": "\"(?:[^\"\\\\]|\\\\.)*\"",
+            "scope": "string"
+        },
+        {
+            "pattern": "'(?:[^'\\\\]|\\\\.)*'",
+            "scope": "string"
+        },
+        {
+            "pattern": "#[0-9a-fA-F]{3,8}\\b",
+            "scope": "number"
+        },
+        {
+            "pattern": "\\b\\d+(\\.\\d+)?(px|em|rem|%|vh|vw|vmin|vmax|ch|ex|cm|mm|in|pt|pc|deg|rad|grad|turn|s|ms|Hz|kHz|dpi|dpcm|dppx)?\\b",
+            "scope": "number"
+        },
+        {
+            "pattern": "\\.[a-zA-Z_-][a-zA-Z0-9_-]*",
+            "scope": "function"
+        },
+        {
+            "pattern": "#[a-zA-Z_-][a-zA-Z0-9_-]*(?=\\s*[{,])",
+            "scope": "attribute"
+        },
+        {
+            "pattern": "@(media|keyframes|import|font-face|supports|charset|namespace|layer|property|container)\\b",
+            "scope": "keyword"
+        },
+        {
+            "pattern": "\\b(display|position|margin|padding|border|background|color|font|width|height|top|left|right|bottom|flex|grid|align|justify|overflow|opacity|transition|transform|animation|z-index|cursor|content|box-sizing|text-align|text-decoration|line-height|letter-spacing|white-space|visibility|pointer-events)\\b",
+            "scope": "type"
+        },
+        {
+            "pattern": ":(hover|focus|active|visited|first-child|last-child|nth-child|before|after|root|not|has|where|is)\\b",
+            "scope": "attribute"
+        }
+    ]
+}

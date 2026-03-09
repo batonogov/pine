@@ -1,0 +1,34 @@
+{
+    "name": "HTML",
+    "extensions": ["html", "htm", "xml", "svg"],
+    "rules": [
+        {
+            "pattern": "<!--[\\s\\S]*?-->",
+            "scope": "comment"
+        },
+        {
+            "pattern": "\"[^\"]*\"",
+            "scope": "string"
+        },
+        {
+            "pattern": "'[^']*'",
+            "scope": "string"
+        },
+        {
+            "pattern": "</?[a-zA-Z][a-zA-Z0-9-]*",
+            "scope": "keyword"
+        },
+        {
+            "pattern": "/?>",
+            "scope": "keyword"
+        },
+        {
+            "pattern": "\\b[a-zA-Z-]+(?==)",
+            "scope": "attribute"
+        },
+        {
+            "pattern": "&[a-zA-Z]+;",
+            "scope": "number"
+        }
+    ]
+}

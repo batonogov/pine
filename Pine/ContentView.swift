@@ -56,7 +56,8 @@ struct ContentView: View {
                         get: { viewModel.activeTabContent },
                         set: { viewModel.activeTabContent = $0 }
                     ),
-                    language: (tab.name as NSString).pathExtension.lowercased()
+                    language: (tab.name as NSString).pathExtension.lowercased(),
+                    fileName: tab.name
                 )
             } else {
                 ContentUnavailableView {
