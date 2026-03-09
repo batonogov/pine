@@ -2,6 +2,8 @@
 
 Minimal native macOS code editor built with SwiftUI + AppKit.
 
+![Pine screenshot](assets/screenshot.png)
+
 ## Philosophy
 Pine is a pine tree in a forest of editors — quiet, reliable, native.
 Each scale of the pine cone icon is a line of code.
