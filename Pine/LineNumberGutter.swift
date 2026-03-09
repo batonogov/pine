@@ -13,9 +13,9 @@ final class LineNumberView: NSView {
     weak var textView: NSTextView?
 
     private let gutterFont = NSFont.monospacedSystemFont(ofSize: 11, weight: .regular)
-    private let gutterTextColor = NSColor(white: 0.45, alpha: 1.0)
-    private let gutterBgColor = NSColor(white: 0.10, alpha: 1.0)
-    private let separatorColor = NSColor(white: 0.20, alpha: 1.0)
+    private let gutterTextColor = NSColor.secondaryLabelColor
+    private let gutterBgColor = NSColor.controlBackgroundColor
+    private let separatorColor = NSColor.separatorColor
 
     var gutterWidth: CGFloat = 40
 

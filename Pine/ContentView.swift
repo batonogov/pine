@@ -165,7 +165,7 @@ struct EditorTabItem: View {
                 .buttonStyle(.plain)
             } else if tab.hasUnsavedChanges {
                 Circle()
-                    .fill(.white.opacity(0.7))
+                    .fill(.secondary)
                     .frame(width: 8, height: 8)
             } else {
                 // Невидимый placeholder для стабильной ширины
@@ -182,7 +182,7 @@ struct EditorTabItem: View {
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 6)
-        .background(isActive ? .white.opacity(0.1) : .clear)
+        .background(isActive ? Color.primary.opacity(0.1) : .clear)
         // Тонкий разделитель справа между вкладками
         .overlay(alignment: .trailing) {
             Divider().frame(height: 16)
@@ -292,7 +292,7 @@ struct TerminalTabItem: View {
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 4)
-        .background(isActive ? .white.opacity(0.1) : .clear)
+        .background(isActive ? Color.primary.opacity(0.1) : .clear)
         .cornerRadius(4)
         .contentShape(Rectangle())
         .onTapGesture(perform: onSelect)
