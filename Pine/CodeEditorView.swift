@@ -43,7 +43,7 @@ struct CodeEditorView: NSViewRepresentable {
         scrollView.hasHorizontalScroller = false
         scrollView.autohidesScrollers = true
         scrollView.drawsBackground = true
-        scrollView.backgroundColor = NSColor(white: 0.12, alpha: 1.0)
+        scrollView.backgroundColor = .textBackgroundColor
         scrollView.autoresizingMask = [.width, .height]
 
         // ── Текстовый стек: Storage → LayoutManager → Container → TextView ──
@@ -74,9 +74,9 @@ struct CodeEditorView: NSViewRepresentable {
         textView.isRichText = false
 
         textView.font = editorFont
-        textView.backgroundColor = NSColor(white: 0.12, alpha: 1.0)
-        textView.textColor = NSColor(white: 0.9, alpha: 1.0)
-        textView.insertionPointColor = .white
+        textView.backgroundColor = .textBackgroundColor
+        textView.textColor = .textColor
+        textView.insertionPointColor = .textColor
 
         textView.isVerticallyResizable = true
         textView.isHorizontallyResizable = false

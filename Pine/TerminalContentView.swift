@@ -33,9 +33,9 @@ struct TerminalContentView: NSViewRepresentable {
 
         // Моноширинный шрифт, тёмный фон
         textView.font = NSFont.monospacedSystemFont(ofSize: 13, weight: .regular)
-        textView.backgroundColor = NSColor(white: 0.08, alpha: 1.0)
-        textView.textColor = NSColor(white: 0.9, alpha: 1.0)
-        textView.insertionPointColor = .white
+        textView.backgroundColor = .textBackgroundColor
+        textView.textColor = .textColor
+        textView.insertionPointColor = .textColor
 
         // Текст растягивается по ширине
         textView.textContainer?.widthTracksTextView = true
