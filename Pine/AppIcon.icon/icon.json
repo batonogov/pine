@@ -1,6 +1,10 @@
 {
+  "color-space-for-untagged-svg-colors" : "display-p3",
   "fill" : {
-    "automatic-gradient" : "display-p3:1.00000,0.82745,0.41961,1.00000",
+    "linear-gradient" : [
+      "display-p3:0.75294,0.51765,0.98824,1.00000",
+      "display-p3:0.48627,0.22745,0.92941,1.00000"
+    ],
     "orientation" : {
       "start" : {
         "x" : 0.5,
@@ -16,17 +20,20 @@
     {
       "layers" : [
         {
-          "blend-mode" : "darken",
-          "fill" : "automatic",
+          "blend-mode" : "normal",
+          "fill" : {
+            "solid" : "display-p3:1.00000,1.00000,1.00000,1.00000"
+          },
           "glass" : true,
           "hidden" : false,
-          "image-name" : "image 2.png",
-          "name" : "image 2",
+          "image-name" : "7EFC2E98-7895-475A-94C6-76613E3EED0D.png",
+          "name" : "7EFC2E98-7895-475A-94C6-76613E3EED0D",
+          "opacity" : 1,
           "position" : {
-            "scale" : 1.4,
+            "scale" : 1.3,
             "translation-in-points" : [
-              -1.2999999999999545,
-              30.4453125
+              0,
+              -20.799999999999955
             ]
           }
         }
