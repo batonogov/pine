@@ -30,8 +30,12 @@ struct CodeEditorView: NSViewRepresentable {
 
     private let editorFont = NSFont.monospacedSystemFont(ofSize: 13, weight: .regular)
 
-    func makeNSView(context: Context) -> NSScrollView {
+    func makeNSView(context: Context) -> NSView {
         let gutterWidth: CGFloat = 40
+
+        // ── Контейнер — держит scroll view и line number view как сиблингов ──
+        let container = NSView()
+        container.wantsLayer = true
 
         // ── ScrollView ──
         let scrollView = NSScrollView()
@@ -40,6 +44,7 @@ struct CodeEditorView: NSViewRepresentable {
         scrollView.autohidesScrollers = true
         scrollView.drawsBackground = true
         scrollView.backgroundColor = NSColor(white: 0.12, alpha: 1.0)
+        scrollView.autoresizingMask = [.width, .height]
 
         // ── Текстовый стек: Storage → LayoutManager → Container → TextView ──
         // Создаём вручную, чтобы всё было корректно инициализировано
@@ -82,40 +87,45 @@ struct CodeEditorView: NSViewRepresentable {
         textView.delegate = context.coordinator
         scrollView.documentView = textView
 
-        // ── Номера строк ──
+        container.addSubview(scrollView)
+
+        // ── Номера строк — поверх scroll view, как отдельный сиблинг ──
         let lineNumberView = LineNumberView(textView: textView)
         lineNumberView.gutterWidth = gutterWidth
-        lineNumberView.frame = NSRect(x: 0, y: 0, width: gutterWidth, height: scrollView.frame.height)
         lineNumberView.autoresizingMask = [.height]
+        container.addSubview(lineNumberView)
 
-        // Добавляем поверх scroll view — фиксируется при скролле
-        scrollView.addSubview(lineNumberView)
+        context.coordinator.scrollView = scrollView
         context.coordinator.lineNumberView = lineNumberView
 
         textView.string = text
         applyHighlighting(to: textView)
 
-        return scrollView
+        return container
     }
 
-    func updateNSView(_ scrollView: NSScrollView, context: Context) {
-        guard let textView = scrollView.documentView as? NSTextView else { return }
+    func updateNSView(_ container: NSView, context: Context) {
+        guard let scrollView = context.coordinator.scrollView,
+              let textView = scrollView.documentView as? NSTextView else { return }
+
+        // Scroll view заполняет весь контейнер
+        scrollView.frame = container.bounds
 
         if textView.string != text {
-            let selectedRanges = textView.selectedRanges
             textView.string = text
-            textView.selectedRanges = selectedRanges
             applyHighlighting(to: textView)
+            // Сброс скролла и курсора при открытии нового файла
+            textView.setSelectedRange(NSRange(location: 0, length: 0))
+            textView.scrollRangeToVisible(NSRange(location: 0, length: 0))
         }
 
-        // Обновляем позицию и размер LineNumberView
+        // Обновляем размер LineNumberView
         if let lineNumberView = context.coordinator.lineNumberView {
             lineNumberView.frame = NSRect(
                 x: 0, y: 0,
                 width: lineNumberView.gutterWidth,
-                height: scrollView.frame.height
+                height: container.bounds.height
             )
-            lineNumberView.needsDisplay = true
         }
     }
 
@@ -125,6 +135,7 @@ struct CodeEditorView: NSViewRepresentable {
 
     class Coordinator: NSObject, NSTextViewDelegate {
         var parent: CodeEditorView
+        var scrollView: NSScrollView?
         var lineNumberView: LineNumberView?
 
         init(parent: CodeEditorView) {
