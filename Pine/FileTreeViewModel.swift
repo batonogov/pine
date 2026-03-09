@@ -14,6 +14,10 @@ struct EditorTab: Identifiable, Hashable {
     let name: String     // Имя файла (отображается на вкладке)
     let url: URL         // Полный путь
     var content: String  // Содержимое файла
+    var savedContent: String // Содержимое на момент последнего сохранения
+
+    /// Есть ли несохранённые изменения
+    var hasUnsavedChanges: Bool { content != savedContent }
 
     // Hashable по id (не по content — содержимое меняется)
     static func == (lhs: EditorTab, rhs: EditorTab) -> Bool { lhs.id == rhs.id }
@@ -127,12 +131,13 @@ final class FileTreeViewModel {
         // Иначе — читаем файл и создаём новую вкладку
         do {
             let content = try String(contentsOf: node.url, encoding: .utf8)
-            let tab = EditorTab(id: node.url, name: node.name, url: node.url, content: content)
+            let tab = EditorTab(id: node.url, name: node.name, url: node.url, content: content, savedContent: content)
             openTabs.append(tab)
             activeTabID = tab.id
         } catch {
+            let errorText = "// Error: \(error.localizedDescription)"
             let tab = EditorTab(id: node.url, name: node.name, url: node.url,
-                                content: "// Error: \(error.localizedDescription)")
+                                content: errorText, savedContent: errorText)
             openTabs.append(tab)
             activeTabID = tab.id
         }
@@ -140,7 +145,33 @@ final class FileTreeViewModel {
 
     // MARK: - Закрытие вкладки
 
+    /// Вкладка, ожидающая подтверждения закрытия (для алерта)
+    var tabPendingClose: EditorTab?
+
     func closeTab(_ tab: EditorTab) {
+        // Если есть несохранённые изменения — показываем алерт
+        if tab.hasUnsavedChanges {
+            tabPendingClose = tab
+            return
+        }
+        forceCloseTab(tab)
+    }
+
+    /// Сохраняет и закрывает вкладку
+    func saveAndCloseTab(_ tab: EditorTab) {
+        if let index = openTabs.firstIndex(where: { $0.id == tab.id }) {
+            do {
+                try openTabs[index].content.write(to: openTabs[index].url, atomically: true, encoding: .utf8)
+                openTabs[index].savedContent = openTabs[index].content
+            } catch {
+                print("Error saving file: \(error.localizedDescription)")
+            }
+        }
+        forceCloseTab(tab)
+    }
+
+    /// Закрывает вкладку без сохранения
+    func forceCloseTab(_ tab: EditorTab) {
         openTabs.removeAll { $0.id == tab.id }
 
         // Если закрыли активную — переключаемся на последнюю оставшуюся
@@ -152,10 +183,13 @@ final class FileTreeViewModel {
     // MARK: - Сохранение файла
 
     func saveCurrentFile() {
-        guard let tab = activeTab else { return }
+        guard let id = activeTabID,
+              let index = openTabs.firstIndex(where: { $0.id == id })
+        else { return }
 
         do {
-            try tab.content.write(to: tab.url, atomically: true, encoding: .utf8)
+            try openTabs[index].content.write(to: openTabs[index].url, atomically: true, encoding: .utf8)
+            openTabs[index].savedContent = openTabs[index].content
         } catch {
             print("Error saving file: \(error.localizedDescription)")
         }

@@ -112,7 +112,34 @@ struct EditorTabBar: View {
         }
         .background(.bar)
         .frame(height: 30)
-        .fixedSize(horizontal: false, vertical: true) // Не позволяем сжать по вертикали
+        .fixedSize(horizontal: false, vertical: true)
+        .alert(
+            "Unsaved Changes",
+            isPresented: Binding(
+                get: { viewModel.tabPendingClose != nil },
+                set: { if !$0 { viewModel.tabPendingClose = nil } }
+            )
+        ) {
+            Button("Save") {
+                if let tab = viewModel.tabPendingClose {
+                    viewModel.saveAndCloseTab(tab)
+                    viewModel.tabPendingClose = nil
+                }
+            }
+            Button("Don't Save", role: .destructive) {
+                if let tab = viewModel.tabPendingClose {
+                    viewModel.forceCloseTab(tab)
+                    viewModel.tabPendingClose = nil
+                }
+            }
+            Button("Cancel", role: .cancel) {
+                viewModel.tabPendingClose = nil
+            }
+        } message: {
+            if let tab = viewModel.tabPendingClose {
+                Text("Do you want to save changes to \"\(tab.name)\"?")
+            }
+        }
     }
 }
 
@@ -128,14 +155,22 @@ struct EditorTabItem: View {
 
     var body: some View {
         HStack(spacing: 4) {
-            // Крестик закрытия слева
-            Button(action: onClose) {
-                Image(systemName: "xmark")
-                    .font(.system(size: 9, weight: .bold))
-                    .foregroundStyle(.secondary)
+            // Крестик закрытия или индикатор несохранённых изменений
+            if isHovering {
+                Button(action: onClose) {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 9, weight: .bold))
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+            } else if tab.hasUnsavedChanges {
+                Circle()
+                    .fill(.white.opacity(0.7))
+                    .frame(width: 8, height: 8)
+            } else {
+                // Невидимый placeholder для стабильной ширины
+                Color.clear.frame(width: 9, height: 9)
             }
-            .buttonStyle(.plain)
-            .opacity(isHovering || isActive ? 1 : 0) // Виден при наведении или если активна
 
             // Иконка файла + имя
             Image(systemName: iconForFile(tab.name))
