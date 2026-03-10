@@ -17,19 +17,6 @@
     {
       "layers" : [
         {
-          "glass" : false,
-          "hidden" : true,
-          "image-name" : "ChatGPT Image 10 марта 2026 г., 22_32_05.png",
-          "name" : "ChatGPT Image 10 марта 2026 г., 22_32_05",
-          "position" : {
-            "scale" : 1.4,
-            "translation-in-points" : [
-              -0.42499999999984084,
-              34.582812500000045
-            ]
-          }
-        },
-        {
           "blend-mode" : "normal",
           "fill" : "automatic",
           "glass" : false,
