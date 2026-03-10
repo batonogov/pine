@@ -3,10 +3,10 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Pine — Minimal Native macOS Code Editor</title>
-    <meta name="description" content="Pine is a minimal native macOS code editor built with SwiftUI and AppKit. Zero dependencies. Open, write code, close.">
-    <meta property="og:title" content="Pine — Minimal Native macOS Code Editor">
-    <meta property="og:description" content="A quiet, reliable, native code editor for macOS. Built with SwiftUI + AppKit, zero dependencies.">
+    <title>Pine - Native macOS Code Editor Without the Bloat</title>
+    <meta name="description" content="Pine is a native macOS code editor built with SwiftUI and AppKit. Open a repo, edit code, run commands, and check git without Electron or dependency bloat.">
+    <meta property="og:title" content="Pine - Native macOS Code Editor Without the Bloat">
+    <meta property="og:description" content="Open a repo, edit code, run commands, and check git in a clean native Mac app. No Electron. Zero dependencies.">
     <meta property="og:image" content="https://raw.githubusercontent.com/batonogov/pine/main/assets/screenshot.png">
     <meta property="og:type" content="website">
     <style>
@@ -332,14 +332,14 @@
         <div class="container">
             <span class="hero-icon" aria-hidden="true">&#127794;</span>
             <h1>Pine</h1>
-            <p class="tagline">Minimal native macOS code editor. Built with SwiftUI&nbsp;+&nbsp;AppKit, zero&nbsp;dependencies.</p>
+            <p class="tagline">Open a repo, edit code, run commands, check git, move on. Native macOS app. Zero dependencies.</p>
             <div class="hero-buttons">
-                <a href="https://github.com/batonogov/pine" class="btn btn-primary">
+                <a href="https://github.com/batonogov/pine/releases" class="btn btn-primary">
+                    Download
+                </a>
+                <a href="https://github.com/batonogov/pine" class="btn btn-secondary">
                     <svg width="20" height="20" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"></path></svg>
                     View on GitHub
-                </a>
-                <a href="https://github.com/batonogov/pine/releases" class="btn btn-secondary">
-                    Download
                 </a>
             </div>
         </div>
@@ -362,32 +362,32 @@
                 <div class="feature-card">
                     <span class="icon" aria-hidden="true">&#128193;</span>
                     <h3>File Tree Sidebar</h3>
-                    <p>Browse your project with a native file tree. Open folders, navigate files, see everything at a glance.</p>
+                    <p>Browse a repo fast with a clean native sidebar, folders-first sorting, and no hidden-file clutter.</p>
                 </div>
                 <div class="feature-card">
                     <span class="icon" aria-hidden="true">&#9998;</span>
                     <h3>Syntax Highlighting</h3>
-                    <p>Built-in grammar-based highlighting for popular languages. Extensible via simple JSON grammar files.</p>
+                    <p>Grammar-based highlighting for Swift, TypeScript, JavaScript, Python, Go, Rust, Shell, HTML, CSS, JSON, YAML, Markdown, and Dockerfile.</p>
                 </div>
                 <div class="feature-card">
                     <span class="icon" aria-hidden="true">&#128187;</span>
-                    <h3>Built-in Terminal</h3>
-                    <p>Integrated terminal powered by a real PTY. Run commands without leaving the editor.</p>
+                    <h3>Real PTY Terminal</h3>
+                    <p>Integrated terminal powered by a real PTY, with multiple tabs, so you can run commands without leaving the editor.</p>
                 </div>
                 <div class="feature-card">
                     <span class="icon" aria-hidden="true">&#127744;</span>
                     <h3>Liquid Glass UI</h3>
-                    <p>Designed for macOS 26 Tahoe with native Liquid Glass materials and translucency effects.</p>
+                    <p>Designed for macOS 26 Tahoe with native Liquid Glass materials, translucency, and system behavior.</p>
                 </div>
                 <div class="feature-card">
                     <span class="icon" aria-hidden="true">&#128203;</span>
                     <h3>Native Tabs</h3>
-                    <p>Uses macOS native window tabs for a familiar, system-integrated experience.</p>
+                    <p>Uses real macOS window tabs instead of custom in-app chrome for a familiar, system-integrated workflow.</p>
                 </div>
                 <div class="feature-card">
                     <span class="icon" aria-hidden="true">&#128268;</span>
                     <h3>Git Integration</h3>
-                    <p>See git status in the file tree, diff markers in the gutter, and switch branches easily.</p>
+                    <p>See git status in the file tree, diff markers in the gutter, branch switching, and a compact status summary.</p>
                 </div>
             </div>
         </div>
@@ -396,8 +396,8 @@
     <!-- Philosophy -->
     <section class="philosophy">
         <div class="container">
-            <blockquote>"Pine is a pine tree in a forest of editors — quiet, reliable, native."</blockquote>
-            <p>Pine doesn't try to be VS Code or Xcode. Open, write code, close. Each scale of the pine cone icon is a line of code.</p>
+            <blockquote>"Less editor. More shipping."</blockquote>
+            <p>Pine is for developers who want a native Mac editor with terminal and git context, without Electron overhead or plugin sprawl.</p>
         </div>
     </section>
 
@@ -429,8 +429,8 @@
     <!-- Requirements -->
     <section class="requirements">
         <div class="container">
-            <h2>Get Started</h2>
-            <p>Clone the repo, open in Xcode, build and run.</p>
+            <h2>Built for macOS</h2>
+            <p>Install with Homebrew or build from source in Xcode. Pine stays small, native, and dependency-free.</p>
             <div class="req-badges">
                 <span class="badge"><span class="dot"></span> macOS 26+</span>
                 <span class="badge"><span class="dot"></span> Xcode 26+</span>
@@ -442,7 +442,7 @@
     <!-- Footer -->
     <footer>
         <div class="container">
-            <p>Pine is open source. <a href="https://github.com/batonogov/pine">Contribute on GitHub</a>.</p>
+            <p>Pine is open source. <a href="https://github.com/batonogov/pine">Read the code on GitHub</a>.</p>
         </div>
     </footer>
 
