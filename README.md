@@ -20,6 +20,12 @@ Pine doesn't try to be VS Code or Xcode. Open, write code, close.
 - Zero third-party dependencies
 - macOS 26 (Tahoe) target
 
+## Install
+
+```bash
+brew install --cask batonogov/tap/pine
+```
+
 ## Requirements
 - macOS 26+
 - Xcode 26+
