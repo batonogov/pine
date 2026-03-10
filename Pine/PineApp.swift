@@ -35,6 +35,13 @@ struct PineApp: App {
                 }
                 .keyboardShortcut("`", modifiers: .command)
             }
+            // Cmd+Shift+B — переключение веток
+            CommandMenu("Git") {
+                Button("Switch Branch...") {
+                    NotificationCenter.default.post(name: .switchBranch, object: nil)
+                }
+                .keyboardShortcut("b", modifiers: [.command, .shift])
+            }
             // Cmd+S — сохранить файл
             CommandGroup(replacing: .saveItem) {
                 Button("Save") {
@@ -78,4 +85,5 @@ extension Notification.Name {
     static let saveFile = Notification.Name("saveFile")
     static let openFolder = Notification.Name("openFolder")
     static let toggleTerminal = Notification.Name("toggleTerminal")
+    static let switchBranch = Notification.Name("switchBranch")
 }

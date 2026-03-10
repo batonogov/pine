@@ -14,6 +14,7 @@ final class ProjectManager {
     var rootNodes: [FileNode] = []
     var projectName: String = "No Project"
     var rootURL: URL?
+    let gitProvider = GitStatusProvider()
 
     func openFolder() {
         let panel = NSOpenPanel()
@@ -34,5 +35,7 @@ final class ProjectManager {
         let root = FileNode(url: url)
         root.loadChildren()
         rootNodes = root.children ?? []
+
+        gitProvider.setup(repositoryURL: url)
     }
 }

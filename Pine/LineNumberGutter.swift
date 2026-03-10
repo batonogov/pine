@@ -18,6 +18,19 @@ final class LineNumberView: NSView {
     private let separatorColor = NSColor.separatorColor
 
     var gutterWidth: CGFloat = 40
+    var lineDiffs: [GitLineDiff] = [] {
+        didSet { needsDisplay = true }
+    }
+
+    /// Pre-indexed diff lookup: line number → kind
+    private var diffMap: [Int: GitLineDiff.Kind] {
+        Dictionary(lineDiffs.map { ($0.line, $0.kind) }, uniquingKeysWith: { _, last in last })
+    }
+
+    // Diff marker colors
+    private let addedColor = NSColor.systemGreen
+    private let modifiedColor = NSColor.systemBlue
+    private let deletedColor = NSColor.systemRed
 
     override var isFlipped: Bool { true }
 
@@ -130,6 +143,8 @@ final class LineNumberView: NSView {
         // ── Рисуем номера видимых строк через enumerateLineFragments ──
         // Этот метод проходит только по видимым фрагментам строк — быстро.
         var previousLineCharIndex = -1
+        let currentDiffMap = self.diffMap
+        let diffBarWidth: CGFloat = 3
 
         layoutManager.enumerateLineFragments(
             forGlyphRange: visibleGlyphRange
@@ -158,6 +173,40 @@ final class LineNumberView: NSView {
                 let size = numStr.size(withAttributes: attrs)
                 let x = self.gutterWidth - size.width - 8
                 numStr.draw(at: NSPoint(x: x, y: y), withAttributes: attrs)
+
+                // ── Git diff marker ──
+                if let diffKind = currentDiffMap[lineNumber] {
+                    let markerColor: NSColor
+                    switch diffKind {
+                    case .added:    markerColor = self.addedColor
+                    case .modified: markerColor = self.modifiedColor
+                    case .deleted:  markerColor = self.deletedColor
+                    }
+
+                    if diffKind == .deleted {
+                        // Deleted: small red triangle at the gutter edge
+                        let triangleSize: CGFloat = 5
+                        let triX = self.gutterWidth - diffBarWidth
+                        let triY = y
+                        let path = NSBezierPath()
+                        path.move(to: NSPoint(x: triX, y: triY))
+                        path.line(to: NSPoint(x: triX + triangleSize, y: triY + triangleSize / 2))
+                        path.line(to: NSPoint(x: triX, y: triY + triangleSize))
+                        path.close()
+                        markerColor.setFill()
+                        path.fill()
+                    } else {
+                        // Added/Modified: colored bar at the right edge of gutter
+                        let barRect = NSRect(
+                            x: self.gutterWidth - diffBarWidth,
+                            y: y,
+                            width: diffBarWidth,
+                            height: lineRect.height
+                        )
+                        markerColor.setFill()
+                        barRect.fill()
+                    }
+                }
 
                 lineNumber += 1
             }
