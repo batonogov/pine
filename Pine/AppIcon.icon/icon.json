@@ -1,18 +1,15 @@
 {
   "color-space-for-untagged-svg-colors" : "display-p3",
   "fill" : {
-    "linear-gradient" : [
-      "display-p3:0.75294,0.51765,0.98824,1.00000",
-      "display-p3:0.48627,0.22745,0.92941,1.00000"
-    ],
+    "automatic-gradient" : "display-p3:0.20392,0.78039,0.34902,1.00000",
     "orientation" : {
       "start" : {
         "x" : 0.5,
-        "y" : 0
+        "y" : 1
       },
       "stop" : {
         "x" : 0.5,
-        "y" : 0.7
+        "y" : 0.3
       }
     }
   },
@@ -20,20 +17,31 @@
     {
       "layers" : [
         {
+          "glass" : false,
+          "hidden" : true,
+          "image-name" : "ChatGPT Image 10 марта 2026 г., 22_32_05.png",
+          "name" : "ChatGPT Image 10 марта 2026 г., 22_32_05",
+          "position" : {
+            "scale" : 1.4,
+            "translation-in-points" : [
+              -0.42499999999984084,
+              34.582812500000045
+            ]
+          }
+        },
+        {
           "blend-mode" : "normal",
-          "fill" : {
-            "solid" : "display-p3:1.00000,1.00000,1.00000,1.00000"
-          },
-          "glass" : true,
+          "fill" : "automatic",
+          "glass" : false,
           "hidden" : false,
-          "image-name" : "7EFC2E98-7895-475A-94C6-76613E3EED0D.png",
-          "name" : "7EFC2E98-7895-475A-94C6-76613E3EED0D",
+          "image-name" : "9D67B364-C03A-4D97-85B1-7CD5C5C04B98.png",
+          "name" : "9D67B364-C03A-4D97-85B1-7CD5C5C04B98",
           "opacity" : 1,
           "position" : {
-            "scale" : 1.3,
+            "scale" : 1.1,
             "translation-in-points" : [
               0,
-              -20.799999999999955
+              0
             ]
           }
         }
