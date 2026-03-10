@@ -131,6 +131,8 @@ struct ContentView: View {
     @State private var terminalTabs: [TerminalTab] = [TerminalTab(name: "Terminal")]
     @State private var activeTerminalID: UUID?
     @State private var columnVisibility: NavigationSplitViewVisibility = .all
+    @State private var lineDiffs: [GitLineDiff] = []
+    @State private var showBranchSwitcher = false
 
     private var hasUnsavedChanges: Bool {
         fileContent != savedContent
@@ -150,15 +152,25 @@ struct ContentView: View {
         NavigationSplitView(columnVisibility: $columnVisibility) {
             SidebarView(projectManager: projectManager, selectedFile: $selectedNode)
         } detail: {
-            if isTerminalVisible {
-                VSplitView {
+            VStack(spacing: 0) {
+                if isTerminalVisible {
+                    VSplitView {
+                        editorArea
+                            .frame(maxWidth: .infinity, minHeight: 200, maxHeight: .infinity)
+                        terminalArea
+                            .frame(maxWidth: .infinity, minHeight: 100, idealHeight: 150, maxHeight: .infinity)
+                    }
+                    .frame(maxHeight: .infinity)
+                } else {
                     editorArea
-                        .frame(maxWidth: .infinity, minHeight: 200, maxHeight: .infinity)
-                    terminalArea
-                        .frame(maxWidth: .infinity, minHeight: 100, idealHeight: 150, maxHeight: .infinity)
+                        .frame(maxHeight: .infinity)
                 }
-            } else {
-                editorArea
+                if projectManager.rootURL != nil && projectManager.gitProvider.isGitRepository {
+                    StatusBarView(
+                        gitProvider: projectManager.gitProvider,
+                        showBranchSwitcher: $showBranchSwitcher
+                    )
+                }
             }
         }
         .frame(minWidth: 800, minHeight: 500)
@@ -190,6 +202,11 @@ struct ContentView: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: .toggleTerminal)) { _ in
             withAnimation { isTerminalVisible.toggle() }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .switchBranch)) { _ in
+            if projectManager.gitProvider.isGitRepository {
+                showBranchSwitcher.toggle()
+            }
         }
     }
 
@@ -228,10 +245,12 @@ struct ContentView: View {
             let content = try String(contentsOf: url, encoding: .utf8)
             fileContent = content
             savedContent = content
+            lineDiffs = projectManager.gitProvider.diffForFile(at: url)
         } catch {
             let errorText = "// Error: \(error.localizedDescription)"
             fileContent = errorText
             savedContent = errorText
+            lineDiffs = []
         }
     }
 
@@ -241,6 +260,9 @@ struct ContentView: View {
             try fileContent.write(to: url, atomically: true, encoding: .utf8)
             savedContent = fileContent
             NSApp.keyWindow?.isDocumentEdited = false
+            // Refresh git status after save
+            projectManager.gitProvider.refresh()
+            lineDiffs = projectManager.gitProvider.diffForFile(at: url)
         } catch {
             print("Error saving file: \(error.localizedDescription)")
         }
@@ -254,7 +276,8 @@ struct ContentView: View {
             CodeEditorView(
                 text: $fileContent,
                 language: (currentFileName as NSString).pathExtension.lowercased(),
-                fileName: currentFileName
+                fileName: currentFileName,
+                lineDiffs: lineDiffs
             )
         } else {
             ContentUnavailableView {
@@ -460,6 +483,14 @@ struct SidebarView: View {
 
 struct FileNodeRow: View {
     var node: FileNode
+    @Environment(ProjectManager.self) var projectManager
+
+    private var gitStatus: GitFileStatus? {
+        let provider = projectManager.gitProvider
+        return node.isDirectory
+            ? provider.statusForDirectory(at: node.url)
+            : provider.statusForFile(at: node.url)
+    }
 
     var body: some View {
         if node.isDirectory {
@@ -477,10 +508,11 @@ struct FileNodeRow: View {
                 }
             } label: {
                 Label(node.name, systemImage: "folder")
-                    .foregroundStyle(.primary)
+                    .foregroundStyle(gitStatus?.color ?? .primary)
             }
         } else {
             Label(node.name, systemImage: iconForFile(node.name))
+                .foregroundStyle(gitStatus?.color ?? .primary)
                 .tag(node)
         }
     }
@@ -498,6 +530,147 @@ struct FileNodeRow: View {
         case "py":                             return "doc.text"
         case "png", "jpg", "jpeg", "gif":      return "photo"
         default:                               return "doc"
+        }
+    }
+}
+
+// MARK: - Status Bar
+
+struct StatusBarView: View {
+    var gitProvider: GitStatusProvider
+    @Binding var showBranchSwitcher: Bool
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Button {
+                showBranchSwitcher.toggle()
+            } label: {
+                HStack(spacing: 3) {
+                    Image(systemName: "arrow.triangle.branch")
+                        .font(.system(size: 10))
+                    Text(gitProvider.currentBranch)
+                        .font(.system(size: 11))
+                }
+                .foregroundStyle(.secondary)
+            }
+            .buttonStyle(.plain)
+            .popover(isPresented: $showBranchSwitcher, arrowEdge: .top) {
+                BranchSwitcherView(gitProvider: gitProvider, isPresented: $showBranchSwitcher)
+            }
+
+            // Git file change summary
+            if !gitProvider.fileStatuses.isEmpty {
+                let counts = gitStatusCounts
+                HStack(spacing: 8) {
+                    if counts.modified > 0 {
+                        Label("\(counts.modified)", systemImage: "pencil")
+                            .foregroundStyle(.orange)
+                    }
+                    if counts.added > 0 {
+                        Label("\(counts.added)", systemImage: "plus")
+                            .foregroundStyle(.green)
+                    }
+                    if counts.untracked > 0 {
+                        Label("\(counts.untracked)", systemImage: "questionmark")
+                            .foregroundStyle(.teal)
+                    }
+                }
+                .font(.system(size: 10))
+            }
+
+            Spacer()
+        }
+        .padding(.horizontal, 8)
+        .frame(height: 22)
+        .background(.bar)
+    }
+
+    private var gitStatusCounts: (modified: Int, added: Int, untracked: Int) {
+        var m = 0, a = 0, u = 0
+        for (_, status) in gitProvider.fileStatuses {
+            switch status {
+            case .modified, .mixed: m += 1
+            case .staged, .added:   a += 1
+            case .untracked:        u += 1
+            default: break
+            }
+        }
+        return (m, a, u)
+    }
+}
+
+// MARK: - Branch Switcher
+
+struct BranchSwitcherView: View {
+    var gitProvider: GitStatusProvider
+    @Binding var isPresented: Bool
+    @State private var searchText = ""
+    @State private var errorMessage = ""
+
+    private var filteredBranches: [String] {
+        if searchText.isEmpty { return gitProvider.branches }
+        return gitProvider.branches.filter {
+            $0.localizedCaseInsensitiveContains(searchText)
+        }
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            TextField("Filter branches...", text: $searchText)
+                .textFieldStyle(.roundedBorder)
+                .padding(8)
+
+            Divider()
+
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 0) {
+                    ForEach(filteredBranches, id: \.self) { branch in
+                        Button {
+                            switchToBranch(branch)
+                        } label: {
+                            HStack {
+                                Image(systemName: branch == gitProvider.currentBranch
+                                      ? "checkmark.circle.fill" : "arrow.triangle.branch")
+                                    .font(.system(size: 11))
+                                    .foregroundStyle(branch == gitProvider.currentBranch ? .green : .secondary)
+                                    .frame(width: 16)
+                                Text(branch)
+                                    .font(.system(size: 12))
+                                    .foregroundStyle(branch == gitProvider.currentBranch ? .primary : .secondary)
+                                Spacer()
+                            }
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 5)
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+            .frame(maxHeight: 300)
+
+            if !errorMessage.isEmpty {
+                Divider()
+                Text(errorMessage)
+                    .font(.system(size: 11))
+                    .foregroundStyle(.red)
+                    .padding(8)
+            }
+        }
+        .frame(width: 250)
+    }
+
+    private func switchToBranch(_ branch: String) {
+        guard branch != gitProvider.currentBranch else {
+            isPresented = false
+            return
+        }
+        let result = gitProvider.checkoutBranch(branch)
+        if result.success {
+            errorMessage = ""
+            isPresented = false
+        } else {
+            errorMessage = result.error
         }
     }
 }

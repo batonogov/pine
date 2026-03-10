@@ -118,6 +118,7 @@ struct CodeEditorView: NSViewRepresentable {
     @Binding var text: String
     var language: String
     var fileName: String?
+    var lineDiffs: [GitLineDiff] = []
 
     private let editorFont = NSFont.monospacedSystemFont(ofSize: 13, weight: .regular)
 
@@ -213,8 +214,9 @@ struct CodeEditorView: NSViewRepresentable {
             textView.scrollRangeToVisible(NSRange(location: 0, length: 0))
         }
 
-        // Обновляем размер LineNumberView
+        // Обновляем размер и diff-данные LineNumberView
         if let lineNumberView = context.coordinator.lineNumberView {
+            lineNumberView.lineDiffs = lineDiffs
             lineNumberView.frame = NSRect(
                 x: 0, y: 0,
                 width: lineNumberView.gutterWidth,
