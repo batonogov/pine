@@ -49,3 +49,10 @@ Pine is a minimal native macOS code editor built with SwiftUI + AppKit, zero ext
 - Grammar files are JSON in `Pine/Grammars/` — add new languages by adding a new JSON file following the existing format
 - Keyboard shortcuts flow through NotificationCenter (PineApp → ContentView → FileTreeViewModel)
 - All UI colors are currently hardcoded dark theme values (migration to semantic colors planned)
+
+## GitHub Issues
+
+When creating issues, always:
+- Add appropriate labels from the repo's label set (e.g. `enhancement`, `bug`, `editor`, `UX`, `priority: high/medium/low`, etc.)
+- Use a clear, concise title
+- Include **Summary**, **Motivation**, and **Implementation ideas** sections in the body
