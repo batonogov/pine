@@ -41,6 +41,14 @@ jobs:
           security set-key-partition-list -S apple-tool:,apple: -k "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
           security list-keychain -d user -s $KEYCHAIN_PATH
 
+      - name: Set version from tag
+        run: |
+          VERSION=${GITHUB_REF_NAME#v}
+          BUILD_NUMBER=${GITHUB_RUN_NUMBER}
+          echo "Setting version to $VERSION ($BUILD_NUMBER)"
+          sed -i '' "s/MARKETING_VERSION = .*;/MARKETING_VERSION = $VERSION;/" Pine.xcodeproj/project.pbxproj
+          sed -i '' "s/CURRENT_PROJECT_VERSION = .*;/CURRENT_PROJECT_VERSION = $BUILD_NUMBER;/" Pine.xcodeproj/project.pbxproj
+
       - name: Build archive
         run: |
           xcodebuild archive \
