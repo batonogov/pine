@@ -196,6 +196,9 @@ struct CodeEditorView: NSViewRepresentable {
     }
 
     func updateNSView(_ container: NSView, context: Context) {
+        // Обновляем parent, чтобы binding в coordinator был актуальным
+        context.coordinator.parent = self
+
         guard let scrollView = context.coordinator.scrollView,
               let textView = scrollView.documentView as? NSTextView else { return }
 
@@ -237,6 +240,8 @@ struct CodeEditorView: NSViewRepresentable {
             guard let textView = notification.object as? NSTextView else { return }
             parent.text = textView.string
             parent.applyHighlighting(to: textView)
+            // Точка на кнопке закрытия таба при несохранённых изменениях
+            textView.window?.isDocumentEdited = true
         }
     }
 

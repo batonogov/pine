@@ -9,15 +9,19 @@ import SwiftUI
 
 @main
 struct PineApp: App {
+    @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
+    @State private var projectManager = ProjectManager()
+
     var body: some Scene {
-        WindowGroup {
-            ContentView()
+        WindowGroup(for: URL.self) { $fileURL in
+            ContentView(fileURL: $fileURL)
+                .environment(projectManager)
         }
         .defaultSize(width: 1100, height: 700)
-        // .commands — добавляет/заменяет пункты главного меню macOS.
-        // CommandGroup(replacing:) заменяет стандартный пункт "Save" (Cmd+S).
         .commands {
-            // Cmd+O — открыть папку
+            // Убираем стандартный "New Window" (Cmd+N) — табы создаются кликом по файлу
+            CommandGroup(replacing: .newItem) { }
+            // Cmd+Shift+O — открыть папку
             CommandGroup(after: .newItem) {
                 Button("Open Folder...") {
                     NotificationCenter.default.post(name: .openFolder, object: nil)
@@ -38,11 +42,38 @@ struct PineApp: App {
                 }
                 .keyboardShortcut("s", modifiers: .command)
             }
+            // Cmd+W — закрыть таб
+            CommandGroup(after: .saveItem) {
+                Button("Close Tab") {
+                    NSApp.sendAction(#selector(NSWindow.performClose(_:)), to: nil, from: nil)
+                }
+                .keyboardShortcut("w", modifiers: .command)
+            }
         }
     }
 }
 
-// Кастомное имя уведомления для Cmd+S
+// MARK: - AppDelegate для настройки нативных табов
+
+class AppDelegate: NSObject, NSApplicationDelegate {
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        NSWindow.allowsAutomaticWindowTabbing = true
+
+        // Устанавливаем tabbingMode для каждого нового окна
+        NotificationCenter.default.addObserver(
+            forName: NSWindow.didBecomeKeyNotification,
+            object: nil,
+            queue: .main
+        ) { notification in
+            if let window = notification.object as? NSWindow {
+                window.tabbingMode = .preferred
+            }
+        }
+    }
+}
+
+// MARK: - Уведомления для команд меню
+
 extension Notification.Name {
     static let saveFile = Notification.Name("saveFile")
     static let openFolder = Notification.Name("openFolder")
