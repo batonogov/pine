@@ -1,0 +1,450 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pine — Minimal Native macOS Code Editor</title>
+    <meta name="description" content="Pine is a minimal native macOS code editor built with SwiftUI and AppKit. Zero dependencies. Open, write code, close.">
+    <meta property="og:title" content="Pine — Minimal Native macOS Code Editor">
+    <meta property="og:description" content="A quiet, reliable, native code editor for macOS. Built with SwiftUI + AppKit, zero dependencies.">
+    <meta property="og:image" content="https://raw.githubusercontent.com/batonogov/pine/main/assets/screenshot.png">
+    <meta property="og:type" content="website">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        :root {
+            --bg-primary: #0d1117;
+            --bg-secondary: #161b22;
+            --bg-card: #1c2128;
+            --text-primary: #e6edf3;
+            --text-secondary: #8b949e;
+            --accent: #58a6ff;
+            --accent-green: #3fb950;
+            --border: #30363d;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            line-height: 1.6;
+            -webkit-font-smoothing: antialiased;
+        }
+
+        .container {
+            max-width: 960px;
+            margin: 0 auto;
+            padding: 0 24px;
+        }
+
+        /* Hero */
+        .hero {
+            text-align: center;
+            padding: 80px 0 60px;
+        }
+
+        .hero-icon {
+            font-size: 72px;
+            margin-bottom: 24px;
+            display: block;
+        }
+
+        .hero h1 {
+            font-size: 56px;
+            font-weight: 700;
+            letter-spacing: -1.5px;
+            margin-bottom: 16px;
+        }
+
+        .hero .tagline {
+            font-size: 20px;
+            color: var(--text-secondary);
+            max-width: 520px;
+            margin: 0 auto 40px;
+        }
+
+        .hero-buttons {
+            display: flex;
+            gap: 16px;
+            justify-content: center;
+            flex-wrap: wrap;
+        }
+
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 12px 24px;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 600;
+            text-decoration: none;
+            transition: all 0.2s ease;
+        }
+
+        .btn-primary {
+            background: var(--accent);
+            color: #fff;
+        }
+
+        .btn-primary:hover {
+            background: #79c0ff;
+        }
+
+        .btn-secondary {
+            background: var(--bg-card);
+            color: var(--text-primary);
+            border: 1px solid var(--border);
+        }
+
+        .btn-secondary:hover {
+            background: var(--bg-secondary);
+            border-color: var(--text-secondary);
+        }
+
+        /* Screenshot */
+        .screenshot-section {
+            padding: 0 0 80px;
+            text-align: center;
+        }
+
+        .screenshot-wrapper {
+            border-radius: 12px;
+            overflow: hidden;
+            border: 1px solid var(--border);
+            box-shadow: 0 16px 64px rgba(0, 0, 0, 0.5);
+        }
+
+        .screenshot-wrapper img {
+            width: 100%;
+            display: block;
+        }
+
+        /* Features */
+        .features {
+            padding: 80px 0;
+            border-top: 1px solid var(--border);
+        }
+
+        .features h2 {
+            text-align: center;
+            font-size: 36px;
+            font-weight: 700;
+            letter-spacing: -0.5px;
+            margin-bottom: 48px;
+        }
+
+        .features-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+            gap: 24px;
+        }
+
+        .feature-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 28px;
+        }
+
+        .feature-card .icon {
+            font-size: 32px;
+            margin-bottom: 12px;
+            display: block;
+        }
+
+        .feature-card h3 {
+            font-size: 18px;
+            font-weight: 600;
+            margin-bottom: 8px;
+        }
+
+        .feature-card p {
+            color: var(--text-secondary);
+            font-size: 15px;
+        }
+
+        /* Philosophy */
+        .philosophy {
+            padding: 80px 0;
+            border-top: 1px solid var(--border);
+            text-align: center;
+        }
+
+        .philosophy blockquote {
+            font-size: 24px;
+            font-style: italic;
+            color: var(--text-secondary);
+            max-width: 600px;
+            margin: 0 auto 24px;
+            line-height: 1.5;
+        }
+
+        .philosophy p {
+            color: var(--text-secondary);
+            font-size: 16px;
+            max-width: 500px;
+            margin: 0 auto;
+        }
+
+        /* Stack */
+        .stack {
+            padding: 80px 0;
+            border-top: 1px solid var(--border);
+        }
+
+        .stack h2 {
+            text-align: center;
+            font-size: 36px;
+            font-weight: 700;
+            letter-spacing: -0.5px;
+            margin-bottom: 48px;
+        }
+
+        .stack-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px;
+        }
+
+        .stack-item {
+            text-align: center;
+            padding: 24px;
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+        }
+
+        .stack-item .label {
+            font-size: 14px;
+            color: var(--text-secondary);
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-bottom: 8px;
+        }
+
+        .stack-item .value {
+            font-size: 18px;
+            font-weight: 600;
+        }
+
+        /* Requirements */
+        .requirements {
+            padding: 80px 0;
+            border-top: 1px solid var(--border);
+            text-align: center;
+        }
+
+        .requirements h2 {
+            font-size: 36px;
+            font-weight: 700;
+            letter-spacing: -0.5px;
+            margin-bottom: 16px;
+        }
+
+        .requirements p {
+            color: var(--text-secondary);
+            font-size: 18px;
+            margin-bottom: 40px;
+        }
+
+        .req-badges {
+            display: flex;
+            gap: 16px;
+            justify-content: center;
+            flex-wrap: wrap;
+        }
+
+        .badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 10px 20px;
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 100px;
+            font-size: 15px;
+            font-weight: 500;
+        }
+
+        .badge .dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: var(--accent-green);
+        }
+
+        /* Footer */
+        footer {
+            padding: 40px 0;
+            border-top: 1px solid var(--border);
+            text-align: center;
+        }
+
+        footer p {
+            color: var(--text-secondary);
+            font-size: 14px;
+        }
+
+        footer a {
+            color: var(--accent);
+            text-decoration: none;
+        }
+
+        footer a:hover {
+            text-decoration: underline;
+        }
+
+        /* Responsive */
+        @media (max-width: 640px) {
+            .hero {
+                padding: 60px 0 40px;
+            }
+
+            .hero h1 {
+                font-size: 40px;
+            }
+
+            .hero .tagline {
+                font-size: 17px;
+            }
+
+            .features h2,
+            .stack h2,
+            .requirements h2 {
+                font-size: 28px;
+            }
+
+            .philosophy blockquote {
+                font-size: 20px;
+            }
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Hero -->
+    <section class="hero">
+        <div class="container">
+            <span class="hero-icon" aria-hidden="true">&#127794;</span>
+            <h1>Pine</h1>
+            <p class="tagline">Minimal native macOS code editor. Built with SwiftUI&nbsp;+&nbsp;AppKit, zero&nbsp;dependencies.</p>
+            <div class="hero-buttons">
+                <a href="https://github.com/batonogov/pine" class="btn btn-primary">
+                    <svg width="20" height="20" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"></path></svg>
+                    View on GitHub
+                </a>
+                <a href="https://github.com/batonogov/pine/releases" class="btn btn-secondary">
+                    Download
+                </a>
+            </div>
+        </div>
+    </section>
+
+    <!-- Screenshot -->
+    <section class="screenshot-section">
+        <div class="container">
+            <div class="screenshot-wrapper">
+                <img src="https://raw.githubusercontent.com/batonogov/pine/main/assets/screenshot.png" alt="Pine editor screenshot" loading="lazy">
+            </div>
+        </div>
+    </section>
+
+    <!-- Features -->
+    <section class="features">
+        <div class="container">
+            <h2>Features</h2>
+            <div class="features-grid">
+                <div class="feature-card">
+                    <span class="icon" aria-hidden="true">&#128193;</span>
+                    <h3>File Tree Sidebar</h3>
+                    <p>Browse your project with a native file tree. Open folders, navigate files, see everything at a glance.</p>
+                </div>
+                <div class="feature-card">
+                    <span class="icon" aria-hidden="true">&#9998;</span>
+                    <h3>Syntax Highlighting</h3>
+                    <p>Built-in grammar-based highlighting for popular languages. Extensible via simple JSON grammar files.</p>
+                </div>
+                <div class="feature-card">
+                    <span class="icon" aria-hidden="true">&#128187;</span>
+                    <h3>Built-in Terminal</h3>
+                    <p>Integrated terminal powered by a real PTY. Run commands without leaving the editor.</p>
+                </div>
+                <div class="feature-card">
+                    <span class="icon" aria-hidden="true">&#127744;</span>
+                    <h3>Liquid Glass UI</h3>
+                    <p>Designed for macOS 26 Tahoe with native Liquid Glass materials and translucency effects.</p>
+                </div>
+                <div class="feature-card">
+                    <span class="icon" aria-hidden="true">&#128203;</span>
+                    <h3>Native Tabs</h3>
+                    <p>Uses macOS native window tabs for a familiar, system-integrated experience.</p>
+                </div>
+                <div class="feature-card">
+                    <span class="icon" aria-hidden="true">&#128268;</span>
+                    <h3>Git Integration</h3>
+                    <p>See git status in the file tree, diff markers in the gutter, and switch branches easily.</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Philosophy -->
+    <section class="philosophy">
+        <div class="container">
+            <blockquote>"Pine is a pine tree in a forest of editors — quiet, reliable, native."</blockquote>
+            <p>Pine doesn't try to be VS Code or Xcode. Open, write code, close. Each scale of the pine cone icon is a line of code.</p>
+        </div>
+    </section>
+
+    <!-- Stack -->
+    <section class="stack">
+        <div class="container">
+            <h2>Built With</h2>
+            <div class="stack-grid">
+                <div class="stack-item">
+                    <div class="label">UI Framework</div>
+                    <div class="value">SwiftUI</div>
+                </div>
+                <div class="stack-item">
+                    <div class="label">Text Engine</div>
+                    <div class="value">AppKit</div>
+                </div>
+                <div class="stack-item">
+                    <div class="label">Dependencies</div>
+                    <div class="value">Zero</div>
+                </div>
+                <div class="stack-item">
+                    <div class="label">Language</div>
+                    <div class="value">Swift</div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Requirements -->
+    <section class="requirements">
+        <div class="container">
+            <h2>Get Started</h2>
+            <p>Clone the repo, open in Xcode, build and run.</p>
+            <div class="req-badges">
+                <span class="badge"><span class="dot"></span> macOS 26+</span>
+                <span class="badge"><span class="dot"></span> Xcode 26+</span>
+                <span class="badge"><span class="dot"></span> Swift 6</span>
+            </div>
+        </div>
+    </section>
+
+    <!-- Footer -->
+    <footer>
+        <div class="container">
+            <p>Pine is open source. <a href="https://github.com/batonogov/pine">Contribute on GitHub</a>.</p>
+        </div>
+    </footer>
+
+</body>
+</html>
