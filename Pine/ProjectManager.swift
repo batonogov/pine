@@ -16,6 +16,42 @@ final class ProjectManager {
     var rootURL: URL?
     let gitProvider = GitStatusProvider()
 
+    // Terminal state — shared across all editor tabs
+    var isTerminalVisible = false
+    var isTerminalMaximized = false
+    var terminalTabs: [TerminalTab] = [TerminalTab(name: "Terminal")]
+    var activeTerminalID: UUID?
+
+    var activeTerminalTab: TerminalTab? {
+        guard let id = activeTerminalID else { return nil }
+        return terminalTabs.first { $0.id == id }
+    }
+
+    func startTerminals() {
+        for tab in terminalTabs where !tab.session.isRunning {
+            tab.session.start(workingDirectory: rootURL)
+        }
+        if activeTerminalID == nil {
+            activeTerminalID = terminalTabs.first?.id
+        }
+    }
+
+    func addTerminalTab() {
+        let number = terminalTabs.count + 1
+        let tab = TerminalTab(name: "Terminal \(number)")
+        tab.session.start(workingDirectory: rootURL)
+        terminalTabs.append(tab)
+        activeTerminalID = tab.id
+    }
+
+    func closeTerminalTab(_ tab: TerminalTab) {
+        tab.session.stop()
+        terminalTabs.removeAll { $0.id == tab.id }
+        if activeTerminalID == tab.id {
+            activeTerminalID = terminalTabs.last?.id
+        }
+    }
+
     func openFolder() {
         let panel = NSOpenPanel()
         panel.canChooseFiles = false

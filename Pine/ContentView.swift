@@ -127,9 +127,6 @@ struct ContentView: View {
     @State private var selectedNode: FileNode?
     @State private var fileContent: String = ""
     @State private var savedContent: String = ""
-    @State private var isTerminalVisible = false
-    @State private var terminalTabs: [TerminalTab] = [TerminalTab(name: "Terminal")]
-    @State private var activeTerminalID: UUID?
     @State private var columnVisibility: NavigationSplitViewVisibility = .all
     @State private var lineDiffs: [GitLineDiff] = []
     @State private var showBranchSwitcher = false
@@ -143,34 +140,33 @@ struct ContentView: View {
         return hasUnsavedChanges ? "● \(name)" : name
     }
 
-    private var activeTerminalTab: TerminalTab? {
-        guard let id = activeTerminalID else { return nil }
-        return terminalTabs.first(where: { $0.id == id })
-    }
-
     var body: some View {
         NavigationSplitView(columnVisibility: $columnVisibility) {
             SidebarView(projectManager: projectManager, selectedFile: $selectedNode)
         } detail: {
             VStack(spacing: 0) {
-                if isTerminalVisible {
-                    VSplitView {
-                        editorArea
-                            .frame(maxWidth: .infinity, minHeight: 200, maxHeight: .infinity)
+                if projectManager.isTerminalVisible {
+                    if projectManager.isTerminalMaximized {
                         terminalArea
-                            .frame(maxWidth: .infinity, minHeight: 100, idealHeight: 150, maxHeight: .infinity)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    } else {
+                        VSplitView {
+                            editorArea
+                                .frame(maxWidth: .infinity, minHeight: 200, maxHeight: .infinity)
+                            terminalArea
+                                .frame(maxWidth: .infinity, minHeight: 100, idealHeight: 150, maxHeight: .infinity)
+                        }
+                        .frame(maxHeight: .infinity)
                     }
-                    .frame(maxHeight: .infinity)
                 } else {
                     editorArea
                         .frame(maxHeight: .infinity)
                 }
-                if projectManager.rootURL != nil && projectManager.gitProvider.isGitRepository {
-                    StatusBarView(
-                        gitProvider: projectManager.gitProvider,
-                        showBranchSwitcher: $showBranchSwitcher
-                    )
-                }
+                StatusBarView(
+                    gitProvider: projectManager.gitProvider,
+                    projectManager: projectManager,
+                    showBranchSwitcher: $showBranchSwitcher
+                )
             }
         }
         .frame(minWidth: 800, minHeight: 500)
@@ -201,7 +197,7 @@ struct ContentView: View {
             projectManager.openFolder()
         }
         .onReceive(NotificationCenter.default.publisher(for: .toggleTerminal)) { _ in
-            withAnimation { isTerminalVisible.toggle() }
+            withAnimation { projectManager.isTerminalVisible.toggle() }
         }
         .onReceive(NotificationCenter.default.publisher(for: .switchBranch)) { _ in
             if projectManager.gitProvider.isGitRepository {
@@ -293,15 +289,10 @@ struct ContentView: View {
     @ViewBuilder
     private var terminalArea: some View {
         VStack(spacing: 0) {
-            TerminalTabBar(
-                terminalTabs: terminalTabs,
-                activeTerminalID: $activeTerminalID,
-                isVisible: $isTerminalVisible,
-                onAdd: { addTerminalTab() },
-                onClose: { tab in closeTerminalTab(tab) }
-            )
+            // Tab bar, стилизованный под нативные macOS window tabs
+            TerminalNativeTabBar(projectManager: projectManager)
 
-            if let tab = activeTerminalTab {
+            if let tab = projectManager.activeTerminalTab {
                 TerminalContentView(session: tab.session)
                     .id(tab.id)
             } else {
@@ -309,96 +300,85 @@ struct ContentView: View {
             }
         }
         .background(Color(nsColor: .textBackgroundColor))
-        .onAppear { startTerminals() }
-    }
-
-    // MARK: - Управление терминалами
-
-    private func startTerminals() {
-        for tab in terminalTabs where !tab.session.isRunning {
-            tab.session.start(workingDirectory: projectManager.rootURL)
-        }
-        if activeTerminalID == nil {
-            activeTerminalID = terminalTabs.first?.id
-        }
-    }
-
-    private func addTerminalTab() {
-        let number = terminalTabs.count + 1
-        let tab = TerminalTab(name: "Terminal \(number)")
-        tab.session.start(workingDirectory: projectManager.rootURL)
-        terminalTabs.append(tab)
-        activeTerminalID = tab.id
-    }
-
-    private func closeTerminalTab(_ tab: TerminalTab) {
-        tab.session.stop()
-        terminalTabs.removeAll { $0.id == tab.id }
-        if activeTerminalID == tab.id {
-            activeTerminalID = terminalTabs.last?.id
-        }
+        .onAppear { projectManager.startTerminals() }
     }
 }
 
-// MARK: - Панель вкладок терминала
 
-struct TerminalTabBar: View {
-    let terminalTabs: [TerminalTab]
-    @Binding var activeTerminalID: UUID?
-    @Binding var isVisible: Bool
-    let onAdd: () -> Void
-    let onClose: (TerminalTab) -> Void
+// MARK: - Панель вкладок терминала (стиль нативных macOS window tabs)
+
+struct TerminalNativeTabBar: View {
+    var projectManager: ProjectManager
 
     var body: some View {
         HStack(spacing: 0) {
-            // Крестик закрытия панели терминала
-            Button {
-                withAnimation { isVisible = false }
-            } label: {
-                Image(systemName: "xmark")
-                    .font(.system(size: 9, weight: .bold))
-                    .foregroundStyle(.secondary)
-            }
-            .buttonStyle(.plain)
-            .padding(.horizontal, 8)
-            .help("Hide Terminal")
-
             // Вкладки терминалов
             ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 0) {
-                    ForEach(terminalTabs) { tab in
-                        TerminalTabItem(
+                HStack(spacing: 2) {
+                    ForEach(projectManager.terminalTabs) { tab in
+                        TerminalNativeTabItem(
                             tab: tab,
-                            isActive: tab.id == activeTerminalID,
-                            canClose: terminalTabs.count > 1,
-                            onSelect: { activeTerminalID = tab.id },
-                            onClose: { onClose(tab) }
+                            isActive: tab.id == projectManager.activeTerminalID,
+                            canClose: projectManager.terminalTabs.count > 1,
+                            onSelect: { projectManager.activeTerminalID = tab.id },
+                            onClose: { projectManager.closeTerminalTab(tab) }
                         )
                     }
                 }
+                .padding(.horizontal, 4)
             }
+
+            // Кнопка "+" — новый терминал
+            Button {
+                projectManager.addTerminalTab()
+            } label: {
+                Image(systemName: "plus")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(.secondary)
+                    .frame(width: 24, height: 24)
+            }
+            .buttonStyle(.plain)
+            .help("New Terminal")
 
             Spacer()
 
-            // Кнопка "+" — добавить новый терминал
+            // Развернуть / свернуть терминал на весь экран
             Button {
-                onAdd()
+                withAnimation { projectManager.isTerminalMaximized.toggle() }
             } label: {
-                Image(systemName: "plus")
-                    .font(.system(size: 11))
+                Image(systemName: projectManager.isTerminalMaximized
+                      ? "arrow.down.right.and.arrow.up.left"
+                      : "arrow.up.left.and.arrow.down.right")
+                    .font(.system(size: 10, weight: .semibold))
                     .foregroundStyle(.secondary)
+                    .frame(width: 24, height: 24)
             }
             .buttonStyle(.plain)
-            .padding(.horizontal, 8)
-            .help("New Terminal")
+            .help(projectManager.isTerminalMaximized ? "Restore Terminal" : "Maximize Terminal")
+
+            // Кнопка скрытия терминала
+            Button {
+                withAnimation {
+                    projectManager.isTerminalVisible = false
+                    projectManager.isTerminalMaximized = false
+                }
+            } label: {
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(.secondary)
+                    .frame(width: 24, height: 24)
+            }
+            .buttonStyle(.plain)
+            .padding(.trailing, 4)
+            .help("Hide Terminal")
         }
-        .frame(height: 28)
+        .frame(height: 30)
         .background(.bar)
     }
 }
 
-/// Одна вкладка терминала.
-struct TerminalTabItem: View {
+/// Вкладка терминала в стиле macOS window tab (capsule).
+struct TerminalNativeTabItem: View {
     let tab: TerminalTab
     let isActive: Bool
     let canClose: Bool
@@ -409,28 +389,39 @@ struct TerminalTabItem: View {
 
     var body: some View {
         HStack(spacing: 4) {
+            // Кнопка закрытия — видна при hover или активной вкладке
             if canClose {
                 Button(action: onClose) {
                     Image(systemName: "xmark")
-                        .font(.system(size: 8, weight: .bold))
+                        .font(.system(size: 7, weight: .bold))
                         .foregroundStyle(.secondary)
+                        .frame(width: 14, height: 14)
+                        .background(
+                            isHovering ? Color.primary.opacity(0.1) : .clear,
+                            in: Circle()
+                        )
                 }
                 .buttonStyle(.plain)
                 .opacity(isHovering || isActive ? 1 : 0)
             }
 
             Image(systemName: "terminal")
-                .font(.system(size: 10))
+                .font(.system(size: 9))
                 .foregroundStyle(.secondary)
+
             Text(tab.name)
-                .font(.system(size: 12))
+                .font(.system(size: 11))
                 .lineLimit(1)
         }
-        .padding(.horizontal, 8)
+        .padding(.horizontal, 10)
         .padding(.vertical, 4)
-        .background(isActive ? Color.primary.opacity(0.1) : .clear)
-        .cornerRadius(4)
-        .contentShape(Rectangle())
+        .background(
+            isActive
+                ? Color.primary.opacity(0.12)
+                : isHovering ? Color.primary.opacity(0.05) : .clear,
+            in: Capsule()
+        )
+        .contentShape(Capsule())
         .onTapGesture(perform: onSelect)
         .onHover { isHovering = $0 }
     }
@@ -538,49 +529,71 @@ struct FileNodeRow: View {
 
 struct StatusBarView: View {
     var gitProvider: GitStatusProvider
+    var projectManager: ProjectManager
     @Binding var showBranchSwitcher: Bool
 
     var body: some View {
         HStack(spacing: 6) {
-            Button {
-                showBranchSwitcher.toggle()
-            } label: {
-                HStack(spacing: 3) {
-                    Image(systemName: "arrow.triangle.branch")
-                        .font(.system(size: 10))
-                    Text(gitProvider.currentBranch)
-                        .font(.system(size: 11))
+            if gitProvider.isGitRepository {
+                Button {
+                    showBranchSwitcher.toggle()
+                } label: {
+                    HStack(spacing: 3) {
+                        Image(systemName: "arrow.triangle.branch")
+                            .font(.system(size: 10))
+                        Text(gitProvider.currentBranch)
+                            .font(.system(size: 11))
+                    }
+                    .foregroundStyle(.secondary)
                 }
-                .foregroundStyle(.secondary)
-            }
-            .buttonStyle(.plain)
-            .popover(isPresented: $showBranchSwitcher, arrowEdge: .top) {
-                BranchSwitcherView(gitProvider: gitProvider, isPresented: $showBranchSwitcher)
-            }
+                .buttonStyle(.plain)
+                .popover(isPresented: $showBranchSwitcher, arrowEdge: .top) {
+                    BranchSwitcherView(gitProvider: gitProvider, isPresented: $showBranchSwitcher)
+                }
 
-            // Git file change summary
-            if !gitProvider.fileStatuses.isEmpty {
-                let counts = gitStatusCounts
-                HStack(spacing: 8) {
-                    if counts.modified > 0 {
-                        Label("\(counts.modified)", systemImage: "pencil")
-                            .foregroundStyle(.orange)
+                // Git file change summary
+                if !gitProvider.fileStatuses.isEmpty {
+                    let counts = gitStatusCounts
+                    HStack(spacing: 8) {
+                        if counts.modified > 0 {
+                            Label("\(counts.modified)", systemImage: "pencil")
+                                .foregroundStyle(.orange)
+                        }
+                        if counts.added > 0 {
+                            Label("\(counts.added)", systemImage: "plus")
+                                .foregroundStyle(.green)
+                        }
+                        if counts.untracked > 0 {
+                            Label("\(counts.untracked)", systemImage: "questionmark")
+                                .foregroundStyle(.teal)
+                        }
                     }
-                    if counts.added > 0 {
-                        Label("\(counts.added)", systemImage: "plus")
-                            .foregroundStyle(.green)
-                    }
-                    if counts.untracked > 0 {
-                        Label("\(counts.untracked)", systemImage: "questionmark")
-                            .foregroundStyle(.teal)
-                    }
+                    .font(.system(size: 10))
                 }
-                .font(.system(size: 10))
             }
 
             Spacer()
+
+            // Кнопка показа/скрытия терминала
+            Button {
+                withAnimation { projectManager.isTerminalVisible.toggle() }
+            } label: {
+                HStack(spacing: 3) {
+                    Image(systemName: projectManager.isTerminalVisible
+                          ? "chevron.down" : "chevron.up")
+                        .font(.system(size: 9, weight: .semibold))
+                    Image(systemName: "terminal")
+                        .font(.system(size: 10))
+                    Text("Terminal")
+                        .font(.system(size: 11))
+                }
+                .foregroundStyle(projectManager.isTerminalVisible ? .primary : .secondary)
+            }
+            .buttonStyle(.plain)
+            .help(projectManager.isTerminalVisible ? "Hide Terminal (⌘`)" : "Show Terminal (⌘`)")
         }
-        .padding(.horizontal, 8)
+        .padding(.leading, 8)
+        .padding(.trailing, 14)
         .frame(height: 22)
         .background(.bar)
     }
