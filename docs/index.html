@@ -3,448 +3,1002 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Pine — Minimal Native macOS Code Editor</title>
-    <meta name="description" content="Pine is a minimal native macOS code editor built with SwiftUI and AppKit. Zero dependencies. Open, write code, close.">
-    <meta property="og:title" content="Pine — Minimal Native macOS Code Editor">
-    <meta property="og:description" content="A quiet, reliable, native code editor for macOS. Built with SwiftUI + AppKit, zero dependencies.">
+    <title>Pine - Native macOS Code Editor Without the Bloat</title>
+    <meta name="description" content="Pine is a native macOS code editor built with SwiftUI and AppKit. Open a repo, edit code, run commands, and check git without Electron or dependency bloat.">
+    <meta property="og:title" content="Pine - Native macOS Code Editor Without the Bloat">
+    <meta property="og:description" content="Less editor. More shipping. Pine is a focused Mac code editor with a real terminal, git context, and zero dependencies.">
     <meta property="og:image" content="https://raw.githubusercontent.com/batonogov/pine/main/assets/screenshot.png">
     <meta property="og:type" content="website">
     <style>
         * {
+            box-sizing: border-box;
             margin: 0;
             padding: 0;
-            box-sizing: border-box;
         }
 
         :root {
-            --bg-primary: #0d1117;
-            --bg-secondary: #161b22;
-            --bg-card: #1c2128;
-            --text-primary: #e6edf3;
-            --text-secondary: #8b949e;
-            --accent: #58a6ff;
-            --accent-green: #3fb950;
-            --border: #30363d;
+            --bg: #07110d;
+            --bg-soft: #0d1a15;
+            --panel: rgba(13, 26, 21, 0.78);
+            --panel-strong: rgba(17, 33, 27, 0.96);
+            --panel-muted: rgba(11, 21, 17, 0.9);
+            --line: rgba(163, 242, 194, 0.14);
+            --line-strong: rgba(163, 242, 194, 0.24);
+            --text: #f3f6f2;
+            --muted: #a4b5ac;
+            --muted-strong: #c6d2cb;
+            --accent: #56cf8b;
+            --accent-strong: #7ef2b0;
+            --accent-ink: #062515;
+            --accent-soft: rgba(86, 207, 139, 0.16);
+            --gold: #f1d27a;
+            --shadow: 0 32px 120px rgba(0, 0, 0, 0.38);
+            --radius-xl: 32px;
+            --radius-lg: 24px;
+            --radius-md: 18px;
+            --radius-sm: 14px;
+            --max-width: 1180px;
+        }
+
+        html {
+            scroll-behavior: smooth;
         }
 
         body {
-            font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", sans-serif;
-            background: var(--bg-primary);
-            color: var(--text-primary);
-            line-height: 1.6;
+            min-height: 100vh;
+            font-family: "SF Pro Display", "Avenir Next", "Helvetica Neue", sans-serif;
+            background:
+                radial-gradient(circle at top left, rgba(86, 207, 139, 0.2), transparent 28%),
+                radial-gradient(circle at 88% 18%, rgba(241, 210, 122, 0.16), transparent 24%),
+                radial-gradient(circle at 70% 82%, rgba(67, 122, 255, 0.12), transparent 20%),
+                linear-gradient(180deg, #06100c 0%, #09130f 38%, #07110d 100%);
+            color: var(--text);
+            line-height: 1.5;
             -webkit-font-smoothing: antialiased;
+            position: relative;
+            overflow-x: hidden;
         }
 
-        .container {
-            max-width: 960px;
-            margin: 0 auto;
-            padding: 0 24px;
+        body::before {
+            content: "";
+            position: fixed;
+            inset: 0;
+            pointer-events: none;
+            background-image:
+                linear-gradient(rgba(163, 242, 194, 0.03) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(163, 242, 194, 0.03) 1px, transparent 1px);
+            background-size: 48px 48px;
+            mask-image: radial-gradient(circle at center, black 40%, transparent 92%);
+            opacity: 0.5;
         }
 
-        /* Hero */
-        .hero {
-            text-align: center;
-            padding: 80px 0 60px;
+        a {
+            color: inherit;
+            text-decoration: none;
         }
 
-        .hero-icon {
-            font-size: 72px;
-            margin-bottom: 24px;
+        img {
             display: block;
+            max-width: 100%;
+        }
+
+        .page {
+            width: min(100% - 40px, var(--max-width));
+            margin: 0 auto;
+            padding: 28px 0 64px;
+        }
+
+        .site-header {
+            position: sticky;
+            top: 18px;
+            z-index: 20;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 20px;
+            padding: 14px 18px;
+            border: 1px solid var(--line);
+            border-radius: 999px;
+            background: rgba(7, 17, 13, 0.58);
+            backdrop-filter: blur(22px);
+            box-shadow: 0 14px 44px rgba(0, 0, 0, 0.18);
+            animation: fade-up 0.8s ease both;
+        }
+
+        .brand {
+            display: inline-flex;
+            align-items: center;
+            gap: 12px;
+            font-weight: 700;
+            letter-spacing: -0.03em;
+        }
+
+        .brand-mark {
+            width: 12px;
+            height: 12px;
+            border-radius: 999px;
+            background: linear-gradient(135deg, var(--accent-strong), var(--accent));
+            box-shadow: 0 0 24px rgba(126, 242, 176, 0.48);
+        }
+
+        .nav {
+            display: inline-flex;
+            align-items: center;
+            gap: 22px;
+            color: var(--muted);
+            font-size: 14px;
+        }
+
+        .nav a:hover {
+            color: var(--text);
+        }
+
+        .header-cta {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            padding: 10px 16px;
+            border-radius: 999px;
+            border: 1px solid rgba(126, 242, 176, 0.3);
+            background: linear-gradient(135deg, rgba(126, 242, 176, 0.18), rgba(126, 242, 176, 0.08));
+            color: var(--text);
+            font-size: 14px;
+            font-weight: 600;
+        }
+
+        .hero {
+            display: grid;
+            grid-template-columns: minmax(0, 1.02fr) minmax(0, 0.98fr);
+            gap: 38px;
+            align-items: center;
+            min-height: calc(100vh - 160px);
+            padding: 60px 0 34px;
+        }
+
+        .hero-copy > * {
+            opacity: 0;
+            animation: fade-up 0.8s ease forwards;
+        }
+
+        .hero-copy > *:nth-child(1) { animation-delay: 0.06s; }
+        .hero-copy > *:nth-child(2) { animation-delay: 0.14s; }
+        .hero-copy > *:nth-child(3) { animation-delay: 0.22s; }
+        .hero-copy > *:nth-child(4) { animation-delay: 0.3s; }
+        .hero-copy > *:nth-child(5) { animation-delay: 0.38s; }
+        .hero-copy > *:nth-child(6) { animation-delay: 0.46s; }
+
+        .eyebrow {
+            display: inline-flex;
+            align-items: center;
+            gap: 10px;
+            padding: 10px 14px;
+            border-radius: 999px;
+            border: 1px solid rgba(241, 210, 122, 0.24);
+            background: rgba(241, 210, 122, 0.08);
+            color: var(--gold);
+            font-size: 13px;
+            font-weight: 600;
+            letter-spacing: 0.06em;
+            text-transform: uppercase;
         }
 
         .hero h1 {
-            font-size: 56px;
-            font-weight: 700;
-            letter-spacing: -1.5px;
-            margin-bottom: 16px;
+            margin-top: 18px;
+            font-size: clamp(54px, 9vw, 92px);
+            line-height: 0.94;
+            letter-spacing: -0.07em;
+            max-width: 10ch;
         }
 
-        .hero .tagline {
-            font-size: 20px;
-            color: var(--text-secondary);
-            max-width: 520px;
-            margin: 0 auto 40px;
+        .hero p {
+            margin-top: 24px;
+            max-width: 620px;
+            color: var(--muted-strong);
+            font-size: clamp(19px, 2.2vw, 22px);
+            line-height: 1.58;
         }
 
-        .hero-buttons {
+        .hero-proof {
             display: flex;
-            gap: 16px;
-            justify-content: center;
             flex-wrap: wrap;
+            gap: 10px;
+            margin-top: 28px;
+        }
+
+        .hero-proof span,
+        .mini-chip,
+        .install-badges span {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 9px 12px;
+            border-radius: 999px;
+            border: 1px solid var(--line);
+            background: rgba(255, 255, 255, 0.03);
+            color: var(--muted-strong);
+            font-size: 13px;
+            font-weight: 500;
+        }
+
+        .hero-proof span::before,
+        .install-badges span::before {
+            content: "";
+            width: 8px;
+            height: 8px;
+            border-radius: 999px;
+            background: var(--accent);
+            box-shadow: 0 0 14px rgba(86, 207, 139, 0.48);
+        }
+
+        .hero-actions {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 14px;
+            margin-top: 30px;
         }
 
         .btn {
             display: inline-flex;
             align-items: center;
-            gap: 8px;
-            padding: 12px 24px;
-            border-radius: 8px;
-            font-size: 16px;
-            font-weight: 600;
-            text-decoration: none;
-            transition: all 0.2s ease;
+            justify-content: center;
+            gap: 10px;
+            padding: 14px 22px;
+            border-radius: 999px;
+            font-size: 15px;
+            font-weight: 700;
+            transition: transform 0.2s ease, border-color 0.2s ease, background 0.2s ease;
+        }
+
+        .btn:hover {
+            transform: translateY(-2px);
         }
 
         .btn-primary {
-            background: var(--accent);
-            color: #fff;
-        }
-
-        .btn-primary:hover {
-            background: #79c0ff;
+            background: linear-gradient(135deg, var(--accent-strong), var(--accent));
+            color: var(--accent-ink);
+            box-shadow: 0 20px 48px rgba(86, 207, 139, 0.24);
         }
 
         .btn-secondary {
-            background: var(--bg-card);
-            color: var(--text-primary);
-            border: 1px solid var(--border);
+            border: 1px solid var(--line-strong);
+            background: rgba(255, 255, 255, 0.04);
+            color: var(--text);
         }
 
-        .btn-secondary:hover {
-            background: var(--bg-secondary);
-            border-color: var(--text-secondary);
-        }
-
-        /* Screenshot */
-        .screenshot-section {
-            padding: 0 0 80px;
-            text-align: center;
-        }
-
-        .screenshot-wrapper {
-            border-radius: 12px;
-            overflow: hidden;
-            border: 1px solid var(--border);
-            box-shadow: 0 16px 64px rgba(0, 0, 0, 0.5);
-        }
-
-        .screenshot-wrapper img {
-            width: 100%;
-            display: block;
-        }
-
-        /* Features */
-        .features {
-            padding: 80px 0;
-            border-top: 1px solid var(--border);
-        }
-
-        .features h2 {
-            text-align: center;
-            font-size: 36px;
-            font-weight: 700;
-            letter-spacing: -0.5px;
-            margin-bottom: 48px;
-        }
-
-        .features-grid {
+        .install-strip {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
-            gap: 24px;
+            gap: 10px;
+            margin-top: 24px;
+            max-width: 640px;
+            padding: 18px;
+            border-radius: var(--radius-md);
+            border: 1px solid var(--line);
+            background: linear-gradient(180deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0.02));
+            box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
         }
 
-        .feature-card {
-            background: var(--bg-card);
-            border: 1px solid var(--border);
-            border-radius: 12px;
-            padding: 28px;
-        }
-
-        .feature-card .icon {
-            font-size: 32px;
-            margin-bottom: 12px;
-            display: block;
-        }
-
-        .feature-card h3 {
-            font-size: 18px;
-            font-weight: 600;
-            margin-bottom: 8px;
-        }
-
-        .feature-card p {
-            color: var(--text-secondary);
-            font-size: 15px;
-        }
-
-        /* Philosophy */
-        .philosophy {
-            padding: 80px 0;
-            border-top: 1px solid var(--border);
-            text-align: center;
-        }
-
-        .philosophy blockquote {
-            font-size: 24px;
-            font-style: italic;
-            color: var(--text-secondary);
-            max-width: 600px;
-            margin: 0 auto 24px;
-            line-height: 1.5;
-        }
-
-        .philosophy p {
-            color: var(--text-secondary);
-            font-size: 16px;
-            max-width: 500px;
-            margin: 0 auto;
-        }
-
-        /* Stack */
-        .stack {
-            padding: 80px 0;
-            border-top: 1px solid var(--border);
-        }
-
-        .stack h2 {
-            text-align: center;
-            font-size: 36px;
+        .install-strip-label {
+            color: var(--muted);
+            font-size: 12px;
             font-weight: 700;
-            letter-spacing: -0.5px;
-            margin-bottom: 48px;
-        }
-
-        .stack-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-            gap: 20px;
-        }
-
-        .stack-item {
-            text-align: center;
-            padding: 24px;
-            background: var(--bg-card);
-            border: 1px solid var(--border);
-            border-radius: 12px;
-        }
-
-        .stack-item .label {
-            font-size: 14px;
-            color: var(--text-secondary);
+            letter-spacing: 0.08em;
             text-transform: uppercase;
-            letter-spacing: 1px;
-            margin-bottom: 8px;
         }
 
-        .stack-item .value {
-            font-size: 18px;
-            font-weight: 600;
+        .install-strip code,
+        .command-shell pre code {
+            display: block;
+            overflow-x: auto;
+            font-family: "SF Mono", "JetBrains Mono", "Menlo", monospace;
+            font-size: 15px;
+            color: var(--accent-strong);
+            white-space: nowrap;
         }
 
-        /* Requirements */
-        .requirements {
-            padding: 80px 0;
-            border-top: 1px solid var(--border);
-            text-align: center;
+        .command-shell p code {
+            display: inline;
+            font-family: "SF Mono", "JetBrains Mono", "Menlo", monospace;
+            color: var(--accent-strong);
         }
 
-        .requirements h2 {
-            font-size: 36px;
-            font-weight: 700;
-            letter-spacing: -0.5px;
-            margin-bottom: 16px;
+        .hero-visual {
+            position: relative;
+            min-height: 620px;
+            animation: fade-up 1s ease 0.24s both;
         }
 
-        .requirements p {
-            color: var(--text-secondary);
-            font-size: 18px;
-            margin-bottom: 40px;
+        .hero-visual::before,
+        .hero-visual::after {
+            content: "";
+            position: absolute;
+            border-radius: 999px;
+            filter: blur(22px);
+            opacity: 0.9;
         }
 
-        .req-badges {
-            display: flex;
-            gap: 16px;
-            justify-content: center;
-            flex-wrap: wrap;
+        .hero-visual::before {
+            inset: 10% auto auto 4%;
+            width: 170px;
+            height: 170px;
+            background: rgba(86, 207, 139, 0.16);
         }
 
-        .badge {
+        .hero-visual::after {
+            inset: auto 4% 12% auto;
+            width: 220px;
+            height: 220px;
+            background: rgba(241, 210, 122, 0.12);
+        }
+
+        .visual-frame {
+            position: absolute;
+            inset: 6% 0 8% 0;
+            border-radius: var(--radius-xl);
+            border: 1px solid rgba(163, 242, 194, 0.08);
+            background:
+                linear-gradient(180deg, rgba(255, 255, 255, 0.06), transparent 18%),
+                rgba(255, 255, 255, 0.02);
+            backdrop-filter: blur(14px);
+            transform: rotate(-4deg);
+            box-shadow: var(--shadow);
+        }
+
+        .shot-window {
+            position: absolute;
+            inset: 0;
+            display: grid;
+            align-items: center;
+            justify-items: center;
+        }
+
+        .shot-card-stack {
+            position: relative;
+            width: min(100%, 680px);
+        }
+
+        .shot-card {
+            position: relative;
+            width: min(100%, 640px);
+            padding: 16px;
+            border-radius: 34px;
+            border: 1px solid rgba(163, 242, 194, 0.16);
+            background: linear-gradient(180deg, rgba(11, 21, 17, 0.92), rgba(9, 17, 14, 0.88));
+            box-shadow: 0 34px 90px rgba(0, 0, 0, 0.45);
+            transform: rotate(4deg);
+        }
+
+        .shot-card img {
+            border-radius: 22px;
+            border: 1px solid rgba(163, 242, 194, 0.12);
+        }
+
+        .shot-chip {
+            position: absolute;
             display: inline-flex;
             align-items: center;
             gap: 8px;
-            padding: 10px 20px;
-            background: var(--bg-card);
-            border: 1px solid var(--border);
-            border-radius: 100px;
-            font-size: 15px;
-            font-weight: 500;
+            padding: 11px 14px;
+            border-radius: 999px;
+            border: 1px solid rgba(163, 242, 194, 0.16);
+            background: rgba(7, 17, 13, 0.82);
+            backdrop-filter: blur(14px);
+            color: var(--text);
+            font-size: 13px;
+            font-weight: 600;
+            box-shadow: 0 18px 40px rgba(0, 0, 0, 0.26);
+            animation: float 5.8s ease-in-out infinite;
         }
 
-        .badge .dot {
+        .shot-chip::before {
+            content: "";
             width: 8px;
             height: 8px;
-            border-radius: 50%;
-            background: var(--accent-green);
+            border-radius: 999px;
+            background: var(--accent);
+            box-shadow: 0 0 16px rgba(86, 207, 139, 0.5);
         }
 
-        /* Footer */
+        .chip-one {
+            top: 4%;
+            right: -2%;
+            animation-delay: 0s;
+        }
+
+        .chip-two {
+            left: -4%;
+            bottom: 24%;
+            animation-delay: 1.4s;
+        }
+
+        .chip-three {
+            right: 10%;
+            bottom: 6%;
+            animation-delay: 2.3s;
+        }
+
+        .section {
+            padding: 44px 0;
+        }
+
+        .section-head {
+            max-width: 760px;
+            margin-bottom: 26px;
+        }
+
+        .section-kicker {
+            display: inline-block;
+            color: var(--accent-strong);
+            font-size: 12px;
+            font-weight: 700;
+            letter-spacing: 0.1em;
+            text-transform: uppercase;
+            margin-bottom: 12px;
+        }
+
+        .section h2 {
+            font-size: clamp(34px, 5vw, 56px);
+            letter-spacing: -0.05em;
+            line-height: 1.02;
+        }
+
+        .section-head p {
+            margin-top: 16px;
+            color: var(--muted-strong);
+            font-size: 18px;
+            max-width: 680px;
+        }
+
+        .mini-grid,
+        .compare-grid,
+        .feature-grid {
+            display: grid;
+            gap: 18px;
+        }
+
+        .mini-grid {
+            grid-template-columns: repeat(4, minmax(0, 1fr));
+        }
+
+        .mini-card,
+        .compare-card,
+        .feature-card,
+        .manifesto-card,
+        .install-panel {
+            position: relative;
+            overflow: hidden;
+            border-radius: var(--radius-lg);
+            border: 1px solid var(--line);
+            background: linear-gradient(180deg, rgba(255, 255, 255, 0.045), rgba(255, 255, 255, 0.02));
+            box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+        }
+
+        .mini-card {
+            min-height: 160px;
+            padding: 22px;
+        }
+
+        .mini-card span {
+            color: var(--muted);
+            font-size: 12px;
+            font-weight: 700;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+        }
+
+        .mini-card h3 {
+            margin-top: 14px;
+            font-size: 24px;
+            letter-spacing: -0.04em;
+        }
+
+        .mini-card p {
+            margin-top: 10px;
+            color: var(--muted-strong);
+            font-size: 15px;
+        }
+
+        .compare-grid {
+            grid-template-columns: 1.05fr 1.05fr 0.9fr;
+        }
+
+        .compare-card {
+            min-height: 320px;
+            padding: 26px;
+        }
+
+        .compare-card h3,
+        .feature-card h3,
+        .install-panel h2,
+        .manifesto-card h2 {
+            font-size: 28px;
+            letter-spacing: -0.04em;
+            line-height: 1.05;
+        }
+
+        .compare-card p,
+        .feature-card p,
+        .manifesto-card p,
+        .install-panel p {
+            margin-top: 14px;
+            color: var(--muted-strong);
+            font-size: 17px;
+        }
+
+        .compare-card ul,
+        .feature-card ul {
+            margin-top: 18px;
+            list-style: none;
+            display: grid;
+            gap: 12px;
+        }
+
+        .compare-card li,
+        .feature-card li {
+            position: relative;
+            padding-left: 22px;
+            color: var(--muted-strong);
+            font-size: 15px;
+        }
+
+        .compare-card li::before,
+        .feature-card li::before {
+            content: "";
+            position: absolute;
+            top: 8px;
+            left: 0;
+            width: 9px;
+            height: 9px;
+            border-radius: 999px;
+            background: var(--accent);
+        }
+
+        .compare-card-accent {
+            background:
+                radial-gradient(circle at top right, rgba(126, 242, 176, 0.12), transparent 35%),
+                linear-gradient(180deg, rgba(255, 255, 255, 0.055), rgba(255, 255, 255, 0.02));
+        }
+
+        .compare-card-muted {
+            background:
+                radial-gradient(circle at bottom left, rgba(241, 210, 122, 0.08), transparent 30%),
+                linear-gradient(180deg, rgba(255, 255, 255, 0.045), rgba(255, 255, 255, 0.02));
+        }
+
+        .feature-grid {
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+        }
+
+        .feature-card {
+            min-height: 240px;
+            padding: 24px;
+        }
+
+        .feature-card.feature-wide {
+            grid-column: span 2;
+        }
+
+        .feature-badge {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 44px;
+            height: 44px;
+            border-radius: 14px;
+            background: var(--accent-soft);
+            color: var(--accent-strong);
+            font-size: 20px;
+            font-weight: 800;
+            box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+        }
+
+        .feature-card h3 {
+            margin-top: 18px;
+        }
+
+        .manifesto-card {
+            padding: 34px;
+            background:
+                radial-gradient(circle at top left, rgba(126, 242, 176, 0.12), transparent 28%),
+                linear-gradient(180deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.02));
+        }
+
+        .manifesto-card .section-kicker {
+            color: var(--gold);
+        }
+
+        .manifesto-pills {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            margin-top: 22px;
+        }
+
+        .install-panel {
+            display: grid;
+            grid-template-columns: 1.05fr 0.95fr;
+            gap: 24px;
+            padding: 30px;
+            background:
+                radial-gradient(circle at top right, rgba(126, 242, 176, 0.1), transparent 30%),
+                linear-gradient(180deg, rgba(255, 255, 255, 0.055), rgba(255, 255, 255, 0.02));
+        }
+
+        .install-actions {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 14px;
+            margin-top: 26px;
+        }
+
+        .install-badges {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            margin-top: 26px;
+        }
+
+        .command-shell {
+            height: 100%;
+            padding: 22px;
+            border-radius: 22px;
+            border: 1px solid rgba(163, 242, 194, 0.14);
+            background: rgba(4, 11, 8, 0.78);
+        }
+
+        .command-shell-label {
+            color: var(--muted);
+            font-size: 12px;
+            font-weight: 700;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+        }
+
+        .command-shell pre {
+            margin-top: 18px;
+        }
+
+        .command-shell p {
+            margin-top: 18px;
+            color: var(--muted);
+            font-size: 15px;
+        }
+
         footer {
-            padding: 40px 0;
-            border-top: 1px solid var(--border);
-            text-align: center;
-        }
-
-        footer p {
-            color: var(--text-secondary);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 18px;
+            padding: 28px 0 10px;
+            color: var(--muted);
             font-size: 14px;
         }
 
         footer a {
-            color: var(--accent);
-            text-decoration: none;
+            color: var(--accent-strong);
         }
 
-        footer a:hover {
-            text-decoration: underline;
+        @keyframes fade-up {
+            from {
+                opacity: 0;
+                transform: translateY(18px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
         }
 
-        /* Responsive */
-        @media (max-width: 640px) {
+        @keyframes float {
+            0%, 100% {
+                transform: translateY(0);
+            }
+            50% {
+                transform: translateY(-8px);
+            }
+        }
+
+        @media (max-width: 1080px) {
+            .hero,
+            .install-panel,
+            .compare-grid,
+            .feature-grid,
+            .mini-grid {
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+            }
+
             .hero {
-                padding: 60px 0 40px;
+                align-items: start;
+                min-height: auto;
+                padding-top: 44px;
             }
 
-            .hero h1 {
-                font-size: 40px;
+            .hero-visual {
+                min-height: 540px;
             }
 
-            .hero .tagline {
-                font-size: 17px;
+            .compare-card:last-child,
+            .feature-card.feature-wide {
+                grid-column: span 2;
+            }
+        }
+
+        @media (max-width: 760px) {
+            .page {
+                width: min(100% - 28px, var(--max-width));
+                padding-top: 20px;
             }
 
-            .features h2,
-            .stack h2,
-            .requirements h2 {
-                font-size: 28px;
+            .site-header {
+                flex-wrap: wrap;
+                justify-content: center;
+                border-radius: 26px;
             }
 
-            .philosophy blockquote {
-                font-size: 20px;
+            .nav {
+                order: 3;
+                width: 100%;
+                justify-content: center;
+                flex-wrap: wrap;
+                gap: 14px;
+            }
+
+            .hero,
+            .install-panel,
+            .compare-grid,
+            .feature-grid,
+            .mini-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .hero {
+                padding-top: 34px;
+            }
+
+            .hero h1,
+            .section h2,
+            .compare-card h3,
+            .feature-card h3,
+            .manifesto-card h2,
+            .install-panel h2 {
+                max-width: none;
+            }
+
+            .hero-visual {
+                min-height: 420px;
+            }
+
+            .visual-frame {
+                inset: 8% 2% 10%;
+            }
+
+            .shot-card {
+                width: 100%;
+                padding: 12px;
+            }
+
+            .shot-chip {
+                position: static;
+                margin-top: 12px;
+                width: fit-content;
+            }
+
+            .shot-window {
+                gap: 0;
+                align-items: start;
+            }
+
+            .shot-card-stack {
+                display: grid;
+                gap: 12px;
+                padding: 34px 14px 0;
+                width: 100%;
+            }
+
+            .compare-card:last-child,
+            .feature-card.feature-wide {
+                grid-column: span 1;
+            }
+
+            footer {
+                flex-direction: column;
+                align-items: flex-start;
             }
         }
     </style>
 </head>
 <body>
+    <div class="page">
+        <header class="site-header">
+            <a class="brand" href="#">
+                <span class="brand-mark" aria-hidden="true"></span>
+                <span>Pine</span>
+            </a>
+            <nav class="nav">
+                <a href="#why">Why Pine</a>
+                <a href="#features">Features</a>
+                <a href="#install">Install</a>
+                <a href="https://github.com/batonogov/pine">GitHub</a>
+            </nav>
+            <a class="header-cta" href="https://github.com/batonogov/pine/releases">Download</a>
+        </header>
 
-    <!-- Hero -->
-    <section class="hero">
-        <div class="container">
-            <span class="hero-icon" aria-hidden="true">&#127794;</span>
-            <h1>Pine</h1>
-            <p class="tagline">Minimal native macOS code editor. Built with SwiftUI&nbsp;+&nbsp;AppKit, zero&nbsp;dependencies.</p>
-            <div class="hero-buttons">
-                <a href="https://github.com/batonogov/pine" class="btn btn-primary">
-                    <svg width="20" height="20" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"></path></svg>
-                    View on GitHub
-                </a>
-                <a href="https://github.com/batonogov/pine/releases" class="btn btn-secondary">
-                    Download
-                </a>
-            </div>
-        </div>
-    </section>
+        <main>
+            <section class="hero">
+                <div class="hero-copy">
+                    <div class="eyebrow">Native macOS code editor</div>
+                    <h1>Less editor. More shipping.</h1>
+                    <p>Pine is a focused Mac code editor for developers who want the core loop to feel instant: open a repo, edit code, run commands, check git, move on.</p>
+                    <div class="hero-proof">
+                        <span>No Electron</span>
+                        <span>Zero dependencies</span>
+                        <span>Real PTY terminal</span>
+                        <span>Git-aware workflow</span>
+                    </div>
+                    <div class="hero-actions">
+                        <a class="btn btn-primary" href="https://github.com/batonogov/pine/releases">Download Pine</a>
+                        <a class="btn btn-secondary" href="https://github.com/batonogov/pine">View on GitHub</a>
+                    </div>
+                    <div class="install-strip">
+                        <div class="install-strip-label">Install in 10 seconds</div>
+                        <code>brew install --cask batonogov/tap/pine</code>
+                    </div>
+                </div>
 
-    <!-- Screenshot -->
-    <section class="screenshot-section">
-        <div class="container">
-            <div class="screenshot-wrapper">
-                <img src="https://raw.githubusercontent.com/batonogov/pine/main/assets/screenshot.png" alt="Pine editor screenshot" loading="lazy">
-            </div>
-        </div>
-    </section>
+                <div class="hero-visual" aria-hidden="true">
+                    <div class="visual-frame"></div>
+                    <div class="shot-window">
+                        <div class="shot-card-stack">
+                            <div class="shot-card">
+                                <img src="https://raw.githubusercontent.com/batonogov/pine/main/assets/screenshot.png" alt="Pine editor screenshot" loading="lazy">
+                            </div>
+                            <div class="shot-chip chip-one">Native window tabs</div>
+                            <div class="shot-chip chip-two">Real PTY terminal</div>
+                            <div class="shot-chip chip-three">Git-aware file tree</div>
+                        </div>
+                    </div>
+                </div>
+            </section>
 
-    <!-- Features -->
-    <section class="features">
-        <div class="container">
-            <h2>Features</h2>
-            <div class="features-grid">
-                <div class="feature-card">
-                    <span class="icon" aria-hidden="true">&#128193;</span>
-                    <h3>File Tree Sidebar</h3>
-                    <p>Browse your project with a native file tree. Open folders, navigate files, see everything at a glance.</p>
+            <section class="section">
+                <div class="mini-grid">
+                    <article class="mini-card">
+                        <span>Native</span>
+                        <h3>SwiftUI + AppKit</h3>
+                        <p>Built like a real Mac app, not a browser pretending to be one.</p>
+                    </article>
+                    <article class="mini-card">
+                        <span>Focused</span>
+                        <h3>Repo-first workflow</h3>
+                        <p>Open a folder, browse files, edit fast, run commands, keep moving.</p>
+                    </article>
+                    <article class="mini-card">
+                        <span>Lean</span>
+                        <h3>Zero dependencies</h3>
+                        <p>No plugin marketplace, no dependency drag, no configuration sprawl.</p>
+                    </article>
+                    <article class="mini-card">
+                        <span>Practical</span>
+                        <h3>Git where it matters</h3>
+                        <p>Status in the tree, branch switching, and diff markers directly in the editor.</p>
+                    </article>
                 </div>
-                <div class="feature-card">
-                    <span class="icon" aria-hidden="true">&#9998;</span>
-                    <h3>Syntax Highlighting</h3>
-                    <p>Built-in grammar-based highlighting for popular languages. Extensible via simple JSON grammar files.</p>
-                </div>
-                <div class="feature-card">
-                    <span class="icon" aria-hidden="true">&#128187;</span>
-                    <h3>Built-in Terminal</h3>
-                    <p>Integrated terminal powered by a real PTY. Run commands without leaving the editor.</p>
-                </div>
-                <div class="feature-card">
-                    <span class="icon" aria-hidden="true">&#127744;</span>
-                    <h3>Liquid Glass UI</h3>
-                    <p>Designed for macOS 26 Tahoe with native Liquid Glass materials and translucency effects.</p>
-                </div>
-                <div class="feature-card">
-                    <span class="icon" aria-hidden="true">&#128203;</span>
-                    <h3>Native Tabs</h3>
-                    <p>Uses macOS native window tabs for a familiar, system-integrated experience.</p>
-                </div>
-                <div class="feature-card">
-                    <span class="icon" aria-hidden="true">&#128268;</span>
-                    <h3>Git Integration</h3>
-                    <p>See git status in the file tree, diff markers in the gutter, and switch branches easily.</p>
-                </div>
-            </div>
-        </div>
-    </section>
+            </section>
 
-    <!-- Philosophy -->
-    <section class="philosophy">
-        <div class="container">
-            <blockquote>"Pine is a pine tree in a forest of editors — quiet, reliable, native."</blockquote>
-            <p>Pine doesn't try to be VS Code or Xcode. Open, write code, close. Each scale of the pine cone icon is a line of code.</p>
-        </div>
-    </section>
-
-    <!-- Stack -->
-    <section class="stack">
-        <div class="container">
-            <h2>Built With</h2>
-            <div class="stack-grid">
-                <div class="stack-item">
-                    <div class="label">UI Framework</div>
-                    <div class="value">SwiftUI</div>
+            <section class="section" id="why">
+                <div class="section-head">
+                    <span class="section-kicker">Why Pine</span>
+                    <h2>Built for the gap between bloated editors and full IDEs.</h2>
+                    <p>Pine keeps the parts that matter in day-to-day coding and cuts the layers that usually slow editors down.</p>
                 </div>
-                <div class="stack-item">
-                    <div class="label">Text Engine</div>
-                    <div class="value">AppKit</div>
+                <div class="compare-grid">
+                    <article class="compare-card compare-card-muted">
+                        <h3>What Pine keeps</h3>
+                        <ul>
+                            <li>Native project tree and Mac window behavior</li>
+                            <li>Syntax highlighting, line numbers, and find</li>
+                            <li>Multiple terminal tabs powered by a real PTY</li>
+                            <li>Git status, gutter diffs, and branch switching</li>
+                        </ul>
+                    </article>
+                    <article class="compare-card compare-card-accent">
+                        <h3>What Pine cuts</h3>
+                        <ul>
+                            <li>Browser engine overhead</li>
+                            <li>Plugin sprawl and extension dependency chains</li>
+                            <li>Settings archaeology before real work starts</li>
+                            <li>Chrome-heavy UI that competes with the code</li>
+                        </ul>
+                    </article>
+                    <article class="compare-card">
+                        <h3>What that feels like</h3>
+                        <p>You spend less time shaping the editor and more time writing, running, and reviewing code. Pine stays in the background and keeps the loop tight.</p>
+                        <div class="hero-proof" style="margin-top: 22px;">
+                            <span>Open fast</span>
+                            <span>Stay focused</span>
+                            <span>Ship sooner</span>
+                        </div>
+                    </article>
                 </div>
-                <div class="stack-item">
-                    <div class="label">Dependencies</div>
-                    <div class="value">Zero</div>
+            </section>
+
+            <section class="section" id="features">
+                <div class="section-head">
+                    <span class="section-kicker">Features</span>
+                    <h2>The essentials, done like a Mac app.</h2>
+                    <p>Pine is not trying to become a platform. It is trying to cover the everyday loop with less friction.</p>
                 </div>
-                <div class="stack-item">
-                    <div class="label">Language</div>
-                    <div class="value">Swift</div>
+                <div class="feature-grid">
+                    <article class="feature-card feature-wide">
+                        <div class="feature-badge">01</div>
+                        <h3>Open a repo and start working immediately.</h3>
+                        <p>Folders-first file tree, clean empty states, hidden files skipped by default, native window tabs, and unsaved-change protection.</p>
+                    </article>
+                    <article class="feature-card">
+                        <div class="feature-badge">02</div>
+                        <h3>Write code without visual drag.</h3>
+                        <p>Line numbers, current-line highlight, undo, find bar, smart indent, and grammar-based syntax highlighting for the core working set.</p>
+                    </article>
+                    <article class="feature-card">
+                        <div class="feature-badge">03</div>
+                        <h3>Run commands in the same window.</h3>
+                        <p>Multiple integrated terminal tabs backed by a real PTY, not a fake console widget.</p>
+                    </article>
+                    <article class="feature-card">
+                        <div class="feature-badge">04</div>
+                        <h3>See git context where decisions happen.</h3>
+                        <p>Status in the file tree, diff markers in the gutter, branch switching, and a compact status bar summary.</p>
+                    </article>
+                    <article class="feature-card feature-wide">
+                        <div class="feature-badge">05</div>
+                        <h3>Cover the languages you actually touch all week.</h3>
+                        <p>Swift, TypeScript, JavaScript, Python, Go, Rust, Shell, HTML, CSS, JSON, YAML, Markdown, and Dockerfile are supported out of the box through JSON grammars.</p>
+                    </article>
                 </div>
-            </div>
-        </div>
-    </section>
+            </section>
 
-    <!-- Requirements -->
-    <section class="requirements">
-        <div class="container">
-            <h2>Get Started</h2>
-            <p>Clone the repo, open in Xcode, build and run.</p>
-            <div class="req-badges">
-                <span class="badge"><span class="dot"></span> macOS 26+</span>
-                <span class="badge"><span class="dot"></span> Xcode 26+</span>
-                <span class="badge"><span class="dot"></span> Swift 6</span>
-            </div>
-        </div>
-    </section>
+            <section class="section">
+                <div class="manifesto-card">
+                    <span class="section-kicker">Positioning</span>
+                    <h2>Pine is not trying to be the biggest editor on your machine. It is trying to be the one you keep open all day.</h2>
+                    <p>If VS Code feels heavy and Xcode feels like too much for everyday editing, Pine is the clean middle ground.</p>
+                    <div class="manifesto-pills">
+                        <span class="mini-chip">No Electron</span>
+                        <span class="mini-chip">No plugin marketplace</span>
+                        <span class="mini-chip">No settings maze</span>
+                        <span class="mini-chip">No dependency pile</span>
+                    </div>
+                </div>
+            </section>
 
-    <!-- Footer -->
-    <footer>
-        <div class="container">
-            <p>Pine is open source. <a href="https://github.com/batonogov/pine">Contribute on GitHub</a>.</p>
-        </div>
-    </footer>
+            <section class="section" id="install">
+                <div class="install-panel">
+                    <div>
+                        <span class="section-kicker">Get Started</span>
+                        <h2>Install Pine in 10 seconds.</h2>
+                        <p>Use Homebrew, grab the latest DMG, or build from source in Xcode. The stack stays small: SwiftUI, AppKit, JSON grammars, and zero third-party dependencies.</p>
+                        <div class="install-actions">
+                            <a class="btn btn-primary" href="https://github.com/batonogov/pine/releases">Download the latest release</a>
+                            <a class="btn btn-secondary" href="https://github.com/batonogov/pine">Read the source</a>
+                        </div>
+                        <div class="install-badges">
+                            <span>macOS 26+</span>
+                            <span>Xcode 26+</span>
+                            <span>Swift 6</span>
+                        </div>
+                    </div>
+                    <div class="command-shell">
+                        <div class="command-shell-label">Homebrew</div>
+                        <pre><code>brew install --cask batonogov/tap/pine</code></pre>
+                        <p>Build from source with <code>xcodebuild -project Pine.xcodeproj -scheme Pine build</code> if you want the full native stack on your machine.</p>
+                    </div>
+                </div>
+            </section>
+        </main>
 
+        <footer>
+            <span>Pine is open source and built for macOS developers who want less editor and more shipping.</span>
+            <a href="https://github.com/batonogov/pine">github.com/batonogov/pine</a>
+        </footer>
+    </div>
 </body>
 </html>
