@@ -47,7 +47,8 @@ jobs:
             -destination "generic/platform=macOS" \
             CODE_SIGN_IDENTITY="Developer ID Application" \
             DEVELOPMENT_TEAM="${{ secrets.APPLE_TEAM_ID }}" \
-            CODE_SIGN_STYLE=Manual
+            CODE_SIGN_STYLE=Manual \
+            ENABLE_HARDENED_RUNTIME=YES
 
       - name: Export app
         run: |
@@ -85,7 +86,17 @@ jobs:
             --apple-id "$APPLE_ID" \
             --password "$APPLE_ID_PASSWORD" \
             --team-id "$APPLE_TEAM_ID" \
-            --wait
+            --wait | tee /tmp/notarytool-output.txt
+
+          SUBMISSION_ID=$(grep -o '[0-9a-f\-]\{36\}' /tmp/notarytool-output.txt | head -1)
+          if grep -q "Invalid" /tmp/notarytool-output.txt; then
+            echo "Notarization failed, fetching log..."
+            xcrun notarytool log "$SUBMISSION_ID" \
+              --apple-id "$APPLE_ID" \
+              --password "$APPLE_ID_PASSWORD" \
+              --team-id "$APPLE_TEAM_ID"
+            exit 1
+          fi
 
           xcrun stapler staple "$RUNNER_TEMP/export/Pine.app"
 
