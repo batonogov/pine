@@ -21,6 +21,13 @@ final class ProjectManager {
         SessionState.save(projectURL: rootURL, openFileURLs: openFileURLs)
     }
 
+    /// Saves only the project URL with an empty file list.
+    /// Used when switching projects so stale tab URLs aren't persisted.
+    func saveProjectOnly() {
+        guard let rootURL = workspace.rootURL else { return }
+        SessionState.save(projectURL: rootURL, openFileURLs: [])
+    }
+
     // MARK: - Convenience accessors (workspace)
 
     var rootNodes: [FileNode] { workspace.rootNodes }

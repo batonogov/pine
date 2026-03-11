@@ -30,12 +30,31 @@ final class WorkspaceManager {
     func loadDirectory(url: URL) {
         rootURL = url
         projectName = url.lastPathComponent
+        loadDirectoryContentsAsync(url: url)
+    }
 
-        let root = FileNode(url: url)
-        root.loadChildren()
-        rootNodes = root.children ?? []
+    /// Heavy I/O (file tree + git) runs on a background queue;
+    /// results are assigned back on the main thread.
+    private func loadDirectoryContentsAsync(url: URL) {
+        DispatchQueue.global(qos: .userInitiated).async {
+            let root = FileNode(url: url)
+            root.loadChildren()
+            let children = root.children ?? []
 
-        gitProvider.setup(repositoryURL: url)
+            let bgGit = GitStatusProvider()
+            bgGit.setup(repositoryURL: url)
+
+            DispatchQueue.main.async { [weak self] in
+                guard let self, self.rootURL == url else { return }
+                self.rootNodes = children
+                self.gitProvider.repositoryURL = bgGit.repositoryURL
+                self.gitProvider.gitRootPath = bgGit.gitRootPath
+                self.gitProvider.isGitRepository = bgGit.isGitRepository
+                self.gitProvider.currentBranch = bgGit.currentBranch
+                self.gitProvider.fileStatuses = bgGit.fileStatuses
+                self.gitProvider.branches = bgGit.branches
+            }
+        }
     }
 
     /// Reload the file tree from disk (e.g. after creating/renaming/deleting files).

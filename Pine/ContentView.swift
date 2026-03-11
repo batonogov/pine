@@ -205,7 +205,8 @@ struct ContentView: View {
             handleFileSelection(node)
         }
         .onChange(of: workspace.rootURL) { _, _ in
-            projectManager.saveSession()
+            // Save only the project URL — old file tabs are stale at this point.
+            projectManager.saveProjectOnly()
         }
         .onReceive(NotificationCenter.default.publisher(for: .saveFile)) { _ in
             saveFile()
@@ -287,12 +288,10 @@ struct ContentView: View {
         guard fileURL == nil,
               let session = SessionState.load() else { return }
 
-        // Deferred project load — keeps the first frame instant,
-        // heavy work (file tree + git) runs on the next main-actor tick.
+        // loadDirectory sets rootURL/projectName synchronously,
+        // then dispatches heavy I/O (file tree + git) to a background queue.
         if workspace.rootURL == nil {
-            Task { @MainActor in
-                workspace.loadDirectory(url: session.projectURL)
-            }
+            workspace.loadDirectory(url: session.projectURL)
         }
 
         let fileURLs = session.existingFileURLs
