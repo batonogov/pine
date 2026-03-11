@@ -95,6 +95,10 @@ enum Strings {
         String(localized: "dialog.unsavedChanges.cancel")
     }
 
+    static var dialogOK: String {
+        String(localized: "dialog.ok")
+    }
+
     // MARK: - Open Panel (AppKit)
 
     static var openPanelMessage: String {

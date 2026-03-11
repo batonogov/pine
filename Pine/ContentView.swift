@@ -202,6 +202,21 @@ struct ContentView: View {
         .onReceive(NotificationCenter.default.publisher(for: .switchBranch)) { _ in
             // Branch switching is now handled via toolbarTitleMenu
         }
+        .onReceive(NotificationCenter.default.publisher(for: .fileRenamed)) { notification in
+            guard let oldURL = notification.userInfo?["oldURL"] as? URL,
+                  let newURL = notification.userInfo?["newURL"] as? URL,
+                  fileURL == oldURL else { return }
+            fileURL = newURL
+            loadFileFromURL(newURL)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .fileDeleted)) { notification in
+            guard let deletedURL = notification.userInfo?["url"] as? URL,
+                  fileURL == deletedURL else { return }
+            fileURL = nil
+            fileContent = ""
+            savedContent = ""
+            lineDiffs = []
+        }
     }
 
     /// Branch subtitle as a plain String to avoid generating a localization key.
@@ -451,6 +466,21 @@ struct SidebarView: View {
                 List(workspace.rootNodes, children: \.optionalChildren, selection: $selectedFile) { node in
                     FileNodeRow(node: node)
                 }
+                .contextMenu {
+                    if let rootURL = workspace.rootURL {
+                        Button {
+                            promptForNewItem(in: rootURL, isDirectory: false)
+                        } label: {
+                            Label(Strings.contextNewFile, systemImage: "doc.badge.plus")
+                        }
+
+                        Button {
+                            promptForNewItem(in: rootURL, isDirectory: true)
+                        } label: {
+                            Label(Strings.contextNewFolder, systemImage: "folder.badge.plus")
+                        }
+                    }
+                }
                 .navigationTitle(workspace.projectName)
             }
         }
@@ -465,6 +495,36 @@ struct SidebarView: View {
                 }
                 .help(Strings.openFolderTooltip)
             }
+        }
+    }
+
+    /// Prompt for a name and create a file or folder in the given parent directory.
+    private func promptForNewItem(in parentURL: URL, isDirectory: Bool) {
+        let title = isDirectory ? Strings.contextNewFolderTitle : Strings.contextNewFileTitle
+
+        let alert = NSAlert()
+        alert.messageText = title
+        alert.addButton(withTitle: Strings.dialogOK)
+        alert.addButton(withTitle: Strings.dialogCancel)
+
+        let textField = NSTextField(frame: NSRect(x: 0, y: 0, width: 260, height: 24))
+        textField.placeholderString = Strings.contextNamePlaceholder
+        alert.accessoryView = textField
+
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        let name = textField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty else { return }
+
+        let newURL = parentURL.appendingPathComponent(name)
+        do {
+            if isDirectory {
+                try FileManager.default.createDirectory(at: newURL, withIntermediateDirectories: false)
+            } else {
+                guard FileManager.default.createFile(atPath: newURL.path, contents: nil) else { return }
+            }
+            workspace.refreshFileTree()
+        } catch {
+            print("Error creating item: \(error.localizedDescription)")
         }
     }
 }
@@ -547,7 +607,7 @@ struct FileNodeRow: View {
             if isDirectory {
                 try FileManager.default.createDirectory(at: newURL, withIntermediateDirectories: false)
             } else {
-                FileManager.default.createFile(atPath: newURL.path, contents: nil)
+                guard FileManager.default.createFile(atPath: newURL.path, contents: nil) else { return }
             }
             workspace.refreshFileTree()
         } catch {
@@ -556,10 +616,16 @@ struct FileNodeRow: View {
     }
 
     private func renameItem(to newName: String) {
-        let newURL = node.url.deletingLastPathComponent().appendingPathComponent(newName)
+        let oldURL = node.url
+        let newURL = oldURL.deletingLastPathComponent().appendingPathComponent(newName)
         do {
-            try FileManager.default.moveItem(at: node.url, to: newURL)
+            try FileManager.default.moveItem(at: oldURL, to: newURL)
             workspace.refreshFileTree()
+            NotificationCenter.default.post(
+                name: .fileRenamed,
+                object: nil,
+                userInfo: ["oldURL": oldURL, "newURL": newURL]
+            )
         } catch {
             print("Error renaming item: \(error.localizedDescription)")
         }
@@ -575,9 +641,15 @@ struct FileNodeRow: View {
 
         guard alert.runModal() == .alertFirstButtonReturn else { return }
 
+        let deletedURL = node.url
         do {
-            try FileManager.default.trashItem(at: node.url, resultingItemURL: nil)
+            try FileManager.default.trashItem(at: deletedURL, resultingItemURL: nil)
             workspace.refreshFileTree()
+            NotificationCenter.default.post(
+                name: .fileDeleted,
+                object: nil,
+                userInfo: ["url": deletedURL]
+            )
         } catch {
             print("Error deleting item: \(error.localizedDescription)")
         }
@@ -592,7 +664,7 @@ struct FileNodeRow: View {
     ) {
         let alert = NSAlert()
         alert.messageText = title
-        alert.addButton(withTitle: "OK")
+        alert.addButton(withTitle: Strings.dialogOK)
         alert.addButton(withTitle: Strings.dialogCancel)
 
         let textField = NSTextField(frame: NSRect(x: 0, y: 0, width: 260, height: 24))

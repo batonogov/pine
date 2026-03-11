@@ -88,4 +88,8 @@ extension Notification.Name {
     static let openFolder = Notification.Name("openFolder")
     static let toggleTerminal = Notification.Name("toggleTerminal")
     static let switchBranch = Notification.Name("switchBranch")
+    /// userInfo: ["oldURL": URL, "newURL": URL]
+    static let fileRenamed = Notification.Name("fileRenamed")
+    /// userInfo: ["url": URL]
+    static let fileDeleted = Notification.Name("fileDeleted")
 }
