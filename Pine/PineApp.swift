@@ -25,35 +25,35 @@ struct PineApp: App {
             CommandGroup(replacing: .newItem) { }
             // Cmd+Shift+O — открыть папку
             CommandGroup(after: .newItem) {
-                Button("Open Folder...") {
+                Button(Strings.menuOpenFolder) {
                     NotificationCenter.default.post(name: .openFolder, object: nil)
                 }
                 .keyboardShortcut("o", modifiers: [.command, .shift])
             }
             // Cmd+` — показать/скрыть терминал
-            CommandMenu("View") {
-                Button("Toggle Terminal") {
+            CommandMenu(Strings.menuView) {
+                Button(Strings.toggleTerminal) {
                     NotificationCenter.default.post(name: .toggleTerminal, object: nil)
                 }
                 .keyboardShortcut("`", modifiers: .command)
             }
             // Cmd+Shift+B — переключение веток
-            CommandMenu("Git") {
-                Button("Switch Branch...") {
+            CommandMenu(Strings.menuGit) {
+                Button(Strings.menuSwitchBranch) {
                     NotificationCenter.default.post(name: .switchBranch, object: nil)
                 }
                 .keyboardShortcut("b", modifiers: [.command, .shift])
             }
             // Cmd+S — сохранить файл
             CommandGroup(replacing: .saveItem) {
-                Button("Save") {
+                Button(Strings.menuSave) {
                     NotificationCenter.default.post(name: .saveFile, object: nil)
                 }
                 .keyboardShortcut("s", modifiers: .command)
             }
             // Cmd+W — закрыть таб
             CommandGroup(after: .saveItem) {
-                Button("Close Tab") {
+                Button(Strings.menuCloseTab) {
                     NSApp.sendAction(#selector(NSWindow.performClose(_:)), to: nil, from: nil)
                 }
                 .keyboardShortcut("w", modifiers: .command)
