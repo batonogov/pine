@@ -434,28 +434,29 @@ struct SidebarView: View {
     @Binding var selectedFile: FileNode?
 
     var body: some View {
-        List(selection: $selectedFile) {
+        Group {
             if projectManager.rootNodes.isEmpty {
-                ContentUnavailableView {
-                    Label("No Folder Open", systemImage: "folder")
-                } description: {
-                    Text("Open a folder to get started")
-                } actions: {
-                    Button("Open Folder...") {
-                        projectManager.openFolder()
+                List {
+                    ContentUnavailableView {
+                        Label("No Folder Open", systemImage: "folder")
+                    } description: {
+                        Text("Open a folder to get started")
+                    } actions: {
+                        Button("Open Folder...") {
+                            projectManager.openFolder()
+                        }
+                        .buttonStyle(.borderedProminent)
                     }
-                    .buttonStyle(.borderedProminent)
                 }
+                .navigationTitle("Files")
             } else {
-                Section(projectManager.projectName) {
-                    ForEach(projectManager.rootNodes) { node in
-                        FileNodeRow(node: node)
-                    }
+                List(projectManager.rootNodes, children: \.optionalChildren, selection: $selectedFile) { node in
+                    FileNodeRow(node: node)
                 }
+                .navigationTitle(projectManager.projectName)
             }
         }
         .listStyle(.sidebar)
-        .navigationTitle("Files")
         .frame(minWidth: 180, idealWidth: 220)
         .toolbar {
             ToolbarItem {
@@ -484,31 +485,10 @@ struct FileNodeRow: View {
     }
 
     var body: some View {
-        if node.isDirectory {
-            DisclosureGroup(
-                isExpanded: Binding(
-                    get: { !(node.children?.isEmpty ?? true) || expandedState },
-                    set: { isExpanded in
-                        expandedState = isExpanded
-                        if isExpanded { node.loadChildren() }
-                    }
-                )
-            ) {
-                ForEach(node.children ?? []) { child in
-                    FileNodeRow(node: child)
-                }
-            } label: {
-                Label(node.name, systemImage: "folder")
-                    .foregroundStyle(gitStatus?.color ?? .primary)
-            }
-        } else {
-            Label(node.name, systemImage: iconForFile(node.name))
-                .foregroundStyle(gitStatus?.color ?? .primary)
-                .tag(node)
-        }
+        Label(node.name, systemImage: node.isDirectory ? "folder" : iconForFile(node.name))
+            .foregroundStyle(gitStatus?.color ?? .primary)
+            .tag(node)
     }
-
-    @State private var expandedState = false
 
     private func iconForFile(_ name: String) -> String {
         let ext = (name as NSString).pathExtension.lowercased()
