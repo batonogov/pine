@@ -148,7 +148,7 @@ final class LineNumberView: NSView {
 
         layoutManager.enumerateLineFragments(
             forGlyphRange: visibleGlyphRange
-        ) { (lineRect, _, _, glyphRange, _) in
+        ) { lineRect, _, _, glyphRange, _ in
             let charIndex = layoutManager.characterIndexForGlyph(at: glyphRange.location)
 
             // Определяем: новая логическая строка или soft-wrap (перенос длинной строки)?

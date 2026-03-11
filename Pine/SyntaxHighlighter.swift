@@ -33,13 +33,13 @@ struct Theme {
 
     /// Тема по умолчанию — адаптируется к light/dark mode.
     static let `default` = Theme(colors: [
-        "comment":   dynamicColor(light: (0.35, 0.55, 0.33), dark: (0.42, 0.68, 0.40)),
-        "string":    dynamicColor(light: (0.76, 0.32, 0.18), dark: (0.89, 0.49, 0.33)),
-        "keyword":   dynamicColor(light: (0.72, 0.20, 0.45), dark: (0.89, 0.36, 0.60)),
-        "number":    dynamicColor(light: (0.64, 0.58, 0.20), dark: (0.82, 0.76, 0.42)),
-        "type":      dynamicColor(light: (0.22, 0.55, 0.60), dark: (0.40, 0.78, 0.82)),
+        "comment": dynamicColor(light: (0.35, 0.55, 0.33), dark: (0.42, 0.68, 0.40)),
+        "string": dynamicColor(light: (0.76, 0.32, 0.18), dark: (0.89, 0.49, 0.33)),
+        "keyword": dynamicColor(light: (0.72, 0.20, 0.45), dark: (0.89, 0.36, 0.60)),
+        "number": dynamicColor(light: (0.64, 0.58, 0.20), dark: (0.82, 0.76, 0.42)),
+        "type": dynamicColor(light: (0.22, 0.55, 0.60), dark: (0.40, 0.78, 0.82)),
         "attribute": dynamicColor(light: (0.52, 0.35, 0.70), dark: (0.68, 0.51, 0.85)),
-        "function":  dynamicColor(light: (0.25, 0.42, 0.75), dark: (0.40, 0.60, 0.90)),
+        "function": dynamicColor(light: (0.25, 0.42, 0.75), dark: (0.40, 0.60, 0.90)),
     ])
 
     private static func dynamicColor(

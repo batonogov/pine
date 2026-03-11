@@ -14,7 +14,9 @@ Pine is a minimal native macOS code editor built with SwiftUI + AppKit. Targets 
 - Type-check a single file (no sudo needed): `/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc -typecheck -target arm64-apple-macos26.0 -sdk /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk <file.swift>`
 - **Dependency:** SwiftTerm added via Xcode SPM (File > Add Package Dependencies > `https://github.com/migueldeicaza/SwiftTerm.git`)
 - No other third-party dependencies
-- No test targets yet
+- **SwiftLint:** `brew install swiftlint` — runs as a build phase; config in `.swiftlint.yml`
+- **Tests:** `xcodebuild test -project Pine.xcodeproj -scheme Pine -destination 'platform=macOS'`
+- Test target: `PineTests` (Swift Testing framework) — covers git parsing, grammar models, file tree
 
 ## Architecture
 
@@ -45,6 +47,7 @@ Pine is a minimal native macOS code editor built with SwiftUI + AppKit. Targets 
 - `LineNumberGutter.swift` — Line number rendering (enumerates only visible line fragments)
 - `TerminalSession.swift` — SwiftTerm integration: TerminalTab, TerminalContentView (NSViewRepresentable), TerminalTabDelegate
 - `GitStatusProvider.swift` — Git status/diff parsing for sidebar indicators and gutter markers
+- `PineTests/` — Unit tests: GitStatusParserTests, GitDiffParserTests, FileNodeTests, GrammarModelTests
 
 ## Release & CI
 

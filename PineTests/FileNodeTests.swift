@@ -1,0 +1,139 @@
+//
+//  FileNodeTests.swift
+//  PineTests
+//
+
+import Testing
+import Foundation
+@testable import Pine
+
+struct FileNodeTests {
+
+    private func makeTempDirectory() throws -> URL {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("PineTests-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        return tempDir
+    }
+
+    private func cleanup(_ url: URL) {
+        try? FileManager.default.removeItem(at: url)
+    }
+
+    @Test func fileNodeDetectsFile() throws {
+        let tempDir = try makeTempDirectory()
+        defer { cleanup(tempDir) }
+
+        let fileURL = tempDir.appendingPathComponent("test.swift")
+        FileManager.default.createFile(atPath: fileURL.path, contents: nil)
+
+        let node = FileNode(url: fileURL)
+        #expect(node.isDirectory == false)
+        #expect(node.name == "test.swift")
+        #expect(node.children == nil)
+        #expect(node.optionalChildren == nil)
+    }
+
+    @Test func fileNodeDetectsDirectory() throws {
+        let tempDir = try makeTempDirectory()
+        defer { cleanup(tempDir) }
+
+        let dirURL = tempDir.appendingPathComponent("Sources")
+        try FileManager.default.createDirectory(at: dirURL, withIntermediateDirectories: true)
+
+        let node = FileNode(url: dirURL)
+        #expect(node.isDirectory == true)
+        #expect(node.name == "Sources")
+    }
+
+    @Test func fileNodeLoadsDirectoryContents() throws {
+        let tempDir = try makeTempDirectory()
+        defer { cleanup(tempDir) }
+
+        FileManager.default.createFile(
+            atPath: tempDir.appendingPathComponent("b.swift").path, contents: nil
+        )
+        FileManager.default.createFile(
+            atPath: tempDir.appendingPathComponent("a.swift").path, contents: nil
+        )
+
+        let node = FileNode(url: tempDir)
+        #expect(node.isDirectory == true)
+        #expect(node.children?.count == 2)
+        // Should be sorted alphabetically
+        #expect(node.children?[0].name == "a.swift")
+        #expect(node.children?[1].name == "b.swift")
+    }
+
+    @Test func directoriesSortBeforeFiles() throws {
+        let tempDir = try makeTempDirectory()
+        defer { cleanup(tempDir) }
+
+        FileManager.default.createFile(
+            atPath: tempDir.appendingPathComponent("zFile.txt").path, contents: nil
+        )
+        try FileManager.default.createDirectory(
+            at: tempDir.appendingPathComponent("aDir"),
+            withIntermediateDirectories: true
+        )
+
+        let node = FileNode(url: tempDir)
+        #expect(node.children?.count == 2)
+        #expect(node.children?[0].name == "aDir")
+        #expect(node.children?[0].isDirectory == true)
+        #expect(node.children?[1].name == "zFile.txt")
+        #expect(node.children?[1].isDirectory == false)
+    }
+
+    @Test func hiddenFilesAreExcluded() throws {
+        let tempDir = try makeTempDirectory()
+        defer { cleanup(tempDir) }
+
+        FileManager.default.createFile(
+            atPath: tempDir.appendingPathComponent(".hidden").path, contents: nil
+        )
+        FileManager.default.createFile(
+            atPath: tempDir.appendingPathComponent("visible.txt").path, contents: nil
+        )
+
+        let node = FileNode(url: tempDir)
+        #expect(node.children?.count == 1)
+        #expect(node.children?[0].name == "visible.txt")
+    }
+
+    @Test func emptyDirectoryHasNilOptionalChildren() throws {
+        let tempDir = try makeTempDirectory()
+        defer { cleanup(tempDir) }
+
+        let emptyDir = tempDir.appendingPathComponent("empty")
+        try FileManager.default.createDirectory(at: emptyDir, withIntermediateDirectories: true)
+
+        let node = FileNode(url: emptyDir)
+        #expect(node.isDirectory == true)
+        #expect(node.optionalChildren == nil)
+    }
+
+    @Test func loadChildrenRefreshes() throws {
+        let tempDir = try makeTempDirectory()
+        defer { cleanup(tempDir) }
+
+        let node = FileNode(url: tempDir)
+        #expect(node.children?.isEmpty == true)
+
+        // Add a file after initial load
+        FileManager.default.createFile(
+            atPath: tempDir.appendingPathComponent("new.txt").path, contents: nil
+        )
+
+        node.loadChildren()
+        #expect(node.children?.count == 1)
+        #expect(node.children?[0].name == "new.txt")
+    }
+
+    @Test func fileNodeEquality() throws {
+        let url = URL(fileURLWithPath: "/tmp/test.swift")
+        let node1 = FileNode(url: url)
+        let node2 = FileNode(url: url)
+        #expect(node1 == node2)
+    }
+}

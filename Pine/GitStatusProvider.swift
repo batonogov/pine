@@ -153,10 +153,13 @@ final class GitStatusProvider {
     private func refreshFileStatuses(at url: URL) {
         let result = runGit(["status", "--porcelain"], at: url)
         guard result.exitCode == 0 else { return }
+        fileStatuses = Self.parseStatusOutput(result.output)
+    }
 
+    static func parseStatusOutput(_ output: String) -> [String: GitFileStatus] {
         var statuses: [String: GitFileStatus] = [:]
 
-        for line in result.output.components(separatedBy: "\n") {
+        for line in output.components(separatedBy: "\n") {
             guard line.count >= 3 else { continue }
             let indexChar = line[line.startIndex]
             let workTreeChar = line[line.index(after: line.startIndex)]
@@ -195,7 +198,7 @@ final class GitStatusProvider {
             statuses[path] = status
         }
 
-        fileStatuses = statuses
+        return statuses
     }
 
     private func refreshBranches(at url: URL) {
@@ -208,7 +211,7 @@ final class GitStatusProvider {
 
     // MARK: - Diff Parser
 
-    private func parseDiff(_ diffOutput: String) -> [GitLineDiff] {
+    func parseDiff(_ diffOutput: String) -> [GitLineDiff] {
         var diffs: [GitLineDiff] = []
         let lines = diffOutput.components(separatedBy: "\n")
 
@@ -279,7 +282,7 @@ final class GitStatusProvider {
         return diffs
     }
 
-    private func parseHunkNewStart(_ header: String) -> Int? {
+    func parseHunkNewStart(_ header: String) -> Int? {
         // Format: @@ -old[,count] +new[,count] @@
         guard let plusIndex = header.firstIndex(of: "+") else { return nil }
         let afterPlus = header[header.index(after: plusIndex)...]

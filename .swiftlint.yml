@@ -1,0 +1,45 @@
+# SwiftLint configuration for Pine
+
+excluded:
+  - .build
+  - Pine.xcodeproj
+
+disabled_rules:
+  - trailing_comma
+  - todo
+  - type_body_length
+  - file_length
+  - function_body_length
+  - cyclomatic_complexity
+  - implicit_optional_initialization
+
+opt_in_rules:
+  - empty_count
+  - closure_spacing
+  - contains_over_first_not_nil
+  - force_unwrapping
+  - modifier_order
+  - overridden_super_call
+  - private_action
+  - private_outlet
+  - unneeded_parentheses_in_closure_argument
+
+line_length:
+  warning: 150
+  error: 200
+
+identifier_name:
+  min_length:
+    warning: 1
+  excluded:
+    - i
+    - j
+    - x
+    - y
+    - id
+
+nesting:
+  type_level: 3
+
+large_tuple:
+  warning: 4
