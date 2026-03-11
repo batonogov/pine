@@ -130,6 +130,8 @@ struct ContentView: View {
     @State private var savedContent: String = ""
     @State private var columnVisibility: NavigationSplitViewVisibility = .all
     @State private var lineDiffs: [GitLineDiff] = []
+    /// When true, the next fileURL change skips reloading from disk (used during rename).
+    @State private var suppressNextReload = false
 
     private var hasUnsavedChanges: Bool {
         fileContent != savedContent
@@ -182,6 +184,10 @@ struct ContentView: View {
             }
         }
         .onChange(of: fileURL) { _, newURL in
+            if suppressNextReload {
+                suppressNextReload = false
+                return
+            }
             if let url = newURL {
                 loadFileFromURL(url)
             }
@@ -208,11 +214,11 @@ struct ContentView: View {
                   let currentURL = fileURL else { return }
             // Exact match (file itself renamed) or child of renamed directory
             if currentURL == oldURL {
-                // Update path, keep unsaved content as-is (don't reload from disk)
+                suppressNextReload = true
                 fileURL = newURL
             } else if currentURL.path.hasPrefix(oldURL.path + "/") {
-                // File is inside a renamed directory — rewrite prefix
                 let relativePath = String(currentURL.path.dropFirst(oldURL.path.count + 1))
+                suppressNextReload = true
                 fileURL = newURL.appendingPathComponent(relativePath)
             }
         }
@@ -233,10 +239,19 @@ struct ContentView: View {
                 alert.alertStyle = .warning
 
                 if alert.runModal() == .alertFirstButtonReturn {
+                    // Save As… — only clear the tab if user actually saved
                     let panel = NSSavePanel()
                     panel.nameFieldStringValue = currentURL.lastPathComponent
-                    if panel.runModal() == .OK, let saveURL = panel.url {
-                        try? fileContent.write(to: saveURL, atomically: true, encoding: .utf8)
+                    guard panel.runModal() == .OK, let saveURL = panel.url else { return }
+                    do {
+                        try fileContent.write(to: saveURL, atomically: true, encoding: .utf8)
+                    } catch {
+                        let errAlert = NSAlert()
+                        errAlert.messageText = Strings.fileOperationErrorTitle
+                        errAlert.informativeText = error.localizedDescription
+                        errAlert.alertStyle = .warning
+                        errAlert.runModal()
+                        return
                     }
                 }
             }
