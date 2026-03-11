@@ -18,20 +18,20 @@ struct SessionState: Codable {
 
     // MARK: - Save
 
-    static func save(projectURL: URL, openFileURLs: [URL]) {
+    static func save(projectURL: URL, openFileURLs: [URL], defaults: UserDefaults = .standard) {
         let state = SessionState(
             projectPath: projectURL.path,
             openFilePaths: openFileURLs.map(\.path)
         )
         guard let data = try? JSONEncoder().encode(state) else { return }
-        UserDefaults.standard.set(data, forKey: defaultsKey)
+        defaults.set(data, forKey: defaultsKey)
     }
 
     // MARK: - Load
 
     /// Returns the saved session if the project folder still exists on disk.
-    static func load() -> SessionState? {
-        guard let data = UserDefaults.standard.data(forKey: defaultsKey),
+    static func load(defaults: UserDefaults = .standard) -> SessionState? {
+        guard let data = defaults.data(forKey: defaultsKey),
               let state = try? JSONDecoder().decode(SessionState.self, from: data) else {
             return nil
         }
