@@ -85,20 +85,35 @@ struct FileNodeTests {
         #expect(node.children?[1].isDirectory == false)
     }
 
-    @Test func hiddenFilesAreExcluded() throws {
+    @Test func dotfilesAreVisibleButGitIsHidden() throws {
         let tempDir = try makeTempDirectory()
         defer { cleanup(tempDir) }
 
         FileManager.default.createFile(
-            atPath: tempDir.appendingPathComponent(".hidden").path, contents: nil
+            atPath: tempDir.appendingPathComponent(".gitignore").path, contents: nil
+        )
+        FileManager.default.createFile(
+            atPath: tempDir.appendingPathComponent(".swiftlint.yml").path, contents: nil
+        )
+        try FileManager.default.createDirectory(
+            at: tempDir.appendingPathComponent(".git"),
+            withIntermediateDirectories: true
+        )
+        FileManager.default.createFile(
+            atPath: tempDir.appendingPathComponent(".DS_Store").path, contents: nil
         )
         FileManager.default.createFile(
             atPath: tempDir.appendingPathComponent("visible.txt").path, contents: nil
         )
 
         let node = FileNode(url: tempDir)
-        #expect(node.children?.count == 1)
-        #expect(node.children?[0].name == "visible.txt")
+        let names = node.children?.map(\.name) ?? []
+        #expect(names.contains(".gitignore"))
+        #expect(names.contains(".swiftlint.yml"))
+        #expect(names.contains("visible.txt"))
+        #expect(!names.contains(".git"))
+        #expect(!names.contains(".DS_Store"))
+        #expect(node.children?.count == 3)
     }
 
     @Test func emptyDirectoryHasNilOptionalChildren() throws {
