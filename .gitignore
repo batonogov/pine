@@ -1,1 +1,19 @@
+# Xcode
 xcuserdata/
+*.xcscmblueprint
+*.xccheckout
+
+# Build
+build/
+DerivedData/
+
+# Swift Package Manager
+.build/
+.swiftpm/
+
+# macOS
+.DS_Store
+
+# Debug symbols
+*.dSYM.zip
+*.dSYM/
