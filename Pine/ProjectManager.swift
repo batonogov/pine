@@ -13,6 +13,29 @@ import SwiftUI
 final class ProjectManager {
     let workspace = WorkspaceManager()
     let terminal = TerminalManager()
+    private var sessionObserver: Any?
+
+    init() {
+        sessionObserver = NotificationCenter.default.addObserver(
+            forName: .saveSession,
+            object: nil,
+            queue: .main
+        ) { [weak self] notification in
+            self?.saveSession(notification: notification)
+        }
+    }
+
+    deinit {
+        if let observer = sessionObserver {
+            NotificationCenter.default.removeObserver(observer)
+        }
+    }
+
+    private func saveSession(notification: Notification) {
+        guard let rootURL = workspace.rootURL else { return }
+        let openFileURLs = notification.userInfo?["openFileURLs"] as? [URL] ?? []
+        SessionState.save(projectURL: rootURL, openFileURLs: openFileURLs)
+    }
 
     // MARK: - Convenience accessors (workspace)
 

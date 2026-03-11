@@ -132,6 +132,8 @@ struct ContentView: View {
     @State private var lineDiffs: [GitLineDiff] = []
     /// When true, the next fileURL change skips reloading from disk (used during rename).
     @State private var suppressNextReload = false
+    /// Tracks whether this view has already attempted session restoration.
+    @State private var didRestoreSession = false
 
     private var hasUnsavedChanges: Bool {
         fileContent != savedContent
@@ -182,6 +184,7 @@ struct ContentView: View {
             if let url = fileURL {
                 loadFileFromURL(url)
             }
+            restoreSessionIfNeeded()
         }
         .onChange(of: fileURL) { _, newURL in
             if suppressNextReload {
@@ -265,6 +268,27 @@ struct ContentView: View {
     /// Branch subtitle as a plain String to avoid generating a localization key.
     private var branchSubtitle: String {
         workspace.gitProvider.isGitRepository ? "⎇ \(workspace.gitProvider.currentBranch)" : ""
+    }
+
+    // MARK: - Session restoration
+
+    private func restoreSessionIfNeeded() {
+        guard !didRestoreSession else { return }
+        didRestoreSession = true
+
+        guard fileURL == nil,
+              let session = SessionState.load() else { return }
+
+        let fileURLs = session.existingFileURLs
+        guard !fileURLs.isEmpty else { return }
+
+        // Open the first file in the current (empty) window
+        fileURL = fileURLs.first
+
+        // Open remaining files in new window tabs
+        for url in fileURLs.dropFirst() {
+            openWindow(value: url)
+        }
     }
 
     // MARK: - Управление файлами

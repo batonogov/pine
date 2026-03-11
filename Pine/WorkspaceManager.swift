@@ -15,6 +15,13 @@ final class WorkspaceManager {
     var rootURL: URL?
     let gitProvider = GitStatusProvider()
 
+    init() {
+        // Восстанавливаем последний открытый проект
+        if let session = SessionState.load() {
+            loadDirectory(url: session.projectURL)
+        }
+    }
+
     func openFolder() {
         let panel = NSOpenPanel()
         panel.canChooseFiles = false

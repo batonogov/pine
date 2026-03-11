@@ -79,6 +79,20 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             }
         }
     }
+
+    func applicationWillTerminate(_ notification: Notification) {
+        // Собираем открытые файлы из всех окон
+        let openFileURLs = NSApplication.shared.windows.compactMap(\.representedURL)
+        // Ищем projectURL через WorkspaceManager
+        // ProjectManager передаётся через environment, но AppDelegate не имеет к нему доступа —
+        // берём rootURL из UserDefaults-сохранённого состояния или из окон.
+        // Вместо этого используем уведомление, которое ProjectManager слушает.
+        NotificationCenter.default.post(
+            name: .saveSession,
+            object: nil,
+            userInfo: ["openFileURLs": openFileURLs]
+        )
+    }
 }
 
 // MARK: - Уведомления для команд меню
@@ -92,4 +106,6 @@ extension Notification.Name {
     static let fileRenamed = Notification.Name("fileRenamed")
     /// userInfo: ["url": URL]
     static let fileDeleted = Notification.Name("fileDeleted")
+    /// Sent on app termination; userInfo: ["openFileURLs": [URL]]
+    static let saveSession = Notification.Name("saveSession")
 }
