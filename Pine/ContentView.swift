@@ -304,7 +304,6 @@ struct ContentView: View {
     }
 }
 
-
 // MARK: - Панель вкладок терминала (стиль нативных macOS window tabs)
 
 struct TerminalNativeTabBar: View {
@@ -669,7 +668,7 @@ struct BranchSwitcherView: View {
 }
 
 #Preview {
-    @Previewable @State var url: URL? = nil
+    @Previewable @State var url: URL?
     ContentView(fileURL: $url)
         .environment(ProjectManager())
 }
