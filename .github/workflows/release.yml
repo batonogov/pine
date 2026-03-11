@@ -143,8 +143,8 @@ jobs:
           VERSION=${{ steps.version.outputs.VERSION }}
           SHA256=$(shasum -a 256 "$RUNNER_TEMP/Pine.dmg" | awk '{print $1}')
 
-          git clone https://x-access-token:${TAP_GITHUB_TOKEN}@github.com/batonogov/homebrew-tap.git $RUNNER_TEMP/homebrew-tap
-          cd $RUNNER_TEMP/homebrew-tap
+          git clone https://x-access-token:${TAP_GITHUB_TOKEN}@github.com/batonogov/homebrew-pine-editor.git $RUNNER_TEMP/homebrew-pine-editor
+          cd $RUNNER_TEMP/homebrew-pine-editor
           sed -i '' "s/version \".*\"/version \"$VERSION\"/" Casks/pine.rb
           sed -i '' "s/sha256 \".*\"/sha256 \"$SHA256\"/" Casks/pine.rb
           git config user.name "github-actions[bot]"
