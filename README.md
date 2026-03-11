@@ -48,7 +48,7 @@ Pine goes in the opposite direction. It is built for the common case:
 ## Install In 10 Seconds
 
 ```bash
-brew tap batonogov/pine-editor
+brew tap batonogov/tap
 brew install --cask pine-editor
 ```
 
