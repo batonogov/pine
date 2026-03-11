@@ -36,7 +36,7 @@ final class GutterTextView: NSTextView {
         super.drawBackground(in: rect)
 
         guard let layoutManager = layoutManager,
-              let textContainer = textContainer else { return }
+              textContainer != nil else { return }
 
         let cursorRange = selectedRange()
         // Подсвечиваем только когда нет выделения (просто курсор)

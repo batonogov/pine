@@ -130,7 +130,6 @@ struct ContentView: View {
     @State private var savedContent: String = ""
     @State private var columnVisibility: NavigationSplitViewVisibility = .all
     @State private var lineDiffs: [GitLineDiff] = []
-    @State private var showBranchSwitcher = false
 
     private var hasUnsavedChanges: Bool {
         fileContent != savedContent
@@ -165,13 +164,13 @@ struct ContentView: View {
                 }
                 StatusBarView(
                     gitProvider: workspace.gitProvider,
-                    terminal: terminal,
-                    showBranchSwitcher: $showBranchSwitcher
+                    terminal: terminal
                 )
             }
         }
         .frame(minWidth: 800, minHeight: 500)
-        .navigationTitle(currentFileName)
+        .navigationTitle(workspace.projectName)
+        .navigationSubtitle(workspace.gitProvider.isGitRepository ? "⎇ \(workspace.gitProvider.currentBranch)" : "")
         .background(WindowBridge(
             representedURL: fileURL,
             isDocumentEdited: hasUnsavedChanges,
@@ -201,9 +200,7 @@ struct ContentView: View {
             withAnimation { terminal.isTerminalVisible.toggle() }
         }
         .onReceive(NotificationCenter.default.publisher(for: .switchBranch)) { _ in
-            if workspace.gitProvider.isGitRepository {
-                showBranchSwitcher.toggle()
-            }
+            // Branch switching is now handled via toolbarTitleMenu
         }
     }
 
@@ -506,27 +503,10 @@ struct FileNodeRow: View {
 struct StatusBarView: View {
     var gitProvider: GitStatusProvider
     var terminal: TerminalManager
-    @Binding var showBranchSwitcher: Bool
 
     var body: some View {
         HStack(spacing: 6) {
             if gitProvider.isGitRepository {
-                Button {
-                    showBranchSwitcher.toggle()
-                } label: {
-                    HStack(spacing: 3) {
-                        Image(systemName: "arrow.triangle.branch")
-                            .font(.system(size: 10))
-                        Text(gitProvider.currentBranch)
-                            .font(.system(size: 11))
-                    }
-                    .foregroundStyle(.secondary)
-                }
-                .buttonStyle(.plain)
-                .popover(isPresented: $showBranchSwitcher, arrowEdge: .top) {
-                    BranchSwitcherView(gitProvider: gitProvider, isPresented: $showBranchSwitcher)
-                }
-
                 // Git file change summary
                 if !gitProvider.fileStatuses.isEmpty {
                     let counts = gitStatusCounts
@@ -585,82 +565,6 @@ struct StatusBarView: View {
             }
         }
         return (m, a, u)
-    }
-}
-
-// MARK: - Branch Switcher
-
-struct BranchSwitcherView: View {
-    var gitProvider: GitStatusProvider
-    @Binding var isPresented: Bool
-    @State private var searchText = ""
-    @State private var errorMessage = ""
-
-    private var filteredBranches: [String] {
-        if searchText.isEmpty { return gitProvider.branches }
-        return gitProvider.branches.filter {
-            $0.localizedCaseInsensitiveContains(searchText)
-        }
-    }
-
-    var body: some View {
-        VStack(spacing: 0) {
-            TextField("Filter branches...", text: $searchText)
-                .textFieldStyle(.roundedBorder)
-                .padding(8)
-
-            Divider()
-
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: 0) {
-                    ForEach(filteredBranches, id: \.self) { branch in
-                        Button {
-                            switchToBranch(branch)
-                        } label: {
-                            HStack {
-                                Image(systemName: branch == gitProvider.currentBranch
-                                      ? "checkmark.circle.fill" : "arrow.triangle.branch")
-                                    .font(.system(size: 11))
-                                    .foregroundStyle(branch == gitProvider.currentBranch ? .green : .secondary)
-                                    .frame(width: 16)
-                                Text(branch)
-                                    .font(.system(size: 12))
-                                    .foregroundStyle(branch == gitProvider.currentBranch ? .primary : .secondary)
-                                Spacer()
-                            }
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 5)
-                            .contentShape(Rectangle())
-                        }
-                        .buttonStyle(.plain)
-                    }
-                }
-            }
-            .frame(maxHeight: 300)
-
-            if !errorMessage.isEmpty {
-                Divider()
-                Text(errorMessage)
-                    .font(.system(size: 11))
-                    .foregroundStyle(.red)
-                    .padding(8)
-            }
-        }
-        .frame(width: 250)
-    }
-
-    private func switchToBranch(_ branch: String) {
-        guard branch != gitProvider.currentBranch else {
-            isPresented = false
-            return
-        }
-        let result = gitProvider.checkoutBranch(branch)
-        if result.success {
-            errorMessage = ""
-            isPresented = false
-        } else {
-            errorMessage = result.error
-        }
     }
 }
 
