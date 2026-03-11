@@ -498,7 +498,6 @@ struct FileNodeRow: View {
     }
 }
 
-
 // MARK: - Status Bar
 
 struct StatusBarView: View {
