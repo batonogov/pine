@@ -293,7 +293,7 @@ struct ContentView: View {
             TerminalNativeTabBar(projectManager: projectManager)
 
             if let tab = projectManager.activeTerminalTab {
-                TerminalContentView(session: tab.session)
+                TerminalContentView(tab: tab)
                     .id(tab.id)
             } else {
                 Color(nsColor: .textBackgroundColor)

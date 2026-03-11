@@ -28,8 +28,8 @@ final class ProjectManager {
     }
 
     func startTerminals() {
-        for tab in terminalTabs where !tab.session.isRunning {
-            tab.session.start(workingDirectory: rootURL)
+        for tab in terminalTabs {
+            tab.configure(workingDirectory: rootURL)
         }
         if activeTerminalID == nil {
             activeTerminalID = terminalTabs.first?.id
@@ -39,13 +39,13 @@ final class ProjectManager {
     func addTerminalTab() {
         let number = terminalTabs.count + 1
         let tab = TerminalTab(name: "Terminal \(number)")
-        tab.session.start(workingDirectory: rootURL)
+        tab.configure(workingDirectory: rootURL)
         terminalTabs.append(tab)
         activeTerminalID = tab.id
     }
 
     func closeTerminalTab(_ tab: TerminalTab) {
-        tab.session.stop()
+        tab.stop()
         terminalTabs.removeAll { $0.id == tab.id }
         if activeTerminalID == tab.id {
             activeTerminalID = terminalTabs.last?.id
