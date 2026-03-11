@@ -291,7 +291,7 @@ struct ContentView: View {
     private var terminalArea: some View {
         VStack(spacing: 0) {
             // Tab bar, стилизованный под нативные macOS window tabs
-            TerminalNativeTabBar(terminal: terminal)
+            TerminalNativeTabBar(terminal: terminal, workingDirectory: workspace.rootURL)
 
             TerminalContentView(terminal: terminal)
         }
@@ -304,6 +304,7 @@ struct ContentView: View {
 
 struct TerminalNativeTabBar: View {
     var terminal: TerminalManager
+    var workingDirectory: URL?
 
     var body: some View {
         HStack(spacing: 0) {
@@ -325,7 +326,7 @@ struct TerminalNativeTabBar: View {
 
             // Кнопка "+" — новый терминал
             Button {
-                terminal.addTerminalTab(workingDirectory: nil)
+                terminal.addTerminalTab(workingDirectory: workingDirectory)
             } label: {
                 Image(systemName: "plus")
                     .font(.system(size: 11, weight: .medium))
