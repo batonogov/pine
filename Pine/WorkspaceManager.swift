@@ -30,6 +30,15 @@ final class WorkspaceManager {
     func loadDirectory(url: URL) {
         rootURL = url
         projectName = url.lastPathComponent
+
+        // Clear stale state immediately so the UI doesn't show
+        // the previous project's sidebar/git while the async load runs.
+        rootNodes = []
+        gitProvider.isGitRepository = false
+        gitProvider.currentBranch = ""
+        gitProvider.fileStatuses = [:]
+        gitProvider.branches = []
+
         loadDirectoryContentsAsync(url: url)
     }
 

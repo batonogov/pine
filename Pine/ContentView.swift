@@ -184,6 +184,11 @@ struct ContentView: View {
         .onAppear {
             if let url = fileURL {
                 loadFileFromURL(url)
+                // New window tabs get fileURL as initial state (onChange won't fire),
+                // so save session here to capture the newly opened tab.
+                Task { @MainActor in
+                    projectManager.saveSession()
+                }
             }
             restoreSessionIfNeeded()
         }
@@ -205,8 +210,9 @@ struct ContentView: View {
             handleFileSelection(node)
         }
         .onChange(of: workspace.rootURL) { _, _ in
-            // Save only the project URL — old file tabs are stale at this point.
-            projectManager.saveProjectOnly()
+            // saveSession() filters files by current rootURL,
+            // so stale tabs from the old project are excluded.
+            projectManager.saveSession()
         }
         .onReceive(NotificationCenter.default.publisher(for: .saveFile)) { _ in
             saveFile()

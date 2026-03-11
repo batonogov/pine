@@ -15,17 +15,14 @@ final class ProjectManager {
     let terminal = TerminalManager()
 
     /// Persists current session (project + open file tabs) to UserDefaults.
+    /// Only includes file URLs that live under the current project root.
     func saveSession() {
         guard let rootURL = workspace.rootURL else { return }
-        let openFileURLs = NSApplication.shared.windows.compactMap(\.representedURL)
+        let rootPath = rootURL.path + "/"
+        let openFileURLs = NSApplication.shared.windows
+            .compactMap(\.representedURL)
+            .filter { $0.path.hasPrefix(rootPath) }
         SessionState.save(projectURL: rootURL, openFileURLs: openFileURLs)
-    }
-
-    /// Saves only the project URL with an empty file list.
-    /// Used when switching projects so stale tab URLs aren't persisted.
-    func saveProjectOnly() {
-        guard let rootURL = workspace.rootURL else { return }
-        SessionState.save(projectURL: rootURL, openFileURLs: [])
     }
 
     // MARK: - Convenience accessors (workspace)
