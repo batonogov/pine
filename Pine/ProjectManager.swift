@@ -7,71 +7,43 @@
 
 import SwiftUI
 
-/// Shared project state across all windows/tabs.
-/// Manages the file tree and project root directory.
+/// Thin coordinator that owns the workspace and terminal managers.
+/// Passed via environment so views can access both sub-managers.
 @Observable
 final class ProjectManager {
-    var rootNodes: [FileNode] = []
-    var projectName: String = "No Project"
-    var rootURL: URL?
-    let gitProvider = GitStatusProvider()
+    let workspace = WorkspaceManager()
+    let terminal = TerminalManager()
 
-    // Terminal state — shared across all editor tabs
-    var isTerminalVisible = false
-    var isTerminalMaximized = false
-    var terminalTabs: [TerminalTab] = [TerminalTab(name: "Terminal")]
-    var activeTerminalID: UUID?
+    // MARK: - Convenience accessors (workspace)
 
-    var activeTerminalTab: TerminalTab? {
-        guard let id = activeTerminalID else { return nil }
-        return terminalTabs.first { $0.id == id }
+    var rootNodes: [FileNode] { workspace.rootNodes }
+    var projectName: String { workspace.projectName }
+    var rootURL: URL? { workspace.rootURL }
+    var gitProvider: GitStatusProvider { workspace.gitProvider }
+
+    func openFolder() { workspace.openFolder() }
+    func loadDirectory(url: URL) { workspace.loadDirectory(url: url) }
+
+    // MARK: - Convenience accessors (terminal)
+
+    var isTerminalVisible: Bool {
+        get { terminal.isTerminalVisible }
+        set { terminal.isTerminalVisible = newValue }
     }
 
-    func startTerminals() {
-        for tab in terminalTabs {
-            tab.configure(workingDirectory: rootURL)
-        }
-        if activeTerminalID == nil {
-            activeTerminalID = terminalTabs.first?.id
-        }
+    var isTerminalMaximized: Bool {
+        get { terminal.isTerminalMaximized }
+        set { terminal.isTerminalMaximized = newValue }
     }
 
-    func addTerminalTab() {
-        let number = terminalTabs.count + 1
-        let tab = TerminalTab(name: "Terminal \(number)")
-        tab.configure(workingDirectory: rootURL)
-        terminalTabs.append(tab)
-        activeTerminalID = tab.id
+    var terminalTabs: [TerminalTab] { terminal.terminalTabs }
+    var activeTerminalID: UUID? {
+        get { terminal.activeTerminalID }
+        set { terminal.activeTerminalID = newValue }
     }
+    var activeTerminalTab: TerminalTab? { terminal.activeTerminalTab }
 
-    func closeTerminalTab(_ tab: TerminalTab) {
-        tab.stop()
-        terminalTabs.removeAll { $0.id == tab.id }
-        if activeTerminalID == tab.id {
-            activeTerminalID = terminalTabs.last?.id
-        }
-    }
-
-    func openFolder() {
-        let panel = NSOpenPanel()
-        panel.canChooseFiles = false
-        panel.canChooseDirectories = true
-        panel.allowsMultipleSelection = false
-        panel.message = "Choose a project folder"
-        panel.prompt = "Open"
-
-        guard panel.runModal() == .OK, let url = panel.url else { return }
-        loadDirectory(url: url)
-    }
-
-    func loadDirectory(url: URL) {
-        rootURL = url
-        projectName = url.lastPathComponent
-
-        let root = FileNode(url: url)
-        root.loadChildren()
-        rootNodes = root.children ?? []
-
-        gitProvider.setup(repositoryURL: url)
-    }
+    func startTerminals() { terminal.startTerminals(workingDirectory: workspace.rootURL) }
+    func addTerminalTab() { terminal.addTerminalTab(workingDirectory: workspace.rootURL) }
+    func closeTerminalTab(_ tab: TerminalTab) { terminal.closeTerminalTab(tab) }
 }

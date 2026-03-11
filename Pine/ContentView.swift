@@ -121,7 +121,8 @@ class WindowCloseInterceptor: NSObject, NSWindowDelegate {
 
 struct ContentView: View {
     @Binding var fileURL: URL?
-    @Environment(ProjectManager.self) var projectManager
+    @Environment(WorkspaceManager.self) var workspace
+    @Environment(TerminalManager.self) var terminal
     @Environment(\.openWindow) var openWindow
 
     @State private var selectedNode: FileNode?
@@ -142,11 +143,11 @@ struct ContentView: View {
 
     var body: some View {
         NavigationSplitView(columnVisibility: $columnVisibility) {
-            SidebarView(projectManager: projectManager, selectedFile: $selectedNode)
+            SidebarView(workspace: workspace, selectedFile: $selectedNode)
         } detail: {
             VStack(spacing: 0) {
-                if projectManager.isTerminalVisible {
-                    if projectManager.isTerminalMaximized {
+                if terminal.isTerminalVisible {
+                    if terminal.isTerminalMaximized {
                         terminalArea
                             .frame(maxWidth: .infinity, maxHeight: .infinity)
                     } else {
@@ -163,8 +164,8 @@ struct ContentView: View {
                         .frame(maxHeight: .infinity)
                 }
                 StatusBarView(
-                    gitProvider: projectManager.gitProvider,
-                    projectManager: projectManager,
+                    gitProvider: workspace.gitProvider,
+                    terminal: terminal,
                     showBranchSwitcher: $showBranchSwitcher
                 )
             }
@@ -194,13 +195,13 @@ struct ContentView: View {
             saveFile()
         }
         .onReceive(NotificationCenter.default.publisher(for: .openFolder)) { _ in
-            projectManager.openFolder()
+            workspace.openFolder()
         }
         .onReceive(NotificationCenter.default.publisher(for: .toggleTerminal)) { _ in
-            withAnimation { projectManager.isTerminalVisible.toggle() }
+            withAnimation { terminal.isTerminalVisible.toggle() }
         }
         .onReceive(NotificationCenter.default.publisher(for: .switchBranch)) { _ in
-            if projectManager.gitProvider.isGitRepository {
+            if workspace.gitProvider.isGitRepository {
                 showBranchSwitcher.toggle()
             }
         }
@@ -241,7 +242,7 @@ struct ContentView: View {
             let content = try String(contentsOf: url, encoding: .utf8)
             fileContent = content
             savedContent = content
-            lineDiffs = projectManager.gitProvider.diffForFile(at: url)
+            lineDiffs = workspace.gitProvider.diffForFile(at: url)
         } catch {
             let errorText = "// Error: \(error.localizedDescription)"
             fileContent = errorText
@@ -257,8 +258,8 @@ struct ContentView: View {
             savedContent = fileContent
             NSApp.keyWindow?.isDocumentEdited = false
             // Refresh git status after save
-            projectManager.gitProvider.refresh()
-            lineDiffs = projectManager.gitProvider.diffForFile(at: url)
+            workspace.gitProvider.refresh()
+            lineDiffs = workspace.gitProvider.diffForFile(at: url)
         } catch {
             print("Error saving file: \(error.localizedDescription)")
         }
@@ -290,9 +291,9 @@ struct ContentView: View {
     private var terminalArea: some View {
         VStack(spacing: 0) {
             // Tab bar, стилизованный под нативные macOS window tabs
-            TerminalNativeTabBar(projectManager: projectManager)
+            TerminalNativeTabBar(terminal: terminal)
 
-            if let tab = projectManager.activeTerminalTab {
+            if let tab = terminal.activeTerminalTab {
                 TerminalContentView(tab: tab)
                     .id(tab.id)
             } else {
@@ -300,27 +301,27 @@ struct ContentView: View {
             }
         }
         .background(Color(nsColor: .textBackgroundColor))
-        .onAppear { projectManager.startTerminals() }
+        .onAppear { terminal.startTerminals(workingDirectory: workspace.rootURL) }
     }
 }
 
 // MARK: - Панель вкладок терминала (стиль нативных macOS window tabs)
 
 struct TerminalNativeTabBar: View {
-    var projectManager: ProjectManager
+    var terminal: TerminalManager
 
     var body: some View {
         HStack(spacing: 0) {
             // Вкладки терминалов
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 2) {
-                    ForEach(projectManager.terminalTabs) { tab in
+                    ForEach(terminal.terminalTabs) { tab in
                         TerminalNativeTabItem(
                             tab: tab,
-                            isActive: tab.id == projectManager.activeTerminalID,
-                            canClose: projectManager.terminalTabs.count > 1,
-                            onSelect: { projectManager.activeTerminalID = tab.id },
-                            onClose: { projectManager.closeTerminalTab(tab) }
+                            isActive: tab.id == terminal.activeTerminalID,
+                            canClose: terminal.terminalTabs.count > 1,
+                            onSelect: { terminal.activeTerminalID = tab.id },
+                            onClose: { terminal.closeTerminalTab(tab) }
                         )
                     }
                 }
@@ -329,7 +330,7 @@ struct TerminalNativeTabBar: View {
 
             // Кнопка "+" — новый терминал
             Button {
-                projectManager.addTerminalTab()
+                terminal.addTerminalTab(workingDirectory: nil)
             } label: {
                 Image(systemName: "plus")
                     .font(.system(size: 11, weight: .medium))
@@ -343,9 +344,9 @@ struct TerminalNativeTabBar: View {
 
             // Развернуть / свернуть терминал на весь экран
             Button {
-                withAnimation { projectManager.isTerminalMaximized.toggle() }
+                withAnimation { terminal.isTerminalMaximized.toggle() }
             } label: {
-                Image(systemName: projectManager.isTerminalMaximized
+                Image(systemName: terminal.isTerminalMaximized
                       ? "arrow.down.right.and.arrow.up.left"
                       : "arrow.up.left.and.arrow.down.right")
                     .font(.system(size: 10, weight: .semibold))
@@ -353,13 +354,13 @@ struct TerminalNativeTabBar: View {
                     .frame(width: 24, height: 24)
             }
             .buttonStyle(.plain)
-            .help(projectManager.isTerminalMaximized ? "Restore Terminal" : "Maximize Terminal")
+            .help(terminal.isTerminalMaximized ? "Restore Terminal" : "Maximize Terminal")
 
             // Кнопка скрытия терминала
             Button {
                 withAnimation {
-                    projectManager.isTerminalVisible = false
-                    projectManager.isTerminalMaximized = false
+                    terminal.isTerminalVisible = false
+                    terminal.isTerminalMaximized = false
                 }
             } label: {
                 Image(systemName: "chevron.down")
@@ -429,12 +430,12 @@ struct TerminalNativeTabItem: View {
 // MARK: - Сайдбар
 
 struct SidebarView: View {
-    var projectManager: ProjectManager
+    var workspace: WorkspaceManager
     @Binding var selectedFile: FileNode?
 
     var body: some View {
         Group {
-            if projectManager.rootNodes.isEmpty {
+            if workspace.rootNodes.isEmpty {
                 List {
                     ContentUnavailableView {
                         Label("No Folder Open", systemImage: "folder")
@@ -442,17 +443,17 @@ struct SidebarView: View {
                         Text("Open a folder to get started")
                     } actions: {
                         Button("Open Folder...") {
-                            projectManager.openFolder()
+                            workspace.openFolder()
                         }
                         .buttonStyle(.borderedProminent)
                     }
                 }
                 .navigationTitle("Files")
             } else {
-                List(projectManager.rootNodes, children: \.optionalChildren, selection: $selectedFile) { node in
+                List(workspace.rootNodes, children: \.optionalChildren, selection: $selectedFile) { node in
                     FileNodeRow(node: node)
                 }
-                .navigationTitle(projectManager.projectName)
+                .navigationTitle(workspace.projectName)
             }
         }
         .listStyle(.sidebar)
@@ -460,7 +461,7 @@ struct SidebarView: View {
         .toolbar {
             ToolbarItem {
                 Button {
-                    projectManager.openFolder()
+                    workspace.openFolder()
                 } label: {
                     Image(systemName: "folder.badge.plus")
                 }
@@ -474,10 +475,10 @@ struct SidebarView: View {
 
 struct FileNodeRow: View {
     var node: FileNode
-    @Environment(ProjectManager.self) var projectManager
+    @Environment(WorkspaceManager.self) var workspace
 
     private var gitStatus: GitFileStatus? {
-        let provider = projectManager.gitProvider
+        let provider = workspace.gitProvider
         return node.isDirectory
             ? provider.statusForDirectory(at: node.url)
             : provider.statusForFile(at: node.url)
@@ -508,7 +509,7 @@ struct FileNodeRow: View {
 
 struct StatusBarView: View {
     var gitProvider: GitStatusProvider
-    var projectManager: ProjectManager
+    var terminal: TerminalManager
     @Binding var showBranchSwitcher: Bool
 
     var body: some View {
@@ -555,10 +556,10 @@ struct StatusBarView: View {
 
             // Кнопка показа/скрытия терминала
             Button {
-                withAnimation { projectManager.isTerminalVisible.toggle() }
+                withAnimation { terminal.isTerminalVisible.toggle() }
             } label: {
                 HStack(spacing: 3) {
-                    Image(systemName: projectManager.isTerminalVisible
+                    Image(systemName: terminal.isTerminalVisible
                           ? "chevron.down" : "chevron.up")
                         .font(.system(size: 9, weight: .semibold))
                     Image(systemName: "terminal")
@@ -566,10 +567,10 @@ struct StatusBarView: View {
                     Text("Terminal")
                         .font(.system(size: 11))
                 }
-                .foregroundStyle(projectManager.isTerminalVisible ? .primary : .secondary)
+                .foregroundStyle(terminal.isTerminalVisible ? .primary : .secondary)
             }
             .buttonStyle(.plain)
-            .help(projectManager.isTerminalVisible ? "Hide Terminal (⌘`)" : "Show Terminal (⌘`)")
+            .help(terminal.isTerminalVisible ? "Hide Terminal (⌘`)" : "Show Terminal (⌘`)")
         }
         .padding(.leading, 8)
         .padding(.trailing, 14)
@@ -669,6 +670,9 @@ struct BranchSwitcherView: View {
 
 #Preview {
     @Previewable @State var url: URL?
+    let projectManager = ProjectManager()
     ContentView(fileURL: $url)
-        .environment(ProjectManager())
+        .environment(projectManager)
+        .environment(projectManager.workspace)
+        .environment(projectManager.terminal)
 }

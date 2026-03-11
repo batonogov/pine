@@ -16,6 +16,8 @@ struct PineApp: App {
         WindowGroup(for: URL.self) { $fileURL in
             ContentView(fileURL: $fileURL)
                 .environment(projectManager)
+                .environment(projectManager.workspace)
+                .environment(projectManager.terminal)
         }
         .defaultSize(width: 1100, height: 700)
         .commands {
