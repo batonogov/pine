@@ -11,8 +11,9 @@ struct SessionStateTests {
 
     private let suiteName = "PineTests.SessionState.\(UUID().uuidString)"
 
-    private func makeDefaults() -> UserDefaults {
-        UserDefaults(suiteName: suiteName)!
+    private func makeDefaults() throws -> UserDefaults {
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        return defaults
     }
 
     private func cleanupDefaults(_ defaults: UserDefaults) {
@@ -41,7 +42,7 @@ struct SessionStateTests {
         FileManager.default.createFile(atPath: file1.path, contents: nil)
         FileManager.default.createFile(atPath: file2.path, contents: nil)
 
-        let defaults = makeDefaults()
+        let defaults = try makeDefaults()
         defer { cleanupDefaults(defaults) }
 
         SessionState.save(projectURL: tempDir, openFileURLs: [file1, file2], defaults: defaults)
@@ -58,7 +59,7 @@ struct SessionStateTests {
 
     @Test func loadReturnsNilWhenProjectDeleted() throws {
         let tempDir = try makeTempDirectory()
-        let defaults = makeDefaults()
+        let defaults = try makeDefaults()
         defer { cleanupDefaults(defaults) }
 
         SessionState.save(projectURL: tempDir, openFileURLs: [], defaults: defaults)
@@ -91,8 +92,8 @@ struct SessionStateTests {
 
     // MARK: - Empty state
 
-    @Test func loadReturnsNilWhenNothingSaved() {
-        let defaults = makeDefaults()
+    @Test func loadReturnsNilWhenNothingSaved() throws {
+        let defaults = try makeDefaults()
         defer { cleanupDefaults(defaults) }
 
         let loaded = SessionState.load(defaults: defaults)
@@ -105,7 +106,7 @@ struct SessionStateTests {
         let tempDir = try makeTempDirectory()
         defer { cleanup(tempDir) }
 
-        let defaults = makeDefaults()
+        let defaults = try makeDefaults()
         defer { cleanupDefaults(defaults) }
 
         SessionState.save(projectURL: tempDir, openFileURLs: [], defaults: defaults)
@@ -123,7 +124,7 @@ struct SessionStateTests {
         let tempDir2 = try makeTempDirectory()
         defer { cleanup(tempDir1); cleanup(tempDir2) }
 
-        let defaults = makeDefaults()
+        let defaults = try makeDefaults()
         defer { cleanupDefaults(defaults) }
 
         SessionState.save(projectURL: tempDir1, openFileURLs: [], defaults: defaults)
@@ -135,15 +136,15 @@ struct SessionStateTests {
 
     // MARK: - projectURL computed property
 
-    @Test func projectURLFromPath() {
+    @Test func projectURLFromPath() throws {
         let state = SessionState(projectPath: "/tmp/myproject", openFilePaths: [])
         #expect(state.projectURL == URL(fileURLWithPath: "/tmp/myproject"))
     }
 
     // MARK: - Corrupt data
 
-    @Test func loadReturnsNilOnCorruptData() {
-        let defaults = makeDefaults()
+    @Test func loadReturnsNilOnCorruptData() throws {
+        let defaults = try makeDefaults()
         defer { cleanupDefaults(defaults) }
 
         defaults.set(Data("not json".utf8), forKey: "lastSessionState")
@@ -161,7 +162,7 @@ struct SessionStateTests {
         let file = tempDir.appendingPathComponent("notadir.txt")
         FileManager.default.createFile(atPath: file.path, contents: nil)
 
-        let defaults = makeDefaults()
+        let defaults = try makeDefaults()
         defer { cleanupDefaults(defaults) }
 
         SessionState.save(projectURL: file, openFileURLs: [], defaults: defaults)
