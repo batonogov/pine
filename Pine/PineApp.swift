@@ -18,6 +18,7 @@ struct PineApp: App {
                 .environment(projectManager)
                 .environment(projectManager.workspace)
                 .environment(projectManager.terminal)
+                .task { appDelegate.projectManager = projectManager }
         }
         .defaultSize(width: 1100, height: 700)
         .commands {
@@ -65,6 +66,8 @@ struct PineApp: App {
 // MARK: - AppDelegate для настройки нативных табов
 
 class AppDelegate: NSObject, NSApplicationDelegate {
+    var projectManager: ProjectManager?
+
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSWindow.allowsAutomaticWindowTabbing = true
 
@@ -78,6 +81,22 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 window.tabbingMode = .preferred
             }
         }
+
+        // Сохраняем сессию при закрытии вкладки/окна
+        NotificationCenter.default.addObserver(
+            forName: NSWindow.willCloseNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            // Defer so the closing window is already removed from NSApp.windows
+            DispatchQueue.main.async {
+                self?.projectManager?.saveSession()
+            }
+        }
+    }
+
+    func applicationWillTerminate(_ notification: Notification) {
+        projectManager?.saveSession()
     }
 }
 

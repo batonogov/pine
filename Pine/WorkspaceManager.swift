@@ -31,11 +31,39 @@ final class WorkspaceManager {
         rootURL = url
         projectName = url.lastPathComponent
 
-        let root = FileNode(url: url)
-        root.loadChildren()
-        rootNodes = root.children ?? []
+        // Clear stale state immediately so the UI doesn't show
+        // the previous project's sidebar/git while the async load runs.
+        rootNodes = []
+        gitProvider.isGitRepository = false
+        gitProvider.currentBranch = ""
+        gitProvider.fileStatuses = [:]
+        gitProvider.branches = []
 
-        gitProvider.setup(repositoryURL: url)
+        loadDirectoryContentsAsync(url: url)
+    }
+
+    /// Heavy I/O (file tree + git) runs on a background queue;
+    /// results are assigned back on the main thread.
+    private func loadDirectoryContentsAsync(url: URL) {
+        DispatchQueue.global(qos: .userInitiated).async {
+            let root = FileNode(url: url)
+            root.loadChildren()
+            let children = root.children ?? []
+
+            let bgGit = GitStatusProvider()
+            bgGit.setup(repositoryURL: url)
+
+            DispatchQueue.main.async { [weak self] in
+                guard let self, self.rootURL == url else { return }
+                self.rootNodes = children
+                self.gitProvider.repositoryURL = bgGit.repositoryURL
+                self.gitProvider.gitRootPath = bgGit.gitRootPath
+                self.gitProvider.isGitRepository = bgGit.isGitRepository
+                self.gitProvider.currentBranch = bgGit.currentBranch
+                self.gitProvider.fileStatuses = bgGit.fileStatuses
+                self.gitProvider.branches = bgGit.branches
+            }
+        }
     }
 
     /// Reload the file tree from disk (e.g. after creating/renaming/deleting files).

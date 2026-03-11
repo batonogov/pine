@@ -14,6 +14,17 @@ final class ProjectManager {
     let workspace = WorkspaceManager()
     let terminal = TerminalManager()
 
+    /// Persists current session (project + open file tabs) to UserDefaults.
+    /// Only includes file URLs that live under the current project root.
+    func saveSession() {
+        guard let rootURL = workspace.rootURL else { return }
+        let rootPath = rootURL.path + "/"
+        let openFileURLs = NSApplication.shared.windows
+            .compactMap(\.representedURL)
+            .filter { $0.path.hasPrefix(rootPath) }
+        SessionState.save(projectURL: rootURL, openFileURLs: openFileURLs)
+    }
+
     // MARK: - Convenience accessors (workspace)
 
     var rootNodes: [FileNode] { workspace.rootNodes }

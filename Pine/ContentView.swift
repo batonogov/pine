@@ -121,6 +121,7 @@ class WindowCloseInterceptor: NSObject, NSWindowDelegate {
 
 struct ContentView: View {
     @Binding var fileURL: URL?
+    @Environment(ProjectManager.self) var projectManager
     @Environment(WorkspaceManager.self) var workspace
     @Environment(TerminalManager.self) var terminal
     @Environment(\.openWindow) var openWindow
@@ -132,6 +133,8 @@ struct ContentView: View {
     @State private var lineDiffs: [GitLineDiff] = []
     /// When true, the next fileURL change skips reloading from disk (used during rename).
     @State private var suppressNextReload = false
+    /// Global flag — only the first ContentView instance restores the session.
+    private static var didRestoreSession = false
 
     private var hasUnsavedChanges: Bool {
         fileContent != savedContent
@@ -181,7 +184,13 @@ struct ContentView: View {
         .onAppear {
             if let url = fileURL {
                 loadFileFromURL(url)
+                // New window tabs get fileURL as initial state (onChange won't fire),
+                // so save session here to capture the newly opened tab.
+                Task { @MainActor in
+                    projectManager.saveSession()
+                }
             }
+            restoreSessionIfNeeded()
         }
         .onChange(of: fileURL) { _, newURL in
             if suppressNextReload {
@@ -191,10 +200,31 @@ struct ContentView: View {
             if let url = newURL {
                 loadFileFromURL(url)
             }
+            // Save session after window representedURL updates
+            Task { @MainActor in
+                projectManager.saveSession()
+            }
         }
         .onChange(of: selectedNode) { _, newNode in
             guard let node = newNode, !node.isDirectory else { return }
             handleFileSelection(node)
+        }
+        .onChange(of: workspace.rootURL) { _, _ in
+            // Clear stale gutter markers from the previous project immediately.
+            lineDiffs = []
+            // saveSession() filters files by current rootURL,
+            // so stale tabs from the old project are excluded.
+            projectManager.saveSession()
+        }
+        .onChange(of: workspace.gitProvider.isGitRepository) { _, isRepo in
+            // After async project load finishes, git state becomes available.
+            // Recalculate gutter diffs for the already-open file.
+            // When switching to a non-git project, clear stale markers.
+            if isRepo, let url = fileURL {
+                lineDiffs = workspace.gitProvider.diffForFile(at: url)
+            } else {
+                lineDiffs = []
+            }
         }
         .onReceive(NotificationCenter.default.publisher(for: .saveFile)) { _ in
             saveFile()
@@ -265,6 +295,33 @@ struct ContentView: View {
     /// Branch subtitle as a plain String to avoid generating a localization key.
     private var branchSubtitle: String {
         workspace.gitProvider.isGitRepository ? "⎇ \(workspace.gitProvider.currentBranch)" : ""
+    }
+
+    // MARK: - Session restoration
+
+    private func restoreSessionIfNeeded() {
+        guard !Self.didRestoreSession else { return }
+        Self.didRestoreSession = true
+
+        guard fileURL == nil,
+              let session = SessionState.load() else { return }
+
+        // loadDirectory sets rootURL/projectName synchronously,
+        // then dispatches heavy I/O (file tree + git) to a background queue.
+        if workspace.rootURL == nil {
+            workspace.loadDirectory(url: session.projectURL)
+        }
+
+        let fileURLs = session.existingFileURLs
+        guard !fileURLs.isEmpty else { return }
+
+        // Open the first file in the current (empty) window
+        fileURL = fileURLs.first
+
+        // Open remaining files in new window tabs
+        for url in fileURLs.dropFirst() {
+            openWindow(value: url)
+        }
     }
 
     // MARK: - Управление файлами

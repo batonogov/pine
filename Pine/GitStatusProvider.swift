@@ -48,8 +48,8 @@ final class GitStatusProvider {
     var isGitRepository: Bool = false
     var branches: [String] = []
 
-    private var repositoryURL: URL?
-    private var gitRootPath: String?
+    var repositoryURL: URL?
+    var gitRootPath: String?
 
     // MARK: - Setup & Refresh
 
