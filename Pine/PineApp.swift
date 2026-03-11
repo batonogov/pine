@@ -18,6 +18,7 @@ struct PineApp: App {
                 .environment(projectManager)
                 .environment(projectManager.workspace)
                 .environment(projectManager.terminal)
+                .task { appDelegate.projectManager = projectManager }
         }
         .defaultSize(width: 1100, height: 700)
         .commands {
@@ -65,6 +66,8 @@ struct PineApp: App {
 // MARK: - AppDelegate для настройки нативных табов
 
 class AppDelegate: NSObject, NSApplicationDelegate {
+    var projectManager: ProjectManager?
+
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSWindow.allowsAutomaticWindowTabbing = true
 
@@ -81,17 +84,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
-        // Собираем открытые файлы из всех окон
-        let openFileURLs = NSApplication.shared.windows.compactMap(\.representedURL)
-        // Ищем projectURL через WorkspaceManager
-        // ProjectManager передаётся через environment, но AppDelegate не имеет к нему доступа —
-        // берём rootURL из UserDefaults-сохранённого состояния или из окон.
-        // Вместо этого используем уведомление, которое ProjectManager слушает.
-        NotificationCenter.default.post(
-            name: .saveSession,
-            object: nil,
-            userInfo: ["openFileURLs": openFileURLs]
-        )
+        projectManager?.saveSession()
     }
 }
 
@@ -106,6 +99,4 @@ extension Notification.Name {
     static let fileRenamed = Notification.Name("fileRenamed")
     /// userInfo: ["url": URL]
     static let fileDeleted = Notification.Name("fileDeleted")
-    /// Sent on app termination; userInfo: ["openFileURLs": [URL]]
-    static let saveSession = Notification.Name("saveSession")
 }

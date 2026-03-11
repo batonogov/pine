@@ -121,6 +121,7 @@ class WindowCloseInterceptor: NSObject, NSWindowDelegate {
 
 struct ContentView: View {
     @Binding var fileURL: URL?
+    @Environment(ProjectManager.self) var projectManager
     @Environment(WorkspaceManager.self) var workspace
     @Environment(TerminalManager.self) var terminal
     @Environment(\.openWindow) var openWindow
@@ -132,8 +133,8 @@ struct ContentView: View {
     @State private var lineDiffs: [GitLineDiff] = []
     /// When true, the next fileURL change skips reloading from disk (used during rename).
     @State private var suppressNextReload = false
-    /// Tracks whether this view has already attempted session restoration.
-    @State private var didRestoreSession = false
+    /// Global flag — only the first ContentView instance restores the session.
+    private static var didRestoreSession = false
 
     private var hasUnsavedChanges: Bool {
         fileContent != savedContent
@@ -194,10 +195,17 @@ struct ContentView: View {
             if let url = newURL {
                 loadFileFromURL(url)
             }
+            // Save session after window representedURL updates
+            Task { @MainActor in
+                projectManager.saveSession()
+            }
         }
         .onChange(of: selectedNode) { _, newNode in
             guard let node = newNode, !node.isDirectory else { return }
             handleFileSelection(node)
+        }
+        .onChange(of: workspace.rootURL) { _, _ in
+            projectManager.saveSession()
         }
         .onReceive(NotificationCenter.default.publisher(for: .saveFile)) { _ in
             saveFile()
@@ -273,11 +281,19 @@ struct ContentView: View {
     // MARK: - Session restoration
 
     private func restoreSessionIfNeeded() {
-        guard !didRestoreSession else { return }
-        didRestoreSession = true
+        guard !Self.didRestoreSession else { return }
+        Self.didRestoreSession = true
 
         guard fileURL == nil,
               let session = SessionState.load() else { return }
+
+        // Deferred project load — keeps the first frame instant,
+        // heavy work (file tree + git) runs on the next main-actor tick.
+        if workspace.rootURL == nil {
+            Task { @MainActor in
+                workspace.loadDirectory(url: session.projectURL)
+            }
+        }
 
         let fileURLs = session.existingFileURLs
         guard !fileURLs.isEmpty else { return }
