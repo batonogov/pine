@@ -5,20 +5,23 @@
 //  Created by Федор Батоногов on 09.03.2026.
 //
 
-import SwiftUI
+import Foundation
 
 /// Один узел дерева файлов — файл или папка.
-/// @Observable — современная замена ObservableObject (Swift 5.9+).
-/// Не требует @Published — все var-свойства отслеживаются автоматически.
-@Observable
 final class FileNode: Identifiable, Hashable {
     let id: URL               // Уникальный идентификатор = полный путь к файлу
     let name: String           // Имя файла/папки (отображается в UI)
     let url: URL               // Полный путь
     let isDirectory: Bool      // true = папка, false = файл
 
-    // С @Observable не нужен @Published — SwiftUI сам отслеживает изменения.
     var children: [FileNode]?
+
+    /// Для List(children:): nil = лист (файл), непустой массив = папка с содержимым.
+    var optionalChildren: [FileNode]? {
+        guard isDirectory else { return nil }
+        let items = children ?? []
+        return items.isEmpty ? nil : items
+    }
 
     init(url: URL) {
         self.id = url
@@ -28,14 +31,12 @@ final class FileNode: Identifiable, Hashable {
         var isDir: ObjCBool = false
         FileManager.default.fileExists(atPath: url.path, isDirectory: &isDir)
         self.isDirectory = isDir.boolValue
-        self.children = isDir.boolValue ? [] : nil
+        self.children = isDir.boolValue ? Self.loadContents(of: url) : nil
     }
 
     // MARK: - Загрузка содержимого папки
 
-    func loadChildren() {
-        guard isDirectory else { return }
-
+    private static func loadContents(of url: URL) -> [FileNode] {
         do {
             let contents = try FileManager.default.contentsOfDirectory(
                 at: url,
@@ -43,7 +44,7 @@ final class FileNode: Identifiable, Hashable {
                 options: [.skipsHiddenFiles]
             )
 
-            children = contents
+            return contents
                 .map { FileNode(url: $0) }
                 .sorted { lhs, rhs in
                     if lhs.isDirectory == rhs.isDirectory {
@@ -53,8 +54,12 @@ final class FileNode: Identifiable, Hashable {
                 }
         } catch {
             print("Error loading directory \(url.path): \(error)")
-            children = []
+            return []
         }
+    }
+
+    func loadChildren() {
+        children = Self.loadContents(of: url)
     }
 
     // MARK: - Hashable
