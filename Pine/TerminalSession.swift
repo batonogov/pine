@@ -10,47 +10,101 @@ import SwiftTerm
 
 // MARK: - NSViewRepresentable обёртка для SwiftTerm
 
-/// Оборачивает LocalProcessTerminalView в SwiftUI.
-/// Ключевой момент: SwiftTerm управляет размером через frame (не Auto Layout).
-/// При каждом изменении размера контейнера обновляем frame терминала.
+/// Единый NSViewRepresentable для терминала.
+/// Создаётся один раз и никогда не пересоздаётся SwiftUI.
+/// Переключение терминальных табов происходит на уровне AppKit.
 struct TerminalContentView: NSViewRepresentable {
-    let tab: TerminalTab
+    let terminal: TerminalManager
 
     func makeNSView(context: Context) -> TerminalContainerView {
         let container = TerminalContainerView()
-        container.tab = tab
+        container.terminal = terminal
+        container.showTab(terminal.activeTerminalTab)
         return container
     }
 
     func updateNSView(_ container: TerminalContainerView, context: Context) {
-        // Если tab сменился — обновляем
-        if container.tab?.id != tab.id {
-            container.tab = tab
-        }
+        container.showTab(terminal.activeTerminalTab)
     }
 }
 
 /// Контейнер NSView, который управляет размером LocalProcessTerminalView.
 /// SwiftTerm ожидает ручное управление frame (как в официальном примере),
 /// а не Auto Layout constraints.
+///
+/// Каждое окно-таб (native macOS window tab) создаёт свой экземпляр контейнера,
+/// но LocalProcessTerminalView — один NSView, который может быть только в одном superview.
+/// Поэтому только активное (main) окно владеет terminal view.
 class TerminalContainerView: NSView {
-    var tab: TerminalTab? {
-        didSet {
-            oldValue?.terminalView.removeFromSuperview()
-            guard let tab else { return }
-            let tv = tab.terminalView
-            tv.frame = bounds
-            addSubview(tv)
+    var terminal: TerminalManager?
+    private var currentTabID: UUID?
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        guard let window else { return }
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(windowDidBecomeMain),
+            name: NSWindow.didBecomeMainNotification,
+            object: window
+        )
+        // Если окно уже main — сразу забираем terminal view
+        if window.isMainWindow {
+            reclaimIfNeeded()
         }
+    }
+
+    @objc private func windowDidBecomeMain() {
+        reclaimIfNeeded()
+    }
+
+    func showTab(_ tab: TerminalTab?) {
+        guard let tab else {
+            subviews.forEach { $0.removeFromSuperview() }
+            currentTabID = nil
+            return
+        }
+        // Если terminal view уже у нас и таб тот же — ничего не делаем
+        guard tab.id != currentTabID || tab.terminalView.superview !== self else { return }
+        // Забираем terminal view только если мы в main window
+        guard window?.isMainWindow == true else {
+            currentTabID = tab.id
+            return
+        }
+        subviews.forEach { $0.removeFromSuperview() }
+        currentTabID = tab.id
+        tab.terminalView.frame = bounds
+        addSubview(tab.terminalView)
     }
 
     override func layout() {
         super.layout()
-        guard let tab else { return }
-        tab.terminalView.frame = bounds
-        tab.terminalView.needsLayout = true
-        // Запускаем процесс после первого layout — терминал уже знает реальный размер
-        tab.startIfNeeded()
+        guard let terminal, let tab = terminal.activeTerminalTab else { return }
+        if tab.terminalView.superview === self {
+            tab.terminalView.frame = bounds
+            tab.terminalView.needsLayout = true
+            tab.startIfNeeded()
+        } else if window?.isMainWindow == true {
+            // Мы main window, но terminal view у другого контейнера — забираем
+            showTab(tab)
+            tab.terminalView.needsLayout = true
+            tab.startIfNeeded()
+        }
+    }
+
+    private func reclaimIfNeeded() {
+        guard let terminal, let tab = terminal.activeTerminalTab else { return }
+        if tab.terminalView.superview !== self {
+            subviews.forEach { $0.removeFromSuperview() }
+            currentTabID = tab.id
+            tab.terminalView.frame = bounds
+            addSubview(tab.terminalView)
+            needsLayout = true
+        }
+    }
+
+    deinit {
+        NotificationCenter.default.removeObserver(self)
     }
 
     override var isFlipped: Bool { true }

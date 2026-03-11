@@ -293,12 +293,7 @@ struct ContentView: View {
             // Tab bar, стилизованный под нативные macOS window tabs
             TerminalNativeTabBar(terminal: terminal)
 
-            if let tab = terminal.activeTerminalTab {
-                TerminalContentView(tab: tab)
-                    .id(tab.id)
-            } else {
-                Color(nsColor: .textBackgroundColor)
-            }
+            TerminalContentView(terminal: terminal)
         }
         .background(Color(nsColor: .textBackgroundColor))
         .onAppear { terminal.startTerminals(workingDirectory: workspace.rootURL) }
