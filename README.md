@@ -48,7 +48,8 @@ Pine goes in the opposite direction. It is built for the common case:
 ## Install In 10 Seconds
 
 ```bash
-brew install --cask batonogov/tap/pine
+brew tap batonogov/tap
+brew install --cask pine-editor
 ```
 
 Or download the latest `.dmg` from [Releases](https://github.com/batonogov/pine/releases).
