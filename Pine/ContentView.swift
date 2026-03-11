@@ -486,6 +486,124 @@ struct FileNodeRow: View {
         Label(node.name, systemImage: node.isDirectory ? "folder" : iconForFile(node.name))
             .foregroundStyle(gitStatus?.color ?? .primary)
             .tag(node)
+            .contextMenu { fileNodeContextMenu }
+    }
+
+    @ViewBuilder
+    private var fileNodeContextMenu: some View {
+        if node.isDirectory {
+            Button {
+                promptForName(title: Strings.contextNewFileTitle, placeholder: Strings.contextNamePlaceholder) { name in
+                    createItem(named: name, isDirectory: false)
+                }
+            } label: {
+                Label(Strings.contextNewFile, systemImage: "doc.badge.plus")
+            }
+
+            Button {
+                promptForName(title: Strings.contextNewFolderTitle, placeholder: Strings.contextNamePlaceholder) { name in
+                    createItem(named: name, isDirectory: true)
+                }
+            } label: {
+                Label(Strings.contextNewFolder, systemImage: "folder.badge.plus")
+            }
+
+            Divider()
+        }
+
+        Button {
+            promptForName(
+                title: Strings.contextRenameTitle,
+                placeholder: Strings.contextNamePlaceholder,
+                defaultValue: node.name
+            ) { newName in
+                renameItem(to: newName)
+            }
+        } label: {
+            Label(Strings.contextRename, systemImage: "pencil")
+        }
+
+        Button(role: .destructive) {
+            deleteItem()
+        } label: {
+            Label(Strings.contextDelete, systemImage: "trash")
+        }
+
+        Divider()
+
+        Button {
+            NSWorkspace.shared.activateFileViewerSelecting([node.url])
+        } label: {
+            Label(Strings.contextRevealInFinder, systemImage: "arrow.right.circle")
+        }
+    }
+
+    // MARK: - File operations
+
+    private func createItem(named name: String, isDirectory: Bool) {
+        let parentURL = node.url
+        let newURL = parentURL.appendingPathComponent(name)
+        do {
+            if isDirectory {
+                try FileManager.default.createDirectory(at: newURL, withIntermediateDirectories: false)
+            } else {
+                FileManager.default.createFile(atPath: newURL.path, contents: nil)
+            }
+            workspace.refreshFileTree()
+        } catch {
+            print("Error creating item: \(error.localizedDescription)")
+        }
+    }
+
+    private func renameItem(to newName: String) {
+        let newURL = node.url.deletingLastPathComponent().appendingPathComponent(newName)
+        do {
+            try FileManager.default.moveItem(at: node.url, to: newURL)
+            workspace.refreshFileTree()
+        } catch {
+            print("Error renaming item: \(error.localizedDescription)")
+        }
+    }
+
+    private func deleteItem() {
+        let alert = NSAlert()
+        alert.messageText = Strings.contextDeleteConfirmTitle
+        alert.informativeText = Strings.contextDeleteConfirmMessage(node.name)
+        alert.addButton(withTitle: Strings.contextDeleteButton)
+        alert.addButton(withTitle: Strings.dialogCancel)
+        alert.alertStyle = .warning
+
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+
+        do {
+            try FileManager.default.trashItem(at: node.url, resultingItemURL: nil)
+            workspace.refreshFileTree()
+        } catch {
+            print("Error deleting item: \(error.localizedDescription)")
+        }
+    }
+
+    /// Shows an AppKit input dialog and calls the completion with the entered name.
+    private func promptForName(
+        title: String,
+        placeholder: String,
+        defaultValue: String = "",
+        completion: @escaping (String) -> Void
+    ) {
+        let alert = NSAlert()
+        alert.messageText = title
+        alert.addButton(withTitle: "OK")
+        alert.addButton(withTitle: Strings.dialogCancel)
+
+        let textField = NSTextField(frame: NSRect(x: 0, y: 0, width: 260, height: 24))
+        textField.placeholderString = placeholder
+        textField.stringValue = defaultValue
+        alert.accessoryView = textField
+
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        let name = textField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty else { return }
+        completion(name)
     }
 
     private func iconForFile(_ name: String) -> String {

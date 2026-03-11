@@ -37,4 +37,13 @@ final class WorkspaceManager {
 
         gitProvider.setup(repositoryURL: url)
     }
+
+    /// Reload the file tree from disk (e.g. after creating/renaming/deleting files).
+    func refreshFileTree() {
+        guard let url = rootURL else { return }
+        let root = FileNode(url: url)
+        root.loadChildren()
+        rootNodes = root.children ?? []
+        gitProvider.refresh()
+    }
 }
