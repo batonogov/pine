@@ -17,6 +17,64 @@ enum Strings {
     static let filesTitle: LocalizedStringKey = "sidebar.filesTitle"
     static let openFolderTooltip: LocalizedStringKey = "sidebar.openFolderTooltip"
 
+    // MARK: - Context Menu
+
+    static let contextNewFile: LocalizedStringKey = "context.newFile"
+    static let contextNewFolder: LocalizedStringKey = "context.newFolder"
+    static let contextRename: LocalizedStringKey = "context.rename"
+    static let contextDelete: LocalizedStringKey = "context.delete"
+    static let contextRevealInFinder: LocalizedStringKey = "context.revealInFinder"
+
+    static var contextNewFileTitle: String {
+        String(localized: "context.newFile.title")
+    }
+
+    static var contextNewFolderTitle: String {
+        String(localized: "context.newFolder.title")
+    }
+
+    static var contextRenameTitle: String {
+        String(localized: "context.rename.title")
+    }
+
+    static var contextDeleteConfirmTitle: String {
+        String(localized: "context.delete.confirmTitle")
+    }
+
+    static func contextDeleteConfirmMessage(_ name: String) -> String {
+        String(localized: "context.delete.confirmMessage \(name)")
+    }
+
+    static var contextNamePlaceholder: String {
+        String(localized: "context.namePlaceholder")
+    }
+
+    static var contextDeleteButton: String {
+        String(localized: "context.delete")
+    }
+
+    // MARK: - File Operation Errors / Prompts
+
+    static var fileOperationErrorTitle: String {
+        String(localized: "fileOperation.error.title")
+    }
+
+    static func fileCreateError(_ name: String) -> String {
+        String(localized: "fileOperation.createError \(name)")
+    }
+
+    static var fileDeletedTitle: String {
+        String(localized: "fileOperation.deleted.title")
+    }
+
+    static var fileDeletedMessage: String {
+        String(localized: "fileOperation.deleted.message")
+    }
+
+    static var fileDeletedSaveAs: String {
+        String(localized: "fileOperation.deleted.saveAs")
+    }
+
     // MARK: - Terminal UI
 
     static let terminalLabel: LocalizedStringKey = "terminal.label"
@@ -57,6 +115,10 @@ enum Strings {
 
     static var dialogCancel: String {
         String(localized: "dialog.unsavedChanges.cancel")
+    }
+
+    static var dialogOK: String {
+        String(localized: "dialog.ok")
     }
 
     // MARK: - Open Panel (AppKit)

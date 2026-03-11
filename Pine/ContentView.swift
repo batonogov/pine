@@ -130,6 +130,8 @@ struct ContentView: View {
     @State private var savedContent: String = ""
     @State private var columnVisibility: NavigationSplitViewVisibility = .all
     @State private var lineDiffs: [GitLineDiff] = []
+    /// When true, the next fileURL change skips reloading from disk (used during rename).
+    @State private var suppressNextReload = false
 
     private var hasUnsavedChanges: Bool {
         fileContent != savedContent
@@ -182,6 +184,10 @@ struct ContentView: View {
             }
         }
         .onChange(of: fileURL) { _, newURL in
+            if suppressNextReload {
+                suppressNextReload = false
+                return
+            }
             if let url = newURL {
                 loadFileFromURL(url)
             }
@@ -201,6 +207,58 @@ struct ContentView: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: .switchBranch)) { _ in
             // Branch switching is now handled via toolbarTitleMenu
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .fileRenamed)) { notification in
+            guard let oldURL = notification.userInfo?["oldURL"] as? URL,
+                  let newURL = notification.userInfo?["newURL"] as? URL,
+                  let currentURL = fileURL else { return }
+            // Exact match (file itself renamed) or child of renamed directory
+            if currentURL == oldURL {
+                suppressNextReload = true
+                fileURL = newURL
+            } else if currentURL.path.hasPrefix(oldURL.path + "/") {
+                let relativePath = String(currentURL.path.dropFirst(oldURL.path.count + 1))
+                suppressNextReload = true
+                fileURL = newURL.appendingPathComponent(relativePath)
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .fileDeleted)) { notification in
+            guard let deletedURL = notification.userInfo?["url"] as? URL,
+                  let currentURL = fileURL else { return }
+            // Exact match or child of deleted directory
+            let isAffected = currentURL == deletedURL
+                || currentURL.path.hasPrefix(deletedURL.path + "/")
+            guard isAffected else { return }
+
+            if hasUnsavedChanges {
+                let alert = NSAlert()
+                alert.messageText = Strings.fileDeletedTitle
+                alert.informativeText = Strings.fileDeletedMessage
+                alert.addButton(withTitle: Strings.fileDeletedSaveAs)
+                alert.addButton(withTitle: Strings.dialogDontSave)
+                alert.alertStyle = .warning
+
+                if alert.runModal() == .alertFirstButtonReturn {
+                    // Save As… — only clear the tab if user actually saved
+                    let panel = NSSavePanel()
+                    panel.nameFieldStringValue = currentURL.lastPathComponent
+                    guard panel.runModal() == .OK, let saveURL = panel.url else { return }
+                    do {
+                        try fileContent.write(to: saveURL, atomically: true, encoding: .utf8)
+                    } catch {
+                        let errAlert = NSAlert()
+                        errAlert.messageText = Strings.fileOperationErrorTitle
+                        errAlert.informativeText = error.localizedDescription
+                        errAlert.alertStyle = .warning
+                        errAlert.runModal()
+                        return
+                    }
+                }
+            }
+            fileURL = nil
+            fileContent = ""
+            savedContent = ""
+            lineDiffs = []
         }
     }
 
@@ -433,7 +491,7 @@ struct SidebarView: View {
 
     var body: some View {
         Group {
-            if workspace.rootNodes.isEmpty {
+            if workspace.rootURL == nil {
                 List {
                     ContentUnavailableView {
                         Label(Strings.noFolderOpen, systemImage: "folder")
@@ -451,6 +509,21 @@ struct SidebarView: View {
                 List(workspace.rootNodes, children: \.optionalChildren, selection: $selectedFile) { node in
                     FileNodeRow(node: node)
                 }
+                .contextMenu {
+                    if let rootURL = workspace.rootURL {
+                        Button {
+                            promptForNewItem(in: rootURL, isDirectory: false)
+                        } label: {
+                            Label(Strings.contextNewFile, systemImage: "doc.badge.plus")
+                        }
+
+                        Button {
+                            promptForNewItem(in: rootURL, isDirectory: true)
+                        } label: {
+                            Label(Strings.contextNewFolder, systemImage: "folder.badge.plus")
+                        }
+                    }
+                }
                 .navigationTitle(workspace.projectName)
             }
         }
@@ -465,6 +538,45 @@ struct SidebarView: View {
                 }
                 .help(Strings.openFolderTooltip)
             }
+        }
+    }
+
+    /// Prompt for a name and create a file or folder in the given parent directory.
+    private func promptForNewItem(in parentURL: URL, isDirectory: Bool) {
+        let title = isDirectory ? Strings.contextNewFolderTitle : Strings.contextNewFileTitle
+
+        let alert = NSAlert()
+        alert.messageText = title
+        alert.addButton(withTitle: Strings.dialogOK)
+        alert.addButton(withTitle: Strings.dialogCancel)
+
+        let textField = NSTextField(frame: NSRect(x: 0, y: 0, width: 260, height: 24))
+        textField.placeholderString = Strings.contextNamePlaceholder
+        alert.accessoryView = textField
+
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        let name = textField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty else { return }
+
+        let newURL = parentURL.appendingPathComponent(name)
+        do {
+            if isDirectory {
+                try FileManager.default.createDirectory(at: newURL, withIntermediateDirectories: false)
+            } else if !FileManager.default.createFile(atPath: newURL.path, contents: nil) {
+                let alert = NSAlert()
+                alert.messageText = Strings.fileOperationErrorTitle
+                alert.informativeText = Strings.fileCreateError(name)
+                alert.alertStyle = .warning
+                alert.runModal()
+                return
+            }
+            workspace.refreshFileTree()
+        } catch {
+            let alert = NSAlert()
+            alert.messageText = Strings.fileOperationErrorTitle
+            alert.informativeText = error.localizedDescription
+            alert.alertStyle = .warning
+            alert.runModal()
         }
     }
 }
@@ -486,6 +598,145 @@ struct FileNodeRow: View {
         Label(node.name, systemImage: node.isDirectory ? "folder" : iconForFile(node.name))
             .foregroundStyle(gitStatus?.color ?? .primary)
             .tag(node)
+            .contextMenu { fileNodeContextMenu }
+    }
+
+    @ViewBuilder
+    private var fileNodeContextMenu: some View {
+        if node.isDirectory {
+            Button {
+                promptForName(title: Strings.contextNewFileTitle, placeholder: Strings.contextNamePlaceholder) { name in
+                    createItem(named: name, isDirectory: false)
+                }
+            } label: {
+                Label(Strings.contextNewFile, systemImage: "doc.badge.plus")
+            }
+
+            Button {
+                promptForName(title: Strings.contextNewFolderTitle, placeholder: Strings.contextNamePlaceholder) { name in
+                    createItem(named: name, isDirectory: true)
+                }
+            } label: {
+                Label(Strings.contextNewFolder, systemImage: "folder.badge.plus")
+            }
+
+            Divider()
+        }
+
+        Button {
+            promptForName(
+                title: Strings.contextRenameTitle,
+                placeholder: Strings.contextNamePlaceholder,
+                defaultValue: node.name
+            ) { newName in
+                renameItem(to: newName)
+            }
+        } label: {
+            Label(Strings.contextRename, systemImage: "pencil")
+        }
+
+        Button(role: .destructive) {
+            deleteItem()
+        } label: {
+            Label(Strings.contextDelete, systemImage: "trash")
+        }
+
+        Divider()
+
+        Button {
+            NSWorkspace.shared.activateFileViewerSelecting([node.url])
+        } label: {
+            Label(Strings.contextRevealInFinder, systemImage: "arrow.right.circle")
+        }
+    }
+
+    // MARK: - File operations
+
+    private func createItem(named name: String, isDirectory: Bool) {
+        let parentURL = node.url
+        let newURL = parentURL.appendingPathComponent(name)
+        do {
+            if isDirectory {
+                try FileManager.default.createDirectory(at: newURL, withIntermediateDirectories: false)
+            } else if !FileManager.default.createFile(atPath: newURL.path, contents: nil) {
+                showFileError(Strings.fileCreateError(name))
+                return
+            }
+            workspace.refreshFileTree()
+        } catch {
+            showFileError(error.localizedDescription)
+        }
+    }
+
+    private func renameItem(to newName: String) {
+        let oldURL = node.url
+        let newURL = oldURL.deletingLastPathComponent().appendingPathComponent(newName)
+        do {
+            try FileManager.default.moveItem(at: oldURL, to: newURL)
+            workspace.refreshFileTree()
+            NotificationCenter.default.post(
+                name: .fileRenamed,
+                object: nil,
+                userInfo: ["oldURL": oldURL, "newURL": newURL]
+            )
+        } catch {
+            showFileError(error.localizedDescription)
+        }
+    }
+
+    private func deleteItem() {
+        let alert = NSAlert()
+        alert.messageText = Strings.contextDeleteConfirmTitle
+        alert.informativeText = Strings.contextDeleteConfirmMessage(node.name)
+        alert.addButton(withTitle: Strings.contextDeleteButton)
+        alert.addButton(withTitle: Strings.dialogCancel)
+        alert.alertStyle = .warning
+
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+
+        let deletedURL = node.url
+        do {
+            try FileManager.default.trashItem(at: deletedURL, resultingItemURL: nil)
+            workspace.refreshFileTree()
+            NotificationCenter.default.post(
+                name: .fileDeleted,
+                object: nil,
+                userInfo: ["url": deletedURL]
+            )
+        } catch {
+            showFileError(error.localizedDescription)
+        }
+    }
+
+    /// Shows an AppKit input dialog and calls the completion with the entered name.
+    private func promptForName(
+        title: String,
+        placeholder: String,
+        defaultValue: String = "",
+        completion: @escaping (String) -> Void
+    ) {
+        let alert = NSAlert()
+        alert.messageText = title
+        alert.addButton(withTitle: Strings.dialogOK)
+        alert.addButton(withTitle: Strings.dialogCancel)
+
+        let textField = NSTextField(frame: NSRect(x: 0, y: 0, width: 260, height: 24))
+        textField.placeholderString = placeholder
+        textField.stringValue = defaultValue
+        alert.accessoryView = textField
+
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        let name = textField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty else { return }
+        completion(name)
+    }
+
+    private func showFileError(_ message: String) {
+        let alert = NSAlert()
+        alert.messageText = Strings.fileOperationErrorTitle
+        alert.informativeText = message
+        alert.alertStyle = .warning
+        alert.runModal()
     }
 
     private func iconForFile(_ name: String) -> String {
