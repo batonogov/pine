@@ -36,15 +36,19 @@ final class FileNode: Identifiable, Hashable {
 
     // MARK: - Загрузка содержимого папки
 
+    /// Names always hidden from the file tree.
+    private static let hiddenNames: Set<String> = [".git", ".DS_Store"]
+
     private static func loadContents(of url: URL) -> [FileNode] {
         do {
             let contents = try FileManager.default.contentsOfDirectory(
                 at: url,
                 includingPropertiesForKeys: [.isDirectoryKey],
-                options: [.skipsHiddenFiles]
+                options: []
             )
 
             return contents
+                .filter { !hiddenNames.contains($0.lastPathComponent) }
                 .map { FileNode(url: $0) }
                 .sorted { lhs, rhs in
                     if lhs.isDirectory == rhs.isDirectory {
