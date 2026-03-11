@@ -171,24 +171,6 @@ struct ContentView: View {
         .frame(minWidth: 800, minHeight: 500)
         .navigationTitle(workspace.projectName)
         .navigationSubtitle(workspace.gitProvider.isGitRepository ? "⎇ \(workspace.gitProvider.currentBranch)" : "")
-        .toolbarTitleMenu {
-            if workspace.gitProvider.isGitRepository {
-                ForEach(workspace.gitProvider.branches, id: \.self) { branch in
-                    Button {
-                        if branch != workspace.gitProvider.currentBranch {
-                            _ = workspace.gitProvider.checkoutBranch(branch)
-                        }
-                    } label: {
-                        HStack {
-                            Text(branch)
-                            if branch == workspace.gitProvider.currentBranch {
-                                Image(systemName: "checkmark")
-                            }
-                        }
-                    }
-                }
-            }
-        }
         .background(WindowBridge(
             representedURL: fileURL,
             isDocumentEdited: hasUnsavedChanges,
@@ -515,6 +497,7 @@ struct FileNodeRow: View {
         }
     }
 }
+
 
 // MARK: - Status Bar
 
