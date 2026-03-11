@@ -87,11 +87,11 @@ class WindowCloseInterceptor: NSObject, NSWindowDelegate {
         }
 
         let alert = NSAlert()
-        alert.messageText = "Unsaved Changes"
-        alert.informativeText = "Do you want to save changes before closing?"
-        alert.addButton(withTitle: "Save")
-        alert.addButton(withTitle: "Don't Save")
-        alert.addButton(withTitle: "Cancel")
+        alert.messageText = String(localized: "Unsaved Changes")
+        alert.informativeText = String(localized: "Do you want to save changes before closing?")
+        alert.addButton(withTitle: String(localized: "Save"))
+        alert.addButton(withTitle: String(localized: "Don't Save"))
+        alert.addButton(withTitle: String(localized: "Cancel"))
         alert.alertStyle = .warning
 
         let response = alert.runModal()

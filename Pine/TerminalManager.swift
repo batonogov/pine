@@ -12,7 +12,7 @@ import SwiftUI
 final class TerminalManager {
     var isTerminalVisible = false
     var isTerminalMaximized = false
-    var terminalTabs: [TerminalTab] = [TerminalTab(name: "Terminal")]
+    var terminalTabs: [TerminalTab] = [TerminalTab(name: String(localized: "Terminal"))]
     var activeTerminalID: UUID?
 
     var activeTerminalTab: TerminalTab? {
@@ -31,7 +31,7 @@ final class TerminalManager {
 
     func addTerminalTab(workingDirectory: URL?) {
         let number = terminalTabs.count + 1
-        let tab = TerminalTab(name: "Terminal \(number)")
+        let tab = TerminalTab(name: String(localized: "Terminal \(number)"))
         tab.configure(workingDirectory: workingDirectory)
         terminalTabs.append(tab)
         activeTerminalID = tab.id

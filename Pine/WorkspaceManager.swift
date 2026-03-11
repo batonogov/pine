@@ -20,8 +20,8 @@ final class WorkspaceManager {
         panel.canChooseFiles = false
         panel.canChooseDirectories = true
         panel.allowsMultipleSelection = false
-        panel.message = "Choose a project folder"
-        panel.prompt = "Open"
+        panel.message = String(localized: "Choose a project folder")
+        panel.prompt = String(localized: "Open")
 
         guard panel.runModal() == .OK, let url = panel.url else { return }
         loadDirectory(url: url)
