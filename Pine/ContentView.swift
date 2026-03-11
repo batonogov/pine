@@ -487,7 +487,7 @@ struct FileNodeRow: View {
         if node.isDirectory {
             DisclosureGroup(
                 isExpanded: Binding(
-                    get: { !(node.children?.isEmpty ?? true) || expandedState },
+                    get: { expandedState },
                     set: { isExpanded in
                         expandedState = isExpanded
                         if isExpanded { node.loadChildren() }
