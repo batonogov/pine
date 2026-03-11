@@ -224,7 +224,7 @@
 /* Begin PBXTargetDependency section */
 		CF000001000000000000000B /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
-			target = 9FA1A7272F5EFA8100BDDA8C /* Pine */;
+			target = CF0000010000000000000001 /* PineTests */;
 			targetProxy = CF000001000000000000000A /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
