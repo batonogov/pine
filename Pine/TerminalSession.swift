@@ -103,11 +103,8 @@ class TerminalContainerView: NSView {
         }
     }
 
-    override func viewDidMoveToSuperview() {
-        super.viewDidMoveToSuperview()
-        if superview == nil {
-            NotificationCenter.default.removeObserver(self)
-        }
+    deinit {
+        NotificationCenter.default.removeObserver(self)
     }
 
     override var isFlipped: Bool { true }
