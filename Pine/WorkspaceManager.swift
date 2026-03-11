@@ -11,7 +11,7 @@ import SwiftUI
 @Observable
 final class WorkspaceManager {
     var rootNodes: [FileNode] = []
-    var projectName: String = "No Project"
+    var projectName: String = "Pine"
     var rootURL: URL?
     let gitProvider = GitStatusProvider()
 
