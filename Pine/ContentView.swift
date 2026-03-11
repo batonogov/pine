@@ -210,6 +210,8 @@ struct ContentView: View {
             handleFileSelection(node)
         }
         .onChange(of: workspace.rootURL) { _, _ in
+            // Clear stale gutter markers from the previous project immediately.
+            lineDiffs = []
             // saveSession() filters files by current rootURL,
             // so stale tabs from the old project are excluded.
             projectManager.saveSession()
@@ -217,8 +219,11 @@ struct ContentView: View {
         .onChange(of: workspace.gitProvider.isGitRepository) { _, isRepo in
             // After async project load finishes, git state becomes available.
             // Recalculate gutter diffs for the already-open file.
+            // When switching to a non-git project, clear stale markers.
             if isRepo, let url = fileURL {
                 lineDiffs = workspace.gitProvider.diffForFile(at: url)
+            } else {
+                lineDiffs = []
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: .saveFile)) { _ in
