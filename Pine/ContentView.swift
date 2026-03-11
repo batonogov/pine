@@ -205,13 +205,41 @@ struct ContentView: View {
         .onReceive(NotificationCenter.default.publisher(for: .fileRenamed)) { notification in
             guard let oldURL = notification.userInfo?["oldURL"] as? URL,
                   let newURL = notification.userInfo?["newURL"] as? URL,
-                  fileURL == oldURL else { return }
-            fileURL = newURL
-            loadFileFromURL(newURL)
+                  let currentURL = fileURL else { return }
+            // Exact match (file itself renamed) or child of renamed directory
+            if currentURL == oldURL {
+                // Update path, keep unsaved content as-is (don't reload from disk)
+                fileURL = newURL
+            } else if currentURL.path.hasPrefix(oldURL.path + "/") {
+                // File is inside a renamed directory — rewrite prefix
+                let relativePath = String(currentURL.path.dropFirst(oldURL.path.count + 1))
+                fileURL = newURL.appendingPathComponent(relativePath)
+            }
         }
         .onReceive(NotificationCenter.default.publisher(for: .fileDeleted)) { notification in
             guard let deletedURL = notification.userInfo?["url"] as? URL,
-                  fileURL == deletedURL else { return }
+                  let currentURL = fileURL else { return }
+            // Exact match or child of deleted directory
+            let isAffected = currentURL == deletedURL
+                || currentURL.path.hasPrefix(deletedURL.path + "/")
+            guard isAffected else { return }
+
+            if hasUnsavedChanges {
+                let alert = NSAlert()
+                alert.messageText = Strings.fileDeletedTitle
+                alert.informativeText = Strings.fileDeletedMessage
+                alert.addButton(withTitle: Strings.fileDeletedSaveAs)
+                alert.addButton(withTitle: Strings.dialogDontSave)
+                alert.alertStyle = .warning
+
+                if alert.runModal() == .alertFirstButtonReturn {
+                    let panel = NSSavePanel()
+                    panel.nameFieldStringValue = currentURL.lastPathComponent
+                    if panel.runModal() == .OK, let saveURL = panel.url {
+                        try? fileContent.write(to: saveURL, atomically: true, encoding: .utf8)
+                    }
+                }
+            }
             fileURL = nil
             fileContent = ""
             savedContent = ""
@@ -448,7 +476,7 @@ struct SidebarView: View {
 
     var body: some View {
         Group {
-            if workspace.rootNodes.isEmpty {
+            if workspace.rootURL == nil {
                 List {
                     ContentUnavailableView {
                         Label(Strings.noFolderOpen, systemImage: "folder")
@@ -519,12 +547,21 @@ struct SidebarView: View {
         do {
             if isDirectory {
                 try FileManager.default.createDirectory(at: newURL, withIntermediateDirectories: false)
-            } else {
-                guard FileManager.default.createFile(atPath: newURL.path, contents: nil) else { return }
+            } else if !FileManager.default.createFile(atPath: newURL.path, contents: nil) {
+                let alert = NSAlert()
+                alert.messageText = Strings.fileOperationErrorTitle
+                alert.informativeText = Strings.fileCreateError(name)
+                alert.alertStyle = .warning
+                alert.runModal()
+                return
             }
             workspace.refreshFileTree()
         } catch {
-            print("Error creating item: \(error.localizedDescription)")
+            let alert = NSAlert()
+            alert.messageText = Strings.fileOperationErrorTitle
+            alert.informativeText = error.localizedDescription
+            alert.alertStyle = .warning
+            alert.runModal()
         }
     }
 }
@@ -606,12 +643,13 @@ struct FileNodeRow: View {
         do {
             if isDirectory {
                 try FileManager.default.createDirectory(at: newURL, withIntermediateDirectories: false)
-            } else {
-                guard FileManager.default.createFile(atPath: newURL.path, contents: nil) else { return }
+            } else if !FileManager.default.createFile(atPath: newURL.path, contents: nil) {
+                showFileError(Strings.fileCreateError(name))
+                return
             }
             workspace.refreshFileTree()
         } catch {
-            print("Error creating item: \(error.localizedDescription)")
+            showFileError(error.localizedDescription)
         }
     }
 
@@ -627,7 +665,7 @@ struct FileNodeRow: View {
                 userInfo: ["oldURL": oldURL, "newURL": newURL]
             )
         } catch {
-            print("Error renaming item: \(error.localizedDescription)")
+            showFileError(error.localizedDescription)
         }
     }
 
@@ -651,7 +689,7 @@ struct FileNodeRow: View {
                 userInfo: ["url": deletedURL]
             )
         } catch {
-            print("Error deleting item: \(error.localizedDescription)")
+            showFileError(error.localizedDescription)
         }
     }
 
@@ -676,6 +714,14 @@ struct FileNodeRow: View {
         let name = textField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !name.isEmpty else { return }
         completion(name)
+    }
+
+    private func showFileError(_ message: String) {
+        let alert = NSAlert()
+        alert.messageText = Strings.fileOperationErrorTitle
+        alert.informativeText = message
+        alert.alertStyle = .warning
+        alert.runModal()
     }
 
     private func iconForFile(_ name: String) -> String {

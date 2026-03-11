@@ -53,6 +53,28 @@ enum Strings {
         String(localized: "context.delete")
     }
 
+    // MARK: - File Operation Errors / Prompts
+
+    static var fileOperationErrorTitle: String {
+        String(localized: "fileOperation.error.title")
+    }
+
+    static func fileCreateError(_ name: String) -> String {
+        String(localized: "fileOperation.createError \(name)")
+    }
+
+    static var fileDeletedTitle: String {
+        String(localized: "fileOperation.deleted.title")
+    }
+
+    static var fileDeletedMessage: String {
+        String(localized: "fileOperation.deleted.message")
+    }
+
+    static var fileDeletedSaveAs: String {
+        String(localized: "fileOperation.deleted.saveAs")
+    }
+
     // MARK: - Terminal UI
 
     static let terminalLabel: LocalizedStringKey = "terminal.label"
