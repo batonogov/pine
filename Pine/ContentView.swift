@@ -87,11 +87,11 @@ class WindowCloseInterceptor: NSObject, NSWindowDelegate {
         }
 
         let alert = NSAlert()
-        alert.messageText = String(localized: "Unsaved Changes")
-        alert.informativeText = String(localized: "Do you want to save changes before closing?")
-        alert.addButton(withTitle: String(localized: "Save"))
-        alert.addButton(withTitle: String(localized: "Don't Save"))
-        alert.addButton(withTitle: String(localized: "Cancel"))
+        alert.messageText = Strings.unsavedChangesTitle
+        alert.informativeText = Strings.unsavedChangesMessage
+        alert.addButton(withTitle: Strings.dialogSave)
+        alert.addButton(withTitle: Strings.dialogDontSave)
+        alert.addButton(withTitle: Strings.dialogCancel)
         alert.alertStyle = .warning
 
         let response = alert.runModal()
@@ -170,7 +170,7 @@ struct ContentView: View {
         }
         .frame(minWidth: 800, minHeight: 500)
         .navigationTitle(workspace.projectName)
-        .navigationSubtitle(workspace.gitProvider.isGitRepository ? "⎇ \(workspace.gitProvider.currentBranch)" : "")
+        .navigationSubtitle(branchSubtitle)
         .background(WindowBridge(
             representedURL: fileURL,
             isDocumentEdited: hasUnsavedChanges,
@@ -202,6 +202,11 @@ struct ContentView: View {
         .onReceive(NotificationCenter.default.publisher(for: .switchBranch)) { _ in
             // Branch switching is now handled via toolbarTitleMenu
         }
+    }
+
+    /// Branch subtitle as a plain String to avoid generating a localization key.
+    private var branchSubtitle: String {
+        workspace.gitProvider.isGitRepository ? "⎇ \(workspace.gitProvider.currentBranch)" : ""
     }
 
     // MARK: - Управление файлами
@@ -275,9 +280,9 @@ struct ContentView: View {
             )
         } else {
             ContentUnavailableView {
-                Label("No File Selected", systemImage: "doc.text")
+                Label(Strings.noFileSelected, systemImage: "doc.text")
             } description: {
-                Text("Select a file from the sidebar")
+                Text(Strings.selectFilePrompt)
             }
         }
     }
@@ -331,7 +336,7 @@ struct TerminalNativeTabBar: View {
                     .frame(width: 24, height: 24)
             }
             .buttonStyle(.plain)
-            .help("New Terminal")
+            .help(Strings.newTerminal)
 
             Spacer()
 
@@ -347,7 +352,7 @@ struct TerminalNativeTabBar: View {
                     .frame(width: 24, height: 24)
             }
             .buttonStyle(.plain)
-            .help(terminal.isTerminalMaximized ? "Restore Terminal" : "Maximize Terminal")
+            .help(terminal.isTerminalMaximized ? Strings.restoreTerminal : Strings.maximizeTerminal)
 
             // Кнопка скрытия терминала
             Button {
@@ -363,7 +368,7 @@ struct TerminalNativeTabBar: View {
             }
             .buttonStyle(.plain)
             .padding(.trailing, 4)
-            .help("Hide Terminal")
+            .help(Strings.hideTerminal)
         }
         .frame(height: 30)
         .background(.bar)
@@ -431,17 +436,17 @@ struct SidebarView: View {
             if workspace.rootNodes.isEmpty {
                 List {
                     ContentUnavailableView {
-                        Label("No Folder Open", systemImage: "folder")
+                        Label(Strings.noFolderOpen, systemImage: "folder")
                     } description: {
-                        Text("Open a folder to get started")
+                        Text(Strings.openFolderPrompt)
                     } actions: {
-                        Button("Open Folder...") {
+                        Button(Strings.openFolderButton) {
                             workspace.openFolder()
                         }
                         .buttonStyle(.borderedProminent)
                     }
                 }
-                .navigationTitle("Files")
+                .navigationTitle(Strings.filesTitle)
             } else {
                 List(workspace.rootNodes, children: \.optionalChildren, selection: $selectedFile) { node in
                     FileNodeRow(node: node)
@@ -458,7 +463,7 @@ struct SidebarView: View {
                 } label: {
                     Image(systemName: "folder.badge.plus")
                 }
-                .help("Open Folder")
+                .help(Strings.openFolderTooltip)
             }
         }
     }
@@ -512,16 +517,28 @@ struct StatusBarView: View {
                     let counts = gitStatusCounts
                     HStack(spacing: 8) {
                         if counts.modified > 0 {
-                            Label("\(counts.modified)", systemImage: "pencil")
-                                .foregroundStyle(.orange)
+                            Label {
+                                Text(verbatim: "\(counts.modified)")
+                            } icon: {
+                                Image(systemName: "pencil")
+                            }
+                            .foregroundStyle(.orange)
                         }
                         if counts.added > 0 {
-                            Label("\(counts.added)", systemImage: "plus")
-                                .foregroundStyle(.green)
+                            Label {
+                                Text(verbatim: "\(counts.added)")
+                            } icon: {
+                                Image(systemName: "plus")
+                            }
+                            .foregroundStyle(.green)
                         }
                         if counts.untracked > 0 {
-                            Label("\(counts.untracked)", systemImage: "questionmark")
-                                .foregroundStyle(.teal)
+                            Label {
+                                Text(verbatim: "\(counts.untracked)")
+                            } icon: {
+                                Image(systemName: "questionmark")
+                            }
+                            .foregroundStyle(.teal)
                         }
                     }
                     .font(.system(size: 10))
@@ -540,13 +557,13 @@ struct StatusBarView: View {
                         .font(.system(size: 9, weight: .semibold))
                     Image(systemName: "terminal")
                         .font(.system(size: 10))
-                    Text("Terminal")
+                    Text(Strings.terminalLabel)
                         .font(.system(size: 11))
                 }
                 .foregroundStyle(terminal.isTerminalVisible ? .primary : .secondary)
             }
             .buttonStyle(.plain)
-            .help(terminal.isTerminalVisible ? "Hide Terminal (⌘`)" : "Show Terminal (⌘`)")
+            .help(terminal.isTerminalVisible ? Strings.hideTerminalShortcut : Strings.showTerminalShortcut)
         }
         .padding(.leading, 8)
         .padding(.trailing, 14)
