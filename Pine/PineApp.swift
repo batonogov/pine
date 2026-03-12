@@ -13,11 +13,12 @@ struct PineApp: App {
     @State private var projectManager = ProjectManager()
 
     var body: some Scene {
-        WindowGroup(for: URL.self) { $fileURL in
-            ContentView(fileURL: $fileURL)
+        WindowGroup {
+            ContentView()
                 .environment(projectManager)
                 .environment(projectManager.workspace)
                 .environment(projectManager.terminal)
+                .environment(projectManager.tabManager)
                 .task { appDelegate.projectManager = projectManager }
         }
         .defaultSize(width: 1100, height: 700)
@@ -55,7 +56,7 @@ struct PineApp: App {
             // Cmd+W — закрыть таб
             CommandGroup(after: .saveItem) {
                 Button(Strings.menuCloseTab) {
-                    NSApp.sendAction(#selector(NSWindow.performClose(_:)), to: nil, from: nil)
+                    NotificationCenter.default.post(name: .closeTab, object: nil)
                 }
                 .keyboardShortcut("w", modifiers: .command)
             }
@@ -63,150 +64,47 @@ struct PineApp: App {
     }
 }
 
-// MARK: - AppDelegate для настройки нативных табов
+// MARK: - AppDelegate
 
 class AppDelegate: NSObject, NSApplicationDelegate {
     var projectManager: ProjectManager?
 
-    /// Session state cached at launch — immune to saveSession() overwrites during startup.
-    /// Cleared after 3s (safety) or after first successful reorder (whichever comes first).
-    private var cachedSession: SessionState?
-    /// Debounced work item for the next merge attempt.
-    private var mergeWorkItem: DispatchWorkItem?
-    /// One-shot flag: active-tab restore runs only once,
-    /// so subsequent merges don't steal focus from the user.
-    private var didRestoreActiveTab = false
-
-    static let editorTabbingID = "pine-editor"
-
     func applicationDidFinishLaunching(_ notification: Notification) {
-        NSWindow.allowsAutomaticWindowTabbing = true
-
-        // Cache session BEFORE any saveSession() call can overwrite UserDefaults.
-        cachedSession = SessionState.load()
-
-        // Устанавливаем tabbingMode для каждого нового окна
-        NotificationCenter.default.addObserver(
-            forName: NSWindow.didBecomeKeyNotification,
-            object: nil,
-            queue: .main
-        ) { notification in
-            if let window = notification.object as? NSWindow {
-                window.tabbingMode = .preferred
-            }
-        }
-
-        // Сохраняем сессию при закрытии вкладки/окна
-        NotificationCenter.default.addObserver(
-            forName: NSWindow.willCloseNotification,
-            object: nil,
-            queue: .main
-        ) { [weak self] _ in
-            // Defer so the closing window is already removed from NSApp.windows
-            DispatchQueue.main.async {
-                self?.projectManager?.saveSession()
-            }
-        }
-
-        // Each .editorWindowReady triggers a debounced merge.
-        // Merge is idempotent — always safe to call, no phase gate.
-        // This handles both startup restoration and runtime tab creation.
-        NotificationCenter.default.addObserver(
-            forName: .editorWindowReady,
-            object: nil,
-            queue: .main
-        ) { [weak self] _ in
-            self?.scheduleMerge()
-        }
-
-        // Clear cachedSession after 3s — stops reordering/active-tab restore,
-        // but merge itself keeps working for any future windows.
-        DispatchQueue.main.asyncAfter(deadline: .now() + 3) { [weak self] in
-            self?.cachedSession = nil
-        }
+        NSWindow.allowsAutomaticWindowTabbing = false
     }
 
     func applicationWillTerminate(_ notification: Notification) {
         projectManager?.saveSession()
     }
 
-    // MARK: - Debounced idempotent tab merge
-
-    /// Schedules a debounced merge. No phase gate — always responds.
-    /// WindowBridgeView handles immediate merge to prevent flash;
-    /// this debounced merge handles session tab reordering and active tab restore.
-    /// 150ms gives SwiftUI enough time to deliver representedURL via updateNSView.
-    private func scheduleMerge() {
-        mergeWorkItem?.cancel()
-        let item = DispatchWorkItem { [weak self] in
-            self?.mergeEditorWindowsIntoTabs()
-        }
-        mergeWorkItem = item
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15, execute: item)
-    }
-
-    /// Idempotent merge: finds editor windows not yet in a tab group
-    /// and adds them to the primary window's tab group, then reorders
-    /// all tabs to match the saved session order via NSWindowTabGroup.
-    /// Safe to call multiple times — already-tabbed windows are skipped,
-    /// reorder is skipped when tabs already match session order.
-    private func mergeEditorWindowsIntoTabs() {
-        let editorWindows = NSApplication.shared.windows.filter {
-            $0.isVisible && $0.tabbingIdentifier == Self.editorTabbingID
-        }
-        guard editorWindows.count > 1 else { return }
-
-        // Phase 1: Add ungrouped windows into a single tab group.
-        // Pick primary: prefer a window that already has a tab group.
-        // Use tabGroup.windows (not tabbedWindows) — tabbedWindows returns nil
-        // when the tab bar is hidden, but tabGroup.windows is always authoritative.
-        let primary = editorWindows.first { ($0.tabGroup?.windows.count ?? 0) > 1 }
-            ?? editorWindows[0]
-
-        let alreadyTabbed: Set<ObjectIdentifier>
-        if let groupWindows = primary.tabGroup?.windows, !groupWindows.isEmpty {
-            alreadyTabbed = Set(groupWindows.map { ObjectIdentifier($0) })
-        } else {
-            alreadyTabbed = [ObjectIdentifier(primary)]
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        guard let tabManager = projectManager?.tabManager,
+              tabManager.hasUnsavedChanges else {
+            return .terminateNow
         }
 
-        let ungrouped = editorWindows.filter { !alreadyTabbed.contains(ObjectIdentifier($0)) }
-        for window in ungrouped {
-            primary.addTabbedWindow(window, ordered: .above)
-        }
+        let alert = NSAlert()
+        alert.messageText = Strings.unsavedChangesTitle
+        alert.informativeText = Strings.unsavedChangesMessage
+        alert.addButton(withTitle: Strings.dialogSave)
+        alert.addButton(withTitle: Strings.dialogDontSave)
+        alert.addButton(withTitle: Strings.dialogCancel)
+        alert.alertStyle = .warning
 
-        // Phase 2: Reorder tabs to match saved session order via NSWindowTabGroup.
-        // Runs on every merge while cachedSession exists — idempotent, so late
-        // windows that arrive after the first merge are also placed correctly.
-        if let session = cachedSession, let tabGroup = primary.tabGroup {
-            let sessionPaths = session.openFilePaths
-            let currentWindows = tabGroup.windows
-            let desired = currentWindows.sorted { windowA, windowB in
-                let indexA = sessionPaths.firstIndex(of: windowA.representedURL?.path ?? "") ?? Int.max
-                let indexB = sessionPaths.firstIndex(of: windowB.representedURL?.path ?? "") ?? Int.max
-                return indexA < indexB
+        let response = alert.runModal()
+        switch response {
+        case .alertFirstButtonReturn:
+            // Save all dirty tabs
+            for index in tabManager.tabs.indices where tabManager.tabs[index].isDirty {
+                let tab = tabManager.tabs[index]
+                try? tab.content.write(to: tab.url, atomically: true, encoding: .utf8)
+                tabManager.tabs[index].savedContent = tab.content
             }
-
-            if desired.map(ObjectIdentifier.init) != currentWindows.map(ObjectIdentifier.init) {
-                for window in desired.dropFirst().reversed() {
-                    tabGroup.removeWindow(window)
-                }
-                for (index, window) in desired.dropFirst().enumerated() {
-                    tabGroup.insertWindow(window, at: index + 1)
-                }
-            }
-        }
-
-        // Phase 3: Restore active tab — one-shot, only when the target window exists.
-        // Flag is set only on successful match, so if the active tab window hasn't
-        // appeared yet, the next merge will retry.
-        if !didRestoreActiveTab, let session = cachedSession,
-           let activeURL = session.activeFileURL {
-            if let activeWindow = editorWindows.first(where: { $0.representedURL == activeURL }) {
-                didRestoreActiveTab = true
-                activeWindow.makeKeyAndOrderFront(nil)
-            }
-            // else: active tab window not yet restored — retry on next merge
+            return .terminateNow
+        case .alertSecondButtonReturn:
+            return .terminateNow
+        default:
+            return .terminateCancel
         }
     }
 }
@@ -218,10 +116,9 @@ extension Notification.Name {
     static let openFolder = Notification.Name("openFolder")
     static let toggleTerminal = Notification.Name("toggleTerminal")
     static let switchBranch = Notification.Name("switchBranch")
+    static let closeTab = Notification.Name("closeTab")
     /// userInfo: ["oldURL": URL, "newURL": URL]
     static let fileRenamed = Notification.Name("fileRenamed")
     /// userInfo: ["url": URL]
     static let fileDeleted = Notification.Name("fileDeleted")
-    /// Posted by WindowBridgeView when an editor window is fully configured.
-    static let editorWindowReady = Notification.Name("editorWindowReady")
 }
