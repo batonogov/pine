@@ -210,6 +210,10 @@ struct CodeEditorView: NSViewRepresentable {
             // Отменяем отложенную подсветку от старого документа,
             // иначе таймер может применить диапазон старого файла к новому
             context.coordinator.cancelPendingHighlight()
+            // Сбрасываем кэш многострочных токенов для нового файла
+            if let storage = textView.textStorage {
+                SyntaxHighlighter.shared.invalidateCache(for: storage)
+            }
             textView.string = text
             applyHighlighting(to: textView)
             // Сброс скролла и курсора при открытии нового файла
