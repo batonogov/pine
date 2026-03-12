@@ -176,6 +176,10 @@ private struct WindowCloseInterceptor: NSViewRepresentable {
         }
 
         func windowShouldClose(_ sender: NSWindow) -> Bool {
+            // Forward to original delegate first — respect its veto if any
+            if let original, original.responds(to: #selector(NSWindowDelegate.windowShouldClose(_:))) {
+                guard original.windowShouldClose?(sender) != false else { return false }
+            }
             guard projectManager.tabManager.hasUnsavedChanges else { return true }
 
             let alert = NSAlert()
@@ -265,6 +269,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             case .alertFirstButtonReturn:
                 for index in pm.tabManager.tabs.indices where pm.tabManager.tabs[index].isDirty {
                     guard pm.tabManager.saveTab(at: index) else {
+                        isTerminating = false
                         return .terminateCancel
                     }
                 }

@@ -26,14 +26,16 @@ final class ProjectRegistry {
     }
 
     /// Returns the ProjectManager for a given project URL, creating one if needed.
+    /// URLs are resolved to their canonical (real) path to prevent duplicates via symlinks.
     func projectManager(for projectURL: URL) -> ProjectManager {
-        if let existing = openProjects[projectURL] {
+        let canonical = projectURL.resolvingSymlinksInPath()
+        if let existing = openProjects[canonical] {
             return existing
         }
         let pm = ProjectManager()
-        pm.workspace.loadDirectory(url: projectURL)
-        openProjects[projectURL] = pm
-        addToRecent(projectURL)
+        pm.workspace.loadDirectory(url: canonical)
+        openProjects[canonical] = pm
+        addToRecent(canonical)
         return pm
     }
 
@@ -54,12 +56,12 @@ final class ProjectRegistry {
 
     /// Closes a project and removes it from open projects.
     func closeProject(_ url: URL) {
-        openProjects.removeValue(forKey: url)
+        openProjects.removeValue(forKey: url.resolvingSymlinksInPath())
     }
 
     /// Checks if a project is already open.
     func isProjectOpen(_ url: URL) -> Bool {
-        openProjects[url] != nil
+        openProjects[url.resolvingSymlinksInPath()] != nil
     }
 
     // MARK: - Recent Projects
