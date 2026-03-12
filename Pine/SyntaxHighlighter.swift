@@ -89,10 +89,13 @@ final class SyntaxHighlighter {
     /// Ключ — имя языка.
     private var compiledRules: [String: [CompiledRule]] = [:]
 
-    /// Кэш диапазонов многострочных токенов по ObjectIdentifier текстового хранилища.
-    /// Позволяет обнаружить изменение границ многострочных конструкций
-    /// (добавление/удаление `/*`, `"""` и т.д.) и запустить полную перекраску.
-    private var multilineMatchCache: [ObjectIdentifier: [NSRange]] = [:]
+    /// Кэш «отпечатка» многострочных токенов по ObjectIdentifier текстового хранилища.
+    /// Отпечаток — упорядоченный массив длин матчей (без позиций).
+    /// Вставка/удаление выше токена сдвигает location, но не меняет длину,
+    /// поэтому обычные правки не вызывают ложных полных перекрасок.
+    /// Изменение границы токена (добавление/удаление `/*`, `"""` и т.д.)
+    /// меняет количество или длину матчей → обнаруживается и запускает full repaint.
+    private var multilineMatchCache: [ObjectIdentifier: [Int]] = [:]
 
     /// Текущая тема
     var theme: Theme = .default
@@ -211,9 +214,9 @@ final class SyntaxHighlighter {
         let fullRange = NSRange(location: 0, length: textStorage.length)
         applyRules(rules, to: textStorage, repaintRange: fullRange, searchRange: fullRange, font: font)
 
-        // Обновляем кэш многострочных матчей
+        // Обновляем кэш отпечатка многострочных матчей
         let key = ObjectIdentifier(textStorage)
-        multilineMatchCache[key] = collectMultilineMatches(
+        multilineMatchCache[key] = collectMultilineFingerprint(
             rules: rules, source: textStorage.string, searchRange: fullRange
         )
     }
@@ -248,16 +251,16 @@ final class SyntaxHighlighter {
         let fullRange = NSRange(location: 0, length: totalLength)
 
         // Сканируем многострочные правила по всему тексту
-        let currentMultiline = collectMultilineMatches(
+        let currentFingerprint = collectMultilineFingerprint(
             rules: rules, source: source, searchRange: fullRange
         )
 
         let key = ObjectIdentifier(textStorage)
-        let cachedMultiline = multilineMatchCache[key]
+        let cachedFingerprint = multilineMatchCache[key]
 
-        // Если границы многострочных токенов изменились — полная перекраска
-        if cachedMultiline != currentMultiline {
-            multilineMatchCache[key] = currentMultiline
+        // Если структура многострочных токенов изменилась — полная перекраска
+        if cachedFingerprint != currentFingerprint {
+            multilineMatchCache[key] = currentFingerprint
             applyRules(rules, to: textStorage, repaintRange: fullRange, searchRange: fullRange, font: font)
             return
         }
@@ -285,21 +288,23 @@ final class SyntaxHighlighter {
         return (grammar, rules)
     }
 
-    /// Собирает диапазоны всех многострочных матчей для сравнения с кэшем.
-    private func collectMultilineMatches(
+    /// Собирает отпечаток многострочных матчей — упорядоченный массив длин.
+    /// Длины инвариантны к вставкам/удалениям выше токена (location сдвигается,
+    /// length — нет), поэтому обычные правки не вызывают ложного full repaint.
+    private func collectMultilineFingerprint(
         rules: [CompiledRule],
         source: String,
         searchRange: NSRange
-    ) -> [NSRange] {
-        var ranges: [NSRange] = []
+    ) -> [Int] {
+        var lengths: [Int] = []
         for rule in rules where rule.isMultiline {
             rule.regex.enumerateMatches(in: source, range: searchRange) { match, _, _ in
                 if let r = match?.range {
-                    ranges.append(r)
+                    lengths.append(r.length)
                 }
             }
         }
-        return ranges
+        return lengths
     }
 
     /// Расширяет диапазон до границ строк + contextLines контекста.

@@ -206,19 +206,33 @@ struct CodeEditorView: NSViewRepresentable {
         // Scroll view заполняет весь контейнер
         scrollView.frame = container.bounds
 
-        if textView.string != text {
+        // Определяем, сменился ли файл/язык (даже если содержимое совпадает)
+        let languageChanged = context.coordinator.lastLanguage != language
+            || context.coordinator.lastFileName != fileName
+        let textChanged = textView.string != text
+
+        if textChanged || languageChanged {
             // Отменяем отложенную подсветку от старого документа,
             // иначе таймер может применить диапазон старого файла к новому
             context.coordinator.cancelPendingHighlight()
-            // Сбрасываем кэш многострочных токенов для нового файла
+            // Сбрасываем кэш многострочных токенов
             if let storage = textView.textStorage {
                 SyntaxHighlighter.shared.invalidateCache(for: storage)
             }
-            textView.string = text
+
+            if textChanged {
+                textView.string = text
+            }
             applyHighlighting(to: textView)
-            // Сброс скролла и курсора при открытии нового файла
-            textView.setSelectedRange(NSRange(location: 0, length: 0))
-            textView.scrollRangeToVisible(NSRange(location: 0, length: 0))
+
+            context.coordinator.lastLanguage = language
+            context.coordinator.lastFileName = fileName
+
+            if textChanged {
+                // Сброс скролла и курсора при открытии нового файла
+                textView.setSelectedRange(NSRange(location: 0, length: 0))
+                textView.scrollRangeToVisible(NSRange(location: 0, length: 0))
+            }
         }
 
         // Обновляем размер и diff-данные LineNumberView
@@ -240,6 +254,11 @@ struct CodeEditorView: NSViewRepresentable {
         var parent: CodeEditorView
         var scrollView: NSScrollView?
         var lineNumberView: LineNumberView?
+
+        /// Последние язык/имя файла — для обнаружения смены грамматики
+        /// при одинаковом содержимом файлов
+        var lastLanguage: String = ""
+        var lastFileName: String?
 
         /// Отложенная задача подсветки (дебаунсинг)
         private var highlightWorkItem: DispatchWorkItem?
