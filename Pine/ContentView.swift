@@ -141,8 +141,7 @@ struct ContentView: View {
     }
 
     private var currentFileName: String {
-        let name = fileURL?.lastPathComponent ?? "Pine"
-        return hasUnsavedChanges ? "● \(name)" : name
+        fileURL?.lastPathComponent ?? workspace.projectName
     }
 
     var body: some View {
@@ -174,7 +173,7 @@ struct ContentView: View {
             }
         }
         .frame(minWidth: 800, minHeight: 500)
-        .navigationTitle(workspace.projectName)
+        .navigationTitle(currentFileName)
         .navigationSubtitle(branchSubtitle)
         .background(WindowBridge(
             representedURL: fileURL,
