@@ -9,10 +9,11 @@ import SwiftUI
 
 // MARK: - WindowBridge
 
-/// Настраивает NSWindow: tabbingMode, representedURL, перехват закрытия с несохранёнными изменениями.
+/// Настраивает NSWindow: tabbingMode, representedURL, tab title, перехват закрытия с несохранёнными изменениями.
 struct WindowBridge: NSViewRepresentable {
     var representedURL: URL?
     var isDocumentEdited: Bool
+    var tabTitle: String?
     var onSave: () -> Void
 
     func makeCoordinator() -> Coordinator {
@@ -29,6 +30,7 @@ struct WindowBridge: NSViewRepresentable {
         context.coordinator.isDocumentEdited = isDocumentEdited
         context.coordinator.onSave = onSave
         nsView.pendingURL = representedURL
+        nsView.pendingTabTitle = tabTitle
         nsView.applyIfPossible()
     }
 
@@ -41,6 +43,7 @@ struct WindowBridge: NSViewRepresentable {
 class WindowBridgeView: NSView {
     weak var hostWindow: NSWindow?
     var pendingURL: URL?
+    var pendingTabTitle: String?
     var coordinator: WindowBridge.Coordinator?
     private var closeInterceptor: WindowCloseInterceptor?
 
@@ -70,6 +73,10 @@ class WindowBridgeView: NSView {
         guard let window = hostWindow ?? self.window else { return }
         window.representedURL = pendingURL
         window.isDocumentEdited = coordinator?.isDocumentEdited ?? false
+        // Set tab caption independently from the window title.
+        // This allows navigationTitle to control the title bar (project name)
+        // while each tab shows its own file name.
+        window.tab.title = pendingTabTitle ?? ""
     }
 }
 
@@ -177,11 +184,12 @@ struct ContentView: View {
             }
         }
         .frame(minWidth: 800, minHeight: 500)
-        .navigationTitle(currentFileName)
+        .navigationTitle(workspace.projectName)
         .navigationSubtitle(branchSubtitle)
         .background(WindowBridge(
             representedURL: fileURL,
             isDocumentEdited: hasUnsavedChanges,
+            tabTitle: fileURL?.lastPathComponent,
             onSave: { [self] in saveFile() }
         ))
         .onAppear {
