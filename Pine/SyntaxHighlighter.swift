@@ -104,6 +104,19 @@ final class SyntaxHighlighter {
         loadGrammars()
     }
 
+    /// Регистрирует грамматику напрямую (для тестов через @testable import).
+    func registerGrammar(_ grammar: Grammar) {
+        for ext in grammar.extensions {
+            grammarsByExtension[ext.lowercased()] = grammar
+        }
+        if let fileNames = grammar.fileNames {
+            for name in fileNames {
+                grammarsByFileName[name] = grammar
+            }
+        }
+        compileRules(for: grammar)
+    }
+
     // MARK: - Загрузка грамматик
 
     /// Ищет все .json файлы в папке Grammars/ внутри бандла и загружает их.
