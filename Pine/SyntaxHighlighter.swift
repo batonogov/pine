@@ -220,6 +220,11 @@ final class SyntaxHighlighter {
     }
 
     /// Применяет подсветку к указанному диапазону NSTextStorage.
+    ///
+    /// Атрибуты сбрасываются и применяются только внутри `range`,
+    /// но regex запускается по всему тексту — это гарантирует корректную
+    /// подсветку многострочных токенов (/* ... */, """ ... """), начало
+    /// которых может лежать за пределами целевого диапазона.
     private func highlightRange(
         textStorage: NSTextStorage,
         range: NSRange,
@@ -236,8 +241,9 @@ final class SyntaxHighlighter {
         }
 
         let source = textStorage.string
+        let fullRange = NSRange(location: 0, length: textStorage.length)
 
-        // Сбрасываем на базовый стиль в указанном диапазоне
+        // Сбрасываем на базовый стиль только в целевом диапазоне
         textStorage.beginEditing()
         textStorage.addAttributes([
             .foregroundColor: NSColor.textColor,
@@ -265,18 +271,24 @@ final class SyntaxHighlighter {
             let priority = scopePriority[rule.scope] ?? 0
             guard let color = theme.color(for: rule.scope) else { continue }
 
-            rule.regex.enumerateMatches(in: source, range: range) { match, _, _ in
+            // Ищем по всему тексту, чтобы найти многострочные токены,
+            // начинающиеся до целевого диапазона
+            rule.regex.enumerateMatches(in: source, range: fullRange) { match, _, _ in
                 guard let matchRange = match?.range else { return }
+
+                // Красим только пересечение с целевым диапазоном
+                let clipped = NSIntersectionRange(matchRange, range)
+                guard clipped.length > 0 else { return }
 
                 // Проверяем, не занят ли диапазон более приоритетным scope
                 let isOverridden = highlightedRanges.contains { existing in
                     existing.priority > priority &&
-                    NSIntersectionRange(existing.range, matchRange).length > 0
+                    NSIntersectionRange(existing.range, clipped).length > 0
                 }
 
                 if !isOverridden {
-                    textStorage.addAttribute(.foregroundColor, value: color, range: matchRange)
-                    highlightedRanges.append((range: matchRange, priority: priority))
+                    textStorage.addAttribute(.foregroundColor, value: color, range: clipped)
+                    highlightedRanges.append((range: clipped, priority: priority))
                 }
             }
         }
