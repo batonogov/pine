@@ -372,6 +372,37 @@
             border: 1px solid rgba(163, 242, 194, 0.12);
         }
 
+        .screenshot-gallery {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 18px;
+            margin-top: 26px;
+        }
+
+        .screenshot-gallery figure {
+            margin: 0;
+        }
+
+        .screenshot-gallery img {
+            border-radius: var(--radius-md);
+            border: 1px solid var(--line);
+            box-shadow: 0 18px 48px rgba(0, 0, 0, 0.3);
+        }
+
+        .screenshot-gallery figcaption {
+            margin-top: 10px;
+            color: var(--muted);
+            font-size: 14px;
+            font-weight: 500;
+            text-align: center;
+        }
+
+        @media (max-width: 760px) {
+            .screenshot-gallery {
+                grid-template-columns: 1fr;
+            }
+        }
+
         .shot-chip {
             position: absolute;
             display: inline-flex;
@@ -953,6 +984,27 @@
                         <h3>Cover the languages you actually touch all week.</h3>
                         <p>Swift, TypeScript, JavaScript, Python, Go, Rust, Shell, HTML, CSS, JSON, YAML, Markdown, and Dockerfile are supported out of the box through JSON grammars.</p>
                     </article>
+                </div>
+            </section>
+
+            <section class="section" id="screenshots">
+                <div class="section-head">
+                    <span class="section-kicker">Screenshots</span>
+                    <h2>See Pine in action.</h2>
+                </div>
+                <div class="screenshot-gallery">
+                    <figure>
+                        <img src="https://raw.githubusercontent.com/batonogov/pine/main/assets/screenshot-editor.png" alt="Pine code editor with syntax highlighting and file tree" loading="lazy">
+                        <figcaption>Code editor with syntax highlighting and git gutter</figcaption>
+                    </figure>
+                    <figure>
+                        <img src="https://raw.githubusercontent.com/batonogov/pine/main/assets/screenshot-terminal.png" alt="Pine built-in terminal" loading="lazy">
+                        <figcaption>Built-in terminal powered by SwiftTerm</figcaption>
+                    </figure>
+                    <figure>
+                        <img src="https://raw.githubusercontent.com/batonogov/pine/main/assets/screenshot-welcome.png" alt="Pine welcome window with recent projects" loading="lazy">
+                        <figcaption>Welcome window with recent projects</figcaption>
+                    </figure>
                 </div>
             </section>
 
