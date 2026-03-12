@@ -200,7 +200,9 @@ struct CodeEditorView: NSViewRepresentable {
         applyHighlighting(to: textView)
 
         // Restore cursor and scroll from saved per-tab state.
-        let safePosition = min(initialCursorPosition, text.count)
+        // initialCursorPosition is stored as NSRange.location (UTF-16 offset),
+        // so clamp against NSString.length, not Swift Character count.
+        let safePosition = min(initialCursorPosition, (text as NSString).length)
         if safePosition > 0 {
             textView.setSelectedRange(NSRange(location: safePosition, length: 0))
         }
