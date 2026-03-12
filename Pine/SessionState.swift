@@ -11,6 +11,7 @@ import Foundation
 struct SessionState: Codable {
     var projectPath: String
     var openFilePaths: [String]
+    var activeFilePath: String?
 
     // MARK: - UserDefaults key
 
@@ -18,10 +19,16 @@ struct SessionState: Codable {
 
     // MARK: - Save
 
-    static func save(projectURL: URL, openFileURLs: [URL], defaults: UserDefaults = .standard) {
+    static func save(
+        projectURL: URL,
+        openFileURLs: [URL],
+        activeFileURL: URL? = nil,
+        defaults: UserDefaults = .standard
+    ) {
         let state = SessionState(
             projectPath: projectURL.path,
-            openFilePaths: openFileURLs.map(\.path)
+            openFilePaths: openFileURLs.map(\.path),
+            activeFilePath: activeFileURL?.path
         )
         guard let data = try? JSONEncoder().encode(state) else { return }
         defaults.set(data, forKey: defaultsKey)
@@ -54,5 +61,12 @@ struct SessionState: Codable {
             let url = URL(fileURLWithPath: path)
             return FileManager.default.fileExists(atPath: path) ? url : nil
         }
+    }
+
+    /// The active file URL if it still exists on disk.
+    var activeFileURL: URL? {
+        guard let path = activeFilePath,
+              FileManager.default.fileExists(atPath: path) else { return nil }
+        return URL(fileURLWithPath: path)
     }
 }

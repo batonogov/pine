@@ -49,6 +49,7 @@ class WindowBridgeView: NSView {
         if let window, closeInterceptor == nil {
             hostWindow = window
             window.tabbingMode = .preferred
+            window.tabbingIdentifier = AppDelegate.editorTabbingID
 
             // Перехватываем закрытие окна для диалога сохранения
             let interceptor = WindowCloseInterceptor(
@@ -59,6 +60,9 @@ class WindowBridgeView: NSView {
             closeInterceptor = interceptor
 
             applyIfPossible()
+
+            // Signal that this editor window is ready for tab merging
+            NotificationCenter.default.post(name: .editorWindowReady, object: nil)
         }
     }
 
@@ -182,6 +186,10 @@ struct ContentView: View {
         ))
         .onAppear {
             if let url = fileURL {
+                // SwiftUI may restore windows with a non-nil fileURL (Codable persistence).
+                // In that case restoreSessionIfNeeded() won't run, so we need to
+                // load the project directory here to populate the sidebar.
+                restoreProjectDirectoryIfNeeded()
                 loadFileFromURL(url)
                 // New window tabs get fileURL as initial state (onChange won't fire),
                 // so save session here to capture the newly opened tab.
@@ -298,6 +306,15 @@ struct ContentView: View {
 
     // MARK: - Session restoration
 
+    /// When SwiftUI auto-restores windows with non-nil fileURL,
+    /// restoreSessionIfNeeded() is skipped (guard fileURL == nil fails).
+    /// This method ensures the project directory is still loaded for the sidebar.
+    private func restoreProjectDirectoryIfNeeded() {
+        guard workspace.rootURL == nil,
+              let session = SessionState.load() else { return }
+        workspace.loadDirectory(url: session.projectURL)
+    }
+
     private func restoreSessionIfNeeded() {
         guard !Self.didRestoreSession else { return }
         Self.didRestoreSession = true
@@ -317,7 +334,8 @@ struct ContentView: View {
         // Open the first file in the current (empty) window
         fileURL = fileURLs.first
 
-        // Open remaining files in new window tabs
+        // Open remaining files in new window tabs.
+        // The debounced merge in AppDelegate handles grouping them.
         for url in fileURLs.dropFirst() {
             openWindow(value: url)
         }
