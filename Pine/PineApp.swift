@@ -10,16 +10,13 @@ import SwiftUI
 @main
 struct PineApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
-    @State private var projectManager = ProjectManager()
+    @State private var registry = ProjectRegistry()
 
     var body: some Scene {
-        WindowGroup {
-            ContentView()
-                .environment(projectManager)
-                .environment(projectManager.workspace)
-                .environment(projectManager.terminal)
-                .environment(projectManager.tabManager)
-                .task { appDelegate.projectManager = projectManager }
+        WindowGroup(for: URL.self) { $projectURL in
+            if let projectURL {
+                ProjectWindowView(projectURL: projectURL, registry: registry)
+            }
         }
         .defaultSize(width: 1100, height: 700)
         .commands {
@@ -61,51 +58,87 @@ struct PineApp: App {
                 .keyboardShortcut("w", modifiers: .command)
             }
         }
+
+        Window(Strings.welcomeTitle, id: "welcome") {
+            WelcomeView(registry: registry)
+                .task { appDelegate.registry = registry }
+        }
+        .defaultSize(width: 600, height: 400)
+        .windowResizability(.contentSize)
+    }
+}
+// MARK: - Project Window wrapper
+
+/// Resolves a ProjectManager from the registry and injects it into ContentView.
+private struct ProjectWindowView: View {
+    let projectURL: URL
+    let registry: ProjectRegistry
+    @Environment(\.dismissWindow) var dismissWindow
+
+    var body: some View {
+        let pm = registry.projectManager(for: projectURL)
+        ContentView()
+            .environment(pm)
+            .environment(pm.workspace)
+            .environment(pm.terminal)
+            .environment(pm.tabManager)
+            .focusedSceneValue(\.projectManager, pm)
+            .onDisappear {
+                pm.saveSession()
+                registry.closeProject(projectURL)
+            }
     }
 }
 
 // MARK: - AppDelegate
 
 class AppDelegate: NSObject, NSApplicationDelegate {
-    var projectManager: ProjectManager?
+    var registry: ProjectRegistry?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSWindow.allowsAutomaticWindowTabbing = false
     }
 
+    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
+        false
+    }
+
     func applicationWillTerminate(_ notification: Notification) {
-        projectManager?.saveSession()
+        guard let registry else { return }
+        for (_, pm) in registry.openProjects {
+            pm.saveSession()
+        }
     }
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
-        guard let tabManager = projectManager?.tabManager,
-              tabManager.hasUnsavedChanges else {
-            return .terminateNow
-        }
+        guard let registry else { return .terminateNow }
 
-        let alert = NSAlert()
-        alert.messageText = Strings.unsavedChangesTitle
-        alert.informativeText = Strings.unsavedChangesMessage
-        alert.addButton(withTitle: Strings.dialogSave)
-        alert.addButton(withTitle: Strings.dialogDontSave)
-        alert.addButton(withTitle: Strings.dialogCancel)
-        alert.alertStyle = .warning
+        for (_, pm) in registry.openProjects {
+            guard pm.tabManager.hasUnsavedChanges else { continue }
 
-        let response = alert.runModal()
-        switch response {
-        case .alertFirstButtonReturn:
-            // Save all dirty tabs — abort termination if any save fails
-            for index in tabManager.tabs.indices where tabManager.tabs[index].isDirty {
-                guard tabManager.saveTab(at: index) else {
-                    return .terminateCancel
+            let alert = NSAlert()
+            alert.messageText = Strings.unsavedChangesTitle
+            alert.informativeText = Strings.unsavedChangesMessage
+            alert.addButton(withTitle: Strings.dialogSave)
+            alert.addButton(withTitle: Strings.dialogDontSave)
+            alert.addButton(withTitle: Strings.dialogCancel)
+            alert.alertStyle = .warning
+
+            let response = alert.runModal()
+            switch response {
+            case .alertFirstButtonReturn:
+                for index in pm.tabManager.tabs.indices where pm.tabManager.tabs[index].isDirty {
+                    guard pm.tabManager.saveTab(at: index) else {
+                        return .terminateCancel
+                    }
                 }
+            case .alertSecondButtonReturn:
+                continue
+            default:
+                return .terminateCancel
             }
-            return .terminateNow
-        case .alertSecondButtonReturn:
-            return .terminateNow
-        default:
-            return .terminateCancel
         }
+        return .terminateNow
     }
 }
 

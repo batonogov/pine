@@ -36,14 +36,14 @@ Pine is a minimal native macOS code editor built with SwiftUI + AppKit. Targets 
 
 **Syntax highlighting:** `SyntaxHighlighter` singleton loads JSON grammar files from `Pine/Grammars/` at startup. Each grammar defines regex rules with scopes (comment, string, keyword, etc.) and a priority system prevents nested matches (comments > strings > keywords).
 
-**Window & tab management:** Uses `WindowGroup(for: URL.self)` — each editor tab is a native macOS window identified by its file URL. `AppDelegate` sets `NSWindow.allowsAutomaticWindowTabbing = true` and `tabbingMode = .preferred` on every new window. `WindowBridge` (NSViewRepresentable in ContentView) configures `representedURL` and `isDocumentEdited` on the host NSWindow. `WindowCloseInterceptor` (proxy NSWindowDelegate) intercepts close to show unsaved-changes dialog. When opening new tabs programmatically via `openWindow(value:)`, windows must be merged into a tab group explicitly with `NSWindow.addTabbedWindow(_:ordered:)`.
+**Window & tab management:** Uses `WindowGroup(for: URL.self)` where URL identifies the project directory (not individual files). Each project gets one native macOS window with an internal editor tab bar (`EditorTabBar`). `ProjectRegistry` deduplicates open projects — opening the same directory twice returns the same `ProjectManager`. A `Welcome` window (`WelcomeView`) shows on launch with a recent projects list and an Open Folder button. `FocusedProjectKey` passes the active `ProjectManager` to menu commands via `@FocusedValue`.
 
-**Session persistence:** `SessionState` (Codable struct) saves project path + open file paths to UserDefaults. `AppDelegate` triggers save on window close and app termination. `ContentView.restoreSessionIfNeeded()` runs once (static flag) on first empty window: loads project, opens first file in current window, remaining files via `openWindow`, then merges into tab group.
+**Session persistence:** `SessionState` (Codable struct) saves project path + open file paths to UserDefaults. `AppDelegate` triggers save on app termination for all open projects. `ContentView.restoreSessionIfNeeded()` restores tabs on first load if the saved session matches the current project.
 
 ## Key Files
 
-- `PineApp.swift` — @main entry point, AppDelegate (window tabbing config, session save on close/terminate), keyboard shortcuts (Cmd+S, Cmd+Shift+O, Cmd+`), mergeRestoredWindowsIntoTabs()
-- `ContentView.swift` — NavigationSplitView layout: sidebar (file tree) + detail (editor tabs + terminal), WindowBridge, WindowCloseInterceptor, session restoration
+- `PineApp.swift` — @main entry point, AppDelegate (window tabbing config, session save on terminate), keyboard shortcuts (Cmd+S, Cmd+Shift+O, Cmd+`), project WindowGroup + Welcome Window scenes
+- `ContentView.swift` — NavigationSplitView layout: sidebar (file tree) + detail (editor tabs + terminal), session restoration
 - `SessionState.swift` — Codable session persistence (project path + open file paths) via UserDefaults
 - `ProjectManager.swift` — Central state: file tree, terminal tabs, git provider, project I/O, saveSession()
 - `FileNode.swift` — Recursive tree model for filesystem
@@ -52,6 +52,9 @@ Pine is a minimal native macOS code editor built with SwiftUI + AppKit. Targets 
 - `LineNumberGutter.swift` — Line number rendering (enumerates only visible line fragments)
 - `TerminalSession.swift` — SwiftTerm integration: TerminalTab, TerminalContentView (NSViewRepresentable), TerminalTabDelegate
 - `GitStatusProvider.swift` — Git status/diff parsing for sidebar indicators and gutter markers
+- `ProjectRegistry.swift` — Manages open projects and recent project history, deduplicates by URL
+- `WelcomeView.swift` — Welcome window with recent projects list and Open Folder button
+- `FocusedProjectKey.swift` — FocusedValueKey for passing active ProjectManager to menu commands
 - `PineTests/` — Unit tests: GitStatusParserTests, GitDiffParserTests, FileNodeTests, GrammarModelTests
 
 ## Release & CI
@@ -71,7 +74,8 @@ Pine is a minimal native macOS code editor built with SwiftUI + AppKit. Targets 
 - UI uses semantic system colors (migrated from hardcoded dark theme values)
 - macOS 26 SDK renamed `NSColor(sRGBRed:)` → `NSColor(srgbRed:)` (lowercase)
 - Editor features: auto-indent on newline, current line highlight, git diff gutter markers
-- Editor tabs use native macOS window tabs (not custom tab bar)
+- Editor tabs use an internal SwiftUI tab bar (`EditorTabBar`), not native macOS window tabs
+- Project windows use `WindowGroup(for: URL.self)` where URL = project directory; `ProjectRegistry` prevents duplicate windows for the same project
 
 ## GitHub Issues
 

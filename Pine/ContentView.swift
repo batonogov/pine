@@ -18,8 +18,7 @@ struct ContentView: View {
     @State private var selectedNode: FileNode?
     @State private var columnVisibility: NavigationSplitViewVisibility = .all
     @State private var lineDiffs: [GitLineDiff] = []
-    /// Global flag — only the first ContentView instance restores the session.
-    private static var didRestoreSession = false
+    @State private var didRestoreSession = false
 
     private var activeTab: EditorTab? { tabManager.activeTab }
 
@@ -125,21 +124,17 @@ struct ContentView: View {
     // MARK: - Session restoration
 
     private func restoreSessionIfNeeded() {
-        guard !Self.didRestoreSession else { return }
-        Self.didRestoreSession = true
+        guard !didRestoreSession else { return }
+        didRestoreSession = true
 
-        guard let session = SessionState.load() else { return }
+        guard let session = SessionState.load(),
+              session.projectURL == workspace.rootURL else { return }
+        guard tabManager.tabs.isEmpty else { return }
 
-        if workspace.rootURL == nil {
-            workspace.loadDirectory(url: session.projectURL)
-        }
-
-        let fileURLs = session.existingFileURLs
-        for url in fileURLs {
+        for url in session.existingFileURLs {
             tabManager.openTab(url: url)
         }
 
-        // Restore the active tab
         if let activeURL = session.activeFileURL,
            let tab = tabManager.tab(for: activeURL) {
             tabManager.activeTabID = tab.id
