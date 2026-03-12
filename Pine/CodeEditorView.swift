@@ -206,34 +206,12 @@ struct CodeEditorView: NSViewRepresentable {
         // Scroll view заполняет весь контейнер
         scrollView.frame = container.bounds
 
-        // Определяем, сменился ли файл/язык (даже если содержимое совпадает)
-        let languageChanged = context.coordinator.lastLanguage != language
-            || context.coordinator.lastFileName != fileName
-        let textChanged = textView.string != text
-
-        if textChanged || languageChanged {
-            // Отменяем отложенную подсветку от старого документа,
-            // иначе таймер может применить диапазон старого файла к новому
-            context.coordinator.cancelPendingHighlight()
-            // Сбрасываем кэш многострочных токенов
-            if let storage = textView.textStorage {
-                SyntaxHighlighter.shared.invalidateCache(for: storage)
-            }
-
-            if textChanged {
-                textView.string = text
-            }
-            applyHighlighting(to: textView)
-
-            context.coordinator.lastLanguage = language
-            context.coordinator.lastFileName = fileName
-
-            if textChanged {
-                // Сброс скролла и курсора при открытии нового файла
-                textView.setSelectedRange(NSRange(location: 0, length: 0))
-                textView.scrollRangeToVisible(NSRange(location: 0, length: 0))
-            }
-        }
+        context.coordinator.updateContentIfNeeded(
+            text: text,
+            language: language,
+            fileName: fileName,
+            font: editorFont
+        )
 
         // Обновляем размер и diff-данные LineNumberView
         if let lineNumberView = context.coordinator.lineNumberView {
@@ -274,6 +252,45 @@ struct CodeEditorView: NSViewRepresentable {
         func cancelPendingHighlight() {
             highlightWorkItem?.cancel()
             highlightWorkItem = nil
+        }
+
+        /// Обновляет текст и подсветку при смене файла или языка.
+        /// Вызывается из updateNSView. Выделен в отдельный метод
+        /// для возможности прямого тестирования.
+        func updateContentIfNeeded(text: String, language: String, fileName: String?, font: NSFont) {
+            guard let sv = scrollView,
+                  let textView = sv.documentView as? NSTextView else { return }
+
+            let languageChanged = lastLanguage != language || lastFileName != fileName
+            let textChanged = textView.string != text
+
+            guard textChanged || languageChanged else { return }
+
+            cancelPendingHighlight()
+            if let storage = textView.textStorage {
+                SyntaxHighlighter.shared.invalidateCache(for: storage)
+            }
+
+            if textChanged {
+                textView.string = text
+            }
+
+            if let storage = textView.textStorage {
+                SyntaxHighlighter.shared.highlight(
+                    textStorage: storage,
+                    language: language,
+                    fileName: fileName,
+                    font: font
+                )
+            }
+
+            lastLanguage = language
+            lastFileName = fileName
+
+            if textChanged {
+                textView.setSelectedRange(NSRange(location: 0, length: 0))
+                textView.scrollRangeToVisible(NSRange(location: 0, length: 0))
+            }
         }
 
         func textDidChange(_ notification: Notification) {
