@@ -14,8 +14,8 @@ Pine is a minimal native macOS code editor built with SwiftUI + AppKit. Targets 
 - Type-check a single file (no sudo needed): `/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc -typecheck -target arm64-apple-macos26.0 -sdk /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk <file.swift>`
 - **Dependency:** SwiftTerm added via Xcode SPM (File > Add Package Dependencies > `https://github.com/migueldeicaza/SwiftTerm.git`)
 - No other third-party dependencies
-- **SwiftLint:** `brew install swiftlint` — runs as a build phase; config in `.swiftlint.yml`. Run `swiftlint` before every commit and fix all warnings/errors
-- **Tests:** `xcodebuild test -project Pine.xcodeproj -scheme Pine -destination 'platform=macOS'`
+- **SwiftLint:** `brew install swiftlint` — runs as a build phase; config in `.swiftlint.yml`. Run `swiftlint` before every commit and fix all warnings/errors. If `swiftlint` crashes with `sourcekitdInProc` error, prefix with `DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer`
+- **Tests:** `DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer xcodebuild test -project Pine.xcodeproj -scheme Pine -destination 'platform=macOS'`
 - Test target: `PineTests` (Swift Testing framework) — covers git parsing, grammar models, file tree
 
 ## Architecture
@@ -36,11 +36,16 @@ Pine is a minimal native macOS code editor built with SwiftUI + AppKit. Targets 
 
 **Syntax highlighting:** `SyntaxHighlighter` singleton loads JSON grammar files from `Pine/Grammars/` at startup. Each grammar defines regex rules with scopes (comment, string, keyword, etc.) and a priority system prevents nested matches (comments > strings > keywords).
 
+**Window & tab management:** Uses `WindowGroup(for: URL.self)` — each editor tab is a native macOS window identified by its file URL. `AppDelegate` sets `NSWindow.allowsAutomaticWindowTabbing = true` and `tabbingMode = .preferred` on every new window. `WindowBridge` (NSViewRepresentable in ContentView) configures `representedURL` and `isDocumentEdited` on the host NSWindow. `WindowCloseInterceptor` (proxy NSWindowDelegate) intercepts close to show unsaved-changes dialog. When opening new tabs programmatically via `openWindow(value:)`, windows must be merged into a tab group explicitly with `NSWindow.addTabbedWindow(_:ordered:)`.
+
+**Session persistence:** `SessionState` (Codable struct) saves project path + open file paths to UserDefaults. `AppDelegate` triggers save on window close and app termination. `ContentView.restoreSessionIfNeeded()` runs once (static flag) on first empty window: loads project, opens first file in current window, remaining files via `openWindow`, then merges into tab group.
+
 ## Key Files
 
-- `PineApp.swift` — @main entry point, keyboard shortcuts (Cmd+S, Cmd+Shift+O, Cmd+`)
-- `ContentView.swift` — NavigationSplitView layout: sidebar (file tree) + detail (editor tabs + terminal)
-- `ProjectManager.swift` — Central state: file tree, terminal tabs, git provider, project I/O
+- `PineApp.swift` — @main entry point, AppDelegate (window tabbing config, session save on close/terminate), keyboard shortcuts (Cmd+S, Cmd+Shift+O, Cmd+`), mergeRestoredWindowsIntoTabs()
+- `ContentView.swift` — NavigationSplitView layout: sidebar (file tree) + detail (editor tabs + terminal), WindowBridge, WindowCloseInterceptor, session restoration
+- `SessionState.swift` — Codable session persistence (project path + open file paths) via UserDefaults
+- `ProjectManager.swift` — Central state: file tree, terminal tabs, git provider, project I/O, saveSession()
 - `FileNode.swift` — Recursive tree model for filesystem
 - `CodeEditorView.swift` — NSViewRepresentable editor with GutterTextView and LineNumberView
 - `SyntaxHighlighter.swift` — Grammar loading, regex compilation, theme colors, highlighting application

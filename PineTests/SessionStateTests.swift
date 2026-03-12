@@ -153,6 +153,74 @@ struct SessionStateTests {
         #expect(loaded == nil)
     }
 
+    // MARK: - Active file round-trip
+
+    @Test func activeFilePathRoundTrip() throws {
+        let tempDir = try makeTempDirectory()
+        defer { cleanup(tempDir) }
+
+        let file1 = tempDir.appendingPathComponent("a.swift")
+        let file2 = tempDir.appendingPathComponent("b.swift")
+        FileManager.default.createFile(atPath: file1.path, contents: nil)
+        FileManager.default.createFile(atPath: file2.path, contents: nil)
+
+        let defaults = try makeDefaults()
+        defer { cleanupDefaults(defaults) }
+
+        SessionState.save(
+            projectURL: tempDir,
+            openFileURLs: [file1, file2],
+            activeFileURL: file2,
+            defaults: defaults
+        )
+
+        let loaded = SessionState.load(defaults: defaults)
+        #expect(loaded?.activeFilePath == file2.path)
+        #expect(loaded?.activeFileURL == file2)
+    }
+
+    @Test func activeFileURLReturnsNilWhenFileDeleted() throws {
+        let tempDir = try makeTempDirectory()
+        defer { cleanup(tempDir) }
+
+        let file = tempDir.appendingPathComponent("gone.swift")
+
+        let state = SessionState(
+            projectPath: tempDir.path,
+            openFilePaths: [],
+            activeFilePath: file.path
+        )
+
+        #expect(state.activeFileURL == nil)
+    }
+
+    @Test func activeFileURLReturnsNilWhenNotSet() throws {
+        let state = SessionState(
+            projectPath: "/tmp",
+            openFilePaths: [],
+            activeFilePath: nil
+        )
+        #expect(state.activeFileURL == nil)
+    }
+
+    @Test func backwardsCompatibleWithoutActiveFilePath() throws {
+        let tempDir = try makeTempDirectory()
+        defer { cleanup(tempDir) }
+
+        let defaults = try makeDefaults()
+        defer { cleanupDefaults(defaults) }
+
+        // Simulate old format without activeFilePath
+        let oldState = ["projectPath": tempDir.path, "openFilePaths": [String]()] as [String: Any]
+        let data = try JSONSerialization.data(withJSONObject: oldState)
+        defaults.set(data, forKey: "lastSessionState")
+
+        let loaded = SessionState.load(defaults: defaults)
+        #expect(loaded != nil)
+        #expect(loaded?.activeFilePath == nil)
+        #expect(loaded?.activeFileURL == nil)
+    }
+
     // MARK: - File as project path (not directory)
 
     @Test func loadReturnsNilWhenProjectPathIsFile() throws {
