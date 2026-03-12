@@ -69,6 +69,13 @@ final class TabManager {
         tabs[index].content = newContent
     }
 
+    /// Updates the saved editor state (cursor, scroll) for the active tab.
+    func updateEditorState(cursorPosition: Int, scrollOffset: CGFloat) {
+        guard let index = activeTabIndex else { return }
+        tabs[index].cursorPosition = cursorPosition
+        tabs[index].scrollOffset = scrollOffset
+    }
+
     /// Saves the active tab to disk. Returns true on success.
     @discardableResult
     func saveActiveTab() -> Bool {
@@ -116,22 +123,16 @@ final class TabManager {
         tabs.first { $0.url == url }
     }
 
-    /// Handles a file being renamed — updates any affected tabs.
+    /// Handles a file being renamed — updates URL in-place to preserve tab identity
+    /// (and thus editor state, undo history, cursor position, etc.).
     func handleFileRenamed(oldURL: URL, newURL: URL) {
         for index in tabs.indices {
             let tabURL = tabs[index].url
             if tabURL == oldURL {
-                let tab = EditorTab(url: newURL, content: tabs[index].content, savedContent: tabs[index].savedContent)
-                let wasActive = activeTabID == tabs[index].id
-                tabs[index] = tab
-                if wasActive { activeTabID = tab.id }
+                tabs[index].url = newURL
             } else if tabURL.path.hasPrefix(oldURL.path + "/") {
                 let relativePath = String(tabURL.path.dropFirst(oldURL.path.count + 1))
-                let updatedURL = newURL.appendingPathComponent(relativePath)
-                let tab = EditorTab(url: updatedURL, content: tabs[index].content, savedContent: tabs[index].savedContent)
-                let wasActive = activeTabID == tabs[index].id
-                tabs[index] = tab
-                if wasActive { activeTabID = tab.id }
+                tabs[index].url = newURL.appendingPathComponent(relativePath)
             }
         }
     }

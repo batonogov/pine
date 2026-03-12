@@ -14,6 +14,8 @@ struct EditorTabBar: View {
     /// Called when user clicks the close button on a tab.
     /// The caller is responsible for unsaved-changes protection.
     var onCloseTab: (EditorTab) -> Void
+    /// Called after tabs are reordered via drag-and-drop.
+    var onReorder: (() -> Void)?
 
     @State private var draggingTabID: UUID?
 
@@ -35,7 +37,8 @@ struct EditorTabBar: View {
                         .onDrop(of: [.text], delegate: TabDropDelegate(
                             tabManager: tabManager,
                             targetTabID: tab.id,
-                            draggingTabID: $draggingTabID
+                            draggingTabID: $draggingTabID,
+                            onReorder: onReorder
                         ))
                     }
                 }
@@ -54,9 +57,11 @@ struct TabDropDelegate: DropDelegate {
     let tabManager: TabManager
     let targetTabID: UUID
     @Binding var draggingTabID: UUID?
+    var onReorder: (() -> Void)?
 
     func performDrop(info: DropInfo) -> Bool {
         draggingTabID = nil
+        onReorder?()
         return true
     }
 

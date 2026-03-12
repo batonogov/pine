@@ -137,7 +137,7 @@ struct TabManagerTests {
         #expect(manager.activeTab?.content == "data")
     }
 
-    @Test("Handle file renamed updates tab URL")
+    @Test("Handle file renamed updates tab URL preserving identity")
     func handleFileRenamed() {
         let manager = TabManager()
         let dir = FileManager.default.temporaryDirectory
@@ -149,10 +149,14 @@ struct TabManagerTests {
         try? "content".write(to: oldURL, atomically: true, encoding: .utf8)
 
         manager.openTab(url: oldURL)
+        let originalID = manager.activeTabID
+
         manager.handleFileRenamed(oldURL: oldURL, newURL: newURL)
 
         #expect(manager.tabs.count == 1)
         #expect(manager.activeTab?.url == newURL)
+        // Tab identity (UUID) must be preserved — no new tab created
+        #expect(manager.activeTabID == originalID)
     }
 
     @Test("Rename updates inactive tab without changing activeTabID target")
@@ -284,5 +288,40 @@ struct TabManagerTests {
 
         #expect(manager.tab(for: url)?.url == url)
         #expect(manager.tab(for: URL(fileURLWithPath: "/no-such-file")) == nil)
+    }
+
+    @Test("Update editor state persists cursor and scroll")
+    func updateEditorState() {
+        let manager = TabManager()
+        let url = tempFileURL()
+        manager.openTab(url: url)
+
+        #expect(manager.activeTab?.cursorPosition == 0)
+        #expect(manager.activeTab?.scrollOffset == 0)
+
+        manager.updateEditorState(cursorPosition: 42, scrollOffset: 128.5)
+
+        #expect(manager.activeTab?.cursorPosition == 42)
+        #expect(manager.activeTab?.scrollOffset == 128.5)
+    }
+
+    @Test("Rename preserves editor state")
+    func renamePreservesEditorState() {
+        let manager = TabManager()
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+
+        let oldURL = dir.appendingPathComponent("old.swift")
+        let newURL = dir.appendingPathComponent("new.swift")
+        try? "content".write(to: oldURL, atomically: true, encoding: .utf8)
+
+        manager.openTab(url: oldURL)
+        manager.updateEditorState(cursorPosition: 15, scrollOffset: 200)
+
+        manager.handleFileRenamed(oldURL: oldURL, newURL: newURL)
+
+        #expect(manager.activeTab?.cursorPosition == 15)
+        #expect(manager.activeTab?.scrollOffset == 200)
     }
 }

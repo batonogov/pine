@@ -119,6 +119,12 @@ struct CodeEditorView: NSViewRepresentable {
     var language: String
     var fileName: String?
     var lineDiffs: [GitLineDiff] = []
+    /// Cursor position to restore when the view is created (tab switch).
+    var initialCursorPosition: Int = 0
+    /// Scroll offset to restore when the view is created (tab switch).
+    var initialScrollOffset: CGFloat = 0
+    /// Called when cursor position or scroll offset changes, so the caller can persist them.
+    var onStateChange: ((Int, CGFloat) -> Void)?
 
     private let editorFont = NSFont.monospacedSystemFont(ofSize: 13, weight: .regular)
 
@@ -193,6 +199,32 @@ struct CodeEditorView: NSViewRepresentable {
         textView.string = text
         applyHighlighting(to: textView)
 
+        // Restore cursor and scroll from saved per-tab state.
+        let safePosition = min(initialCursorPosition, text.count)
+        if safePosition > 0 {
+            textView.setSelectedRange(NSRange(location: safePosition, length: 0))
+        }
+
+        // Scroll restoration needs layout to be complete, so defer it.
+        let savedOffset = initialScrollOffset
+        DispatchQueue.main.async {
+            if savedOffset > 0 {
+                scrollView.contentView.scroll(to: NSPoint(x: 0, y: savedOffset))
+                scrollView.reflectScrolledClipView(scrollView.contentView)
+            } else if safePosition > 0 {
+                textView.scrollRangeToVisible(NSRange(location: safePosition, length: 0))
+            }
+        }
+
+        // Observe scroll changes to persist scroll offset.
+        scrollView.contentView.postsBoundsChangedNotifications = true
+        NotificationCenter.default.addObserver(
+            context.coordinator,
+            selector: #selector(Coordinator.scrollViewDidScroll(_:)),
+            name: NSView.boundsDidChangeNotification,
+            object: scrollView.contentView
+        )
+
         return container
     }
 
@@ -247,6 +279,10 @@ struct CodeEditorView: NSViewRepresentable {
             self.parent = parent
         }
 
+        deinit {
+            NotificationCenter.default.removeObserver(self)
+        }
+
         /// Отменяет отложенную подсветку. Вызывается при смене файла
         /// чтобы не применить диапазон старого документа к новому.
         func cancelPendingHighlight() {
@@ -287,15 +323,18 @@ struct CodeEditorView: NSViewRepresentable {
             lastLanguage = language
             lastFileName = fileName
 
-            if textChanged {
-                textView.setSelectedRange(NSRange(location: 0, length: 0))
-                textView.scrollRangeToVisible(NSRange(location: 0, length: 0))
-            }
+            // Note: cursor/scroll restoration on tab switch is handled by makeNSView
+            // (since .id(tab.id) recreates the view). This path only fires for
+            // in-place content changes from updateNSView, where we should not
+            // reset the cursor.
         }
 
         func textDidChange(_ notification: Notification) {
             guard let textView = notification.object as? NSTextView else { return }
             parent.text = textView.string
+
+            // Report state change
+            reportStateChange()
 
             // Захватываем editedRange из textStorage сейчас,
             // пока он валиден в координатах текущей версии текста
@@ -339,6 +378,22 @@ struct CodeEditorView: NSViewRepresentable {
             }
             highlightWorkItem = workItem
             DispatchQueue.main.asyncAfter(deadline: .now() + highlightDelay, execute: workItem)
+        }
+
+        func textViewDidChangeSelection(_ notification: Notification) {
+            reportStateChange()
+        }
+
+        @objc func scrollViewDidScroll(_ notification: Notification) {
+            reportStateChange()
+        }
+
+        private func reportStateChange() {
+            guard let sv = scrollView,
+                  let textView = sv.documentView as? NSTextView else { return }
+            let cursor = textView.selectedRange().location
+            let scroll = sv.contentView.bounds.origin.y
+            parent.onStateChange?(cursor, scroll)
         }
     }
 

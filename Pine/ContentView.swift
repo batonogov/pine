@@ -250,7 +250,8 @@ struct ContentView: View {
             if !tabManager.tabs.isEmpty {
                 EditorTabBar(
                     tabManager: tabManager,
-                    onCloseTab: { tab in closeTabWithConfirmation(tab) }
+                    onCloseTab: { tab in closeTabWithConfirmation(tab) },
+                    onReorder: { projectManager.saveSession() }
                 )
             }
 
@@ -262,7 +263,12 @@ struct ContentView: View {
                     ),
                     language: tab.language,
                     fileName: tab.fileName,
-                    lineDiffs: lineDiffs
+                    lineDiffs: lineDiffs,
+                    initialCursorPosition: tab.cursorPosition,
+                    initialScrollOffset: tab.scrollOffset,
+                    onStateChange: { cursor, scroll in
+                        tabManager.updateEditorState(cursorPosition: cursor, scrollOffset: scroll)
+                    }
                 )
                 .id(tab.id)
             } else {

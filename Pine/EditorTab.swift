@@ -10,9 +10,13 @@ import Foundation
 /// Represents a single open editor tab with its file URL and content state.
 struct EditorTab: Identifiable, Hashable {
     let id: UUID
-    let url: URL
+    var url: URL
     var content: String
     var savedContent: String
+
+    // Per-tab editor state — preserved across tab switches.
+    var cursorPosition: Int = 0
+    var scrollOffset: CGFloat = 0
 
     var isDirty: Bool { content != savedContent }
 
@@ -29,7 +33,7 @@ struct EditorTab: Identifiable, Hashable {
         self.savedContent = savedContent
     }
 
-    // Hashable by id only — content changes shouldn't affect identity.
+    // Hashable by id only — content/state changes shouldn't affect identity.
     static func == (lhs: EditorTab, rhs: EditorTab) -> Bool { lhs.id == rhs.id }
     func hash(into hasher: inout Hasher) { hasher.combine(id) }
 }
