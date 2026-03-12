@@ -18,12 +18,8 @@ struct PineApp: App {
             if let projectURL {
                 ProjectWindowView(projectURL: projectURL, registry: registry)
             } else {
-                // SwiftUI may instantiate with nil URL — redirect to Welcome
-                Color.clear.onAppear {
-                    NSApp.windows
-                        .first { $0.contentView?.subviews.isEmpty == true || $0.title.isEmpty }?
-                        .close()
-                }
+                // SwiftUI may instantiate with nil URL — close placeholder and show Welcome
+                NilProjectRedirect()
             }
         }
         .defaultSize(width: 1100, height: 700)
@@ -81,6 +77,22 @@ struct PineApp: App {
     }
 }
 
+// MARK: - Nil-project redirect
+
+/// Closes the placeholder window and opens the Welcome window instead.
+private struct NilProjectRedirect: View {
+    @Environment(\.openWindow) var openWindow
+
+    var body: some View {
+        Color.clear.onAppear {
+            NSApp.windows
+                .first { $0.contentView?.subviews.isEmpty == true || $0.title.isEmpty }?
+                .close()
+            openWindow(id: "welcome")
+        }
+    }
+}
+
 // MARK: - Project Window wrapper
 
 /// Resolves a ProjectManager from the registry and injects it into ContentView.
@@ -102,8 +114,10 @@ private struct ProjectWindowView: View {
             .onDisappear {
                 // Cleanup only — unsaved check already handled by WindowCloseInterceptor
                 registry.closeProject(projectURL)
-                if registry.openProjects.isEmpty {
-                    // Clear saved session so next launch doesn't reopen a stale project
+                let isTerminating = (NSApp.delegate as? AppDelegate)?.isTerminating == true
+                if registry.openProjects.isEmpty && !isTerminating {
+                    // User explicitly closed last project — clear session so next launch
+                    // shows Welcome instead of reopening a stale project.
                     SessionState.clear()
                     openWindow(id: "welcome")
                 }
@@ -208,6 +222,9 @@ private struct WindowCloseInterceptor: NSViewRepresentable {
 
 class AppDelegate: NSObject, NSApplicationDelegate {
     var registry: ProjectRegistry?
+    /// Set to true once applicationShouldTerminate is called, so onDisappear
+    /// handlers know not to clear the saved session during app quit.
+    private(set) var isTerminating = false
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSWindow.allowsAutomaticWindowTabbing = false
@@ -229,6 +246,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        isTerminating = true
         guard let registry else { return .terminateNow }
 
         for (_, pm) in registry.openProjects {
@@ -253,6 +271,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             case .alertSecondButtonReturn:
                 continue
             default:
+                isTerminating = false
                 return .terminateCancel
             }
         }
