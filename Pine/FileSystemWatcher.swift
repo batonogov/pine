@@ -24,6 +24,13 @@ final class FileSystemWatcher {
     /// Broken in stopOnQueue() when the stream is torn down.
     private var retainedSelf: FileSystemWatcher?
 
+    /// Token incremented on every stop so that a main.async callback
+    /// that was already enqueued before stop() can detect staleness
+    /// and skip delivery. Read/written on queue; captured by value
+    /// into the main.async block and compared on main via the
+    /// thread-safe isActive(generation:) check.
+    private var activeGeneration: Int = 0
+
     init(debounceInterval: TimeInterval = 0.5, callback: @escaping @MainActor () -> Void) {
         self.debounceInterval = debounceInterval
         self.callback = callback
@@ -70,6 +77,7 @@ final class FileSystemWatcher {
     private func stopOnQueue() {
         debounceWorkItem?.cancel()
         debounceWorkItem = nil
+        activeGeneration += 1
 
         guard let stream else { return }
         FSEventStreamStop(stream)
@@ -79,19 +87,33 @@ final class FileSystemWatcher {
         retainedSelf = nil
     }
 
+    /// Thread-safe check: returns true only if no stop() has occurred
+    /// since the given generation was captured.
+    private func isActive(generation: Int) -> Bool {
+        queue.sync { activeGeneration == generation }
+    }
+
     /// Called from the FSEvents callback on self.queue.
     /// Debounces on the serial queue, then dispatches the callback to main.
     fileprivate func handleEvents() {
         debounceWorkItem?.cancel()
         let cb = callback
-        let work = DispatchWorkItem {
-            DispatchQueue.main.async { cb() }
+        let generation = activeGeneration
+        let work = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            DispatchQueue.main.async {
+                // If stop() was called between enqueue and delivery,
+                // the generation will have changed — skip the callback.
+                guard self.isActive(generation: generation) else { return }
+                cb()
+            }
         }
         debounceWorkItem = work
         queue.asyncAfter(deadline: .now() + debounceInterval, execute: work)
     }
 }
 
+// swiftlint:disable:next function_parameter_count
 private func fsEventCallback(
     _ streamRef: ConstFSEventStreamRef,
     _ clientCallBackInfo: UnsafeMutableRawPointer?,
