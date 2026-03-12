@@ -54,6 +54,17 @@ class WindowBridgeView: NSView {
             window.tabbingMode = .preferred
             window.tabbingIdentifier = AppDelegate.editorTabbingID
 
+            // Hide the window until it's merged into the tab group
+            // to prevent the brief flash as a separate window.
+            let hasOtherEditorWindows = NSApplication.shared.windows.contains {
+                $0 !== window
+                    && $0.tabbingIdentifier == AppDelegate.editorTabbingID
+                    && $0.isVisible
+            }
+            if hasOtherEditorWindows {
+                window.alphaValue = 0
+            }
+
             // Перехватываем закрытие окна для диалога сохранения
             let interceptor = WindowCloseInterceptor(
                 originalDelegate: window.delegate,
