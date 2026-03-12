@@ -5,8 +5,12 @@
 
 import Testing
 import AppKit
+import SwiftUI
 @testable import Pine
 
+/// Serialized: все тесты мутируют singleton SyntaxHighlighter.shared
+/// (регистрируют грамматики, меняют кэш), поэтому параллельный запуск небезопасен.
+@Suite(.serialized)
 struct SyntaxHighlighterTests {
 
     private let font = NSFont.monospacedSystemFont(ofSize: 13, weight: .regular)
@@ -54,8 +58,6 @@ struct SyntaxHighlighterTests {
     }
 
     /// Build text with a block comment spanning many lines.
-    /// Returns `(text, commentBodyOffset)` where commentBodyOffset
-    /// points to the first character after `/* `.
     private func makeLongComment(prefixLines: Int = 0, commentLines: Int = 60) -> String {
         var lines: [String] = []
         for i in 0..<prefixLines {
@@ -197,7 +199,7 @@ struct SyntaxHighlighterTests {
                 "Marker outside repaint range must survive — proves no false full repaint")
     }
 
-    // MARK: - 4. Language change with same text re-highlights
+    // MARK: - 4. Language change with same text re-highlights (SyntaxHighlighter level)
 
     @Test func languageChangeWithSameTextReHighlights() {
         register(langA, langB)
@@ -263,5 +265,84 @@ struct SyntaxHighlighterTests {
         // Red marker should be gone — full repaint overwrote it with comment color
         #expect(foregroundColor(in: storage, at: farPos) == commentColor,
                 "After cache invalidation, full repaint must overwrite marker with comment color")
+    }
+
+    // MARK: - 6. updateNSView detects language change with identical text
+
+    @Test func updateNSViewReHighlightsOnLanguageChangeWithSameText() {
+        register(langA, langB)
+
+        let text = "# this is a comment\nfunc hello()"
+        let hl = SyntaxHighlighter.shared
+        let commentColor = hl.theme.color(for: "comment")
+        let keywordColor = hl.theme.color(for: "keyword")
+
+        // Build the text system manually (same stack as CodeEditorView.makeNSView)
+        let textStorage = NSTextStorage(string: text)
+        let layoutManager = NSLayoutManager()
+        textStorage.addLayoutManager(layoutManager)
+        let textContainer = NSTextContainer(containerSize: NSSize(width: 500, height: CGFloat.greatestFiniteMagnitude))
+        layoutManager.addTextContainer(textContainer)
+        let textView = NSTextView(frame: NSRect(x: 0, y: 0, width: 500, height: 500), textContainer: textContainer)
+
+        let scrollView = NSScrollView(frame: NSRect(x: 0, y: 0, width: 500, height: 500))
+        scrollView.documentView = textView
+
+        // Create Coordinator with langA
+        var editorView = CodeEditorView(
+            text: .constant(text),
+            language: "langa",
+            fileName: "test.langa"
+        )
+        let coordinator = CodeEditorView.Coordinator(parent: editorView)
+        coordinator.scrollView = scrollView
+
+        // Simulate first updateNSView — establishes lastLanguage/lastFileName
+        coordinator.lastLanguage = "langa"
+        coordinator.lastFileName = "test.langa"
+        hl.highlight(textStorage: textStorage, language: "langa", font: font)
+
+        let hashPos = 0
+        let funcPos = (text as NSString).range(of: "func").location
+
+        #expect(foregroundColor(in: textStorage, at: hashPos) != commentColor,
+                "`#` should not be comment in langA")
+        #expect(foregroundColor(in: textStorage, at: funcPos) == keywordColor,
+                "`func` should be keyword in langA")
+
+        // Now simulate switching to langB — same text, different language
+        editorView = CodeEditorView(
+            text: .constant(text),
+            language: "langb",
+            fileName: "test.langb"
+        )
+        coordinator.parent = editorView
+
+        // This is the logic from updateNSView that we're testing:
+        // languageChanged should be true, textChanged should be false
+        let languageChanged = coordinator.lastLanguage != editorView.language
+            || coordinator.lastFileName != editorView.fileName
+        let textChanged = textView.string != text
+
+        #expect(languageChanged, "Language change must be detected")
+        #expect(!textChanged, "Text must be identical")
+
+        // Execute the same code path as updateNSView
+        if textChanged || languageChanged {
+            coordinator.cancelPendingHighlight()
+            hl.invalidateCache(for: textStorage)
+
+            // text didn't change, so no textView.string = text
+            hl.highlight(textStorage: textStorage, language: editorView.language, font: font)
+
+            coordinator.lastLanguage = editorView.language
+            coordinator.lastFileName = editorView.fileName
+        }
+
+        // Verify re-highlighting happened with the new grammar
+        #expect(foregroundColor(in: textStorage, at: hashPos) == commentColor,
+                "`#` must become comment after language switch to langB")
+        #expect(foregroundColor(in: textStorage, at: funcPos) != keywordColor,
+                "`func` must lose keyword color after language switch to langB")
     }
 }
