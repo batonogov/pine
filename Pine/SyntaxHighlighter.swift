@@ -76,15 +76,45 @@ final class SyntaxHighlighter {
     /// Грамматики по точному имени файла (Dockerfile, Makefile и т.д.)
     private var grammarsByFileName: [String: Grammar] = [:]
 
+    /// Скомпилированное правило подсветки.
+    struct CompiledRule {
+        let regex: NSRegularExpression
+        let scope: String
+        /// true для правил, способных матчить через переносы строк
+        /// (паттерн содержит `[\s\S]` или опция dotMatchesLineSeparators).
+        let isMultiline: Bool
+    }
+
     /// Скомпилированные regex для каждой грамматики (кэшируем для производительности).
-    /// Ключ — имя языка, значение — массив пар (regex, scope).
-    private var compiledRules: [String: [(regex: NSRegularExpression, scope: String)]] = [:]
+    /// Ключ — имя языка.
+    private var compiledRules: [String: [CompiledRule]] = [:]
+
+    /// Кэш «отпечатка» многострочных токенов по ObjectIdentifier текстового хранилища.
+    /// Отпечаток — упорядоченный массив длин матчей (без позиций).
+    /// Вставка/удаление выше токена сдвигает location, но не меняет длину,
+    /// поэтому обычные правки не вызывают ложных полных перекрасок.
+    /// Изменение границы токена (добавление/удаление `/*`, `"""` и т.д.)
+    /// меняет количество или длину матчей → обнаруживается и запускает full repaint.
+    private var multilineMatchCache: [ObjectIdentifier: [Int]] = [:]
 
     /// Текущая тема
     var theme: Theme = .default
 
     private init() {
         loadGrammars()
+    }
+
+    /// Регистрирует грамматику напрямую (для тестов через @testable import).
+    func registerGrammar(_ grammar: Grammar) {
+        for ext in grammar.extensions {
+            grammarsByExtension[ext.lowercased()] = grammar
+        }
+        if let fileNames = grammar.fileNames {
+            for name in fileNames {
+                grammarsByFileName[name] = grammar
+            }
+        }
+        compileRules(for: grammar)
     }
 
     // MARK: - Загрузка грамматик
@@ -131,10 +161,11 @@ final class SyntaxHighlighter {
 
     /// Компилирует regex-паттерны грамматики в NSRegularExpression.
     private func compileRules(for grammar: Grammar) {
-        var rules: [(regex: NSRegularExpression, scope: String)] = []
+        var rules: [CompiledRule] = []
 
         for rule in grammar.rules {
             var opts: NSRegularExpression.Options = []
+            var isMultiline = false
 
             // Преобразуем строковые опции в NSRegularExpression.Options
             if let options = rule.options {
@@ -146,14 +177,20 @@ final class SyntaxHighlighter {
                         opts.insert(.caseInsensitive)
                     case "dotMatchesLineSeparators":
                         opts.insert(.dotMatchesLineSeparators)
+                        isMultiline = true
                     default:
                         break
                     }
                 }
             }
 
+            // Паттерны с [\s\S] матчат через переносы строк
+            if rule.pattern.contains("[\\s\\S]") || rule.pattern.contains("[\\S\\s]") {
+                isMultiline = true
+            }
+
             if let regex = try? NSRegularExpression(pattern: rule.pattern, options: opts) {
-                rules.append((regex: regex, scope: rule.scope))
+                rules.append(CompiledRule(regex: regex, scope: rule.scope, isMultiline: isMultiline))
             } else {
                 print("SyntaxHighlighter: Invalid regex in \(grammar.name): \(rule.pattern)")
             }
@@ -164,77 +201,204 @@ final class SyntaxHighlighter {
 
     // MARK: - Подсветка
 
-    /// Применяет подсветку к NSTextStorage.
-    /// - Parameters:
-    ///   - textStorage: Хранилище текста NSTextView
-    ///   - language: Расширение файла ("swift", "py", "go")
-    ///   - fileName: Полное имя файла ("Dockerfile") — для поиска по имени
-    ///   - font: Базовый шрифт текста
+    /// Количество строк контекста вокруг изменённого региона для инкрементальной подсветки.
+    private let contextLines = 20
+
+    /// Приоритеты scopes: comment и string перекрывают остальные
+    private let scopePriority: [String: Int] = [
+        "comment": 100,
+        "string": 90
+    ]
+
+    /// Применяет подсветку ко всему NSTextStorage и обновляет кэш многострочных матчей.
     func highlight(
         textStorage: NSTextStorage,
         language: String,
         fileName: String? = nil,
         font: NSFont
     ) {
-        // Ищем грамматику: сначала по имени файла, потом по расширению
+        guard let (_, rules) = resolveGrammar(language: language, fileName: fileName) else {
+            resetAttributes(textStorage: textStorage,
+                            range: NSRange(location: 0, length: textStorage.length),
+                            font: font)
+            return
+        }
+
+        let fullRange = NSRange(location: 0, length: textStorage.length)
+        applyRules(rules, to: textStorage, repaintRange: fullRange, searchRange: fullRange, font: font)
+
+        // Обновляем кэш отпечатка многострочных матчей
+        let key = ObjectIdentifier(textStorage)
+        multilineMatchCache[key] = collectMultilineFingerprint(
+            rules: rules, source: textStorage.string, searchRange: fullRange
+        )
+    }
+
+    /// Инкрементальная подсветка: подсвечивает только изменённый регион.
+    ///
+    /// Стратегия:
+    /// 1. Многострочные правила (2–3 на грамматику) запускаются по всему тексту,
+    ///    чтобы обнаружить токены, начинающиеся за пределами окна.
+    ///    Результат сравнивается с кэшем — если границы изменились
+    ///    (добавлен/удалён `/*`, `"""` и т.д.), запускается полная перекраска.
+    /// 2. Однострочные правила (keyword, type, function и т.д.) запускаются
+    ///    только в пределах расширенного диапазона.
+    func highlightEdited(
+        textStorage: NSTextStorage,
+        editedRange: NSRange,
+        language: String,
+        fileName: String? = nil,
+        font: NSFont
+    ) {
+        let totalLength = textStorage.length
+        guard totalLength > 0 else { return }
+
+        guard let (_, rules) = resolveGrammar(language: language, fileName: fileName) else {
+            resetAttributes(textStorage: textStorage,
+                            range: NSRange(location: 0, length: totalLength),
+                            font: font)
+            return
+        }
+
+        let source = textStorage.string
+        let fullRange = NSRange(location: 0, length: totalLength)
+
+        // Сканируем многострочные правила по всему тексту
+        let currentFingerprint = collectMultilineFingerprint(
+            rules: rules, source: source, searchRange: fullRange
+        )
+
+        let key = ObjectIdentifier(textStorage)
+        let cachedFingerprint = multilineMatchCache[key]
+
+        // Если структура многострочных токенов изменилась — полная перекраска
+        if cachedFingerprint != currentFingerprint {
+            multilineMatchCache[key] = currentFingerprint
+            applyRules(rules, to: textStorage, repaintRange: fullRange, searchRange: fullRange, font: font)
+            return
+        }
+
+        // Границы не изменились — инкрементальная подсветка
+        let repaintRange = expandToContext(editedRange, in: source as NSString, totalLength: totalLength)
+        applyRules(rules, to: textStorage, repaintRange: repaintRange, searchRange: repaintRange, font: font)
+    }
+
+    /// Удаляет кэш для textStorage (вызывать при смене файла).
+    func invalidateCache(for textStorage: NSTextStorage) {
+        multilineMatchCache.removeValue(forKey: ObjectIdentifier(textStorage))
+    }
+
+    // MARK: - Private helpers
+
+    private func resolveGrammar(language: String, fileName: String?) -> (Grammar, [CompiledRule])? {
         let grammar: Grammar?
         if let name = fileName, let g = grammarsByFileName[name] {
             grammar = g
         } else {
             grammar = grammarsByExtension[language.lowercased()]
         }
+        guard let grammar, let rules = compiledRules[grammar.name] else { return nil }
+        return (grammar, rules)
+    }
 
-        let fullRange = NSRange(location: 0, length: textStorage.length)
-        let source = textStorage.string
+    /// Собирает отпечаток многострочных матчей — упорядоченный массив длин.
+    /// Длины инвариантны к вставкам/удалениям выше токена (location сдвигается,
+    /// length — нет), поэтому обычные правки не вызывают ложного full repaint.
+    private func collectMultilineFingerprint(
+        rules: [CompiledRule],
+        source: String,
+        searchRange: NSRange
+    ) -> [Int] {
+        var lengths: [Int] = []
+        for rule in rules where rule.isMultiline {
+            rule.regex.enumerateMatches(in: source, range: searchRange) { match, _, _ in
+                if let r = match?.range {
+                    lengths.append(r.length)
+                }
+            }
+        }
+        return lengths
+    }
 
-        // Сбрасываем на базовый стиль
+    /// Расширяет диапазон до границ строк + contextLines контекста.
+    private func expandToContext(_ range: NSRange, in source: NSString, totalLength: Int) -> NSRange {
+        let expanded = source.lineRange(for: range)
+
+        var linesAdded = 0
+        var start = expanded.location
+        while start > 0 && linesAdded < contextLines {
+            start -= 1
+            if source.character(at: start) == 0x0A { linesAdded += 1 }
+        }
+        if start > 0 { start += 1 }
+
+        linesAdded = 0
+        var end = NSMaxRange(expanded)
+        while end < totalLength && linesAdded < contextLines {
+            if source.character(at: end) == 0x0A { linesAdded += 1 }
+            end += 1
+        }
+
+        return NSRange(location: start, length: end - start)
+    }
+
+    /// Сбрасывает атрибуты на базовый стиль (без грамматики).
+    private func resetAttributes(textStorage: NSTextStorage, range: NSRange, font: NSFont) {
         textStorage.beginEditing()
         textStorage.addAttributes([
             .foregroundColor: NSColor.textColor,
             .font: font
-        ], range: fullRange)
+        ], range: range)
+        textStorage.endEditing()
+    }
 
-        // Если грамматика не найдена — оставляем plain text
-        guard let grammar,
-              let rules = compiledRules[grammar.name]
-        else {
-            textStorage.endEditing()
-            return
-        }
+    /// Применяет правила подсветки.
+    ///
+    /// - `repaintRange`: диапазон, в котором сбрасываются и перекрашиваются атрибуты.
+    /// - `searchRange`: диапазон поиска для однострочных правил.
+    ///   Многострочные правила всегда ищут по всему тексту (через fullRange),
+    ///   чтобы обнаружить токены, начинающиеся до repaintRange.
+    private func applyRules(
+        _ rules: [CompiledRule],
+        to textStorage: NSTextStorage,
+        repaintRange: NSRange,
+        searchRange: NSRange,
+        font: NSFont
+    ) {
+        let source = textStorage.string
+        let fullRange = NSRange(location: 0, length: textStorage.length)
 
-        // Применяем правила последовательно.
-        // Порядок важен: последние правила перекрывают предыдущие.
-        // В JSON грамматики комментарии идут первыми — и они будут перекрыты,
-        // если строка/ключевое слово совпадёт внутри. Но при правильном порядке
-        // (комментарии первые, они применяются, а потом ключевые слова красят поверх,
-        // но комментарии длиннее и последний wins) — это работает корректно
-        // для большинства случаев.
+        textStorage.beginEditing()
+        textStorage.addAttributes([
+            .foregroundColor: NSColor.textColor,
+            .font: font
+        ], range: repaintRange)
 
-        // Создаём массив "занятых" диапазонов — чтобы comment перекрывал всё
         var highlightedRanges: [(range: NSRange, priority: Int)] = []
-
-        // Приоритеты scopes: comment и string перекрывают остальные
-        let scopePriority: [String: Int] = [
-            "comment": 100,
-            "string": 90
-        ]
 
         for rule in rules {
             let priority = scopePriority[rule.scope] ?? 0
             guard let color = theme.color(for: rule.scope) else { continue }
 
-            rule.regex.enumerateMatches(in: source, range: fullRange) { match, _, _ in
+            // Многострочные правила ищут по всему тексту,
+            // однострочные — только в searchRange
+            let scanRange = rule.isMultiline ? fullRange : searchRange
+
+            rule.regex.enumerateMatches(in: source, range: scanRange) { match, _, _ in
                 guard let matchRange = match?.range else { return }
 
-                // Проверяем, не занят ли диапазон более приоритетным scope
+                // Красим только пересечение с repaintRange
+                let clipped = NSIntersectionRange(matchRange, repaintRange)
+                guard clipped.length > 0 else { return }
+
                 let isOverridden = highlightedRanges.contains { existing in
                     existing.priority > priority &&
-                    NSIntersectionRange(existing.range, matchRange).length > 0
+                    NSIntersectionRange(existing.range, clipped).length > 0
                 }
 
                 if !isOverridden {
-                    textStorage.addAttribute(.foregroundColor, value: color, range: matchRange)
-                    highlightedRanges.append((range: matchRange, priority: priority))
+                    textStorage.addAttribute(.foregroundColor, value: color, range: clipped)
+                    highlightedRanges.append((range: clipped, priority: priority))
                 }
             }
         }

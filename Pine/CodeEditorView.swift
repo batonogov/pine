@@ -206,13 +206,12 @@ struct CodeEditorView: NSViewRepresentable {
         // Scroll view заполняет весь контейнер
         scrollView.frame = container.bounds
 
-        if textView.string != text {
-            textView.string = text
-            applyHighlighting(to: textView)
-            // Сброс скролла и курсора при открытии нового файла
-            textView.setSelectedRange(NSRange(location: 0, length: 0))
-            textView.scrollRangeToVisible(NSRange(location: 0, length: 0))
-        }
+        context.coordinator.updateContentIfNeeded(
+            text: text,
+            language: language,
+            fileName: fileName,
+            font: editorFont
+        )
 
         // Обновляем размер и diff-данные LineNumberView
         if let lineNumberView = context.coordinator.lineNumberView {
@@ -234,16 +233,114 @@ struct CodeEditorView: NSViewRepresentable {
         var scrollView: NSScrollView?
         var lineNumberView: LineNumberView?
 
+        /// Последние язык/имя файла — для обнаружения смены грамматики
+        /// при одинаковом содержимом файлов
+        var lastLanguage: String = ""
+        var lastFileName: String?
+
+        /// Отложенная задача подсветки (дебаунсинг)
+        private var highlightWorkItem: DispatchWorkItem?
+        /// Задержка дебаунсинга
+        private let highlightDelay: TimeInterval = 0.05
+
         init(parent: CodeEditorView) {
             self.parent = parent
+        }
+
+        /// Отменяет отложенную подсветку. Вызывается при смене файла
+        /// чтобы не применить диапазон старого документа к новому.
+        func cancelPendingHighlight() {
+            highlightWorkItem?.cancel()
+            highlightWorkItem = nil
+        }
+
+        /// Обновляет текст и подсветку при смене файла или языка.
+        /// Вызывается из updateNSView. Выделен в отдельный метод
+        /// для возможности прямого тестирования.
+        func updateContentIfNeeded(text: String, language: String, fileName: String?, font: NSFont) {
+            guard let sv = scrollView,
+                  let textView = sv.documentView as? NSTextView else { return }
+
+            let languageChanged = lastLanguage != language || lastFileName != fileName
+            let textChanged = textView.string != text
+
+            guard textChanged || languageChanged else { return }
+
+            cancelPendingHighlight()
+            if let storage = textView.textStorage {
+                SyntaxHighlighter.shared.invalidateCache(for: storage)
+            }
+
+            if textChanged {
+                textView.string = text
+            }
+
+            if let storage = textView.textStorage {
+                SyntaxHighlighter.shared.highlight(
+                    textStorage: storage,
+                    language: language,
+                    fileName: fileName,
+                    font: font
+                )
+            }
+
+            lastLanguage = language
+            lastFileName = fileName
+
+            if textChanged {
+                textView.setSelectedRange(NSRange(location: 0, length: 0))
+                textView.scrollRangeToVisible(NSRange(location: 0, length: 0))
+            }
         }
 
         func textDidChange(_ notification: Notification) {
             guard let textView = notification.object as? NSTextView else { return }
             parent.text = textView.string
-            parent.applyHighlighting(to: textView)
             // Точка на кнопке закрытия таба при несохранённых изменениях
             textView.window?.isDocumentEdited = true
+
+            // Захватываем editedRange из textStorage сейчас,
+            // пока он валиден в координатах текущей версии текста
+            var editedRange: NSRange?
+            if let storage = textView.textStorage {
+                let edited = storage.editedRange
+                if edited.location != NSNotFound {
+                    editedRange = edited
+                }
+            }
+
+            // Дебаунсинг: откладываем подсветку до паузы в вводе.
+            // Не накапливаем диапазоны — каждый textDidChange работает
+            // в своих координатах; union между версиями некорректен.
+            // При быстром вводе последовательные правки обычно смежны,
+            // и 20-строчный контекст в highlightEdited покрывает их.
+            highlightWorkItem?.cancel()
+            let workItem = DispatchWorkItem { [weak self] in
+                guard let self else { return }
+                guard let sv = self.scrollView,
+                      let tv = sv.documentView as? NSTextView,
+                      let storage = tv.textStorage else { return }
+
+                if let range = editedRange, range.location + range.length <= storage.length {
+                    SyntaxHighlighter.shared.highlightEdited(
+                        textStorage: storage,
+                        editedRange: range,
+                        language: self.parent.language,
+                        fileName: self.parent.fileName,
+                        font: self.parent.editorFont
+                    )
+                } else {
+                    // Диапазон не определён или невалиден — полная подсветка
+                    SyntaxHighlighter.shared.highlight(
+                        textStorage: storage,
+                        language: self.parent.language,
+                        fileName: self.parent.fileName,
+                        font: self.parent.editorFont
+                    )
+                }
+            }
+            highlightWorkItem = workItem
+            DispatchQueue.main.asyncAfter(deadline: .now() + highlightDelay, execute: workItem)
         }
     }
 
