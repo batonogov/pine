@@ -174,7 +174,7 @@ struct ContentView: View {
             }
         }
         .frame(minWidth: 800, minHeight: 500)
-        .navigationTitle(workspace.projectName)
+        .navigationTitle(currentFileName)
         .navigationSubtitle(branchSubtitle)
         .background(WindowBridge(
             representedURL: fileURL,
