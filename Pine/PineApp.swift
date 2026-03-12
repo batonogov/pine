@@ -100,13 +100,68 @@ private struct ProjectWindowView: View {
             .focusedSceneValue(\.projectManager, pm)
             .onAppear { registry.lastActiveProjectURL = projectURL }
             .onDisappear {
-                handleWindowClose(pm: pm)
+                // Cleanup only — unsaved check already handled by WindowCloseInterceptor
+                registry.closeProject(projectURL)
+                if registry.openProjects.isEmpty {
+                    openWindow(id: "welcome")
+                }
+            }
+            .background {
+                WindowCloseInterceptor(
+                    projectManager: pm,
+                    registry: registry,
+                    projectURL: projectURL
+                )
             }
     }
+}
 
-    /// Prompts for unsaved changes before closing the project window.
-    private func handleWindowClose(pm: ProjectManager) {
-        if pm.tabManager.hasUnsavedChanges {
+// MARK: - NSWindowDelegate interceptor for unsaved-changes on close
+
+/// Installs an NSWindowDelegate on the hosting window to intercept close
+/// and prompt for unsaved changes before the window actually closes.
+private struct WindowCloseInterceptor: NSViewRepresentable {
+    let projectManager: ProjectManager
+    let registry: ProjectRegistry
+    let projectURL: URL
+
+    func makeNSView(context: Context) -> NSView {
+        let view = NSView()
+        // Defer to next run loop so the window is set
+        DispatchQueue.main.async {
+            guard let window = view.window else { return }
+            let delegate = CloseDelegate(
+                projectManager: projectManager,
+                original: window.delegate
+            )
+            context.coordinator.closeDelegate = delegate
+            window.delegate = delegate
+        }
+        return view
+    }
+
+    func updateNSView(_ nsView: NSView, context: Context) {}
+
+    func makeCoordinator() -> Coordinator { Coordinator() }
+
+    class Coordinator {
+        // Strong reference to keep delegate alive
+        var closeDelegate: CloseDelegate?
+    }
+
+    /// Proxy NSWindowDelegate that intercepts windowShouldClose.
+    class CloseDelegate: NSObject, NSWindowDelegate {
+        let projectManager: ProjectManager
+        weak var original: (any NSWindowDelegate)?
+
+        init(projectManager: ProjectManager, original: (any NSWindowDelegate)?) {
+            self.projectManager = projectManager
+            self.original = original
+        }
+
+        func windowShouldClose(_ sender: NSWindow) -> Bool {
+            guard projectManager.tabManager.hasUnsavedChanges else { return true }
+
             let alert = NSAlert()
             alert.messageText = Strings.unsavedChangesTitle
             alert.informativeText = Strings.unsavedChangesMessage
@@ -118,25 +173,31 @@ private struct ProjectWindowView: View {
             let response = alert.runModal()
             switch response {
             case .alertFirstButtonReturn:
-                // Save all dirty tabs — abort close if any save fails
-                for index in pm.tabManager.tabs.indices where pm.tabManager.tabs[index].isDirty {
-                    guard pm.tabManager.saveTab(at: index) else {
-                        return // Abort close: save failed
+                for index in projectManager.tabManager.tabs.indices
+                    where projectManager.tabManager.tabs[index].isDirty {
+                    guard projectManager.tabManager.saveTab(at: index) else {
+                        return false // Save failed — abort close
                     }
                 }
+                return true
             case .alertSecondButtonReturn:
-                break // Don't save — proceed to close
+                return true // Don't save — allow close
             default:
-                return // Cancel — abort close
+                return false // Cancel — abort close
             }
         }
 
-        pm.saveSession()
-        registry.closeProject(projectURL)
+        // Forward other delegate calls to the original
+        func windowWillClose(_ notification: Notification) {
+            original?.windowWillClose?(notification)
+        }
 
-        // Show Welcome window when last project closes
-        if registry.openProjects.isEmpty {
-            openWindow(id: "welcome")
+        func windowDidBecomeKey(_ notification: Notification) {
+            original?.windowDidBecomeKey?(notification)
+        }
+
+        func windowDidResignKey(_ notification: Notification) {
+            original?.windowDidResignKey?(notification)
         }
     }
 }
