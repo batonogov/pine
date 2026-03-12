@@ -8,6 +8,9 @@
 import SwiftUI
 
 /// Manages the project file tree, root directory, and git integration.
+///
+/// All public/internal methods and property access must happen on the
+/// main thread (enforced by SwiftUI's @Observable).
 @Observable
 final class WorkspaceManager {
     var rootNodes: [FileNode] = []
@@ -34,6 +37,11 @@ final class WorkspaceManager {
     }
 
     func loadDirectory(url: URL) {
+        // Stop old watcher immediately so it cannot fire events
+        // that would bump loadGeneration and race with the new load.
+        fileWatcher?.stop()
+        fileWatcher = nil
+
         rootURL = url
         projectName = url.lastPathComponent
         loadGeneration += 1
@@ -48,14 +56,13 @@ final class WorkspaceManager {
         gitProvider.branches = []
 
         loadDirectoryContentsAsync(url: url, generation: generation) { [weak self] in
-            // Start watching only after the initial load completes,
-            // so early FSEvents don't race with the first tree build.
             self?.startWatching(url: url)
         }
     }
 
     private func startWatching(url: URL) {
         let watcher = FileSystemWatcher { [weak self] in
+            // This closure runs on main (guaranteed by FileSystemWatcher).
             self?.refreshFileTreeAsync()
         }
         watcher.watch(directory: url)
@@ -103,8 +110,9 @@ final class WorkspaceManager {
         gitProvider.refresh()
     }
 
-    /// Background variant called by the file watcher so that
-    /// automatic refreshes never block the main thread.
+    /// Background variant called by the file watcher.
+    /// Runs on main (watcher dispatches here) so loadGeneration
+    /// access is safe; heavy I/O is dispatched to a background queue.
     private func refreshFileTreeAsync() {
         guard let url = rootURL else { return }
         loadGeneration += 1

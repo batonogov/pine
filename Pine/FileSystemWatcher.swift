@@ -3,36 +3,37 @@
 //  Pine
 //
 //  Watches a directory tree for filesystem changes using FSEvents
-//  and fires a debounced callback when files are created, deleted,
-//  renamed, or modified.
+//  and fires a debounced callback on the main thread when files
+//  are created, deleted, renamed, or modified.
 //
 
 import Foundation
 
 final class FileSystemWatcher {
     private var stream: FSEventStreamRef?
-    private let callback: () -> Void
+    private let callback: @MainActor () -> Void
     private let debounceInterval: TimeInterval
 
-    /// Serial queue that owns all mutable state (stream, debounceWorkItem)
-    /// and receives FSEvents callbacks, eliminating races between
-    /// event delivery, debounce scheduling, and stop/deinit.
+    /// Serial queue that owns all mutable state (stream, debounceWorkItem).
+    /// FSEvents callbacks are delivered here too.
     private let queue = DispatchQueue(label: "pine.fswatcher", qos: .utility)
     private var debounceWorkItem: DispatchWorkItem?
 
-    init(debounceInterval: TimeInterval = 0.5, callback: @escaping () -> Void) {
+    /// Strong self-reference kept while the stream is active.
+    /// Prevents deallocation while FSEvents holds an unretained pointer.
+    /// Broken in stopOnQueue() when the stream is torn down.
+    private var retainedSelf: FileSystemWatcher?
+
+    init(debounceInterval: TimeInterval = 0.5, callback: @escaping @MainActor () -> Void) {
         self.debounceInterval = debounceInterval
         self.callback = callback
-    }
-
-    deinit {
-        stopOnQueue()
     }
 
     func watch(directory: URL) {
         queue.sync { self.watchOnQueue(directory: directory) }
     }
 
+    /// Must be called before dropping the last external reference.
     func stop() {
         queue.sync { self.stopOnQueue() }
     }
@@ -61,6 +62,7 @@ final class FileSystemWatcher {
         ) else { return }
 
         self.stream = stream
+        retainedSelf = self
         FSEventStreamSetDispatchQueue(stream, queue)
         FSEventStreamStart(stream)
     }
@@ -74,13 +76,16 @@ final class FileSystemWatcher {
         FSEventStreamInvalidate(stream)
         FSEventStreamRelease(stream)
         self.stream = nil
+        retainedSelf = nil
     }
 
     /// Called from the FSEvents callback on self.queue.
+    /// Debounces on the serial queue, then dispatches the callback to main.
     fileprivate func handleEvents() {
         debounceWorkItem?.cancel()
-        let work = DispatchWorkItem { [weak self] in
-            self?.callback()
+        let cb = callback
+        let work = DispatchWorkItem {
+            DispatchQueue.main.async { cb() }
         }
         debounceWorkItem = work
         queue.asyncAfter(deadline: .now() + debounceInterval, execute: work)
