@@ -7,181 +7,24 @@
 
 import SwiftUI
 
-// MARK: - WindowBridge
-
-/// Настраивает NSWindow: tabbingMode, representedURL, tab title, перехват закрытия с несохранёнными изменениями.
-struct WindowBridge: NSViewRepresentable {
-    var representedURL: URL?
-    var isDocumentEdited: Bool
-    var tabTitle: String?
-    var onSave: () -> Void
-
-    func makeCoordinator() -> Coordinator {
-        Coordinator()
-    }
-
-    func makeNSView(context: Context) -> WindowBridgeView {
-        let view = WindowBridgeView()
-        view.coordinator = context.coordinator
-        return view
-    }
-
-    func updateNSView(_ nsView: WindowBridgeView, context: Context) {
-        context.coordinator.isDocumentEdited = isDocumentEdited
-        context.coordinator.onSave = onSave
-        nsView.pendingURL = representedURL
-        nsView.pendingTabTitle = tabTitle
-        nsView.applyIfPossible()
-    }
-
-    class Coordinator {
-        var isDocumentEdited = false
-        var onSave: (() -> Void)?
-    }
-}
-
-class WindowBridgeView: NSView {
-    weak var hostWindow: NSWindow?
-    var pendingURL: URL?
-    var pendingTabTitle: String?
-    var coordinator: WindowBridge.Coordinator?
-    private var closeInterceptor: WindowCloseInterceptor?
-    /// Tracks whether representedURL has been set at least once.
-    /// Used to re-trigger merge for session tab reordering after URL arrives.
-    private var didSetRepresentedURL = false
-
-    override func viewDidMoveToWindow() {
-        super.viewDidMoveToWindow()
-        if let window, closeInterceptor == nil {
-            hostWindow = window
-            window.tabbingMode = .preferred
-            window.tabbingIdentifier = AppDelegate.editorTabbingID
-
-            // Перехватываем закрытие окна для диалога сохранения
-            let interceptor = WindowCloseInterceptor(
-                originalDelegate: window.delegate,
-                coordinator: coordinator
-            )
-            window.delegate = interceptor
-            closeInterceptor = interceptor
-
-            applyIfPossible()
-
-            // Immediately merge into an existing tab group to prevent the
-            // window from flashing as a standalone window before becoming a tab.
-            // Prefer the key/visible window to avoid merging into a minimized
-            // or hidden group. Fall back to any editor window for cold start
-            // where the primary may not be visible yet.
-            let editorPeers = NSApplication.shared.windows.filter {
-                $0 !== window && $0.tabbingIdentifier == AppDelegate.editorTabbingID
-            }
-            let primaryWindow = editorPeers.first(where: { $0.isKeyWindow })
-                ?? editorPeers.first(where: { $0.isVisible && !$0.isMiniaturized })
-                ?? editorPeers.first
-            if let primaryWindow {
-                window.alphaValue = 0
-                primaryWindow.addTabbedWindow(window, ordered: .above)
-                window.alphaValue = 1
-            }
-
-            // Signal for session reordering (debounced merge handles tab order)
-            NotificationCenter.default.post(name: .editorWindowReady, object: nil)
-        }
-    }
-
-    func applyIfPossible() {
-        guard let window = hostWindow ?? self.window else { return }
-        let previousURL = window.representedURL
-        window.representedURL = pendingURL
-        window.isDocumentEdited = coordinator?.isDocumentEdited ?? false
-        // Set tab caption independently from the window title.
-        // This allows navigationTitle to control the title bar (project name)
-        // while each tab shows its own file name.
-        window.tab.title = pendingTabTitle ?? ""
-
-        // Re-trigger merge when representedURL first becomes available.
-        // viewDidMoveToWindow fires before updateNSView sets the URL,
-        // so the debounced merge needs a second pass to reorder correctly.
-        if !didSetRepresentedURL, previousURL == nil, pendingURL != nil {
-            didSetRepresentedURL = true
-            NotificationCenter.default.post(name: .editorWindowReady, object: nil)
-        }
-    }
-}
-
-/// Proxy-delegate: перехватывает windowShouldClose для диалога сохранения,
-/// остальные методы пробрасывает оригинальному SwiftUI-delegate.
-class WindowCloseInterceptor: NSObject, NSWindowDelegate {
-    weak var originalDelegate: NSWindowDelegate?
-    weak var coordinator: WindowBridge.Coordinator?
-
-    init(originalDelegate: NSWindowDelegate?, coordinator: WindowBridge.Coordinator?) {
-        self.originalDelegate = originalDelegate
-        self.coordinator = coordinator
-        super.init()
-    }
-
-    func windowShouldClose(_ sender: NSWindow) -> Bool {
-        guard let coordinator, coordinator.isDocumentEdited else {
-            return originalDelegate?.windowShouldClose?(sender) ?? true
-        }
-
-        let alert = NSAlert()
-        alert.messageText = Strings.unsavedChangesTitle
-        alert.informativeText = Strings.unsavedChangesMessage
-        alert.addButton(withTitle: Strings.dialogSave)
-        alert.addButton(withTitle: Strings.dialogDontSave)
-        alert.addButton(withTitle: Strings.dialogCancel)
-        alert.alertStyle = .warning
-
-        let response = alert.runModal()
-        switch response {
-        case .alertFirstButtonReturn:
-            coordinator.onSave?()
-            return true
-        case .alertSecondButtonReturn:
-            return true
-        default:
-            return false
-        }
-    }
-
-    // Пробрасываем все остальные delegate-методы оригинальному SwiftUI delegate
-    override func responds(to aSelector: Selector!) -> Bool {
-        if super.responds(to: aSelector) { return true }
-        return originalDelegate?.responds(to: aSelector) ?? false
-    }
-
-    override func forwardingTarget(for aSelector: Selector!) -> Any? {
-        return originalDelegate
-    }
-}
-
 // MARK: - Главный ContentView
 
 struct ContentView: View {
-    @Binding var fileURL: URL?
     @Environment(ProjectManager.self) var projectManager
     @Environment(WorkspaceManager.self) var workspace
     @Environment(TerminalManager.self) var terminal
-    @Environment(\.openWindow) var openWindow
+    @Environment(TabManager.self) var tabManager
 
     @State private var selectedNode: FileNode?
-    @State private var fileContent: String = ""
-    @State private var savedContent: String = ""
     @State private var columnVisibility: NavigationSplitViewVisibility = .all
     @State private var lineDiffs: [GitLineDiff] = []
-    /// When true, the next fileURL change skips reloading from disk (used during rename).
-    @State private var suppressNextReload = false
     /// Global flag — only the first ContentView instance restores the session.
     private static var didRestoreSession = false
 
-    private var hasUnsavedChanges: Bool {
-        fileContent != savedContent
-    }
+    private var activeTab: EditorTab? { tabManager.activeTab }
 
     private var currentFileName: String {
-        fileURL?.lastPathComponent ?? workspace.projectName
+        activeTab?.fileName ?? workspace.projectName
     }
 
     var body: some View {
@@ -215,63 +58,43 @@ struct ContentView: View {
         .frame(minWidth: 800, minHeight: 500)
         .navigationTitle(workspace.projectName)
         .navigationSubtitle(branchSubtitle)
-        .background(WindowBridge(
-            representedURL: fileURL,
-            isDocumentEdited: hasUnsavedChanges,
-            tabTitle: fileURL?.lastPathComponent,
-            onSave: { [self] in saveFile() }
-        ))
         .onAppear {
-            if let url = fileURL {
-                // SwiftUI may restore windows with a non-nil fileURL (Codable persistence).
-                // In that case restoreSessionIfNeeded() won't run, so we need to
-                // load the project directory here to populate the sidebar.
-                restoreProjectDirectoryIfNeeded()
-                loadFileFromURL(url)
-                // New window tabs get fileURL as initial state (onChange won't fire),
-                // so save session here to capture the newly opened tab.
-                Task { @MainActor in
-                    projectManager.saveSession()
-                }
-            }
             restoreSessionIfNeeded()
-        }
-        .onChange(of: fileURL) { _, newURL in
-            if suppressNextReload {
-                suppressNextReload = false
-                return
-            }
-            if let url = newURL {
-                loadFileFromURL(url)
-            }
-            // Save session after window representedURL updates
-            Task { @MainActor in
-                projectManager.saveSession()
-            }
         }
         .onChange(of: selectedNode) { _, newNode in
             guard let node = newNode, !node.isDirectory else { return }
             handleFileSelection(node)
         }
         .onChange(of: workspace.rootURL) { _, _ in
-            // Clear stale gutter markers from the previous project immediately.
             lineDiffs = []
-            // saveSession() filters files by current rootURL,
-            // so stale tabs from the old project are excluded.
+            projectManager.saveSession()
+        }
+        .onChange(of: tabManager.activeTabID) { _, _ in
+            refreshLineDiffs()
+            projectManager.saveSession()
+        }
+        .onChange(of: tabManager.tabs.count) { _, _ in
             projectManager.saveSession()
         }
         .onChange(of: workspace.gitProvider.isGitRepository) { _, isRepo in
-            // After async project load finishes, git state becomes available.
-            // Recalculate gutter diffs for the already-open file.
-            // When switching to a non-git project, clear stale markers.
-            if isRepo, let url = fileURL {
-                lineDiffs = workspace.gitProvider.diffForFile(at: url)
+            if isRepo {
+                refreshLineDiffs()
             } else {
                 lineDiffs = []
             }
         }
+        .onChange(of: workspace.gitProvider.currentBranch) { _, _ in
+            refreshLineDiffs()
+        }
+        .onChange(of: workspace.gitProvider.fileStatuses) { _, _ in
+            refreshLineDiffs()
+        }
         .onReceive(NotificationCenter.default.publisher(for: .saveFile)) { _ in
             saveFile()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .closeTab)) { _ in
+            guard let tab = tabManager.activeTab else { return }
+            closeTabWithConfirmation(tab)
         }
         .onReceive(NotificationCenter.default.publisher(for: .openFolder)) { _ in
             workspace.openFolder()
@@ -284,55 +107,13 @@ struct ContentView: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: .fileRenamed)) { notification in
             guard let oldURL = notification.userInfo?["oldURL"] as? URL,
-                  let newURL = notification.userInfo?["newURL"] as? URL,
-                  let currentURL = fileURL else { return }
-            // Exact match (file itself renamed) or child of renamed directory
-            if currentURL == oldURL {
-                suppressNextReload = true
-                fileURL = newURL
-            } else if currentURL.path.hasPrefix(oldURL.path + "/") {
-                let relativePath = String(currentURL.path.dropFirst(oldURL.path.count + 1))
-                suppressNextReload = true
-                fileURL = newURL.appendingPathComponent(relativePath)
-            }
+                  let newURL = notification.userInfo?["newURL"] as? URL else { return }
+            tabManager.handleFileRenamed(oldURL: oldURL, newURL: newURL)
+            projectManager.saveSession()
         }
         .onReceive(NotificationCenter.default.publisher(for: .fileDeleted)) { notification in
-            guard let deletedURL = notification.userInfo?["url"] as? URL,
-                  let currentURL = fileURL else { return }
-            // Exact match or child of deleted directory
-            let isAffected = currentURL == deletedURL
-                || currentURL.path.hasPrefix(deletedURL.path + "/")
-            guard isAffected else { return }
-
-            if hasUnsavedChanges {
-                let alert = NSAlert()
-                alert.messageText = Strings.fileDeletedTitle
-                alert.informativeText = Strings.fileDeletedMessage
-                alert.addButton(withTitle: Strings.fileDeletedSaveAs)
-                alert.addButton(withTitle: Strings.dialogDontSave)
-                alert.alertStyle = .warning
-
-                if alert.runModal() == .alertFirstButtonReturn {
-                    // Save As… — only clear the tab if user actually saved
-                    let panel = NSSavePanel()
-                    panel.nameFieldStringValue = currentURL.lastPathComponent
-                    guard panel.runModal() == .OK, let saveURL = panel.url else { return }
-                    do {
-                        try fileContent.write(to: saveURL, atomically: true, encoding: .utf8)
-                    } catch {
-                        let errAlert = NSAlert()
-                        errAlert.messageText = Strings.fileOperationErrorTitle
-                        errAlert.informativeText = error.localizedDescription
-                        errAlert.alertStyle = .warning
-                        errAlert.runModal()
-                        return
-                    }
-                }
-            }
-            fileURL = nil
-            fileContent = ""
-            savedContent = ""
-            lineDiffs = []
+            guard let deletedURL = notification.userInfo?["url"] as? URL else { return }
+            handleFileDeletion(deletedURL)
         }
     }
 
@@ -343,115 +124,159 @@ struct ContentView: View {
 
     // MARK: - Session restoration
 
-    /// When SwiftUI auto-restores windows with non-nil fileURL,
-    /// restoreSessionIfNeeded() is skipped (guard fileURL == nil fails).
-    /// This method ensures the project directory is still loaded for the sidebar.
-    private func restoreProjectDirectoryIfNeeded() {
-        guard workspace.rootURL == nil,
-              let session = SessionState.load() else { return }
-        workspace.loadDirectory(url: session.projectURL)
-    }
-
     private func restoreSessionIfNeeded() {
         guard !Self.didRestoreSession else { return }
         Self.didRestoreSession = true
 
-        guard fileURL == nil,
-              let session = SessionState.load() else { return }
+        guard let session = SessionState.load() else { return }
 
-        // loadDirectory sets rootURL/projectName synchronously,
-        // then dispatches heavy I/O (file tree + git) to a background queue.
         if workspace.rootURL == nil {
             workspace.loadDirectory(url: session.projectURL)
         }
 
         let fileURLs = session.existingFileURLs
-        guard !fileURLs.isEmpty else { return }
+        for url in fileURLs {
+            tabManager.openTab(url: url)
+        }
 
-        // Open the first file in the current (empty) window
-        fileURL = fileURLs.first
-
-        // Open remaining files in new window tabs.
-        // The debounced merge in AppDelegate handles grouping them.
-        for url in fileURLs.dropFirst() {
-            openWindow(value: url)
+        // Restore the active tab
+        if let activeURL = session.activeFileURL,
+           let tab = tabManager.tab(for: activeURL) {
+            tabManager.activeTabID = tab.id
         }
     }
 
     // MARK: - Управление файлами
 
     private func handleFileSelection(_ node: FileNode) {
-        if fileURL == nil {
-            // Пустое окно — загружаем файл сюда
-            fileURL = node.url
-            return
-        }
-
-        if fileURL == node.url {
-            // Этот файл уже открыт в текущем табе
-            return
-        }
-
-        // Проверяем, открыт ли файл в другом табе — переключаемся на него
-        if let existingWindow = NSApplication.shared.windows.first(where: {
-            $0.representedURL == node.url && $0.isVisible
-        }) {
-            existingWindow.makeKeyAndOrderFront(nil)
-            // Сбрасываем выделение в текущем окне
-            selectedNode = nil
-            return
-        }
-
-        // Открываем в новом табе
-        openWindow(value: node.url)
+        tabManager.openTab(url: node.url)
         // Сбрасываем выделение, чтобы повторный клик тоже сработал
         selectedNode = nil
     }
 
-    private func loadFileFromURL(_ url: URL) {
-        do {
-            let content = try String(contentsOf: url, encoding: .utf8)
-            fileContent = content
-            savedContent = content
-            lineDiffs = workspace.gitProvider.diffForFile(at: url)
-        } catch {
-            let errorText = "// Error: \(error.localizedDescription)"
-            fileContent = errorText
-            savedContent = errorText
+    private func saveFile() {
+        guard tabManager.saveActiveTab() else { return }
+        // Refresh git status after save
+        workspace.gitProvider.refresh()
+        refreshLineDiffs()
+    }
+
+    /// Refreshes cached line diffs for the active tab.
+    private func refreshLineDiffs() {
+        guard let tab = tabManager.activeTab else {
             lineDiffs = []
+            return
+        }
+        lineDiffs = workspace.gitProvider.diffForFile(at: tab.url)
+    }
+
+    /// Closes a tab with unsaved-changes protection.
+    /// Used by both the tab bar close button and Cmd+W.
+    private func closeTabWithConfirmation(_ tab: EditorTab) {
+        if tab.isDirty {
+            let alert = NSAlert()
+            alert.messageText = Strings.unsavedChangesTitle
+            alert.informativeText = Strings.unsavedChangesMessage
+            alert.addButton(withTitle: Strings.dialogSave)
+            alert.addButton(withTitle: Strings.dialogDontSave)
+            alert.addButton(withTitle: Strings.dialogCancel)
+            alert.alertStyle = .warning
+
+            let response = alert.runModal()
+            switch response {
+            case .alertFirstButtonReturn:
+                guard let index = tabManager.tabs.firstIndex(where: { $0.id == tab.id }) else { return }
+                guard tabManager.saveTab(at: index) else { return }
+                workspace.gitProvider.refresh()
+                tabManager.closeTab(id: tab.id)
+            case .alertSecondButtonReturn:
+                tabManager.closeTab(id: tab.id)
+            default:
+                return
+            }
+        } else {
+            tabManager.closeTab(id: tab.id)
         }
     }
 
-    private func saveFile() {
-        guard let url = fileURL else { return }
-        do {
-            try fileContent.write(to: url, atomically: true, encoding: .utf8)
-            savedContent = fileContent
-            NSApp.keyWindow?.isDocumentEdited = false
-            // Refresh git status after save
-            workspace.gitProvider.refresh()
-            lineDiffs = workspace.gitProvider.diffForFile(at: url)
-        } catch {
-            print("Error saving file: \(error.localizedDescription)")
+    private func handleFileDeletion(_ deletedURL: URL) {
+        let affected = tabManager.tabsAffectedByDeletion(url: deletedURL)
+        guard !affected.isEmpty else { return }
+
+        let dirtyTabs = affected.filter { $0.isDirty }
+        if !dirtyTabs.isEmpty {
+            let alert = NSAlert()
+            alert.messageText = Strings.fileDeletedTitle
+            alert.informativeText = Strings.fileDeletedMessage
+            alert.addButton(withTitle: Strings.fileDeletedSaveAs)
+            alert.addButton(withTitle: Strings.dialogDontSave)
+            alert.addButton(withTitle: Strings.dialogCancel)
+            alert.alertStyle = .warning
+
+            let response = alert.runModal()
+            switch response {
+            case .alertFirstButtonReturn:
+                // Save As… for each dirty tab — abort entirely on cancel/error
+                for tab in dirtyTabs {
+                    let panel = NSSavePanel()
+                    panel.nameFieldStringValue = tab.fileName
+                    guard panel.runModal() == .OK, let saveURL = panel.url else { return }
+                    do {
+                        try tab.content.write(to: saveURL, atomically: true, encoding: .utf8)
+                    } catch {
+                        let errAlert = NSAlert()
+                        errAlert.messageText = Strings.fileOperationErrorTitle
+                        errAlert.informativeText = error.localizedDescription
+                        errAlert.alertStyle = .warning
+                        errAlert.runModal()
+                        return
+                    }
+                }
+            case .alertSecondButtonReturn:
+                break // Don't save — proceed to close
+            default:
+                return // Cancel — keep tabs open
+            }
         }
+
+        tabManager.closeTabsForDeletedFile(url: deletedURL)
     }
 
     // MARK: - Область редактора
 
     @ViewBuilder
     private var editorArea: some View {
-        if fileURL != nil {
-            CodeEditorView(
-                text: $fileContent,
-                language: (currentFileName as NSString).pathExtension.lowercased(),
-                fileName: currentFileName,
-                lineDiffs: lineDiffs
-            )
-        } else {
-            ContentUnavailableView {
-                Label(Strings.noFileSelected, systemImage: "doc.text")
-            } description: {
-                Text(Strings.selectFilePrompt)
+        VStack(spacing: 0) {
+            if !tabManager.tabs.isEmpty {
+                EditorTabBar(
+                    tabManager: tabManager,
+                    onCloseTab: { tab in closeTabWithConfirmation(tab) },
+                    onReorder: { projectManager.saveSession() }
+                )
+            }
+
+            if let tab = activeTab {
+                CodeEditorView(
+                    text: Binding(
+                        get: { tab.content },
+                        set: { tabManager.updateContent($0) }
+                    ),
+                    language: tab.language,
+                    fileName: tab.fileName,
+                    lineDiffs: lineDiffs,
+                    initialCursorPosition: tab.cursorPosition,
+                    initialScrollOffset: tab.scrollOffset,
+                    onStateChange: { cursor, scroll in
+                        tabManager.updateEditorState(cursorPosition: cursor, scrollOffset: scroll)
+                    }
+                )
+                .id(tab.id)
+            } else {
+                ContentUnavailableView {
+                    Label(Strings.noFileSelected, systemImage: "doc.text")
+                } description: {
+                    Text(Strings.selectFilePrompt)
+                }
             }
         }
     }
@@ -937,10 +762,10 @@ struct StatusBarView: View {
 }
 
 #Preview {
-    @Previewable @State var url: URL?
     let projectManager = ProjectManager()
-    ContentView(fileURL: $url)
+    ContentView()
         .environment(projectManager)
         .environment(projectManager.workspace)
         .environment(projectManager.terminal)
+        .environment(projectManager.tabManager)
 }
