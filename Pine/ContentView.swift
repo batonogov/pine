@@ -816,7 +816,6 @@ struct FileNodeRow: View {
         // Apple / Swift
         case "swift":                          return "swift"
         case "plist", "entitlements":          return "list.bullet.rectangle"
-        case "xcodeproj", "xcworkspace":       return "hammer"
         case "storyboard", "xib":             return "rectangle.on.rectangle"
 
         // Web
@@ -878,14 +877,14 @@ struct FileNodeRow: View {
     }
 
     private func iconForFolder(_ name: String) -> String {
+        let ext = (name as NSString).pathExtension.lowercased()
+        switch ext {
+        case "xcodeproj", "xcworkspace":       return "hammer"
+        default: break
+        }
+
         let lowered = name.lowercased()
         switch lowered {
-        case ".git":                           return "arrow.triangle.branch"
-        case "sources", "src", "lib":          return "folder"
-        case "tests", "test", "spec",
-             "specs", "__tests__":             return "folder"
-        case "assets", "resources",
-             "images", "icons":                return "folder"
         case "node_modules", "packages",
              ".build", "build", "dist",
              "output", "target":               return "folder.badge.gearshape"
