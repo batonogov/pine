@@ -94,11 +94,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         let response = alert.runModal()
         switch response {
         case .alertFirstButtonReturn:
-            // Save all dirty tabs
+            // Save all dirty tabs — abort termination if any save fails
             for index in tabManager.tabs.indices where tabManager.tabs[index].isDirty {
-                let tab = tabManager.tabs[index]
-                try? tab.content.write(to: tab.url, atomically: true, encoding: .utf8)
-                tabManager.tabs[index].savedContent = tab.content
+                guard tabManager.saveTab(at: index) else {
+                    return .terminateCancel
+                }
             }
             return .terminateNow
         case .alertSecondButtonReturn:

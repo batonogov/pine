@@ -6,10 +6,16 @@
 //
 
 import SwiftUI
+import UniformTypeIdentifiers
 
 /// Internal tab bar for editor tabs, styled like the terminal tab bar.
 struct EditorTabBar: View {
     var tabManager: TabManager
+    /// Called when user clicks the close button on a tab.
+    /// The caller is responsible for unsaved-changes protection.
+    var onCloseTab: (EditorTab) -> Void
+
+    @State private var draggingTabID: UUID?
 
     var body: some View {
         HStack(spacing: 0) {
@@ -20,8 +26,17 @@ struct EditorTabBar: View {
                             tab: tab,
                             isActive: tab.id == tabManager.activeTabID,
                             onSelect: { tabManager.activeTabID = tab.id },
-                            onClose: { tabManager.closeTab(id: tab.id) }
+                            onClose: { onCloseTab(tab) }
                         )
+                        .onDrag {
+                            draggingTabID = tab.id
+                            return NSItemProvider(object: tab.id.uuidString as NSString)
+                        }
+                        .onDrop(of: [.text], delegate: TabDropDelegate(
+                            tabManager: tabManager,
+                            targetTabID: tab.id,
+                            draggingTabID: $draggingTabID
+                        ))
                     }
                 }
                 .padding(.horizontal, 4)
@@ -31,6 +46,31 @@ struct EditorTabBar: View {
         }
         .frame(height: 30)
         .background(.bar)
+    }
+}
+
+/// Handles drag-to-reorder for editor tabs.
+struct TabDropDelegate: DropDelegate {
+    let tabManager: TabManager
+    let targetTabID: UUID
+    @Binding var draggingTabID: UUID?
+
+    func performDrop(info: DropInfo) -> Bool {
+        draggingTabID = nil
+        return true
+    }
+
+    func dropEntered(info: DropInfo) {
+        guard let dragging = draggingTabID, dragging != targetTabID else { return }
+        guard let fromIndex = tabManager.tabs.firstIndex(where: { $0.id == dragging }),
+              let toIndex = tabManager.tabs.firstIndex(where: { $0.id == targetTabID }) else { return }
+        withAnimation(.easeInOut(duration: 0.2)) {
+            tabManager.tabs.move(fromOffsets: IndexSet(integer: fromIndex), toOffset: toIndex > fromIndex ? toIndex + 1 : toIndex)
+        }
+    }
+
+    func dropUpdated(info: DropInfo) -> DropProposal? {
+        DropProposal(operation: .move)
     }
 }
 

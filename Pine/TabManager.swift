@@ -69,15 +69,28 @@ final class TabManager {
         tabs[index].content = newContent
     }
 
-    /// Saves the active tab to disk.
-    func saveActiveTab() {
-        guard let index = activeTabIndex else { return }
+    /// Saves the active tab to disk. Returns true on success.
+    @discardableResult
+    func saveActiveTab() -> Bool {
+        guard let index = activeTabIndex else { return false }
+        return saveTab(at: index)
+    }
+
+    /// Saves a specific tab by index. Returns true on success, shows alert on failure.
+    @discardableResult
+    func saveTab(at index: Int) -> Bool {
         let tab = tabs[index]
         do {
             try tab.content.write(to: tab.url, atomically: true, encoding: .utf8)
             tabs[index].savedContent = tab.content
+            return true
         } catch {
-            print("Error saving file: \(error.localizedDescription)")
+            let alert = NSAlert()
+            alert.messageText = Strings.fileOperationErrorTitle
+            alert.informativeText = error.localizedDescription
+            alert.alertStyle = .critical
+            alert.runModal()
+            return false
         }
     }
 

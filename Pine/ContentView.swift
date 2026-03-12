@@ -17,6 +17,7 @@ struct ContentView: View {
 
     @State private var selectedNode: FileNode?
     @State private var columnVisibility: NavigationSplitViewVisibility = .all
+    @State private var lineDiffs: [GitLineDiff] = []
     /// Global flag — only the first ContentView instance restores the session.
     private static var didRestoreSession = false
 
@@ -65,18 +66,29 @@ struct ContentView: View {
             handleFileSelection(node)
         }
         .onChange(of: workspace.rootURL) { _, _ in
-            // saveSession() filters files by current rootURL,
-            // so stale tabs from the old project are excluded.
+            lineDiffs = []
             projectManager.saveSession()
         }
         .onChange(of: tabManager.activeTabID) { _, _ in
+            refreshLineDiffs()
             projectManager.saveSession()
+        }
+        .onChange(of: tabManager.tabs.count) { _, _ in
+            projectManager.saveSession()
+        }
+        .onChange(of: workspace.gitProvider.isGitRepository) { _, isRepo in
+            if isRepo {
+                refreshLineDiffs()
+            } else {
+                lineDiffs = []
+            }
         }
         .onReceive(NotificationCenter.default.publisher(for: .saveFile)) { _ in
             saveFile()
         }
         .onReceive(NotificationCenter.default.publisher(for: .closeTab)) { _ in
-            closeActiveTab()
+            guard let tab = tabManager.activeTab else { return }
+            closeTabWithConfirmation(tab)
         }
         .onReceive(NotificationCenter.default.publisher(for: .openFolder)) { _ in
             workspace.openFolder()
@@ -91,6 +103,7 @@ struct ContentView: View {
             guard let oldURL = notification.userInfo?["oldURL"] as? URL,
                   let newURL = notification.userInfo?["newURL"] as? URL else { return }
             tabManager.handleFileRenamed(oldURL: oldURL, newURL: newURL)
+            projectManager.saveSession()
         }
         .onReceive(NotificationCenter.default.publisher(for: .fileDeleted)) { notification in
             guard let deletedURL = notification.userInfo?["url"] as? URL else { return }
@@ -136,14 +149,24 @@ struct ContentView: View {
     }
 
     private func saveFile() {
-        tabManager.saveActiveTab()
+        guard tabManager.saveActiveTab() else { return }
         // Refresh git status after save
         workspace.gitProvider.refresh()
+        refreshLineDiffs()
     }
 
-    private func closeActiveTab() {
-        guard let tab = tabManager.activeTab else { return }
+    /// Refreshes cached line diffs for the active tab.
+    private func refreshLineDiffs() {
+        guard let tab = tabManager.activeTab else {
+            lineDiffs = []
+            return
+        }
+        lineDiffs = workspace.gitProvider.diffForFile(at: tab.url)
+    }
 
+    /// Closes a tab with unsaved-changes protection.
+    /// Used by both the tab bar close button and Cmd+W.
+    private func closeTabWithConfirmation(_ tab: EditorTab) {
         if tab.isDirty {
             let alert = NSAlert()
             alert.messageText = Strings.unsavedChangesTitle
@@ -156,7 +179,8 @@ struct ContentView: View {
             let response = alert.runModal()
             switch response {
             case .alertFirstButtonReturn:
-                tabManager.saveActiveTab()
+                guard let index = tabManager.tabs.firstIndex(where: { $0.id == tab.id }) else { return }
+                guard tabManager.saveTab(at: index) else { return }
                 tabManager.closeTab(id: tab.id)
             case .alertSecondButtonReturn:
                 tabManager.closeTab(id: tab.id)
@@ -166,7 +190,6 @@ struct ContentView: View {
         } else {
             tabManager.closeTab(id: tab.id)
         }
-        projectManager.saveSession()
     }
 
     private func handleFileDeletion(_ deletedURL: URL) {
@@ -180,13 +203,17 @@ struct ContentView: View {
             alert.informativeText = Strings.fileDeletedMessage
             alert.addButton(withTitle: Strings.fileDeletedSaveAs)
             alert.addButton(withTitle: Strings.dialogDontSave)
+            alert.addButton(withTitle: Strings.dialogCancel)
             alert.alertStyle = .warning
 
-            if alert.runModal() == .alertFirstButtonReturn {
+            let response = alert.runModal()
+            switch response {
+            case .alertFirstButtonReturn:
+                // Save As… for each dirty tab — abort entirely on cancel/error
                 for tab in dirtyTabs {
                     let panel = NSSavePanel()
                     panel.nameFieldStringValue = tab.fileName
-                    guard panel.runModal() == .OK, let saveURL = panel.url else { continue }
+                    guard panel.runModal() == .OK, let saveURL = panel.url else { return }
                     do {
                         try tab.content.write(to: saveURL, atomically: true, encoding: .utf8)
                     } catch {
@@ -195,8 +222,13 @@ struct ContentView: View {
                         errAlert.informativeText = error.localizedDescription
                         errAlert.alertStyle = .warning
                         errAlert.runModal()
+                        return
                     }
                 }
+            case .alertSecondButtonReturn:
+                break // Don't save — proceed to close
+            default:
+                return // Cancel — keep tabs open
             }
         }
 
@@ -209,7 +241,10 @@ struct ContentView: View {
     private var editorArea: some View {
         VStack(spacing: 0) {
             if !tabManager.tabs.isEmpty {
-                EditorTabBar(tabManager: tabManager)
+                EditorTabBar(
+                    tabManager: tabManager,
+                    onCloseTab: { tab in closeTabWithConfirmation(tab) }
+                )
             }
 
             if let tab = activeTab {
@@ -220,7 +255,7 @@ struct ContentView: View {
                     ),
                     language: tab.language,
                     fileName: tab.fileName,
-                    lineDiffs: workspace.gitProvider.diffForFile(at: tab.url)
+                    lineDiffs: lineDiffs
                 )
                 .id(tab.id)
             } else {
