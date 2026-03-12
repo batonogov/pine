@@ -13,6 +13,11 @@ final class FileSystemWatcher {
     private var stream: FSEventStreamRef?
     private let callback: () -> Void
     private let debounceInterval: TimeInterval
+
+    /// Serial queue that owns all mutable state (stream, debounceWorkItem)
+    /// and receives FSEvents callbacks, eliminating races between
+    /// event delivery, debounce scheduling, and stop/deinit.
+    private let queue = DispatchQueue(label: "pine.fswatcher", qos: .utility)
     private var debounceWorkItem: DispatchWorkItem?
 
     init(debounceInterval: TimeInterval = 0.5, callback: @escaping () -> Void) {
@@ -21,11 +26,21 @@ final class FileSystemWatcher {
     }
 
     deinit {
-        stop()
+        stopOnQueue()
     }
 
     func watch(directory: URL) {
-        stop()
+        queue.sync { self.watchOnQueue(directory: directory) }
+    }
+
+    func stop() {
+        queue.sync { self.stopOnQueue() }
+    }
+
+    // MARK: - Private (must run on self.queue)
+
+    private func watchOnQueue(directory: URL) {
+        stopOnQueue()
 
         let path = directory.path as CFString
         var context = FSEventStreamContext()
@@ -46,11 +61,11 @@ final class FileSystemWatcher {
         ) else { return }
 
         self.stream = stream
-        FSEventStreamSetDispatchQueue(stream, DispatchQueue.global(qos: .utility))
+        FSEventStreamSetDispatchQueue(stream, queue)
         FSEventStreamStart(stream)
     }
 
-    func stop() {
+    private func stopOnQueue() {
         debounceWorkItem?.cancel()
         debounceWorkItem = nil
 
@@ -61,13 +76,14 @@ final class FileSystemWatcher {
         self.stream = nil
     }
 
+    /// Called from the FSEvents callback on self.queue.
     fileprivate func handleEvents() {
         debounceWorkItem?.cancel()
         let work = DispatchWorkItem { [weak self] in
             self?.callback()
         }
         debounceWorkItem = work
-        DispatchQueue.main.asyncAfter(deadline: .now() + debounceInterval, execute: work)
+        queue.asyncAfter(deadline: .now() + debounceInterval, execute: work)
     }
 }
 

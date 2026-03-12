@@ -16,6 +16,11 @@ final class WorkspaceManager {
     let gitProvider = GitStatusProvider()
     private var fileWatcher: FileSystemWatcher?
 
+    /// Monotonically increasing token that invalidates stale async loads.
+    /// Bumped on every loadDirectory / refreshFileTree call so that
+    /// a slow background task never overwrites a newer result.
+    private var loadGeneration: Int = 0
+
     func openFolder() {
         let panel = NSOpenPanel()
         panel.canChooseFiles = false
@@ -31,6 +36,8 @@ final class WorkspaceManager {
     func loadDirectory(url: URL) {
         rootURL = url
         projectName = url.lastPathComponent
+        loadGeneration += 1
+        let generation = loadGeneration
 
         // Clear stale state immediately so the UI doesn't show
         // the previous project's sidebar/git while the async load runs.
@@ -40,13 +47,16 @@ final class WorkspaceManager {
         gitProvider.fileStatuses = [:]
         gitProvider.branches = []
 
-        loadDirectoryContentsAsync(url: url)
-        startWatching(url: url)
+        loadDirectoryContentsAsync(url: url, generation: generation) { [weak self] in
+            // Start watching only after the initial load completes,
+            // so early FSEvents don't race with the first tree build.
+            self?.startWatching(url: url)
+        }
     }
 
     private func startWatching(url: URL) {
         let watcher = FileSystemWatcher { [weak self] in
-            self?.refreshFileTree()
+            self?.refreshFileTreeAsync()
         }
         watcher.watch(directory: url)
         fileWatcher = watcher
@@ -54,7 +64,11 @@ final class WorkspaceManager {
 
     /// Heavy I/O (file tree + git) runs on a background queue;
     /// results are assigned back on the main thread.
-    private func loadDirectoryContentsAsync(url: URL) {
+    private func loadDirectoryContentsAsync(
+        url: URL,
+        generation: Int,
+        completion: (() -> Void)? = nil
+    ) {
         DispatchQueue.global(qos: .userInitiated).async {
             let root = FileNode(url: url)
             root.loadChildren()
@@ -64,7 +78,7 @@ final class WorkspaceManager {
             bgGit.setup(repositoryURL: url)
 
             DispatchQueue.main.async { [weak self] in
-                guard let self, self.rootURL == url else { return }
+                guard let self, self.loadGeneration == generation else { return }
                 self.rootNodes = children
                 self.gitProvider.repositoryURL = bgGit.repositoryURL
                 self.gitProvider.gitRootPath = bgGit.gitRootPath
@@ -72,16 +86,29 @@ final class WorkspaceManager {
                 self.gitProvider.currentBranch = bgGit.currentBranch
                 self.gitProvider.fileStatuses = bgGit.fileStatuses
                 self.gitProvider.branches = bgGit.branches
+                completion?()
             }
         }
     }
 
     /// Reload the file tree from disk (e.g. after creating/renaming/deleting files).
+    /// Runs synchronously on the main thread for immediate UI feedback
+    /// after explicit user actions (create/rename/delete).
     func refreshFileTree() {
         guard let url = rootURL else { return }
+        loadGeneration += 1
         let root = FileNode(url: url)
         root.loadChildren()
         rootNodes = root.children ?? []
         gitProvider.refresh()
+    }
+
+    /// Background variant called by the file watcher so that
+    /// automatic refreshes never block the main thread.
+    private func refreshFileTreeAsync() {
+        guard let url = rootURL else { return }
+        loadGeneration += 1
+        let generation = loadGeneration
+        loadDirectoryContentsAsync(url: url, generation: generation)
     }
 }
