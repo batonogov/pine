@@ -92,6 +92,11 @@ struct ContentView: View {
         .onChange(of: workspace.gitProvider.fileStatuses) { _, _ in
             refreshLineDiffs()
         }
+        .onChange(of: controlActiveState) { _, newState in
+            if newState == .key, let url = workspace.rootURL {
+                registry.lastActiveProjectURL = url
+            }
+        }
         .onReceive(NotificationCenter.default.publisher(for: .refreshLineDiffs)) { _ in
             guard controlActiveState == .key else { return }
             refreshLineDiffs()

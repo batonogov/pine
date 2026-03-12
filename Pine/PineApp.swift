@@ -17,6 +17,13 @@ struct PineApp: App {
         WindowGroup(for: URL.self) { $projectURL in
             if let projectURL {
                 ProjectWindowView(projectURL: projectURL, registry: registry)
+            } else {
+                // SwiftUI may instantiate with nil URL — redirect to Welcome
+                Color.clear.onAppear {
+                    NSApp.windows
+                        .first { $0.contentView?.subviews.isEmpty == true || $0.title.isEmpty }?
+                        .close()
+                }
             }
         }
         .defaultSize(width: 1100, height: 700)
@@ -111,11 +118,16 @@ private struct ProjectWindowView: View {
             let response = alert.runModal()
             switch response {
             case .alertFirstButtonReturn:
+                // Save all dirty tabs — abort close if any save fails
                 for index in pm.tabManager.tabs.indices where pm.tabManager.tabs[index].isDirty {
-                    _ = pm.tabManager.saveTab(at: index)
+                    guard pm.tabManager.saveTab(at: index) else {
+                        return // Abort close: save failed
+                    }
                 }
+            case .alertSecondButtonReturn:
+                break // Don't save — proceed to close
             default:
-                break
+                return // Cancel — abort close
             }
         }
 
