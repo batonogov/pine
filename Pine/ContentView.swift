@@ -651,7 +651,9 @@ struct FileNodeRow: View {
     }
 
     var body: some View {
-        Label(node.name, systemImage: node.isDirectory ? "folder" : iconForFile(node.name))
+        Label(node.name, systemImage: node.isDirectory
+              ? FileIconMapper.iconForFolder(node.name)
+              : FileIconMapper.iconForFile(node.name))
             .foregroundStyle(gitStatus?.color ?? .primary)
             .tag(node)
             .contextMenu { fileNodeContextMenu }
@@ -795,19 +797,6 @@ struct FileNodeRow: View {
         alert.runModal()
     }
 
-    private func iconForFile(_ name: String) -> String {
-        let ext = (name as NSString).pathExtension.lowercased()
-        switch ext {
-        case "swift":                          return "swift"
-        case "js", "ts", "jsx", "tsx":         return "doc.text"
-        case "json":                           return "curlybraces"
-        case "md", "txt":                      return "doc.plaintext"
-        case "html", "css":                    return "globe"
-        case "py":                             return "doc.text"
-        case "png", "jpg", "jpeg", "gif":      return "photo"
-        default:                               return "doc"
-        }
-    }
 }
 
 // MARK: - Status Bar
