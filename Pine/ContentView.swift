@@ -54,17 +54,6 @@ class WindowBridgeView: NSView {
             window.tabbingMode = .preferred
             window.tabbingIdentifier = AppDelegate.editorTabbingID
 
-            // Hide the window until it's merged into the tab group
-            // to prevent the brief flash as a separate window.
-            let hasOtherEditorWindows = NSApplication.shared.windows.contains {
-                $0 !== window
-                    && $0.tabbingIdentifier == AppDelegate.editorTabbingID
-                    && $0.isVisible
-            }
-            if hasOtherEditorWindows {
-                window.alphaValue = 0
-            }
-
             // Перехватываем закрытие окна для диалога сохранения
             let interceptor = WindowCloseInterceptor(
                 originalDelegate: window.delegate,
@@ -75,7 +64,20 @@ class WindowBridgeView: NSView {
 
             applyIfPossible()
 
-            // Signal that this editor window is ready for tab merging
+            // Immediately merge into an existing tab group to prevent the
+            // window from flashing as a standalone window before becoming a tab.
+            // The debounced merge in AppDelegate handles session reordering.
+            if let primaryWindow = NSApplication.shared.windows.first(where: {
+                $0 !== window
+                    && $0.tabbingIdentifier == AppDelegate.editorTabbingID
+                    && $0.isVisible
+            }) {
+                window.alphaValue = 0
+                primaryWindow.addTabbedWindow(window, ordered: .above)
+                window.alphaValue = 1
+            }
+
+            // Signal for session reordering (debounced merge handles tab order)
             NotificationCenter.default.post(name: .editorWindowReady, object: nil)
         }
     }

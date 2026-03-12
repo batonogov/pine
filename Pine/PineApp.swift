@@ -134,6 +134,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     /// Schedules a debounced merge. No phase gate — always responds.
     /// The 50ms debounce coalesces rapid window appearances.
+    /// WindowBridgeView handles immediate merge to prevent flash;
+    /// this debounced merge handles session tab reordering.
     private func scheduleMerge() {
         mergeWorkItem?.cancel()
         let item = DispatchWorkItem { [weak self] in
@@ -141,15 +143,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
         mergeWorkItem = item
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.05, execute: item)
-
-        // Safety fallback: if a window was hidden but merge didn't fire
-        // (e.g., guard editorWindows.count > 1 returned early), restore visibility.
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-            for window in NSApplication.shared.windows
-            where window.tabbingIdentifier == Self.editorTabbingID && window.alphaValue == 0 {
-                window.alphaValue = 1
-            }
-        }
     }
 
     /// Idempotent merge: finds editor windows not yet in a tab group
@@ -180,11 +173,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         let ungrouped = editorWindows.filter { !alreadyTabbed.contains(ObjectIdentifier($0)) }
         for window in ungrouped {
             primary.addTabbedWindow(window, ordered: .above)
-        }
-
-        // Restore visibility for windows that were hidden to prevent flash.
-        for window in ungrouped where window.alphaValue == 0 {
-            window.alphaValue = 1
         }
 
         // Phase 2: Reorder tabs to match saved session order via NSWindowTabGroup.
