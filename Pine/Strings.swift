@@ -131,6 +131,13 @@ enum Strings {
         String(localized: "openPanel.prompt")
     }
 
+    // MARK: - Welcome Window
+
+    static let welcomeTitle: LocalizedStringKey = "welcome.title"
+    static let welcomeSubtitle: LocalizedStringKey = "welcome.subtitle"
+    static let welcomeRecentProjects: LocalizedStringKey = "welcome.recentProjects"
+    static let welcomeNoRecent: LocalizedStringKey = "welcome.noRecent"
+
     // MARK: - Terminal Tab Names (runtime)
 
     static var terminalDefaultName: String {

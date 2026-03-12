@@ -17,6 +17,13 @@ struct SessionState: Codable {
 
     private static let defaultsKey = "lastSessionState"
 
+    // MARK: - Clear
+
+    /// Removes the saved session so the next launch starts with Welcome.
+    static func clear(defaults: UserDefaults = .standard) {
+        defaults.removeObject(forKey: defaultsKey)
+    }
+
     // MARK: - Save
 
     static func save(

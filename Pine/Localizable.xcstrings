@@ -2,19 +2,19 @@
   "sourceLanguage" : "en",
   "strings" : {
     "context.delete" : {
-      "extractionState" : "manual",
       "comment" : "Context menu item / button to delete (move to Trash).",
+      "extractionState" : "manual",
       "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Delete"
-          }
-        },
         "de" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Löschen"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Delete"
           }
         },
         "es" : {
@@ -62,19 +62,19 @@
       }
     },
     "context.delete.confirmMessage %@" : {
-      "extractionState" : "manual",
       "comment" : "Message in the delete confirmation alert. %@ is the file/folder name.",
+      "extractionState" : "manual",
       "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Are you sure you want to move \"%@\" to the Trash?"
-          }
-        },
         "de" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Möchten Sie „%@“ wirklich in den Papierkorb legen?"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Are you sure you want to move \"%@\" to the Trash?"
           }
         },
         "es" : {
@@ -122,19 +122,19 @@
       }
     },
     "context.delete.confirmTitle" : {
-      "extractionState" : "manual",
       "comment" : "Title of the delete confirmation alert.",
+      "extractionState" : "manual",
       "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Move to Trash"
-          }
-        },
         "de" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "In den Papierkorb legen"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Move to Trash"
           }
         },
         "es" : {
@@ -182,16 +182,16 @@
       }
     },
     "context.namePlaceholder" : {
-      "extractionState" : "manual",
       "comment" : "Placeholder text in name input field.",
+      "extractionState" : "manual",
       "localizations" : {
-        "en" : {
+        "de" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Name"
           }
         },
-        "de" : {
+        "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Name"
@@ -242,19 +242,19 @@
       }
     },
     "context.newFile" : {
-      "extractionState" : "manual",
       "comment" : "Context menu item to create a new file.",
+      "extractionState" : "manual",
       "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "New File"
-          }
-        },
         "de" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Neue Datei"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "New File"
           }
         },
         "es" : {
@@ -302,19 +302,19 @@
       }
     },
     "context.newFile.title" : {
-      "extractionState" : "manual",
       "comment" : "Title of dialog when creating a new file.",
+      "extractionState" : "manual",
       "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "New File"
-          }
-        },
         "de" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Neue Datei"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "New File"
           }
         },
         "es" : {
@@ -362,19 +362,19 @@
       }
     },
     "context.newFolder" : {
-      "extractionState" : "manual",
       "comment" : "Context menu item to create a new folder.",
+      "extractionState" : "manual",
       "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "New Folder"
-          }
-        },
         "de" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Neuer Ordner"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "New Folder"
           }
         },
         "es" : {
@@ -422,19 +422,19 @@
       }
     },
     "context.newFolder.title" : {
-      "extractionState" : "manual",
       "comment" : "Title of dialog when creating a new folder.",
+      "extractionState" : "manual",
       "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "New Folder"
-          }
-        },
         "de" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Neuer Ordner"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "New Folder"
           }
         },
         "es" : {
@@ -482,19 +482,19 @@
       }
     },
     "context.rename" : {
-      "extractionState" : "manual",
       "comment" : "Context menu item to rename a file or folder.",
+      "extractionState" : "manual",
       "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Rename"
-          }
-        },
         "de" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Umbenennen"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Rename"
           }
         },
         "es" : {
@@ -542,19 +542,19 @@
       }
     },
     "context.rename.title" : {
-      "extractionState" : "manual",
       "comment" : "Title of the rename dialog.",
+      "extractionState" : "manual",
       "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Rename"
-          }
-        },
         "de" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Umbenennen"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Rename"
           }
         },
         "es" : {
@@ -602,19 +602,19 @@
       }
     },
     "context.revealInFinder" : {
-      "extractionState" : "manual",
       "comment" : "Context menu item to reveal the file in Finder.",
+      "extractionState" : "manual",
       "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Reveal in Finder"
-          }
-        },
         "de" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Im Finder anzeigen"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reveal in Finder"
           }
         },
         "es" : {
@@ -662,16 +662,16 @@
       }
     },
     "dialog.ok" : {
-      "extractionState" : "manual",
       "comment" : "OK button in dialogs.",
+      "extractionState" : "manual",
       "localizations" : {
-        "en" : {
+        "de" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "OK"
           }
         },
-        "de" : {
+        "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "OK"
@@ -722,19 +722,19 @@
       }
     },
     "dialog.unsavedChanges.cancel" : {
-      "extractionState" : "manual",
       "comment" : "Button to cancel closing the tab in the unsaved-changes alert.",
+      "extractionState" : "manual",
       "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Cancel"
-          }
-        },
         "de" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Abbrechen"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cancel"
           }
         },
         "es" : {
@@ -782,19 +782,19 @@
       }
     },
     "dialog.unsavedChanges.dontSave" : {
-      "extractionState" : "manual",
       "comment" : "Button to discard changes and close the tab.",
+      "extractionState" : "manual",
       "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Don't Save"
-          }
-        },
         "de" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Nicht sichern"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Don't Save"
           }
         },
         "es" : {
@@ -842,19 +842,19 @@
       }
     },
     "dialog.unsavedChanges.message" : {
-      "extractionState" : "manual",
       "comment" : "Alert body text asking whether to save before closing a tab with edits.",
+      "extractionState" : "manual",
       "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Do you want to save changes before closing?"
-          }
-        },
         "de" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Möchten Sie die Änderungen vor dem Schließen sichern?"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Do you want to save changes before closing?"
           }
         },
         "es" : {
@@ -902,19 +902,19 @@
       }
     },
     "dialog.unsavedChanges.save" : {
-      "extractionState" : "manual",
       "comment" : "Button to save changes and close the tab.",
+      "extractionState" : "manual",
       "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Save"
-          }
-        },
         "de" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Sichern"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Save"
           }
         },
         "es" : {
@@ -962,19 +962,19 @@
       }
     },
     "dialog.unsavedChanges.title" : {
-      "extractionState" : "manual",
       "comment" : "Alert title shown when closing a tab that has unsaved edits.",
+      "extractionState" : "manual",
       "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Unsaved Changes"
-          }
-        },
         "de" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Ungesicherte Änderungen"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Unsaved Changes"
           }
         },
         "es" : {
@@ -1022,19 +1022,19 @@
       }
     },
     "editor.noFileSelected" : {
-      "extractionState" : "manual",
       "comment" : "Placeholder title shown in the editor area when no file is open.",
+      "extractionState" : "manual",
       "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "No File Selected"
-          }
-        },
         "de" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Keine Datei ausgewählt"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No File Selected"
           }
         },
         "es" : {
@@ -1082,19 +1082,19 @@
       }
     },
     "editor.selectFilePrompt" : {
-      "extractionState" : "manual",
       "comment" : "Descriptive text below the 'No File Selected' placeholder.",
+      "extractionState" : "manual",
       "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Select a file from the sidebar"
-          }
-        },
         "de" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Wählen Sie eine Datei in der Seitenleiste"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Select a file from the sidebar"
           }
         },
         "es" : {
@@ -1142,19 +1142,19 @@
       }
     },
     "fileOperation.createError %@" : {
-      "extractionState" : "manual",
       "comment" : "Error message when file creation fails. %@ is the file name.",
+      "extractionState" : "manual",
       "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Could not create \"%@\"."
-          }
-        },
         "de" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "\"%@\" konnte nicht erstellt werden."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Could not create \"%@\"."
           }
         },
         "es" : {
@@ -1202,19 +1202,19 @@
       }
     },
     "fileOperation.deleted.message" : {
-      "extractionState" : "manual",
       "comment" : "Message shown when a file with unsaved changes is deleted.",
+      "extractionState" : "manual",
       "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "You have unsaved changes. Would you like to save a copy?"
-          }
-        },
         "de" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Sie haben ungesicherte Änderungen. Möchten Sie eine Kopie speichern?"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "You have unsaved changes. Would you like to save a copy?"
           }
         },
         "es" : {
@@ -1262,19 +1262,19 @@
       }
     },
     "fileOperation.deleted.saveAs" : {
-      "extractionState" : "manual",
       "comment" : "Button to save a copy of the file after deletion.",
+      "extractionState" : "manual",
       "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Save As…"
-          }
-        },
         "de" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Sichern unter…"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Save As…"
           }
         },
         "es" : {
@@ -1322,19 +1322,19 @@
       }
     },
     "fileOperation.deleted.title" : {
-      "extractionState" : "manual",
       "comment" : "Title for the alert shown when a file with unsaved changes is deleted.",
+      "extractionState" : "manual",
       "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "File Moved to Trash"
-          }
-        },
         "de" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Datei in den Papierkorb gelegt"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "File Moved to Trash"
           }
         },
         "es" : {
@@ -1382,19 +1382,19 @@
       }
     },
     "fileOperation.error.title" : {
-      "extractionState" : "manual",
       "comment" : "Title for file operation error alerts.",
+      "extractionState" : "manual",
       "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Error"
-          }
-        },
         "de" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Fehler"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Error"
           }
         },
         "es" : {
@@ -1442,19 +1442,19 @@
       }
     },
     "menu.closeTab" : {
-      "extractionState" : "manual",
       "comment" : "Menu command: close the current editor tab (⌘W).",
+      "extractionState" : "manual",
       "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Close Tab"
-          }
-        },
         "de" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Tab schließen"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Close Tab"
           }
         },
         "es" : {
@@ -1502,16 +1502,16 @@
       }
     },
     "menu.git" : {
-      "extractionState" : "manual",
       "comment" : "Top-level Git menu title in the menu bar.",
+      "extractionState" : "manual",
       "localizations" : {
-        "en" : {
+        "de" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Git"
           }
         },
-        "de" : {
+        "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Git"
@@ -1562,19 +1562,19 @@
       }
     },
     "menu.openFolder" : {
-      "extractionState" : "manual",
       "comment" : "Menu command: open a folder picker dialog (⌘⇧O).",
+      "extractionState" : "manual",
       "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Open Folder…"
-          }
-        },
         "de" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Ordner öffnen…"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Open Folder…"
           }
         },
         "es" : {
@@ -1622,19 +1622,19 @@
       }
     },
     "menu.save" : {
-      "extractionState" : "manual",
       "comment" : "Menu command: save the current file (⌘S).",
+      "extractionState" : "manual",
       "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Save"
-          }
-        },
         "de" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Sichern"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Save"
           }
         },
         "es" : {
@@ -1682,19 +1682,19 @@
       }
     },
     "menu.switchBranch" : {
-      "extractionState" : "manual",
       "comment" : "Menu command: open branch-switching dialog (⌘⇧B).",
+      "extractionState" : "manual",
       "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Switch Branch…"
-          }
-        },
         "de" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Branch wechseln…"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Switch Branch…"
           }
         },
         "es" : {
@@ -1742,19 +1742,19 @@
       }
     },
     "menu.view" : {
-      "extractionState" : "manual",
       "comment" : "Top-level View menu title in the menu bar (contains Toggle Terminal).",
+      "extractionState" : "manual",
       "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "View"
-          }
-        },
         "de" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Darstellung"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "View"
           }
         },
         "es" : {
@@ -1802,19 +1802,19 @@
       }
     },
     "openPanel.message" : {
-      "extractionState" : "manual",
       "comment" : "Message shown inside the NSOpenPanel folder picker.",
+      "extractionState" : "manual",
       "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Choose a project folder"
-          }
-        },
         "de" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Projektordner auswählen"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Choose a project folder"
           }
         },
         "es" : {
@@ -1862,19 +1862,19 @@
       }
     },
     "openPanel.prompt" : {
-      "extractionState" : "manual",
       "comment" : "Confirm button label in the NSOpenPanel folder picker.",
+      "extractionState" : "manual",
       "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Open"
-          }
-        },
         "de" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Öffnen"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Open"
           }
         },
         "es" : {
@@ -1921,20 +1921,23 @@
         }
       }
     },
+    "Pine" : {
+
+    },
     "sidebar.filesTitle" : {
-      "extractionState" : "manual",
       "comment" : "Navigation title for the sidebar when no project is loaded.",
+      "extractionState" : "manual",
       "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Files"
-          }
-        },
         "de" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Dateien"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Files"
           }
         },
         "es" : {
@@ -1982,19 +1985,19 @@
       }
     },
     "sidebar.noFolderOpen" : {
-      "extractionState" : "manual",
       "comment" : "Placeholder title in the sidebar when no project folder is open.",
+      "extractionState" : "manual",
       "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "No Folder Open"
-          }
-        },
         "de" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Kein Ordner geöffnet"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No Folder Open"
           }
         },
         "es" : {
@@ -2042,19 +2045,19 @@
       }
     },
     "sidebar.openFolderButton" : {
-      "extractionState" : "manual",
       "comment" : "Button in the empty-sidebar placeholder that opens a folder picker.",
+      "extractionState" : "manual",
       "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Open Folder…"
-          }
-        },
         "de" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Ordner öffnen…"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Open Folder…"
           }
         },
         "es" : {
@@ -2102,19 +2105,19 @@
       }
     },
     "sidebar.openFolderPrompt" : {
-      "extractionState" : "manual",
       "comment" : "Descriptive text below the 'No Folder Open' placeholder in the sidebar.",
+      "extractionState" : "manual",
       "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Open a folder to get started"
-          }
-        },
         "de" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Öffnen Sie einen Ordner, um zu beginnen"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Open a folder to get started"
           }
         },
         "es" : {
@@ -2162,19 +2165,19 @@
       }
     },
     "sidebar.openFolderTooltip" : {
-      "extractionState" : "manual",
       "comment" : "Toolbar button tooltip for opening a project folder.",
+      "extractionState" : "manual",
       "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Open Folder"
-          }
-        },
         "de" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Ordner öffnen"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Open Folder"
           }
         },
         "es" : {
@@ -2222,16 +2225,16 @@
       }
     },
     "terminal.defaultName" : {
-      "extractionState" : "manual",
       "comment" : "Default name for the first terminal tab.",
+      "extractionState" : "manual",
       "localizations" : {
-        "en" : {
+        "de" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Terminal"
           }
         },
-        "de" : {
+        "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Terminal"
@@ -2282,19 +2285,19 @@
       }
     },
     "terminal.hide" : {
-      "extractionState" : "manual",
       "comment" : "Tooltip for the chevron button that hides the terminal panel.",
+      "extractionState" : "manual",
       "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Hide Terminal"
-          }
-        },
         "de" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Terminal ausblenden"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hide Terminal"
           }
         },
         "es" : {
@@ -2342,19 +2345,19 @@
       }
     },
     "terminal.hideShortcut" : {
-      "extractionState" : "manual",
       "comment" : "Status bar tooltip when the terminal is visible; includes keyboard shortcut.",
+      "extractionState" : "manual",
       "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Hide Terminal (⌘`)"
-          }
-        },
         "de" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Terminal ausblenden (⌘`)"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hide Terminal (⌘`)"
           }
         },
         "es" : {
@@ -2402,16 +2405,16 @@
       }
     },
     "terminal.label" : {
-      "extractionState" : "manual",
       "comment" : "Label next to the terminal icon in the status bar.",
+      "extractionState" : "manual",
       "localizations" : {
-        "en" : {
+        "de" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Terminal"
           }
         },
-        "de" : {
+        "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Terminal"
@@ -2462,19 +2465,19 @@
       }
     },
     "terminal.maximize" : {
-      "extractionState" : "manual",
       "comment" : "Tooltip for expanding the terminal to fill the entire editor area.",
+      "extractionState" : "manual",
       "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Maximize Terminal"
-          }
-        },
         "de" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Terminal maximieren"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Maximize Terminal"
           }
         },
         "es" : {
@@ -2522,19 +2525,19 @@
       }
     },
     "terminal.new" : {
-      "extractionState" : "manual",
       "comment" : "Tooltip for the '+' button that creates a new terminal tab.",
+      "extractionState" : "manual",
       "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "New Terminal"
-          }
-        },
         "de" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Neues Terminal"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "New Terminal"
           }
         },
         "es" : {
@@ -2582,16 +2585,16 @@
       }
     },
     "terminal.numberedName %lld" : {
-      "extractionState" : "manual",
       "comment" : "Name for additional terminal tabs; %lld is the sequential tab number.",
+      "extractionState" : "manual",
       "localizations" : {
-        "en" : {
+        "de" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Terminal %lld"
           }
         },
-        "de" : {
+        "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Terminal %lld"
@@ -2642,19 +2645,19 @@
       }
     },
     "terminal.restore" : {
-      "extractionState" : "manual",
       "comment" : "Tooltip shown when terminal is maximized; restores split view.",
+      "extractionState" : "manual",
       "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Restore Terminal"
-          }
-        },
         "de" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Terminal wiederherstellen"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Restore Terminal"
           }
         },
         "es" : {
@@ -2702,19 +2705,19 @@
       }
     },
     "terminal.showShortcut" : {
-      "extractionState" : "manual",
       "comment" : "Status bar tooltip when the terminal is hidden; includes keyboard shortcut.",
+      "extractionState" : "manual",
       "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Show Terminal (⌘`)"
-          }
-        },
         "de" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Terminal einblenden (⌘`)"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Show Terminal (⌘`)"
           }
         },
         "es" : {
@@ -2762,19 +2765,19 @@
       }
     },
     "terminal.toggle" : {
-      "extractionState" : "manual",
       "comment" : "Menu command to show or hide the terminal panel (⌘`).",
+      "extractionState" : "manual",
       "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Toggle Terminal"
-          }
-        },
         "de" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Terminal ein-/ausblenden"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Toggle Terminal"
           }
         },
         "es" : {
@@ -2817,6 +2820,246 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "切换终端"
+          }
+        }
+      }
+    },
+    "welcome.noRecent" : {
+      "comment" : "Placeholder when no recent projects exist.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Keine letzten Projekte"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No Recent Projects"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sin proyectos recientes"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aucun projet récent"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "最近のプロジェクトはありません"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "최근 프로젝트 없음"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nenhum projeto recente"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Нет недавних проектов"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "没有最近的项目"
+          }
+        }
+      }
+    },
+    "welcome.recentProjects" : {
+      "comment" : "Header for recent projects list in the welcome window.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Letzte Projekte"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Recent Projects"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Proyectos recientes"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Projets récents"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "最近のプロジェクト"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "최근 프로젝트"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Projetos recentes"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Недавние проекты"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "最近的项目"
+          }
+        }
+      }
+    },
+    "welcome.subtitle" : {
+      "comment" : "Subtitle on the welcome window.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ein minimaler nativer macOS-Code-Editor"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A minimal native macOS code editor"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Un editor de código nativo y minimalista para macOS"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Un éditeur de code natif et minimaliste pour macOS"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ミニマルなネイティブ macOS コードエディタ"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "미니멀 네이티브 macOS 코드 편집기"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Um editor de código nativo e minimalista para macOS"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Минималистичный нативный редактор кода для macOS"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "极简原生 macOS 代码编辑器"
+          }
+        }
+      }
+    },
+    "welcome.title" : {
+      "comment" : "Welcome window title.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Willkommen bei Pine"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Welcome to Pine"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bienvenido a Pine"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bienvenue dans Pine"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pine へようこそ"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pine에 오신 것을 환영합니다"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bem-vindo ao Pine"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Добро пожаловать в Pine"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "欢迎使用 Pine"
           }
         }
       }
