@@ -133,16 +133,16 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     // MARK: - Debounced idempotent tab merge
 
     /// Schedules a debounced merge. No phase gate — always responds.
-    /// The 50ms debounce coalesces rapid window appearances.
     /// WindowBridgeView handles immediate merge to prevent flash;
-    /// this debounced merge handles session tab reordering.
+    /// this debounced merge handles session tab reordering and active tab restore.
+    /// 150ms gives SwiftUI enough time to deliver representedURL via updateNSView.
     private func scheduleMerge() {
         mergeWorkItem?.cancel()
         let item = DispatchWorkItem { [weak self] in
             self?.mergeEditorWindowsIntoTabs()
         }
         mergeWorkItem = item
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05, execute: item)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15, execute: item)
     }
 
     /// Idempotent merge: finds editor windows not yet in a tab group

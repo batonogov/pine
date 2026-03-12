@@ -46,6 +46,9 @@ class WindowBridgeView: NSView {
     var pendingTabTitle: String?
     var coordinator: WindowBridge.Coordinator?
     private var closeInterceptor: WindowCloseInterceptor?
+    /// Tracks whether representedURL has been set at least once.
+    /// Used to re-trigger merge for session tab reordering after URL arrives.
+    private var didSetRepresentedURL = false
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
@@ -66,11 +69,11 @@ class WindowBridgeView: NSView {
 
             // Immediately merge into an existing tab group to prevent the
             // window from flashing as a standalone window before becoming a tab.
-            // The debounced merge in AppDelegate handles session reordering.
+            // Don't require isVisible — on cold start the primary window may not
+            // be visible yet, but addTabbedWindow works on any NSWindow.
             if let primaryWindow = NSApplication.shared.windows.first(where: {
                 $0 !== window
                     && $0.tabbingIdentifier == AppDelegate.editorTabbingID
-                    && $0.isVisible
             }) {
                 window.alphaValue = 0
                 primaryWindow.addTabbedWindow(window, ordered: .above)
@@ -84,12 +87,21 @@ class WindowBridgeView: NSView {
 
     func applyIfPossible() {
         guard let window = hostWindow ?? self.window else { return }
+        let previousURL = window.representedURL
         window.representedURL = pendingURL
         window.isDocumentEdited = coordinator?.isDocumentEdited ?? false
         // Set tab caption independently from the window title.
         // This allows navigationTitle to control the title bar (project name)
         // while each tab shows its own file name.
         window.tab.title = pendingTabTitle ?? ""
+
+        // Re-trigger merge when representedURL first becomes available.
+        // viewDidMoveToWindow fires before updateNSView sets the URL,
+        // so the debounced merge needs a second pass to reorder correctly.
+        if !didSetRepresentedURL, previousURL == nil, pendingURL != nil {
+            didSetRepresentedURL = true
+            NotificationCenter.default.post(name: .editorWindowReady, object: nil)
+        }
     }
 }
 
