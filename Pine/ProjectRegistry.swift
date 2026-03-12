@@ -50,8 +50,9 @@ final class ProjectRegistry {
         panel.prompt = Strings.openPanelPrompt
 
         guard panel.runModal() == .OK, let url = panel.url else { return nil }
-        _ = projectManager(for: url)
-        return url
+        let canonical = url.resolvingSymlinksInPath()
+        _ = projectManager(for: canonical)
+        return canonical
     }
 
     /// Closes a project and removes it from open projects.

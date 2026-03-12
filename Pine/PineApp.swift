@@ -70,7 +70,10 @@ struct PineApp: App {
 
         Window(Strings.welcomeTitle, id: "welcome") {
             WelcomeView(registry: registry)
-                .task { appDelegate.registry = registry }
+                .task {
+                    appDelegate.registry = registry
+                }
+                .background { AppDelegateBridge(appDelegate: appDelegate) }
         }
         .defaultSize(width: 600, height: 400)
         .windowResizability(.contentSize)
@@ -89,6 +92,22 @@ private struct NilProjectRedirect: View {
                 .first { $0.contentView?.subviews.isEmpty == true || $0.title.isEmpty }?
                 .close()
             openWindow(id: "welcome")
+        }
+    }
+}
+
+// MARK: - AppDelegate bridge (passes SwiftUI openWindow closures to AppDelegate)
+
+/// Invisible view that hands SwiftUI's openWindow actions to AppDelegate
+/// so it can open windows when no SwiftUI views are active.
+private struct AppDelegateBridge: View {
+    let appDelegate: AppDelegate
+    @Environment(\.openWindow) var openWindow
+
+    var body: some View {
+        Color.clear.onAppear {
+            appDelegate.openNamedWindow = { id in openWindow(id: id) }
+            appDelegate.openProjectWindow = { url in openWindow(value: url) }
         }
     }
 }
@@ -230,8 +249,32 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     /// handlers know not to clear the saved session during app quit.
     private(set) var isTerminating = false
 
+    /// Closure to open a named SwiftUI window, set by PineApp on launch.
+    var openNamedWindow: ((String) -> Void)?
+    /// Closure to open a project SwiftUI window by URL, set by PineApp on launch.
+    var openProjectWindow: ((URL) -> Void)?
+
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSWindow.allowsAutomaticWindowTabbing = false
+
+        // Fallback: when no visible windows exist, Cmd+Shift+O opens a folder picker
+        NotificationCenter.default.addObserver(
+            forName: .openFolder, object: nil, queue: .main
+        ) { [weak self] _ in
+            guard NSApp.windows.allSatisfy({ !$0.isVisible }) else { return }
+            guard let self, let registry = self.registry else { return }
+            if let url = registry.openProjectViaPanel() {
+                self.openProjectWindow?(url)
+            }
+        }
+    }
+
+    /// Called when the user clicks the dock icon with no visible windows.
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        if !flag {
+            openNamedWindow?("welcome")
+        }
+        return true
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
