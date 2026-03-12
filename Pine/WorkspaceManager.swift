@@ -24,6 +24,10 @@ final class WorkspaceManager {
     /// a slow background task never overwrites a newer result.
     private var loadGeneration: Int = 0
 
+    deinit {
+        fileWatcher?.stop()
+    }
+
     func openFolder() {
         let panel = NSOpenPanel()
         panel.canChooseFiles = false
