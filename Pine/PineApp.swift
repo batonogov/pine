@@ -103,6 +103,8 @@ private struct ProjectWindowView: View {
                 // Cleanup only — unsaved check already handled by WindowCloseInterceptor
                 registry.closeProject(projectURL)
                 if registry.openProjects.isEmpty {
+                    // Clear saved session so next launch doesn't reopen a stale project
+                    SessionState.clear()
                     openWindow(id: "welcome")
                 }
             }
@@ -216,8 +218,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
-        guard let registry else { return }
-        // Save session for the last focused project (saved in registry)
+        guard let registry, !registry.openProjects.isEmpty else { return }
+        // Save session for the last focused project so it auto-restores on next launch
         if let url = registry.lastActiveProjectURL,
            let pm = registry.openProjects[url] {
             pm.saveSession()
