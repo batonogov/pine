@@ -164,14 +164,65 @@ final class SyntaxHighlighter {
 
     // MARK: - Подсветка
 
-    /// Применяет подсветку к NSTextStorage.
-    /// - Parameters:
-    ///   - textStorage: Хранилище текста NSTextView
-    ///   - language: Расширение файла ("swift", "py", "go")
-    ///   - fileName: Полное имя файла ("Dockerfile") — для поиска по имени
-    ///   - font: Базовый шрифт текста
+    /// Количество строк контекста вокруг изменённого региона для инкрементальной подсветки.
+    /// Нужно для корректной обработки многострочных конструкций (комментарии, строки).
+    private let contextLines = 20
+
+    /// Применяет подсветку ко всему NSTextStorage.
     func highlight(
         textStorage: NSTextStorage,
+        language: String,
+        fileName: String? = nil,
+        font: NSFont
+    ) {
+        let fullRange = NSRange(location: 0, length: textStorage.length)
+        highlightRange(textStorage: textStorage, range: fullRange, language: language, fileName: fileName, font: font)
+    }
+
+    /// Инкрементальная подсветка: подсвечивает только изменённый регион
+    /// с расширением до границ строк + контекст для многострочных конструкций.
+    func highlightEdited(
+        textStorage: NSTextStorage,
+        editedRange: NSRange,
+        language: String,
+        fileName: String? = nil,
+        font: NSFont
+    ) {
+        let source = textStorage.string as NSString
+        let totalLength = textStorage.length
+        guard totalLength > 0 else { return }
+
+        // Расширяем editedRange до границ строк
+        var expandedRange = source.lineRange(for: editedRange)
+
+        // Добавляем contextLines строк контекста с каждой стороны
+        var linesAdded = 0
+        var start = expandedRange.location
+        while start > 0 && linesAdded < contextLines {
+            start -= 1
+            if source.character(at: start) == 0x0A { // '\n'
+                linesAdded += 1
+            }
+        }
+        if start > 0 { start += 1 } // не включаем '\n' предыдущей строки
+
+        linesAdded = 0
+        var end = NSMaxRange(expandedRange)
+        while end < totalLength && linesAdded < contextLines {
+            if source.character(at: end) == 0x0A {
+                linesAdded += 1
+            }
+            end += 1
+        }
+
+        expandedRange = NSRange(location: start, length: end - start)
+        highlightRange(textStorage: textStorage, range: expandedRange, language: language, fileName: fileName, font: font)
+    }
+
+    /// Применяет подсветку к указанному диапазону NSTextStorage.
+    private func highlightRange(
+        textStorage: NSTextStorage,
+        range: NSRange,
         language: String,
         fileName: String? = nil,
         font: NSFont
@@ -184,15 +235,14 @@ final class SyntaxHighlighter {
             grammar = grammarsByExtension[language.lowercased()]
         }
 
-        let fullRange = NSRange(location: 0, length: textStorage.length)
         let source = textStorage.string
 
-        // Сбрасываем на базовый стиль
+        // Сбрасываем на базовый стиль в указанном диапазоне
         textStorage.beginEditing()
         textStorage.addAttributes([
             .foregroundColor: NSColor.textColor,
             .font: font
-        ], range: fullRange)
+        ], range: range)
 
         // Если грамматика не найдена — оставляем plain text
         guard let grammar,
@@ -201,14 +251,6 @@ final class SyntaxHighlighter {
             textStorage.endEditing()
             return
         }
-
-        // Применяем правила последовательно.
-        // Порядок важен: последние правила перекрывают предыдущие.
-        // В JSON грамматики комментарии идут первыми — и они будут перекрыты,
-        // если строка/ключевое слово совпадёт внутри. Но при правильном порядке
-        // (комментарии первые, они применяются, а потом ключевые слова красят поверх,
-        // но комментарии длиннее и последний wins) — это работает корректно
-        // для большинства случаев.
 
         // Создаём массив "занятых" диапазонов — чтобы comment перекрывал всё
         var highlightedRanges: [(range: NSRange, priority: Int)] = []
@@ -223,7 +265,7 @@ final class SyntaxHighlighter {
             let priority = scopePriority[rule.scope] ?? 0
             guard let color = theme.color(for: rule.scope) else { continue }
 
-            rule.regex.enumerateMatches(in: source, range: fullRange) { match, _, _ in
+            rule.regex.enumerateMatches(in: source, range: range) { match, _, _ in
                 guard let matchRange = match?.range else { return }
 
                 // Проверяем, не занят ли диапазон более приоритетным scope

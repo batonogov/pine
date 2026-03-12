@@ -8,6 +8,16 @@
 import SwiftUI
 import AppKit
 
+// MARK: - NSRange union helper
+
+private extension NSRange {
+    func union(_ other: NSRange) -> NSRange {
+        let start = min(location, other.location)
+        let end = max(NSMaxRange(self), NSMaxRange(other))
+        return NSRange(location: start, length: end - start)
+    }
+}
+
 // MARK: - NSTextView с отступом слева для номеров строк
 
 /// Подкласс NSTextView, который сдвигает текстовый контейнер вправо,
@@ -234,6 +244,14 @@ struct CodeEditorView: NSViewRepresentable {
         var scrollView: NSScrollView?
         var lineNumberView: LineNumberView?
 
+        /// Таймер для дебаунсинга подсветки при быстром вводе
+        private var highlightWorkItem: DispatchWorkItem?
+        /// Задержка дебаунсинга (мс)
+        private let highlightDelay: TimeInterval = 0.05
+
+        /// Накопленный диапазон изменений между срабатываниями дебаунса
+        private var pendingEditedRange: NSRange?
+
         init(parent: CodeEditorView) {
             self.parent = parent
         }
@@ -241,9 +259,43 @@ struct CodeEditorView: NSViewRepresentable {
         func textDidChange(_ notification: Notification) {
             guard let textView = notification.object as? NSTextView else { return }
             parent.text = textView.string
-            parent.applyHighlighting(to: textView)
             // Точка на кнопке закрытия таба при несохранённых изменениях
             textView.window?.isDocumentEdited = true
+
+            // Собираем editedRange из textStorage
+            if let storage = textView.textStorage {
+                let edited = storage.editedRange
+                if edited.location != NSNotFound {
+                    if let pending = pendingEditedRange {
+                        // Объединяем с накопленным диапазоном
+                        pendingEditedRange = pending.union(edited)
+                    } else {
+                        pendingEditedRange = edited
+                    }
+                }
+            }
+
+            // Дебаунсинг: откладываем подсветку до паузы в вводе
+            highlightWorkItem?.cancel()
+            let workItem = DispatchWorkItem { [weak self] in
+                guard let self, let textView = notification.object as? NSTextView,
+                      let storage = textView.textStorage else { return }
+
+                if let range = self.pendingEditedRange {
+                    SyntaxHighlighter.shared.highlightEdited(
+                        textStorage: storage,
+                        editedRange: range,
+                        language: self.parent.language,
+                        fileName: self.parent.fileName,
+                        font: self.parent.editorFont
+                    )
+                } else {
+                    self.parent.applyHighlighting(to: textView)
+                }
+                self.pendingEditedRange = nil
+            }
+            highlightWorkItem = workItem
+            DispatchQueue.main.asyncAfter(deadline: .now() + highlightDelay, execute: workItem)
         }
     }
 
