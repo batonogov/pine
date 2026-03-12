@@ -51,6 +51,7 @@ struct PineApp: App {
                     guard let pm = focusedProject else { return }
                     if pm.tabManager.saveActiveTab() {
                         pm.workspace.gitProvider.refresh()
+                        NotificationCenter.default.post(name: .refreshLineDiffs, object: nil)
                     }
                 }
                 .keyboardShortcut("s", modifiers: .command)
@@ -80,7 +81,6 @@ private struct ProjectWindowView: View {
     let projectURL: URL
     let registry: ProjectRegistry
     @Environment(\.openWindow) var openWindow
-    @Environment(\.dismissWindow) var dismissWindow
 
     var body: some View {
         let pm = registry.projectManager(for: projectURL)
@@ -91,14 +91,41 @@ private struct ProjectWindowView: View {
             .environment(pm.tabManager)
             .environment(registry)
             .focusedSceneValue(\.projectManager, pm)
+            .onAppear { registry.lastActiveProjectURL = projectURL }
             .onDisappear {
-                pm.saveSession()
-                registry.closeProject(projectURL)
-                // Show Welcome window when last project closes
-                if registry.openProjects.isEmpty {
-                    openWindow(id: "welcome")
-                }
+                handleWindowClose(pm: pm)
             }
+    }
+
+    /// Prompts for unsaved changes before closing the project window.
+    private func handleWindowClose(pm: ProjectManager) {
+        if pm.tabManager.hasUnsavedChanges {
+            let alert = NSAlert()
+            alert.messageText = Strings.unsavedChangesTitle
+            alert.informativeText = Strings.unsavedChangesMessage
+            alert.addButton(withTitle: Strings.dialogSave)
+            alert.addButton(withTitle: Strings.dialogDontSave)
+            alert.addButton(withTitle: Strings.dialogCancel)
+            alert.alertStyle = .warning
+
+            let response = alert.runModal()
+            switch response {
+            case .alertFirstButtonReturn:
+                for index in pm.tabManager.tabs.indices where pm.tabManager.tabs[index].isDirty {
+                    _ = pm.tabManager.saveTab(at: index)
+                }
+            default:
+                break
+            }
+        }
+
+        pm.saveSession()
+        registry.closeProject(projectURL)
+
+        // Show Welcome window when last project closes
+        if registry.openProjects.isEmpty {
+            openWindow(id: "welcome")
+        }
     }
 }
 
@@ -117,8 +144,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationWillTerminate(_ notification: Notification) {
         guard let registry else { return }
-        // Save session for the first open project (single-session model)
-        if let (_, pm) = registry.openProjects.first {
+        // Save session for the last focused project (saved in registry)
+        if let url = registry.lastActiveProjectURL,
+           let pm = registry.openProjects[url] {
+            pm.saveSession()
+        } else if let (_, pm) = registry.openProjects.first {
             pm.saveSession()
         }
     }
@@ -160,6 +190,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 extension Notification.Name {
     static let openFolder = Notification.Name("openFolder")
     static let closeTab = Notification.Name("closeTab")
+    static let refreshLineDiffs = Notification.Name("refreshLineDiffs")
     /// userInfo: ["oldURL": URL, "newURL": URL]
     static let fileRenamed = Notification.Name("fileRenamed")
     /// userInfo: ["url": URL]

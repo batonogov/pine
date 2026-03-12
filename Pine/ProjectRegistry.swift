@@ -15,6 +15,8 @@ final class ProjectRegistry {
     private(set) var openProjects: [URL: ProjectManager] = [:]
     /// Recently opened project paths (most recent first), persisted to UserDefaults.
     var recentProjects: [URL] = []
+    /// Tracks the last active project for session save on quit.
+    var lastActiveProjectURL: URL?
 
     private static let recentProjectsKey = "recentProjectPaths"
     private static let maxRecentProjects = 10

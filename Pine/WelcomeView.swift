@@ -13,6 +13,9 @@ struct WelcomeView: View {
     @Environment(\.openWindow) var openWindow
     @Environment(\.dismissWindow) var dismissWindow
 
+    /// Only auto-restore on first appearance (cold launch).
+    private static var didAutoRestore = false
+
     var body: some View {
         HStack(spacing: 0) {
             // Left: logo and actions
@@ -85,10 +88,15 @@ struct WelcomeView: View {
         }
         .frame(width: 600, height: 400)
         .onAppear {
-            // Auto-restore last session on launch
+            // Auto-restore last session only on cold launch
+            guard !Self.didAutoRestore else { return }
+            Self.didAutoRestore = true
             if let session = SessionState.load() {
                 openProject(at: session.projectURL)
             }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .openFolder)) { _ in
+            openFolder()
         }
     }
 

@@ -92,6 +92,10 @@ struct ContentView: View {
         .onChange(of: workspace.gitProvider.fileStatuses) { _, _ in
             refreshLineDiffs()
         }
+        .onReceive(NotificationCenter.default.publisher(for: .refreshLineDiffs)) { _ in
+            guard controlActiveState == .key else { return }
+            refreshLineDiffs()
+        }
         .onReceive(NotificationCenter.default.publisher(for: .closeTab)) { _ in
             guard controlActiveState == .key,
                   let tab = tabManager.activeTab else { return }
