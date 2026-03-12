@@ -69,12 +69,16 @@ class WindowBridgeView: NSView {
 
             // Immediately merge into an existing tab group to prevent the
             // window from flashing as a standalone window before becoming a tab.
-            // Don't require isVisible — on cold start the primary window may not
-            // be visible yet, but addTabbedWindow works on any NSWindow.
-            if let primaryWindow = NSApplication.shared.windows.first(where: {
-                $0 !== window
-                    && $0.tabbingIdentifier == AppDelegate.editorTabbingID
-            }) {
+            // Prefer the key/visible window to avoid merging into a minimized
+            // or hidden group. Fall back to any editor window for cold start
+            // where the primary may not be visible yet.
+            let editorPeers = NSApplication.shared.windows.filter {
+                $0 !== window && $0.tabbingIdentifier == AppDelegate.editorTabbingID
+            }
+            let primaryWindow = editorPeers.first(where: { $0.isKeyWindow })
+                ?? editorPeers.first(where: { $0.isVisible && !$0.isMiniaturized })
+                ?? editorPeers.first
+            if let primaryWindow {
                 window.alphaValue = 0
                 primaryWindow.addTabbedWindow(window, ordered: .above)
                 window.alphaValue = 1
