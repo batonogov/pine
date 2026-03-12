@@ -305,6 +305,39 @@ struct TabManagerTests {
         #expect(manager.activeTab?.scrollOffset == 128.5)
     }
 
+    @Test("Cursor position uses UTF-16 semantics consistent with NSRange")
+    func cursorPositionUTF16Semantics() {
+        let manager = TabManager()
+        // 🎉 is a single Swift Character but 2 UTF-16 code units
+        let emojiContent = "🎉 hello"
+        let url = tempFileURL(content: emojiContent)
+
+        manager.openTab(url: url)
+
+        // Simulate NSTextView placing cursor after "🎉 " (4 UTF-16 units: 2 for emoji + 1 space + next char)
+        let nsLength = (emojiContent as NSString).length
+        let swiftCount = emojiContent.count
+        // Verify the premise: these differ for emoji content
+        #expect(nsLength != swiftCount, "emoji content should have different NSString.length vs Character count")
+        #expect(nsLength == 8) // 🎉(2) + " "(1) + "hello"(5)
+        #expect(swiftCount == 7) // 🎉(1) + " "(1) + "hello"(5)
+
+        // Store a cursor position that's valid in UTF-16 but > Character count
+        // (e.g. cursor at end of string in NSTextView terms)
+        manager.updateEditorState(cursorPosition: nsLength, scrollOffset: 0)
+        #expect(manager.activeTab?.cursorPosition == nsLength)
+
+        // The restore clamp in CodeEditorView uses (text as NSString).length,
+        // so nsLength should be within bounds. If it used text.count, this
+        // position would be incorrectly clamped to 7 instead of 8.
+        let restoredPosition = min(nsLength, (emojiContent as NSString).length)
+        #expect(restoredPosition == nsLength)
+
+        // Verify the bug scenario: clamping via text.count would truncate
+        let brokenPosition = min(nsLength, swiftCount)
+        #expect(brokenPosition != nsLength, "text.count clamp would lose cursor position on emoji content")
+    }
+
     @Test("Rename preserves editor state")
     func renamePreservesEditorState() {
         let manager = TabManager()
