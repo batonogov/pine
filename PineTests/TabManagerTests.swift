@@ -120,21 +120,21 @@ struct TabManagerTests {
         #expect(onDisk == "modified")
     }
 
-    @Test("Save tab returns false for non-writable path")
+    @Test("trySaveTab throws for non-writable path and leaves tab dirty")
     func saveTabFailsForBadPath() {
         let manager = TabManager()
-        // Use a path under /dev/null which cannot be written to
         let badURL = URL(fileURLWithPath: "/nonexistent_dir_\(UUID().uuidString)/file.txt")
 
-        // Manually create a tab with a bad URL
         let tab = EditorTab(url: badURL, content: "data", savedContent: "")
         manager.tabs.append(tab)
         manager.activeTabID = tab.id
 
-        // saveTab shows an alert and returns false — we can't dismiss the alert
-        // in a unit test, so we test the saveTab(at:) path indirectly by checking
-        // that the tab remains dirty after a write failure attempt
+        #expect(throws: (any Error).self) {
+            try manager.trySaveTab(at: 0)
+        }
+        // Tab must remain dirty after failed save
         #expect(manager.activeTab?.isDirty == true)
+        #expect(manager.activeTab?.content == "data")
     }
 
     @Test("Handle file renamed updates tab URL")

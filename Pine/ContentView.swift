@@ -83,6 +83,12 @@ struct ContentView: View {
                 lineDiffs = []
             }
         }
+        .onChange(of: workspace.gitProvider.currentBranch) { _, _ in
+            refreshLineDiffs()
+        }
+        .onChange(of: workspace.gitProvider.fileStatuses) { _, _ in
+            refreshLineDiffs()
+        }
         .onReceive(NotificationCenter.default.publisher(for: .saveFile)) { _ in
             saveFile()
         }
@@ -181,6 +187,7 @@ struct ContentView: View {
             case .alertFirstButtonReturn:
                 guard let index = tabManager.tabs.firstIndex(where: { $0.id == tab.id }) else { return }
                 guard tabManager.saveTab(at: index) else { return }
+                workspace.gitProvider.refresh()
                 tabManager.closeTab(id: tab.id)
             case .alertSecondButtonReturn:
                 tabManager.closeTab(id: tab.id)

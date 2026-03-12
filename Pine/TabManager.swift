@@ -76,14 +76,21 @@ final class TabManager {
         return saveTab(at: index)
     }
 
+    /// Writes tab content to disk without UI. Returns true on success.
+    /// On failure, throws — callers decide how to present the error.
+    @discardableResult
+    func trySaveTab(at index: Int) throws -> Bool {
+        let tab = tabs[index]
+        try tab.content.write(to: tab.url, atomically: true, encoding: .utf8)
+        tabs[index].savedContent = tab.content
+        return true
+    }
+
     /// Saves a specific tab by index. Returns true on success, shows alert on failure.
     @discardableResult
     func saveTab(at index: Int) -> Bool {
-        let tab = tabs[index]
         do {
-            try tab.content.write(to: tab.url, atomically: true, encoding: .utf8)
-            tabs[index].savedContent = tab.content
-            return true
+            return try trySaveTab(at: index)
         } catch {
             let alert = NSAlert()
             alert.messageText = Strings.fileOperationErrorTitle

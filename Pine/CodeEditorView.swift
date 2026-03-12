@@ -296,8 +296,6 @@ struct CodeEditorView: NSViewRepresentable {
         func textDidChange(_ notification: Notification) {
             guard let textView = notification.object as? NSTextView else { return }
             parent.text = textView.string
-            // Точка на кнопке закрытия таба при несохранённых изменениях
-            textView.window?.isDocumentEdited = true
 
             // Захватываем editedRange из textStorage сейчас,
             // пока он валиден в координатах текущей версии текста
