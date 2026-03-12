@@ -141,8 +141,7 @@ struct ContentView: View {
     }
 
     private var currentFileName: String {
-        let name = fileURL?.lastPathComponent ?? "Pine"
-        return hasUnsavedChanges ? "● \(name)" : name
+        fileURL?.lastPathComponent ?? workspace.projectName
     }
 
     var body: some View {
