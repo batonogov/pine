@@ -14,6 +14,7 @@ final class WorkspaceManager {
     var projectName: String = "Pine"
     var rootURL: URL?
     let gitProvider = GitStatusProvider()
+    private var fileWatcher: FileSystemWatcher?
 
     func openFolder() {
         let panel = NSOpenPanel()
@@ -40,6 +41,15 @@ final class WorkspaceManager {
         gitProvider.branches = []
 
         loadDirectoryContentsAsync(url: url)
+        startWatching(url: url)
+    }
+
+    private func startWatching(url: URL) {
+        let watcher = FileSystemWatcher { [weak self] in
+            self?.refreshFileTree()
+        }
+        watcher.watch(directory: url)
+        fileWatcher = watcher
     }
 
     /// Heavy I/O (file tree + git) runs on a background queue;
