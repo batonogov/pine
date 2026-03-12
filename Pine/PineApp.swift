@@ -11,6 +11,7 @@ import SwiftUI
 struct PineApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
     @State private var registry = ProjectRegistry()
+    @FocusedValue(\.projectManager) private var focusedProject: ProjectManager?
 
     var body: some Scene {
         WindowGroup(for: URL.self) { $projectURL in
@@ -32,21 +33,25 @@ struct PineApp: App {
             // Cmd+` — показать/скрыть терминал
             CommandMenu(Strings.menuView) {
                 Button(Strings.toggleTerminal) {
-                    NotificationCenter.default.post(name: .toggleTerminal, object: nil)
+                    guard let pm = focusedProject else { return }
+                    pm.terminal.isTerminalVisible.toggle()
                 }
                 .keyboardShortcut("`", modifiers: .command)
             }
             // Cmd+Shift+B — переключение веток
             CommandMenu(Strings.menuGit) {
                 Button(Strings.menuSwitchBranch) {
-                    NotificationCenter.default.post(name: .switchBranch, object: nil)
+                    // Branch switching is handled via toolbarTitleMenu
                 }
                 .keyboardShortcut("b", modifiers: [.command, .shift])
             }
             // Cmd+S — сохранить файл
             CommandGroup(replacing: .saveItem) {
                 Button(Strings.menuSave) {
-                    NotificationCenter.default.post(name: .saveFile, object: nil)
+                    guard let pm = focusedProject else { return }
+                    if pm.tabManager.saveActiveTab() {
+                        pm.workspace.gitProvider.refresh()
+                    }
                 }
                 .keyboardShortcut("s", modifiers: .command)
             }
@@ -67,12 +72,14 @@ struct PineApp: App {
         .windowResizability(.contentSize)
     }
 }
+
 // MARK: - Project Window wrapper
 
 /// Resolves a ProjectManager from the registry and injects it into ContentView.
 private struct ProjectWindowView: View {
     let projectURL: URL
     let registry: ProjectRegistry
+    @Environment(\.openWindow) var openWindow
     @Environment(\.dismissWindow) var dismissWindow
 
     var body: some View {
@@ -82,10 +89,15 @@ private struct ProjectWindowView: View {
             .environment(pm.workspace)
             .environment(pm.terminal)
             .environment(pm.tabManager)
+            .environment(registry)
             .focusedSceneValue(\.projectManager, pm)
             .onDisappear {
                 pm.saveSession()
                 registry.closeProject(projectURL)
+                // Show Welcome window when last project closes
+                if registry.openProjects.isEmpty {
+                    openWindow(id: "welcome")
+                }
             }
     }
 }
@@ -105,7 +117,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationWillTerminate(_ notification: Notification) {
         guard let registry else { return }
-        for (_, pm) in registry.openProjects {
+        // Save session for the first open project (single-session model)
+        if let (_, pm) = registry.openProjects.first {
             pm.saveSession()
         }
     }
@@ -145,10 +158,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 // MARK: - Уведомления для команд меню
 
 extension Notification.Name {
-    static let saveFile = Notification.Name("saveFile")
     static let openFolder = Notification.Name("openFolder")
-    static let toggleTerminal = Notification.Name("toggleTerminal")
-    static let switchBranch = Notification.Name("switchBranch")
     static let closeTab = Notification.Name("closeTab")
     /// userInfo: ["oldURL": URL, "newURL": URL]
     static let fileRenamed = Notification.Name("fileRenamed")

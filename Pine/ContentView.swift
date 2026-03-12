@@ -14,6 +14,10 @@ struct ContentView: View {
     @Environment(WorkspaceManager.self) var workspace
     @Environment(TerminalManager.self) var terminal
     @Environment(TabManager.self) var tabManager
+    @Environment(ProjectRegistry.self) var registry
+    @Environment(\.openWindow) var openWindow
+
+    @Environment(\.controlActiveState) var controlActiveState
 
     @State private var selectedNode: FileNode?
     @State private var columnVisibility: NavigationSplitViewVisibility = .all
@@ -88,21 +92,14 @@ struct ContentView: View {
         .onChange(of: workspace.gitProvider.fileStatuses) { _, _ in
             refreshLineDiffs()
         }
-        .onReceive(NotificationCenter.default.publisher(for: .saveFile)) { _ in
-            saveFile()
-        }
         .onReceive(NotificationCenter.default.publisher(for: .closeTab)) { _ in
-            guard let tab = tabManager.activeTab else { return }
+            guard controlActiveState == .key,
+                  let tab = tabManager.activeTab else { return }
             closeTabWithConfirmation(tab)
         }
         .onReceive(NotificationCenter.default.publisher(for: .openFolder)) { _ in
-            workspace.openFolder()
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .toggleTerminal)) { _ in
-            withAnimation { terminal.isTerminalVisible.toggle() }
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .switchBranch)) { _ in
-            // Branch switching is now handled via toolbarTitleMenu
+            guard controlActiveState == .key else { return }
+            openNewProject()
         }
         .onReceive(NotificationCenter.default.publisher(for: .fileRenamed)) { notification in
             guard let oldURL = notification.userInfo?["oldURL"] as? URL,
@@ -141,19 +138,20 @@ struct ContentView: View {
         }
     }
 
+    // MARK: - Открытие нового проекта
+
+    /// Opens a new project via folder picker, opening it in a new window.
+    private func openNewProject() {
+        guard let url = registry.openProjectViaPanel() else { return }
+        openWindow(value: url)
+    }
+
     // MARK: - Управление файлами
 
     private func handleFileSelection(_ node: FileNode) {
         tabManager.openTab(url: node.url)
         // Сбрасываем выделение, чтобы повторный клик тоже сработал
         selectedNode = nil
-    }
-
-    private func saveFile() {
-        guard tabManager.saveActiveTab() else { return }
-        // Refresh git status after save
-        workspace.gitProvider.refresh()
-        refreshLineDiffs()
     }
 
     /// Refreshes cached line diffs for the active tab.
@@ -419,6 +417,8 @@ struct TerminalNativeTabItem: View {
 struct SidebarView: View {
     var workspace: WorkspaceManager
     @Binding var selectedFile: FileNode?
+    @Environment(ProjectRegistry.self) var registry
+    @Environment(\.openWindow) var openWindow
 
     var body: some View {
         Group {
@@ -430,7 +430,7 @@ struct SidebarView: View {
                         Text(Strings.openFolderPrompt)
                     } actions: {
                         Button(Strings.openFolderButton) {
-                            workspace.openFolder()
+                            openNewProject()
                         }
                         .buttonStyle(.borderedProminent)
                     }
@@ -463,13 +463,19 @@ struct SidebarView: View {
         .toolbar {
             ToolbarItem {
                 Button {
-                    workspace.openFolder()
+                    openNewProject()
                 } label: {
                     Image(systemName: "folder.badge.plus")
                 }
                 .help(Strings.openFolderTooltip)
             }
         }
+    }
+
+    /// Opens a new project via folder picker in a new window.
+    private func openNewProject() {
+        guard let url = registry.openProjectViaPanel() else { return }
+        openWindow(value: url)
     }
 
     /// Prompt for a name and create a file or folder in the given parent directory.
@@ -758,9 +764,11 @@ struct StatusBarView: View {
 
 #Preview {
     let projectManager = ProjectManager()
+    let registry = ProjectRegistry()
     ContentView()
         .environment(projectManager)
         .environment(projectManager.workspace)
         .environment(projectManager.terminal)
         .environment(projectManager.tabManager)
+        .environment(registry)
 }
