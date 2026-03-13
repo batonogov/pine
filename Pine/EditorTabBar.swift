@@ -112,7 +112,7 @@ struct EditorTabItem: View {
                 )
             }
             .buttonStyle(.plain)
-            .opacity(isHovering || isActive || tab.isDirty ? 1 : 0)
+            .opacity(isHovering || isActive || tab.isDirty ? 1 : 0.01)
             .accessibilityIdentifier(AccessibilityID.editorTabCloseButton(tab.fileName))
 
             Image(systemName: FileIconMapper.iconForFile(tab.fileName))
@@ -134,6 +134,13 @@ struct EditorTabItem: View {
         .contentShape(Capsule())
         .onTapGesture(perform: onSelect)
         .onHover { isHovering = $0 }
-        .accessibilityIdentifier(AccessibilityID.editorTab(tab.fileName))
+        .accessibilityRepresentation {
+            HStack {
+                Button(tab.fileName, action: onSelect)
+                    .accessibilityIdentifier(AccessibilityID.editorTab(tab.fileName))
+                Button("Close", action: onClose)
+                    .accessibilityIdentifier(AccessibilityID.editorTabCloseButton(tab.fileName))
+            }
+        }
     }
 }

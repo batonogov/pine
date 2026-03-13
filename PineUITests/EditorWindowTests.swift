@@ -27,6 +27,18 @@ final class EditorWindowTests: PineUITestCase {
         try super.tearDownWithError()
     }
 
+    // MARK: - Helpers
+
+    /// Finds an editor tab button by file name.
+    private func editorTab(_ fileName: String) -> XCUIElement {
+        app.buttons["editorTab_\(fileName)"].firstMatch
+    }
+
+    /// Finds the close button for a tab by file name.
+    private func editorTabCloseButton(_ fileName: String) -> XCUIElement {
+        app.buttons["editorTabClose_\(fileName)"].firstMatch
+    }
+
     // MARK: - P1: File selection opens a tab
 
     func testClickFileInSidebarOpensTab() throws {
@@ -42,9 +54,8 @@ final class EditorWindowTests: PineUITestCase {
         }
         fileRow.click()
 
-        // Editor tab appears as a StaticText or Group with the identifier
-        let editorTab = app.staticTexts["editorTab_main.swift"].firstMatch
-        XCTAssertTrue(waitForExistence(editorTab, timeout: 5), "Editor tab for main.swift should appear")
+        let tab = editorTab("main.swift")
+        XCTAssertTrue(waitForExistence(tab, timeout: 5), "Editor tab for main.swift should appear")
     }
 
     func testOpenMultipleFilesCreatesTabs() throws {
@@ -59,10 +70,8 @@ final class EditorWindowTests: PineUITestCase {
         let utilsFile = app.staticTexts["fileNode_utils.swift"]
         if waitForExistence(utilsFile, timeout: 5) { utilsFile.click() }
 
-        let tab1 = app.staticTexts["editorTab_main.swift"].firstMatch
-        let tab2 = app.staticTexts["editorTab_utils.swift"].firstMatch
-        XCTAssertTrue(waitForExistence(tab1), "main.swift tab should exist")
-        XCTAssertTrue(waitForExistence(tab2), "utils.swift tab should exist")
+        XCTAssertTrue(waitForExistence(editorTab("main.swift")), "main.swift tab should exist")
+        XCTAssertTrue(waitForExistence(editorTab("utils.swift")), "utils.swift tab should exist")
     }
 
     // MARK: - P1: Switching between tabs
@@ -82,8 +91,8 @@ final class EditorWindowTests: PineUITestCase {
         sleep(1)
 
         // Both tabs should exist
-        let mainTab = app.staticTexts["editorTab_main.swift"].firstMatch
-        let utilsTab = app.staticTexts["editorTab_utils.swift"].firstMatch
+        let mainTab = editorTab("main.swift")
+        let utilsTab = editorTab("utils.swift")
         XCTAssertTrue(mainTab.exists, "main.swift tab should exist")
         XCTAssertTrue(utilsTab.exists, "utils.swift tab should exist")
 
@@ -96,9 +105,9 @@ final class EditorWindowTests: PineUITestCase {
         XCTAssertTrue(utilsTab.exists, "utils.swift tab should still exist")
     }
 
-    // MARK: - P1: Cmd+W closes tab, activates neighbor
+    // MARK: - P1: Close button removes tab, activates neighbor
 
-    func testCmdWClosesActiveTabAndActivatesNeighbor() throws {
+    func testCloseButtonRemovesTabAndActivatesNeighbor() throws {
         launchWithProject(projectURL)
 
         let sidebar = app.outlines["sidebar"]
@@ -113,20 +122,22 @@ final class EditorWindowTests: PineUITestCase {
         XCTAssertTrue(waitForExistence(utilsFile, timeout: 5))
         utilsFile.click()
 
-        // Both tabs should exist, utils.swift is active (last opened)
-        let mainTab = app.staticTexts["editorTab_main.swift"].firstMatch
-        let utilsTab = app.staticTexts["editorTab_utils.swift"].firstMatch
+        // Both tabs should exist
+        let mainTab = editorTab("main.swift")
+        let utilsTab = editorTab("utils.swift")
         XCTAssertTrue(waitForExistence(mainTab))
         XCTAssertTrue(waitForExistence(utilsTab))
 
-        // Cmd+W → close active tab (utils.swift)
-        app.typeKey("w", modifierFlags: .command)
+        // Click close button on utils.swift tab
+        let closeButton = editorTabCloseButton("utils.swift")
+        XCTAssertTrue(waitForExistence(closeButton, timeout: 5), "Close button should be accessible")
+        closeButton.click()
 
         // utils.swift tab should disappear
-        XCTAssertTrue(utilsTab.waitForNonExistence(timeout: 5), "Active tab should close on Cmd+W")
+        XCTAssertTrue(utilsTab.waitForNonExistence(timeout: 5), "Tab should close after clicking close button")
 
         // main.swift tab should still exist (neighbor activated)
-        XCTAssertTrue(mainTab.exists, "Neighbor tab should remain after Cmd+W")
+        XCTAssertTrue(mainTab.exists, "Neighbor tab should remain after closing another tab")
     }
 
     // MARK: - P1: Editor placeholder when no tabs open

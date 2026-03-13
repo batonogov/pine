@@ -58,18 +58,8 @@ struct PineApp: App {
                 }
                 .keyboardShortcut("s", modifiers: .command)
             }
-            // Cmd+W — закрыть таб или окно
-            CommandGroup(after: .saveItem) {
-                Button(Strings.menuCloseTab) {
-                    if let project = focusedProject, project.tabManager.activeTab != nil {
-                        NotificationCenter.default.post(name: .closeTab, object: nil)
-                    } else {
-                        // No active tab or no project (Welcome) — close the key window
-                        NSApp.keyWindow?.close()
-                    }
-                }
-                .keyboardShortcut("w", modifiers: .command)
-            }
+            // Cmd+W is handled by CloseDelegate.windowShouldClose —
+            // it closes the active tab (if any) instead of the window.
         }
 
         Window(Strings.welcomeTitle, id: "welcome") {
@@ -231,6 +221,37 @@ private struct WindowCloseInterceptor: NSViewRepresentable {
             if let original, original.responds(to: #selector(NSWindowDelegate.windowShouldClose(_:))) {
                 guard original.windowShouldClose?(sender) != false else { return false }
             }
+
+            // Cmd+W (performClose:) with an active tab → close tab, not window.
+            // Direct call instead of notification — .onReceive in SwiftUI/Combine
+            // may fire too late or be blocked by controlActiveState guard.
+            if let tab = projectManager.tabManager.activeTab {
+                if tab.isDirty {
+                    let alert = NSAlert()
+                    alert.messageText = Strings.unsavedChangesTitle
+                    alert.informativeText = Strings.unsavedChangesMessage
+                    alert.addButton(withTitle: Strings.dialogSave)
+                    alert.addButton(withTitle: Strings.dialogDontSave)
+                    alert.addButton(withTitle: Strings.dialogCancel)
+                    alert.alertStyle = .warning
+                    let response = alert.runModal()
+                    switch response {
+                    case .alertFirstButtonReturn:
+                        if let idx = projectManager.tabManager.tabs.firstIndex(where: { $0.id == tab.id }) {
+                            guard projectManager.tabManager.saveTab(at: idx) else { return false }
+                        }
+                        projectManager.tabManager.closeTab(id: tab.id)
+                    case .alertSecondButtonReturn:
+                        projectManager.tabManager.closeTab(id: tab.id)
+                    default:
+                        break // Cancel — do nothing
+                    }
+                } else {
+                    projectManager.tabManager.closeTab(id: tab.id)
+                }
+                return false
+            }
+
             guard projectManager.tabManager.hasUnsavedChanges else { return true }
 
             let alert = NSAlert()
