@@ -70,6 +70,8 @@ struct PineApp: App {
 
         Window(Strings.welcomeTitle, id: "welcome") {
             WelcomeView(registry: registry)
+                .onAppear { appDelegate.registry = registry }
+                .background { AppDelegateBridge(appDelegate: appDelegate) }
         }
         .defaultSize(width: 600, height: 400)
         .windowResizability(.contentSize)
@@ -275,7 +277,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     /// Called when the user clicks the dock icon with no visible windows.
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
         if !flag {
-            openNamedWindow?("welcome")
+            // Prefer surfacing existing hidden/minimized project windows
+            if let window = NSApp.windows.first(where: { !$0.isVisible && $0.contentView != nil }) {
+                window.makeKeyAndOrderFront(nil)
+            } else {
+                openNamedWindow?("welcome")
+            }
         }
         return true
     }
