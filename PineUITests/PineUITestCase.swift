@@ -44,7 +44,6 @@ class PineUITestCase: XCTestCase {
         ensureWindowVisible()
         // Wait for project window to appear (Welcome gets dismissed,
         // project window opens via PendingProjectOpener)
-        sleep(2)
         _ = app.windows.firstMatch.waitForExistence(timeout: 10)
     }
 

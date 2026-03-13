@@ -52,7 +52,6 @@ final class WelcomeWindowTests: PineUITestCase {
         let openFolderButton = app.buttons["welcomeOpenFolderButton"]
         XCTAssertTrue(waitForExistence(openFolderButton))
         openFolderButton.click()
-        sleep(1)
 
         // NSOpenPanel shows as a sheet or separate window with an "Open" button
         let openPanel = app.sheets.firstMatch
@@ -63,7 +62,6 @@ final class WelcomeWindowTests: PineUITestCase {
 
         // Dismiss the panel by pressing Escape
         app.typeKey(.escape, modifierFlags: [])
-        sleep(1)
 
         // Welcome window should still be visible after cancelling
         let welcomeWindow = app.windows["welcome"]
@@ -83,7 +81,6 @@ final class WelcomeWindowTests: PineUITestCase {
 
         // Step 2: Terminate and relaunch with --reset-state (clears sessions, preserves recent projects)
         app.terminate()
-        sleep(1)
 
         app = XCUIApplication()
         app.launchArguments += ["--reset-state"]
@@ -106,7 +103,6 @@ final class WelcomeWindowTests: PineUITestCase {
 
         // Step 4: Click the recent project
         recentItem.click()
-        sleep(2)
 
         // Project window should open with sidebar
         let sidebarAfter = app.outlines["sidebar"]
@@ -126,7 +122,6 @@ final class WelcomeWindowTests: PineUITestCase {
 
         // Step 2: Terminate the app
         app.terminate()
-        sleep(1)
 
         // Step 3: Relaunch with --reset-state (simulates clean restart)
         app = XCUIApplication()
