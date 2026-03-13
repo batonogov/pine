@@ -7,9 +7,9 @@
 
 import Foundation
 
-/// Persists and restores session state (project folder + open editor tabs).
-/// Each project stores its own session keyed by its path.
-/// A separate key tracks which projects were open at quit for multi-window restore.
+/// Persists and restores per-project editor tab state (open files + active tab).
+/// Window restoration (which projects are open) is handled by the system via
+/// WindowGroup's built-in scene restoration.
 struct SessionState: Codable {
     var projectPath: String
     var openFilePaths: [String]
@@ -17,14 +17,10 @@ struct SessionState: Codable {
 
     // MARK: - UserDefaults keys
 
-    /// Legacy single-project key (kept for migration).
-    private static let defaultsKey = "lastSessionState"
+    /// Legacy single-project key (kept for migration from older versions).
+    private static let legacyKey = "lastSessionState"
     /// Per-project session key prefix.
     private static let perProjectPrefix = "sessionState:"
-    /// List of project paths that were open at last quit.
-    private static let openProjectsKey = "openProjectPaths"
-
-    // MARK: - Per-project key
 
     private static func key(for projectURL: URL) -> String {
         perProjectPrefix + projectURL.resolvingSymlinksInPath().path
@@ -32,27 +28,9 @@ struct SessionState: Codable {
 
     // MARK: - Clear
 
-    /// Removes the saved session for a specific project.
+    /// Removes the saved tab session for a specific project.
     static func clear(for projectURL: URL, defaults: UserDefaults = .standard) {
         defaults.removeObject(forKey: key(for: projectURL))
-        // Also remove from open projects list
-        var paths = defaults.stringArray(forKey: openProjectsKey) ?? []
-        paths.removeAll { $0 == projectURL.resolvingSymlinksInPath().path }
-        defaults.set(paths, forKey: openProjectsKey)
-        // If no projects remain, clear legacy key too so fallback doesn't resurrect a project
-        if paths.isEmpty {
-            defaults.removeObject(forKey: defaultsKey)
-        }
-    }
-
-    /// Loads legacy single-project session (for migration from older versions).
-    static func loadLegacySingle(defaults: UserDefaults = .standard) -> SessionState? {
-        guard let data = defaults.data(forKey: defaultsKey),
-              let state = try? JSONDecoder().decode(SessionState.self, from: data) else {
-            return nil
-        }
-        guard directoryExists(at: state.projectPath) else { return nil }
-        return state
     }
 
     // MARK: - Save
@@ -70,23 +48,15 @@ struct SessionState: Codable {
         )
         guard let data = try? JSONEncoder().encode(state) else { return }
         defaults.set(data, forKey: key(for: projectURL))
-        // Also write to legacy key for backwards compat
-        defaults.set(data, forKey: defaultsKey)
-    }
-
-    /// Records which project URLs are currently open (called on quit).
-    static func saveOpenProjects(_ urls: [URL], defaults: UserDefaults = .standard) {
-        let paths = urls.map { $0.resolvingSymlinksInPath().path }
-        defaults.set(paths, forKey: openProjectsKey)
     }
 
     // MARK: - Load
 
-    /// Returns the saved session for a specific project, if the folder still exists.
+    /// Returns the saved tab session for a specific project, if the folder still exists.
     static func load(for projectURL: URL, defaults: UserDefaults = .standard) -> SessionState? {
         guard let data = defaults.data(forKey: key(for: projectURL)),
               let state = try? JSONDecoder().decode(SessionState.self, from: data) else {
-            // Try legacy key as fallback
+            // Try legacy key as fallback for migration
             return loadLegacy(for: projectURL, defaults: defaults)
         }
         guard directoryExists(at: state.projectPath) else { return nil }
@@ -95,7 +65,7 @@ struct SessionState: Codable {
 
     /// Loads from legacy single-project key if it matches the given project.
     private static func loadLegacy(for projectURL: URL, defaults: UserDefaults) -> SessionState? {
-        guard let data = defaults.data(forKey: defaultsKey),
+        guard let data = defaults.data(forKey: legacyKey),
               let state = try? JSONDecoder().decode(SessionState.self, from: data) else {
             return nil
         }
@@ -104,15 +74,6 @@ struct SessionState: Codable {
             .resolvingSymlinksInPath().path == canonical else { return nil }
         guard directoryExists(at: state.projectPath) else { return nil }
         return state
-    }
-
-    /// Returns the project URLs that were open at last quit.
-    static func loadOpenProjects(defaults: UserDefaults = .standard) -> [URL] {
-        guard let paths = defaults.stringArray(forKey: openProjectsKey) else { return [] }
-        return paths.compactMap { path in
-            guard directoryExists(at: path) else { return nil }
-            return URL(fileURLWithPath: path)
-        }
     }
 
     private static func directoryExists(at path: String) -> Bool {

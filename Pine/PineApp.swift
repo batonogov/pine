@@ -22,7 +22,6 @@ struct PineApp: App {
                 NilProjectRedirect()
             }
         }
-        .restorationBehavior(.disabled)
         .defaultSize(width: 1100, height: 700)
         .commands {
             // Убираем стандартный "New Window" (Cmd+N) — табы создаются кликом по файлу
@@ -129,12 +128,10 @@ private struct ProjectWindowView: View {
     let registry: ProjectRegistry
     let appDelegate: AppDelegate
     @Environment(\.openWindow) var openWindow
-    @State private var pm: ProjectManager?
-    @State private var didAttemptLoad = false
 
     var body: some View {
         Group {
-            if let pm {
+            if let pm = registry.projectManager(for: projectURL) {
                 ContentView()
                     .environment(pm)
                     .environment(pm.workspace)
@@ -149,26 +146,16 @@ private struct ProjectWindowView: View {
                             projectURL: projectURL
                         )
                     }
-            } else if didAttemptLoad {
+            } else {
                 // Directory no longer exists — close this blank window and show Welcome
                 NilProjectRedirect()
             }
         }
-        .onAppear {
-            if pm == nil {
-                pm = registry.projectManager(for: projectURL)
-                didAttemptLoad = true
-            }
-            registry.lastActiveProjectURL = projectURL
-            appDelegate.registry = registry
-        }
+        .onAppear { appDelegate.registry = registry }
         .background { AppDelegateBridge(appDelegate: appDelegate) }
         .onDisappear {
             let isTerminating = (NSApp.delegate as? AppDelegate)?.isTerminating == true
-            // Don't remove from registry during quit — applicationWillTerminate needs it for session save
             if !isTerminating {
-                // User deliberately closed this project — clear its session so it
-                // won't auto-restore on next launch
                 SessionState.clear(for: projectURL)
                 registry.closeProject(projectURL)
                 if registry.openProjects.isEmpty {
@@ -326,11 +313,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationWillTerminate(_ notification: Notification) {
         guard let registry else { return }
-        // Save session for every open project and record the open project list
+        // Save per-project tab state; the system handles which windows to restore.
         for (_, pm) in registry.openProjects {
             pm.saveSession()
         }
-        SessionState.saveOpenProjects(Array(registry.openProjects.keys))
     }
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
