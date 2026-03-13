@@ -87,17 +87,20 @@ struct PineApp: App {
 // MARK: - Nil-project redirect
 
 /// Closes the placeholder window and opens the Welcome window instead.
-private struct NilProjectRedirect: View {
+/// Uses an NSViewRepresentable to reliably find its own host window.
+private struct NilProjectRedirect: NSViewRepresentable {
     @Environment(\.openWindow) var openWindow
 
-    var body: some View {
-        Color.clear.onAppear {
-            NSApp.windows
-                .first { $0.contentView?.subviews.isEmpty == true || $0.title.isEmpty }?
-                .close()
+    func makeNSView(context: Context) -> NSView {
+        let view = NSView()
+        DispatchQueue.main.async {
+            view.window?.close()
             openWindow(id: "welcome")
         }
+        return view
     }
+
+    func updateNSView(_ nsView: NSView, context: Context) {}
 }
 
 // MARK: - AppDelegate bridge (passes SwiftUI openWindow closures to AppDelegate)
