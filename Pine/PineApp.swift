@@ -60,10 +60,15 @@ struct PineApp: App {
                 }
                 .keyboardShortcut("s", modifiers: .command)
             }
-            // Cmd+W — закрыть таб
+            // Cmd+W — закрыть таб или окно
             CommandGroup(after: .saveItem) {
                 Button(Strings.menuCloseTab) {
-                    NotificationCenter.default.post(name: .closeTab, object: nil)
+                    if focusedProject != nil {
+                        NotificationCenter.default.post(name: .closeTab, object: nil)
+                    } else {
+                        // No project focused (e.g. Welcome window) — close the key window
+                        NSApp.keyWindow?.close()
+                    }
                 }
                 .keyboardShortcut("w", modifiers: .command)
             }
@@ -120,40 +125,43 @@ private struct ProjectWindowView: View {
     let registry: ProjectRegistry
     let appDelegate: AppDelegate
     @Environment(\.openWindow) var openWindow
+    @State private var pm: ProjectManager?
 
     var body: some View {
-        let pm = registry.projectManager(for: projectURL)
-        ContentView()
-            .environment(pm)
-            .environment(pm.workspace)
-            .environment(pm.terminal)
-            .environment(pm.tabManager)
-            .environment(registry)
-            .focusedSceneValue(\.projectManager, pm)
-            .onAppear {
-                registry.lastActiveProjectURL = projectURL
-                // Ensure AppDelegate has registry even if Welcome was never shown
-                appDelegate.registry = registry
+        Group {
+            if let pm {
+                ContentView()
+                    .environment(pm)
+                    .environment(pm.workspace)
+                    .environment(pm.terminal)
+                    .environment(pm.tabManager)
+                    .environment(registry)
+                    .focusedSceneValue(\.projectManager, pm)
+                    .background {
+                        WindowCloseInterceptor(
+                            projectManager: pm,
+                            registry: registry,
+                            projectURL: projectURL
+                        )
+                    }
             }
-            .background { AppDelegateBridge(appDelegate: appDelegate) }
-            .onDisappear {
-                // Cleanup only — unsaved check already handled by WindowCloseInterceptor
-                registry.closeProject(projectURL)
-                let isTerminating = (NSApp.delegate as? AppDelegate)?.isTerminating == true
-                if registry.openProjects.isEmpty && !isTerminating {
-                    // User explicitly closed last project — clear session so next launch
-                    // shows Welcome instead of reopening a stale project.
-                    SessionState.clear()
-                    openWindow(id: "welcome")
-                }
+        }
+        .onAppear {
+            if pm == nil {
+                pm = registry.projectManager(for: projectURL)
             }
-            .background {
-                WindowCloseInterceptor(
-                    projectManager: pm,
-                    registry: registry,
-                    projectURL: projectURL
-                )
+            registry.lastActiveProjectURL = projectURL
+            appDelegate.registry = registry
+        }
+        .background { AppDelegateBridge(appDelegate: appDelegate) }
+        .onDisappear {
+            registry.closeProject(projectURL)
+            let isTerminating = (NSApp.delegate as? AppDelegate)?.isTerminating == true
+            if registry.openProjects.isEmpty && !isTerminating {
+                SessionState.clear()
+                openWindow(id: "welcome")
             }
+        }
     }
 }
 
