@@ -108,18 +108,35 @@ private struct NilProjectRedirect: NSViewRepresentable {
 
 /// Captures the Welcome window's NSWindow reference into AppDelegate
 /// so it can be shown/hidden reliably via AppKit.
+/// Uses viewDidMoveToWindow instead of DispatchQueue.main.async for
+/// a guaranteed AppKit lifecycle callback.
 private struct WelcomeWindowCapture: NSViewRepresentable {
     let appDelegate: AppDelegate
 
     func makeNSView(context: Context) -> NSView {
-        let view = NSView()
-        DispatchQueue.main.async {
-            appDelegate.welcomeWindow = view.window
+        let view = WindowCaptureSentinel { [weak appDelegate] window in
+            appDelegate?.welcomeWindow = window
         }
         return view
     }
 
     func updateNSView(_ nsView: NSView, context: Context) {}
+}
+
+/// NSView subclass that reports its host window via a callback
+/// when inserted into the window hierarchy.
+private final class WindowCaptureSentinel: NSView {
+    var onWindow: ((NSWindow) -> Void)?
+
+    convenience init(onWindow: @escaping (NSWindow) -> Void) {
+        self.init(frame: .zero)
+        self.onWindow = onWindow
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        if let window { onWindow?(window) }
+    }
 }
 
 // MARK: - AppDelegate bridge (passes SwiftUI openWindow closures to AppDelegate)
@@ -313,17 +330,20 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // openWindow stops working after a few dismissWindow cycles.
         openNamedWindow?("welcome")
         DispatchQueue.main.async { [weak self] in
-            self?.welcomeWindow?.makeKeyAndOrderFront(nil)
+            guard let window = self?.welcomeWindow, !window.isVisible else { return }
+            window.makeKeyAndOrderFront(nil)
             NSApp.activate()
         }
     }
 
+    func applicationWillFinishLaunching(_ notification: Notification) {
+        // Must be set before applicationDidFinishLaunching — the system runs
+        // window restoration between willFinishLaunching and didFinishLaunching.
+        UserDefaults.standard.set(false, forKey: "NSQuitAlwaysKeepsWindows")
+    }
+
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSWindow.allowsAutomaticWindowTabbing = false
-        // Disable macOS automatic window restoration so Pine always starts
-        // on the Welcome screen. Per-project sessions are restored when the
-        // user explicitly opens a project from Welcome or Open Recent.
-        UserDefaults.standard.set(false, forKey: "NSQuitAlwaysKeepsWindows")
 
         // Fallback: when no visible windows exist, Cmd+Shift+O opens a folder picker
         NotificationCenter.default.addObserver(
