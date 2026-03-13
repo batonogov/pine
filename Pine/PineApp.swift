@@ -161,9 +161,10 @@ private struct ProjectWindowView: View {
             let isTerminating = (NSApp.delegate as? AppDelegate)?.isTerminating == true
             // Don't remove from registry during quit — applicationWillTerminate needs it for session save
             if !isTerminating {
+                // Save session before removing from registry so tabs survive a quit-from-Welcome
+                pm?.saveSession()
                 registry.closeProject(projectURL)
                 if registry.openProjects.isEmpty {
-                    SessionState.clear()
                     openWindow(id: "welcome")
                 }
             }
