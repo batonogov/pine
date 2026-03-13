@@ -93,9 +93,10 @@ private struct NilProjectRedirect: NSViewRepresentable {
 
     func makeNSView(context: Context) -> NSView {
         let view = NSView()
+        let open = openWindow // capture before async — @Environment may be invalid later
         DispatchQueue.main.async {
             view.window?.close()
-            openWindow(id: "welcome")
+            open(id: "welcome")
         }
         return view
     }
@@ -192,11 +193,14 @@ private struct WindowCloseInterceptor: NSViewRepresentable {
         // Defer to next run loop so the window is set
         DispatchQueue.main.async {
             guard let window = view.window else { return }
+            let original = window.delegate
             let delegate = CloseDelegate(
                 projectManager: projectManager,
-                original: window.delegate
+                original: original
             )
             context.coordinator.closeDelegate = delegate
+            // Coordinator keeps the original alive (NSWindow.delegate is weak)
+            context.coordinator.originalDelegate = original
             window.delegate = delegate
         }
         return view
@@ -207,16 +211,18 @@ private struct WindowCloseInterceptor: NSViewRepresentable {
     func makeCoordinator() -> Coordinator { Coordinator() }
 
     class Coordinator {
-        // Strong reference to keep delegate alive
+        // Strong reference to keep our delegate alive (NSWindow.delegate is weak)
         var closeDelegate: CloseDelegate?
+        // Strong reference to keep the original delegate alive
+        var originalDelegate: (any NSWindowDelegate)?
     }
 
     /// Proxy NSWindowDelegate that intercepts windowShouldClose.
     class CloseDelegate: NSObject, NSWindowDelegate {
         let projectManager: ProjectManager
-        /// Strong reference: NSWindow.delegate is weak, so the original delegate
-        /// would be deallocated if we only held a weak ref here.
-        var original: (any NSWindowDelegate)?
+        /// Weak ref to original — Coordinator holds the strong ref separately
+        /// to avoid a potential retain cycle through the delegate chain.
+        weak var original: (any NSWindowDelegate)?
 
         init(projectManager: ProjectManager, original: (any NSWindowDelegate)?) {
             self.projectManager = projectManager
@@ -301,8 +307,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     /// Called when the user clicks the dock icon with no visible windows.
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
         if !flag {
-            // Prefer surfacing existing hidden/minimized project windows
-            if let window = NSApp.windows.first(where: { !$0.isVisible && $0.contentView != nil }) {
+            // Prefer surfacing existing hidden/minimized project windows (filter out
+            // internal SwiftUI hosting windows and panels by requiring a non-empty title)
+            if let window = NSApp.windows.first(where: {
+                !$0.isVisible && !$0.title.isEmpty && $0.contentView != nil
+            }) {
                 window.makeKeyAndOrderFront(nil)
             } else {
                 openNamedWindow?("welcome")

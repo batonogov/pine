@@ -15,7 +15,11 @@ struct WelcomeView: View {
     @Environment(\.controlActiveState) var controlActiveState
 
     /// Only auto-restore on first appearance (cold launch).
-    private static var didAutoRestore = false
+    /// Reset via `WelcomeView.resetAutoRestore()` in tests if needed.
+    private(set) static var didAutoRestore = false
+
+    /// Allows tests/previews to reset the auto-restore flag.
+    static func resetAutoRestore() { didAutoRestore = false }
 
     var body: some View {
         HStack(spacing: 0) {
@@ -92,16 +96,22 @@ struct WelcomeView: View {
             // Auto-restore all previously open projects on cold launch
             guard !Self.didAutoRestore else { return }
             Self.didAutoRestore = true
+            var restored = false
             let projectURLs = SessionState.loadOpenProjects()
             if projectURLs.isEmpty {
                 // Fallback: try legacy single-project key for migration
                 if let state = SessionState.loadLegacySingle() {
-                    openProject(at: state.projectURL)
+                    openProjectWindow(at: state.projectURL)
+                    restored = true
                 }
             } else {
                 for url in projectURLs {
-                    openProject(at: url)
+                    openProjectWindow(at: url)
+                    restored = true
                 }
+            }
+            if restored {
+                dismissWindow(id: "welcome")
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: .openFolder)) { _ in
@@ -117,10 +127,16 @@ struct WelcomeView: View {
         }
     }
 
-    private func openProject(at url: URL) {
+    /// Opens a project window without dismissing Welcome (used by restore loop).
+    private func openProjectWindow(at url: URL) {
         let canonical = url.resolvingSymlinksInPath()
         guard registry.projectManager(for: canonical) != nil else { return }
         openWindow(value: canonical)
+    }
+
+    /// Opens a project and dismisses Welcome (used by user clicks).
+    private func openProject(at url: URL) {
+        openProjectWindow(at: url)
         dismissWindow(id: "welcome")
     }
 }
