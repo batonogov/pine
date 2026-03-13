@@ -12,6 +12,7 @@ struct WelcomeView: View {
     var registry: ProjectRegistry
     @Environment(\.openWindow) var openWindow
     @Environment(\.dismissWindow) var dismissWindow
+    @Environment(\.controlActiveState) var controlActiveState
 
     /// Only auto-restore on first appearance (cold launch).
     private static var didAutoRestore = false
@@ -96,6 +97,7 @@ struct WelcomeView: View {
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: .openFolder)) { _ in
+            guard controlActiveState == .key else { return }
             openFolder()
         }
     }
@@ -108,8 +110,9 @@ struct WelcomeView: View {
     }
 
     private func openProject(at url: URL) {
-        _ = registry.projectManager(for: url)
-        openWindow(value: url)
+        let canonical = url.resolvingSymlinksInPath()
+        _ = registry.projectManager(for: canonical)
+        openWindow(value: canonical)
         dismissWindow(id: "welcome")
     }
 }
