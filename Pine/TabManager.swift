@@ -164,7 +164,7 @@ final class TabManager {
         let tabID: UUID
         let url: URL
         let kind: Kind
-        enum Kind { case modified, deleted }
+        enum Kind: Equatable { case modified, deleted }
     }
 
     /// Checks open tabs against disk state. Silently reloads clean tabs that were

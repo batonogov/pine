@@ -116,10 +116,9 @@ struct ContentView: View {
             handleFileDeletion(deletedURL)
         }
         .onChange(of: workspace.externalChangeToken) { _, _ in
+            guard controlActiveState == .key else { return }
             let conflicts = tabManager.checkExternalChanges()
-            for conflict in conflicts {
-                handleExternalConflict(conflict)
-            }
+            handleExternalConflicts(conflicts)
         }
     }
 
@@ -203,20 +202,29 @@ struct ContentView: View {
         }
     }
 
-    private func handleExternalConflict(_ conflict: TabManager.ExternalConflict) {
-        switch conflict.kind {
-        case .modified:
+    private func handleExternalConflicts(_ conflicts: [TabManager.ExternalConflict]) {
+        let modified = conflicts.filter { $0.kind == .modified }
+        let deleted = conflicts.filter { $0.kind == .deleted }
+
+        // Single grouped alert for all externally modified dirty tabs
+        if !modified.isEmpty {
+            let names = modified.map(\.url.lastPathComponent).joined(separator: ", ")
             let alert = NSAlert()
             alert.messageText = Strings.externalModifyTitle
-            alert.informativeText = Strings.externalModifyMessage(conflict.url.lastPathComponent)
+            alert.informativeText = Strings.externalModifyMessage(names)
             alert.addButton(withTitle: Strings.externalModifyReload)
             alert.addButton(withTitle: Strings.externalModifyKeep)
             alert.alertStyle = .warning
 
             if alert.runModal() == .alertFirstButtonReturn {
-                tabManager.reloadTab(url: conflict.url)
+                for conflict in modified {
+                    tabManager.reloadTab(url: conflict.url)
+                }
             }
-        case .deleted:
+        }
+
+        // Handle deleted files via existing flow
+        for conflict in deleted {
             handleFileDeletion(conflict.url)
         }
     }
@@ -467,6 +475,46 @@ final class SidebarEditState {
         editingText = ""
         isNewlyCreated = false
     }
+
+    /// Creates a file or folder with a unique "untitled" name, then starts inline rename.
+    func createNewItem(in parentURL: URL, isDirectory: Bool, workspace: WorkspaceManager) {
+        let baseName = isDirectory ? "untitled folder" : "untitled"
+        let name = Self.uniqueName(baseName, in: parentURL)
+        let newURL = parentURL.appendingPathComponent(name)
+
+        do {
+            if isDirectory {
+                try FileManager.default.createDirectory(at: newURL, withIntermediateDirectories: false)
+            } else if !FileManager.default.createFile(atPath: newURL.path, contents: nil) {
+                Self.showFileError(Strings.fileCreateError(name))
+                return
+            }
+            workspace.refreshFileTree()
+            startNewItem(url: newURL)
+        } catch {
+            Self.showFileError(error.localizedDescription)
+        }
+    }
+
+    /// Returns a unique name by appending a counter if the name already exists.
+    static func uniqueName(_ baseName: String, in parentURL: URL) -> String {
+        var name = baseName
+        var counter = 2
+        while FileManager.default.fileExists(atPath: parentURL.appendingPathComponent(name).path) {
+            name = "\(baseName) \(counter)"
+            counter += 1
+        }
+        return name
+    }
+
+    /// Shows an AppKit error alert for file operations.
+    static func showFileError(_ message: String) {
+        let alert = NSAlert()
+        alert.messageText = Strings.fileOperationErrorTitle
+        alert.informativeText = message
+        alert.alertStyle = .warning
+        alert.runModal()
+    }
 }
 
 // MARK: - Сайдбар
@@ -502,13 +550,13 @@ struct SidebarView: View {
                 .contextMenu {
                     if let rootURL = workspace.rootURL {
                         Button {
-                            createNewItem(in: rootURL, isDirectory: false)
+                            editState.createNewItem(in: rootURL, isDirectory: false, workspace: workspace)
                         } label: {
                             Label(Strings.contextNewFile, systemImage: "doc.badge.plus")
                         }
 
                         Button {
-                            createNewItem(in: rootURL, isDirectory: true)
+                            editState.createNewItem(in: rootURL, isDirectory: true, workspace: workspace)
                         } label: {
                             Label(Strings.contextNewFolder, systemImage: "folder.badge.plus")
                         }
@@ -537,44 +585,6 @@ struct SidebarView: View {
         openWindow(value: url)
     }
 
-    /// Creates a file or folder with a unique "untitled" name, then starts inline rename.
-    private func createNewItem(in parentURL: URL, isDirectory: Bool) {
-        let baseName = isDirectory ? "untitled folder" : "untitled"
-        let name = uniqueName(baseName, in: parentURL)
-        let newURL = parentURL.appendingPathComponent(name)
-
-        do {
-            if isDirectory {
-                try FileManager.default.createDirectory(at: newURL, withIntermediateDirectories: false)
-            } else if !FileManager.default.createFile(atPath: newURL.path, contents: nil) {
-                showFileError(Strings.fileCreateError(name))
-                return
-            }
-            workspace.refreshFileTree()
-            editState.startNewItem(url: newURL)
-        } catch {
-            showFileError(error.localizedDescription)
-        }
-    }
-
-    /// Returns a unique name by appending a counter if needed.
-    private func uniqueName(_ baseName: String, in parentURL: URL) -> String {
-        var name = baseName
-        var counter = 2
-        while FileManager.default.fileExists(atPath: parentURL.appendingPathComponent(name).path) {
-            name = "\(baseName) \(counter)"
-            counter += 1
-        }
-        return name
-    }
-
-    private func showFileError(_ message: String) {
-        let alert = NSAlert()
-        alert.messageText = Strings.fileOperationErrorTitle
-        alert.informativeText = message
-        alert.alertStyle = .warning
-        alert.runModal()
-    }
 }
 
 // MARK: - Строка файла/папки в дереве
@@ -633,9 +643,10 @@ struct FileNodeRow: View {
                     }
                 }
                 .onChange(of: isTextFieldFocused) { _, focused in
-                    if !focused && editState.renamingURL == node.url {
-                        commitRename()
-                    }
+                    // Guard against double-commit: onSubmit clears editState,
+                    // then focus loss fires — skip if already committed.
+                    guard !focused, editState.renamingURL == node.url else { return }
+                    commitRename()
                 }
         }
     }
@@ -684,23 +695,7 @@ struct FileNodeRow: View {
     // MARK: - File operations
 
     private func createNewItem(isDirectory: Bool) {
-        let parentURL = node.url
-        let baseName = isDirectory ? "untitled folder" : "untitled"
-        let name = uniqueName(baseName, in: parentURL)
-        let newURL = parentURL.appendingPathComponent(name)
-
-        do {
-            if isDirectory {
-                try FileManager.default.createDirectory(at: newURL, withIntermediateDirectories: false)
-            } else if !FileManager.default.createFile(atPath: newURL.path, contents: nil) {
-                showFileError(Strings.fileCreateError(name))
-                return
-            }
-            workspace.refreshFileTree()
-            editState.startNewItem(url: newURL)
-        } catch {
-            showFileError(error.localizedDescription)
-        }
+        editState.createNewItem(in: node.url, isDirectory: isDirectory, workspace: workspace)
     }
 
     private func commitRename() {
@@ -740,7 +735,7 @@ struct FileNodeRow: View {
             }
         } catch {
             // Keep editing so the user can try a different name
-            showFileError(error.localizedDescription)
+            SidebarEditState.showFileError(error.localizedDescription)
         }
     }
 
@@ -767,26 +762,8 @@ struct FileNodeRow: View {
                 userInfo: ["url": deletedURL]
             )
         } catch {
-            showFileError(error.localizedDescription)
+            SidebarEditState.showFileError(error.localizedDescription)
         }
-    }
-
-    private func uniqueName(_ baseName: String, in parentURL: URL) -> String {
-        var name = baseName
-        var counter = 2
-        while FileManager.default.fileExists(atPath: parentURL.appendingPathComponent(name).path) {
-            name = "\(baseName) \(counter)"
-            counter += 1
-        }
-        return name
-    }
-
-    private func showFileError(_ message: String) {
-        let alert = NSAlert()
-        alert.messageText = Strings.fileOperationErrorTitle
-        alert.informativeText = message
-        alert.alertStyle = .warning
-        alert.runModal()
     }
 }
 
