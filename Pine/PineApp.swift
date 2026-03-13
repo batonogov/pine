@@ -22,6 +22,7 @@ struct PineApp: App {
                 NilProjectRedirect()
             }
         }
+        .restorationBehavior(.disabled)
         .defaultSize(width: 1100, height: 700)
         .commands {
             // Убираем стандартный "New Window" (Cmd+N) — табы создаются кликом по файлу
