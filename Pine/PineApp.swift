@@ -162,7 +162,14 @@ private struct ProjectWindowView: View {
                 registry.openProjects[canonical]?.saveSession()
                 registry.closeProject(projectURL)
                 if registry.openProjects.isEmpty {
-                    openWindow(id: "welcome")
+                    // Defer to next run-loop cycle — opening a window during
+                    // onDisappear teardown is unreliable and the Welcome window
+                    // may not become visible otherwise.
+                    let open = openWindow
+                    DispatchQueue.main.async {
+                        open(id: "welcome")
+                        NSApp.activate()
+                    }
                 }
             }
         }
