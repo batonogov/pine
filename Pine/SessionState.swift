@@ -33,6 +33,15 @@ struct SessionState: Codable {
         defaults.removeObject(forKey: key(for: projectURL))
     }
 
+    /// Removes all saved sessions (used by `--reset-state` launch argument for UI testing).
+    static func removeAll(defaults: UserDefaults = .standard) {
+        let allKeys = defaults.dictionaryRepresentation().keys
+        for key in allKeys where key.hasPrefix(perProjectPrefix) {
+            defaults.removeObject(forKey: key)
+        }
+        defaults.removeObject(forKey: legacyKey)
+    }
+
     // MARK: - Save
 
     static func save(

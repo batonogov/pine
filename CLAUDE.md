@@ -15,8 +15,12 @@ Pine is a minimal native macOS code editor built with SwiftUI + AppKit. Targets 
 - **Dependency:** SwiftTerm added via Xcode SPM (File > Add Package Dependencies > `https://github.com/migueldeicaza/SwiftTerm.git`)
 - No other third-party dependencies
 - **SwiftLint:** `brew install swiftlint` — runs as a build phase; config in `.swiftlint.yml`. Run `swiftlint` before every commit and fix all warnings/errors. If `swiftlint` crashes with `sourcekitdInProc` error, prefix with `DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer`
-- **Tests:** `DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer xcodebuild test -project Pine.xcodeproj -scheme Pine -destination 'platform=macOS'`
-- Test target: `PineTests` (Swift Testing framework) — covers git parsing, grammar models, file tree
+- **Unit Tests:** `DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer xcodebuild test -project Pine.xcodeproj -scheme Pine -destination 'platform=macOS' -only-testing:PineTests`
+- Unit test target: `PineTests` (Swift Testing framework) — covers git parsing, grammar models, file tree
+- **UI Tests:** `DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer xcodebuild test -project Pine.xcodeproj -scheme Pine -destination 'platform=macOS' -only-testing:PineUITests`
+- UI test target: `PineUITests` (XCTest/XCUITest) — end-to-end tests for Welcome window, editor tabs, terminal, multi-window
+- Launch arguments for UI testing: `--reset-state` (clears persisted sessions), `--open-project <path>` (opens project without file dialog)
+- Accessibility identifiers defined in `Pine/AccessibilityIdentifiers.swift` — used by both app views and UI tests
 
 ## Architecture
 
@@ -55,7 +59,9 @@ Pine is a minimal native macOS code editor built with SwiftUI + AppKit. Targets 
 - `ProjectRegistry.swift` — Manages open projects and recent project history, deduplicates by URL
 - `WelcomeView.swift` — Welcome window with recent projects list and Open Folder button
 - `FocusedProjectKey.swift` — FocusedValueKey for passing active ProjectManager to menu commands
+- `AccessibilityIdentifiers.swift` — Shared accessibility ID constants for UI testing
 - `PineTests/` — Unit tests: GitStatusParserTests, GitDiffParserTests, FileNodeTests, GrammarModelTests
+- `PineUITests/` — XCUITest suite: WelcomeWindowTests, EditorWindowTests, TerminalTests, MultiWindowTests
 
 ## Release & CI
 

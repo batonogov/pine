@@ -78,6 +78,7 @@ struct PineApp: App {
                 .onAppear { appDelegate.registry = registry }
                 .background { AppDelegateBridge(appDelegate: appDelegate) }
                 .background { WelcomeWindowCapture(appDelegate: appDelegate) }
+                .background { PendingProjectOpener(appDelegate: appDelegate, registry: registry) }
         }
         .defaultSize(width: 600, height: 400)
         .windowResizability(.contentSize)
@@ -151,6 +152,29 @@ private struct AppDelegateBridge: View {
         Color.clear.onAppear {
             appDelegate.openNamedWindow = { id in openWindow(id: id) }
             appDelegate.openProjectWindow = { url in openWindow(value: url) }
+        }
+    }
+}
+
+// MARK: - Pending project opener (UI testing support)
+
+/// Opens a project passed via `--open-project` launch argument once SwiftUI is ready.
+private struct PendingProjectOpener: View {
+    let appDelegate: AppDelegate
+    let registry: ProjectRegistry
+    @Environment(\.openWindow) var openWindow
+    @Environment(\.dismissWindow) var dismissWindow
+
+    var body: some View {
+        Color.clear.onAppear {
+            guard let url = appDelegate.pendingProjectURL else { return }
+            appDelegate.pendingProjectURL = nil
+            _ = registry.projectManager(for: url)
+            openWindow(value: url)
+            // Defer dismiss so the project window has time to appear
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                dismissWindow(id: "welcome")
+            }
         }
     }
 }
@@ -311,6 +335,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     /// after a few cycles on singleton Window scenes.
     weak var welcomeWindow: NSWindow?
 
+    /// Project URL passed via `--open-project` launch argument (UI testing).
+    /// Consumed by PineApp scene on first appearance.
+    var pendingProjectURL: URL?
+
     /// Handles cleanup when a project window disappears: saves session,
     /// removes from registry, and shows Welcome if no projects remain.
     func handleProjectWindowDisappear(projectURL: URL, registry: ProjectRegistry) {
@@ -340,10 +368,22 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // Must be set before applicationDidFinishLaunching — the system runs
         // window restoration between willFinishLaunching and didFinishLaunching.
         UserDefaults.standard.set(false, forKey: "NSQuitAlwaysKeepsWindows")
+
+        // UI testing support: clear persisted state for a clean launch
+        if CommandLine.arguments.contains("--reset-state") {
+            SessionState.removeAll()
+        }
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSWindow.allowsAutomaticWindowTabbing = false
+
+        // UI testing support: store project URL for PineApp to open via SwiftUI
+        if let idx = CommandLine.arguments.firstIndex(of: "--open-project"),
+           idx + 1 < CommandLine.arguments.count {
+            let path = CommandLine.arguments[idx + 1]
+            pendingProjectURL = URL(fileURLWithPath: path).resolvingSymlinksInPath()
+        }
 
         // Fallback: when no visible windows exist, Cmd+Shift+O opens a folder picker
         NotificationCenter.default.addObserver(

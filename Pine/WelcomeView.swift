@@ -36,6 +36,7 @@ struct WelcomeView: View {
                 }
                 .buttonStyle(.borderedProminent)
                 .controlSize(.large)
+                .accessibilityIdentifier(AccessibilityID.welcomeOpenFolderButton)
 
                 Spacer()
             }
@@ -78,8 +79,10 @@ struct WelcomeView: View {
                             .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
+                        .accessibilityIdentifier(AccessibilityID.welcomeRecentProject(url.lastPathComponent))
                     }
                     .listStyle(.plain)
+                    .accessibilityIdentifier(AccessibilityID.welcomeRecentProjectsList)
                 }
             }
             .frame(minWidth: 280)

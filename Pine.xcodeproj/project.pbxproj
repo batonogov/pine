@@ -18,11 +18,19 @@
 			remoteGlobalIDString = CF0000010000000000000001;
 			remoteInfo = PineTests;
 		};
+		CF0000020000000000000010 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 9FA1A7202F5EFA8100BDDA8C /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 9FA1A7272F5EFA8100BDDA8C;
+			remoteInfo = Pine;
+		};
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
 		9FA1A7282F5EFA8100BDDA8C /* Pine.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Pine.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		CF0000010000000000000005 /* PineTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = PineTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		CF0000020000000000000005 /* PineUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = PineUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -34,6 +42,11 @@
 		CF0000010000000000000006 /* PineTests */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			path = PineTests;
+			sourceTree = "<group>";
+		};
+		CF0000020000000000000006 /* PineUITests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = PineUITests;
 			sourceTree = "<group>";
 		};
 /* End PBXFileSystemSynchronizedRootGroup section */
@@ -54,6 +67,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		CF0000020000000000000003 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -62,6 +82,7 @@
 			children = (
 				9FA1A72A2F5EFA8100BDDA8C /* Pine */,
 				CF0000010000000000000006 /* PineTests */,
+				CF0000020000000000000006 /* PineUITests */,
 				9FA1A7292F5EFA8100BDDA8C /* Products */,
 			);
 			sourceTree = "<group>";
@@ -71,6 +92,7 @@
 			children = (
 				9FA1A7282F5EFA8100BDDA8C /* Pine.app */,
 				CF0000010000000000000005 /* PineTests.xctest */,
+				CF0000020000000000000005 /* PineUITests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -123,6 +145,27 @@
 			productReference = CF0000010000000000000005 /* PineTests.xctest */;
 			productType = "com.apple.product-type.bundle.unit-test";
 		};
+		CF0000020000000000000001 /* PineUITests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = CF0000020000000000000009 /* Build configuration list for PBXNativeTarget "PineUITests" */;
+			buildPhases = (
+				CF0000020000000000000002 /* Sources */,
+				CF0000020000000000000003 /* Frameworks */,
+				CF0000020000000000000004 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				CF000002000000000000000B /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				CF0000020000000000000006 /* PineUITests */,
+			);
+			name = PineUITests;
+			productName = PineUITests;
+			productReference = CF0000020000000000000005 /* PineUITests.xctest */;
+			productType = "com.apple.product-type.bundle.ui-testing";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -137,6 +180,10 @@
 						CreatedOnToolsVersion = 26.3;
 					};
 					CF0000010000000000000001 = {
+						CreatedOnToolsVersion = 26.3;
+						TestTargetID = 9FA1A7272F5EFA8100BDDA8C;
+					};
+					CF0000020000000000000001 = {
 						CreatedOnToolsVersion = 26.3;
 						TestTargetID = 9FA1A7272F5EFA8100BDDA8C;
 					};
@@ -169,6 +216,7 @@
 			targets = (
 				9FA1A7272F5EFA8100BDDA8C /* Pine */,
 				CF0000010000000000000001 /* PineTests */,
+				CF0000020000000000000001 /* PineUITests */,
 			);
 		};
 /* End PBXProject section */
@@ -182,6 +230,13 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 		CF0000010000000000000004 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		CF0000020000000000000004 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -227,6 +282,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		CF0000020000000000000002 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
@@ -234,6 +296,11 @@
 			isa = PBXTargetDependency;
 			target = CF0000010000000000000001 /* PineTests */;
 			targetProxy = CF000001000000000000000A /* PBXContainerItemProxy */;
+		};
+		CF000002000000000000000B /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 9FA1A7272F5EFA8100BDDA8C /* Pine */;
+			targetProxy = CF0000020000000000000010 /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
 
@@ -470,6 +537,46 @@
 			};
 			name = Release;
 		};
+		CF0000020000000000000007 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 69K34DW42R;
+				GENERATE_INFOPLIST_FILE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 26.0;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = io.github.batonogov.pine.uitests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TEST_TARGET_NAME = Pine;
+			};
+			name = Debug;
+		};
+		CF0000020000000000000008 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 69K34DW42R;
+				GENERATE_INFOPLIST_FILE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 26.0;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = io.github.batonogov.pine.uitests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TEST_TARGET_NAME = Pine;
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -496,6 +603,15 @@
 			buildConfigurations = (
 				CF0000010000000000000007 /* Debug */,
 				CF0000010000000000000008 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		CF0000020000000000000009 /* Build configuration list for PBXNativeTarget "PineUITests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				CF0000020000000000000007 /* Debug */,
+				CF0000020000000000000008 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
