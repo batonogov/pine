@@ -77,6 +77,7 @@ struct PineApp: App {
             WelcomeView(registry: registry)
                 .onAppear { appDelegate.registry = registry }
                 .background { AppDelegateBridge(appDelegate: appDelegate) }
+                .background { WelcomeWindowCapture(appDelegate: appDelegate) }
         }
         .defaultSize(width: 600, height: 400)
         .windowResizability(.contentSize)
@@ -96,6 +97,24 @@ private struct NilProjectRedirect: NSViewRepresentable {
         DispatchQueue.main.async {
             view.window?.close()
             open(id: "welcome")
+        }
+        return view
+    }
+
+    func updateNSView(_ nsView: NSView, context: Context) {}
+}
+
+// MARK: - Welcome window capture
+
+/// Captures the Welcome window's NSWindow reference into AppDelegate
+/// so it can be shown/hidden reliably via AppKit.
+private struct WelcomeWindowCapture: NSViewRepresentable {
+    let appDelegate: AppDelegate
+
+    func makeNSView(context: Context) -> NSView {
+        let view = NSView()
+        DispatchQueue.main.async {
+            appDelegate.welcomeWindow = view.window
         }
         return view
     }
@@ -154,7 +173,8 @@ private struct ProjectWindowView: View {
         .onAppear { appDelegate.registry = registry }
         .background { AppDelegateBridge(appDelegate: appDelegate) }
         .onDisappear {
-            let isTerminating = (NSApp.delegate as? AppDelegate)?.isTerminating == true
+            let appDelegate = NSApp.delegate as? AppDelegate
+            let isTerminating = appDelegate?.isTerminating == true
             if !isTerminating {
                 // Save session before closing so it can be restored
                 // when the user reopens this project from Welcome or Open Recent.
@@ -162,13 +182,8 @@ private struct ProjectWindowView: View {
                 registry.openProjects[canonical]?.saveSession()
                 registry.closeProject(projectURL)
                 if registry.openProjects.isEmpty {
-                    // Defer to next run-loop cycle — opening a window during
-                    // onDisappear teardown is unreliable and the Welcome window
-                    // may not become visible otherwise.
-                    let open = openWindow
                     DispatchQueue.main.async {
-                        open(id: "welcome")
-                        NSApp.activate()
+                        appDelegate?.showWelcome()
                     }
                 }
             }
@@ -286,6 +301,24 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     /// Closure to open a project SwiftUI window by URL, set by PineApp on launch.
     var openProjectWindow: ((URL) -> Void)?
 
+    /// Reference to the Welcome NSWindow, captured via WelcomeWindowCapture.
+    /// Used for reliable show/hide — SwiftUI's dismissWindow/openWindow breaks
+    /// after a few cycles on singleton Window scenes.
+    weak var welcomeWindow: NSWindow?
+
+    func showWelcome() {
+        if let window = welcomeWindow {
+            window.makeKeyAndOrderFront(nil)
+        } else {
+            openNamedWindow?("welcome")
+        }
+        NSApp.activate()
+    }
+
+    func hideWelcome() {
+        welcomeWindow?.orderOut(nil)
+    }
+
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSWindow.allowsAutomaticWindowTabbing = false
         // Disable macOS automatic window restoration so Pine always starts
@@ -312,10 +345,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             // internal SwiftUI hosting windows and panels by requiring a non-empty title)
             if let window = NSApp.windows.first(where: {
                 !$0.isVisible && !$0.title.isEmpty && $0.contentView != nil
+                    && $0 != welcomeWindow
             }) {
                 window.makeKeyAndOrderFront(nil)
             } else {
-                openNamedWindow?("welcome")
+                showWelcome()
             }
         }
         return true

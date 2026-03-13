@@ -11,7 +11,6 @@ import SwiftUI
 struct WelcomeView: View {
     var registry: ProjectRegistry
     @Environment(\.openWindow) var openWindow
-    @Environment(\.dismissWindow) var dismissWindow
     @Environment(\.controlActiveState) var controlActiveState
 
     var body: some View {
@@ -94,7 +93,7 @@ struct WelcomeView: View {
     private func openFolder() {
         if let url = registry.openProjectViaPanel() {
             openWindow(value: url)
-            dismissWindow(id: "welcome")
+            (NSApp.delegate as? AppDelegate)?.hideWelcome()
         }
     }
 
@@ -102,6 +101,6 @@ struct WelcomeView: View {
         let canonical = url.resolvingSymlinksInPath()
         guard registry.projectManager(for: canonical) != nil else { return }
         openWindow(value: canonical)
-        dismissWindow(id: "welcome")
+        (NSApp.delegate as? AppDelegate)?.hideWelcome()
     }
 }
