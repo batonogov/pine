@@ -17,12 +17,10 @@ struct PineApp: App {
         WindowGroup(for: URL.self) { $projectURL in
             if let projectURL {
                 ProjectWindowView(projectURL: projectURL, registry: registry, appDelegate: appDelegate)
-            } else {
-                // SwiftUI may instantiate with nil URL — close placeholder and show Welcome
-                NilProjectRedirect()
             }
         }
         .defaultSize(width: 1100, height: 700)
+        .defaultLaunchBehavior(.suppressed)
         .commands {
             // Убираем стандартный "New Window" (Cmd+N) — табы создаются кликом по файлу
             CommandGroup(replacing: .newItem) { }
@@ -82,27 +80,8 @@ struct PineApp: App {
         }
         .defaultSize(width: 600, height: 400)
         .windowResizability(.contentSize)
+        .defaultLaunchBehavior(.presented)
     }
-}
-
-// MARK: - Nil-project redirect
-
-/// Closes the placeholder window and opens the Welcome window instead.
-/// Uses an NSViewRepresentable to reliably find its own host window.
-private struct NilProjectRedirect: NSViewRepresentable {
-    @Environment(\.openWindow) var openWindow
-
-    func makeNSView(context: Context) -> NSView {
-        let view = NSView()
-        let open = openWindow // capture before async — @Environment may be invalid later
-        DispatchQueue.main.async {
-            view.window?.close()
-            open(id: "welcome")
-        }
-        return view
-    }
-
-    func updateNSView(_ nsView: NSView, context: Context) {}
 }
 
 // MARK: - Welcome window capture
@@ -206,9 +185,6 @@ private struct ProjectWindowView: View {
                             projectURL: projectURL
                         )
                     }
-            } else {
-                // Directory no longer exists — close this blank window and show Welcome
-                NilProjectRedirect()
             }
         }
         .onAppear { appDelegate.registry = registry }
@@ -383,6 +359,15 @@ class AppDelegate: NSObject, NSApplicationDelegate {
            idx + 1 < CommandLine.arguments.count {
             let path = CommandLine.arguments[idx + 1]
             pendingProjectURL = URL(fileURLWithPath: path).resolvingSymlinksInPath()
+        }
+
+        // Ensure Welcome is visible if SwiftUI didn't present it automatically
+        // (e.g. when window restoration state interferes with defaultLaunchBehavior)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+            let hasVisibleWindow = NSApp.windows.contains { $0.isVisible && !$0.title.isEmpty }
+            if !hasVisibleWindow {
+                self?.showWelcome()
+            }
         }
 
         // Fallback: when no visible windows exist, Cmd+Shift+O opens a folder picker

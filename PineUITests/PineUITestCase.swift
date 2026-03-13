@@ -39,11 +39,8 @@ class PineUITestCase: XCTestCase {
         app.launchArguments += ["--open-project", projectURL.path]
         app.launch()
         app.activate()
-        // Welcome window doesn't auto-show in XCUITest context —
-        // open it via menu so PendingProjectOpener can fire and open the project
-        ensureWindowVisible()
-        // Wait for project window to appear (Welcome gets dismissed,
-        // project window opens via PendingProjectOpener)
+        // Welcome appears via .defaultLaunchBehavior(.presented),
+        // PendingProjectOpener opens the project and dismisses Welcome
         _ = app.windows.firstMatch.waitForExistence(timeout: 10)
     }
 
@@ -51,39 +48,6 @@ class PineUITestCase: XCTestCase {
     func launchClean() {
         app.launch()
         app.activate()
-        ensureWindowVisible()
-    }
-
-    /// Ensures at least one window is visible, opening Welcome via menu if needed.
-    func ensureWindowVisible() {
-        if app.windows.firstMatch.waitForExistence(timeout: 3) { return }
-        // Fallback: open Welcome window via the Window menu
-        // The menu bar items have localized titles, so use the menu bar item for "Окно"/"Window"
-        let menuBar = app.menuBars.firstMatch
-        guard menuBar.exists else { return }
-
-        // Find Window menu by trying known titles
-        let windowMenuTitles = ["Окно", "Window"]
-        for title in windowMenuTitles {
-            let menuItem = menuBar.menuBarItems[title]
-            if menuItem.exists {
-                menuItem.click()
-                // Now find the Welcome item in the open menu
-                let welcomePatterns = ["Добро пожаловать", "Welcome"]
-                for pattern in welcomePatterns {
-                    let predicate = NSPredicate(format: "title CONTAINS[c] %@", pattern)
-                    let welcomeItem = app.menuItems.matching(predicate).firstMatch
-                    if welcomeItem.waitForExistence(timeout: 2), welcomeItem.isHittable {
-                        welcomeItem.click()
-                        _ = app.windows.firstMatch.waitForExistence(timeout: 5)
-                        return
-                    }
-                }
-                // Close the menu if we didn't find the item
-                app.typeKey(.escape, modifierFlags: [])
-                return
-            }
-        }
     }
 
     /// Waits for an element to exist with a timeout.

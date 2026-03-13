@@ -86,7 +86,7 @@ final class WelcomeWindowTests: PineUITestCase {
         app.launchArguments += ["--reset-state"]
         app.launch()
         app.activate()
-        ensureWindowVisible()
+
 
         // Step 3: Welcome should show with recent projects
         let welcomeWindow = app.windows["welcome"]
@@ -128,7 +128,7 @@ final class WelcomeWindowTests: PineUITestCase {
         app.launchArguments += ["--reset-state"]
         app.launch()
         app.activate()
-        ensureWindowVisible()
+
 
         // Welcome should appear, not the previous project
         let welcomeWindow = app.windows["welcome"]
