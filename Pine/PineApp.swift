@@ -173,20 +173,8 @@ private struct ProjectWindowView: View {
         .onAppear { appDelegate.registry = registry }
         .background { AppDelegateBridge(appDelegate: appDelegate) }
         .onDisappear {
-            let appDelegate = NSApp.delegate as? AppDelegate
-            let isTerminating = appDelegate?.isTerminating == true
-            if !isTerminating {
-                // Save session before closing so it can be restored
-                // when the user reopens this project from Welcome or Open Recent.
-                let canonical = projectURL.resolvingSymlinksInPath()
-                registry.openProjects[canonical]?.saveSession()
-                registry.closeProject(projectURL)
-                if registry.openProjects.isEmpty {
-                    DispatchQueue.main.async {
-                        appDelegate?.showWelcome()
-                    }
-                }
-            }
+            (NSApp.delegate as? AppDelegate)?
+                .handleProjectWindowDisappear(projectURL: projectURL, registry: registry)
         }
     }
 }
@@ -306,6 +294,20 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     /// after a few cycles on singleton Window scenes.
     weak var welcomeWindow: NSWindow?
 
+    /// Handles cleanup when a project window disappears: saves session,
+    /// removes from registry, and shows Welcome if no projects remain.
+    func handleProjectWindowDisappear(projectURL: URL, registry: ProjectRegistry) {
+        guard !isTerminating else { return }
+        // Save session before closing so it can be restored
+        // when the user reopens this project from Welcome or Open Recent.
+        let canonical = projectURL.resolvingSymlinksInPath()
+        registry.openProjects[canonical]?.saveSession()
+        registry.closeProject(projectURL)
+        if registry.openProjects.isEmpty {
+            showWelcome()
+        }
+    }
+
     func showWelcome() {
         // Try SwiftUI first, then force-show via AppKit as fallback —
         // openWindow stops working after a few dismissWindow cycles.
@@ -358,7 +360,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationWillTerminate(_ notification: Notification) {
         guard let registry else { return }
-        // Save per-project tab state; the system handles which windows to restore.
+        // Save per-project tab state so sessions can be restored from Welcome.
         for (_, pm) in registry.openProjects {
             pm.saveSession()
         }
