@@ -63,10 +63,10 @@ struct PineApp: App {
             // Cmd+W — закрыть таб или окно
             CommandGroup(after: .saveItem) {
                 Button(Strings.menuCloseTab) {
-                    if focusedProject != nil {
+                    if let project = focusedProject, project.tabManager.activeTab != nil {
                         NotificationCenter.default.post(name: .closeTab, object: nil)
                     } else {
-                        // No project focused (e.g. Welcome window) — close the key window
+                        // No active tab or no project (Welcome) — close the key window
                         NSApp.keyWindow?.close()
                     }
                 }
@@ -155,11 +155,14 @@ private struct ProjectWindowView: View {
         }
         .background { AppDelegateBridge(appDelegate: appDelegate) }
         .onDisappear {
-            registry.closeProject(projectURL)
             let isTerminating = (NSApp.delegate as? AppDelegate)?.isTerminating == true
-            if registry.openProjects.isEmpty && !isTerminating {
-                SessionState.clear()
-                openWindow(id: "welcome")
+            // Don't remove from registry during quit — applicationWillTerminate needs it for session save
+            if !isTerminating {
+                registry.closeProject(projectURL)
+                if registry.openProjects.isEmpty {
+                    SessionState.clear()
+                    openWindow(id: "welcome")
+                }
             }
         }
     }
