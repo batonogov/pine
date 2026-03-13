@@ -47,7 +47,7 @@ struct SessionStateTests {
 
         SessionState.save(projectURL: tempDir, openFileURLs: [file1, file2], defaults: defaults)
 
-        let loaded = SessionState.load(defaults: defaults)
+        let loaded = SessionState.load(for: tempDir, defaults: defaults)
         #expect(loaded != nil)
         #expect(loaded?.projectURL.path == tempDir.path)
         #expect(loaded?.existingFileURLs.count == 2)
@@ -67,7 +67,7 @@ struct SessionStateTests {
         // Delete the project folder
         cleanup(tempDir)
 
-        let loaded = SessionState.load(defaults: defaults)
+        let loaded = SessionState.load(for: tempDir, defaults: defaults)
         #expect(loaded == nil)
     }
 
@@ -93,10 +93,13 @@ struct SessionStateTests {
     // MARK: - Empty state
 
     @Test func loadReturnsNilWhenNothingSaved() throws {
+        let tempDir = try makeTempDirectory()
+        defer { cleanup(tempDir) }
+
         let defaults = try makeDefaults()
         defer { cleanupDefaults(defaults) }
 
-        let loaded = SessionState.load(defaults: defaults)
+        let loaded = SessionState.load(for: tempDir, defaults: defaults)
         #expect(loaded == nil)
     }
 
@@ -111,27 +114,52 @@ struct SessionStateTests {
 
         SessionState.save(projectURL: tempDir, openFileURLs: [], defaults: defaults)
 
-        let loaded = SessionState.load(defaults: defaults)
+        let loaded = SessionState.load(for: tempDir, defaults: defaults)
         #expect(loaded != nil)
         #expect(loaded?.existingFileURLs.isEmpty == true)
         #expect(loaded?.projectURL.path == tempDir.path)
     }
 
-    // MARK: - Overwrite previous session
+    // MARK: - Per-project isolation
 
-    @Test func saveOverwritesPreviousSession() throws {
+    @Test func perProjectSessionsAreIsolated() throws {
         let tempDir1 = try makeTempDirectory()
         let tempDir2 = try makeTempDirectory()
         defer { cleanup(tempDir1); cleanup(tempDir2) }
 
+        let file1 = tempDir1.appendingPathComponent("a.swift")
+        let file2 = tempDir2.appendingPathComponent("b.swift")
+        FileManager.default.createFile(atPath: file1.path, contents: nil)
+        FileManager.default.createFile(atPath: file2.path, contents: nil)
+
         let defaults = try makeDefaults()
         defer { cleanupDefaults(defaults) }
 
-        SessionState.save(projectURL: tempDir1, openFileURLs: [], defaults: defaults)
-        SessionState.save(projectURL: tempDir2, openFileURLs: [], defaults: defaults)
+        SessionState.save(projectURL: tempDir1, openFileURLs: [file1], defaults: defaults)
+        SessionState.save(projectURL: tempDir2, openFileURLs: [file2], defaults: defaults)
 
-        let loaded = SessionState.load(defaults: defaults)
-        #expect(loaded?.projectURL.path == tempDir2.path)
+        let loaded1 = SessionState.load(for: tempDir1, defaults: defaults)
+        let loaded2 = SessionState.load(for: tempDir2, defaults: defaults)
+        #expect(loaded1?.projectURL.path == tempDir1.path)
+        #expect(loaded2?.projectURL.path == tempDir2.path)
+        #expect(loaded1?.existingFileURLs.count == 1)
+        #expect(loaded2?.existingFileURLs.count == 1)
+    }
+
+    // MARK: - Clear
+
+    @Test func clearRemovesProjectSession() throws {
+        let tempDir = try makeTempDirectory()
+        defer { cleanup(tempDir) }
+
+        let defaults = try makeDefaults()
+        defer { cleanupDefaults(defaults) }
+
+        SessionState.save(projectURL: tempDir, openFileURLs: [], defaults: defaults)
+        SessionState.clear(for: tempDir, defaults: defaults)
+
+        let loaded = SessionState.load(for: tempDir, defaults: defaults)
+        #expect(loaded == nil)
     }
 
     // MARK: - projectURL computed property
@@ -139,18 +167,6 @@ struct SessionStateTests {
     @Test func projectURLFromPath() throws {
         let state = SessionState(projectPath: "/tmp/myproject", openFilePaths: [])
         #expect(state.projectURL == URL(fileURLWithPath: "/tmp/myproject"))
-    }
-
-    // MARK: - Corrupt data
-
-    @Test func loadReturnsNilOnCorruptData() throws {
-        let defaults = try makeDefaults()
-        defer { cleanupDefaults(defaults) }
-
-        defaults.set(Data("not json".utf8), forKey: "lastSessionState")
-
-        let loaded = SessionState.load(defaults: defaults)
-        #expect(loaded == nil)
     }
 
     // MARK: - Active file round-trip
@@ -174,7 +190,7 @@ struct SessionStateTests {
             defaults: defaults
         )
 
-        let loaded = SessionState.load(defaults: defaults)
+        let loaded = SessionState.load(for: tempDir, defaults: defaults)
         #expect(loaded?.activeFilePath == file2.path)
         #expect(loaded?.activeFileURL == file2)
     }
@@ -210,12 +226,13 @@ struct SessionStateTests {
         let defaults = try makeDefaults()
         defer { cleanupDefaults(defaults) }
 
-        // Simulate old format without activeFilePath
+        // Simulate old format without activeFilePath stored in legacy key
         let oldState = ["projectPath": tempDir.path, "openFilePaths": [String]()] as [String: Any]
         let data = try JSONSerialization.data(withJSONObject: oldState)
         defaults.set(data, forKey: "lastSessionState")
 
-        let loaded = SessionState.load(defaults: defaults)
+        // Legacy fallback should find it when loading for the same project
+        let loaded = SessionState.load(for: tempDir, defaults: defaults)
         #expect(loaded != nil)
         #expect(loaded?.activeFilePath == nil)
         #expect(loaded?.activeFileURL == nil)
@@ -235,7 +252,24 @@ struct SessionStateTests {
 
         SessionState.save(projectURL: file, openFileURLs: [], defaults: defaults)
 
-        let loaded = SessionState.load(defaults: defaults)
+        let loaded = SessionState.load(for: file, defaults: defaults)
+        #expect(loaded == nil)
+    }
+
+    // MARK: - Corrupt data
+
+    @Test func loadReturnsNilOnCorruptData() throws {
+        let tempDir = try makeTempDirectory()
+        defer { cleanup(tempDir) }
+
+        let defaults = try makeDefaults()
+        defer { cleanupDefaults(defaults) }
+
+        // Write corrupt data to per-project key
+        let key = "sessionState:" + tempDir.resolvingSymlinksInPath().path
+        defaults.set(Data("not json".utf8), forKey: key)
+
+        let loaded = SessionState.load(for: tempDir, defaults: defaults)
         #expect(loaded == nil)
     }
 }
