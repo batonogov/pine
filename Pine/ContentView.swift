@@ -134,7 +134,8 @@ struct ContentView: View {
         didRestoreSession = true
 
         guard let session = SessionState.load(),
-              session.projectURL == workspace.rootURL else { return }
+              session.projectURL.resolvingSymlinksInPath() == workspace.rootURL?.resolvingSymlinksInPath()
+        else { return }
         guard tabManager.tabs.isEmpty else { return }
 
         for url in session.existingFileURLs {

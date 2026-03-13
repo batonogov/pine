@@ -16,7 +16,7 @@ struct PineApp: App {
     var body: some Scene {
         WindowGroup(for: URL.self) { $projectURL in
             if let projectURL {
-                ProjectWindowView(projectURL: projectURL, registry: registry)
+                ProjectWindowView(projectURL: projectURL, registry: registry, appDelegate: appDelegate)
             } else {
                 // SwiftUI may instantiate with nil URL — close placeholder and show Welcome
                 NilProjectRedirect()
@@ -70,10 +70,6 @@ struct PineApp: App {
 
         Window(Strings.welcomeTitle, id: "welcome") {
             WelcomeView(registry: registry)
-                .task {
-                    appDelegate.registry = registry
-                }
-                .background { AppDelegateBridge(appDelegate: appDelegate) }
         }
         .defaultSize(width: 600, height: 400)
         .windowResizability(.contentSize)
@@ -115,9 +111,11 @@ private struct AppDelegateBridge: View {
 // MARK: - Project Window wrapper
 
 /// Resolves a ProjectManager from the registry and injects it into ContentView.
+/// Also ensures AppDelegate is wired up even when Welcome window is never shown.
 private struct ProjectWindowView: View {
     let projectURL: URL
     let registry: ProjectRegistry
+    let appDelegate: AppDelegate
     @Environment(\.openWindow) var openWindow
 
     var body: some View {
@@ -129,7 +127,12 @@ private struct ProjectWindowView: View {
             .environment(pm.tabManager)
             .environment(registry)
             .focusedSceneValue(\.projectManager, pm)
-            .onAppear { registry.lastActiveProjectURL = projectURL }
+            .onAppear {
+                registry.lastActiveProjectURL = projectURL
+                // Ensure AppDelegate has registry even if Welcome was never shown
+                appDelegate.registry = registry
+            }
+            .background { AppDelegateBridge(appDelegate: appDelegate) }
             .onDisappear {
                 // Cleanup only — unsaved check already handled by WindowCloseInterceptor
                 registry.closeProject(projectURL)
