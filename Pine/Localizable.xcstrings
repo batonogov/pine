@@ -1,6 +1,78 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
+    "conflict.externalModify.keep" : {
+      "comment" : "Button: keep local unsaved changes instead of reloading from disk.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Keep Local Changes"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Оставить локальные изменения"
+          }
+        }
+      }
+    },
+    "conflict.externalModify.message %@" : {
+      "comment" : "Informative text when a file with unsaved changes was modified externally.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ has been modified outside Pine. You have unsaved changes."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ был изменён за пределами Pine. У вас есть несохранённые изменения."
+          }
+        }
+      }
+    },
+    "conflict.externalModify.reload" : {
+      "comment" : "Button: reload file content from disk, discarding local changes.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reload from Disk"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Перезагрузить с диска"
+          }
+        }
+      }
+    },
+    "conflict.externalModify.title" : {
+      "comment" : "Alert title when a file with unsaved changes was modified externally.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "File Modified Externally"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Файл изменён извне"
+          }
+        }
+      }
+    },
     "context.delete" : {
       "comment" : "Context menu item / button to delete (move to Trash).",
       "extractionState" : "manual",

@@ -115,6 +115,12 @@ struct ContentView: View {
             guard let deletedURL = notification.userInfo?["url"] as? URL else { return }
             handleFileDeletion(deletedURL)
         }
+        .onChange(of: workspace.externalChangeToken) { _, _ in
+            let conflicts = tabManager.checkExternalChanges()
+            for conflict in conflicts {
+                handleExternalConflict(conflict)
+            }
+        }
     }
 
     /// Branch subtitle as a plain String to avoid generating a localization key.
@@ -194,6 +200,24 @@ struct ContentView: View {
             }
         } else {
             tabManager.closeTab(id: tab.id)
+        }
+    }
+
+    private func handleExternalConflict(_ conflict: TabManager.ExternalConflict) {
+        switch conflict.kind {
+        case .modified:
+            let alert = NSAlert()
+            alert.messageText = Strings.externalModifyTitle
+            alert.informativeText = Strings.externalModifyMessage(conflict.url.lastPathComponent)
+            alert.addButton(withTitle: Strings.externalModifyReload)
+            alert.addButton(withTitle: Strings.externalModifyKeep)
+            alert.alertStyle = .warning
+
+            if alert.runModal() == .alertFirstButtonReturn {
+                tabManager.reloadTab(url: conflict.url)
+            }
+        case .deleted:
+            handleFileDeletion(conflict.url)
         }
     }
 
@@ -417,6 +441,34 @@ struct TerminalNativeTabItem: View {
     }
 }
 
+// MARK: - Sidebar edit state
+
+/// Tracks inline rename / new-item state for the sidebar file tree.
+@Observable
+final class SidebarEditState {
+    var renamingURL: URL?
+    var editingText: String = ""
+    var isNewlyCreated: Bool = false
+
+    func startRename(for node: FileNode) {
+        renamingURL = node.url
+        editingText = node.name
+        isNewlyCreated = false
+    }
+
+    func startNewItem(url: URL) {
+        renamingURL = url
+        editingText = url.lastPathComponent
+        isNewlyCreated = true
+    }
+
+    func clear() {
+        renamingURL = nil
+        editingText = ""
+        isNewlyCreated = false
+    }
+}
+
 // MARK: - Сайдбар
 
 struct SidebarView: View {
@@ -424,6 +476,7 @@ struct SidebarView: View {
     @Binding var selectedFile: FileNode?
     @Environment(ProjectRegistry.self) var registry
     @Environment(\.openWindow) var openWindow
+    @State private var editState = SidebarEditState()
 
     var body: some View {
         Group {
@@ -445,16 +498,17 @@ struct SidebarView: View {
                 List(workspace.rootNodes, children: \.optionalChildren, selection: $selectedFile) { node in
                     FileNodeRow(node: node)
                 }
+                .environment(editState)
                 .contextMenu {
                     if let rootURL = workspace.rootURL {
                         Button {
-                            promptForNewItem(in: rootURL, isDirectory: false)
+                            createNewItem(in: rootURL, isDirectory: false)
                         } label: {
                             Label(Strings.contextNewFile, systemImage: "doc.badge.plus")
                         }
 
                         Button {
-                            promptForNewItem(in: rootURL, isDirectory: true)
+                            createNewItem(in: rootURL, isDirectory: true)
                         } label: {
                             Label(Strings.contextNewFolder, systemImage: "folder.badge.plus")
                         }
@@ -483,43 +537,43 @@ struct SidebarView: View {
         openWindow(value: url)
     }
 
-    /// Prompt for a name and create a file or folder in the given parent directory.
-    private func promptForNewItem(in parentURL: URL, isDirectory: Bool) {
-        let title = isDirectory ? Strings.contextNewFolderTitle : Strings.contextNewFileTitle
-
-        let alert = NSAlert()
-        alert.messageText = title
-        alert.addButton(withTitle: Strings.dialogOK)
-        alert.addButton(withTitle: Strings.dialogCancel)
-
-        let textField = NSTextField(frame: NSRect(x: 0, y: 0, width: 260, height: 24))
-        textField.placeholderString = Strings.contextNamePlaceholder
-        alert.accessoryView = textField
-
-        guard alert.runModal() == .alertFirstButtonReturn else { return }
-        let name = textField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !name.isEmpty else { return }
-
+    /// Creates a file or folder with a unique "untitled" name, then starts inline rename.
+    private func createNewItem(in parentURL: URL, isDirectory: Bool) {
+        let baseName = isDirectory ? "untitled folder" : "untitled"
+        let name = uniqueName(baseName, in: parentURL)
         let newURL = parentURL.appendingPathComponent(name)
+
         do {
             if isDirectory {
                 try FileManager.default.createDirectory(at: newURL, withIntermediateDirectories: false)
             } else if !FileManager.default.createFile(atPath: newURL.path, contents: nil) {
-                let alert = NSAlert()
-                alert.messageText = Strings.fileOperationErrorTitle
-                alert.informativeText = Strings.fileCreateError(name)
-                alert.alertStyle = .warning
-                alert.runModal()
+                showFileError(Strings.fileCreateError(name))
                 return
             }
             workspace.refreshFileTree()
+            editState.startNewItem(url: newURL)
         } catch {
-            let alert = NSAlert()
-            alert.messageText = Strings.fileOperationErrorTitle
-            alert.informativeText = error.localizedDescription
-            alert.alertStyle = .warning
-            alert.runModal()
+            showFileError(error.localizedDescription)
         }
+    }
+
+    /// Returns a unique name by appending a counter if needed.
+    private func uniqueName(_ baseName: String, in parentURL: URL) -> String {
+        var name = baseName
+        var counter = 2
+        while FileManager.default.fileExists(atPath: parentURL.appendingPathComponent(name).path) {
+            name = "\(baseName) \(counter)"
+            counter += 1
+        }
+        return name
+    }
+
+    private func showFileError(_ message: String) {
+        let alert = NSAlert()
+        alert.messageText = Strings.fileOperationErrorTitle
+        alert.informativeText = message
+        alert.alertStyle = .warning
+        alert.runModal()
     }
 }
 
@@ -528,6 +582,11 @@ struct SidebarView: View {
 struct FileNodeRow: View {
     var node: FileNode
     @Environment(WorkspaceManager.self) var workspace
+    @Environment(TabManager.self) var tabManager
+    @Environment(SidebarEditState.self) var editState
+    @FocusState private var isTextFieldFocused: Bool
+
+    private var isEditing: Bool { editState.renamingURL == node.url }
 
     private var gitStatus: GitFileStatus? {
         let provider = workspace.gitProvider
@@ -536,30 +595,64 @@ struct FileNodeRow: View {
             : provider.statusForFile(at: node.url)
     }
 
-    var body: some View {
-        Label(node.name, systemImage: node.isDirectory
-              ? FileIconMapper.iconForFolder(node.name)
-              : FileIconMapper.iconForFile(node.name))
-            .foregroundStyle(gitStatus?.color ?? .primary)
-            .tag(node)
-            .contextMenu { fileNodeContextMenu }
+    private var iconName: String {
+        node.isDirectory
+            ? FileIconMapper.iconForFolder(node.name)
+            : FileIconMapper.iconForFile(node.name)
     }
+
+    var body: some View {
+        Group {
+            if isEditing {
+                inlineEditor
+            } else {
+                Label(node.name, systemImage: iconName)
+                    .foregroundStyle(gitStatus?.color ?? .primary)
+            }
+        }
+        .tag(node)
+        .contextMenu { fileNodeContextMenu }
+    }
+
+    // MARK: - Inline editor
+
+    @ViewBuilder
+    private var inlineEditor: some View {
+        @Bindable var state = editState
+        HStack(spacing: 4) {
+            Image(systemName: iconName)
+                .foregroundStyle(.secondary)
+            TextField("", text: $state.editingText)
+                .textFieldStyle(.plain)
+                .onSubmit { commitRename() }
+                .onExitCommand { cancelRename() }
+                .focused($isTextFieldFocused)
+                .onAppear {
+                    DispatchQueue.main.async {
+                        isTextFieldFocused = true
+                    }
+                }
+                .onChange(of: isTextFieldFocused) { _, focused in
+                    if !focused && editState.renamingURL == node.url {
+                        commitRename()
+                    }
+                }
+        }
+    }
+
+    // MARK: - Context menu
 
     @ViewBuilder
     private var fileNodeContextMenu: some View {
         if node.isDirectory {
             Button {
-                promptForName(title: Strings.contextNewFileTitle, placeholder: Strings.contextNamePlaceholder) { name in
-                    createItem(named: name, isDirectory: false)
-                }
+                createNewItem(isDirectory: false)
             } label: {
                 Label(Strings.contextNewFile, systemImage: "doc.badge.plus")
             }
 
             Button {
-                promptForName(title: Strings.contextNewFolderTitle, placeholder: Strings.contextNamePlaceholder) { name in
-                    createItem(named: name, isDirectory: true)
-                }
+                createNewItem(isDirectory: true)
             } label: {
                 Label(Strings.contextNewFolder, systemImage: "folder.badge.plus")
             }
@@ -568,13 +661,7 @@ struct FileNodeRow: View {
         }
 
         Button {
-            promptForName(
-                title: Strings.contextRenameTitle,
-                placeholder: Strings.contextNamePlaceholder,
-                defaultValue: node.name
-            ) { newName in
-                renameItem(to: newName)
-            }
+            editState.startRename(for: node)
         } label: {
             Label(Strings.contextRename, systemImage: "pencil")
         }
@@ -596,9 +683,12 @@ struct FileNodeRow: View {
 
     // MARK: - File operations
 
-    private func createItem(named name: String, isDirectory: Bool) {
+    private func createNewItem(isDirectory: Bool) {
         let parentURL = node.url
+        let baseName = isDirectory ? "untitled folder" : "untitled"
+        let name = uniqueName(baseName, in: parentURL)
         let newURL = parentURL.appendingPathComponent(name)
+
         do {
             if isDirectory {
                 try FileManager.default.createDirectory(at: newURL, withIntermediateDirectories: false)
@@ -607,37 +697,66 @@ struct FileNodeRow: View {
                 return
             }
             workspace.refreshFileTree()
+            editState.startNewItem(url: newURL)
         } catch {
             showFileError(error.localizedDescription)
         }
     }
 
-    private func renameItem(to newName: String) {
+    private func commitRename() {
+        guard editState.renamingURL == node.url else { return }
+
+        let newName = editState.editingText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !newName.isEmpty else {
+            cancelRename()
+            return
+        }
+
         let oldURL = node.url
         let newURL = oldURL.deletingLastPathComponent().appendingPathComponent(newName)
+        let wasNewlyCreated = editState.isNewlyCreated
+
+        // Name unchanged — accept as-is
+        if newURL == oldURL {
+            editState.clear()
+            if wasNewlyCreated && !node.isDirectory {
+                tabManager.openTab(url: oldURL)
+            }
+            return
+        }
+
         do {
             try FileManager.default.moveItem(at: oldURL, to: newURL)
+            editState.clear()
             workspace.refreshFileTree()
             NotificationCenter.default.post(
                 name: .fileRenamed,
                 object: nil,
                 userInfo: ["oldURL": oldURL, "newURL": newURL]
             )
+            // Auto-open newly created files in an editor tab
+            if wasNewlyCreated && !node.isDirectory {
+                tabManager.openTab(url: newURL)
+            }
         } catch {
+            // Keep editing so the user can try a different name
             showFileError(error.localizedDescription)
         }
     }
 
+    private func cancelRename() {
+        let wasNewlyCreated = editState.isNewlyCreated
+        let url = editState.renamingURL
+        editState.clear()
+
+        // Delete placeholder item if creation was cancelled
+        if wasNewlyCreated, let url {
+            try? FileManager.default.removeItem(at: url)
+            workspace.refreshFileTree()
+        }
+    }
+
     private func deleteItem() {
-        let alert = NSAlert()
-        alert.messageText = Strings.contextDeleteConfirmTitle
-        alert.informativeText = Strings.contextDeleteConfirmMessage(node.name)
-        alert.addButton(withTitle: Strings.contextDeleteButton)
-        alert.addButton(withTitle: Strings.dialogCancel)
-        alert.alertStyle = .warning
-
-        guard alert.runModal() == .alertFirstButtonReturn else { return }
-
         let deletedURL = node.url
         do {
             try FileManager.default.trashItem(at: deletedURL, resultingItemURL: nil)
@@ -652,27 +771,14 @@ struct FileNodeRow: View {
         }
     }
 
-    /// Shows an AppKit input dialog and calls the completion with the entered name.
-    private func promptForName(
-        title: String,
-        placeholder: String,
-        defaultValue: String = "",
-        completion: @escaping (String) -> Void
-    ) {
-        let alert = NSAlert()
-        alert.messageText = title
-        alert.addButton(withTitle: Strings.dialogOK)
-        alert.addButton(withTitle: Strings.dialogCancel)
-
-        let textField = NSTextField(frame: NSRect(x: 0, y: 0, width: 260, height: 24))
-        textField.placeholderString = placeholder
-        textField.stringValue = defaultValue
-        alert.accessoryView = textField
-
-        guard alert.runModal() == .alertFirstButtonReturn else { return }
-        let name = textField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !name.isEmpty else { return }
-        completion(name)
+    private func uniqueName(_ baseName: String, in parentURL: URL) -> String {
+        var name = baseName
+        var counter = 2
+        while FileManager.default.fileExists(atPath: parentURL.appendingPathComponent(name).path) {
+            name = "\(baseName) \(counter)"
+            counter += 1
+        }
+        return name
     }
 
     private func showFileError(_ message: String) {
@@ -682,7 +788,6 @@ struct FileNodeRow: View {
         alert.alertStyle = .warning
         alert.runModal()
     }
-
 }
 
 // MARK: - Status Bar
