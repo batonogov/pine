@@ -307,16 +307,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     weak var welcomeWindow: NSWindow?
 
     func showWelcome() {
-        if let window = welcomeWindow {
-            window.makeKeyAndOrderFront(nil)
-        } else {
-            openNamedWindow?("welcome")
+        // Try SwiftUI first, then force-show via AppKit as fallback —
+        // openWindow stops working after a few dismissWindow cycles.
+        openNamedWindow?("welcome")
+        DispatchQueue.main.async { [weak self] in
+            self?.welcomeWindow?.makeKeyAndOrderFront(nil)
+            NSApp.activate()
         }
-        NSApp.activate()
-    }
-
-    func hideWelcome() {
-        welcomeWindow?.orderOut(nil)
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
