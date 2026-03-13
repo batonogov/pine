@@ -108,7 +108,7 @@ struct WelcomeView: View {
     private func openFolder() {
         if let url = registry.openProjectViaPanel() {
             openWindow(value: url)
-            dismissWindow(id: "welcome")
+            closeWelcome()
         }
     }
 
@@ -116,6 +116,16 @@ struct WelcomeView: View {
         let canonical = url.resolvingSymlinksInPath()
         guard registry.projectManager(for: canonical) != nil else { return }
         openWindow(value: canonical)
+        closeWelcome()
+    }
+
+    /// Closes all Welcome windows — both SwiftUI-managed and AppKit-created fallback.
+    private func closeWelcome() {
         dismissWindow(id: "welcome")
+        // Close any AppKit-created welcome windows that dismissWindow doesn't handle
+        for window in NSApp.windows
+            where window.identifier?.rawValue == "welcome" && window.isVisible {
+            window.close()
+        }
     }
 }

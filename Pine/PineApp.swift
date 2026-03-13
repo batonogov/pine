@@ -10,8 +10,9 @@ import SwiftUI
 @main
 struct PineApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
-    @State private var registry = ProjectRegistry()
     @FocusedValue(\.projectManager) private var focusedProject: ProjectManager?
+
+    private var registry: ProjectRegistry { appDelegate.registry }
 
     var body: some Scene {
         WindowGroup(for: URL.self) { $projectURL in
@@ -73,7 +74,6 @@ struct PineApp: App {
 
         Window(Strings.welcomeTitle, id: "welcome") {
             WelcomeView(registry: registry, appDelegate: appDelegate)
-                .onAppear { appDelegate.registry = registry }
                 .background { AppDelegateBridge(appDelegate: appDelegate, registry: registry) }
                 .background { WelcomeWindowCapture(appDelegate: appDelegate) }
         }
@@ -168,7 +168,6 @@ private struct ProjectWindowView: View {
                     }
             }
         }
-        .onAppear { appDelegate.registry = registry }
         .background { AppDelegateBridge(appDelegate: appDelegate, registry: registry) }
         .onDisappear {
             (NSApp.delegate as? AppDelegate)?
@@ -277,7 +276,8 @@ private struct WindowCloseInterceptor: NSViewRepresentable {
 // MARK: - AppDelegate
 
 class AppDelegate: NSObject, NSApplicationDelegate {
-    var registry: ProjectRegistry?
+    /// Central project registry — created early so it's available for AppKit fallback.
+    var registry = ProjectRegistry()
     /// Set to true once applicationShouldTerminate is called, so onDisappear
     /// handlers know not to clear the saved session during app quit.
     private(set) var isTerminating = false
@@ -315,10 +315,33 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // openWindow stops working after a few dismissWindow cycles.
         openNamedWindow?("welcome")
         DispatchQueue.main.async { [weak self] in
-            guard let window = self?.welcomeWindow, !window.isVisible else { return }
-            window.makeKeyAndOrderFront(nil)
-            NSApp.activate()
+            if let window = self?.welcomeWindow, !window.isVisible {
+                window.makeKeyAndOrderFront(nil)
+                NSApp.activate()
+            } else if self?.welcomeWindow == nil {
+                // SwiftUI scene lifecycle didn't create the window (e.g. XCUITest
+                // or direct binary launch that bypasses LaunchServices).
+                self?.createWelcomeWindowViaAppKit()
+            }
         }
+    }
+
+    /// Creates the Welcome window via AppKit when SwiftUI's scene lifecycle
+    /// fails to instantiate it (known issue on macOS 26 with launches that
+    /// bypass LaunchServices, including XCUITest).
+    private func createWelcomeWindowViaAppKit() {
+        let welcomeView = WelcomeView(registry: registry, appDelegate: self)
+        let hostingController = NSHostingController(rootView: welcomeView)
+        let window = NSWindow(contentViewController: hostingController)
+        window.identifier = NSUserInterfaceItemIdentifier("welcome")
+        window.title = ""
+        window.setContentSize(NSSize(width: 600, height: 400))
+        window.styleMask = [.titled, .closable, .miniaturizable]
+        window.center()
+        window.isReleasedWhenClosed = false
+        welcomeWindow = window
+        window.makeKeyAndOrderFront(nil)
+        NSApp.activate()
     }
 
     func applicationWillFinishLaunching(_ notification: Notification) {
@@ -356,8 +379,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             forName: .openFolder, object: nil, queue: .main
         ) { [weak self] _ in
             guard NSApp.windows.allSatisfy({ !$0.isVisible }) else { return }
-            guard let self, let registry = self.registry else { return }
-            if let url = registry.openProjectViaPanel() {
+            guard let self else { return }
+            if let url = self.registry.openProjectViaPanel() {
                 self.openProjectWindow?(url)
             }
         }
@@ -385,7 +408,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
-        guard let registry else { return }
         // Save per-project tab state so sessions can be restored from Welcome.
         for (_, pm) in registry.openProjects {
             pm.saveSession()
@@ -394,7 +416,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         isTerminating = true
-        guard let registry else { return .terminateNow }
 
         for (_, pm) in registry.openProjects {
             guard pm.tabManager.hasUnsavedChanges else { continue }

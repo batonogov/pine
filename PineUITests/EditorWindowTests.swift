@@ -96,6 +96,39 @@ final class EditorWindowTests: PineUITestCase {
         XCTAssertTrue(utilsTab.exists, "utils.swift tab should still exist")
     }
 
+    // MARK: - P1: Cmd+W closes tab, activates neighbor
+
+    func testCmdWClosesActiveTabAndActivatesNeighbor() throws {
+        launchWithProject(projectURL)
+
+        let sidebar = app.outlines["sidebar"]
+        XCTAssertTrue(waitForExistence(sidebar, timeout: 10), "Sidebar should appear")
+
+        // Open two files
+        let mainFile = app.staticTexts["fileNode_main.swift"]
+        XCTAssertTrue(waitForExistence(mainFile, timeout: 5))
+        mainFile.click()
+
+        let utilsFile = app.staticTexts["fileNode_utils.swift"]
+        XCTAssertTrue(waitForExistence(utilsFile, timeout: 5))
+        utilsFile.click()
+
+        // Both tabs should exist, utils.swift is active (last opened)
+        let mainTab = app.staticTexts["editorTab_main.swift"].firstMatch
+        let utilsTab = app.staticTexts["editorTab_utils.swift"].firstMatch
+        XCTAssertTrue(waitForExistence(mainTab))
+        XCTAssertTrue(waitForExistence(utilsTab))
+
+        // Cmd+W → close active tab (utils.swift)
+        app.typeKey("w", modifierFlags: .command)
+
+        // utils.swift tab should disappear
+        XCTAssertTrue(utilsTab.waitForNonExistence(timeout: 5), "Active tab should close on Cmd+W")
+
+        // main.swift tab should still exist (neighbor activated)
+        XCTAssertTrue(mainTab.exists, "Neighbor tab should remain after Cmd+W")
+    }
+
     // MARK: - P1: Editor placeholder when no tabs open
 
     func testEditorPlaceholderShownWithNoTabs() throws {
