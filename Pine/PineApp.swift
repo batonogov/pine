@@ -77,6 +77,7 @@ struct PineApp: App {
             WelcomeView(registry: registry)
                 .onAppear { appDelegate.registry = registry }
                 .background { AppDelegateBridge(appDelegate: appDelegate) }
+                .background { WelcomeWindowCapture(appDelegate: appDelegate) }
         }
         .defaultSize(width: 600, height: 400)
         .windowResizability(.contentSize)
@@ -101,6 +102,41 @@ private struct NilProjectRedirect: NSViewRepresentable {
     }
 
     func updateNSView(_ nsView: NSView, context: Context) {}
+}
+
+// MARK: - Welcome window capture
+
+/// Captures the Welcome window's NSWindow reference into AppDelegate
+/// so it can be shown/hidden reliably via AppKit.
+/// Uses viewDidMoveToWindow instead of DispatchQueue.main.async for
+/// a guaranteed AppKit lifecycle callback.
+private struct WelcomeWindowCapture: NSViewRepresentable {
+    let appDelegate: AppDelegate
+
+    func makeNSView(context: Context) -> NSView {
+        let view = WindowCaptureSentinel { [weak appDelegate] window in
+            appDelegate?.welcomeWindow = window
+        }
+        return view
+    }
+
+    func updateNSView(_ nsView: NSView, context: Context) {}
+}
+
+/// NSView subclass that reports its host window via a callback
+/// when inserted into the window hierarchy.
+private final class WindowCaptureSentinel: NSView {
+    var onWindow: ((NSWindow) -> Void)?
+
+    convenience init(onWindow: @escaping (NSWindow) -> Void) {
+        self.init(frame: .zero)
+        self.onWindow = onWindow
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        if let window { onWindow?(window) }
+    }
 }
 
 // MARK: - AppDelegate bridge (passes SwiftUI openWindow closures to AppDelegate)
@@ -154,14 +190,8 @@ private struct ProjectWindowView: View {
         .onAppear { appDelegate.registry = registry }
         .background { AppDelegateBridge(appDelegate: appDelegate) }
         .onDisappear {
-            let isTerminating = (NSApp.delegate as? AppDelegate)?.isTerminating == true
-            if !isTerminating {
-                SessionState.clear(for: projectURL)
-                registry.closeProject(projectURL)
-                if registry.openProjects.isEmpty {
-                    openWindow(id: "welcome")
-                }
-            }
+            (NSApp.delegate as? AppDelegate)?
+                .handleProjectWindowDisappear(projectURL: projectURL, registry: registry)
         }
     }
 }
@@ -276,6 +306,42 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     /// Closure to open a project SwiftUI window by URL, set by PineApp on launch.
     var openProjectWindow: ((URL) -> Void)?
 
+    /// Reference to the Welcome NSWindow, captured via WelcomeWindowCapture.
+    /// Used for reliable show/hide — SwiftUI's dismissWindow/openWindow breaks
+    /// after a few cycles on singleton Window scenes.
+    weak var welcomeWindow: NSWindow?
+
+    /// Handles cleanup when a project window disappears: saves session,
+    /// removes from registry, and shows Welcome if no projects remain.
+    func handleProjectWindowDisappear(projectURL: URL, registry: ProjectRegistry) {
+        guard !isTerminating else { return }
+        // Save session before closing so it can be restored
+        // when the user reopens this project from Welcome or Open Recent.
+        let canonical = projectURL.resolvingSymlinksInPath()
+        registry.openProjects[canonical]?.saveSession()
+        registry.closeProject(projectURL)
+        if registry.openProjects.isEmpty {
+            showWelcome()
+        }
+    }
+
+    func showWelcome() {
+        // Try SwiftUI first, then force-show via AppKit as fallback —
+        // openWindow stops working after a few dismissWindow cycles.
+        openNamedWindow?("welcome")
+        DispatchQueue.main.async { [weak self] in
+            guard let window = self?.welcomeWindow, !window.isVisible else { return }
+            window.makeKeyAndOrderFront(nil)
+            NSApp.activate()
+        }
+    }
+
+    func applicationWillFinishLaunching(_ notification: Notification) {
+        // Must be set before applicationDidFinishLaunching — the system runs
+        // window restoration between willFinishLaunching and didFinishLaunching.
+        UserDefaults.standard.set(false, forKey: "NSQuitAlwaysKeepsWindows")
+    }
+
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSWindow.allowsAutomaticWindowTabbing = false
 
@@ -298,10 +364,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             // internal SwiftUI hosting windows and panels by requiring a non-empty title)
             if let window = NSApp.windows.first(where: {
                 !$0.isVisible && !$0.title.isEmpty && $0.contentView != nil
+                    && $0 != welcomeWindow
             }) {
                 window.makeKeyAndOrderFront(nil)
             } else {
-                openNamedWindow?("welcome")
+                showWelcome()
             }
         }
         return true
@@ -313,7 +380,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationWillTerminate(_ notification: Notification) {
         guard let registry else { return }
-        // Save per-project tab state; the system handles which windows to restore.
+        // Save per-project tab state so sessions can be restored from Welcome.
         for (_, pm) in registry.openProjects {
             pm.saveSession()
         }
