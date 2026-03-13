@@ -111,7 +111,7 @@ struct WelcomeView: View {
 
     private func openProject(at url: URL) {
         let canonical = url.resolvingSymlinksInPath()
-        _ = registry.projectManager(for: canonical)
+        guard registry.projectManager(for: canonical) != nil else { return }
         openWindow(value: canonical)
         dismissWindow(id: "welcome")
     }

@@ -27,10 +27,19 @@ final class ProjectRegistry {
 
     /// Returns the ProjectManager for a given project URL, creating one if needed.
     /// URLs are resolved to their canonical (real) path to prevent duplicates via symlinks.
-    func projectManager(for projectURL: URL) -> ProjectManager {
+    /// Returns nil if the directory no longer exists on disk.
+    func projectManager(for projectURL: URL) -> ProjectManager? {
         let canonical = projectURL.resolvingSymlinksInPath()
         if let existing = openProjects[canonical] {
             return existing
+        }
+        // Validate that the directory still exists
+        var isDir: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: canonical.path, isDirectory: &isDir),
+              isDir.boolValue else {
+            recentProjects.removeAll { $0 == canonical }
+            saveRecentProjects()
+            return nil
         }
         let pm = ProjectManager()
         pm.workspace.loadDirectory(url: canonical)
@@ -51,7 +60,7 @@ final class ProjectRegistry {
 
         guard panel.runModal() == .OK, let url = panel.url else { return nil }
         let canonical = url.resolvingSymlinksInPath()
-        _ = projectManager(for: canonical)
+        guard projectManager(for: canonical) != nil else { return nil }
         return canonical
     }
 
