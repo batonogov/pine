@@ -56,7 +56,7 @@ class PineUITestCase: XCTestCase {
     }
 
     /// Ensures at least one window is visible, opening Welcome via menu if needed.
-    private func ensureWindowVisible() {
+    func ensureWindowVisible() {
         if app.windows.firstMatch.waitForExistence(timeout: 3) { return }
         // Fallback: open Welcome window via the Window menu
         // The menu bar items have localized titles, so use the menu bar item for "Окно"/"Window"
