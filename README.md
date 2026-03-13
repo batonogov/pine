@@ -2,7 +2,11 @@
 
 > A native Mac code editor for developers who are tired of opening a browser just to edit code.
 
-![Pine screenshot](assets/screenshot.png)
+![Pine Editor](assets/screenshot-editor.png)
+
+![Pine Welcome](assets/screenshot-welcome.png)
+
+![Pine Terminal](assets/screenshot-terminal.png)
 
 Pine is a focused code editor for macOS 26+ built with SwiftUI and AppKit. It gives you the core developer loop in one clean native app: open a folder, edit code, run commands, check git, move on.
 

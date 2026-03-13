@@ -7,7 +7,7 @@
     <meta name="description" content="Pine is a native macOS code editor built with SwiftUI and AppKit. Open a repo, edit code, run commands, and check git without Electron or dependency bloat.">
     <meta property="og:title" content="Pine - Native macOS Code Editor Without the Bloat">
     <meta property="og:description" content="Less editor. More shipping. Pine is a focused Mac code editor with a full terminal emulator, git context, and minimal dependencies.">
-    <meta property="og:image" content="https://raw.githubusercontent.com/batonogov/pine/main/assets/screenshot.png">
+    <meta property="og:image" content="https://raw.githubusercontent.com/batonogov/pine/main/assets/screenshot-editor.png">
     <meta property="og:type" content="website">
     <style>
         * {
@@ -144,6 +144,31 @@
             color: var(--text);
             font-size: 14px;
             font-weight: 600;
+        }
+
+        .lang-toggle {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            padding: 8px 14px;
+            border-radius: 999px;
+            border: 1px solid var(--line);
+            background: rgba(255, 255, 255, 0.04);
+            color: var(--muted-strong);
+            font-size: 13px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: border-color 0.2s ease, color 0.2s ease;
+        }
+
+        .lang-toggle:hover {
+            border-color: var(--line-strong);
+            color: var(--text);
+        }
+
+        .lang-toggle:focus-visible {
+            outline: 2px solid var(--accent);
+            outline-offset: 2px;
         }
 
         .hero {
@@ -370,6 +395,31 @@
         .shot-card img {
             border-radius: 22px;
             border: 1px solid rgba(163, 242, 194, 0.12);
+        }
+
+        .screenshot-gallery {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 18px;
+            margin-top: 26px;
+        }
+
+        .screenshot-gallery figure {
+            margin: 0;
+        }
+
+        .screenshot-gallery img {
+            border-radius: var(--radius-md);
+            border: 1px solid var(--line);
+            box-shadow: 0 18px 48px rgba(0, 0, 0, 0.3);
+        }
+
+        .screenshot-gallery figcaption {
+            margin-top: 10px;
+            color: var(--muted);
+            font-size: 14px;
+            font-weight: 500;
+            text-align: center;
         }
 
         .shot-chip {
@@ -799,6 +849,10 @@
                 grid-column: span 1;
             }
 
+            .screenshot-gallery {
+                grid-template-columns: 1fr;
+            }
+
             footer {
                 flex-direction: column;
                 align-items: flex-start;
@@ -814,32 +868,33 @@
                 <span>Pine</span>
             </a>
             <nav class="nav">
-                <a href="#why">Why Pine</a>
-                <a href="#features">Features</a>
-                <a href="#install">Install</a>
+                <a href="#why" data-i18n="nav.why">Why Pine</a>
+                <a href="#features" data-i18n="nav.features">Features</a>
+                <a href="#install" data-i18n="nav.install">Install</a>
                 <a href="https://github.com/batonogov/pine">GitHub</a>
             </nav>
-            <a class="header-cta" href="https://github.com/batonogov/pine/releases">Download</a>
+            <button class="lang-toggle" id="lang-toggle" type="button">RU</button>
+            <a class="header-cta" href="https://github.com/batonogov/pine/releases" data-i18n="header.cta">Download</a>
         </header>
 
         <main>
             <section class="hero">
                 <div class="hero-copy">
-                    <div class="eyebrow">Native macOS code editor</div>
-                    <h1>Less editor. More shipping.</h1>
-                    <p>Pine is a focused Mac code editor for developers who want the core loop to feel instant: open a repo, edit code, run commands, check git, move on.</p>
+                    <div class="eyebrow" data-i18n="hero.eyebrow">Native macOS code editor</div>
+                    <h1 data-i18n="hero.title">Less editor. More shipping.</h1>
+                    <p data-i18n="hero.desc">Pine is a focused Mac code editor for developers who want the core loop to feel instant: open a repo, edit code, run commands, check git, move on.</p>
                     <div class="hero-proof">
-                        <span>No Electron</span>
-                        <span>Minimal dependencies</span>
-                        <span>Full terminal emulator</span>
-                        <span>Git-aware workflow</span>
+                        <span data-i18n="hero.noElectron">No Electron</span>
+                        <span data-i18n="hero.minimalDeps">Minimal dependencies</span>
+                        <span data-i18n="hero.terminal">Full terminal emulator</span>
+                        <span data-i18n="hero.gitAware">Git-aware workflow</span>
                     </div>
                     <div class="hero-actions">
-                        <a class="btn btn-primary" href="https://github.com/batonogov/pine/releases">Download Pine</a>
-                        <a class="btn btn-secondary" href="https://github.com/batonogov/pine">View on GitHub</a>
+                        <a class="btn btn-primary" href="https://github.com/batonogov/pine/releases" data-i18n="hero.download">Download Pine</a>
+                        <a class="btn btn-secondary" href="https://github.com/batonogov/pine" data-i18n="hero.github">View on GitHub</a>
                     </div>
                     <div class="install-strip">
-                        <div class="install-strip-label">Install in 10 seconds</div>
+                        <div class="install-strip-label" data-i18n="hero.installLabel">Install in 10 seconds</div>
                         <code>brew tap batonogov/tap &amp;&amp; brew install --cask pine-editor</code>
                     </div>
                 </div>
@@ -849,11 +904,11 @@
                     <div class="shot-window">
                         <div class="shot-card-stack">
                             <div class="shot-card">
-                                <img src="https://raw.githubusercontent.com/batonogov/pine/main/assets/screenshot.png" alt="Pine editor screenshot" loading="lazy">
+                                <img src="https://raw.githubusercontent.com/batonogov/pine/main/assets/screenshot-editor.png" alt="Pine editor screenshot" data-i18n-alt="hero.alt" loading="lazy">
                             </div>
-                            <div class="shot-chip chip-one">Native window tabs</div>
-                            <div class="shot-chip chip-two">Full terminal emulator</div>
-                            <div class="shot-chip chip-three">Git-aware file tree</div>
+                            <div class="shot-chip chip-one" data-i18n="hero.chipTabs">Native window tabs</div>
+                            <div class="shot-chip chip-two" data-i18n="hero.chipTerminal">Full terminal emulator</div>
+                            <div class="shot-chip chip-three" data-i18n="hero.chipGit">Git-aware file tree</div>
                         </div>
                     </div>
                 </div>
@@ -862,60 +917,60 @@
             <section class="section">
                 <div class="mini-grid">
                     <article class="mini-card">
-                        <span>Native</span>
-                        <h3>SwiftUI + AppKit</h3>
-                        <p>Built like a real Mac app, not a browser pretending to be one.</p>
+                        <span data-i18n="mini.nativeKicker">Native</span>
+                        <h3 data-i18n="mini.nativeTitle">SwiftUI + AppKit</h3>
+                        <p data-i18n="mini.nativeDesc">Built like a real Mac app, not a browser pretending to be one.</p>
                     </article>
                     <article class="mini-card">
-                        <span>Focused</span>
-                        <h3>Repo-first workflow</h3>
-                        <p>Open a folder, browse files, edit fast, run commands, keep moving.</p>
+                        <span data-i18n="mini.focusedKicker">Focused</span>
+                        <h3 data-i18n="mini.focusedTitle">Repo-first workflow</h3>
+                        <p data-i18n="mini.focusedDesc">Open a folder, browse files, edit fast, run commands, keep moving.</p>
                     </article>
                     <article class="mini-card">
-                        <span>Lean</span>
-                        <h3>Minimal footprint</h3>
-                        <p>One dependency (SwiftTerm), no plugin marketplace, no configuration sprawl.</p>
+                        <span data-i18n="mini.leanKicker">Lean</span>
+                        <h3 data-i18n="mini.leanTitle">Minimal footprint</h3>
+                        <p data-i18n="mini.leanDesc">One dependency (SwiftTerm), no plugin marketplace, no configuration sprawl.</p>
                     </article>
                     <article class="mini-card">
-                        <span>Practical</span>
-                        <h3>Git where it matters</h3>
-                        <p>Status in the tree, branch switching, and diff markers directly in the editor.</p>
+                        <span data-i18n="mini.practicalKicker">Practical</span>
+                        <h3 data-i18n="mini.practicalTitle">Git where it matters</h3>
+                        <p data-i18n="mini.practicalDesc">Status in the tree, branch switching, and diff markers directly in the editor.</p>
                     </article>
                 </div>
             </section>
 
             <section class="section" id="why">
                 <div class="section-head">
-                    <span class="section-kicker">Why Pine</span>
-                    <h2>Built for the gap between bloated editors and full IDEs.</h2>
-                    <p>Pine keeps the parts that matter in day-to-day coding and cuts the layers that usually slow editors down.</p>
+                    <span class="section-kicker" data-i18n="why.kicker">Why Pine</span>
+                    <h2 data-i18n="why.title">Built for the gap between bloated editors and full IDEs.</h2>
+                    <p data-i18n="why.desc">Pine keeps the parts that matter in day-to-day coding and cuts the layers that usually slow editors down.</p>
                 </div>
                 <div class="compare-grid">
                     <article class="compare-card compare-card-muted">
-                        <h3>What Pine keeps</h3>
+                        <h3 data-i18n="why.keepsTitle">What Pine keeps</h3>
                         <ul>
-                            <li>Native project tree and Mac window behavior</li>
-                            <li>Syntax highlighting, line numbers, and find</li>
-                            <li>Multiple terminal tabs powered by a real PTY</li>
-                            <li>Git status, gutter diffs, and branch switching</li>
+                            <li data-i18n="why.keepsLi1">Native project tree and Mac window behavior</li>
+                            <li data-i18n="why.keepsLi2">Syntax highlighting, line numbers, and find</li>
+                            <li data-i18n="why.keepsLi3">Multiple terminal tabs powered by a real PTY</li>
+                            <li data-i18n="why.keepsLi4">Git status, gutter diffs, and branch switching</li>
                         </ul>
                     </article>
                     <article class="compare-card compare-card-accent">
-                        <h3>What Pine cuts</h3>
+                        <h3 data-i18n="why.cutsTitle">What Pine cuts</h3>
                         <ul>
-                            <li>Browser engine overhead</li>
-                            <li>Plugin sprawl and extension dependency chains</li>
-                            <li>Settings archaeology before real work starts</li>
-                            <li>Chrome-heavy UI that competes with the code</li>
+                            <li data-i18n="why.cutsLi1">Browser engine overhead</li>
+                            <li data-i18n="why.cutsLi2">Plugin sprawl and extension dependency chains</li>
+                            <li data-i18n="why.cutsLi3">Settings archaeology before real work starts</li>
+                            <li data-i18n="why.cutsLi4">Chrome-heavy UI that competes with the code</li>
                         </ul>
                     </article>
                     <article class="compare-card">
-                        <h3>What that feels like</h3>
-                        <p>You spend less time shaping the editor and more time writing, running, and reviewing code. Pine stays in the background and keeps the loop tight.</p>
+                        <h3 data-i18n="why.feelsTitle">What that feels like</h3>
+                        <p data-i18n="why.feelsDesc">You spend less time shaping the editor and more time writing, running, and reviewing code. Pine stays in the background and keeps the loop tight.</p>
                         <div class="hero-proof" style="margin-top: 22px;">
-                            <span>Open fast</span>
-                            <span>Stay focused</span>
-                            <span>Ship sooner</span>
+                            <span data-i18n="why.feelsChip1">Open fast</span>
+                            <span data-i18n="why.feelsChip2">Stay focused</span>
+                            <span data-i18n="why.feelsChip3">Ship sooner</span>
                         </div>
                     </article>
                 </div>
@@ -923,49 +978,70 @@
 
             <section class="section" id="features">
                 <div class="section-head">
-                    <span class="section-kicker">Features</span>
-                    <h2>The essentials, done like a Mac app.</h2>
-                    <p>Pine is not trying to become a platform. It is trying to cover the everyday loop with less friction.</p>
+                    <span class="section-kicker" data-i18n="features.kicker">Features</span>
+                    <h2 data-i18n="features.title">The essentials, done like a Mac app.</h2>
+                    <p data-i18n="features.desc">Pine is not trying to become a platform. It is trying to cover the everyday loop with less friction.</p>
                 </div>
                 <div class="feature-grid">
                     <article class="feature-card feature-wide">
                         <div class="feature-badge">01</div>
-                        <h3>Open a repo and start working immediately.</h3>
-                        <p>Folders-first file tree, clean empty states, hidden files skipped by default, native window tabs, and unsaved-change protection.</p>
+                        <h3 data-i18n="features.01title">Open a repo and start working immediately.</h3>
+                        <p data-i18n="features.01desc">Folders-first file tree, clean empty states, hidden files skipped by default, native window tabs, and unsaved-change protection.</p>
                     </article>
                     <article class="feature-card">
                         <div class="feature-badge">02</div>
-                        <h3>Write code without visual drag.</h3>
-                        <p>Line numbers, current-line highlight, undo, find bar, smart indent, and grammar-based syntax highlighting for the core working set.</p>
+                        <h3 data-i18n="features.02title">Write code without visual drag.</h3>
+                        <p data-i18n="features.02desc">Line numbers, current-line highlight, undo, find bar, smart indent, and grammar-based syntax highlighting for the core working set.</p>
                     </article>
                     <article class="feature-card">
                         <div class="feature-badge">03</div>
-                        <h3>Run commands in the same window.</h3>
-                        <p>Multiple terminal tabs powered by SwiftTerm — a full VT100/xterm emulator with colors, oh-my-zsh, and TUI app support.</p>
+                        <h3 data-i18n="features.03title">Run commands in the same window.</h3>
+                        <p data-i18n="features.03desc">Multiple terminal tabs powered by SwiftTerm — a full VT100/xterm emulator with colors, oh-my-zsh, and TUI app support.</p>
                     </article>
                     <article class="feature-card">
                         <div class="feature-badge">04</div>
-                        <h3>See git context where decisions happen.</h3>
-                        <p>Status in the file tree, diff markers in the gutter, branch switching, and a compact status bar summary.</p>
+                        <h3 data-i18n="features.04title">See git context where decisions happen.</h3>
+                        <p data-i18n="features.04desc">Status in the file tree, diff markers in the gutter, branch switching, and a compact status bar summary.</p>
                     </article>
                     <article class="feature-card feature-wide">
                         <div class="feature-badge">05</div>
-                        <h3>Cover the languages you actually touch all week.</h3>
-                        <p>Swift, TypeScript, JavaScript, Python, Go, Rust, Shell, HTML, CSS, JSON, YAML, Markdown, and Dockerfile are supported out of the box through JSON grammars.</p>
+                        <h3 data-i18n="features.05title">Cover the languages you actually touch all week.</h3>
+                        <p data-i18n="features.05desc">Swift, TypeScript, JavaScript, Python, Go, Rust, Shell, HTML, CSS, JSON, YAML, Markdown, and Dockerfile are supported out of the box through JSON grammars.</p>
                     </article>
+                </div>
+            </section>
+
+            <section class="section" id="screenshots">
+                <div class="section-head">
+                    <span class="section-kicker" data-i18n="screenshots.kicker">Screenshots</span>
+                    <h2 data-i18n="screenshots.title">See Pine in action.</h2>
+                </div>
+                <div class="screenshot-gallery">
+                    <figure>
+                        <img src="https://raw.githubusercontent.com/batonogov/pine/main/assets/screenshot-editor.png" alt="Pine code editor with syntax highlighting and file tree" data-i18n-alt="screenshots.alt1" loading="lazy">
+                        <figcaption data-i18n="screenshots.cap1">Code editor with syntax highlighting and git gutter</figcaption>
+                    </figure>
+                    <figure>
+                        <img src="https://raw.githubusercontent.com/batonogov/pine/main/assets/screenshot-terminal.png" alt="Pine built-in terminal" data-i18n-alt="screenshots.alt2" loading="lazy">
+                        <figcaption data-i18n="screenshots.cap2">Built-in terminal powered by SwiftTerm</figcaption>
+                    </figure>
+                    <figure>
+                        <img src="https://raw.githubusercontent.com/batonogov/pine/main/assets/screenshot-welcome.png" alt="Pine welcome window with recent projects" data-i18n-alt="screenshots.alt3" loading="lazy">
+                        <figcaption data-i18n="screenshots.cap3">Welcome window with recent projects</figcaption>
+                    </figure>
                 </div>
             </section>
 
             <section class="section">
                 <div class="manifesto-card">
-                    <span class="section-kicker">Positioning</span>
-                    <h2>Pine is not trying to be the biggest editor on your machine. It is trying to be the one you keep open all day.</h2>
-                    <p>If VS Code feels heavy and Xcode feels like too much for everyday editing, Pine is the clean middle ground.</p>
+                    <span class="section-kicker" data-i18n="manifesto.kicker">Positioning</span>
+                    <h2 data-i18n="manifesto.title">Pine is not trying to be the biggest editor on your machine. It is trying to be the one you keep open all day.</h2>
+                    <p data-i18n="manifesto.desc">If VS Code feels heavy and Xcode feels like too much for everyday editing, Pine is the clean middle ground.</p>
                     <div class="manifesto-pills">
-                        <span class="mini-chip">No Electron</span>
-                        <span class="mini-chip">No plugin marketplace</span>
-                        <span class="mini-chip">No settings maze</span>
-                        <span class="mini-chip">Minimal dependencies</span>
+                        <span class="mini-chip" data-i18n="manifesto.chip1">No Electron</span>
+                        <span class="mini-chip" data-i18n="manifesto.chip2">No plugin marketplace</span>
+                        <span class="mini-chip" data-i18n="manifesto.chip3">No settings maze</span>
+                        <span class="mini-chip" data-i18n="manifesto.chip4">Minimal dependencies</span>
                     </div>
                 </div>
             </section>
@@ -973,12 +1049,12 @@
             <section class="section" id="install">
                 <div class="install-panel">
                     <div>
-                        <span class="section-kicker">Get Started</span>
-                        <h2>Install Pine in 10 seconds.</h2>
-                        <p>Use Homebrew, grab the latest DMG, or build from source in Xcode. The stack stays small: SwiftUI, AppKit, JSON grammars, and SwiftTerm for the terminal.</p>
+                        <span class="section-kicker" data-i18n="install.kicker">Get Started</span>
+                        <h2 data-i18n="install.title">Install Pine in 10 seconds.</h2>
+                        <p data-i18n="install.desc">Use Homebrew, grab the latest DMG, or build from source in Xcode. The stack stays small: SwiftUI, AppKit, JSON grammars, and SwiftTerm for the terminal.</p>
                         <div class="install-actions">
-                            <a class="btn btn-primary" href="https://github.com/batonogov/pine/releases">Download the latest release</a>
-                            <a class="btn btn-secondary" href="https://github.com/batonogov/pine">Read the source</a>
+                            <a class="btn btn-primary" href="https://github.com/batonogov/pine/releases" data-i18n="install.download">Download the latest release</a>
+                            <a class="btn btn-secondary" href="https://github.com/batonogov/pine" data-i18n="install.source">Read the source</a>
                         </div>
                         <div class="install-badges">
                             <span>macOS 26+</span>
@@ -989,16 +1065,242 @@
                     <div class="command-shell">
                         <div class="command-shell-label">Homebrew</div>
                         <pre><code>brew tap batonogov/tap &amp;&amp; brew install --cask pine-editor</code></pre>
-                        <p>Build from source with <code>xcodebuild -project Pine.xcodeproj -scheme Pine build</code> if you want the full native stack on your machine.</p>
+                        <p data-i18n-html="install.shellNote">Build from source with <code>xcodebuild -project Pine.xcodeproj -scheme Pine build</code> if you want the full native stack on your machine.</p>
                     </div>
                 </div>
             </section>
         </main>
 
         <footer>
-            <span>Pine is open source and built for macOS developers who want less editor and more shipping.</span>
+            <span data-i18n="footer.text">Pine is open source and built for macOS developers who want less editor and more shipping.</span>
             <a href="https://github.com/batonogov/pine">github.com/batonogov/pine</a>
         </footer>
     </div>
+
+    <script>
+        var T = {
+            en: {
+                "nav.why": "Why Pine",
+                "nav.features": "Features",
+                "nav.install": "Install",
+                "header.cta": "Download",
+                "hero.eyebrow": "Native macOS code editor",
+                "hero.title": "Less editor. More shipping.",
+                "hero.desc": "Pine is a focused Mac code editor for developers who want the core loop to feel instant: open a repo, edit code, run commands, check git, move on.",
+                "hero.noElectron": "No Electron",
+                "hero.minimalDeps": "Minimal dependencies",
+                "hero.terminal": "Full terminal emulator",
+                "hero.gitAware": "Git-aware workflow",
+                "hero.download": "Download Pine",
+                "hero.github": "View on GitHub",
+                "hero.installLabel": "Install in 10 seconds",
+                "hero.alt": "Pine editor screenshot",
+                "hero.chipTabs": "Native window tabs",
+                "hero.chipTerminal": "Full terminal emulator",
+                "hero.chipGit": "Git-aware file tree",
+                "mini.nativeKicker": "Native",
+                "mini.nativeTitle": "SwiftUI + AppKit",
+                "mini.nativeDesc": "Built like a real Mac app, not a browser pretending to be one.",
+                "mini.focusedKicker": "Focused",
+                "mini.focusedTitle": "Repo-first workflow",
+                "mini.focusedDesc": "Open a folder, browse files, edit fast, run commands, keep moving.",
+                "mini.leanKicker": "Lean",
+                "mini.leanTitle": "Minimal footprint",
+                "mini.leanDesc": "One dependency (SwiftTerm), no plugin marketplace, no configuration sprawl.",
+                "mini.practicalKicker": "Practical",
+                "mini.practicalTitle": "Git where it matters",
+                "mini.practicalDesc": "Status in the tree, branch switching, and diff markers directly in the editor.",
+                "why.kicker": "Why Pine",
+                "why.title": "Built for the gap between bloated editors and full IDEs.",
+                "why.desc": "Pine keeps the parts that matter in day-to-day coding and cuts the layers that usually slow editors down.",
+                "why.keepsTitle": "What Pine keeps",
+                "why.keepsLi1": "Native project tree and Mac window behavior",
+                "why.keepsLi2": "Syntax highlighting, line numbers, and find",
+                "why.keepsLi3": "Multiple terminal tabs powered by a real PTY",
+                "why.keepsLi4": "Git status, gutter diffs, and branch switching",
+                "why.cutsTitle": "What Pine cuts",
+                "why.cutsLi1": "Browser engine overhead",
+                "why.cutsLi2": "Plugin sprawl and extension dependency chains",
+                "why.cutsLi3": "Settings archaeology before real work starts",
+                "why.cutsLi4": "Chrome-heavy UI that competes with the code",
+                "why.feelsTitle": "What that feels like",
+                "why.feelsDesc": "You spend less time shaping the editor and more time writing, running, and reviewing code. Pine stays in the background and keeps the loop tight.",
+                "why.feelsChip1": "Open fast",
+                "why.feelsChip2": "Stay focused",
+                "why.feelsChip3": "Ship sooner",
+                "features.kicker": "Features",
+                "features.title": "The essentials, done like a Mac app.",
+                "features.desc": "Pine is not trying to become a platform. It is trying to cover the everyday loop with less friction.",
+                "features.01title": "Open a repo and start working immediately.",
+                "features.01desc": "Folders-first file tree, clean empty states, hidden files skipped by default, native window tabs, and unsaved-change protection.",
+                "features.02title": "Write code without visual drag.",
+                "features.02desc": "Line numbers, current-line highlight, undo, find bar, smart indent, and grammar-based syntax highlighting for the core working set.",
+                "features.03title": "Run commands in the same window.",
+                "features.03desc": "Multiple terminal tabs powered by SwiftTerm \u2014 a full VT100/xterm emulator with colors, oh-my-zsh, and TUI app support.",
+                "features.04title": "See git context where decisions happen.",
+                "features.04desc": "Status in the file tree, diff markers in the gutter, branch switching, and a compact status bar summary.",
+                "features.05title": "Cover the languages you actually touch all week.",
+                "features.05desc": "Swift, TypeScript, JavaScript, Python, Go, Rust, Shell, HTML, CSS, JSON, YAML, Markdown, and Dockerfile are supported out of the box through JSON grammars.",
+                "screenshots.kicker": "Screenshots",
+                "screenshots.title": "See Pine in action.",
+                "screenshots.alt1": "Pine code editor with syntax highlighting and file tree",
+                "screenshots.cap1": "Code editor with syntax highlighting and git gutter",
+                "screenshots.alt2": "Pine built-in terminal",
+                "screenshots.cap2": "Built-in terminal powered by SwiftTerm",
+                "screenshots.alt3": "Pine welcome window with recent projects",
+                "screenshots.cap3": "Welcome window with recent projects",
+                "manifesto.kicker": "Positioning",
+                "manifesto.title": "Pine is not trying to be the biggest editor on your machine. It is trying to be the one you keep open all day.",
+                "manifesto.desc": "If VS Code feels heavy and Xcode feels like too much for everyday editing, Pine is the clean middle ground.",
+                "manifesto.chip1": "No Electron",
+                "manifesto.chip2": "No plugin marketplace",
+                "manifesto.chip3": "No settings maze",
+                "manifesto.chip4": "Minimal dependencies",
+                "install.kicker": "Get Started",
+                "install.title": "Install Pine in 10 seconds.",
+                "install.desc": "Use Homebrew, grab the latest DMG, or build from source in Xcode. The stack stays small: SwiftUI, AppKit, JSON grammars, and SwiftTerm for the terminal.",
+                "install.download": "Download the latest release",
+                "install.source": "Read the source",
+                "install.shellNote": "Build from source with <code>xcodebuild -project Pine.xcodeproj -scheme Pine build</code> if you want the full native stack on your machine.",
+                "footer.text": "Pine is open source and built for macOS developers who want less editor and more shipping.",
+                "meta.title": "Pine - Native macOS Code Editor Without the Bloat",
+                "meta.description": "Pine is a native macOS code editor built with SwiftUI and AppKit. Open a repo, edit code, run commands, and check git without Electron or dependency bloat.",
+                "meta.ogTitle": "Pine - Native macOS Code Editor Without the Bloat",
+                "meta.ogDescription": "Less editor. More shipping. Pine is a focused Mac code editor with a full terminal emulator, git context, and minimal dependencies."
+            },
+            ru: {
+                "nav.why": "\u041f\u043e\u0447\u0435\u043c\u0443 Pine",
+                "nav.features": "\u0412\u043e\u0437\u043c\u043e\u0436\u043d\u043e\u0441\u0442\u0438",
+                "nav.install": "\u0423\u0441\u0442\u0430\u043d\u043e\u0432\u043a\u0430",
+                "header.cta": "\u0421\u043a\u0430\u0447\u0430\u0442\u044c",
+                "hero.eyebrow": "\u041d\u0430\u0442\u0438\u0432\u043d\u044b\u0439 \u0440\u0435\u0434\u0430\u043a\u0442\u043e\u0440 \u043a\u043e\u0434\u0430 \u0434\u043b\u044f macOS",
+                "hero.title": "\u041c\u0435\u043d\u044c\u0448\u0435 \u0440\u0435\u0434\u0430\u043a\u0442\u043e\u0440\u0430. \u0411\u043e\u043b\u044c\u0448\u0435 \u0434\u0435\u043b\u0430.",
+                "hero.desc": "Pine \u2014 \u043d\u0430\u0442\u0438\u0432\u043d\u044b\u0439 \u0440\u0435\u0434\u0430\u043a\u0442\u043e\u0440 \u043a\u043e\u0434\u0430 \u0434\u043b\u044f Mac, \u0433\u0434\u0435 \u0432\u0441\u0451 \u043c\u043e\u043c\u0435\u043d\u0442\u0430\u043b\u044c\u043d\u043e: \u043e\u0442\u043a\u0440\u044b\u043b \u0440\u0435\u043f\u043e\u0437\u0438\u0442\u043e\u0440\u0438\u0439, \u043d\u0430\u043f\u0438\u0441\u0430\u043b \u043a\u043e\u0434, \u0437\u0430\u043f\u0443\u0441\u0442\u0438\u043b \u043a\u043e\u043c\u0430\u043d\u0434\u0443, \u043f\u0440\u043e\u0432\u0435\u0440\u0438\u043b git, \u043f\u043e\u0448\u0451\u043b \u0434\u0430\u043b\u044c\u0448\u0435.",
+                "hero.noElectron": "\u0411\u0435\u0437 Electron",
+                "hero.minimalDeps": "\u041c\u0438\u043d\u0438\u043c\u0443\u043c \u0437\u0430\u0432\u0438\u0441\u0438\u043c\u043e\u0441\u0442\u0435\u0439",
+                "hero.terminal": "\u041f\u043e\u043b\u043d\u043e\u0446\u0435\u043d\u043d\u044b\u0439 \u0442\u0435\u0440\u043c\u0438\u043d\u0430\u043b",
+                "hero.gitAware": "Git-\u0438\u043d\u0442\u0435\u0433\u0440\u0430\u0446\u0438\u044f",
+                "hero.download": "\u0421\u043a\u0430\u0447\u0430\u0442\u044c Pine",
+                "hero.github": "\u041e\u0442\u043a\u0440\u044b\u0442\u044c \u043d\u0430 GitHub",
+                "hero.installLabel": "\u0423\u0441\u0442\u0430\u043d\u043e\u0432\u043a\u0430 \u0437\u0430 10 \u0441\u0435\u043a\u0443\u043d\u0434",
+                "hero.alt": "\u0421\u043a\u0440\u0438\u043d\u0448\u043e\u0442 \u0440\u0435\u0434\u0430\u043a\u0442\u043e\u0440\u0430 Pine",
+                "hero.chipTabs": "\u041d\u0430\u0442\u0438\u0432\u043d\u044b\u0435 \u0432\u043a\u043b\u0430\u0434\u043a\u0438",
+                "hero.chipTerminal": "\u041f\u043e\u043b\u043d\u043e\u0446\u0435\u043d\u043d\u044b\u0439 \u0442\u0435\u0440\u043c\u0438\u043d\u0430\u043b",
+                "hero.chipGit": "Git-\u0434\u0435\u0440\u0435\u0432\u043e \u0444\u0430\u0439\u043b\u043e\u0432",
+                "mini.nativeKicker": "\u041d\u0430\u0442\u0438\u0432\u043d\u044b\u0439",
+                "mini.nativeTitle": "SwiftUI + AppKit",
+                "mini.nativeDesc": "\u041d\u0430\u0441\u0442\u043e\u044f\u0449\u0435\u0435 Mac-\u043f\u0440\u0438\u043b\u043e\u0436\u0435\u043d\u0438\u0435, \u0430 \u043d\u0435 \u0431\u0440\u0430\u0443\u0437\u0435\u0440 \u043f\u043e\u0434 \u043c\u0430\u0441\u043a\u043e\u0439.",
+                "mini.focusedKicker": "\u0424\u043e\u043a\u0443\u0441",
+                "mini.focusedTitle": "\u0420\u0430\u0431\u043e\u0442\u0430 \u0441 \u0440\u0435\u043f\u043e\u0437\u0438\u0442\u043e\u0440\u0438\u0435\u043c",
+                "mini.focusedDesc": "\u041e\u0442\u043a\u0440\u044b\u043b \u043f\u0430\u043f\u043a\u0443, \u043f\u0440\u043e\u0441\u043c\u043e\u0442\u0440\u0435\u043b \u0444\u0430\u0439\u043b\u044b, \u043e\u0442\u0440\u0435\u0434\u0430\u043a\u0442\u0438\u0440\u043e\u0432\u0430\u043b, \u0437\u0430\u043f\u0443\u0441\u0442\u0438\u043b \u043a\u043e\u043c\u0430\u043d\u0434\u0443, \u0434\u0432\u0438\u0433\u0430\u0435\u0448\u044c\u0441\u044f \u0434\u0430\u043b\u044c\u0448\u0435.",
+                "mini.leanKicker": "\u041b\u0451\u0433\u043a\u0438\u0439",
+                "mini.leanTitle": "\u041c\u0438\u043d\u0438\u043c\u0430\u043b\u044c\u043d\u044b\u0439 \u0440\u0430\u0437\u043c\u0435\u0440",
+                "mini.leanDesc": "\u041e\u0434\u043d\u0430 \u0437\u0430\u0432\u0438\u0441\u0438\u043c\u043e\u0441\u0442\u044c (SwiftTerm), \u043d\u0438\u043a\u0430\u043a\u0438\u0445 \u043f\u043b\u0430\u0433\u0438\u043d\u043e\u0432, \u043d\u0438\u043a\u0430\u043a\u043e\u0433\u043e \u0440\u0430\u0437\u0440\u0430\u0441\u0442\u0430\u043d\u0438\u044f \u043a\u043e\u043d\u0444\u0438\u0433\u043e\u0432.",
+                "mini.practicalKicker": "\u041f\u0440\u0430\u043a\u0442\u0438\u0447\u043d\u044b\u0439",
+                "mini.practicalTitle": "Git \u0442\u0430\u043c, \u0433\u0434\u0435 \u043d\u0443\u0436\u043d\u043e",
+                "mini.practicalDesc": "\u0421\u0442\u0430\u0442\u0443\u0441\u044b \u0432 \u0434\u0435\u0440\u0435\u0432\u0435 \u0444\u0430\u0439\u043b\u043e\u0432, \u043f\u0435\u0440\u0435\u043a\u043b\u044e\u0447\u0435\u043d\u0438\u0435 \u0432\u0435\u0442\u043e\u043a \u0438 diff-\u043c\u0430\u0440\u043a\u0435\u0440\u044b \u043f\u0440\u044f\u043c\u043e \u0432 \u0440\u0435\u0434\u0430\u043a\u0442\u043e\u0440\u0435.",
+                "why.kicker": "\u041f\u043e\u0447\u0435\u043c\u0443 Pine",
+                "why.title": "\u0414\u043b\u044f \u0442\u0435\u0445, \u043a\u043e\u043c\u0443 \u0442\u044f\u0436\u0451\u043b\u044b\u0435 \u0440\u0435\u0434\u0430\u043a\u0442\u043e\u0440\u044b \u2014 \u043c\u043d\u043e\u0433\u043e, \u0430 \u043f\u043e\u043b\u043d\u044b\u0435 IDE \u2014 \u0438\u0437\u043b\u0438\u0448\u043d\u0438.",
+                "why.desc": "Pine \u043e\u0441\u0442\u0430\u0432\u043b\u044f\u0435\u0442 \u0442\u043e, \u0447\u0442\u043e \u043d\u0443\u0436\u043d\u043e \u043a\u0430\u0436\u0434\u044b\u0439 \u0434\u0435\u043d\u044c, \u0438 \u0443\u0431\u0438\u0440\u0430\u0435\u0442 \u0441\u043b\u043e\u0438, \u043a\u043e\u0442\u043e\u0440\u044b\u0435 \u0442\u043e\u0440\u043c\u043e\u0437\u044f\u0442 \u0440\u0430\u0431\u043e\u0442\u0443.",
+                "why.keepsTitle": "\u0427\u0442\u043e Pine \u043e\u0441\u0442\u0430\u0432\u043b\u044f\u0435\u0442",
+                "why.keepsLi1": "\u041d\u0430\u0442\u0438\u0432\u043d\u043e\u0435 \u0434\u0435\u0440\u0435\u0432\u043e \u043f\u0440\u043e\u0435\u043a\u0442\u0430 \u0438 \u043f\u043e\u0432\u0435\u0434\u0435\u043d\u0438\u0435 \u043e\u043a\u043e\u043d Mac",
+                "why.keepsLi2": "\u041f\u043e\u0434\u0441\u0432\u0435\u0442\u043a\u0430 \u0441\u0438\u043d\u0442\u0430\u043a\u0441\u0438\u0441\u0430, \u043d\u043e\u043c\u0435\u0440\u0430 \u0441\u0442\u0440\u043e\u043a \u0438 \u043f\u043e\u0438\u0441\u043a",
+                "why.keepsLi3": "\u041d\u0435\u0441\u043a\u043e\u043b\u044c\u043a\u043e \u0432\u043a\u043b\u0430\u0434\u043e\u043a \u0442\u0435\u0440\u043c\u0438\u043d\u0430\u043b\u0430 \u043d\u0430 \u0440\u0435\u0430\u043b\u044c\u043d\u043e\u043c PTY",
+                "why.keepsLi4": "Git-\u0441\u0442\u0430\u0442\u0443\u0441\u044b, diff \u0432 gutter \u0438 \u043f\u0435\u0440\u0435\u043a\u043b\u044e\u0447\u0435\u043d\u0438\u0435 \u0432\u0435\u0442\u043e\u043a",
+                "why.cutsTitle": "\u0427\u0442\u043e Pine \u0443\u0431\u0438\u0440\u0430\u0435\u0442",
+                "why.cutsLi1": "\u041d\u0430\u043a\u043b\u0430\u0434\u043d\u044b\u0435 \u0440\u0430\u0441\u0445\u043e\u0434\u044b \u0431\u0440\u0430\u0443\u0437\u0435\u0440\u043d\u043e\u0433\u043e \u0434\u0432\u0438\u0436\u043a\u0430",
+                "why.cutsLi2": "\u0420\u0430\u0437\u0440\u0430\u0441\u0442\u0430\u043d\u0438\u0435 \u043f\u043b\u0430\u0433\u0438\u043d\u043e\u0432 \u0438 \u0446\u0435\u043f\u043e\u0447\u043a\u0438 \u0437\u0430\u0432\u0438\u0441\u0438\u043c\u043e\u0441\u0442\u0435\u0439",
+                "why.cutsLi3": "\u0410\u0440\u0445\u0435\u043e\u043b\u043e\u0433\u0438\u044e \u043d\u0430\u0441\u0442\u0440\u043e\u0435\u043a \u043f\u0435\u0440\u0435\u0434 \u043d\u0430\u0447\u0430\u043b\u043e\u043c \u0440\u0430\u0431\u043e\u0442\u044b",
+                "why.cutsLi4": "\u0422\u044f\u0436\u0451\u043b\u044b\u0439 UI, \u043a\u043e\u0442\u043e\u0440\u044b\u0439 \u043a\u043e\u043d\u043a\u0443\u0440\u0438\u0440\u0443\u0435\u0442 \u0441 \u043a\u043e\u0434\u043e\u043c",
+                "why.feelsTitle": "\u041a\u0430\u043a \u044d\u0442\u043e \u043e\u0449\u0443\u0449\u0430\u0435\u0442\u0441\u044f",
+                "why.feelsDesc": "\u041c\u0435\u043d\u044c\u0448\u0435 \u0432\u0440\u0435\u043c\u0435\u043d\u0438 \u043d\u0430 \u043d\u0430\u0441\u0442\u0440\u043e\u0439\u043a\u0443 \u0440\u0435\u0434\u0430\u043a\u0442\u043e\u0440\u0430, \u0431\u043e\u043b\u044c\u0448\u0435 \u2014 \u043d\u0430 \u043d\u0430\u043f\u0438\u0441\u0430\u043d\u0438\u0435, \u0437\u0430\u043f\u0443\u0441\u043a \u0438 \u0440\u0435\u0432\u044c\u044e \u043a\u043e\u0434\u0430. Pine \u043e\u0441\u0442\u0430\u0451\u0442\u0441\u044f \u043d\u0430 \u0444\u043e\u043d\u0435 \u0438 \u043d\u0435 \u043c\u0435\u0448\u0430\u0435\u0442.",
+                "why.feelsChip1": "\u0411\u044b\u0441\u0442\u0440\u044b\u0439 \u0441\u0442\u0430\u0440\u0442",
+                "why.feelsChip2": "\u0424\u043e\u043a\u0443\u0441 \u043d\u0430 \u043a\u043e\u0434\u0435",
+                "why.feelsChip3": "\u0411\u044b\u0441\u0442\u0440\u0435\u0435 \u0440\u0435\u043b\u0438\u0437\u044b",
+                "features.kicker": "\u0412\u043e\u0437\u043c\u043e\u0436\u043d\u043e\u0441\u0442\u0438",
+                "features.title": "\u0412\u0441\u0451 \u043d\u0435\u043e\u0431\u0445\u043e\u0434\u0438\u043c\u043e\u0435, \u043a\u0430\u043a \u0432 \u043d\u0430\u0441\u0442\u043e\u044f\u0449\u0435\u043c Mac-\u043f\u0440\u0438\u043b\u043e\u0436\u0435\u043d\u0438\u0438.",
+                "features.desc": "Pine \u043d\u0435 \u043f\u044b\u0442\u0430\u0435\u0442\u0441\u044f \u0441\u0442\u0430\u0442\u044c \u043f\u043b\u0430\u0442\u0444\u043e\u0440\u043c\u043e\u0439. \u041e\u043d \u043f\u043e\u043a\u0440\u044b\u0432\u0430\u0435\u0442 \u0435\u0436\u0435\u0434\u043d\u0435\u0432\u043d\u044b\u0439 \u0440\u0430\u0431\u043e\u0447\u0438\u0439 \u0446\u0438\u043a\u043b \u0441 \u043c\u0438\u043d\u0438\u043c\u0430\u043b\u044c\u043d\u044b\u043c \u0442\u0440\u0435\u043d\u0438\u0435\u043c.",
+                "features.01title": "\u041e\u0442\u043a\u0440\u043e\u0439 \u0440\u0435\u043f\u043e\u0437\u0438\u0442\u043e\u0440\u0438\u0439 \u0438 \u0441\u0440\u0430\u0437\u0443 \u0440\u0430\u0431\u043e\u0442\u0430\u0439.",
+                "features.01desc": "\u0414\u0435\u0440\u0435\u0432\u043e \u0444\u0430\u0439\u043b\u043e\u0432 \u0441 \u043f\u0430\u043f\u043a\u0430\u043c\u0438 \u0441\u0432\u0435\u0440\u0445\u0443, \u0430\u043a\u043a\u0443\u0440\u0430\u0442\u043d\u044b\u0435 \u043f\u0443\u0441\u0442\u044b\u0435 \u0441\u043e\u0441\u0442\u043e\u044f\u043d\u0438\u044f, \u0441\u043a\u0440\u044b\u0442\u044b\u0435 \u0444\u0430\u0439\u043b\u044b \u0441\u043f\u0440\u044f\u0442\u0430\u043d\u044b, \u043d\u0430\u0442\u0438\u0432\u043d\u044b\u0435 \u0432\u043a\u043b\u0430\u0434\u043a\u0438 \u0438 \u0437\u0430\u0449\u0438\u0442\u0430 \u043d\u0435\u0441\u043e\u0445\u0440\u0430\u043d\u0451\u043d\u043d\u044b\u0445 \u0438\u0437\u043c\u0435\u043d\u0435\u043d\u0438\u0439.",
+                "features.02title": "\u041f\u0438\u0448\u0438 \u043a\u043e\u0434 \u0431\u0435\u0437 \u0432\u0438\u0437\u0443\u0430\u043b\u044c\u043d\u043e\u0433\u043e \u0448\u0443\u043c\u0430.",
+                "features.02desc": "\u041d\u043e\u043c\u0435\u0440\u0430 \u0441\u0442\u0440\u043e\u043a, \u043f\u043e\u0434\u0441\u0432\u0435\u0442\u043a\u0430 \u0442\u0435\u043a\u0443\u0449\u0435\u0439 \u0441\u0442\u0440\u043e\u043a\u0438, \u043e\u0442\u043c\u0435\u043d\u0430, \u043f\u043e\u0438\u0441\u043a, \u0443\u043c\u043d\u044b\u0439 \u043e\u0442\u0441\u0442\u0443\u043f \u0438 \u043f\u043e\u0434\u0441\u0432\u0435\u0442\u043a\u0430 \u0441\u0438\u043d\u0442\u0430\u043a\u0441\u0438\u0441\u0430 \u043d\u0430 \u043e\u0441\u043d\u043e\u0432\u0435 \u0433\u0440\u0430\u043c\u043c\u0430\u0442\u0438\u043a.",
+                "features.03title": "\u0417\u0430\u043f\u0443\u0441\u043a\u0430\u0439 \u043a\u043e\u043c\u0430\u043d\u0434\u044b \u0432 \u0442\u043e\u043c \u0436\u0435 \u043e\u043a\u043d\u0435.",
+                "features.03desc": "\u041d\u0435\u0441\u043a\u043e\u043b\u044c\u043a\u043e \u0432\u043a\u043b\u0430\u0434\u043e\u043a \u0442\u0435\u0440\u043c\u0438\u043d\u0430\u043b\u0430 \u043d\u0430 SwiftTerm \u2014 \u043f\u043e\u043b\u043d\u043e\u0446\u0435\u043d\u043d\u044b\u0439 VT100/xterm-\u044d\u043c\u0443\u043b\u044f\u0442\u043e\u0440 \u0441 \u0446\u0432\u0435\u0442\u0430\u043c\u0438, oh-my-zsh \u0438 \u043f\u043e\u0434\u0434\u0435\u0440\u0436\u043a\u043e\u0439 TUI-\u043f\u0440\u0438\u043b\u043e\u0436\u0435\u043d\u0438\u0439.",
+                "features.04title": "Git-\u043a\u043e\u043d\u0442\u0435\u043a\u0441\u0442 \u0442\u0430\u043c, \u0433\u0434\u0435 \u043f\u0440\u0438\u043d\u0438\u043c\u0430\u044e\u0442\u0441\u044f \u0440\u0435\u0448\u0435\u043d\u0438\u044f.",
+                "features.04desc": "\u0421\u0442\u0430\u0442\u0443\u0441\u044b \u0432 \u0434\u0435\u0440\u0435\u0432\u0435 \u0444\u0430\u0439\u043b\u043e\u0432, diff-\u043c\u0430\u0440\u043a\u0435\u0440\u044b \u0432 gutter, \u043f\u0435\u0440\u0435\u043a\u043b\u044e\u0447\u0435\u043d\u0438\u0435 \u0432\u0435\u0442\u043e\u043a \u0438 \u043a\u043e\u043c\u043f\u0430\u043a\u0442\u043d\u044b\u0439 \u0441\u0442\u0430\u0442\u0443\u0441-\u0431\u0430\u0440.",
+                "features.05title": "\u041f\u043e\u0434\u0434\u0435\u0440\u0436\u043a\u0430 \u044f\u0437\u044b\u043a\u043e\u0432, \u043a\u043e\u0442\u043e\u0440\u044b\u0435 \u0442\u044b \u0438\u0441\u043f\u043e\u043b\u044c\u0437\u0443\u0435\u0448\u044c \u043a\u0430\u0436\u0434\u044b\u0439 \u0434\u0435\u043d\u044c.",
+                "features.05desc": "Swift, TypeScript, JavaScript, Python, Go, Rust, Shell, HTML, CSS, JSON, YAML, Markdown \u0438 Dockerfile \u043f\u043e\u0434\u0434\u0435\u0440\u0436\u0438\u0432\u0430\u044e\u0442\u0441\u044f \u0438\u0437 \u043a\u043e\u0440\u043e\u0431\u043a\u0438 \u0447\u0435\u0440\u0435\u0437 JSON-\u0433\u0440\u0430\u043c\u043c\u0430\u0442\u0438\u043a\u0438.",
+                "screenshots.kicker": "\u0421\u043a\u0440\u0438\u043d\u0448\u043e\u0442\u044b",
+                "screenshots.title": "Pine \u0432 \u0434\u0435\u0439\u0441\u0442\u0432\u0438\u0438.",
+                "screenshots.alt1": "\u0420\u0435\u0434\u0430\u043a\u0442\u043e\u0440 \u043a\u043e\u0434\u0430 Pine \u0441 \u043f\u043e\u0434\u0441\u0432\u0435\u0442\u043a\u043e\u0439 \u0441\u0438\u043d\u0442\u0430\u043a\u0441\u0438\u0441\u0430 \u0438 \u0434\u0435\u0440\u0435\u0432\u043e\u043c \u0444\u0430\u0439\u043b\u043e\u0432",
+                "screenshots.cap1": "\u0420\u0435\u0434\u0430\u043a\u0442\u043e\u0440 \u043a\u043e\u0434\u0430 \u0441 \u043f\u043e\u0434\u0441\u0432\u0435\u0442\u043a\u043e\u0439 \u0441\u0438\u043d\u0442\u0430\u043a\u0441\u0438\u0441\u0430 \u0438 git-\u043c\u0430\u0440\u043a\u0435\u0440\u0430\u043c\u0438",
+                "screenshots.alt2": "\u0412\u0441\u0442\u0440\u043e\u0435\u043d\u043d\u044b\u0439 \u0442\u0435\u0440\u043c\u0438\u043d\u0430\u043b Pine",
+                "screenshots.cap2": "\u0412\u0441\u0442\u0440\u043e\u0435\u043d\u043d\u044b\u0439 \u0442\u0435\u0440\u043c\u0438\u043d\u0430\u043b \u043d\u0430 SwiftTerm",
+                "screenshots.alt3": "\u041e\u043a\u043d\u043e \u043f\u0440\u0438\u0432\u0435\u0442\u0441\u0442\u0432\u0438\u044f Pine \u0441\u043e \u0441\u043f\u0438\u0441\u043a\u043e\u043c \u043d\u0435\u0434\u0430\u0432\u043d\u0438\u0445 \u043f\u0440\u043e\u0435\u043a\u0442\u043e\u0432",
+                "screenshots.cap3": "\u041e\u043a\u043d\u043e \u043f\u0440\u0438\u0432\u0435\u0442\u0441\u0442\u0432\u0438\u044f \u0441 \u043d\u0435\u0434\u0430\u0432\u043d\u0438\u043c\u0438 \u043f\u0440\u043e\u0435\u043a\u0442\u0430\u043c\u0438",
+                "manifesto.kicker": "\u041f\u043e\u0437\u0438\u0446\u0438\u043e\u043d\u0438\u0440\u043e\u0432\u0430\u043d\u0438\u0435",
+                "manifesto.title": "Pine \u043d\u0435 \u043f\u044b\u0442\u0430\u0435\u0442\u0441\u044f \u0441\u0442\u0430\u0442\u044c \u0441\u0430\u043c\u044b\u043c \u0431\u043e\u043b\u044c\u0448\u0438\u043c \u0440\u0435\u0434\u0430\u043a\u0442\u043e\u0440\u043e\u043c. \u041e\u043d \u0441\u0442\u0440\u0435\u043c\u0438\u0442\u0441\u044f \u0431\u044b\u0442\u044c \u0442\u0435\u043c, \u043a\u043e\u0442\u043e\u0440\u044b\u0439 \u043e\u0442\u043a\u0440\u044b\u0442 \u0432\u0435\u0441\u044c \u0434\u0435\u043d\u044c.",
+                "manifesto.desc": "\u0415\u0441\u043b\u0438 VS Code \u043a\u0430\u0436\u0435\u0442\u0441\u044f \u0442\u044f\u0436\u0451\u043b\u044b\u043c, \u0430 Xcode \u2014 \u0438\u0437\u043b\u0438\u0448\u043d\u0438\u043c \u0434\u043b\u044f \u043f\u043e\u0432\u0441\u0435\u0434\u043d\u0435\u0432\u043d\u043e\u0439 \u0440\u0430\u0431\u043e\u0442\u044b, Pine \u2014 \u0437\u043e\u043b\u043e\u0442\u0430\u044f \u0441\u0435\u0440\u0435\u0434\u0438\u043d\u0430.",
+                "manifesto.chip1": "\u0411\u0435\u0437 Electron",
+                "manifesto.chip2": "\u0411\u0435\u0437 \u043c\u0430\u0433\u0430\u0437\u0438\u043d\u0430 \u043f\u043b\u0430\u0433\u0438\u043d\u043e\u0432",
+                "manifesto.chip3": "\u0411\u0435\u0437 \u043b\u0430\u0431\u0438\u0440\u0438\u043d\u0442\u0430 \u043d\u0430\u0441\u0442\u0440\u043e\u0435\u043a",
+                "manifesto.chip4": "\u041c\u0438\u043d\u0438\u043c\u0443\u043c \u0437\u0430\u0432\u0438\u0441\u0438\u043c\u043e\u0441\u0442\u0435\u0439",
+                "install.kicker": "\u041d\u0430\u0447\u0430\u043b\u043e \u0440\u0430\u0431\u043e\u0442\u044b",
+                "install.title": "\u0423\u0441\u0442\u0430\u043d\u043e\u0432\u0438 Pine \u0437\u0430 10 \u0441\u0435\u043a\u0443\u043d\u0434.",
+                "install.desc": "\u0427\u0435\u0440\u0435\u0437 Homebrew, DMG \u0438\u043b\u0438 \u0441\u0431\u043e\u0440\u043a\u043e\u0439 \u0438\u0437 \u0438\u0441\u0445\u043e\u0434\u043d\u0438\u043a\u043e\u0432 \u0432 Xcode. \u0421\u0442\u0435\u043a \u043c\u0438\u043d\u0438\u043c\u0430\u043b\u044c\u043d\u044b\u0439: SwiftUI, AppKit, JSON-\u0433\u0440\u0430\u043c\u043c\u0430\u0442\u0438\u043a\u0438 \u0438 SwiftTerm \u0434\u043b\u044f \u0442\u0435\u0440\u043c\u0438\u043d\u0430\u043b\u0430.",
+                "install.download": "\u0421\u043a\u0430\u0447\u0430\u0442\u044c \u043f\u043e\u0441\u043b\u0435\u0434\u043d\u044e\u044e \u0432\u0435\u0440\u0441\u0438\u044e",
+                "install.source": "\u041e\u0442\u043a\u0440\u044b\u0442\u044c \u0438\u0441\u0445\u043e\u0434\u043d\u044b\u0439 \u043a\u043e\u0434",
+                "install.shellNote": "\u0421\u043e\u0431\u0435\u0440\u0438\u0442\u0435 \u0438\u0437 \u0438\u0441\u0445\u043e\u0434\u043d\u0438\u043a\u043e\u0432 \u043a\u043e\u043c\u0430\u043d\u0434\u043e\u0439 <code>xcodebuild -project Pine.xcodeproj -scheme Pine build</code>, \u0435\u0441\u043b\u0438 \u0445\u043e\u0442\u0438\u0442\u0435 \u043f\u043e\u043b\u043d\u044b\u0439 \u043d\u0430\u0442\u0438\u0432\u043d\u044b\u0439 \u0441\u0442\u0435\u043a \u043d\u0430 \u0441\u0432\u043e\u0451\u043c Mac.",
+                "footer.text": "Pine \u2014 \u043e\u043f\u0435\u043d\u0441\u043e\u0440\u0441-\u0440\u0435\u0434\u0430\u043a\u0442\u043e\u0440 \u0434\u043b\u044f macOS-\u0440\u0430\u0437\u0440\u0430\u0431\u043e\u0442\u0447\u0438\u043a\u043e\u0432, \u043a\u043e\u0442\u043e\u0440\u044b\u0435 \u0445\u043e\u0442\u044f\u0442 \u043c\u0435\u043d\u044c\u0448\u0435 \u0440\u0435\u0434\u0430\u043a\u0442\u043e\u0440\u0430 \u0438 \u0431\u043e\u043b\u044c\u0448\u0435 \u0434\u0435\u043b\u0430.",
+                "meta.title": "Pine \u2014 \u041d\u0430\u0442\u0438\u0432\u043d\u044b\u0439 \u0440\u0435\u0434\u0430\u043a\u0442\u043e\u0440 \u043a\u043e\u0434\u0430 \u0434\u043b\u044f macOS \u0431\u0435\u0437 \u043b\u0438\u0448\u043d\u0435\u0433\u043e",
+                "meta.description": "Pine \u2014 \u043d\u0430\u0442\u0438\u0432\u043d\u044b\u0439 \u0440\u0435\u0434\u0430\u043a\u0442\u043e\u0440 \u043a\u043e\u0434\u0430 \u0434\u043b\u044f macOS \u043d\u0430 SwiftUI \u0438 AppKit. \u041e\u0442\u043a\u0440\u044b\u0432\u0430\u0439 \u0440\u0435\u043f\u043e\u0437\u0438\u0442\u043e\u0440\u0438\u0438, \u043f\u0438\u0448\u0438 \u043a\u043e\u0434, \u0437\u0430\u043f\u0443\u0441\u043a\u0430\u0439 \u043a\u043e\u043c\u0430\u043d\u0434\u044b \u0438 \u0440\u0430\u0431\u043e\u0442\u0430\u0439 \u0441 git \u0431\u0435\u0437 Electron.",
+                "meta.ogTitle": "Pine \u2014 \u041d\u0430\u0442\u0438\u0432\u043d\u044b\u0439 \u0440\u0435\u0434\u0430\u043a\u0442\u043e\u0440 \u043a\u043e\u0434\u0430 \u0434\u043b\u044f macOS \u0431\u0435\u0437 \u043b\u0438\u0448\u043d\u0435\u0433\u043e",
+                "meta.ogDescription": "\u041c\u0435\u043d\u044c\u0448\u0435 \u0440\u0435\u0434\u0430\u043a\u0442\u043e\u0440\u0430. \u0411\u043e\u043b\u044c\u0448\u0435 \u0434\u0435\u043b\u0430. Pine \u2014 \u043d\u0430\u0442\u0438\u0432\u043d\u044b\u0439 \u0440\u0435\u0434\u0430\u043a\u0442\u043e\u0440 \u043a\u043e\u0434\u0430 \u0434\u043b\u044f Mac \u0441 \u043f\u043e\u043b\u043d\u043e\u0446\u0435\u043d\u043d\u044b\u043c \u0442\u0435\u0440\u043c\u0438\u043d\u0430\u043b\u043e\u043c, git-\u0438\u043d\u0442\u0435\u0433\u0440\u0430\u0446\u0438\u0435\u0439 \u0438 \u043c\u0438\u043d\u0438\u043c\u0443\u043c\u043e\u043c \u0437\u0430\u0432\u0438\u0441\u0438\u043c\u043e\u0441\u0442\u0435\u0439."
+            }
+        };
+
+        function getLang() {
+            var stored = localStorage.getItem("pine-lang");
+            if (stored && T[stored]) return stored;
+            var br = (navigator.language || "").slice(0, 2);
+            return T[br] ? br : "en";
+        }
+
+        function applyLang(lang) {
+            document.documentElement.lang = lang;
+            document.title = T[lang]["meta.title"];
+            var desc = document.querySelector('meta[name="description"]');
+            if (desc) desc.content = T[lang]["meta.description"];
+            var ogT = document.querySelector('meta[property="og:title"]');
+            if (ogT) ogT.content = T[lang]["meta.ogTitle"];
+            var ogD = document.querySelector('meta[property="og:description"]');
+            if (ogD) ogD.content = T[lang]["meta.ogDescription"];
+
+            document.querySelectorAll("[data-i18n]").forEach(function(el) {
+                var key = el.getAttribute("data-i18n");
+                if (T[lang][key]) el.textContent = T[lang][key];
+            });
+            document.querySelectorAll("[data-i18n-html]").forEach(function(el) {
+                var key = el.getAttribute("data-i18n-html");
+                if (T[lang][key]) el.innerHTML = T[lang][key];
+            });
+            document.querySelectorAll("[data-i18n-alt]").forEach(function(el) {
+                var key = el.getAttribute("data-i18n-alt");
+                if (T[lang][key]) el.alt = T[lang][key];
+            });
+
+            var btn = document.getElementById("lang-toggle");
+            if (btn) btn.textContent = lang === "en" ? "RU" : "EN";
+            localStorage.setItem("pine-lang", lang);
+        }
+
+        var currentLang = getLang();
+        applyLang(currentLang);
+
+        document.getElementById("lang-toggle").addEventListener("click", function() {
+            currentLang = currentLang === "en" ? "ru" : "en";
+            applyLang(currentLang);
+        });
+    </script>
 </body>
 </html>
