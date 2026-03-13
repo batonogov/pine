@@ -156,7 +156,10 @@ private struct ProjectWindowView: View {
         .onDisappear {
             let isTerminating = (NSApp.delegate as? AppDelegate)?.isTerminating == true
             if !isTerminating {
-                SessionState.clear(for: projectURL)
+                // Save session before closing so it can be restored
+                // when the user reopens this project from Welcome or Open Recent.
+                let canonical = projectURL.resolvingSymlinksInPath()
+                registry.openProjects[canonical]?.saveSession()
                 registry.closeProject(projectURL)
                 if registry.openProjects.isEmpty {
                     openWindow(id: "welcome")
@@ -278,6 +281,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSWindow.allowsAutomaticWindowTabbing = false
+        // Disable macOS automatic window restoration so Pine always starts
+        // on the Welcome screen. Per-project sessions are restored when the
+        // user explicitly opens a project from Welcome or Open Recent.
+        UserDefaults.standard.set(false, forKey: "NSQuitAlwaysKeepsWindows")
 
         // Fallback: when no visible windows exist, Cmd+Shift+O opens a folder picker
         NotificationCenter.default.addObserver(

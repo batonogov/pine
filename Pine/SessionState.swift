@@ -8,8 +8,8 @@
 import Foundation
 
 /// Persists and restores per-project editor tab state (open files + active tab).
-/// Window restoration (which projects are open) is handled by the system via
-/// WindowGroup's built-in scene restoration.
+/// Sessions are preserved across window close and app quit so that reopening
+/// a project from Welcome or Open Recent restores its last workspace state.
 struct SessionState: Codable {
     var projectPath: String
     var openFilePaths: [String]
