@@ -133,8 +133,8 @@ struct ContentView: View {
         guard !didRestoreSession else { return }
         didRestoreSession = true
 
-        guard let session = SessionState.load(),
-              session.projectURL.resolvingSymlinksInPath() == workspace.rootURL?.resolvingSymlinksInPath()
+        guard let rootURL = workspace.rootURL,
+              let session = SessionState.load(for: rootURL)
         else { return }
         guard tabManager.tabs.isEmpty else { return }
 

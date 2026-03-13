@@ -89,11 +89,19 @@ struct WelcomeView: View {
         }
         .frame(width: 600, height: 400)
         .onAppear {
-            // Auto-restore last session only on cold launch
+            // Auto-restore all previously open projects on cold launch
             guard !Self.didAutoRestore else { return }
             Self.didAutoRestore = true
-            if let session = SessionState.load() {
-                openProject(at: session.projectURL)
+            let projectURLs = SessionState.loadOpenProjects()
+            if projectURLs.isEmpty {
+                // Fallback: try legacy single-project key for migration
+                if let state = SessionState.loadLegacySingle() {
+                    openProject(at: state.projectURL)
+                }
+            } else {
+                for url in projectURLs {
+                    openProject(at: url)
+                }
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: .openFolder)) { _ in

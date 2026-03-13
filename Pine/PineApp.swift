@@ -129,6 +129,7 @@ private struct ProjectWindowView: View {
     let appDelegate: AppDelegate
     @Environment(\.openWindow) var openWindow
     @State private var pm: ProjectManager?
+    @State private var didAttemptLoad = false
 
     var body: some View {
         Group {
@@ -147,11 +148,15 @@ private struct ProjectWindowView: View {
                             projectURL: projectURL
                         )
                     }
+            } else if didAttemptLoad {
+                // Directory no longer exists — close this blank window and show Welcome
+                NilProjectRedirect()
             }
         }
         .onAppear {
             if pm == nil {
                 pm = registry.projectManager(for: projectURL)
+                didAttemptLoad = true
             }
             registry.lastActiveProjectURL = projectURL
             appDelegate.registry = registry
@@ -161,8 +166,9 @@ private struct ProjectWindowView: View {
             let isTerminating = (NSApp.delegate as? AppDelegate)?.isTerminating == true
             // Don't remove from registry during quit — applicationWillTerminate needs it for session save
             if !isTerminating {
-                // Save session before removing from registry so tabs survive a quit-from-Welcome
-                pm?.saveSession()
+                // User deliberately closed this project — clear its session so it
+                // won't auto-restore on next launch
+                SessionState.clear(for: projectURL)
                 registry.closeProject(projectURL)
                 if registry.openProjects.isEmpty {
                     openWindow(id: "welcome")
@@ -310,14 +316,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
-        guard let registry, !registry.openProjects.isEmpty else { return }
-        // Save session for the last focused project so it auto-restores on next launch
-        if let url = registry.lastActiveProjectURL,
-           let pm = registry.openProjects[url] {
-            pm.saveSession()
-        } else if let (_, pm) = registry.openProjects.first {
+        guard let registry else { return }
+        // Save session for every open project and record the open project list
+        for (_, pm) in registry.openProjects {
             pm.saveSession()
         }
+        SessionState.saveOpenProjects(Array(registry.openProjects.keys))
     }
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
