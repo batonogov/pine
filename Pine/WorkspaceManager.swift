@@ -19,6 +19,10 @@ final class WorkspaceManager {
     let gitProvider = GitStatusProvider()
     private var fileWatcher: FileSystemWatcher?
 
+    /// Incremented on every file-watcher event so ContentView can trigger
+    /// external change detection on open tabs.
+    var externalChangeToken: Int = 0
+
     /// Monotonically increasing token that invalidates stale async loads.
     /// Bumped on every loadDirectory / refreshFileTree call so that
     /// a slow background task never overwrites a newer result.
@@ -67,6 +71,7 @@ final class WorkspaceManager {
     private func startWatching(url: URL) {
         let watcher = FileSystemWatcher { [weak self] in
             // This closure runs on main (guaranteed by FileSystemWatcher).
+            self?.externalChangeToken += 1
             self?.refreshFileTreeAsync()
         }
         watcher.watch(directory: url)

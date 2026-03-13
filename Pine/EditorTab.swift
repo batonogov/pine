@@ -18,6 +18,10 @@ struct EditorTab: Identifiable, Hashable {
     var cursorPosition: Int = 0
     var scrollOffset: CGFloat = 0
 
+    /// Last known modification date of the file on disk.
+    /// Used to detect external changes by comparing with the current stat.
+    var lastModDate: Date?
+
     var isDirty: Bool { content != savedContent }
 
     var fileName: String { url.lastPathComponent }

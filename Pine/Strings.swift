@@ -75,6 +75,24 @@ enum Strings {
         String(localized: "fileOperation.deleted.saveAs")
     }
 
+    // MARK: - External Change Conflicts
+
+    static var externalModifyTitle: String {
+        String(localized: "conflict.externalModify.title")
+    }
+
+    static func externalModifyMessage(_ name: String) -> String {
+        String(localized: "conflict.externalModify.message \(name)")
+    }
+
+    static var externalModifyReload: String {
+        String(localized: "conflict.externalModify.reload")
+    }
+
+    static var externalModifyKeep: String {
+        String(localized: "conflict.externalModify.keep")
+    }
+
     // MARK: - Terminal UI
 
     static let terminalLabel: LocalizedStringKey = "terminal.label"

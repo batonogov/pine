@@ -40,7 +40,8 @@ final class TabManager {
             content = "// Error: \(error.localizedDescription)"
         }
 
-        let tab = EditorTab(url: url, content: content, savedContent: content)
+        var tab = EditorTab(url: url, content: content, savedContent: content)
+        tab.lastModDate = modDate(for: url)
         tabs.append(tab)
         activeTabID = tab.id
     }
@@ -90,6 +91,7 @@ final class TabManager {
         let tab = tabs[index]
         try tab.content.write(to: tab.url, atomically: true, encoding: .utf8)
         tabs[index].savedContent = tab.content
+        tabs[index].lastModDate = modDate(for: tab.url)
         return true
     }
 
@@ -153,5 +155,74 @@ final class TabManager {
         for tab in affected {
             closeTab(id: tab.id)
         }
+    }
+
+    // MARK: - External change detection
+
+    /// Describes an external change that requires user action (dirty tab conflict).
+    struct ExternalConflict {
+        let tabID: UUID
+        let url: URL
+        let kind: Kind
+        enum Kind: Equatable { case modified, deleted }
+    }
+
+    /// Checks open tabs against disk state. Silently reloads clean tabs that were
+    /// modified externally. Closes clean tabs for deleted files. Returns conflicts
+    /// for dirty tabs that need user resolution.
+    func checkExternalChanges() -> [ExternalConflict] {
+        var conflicts: [ExternalConflict] = []
+        var cleanDeletedIDs: [UUID] = []
+
+        for index in tabs.indices {
+            let tab = tabs[index]
+
+            if !FileManager.default.fileExists(atPath: tab.url.path) {
+                if tab.isDirty {
+                    conflicts.append(.init(tabID: tab.id, url: tab.url, kind: .deleted))
+                } else {
+                    cleanDeletedIDs.append(tab.id)
+                }
+                continue
+            }
+
+            guard let diskMod = modDate(for: tab.url),
+                  let lastMod = tab.lastModDate,
+                  diskMod > lastMod
+            else { continue }
+
+            if tab.isDirty {
+                conflicts.append(.init(tabID: tab.id, url: tab.url, kind: .modified))
+                tabs[index].lastModDate = diskMod
+            } else {
+                // Safe to reload silently
+                if let content = try? String(contentsOf: tab.url, encoding: .utf8) {
+                    tabs[index].content = content
+                    tabs[index].savedContent = content
+                    tabs[index].lastModDate = diskMod
+                }
+            }
+        }
+
+        for id in cleanDeletedIDs {
+            closeTab(id: id)
+        }
+
+        return conflicts
+    }
+
+    /// Reloads a tab's content from disk (used after user chooses "reload" in conflict dialog).
+    func reloadTab(url: URL) {
+        guard let index = tabs.firstIndex(where: { $0.url == url }) else { return }
+        if let content = try? String(contentsOf: url, encoding: .utf8) {
+            tabs[index].content = content
+            tabs[index].savedContent = content
+            tabs[index].lastModDate = modDate(for: url)
+        }
+    }
+
+    /// Returns the modification date of a file, or nil on error.
+    private func modDate(for url: URL) -> Date? {
+        try? FileManager.default.attributesOfItem(atPath: url.path)[.modificationDate] as? Date
     }
 }
