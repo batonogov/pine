@@ -12,9 +12,7 @@ struct WelcomeView: View {
     var registry: ProjectRegistry
     @Environment(\.openWindow) var openWindow
     @Environment(\.dismissWindow) var dismissWindow
-
-    /// Only auto-restore on first appearance (cold launch).
-    private static var didAutoRestore = false
+    @Environment(\.controlActiveState) var controlActiveState
 
     var body: some View {
         HStack(spacing: 0) {
@@ -87,15 +85,8 @@ struct WelcomeView: View {
             .frame(minWidth: 280)
         }
         .frame(width: 600, height: 400)
-        .onAppear {
-            // Auto-restore last session only on cold launch
-            guard !Self.didAutoRestore else { return }
-            Self.didAutoRestore = true
-            if let session = SessionState.load() {
-                openProject(at: session.projectURL)
-            }
-        }
         .onReceive(NotificationCenter.default.publisher(for: .openFolder)) { _ in
+            guard controlActiveState == .key else { return }
             openFolder()
         }
     }
@@ -108,8 +99,9 @@ struct WelcomeView: View {
     }
 
     private func openProject(at url: URL) {
-        _ = registry.projectManager(for: url)
-        openWindow(value: url)
+        let canonical = url.resolvingSymlinksInPath()
+        guard registry.projectManager(for: canonical) != nil else { return }
+        openWindow(value: canonical)
         dismissWindow(id: "welcome")
     }
 }

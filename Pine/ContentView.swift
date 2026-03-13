@@ -92,11 +92,6 @@ struct ContentView: View {
         .onChange(of: workspace.gitProvider.fileStatuses) { _, _ in
             refreshLineDiffs()
         }
-        .onChange(of: controlActiveState) { _, newState in
-            if newState == .key, let url = workspace.rootURL {
-                registry.lastActiveProjectURL = url
-            }
-        }
         .onReceive(NotificationCenter.default.publisher(for: .refreshLineDiffs)) { _ in
             guard controlActiveState == .key else { return }
             refreshLineDiffs()
@@ -133,8 +128,9 @@ struct ContentView: View {
         guard !didRestoreSession else { return }
         didRestoreSession = true
 
-        guard let session = SessionState.load(),
-              session.projectURL == workspace.rootURL else { return }
+        guard let rootURL = workspace.rootURL,
+              let session = SessionState.load(for: rootURL)
+        else { return }
         guard tabManager.tabs.isEmpty else { return }
 
         for url in session.existingFileURLs {

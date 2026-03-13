@@ -7,21 +7,30 @@
 
 import Foundation
 
-/// Persists and restores the last session (project folder + open editor tabs).
+/// Persists and restores per-project editor tab state (open files + active tab).
+/// Window restoration (which projects are open) is handled by the system via
+/// WindowGroup's built-in scene restoration.
 struct SessionState: Codable {
     var projectPath: String
     var openFilePaths: [String]
     var activeFilePath: String?
 
-    // MARK: - UserDefaults key
+    // MARK: - UserDefaults keys
 
-    private static let defaultsKey = "lastSessionState"
+    /// Legacy single-project key (kept for migration from older versions).
+    private static let legacyKey = "lastSessionState"
+    /// Per-project session key prefix.
+    private static let perProjectPrefix = "sessionState:"
+
+    private static func key(for projectURL: URL) -> String {
+        perProjectPrefix + projectURL.resolvingSymlinksInPath().path
+    }
 
     // MARK: - Clear
 
-    /// Removes the saved session so the next launch starts with Welcome.
-    static func clear(defaults: UserDefaults = .standard) {
-        defaults.removeObject(forKey: defaultsKey)
+    /// Removes the saved tab session for a specific project.
+    static func clear(for projectURL: URL, defaults: UserDefaults = .standard) {
+        defaults.removeObject(forKey: key(for: projectURL))
     }
 
     // MARK: - Save
@@ -38,24 +47,38 @@ struct SessionState: Codable {
             activeFilePath: activeFileURL?.path
         )
         guard let data = try? JSONEncoder().encode(state) else { return }
-        defaults.set(data, forKey: defaultsKey)
+        defaults.set(data, forKey: key(for: projectURL))
     }
 
     // MARK: - Load
 
-    /// Returns the saved session if the project folder still exists on disk.
-    static func load(defaults: UserDefaults = .standard) -> SessionState? {
-        guard let data = defaults.data(forKey: defaultsKey),
+    /// Returns the saved tab session for a specific project, if the folder still exists.
+    static func load(for projectURL: URL, defaults: UserDefaults = .standard) -> SessionState? {
+        guard let data = defaults.data(forKey: key(for: projectURL)),
+              let state = try? JSONDecoder().decode(SessionState.self, from: data) else {
+            // Try legacy key as fallback for migration
+            return loadLegacy(for: projectURL, defaults: defaults)
+        }
+        guard directoryExists(at: state.projectPath) else { return nil }
+        return state
+    }
+
+    /// Loads from legacy single-project key if it matches the given project.
+    private static func loadLegacy(for projectURL: URL, defaults: UserDefaults) -> SessionState? {
+        guard let data = defaults.data(forKey: legacyKey),
               let state = try? JSONDecoder().decode(SessionState.self, from: data) else {
             return nil
         }
-        // Only restore if the project folder still exists
-        var isDir: ObjCBool = false
-        guard FileManager.default.fileExists(atPath: state.projectPath, isDirectory: &isDir),
-              isDir.boolValue else {
-            return nil
-        }
+        let canonical = projectURL.resolvingSymlinksInPath().path
+        guard state.projectPath == canonical || URL(fileURLWithPath: state.projectPath)
+            .resolvingSymlinksInPath().path == canonical else { return nil }
+        guard directoryExists(at: state.projectPath) else { return nil }
         return state
+    }
+
+    private static func directoryExists(at path: String) -> Bool {
+        var isDir: ObjCBool = false
+        return FileManager.default.fileExists(atPath: path, isDirectory: &isDir) && isDir.boolValue
     }
 
     // MARK: - Resolved URLs
