@@ -207,7 +207,9 @@ private struct WindowCloseInterceptor: NSViewRepresentable {
     /// Proxy NSWindowDelegate that intercepts windowShouldClose.
     class CloseDelegate: NSObject, NSWindowDelegate {
         let projectManager: ProjectManager
-        weak var original: (any NSWindowDelegate)?
+        /// Strong reference: NSWindow.delegate is weak, so the original delegate
+        /// would be deallocated if we only held a weak ref here.
+        var original: (any NSWindowDelegate)?
 
         init(projectManager: ProjectManager, original: (any NSWindowDelegate)?) {
             self.projectManager = projectManager
