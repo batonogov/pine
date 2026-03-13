@@ -153,16 +153,16 @@ private struct ProjectWindowView: View {
                         WindowCloseInterceptor(
                             projectManager: pm,
                             registry: registry,
-                            projectURL: projectURL
+                            projectURL: projectURL,
+                            appDelegate: appDelegate
                         )
                     }
             }
         }
         .background { AppDelegateBridge(appDelegate: appDelegate, registry: registry) }
-        .onDisappear {
-            (NSApp.delegate as? AppDelegate)?
-                .handleProjectWindowDisappear(projectURL: projectURL, registry: registry)
-        }
+        // Note: project cleanup (session save, Welcome restore) is handled by
+        // CloseDelegate.windowWillClose — not onDisappear, which doesn't fire
+        // reliably when windows are closed via AppKit performClose:.
     }
 }
 
@@ -174,6 +174,7 @@ private struct WindowCloseInterceptor: NSViewRepresentable {
     let projectManager: ProjectManager
     let registry: ProjectRegistry
     let projectURL: URL
+    let appDelegate: AppDelegate
 
     func makeNSView(context: Context) -> NSView {
         let view = NSView()
@@ -183,6 +184,9 @@ private struct WindowCloseInterceptor: NSViewRepresentable {
             let original = window.delegate
             let delegate = CloseDelegate(
                 projectManager: projectManager,
+                registry: registry,
+                projectURL: projectURL,
+                appDelegate: appDelegate,
                 original: original
             )
             context.coordinator.closeDelegate = delegate
@@ -204,15 +208,27 @@ private struct WindowCloseInterceptor: NSViewRepresentable {
         var originalDelegate: (any NSWindowDelegate)?
     }
 
-    /// Proxy NSWindowDelegate that intercepts windowShouldClose.
+    /// Proxy NSWindowDelegate that intercepts windowShouldClose and windowWillClose.
     class CloseDelegate: NSObject, NSWindowDelegate {
         let projectManager: ProjectManager
+        let registry: ProjectRegistry
+        let projectURL: URL
+        weak var appDelegate: AppDelegate?
         /// Weak ref to original — Coordinator holds the strong ref separately
         /// to avoid a potential retain cycle through the delegate chain.
         weak var original: (any NSWindowDelegate)?
 
-        init(projectManager: ProjectManager, original: (any NSWindowDelegate)?) {
+        init(
+            projectManager: ProjectManager,
+            registry: ProjectRegistry,
+            projectURL: URL,
+            appDelegate: AppDelegate,
+            original: (any NSWindowDelegate)?
+        ) {
             self.projectManager = projectManager
+            self.registry = registry
+            self.projectURL = projectURL
+            self.appDelegate = appDelegate
             self.original = original
         }
 
@@ -282,6 +298,12 @@ private struct WindowCloseInterceptor: NSViewRepresentable {
         // Forward other delegate calls to the original
         func windowWillClose(_ notification: Notification) {
             original?.windowWillClose?(notification)
+            // Trigger Welcome window when last project closes.
+            // Using windowWillClose instead of SwiftUI onDisappear
+            // because onDisappear may not fire reliably for AppKit-closed windows.
+            appDelegate?.handleProjectWindowDisappear(
+                projectURL: projectURL, registry: registry
+            )
         }
 
         func windowDidBecomeKey(_ notification: Notification) {
