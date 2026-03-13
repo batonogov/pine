@@ -87,7 +87,6 @@ final class WelcomeWindowTests: PineUITestCase {
         app.launch()
         app.activate()
 
-
         // Step 3: Welcome should show with recent projects
         let welcomeWindow = app.windows["welcome"]
         XCTAssertTrue(waitForExistence(welcomeWindow, timeout: 10), "Welcome should appear on relaunch")
@@ -109,6 +108,42 @@ final class WelcomeWindowTests: PineUITestCase {
         XCTAssertTrue(waitForExistence(sidebarAfter, timeout: 10), "Project should open from recent click")
     }
 
+    // MARK: - P0: Welcome closes when project opens
+
+    func testWelcomeClosesWhenProjectOpens() throws {
+        // Step 1: Launch with a project to create a recent entry
+        projectURL = try createTempProject(files: ["hello.swift": "// hi\n"])
+        let url = try XCTUnwrap(projectURL)
+        launchWithProject(url)
+
+        let sidebar = app.outlines["sidebar"]
+        XCTAssertTrue(waitForExistence(sidebar, timeout: 10), "Project should open")
+
+        // Step 2: Terminate and relaunch clean
+        app.terminate()
+
+        app = XCUIApplication()
+        app.launchArguments += ["--reset-state"]
+        app.launch()
+        app.activate()
+
+        // Step 3: Welcome should appear
+        let welcomeWindow = app.windows["welcome"]
+        XCTAssertTrue(waitForExistence(welcomeWindow, timeout: 10), "Welcome should appear on relaunch")
+
+        // Step 4: Click recent project
+        let projectName = url.lastPathComponent
+        let recentItem = app.descendants(matching: .any)[
+            "welcomeRecentProject_\(projectName)"
+        ].firstMatch
+        XCTAssertTrue(waitForExistence(recentItem, timeout: 5))
+        recentItem.click()
+
+        // Step 5: Welcome window should disappear
+        let welcomeGone = welcomeWindow.waitForNonExistence(timeout: 10)
+        XCTAssertTrue(welcomeGone, "Welcome window should close after opening a project")
+    }
+
     // MARK: - P0: Restart → Welcome (not previous windows)
 
     func testRestartShowsWelcomeNotPreviousProject() throws {
@@ -128,7 +163,6 @@ final class WelcomeWindowTests: PineUITestCase {
         app.launchArguments += ["--reset-state"]
         app.launch()
         app.activate()
-
 
         // Welcome should appear, not the previous project
         let welcomeWindow = app.windows["welcome"]

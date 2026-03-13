@@ -19,7 +19,8 @@ Pine is a minimal native macOS code editor built with SwiftUI + AppKit. Targets 
 - Unit test target: `PineTests` (Swift Testing framework) — covers git parsing, grammar models, file tree
 - **UI Tests:** `DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer xcodebuild test -project Pine.xcodeproj -scheme Pine -destination 'platform=macOS' -only-testing:PineUITests`
 - UI test target: `PineUITests` (XCTest/XCUITest) — end-to-end tests for Welcome window, editor tabs, terminal, multi-window
-- Launch arguments for UI testing: `--reset-state` (clears persisted sessions), `--open-project <path>` (opens project without file dialog)
+- Launch arguments for UI testing: `--reset-state` (clears persisted sessions)
+- Environment variable for UI testing: `PINE_OPEN_PROJECT=<path>` (opens project without file dialog — uses env var because macOS interprets bare paths in launch arguments as files to open)
 - Accessibility identifiers defined in `Pine/AccessibilityIdentifiers.swift` — used by both app views and UI tests
 
 ## Architecture

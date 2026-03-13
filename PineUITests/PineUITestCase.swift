@@ -34,13 +34,13 @@ class PineUITestCase: XCTestCase {
         return dir
     }
 
-    /// Launches the app with `--open-project` pointing to the given directory.
+    /// Launches the app with the given project directory.
+    /// Uses environment variable instead of launch arguments to avoid
+    /// macOS interpreting the path as a file-open request.
     func launchWithProject(_ projectURL: URL) {
-        app.launchArguments += ["--open-project", projectURL.path]
+        app.launchEnvironment["PINE_OPEN_PROJECT"] = projectURL.path
         app.launch()
         app.activate()
-        // Welcome appears via .defaultLaunchBehavior(.presented),
-        // PendingProjectOpener opens the project and dismisses Welcome
         _ = app.windows.firstMatch.waitForExistence(timeout: 10)
     }
 

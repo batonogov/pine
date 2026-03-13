@@ -72,11 +72,10 @@ struct PineApp: App {
         }
 
         Window(Strings.welcomeTitle, id: "welcome") {
-            WelcomeView(registry: registry)
+            WelcomeView(registry: registry, appDelegate: appDelegate)
                 .onAppear { appDelegate.registry = registry }
-                .background { AppDelegateBridge(appDelegate: appDelegate) }
+                .background { AppDelegateBridge(appDelegate: appDelegate, registry: registry) }
                 .background { WelcomeWindowCapture(appDelegate: appDelegate) }
-                .background { PendingProjectOpener(appDelegate: appDelegate, registry: registry) }
         }
         .defaultSize(width: 600, height: 400)
         .windowResizability(.contentSize)
@@ -121,24 +120,11 @@ private final class WindowCaptureSentinel: NSView {
 
 // MARK: - AppDelegate bridge (passes SwiftUI openWindow closures to AppDelegate)
 
-/// Invisible view that hands SwiftUI's openWindow actions to AppDelegate
+/// Invisible view that hands SwiftUI's openWindow/dismissWindow actions to AppDelegate
 /// so it can open windows when no SwiftUI views are active.
+/// Also opens a pending project (from `--open-project` launch argument)
+/// once the closures are wired up — guaranteeing no race condition.
 private struct AppDelegateBridge: View {
-    let appDelegate: AppDelegate
-    @Environment(\.openWindow) var openWindow
-
-    var body: some View {
-        Color.clear.onAppear {
-            appDelegate.openNamedWindow = { id in openWindow(id: id) }
-            appDelegate.openProjectWindow = { url in openWindow(value: url) }
-        }
-    }
-}
-
-// MARK: - Pending project opener (UI testing support)
-
-/// Opens a project passed via `--open-project` launch argument once SwiftUI is ready.
-private struct PendingProjectOpener: View {
     let appDelegate: AppDelegate
     let registry: ProjectRegistry
     @Environment(\.openWindow) var openWindow
@@ -146,14 +132,9 @@ private struct PendingProjectOpener: View {
 
     var body: some View {
         Color.clear.onAppear {
-            guard let url = appDelegate.pendingProjectURL else { return }
-            appDelegate.pendingProjectURL = nil
-            _ = registry.projectManager(for: url)
-            openWindow(value: url)
-            // Defer dismiss so the project window has time to appear
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                dismissWindow(id: "welcome")
-            }
+            appDelegate.openNamedWindow = { id in openWindow(id: id) }
+            appDelegate.openProjectWindow = { url in openWindow(value: url) }
+
         }
     }
 }
@@ -188,7 +169,7 @@ private struct ProjectWindowView: View {
             }
         }
         .onAppear { appDelegate.registry = registry }
-        .background { AppDelegateBridge(appDelegate: appDelegate) }
+        .background { AppDelegateBridge(appDelegate: appDelegate, registry: registry) }
         .onDisappear {
             (NSApp.delegate as? AppDelegate)?
                 .handleProjectWindowDisappear(projectURL: projectURL, registry: registry)
@@ -312,7 +293,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     weak var welcomeWindow: NSWindow?
 
     /// Project URL passed via `--open-project` launch argument (UI testing).
-    /// Consumed by PineApp scene on first appearance.
+    /// Consumed by AppDelegateBridge once SwiftUI closures are wired up.
     var pendingProjectURL: URL?
 
     /// Handles cleanup when a project window disappears: saves session,
@@ -349,17 +330,17 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         if CommandLine.arguments.contains("--reset-state") {
             SessionState.removeAll()
         }
+
+        // UI testing support: read project path from environment variable.
+        // Using env var instead of launch argument because macOS interprets
+        // bare file paths in arguments as files to open, suppressing normal window behavior.
+        if let path = ProcessInfo.processInfo.environment["PINE_OPEN_PROJECT"] {
+            pendingProjectURL = URL(fileURLWithPath: path).resolvingSymlinksInPath()
+        }
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSWindow.allowsAutomaticWindowTabbing = false
-
-        // UI testing support: store project URL for PineApp to open via SwiftUI
-        if let idx = CommandLine.arguments.firstIndex(of: "--open-project"),
-           idx + 1 < CommandLine.arguments.count {
-            let path = CommandLine.arguments[idx + 1]
-            pendingProjectURL = URL(fileURLWithPath: path).resolvingSymlinksInPath()
-        }
 
         // Ensure Welcome is visible if SwiftUI didn't present it automatically
         // (e.g. when window restoration state interferes with defaultLaunchBehavior)

@@ -14,6 +14,9 @@ struct WelcomeView: View {
     @Environment(\.dismissWindow) var dismissWindow
     @Environment(\.controlActiveState) var controlActiveState
 
+    /// AppDelegate reference for checking pending project URL (UI testing).
+    var appDelegate: AppDelegate?
+
     var body: some View {
         HStack(spacing: 0) {
             // Left: logo and actions
@@ -91,6 +94,14 @@ struct WelcomeView: View {
         .onReceive(NotificationCenter.default.publisher(for: .openFolder)) { _ in
             guard controlActiveState == .key else { return }
             openFolder()
+        }
+        .task {
+            // Open pending project from PINE_OPEN_PROJECT env var.
+            guard let url = appDelegate?.pendingProjectURL else { return }
+            appDelegate?.pendingProjectURL = nil
+            // Wait for initial SwiftUI layout to complete.
+            try? await Task.sleep(for: .seconds(0.5))
+            openProject(at: url)
         }
     }
 
