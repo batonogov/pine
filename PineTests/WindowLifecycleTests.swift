@@ -124,6 +124,83 @@ struct WindowLifecycleTests {
         #expect(session2?.existingFileURLs.count == 1)
     }
 
+    // MARK: - windowShouldClose (CloseDelegate)
+
+    @Test func windowShouldCloseReturnsTrueWhenNoTabs() throws {
+        let dir = try makeTempDirectory()
+        defer { cleanup(dir) }
+
+        let registry = ProjectRegistry()
+        let pm = try #require(registry.projectManager(for: dir))
+        let delegate = AppDelegate()
+        let window = NSWindow()
+
+        let closeDelegate = Pine.CloseDelegate(
+            projectManager: pm,
+            registry: registry,
+            projectURL: dir,
+            appDelegate: delegate,
+            original: nil
+        )
+
+        // No tabs open — window should close
+        #expect(closeDelegate.windowShouldClose(window))
+    }
+
+    @Test func windowShouldCloseReturnsTrueWithCleanTabs() throws {
+        let dir = try makeTempDirectory()
+        defer { cleanup(dir) }
+        let file = try makeTempFile(in: dir)
+
+        let registry = ProjectRegistry()
+        let pm = try #require(registry.projectManager(for: dir))
+        pm.tabManager.openTab(url: file)
+
+        let delegate = AppDelegate()
+        let window = NSWindow()
+
+        let closeDelegate = Pine.CloseDelegate(
+            projectManager: pm,
+            registry: registry,
+            projectURL: dir,
+            appDelegate: delegate,
+            original: nil
+        )
+
+        // Clean tabs — window should close (not close tab one by one)
+        #expect(closeDelegate.windowShouldClose(window))
+        // Tabs should NOT have been closed individually
+        #expect(pm.tabManager.tabs.count == 1)
+    }
+
+    @Test func windowShouldCloseDoesNotCloseIndividualCleanTab() throws {
+        let dir = try makeTempDirectory()
+        defer { cleanup(dir) }
+        let file1 = try makeTempFile(in: dir, name: "a.swift")
+        let file2 = try makeTempFile(in: dir, name: "b.swift")
+
+        let registry = ProjectRegistry()
+        let pm = try #require(registry.projectManager(for: dir))
+        pm.tabManager.openTab(url: file1)
+        pm.tabManager.openTab(url: file2)
+
+        let delegate = AppDelegate()
+        let window = NSWindow()
+
+        let closeDelegate = Pine.CloseDelegate(
+            projectManager: pm,
+            registry: registry,
+            projectURL: dir,
+            appDelegate: delegate,
+            original: nil
+        )
+
+        // With multiple clean tabs, should close window (return true)
+        // and NOT close tabs one by one
+        #expect(closeDelegate.windowShouldClose(window))
+        #expect(pm.tabManager.tabs.count == 2)
+    }
+
     // MARK: - showWelcome
 
     @Test func showWelcomeCallsOpenNamedWindow() throws {

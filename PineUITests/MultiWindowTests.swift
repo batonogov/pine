@@ -71,9 +71,9 @@ final class MultiWindowTests: PineUITestCase {
         )
     }
 
-    // MARK: - P2: Close project with open tab → tab closes first, then window
+    // MARK: - P2: Close button closes window even with open tabs
 
-    func testCloseProjectWithTabClosesTabFirst() throws {
+    func testCloseButtonClosesWindowWithOpenTab() throws {
         launchWithProject(projectURL)
 
         let sidebar = app.outlines["sidebar"]
@@ -87,23 +87,47 @@ final class MultiWindowTests: PineUITestCase {
         let tab = app.buttons["editorTab_a.swift"].firstMatch
         XCTAssertTrue(waitForExistence(tab, timeout: 5), "Tab should open")
 
-        // Click window close button — should close the tab, not the window
+        // Click window close button — should close the window, not just the tab
         let closeButton = app.windows.firstMatch.buttons["_XCUI:CloseWindow"].firstMatch
         closeButton.click()
 
-        // Tab should be gone
-        XCTAssertTrue(tab.waitForNonExistence(timeout: 5), "Tab should close first")
-
-        // Sidebar should still be present (window not closed)
-        XCTAssertTrue(sidebar.exists, "Window should remain open after tab close")
-
-        // Click close again — now window should close and Welcome appears
-        closeButton.click()
-
+        // Welcome window should appear (window closed entirely)
         let welcomeWindow = app.windows["welcome"]
         XCTAssertTrue(
             waitForExistence(welcomeWindow, timeout: 10),
-            "Welcome should appear after closing window with no tabs"
+            "Welcome should appear after closing window with open tab"
         )
     }
+
+    // MARK: - P2: Tab close button closes tab, not window
+
+    func testTabCloseButtonClosesTabNotWindow() throws {
+        launchWithProject(projectURL)
+
+        let sidebar = app.outlines["sidebar"]
+        XCTAssertTrue(waitForExistence(sidebar, timeout: 10))
+
+        // Open a file to create a tab
+        let fileNode = app.staticTexts["fileNode_a.swift"]
+        XCTAssertTrue(waitForExistence(fileNode, timeout: 5))
+        fileNode.click()
+
+        let tab = app.buttons["editorTab_a.swift"].firstMatch
+        XCTAssertTrue(waitForExistence(tab, timeout: 5), "Tab should open")
+
+        // Click the tab's close button (X) — should close only the tab
+        let tabCloseButton = app.buttons["editorTabClose_a.swift"].firstMatch
+        XCTAssertTrue(waitForExistence(tabCloseButton, timeout: 5))
+        tabCloseButton.click()
+
+        // Tab should be gone
+        XCTAssertTrue(tab.waitForNonExistence(timeout: 5), "Tab should close")
+
+        // Window should remain open (sidebar still visible)
+        XCTAssertTrue(sidebar.exists, "Window should remain open after closing tab")
+    }
+
+    // Note: Cmd+W tab closing is handled by NSEvent.addLocalMonitorForEvents
+    // in AppDelegate, but XCUITest's typeKey bypasses the app's event queue
+    // (uses Accessibility APIs instead), so Cmd+W cannot be reliably UI-tested.
 }
