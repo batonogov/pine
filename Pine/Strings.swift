@@ -111,6 +111,9 @@ enum Strings {
     static let menuOpenFolder: LocalizedStringKey = "menu.openFolder"
     static let menuSwitchBranch: LocalizedStringKey = "menu.switchBranch"
     static let menuSave: LocalizedStringKey = "menu.save"
+    static let menuSaveAll: LocalizedStringKey = "menu.saveAll"
+    static let menuSaveAs: LocalizedStringKey = "menu.saveAs"
+    static let menuDuplicate: LocalizedStringKey = "menu.duplicate"
     static let menuCloseTab: LocalizedStringKey = "menu.closeTab"
 
     // MARK: - Unsaved Changes Dialog (AppKit)
@@ -135,8 +138,22 @@ enum Strings {
         String(localized: "dialog.unsavedChanges.cancel")
     }
 
+    static var dialogSaveAll: String {
+        String(localized: "dialog.unsavedChanges.saveAll")
+    }
+
+    static func unsavedChangesListMessage(_ fileNames: String) -> String {
+        String(localized: "dialog.unsavedChanges.listMessage \(fileNames)")
+    }
+
     static var dialogOK: String {
         String(localized: "dialog.ok")
+    }
+
+    // MARK: - Save As Panel (AppKit)
+
+    static var saveAsPanelTitle: String {
+        String(localized: "saveAsPanel.title")
     }
 
     // MARK: - Open Panel (AppKit)
