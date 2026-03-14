@@ -338,6 +338,228 @@ struct TabManagerTests {
         #expect(brokenPosition != nsLength, "text.count clamp would lose cursor position on emoji content")
     }
 
+    // MARK: - Save All
+
+    @Test("Save all tabs saves every dirty tab")
+    func saveAllTabs() throws {
+        let manager = TabManager()
+        let url1 = tempFileURL(name: "a.swift", content: "original1")
+        let url2 = tempFileURL(name: "b.swift", content: "original2")
+        let url3 = tempFileURL(name: "c.swift", content: "original3")
+
+        manager.openTab(url: url1)
+        manager.openTab(url: url2)
+        manager.openTab(url: url3)
+
+        // Make first and third dirty
+        manager.activeTabID = manager.tabs[0].id
+        manager.updateContent("modified1")
+        manager.activeTabID = manager.tabs[2].id
+        manager.updateContent("modified3")
+
+        #expect(manager.dirtyTabs.count == 2)
+
+        try manager.trySaveAllTabs()
+        #expect(manager.hasUnsavedChanges == false)
+
+        // Verify disk contents
+        let disk1 = try? String(contentsOf: url1, encoding: .utf8)
+        let disk2 = try? String(contentsOf: url2, encoding: .utf8)
+        let disk3 = try? String(contentsOf: url3, encoding: .utf8)
+        #expect(disk1 == "modified1")
+        #expect(disk2 == "original2") // was clean — should not be rewritten
+        #expect(disk3 == "modified3")
+    }
+
+    @Test("Save all tabs throws on first failure")
+    func saveAllTabsStopsOnFailure() {
+        let manager = TabManager()
+        let goodURL = tempFileURL(name: "good.swift", content: "original")
+        let badURL = URL(fileURLWithPath: "/nonexistent_dir_\(UUID().uuidString)/bad.swift")
+
+        manager.openTab(url: goodURL)
+        // Manually add bad tab
+        let badTab = EditorTab(url: badURL, content: "data", savedContent: "")
+        manager.tabs.append(badTab)
+
+        // Make good tab dirty
+        manager.activeTabID = manager.tabs[0].id
+        manager.updateContent("modified")
+
+        #expect(manager.dirtyTabs.count == 2)
+
+        #expect(throws: (any Error).self) {
+            try manager.trySaveAllTabs()
+        }
+        // At least one tab should still be dirty (the bad one)
+        #expect(manager.hasUnsavedChanges == true)
+    }
+
+    @Test("Save all tabs succeeds when no dirty tabs")
+    func saveAllTabsNoDirtyTabs() throws {
+        let manager = TabManager()
+        let url = tempFileURL(content: "clean")
+        manager.openTab(url: url)
+
+        try manager.trySaveAllTabs()
+        #expect(manager.hasUnsavedChanges == false)
+    }
+
+    // MARK: - Dirty Tabs
+
+    @Test("dirtyTabs returns only modified tabs")
+    func dirtyTabsFiltering() {
+        let manager = TabManager()
+        let url1 = tempFileURL(name: "clean.swift", content: "clean")
+        let url2 = tempFileURL(name: "dirty.swift", content: "original")
+
+        manager.openTab(url: url1)
+        manager.openTab(url: url2)
+
+        // Make only url2 dirty
+        manager.activeTabID = manager.tabs[1].id
+        manager.updateContent("changed")
+
+        let dirty = manager.dirtyTabs
+        #expect(dirty.count == 1)
+        #expect(dirty[0].url == url2)
+    }
+
+    // MARK: - Save As
+
+    @Test("Save tab as writes to new URL and updates tab")
+    func saveTabAs() throws {
+        let manager = TabManager()
+        let url = tempFileURL(name: "original.swift", content: "hello")
+        manager.openTab(url: url)
+        manager.updateContent("modified content")
+
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let newURL = dir.appendingPathComponent("saved_as.swift")
+
+        let success = try manager.saveActiveTabAs(to: newURL)
+        #expect(success == true)
+
+        // Tab URL should be updated
+        #expect(manager.activeTab?.url == newURL)
+        // Tab should be clean
+        #expect(manager.activeTab?.isDirty == false)
+        // Content on disk at new URL
+        let onDisk = try String(contentsOf: newURL, encoding: .utf8)
+        #expect(onDisk == "modified content")
+        // Tab identity preserved
+        #expect(manager.tabs.count == 1)
+    }
+
+    @Test("Save tab as preserves tab identity (UUID)")
+    func saveTabAsPreservesIdentity() throws {
+        let manager = TabManager()
+        let url = tempFileURL(content: "data")
+        manager.openTab(url: url)
+        let originalID = manager.activeTabID
+
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let newURL = dir.appendingPathComponent("new.swift")
+
+        try manager.saveActiveTabAs(to: newURL)
+
+        #expect(manager.activeTabID == originalID)
+    }
+
+    @Test("Save tab as throws for non-writable path")
+    func saveTabAsFailsForBadPath() {
+        let manager = TabManager()
+        let url = tempFileURL(content: "data")
+        manager.openTab(url: url)
+
+        let badURL = URL(fileURLWithPath: "/nonexistent_dir_\(UUID().uuidString)/file.swift")
+
+        #expect(throws: (any Error).self) {
+            try manager.saveActiveTabAs(to: badURL)
+        }
+        // Tab should remain at original URL
+        #expect(manager.activeTab?.url == url)
+    }
+
+    // MARK: - Duplicate
+
+    @Test("Duplicate active tab creates copy with Finder naming")
+    func duplicateActiveTab() throws {
+        let manager = TabManager()
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let url = dir.appendingPathComponent("file.swift")
+        try "content".write(to: url, atomically: true, encoding: .utf8)
+
+        manager.openTab(url: url)
+        let originalID = manager.activeTabID
+
+        let duplicated = manager.duplicateActiveTab()
+        #expect(duplicated == true)
+
+        // Should have 2 tabs now
+        #expect(manager.tabs.count == 2)
+        // Active tab should be the duplicate
+        #expect(manager.activeTabID != originalID)
+        // Duplicate URL should follow Finder naming: "file copy.swift"
+        #expect(manager.activeTab?.url.lastPathComponent == "file copy.swift")
+        // Duplicate should have same content
+        #expect(manager.activeTab?.content == "content")
+        // Duplicate should be clean (saved to disk)
+        #expect(manager.activeTab?.isDirty == false)
+        // File should exist on disk
+        if let activeTab = manager.activeTab {
+            #expect(FileManager.default.fileExists(atPath: activeTab.url.path))
+        } else {
+            Issue.record("activeTab should not be nil after duplicate")
+        }
+    }
+
+    @Test("Duplicate uses incremented name when copy exists")
+    func duplicateActiveTabIncrementsName() throws {
+        let manager = TabManager()
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let url = dir.appendingPathComponent("file.swift")
+        try "content".write(to: url, atomically: true, encoding: .utf8)
+        // Create "file copy.swift" so the first name is taken
+        let copyURL = dir.appendingPathComponent("file copy.swift")
+        try "existing".write(to: copyURL, atomically: true, encoding: .utf8)
+
+        manager.openTab(url: url)
+        let duplicated = manager.duplicateActiveTab()
+        #expect(duplicated == true)
+        #expect(manager.activeTab?.url.lastPathComponent == "file copy 2.swift")
+    }
+
+    @Test("Duplicate file without extension uses Finder naming")
+    func duplicateFileWithoutExtension() throws {
+        let manager = TabManager()
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let url = dir.appendingPathComponent("Makefile")
+        try "all:".write(to: url, atomically: true, encoding: .utf8)
+
+        manager.openTab(url: url)
+        let duplicated = manager.duplicateActiveTab()
+        #expect(duplicated == true)
+        #expect(manager.activeTab?.url.lastPathComponent == "Makefile copy")
+    }
+
+    @Test("Duplicate returns false when no active tab")
+    func duplicateNoActiveTab() {
+        let manager = TabManager()
+        let result = manager.duplicateActiveTab()
+        #expect(result == false)
+    }
+
     @Test("Rename preserves editor state")
     func renamePreservesEditorState() {
         let manager = TabManager()

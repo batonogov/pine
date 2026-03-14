@@ -161,6 +161,7 @@ struct CodeEditorView: NSViewRepresentable {
         let textView = GutterTextView(frame: scrollView.bounds, textContainer: textContainer)
         textView.gutterInset = gutterWidth + 4
 
+        textView.setAccessibilityIdentifier(AccessibilityID.codeEditor)
         textView.isEditable = true
         textView.isSelectable = true
         textView.allowsUndo = true

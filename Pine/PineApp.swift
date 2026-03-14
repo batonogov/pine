@@ -47,7 +47,7 @@ struct PineApp: App {
                 }
                 .keyboardShortcut("b", modifiers: [.command, .shift])
             }
-            // Cmd+S — сохранить файл
+            // File menu: Save, Save All, Save As, Duplicate
             CommandGroup(replacing: .saveItem) {
                 Button(Strings.menuSave) {
                     guard let pm = focusedProject else { return }
@@ -57,6 +57,47 @@ struct PineApp: App {
                     }
                 }
                 .keyboardShortcut("s", modifiers: .command)
+
+                Button(Strings.menuSaveAll) {
+                    guard let pm = focusedProject else { return }
+                    if pm.tabManager.saveAllTabs() {
+                        pm.workspace.gitProvider.refresh()
+                        NotificationCenter.default.post(name: .refreshLineDiffs, object: nil)
+                    }
+                }
+                .keyboardShortcut("s", modifiers: [.command, .option])
+
+                Divider()
+
+                Button(Strings.menuSaveAs) {
+                    guard let pm = focusedProject else { return }
+                    guard pm.tabManager.activeTab != nil else { return }
+                    let panel = NSSavePanel()
+                    panel.title = Strings.saveAsPanelTitle
+                    panel.nameFieldStringValue = pm.tabManager.activeTab?.fileName ?? ""
+                    if let dir = pm.tabManager.activeTab?.url.deletingLastPathComponent() {
+                        panel.directoryURL = dir
+                    }
+                    guard panel.runModal() == .OK, let url = panel.url else { return }
+                    do {
+                        try pm.tabManager.saveActiveTabAs(to: url)
+                        pm.workspace.gitProvider.refresh()
+                        NotificationCenter.default.post(name: .refreshLineDiffs, object: nil)
+                    } catch {
+                        let alert = NSAlert()
+                        alert.messageText = Strings.fileOperationErrorTitle
+                        alert.informativeText = error.localizedDescription
+                        alert.alertStyle = .critical
+                        alert.runModal()
+                    }
+                }
+                .keyboardShortcut("s", modifiers: [.command, .shift])
+
+                Button(Strings.menuDuplicate) {
+                    guard let pm = focusedProject else { return }
+                    pm.tabManager.duplicateActiveTab()
+                }
+                .keyboardShortcut("d", modifiers: [.command, .shift])
             }
             // Cmd+W is handled by CloseDelegate.windowShouldClose —
             // it closes the active tab (if any) instead of the window.
@@ -268,12 +309,14 @@ private struct WindowCloseInterceptor: NSViewRepresentable {
                 return false
             }
 
-            guard projectManager.tabManager.hasUnsavedChanges else { return true }
+            let dirty = projectManager.tabManager.dirtyTabs
+            guard !dirty.isEmpty else { return true }
 
+            let fileList = dirty.map { "  • \($0.fileName)" }.joined(separator: "\n")
             let alert = NSAlert()
             alert.messageText = Strings.unsavedChangesTitle
-            alert.informativeText = Strings.unsavedChangesMessage
-            alert.addButton(withTitle: Strings.dialogSave)
+            alert.informativeText = Strings.unsavedChangesListMessage(fileList)
+            alert.addButton(withTitle: Strings.dialogSaveAll)
             alert.addButton(withTitle: Strings.dialogDontSave)
             alert.addButton(withTitle: Strings.dialogCancel)
             alert.alertStyle = .warning
@@ -281,11 +324,8 @@ private struct WindowCloseInterceptor: NSViewRepresentable {
             let response = alert.runModal()
             switch response {
             case .alertFirstButtonReturn:
-                for index in projectManager.tabManager.tabs.indices
-                    where projectManager.tabManager.tabs[index].isDirty {
-                    guard projectManager.tabManager.saveTab(at: index) else {
-                        return false // Save failed — abort close
-                    }
+                guard projectManager.tabManager.saveAllTabs() else {
+                    return false // Save failed — abort close
                 }
                 return true
             case .alertSecondButtonReturn:
@@ -461,12 +501,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         isTerminating = true
 
         for (_, pm) in registry.openProjects {
-            guard pm.tabManager.hasUnsavedChanges else { continue }
+            let dirty = pm.tabManager.dirtyTabs
+            guard !dirty.isEmpty else { continue }
 
+            let fileList = dirty.map { "  • \($0.fileName)" }.joined(separator: "\n")
             let alert = NSAlert()
             alert.messageText = Strings.unsavedChangesTitle
-            alert.informativeText = Strings.unsavedChangesMessage
-            alert.addButton(withTitle: Strings.dialogSave)
+            alert.informativeText = Strings.unsavedChangesListMessage(fileList)
+            alert.addButton(withTitle: Strings.dialogSaveAll)
             alert.addButton(withTitle: Strings.dialogDontSave)
             alert.addButton(withTitle: Strings.dialogCancel)
             alert.alertStyle = .warning
@@ -474,11 +516,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             let response = alert.runModal()
             switch response {
             case .alertFirstButtonReturn:
-                for index in pm.tabManager.tabs.indices where pm.tabManager.tabs[index].isDirty {
-                    guard pm.tabManager.saveTab(at: index) else {
-                        isTerminating = false
-                        return .terminateCancel
-                    }
+                guard pm.tabManager.saveAllTabs() else {
+                    isTerminating = false
+                    return .terminateCancel
                 }
             case .alertSecondButtonReturn:
                 continue
