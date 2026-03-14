@@ -14,7 +14,12 @@ class PineUITestCase: XCTestCase {
     override func setUpWithError() throws {
         continueAfterFailure = false
         app = XCUIApplication()
-        app.launchArguments += ["--reset-state", "-ApplePersistenceIgnoreState", "YES"]
+        app.launchArguments += [
+            "--reset-state",
+            "-ApplePersistenceIgnoreState", "YES",
+            "-AppleLanguages", "(en)",
+            "-AppleLocale", "en_US"
+        ]
     }
 
     // MARK: - Helpers

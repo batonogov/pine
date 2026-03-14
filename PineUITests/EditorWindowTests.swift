@@ -149,6 +149,68 @@ final class EditorWindowTests: PineUITestCase {
         XCTAssertTrue(waitForExistence(placeholder, timeout: 10), "Editor placeholder should be visible when no tabs are open")
     }
 
+    // MARK: - P1: Duplicate creates tab with copy naming
+
+    func testDuplicateCreatesTabWithCopyNaming() throws {
+        launchWithProject(projectURL)
+
+        let sidebar = app.outlines["sidebar"]
+        XCTAssertTrue(waitForExistence(sidebar, timeout: 10))
+
+        // Open a file
+        let mainFile = app.staticTexts["fileNode_main.swift"]
+        XCTAssertTrue(waitForExistence(mainFile, timeout: 5))
+        mainFile.click()
+
+        let mainTab = editorTab("main.swift")
+        XCTAssertTrue(waitForExistence(mainTab, timeout: 5))
+
+        // File > Duplicate
+        // File > Duplicate via menu
+        app.activate()
+        sleep(1)
+        app.menuBars.menuBarItems["File"].click()
+        app.menuItems["Duplicate"].click()
+
+        // A new tab "main copy.swift" should appear
+        let copyTab = editorTab("main copy.swift")
+        XCTAssertTrue(waitForExistence(copyTab, timeout: 5), "Duplicate tab should appear with Finder-like copy naming")
+
+        // Original tab should still exist
+        XCTAssertTrue(mainTab.exists, "Original tab should remain after duplicating")
+    }
+
+    // MARK: - P1: Save All saves dirty files
+
+    func testSaveAllMenuItemExists() throws {
+        launchWithProject(projectURL)
+
+        let sidebar = app.outlines["sidebar"]
+        XCTAssertTrue(waitForExistence(sidebar, timeout: 10))
+
+        // Open a file so Save All menu item is relevant
+        let mainFile = app.staticTexts["fileNode_main.swift"]
+        XCTAssertTrue(waitForExistence(mainFile, timeout: 5))
+        mainFile.click()
+
+        let mainTab = editorTab("main.swift")
+        XCTAssertTrue(waitForExistence(mainTab, timeout: 5))
+
+        // File menu should contain Save All
+        app.activate()
+        sleep(1)
+        app.menuBars.menuBarItems["File"].click()
+        let saveAllItem = app.menuItems["Save All"]
+        XCTAssertTrue(waitForExistence(saveAllItem, timeout: 3), "Save All menu item should exist")
+
+        // Also check Save As… and Duplicate exist
+        let saveAsItem = app.menuItems["Save As…"]
+        XCTAssertTrue(saveAsItem.exists, "Save As… menu item should exist")
+
+        let duplicateItem = app.menuItems["Duplicate"]
+        XCTAssertTrue(duplicateItem.exists, "Duplicate menu item should exist")
+    }
+
     // MARK: - P1: Status bar terminal toggle visible
 
     func testTerminalToggleButtonVisible() throws {
