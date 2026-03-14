@@ -64,6 +64,7 @@ struct ContentView: View {
         .navigationSubtitle(branchSubtitle)
         .onAppear {
             restoreSessionIfNeeded()
+            syncSidebarSelection()
         }
         .onChange(of: selectedNode) { _, newNode in
             guard let node = newNode, !node.isDirectory else { return }
@@ -74,6 +75,7 @@ struct ContentView: View {
             projectManager.saveSession()
         }
         .onChange(of: tabManager.activeTabID) { _, _ in
+            syncSidebarSelection()
             refreshLineDiffs()
             projectManager.saveSession()
         }
@@ -161,8 +163,29 @@ struct ContentView: View {
 
     private func handleFileSelection(_ node: FileNode) {
         tabManager.openTab(url: node.url)
-        // Сбрасываем выделение, чтобы повторный клик тоже сработал
-        selectedNode = nil
+    }
+
+    /// Syncs sidebar selection to match the active editor tab.
+    private func syncSidebarSelection() {
+        guard let url = tabManager.activeTab?.url else {
+            selectedNode = nil
+            return
+        }
+        // Already pointing at the right node — skip tree traversal
+        if selectedNode?.url == url { return }
+        selectedNode = findNode(url: url, in: workspace.rootNodes)
+    }
+
+    /// Recursively searches the file tree for a node with the given URL.
+    private func findNode(url: URL, in nodes: [FileNode]) -> FileNode? {
+        for node in nodes {
+            if node.url == url { return node }
+            if let children = node.children,
+               let found = findNode(url: url, in: children) {
+                return found
+            }
+        }
+        return nil
     }
 
     /// Refreshes cached line diffs for the active tab.
