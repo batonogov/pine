@@ -127,14 +127,19 @@ jobs:
         id: version
         run: echo "VERSION=${GITHUB_REF_NAME#v}" >> $GITHUB_OUTPUT
 
-      - name: Create GitHub Release
+      - name: Upload DMG to GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "$GITHUB_REF_NAME" \
-            "$RUNNER_TEMP/Pine.dmg#Pine-${{ steps.version.outputs.VERSION }}.dmg" \
-            --title "Pine ${{ steps.version.outputs.VERSION }}" \
-            --generate-notes
+          if gh release view "$GITHUB_REF_NAME" > /dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" \
+              "$RUNNER_TEMP/Pine.dmg#Pine-${{ steps.version.outputs.VERSION }}.dmg"
+          else
+            gh release create "$GITHUB_REF_NAME" \
+              "$RUNNER_TEMP/Pine.dmg#Pine-${{ steps.version.outputs.VERSION }}.dmg" \
+              --title "Pine ${{ steps.version.outputs.VERSION }}" \
+              --generate-notes
+          fi
 
       - name: Update Homebrew Tap
         env:
