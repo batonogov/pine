@@ -52,16 +52,26 @@ struct GitStatusProviderTests {
     @discardableResult
     private func runShell(_ command: String, at dir: URL) throws -> String {
         let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/bin/zsh")
+        process.executableURL = URL(fileURLWithPath: "/bin/sh")
         process.arguments = ["-c", command]
         process.currentDirectoryURL = dir
-        let pipe = Pipe()
-        process.standardOutput = pipe
-        process.standardError = pipe
+        let outPipe = Pipe()
+        let errPipe = Pipe()
+        process.standardOutput = outPipe
+        process.standardError = errPipe
         try process.run()
         process.waitUntilExit()
-        let data = pipe.fileHandleForReading.readDataToEndOfFile()
-        return String(data: data, encoding: .utf8) ?? ""
+        let outData = outPipe.fileHandleForReading.readDataToEndOfFile()
+        let errData = errPipe.fileHandleForReading.readDataToEndOfFile()
+        guard process.terminationStatus == 0 else {
+            let stderr = String(data: errData, encoding: .utf8) ?? ""
+            throw NSError(
+                domain: "ShellError",
+                code: Int(process.terminationStatus),
+                userInfo: [NSLocalizedDescriptionKey: "'\(command)' failed: \(stderr)"]
+            )
+        }
+        return String(data: outData, encoding: .utf8) ?? ""
     }
 
     // MARK: - setup

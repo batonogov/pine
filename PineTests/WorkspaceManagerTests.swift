@@ -14,10 +14,13 @@ import Testing
 struct WorkspaceManagerTests {
 
     private func makeTempDirectory() throws -> URL {
-        let dir = FileManager.default.temporaryDirectory
+        let rawDir = FileManager.default.temporaryDirectory
             .appendingPathComponent("pine-test-\(UUID().uuidString)")
-        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        return dir
+        try FileManager.default.createDirectory(at: rawDir, withIntermediateDirectories: true)
+        // Resolve firmlinks (/var -> /private/var) for consistent path comparison
+        guard let resolved = realpath(rawDir.path, nil) else { throw CocoaError(.fileNoSuchFile) }
+        defer { free(resolved) }
+        return URL(fileURLWithPath: String(cString: resolved))
     }
 
     private func cleanup(_ url: URL) {
