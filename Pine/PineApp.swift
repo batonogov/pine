@@ -99,17 +99,9 @@ struct PineApp: App {
                 }
                 .keyboardShortcut("d", modifiers: [.command, .shift])
             }
-            // Cmd+W — close active tab (or close window when no tabs)
-            CommandGroup(after: .saveItem) {
-                Button(Strings.menuCloseTab) {
-                    if let pm = focusedProject, pm.tabManager.activeTab != nil {
-                        NotificationCenter.default.post(name: .closeTab, object: nil)
-                    } else {
-                        NSApp.keyWindow?.performClose(nil)
-                    }
-                }
-                .keyboardShortcut("w", modifiers: .command)
-            }
+            // Cmd+W is intercepted by AppDelegate's local event monitor
+            // to close the active tab. The close button goes through
+            // windowShouldClose which closes the entire window.
         }
 
         Window(Strings.welcomeTitle, id: "welcome") {
@@ -263,8 +255,8 @@ private struct WindowCloseInterceptor: NSViewRepresentable {
 }
 
 /// NSWindowDelegate proxy that intercepts windowShouldClose and windowWillClose.
-/// Closing the window (red button) checks all dirty tabs and closes the window.
-/// Cmd+W is handled separately as a SwiftUI menu command that closes the active tab.
+/// windowShouldClose always closes the entire window (red close button path).
+/// Cmd+W is intercepted earlier by AppDelegate's local event monitor.
 class CloseDelegate: NSObject, NSWindowDelegate {
     let projectManager: ProjectManager
     let registry: ProjectRegistry
@@ -288,14 +280,41 @@ class CloseDelegate: NSObject, NSWindowDelegate {
         self.original = original
     }
 
+    /// Closes the active tab with unsaved-changes dialog. Called by the Cmd+W event monitor.
+    func closeActiveTab() {
+        guard let tab = projectManager.tabManager.activeTab else { return }
+        if tab.isDirty {
+            let alert = NSAlert()
+            alert.messageText = Strings.unsavedChangesTitle
+            alert.informativeText = Strings.unsavedChangesMessage
+            alert.addButton(withTitle: Strings.dialogSave)
+            alert.addButton(withTitle: Strings.dialogDontSave)
+            alert.addButton(withTitle: Strings.dialogCancel)
+            alert.alertStyle = .warning
+            let response = alert.runModal()
+            switch response {
+            case .alertFirstButtonReturn:
+                if let idx = projectManager.tabManager.tabs.firstIndex(where: { $0.id == tab.id }) {
+                    guard projectManager.tabManager.saveTab(at: idx) else { return }
+                }
+                projectManager.tabManager.closeTab(id: tab.id)
+            case .alertSecondButtonReturn:
+                projectManager.tabManager.closeTab(id: tab.id)
+            default:
+                break
+            }
+        } else {
+            projectManager.tabManager.closeTab(id: tab.id)
+        }
+    }
+
     func windowShouldClose(_ sender: NSWindow) -> Bool {
         // Forward to original delegate first — respect its veto if any
         if let original, original.responds(to: #selector(NSWindowDelegate.windowShouldClose(_:))) {
             guard original.windowShouldClose?(sender) != false else { return false }
         }
 
-        // Window close (red button) always closes the entire window.
-        // Cmd+W tab closing is handled by the SwiftUI menu command.
+        // Close button → close the entire window.
         let dirty = projectManager.tabManager.dirtyTabs
         guard !dirty.isEmpty else { return true }
 
@@ -433,6 +452,24 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSWindow.allowsAutomaticWindowTabbing = false
+
+        // Intercept Cmd+W before the system "Close" menu item.
+        // For project windows: close active tab (or close window if no tabs).
+        // For other windows: pass through to default behavior.
+        NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+            guard event.modifierFlags.intersection(.deviceIndependentFlagsMask) == .command,
+                  event.charactersIgnoringModifiers == "w",
+                  let window = NSApp.keyWindow,
+                  let closeDelegate = window.delegate as? CloseDelegate else {
+                return event
+            }
+            if closeDelegate.projectManager.tabManager.activeTab != nil {
+                closeDelegate.closeActiveTab()
+            } else {
+                window.performClose(nil)
+            }
+            return nil // consume event
+        }
 
         // Ensure Welcome is visible if SwiftUI didn't present it automatically
         // (e.g. when window restoration state interferes with defaultLaunchBehavior)
