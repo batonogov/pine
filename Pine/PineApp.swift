@@ -10,19 +10,18 @@ import SwiftUI
 @main
 struct PineApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
-    @State private var registry = ProjectRegistry()
     @FocusedValue(\.projectManager) private var focusedProject: ProjectManager?
+
+    private var registry: ProjectRegistry { appDelegate.registry }
 
     var body: some Scene {
         WindowGroup(for: URL.self) { $projectURL in
             if let projectURL {
                 ProjectWindowView(projectURL: projectURL, registry: registry, appDelegate: appDelegate)
-            } else {
-                // SwiftUI may instantiate with nil URL — close placeholder and show Welcome
-                NilProjectRedirect()
             }
         }
         .defaultSize(width: 1100, height: 700)
+        .defaultLaunchBehavior(.suppressed)
         .commands {
             // Убираем стандартный "New Window" (Cmd+N) — табы создаются кликом по файлу
             CommandGroup(replacing: .newItem) { }
@@ -59,49 +58,19 @@ struct PineApp: App {
                 }
                 .keyboardShortcut("s", modifiers: .command)
             }
-            // Cmd+W — закрыть таб или окно
-            CommandGroup(after: .saveItem) {
-                Button(Strings.menuCloseTab) {
-                    if let project = focusedProject, project.tabManager.activeTab != nil {
-                        NotificationCenter.default.post(name: .closeTab, object: nil)
-                    } else {
-                        // No active tab or no project (Welcome) — close the key window
-                        NSApp.keyWindow?.close()
-                    }
-                }
-                .keyboardShortcut("w", modifiers: .command)
-            }
+            // Cmd+W is handled by CloseDelegate.windowShouldClose —
+            // it closes the active tab (if any) instead of the window.
         }
 
         Window(Strings.welcomeTitle, id: "welcome") {
-            WelcomeView(registry: registry)
-                .onAppear { appDelegate.registry = registry }
-                .background { AppDelegateBridge(appDelegate: appDelegate) }
+            WelcomeView(registry: registry, appDelegate: appDelegate)
+                .background { AppDelegateBridge(appDelegate: appDelegate, registry: registry) }
                 .background { WelcomeWindowCapture(appDelegate: appDelegate) }
         }
         .defaultSize(width: 600, height: 400)
         .windowResizability(.contentSize)
+        .defaultLaunchBehavior(.presented)
     }
-}
-
-// MARK: - Nil-project redirect
-
-/// Closes the placeholder window and opens the Welcome window instead.
-/// Uses an NSViewRepresentable to reliably find its own host window.
-private struct NilProjectRedirect: NSViewRepresentable {
-    @Environment(\.openWindow) var openWindow
-
-    func makeNSView(context: Context) -> NSView {
-        let view = NSView()
-        let open = openWindow // capture before async — @Environment may be invalid later
-        DispatchQueue.main.async {
-            view.window?.close()
-            open(id: "welcome")
-        }
-        return view
-    }
-
-    func updateNSView(_ nsView: NSView, context: Context) {}
 }
 
 // MARK: - Welcome window capture
@@ -141,16 +110,21 @@ private final class WindowCaptureSentinel: NSView {
 
 // MARK: - AppDelegate bridge (passes SwiftUI openWindow closures to AppDelegate)
 
-/// Invisible view that hands SwiftUI's openWindow actions to AppDelegate
+/// Invisible view that hands SwiftUI's openWindow/dismissWindow actions to AppDelegate
 /// so it can open windows when no SwiftUI views are active.
+/// Also opens a pending project (from `--open-project` launch argument)
+/// once the closures are wired up — guaranteeing no race condition.
 private struct AppDelegateBridge: View {
     let appDelegate: AppDelegate
+    let registry: ProjectRegistry
     @Environment(\.openWindow) var openWindow
+    @Environment(\.dismissWindow) var dismissWindow
 
     var body: some View {
         Color.clear.onAppear {
             appDelegate.openNamedWindow = { id in openWindow(id: id) }
             appDelegate.openProjectWindow = { url in openWindow(value: url) }
+
         }
     }
 }
@@ -179,20 +153,16 @@ private struct ProjectWindowView: View {
                         WindowCloseInterceptor(
                             projectManager: pm,
                             registry: registry,
-                            projectURL: projectURL
+                            projectURL: projectURL,
+                            appDelegate: appDelegate
                         )
                     }
-            } else {
-                // Directory no longer exists — close this blank window and show Welcome
-                NilProjectRedirect()
             }
         }
-        .onAppear { appDelegate.registry = registry }
-        .background { AppDelegateBridge(appDelegate: appDelegate) }
-        .onDisappear {
-            (NSApp.delegate as? AppDelegate)?
-                .handleProjectWindowDisappear(projectURL: projectURL, registry: registry)
-        }
+        .background { AppDelegateBridge(appDelegate: appDelegate, registry: registry) }
+        // Note: project cleanup (session save, Welcome restore) is handled by
+        // CloseDelegate.windowWillClose — not onDisappear, which doesn't fire
+        // reliably when windows are closed via AppKit performClose:.
     }
 }
 
@@ -204,6 +174,7 @@ private struct WindowCloseInterceptor: NSViewRepresentable {
     let projectManager: ProjectManager
     let registry: ProjectRegistry
     let projectURL: URL
+    let appDelegate: AppDelegate
 
     func makeNSView(context: Context) -> NSView {
         let view = NSView()
@@ -213,6 +184,9 @@ private struct WindowCloseInterceptor: NSViewRepresentable {
             let original = window.delegate
             let delegate = CloseDelegate(
                 projectManager: projectManager,
+                registry: registry,
+                projectURL: projectURL,
+                appDelegate: appDelegate,
                 original: original
             )
             context.coordinator.closeDelegate = delegate
@@ -234,15 +208,27 @@ private struct WindowCloseInterceptor: NSViewRepresentable {
         var originalDelegate: (any NSWindowDelegate)?
     }
 
-    /// Proxy NSWindowDelegate that intercepts windowShouldClose.
+    /// Proxy NSWindowDelegate that intercepts windowShouldClose and windowWillClose.
     class CloseDelegate: NSObject, NSWindowDelegate {
         let projectManager: ProjectManager
+        let registry: ProjectRegistry
+        let projectURL: URL
+        weak var appDelegate: AppDelegate?
         /// Weak ref to original — Coordinator holds the strong ref separately
         /// to avoid a potential retain cycle through the delegate chain.
         weak var original: (any NSWindowDelegate)?
 
-        init(projectManager: ProjectManager, original: (any NSWindowDelegate)?) {
+        init(
+            projectManager: ProjectManager,
+            registry: ProjectRegistry,
+            projectURL: URL,
+            appDelegate: AppDelegate,
+            original: (any NSWindowDelegate)?
+        ) {
             self.projectManager = projectManager
+            self.registry = registry
+            self.projectURL = projectURL
+            self.appDelegate = appDelegate
             self.original = original
         }
 
@@ -251,6 +237,37 @@ private struct WindowCloseInterceptor: NSViewRepresentable {
             if let original, original.responds(to: #selector(NSWindowDelegate.windowShouldClose(_:))) {
                 guard original.windowShouldClose?(sender) != false else { return false }
             }
+
+            // Cmd+W (performClose:) with an active tab → close tab, not window.
+            // Direct call instead of notification — .onReceive in SwiftUI/Combine
+            // may fire too late or be blocked by controlActiveState guard.
+            if let tab = projectManager.tabManager.activeTab {
+                if tab.isDirty {
+                    let alert = NSAlert()
+                    alert.messageText = Strings.unsavedChangesTitle
+                    alert.informativeText = Strings.unsavedChangesMessage
+                    alert.addButton(withTitle: Strings.dialogSave)
+                    alert.addButton(withTitle: Strings.dialogDontSave)
+                    alert.addButton(withTitle: Strings.dialogCancel)
+                    alert.alertStyle = .warning
+                    let response = alert.runModal()
+                    switch response {
+                    case .alertFirstButtonReturn:
+                        if let idx = projectManager.tabManager.tabs.firstIndex(where: { $0.id == tab.id }) {
+                            guard projectManager.tabManager.saveTab(at: idx) else { return false }
+                        }
+                        projectManager.tabManager.closeTab(id: tab.id)
+                    case .alertSecondButtonReturn:
+                        projectManager.tabManager.closeTab(id: tab.id)
+                    default:
+                        break // Cancel — do nothing
+                    }
+                } else {
+                    projectManager.tabManager.closeTab(id: tab.id)
+                }
+                return false
+            }
+
             guard projectManager.tabManager.hasUnsavedChanges else { return true }
 
             let alert = NSAlert()
@@ -281,6 +298,12 @@ private struct WindowCloseInterceptor: NSViewRepresentable {
         // Forward other delegate calls to the original
         func windowWillClose(_ notification: Notification) {
             original?.windowWillClose?(notification)
+            // Trigger Welcome window when last project closes.
+            // Using windowWillClose instead of SwiftUI onDisappear
+            // because onDisappear may not fire reliably for AppKit-closed windows.
+            appDelegate?.handleProjectWindowDisappear(
+                projectURL: projectURL, registry: registry
+            )
         }
 
         func windowDidBecomeKey(_ notification: Notification) {
@@ -296,7 +319,8 @@ private struct WindowCloseInterceptor: NSViewRepresentable {
 // MARK: - AppDelegate
 
 class AppDelegate: NSObject, NSApplicationDelegate {
-    var registry: ProjectRegistry?
+    /// Central project registry — created early so it's available for AppKit fallback.
+    var registry = ProjectRegistry()
     /// Set to true once applicationShouldTerminate is called, so onDisappear
     /// handlers know not to clear the saved session during app quit.
     private(set) var isTerminating = false
@@ -310,6 +334,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     /// Used for reliable show/hide — SwiftUI's dismissWindow/openWindow breaks
     /// after a few cycles on singleton Window scenes.
     weak var welcomeWindow: NSWindow?
+
+    /// Project URL passed via `--open-project` launch argument (UI testing).
+    /// Consumed by AppDelegateBridge once SwiftUI closures are wired up.
+    var pendingProjectURL: URL?
 
     /// Handles cleanup when a project window disappears: saves session,
     /// removes from registry, and shows Welcome if no projects remain.
@@ -330,28 +358,72 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // openWindow stops working after a few dismissWindow cycles.
         openNamedWindow?("welcome")
         DispatchQueue.main.async { [weak self] in
-            guard let window = self?.welcomeWindow, !window.isVisible else { return }
-            window.makeKeyAndOrderFront(nil)
-            NSApp.activate()
+            if let window = self?.welcomeWindow, !window.isVisible {
+                window.makeKeyAndOrderFront(nil)
+                NSApp.activate()
+            } else if self?.welcomeWindow == nil {
+                // SwiftUI scene lifecycle didn't create the window (e.g. XCUITest
+                // or direct binary launch that bypasses LaunchServices).
+                self?.createWelcomeWindowViaAppKit()
+            }
         }
+    }
+
+    /// Creates the Welcome window via AppKit when SwiftUI's scene lifecycle
+    /// fails to instantiate it (known issue on macOS 26 with launches that
+    /// bypass LaunchServices, including XCUITest).
+    private func createWelcomeWindowViaAppKit() {
+        let welcomeView = WelcomeView(registry: registry, appDelegate: self)
+        let hostingController = NSHostingController(rootView: welcomeView)
+        let window = NSWindow(contentViewController: hostingController)
+        window.identifier = NSUserInterfaceItemIdentifier("welcome")
+        window.title = ""
+        window.setContentSize(NSSize(width: 600, height: 400))
+        window.styleMask = [.titled, .closable, .miniaturizable]
+        window.center()
+        window.isReleasedWhenClosed = false
+        welcomeWindow = window
+        window.makeKeyAndOrderFront(nil)
+        NSApp.activate()
     }
 
     func applicationWillFinishLaunching(_ notification: Notification) {
         // Must be set before applicationDidFinishLaunching — the system runs
         // window restoration between willFinishLaunching and didFinishLaunching.
         UserDefaults.standard.set(false, forKey: "NSQuitAlwaysKeepsWindows")
+
+        // UI testing support: clear persisted state for a clean launch
+        if CommandLine.arguments.contains("--reset-state") {
+            SessionState.removeAll()
+        }
+
+        // UI testing support: read project path from environment variable.
+        // Using env var instead of launch argument because macOS interprets
+        // bare file paths in arguments as files to open, suppressing normal window behavior.
+        if let path = ProcessInfo.processInfo.environment["PINE_OPEN_PROJECT"] {
+            pendingProjectURL = URL(fileURLWithPath: path).resolvingSymlinksInPath()
+        }
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSWindow.allowsAutomaticWindowTabbing = false
+
+        // Ensure Welcome is visible if SwiftUI didn't present it automatically
+        // (e.g. when window restoration state interferes with defaultLaunchBehavior)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+            let hasVisibleWindow = NSApp.windows.contains { $0.isVisible && !$0.title.isEmpty }
+            if !hasVisibleWindow {
+                self?.showWelcome()
+            }
+        }
 
         // Fallback: when no visible windows exist, Cmd+Shift+O opens a folder picker
         NotificationCenter.default.addObserver(
             forName: .openFolder, object: nil, queue: .main
         ) { [weak self] _ in
             guard NSApp.windows.allSatisfy({ !$0.isVisible }) else { return }
-            guard let self, let registry = self.registry else { return }
-            if let url = registry.openProjectViaPanel() {
+            guard let self else { return }
+            if let url = self.registry.openProjectViaPanel() {
                 self.openProjectWindow?(url)
             }
         }
@@ -379,7 +451,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
-        guard let registry else { return }
         // Save per-project tab state so sessions can be restored from Welcome.
         for (_, pm) in registry.openProjects {
             pm.saveSession()
@@ -388,7 +459,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         isTerminating = true
-        guard let registry else { return .terminateNow }
 
         for (_, pm) in registry.openProjects {
             guard pm.tabManager.hasUnsavedChanges else { continue }

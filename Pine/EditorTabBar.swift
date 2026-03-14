@@ -49,6 +49,7 @@ struct EditorTabBar: View {
         }
         .frame(height: 30)
         .background(.bar)
+        .accessibilityIdentifier(AccessibilityID.editorTabBar)
     }
 }
 
@@ -111,7 +112,8 @@ struct EditorTabItem: View {
                 )
             }
             .buttonStyle(.plain)
-            .opacity(isHovering || isActive || tab.isDirty ? 1 : 0)
+            .opacity(isHovering || isActive || tab.isDirty ? 1 : 0.01)
+            .accessibilityIdentifier(AccessibilityID.editorTabCloseButton(tab.fileName))
 
             Image(systemName: FileIconMapper.iconForFile(tab.fileName))
                 .font(.system(size: 9))
@@ -132,5 +134,13 @@ struct EditorTabItem: View {
         .contentShape(Capsule())
         .onTapGesture(perform: onSelect)
         .onHover { isHovering = $0 }
+        .accessibilityRepresentation {
+            HStack {
+                Button(tab.fileName, action: onSelect)
+                    .accessibilityIdentifier(AccessibilityID.editorTab(tab.fileName))
+                Button("Close", action: onClose)
+                    .accessibilityIdentifier(AccessibilityID.editorTabCloseButton(tab.fileName))
+            }
+        }
     }
 }

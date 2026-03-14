@@ -33,6 +33,7 @@ struct ContentView: View {
     var body: some View {
         NavigationSplitView(columnVisibility: $columnVisibility) {
             SidebarView(workspace: workspace, selectedFile: $selectedNode)
+                .accessibilityIdentifier(AccessibilityID.sidebar)
         } detail: {
             VStack(spacing: 0) {
                 if terminal.isTerminalVisible {
@@ -301,12 +302,14 @@ struct ContentView: View {
                     }
                 )
                 .id(tab.id)
+                .accessibilityIdentifier(AccessibilityID.codeEditor)
             } else {
                 ContentUnavailableView {
                     Label(Strings.noFileSelected, systemImage: "doc.text")
                 } description: {
                     Text(Strings.selectFilePrompt)
                 }
+                .accessibilityIdentifier(AccessibilityID.editorPlaceholder)
             }
         }
     }
@@ -361,6 +364,8 @@ struct TerminalNativeTabBar: View {
             }
             .buttonStyle(.plain)
             .help(Strings.newTerminal)
+            .accessibilityIdentifier(AccessibilityID.newTerminalButton)
+            .accessibilityAddTraits(.isButton)
 
             Spacer()
 
@@ -377,6 +382,7 @@ struct TerminalNativeTabBar: View {
             }
             .buttonStyle(.plain)
             .help(terminal.isTerminalMaximized ? Strings.restoreTerminal : Strings.maximizeTerminal)
+            .accessibilityIdentifier(AccessibilityID.maximizeTerminalButton)
 
             // Кнопка скрытия терминала
             Button {
@@ -393,6 +399,7 @@ struct TerminalNativeTabBar: View {
             .buttonStyle(.plain)
             .padding(.trailing, 4)
             .help(Strings.hideTerminal)
+            .accessibilityIdentifier(AccessibilityID.hideTerminalButton)
         }
         .frame(height: 30)
         .background(.bar)
@@ -446,6 +453,7 @@ struct TerminalNativeTabItem: View {
         .contentShape(Capsule())
         .onTapGesture(perform: onSelect)
         .onHover { isHovering = $0 }
+        .accessibilityIdentifier(AccessibilityID.terminalTab(tab.name))
     }
 }
 
@@ -621,6 +629,7 @@ struct FileNodeRow: View {
             }
         }
         .tag(node)
+        .accessibilityIdentifier(AccessibilityID.fileNode(node.name))
         .contextMenu { fileNodeContextMenu }
     }
 
@@ -828,6 +837,8 @@ struct StatusBarView: View {
             }
             .buttonStyle(.plain)
             .help(terminal.isTerminalVisible ? Strings.hideTerminalShortcut : Strings.showTerminalShortcut)
+            .accessibilityIdentifier(AccessibilityID.terminalToggleButton)
+            .accessibilityAddTraits(.isButton)
         }
         .padding(.leading, 8)
         .padding(.trailing, 14)

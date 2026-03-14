@@ -14,6 +14,9 @@ struct WelcomeView: View {
     @Environment(\.dismissWindow) var dismissWindow
     @Environment(\.controlActiveState) var controlActiveState
 
+    /// AppDelegate reference for checking pending project URL (UI testing).
+    var appDelegate: AppDelegate?
+
     var body: some View {
         HStack(spacing: 0) {
             // Left: logo and actions
@@ -36,6 +39,7 @@ struct WelcomeView: View {
                 }
                 .buttonStyle(.borderedProminent)
                 .controlSize(.large)
+                .accessibilityIdentifier(AccessibilityID.welcomeOpenFolderButton)
 
                 Spacer()
             }
@@ -78,8 +82,10 @@ struct WelcomeView: View {
                             .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
+                        .accessibilityIdentifier(AccessibilityID.welcomeRecentProject(url.lastPathComponent))
                     }
                     .listStyle(.plain)
+                    .accessibilityIdentifier(AccessibilityID.welcomeRecentProjectsList)
                 }
             }
             .frame(minWidth: 280)
@@ -89,12 +95,20 @@ struct WelcomeView: View {
             guard controlActiveState == .key else { return }
             openFolder()
         }
+        .task {
+            // Open pending project from PINE_OPEN_PROJECT env var.
+            guard let url = appDelegate?.pendingProjectURL else { return }
+            appDelegate?.pendingProjectURL = nil
+            // Wait for initial SwiftUI layout to complete.
+            try? await Task.sleep(for: .seconds(0.5))
+            openProject(at: url)
+        }
     }
 
     private func openFolder() {
         if let url = registry.openProjectViaPanel() {
             openWindow(value: url)
-            dismissWindow(id: "welcome")
+            closeWelcome()
         }
     }
 
@@ -102,6 +116,16 @@ struct WelcomeView: View {
         let canonical = url.resolvingSymlinksInPath()
         guard registry.projectManager(for: canonical) != nil else { return }
         openWindow(value: canonical)
+        closeWelcome()
+    }
+
+    /// Closes all Welcome windows — both SwiftUI-managed and AppKit-created fallback.
+    private func closeWelcome() {
         dismissWindow(id: "welcome")
+        // Close any AppKit-created welcome windows that dismissWindow doesn't handle
+        for window in NSApp.windows
+            where window.identifier?.rawValue == "welcome" && window.isVisible {
+            window.close()
+        }
     }
 }

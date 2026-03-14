@@ -40,6 +40,16 @@
                ReferencedContainer = "container:Pine.xcodeproj">
             </BuildableReference>
          </TestableReference>
+         <TestableReference
+            skipped = "NO">
+            <BuildableReference
+               BuildableIdentifier = "primary"
+               BlueprintIdentifier = "CF0000020000000000000001"
+               BuildableName = "PineUITests.xctest"
+               BlueprintName = "PineUITests"
+               ReferencedContainer = "container:Pine.xcodeproj">
+            </BuildableReference>
+         </TestableReference>
       </Testables>
    </TestAction>
    <LaunchAction
