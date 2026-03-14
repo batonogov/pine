@@ -72,10 +72,14 @@ Pine is a minimal native macOS code editor built with SwiftUI + AppKit. Targets 
 
 ## Release & CI
 
-- GitHub Actions workflow (`.github/workflows/release.yml`) triggers on `v*` tags
+- **Release Please** (`.github/workflows/release-please.yml`) automates versioning and changelog via [Conventional Commits](https://www.conventionalcommits.org/):
+  - On every push to `main`, Release Please creates/updates a Release PR with version bump in `version.txt` and auto-generated `CHANGELOG.md`
+  - When the Release PR is merged, Release Please creates a git tag (e.g. `v0.13.0`) which triggers the build workflow
+  - Config: `release-please-config.json`, manifest: `.release-please-manifest.json`
+  - Requires `RELEASE_PLEASE_TOKEN` secret (PAT with `contents: write` + `pull-requests: write`) — default `GITHUB_TOKEN` won't trigger downstream workflows
+- **Build workflow** (`.github/workflows/release.yml`) triggers on `v*` tags
 - Pipeline: build → code sign → notarize → create DMG → GitHub Release → update Homebrew Tap
-- Secrets: `CERTIFICATE_P12`, `CERTIFICATE_PASSWORD`, `APPLE_ID`, `APPLE_ID_PASSWORD`, `APPLE_TEAM_ID`, `TAP_GITHUB_TOKEN`
-- To release: `git tag v0.X.0 && git push origin v0.X.0` — CI handles the rest
+- Secrets: `CERTIFICATE_P12`, `CERTIFICATE_PASSWORD`, `APPLE_ID`, `APPLE_ID_PASSWORD`, `APPLE_TEAM_ID`, `TAP_GITHUB_TOKEN`, `RELEASE_PLEASE_TOKEN`
 - Homebrew: `brew tap batonogov/tap && brew install --cask pine-editor`
 
 ## Conventions
@@ -89,6 +93,7 @@ Pine is a minimal native macOS code editor built with SwiftUI + AppKit. Targets 
 - Editor features: auto-indent on newline, current line highlight, git diff gutter markers
 - Editor tabs use an internal SwiftUI tab bar (`EditorTabBar`), not native macOS window tabs
 - Project windows use `WindowGroup(for: URL.self)` where URL = project directory; `ProjectRegistry` prevents duplicate windows for the same project
+- **Conventional Commits** — all commit messages must follow the format: `feat:`, `fix:`, `chore:`, `docs:`, `refactor:`, `perf:`, `test:`. Use `feat!:` or `BREAKING CHANGE:` footer for breaking changes
 
 ## GitHub Issues
 
