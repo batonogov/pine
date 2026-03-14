@@ -99,8 +99,17 @@ struct PineApp: App {
                 }
                 .keyboardShortcut("d", modifiers: [.command, .shift])
             }
-            // Cmd+W is handled by CloseDelegate.windowShouldClose —
-            // it closes the active tab (if any) instead of the window.
+            // Cmd+W — close active tab (or close window when no tabs)
+            CommandGroup(after: .saveItem) {
+                Button(Strings.menuCloseTab) {
+                    if let pm = focusedProject, pm.tabManager.activeTab != nil {
+                        NotificationCenter.default.post(name: .closeTab, object: nil)
+                    } else {
+                        NSApp.keyWindow?.performClose(nil)
+                    }
+                }
+                .keyboardShortcut("w", modifiers: .command)
+            }
         }
 
         Window(Strings.welcomeTitle, id: "welcome") {
@@ -250,109 +259,86 @@ private struct WindowCloseInterceptor: NSViewRepresentable {
     }
 
     /// Proxy NSWindowDelegate that intercepts windowShouldClose and windowWillClose.
-    class CloseDelegate: NSObject, NSWindowDelegate {
-        let projectManager: ProjectManager
-        let registry: ProjectRegistry
-        let projectURL: URL
-        weak var appDelegate: AppDelegate?
-        /// Weak ref to original — Coordinator holds the strong ref separately
-        /// to avoid a potential retain cycle through the delegate chain.
-        weak var original: (any NSWindowDelegate)?
+    /// Uses the top-level CloseDelegate class (internal for testability).
+}
 
-        init(
-            projectManager: ProjectManager,
-            registry: ProjectRegistry,
-            projectURL: URL,
-            appDelegate: AppDelegate,
-            original: (any NSWindowDelegate)?
-        ) {
-            self.projectManager = projectManager
-            self.registry = registry
-            self.projectURL = projectURL
-            self.appDelegate = appDelegate
-            self.original = original
+/// NSWindowDelegate proxy that intercepts windowShouldClose and windowWillClose.
+/// Closing the window (red button) checks all dirty tabs and closes the window.
+/// Cmd+W is handled separately as a SwiftUI menu command that closes the active tab.
+class CloseDelegate: NSObject, NSWindowDelegate {
+    let projectManager: ProjectManager
+    let registry: ProjectRegistry
+    let projectURL: URL
+    weak var appDelegate: AppDelegate?
+    /// Weak ref to original — Coordinator holds the strong ref separately
+    /// to avoid a potential retain cycle through the delegate chain.
+    weak var original: (any NSWindowDelegate)?
+
+    init(
+        projectManager: ProjectManager,
+        registry: ProjectRegistry,
+        projectURL: URL,
+        appDelegate: AppDelegate,
+        original: (any NSWindowDelegate)?
+    ) {
+        self.projectManager = projectManager
+        self.registry = registry
+        self.projectURL = projectURL
+        self.appDelegate = appDelegate
+        self.original = original
+    }
+
+    func windowShouldClose(_ sender: NSWindow) -> Bool {
+        // Forward to original delegate first — respect its veto if any
+        if let original, original.responds(to: #selector(NSWindowDelegate.windowShouldClose(_:))) {
+            guard original.windowShouldClose?(sender) != false else { return false }
         }
 
-        func windowShouldClose(_ sender: NSWindow) -> Bool {
-            // Forward to original delegate first — respect its veto if any
-            if let original, original.responds(to: #selector(NSWindowDelegate.windowShouldClose(_:))) {
-                guard original.windowShouldClose?(sender) != false else { return false }
+        // Window close (red button) always closes the entire window.
+        // Cmd+W tab closing is handled by the SwiftUI menu command.
+        let dirty = projectManager.tabManager.dirtyTabs
+        guard !dirty.isEmpty else { return true }
+
+        let fileList = dirty.map { "  • \($0.fileName)" }.joined(separator: "\n")
+        let alert = NSAlert()
+        alert.messageText = Strings.unsavedChangesTitle
+        alert.informativeText = Strings.unsavedChangesListMessage(fileList)
+        alert.addButton(withTitle: Strings.dialogSaveAll)
+        alert.addButton(withTitle: Strings.dialogDontSave)
+        alert.addButton(withTitle: Strings.dialogCancel)
+        alert.alertStyle = .warning
+
+        let response = alert.runModal()
+        switch response {
+        case .alertFirstButtonReturn:
+            guard projectManager.tabManager.saveAllTabs() else {
+                return false // Save failed — abort close
             }
-
-            // Cmd+W (performClose:) with an active tab → close tab, not window.
-            // Direct call instead of notification — .onReceive in SwiftUI/Combine
-            // may fire too late or be blocked by controlActiveState guard.
-            if let tab = projectManager.tabManager.activeTab {
-                if tab.isDirty {
-                    let alert = NSAlert()
-                    alert.messageText = Strings.unsavedChangesTitle
-                    alert.informativeText = Strings.unsavedChangesMessage
-                    alert.addButton(withTitle: Strings.dialogSave)
-                    alert.addButton(withTitle: Strings.dialogDontSave)
-                    alert.addButton(withTitle: Strings.dialogCancel)
-                    alert.alertStyle = .warning
-                    let response = alert.runModal()
-                    switch response {
-                    case .alertFirstButtonReturn:
-                        if let idx = projectManager.tabManager.tabs.firstIndex(where: { $0.id == tab.id }) {
-                            guard projectManager.tabManager.saveTab(at: idx) else { return false }
-                        }
-                        projectManager.tabManager.closeTab(id: tab.id)
-                    case .alertSecondButtonReturn:
-                        projectManager.tabManager.closeTab(id: tab.id)
-                    default:
-                        break // Cancel — do nothing
-                    }
-                } else {
-                    projectManager.tabManager.closeTab(id: tab.id)
-                }
-                return false
-            }
-
-            let dirty = projectManager.tabManager.dirtyTabs
-            guard !dirty.isEmpty else { return true }
-
-            let fileList = dirty.map { "  • \($0.fileName)" }.joined(separator: "\n")
-            let alert = NSAlert()
-            alert.messageText = Strings.unsavedChangesTitle
-            alert.informativeText = Strings.unsavedChangesListMessage(fileList)
-            alert.addButton(withTitle: Strings.dialogSaveAll)
-            alert.addButton(withTitle: Strings.dialogDontSave)
-            alert.addButton(withTitle: Strings.dialogCancel)
-            alert.alertStyle = .warning
-
-            let response = alert.runModal()
-            switch response {
-            case .alertFirstButtonReturn:
-                guard projectManager.tabManager.saveAllTabs() else {
-                    return false // Save failed — abort close
-                }
-                return true
-            case .alertSecondButtonReturn:
-                return true // Don't save — allow close
-            default:
-                return false // Cancel — abort close
-            }
+            return true
+        case .alertSecondButtonReturn:
+            return true // Don't save — allow close
+        default:
+            return false // Cancel — abort close
         }
+    }
 
-        // Forward other delegate calls to the original
-        func windowWillClose(_ notification: Notification) {
-            original?.windowWillClose?(notification)
-            // Trigger Welcome window when last project closes.
-            // Using windowWillClose instead of SwiftUI onDisappear
-            // because onDisappear may not fire reliably for AppKit-closed windows.
-            appDelegate?.handleProjectWindowDisappear(
-                projectURL: projectURL, registry: registry
-            )
-        }
+    // Forward other delegate calls to the original
+    func windowWillClose(_ notification: Notification) {
+        original?.windowWillClose?(notification)
+        // Trigger Welcome window when last project closes.
+        // Using windowWillClose instead of SwiftUI onDisappear
+        // because onDisappear may not fire reliably for AppKit-closed windows.
+        appDelegate?.handleProjectWindowDisappear(
+            projectURL: projectURL, registry: registry
+        )
+    }
 
-        func windowDidBecomeKey(_ notification: Notification) {
-            original?.windowDidBecomeKey?(notification)
-        }
+    func windowDidBecomeKey(_ notification: Notification) {
+        original?.windowDidBecomeKey?(notification)
+    }
 
-        func windowDidResignKey(_ notification: Notification) {
-            original?.windowDidResignKey?(notification)
-        }
+    func windowDidResignKey(_ notification: Notification) {
+        original?.windowDidResignKey?(notification)
     }
 }
 
