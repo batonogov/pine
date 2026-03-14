@@ -23,6 +23,7 @@ Pine is a minimal native macOS code editor built with SwiftUI + AppKit. Targets 
 - Environment variable for UI testing: `PINE_OPEN_PROJECT=<path>` (opens project without file dialog — uses env var because macOS interprets bare paths in launch arguments as files to open)
 - **Known issue:** On macOS 26, `XCUIApplication.launch()` bypasses LaunchServices, so SwiftUI `.defaultLaunchBehavior(.presented)` does not create windows. The app includes an AppKit fallback (`createWelcomeWindowViaAppKit`) that activates after 0.5s if no windows appear.
 - **Known issue:** `GutterTextView` (NSTextView inside NSViewRepresentable) does not receive keyboard input from XCUITest's `typeText()`/`typeKey()`. UI tests that need to verify editor content changes should use alternative approaches (e.g., verifying menu item availability, checking tab state).
+- **Known issue:** XCUITest's `typeKey()` bypasses the app's `NSEvent.addLocalMonitorForEvents` — synthetic key events go through Accessibility APIs, not the app's event queue. Keyboard shortcuts handled via local event monitors (e.g., Cmd+W for tab closing) cannot be reliably UI-tested with `typeKey()`. Use mouse clicks on UI elements instead.
 - To interact with menu items in UI tests, use `app.menuBars.menuBarItems["File"].click()` then `app.menuItems["Item Name"].click()` with English names (locale is forced to `en`)
 - Accessibility identifiers defined in `Pine/AccessibilityIdentifiers.swift` — used by both app views and UI tests
 
@@ -52,7 +53,7 @@ Pine is a minimal native macOS code editor built with SwiftUI + AppKit. Targets 
 
 ## Key Files
 
-- `PineApp.swift` — @main entry point, AppDelegate (window tabbing config, session save on terminate), keyboard shortcuts (Cmd+S, Cmd+Option+S, Cmd+Shift+S, Cmd+Shift+D, Cmd+Shift+O, Cmd+`), project WindowGroup + Welcome Window scenes, CloseDelegate for unsaved-changes dialogs
+- `PineApp.swift` — @main entry point, AppDelegate (window tabbing config, session save on terminate, Cmd+W event monitor), keyboard shortcuts (Cmd+S, Cmd+Option+S, Cmd+Shift+S, Cmd+Shift+D, Cmd+Shift+O, Cmd+W, Cmd+`), project WindowGroup + Welcome Window scenes, `CloseDelegate` (top-level class for testability) handles window close with dirty-tabs dialog
 - `ContentView.swift` — NavigationSplitView layout: sidebar (file tree) + detail (editor tabs + terminal), session restoration
 - `SessionState.swift` — Codable session persistence (project path + open file paths) via UserDefaults
 - `ProjectManager.swift` — Central state: file tree, terminal tabs, git provider, project I/O, saveSession()
@@ -67,7 +68,7 @@ Pine is a minimal native macOS code editor built with SwiftUI + AppKit. Targets 
 - `FocusedProjectKey.swift` — FocusedValueKey for passing active ProjectManager to menu commands
 - `AccessibilityIdentifiers.swift` — Shared accessibility ID constants for UI testing
 - `Pine/TabManager.swift` — Editor tab lifecycle: open, close, save, saveAll, saveAs, duplicate, dirty tracking, external change detection
-- `PineTests/` — Unit tests: GitStatusParserTests, GitDiffParserTests, FileNodeTests, GrammarModelTests, TabManagerTests
+- `PineTests/` — Unit tests: GitStatusParserTests, GitDiffParserTests, FileNodeTests, GrammarModelTests, TabManagerTests, WindowLifecycleTests
 - `PineUITests/` — XCUITest suite: WelcomeWindowTests, EditorWindowTests, TerminalTests, MultiWindowTests
 
 ## Release & CI
@@ -87,7 +88,7 @@ Pine is a minimal native macOS code editor built with SwiftUI + AppKit. Targets 
 - Uses `@Observable` macro (Swift 5.9+), not ObservableObject/Published
 - Models are either structs (EditorTab) or @Observable classes (FileNode, TerminalTab) depending on identity semantics
 - Grammar files are JSON in `Pine/Grammars/` — add new languages by adding a new JSON file following the existing format
-- Keyboard shortcuts: Save (Cmd+S), Save All (Cmd+Option+S), Save As (Cmd+Shift+S), Duplicate (Cmd+Shift+D), Open Folder (Cmd+Shift+O), Toggle Terminal (Cmd+`). Menu commands flow through `@FocusedValue(\.projectManager)` to `TabManager`
+- Keyboard shortcuts: Save (Cmd+S), Save All (Cmd+Option+S), Save As (Cmd+Shift+S), Duplicate (Cmd+Shift+D), Open Folder (Cmd+Shift+O), Close Tab (Cmd+W), Toggle Terminal (Cmd+`). Menu commands flow through `@FocusedValue(\.projectManager)` to `TabManager`. Cmd+W is intercepted via `NSEvent.addLocalMonitorForEvents` in AppDelegate (not a SwiftUI menu command) to close the active tab; the window close button goes through `CloseDelegate.windowShouldClose` to close the entire window
 - UI uses semantic system colors (migrated from hardcoded dark theme values)
 - macOS 26 SDK renamed `NSColor(sRGBRed:)` → `NSColor(srgbRed:)` (lowercase)
 - Editor features: auto-indent on newline, current line highlight, git diff gutter markers
