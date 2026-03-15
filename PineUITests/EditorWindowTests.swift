@@ -226,7 +226,6 @@ final class EditorWindowTests: PineUITestCase {
 
         let mainTab = editorTab("main.swift")
         XCTAssertTrue(waitForExistence(mainTab, timeout: 5))
-        sleep(1) // let session save
 
         // Close the project window → Welcome appears
         let closeButton = app.windows.firstMatch.buttons["_XCUI:CloseWindow"].firstMatch
@@ -242,20 +241,23 @@ final class EditorWindowTests: PineUITestCase {
         XCTAssertTrue(waitForExistence(recentProject, timeout: 5), "Project should be in recents")
         recentProject.click()
 
+        // Wait for project window to appear
+        let sidebarAfterRestore = app.outlines["sidebar"]
+        XCTAssertTrue(waitForExistence(sidebarAfterRestore, timeout: 10), "Project should reopen")
+
         // Tab should be restored from session
         let restoredTab = editorTab("main.swift")
         XCTAssertTrue(waitForExistence(restoredTab, timeout: 10), "Tab should be restored from session")
 
-        // Wait for async file tree load + syncSidebarSelection
-        let sidebarAfterRestore = app.outlines["sidebar"]
-        XCTAssertTrue(waitForExistence(sidebarAfterRestore, timeout: 10))
-
+        // Wait for async file tree load + syncSidebarSelection via onChange(of: rootNodes)
         let mainRow = sidebarAfterRestore.cells.containing(
             .staticText, identifier: "fileNode_main.swift"
         ).firstMatch
-        XCTAssertTrue(waitForExistence(mainRow, timeout: 5), "main.swift row should exist in sidebar")
-        sleep(2)
-        XCTAssertTrue(mainRow.isSelected, "Active file should be highlighted in sidebar after session restore")
+        XCTAssertTrue(waitForExistence(mainRow, timeout: 10), "main.swift row should exist in sidebar")
+
+        let selectedPredicate = NSPredicate(format: "isSelected == true")
+        expectation(for: selectedPredicate, evaluatedWith: mainRow, handler: nil)
+        waitForExpectations(timeout: 5)
     }
 
     // MARK: - P1: Status bar terminal toggle visible
