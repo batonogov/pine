@@ -265,6 +265,14 @@ final class TabManager {
         }
     }
 
+    // MARK: - Markdown preview
+
+    /// Cycles the preview mode for the active tab if it's a Markdown file.
+    func togglePreviewMode() {
+        guard let index = activeTabIndex, tabs[index].isMarkdownFile else { return }
+        tabs[index].previewMode = tabs[index].previewMode.next
+    }
+
     // MARK: - External change detection
 
     /// Describes an external change that requires user action (dirty tab conflict).

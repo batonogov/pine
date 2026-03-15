@@ -106,6 +106,7 @@ enum Strings {
 
     // MARK: - Menu Commands
 
+    static let menuTogglePreview: LocalizedStringKey = "menu.togglePreview"
     static let menuView: LocalizedStringKey = "menu.view"
     static let menuGit: LocalizedStringKey = "menu.git"
     static let menuOpenFolder: LocalizedStringKey = "menu.openFolder"

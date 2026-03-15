@@ -644,6 +644,56 @@ struct TabManagerTests {
         #expect(tab.isDirty == false)
     }
 
+    // MARK: - Markdown preview mode
+
+    @Test("Toggle preview mode cycles for markdown file")
+    func togglePreviewModeCyclesForMarkdown() {
+        let manager = TabManager()
+        let url = tempFileURL(name: "readme.md", content: "# Hello")
+
+        manager.openTab(url: url)
+        #expect(manager.activeTab?.previewMode == .source)
+
+        manager.togglePreviewMode()
+        #expect(manager.activeTab?.previewMode == .split)
+
+        manager.togglePreviewMode()
+        #expect(manager.activeTab?.previewMode == .preview)
+
+        manager.togglePreviewMode()
+        #expect(manager.activeTab?.previewMode == .source)
+    }
+
+    @Test("Toggle preview mode ignores non-markdown file")
+    func togglePreviewModeIgnoresNonMarkdown() {
+        let manager = TabManager()
+        let url = tempFileURL(name: "main.swift", content: "let x = 1")
+
+        manager.openTab(url: url)
+        #expect(manager.activeTab?.previewMode == .source)
+
+        manager.togglePreviewMode()
+        #expect(manager.activeTab?.previewMode == .source)
+    }
+
+    @Test("Preview mode preserved across tab switch")
+    func previewModePreservedAcrossTabSwitch() {
+        let manager = TabManager()
+        let mdURL = tempFileURL(name: "readme.md", content: "# Hello")
+        let swiftURL = tempFileURL(name: "main.swift", content: "let x = 1")
+
+        manager.openTab(url: mdURL)
+        manager.togglePreviewMode() // → split
+        #expect(manager.activeTab?.previewMode == .split)
+
+        manager.openTab(url: swiftURL)
+        #expect(manager.activeTab?.url == swiftURL)
+
+        // Switch back to markdown tab
+        manager.activeTabID = manager.tabs[0].id
+        #expect(manager.activeTab?.previewMode == .split)
+    }
+
     @Test("Rename preserves editor state")
     func renamePreservesEditorState() {
         let manager = TabManager()

@@ -39,6 +39,12 @@ struct PineApp: App {
                     pm.terminal.isTerminalVisible.toggle()
                 }
                 .keyboardShortcut("`", modifiers: .command)
+
+                Button(Strings.menuTogglePreview) {
+                    guard let pm = focusedProject else { return }
+                    pm.tabManager.togglePreviewMode()
+                }
+                .keyboardShortcut("p", modifiers: [.command, .shift])
             }
             // Cmd+Shift+B — переключение веток
             CommandMenu(Strings.menuGit) {

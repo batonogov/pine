@@ -27,7 +27,16 @@ struct EditorTab: Identifiable, Hashable {
     /// Used to detect external changes by comparing with the current stat.
     var lastModDate: Date?
 
+    /// Markdown preview mode (source/preview/split). Only meaningful for markdown files.
+    var previewMode: MarkdownPreviewMode = .source
+
     var isDirty: Bool { kind == .text && content != savedContent }
+
+    /// Whether this tab's file is a Markdown file (.md or .markdown).
+    var isMarkdownFile: Bool {
+        let ext = (url.lastPathComponent as NSString).pathExtension.lowercased()
+        return ext == "md" || ext == "markdown"
+    }
 
     var fileName: String { url.lastPathComponent }
 

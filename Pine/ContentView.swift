@@ -145,6 +145,17 @@ struct ContentView: View {
             tabManager.openTab(url: url)
         }
 
+        // Restore preview modes for markdown tabs
+        if let previewModes = session.previewModes {
+            for index in tabManager.tabs.indices {
+                let path = tabManager.tabs[index].url.path
+                if let rawMode = previewModes[path],
+                   let mode = MarkdownPreviewMode(rawValue: rawMode) {
+                    tabManager.tabs[index].previewMode = mode
+                }
+            }
+        }
+
         if let activeURL = session.activeFileURL,
            let tab = tabManager.tab(for: activeURL) {
             tabManager.activeTabID = tab.id
@@ -305,33 +316,39 @@ struct ContentView: View {
                 EditorTabBar(
                     tabManager: tabManager,
                     onCloseTab: { tab in closeTabWithConfirmation(tab) },
-                    onReorder: { projectManager.saveSession() }
+                    onReorder: { projectManager.saveSession() },
+                    isMarkdownFile: activeTab?.isMarkdownFile ?? false,
+                    previewMode: activeTab?.previewMode ?? .source,
+                    onTogglePreview: { tabManager.togglePreviewMode() }
                 )
             }
 
             if let tab = activeTab {
-                if tab.kind == .preview {
-                    QuickLookPreviewView(url: tab.url)
-                        .id(tab.id)
-                        .accessibilityIdentifier(AccessibilityID.quickLookPreview)
-                } else {
-                    CodeEditorView(
-                        text: Binding(
-                            get: { tab.content },
-                            set: { tabManager.updateContent($0) }
-                        ),
-                        language: tab.language,
-                        fileName: tab.fileName,
-                        lineDiffs: lineDiffs,
-                        initialCursorPosition: tab.cursorPosition,
-                        initialScrollOffset: tab.scrollOffset,
-                        onStateChange: { cursor, scroll in
-                            tabManager.updateEditorState(cursorPosition: cursor, scrollOffset: scroll)
+                Group {
+                    if tab.kind == .preview {
+                        QuickLookPreviewView(url: tab.url)
+                            .accessibilityIdentifier(AccessibilityID.quickLookPreview)
+                    } else if tab.isMarkdownFile {
+                        switch tab.previewMode {
+                        case .source:
+                            codeEditorView(for: tab)
+                        case .preview:
+                            MarkdownPreviewView(content: tab.content)
+                                .accessibilityIdentifier(AccessibilityID.markdownPreviewView)
+                        case .split:
+                            HSplitView {
+                                codeEditorView(for: tab)
+                                    .frame(minWidth: 200)
+                                MarkdownPreviewView(content: tab.content)
+                                    .accessibilityIdentifier(AccessibilityID.markdownPreviewView)
+                                    .frame(minWidth: 200)
+                            }
                         }
-                    )
-                    .id(tab.id)
-                    .accessibilityIdentifier(AccessibilityID.codeEditor)
+                    } else {
+                        codeEditorView(for: tab)
+                    }
                 }
+                .id(tab.id)
             } else {
                 ContentUnavailableView {
                     Label(Strings.noFileSelected, systemImage: "doc.text")
@@ -341,6 +358,25 @@ struct ContentView: View {
                 .accessibilityIdentifier(AccessibilityID.editorPlaceholder)
             }
         }
+    }
+
+    @ViewBuilder
+    private func codeEditorView(for tab: EditorTab) -> some View {
+        CodeEditorView(
+            text: Binding(
+                get: { tab.content },
+                set: { tabManager.updateContent($0) }
+            ),
+            language: tab.language,
+            fileName: tab.fileName,
+            lineDiffs: lineDiffs,
+            initialCursorPosition: tab.cursorPosition,
+            initialScrollOffset: tab.scrollOffset,
+            onStateChange: { cursor, scroll in
+                tabManager.updateEditorState(cursorPosition: cursor, scrollOffset: scroll)
+            }
+        )
+        .accessibilityIdentifier(AccessibilityID.codeEditor)
     }
 
     // MARK: - Область терминала

@@ -27,10 +27,21 @@ final class ProjectManager {
 
         let activeFileURL = tabManager.activeTab?.url
 
+        // Collect preview modes for markdown tabs that aren't in default (.source) state
+        var previewModes: [String: String]?
+        let mdTabs = tabManager.tabs.filter { $0.isMarkdownFile && $0.previewMode != .source }
+        if !mdTabs.isEmpty {
+            previewModes = [:]
+            for tab in mdTabs {
+                previewModes?[tab.url.path] = tab.previewMode.rawValue
+            }
+        }
+
         SessionState.save(
             projectURL: rootURL,
             openFileURLs: openFileURLs,
-            activeFileURL: activeFileURL
+            activeFileURL: activeFileURL,
+            previewModes: previewModes
         )
     }
 

@@ -8,6 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		9FA7317B2F61803400E91711 /* SwiftTerm in Frameworks */ = {isa = PBXBuildFile; productRef = 9FA7317A2F61803400E91711 /* SwiftTerm */; };
+		CF0000030000000000000003 /* Markdown in Frameworks */ = {isa = PBXBuildFile; productRef = CF0000030000000000000002 /* Markdown */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -57,6 +58,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				9FA7317B2F61803400E91711 /* SwiftTerm in Frameworks */,
+				CF0000030000000000000003 /* Markdown in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -119,6 +121,7 @@
 			name = Pine;
 			packageProductDependencies = (
 				9FA7317A2F61803400E91711 /* SwiftTerm */,
+				CF0000030000000000000002 /* Markdown */,
 			);
 			productName = Pine;
 			productReference = 9FA1A7282F5EFA8100BDDA8C /* Pine.app */;
@@ -208,6 +211,7 @@
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
 				9FA731792F61803400E91711 /* XCRemoteSwiftPackageReference "SwiftTerm" */,
+				CF0000030000000000000001 /* XCRemoteSwiftPackageReference "swift-markdown" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 9FA1A7292F5EFA8100BDDA8C /* Products */;
@@ -627,6 +631,14 @@
 				minimumVersion = 1.5.0;
 			};
 		};
+		CF0000030000000000000001 /* XCRemoteSwiftPackageReference "swift-markdown" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/swiftlang/swift-markdown.git";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 0.5.0;
+			};
+		};
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
@@ -634,6 +646,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = 9FA731792F61803400E91711 /* XCRemoteSwiftPackageReference "SwiftTerm" */;
 			productName = SwiftTerm;
+		};
+		CF0000030000000000000002 /* Markdown */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = CF0000030000000000000001 /* XCRemoteSwiftPackageReference "swift-markdown" */;
+			productName = Markdown;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};
