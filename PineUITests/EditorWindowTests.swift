@@ -250,10 +250,7 @@ final class EditorWindowTests: PineUITestCase {
 
         // Tab should be restored from session
         let restoredTab = editorTab("main.swift")
-        // Dump all buttons for debugging CI failure
-        let allButtons = app.buttons.allElementsBoundByIndex.map { $0.identifier }
-        print("DEBUG: All button identifiers after restore: \(allButtons)")
-        XCTAssertTrue(waitForExistence(restoredTab, timeout: 15), "Tab should be restored from session. Buttons: \(allButtons)")
+        XCTAssertTrue(waitForExistence(restoredTab, timeout: 15), "Tab should be restored from session")
 
         // Wait for async file tree load + syncSidebarSelection via onChange(of: rootNodes)
         let mainRow = sidebarAfterRestore.cells.containing(

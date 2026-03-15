@@ -80,6 +80,7 @@ struct ContentView: View {
             projectManager.saveSession()
         }
         .onChange(of: workspace.rootNodes) { _, _ in
+            restoreSessionIfNeeded()
             syncSidebarSelection()
         }
         .onChange(of: tabManager.tabs.count) { _, _ in
