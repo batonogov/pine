@@ -227,6 +227,9 @@ final class EditorWindowTests: PineUITestCase {
         let mainTab = editorTab("main.swift")
         XCTAssertTrue(waitForExistence(mainTab, timeout: 5))
 
+        // Give SwiftUI time to trigger onChange → saveSession
+        sleep(1)
+
         // Close the project window → Welcome appears
         let closeButton = app.windows.firstMatch.buttons["_XCUI:CloseWindow"].firstMatch
         XCTAssertTrue(closeButton.exists)
