@@ -569,7 +569,7 @@ struct TabManagerTests {
         #expect(manager.isPreviewFile(url: dir.appendingPathComponent("photo.png")) == true)
         #expect(manager.isPreviewFile(url: dir.appendingPathComponent("image.jpg")) == true)
         #expect(manager.isPreviewFile(url: dir.appendingPathComponent("icon.gif")) == true)
-        #expect(manager.isPreviewFile(url: dir.appendingPathComponent("vector.svg")) == true)
+        #expect(manager.isPreviewFile(url: dir.appendingPathComponent("icon.webp")) == true)
     }
 
     @Test("isPreviewFile returns true for PDF and fonts")
