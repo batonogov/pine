@@ -137,12 +137,22 @@ struct ContentView: View {
     // MARK: - Session restoration
 
     private func restoreSessionIfNeeded() {
-        guard !didRestoreSession else { return }
+        guard !didRestoreSession else {
+            print("[Pine] restoreSession: already restored")
+            return
+        }
         didRestoreSession = true
 
-        guard let rootURL = workspace.rootURL,
-              let session = SessionState.load(for: rootURL)
-        else { return }
+        guard let rootURL = workspace.rootURL else {
+            print("[Pine] restoreSession: no rootURL")
+            didRestoreSession = false // Allow retry when rootURL becomes available
+            return
+        }
+
+        let session = SessionState.load(for: rootURL)
+        print("[Pine] restoreSession: rootURL=\(rootURL.path) session=\(session != nil) tabs.empty=\(tabManager.tabs.isEmpty)")
+
+        guard let session else { return }
         guard tabManager.tabs.isEmpty else { return }
 
         for url in session.existingFileURLs {
@@ -153,6 +163,7 @@ struct ContentView: View {
            let tab = tabManager.tab(for: activeURL) {
             tabManager.activeTabID = tab.id
         }
+        print("[Pine] restoreSession: restored \(session.existingFileURLs.count) tabs")
     }
 
     // MARK: - Открытие нового проекта

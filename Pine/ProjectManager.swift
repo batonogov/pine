@@ -18,7 +18,10 @@ final class ProjectManager {
     /// Persists current session (project + open file tabs) to UserDefaults.
     /// Reads from tabManager.tabs for the authoritative tab list.
     func saveSession() {
-        guard let rootURL = workspace.rootURL else { return }
+        guard let rootURL = workspace.rootURL else {
+            print("[Pine] saveSession: no rootURL")
+            return
+        }
         let rootPath = rootURL.path + "/"
 
         let openFileURLs = tabManager.tabs
@@ -26,6 +29,8 @@ final class ProjectManager {
             .filter { $0.path.hasPrefix(rootPath) }
 
         let activeFileURL = tabManager.activeTab?.url
+
+        print("[Pine] saveSession: rootURL=\(rootURL.path) tabs=\(openFileURLs.map(\.lastPathComponent)) active=\(activeFileURL?.lastPathComponent ?? "nil")")
 
         SessionState.save(
             projectURL: rootURL,
