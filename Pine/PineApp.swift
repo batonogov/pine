@@ -183,7 +183,11 @@ private struct ProjectWindowView: View {
 
     var body: some View {
         Group {
-            if let pm = registry.projectManager(for: projectURL) {
+            // Use direct dict lookup — NOT projectManager(for:) which auto-creates.
+            // Hidden windows from closed projects still get re-rendered by SwiftUI;
+            // calling projectManager(for:) would silently re-add the closed project
+            // to openProjects, breaking the "show Welcome when last project closes" logic.
+            if let pm = registry.openProjects[projectURL.resolvingSymlinksInPath()] {
                 ContentView()
                     .environment(pm)
                     .environment(pm.workspace)
@@ -514,9 +518,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     /// Called when the user clicks the dock icon with no visible windows.
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
         if !flag {
-            // Prefer surfacing existing hidden/minimized project windows (filter out
-            // internal SwiftUI hosting windows and panels by requiring a non-empty title)
-            if let window = NSApp.windows.first(where: {
+            if registry.openProjects.isEmpty {
+                // No open projects — always show Welcome, don't resurrect zombie windows
+                // (SwiftUI WindowGroup keeps closed project windows alive but hidden)
+                showWelcome()
+            } else if let window = NSApp.windows.first(where: {
                 !$0.isVisible && !$0.title.isEmpty && $0.contentView != nil
                     && $0 != welcomeWindow
             }) {
