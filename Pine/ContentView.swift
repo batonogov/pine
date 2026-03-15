@@ -597,7 +597,7 @@ struct SidebarView: View {
             }
         }
         .listStyle(.sidebar)
-        .frame(minWidth: 180, idealWidth: 220)
+        .frame(minWidth: 200, idealWidth: 250)
         .toolbar {
             ToolbarItem {
                 Button {
