@@ -310,22 +310,28 @@ struct ContentView: View {
             }
 
             if let tab = activeTab {
-                CodeEditorView(
-                    text: Binding(
-                        get: { tab.content },
-                        set: { tabManager.updateContent($0) }
-                    ),
-                    language: tab.language,
-                    fileName: tab.fileName,
-                    lineDiffs: lineDiffs,
-                    initialCursorPosition: tab.cursorPosition,
-                    initialScrollOffset: tab.scrollOffset,
-                    onStateChange: { cursor, scroll in
-                        tabManager.updateEditorState(cursorPosition: cursor, scrollOffset: scroll)
-                    }
-                )
-                .id(tab.id)
-                .accessibilityIdentifier(AccessibilityID.codeEditor)
+                if tab.kind == .preview {
+                    QuickLookPreviewView(url: tab.url)
+                        .id(tab.id)
+                        .accessibilityIdentifier(AccessibilityID.quickLookPreview)
+                } else {
+                    CodeEditorView(
+                        text: Binding(
+                            get: { tab.content },
+                            set: { tabManager.updateContent($0) }
+                        ),
+                        language: tab.language,
+                        fileName: tab.fileName,
+                        lineDiffs: lineDiffs,
+                        initialCursorPosition: tab.cursorPosition,
+                        initialScrollOffset: tab.scrollOffset,
+                        onStateChange: { cursor, scroll in
+                            tabManager.updateEditorState(cursorPosition: cursor, scrollOffset: scroll)
+                        }
+                    )
+                    .id(tab.id)
+                    .accessibilityIdentifier(AccessibilityID.codeEditor)
+                }
             } else {
                 ContentUnavailableView {
                     Label(Strings.noFileSelected, systemImage: "doc.text")

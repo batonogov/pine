@@ -9,10 +9,15 @@ import Foundation
 
 /// Represents a single open editor tab with its file URL and content state.
 struct EditorTab: Identifiable, Hashable {
+
+    /// Whether this tab shows an editable text file or a Quick Look preview.
+    enum TabKind { case text, preview }
+
     let id: UUID
     var url: URL
     var content: String
     var savedContent: String
+    var kind: TabKind
 
     // Per-tab editor state — preserved across tab switches.
     var cursorPosition: Int = 0
@@ -22,7 +27,7 @@ struct EditorTab: Identifiable, Hashable {
     /// Used to detect external changes by comparing with the current stat.
     var lastModDate: Date?
 
-    var isDirty: Bool { content != savedContent }
+    var isDirty: Bool { kind == .text && content != savedContent }
 
     var fileName: String { url.lastPathComponent }
 
@@ -30,11 +35,12 @@ struct EditorTab: Identifiable, Hashable {
         (url.lastPathComponent as NSString).pathExtension.lowercased()
     }
 
-    init(url: URL, content: String = "", savedContent: String = "") {
+    init(url: URL, content: String = "", savedContent: String = "", kind: TabKind = .text) {
         self.id = UUID()
         self.url = url
         self.content = content
         self.savedContent = savedContent
+        self.kind = kind
     }
 
     // Hashable by id only — content/state changes shouldn't affect identity.
