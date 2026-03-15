@@ -214,12 +214,12 @@ final class EditorWindowTests: PineUITestCase {
     // MARK: - P1: Session restore highlights active file in sidebar
 
     func testSidebarHighlightsActiveFileAfterSessionRestore() throws {
+        // Step 1: Launch with project and open a file
         launchWithProject(projectURL)
 
         let sidebar = app.outlines["sidebar"]
         XCTAssertTrue(waitForExistence(sidebar, timeout: 10))
 
-        // Open a file to create a session
         let mainFile = app.staticTexts["fileNode_main.swift"]
         XCTAssertTrue(waitForExistence(mainFile, timeout: 5))
         mainFile.click()
@@ -230,29 +230,28 @@ final class EditorWindowTests: PineUITestCase {
         // Give SwiftUI time to trigger onChange → saveSession
         sleep(1)
 
-        // Close the project window → Welcome appears
-        let closeButton = app.windows.firstMatch.buttons["_XCUI:CloseWindow"].firstMatch
-        XCTAssertTrue(closeButton.exists)
-        closeButton.click()
+        // Step 2: Terminate and relaunch (session should be persisted)
+        app.terminate()
 
-        let welcomeWindow = app.windows["welcome"]
-        XCTAssertTrue(waitForExistence(welcomeWindow, timeout: 10), "Welcome should appear")
+        app = XCUIApplication()
+        app.launchArguments += [
+            "-ApplePersistenceIgnoreState", "YES",
+            "-AppleLanguages", "(en)",
+            "-AppleLocale", "en_US"
+        ]
+        // Note: do NOT pass --reset-state here, we want the session to survive
+        app.launchEnvironment["PINE_OPEN_PROJECT"] = projectURL.path
+        app.launch()
+        app.activate()
 
-        // Reopen the same project from recent projects list
-        let projectName = projectURL.lastPathComponent
-        let recentProject = app.buttons["welcomeRecentProject_\(projectName)"]
-        XCTAssertTrue(waitForExistence(recentProject, timeout: 5), "Project should be in recents")
-        recentProject.click()
-
-        // Wait for project window to appear
+        // Step 3: Verify tab is restored from session
         let sidebarAfterRestore = app.outlines["sidebar"]
         XCTAssertTrue(waitForExistence(sidebarAfterRestore, timeout: 15), "Project should reopen")
 
-        // Tab should be restored from session
         let restoredTab = editorTab("main.swift")
         XCTAssertTrue(waitForExistence(restoredTab, timeout: 15), "Tab should be restored from session")
 
-        // Wait for async file tree load + syncSidebarSelection via onChange(of: rootNodes)
+        // Step 4: Verify sidebar selection is synced
         let mainRow = sidebarAfterRestore.cells.containing(
             .staticText, identifier: "fileNode_main.swift"
         ).firstMatch
