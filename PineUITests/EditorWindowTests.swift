@@ -211,6 +211,53 @@ final class EditorWindowTests: PineUITestCase {
         XCTAssertTrue(duplicateItem.exists, "Duplicate menu item should exist")
     }
 
+    // MARK: - P1: Session restore highlights active file in sidebar
+
+    func testSidebarHighlightsActiveFileAfterSessionRestore() throws {
+        launchWithProject(projectURL)
+
+        let sidebar = app.outlines["sidebar"]
+        XCTAssertTrue(waitForExistence(sidebar, timeout: 10))
+
+        // Open a file to create a session
+        let mainFile = app.staticTexts["fileNode_main.swift"]
+        XCTAssertTrue(waitForExistence(mainFile, timeout: 5))
+        mainFile.click()
+
+        let mainTab = editorTab("main.swift")
+        XCTAssertTrue(waitForExistence(mainTab, timeout: 5))
+        sleep(1) // let session save
+
+        // Close the project window → Welcome appears
+        let closeButton = app.windows.firstMatch.buttons["_XCUI:CloseWindow"].firstMatch
+        XCTAssertTrue(closeButton.exists)
+        closeButton.click()
+
+        let welcomeWindow = app.windows["welcome"]
+        XCTAssertTrue(waitForExistence(welcomeWindow, timeout: 10), "Welcome should appear")
+
+        // Reopen the same project from recent projects list
+        let projectName = projectURL.lastPathComponent
+        let recentProject = app.buttons["welcomeRecentProject_\(projectName)"]
+        XCTAssertTrue(waitForExistence(recentProject, timeout: 5), "Project should be in recents")
+        recentProject.click()
+
+        // Tab should be restored from session
+        let restoredTab = editorTab("main.swift")
+        XCTAssertTrue(waitForExistence(restoredTab, timeout: 10), "Tab should be restored from session")
+
+        // Wait for async file tree load + syncSidebarSelection
+        let sidebarAfterRestore = app.outlines["sidebar"]
+        XCTAssertTrue(waitForExistence(sidebarAfterRestore, timeout: 10))
+
+        let mainRow = sidebarAfterRestore.cells.containing(
+            .staticText, identifier: "fileNode_main.swift"
+        ).firstMatch
+        XCTAssertTrue(waitForExistence(mainRow, timeout: 5), "main.swift row should exist in sidebar")
+        sleep(2)
+        XCTAssertTrue(mainRow.isSelected, "Active file should be highlighted in sidebar after session restore")
+    }
+
     // MARK: - P1: Status bar terminal toggle visible
 
     func testTerminalToggleButtonVisible() throws {
