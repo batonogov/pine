@@ -229,4 +229,3 @@ final class EditorWindowTests: PineUITestCase {
         XCTAssertTrue(waitForExistence(terminalToggle, timeout: 10), "Terminal toggle button should be visible in status bar")
     }
 }
-
