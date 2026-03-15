@@ -79,6 +79,9 @@ struct ContentView: View {
             refreshLineDiffs()
             projectManager.saveSession()
         }
+        .onChange(of: workspace.rootNodes) { _, _ in
+            syncSidebarSelection()
+        }
         .onChange(of: tabManager.tabs.count) { _, _ in
             projectManager.saveSession()
         }
