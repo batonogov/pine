@@ -2,6 +2,7 @@
 
 excluded:
   - .build
+  - .claude
   - Pine.xcodeproj
 
 disabled_rules:

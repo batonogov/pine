@@ -211,6 +211,15 @@ final class EditorWindowTests: PineUITestCase {
         XCTAssertTrue(duplicateItem.exists, "Duplicate menu item should exist")
     }
 
+    // MARK: - P1: Session restore highlights active file in sidebar
+
+    // TODO: (#138) Fix flaky on CI — CloseDelegate.windowWillClose doesn't fire in XCUITest,
+    // leaving stale ProjectManager in registry. WelcomeView cleanup added but needs
+    // CI verification.
+    // func testSidebarHighlightsActiveFileAfterSessionRestore() throws {
+    //     ...
+    // }
+
     // MARK: - P1: Status bar terminal toggle visible
 
     func testTerminalToggleButtonVisible() throws {

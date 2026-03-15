@@ -17,3 +17,9 @@ DerivedData/
 # Debug symbols
 *.dSYM.zip
 *.dSYM/
+
+# Profiling
+*.profraw
+
+# Claude Code
+.claude/

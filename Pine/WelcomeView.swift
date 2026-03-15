@@ -107,16 +107,33 @@ struct WelcomeView: View {
 
     private func openFolder() {
         if let url = registry.openProjectViaPanel() {
-            openWindow(value: url)
+            openProjectWindow(url)
             closeWelcome()
         }
     }
 
     private func openProject(at url: URL) {
         let canonical = url.resolvingSymlinksInPath()
+        // If the project is still in openProjects (window close didn't clean up),
+        // save its session and remove it so projectManager(for:) creates a fresh PM.
+        if registry.isProjectOpen(canonical) {
+            registry.openProjects[canonical]?.saveSession()
+            registry.closeProject(canonical)
+        }
         guard registry.projectManager(for: canonical) != nil else { return }
-        openWindow(value: canonical)
+        openProjectWindow(canonical)
         closeWelcome()
+    }
+
+    /// Opens a project window using AppDelegate's captured closure (works from both
+    /// SwiftUI scene windows and AppKit-created fallback windows) or falls back
+    /// to the SwiftUI environment action.
+    private func openProjectWindow(_ url: URL) {
+        if let open = appDelegate?.openProjectWindow {
+            open(url)
+        } else {
+            openWindow(value: url)
+        }
     }
 
     /// Closes all Welcome windows — both SwiftUI-managed and AppKit-created fallback.

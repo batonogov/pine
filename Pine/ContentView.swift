@@ -62,7 +62,7 @@ struct ContentView: View {
         .frame(minWidth: 800, minHeight: 500)
         .navigationTitle(workspace.projectName)
         .navigationSubtitle(branchSubtitle)
-        .onAppear {
+        .task {
             restoreSessionIfNeeded()
             syncSidebarSelection()
         }
@@ -78,6 +78,10 @@ struct ContentView: View {
             syncSidebarSelection()
             refreshLineDiffs()
             projectManager.saveSession()
+        }
+        .onChange(of: workspace.rootNodes) { _, _ in
+            restoreSessionIfNeeded()
+            syncSidebarSelection()
         }
         .onChange(of: tabManager.tabs.count) { _, _ in
             projectManager.saveSession()
@@ -136,9 +140,12 @@ struct ContentView: View {
         guard !didRestoreSession else { return }
         didRestoreSession = true
 
-        guard let rootURL = workspace.rootURL,
-              let session = SessionState.load(for: rootURL)
-        else { return }
+        guard let rootURL = workspace.rootURL else {
+            didRestoreSession = false // Allow retry when rootURL becomes available
+            return
+        }
+
+        guard let session = SessionState.load(for: rootURL) else { return }
         guard tabManager.tabs.isEmpty else { return }
 
         for url in session.existingFileURLs {

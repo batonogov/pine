@@ -195,6 +195,7 @@ private struct ProjectWindowView: View {
             // to openProjects, breaking the "show Welcome when last project closes" logic.
             if let pm = registry.openProjects[projectURL.resolvingSymlinksInPath()] {
                 ContentView()
+                    .id(ObjectIdentifier(pm))
                     .environment(pm)
                     .environment(pm.workspace)
                     .environment(pm.terminal)
