@@ -20,7 +20,7 @@ struct PineApp: App {
                 ProjectWindowView(projectURL: projectURL, registry: registry, appDelegate: appDelegate)
             }
         }
-        .defaultSize(width: 1100, height: 700)
+        .defaultSize(width: 1280, height: 800)
         .defaultLaunchBehavior(.suppressed)
         .commands {
             // Убираем стандартный "New Window" (Cmd+N) — табы создаются кликом по файлу
