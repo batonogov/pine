@@ -183,7 +183,11 @@ private struct ProjectWindowView: View {
 
     var body: some View {
         Group {
-            if let pm = registry.projectManager(for: projectURL) {
+            // Use direct dict lookup — NOT projectManager(for:) which auto-creates.
+            // Hidden windows from closed projects still get re-rendered by SwiftUI;
+            // calling projectManager(for:) would silently re-add the closed project
+            // to openProjects, breaking the "show Welcome when last project closes" logic.
+            if let pm = registry.openProjects[projectURL.resolvingSymlinksInPath()] {
                 ContentView()
                     .environment(pm)
                     .environment(pm.workspace)
@@ -399,19 +403,38 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func showWelcome() {
-        // Try SwiftUI first, then force-show via AppKit as fallback —
-        // openWindow stops working after a few dismissWindow cycles.
+        // Try SwiftUI first — may silently fail after repeated dismiss cycles
+        // because the captured @Environment(\.openWindow) closure becomes stale.
         openNamedWindow?("welcome")
-        DispatchQueue.main.async { [weak self] in
-            if let window = self?.welcomeWindow, !window.isVisible {
-                window.makeKeyAndOrderFront(nil)
-                NSApp.activate()
-            } else if self?.welcomeWindow == nil {
-                // SwiftUI scene lifecycle didn't create the window (e.g. XCUITest
-                // or direct binary launch that bypasses LaunchServices).
-                self?.createWelcomeWindowViaAppKit()
-            }
+
+        // Give SwiftUI a moment to process, then verify and fallback via AppKit.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak self] in
+            guard let self else { return }
+            self.ensureWelcomeVisible()
         }
+    }
+
+    /// Guarantees the Welcome window is visible, creating it via AppKit if needed.
+    private func ensureWelcomeVisible() {
+        // Check if any welcome window is already on screen
+        if let window = welcomeWindow, window.isVisible {
+            window.makeKeyAndOrderFront(nil)
+            NSApp.activate()
+            return
+        }
+
+        // welcomeWindow ref may point to a closed/deallocated window — find a live one
+        if let liveWindow = NSApp.windows.first(where: {
+            $0.identifier?.rawValue == "welcome" && $0.contentView != nil
+        }) {
+            welcomeWindow = liveWindow
+            liveWindow.makeKeyAndOrderFront(nil)
+            NSApp.activate()
+            return
+        }
+
+        // Nothing worked — create from scratch via AppKit
+        createWelcomeWindowViaAppKit()
     }
 
     /// Creates the Welcome window via AppKit when SwiftUI's scene lifecycle
@@ -495,9 +518,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     /// Called when the user clicks the dock icon with no visible windows.
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
         if !flag {
-            // Prefer surfacing existing hidden/minimized project windows (filter out
-            // internal SwiftUI hosting windows and panels by requiring a non-empty title)
-            if let window = NSApp.windows.first(where: {
+            if registry.openProjects.isEmpty {
+                // No open projects — always show Welcome, don't resurrect zombie windows
+                // (SwiftUI WindowGroup keeps closed project windows alive but hidden)
+                showWelcome()
+            } else if let window = NSApp.windows.first(where: {
                 !$0.isVisible && !$0.title.isEmpty && $0.contentView != nil
                     && $0 != welcomeWindow
             }) {
