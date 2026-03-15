@@ -16,7 +16,7 @@
             "scope": "string"
         },
         {
-            "pattern": "^[\\w.-]+(?=\\s*:)",
+            "pattern": "^\\s*[\\w.-]+(?=\\s*:)",
             "scope": "attribute",
             "options": ["anchorsMatchLines"]
         },
@@ -29,8 +29,17 @@
             "scope": "number"
         },
         {
-            "pattern": "---",
+            "pattern": "---|\\.\\.\\.",
             "scope": "keyword"
+        },
+        {
+            "pattern": "[|>][-+]?(?=\\s*$)",
+            "scope": "keyword",
+            "options": ["anchorsMatchLines"]
+        },
+        {
+            "pattern": "!!?\\w+",
+            "scope": "attribute"
         },
         {
             "pattern": "&\\w+|\\*\\w+",
