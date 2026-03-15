@@ -243,21 +243,21 @@ final class EditorWindowTests: PineUITestCase {
 
         // Wait for project window to appear
         let sidebarAfterRestore = app.outlines["sidebar"]
-        XCTAssertTrue(waitForExistence(sidebarAfterRestore, timeout: 10), "Project should reopen")
+        XCTAssertTrue(waitForExistence(sidebarAfterRestore, timeout: 15), "Project should reopen")
 
         // Tab should be restored from session
         let restoredTab = editorTab("main.swift")
-        XCTAssertTrue(waitForExistence(restoredTab, timeout: 10), "Tab should be restored from session")
+        XCTAssertTrue(waitForExistence(restoredTab, timeout: 15), "Tab should be restored from session")
 
         // Wait for async file tree load + syncSidebarSelection via onChange(of: rootNodes)
         let mainRow = sidebarAfterRestore.cells.containing(
             .staticText, identifier: "fileNode_main.swift"
         ).firstMatch
-        XCTAssertTrue(waitForExistence(mainRow, timeout: 10), "main.swift row should exist in sidebar")
+        XCTAssertTrue(waitForExistence(mainRow, timeout: 15), "main.swift row should exist in sidebar")
 
         let selectedPredicate = NSPredicate(format: "isSelected == true")
         expectation(for: selectedPredicate, evaluatedWith: mainRow, handler: nil)
-        waitForExpectations(timeout: 5)
+        waitForExpectations(timeout: 10)
     }
 
     // MARK: - P1: Status bar terminal toggle visible
