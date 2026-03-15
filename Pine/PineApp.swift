@@ -399,19 +399,38 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func showWelcome() {
-        // Try SwiftUI first, then force-show via AppKit as fallback —
-        // openWindow stops working after a few dismissWindow cycles.
+        // Try SwiftUI first — may silently fail after repeated dismiss cycles
+        // because the captured @Environment(\.openWindow) closure becomes stale.
         openNamedWindow?("welcome")
-        DispatchQueue.main.async { [weak self] in
-            if let window = self?.welcomeWindow, !window.isVisible {
-                window.makeKeyAndOrderFront(nil)
-                NSApp.activate()
-            } else if self?.welcomeWindow == nil {
-                // SwiftUI scene lifecycle didn't create the window (e.g. XCUITest
-                // or direct binary launch that bypasses LaunchServices).
-                self?.createWelcomeWindowViaAppKit()
-            }
+
+        // Give SwiftUI a moment to process, then verify and fallback via AppKit.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak self] in
+            guard let self else { return }
+            self.ensureWelcomeVisible()
         }
+    }
+
+    /// Guarantees the Welcome window is visible, creating it via AppKit if needed.
+    private func ensureWelcomeVisible() {
+        // Check if any welcome window is already on screen
+        if let window = welcomeWindow, window.isVisible {
+            window.makeKeyAndOrderFront(nil)
+            NSApp.activate()
+            return
+        }
+
+        // welcomeWindow ref may point to a closed/deallocated window — find a live one
+        if let liveWindow = NSApp.windows.first(where: {
+            $0.identifier?.rawValue == "welcome" && $0.contentView != nil
+        }) {
+            welcomeWindow = liveWindow
+            liveWindow.makeKeyAndOrderFront(nil)
+            NSApp.activate()
+            return
+        }
+
+        // Nothing worked — create from scratch via AppKit
+        createWelcomeWindowViaAppKit()
     }
 
     /// Creates the Welcome window via AppKit when SwiftUI's scene lifecycle

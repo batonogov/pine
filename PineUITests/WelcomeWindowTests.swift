@@ -9,10 +9,10 @@ import XCTest
 
 final class WelcomeWindowTests: PineUITestCase {
 
-    private var projectURL: URL?
+    private var projectURLs: [URL] = []
 
     override func tearDownWithError() throws {
-        if let url = projectURL { cleanupProject(url) }
+        for url in projectURLs { cleanupProject(url) }
         try super.tearDownWithError()
     }
 
@@ -72,8 +72,8 @@ final class WelcomeWindowTests: PineUITestCase {
 
     func testClickRecentProjectOpensProject() throws {
         // Step 1: Launch with a project to create a recent entry
-        projectURL = try createTempProject(files: ["hello.swift": "// hi\n"])
-        let url = try XCTUnwrap(projectURL)
+        let url = try createTempProject(files: ["hello.swift": "// hi\n"])
+        projectURLs.append(url)
         launchWithProject(url)
 
         let sidebar = app.outlines["sidebar"]
@@ -112,8 +112,8 @@ final class WelcomeWindowTests: PineUITestCase {
 
     func testWelcomeClosesWhenProjectOpens() throws {
         // Step 1: Launch with a project to create a recent entry
-        projectURL = try createTempProject(files: ["hello.swift": "// hi\n"])
-        let url = try XCTUnwrap(projectURL)
+        let url = try createTempProject(files: ["hello.swift": "// hi\n"])
+        projectURLs.append(url)
         launchWithProject(url)
 
         let sidebar = app.outlines["sidebar"]
@@ -144,12 +144,69 @@ final class WelcomeWindowTests: PineUITestCase {
         XCTAssertTrue(welcomeGone, "Welcome window should close after opening a project")
     }
 
+    // MARK: - P0: Close project → Welcome reappears
+
+    func testWelcomeReappearsAfterClosingProjectWindow() throws {
+        // Realistic workflow: open project, work with files, close, reopen from Welcome, close again.
+        // The bug manifests on the second cycle when openWindow stops working after dismissWindow.
+        let url = try createTempProject(files: [
+            "main.swift": "let x = 1\n",
+            "utils.swift": "func helper() {}\n"
+        ])
+        projectURLs.append(url)
+
+        // --- Cycle 1: open project via env var, open files, close ---
+        launchWithProject(url)
+
+        let sidebar = app.outlines["sidebar"]
+        XCTAssertTrue(waitForExistence(sidebar, timeout: 10), "Project should open")
+
+        let mainFile = app.staticTexts["fileNode_main.swift"]
+        if waitForExistence(mainFile, timeout: 5) { mainFile.click() }
+        let utilsFile = app.staticTexts["fileNode_utils.swift"]
+        if waitForExistence(utilsFile, timeout: 5) { utilsFile.click() }
+
+        app.windows.firstMatch.buttons[XCUIIdentifierCloseWindow].click()
+
+        let welcomeWindow = app.windows["welcome"]
+        XCTAssertTrue(
+            waitForExistence(welcomeWindow, timeout: 10),
+            "Welcome should reappear after closing project (cycle 1)"
+        )
+
+        // --- Cycle 2: reopen same project from recent list, open files, close ---
+        let projectName = url.lastPathComponent
+        let recentItem = app.descendants(matching: .any)[
+            "welcomeRecentProject_\(projectName)"
+        ].firstMatch
+        XCTAssertTrue(waitForExistence(recentItem, timeout: 5), "Project should be in recent list")
+        recentItem.click()
+
+        XCTAssertTrue(
+            waitForExistence(sidebar, timeout: 10),
+            "Project should reopen from Welcome"
+        )
+
+        let mainFile2 = app.staticTexts["fileNode_main.swift"]
+        if waitForExistence(mainFile2, timeout: 5) { mainFile2.click() }
+        let utilsFile2 = app.staticTexts["fileNode_utils.swift"]
+        if waitForExistence(utilsFile2, timeout: 5) { utilsFile2.click() }
+
+        app.windows.firstMatch.buttons[XCUIIdentifierCloseWindow].click()
+
+        // This is where the bug manifests — Welcome doesn't appear on second cycle
+        XCTAssertTrue(
+            waitForExistence(welcomeWindow, timeout: 10),
+            "Welcome should reappear after closing project (cycle 2)"
+        )
+    }
+
     // MARK: - P0: Restart → Welcome (not previous windows)
 
     func testRestartShowsWelcomeNotPreviousProject() throws {
         // Step 1: Launch with a project
-        projectURL = try createTempProject(files: ["test.swift": "// test\n"])
-        let url = try XCTUnwrap(projectURL)
+        let url = try createTempProject(files: ["test.swift": "// test\n"])
+        projectURLs.append(url)
         launchWithProject(url)
 
         let sidebar = app.outlines["sidebar"]
