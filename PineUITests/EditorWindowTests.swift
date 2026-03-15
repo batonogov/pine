@@ -227,11 +227,11 @@ final class EditorWindowTests: PineUITestCase {
         let mainTab = editorTab("main.swift")
         XCTAssertTrue(waitForExistence(mainTab, timeout: 5))
 
-        // Give SwiftUI time to trigger onChange → saveSession
-        sleep(1)
+        // Give SwiftUI time to trigger onChange → saveSession and flush to disk
+        sleep(2)
 
-        // Step 2: Terminate and relaunch (session should be persisted)
-        app.terminate()
+        // Step 2: Gracefully quit (triggers applicationWillTerminate → saveSession)
+        app.typeKey("q", modifierFlags: .command)
 
         app = XCUIApplication()
         app.launchArguments += [
