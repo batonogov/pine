@@ -34,6 +34,10 @@ enum AccessibilityID {
     static let maximizeTerminalButton = "maximizeTerminalButton"
     static let hideTerminalButton = "hideTerminalButton"
 
+    // MARK: - Markdown Preview
+    static let markdownPreviewToggle = "markdownPreviewToggle"
+    static let markdownPreviewView = "markdownPreviewView"
+
     // MARK: - Status bar
     static let statusBar = "statusBar"
     static let terminalToggleButton = "terminalToggleButton"

@@ -256,6 +256,45 @@ struct SessionStateTests {
         #expect(loaded == nil)
     }
 
+    // MARK: - Preview modes
+
+    @Test func previewModesRoundTrip() throws {
+        let tempDir = try makeTempDirectory()
+        defer { cleanup(tempDir) }
+
+        let file = tempDir.appendingPathComponent("readme.md")
+        FileManager.default.createFile(atPath: file.path, contents: nil)
+
+        let defaults = try makeDefaults()
+        defer { cleanupDefaults(defaults) }
+
+        let modes = [file.path: "split"]
+        SessionState.save(
+            projectURL: tempDir,
+            openFileURLs: [file],
+            previewModes: modes,
+            defaults: defaults
+        )
+
+        let loaded = SessionState.load(for: tempDir, defaults: defaults)
+        #expect(loaded?.previewModes?[file.path] == "split")
+    }
+
+    @Test func legacySessionWithoutPreviewModesLoadsDefaults() throws {
+        let tempDir = try makeTempDirectory()
+        defer { cleanup(tempDir) }
+
+        let defaults = try makeDefaults()
+        defer { cleanupDefaults(defaults) }
+
+        // Save without preview modes (simulating older format)
+        SessionState.save(projectURL: tempDir, openFileURLs: [], defaults: defaults)
+
+        let loaded = SessionState.load(for: tempDir, defaults: defaults)
+        #expect(loaded != nil)
+        #expect(loaded?.previewModes == nil)
+    }
+
     // MARK: - Corrupt data
 
     @Test func loadReturnsNilOnCorruptData() throws {

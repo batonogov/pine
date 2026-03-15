@@ -16,8 +16,22 @@ struct EditorTabBar: View {
     var onCloseTab: (EditorTab) -> Void
     /// Called after tabs are reordered via drag-and-drop.
     var onReorder: (() -> Void)?
+    /// Whether the active tab is a Markdown file.
+    var isMarkdownFile: Bool = false
+    /// Current preview mode of the active tab.
+    var previewMode: MarkdownPreviewMode = .source
+    /// Called when the user toggles the Markdown preview mode.
+    var onTogglePreview: (() -> Void)?
 
     @State private var draggingTabID: UUID?
+
+    private var previewIcon: String {
+        switch previewMode {
+        case .source: "doc.plaintext"
+        case .preview: "eye"
+        case .split: "rectangle.split.2x1"
+        }
+    }
 
     var body: some View {
         HStack(spacing: 0) {
@@ -46,6 +60,21 @@ struct EditorTabBar: View {
             }
 
             Spacer()
+
+            if isMarkdownFile {
+                Button {
+                    onTogglePreview?()
+                } label: {
+                    Image(systemName: previewIcon)
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(.secondary)
+                        .frame(width: 24, height: 24)
+                }
+                .buttonStyle(.plain)
+                .help(Strings.menuTogglePreview)
+                .accessibilityIdentifier(AccessibilityID.markdownPreviewToggle)
+                .padding(.trailing, 4)
+            }
         }
         .frame(height: 30)
         .background(.bar)

@@ -14,6 +14,9 @@ struct SessionState: Codable {
     var projectPath: String
     var openFilePaths: [String]
     var activeFilePath: String?
+    /// Preview modes for markdown files. Key is file path, value is MarkdownPreviewMode raw value.
+    /// Optional for backwards compatibility with sessions saved before this field existed.
+    var previewModes: [String: String]?
 
     // MARK: - UserDefaults keys
 
@@ -48,12 +51,14 @@ struct SessionState: Codable {
         projectURL: URL,
         openFileURLs: [URL],
         activeFileURL: URL? = nil,
+        previewModes: [String: String]? = nil,
         defaults: UserDefaults = .standard
     ) {
         let state = SessionState(
             projectPath: projectURL.path,
             openFilePaths: openFileURLs.map(\.path),
-            activeFilePath: activeFileURL?.path
+            activeFilePath: activeFileURL?.path,
+            previewModes: previewModes
         )
         guard let data = try? JSONEncoder().encode(state) else { return }
         defaults.set(data, forKey: key(for: projectURL))
