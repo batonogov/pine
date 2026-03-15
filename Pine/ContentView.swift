@@ -62,7 +62,7 @@ struct ContentView: View {
         .frame(minWidth: 800, minHeight: 500)
         .navigationTitle(workspace.projectName)
         .navigationSubtitle(branchSubtitle)
-        .onAppear {
+        .task {
             restoreSessionIfNeeded()
             syncSidebarSelection()
         }
