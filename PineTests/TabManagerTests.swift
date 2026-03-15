@@ -560,6 +560,90 @@ struct TabManagerTests {
         #expect(result == false)
     }
 
+    // MARK: - Preview file detection
+
+    @Test("isPreviewFile returns true for images")
+    func isPreviewFileImages() {
+        let manager = TabManager()
+        let dir = FileManager.default.temporaryDirectory
+        #expect(manager.isPreviewFile(url: dir.appendingPathComponent("photo.png")) == true)
+        #expect(manager.isPreviewFile(url: dir.appendingPathComponent("image.jpg")) == true)
+        #expect(manager.isPreviewFile(url: dir.appendingPathComponent("icon.gif")) == true)
+        #expect(manager.isPreviewFile(url: dir.appendingPathComponent("vector.svg")) == true)
+    }
+
+    @Test("isPreviewFile returns true for PDF and fonts")
+    func isPreviewFilePDFAndFonts() {
+        let manager = TabManager()
+        let dir = FileManager.default.temporaryDirectory
+        #expect(manager.isPreviewFile(url: dir.appendingPathComponent("doc.pdf")) == true)
+        #expect(manager.isPreviewFile(url: dir.appendingPathComponent("font.ttf")) == true)
+        #expect(manager.isPreviewFile(url: dir.appendingPathComponent("font.otf")) == true)
+    }
+
+    @Test("isPreviewFile returns true for audio and video")
+    func isPreviewFileAudioVideo() {
+        let manager = TabManager()
+        let dir = FileManager.default.temporaryDirectory
+        #expect(manager.isPreviewFile(url: dir.appendingPathComponent("song.mp3")) == true)
+        #expect(manager.isPreviewFile(url: dir.appendingPathComponent("video.mp4")) == true)
+        #expect(manager.isPreviewFile(url: dir.appendingPathComponent("movie.mov")) == true)
+    }
+
+    @Test("isPreviewFile returns false for text and source code")
+    func isPreviewFileTextFiles() {
+        let manager = TabManager()
+        let dir = FileManager.default.temporaryDirectory
+        #expect(manager.isPreviewFile(url: dir.appendingPathComponent("main.swift")) == false)
+        #expect(manager.isPreviewFile(url: dir.appendingPathComponent("readme.txt")) == false)
+        #expect(manager.isPreviewFile(url: dir.appendingPathComponent("config.json")) == false)
+        #expect(manager.isPreviewFile(url: dir.appendingPathComponent("style.css")) == false)
+        #expect(manager.isPreviewFile(url: dir.appendingPathComponent("index.html")) == false)
+        #expect(manager.isPreviewFile(url: dir.appendingPathComponent("app.js")) == false)
+    }
+
+    @Test("isPreviewFile returns false for files with no extension")
+    func isPreviewFileNoExtension() {
+        let manager = TabManager()
+        let dir = FileManager.default.temporaryDirectory
+        #expect(manager.isPreviewFile(url: dir.appendingPathComponent("Makefile")) == false)
+    }
+
+    @Test("openTab for image creates preview tab")
+    func openTabPreviewFile() {
+        let manager = TabManager()
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let url = dir.appendingPathComponent("test.png")
+        // Create a minimal PNG file (1x1 pixel)
+        let pngData = Data([
+            0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A,  // PNG signature
+            0x00, 0x00, 0x00, 0x0D, 0x49, 0x48, 0x44, 0x52,  // IHDR chunk
+            0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01,
+            0x08, 0x02, 0x00, 0x00, 0x00, 0x90, 0x77, 0x53,
+            0xDE, 0x00, 0x00, 0x00, 0x0C, 0x49, 0x44, 0x41,
+            0x54, 0x08, 0xD7, 0x63, 0xF8, 0xCF, 0xC0, 0x00,
+            0x00, 0x00, 0x02, 0x00, 0x01, 0xE2, 0x21, 0xBC,
+            0x33, 0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4E,
+            0x44, 0xAE, 0x42, 0x60, 0x82
+        ])
+        try? pngData.write(to: url)
+
+        manager.openTab(url: url)
+
+        #expect(manager.tabs.count == 1)
+        #expect(manager.activeTab?.kind == .preview)
+        #expect(manager.activeTab?.isDirty == false)
+        #expect(manager.activeTab?.content == "")
+    }
+
+    @Test("Preview tabs are never dirty")
+    func previewTabNeverDirty() {
+        let tab = EditorTab(url: URL(fileURLWithPath: "/tmp/test.png"), kind: .preview)
+        #expect(tab.isDirty == false)
+    }
+
     @Test("Rename preserves editor state")
     func renamePreservesEditorState() {
         let manager = TabManager()

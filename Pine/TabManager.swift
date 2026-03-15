@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import UniformTypeIdentifiers
 
 /// Manages the set of open editor tabs and the active selection.
 @Observable
@@ -29,6 +30,14 @@ final class TabManager {
         // Dedup: if already open, just activate
         if let existing = tabs.first(where: { $0.url == url }) {
             activeTabID = existing.id
+            return
+        }
+
+        if isPreviewFile(url: url) {
+            var tab = EditorTab(url: url, kind: .preview)
+            tab.lastModDate = modDate(for: url)
+            tabs.append(tab)
+            activeTabID = tab.id
             return
         }
 
@@ -64,9 +73,10 @@ final class TabManager {
         }
     }
 
-    /// Updates the content of the active tab.
+    /// Updates the content of the active tab (text tabs only).
     func updateContent(_ newContent: String) {
         guard let index = activeTabIndex else { return }
+        guard tabs[index].kind == .text else { return }
         tabs[index].content = newContent
     }
 
@@ -89,6 +99,7 @@ final class TabManager {
     @discardableResult
     func trySaveTab(at index: Int) throws -> Bool {
         let tab = tabs[index]
+        guard tab.kind == .text else { return false }
         try tab.content.write(to: tab.url, atomically: true, encoding: .utf8)
         tabs[index].savedContent = tab.content
         tabs[index].lastModDate = modDate(for: tab.url)
@@ -288,7 +299,9 @@ final class TabManager {
                   diskMod > lastMod
             else { continue }
 
-            if tab.isDirty {
+            if tab.kind == .preview {
+                tabs[index].lastModDate = diskMod
+            } else if tab.isDirty {
                 conflicts.append(.init(tabID: tab.id, url: tab.url, kind: .modified))
                 tabs[index].lastModDate = diskMod
             } else {
@@ -321,5 +334,24 @@ final class TabManager {
     /// Returns the modification date of a file, or nil on error.
     private func modDate(for url: URL) -> Date? {
         try? FileManager.default.attributesOfItem(atPath: url.path)[.modificationDate] as? Date
+    }
+
+    // MARK: - Preview file detection
+
+    /// Determines if a file should be opened as a Quick Look preview
+    /// rather than in the text editor.
+    func isPreviewFile(url: URL) -> Bool {
+        guard let type = UTType(filenameExtension: url.pathExtension),
+              !type.conforms(to: .text),
+              !type.conforms(to: .sourceCode)
+        else { return false }
+
+        // Additional check: files with no extension or unknown types
+        // default to text editor
+        if type == .item || type == .data {
+            return false
+        }
+
+        return true
     }
 }
