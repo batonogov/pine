@@ -114,6 +114,12 @@ struct WelcomeView: View {
 
     private func openProject(at url: URL) {
         let canonical = url.resolvingSymlinksInPath()
+        // If the project is still in openProjects (window close didn't clean up),
+        // save its session and remove it so projectManager(for:) creates a fresh PM.
+        if registry.isProjectOpen(canonical) {
+            registry.openProjects[canonical]?.saveSession()
+            registry.closeProject(canonical)
+        }
         guard registry.projectManager(for: canonical) != nil else { return }
         openProjectWindow(canonical)
         closeWelcome()

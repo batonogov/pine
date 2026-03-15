@@ -204,21 +204,12 @@ private struct ProjectWindowView: View {
                             appDelegate: appDelegate
                         )
                     }
-                    .onDisappear {
-                        // Fallback: if CloseDelegate.windowWillClose didn't fire
-                        // (e.g., in XCUITest), save session and clean up here.
-                        guard !appDelegate.isTerminating else { return }
-                        guard registry.isProjectOpen(projectURL) else { return }
-                        appDelegate.handleProjectWindowDisappear(
-                            projectURL: projectURL, registry: registry
-                        )
-                    }
             }
         }
         .background { AppDelegateBridge(appDelegate: appDelegate, registry: registry) }
-        // Note: project cleanup (session save, Welcome restore) is primarily handled by
-        // CloseDelegate.windowWillClose. ContentView.onDisappear serves as a fallback
-        // for environments where the CloseDelegate may not be installed (e.g., XCUITest).
+        // Note: project cleanup (session save, Welcome restore) is handled by
+        // CloseDelegate.windowWillClose — not onDisappear, which doesn't fire
+        // reliably when windows are closed via AppKit performClose:.
     }
 }
 
