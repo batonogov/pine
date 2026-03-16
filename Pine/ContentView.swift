@@ -792,10 +792,13 @@ struct FileNodeRow: View {
         do {
             try FileManager.default.copyItem(at: url, to: copyURL)
             workspace.refreshFileTree()
-            // Start inline rename so the user can immediately adjust the name
-            editState.renamingURL = copyURL
-            editState.editingText = copyURL.lastPathComponent
-            editState.isNewlyCreated = false
+            // Allow SwiftUI to create FileNodeRow for the new item,
+            // then start inline rename on the next run-loop cycle.
+            DispatchQueue.main.async {
+                editState.renamingURL = copyURL
+                editState.editingText = copyURL.lastPathComponent
+                editState.isNewlyCreated = false
+            }
             // Also open the duplicate in editor if it's a file
             if !node.isDirectory {
                 tabManager.openTab(url: copyURL)
