@@ -23,6 +23,7 @@ struct ContentView: View {
     @State private var columnVisibility: NavigationSplitViewVisibility = .all
     @State private var lineDiffs: [GitLineDiff] = []
     @State private var didRestoreSession = false
+    @State private var showBranchSwitcher = false
 
     private var activeTab: EditorTab? { tabManager.activeTab }
 
@@ -121,6 +122,17 @@ struct ContentView: View {
         .onReceive(NotificationCenter.default.publisher(for: .fileDeleted)) { notification in
             guard let deletedURL = notification.userInfo?["url"] as? URL else { return }
             handleFileDeletion(deletedURL)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .switchBranch)) { _ in
+            guard controlActiveState == .key,
+                  workspace.gitProvider.isGitRepository else { return }
+            showBranchSwitcher = true
+        }
+        .sheet(isPresented: $showBranchSwitcher) {
+            BranchSwitcherView(
+                gitProvider: workspace.gitProvider,
+                isPresented: $showBranchSwitcher
+            )
         }
         .onChange(of: workspace.externalChangeToken) { _, _ in
             guard controlActiveState == .key else { return }

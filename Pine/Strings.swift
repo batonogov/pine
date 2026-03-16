@@ -112,6 +112,14 @@ enum Strings {
     static let menuGit: LocalizedStringKey = "menu.git"
     static let menuOpenFolder: LocalizedStringKey = "menu.openFolder"
     static let menuSwitchBranch: LocalizedStringKey = "menu.switchBranch"
+    // MARK: - Branch Switcher
+
+    static let branchFilterPlaceholder: LocalizedStringKey = "branch.filterPlaceholder"
+
+    static var branchSwitchErrorTitle: String {
+        String(localized: "branch.switchError.title")
+    }
+
     static let menuSave: LocalizedStringKey = "menu.save"
     static let menuSaveAll: LocalizedStringKey = "menu.saveAll"
     static let menuSaveAs: LocalizedStringKey = "menu.saveAs"

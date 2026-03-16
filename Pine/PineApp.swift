@@ -49,7 +49,7 @@ struct PineApp: App {
             // Cmd+Shift+B — переключение веток
             CommandMenu(Strings.menuGit) {
                 Button(Strings.menuSwitchBranch) {
-                    // Branch switching is handled via toolbarTitleMenu
+                    NotificationCenter.default.post(name: .switchBranch, object: nil)
                 }
                 .keyboardShortcut("b", modifiers: [.command, .shift])
             }
@@ -592,6 +592,7 @@ extension Notification.Name {
     static let openFolder = Notification.Name("openFolder")
     static let closeTab = Notification.Name("closeTab")
     static let refreshLineDiffs = Notification.Name("refreshLineDiffs")
+    static let switchBranch = Notification.Name("switchBranch")
     /// userInfo: ["oldURL": URL, "newURL": URL]
     static let fileRenamed = Notification.Name("fileRenamed")
     /// userInfo: ["url": URL]
