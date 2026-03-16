@@ -792,7 +792,11 @@ struct FileNodeRow: View {
         do {
             try FileManager.default.copyItem(at: url, to: copyURL)
             workspace.refreshFileTree()
-            // Open the duplicate in editor if it's a file
+            // Start inline rename so the user can immediately adjust the name
+            editState.renamingURL = copyURL
+            editState.editingText = copyURL.lastPathComponent
+            editState.isNewlyCreated = false
+            // Also open the duplicate in editor if it's a file
             if !node.isDirectory {
                 tabManager.openTab(url: copyURL)
             }
