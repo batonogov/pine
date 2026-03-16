@@ -729,7 +729,13 @@ struct FileNodeRow: View {
     @Environment(SidebarEditState.self) var editState
     @FocusState private var isTextFieldFocused: Bool
 
-    private var isEditing: Bool { editState.renamingURL == node.url }
+    private var isEditing: Bool {
+        guard let renamingURL = editState.renamingURL else { return false }
+        // Compare by path to ignore trailing-slash differences between
+        // URLs built via appendingPathComponent (no slash) and URLs
+        // returned by contentsOfDirectory (trailing slash for directories).
+        return renamingURL.path == node.url.path
+    }
 
     private var gitStatus: GitFileStatus? {
         let provider = workspace.gitProvider
@@ -779,7 +785,7 @@ struct FileNodeRow: View {
                 .onChange(of: isTextFieldFocused) { _, focused in
                     // Guard against double-commit: onSubmit clears editState,
                     // then focus loss fires — skip if already committed.
-                    guard !focused, editState.renamingURL == node.url else { return }
+                    guard !focused, editState.renamingURL?.path == node.url.path else { return }
                     commitRename()
                 }
         }
@@ -848,7 +854,7 @@ struct FileNodeRow: View {
     }
 
     private func commitRename() {
-        guard editState.renamingURL == node.url else { return }
+        guard editState.renamingURL?.path == node.url.path else { return }
 
         let newName = editState.editingText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !newName.isEmpty else {
