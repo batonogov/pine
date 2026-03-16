@@ -57,7 +57,18 @@ final class DuplicateTests: PineUITestCase {
 
         duplicateViaSidebar("hello.swift")
 
-        // The copy should appear in the sidebar
+        // The copy should exist on disk
+        let copyPath = projectURL.appendingPathComponent("hello copy.swift").path
+        XCTAssertTrue(
+            FileManager.default.fileExists(atPath: copyPath),
+            "Copy file should exist on disk"
+        )
+
+        // After duplication the copy may be in inline-rename mode (TextField)
+        // or as a StaticText. Press Escape to dismiss rename, then check sidebar.
+        app.typeKey(.escape, modifierFlags: [])
+        sleep(1)
+
         let copyNode = app.staticTexts["fileNode_hello copy.swift"]
         XCTAssertTrue(
             waitForExistence(copyNode, timeout: 5),
@@ -69,13 +80,6 @@ final class DuplicateTests: PineUITestCase {
         XCTAssertTrue(
             waitForExistence(copyTab, timeout: 5),
             "Duplicated file should open in an editor tab"
-        )
-
-        // The copy should exist on disk
-        let copyPath = projectURL.appendingPathComponent("hello copy.swift").path
-        XCTAssertTrue(
-            FileManager.default.fileExists(atPath: copyPath),
-            "Copy file should exist on disk"
         )
     }
 
@@ -89,13 +93,6 @@ final class DuplicateTests: PineUITestCase {
 
         duplicateViaSidebar("docs")
 
-        // The copy should appear in the sidebar
-        let copyNode = app.staticTexts["fileNode_docs copy"]
-        XCTAssertTrue(
-            waitForExistence(copyNode, timeout: 5),
-            "docs copy should appear in sidebar after duplicating"
-        )
-
         // The copy should exist on disk as a directory
         let copyPath = projectURL.appendingPathComponent("docs copy").path
         var isDir: ObjCBool = false
@@ -108,6 +105,16 @@ final class DuplicateTests: PineUITestCase {
         XCTAssertTrue(
             FileManager.default.fileExists(atPath: copiedFile),
             "Files inside the directory should be copied recursively"
+        )
+
+        // Dismiss inline rename and verify sidebar shows the copy
+        app.typeKey(.escape, modifierFlags: [])
+        sleep(1)
+
+        let copyNode = app.staticTexts["fileNode_docs copy"]
+        XCTAssertTrue(
+            waitForExistence(copyNode, timeout: 5),
+            "docs copy should appear in sidebar after duplicating"
         )
     }
 
@@ -126,10 +133,20 @@ final class DuplicateTests: PineUITestCase {
         duplicateViaSidebar("hello.swift")
 
         // Should get "hello copy 2.swift" since "hello copy.swift" already exists
+        let copy2Path = projectURL.appendingPathComponent("hello copy 2.swift").path
+        XCTAssertTrue(
+            FileManager.default.fileExists(atPath: copy2Path),
+            "Second duplicate should be named 'hello copy 2.swift'"
+        )
+
+        // Dismiss inline rename and verify sidebar
+        app.typeKey(.escape, modifierFlags: [])
+        sleep(1)
+
         let copy2Node = app.staticTexts["fileNode_hello copy 2.swift"]
         XCTAssertTrue(
             waitForExistence(copy2Node, timeout: 5),
-            "Second duplicate should be named 'hello copy 2.swift'"
+            "hello copy 2.swift should appear in sidebar"
         )
     }
 
