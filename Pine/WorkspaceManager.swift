@@ -28,6 +28,10 @@ final class WorkspaceManager {
     /// a slow background task never overwrites a newer result.
     private var loadGeneration: Int = 0
 
+    /// After a synchronous refreshFileTree(), watcher events within this
+    /// window are suppressed because they echo the action we just handled.
+    private var suppressWatcherUntil: Date?
+
     deinit {
         fileWatcher?.stop()
     }
@@ -117,12 +121,18 @@ final class WorkspaceManager {
         root.loadChildren()
         rootNodes = root.children ?? []
         gitProvider.refresh()
+        // Suppress watcher echoes — we just refreshed, so any watcher event
+        // within the next second is redundant and could break inline editing.
+        suppressWatcherUntil = Date().addingTimeInterval(1.0)
     }
 
     /// Background variant called by the file watcher.
     /// Runs on main (watcher dispatches here) so loadGeneration
     /// access is safe; heavy I/O is dispatched to a background queue.
     private func refreshFileTreeAsync() {
+        if let until = suppressWatcherUntil, Date() < until {
+            return
+        }
         guard let url = rootURL else { return }
         loadGeneration += 1
         let generation = loadGeneration
