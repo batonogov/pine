@@ -63,6 +63,21 @@ struct ContentView: View {
         .frame(minWidth: 800, minHeight: 500)
         .navigationTitle(workspace.projectName)
         .navigationSubtitle(branchSubtitle)
+        .toolbarTitleMenu {
+            if workspace.gitProvider.isGitRepository {
+                ForEach(workspace.gitProvider.branches, id: \.self) { branch in
+                    Button {
+                        switchBranch(branch)
+                    } label: {
+                        if branch == workspace.gitProvider.currentBranch {
+                            Label(branch, systemImage: "checkmark")
+                        } else {
+                            Text(branch)
+                        }
+                    }
+                }
+            }
+        }
         .task {
             restoreSessionIfNeeded()
             syncSidebarSelection()
@@ -225,6 +240,19 @@ struct ContentView: View {
             return
         }
         lineDiffs = workspace.gitProvider.diffForFile(at: tab.url)
+    }
+
+    /// Switches to the given branch via toolbarTitleMenu, showing an alert on error.
+    private func switchBranch(_ branch: String) {
+        guard branch != workspace.gitProvider.currentBranch else { return }
+        let result = workspace.gitProvider.checkoutBranch(branch)
+        if !result.success {
+            let alert = NSAlert()
+            alert.messageText = Strings.branchSwitchErrorTitle
+            alert.informativeText = result.error
+            alert.alertStyle = .warning
+            alert.runModal()
+        }
     }
 
     /// Closes a tab with unsaved-changes protection.

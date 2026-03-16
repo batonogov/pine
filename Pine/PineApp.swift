@@ -46,13 +46,6 @@ struct PineApp: App {
                 }
                 .keyboardShortcut("p", modifiers: [.command, .shift])
             }
-            // Cmd+Shift+B — переключение веток
-            CommandMenu(Strings.menuGit) {
-                Button(Strings.menuSwitchBranch) {
-                    NotificationCenter.default.post(name: .switchBranch, object: nil)
-                }
-                .keyboardShortcut("b", modifiers: [.command, .shift])
-            }
             // File menu: Save, Save All, Save As, Duplicate
             CommandGroup(replacing: .saveItem) {
                 Button(Strings.menuSave) {
@@ -498,6 +491,18 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             } else {
                 window.performClose(nil)
             }
+            return nil // consume event
+        }
+
+        // Intercept Cmd+Shift+B to open branch switcher sheet.
+        NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+            guard event.modifierFlags.intersection(.deviceIndependentFlagsMask) == [.command, .shift],
+                  event.charactersIgnoringModifiers == "b",
+                  let window = NSApp.keyWindow,
+                  window.delegate is CloseDelegate else {
+                return event
+            }
+            NotificationCenter.default.post(name: .switchBranch, object: nil)
             return nil // consume event
         }
 
