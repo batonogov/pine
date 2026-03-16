@@ -21,6 +21,7 @@ enum Strings {
 
     static let contextNewFile: LocalizedStringKey = "context.newFile"
     static let contextNewFolder: LocalizedStringKey = "context.newFolder"
+    static let contextDuplicate: LocalizedStringKey = "context.duplicate"
     static let contextRename: LocalizedStringKey = "context.rename"
     static let contextDelete: LocalizedStringKey = "context.delete"
     static let contextRevealInFinder: LocalizedStringKey = "context.revealInFinder"

@@ -26,13 +26,26 @@ class PineUITestCase: XCTestCase {
 
     /// Creates a temporary project directory with sample files for testing.
     @discardableResult
-    func createTempProject(files: [String: String] = ["main.swift": "// Hello\n"]) throws -> URL {
+    func createTempProject(
+        files: [String: String] = ["main.swift": "// Hello\n"],
+        directories: [String] = []
+    ) throws -> URL {
         let dir = FileManager.default.temporaryDirectory
             .appendingPathComponent("PineUITest-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
 
+        for dirName in directories {
+            let subdir = dir.appendingPathComponent(dirName, isDirectory: true)
+            try FileManager.default.createDirectory(at: subdir, withIntermediateDirectories: true)
+        }
+
         for (name, content) in files {
             let file = dir.appendingPathComponent(name)
+            // Create intermediate directories for nested paths like "subfolder/file.txt"
+            try FileManager.default.createDirectory(
+                at: file.deletingLastPathComponent(),
+                withIntermediateDirectories: true
+            )
             try content.write(to: file, atomically: true, encoding: .utf8)
         }
 

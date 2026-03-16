@@ -576,6 +576,31 @@ final class SidebarEditState {
         }
     }
 
+    /// Duplicates a file or folder with Finder-style naming, then starts inline rename.
+    func duplicateItem(
+        at url: URL,
+        isDirectory: Bool,
+        workspace: WorkspaceManager,
+        tabManager: TabManager
+    ) {
+        guard let copyURL = Self.finderCopyURL(for: url) else { return }
+
+        do {
+            try FileManager.default.copyItem(at: url, to: copyURL)
+            workspace.refreshFileTree()
+            // Start inline rename — same pattern as createNewItem.
+            // isNewlyCreated is false so cancelling rename keeps the copy.
+            renamingURL = copyURL
+            editingText = copyURL.lastPathComponent
+            isNewlyCreated = false
+            if !isDirectory {
+                tabManager.openTab(url: copyURL)
+            }
+        } catch {
+            Self.showFileError(error.localizedDescription)
+        }
+    }
+
     /// Returns a unique name by appending a counter if the name already exists.
     static func uniqueName(_ baseName: String, in parentURL: URL) -> String {
         var name = baseName
@@ -585,6 +610,34 @@ final class SidebarEditState {
             counter += 1
         }
         return name
+    }
+
+    /// Generates a Finder-style copy URL: "name copy", "name copy 2", etc.
+    static func finderCopyURL(for url: URL) -> URL? {
+        let directory = url.deletingLastPathComponent()
+        let ext = url.pathExtension
+        let baseName = ext.isEmpty
+            ? url.lastPathComponent
+            : String(url.lastPathComponent.dropLast(ext.count + 1))
+
+        let fm = FileManager.default
+        for counter in 0... {
+            let copyName: String
+            if counter == 0 {
+                copyName = ext.isEmpty
+                    ? "\(baseName) copy"
+                    : "\(baseName) copy.\(ext)"
+            } else {
+                copyName = ext.isEmpty
+                    ? "\(baseName) copy \(counter + 1)"
+                    : "\(baseName) copy \(counter + 1).\(ext)"
+            }
+            let candidate = directory.appendingPathComponent(copyName)
+            if !fm.fileExists(atPath: candidate.path) {
+                return candidate
+            }
+        }
+        return nil
     }
 
     /// Shows an AppKit error alert for file operations.
@@ -643,6 +696,14 @@ struct SidebarView: View {
                     }
                 }
                 .navigationTitle(workspace.projectName)
+                .onChange(of: editState.renamingURL) { _, newURL in
+                    if newURL != nil {
+                        // Defer to avoid modifying state during view update
+                        DispatchQueue.main.async {
+                            selectedFile = nil
+                        }
+                    }
+                }
             }
         }
         .listStyle(.sidebar)
@@ -676,7 +737,13 @@ struct FileNodeRow: View {
     @Environment(SidebarEditState.self) var editState
     @FocusState private var isTextFieldFocused: Bool
 
-    private var isEditing: Bool { editState.renamingURL == node.url }
+    private var isEditing: Bool {
+        guard let renamingURL = editState.renamingURL else { return false }
+        // Compare by path to ignore trailing-slash differences between
+        // URLs built via appendingPathComponent (no slash) and URLs
+        // returned by contentsOfDirectory (trailing slash for directories).
+        return renamingURL.path == node.url.path
+    }
 
     private var gitStatus: GitFileStatus? {
         let provider = workspace.gitProvider
@@ -726,7 +793,7 @@ struct FileNodeRow: View {
                 .onChange(of: isTextFieldFocused) { _, focused in
                     // Guard against double-commit: onSubmit clears editState,
                     // then focus loss fires — skip if already committed.
-                    guard !focused, editState.renamingURL == node.url else { return }
+                    guard !focused, editState.renamingURL?.path == node.url.path else { return }
                     commitRename()
                 }
         }
@@ -750,6 +817,12 @@ struct FileNodeRow: View {
             }
 
             Divider()
+        }
+
+        Button {
+            duplicateItem()
+        } label: {
+            Label(Strings.contextDuplicate, systemImage: "plus.square.on.square")
         }
 
         Button {
@@ -779,8 +852,17 @@ struct FileNodeRow: View {
         editState.createNewItem(in: node.url, isDirectory: isDirectory, workspace: workspace)
     }
 
+    private func duplicateItem() {
+        editState.duplicateItem(
+            at: node.url,
+            isDirectory: node.isDirectory,
+            workspace: workspace,
+            tabManager: tabManager
+        )
+    }
+
     private func commitRename() {
-        guard editState.renamingURL == node.url else { return }
+        guard editState.renamingURL?.path == node.url.path else { return }
 
         let newName = editState.editingText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !newName.isEmpty else {
