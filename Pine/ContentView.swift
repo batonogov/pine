@@ -753,6 +753,12 @@ struct FileNodeRow: View {
         }
 
         Button {
+            duplicateItem()
+        } label: {
+            Label(Strings.contextDuplicate, systemImage: "plus.square.on.square")
+        }
+
+        Button {
             editState.startRename(for: node)
         } label: {
             Label(Strings.contextRename, systemImage: "pencil")
@@ -777,6 +783,50 @@ struct FileNodeRow: View {
 
     private func createNewItem(isDirectory: Bool) {
         editState.createNewItem(in: node.url, isDirectory: isDirectory, workspace: workspace)
+    }
+
+    private func duplicateItem() {
+        let url = node.url
+        guard let copyURL = finderCopyURL(for: url) else { return }
+
+        do {
+            try FileManager.default.copyItem(at: url, to: copyURL)
+            workspace.refreshFileTree()
+            // Open the duplicate in editor if it's a file
+            if !node.isDirectory {
+                tabManager.openTab(url: copyURL)
+            }
+        } catch {
+            SidebarEditState.showFileError(error.localizedDescription)
+        }
+    }
+
+    /// Generates a Finder-style copy URL: "name copy", "name copy 2", etc.
+    private func finderCopyURL(for url: URL) -> URL? {
+        let directory = url.deletingLastPathComponent()
+        let ext = url.pathExtension
+        let baseName = ext.isEmpty
+            ? url.lastPathComponent
+            : String(url.lastPathComponent.dropLast(ext.count + 1))
+
+        let fm = FileManager.default
+        for counter in 0... {
+            let copyName: String
+            if counter == 0 {
+                copyName = ext.isEmpty
+                    ? "\(baseName) copy"
+                    : "\(baseName) copy.\(ext)"
+            } else {
+                copyName = ext.isEmpty
+                    ? "\(baseName) copy \(counter + 1)"
+                    : "\(baseName) copy \(counter + 1).\(ext)"
+            }
+            let candidate = directory.appendingPathComponent(copyName)
+            if !fm.fileExists(atPath: candidate.path) {
+                return candidate
+            }
+        }
+        return nil
     }
 
     private func commitRename() {
