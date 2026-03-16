@@ -63,21 +63,6 @@ struct ContentView: View {
         .frame(minWidth: 800, minHeight: 500)
         .navigationTitle(workspace.projectName)
         .navigationSubtitle(branchSubtitle)
-        .toolbarTitleMenu {
-            if workspace.gitProvider.isGitRepository {
-                ForEach(workspace.gitProvider.branches, id: \.self) { branch in
-                    Button {
-                        switchBranch(branch)
-                    } label: {
-                        if branch == workspace.gitProvider.currentBranch {
-                            Label(branch, systemImage: "checkmark")
-                        } else {
-                            Text(branch)
-                        }
-                    }
-                }
-            }
-        }
         .task {
             restoreSessionIfNeeded()
             syncSidebarSelection()
@@ -975,10 +960,32 @@ struct FileNodeRow: View {
 struct StatusBarView: View {
     var gitProvider: GitStatusProvider
     var terminal: TerminalManager
+    @State private var showBranchPopover = false
 
     var body: some View {
         HStack(spacing: 6) {
             if gitProvider.isGitRepository {
+                // Branch switcher button
+                Button {
+                    showBranchPopover.toggle()
+                } label: {
+                    HStack(spacing: 3) {
+                        Image(systemName: "arrow.triangle.branch")
+                            .font(.system(size: 10))
+                        Text(gitProvider.currentBranch)
+                            .font(.system(size: 11))
+                    }
+                    .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier(AccessibilityID.branchSwitcherButton)
+                .popover(isPresented: $showBranchPopover, arrowEdge: .top) {
+                    BranchSwitcherView(
+                        gitProvider: gitProvider,
+                        isPresented: $showBranchPopover
+                    )
+                }
+
                 // Git file change summary
                 if !gitProvider.fileStatuses.isEmpty {
                     let counts = gitStatusCounts

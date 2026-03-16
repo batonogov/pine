@@ -2,11 +2,11 @@
 //  BranchSwitcherTests.swift
 //  PineUITests
 //
-//  Tests for branch switching via title bar dropdown.
+//  Tests for branch switching via status bar button and popover.
 //
 //  Note: Cmd+Shift+B opens the full branch sheet but is handled via
 //  NSEvent.addLocalMonitorForEvents, which XCUITest's typeKey() bypasses.
-//  These tests use the toolbarTitleMenu (title bar click) instead.
+//  These tests use the status bar branch button instead.
 //
 
 import XCTest
@@ -67,16 +67,9 @@ final class BranchSwitcherTests: PineUITestCase {
         return String(data: data, encoding: .utf8) ?? ""
     }
 
-    /// Finds the branch subtitle text in the title bar and clicks it to open the title menu.
-    private func openTitleMenu() {
-        let subtitle = app.staticTexts.matching(
-            NSPredicate(format: "value CONTAINS '⎇'")
-        ).firstMatch
-        XCTAssertTrue(
-            waitForExistence(subtitle, timeout: 10),
-            "Branch subtitle should exist in title bar"
-        )
-        subtitle.click()
+    /// Finds and returns the branch switcher button in the status bar.
+    private var branchButton: XCUIElement {
+        app.descendants(matching: .any)["branchSwitcherButton"].firstMatch
     }
 
     // MARK: - Title bar shows branch name
@@ -96,78 +89,114 @@ final class BranchSwitcherTests: PineUITestCase {
         )
     }
 
-    // MARK: - Title menu shows branches
+    // MARK: - Branch button visible in status bar
 
-    func testTitleMenuShowsBranches() throws {
+    func testBranchButtonVisibleInStatusBar() throws {
         launchWithProject(projectURL)
 
         let window = app.windows.firstMatch
         XCTAssertTrue(window.waitForExistence(timeout: 10))
-        sleep(2)
 
-        openTitleMenu()
-        sleep(1)
-
-        // The toolbarTitleMenu should show branch names as menu items
-        let testBranch = app.menuItems["test-branch"]
-        let featureBranch = app.menuItems["feature-xyz"]
         XCTAssertTrue(
-            waitForExistence(testBranch, timeout: 5),
-            "test-branch should appear in title menu"
-        )
-        XCTAssertTrue(
-            waitForExistence(featureBranch, timeout: 5),
-            "feature-xyz should appear in title menu"
+            waitForExistence(branchButton, timeout: 10),
+            "Branch switcher button should be visible in status bar"
         )
     }
 
-    // MARK: - Switch branch via title menu updates subtitle
+    // MARK: - Branch button opens popover with branches
 
-    func testSwitchBranchViaTitleMenuUpdatesSubtitle() throws {
+    func testBranchButtonOpensPopoverWithBranches() throws {
         launchWithProject(projectURL)
 
         let window = app.windows.firstMatch
         XCTAssertTrue(window.waitForExistence(timeout: 10))
         sleep(2)
 
-        // Open title menu and click test-branch
-        openTitleMenu()
+        // Click branch button to open popover
+        XCTAssertTrue(waitForExistence(branchButton, timeout: 10))
+        branchButton.click()
         sleep(1)
 
-        let testBranchItem = app.menuItems["test-branch"]
-        XCTAssertTrue(waitForExistence(testBranchItem, timeout: 5))
-        testBranchItem.click()
+        // Search field should appear in the popover
+        let searchField = app.textFields["branchSearchField"]
+        XCTAssertTrue(
+            waitForExistence(searchField, timeout: 5),
+            "Branch popover should show search field"
+        )
+
+        // Branch items should be visible
+        let mainBranch = app.descendants(matching: .any)["branchItem_main"].firstMatch
+        let testBranch = app.descendants(matching: .any)["branchItem_test-branch"].firstMatch
+        XCTAssertTrue(
+            waitForExistence(mainBranch, timeout: 5),
+            "main branch should appear in branch list"
+        )
+        XCTAssertTrue(
+            waitForExistence(testBranch, timeout: 5),
+            "test-branch should appear in branch list"
+        )
+    }
+
+    // MARK: - Search filters branches
+
+    func testSearchFiltersBranches() throws {
+        launchWithProject(projectURL)
+
+        let window = app.windows.firstMatch
+        XCTAssertTrue(window.waitForExistence(timeout: 10))
         sleep(2)
 
-        // Subtitle should now show test-branch
+        XCTAssertTrue(waitForExistence(branchButton, timeout: 10))
+        branchButton.click()
+        sleep(1)
+
+        let searchField = app.textFields["branchSearchField"]
+        XCTAssertTrue(waitForExistence(searchField, timeout: 5))
+
+        // Type "test" to filter
+        searchField.click()
+        searchField.typeText("test")
+        sleep(1)
+
+        let testBranch = app.descendants(matching: .any)["branchItem_test-branch"].firstMatch
+        let featureBranch = app.descendants(matching: .any)["branchItem_feature-xyz"].firstMatch
+        XCTAssertTrue(testBranch.exists, "test-branch should match filter")
+        XCTAssertFalse(featureBranch.exists, "feature-xyz should be filtered out")
+    }
+
+    // MARK: - Switch branch via popover updates UI
+
+    func testSwitchBranchViaPopoverUpdatesUI() throws {
+        launchWithProject(projectURL)
+
+        let window = app.windows.firstMatch
+        XCTAssertTrue(window.waitForExistence(timeout: 10))
+        sleep(2)
+
+        XCTAssertTrue(waitForExistence(branchButton, timeout: 10))
+        branchButton.click()
+        sleep(1)
+
+        // Click on test-branch
+        let testBranch = app.descendants(matching: .any)["branchItem_test-branch"].firstMatch
+        XCTAssertTrue(waitForExistence(testBranch, timeout: 5))
+        testBranch.click()
+        sleep(2)
+
+        // Popover should dismiss
+        let searchField = app.textFields["branchSearchField"]
+        XCTAssertTrue(
+            searchField.waitForNonExistence(timeout: 5),
+            "Popover should dismiss after branch switch"
+        )
+
+        // Title bar subtitle should update
         let branchText = app.staticTexts.matching(
             NSPredicate(format: "value CONTAINS 'test-branch'")
         ).firstMatch
         XCTAssertTrue(
             waitForExistence(branchText, timeout: 5),
-            "Title bar should update to show test-branch after switching"
-        )
-    }
-
-    // MARK: - Current branch has checkmark in title menu
-
-    func testCurrentBranchHasCheckmarkInTitleMenu() throws {
-        launchWithProject(projectURL)
-
-        let window = app.windows.firstMatch
-        XCTAssertTrue(window.waitForExistence(timeout: 10))
-        sleep(2)
-
-        openTitleMenu()
-        sleep(1)
-
-        // The current branch (main) should have a checkmark label
-        let mainWithCheckmark = app.menuItems.matching(
-            NSPredicate(format: "label CONTAINS 'main'")
-        ).firstMatch
-        XCTAssertTrue(
-            waitForExistence(mainWithCheckmark, timeout: 5),
-            "Current branch should appear in title menu"
+            "Title bar should update to show test-branch"
         )
     }
 
