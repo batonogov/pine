@@ -36,9 +36,11 @@ final class DuplicateTests: PineUITestCase {
         XCTAssertTrue(waitForExistence(node, timeout: 5), "\(nodeName) should appear in sidebar")
         node.rightClick()
 
-        // Context menu items appear as descendants of the app.
-        // Use firstMatch to avoid ambiguity with the File menu "Duplicate".
-        let duplicateItem = app.menuItems["Duplicate"].firstMatch
+        // Context menu is the last menu in the app's menus collection.
+        // We must target it specifically to avoid hitting the disabled
+        // "Duplicate" in the File menu bar.
+        let contextMenu = app.menus.firstMatch
+        let duplicateItem = contextMenu.menuItems["Duplicate"]
         XCTAssertTrue(waitForExistence(duplicateItem, timeout: 3), "Duplicate menu item should appear")
         duplicateItem.click()
 
