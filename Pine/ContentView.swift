@@ -698,7 +698,10 @@ struct SidebarView: View {
                 .navigationTitle(workspace.projectName)
                 .onChange(of: editState.renamingURL) { _, newURL in
                     if newURL != nil {
-                        selectedFile = nil
+                        // Defer to avoid modifying state during view update
+                        DispatchQueue.main.async {
+                            selectedFile = nil
+                        }
                     }
                 }
             }
