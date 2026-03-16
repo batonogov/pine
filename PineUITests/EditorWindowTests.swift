@@ -220,6 +220,44 @@ final class EditorWindowTests: PineUITestCase {
     //     ...
     // }
 
+    // MARK: - P1: Unrecognized file extensions open as text, not preview
+
+    func testUnrecognizedExtensionOpensAsText() throws {
+        // Create a project with a .go file (unrecognized by macOS UTType as text)
+        let goProjectURL = try createTempProject(files: [
+            "main.go": "package main\n\nfunc main() {}\n"
+        ])
+        defer { cleanupProject(goProjectURL) }
+
+        launchWithProject(goProjectURL)
+
+        let sidebar = app.outlines["sidebar"]
+        XCTAssertTrue(waitForExistence(sidebar, timeout: 10), "Sidebar should appear")
+
+        let fileRow = app.staticTexts["fileNode_main.go"]
+        guard waitForExistence(fileRow, timeout: 5) else {
+            XCTFail("main.go should appear in the sidebar")
+            return
+        }
+        fileRow.click()
+
+        let tab = editorTab("main.go")
+        XCTAssertTrue(waitForExistence(tab, timeout: 5), "Editor tab for main.go should appear")
+
+        // The code editor should be shown, not Quick Look preview
+        let codeEditor = app.textViews["codeEditor"].firstMatch
+        let quickLook = app.descendants(matching: .any)["quickLookPreview"].firstMatch
+
+        XCTAssertTrue(
+            waitForExistence(codeEditor, timeout: 5),
+            "Code editor should be displayed for .go files"
+        )
+        XCTAssertFalse(
+            quickLook.exists,
+            "Quick Look preview should NOT be displayed for .go files"
+        )
+    }
+
     // MARK: - P1: Status bar terminal toggle visible
 
     func testTerminalToggleButtonVisible() throws {
