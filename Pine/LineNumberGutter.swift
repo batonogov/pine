@@ -214,6 +214,18 @@ final class LineNumberView: NSView {
             previousLineCharIndex = charIndex
         }
 
+        // ── Номер для завершающей пустой строки (после последнего \n) ──
+        let extraRect = layoutManager.extraLineFragmentRect
+        if extraRect.height > 0 && source.hasSuffix("\n") {
+            let y = extraRect.origin.y + originY - visibleRect.origin.y
+            if y >= -extraRect.height && y <= bounds.height {
+                let numStr = "\(lineNumber)" as NSString
+                let size = numStr.size(withAttributes: attrs)
+                let x = gutterWidth - size.width - 8
+                numStr.draw(at: NSPoint(x: x, y: y), withAttributes: attrs)
+            }
+        }
+
         // ── Обновляем ширину гуттера если изменилось количество цифр ──
         let totalLines = source.components(separatedBy: "\n").count
         let digits = max(String(totalLines).count, 2)
