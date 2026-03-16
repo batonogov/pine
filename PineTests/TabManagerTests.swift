@@ -609,6 +609,20 @@ struct TabManagerTests {
         #expect(manager.isPreviewFile(url: dir.appendingPathComponent("Makefile")) == false)
     }
 
+    @Test("isPreviewFile returns false for unrecognized plain-text extensions")
+    func isPreviewFileUnrecognizedExtensions() {
+        let manager = TabManager()
+        let dir = FileManager.default.temporaryDirectory
+        #expect(manager.isPreviewFile(url: dir.appendingPathComponent("main.go")) == false)
+        #expect(manager.isPreviewFile(url: dir.appendingPathComponent("go.mod")) == false)
+        #expect(manager.isPreviewFile(url: dir.appendingPathComponent("go.sum")) == false)
+        #expect(manager.isPreviewFile(url: dir.appendingPathComponent("coverage.out")) == false)
+        #expect(manager.isPreviewFile(url: dir.appendingPathComponent("Cargo.toml")) == false)
+        #expect(manager.isPreviewFile(url: dir.appendingPathComponent("Cargo.lock")) == false)
+        #expect(manager.isPreviewFile(url: dir.appendingPathComponent(".gitignore")) == false)
+        #expect(manager.isPreviewFile(url: dir.appendingPathComponent("Dockerfile")) == false)
+    }
+
     @Test("openTab for image creates preview tab")
     func openTabPreviewFile() {
         let manager = TabManager()

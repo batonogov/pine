@@ -348,18 +348,17 @@ final class TabManager {
 
     /// Determines if a file should be opened as a Quick Look preview
     /// rather than in the text editor.
+    ///
+    /// Uses a whitelist approach: only known binary types (images, audio,
+    /// video, PDF, fonts) get a preview. Everything else opens as text,
+    /// which is the expected behavior for a code editor.
     func isPreviewFile(url: URL) -> Bool {
-        guard let type = UTType(filenameExtension: url.pathExtension),
-              !type.conforms(to: .text),
-              !type.conforms(to: .sourceCode)
-        else { return false }
-
-        // Additional check: files with no extension or unknown types
-        // default to text editor
-        if type == .item || type == .data {
+        guard let type = UTType(filenameExtension: url.pathExtension) else {
             return false
         }
-
-        return true
+        return type.conforms(to: .image)
+            || type.conforms(to: .audiovisualContent)
+            || type.conforms(to: .pdf)
+            || type.conforms(to: .font)
     }
 }
