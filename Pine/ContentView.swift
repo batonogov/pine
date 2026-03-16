@@ -576,6 +576,31 @@ final class SidebarEditState {
         }
     }
 
+    /// Duplicates a file or folder with Finder-style naming, then starts inline rename.
+    func duplicateItem(
+        at url: URL,
+        isDirectory: Bool,
+        workspace: WorkspaceManager,
+        tabManager: TabManager
+    ) {
+        guard let copyURL = Self.finderCopyURL(for: url) else { return }
+
+        do {
+            try FileManager.default.copyItem(at: url, to: copyURL)
+            workspace.refreshFileTree()
+            // Start inline rename — same pattern as createNewItem.
+            // isNewlyCreated is false so cancelling rename keeps the copy.
+            renamingURL = copyURL
+            editingText = copyURL.lastPathComponent
+            isNewlyCreated = false
+            if !isDirectory {
+                tabManager.openTab(url: copyURL)
+            }
+        } catch {
+            Self.showFileError(error.localizedDescription)
+        }
+    }
+
     /// Returns a unique name by appending a counter if the name already exists.
     static func uniqueName(_ baseName: String, in parentURL: URL) -> String {
         var name = baseName
@@ -585,6 +610,34 @@ final class SidebarEditState {
             counter += 1
         }
         return name
+    }
+
+    /// Generates a Finder-style copy URL: "name copy", "name copy 2", etc.
+    static func finderCopyURL(for url: URL) -> URL? {
+        let directory = url.deletingLastPathComponent()
+        let ext = url.pathExtension
+        let baseName = ext.isEmpty
+            ? url.lastPathComponent
+            : String(url.lastPathComponent.dropLast(ext.count + 1))
+
+        let fm = FileManager.default
+        for counter in 0... {
+            let copyName: String
+            if counter == 0 {
+                copyName = ext.isEmpty
+                    ? "\(baseName) copy"
+                    : "\(baseName) copy.\(ext)"
+            } else {
+                copyName = ext.isEmpty
+                    ? "\(baseName) copy \(counter + 1)"
+                    : "\(baseName) copy \(counter + 1).\(ext)"
+            }
+            let candidate = directory.appendingPathComponent(copyName)
+            if !fm.fileExists(atPath: candidate.path) {
+                return candidate
+            }
+        }
+        return nil
     }
 
     /// Shows an AppKit error alert for file operations.
@@ -786,54 +839,12 @@ struct FileNodeRow: View {
     }
 
     private func duplicateItem() {
-        let url = node.url
-        guard let copyURL = finderCopyURL(for: url) else { return }
-
-        do {
-            try FileManager.default.copyItem(at: url, to: copyURL)
-            workspace.refreshFileTree()
-            // Allow SwiftUI to create FileNodeRow for the new item,
-            // then start inline rename on the next run-loop cycle.
-            DispatchQueue.main.async {
-                editState.renamingURL = copyURL
-                editState.editingText = copyURL.lastPathComponent
-                editState.isNewlyCreated = false
-            }
-            // Also open the duplicate in editor if it's a file
-            if !node.isDirectory {
-                tabManager.openTab(url: copyURL)
-            }
-        } catch {
-            SidebarEditState.showFileError(error.localizedDescription)
-        }
-    }
-
-    /// Generates a Finder-style copy URL: "name copy", "name copy 2", etc.
-    private func finderCopyURL(for url: URL) -> URL? {
-        let directory = url.deletingLastPathComponent()
-        let ext = url.pathExtension
-        let baseName = ext.isEmpty
-            ? url.lastPathComponent
-            : String(url.lastPathComponent.dropLast(ext.count + 1))
-
-        let fm = FileManager.default
-        for counter in 0... {
-            let copyName: String
-            if counter == 0 {
-                copyName = ext.isEmpty
-                    ? "\(baseName) copy"
-                    : "\(baseName) copy.\(ext)"
-            } else {
-                copyName = ext.isEmpty
-                    ? "\(baseName) copy \(counter + 1)"
-                    : "\(baseName) copy \(counter + 1).\(ext)"
-            }
-            let candidate = directory.appendingPathComponent(copyName)
-            if !fm.fileExists(atPath: candidate.path) {
-                return candidate
-            }
-        }
-        return nil
+        editState.duplicateItem(
+            at: node.url,
+            isDirectory: node.isDirectory,
+            workspace: workspace,
+            tabManager: tabManager
+        )
     }
 
     private func commitRename() {
