@@ -36,7 +36,10 @@ final class DuplicateTests: PineUITestCase {
         XCTAssertTrue(waitForExistence(node, timeout: 5), "\(nodeName) should appear in sidebar")
         node.rightClick()
 
-        let duplicateItem = app.menuItems["Duplicate"]
+        // Use the context menu inside the sidebar outline to avoid matching
+        // the "Duplicate" item in the File menu bar.
+        let sidebar = app.outlines["sidebar"]
+        let duplicateItem = sidebar.menuItems["Duplicate"]
         XCTAssertTrue(waitForExistence(duplicateItem, timeout: 3), "Duplicate menu item should appear")
         duplicateItem.click()
     }
