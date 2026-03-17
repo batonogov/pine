@@ -171,7 +171,15 @@ struct CodeEditorView: NSViewRepresentable {
     /// Пользовательский ключ атрибута для подсветки парных скобок.
     static let bracketHighlightKey = NSAttributedString.Key("PineBracketHighlight")
 
-    private let editorFont = NSFont.monospacedSystemFont(ofSize: 13, weight: .regular)
+    var fontSize: CGFloat = FontSizeSettings.shared.fontSize
+
+    private var editorFont: NSFont {
+        NSFont.monospacedSystemFont(ofSize: fontSize, weight: .regular)
+    }
+
+    private var gutterFont: NSFont {
+        NSFont.monospacedSystemFont(ofSize: max(fontSize - 2, FontSizeSettings.minSize), weight: .regular)
+    }
 
     func makeNSView(context: Context) -> NSView {
         let gutterWidth: CGFloat = 40
@@ -238,6 +246,7 @@ struct CodeEditorView: NSViewRepresentable {
         // ── Номера строк — поверх scroll view, как отдельный сиблинг ──
         let lineNumberView = LineNumberView(textView: textView)
         lineNumberView.gutterWidth = gutterWidth
+        lineNumberView.gutterFont = gutterFont
         container.addSubview(lineNumberView)
 
         // ── Minimap — справа от scroll view ──
@@ -248,6 +257,7 @@ struct CodeEditorView: NSViewRepresentable {
         context.coordinator.scrollView = scrollView
         context.coordinator.lineNumberView = lineNumberView
         context.coordinator.minimapView = minimapView
+        context.coordinator.lastFontSize = editorFont.pointSize
 
         textView.string = text
         applyHighlighting(to: textView)
@@ -305,6 +315,9 @@ struct CodeEditorView: NSViewRepresentable {
             font: editorFont
         )
 
+        // Обновляем шрифт при изменении размера (Cmd+Plus/Minus)
+        context.coordinator.updateFontIfNeeded(font: editorFont, gutterFont: gutterFont)
+
         // Обновляем diff-данные LineNumberView
         if let lineNumberView = context.coordinator.lineNumberView {
             lineNumberView.lineDiffs = lineDiffs
@@ -325,6 +338,8 @@ struct CodeEditorView: NSViewRepresentable {
         /// при одинаковом содержимом файлов
         var lastLanguage: String = ""
         var lastFileName: String?
+        /// Последний размер шрифта — для обнаружения изменений (Cmd+Plus/Minus)
+        var lastFontSize: CGFloat = 0
 
         /// Отложенная задача подсветки (дебаунсинг)
         private var highlightWorkItem: DispatchWorkItem?
@@ -383,6 +398,31 @@ struct CodeEditorView: NSViewRepresentable {
             // (since .id(tab.id) recreates the view). This path only fires for
             // in-place content changes from updateNSView, where we should not
             // reset the cursor.
+        }
+
+        /// Updates font on both editor and gutter when font size changes.
+        func updateFontIfNeeded(font: NSFont, gutterFont: NSFont) {
+            guard font.pointSize != lastFontSize else { return }
+            lastFontSize = font.pointSize
+
+            guard let sv = scrollView,
+                  let textView = sv.documentView as? NSTextView else { return }
+
+            textView.font = font
+
+            // Re-highlight with new font
+            if let storage = textView.textStorage {
+                SyntaxHighlighter.shared.highlight(
+                    textStorage: storage,
+                    language: parent.language,
+                    fileName: parent.fileName,
+                    font: font
+                )
+            }
+
+            // Update gutter font
+            lineNumberView?.gutterFont = gutterFont
+            lineNumberView?.needsDisplay = true
         }
 
         func textDidChange(_ notification: Notification) {

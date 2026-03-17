@@ -34,6 +34,23 @@ struct PineApp: App {
             }
             // Cmd+` — показать/скрыть терминал
             CommandMenu(Strings.menuView) {
+                Button(Strings.menuIncreaseFontSize) {
+                    FontSizeSettings.shared.increase()
+                }
+                .keyboardShortcut("+", modifiers: .command)
+
+                Button(Strings.menuDecreaseFontSize) {
+                    FontSizeSettings.shared.decrease()
+                }
+                .keyboardShortcut("-", modifiers: .command)
+
+                Button(Strings.menuResetFontSize) {
+                    FontSizeSettings.shared.reset()
+                }
+                .keyboardShortcut("0", modifiers: .command)
+
+                Divider()
+
                 Button(Strings.toggleTerminal) {
                     guard let pm = focusedProject else { return }
                     pm.terminal.isTerminalVisible.toggle()
@@ -485,6 +502,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // UI testing support: clear persisted state for a clean launch
         if CommandLine.arguments.contains("--reset-state") {
             SessionState.removeAll()
+            FontSizeSettings.shared.reset()
         }
 
         // UI testing support: read project path from environment variable.
