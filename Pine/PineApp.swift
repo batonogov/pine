@@ -484,6 +484,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // UI testing support: clear persisted state for a clean launch
         if CommandLine.arguments.contains("--reset-state") {
             SessionState.removeAll()
+            FontSizeSettings.shared.reset()
         }
 
         // UI testing support: read project path from environment variable.

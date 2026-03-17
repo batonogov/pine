@@ -128,12 +128,12 @@ struct CodeEditorView: NSViewRepresentable {
 
     var fontSize: CGFloat = FontSizeSettings.shared.fontSize
 
-    var editorFont: NSFont {
+    private var editorFont: NSFont {
         NSFont.monospacedSystemFont(ofSize: fontSize, weight: .regular)
     }
 
     private var gutterFont: NSFont {
-        NSFont.monospacedSystemFont(ofSize: fontSize - 2, weight: .regular)
+        NSFont.monospacedSystemFont(ofSize: max(fontSize - 2, FontSizeSettings.minSize), weight: .regular)
     }
 
     func makeNSView(context: Context) -> NSView {
