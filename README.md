@@ -44,7 +44,7 @@ If VS Code feels heavy and Xcode feels like overkill for everyday editing, Pine 
 | `Cmd+Shift+S` | Save As |
 | `Cmd+Shift+D` | Duplicate tab |
 | `Cmd+W` | Close tab |
-| Cmd+\` | Toggle terminal |
+| ``Cmd+` `` | Toggle terminal |
 | `Cmd+Shift+B` | Switch branch |
 | `Cmd+Shift+P` | Toggle Markdown preview |
 
