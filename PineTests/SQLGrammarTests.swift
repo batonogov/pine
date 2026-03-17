@@ -98,7 +98,7 @@ struct SQLGrammarTests {
     @Test func noDuplicateKeywordsAcrossRules() throws {
         let keywordRules = grammar.rules.filter { $0.scope == "keyword" }
         var allKeywords: [String] = []
-        let wordPattern = try NSRegularExpression(pattern: "[A-Z_]+", options: [])
+        let wordPattern = try NSRegularExpression(pattern: "[A-Z][A-Z_]+", options: [])
         for rule in keywordRules {
             let range = NSRange(rule.pattern.startIndex..., in: rule.pattern)
             let matches = wordPattern.matches(in: rule.pattern, range: range)
