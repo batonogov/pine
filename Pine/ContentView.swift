@@ -442,7 +442,8 @@ struct ContentView: View {
             initialScrollOffset: tab.scrollOffset,
             onStateChange: { cursor, scroll in
                 tabManager.updateEditorState(cursorPosition: cursor, scrollOffset: scroll)
-            }
+            },
+            fontSize: FontSizeSettings.shared.fontSize
         )
         .accessibilityIdentifier(AccessibilityID.codeEditor)
     }
