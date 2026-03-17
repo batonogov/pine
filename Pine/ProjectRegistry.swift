@@ -13,6 +13,9 @@ import SwiftUI
 final class ProjectRegistry {
     /// Open projects keyed by their root directory URL.
     private(set) var openProjects: [URL: ProjectManager] = [:]
+    /// Projects whose window was closed but whose ProjectManager (and terminal processes)
+    /// are kept alive. Reopening the same project returns the existing PM.
+    private(set) var backgroundProjects: Set<URL> = []
     /// Recently opened project paths (most recent first), persisted to UserDefaults.
     var recentProjects: [URL] = []
 
@@ -29,6 +32,21 @@ final class ProjectRegistry {
     func projectManager(for projectURL: URL) -> ProjectManager? {
         let canonical = projectURL.resolvingSymlinksInPath()
         if let existing = openProjects[canonical] {
+            // Verify directory still exists when reopening from background
+            if backgroundProjects.contains(canonical) {
+                var isDir: ObjCBool = false
+                guard FileManager.default.fileExists(atPath: canonical.path, isDirectory: &isDir),
+                      isDir.boolValue else {
+                    // Directory was deleted while in background — clean up
+                    existing.terminal.terminateAll()
+                    openProjects.removeValue(forKey: canonical)
+                    backgroundProjects.remove(canonical)
+                    recentProjects.removeAll { $0 == canonical }
+                    saveRecentProjects()
+                    return nil
+                }
+                backgroundProjects.remove(canonical)
+            }
             return existing
         }
         // Validate that the directory still exists
@@ -62,12 +80,36 @@ final class ProjectRegistry {
         return canonical
     }
 
-    /// Closes a project and removes it from open projects.
-    func closeProject(_ url: URL) {
-        openProjects.removeValue(forKey: url.resolvingSymlinksInPath())
+    /// Closes the project window but keeps the ProjectManager alive (preserving terminal sessions).
+    /// The PM moves to `backgroundProjects` and will be reused if the project is reopened.
+    func closeProjectWindow(_ url: URL) {
+        let canonical = url.resolvingSymlinksInPath()
+        guard openProjects[canonical] != nil else { return }
+        backgroundProjects.insert(canonical)
     }
 
-    /// Checks if a project is already open.
+    /// Closes a project and removes it from open projects.
+    /// For backwards compatibility, delegates to `closeProjectWindow`.
+    func closeProject(_ url: URL) {
+        closeProjectWindow(url)
+    }
+
+    /// Fully destroys all project managers. Called during app termination.
+    func destroyAllProjects() {
+        for (_, pm) in openProjects {
+            pm.terminal.terminateAll()
+        }
+        openProjects.removeAll()
+        backgroundProjects.removeAll()
+    }
+
+    /// Returns true if the project has an open (non-background) window.
+    func isWindowOpen(_ url: URL) -> Bool {
+        let canonical = url.resolvingSymlinksInPath()
+        return openProjects[canonical] != nil && !backgroundProjects.contains(canonical)
+    }
+
+    /// Checks if a project is already open (including background).
     func isProjectOpen(_ url: URL) -> Bool {
         openProjects[url.resolvingSymlinksInPath()] != nil
     }

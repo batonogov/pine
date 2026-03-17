@@ -96,6 +96,15 @@ struct ContentView: View {
         .onChange(of: tabManager.tabs.count) { _, _ in
             projectManager.saveSession()
         }
+        .onChange(of: terminal.isTerminalVisible) { _, _ in
+            projectManager.saveSession()
+        }
+        .onChange(of: terminal.terminalTabs.count) { _, _ in
+            projectManager.saveSession()
+        }
+        .onChange(of: terminal.activeTerminalID) { _, _ in
+            projectManager.saveSession()
+        }
         .onChange(of: workspace.gitProvider.isGitRepository) { _, isRepo in
             if isRepo {
                 refreshLineDiffs()
@@ -167,26 +176,49 @@ struct ContentView: View {
         }
 
         guard let session = SessionState.load(for: rootURL) else { return }
-        guard tabManager.tabs.isEmpty else { return }
 
-        for url in session.existingFileURLs {
-            tabManager.openTab(url: url)
-        }
+        // Restore editor tabs only if PM has no tabs (fresh or after restart)
+        if tabManager.tabs.isEmpty {
+            for url in session.existingFileURLs {
+                tabManager.openTab(url: url)
+            }
 
-        // Restore preview modes for markdown tabs
-        if let previewModes = session.previewModes {
-            for index in tabManager.tabs.indices {
-                let path = tabManager.tabs[index].url.path
-                if let rawMode = previewModes[path],
-                   let mode = MarkdownPreviewMode(rawValue: rawMode) {
-                    tabManager.tabs[index].previewMode = mode
+            // Restore preview modes for markdown tabs
+            if let previewModes = session.previewModes {
+                for index in tabManager.tabs.indices {
+                    let path = tabManager.tabs[index].url.path
+                    if let rawMode = previewModes[path],
+                       let mode = MarkdownPreviewMode(rawValue: rawMode) {
+                        tabManager.tabs[index].previewMode = mode
+                    }
                 }
+            }
+
+            if let activeURL = session.activeFileURL,
+               let tab = tabManager.tab(for: activeURL) {
+                tabManager.activeTabID = tab.id
             }
         }
 
-        if let activeURL = session.activeFileURL,
-           let tab = tabManager.tab(for: activeURL) {
-            tabManager.activeTabID = tab.id
+        // Restore terminal state
+        if let visible = session.isTerminalVisible {
+            terminal.isTerminalVisible = visible
+        }
+        if let maximized = session.isTerminalMaximized {
+            terminal.isTerminalMaximized = maximized
+        }
+
+        // Create terminal tabs only if PM has a single default (unused) tab
+        // (i.e., fresh PM after restart, not reused from background)
+        if let count = session.terminalTabCount, count > 1,
+           terminal.terminalTabs.count == 1 {
+            for _ in 1..<count {
+                terminal.addTerminalTab(workingDirectory: rootURL)
+            }
+        }
+        if let activeIndex = session.activeTerminalIndex,
+           activeIndex < terminal.terminalTabs.count {
+            terminal.activeTerminalID = terminal.terminalTabs[activeIndex].id
         }
     }
 
@@ -441,6 +473,20 @@ struct TerminalNativeTabBar: View {
     var terminal: TerminalManager
     var workingDirectory: URL?
 
+    private func closeTerminalTabWithConfirmation(_ tab: TerminalTab) {
+        if tab.hasForegroundProcess {
+            let alert = NSAlert()
+            alert.messageText = Strings.terminalTabCloseWarningTitle
+            alert.informativeText = Strings.terminalTabCloseWarningMessage
+            alert.addButton(withTitle: Strings.terminalTabCloseWarningClose)
+            alert.addButton(withTitle: Strings.dialogCancel)
+            alert.alertStyle = .warning
+
+            guard alert.runModal() == .alertFirstButtonReturn else { return }
+        }
+        terminal.closeTerminalTab(tab)
+    }
+
     var body: some View {
         HStack(spacing: 0) {
             // Вкладки терминалов
@@ -452,7 +498,7 @@ struct TerminalNativeTabBar: View {
                             isActive: tab.id == terminal.activeTerminalID,
                             canClose: terminal.terminalTabs.count > 1,
                             onSelect: { terminal.activeTerminalID = tab.id },
-                            onClose: { terminal.closeTerminalTab(tab) }
+                            onClose: { closeTerminalTabWithConfirmation(tab) }
                         )
                     }
                 }

@@ -192,4 +192,30 @@ enum Strings {
     static func terminalNumberedName(_ number: Int) -> String {
         String(localized: "terminal.numberedName \(number)")
     }
+
+    // MARK: - Terminal Process Warnings
+
+    static var terminalActiveProcessWarningTitle: String {
+        String(localized: "terminal.activeProcessWarning.title")
+    }
+
+    static var terminalActiveProcessWarningMessage: String {
+        String(localized: "terminal.activeProcessWarning.message")
+    }
+
+    static var terminalActiveProcessWarningQuit: String {
+        String(localized: "terminal.activeProcessWarning.quit")
+    }
+
+    static var terminalTabCloseWarningTitle: String {
+        String(localized: "terminal.tabCloseWarning.title")
+    }
+
+    static var terminalTabCloseWarningMessage: String {
+        String(localized: "terminal.tabCloseWarning.message")
+    }
+
+    static var terminalTabCloseWarningClose: String {
+        String(localized: "terminal.tabCloseWarning.close")
+    }
 }

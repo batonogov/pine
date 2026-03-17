@@ -78,6 +78,7 @@ final class TerminalTab: Identifiable, Hashable {
     let id = UUID()
     var name: String
     let terminalView: LocalProcessTerminalView
+    fileprivate(set) var isTerminated = false
 
     private let delegate: TerminalTabDelegate
     private var processStarted = false
@@ -147,7 +148,25 @@ final class TerminalTab: Identifiable, Hashable {
     }
 
     func stop() {
-        // SwiftTerm завершает процесс при деинициализации view
+        guard !isTerminated else { return }
+        isTerminated = true
+        terminalView.terminate()
+    }
+
+    /// Whether the shell process is still running.
+    var isProcessRunning: Bool {
+        !isTerminated && processStarted && terminalView.process.running
+    }
+
+    /// Whether a foreground process (child of the shell) is currently running.
+    /// Returns true if tcgetpgrp reports a different process group than the shell.
+    var hasForegroundProcess: Bool {
+        guard isProcessRunning else { return false }
+        let fd = terminalView.process.childfd
+        guard fd >= 0 else { return false }
+        let foregroundPgid = tcgetpgrp(fd)
+        let shellPid = terminalView.process.shellPid
+        return foregroundPgid > 0 && foregroundPgid != shellPid
     }
 
     static func == (lhs: TerminalTab, rhs: TerminalTab) -> Bool { lhs.id == rhs.id }
@@ -167,5 +186,7 @@ class TerminalTabDelegate: NSObject, LocalProcessTerminalViewDelegate {
 
     func hostCurrentDirectoryUpdate(source: TerminalView, directory: String?) {}
 
-    func processTerminated(source: TerminalView, exitCode: Int32?) {}
+    func processTerminated(source: TerminalView, exitCode: Int32?) {
+        tab?.isTerminated = true
+    }
 }
