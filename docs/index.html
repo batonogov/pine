@@ -8,7 +8,14 @@
     <meta property="og:title" content="Pine - Native macOS Code Editor Without the Bloat">
     <meta property="og:description" content="Less editor. More shipping. Pine is a focused Mac code editor with a full terminal emulator, git context, and minimal dependencies.">
     <meta property="og:image" content="https://raw.githubusercontent.com/batonogov/pine/main/assets/screenshot-editor.png">
+    <meta property="og:url" content="https://batonogov.github.io/pine/">
     <meta property="og:type" content="website">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="Pine - Native macOS Code Editor Without the Bloat">
+    <meta name="twitter:description" content="Less editor. More shipping. Pine is a focused Mac code editor with a full terminal emulator, git context, and minimal dependencies.">
+    <meta name="twitter:image" content="https://raw.githubusercontent.com/batonogov/pine/main/assets/screenshot-editor.png">
+    <meta name="theme-color" content="#07110d">
+    <link rel="canonical" href="https://batonogov.github.io/pine/">
     <style>
         * {
             box-sizing: border-box;
@@ -871,6 +878,7 @@
                 <a href="#why" data-i18n="nav.why">Why Pine</a>
                 <a href="#features" data-i18n="nav.features">Features</a>
                 <a href="#install" data-i18n="nav.install">Install</a>
+                <a href="#screenshots" data-i18n="nav.screenshots">Screenshots</a>
                 <a href="https://github.com/batonogov/pine">GitHub</a>
             </nav>
             <button class="lang-toggle" id="lang-toggle" type="button">RU</button>
@@ -904,7 +912,7 @@
                     <div class="shot-window">
                         <div class="shot-card-stack">
                             <div class="shot-card">
-                                <img src="https://raw.githubusercontent.com/batonogov/pine/main/assets/screenshot-editor.png" alt="Pine editor screenshot" data-i18n-alt="hero.alt" loading="lazy">
+                                <img src="https://raw.githubusercontent.com/batonogov/pine/main/assets/screenshot-editor.png" alt="Pine editor screenshot" data-i18n-alt="hero.alt">
                             </div>
                             <div class="shot-chip chip-one" data-i18n="hero.chipTabs">Native window tabs</div>
                             <div class="shot-chip chip-two" data-i18n="hero.chipTerminal">Full terminal emulator</div>
@@ -1083,6 +1091,7 @@
                 "nav.why": "Why Pine",
                 "nav.features": "Features",
                 "nav.install": "Install",
+                "nav.screenshots": "Screenshots",
                 "header.cta": "Download",
                 "hero.eyebrow": "Native macOS code editor",
                 "hero.title": "Less editor. More shipping.",
@@ -1166,12 +1175,15 @@
                 "meta.title": "Pine - Native macOS Code Editor Without the Bloat",
                 "meta.description": "Pine is a native macOS code editor built with SwiftUI and AppKit. Open a repo, edit code, run commands, and check git without Electron or dependency bloat.",
                 "meta.ogTitle": "Pine - Native macOS Code Editor Without the Bloat",
-                "meta.ogDescription": "Less editor. More shipping. Pine is a focused Mac code editor with a full terminal emulator, git context, and minimal dependencies."
+                "meta.ogDescription": "Less editor. More shipping. Pine is a focused Mac code editor with a full terminal emulator, git context, and minimal dependencies.",
+                "meta.twitterTitle": "Pine - Native macOS Code Editor Without the Bloat",
+                "meta.twitterDescription": "Less editor. More shipping. Pine is a focused Mac code editor with a full terminal emulator, git context, and minimal dependencies."
             },
             ru: {
                 "nav.why": "Почему Pine",
                 "nav.features": "Что умеет",
                 "nav.install": "Установка",
+                "nav.screenshots": "Скриншоты",
                 "header.cta": "Скачать",
                 "hero.eyebrow": "Нативный редактор кода для macOS",
                 "hero.title": "Меньше редактора. Больше кода.",
@@ -1255,7 +1267,9 @@
                 "meta.title": "Pine — Нативный редактор кода для macOS без лишнего",
                 "meta.description": "Pine — нативный редактор кода для macOS на SwiftUI и AppKit. Открывай репозиторий, редактируй код, запускай команды и работай с Git без Electron и лишнего веса.",
                 "meta.ogTitle": "Pine — Нативный редактор кода для macOS без лишнего",
-                "meta.ogDescription": "Меньше редактора. Больше кода. Pine — нативный редактор кода для Mac с полноценным терминалом, Git под рукой и минимумом зависимостей."
+                "meta.ogDescription": "Меньше редактора. Больше кода. Pine — нативный редактор кода для Mac с полноценным терминалом, Git под рукой и минимумом зависимостей.",
+                "meta.twitterTitle": "Pine — Нативный редактор кода для macOS без лишнего",
+                "meta.twitterDescription": "Меньше редактора. Больше кода. Pine — нативный редактор кода для Mac с полноценным терминалом, Git под рукой и минимумом зависимостей."
             }
         };
 
@@ -1275,6 +1289,10 @@
             if (ogT) ogT.content = T[lang]["meta.ogTitle"];
             var ogD = document.querySelector('meta[property="og:description"]');
             if (ogD) ogD.content = T[lang]["meta.ogDescription"];
+            var twT = document.querySelector('meta[name="twitter:title"]');
+            if (twT) twT.content = T[lang]["meta.twitterTitle"];
+            var twD = document.querySelector('meta[name="twitter:description"]');
+            if (twD) twD.content = T[lang]["meta.twitterDescription"];
 
             document.querySelectorAll("[data-i18n]").forEach(function(el) {
                 var key = el.getAttribute("data-i18n");
