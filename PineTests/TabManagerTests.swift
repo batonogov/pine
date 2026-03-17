@@ -746,6 +746,61 @@ struct TabManagerTests {
         #expect(manager.activeTab?.previewMode == .split)
     }
 
+    // MARK: - Large file detection
+
+    @Test("isLargeFile returns true for files >= 1 MB")
+    func isLargeFileAboveThreshold() throws {
+        let manager = TabManager()
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let url = dir.appendingPathComponent("large.log")
+        // Create a file exactly at the threshold (1 MB)
+        let data = Data(count: TabManager.largeFileThreshold)
+        try data.write(to: url)
+
+        #expect(manager.isLargeFile(url: url) == true)
+    }
+
+    @Test("isLargeFile returns false for files < 1 MB")
+    func isLargeFileBelowThreshold() throws {
+        let manager = TabManager()
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let url = dir.appendingPathComponent("small.swift")
+        let data = Data(count: TabManager.largeFileThreshold - 1)
+        try data.write(to: url)
+
+        #expect(manager.isLargeFile(url: url) == false)
+    }
+
+    @Test("isLargeFile returns false for nonexistent file")
+    func isLargeFileNonexistent() {
+        let manager = TabManager()
+        let url = URL(fileURLWithPath: "/nonexistent_\(UUID().uuidString)/file.txt")
+        #expect(manager.isLargeFile(url: url) == false)
+    }
+
+    @Test("Open small file has syntaxHighlightingDisabled == false")
+    func openSmallFileHasHighlighting() {
+        let manager = TabManager()
+        let url = tempFileURL(content: "let x = 1")
+
+        manager.openTab(url: url)
+
+        #expect(manager.activeTab?.syntaxHighlightingDisabled == false)
+    }
+
+    @Test("EditorTab with syntaxHighlightingDisabled creates correctly")
+    func editorTabWithDisabledHighlighting() {
+        var tab = EditorTab(url: URL(fileURLWithPath: "/tmp/large.log"), content: "data", savedContent: "data")
+        tab.syntaxHighlightingDisabled = true
+
+        #expect(tab.syntaxHighlightingDisabled == true)
+        #expect(tab.isDirty == false)
+    }
+
     @Test("Rename preserves editor state")
     func renamePreservesEditorState() {
         let manager = TabManager()

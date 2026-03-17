@@ -195,6 +195,8 @@ struct CodeEditorView: NSViewRepresentable {
     var lineDiffs: [GitLineDiff] = []
     /// Whether the minimap panel is visible.
     var isMinimapVisible: Bool = true
+    /// Whether syntax highlighting is disabled for this tab (e.g. large files).
+    var syntaxHighlightingDisabled: Bool = false
     /// Cursor position to restore when the view is created (tab switch).
     var initialCursorPosition: Int = 0
     /// Scroll offset to restore when the view is created (tab switch).
@@ -433,7 +435,7 @@ struct CodeEditorView: NSViewRepresentable {
                 textView.string = text
             }
 
-            if let storage = textView.textStorage {
+            if !parent.syntaxHighlightingDisabled, let storage = textView.textStorage {
                 SyntaxHighlighter.shared.highlight(
                     textStorage: storage,
                     language: language,
@@ -462,7 +464,7 @@ struct CodeEditorView: NSViewRepresentable {
             textView.font = font
 
             // Re-highlight with new font
-            if let storage = textView.textStorage {
+            if !parent.syntaxHighlightingDisabled, let storage = textView.textStorage {
                 SyntaxHighlighter.shared.highlight(
                     textStorage: storage,
                     language: parent.language,
@@ -496,6 +498,9 @@ struct CodeEditorView: NSViewRepresentable {
                     editedRange = edited
                 }
             }
+
+            // Skip highlighting for large files opened without syntax highlighting
+            guard !parent.syntaxHighlightingDisabled else { return }
 
             // Дебаунсинг: откладываем подсветку до паузы в вводе.
             // Не накапливаем диапазоны — каждый textDidChange работает
@@ -612,6 +617,7 @@ struct CodeEditorView: NSViewRepresentable {
     }
 
     private func applyHighlighting(to textView: NSTextView) {
+        guard !syntaxHighlightingDisabled else { return }
         guard let storage = textView.textStorage else { return }
         SyntaxHighlighter.shared.highlight(
             textStorage: storage,

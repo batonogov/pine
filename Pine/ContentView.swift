@@ -176,8 +176,10 @@ struct ContentView: View {
 
         // Restore editor tabs only if PM has no tabs (fresh or after restart)
         if tabManager.tabs.isEmpty {
+            let disabledSet = Set(session.highlightingDisabledPaths ?? [])
             for url in session.existingFileURLs {
-                tabManager.openTab(url: url)
+                let disabled = disabledSet.contains(url.path)
+                tabManager.openTab(url: url, syntaxHighlightingDisabled: disabled)
             }
 
             // Restore preview modes for markdown tabs
@@ -452,6 +454,7 @@ struct ContentView: View {
             fileName: tab.fileName,
             lineDiffs: lineDiffs,
             isMinimapVisible: isMinimapVisible,
+            syntaxHighlightingDisabled: tab.syntaxHighlightingDisabled,
             initialCursorPosition: tab.cursorPosition,
             initialScrollOffset: tab.scrollOffset,
             onStateChange: { cursor, scroll in
