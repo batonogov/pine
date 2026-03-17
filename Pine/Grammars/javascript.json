@@ -1,6 +1,7 @@
 {
     "name": "JavaScript",
     "extensions": ["js", "jsx", "mjs", "cjs"],
+    "lineComment": "//",
     "rules": [
         {
             "pattern": "//.*$",

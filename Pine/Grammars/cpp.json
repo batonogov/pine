@@ -1,6 +1,7 @@
 {
     "name": "C++",
     "extensions": ["cpp", "cc", "cxx", "hpp", "hxx", "hh"],
+    "lineComment": "//",
     "rules": [
         {
             "pattern": "//.*$",

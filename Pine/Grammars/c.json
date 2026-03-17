@@ -1,6 +1,7 @@
 {
     "name": "C",
     "extensions": ["c", "h"],
+    "lineComment": "//",
     "rules": [
         {
             "pattern": "//.*$",

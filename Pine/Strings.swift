@@ -120,6 +120,7 @@ enum Strings {
         String(localized: "branch.switchError.title")
     }
 
+    static let menuToggleComment: LocalizedStringKey = "menu.toggleComment"
     static let menuSave: LocalizedStringKey = "menu.save"
     static let menuSaveAll: LocalizedStringKey = "menu.saveAll"
     static let menuSaveAs: LocalizedStringKey = "menu.saveAs"
