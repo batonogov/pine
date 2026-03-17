@@ -473,6 +473,7 @@ private struct TerminalSessionObserver: ViewModifier {
     func body(content: Content) -> some View {
         content
             .onChange(of: terminal.isTerminalVisible) { _, _ in onSave() }
+            .onChange(of: terminal.isTerminalMaximized) { _, _ in onSave() }
             .onChange(of: terminal.terminalTabs.count) { _, _ in onSave() }
             .onChange(of: terminal.activeTerminalID) { _, _ in onSave() }
     }

@@ -557,9 +557,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
-        // Terminate all terminal processes and save sessions before quitting.
+        // Save sessions before terminating processes.
         for (_, pm) in registry.openProjects {
-            pm.terminal.terminateAll()
             pm.saveSession()
         }
         registry.destroyAllProjects()

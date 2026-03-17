@@ -295,8 +295,6 @@ struct SessionStateTests {
         #expect(loaded?.previewModes == nil)
     }
 
-    // MARK: - Corrupt data
-
     // MARK: - Terminal state
 
     @Test func terminalStateRoundTrip() throws {
