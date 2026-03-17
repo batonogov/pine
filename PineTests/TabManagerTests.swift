@@ -560,6 +560,44 @@ struct TabManagerTests {
         #expect(result == false)
     }
 
+    @Test("tryDuplicateActiveTab succeeds and creates copy")
+    func tryDuplicateActiveTabSuccess() throws {
+        let manager = TabManager()
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let url = dir.appendingPathComponent("file.swift")
+        try "content".write(to: url, atomically: true, encoding: .utf8)
+
+        manager.openTab(url: url)
+        let originalID = manager.activeTabID
+
+        let success = try manager.tryDuplicateActiveTab()
+        #expect(success == true)
+        #expect(manager.tabs.count == 2)
+        #expect(manager.activeTabID != originalID)
+        #expect(manager.activeTab?.url.lastPathComponent == "file copy.swift")
+        #expect(manager.activeTab?.isDirty == false)
+    }
+
+    @Test("tryDuplicateActiveTab throws for non-writable path")
+    func duplicateActiveTabThrowsForBadPath() {
+        let manager = TabManager()
+        let badDir = URL(fileURLWithPath: "/nonexistent_dir_\(UUID().uuidString)")
+        let badURL = badDir.appendingPathComponent("file.swift")
+
+        let tab = EditorTab(url: badURL, content: "data", savedContent: "data")
+        manager.tabs.append(tab)
+        manager.activeTabID = tab.id
+
+        #expect(throws: (any Error).self) {
+            try manager.tryDuplicateActiveTab()
+        }
+        // Original tab should remain unchanged
+        #expect(manager.tabs.count == 1)
+        #expect(manager.activeTab?.url == badURL)
+    }
+
     // MARK: - Preview file detection
 
     @Test("isPreviewFile returns true for images")
