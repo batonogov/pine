@@ -62,6 +62,24 @@ struct PineApp: App {
                     pm.tabManager.togglePreviewMode()
                 }
                 .keyboardShortcut("p", modifiers: [.command, .shift])
+
+                Divider()
+
+                Button(Strings.menuToggleMinimap) {
+                    MinimapSettings.toggle()
+                }
+                .keyboardShortcut("m", modifiers: [.command, .shift])
+            }
+            // Terminal menu: New Tab (Cmd+T)
+            CommandMenu(Strings.menuTerminal) {
+                Button(Strings.menuNewTerminalTab) {
+                    guard let pm = focusedProject else { return }
+                    if !pm.terminal.isTerminalVisible {
+                        pm.terminal.isTerminalVisible = true
+                    }
+                    pm.addTerminalTab()
+                }
+                .keyboardShortcut("t", modifiers: .command)
             }
             // File menu: Save, Save All, Save As, Duplicate
             CommandGroup(replacing: .saveItem) {

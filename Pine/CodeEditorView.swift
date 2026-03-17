@@ -114,17 +114,62 @@ final class GutterTextView: NSTextView {
     }
 }
 
+// MARK: - Editor container that manages scroll view + minimap layout
+
+/// Custom container view that lays out the scroll view and minimap side by side.
+/// Replaces autoresizingMask with explicit layout so the minimap width is
+/// always accounted for.
+final class EditorContainerView: NSView {
+    var minimapWidth: CGFloat = 0
+
+    override func layout() {
+        super.layout()
+        for sub in subviews {
+            if let minimap = sub as? MinimapView {
+                if minimap.isHidden {
+                    continue
+                }
+                minimap.frame = NSRect(
+                    x: bounds.width - minimapWidth,
+                    y: 0,
+                    width: minimapWidth,
+                    height: bounds.height
+                )
+                minimap.needsDisplay = true
+            } else if sub is NSScrollView {
+                sub.frame = NSRect(
+                    x: 0, y: 0,
+                    width: bounds.width - minimapWidth,
+                    height: bounds.height
+                )
+            } else {
+                // LineNumberView — keep x=0, full height, its own width
+                sub.frame = NSRect(
+                    x: 0, y: 0,
+                    width: sub.frame.width,
+                    height: bounds.height
+                )
+            }
+        }
+    }
+}
+
 struct CodeEditorView: NSViewRepresentable {
     @Binding var text: String
     var language: String
     var fileName: String?
     var lineDiffs: [GitLineDiff] = []
+    /// Whether the minimap panel is visible.
+    var isMinimapVisible: Bool = true
     /// Cursor position to restore when the view is created (tab switch).
     var initialCursorPosition: Int = 0
     /// Scroll offset to restore when the view is created (tab switch).
     var initialScrollOffset: CGFloat = 0
     /// Called when cursor position or scroll offset changes, so the caller can persist them.
     var onStateChange: ((Int, CGFloat) -> Void)?
+
+    /// Пользовательский ключ атрибута для подсветки парных скобок.
+    static let bracketHighlightKey = NSAttributedString.Key("PineBracketHighlight")
 
     var fontSize: CGFloat = FontSizeSettings.shared.fontSize
 
@@ -139,9 +184,10 @@ struct CodeEditorView: NSViewRepresentable {
     func makeNSView(context: Context) -> NSView {
         let gutterWidth: CGFloat = 40
 
-        // ── Контейнер — держит scroll view и line number view как сиблингов ──
-        let container = NSView()
+        // ── Контейнер — держит scroll view, line number view и minimap ──
+        let container = EditorContainerView()
         container.wantsLayer = true
+        container.minimapWidth = isMinimapVisible ? MinimapView.defaultWidth : 0
 
         // ── ScrollView ──
         let scrollView = NSScrollView()
@@ -150,7 +196,8 @@ struct CodeEditorView: NSViewRepresentable {
         scrollView.autohidesScrollers = true
         scrollView.drawsBackground = true
         scrollView.backgroundColor = .textBackgroundColor
-        scrollView.autoresizingMask = [.width, .height]
+        // Layout managed by EditorContainerView.layout()
+        scrollView.autoresizingMask = []
 
         // ── Текстовый стек: Storage → LayoutManager → Container → TextView ──
         // Создаём вручную, чтобы всё было корректно инициализировано
@@ -200,11 +247,16 @@ struct CodeEditorView: NSViewRepresentable {
         let lineNumberView = LineNumberView(textView: textView)
         lineNumberView.gutterWidth = gutterWidth
         lineNumberView.gutterFont = gutterFont
-        lineNumberView.autoresizingMask = [.height]
         container.addSubview(lineNumberView)
+
+        // ── Minimap — справа от scroll view ──
+        let minimapView = MinimapView(textView: textView)
+        minimapView.isHidden = !isMinimapVisible
+        container.addSubview(minimapView)
 
         context.coordinator.scrollView = scrollView
         context.coordinator.lineNumberView = lineNumberView
+        context.coordinator.minimapView = minimapView
         context.coordinator.lastFontSize = editorFont.pointSize
 
         textView.string = text
@@ -227,6 +279,8 @@ struct CodeEditorView: NSViewRepresentable {
             } else if safePosition > 0 {
                 textView.scrollRangeToVisible(NSRange(location: safePosition, length: 0))
             }
+            // Redraw minimap after layout is complete
+            minimapView.needsDisplay = true
         }
 
         // Observe scroll changes to persist scroll offset.
@@ -245,11 +299,14 @@ struct CodeEditorView: NSViewRepresentable {
         // Обновляем parent, чтобы binding в coordinator был актуальным
         context.coordinator.parent = self
 
-        guard let scrollView = context.coordinator.scrollView,
-              let textView = scrollView.documentView as? NSTextView else { return }
+        guard let editorContainer = container as? EditorContainerView else { return }
 
-        // Scroll view заполняет весь контейнер
-        scrollView.frame = container.bounds
+        // Minimap visibility — triggers relayout via needsLayout
+        if let minimapView = context.coordinator.minimapView {
+            minimapView.isHidden = !isMinimapVisible
+        }
+        editorContainer.minimapWidth = isMinimapVisible ? MinimapView.defaultWidth : 0
+        editorContainer.needsLayout = true
 
         context.coordinator.updateContentIfNeeded(
             text: text,
@@ -261,14 +318,9 @@ struct CodeEditorView: NSViewRepresentable {
         // Обновляем шрифт при изменении размера (Cmd+Plus/Minus)
         context.coordinator.updateFontIfNeeded(font: editorFont, gutterFont: gutterFont)
 
-        // Обновляем размер и diff-данные LineNumberView
+        // Обновляем diff-данные LineNumberView
         if let lineNumberView = context.coordinator.lineNumberView {
             lineNumberView.lineDiffs = lineDiffs
-            lineNumberView.frame = NSRect(
-                x: 0, y: 0,
-                width: lineNumberView.gutterWidth,
-                height: container.bounds.height
-            )
         }
     }
 
@@ -280,6 +332,7 @@ struct CodeEditorView: NSViewRepresentable {
         var parent: CodeEditorView
         var scrollView: NSScrollView?
         var lineNumberView: LineNumberView?
+        var minimapView: MinimapView?
 
         /// Последние язык/имя файла — для обнаружения смены грамматики
         /// при одинаковом содержимом файлов
@@ -376,6 +429,10 @@ struct CodeEditorView: NSViewRepresentable {
             guard let textView = notification.object as? NSTextView else { return }
             parent.text = textView.string
 
+            // Подсветка синтаксиса сбросит backgroundColor —
+            // считаем bracket highlight невалидным
+            previousBracketRanges = []
+
             // Report state change
             reportStateChange()
 
@@ -425,6 +482,62 @@ struct CodeEditorView: NSViewRepresentable {
 
         func textViewDidChangeSelection(_ notification: Notification) {
             reportStateChange()
+            updateBracketHighlight()
+        }
+
+        /// Предыдущие позиции подсвеченных скобок (для очистки).
+        private var previousBracketRanges: [NSRange] = []
+
+        /// Цвет подсветки парных скобок.
+        private let bracketHighlightColor = NSColor(name: nil) { appearance in
+            if appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua {
+                return NSColor.white.withAlphaComponent(0.15)
+            } else {
+                return NSColor.black.withAlphaComponent(0.12)
+            }
+        }
+
+        private func updateBracketHighlight() {
+            guard let sv = scrollView,
+                  let textView = sv.documentView as? NSTextView,
+                  let storage = textView.textStorage else { return }
+
+            storage.beginEditing()
+
+            // Снимаем предыдущую подсветку
+            for range in previousBracketRanges where range.location + range.length <= storage.length {
+                storage.removeAttribute(CodeEditorView.bracketHighlightKey, range: range)
+                storage.removeAttribute(.backgroundColor, range: range)
+            }
+            previousBracketRanges = []
+
+            // Ищем новую пару скобок
+            let cursorRange = textView.selectedRange()
+            if cursorRange.length == 0 {
+                let skipRanges = SyntaxHighlighter.shared.commentAndStringRanges(
+                    in: textView.string,
+                    language: parent.language,
+                    fileName: parent.fileName
+                )
+
+                if let match = BracketMatcher.findMatch(
+                    in: textView.string,
+                    cursorPosition: cursorRange.location,
+                    skipRanges: skipRanges
+                ) {
+                    let openerRange = NSRange(location: match.opener, length: 1)
+                    let closerRange = NSRange(location: match.closer, length: 1)
+
+                    for range in [openerRange, closerRange] {
+                        storage.addAttribute(.backgroundColor, value: bracketHighlightColor, range: range)
+                        storage.addAttribute(CodeEditorView.bracketHighlightKey, value: true, range: range)
+                    }
+
+                    previousBracketRanges = [openerRange, closerRange]
+                }
+            }
+
+            storage.endEditing()
         }
 
         @objc func scrollViewDidScroll(_ notification: Notification) {

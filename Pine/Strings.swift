@@ -110,6 +110,8 @@ enum Strings {
     static let menuIncreaseFontSize: LocalizedStringKey = "menu.increaseFontSize"
     static let menuDecreaseFontSize: LocalizedStringKey = "menu.decreaseFontSize"
     static let menuResetFontSize: LocalizedStringKey = "menu.resetFontSize"
+    static let menuTerminal: LocalizedStringKey = "menu.terminal"
+    static let menuNewTerminalTab: LocalizedStringKey = "menu.newTerminalTab"
     static let menuTogglePreview: LocalizedStringKey = "menu.togglePreview"
     static let menuView: LocalizedStringKey = "menu.view"
     static let menuGit: LocalizedStringKey = "menu.git"
@@ -122,6 +124,8 @@ enum Strings {
     static var branchSwitchErrorTitle: String {
         String(localized: "branch.switchError.title")
     }
+
+    static let menuToggleMinimap: LocalizedStringKey = "menu.toggleMinimap"
 
     static let menuSave: LocalizedStringKey = "menu.save"
     static let menuSaveAll: LocalizedStringKey = "menu.saveAll"

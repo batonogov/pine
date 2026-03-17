@@ -55,6 +55,9 @@ private extension NSFont {
 
 // MARK: - AttributedStringBuilder
 
+/// URL schemes allowed in Markdown preview links.
+private let allowedLinkSchemes: Set<String> = ["https", "http", "mailto"]
+
 private struct AttributedStringBuilder: MarkupVisitor {
     typealias Result = NSAttributedString
 
@@ -238,9 +241,13 @@ private struct AttributedStringBuilder: MarkupVisitor {
             result.append(visitInline(child))
         }
         let range = NSRange(location: 0, length: result.length)
-        result.addAttribute(.foregroundColor, value: NSColor.systemBlue, range: range)
-        result.addAttribute(.underlineStyle, value: NSUnderlineStyle.single.rawValue, range: range)
-        if let dest = link.destination, let url = URL(string: dest) {
+
+        if let dest = link.destination,
+           let url = URL(string: dest),
+           let scheme = url.scheme?.lowercased(),
+           allowedLinkSchemes.contains(scheme) {
+            result.addAttribute(.foregroundColor, value: NSColor.systemBlue, range: range)
+            result.addAttribute(.underlineStyle, value: NSUnderlineStyle.single.rawValue, range: range)
             result.addAttribute(.link, value: url, range: range)
         }
         return result
