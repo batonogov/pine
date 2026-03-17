@@ -28,23 +28,27 @@ final class TerminalTests: PineUITestCase {
     func testNewTerminalTabViaMenu() throws {
         launchWithProject(projectURL)
 
-        // Show terminal first
+        // Wait for window to fully load
         let toggle = app.descendants(matching: .any)["terminalToggleButton"].firstMatch
         guard waitForExistence(toggle, timeout: 10) else {
             XCTFail("Terminal toggle should exist in status bar")
             return
         }
-        toggle.click()
-        sleep(2)
 
-        // Verify first terminal tab exists
-        let terminalTabBar = app.descendants(matching: .any)["terminalTabBar"].firstMatch
-        XCTAssertTrue(waitForExistence(terminalTabBar, timeout: 10), "Terminal tab bar should exist")
-
-        // Create new terminal tab via menu: Terminal → New Tab
+        // Create first terminal tab via menu — this also shows the terminal
         app.menuBars.menuBarItems["Terminal"].click()
         app.menuItems["New Tab"].click()
-        sleep(2)
+
+        // Wait for terminal to become visible
+        let newTerminalButton = app.descendants(matching: .any)["newTerminalButton"].firstMatch
+        guard waitForExistence(newTerminalButton, timeout: 10) else {
+            XCTFail("Terminal should become visible after New Tab")
+            return
+        }
+
+        // Create second terminal tab via menu
+        app.menuBars.menuBarItems["Terminal"].click()
+        app.menuItems["New Tab"].click()
 
         // Verify second terminal tab appeared — tab bar should have "Terminal 2"
         let secondTab = app.descendants(matching: .any)["terminalTab_Terminal 2"].firstMatch
