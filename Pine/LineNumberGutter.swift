@@ -12,7 +12,7 @@ import AppKit
 final class LineNumberView: NSView {
     weak var textView: NSTextView?
 
-    private let gutterFont = NSFont.monospacedSystemFont(ofSize: 11, weight: .regular)
+    var gutterFont = NSFont.monospacedSystemFont(ofSize: 11, weight: .regular)
     private let gutterTextColor = NSColor.secondaryLabelColor
     private let gutterBgColor = NSColor.controlBackgroundColor
     private let separatorColor = NSColor.separatorColor

@@ -2048,6 +2048,66 @@
         }
       }
     },
+    "menu.newTerminalTab" : {
+      "comment" : "Menu command: create a new terminal tab (⌘T).",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Neuer Tab"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "New Tab"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nueva pestaña"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nouvel onglet"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "新規タブ"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "새 탭"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nova aba"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Новая вкладка"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "新建标签页"
+          }
+        }
+      }
+    },
     "menu.openFolder" : {
       "comment" : "Menu command: open a folder picker dialog (⌘⇧O).",
       "extractionState" : "manual",
@@ -2408,6 +2468,66 @@
         }
       }
     },
+    "menu.terminal" : {
+      "comment" : "Top-level Terminal menu title in the menu bar.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Terminal"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Terminal"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Terminal"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Terminal"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ターミナル"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "터미널"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Terminal"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Терминал"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "终端"
+          }
+        }
+      }
+    },
     "menu.switchBranch" : {
       "comment" : "Menu command: open branch-switching dialog (⌘⇧B).",
       "extractionState" : "manual",
@@ -2526,6 +2646,111 @@
             "value" : "切换注释"
           }
         }
+      }
+    },
+    "menu.toggleMinimap" : {
+      "comment" : "Menu command: toggle code minimap panel.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Minimap umschalten"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Toggle Minimap"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Alternar minimapa"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Afficher/masquer la minicarte"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ミニマップを切り替え"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "미니맵 전환"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Alternar minimapa"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Переключить миникарту"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "切换迷你地图"
+          }
+        }
+      }
+    },
+    "menu.decreaseFontSize" : {
+      "comment" : "Menu command: decrease editor font size.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : { "stringUnit" : { "state" : "translated", "value" : "Schrift verkleinern" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Decrease Font Size" } },
+        "es" : { "stringUnit" : { "state" : "translated", "value" : "Reducir tamaño de fuente" } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Réduire la taille de la police" } },
+        "ja" : { "stringUnit" : { "state" : "translated", "value" : "フォントサイズを縮小" } },
+        "ko" : { "stringUnit" : { "state" : "translated", "value" : "글꼴 크기 줄이기" } },
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Diminuir tamanho da fonte" } },
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Уменьшить размер шрифта" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "减小字体大小" } }
+      }
+    },
+    "menu.increaseFontSize" : {
+      "comment" : "Menu command: increase editor font size.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : { "stringUnit" : { "state" : "translated", "value" : "Schrift vergrößern" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Increase Font Size" } },
+        "es" : { "stringUnit" : { "state" : "translated", "value" : "Aumentar tamaño de fuente" } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Augmenter la taille de la police" } },
+        "ja" : { "stringUnit" : { "state" : "translated", "value" : "フォントサイズを拡大" } },
+        "ko" : { "stringUnit" : { "state" : "translated", "value" : "글꼴 크기 늘리기" } },
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Aumentar tamanho da fonte" } },
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Увеличить размер шрифта" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "增大字体大小" } }
+      }
+    },
+    "menu.resetFontSize" : {
+      "comment" : "Menu command: reset editor font size to default.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : { "stringUnit" : { "state" : "translated", "value" : "Schriftgröße zurücksetzen" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Reset Font Size" } },
+        "es" : { "stringUnit" : { "state" : "translated", "value" : "Restablecer tamaño de fuente" } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Réinitialiser la taille de la police" } },
+        "ja" : { "stringUnit" : { "state" : "translated", "value" : "フォントサイズをリセット" } },
+        "ko" : { "stringUnit" : { "state" : "translated", "value" : "글꼴 크기 초기화" } },
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Redefinir tamanho da fonte" } },
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Сбросить размер шрифта" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "重置字体大小" } }
       }
     },
     "menu.togglePreview" : {

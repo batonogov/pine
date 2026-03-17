@@ -34,6 +34,23 @@ struct PineApp: App {
             }
             // Cmd+` — показать/скрыть терминал
             CommandMenu(Strings.menuView) {
+                Button(Strings.menuIncreaseFontSize) {
+                    FontSizeSettings.shared.increase()
+                }
+                .keyboardShortcut("+", modifiers: .command)
+
+                Button(Strings.menuDecreaseFontSize) {
+                    FontSizeSettings.shared.decrease()
+                }
+                .keyboardShortcut("-", modifiers: .command)
+
+                Button(Strings.menuResetFontSize) {
+                    FontSizeSettings.shared.reset()
+                }
+                .keyboardShortcut("0", modifiers: .command)
+
+                Divider()
+
                 Button(Strings.toggleTerminal) {
                     guard let pm = focusedProject else { return }
                     pm.terminal.isTerminalVisible.toggle()
@@ -45,6 +62,24 @@ struct PineApp: App {
                     pm.tabManager.togglePreviewMode()
                 }
                 .keyboardShortcut("p", modifiers: [.command, .shift])
+
+                Divider()
+
+                Button(Strings.menuToggleMinimap) {
+                    MinimapSettings.toggle()
+                }
+                .keyboardShortcut("m", modifiers: [.command, .shift])
+            }
+            // Terminal menu: New Tab (Cmd+T)
+            CommandMenu(Strings.menuTerminal) {
+                Button(Strings.menuNewTerminalTab) {
+                    guard let pm = focusedProject else { return }
+                    if !pm.terminal.isTerminalVisible {
+                        pm.terminal.isTerminalVisible = true
+                    }
+                    pm.addTerminalTab()
+                }
+                .keyboardShortcut("t", modifiers: .command)
             }
             // Edit menu: Toggle Comment
             CommandGroup(after: .pasteboard) {
@@ -474,6 +509,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // UI testing support: clear persisted state for a clean launch
         if CommandLine.arguments.contains("--reset-state") {
             SessionState.removeAll()
+            FontSizeSettings.shared.reset()
         }
 
         // UI testing support: read project path from environment variable.

@@ -301,6 +301,31 @@ final class SyntaxHighlighter {
         multilineMatchCache.removeValue(forKey: ObjectIdentifier(textStorage))
     }
 
+    /// Возвращает диапазоны комментариев и строк для данного текста.
+    /// Используется для пропуска скобок при bracket matching.
+    func commentAndStringRanges(
+        in text: String,
+        language: String,
+        fileName: String? = nil
+    ) -> [NSRange] {
+        guard let (_, rules) = resolveGrammar(language: language, fileName: fileName) else {
+            return []
+        }
+
+        let fullRange = NSRange(location: 0, length: (text as NSString).length)
+        var ranges: [NSRange] = []
+
+        for rule in rules where rule.scope == "comment" || rule.scope == "string" {
+            rule.regex.enumerateMatches(in: text, range: fullRange) { match, _, _ in
+                if let range = match?.range {
+                    ranges.append(range)
+                }
+            }
+        }
+
+        return ranges
+    }
+
     // MARK: - Private helpers
 
     private func resolveGrammar(language: String, fileName: String?) -> (Grammar, [CompiledRule])? {
