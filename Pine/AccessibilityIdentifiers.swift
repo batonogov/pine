@@ -38,6 +38,11 @@ enum AccessibilityID {
     static let markdownPreviewToggle = "markdownPreviewToggle"
     static let markdownPreviewView = "markdownPreviewView"
 
+    // MARK: - Branch switcher
+    static let branchSwitcherButton = "branchSwitcherButton"
+    static let branchSearchField = "branchSearchField"
+    static func branchItem(_ name: String) -> String { "branchItem_\(name)" }
+
     // MARK: - Status bar
     static let statusBar = "statusBar"
     static let terminalToggleButton = "terminalToggleButton"

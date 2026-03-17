@@ -23,6 +23,7 @@ struct ContentView: View {
     @State private var columnVisibility: NavigationSplitViewVisibility = .all
     @State private var lineDiffs: [GitLineDiff] = []
     @State private var didRestoreSession = false
+    @State private var showBranchSwitcher = false
 
     private var activeTab: EditorTab? { tabManager.activeTab }
 
@@ -62,6 +63,14 @@ struct ContentView: View {
         .frame(minWidth: 800, minHeight: 500)
         .navigationTitle(workspace.projectName)
         .navigationSubtitle(branchSubtitle)
+        .background {
+            BranchSubtitleClickHandler(
+                branches: workspace.gitProvider.branches,
+                currentBranch: workspace.gitProvider.currentBranch,
+                isGitRepository: workspace.gitProvider.isGitRepository,
+                onSwitchBranch: switchBranch
+            )
+        }
         .task {
             restoreSessionIfNeeded()
             syncSidebarSelection()
@@ -122,6 +131,17 @@ struct ContentView: View {
             guard let deletedURL = notification.userInfo?["url"] as? URL else { return }
             handleFileDeletion(deletedURL)
         }
+        .onReceive(NotificationCenter.default.publisher(for: .switchBranch)) { _ in
+            guard controlActiveState == .key,
+                  workspace.gitProvider.isGitRepository else { return }
+            showBranchSwitcher = true
+        }
+        .sheet(isPresented: $showBranchSwitcher) {
+            BranchSwitcherView(
+                gitProvider: workspace.gitProvider,
+                isPresented: $showBranchSwitcher
+            )
+        }
         .onChange(of: workspace.externalChangeToken) { _, _ in
             guard controlActiveState == .key else { return }
             let conflicts = tabManager.checkExternalChanges()
@@ -131,7 +151,7 @@ struct ContentView: View {
 
     /// Branch subtitle as a plain String to avoid generating a localization key.
     private var branchSubtitle: String {
-        workspace.gitProvider.isGitRepository ? "⎇ \(workspace.gitProvider.currentBranch)" : ""
+        workspace.gitProvider.isGitRepository ? "⎇ \(workspace.gitProvider.currentBranch) ▾" : ""
     }
 
     // MARK: - Session restoration
@@ -213,6 +233,19 @@ struct ContentView: View {
             return
         }
         lineDiffs = workspace.gitProvider.diffForFile(at: tab.url)
+    }
+
+    /// Switches to the given branch via toolbarTitleMenu, showing an alert on error.
+    private func switchBranch(_ branch: String) {
+        guard branch != workspace.gitProvider.currentBranch else { return }
+        let result = workspace.gitProvider.checkoutBranch(branch)
+        if !result.success {
+            let alert = NSAlert()
+            alert.messageText = Strings.branchSwitchErrorTitle
+            alert.informativeText = result.error
+            alert.alertStyle = .warning
+            alert.runModal()
+        }
     }
 
     /// Closes a tab with unsaved-changes protection.

@@ -46,13 +46,6 @@ struct PineApp: App {
                 }
                 .keyboardShortcut("p", modifiers: [.command, .shift])
             }
-            // Cmd+Shift+B — переключение веток
-            CommandMenu(Strings.menuGit) {
-                Button(Strings.menuSwitchBranch) {
-                    // Branch switching is handled via toolbarTitleMenu
-                }
-                .keyboardShortcut("b", modifiers: [.command, .shift])
-            }
             // File menu: Save, Save All, Save As, Duplicate
             CommandGroup(replacing: .saveItem) {
                 Button(Strings.menuSave) {
@@ -501,6 +494,18 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             return nil // consume event
         }
 
+        // Intercept Cmd+Shift+B to open branch switcher sheet.
+        NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+            guard event.modifierFlags.intersection(.deviceIndependentFlagsMask) == [.command, .shift],
+                  event.charactersIgnoringModifiers == "b",
+                  let window = NSApp.keyWindow,
+                  window.delegate is CloseDelegate else {
+                return event
+            }
+            NotificationCenter.default.post(name: .switchBranch, object: nil)
+            return nil // consume event
+        }
+
         // Ensure Welcome is visible if SwiftUI didn't present it automatically
         // (e.g. when window restoration state interferes with defaultLaunchBehavior)
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
@@ -592,6 +597,7 @@ extension Notification.Name {
     static let openFolder = Notification.Name("openFolder")
     static let closeTab = Notification.Name("closeTab")
     static let refreshLineDiffs = Notification.Name("refreshLineDiffs")
+    static let switchBranch = Notification.Name("switchBranch")
     /// userInfo: ["oldURL": URL, "newURL": URL]
     static let fileRenamed = Notification.Name("fileRenamed")
     /// userInfo: ["url": URL]
