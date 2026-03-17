@@ -109,16 +109,16 @@ final class BranchSwitcherTests: PineUITestCase {
         )
     }
 
-    // MARK: - Git menu no longer in menu bar
+    // MARK: - Git menu exists in menu bar
 
-    func testGitMenuDoesNotExist() throws {
+    func testGitMenuExists() throws {
         launchWithProject(projectURL)
 
         let window = app.windows.firstMatch
         XCTAssertTrue(window.waitForExistence(timeout: 10))
 
         let gitMenu = app.menuBars.menuBarItems["Git"]
-        XCTAssertFalse(gitMenu.exists, "Git menu should not exist in the menu bar")
+        XCTAssertTrue(gitMenu.exists, "Git menu should exist in the menu bar")
     }
 
     // MARK: - External branch switch updates subtitle
