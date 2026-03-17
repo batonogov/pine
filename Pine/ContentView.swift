@@ -96,15 +96,10 @@ struct ContentView: View {
         .onChange(of: tabManager.tabs.count) { _, _ in
             projectManager.saveSession()
         }
-        .onChange(of: terminal.isTerminalVisible) { _, _ in
-            projectManager.saveSession()
-        }
-        .onChange(of: terminal.terminalTabs.count) { _, _ in
-            projectManager.saveSession()
-        }
-        .onChange(of: terminal.activeTerminalID) { _, _ in
-            projectManager.saveSession()
-        }
+        .modifier(TerminalSessionObserver(
+            terminal: terminal,
+            onSave: { projectManager.saveSession() }
+        ))
         .onChange(of: workspace.gitProvider.isGitRepository) { _, isRepo in
             if isRepo {
                 refreshLineDiffs()
@@ -464,6 +459,22 @@ struct ContentView: View {
         }
         .background(Color(nsColor: .textBackgroundColor))
         .onAppear { terminal.startTerminals(workingDirectory: workspace.rootURL) }
+    }
+}
+
+// MARK: - Terminal session state observer
+
+/// Saves terminal state to session when visibility, tab count, or active tab changes.
+/// Extracted into a ViewModifier to reduce body complexity for the type-checker.
+private struct TerminalSessionObserver: ViewModifier {
+    let terminal: TerminalManager
+    let onSave: () -> Void
+
+    func body(content: Content) -> some View {
+        content
+            .onChange(of: terminal.isTerminalVisible) { _, _ in onSave() }
+            .onChange(of: terminal.terminalTabs.count) { _, _ in onSave() }
+            .onChange(of: terminal.activeTerminalID) { _, _ in onSave() }
     }
 }
 
