@@ -1,6 +1,6 @@
 # Pine
 
-> A native Mac code editor for developers who are tired of opening a browser just to edit code.
+> A fast, minimal, native macOS code editor.
 
 ![Pine Editor](assets/screenshot-editor.png)
 
@@ -8,48 +8,47 @@
 
 ![Pine Terminal](assets/screenshot-terminal.png)
 
-Pine is a focused code editor for macOS 26+ built with SwiftUI and AppKit. It gives you the core developer loop in one clean native app: open a folder, edit code, run commands, check git, move on.
+Pine is a code editor for macOS 26+ built with SwiftUI and AppKit. One window, one project: open a folder, edit code, run commands, check git.
 
-No Electron. No extension marketplace. No settings archaeology. No pretending to be an operating system inside your operating system.
+No Electron. No extension marketplace. No settings to dig through. Just a native Mac app that stays out of your way.
 
-If VS Code feels heavy and Xcode feels like overkill for day-to-day editing, Pine is the middle ground.
+## Why Pine
 
-## Why Pine Exists
+Most editors keep adding layers until opening a project feels like launching a platform. Pine goes the other direction:
 
-Most editors keep adding layers until opening a project feels like launching a platform.
+- **Fast.** Native binary, no browser engine, no startup lag.
+- **Minimal.** One dependency ([SwiftTerm](https://github.com/migueldeicaza/SwiftTerm)), no plugins, no configuration sprawl.
+- **Native.** SwiftUI + AppKit, system text handling, Liquid Glass UI on macOS 26.
 
-Pine goes in the opposite direction. It is built for the common case:
+If VS Code feels heavy and Xcode feels like overkill for everyday editing, Pine is the middle ground.
 
-- You want to open a repo fast.
-- You want a native editor that feels like a Mac app.
-- You want terminal and git context without leaving the window.
-- You do not want plugins, tabs, panels, and settings fighting for attention.
+## Features
 
-## Why People Install It
+- **Editor** — Line numbers, current-line highlight, smart indent, find bar, undo, and grammar-based syntax highlighting
+- **Syntax highlighting** — Swift, TypeScript, JavaScript, Python, Go, Rust, Shell, HTML, CSS, JSON, YAML, Markdown, Dockerfile
+- **Terminal** — Multiple tabs powered by [SwiftTerm](https://github.com/migueldeicaza/SwiftTerm) (full VT100/xterm with colors, oh-my-zsh, TUI apps)
+- **Git** — File status in the sidebar, diff markers in the gutter, branch switching via title bar click or search sheet
+- **Markdown preview** — Source, preview, and side-by-side split modes
+- **Quick Look** — Preview images and non-text files without leaving the editor
+- **File management** — New file/folder, rename, duplicate, delete, reveal in Finder from the sidebar context menu
+- **Session restore** — Reopens your tabs and project state between launches
+- **Localized** — English, German, Spanish, French, Japanese, Korean, Portuguese (BR), Russian, Simplified Chinese
 
-- Native from top to bottom. SwiftUI + AppKit, system shortcuts, native window tabs, native text handling.
-- Lightweight by design. One dependency ([SwiftTerm](https://github.com/migueldeicaza/SwiftTerm) for the terminal) and no browser engine.
-- Focused on shipping work. Edit, save, run, inspect git changes, switch branches, close.
-- Small surface area, low friction. Less setup, less UI noise, fewer decisions before you can type.
+## Keyboard Shortcuts
 
-## What You Get
+| Shortcut | Action |
+| --- | --- |
+| `Cmd+Shift+O` | Open folder |
+| `Cmd+S` | Save |
+| `Cmd+Option+S` | Save All |
+| `Cmd+Shift+S` | Save As |
+| `Cmd+Shift+D` | Duplicate tab |
+| `Cmd+W` | Close tab |
+| ``Cmd+` `` | Toggle terminal |
+| `Cmd+Shift+B` | Switch branch |
+| `Cmd+Shift+P` | Toggle Markdown preview |
 
-- File tree sidebar with folders-first sorting and a clean empty state
-- Code editor with line numbers, current-line highlight, undo, find bar, and smart indent
-- Grammar-based syntax highlighting for Swift, TypeScript, JavaScript, Python, Go, Rust, Shell, HTML, CSS, JSON, YAML, Markdown, and Dockerfile
-- Built-in terminal powered by [SwiftTerm](https://github.com/migueldeicaza/SwiftTerm) — a full VT100/xterm emulator with colors, oh-my-zsh support, and TUI app compatibility (vim, htop, nano)
-- Git status in the file tree, git summary in the status bar, branch switching, and line diff markers in the gutter
-- Native macOS window tabs for opened files
-- Liquid Glass UI tuned for macOS 26 Tahoe
-
-## What Pine Is Not
-
-- Not a VS Code clone
-- Not a plugin platform
-- Not a replacement for a full IDE when you need one
-- Not another Electron shell
-
-## Install In 10 Seconds
+## Install
 
 ```bash
 brew tap batonogov/tap
@@ -57,16 +56,6 @@ brew install --cask pine-editor
 ```
 
 Or download the latest `.dmg` from [Releases](https://github.com/batonogov/pine/releases).
-
-## Keyboard Shortcuts
-
-| Shortcut | Action |
-| --- | --- |
-| `Cmd+Shift+O` | Open folder |
-| `Cmd+S` | Save file |
-| `Cmd+`` | Toggle terminal |
-| `Cmd+Shift+B` | Switch git branch |
-| `Cmd+W` | Close current tab |
 
 ## Build From Source
 
@@ -85,7 +74,7 @@ SwiftTerm is resolved automatically via Swift Package Manager on first build.
 - SwiftUI for app structure and native macOS UI
 - AppKit text system for the editor core
 - JSON grammars for syntax highlighting
-- [SwiftTerm](https://github.com/migueldeicaza/SwiftTerm) for the terminal emulator (VT100/xterm)
+- [SwiftTerm](https://github.com/migueldeicaza/SwiftTerm) for the terminal emulator
 
 ## License
 

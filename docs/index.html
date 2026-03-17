@@ -3,12 +3,19 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Pine - Native macOS Code Editor Without the Bloat</title>
-    <meta name="description" content="Pine is a native macOS code editor built with SwiftUI and AppKit. Open a repo, edit code, run commands, and check git without Electron or dependency bloat.">
-    <meta property="og:title" content="Pine - Native macOS Code Editor Without the Bloat">
-    <meta property="og:description" content="Less editor. More shipping. Pine is a focused Mac code editor with a full terminal emulator, git context, and minimal dependencies.">
+    <title>Pine — A Fast, Minimal, Native macOS Code Editor</title>
+    <meta name="description" content="Pine is a fast, minimal, native macOS code editor built with SwiftUI and AppKit. Edit code, run commands, and check git without Electron or bloat.">
+    <meta property="og:title" content="Pine — A Fast, Minimal, Native macOS Code Editor">
+    <meta property="og:description" content="A fast, minimal, native macOS code editor. Edit code, run commands, check git — no Electron, no bloat.">
     <meta property="og:image" content="https://raw.githubusercontent.com/batonogov/pine/main/assets/screenshot-editor.png">
+    <meta property="og:url" content="https://batonogov.github.io/pine/">
     <meta property="og:type" content="website">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="Pine — A Fast, Minimal, Native macOS Code Editor">
+    <meta name="twitter:description" content="A fast, minimal, native macOS code editor. Edit code, run commands, check git — no Electron, no bloat.">
+    <meta name="twitter:image" content="https://raw.githubusercontent.com/batonogov/pine/main/assets/screenshot-editor.png">
+    <meta name="theme-color" content="#07110d">
+    <link rel="canonical" href="https://batonogov.github.io/pine/">
     <style>
         * {
             box-sizing: border-box;
@@ -150,15 +157,17 @@
             display: inline-flex;
             align-items: center;
             justify-content: center;
-            padding: 8px 14px;
+            padding: 8px 28px 8px 14px;
             border-radius: 999px;
             border: 1px solid var(--line);
-            background: rgba(255, 255, 255, 0.04);
+            background: rgba(255, 255, 255, 0.04) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%23a4b5ac'/%3E%3C/svg%3E") no-repeat right 12px center;
             color: var(--muted-strong);
             font-size: 13px;
             font-weight: 600;
             cursor: pointer;
             transition: border-color 0.2s ease, color 0.2s ease;
+            -webkit-appearance: none;
+            appearance: none;
         }
 
         .lang-toggle:hover {
@@ -169,6 +178,11 @@
         .lang-toggle:focus-visible {
             outline: 2px solid var(--accent);
             outline-offset: 2px;
+        }
+
+        .lang-toggle option {
+            background: var(--bg);
+            color: var(--text);
         }
 
         .hero {
@@ -871,18 +885,29 @@
                 <a href="#why" data-i18n="nav.why">Why Pine</a>
                 <a href="#features" data-i18n="nav.features">Features</a>
                 <a href="#install" data-i18n="nav.install">Install</a>
+                <a href="#screenshots" data-i18n="nav.screenshots">Screenshots</a>
                 <a href="https://github.com/batonogov/pine">GitHub</a>
             </nav>
-            <button class="lang-toggle" id="lang-toggle" type="button">RU</button>
+            <select class="lang-toggle" id="lang-toggle">
+                <option value="en">EN</option>
+                <option value="de">DE</option>
+                <option value="es">ES</option>
+                <option value="fr">FR</option>
+                <option value="ja">JA</option>
+                <option value="ko">KO</option>
+                <option value="pt-BR">PT</option>
+                <option value="ru">RU</option>
+                <option value="zh-Hans">中文</option>
+            </select>
             <a class="header-cta" href="https://github.com/batonogov/pine/releases" data-i18n="header.cta">Download</a>
         </header>
 
         <main>
             <section class="hero">
                 <div class="hero-copy">
-                    <div class="eyebrow" data-i18n="hero.eyebrow">Native macOS code editor</div>
-                    <h1 data-i18n="hero.title">Less editor. More shipping.</h1>
-                    <p data-i18n="hero.desc">Pine is a focused Mac code editor for developers who want the core loop to feel instant: open a repo, edit code, run commands, check git, move on.</p>
+                    <div class="eyebrow" data-i18n="hero.eyebrow">Fast · Minimal · Native</div>
+                    <h1 data-i18n="hero.title">A code editor that stays out of your way.</h1>
+                    <p data-i18n="hero.desc">Pine is a fast, minimal, native macOS code editor. Open a folder, edit code, run commands, check git — and move on.</p>
                     <div class="hero-proof">
                         <span data-i18n="hero.noElectron">No Electron</span>
                         <span data-i18n="hero.minimalDeps">Minimal dependencies</span>
@@ -904,9 +929,9 @@
                     <div class="shot-window">
                         <div class="shot-card-stack">
                             <div class="shot-card">
-                                <img src="https://raw.githubusercontent.com/batonogov/pine/main/assets/screenshot-editor.png" alt="Pine editor screenshot" data-i18n-alt="hero.alt" loading="lazy">
+                                <img src="https://raw.githubusercontent.com/batonogov/pine/main/assets/screenshot-editor.png" alt="Pine editor screenshot" data-i18n-alt="hero.alt">
                             </div>
-                            <div class="shot-chip chip-one" data-i18n="hero.chipTabs">Native window tabs</div>
+                            <div class="shot-chip chip-one" data-i18n="hero.chipTabs">Markdown preview</div>
                             <div class="shot-chip chip-two" data-i18n="hero.chipTerminal">Full terminal emulator</div>
                             <div class="shot-chip chip-three" data-i18n="hero.chipGit">Git-aware file tree</div>
                         </div>
@@ -986,12 +1011,12 @@
                     <article class="feature-card feature-wide">
                         <div class="feature-badge">01</div>
                         <h3 data-i18n="features.01title">Open a repo and start working immediately.</h3>
-                        <p data-i18n="features.01desc">Folders-first file tree, clean empty states, hidden files skipped by default, native window tabs, and unsaved-change protection.</p>
+                        <p data-i18n="features.01desc">Folders-first file tree, clean empty states, hidden files skipped by default, editor tabs, and unsaved-change protection.</p>
                     </article>
                     <article class="feature-card">
                         <div class="feature-badge">02</div>
                         <h3 data-i18n="features.02title">Write code without visual drag.</h3>
-                        <p data-i18n="features.02desc">Line numbers, current-line highlight, undo, find bar, smart indent, and grammar-based syntax highlighting for the core working set.</p>
+                        <p data-i18n="features.02desc">Line numbers, current-line highlight, undo, find bar, smart indent, and syntax highlighting for Swift, TypeScript, JavaScript, Python, Go, Rust, and more.</p>
                     </article>
                     <article class="feature-card">
                         <div class="feature-badge">03</div>
@@ -1005,8 +1030,8 @@
                     </article>
                     <article class="feature-card feature-wide">
                         <div class="feature-badge">05</div>
-                        <h3 data-i18n="features.05title">Cover the languages you actually touch all week.</h3>
-                        <p data-i18n="features.05desc">Swift, TypeScript, JavaScript, Python, Go, Rust, Shell, HTML, CSS, JSON, YAML, Markdown, and Dockerfile are supported out of the box through JSON grammars.</p>
+                        <h3 data-i18n="features.05title">Preview Markdown and non-text files.</h3>
+                        <p data-i18n="features.05desc">Native Markdown preview with source, rendered, and split modes. Quick Look for images and binary files without leaving the editor.</p>
                     </article>
                 </div>
             </section>
@@ -1035,8 +1060,8 @@
             <section class="section">
                 <div class="manifesto-card">
                     <span class="section-kicker" data-i18n="manifesto.kicker">Positioning</span>
-                    <h2 data-i18n="manifesto.title">Pine is not trying to be the biggest editor on your machine. It is trying to be the one you keep open all day.</h2>
-                    <p data-i18n="manifesto.desc">If VS Code feels heavy and Xcode feels like too much for everyday editing, Pine is the clean middle ground.</p>
+                    <h2 data-i18n="manifesto.title">Pine is not trying to be the biggest editor on your machine. It is the one that opens fast and never gets in the way.</h2>
+                    <p data-i18n="manifesto.desc">If VS Code feels heavy and Xcode feels like overkill for everyday editing, Pine is the middle ground.</p>
                     <div class="manifesto-pills">
                         <span class="mini-chip" data-i18n="manifesto.chip1">No Electron</span>
                         <span class="mini-chip" data-i18n="manifesto.chip2">No plugin marketplace</span>
@@ -1059,7 +1084,7 @@
                         <div class="install-badges">
                             <span>macOS 26+</span>
                             <span>Xcode 26+</span>
-                            <span>Swift 6</span>
+                            <span>SwiftUI + AppKit</span>
                         </div>
                     </div>
                     <div class="command-shell">
@@ -1072,7 +1097,7 @@
         </main>
 
         <footer>
-            <span data-i18n="footer.text">Pine is open source and built for macOS developers who want less editor and more shipping.</span>
+            <span data-i18n="footer.text">Pine is open source and built for macOS developers who want a fast, minimal, native code editor.</span>
             <a href="https://github.com/batonogov/pine">github.com/batonogov/pine</a>
         </footer>
     </div>
@@ -1083,10 +1108,11 @@
                 "nav.why": "Why Pine",
                 "nav.features": "Features",
                 "nav.install": "Install",
+                "nav.screenshots": "Screenshots",
                 "header.cta": "Download",
-                "hero.eyebrow": "Native macOS code editor",
-                "hero.title": "Less editor. More shipping.",
-                "hero.desc": "Pine is a focused Mac code editor for developers who want the core loop to feel instant: open a repo, edit code, run commands, check git, move on.",
+                "hero.eyebrow": "Fast · Minimal · Native",
+                "hero.title": "A code editor that stays out of your way.",
+                "hero.desc": "Pine is a fast, minimal, native macOS code editor. Open a folder, edit code, run commands, check git — and move on.",
                 "hero.noElectron": "No Electron",
                 "hero.minimalDeps": "Minimal dependencies",
                 "hero.terminal": "Full terminal emulator",
@@ -1095,7 +1121,7 @@
                 "hero.github": "View on GitHub",
                 "hero.installLabel": "Install in 10 seconds",
                 "hero.alt": "Pine editor screenshot",
-                "hero.chipTabs": "Native window tabs",
+                "hero.chipTabs": "Markdown preview",
                 "hero.chipTerminal": "Full terminal emulator",
                 "hero.chipGit": "Git-aware file tree",
                 "mini.nativeKicker": "Native",
@@ -1132,15 +1158,15 @@
                 "features.title": "The essentials, done like a Mac app.",
                 "features.desc": "Pine is not trying to become a platform. It is trying to cover the everyday loop with less friction.",
                 "features.01title": "Open a repo and start working immediately.",
-                "features.01desc": "Folders-first file tree, clean empty states, hidden files skipped by default, native window tabs, and unsaved-change protection.",
+                "features.01desc": "Folders-first file tree, clean empty states, hidden files skipped by default, editor tabs, and unsaved-change protection.",
                 "features.02title": "Write code without visual drag.",
-                "features.02desc": "Line numbers, current-line highlight, undo, find bar, smart indent, and grammar-based syntax highlighting for the core working set.",
+                "features.02desc": "Line numbers, current-line highlight, undo, find bar, smart indent, and syntax highlighting for Swift, TypeScript, JavaScript, Python, Go, Rust, and more.",
                 "features.03title": "Run commands in the same window.",
                 "features.03desc": "Multiple terminal tabs powered by SwiftTerm — a full VT100/xterm emulator with colors, oh-my-zsh, and TUI app support.",
                 "features.04title": "See git context where decisions happen.",
                 "features.04desc": "Status in the file tree, diff markers in the gutter, branch switching, and a compact status bar summary.",
-                "features.05title": "Cover the languages you actually touch all week.",
-                "features.05desc": "Swift, TypeScript, JavaScript, Python, Go, Rust, Shell, HTML, CSS, JSON, YAML, Markdown, and Dockerfile are supported out of the box through JSON grammars.",
+                "features.05title": "Preview Markdown and non-text files.",
+                "features.05desc": "Native Markdown preview with source, rendered, and split modes. Quick Look for images and binary files without leaving the editor.",
                 "screenshots.kicker": "Screenshots",
                 "screenshots.title": "See Pine in action.",
                 "screenshots.alt1": "Pine code editor with syntax highlighting and file tree",
@@ -1150,8 +1176,8 @@
                 "screenshots.alt3": "Pine welcome window with recent projects",
                 "screenshots.cap3": "Welcome window with recent projects",
                 "manifesto.kicker": "Positioning",
-                "manifesto.title": "Pine is not trying to be the biggest editor on your machine. It is trying to be the one you keep open all day.",
-                "manifesto.desc": "If VS Code feels heavy and Xcode feels like too much for everyday editing, Pine is the clean middle ground.",
+                "manifesto.title": "Pine is not trying to be the biggest editor on your machine. It is the one that opens fast and never gets in the way.",
+                "manifesto.desc": "If VS Code feels heavy and Xcode feels like overkill for everyday editing, Pine is the middle ground.",
                 "manifesto.chip1": "No Electron",
                 "manifesto.chip2": "No plugin marketplace",
                 "manifesto.chip3": "No settings maze",
@@ -1162,20 +1188,23 @@
                 "install.download": "Download the latest release",
                 "install.source": "Read the source",
                 "install.shellNote": "Build from source with <code>xcodebuild -project Pine.xcodeproj -scheme Pine build</code> if you want the full native stack on your machine.",
-                "footer.text": "Pine is open source and built for macOS developers who want less editor and more shipping.",
-                "meta.title": "Pine - Native macOS Code Editor Without the Bloat",
-                "meta.description": "Pine is a native macOS code editor built with SwiftUI and AppKit. Open a repo, edit code, run commands, and check git without Electron or dependency bloat.",
-                "meta.ogTitle": "Pine - Native macOS Code Editor Without the Bloat",
-                "meta.ogDescription": "Less editor. More shipping. Pine is a focused Mac code editor with a full terminal emulator, git context, and minimal dependencies."
+                "footer.text": "Pine is open source and built for macOS developers who want a fast, minimal, native code editor.",
+                "meta.title": "Pine — A Fast, Minimal, Native macOS Code Editor",
+                "meta.description": "Pine is a fast, minimal, native macOS code editor built with SwiftUI and AppKit. Edit code, run commands, and check git without Electron or bloat.",
+                "meta.ogTitle": "Pine — A Fast, Minimal, Native macOS Code Editor",
+                "meta.ogDescription": "A fast, minimal, native macOS code editor. Edit code, run commands, check git — no Electron, no bloat.",
+                "meta.twitterTitle": "Pine — A Fast, Minimal, Native macOS Code Editor",
+                "meta.twitterDescription": "A fast, minimal, native macOS code editor. Edit code, run commands, check git — no Electron, no bloat."
             },
             ru: {
                 "nav.why": "Почему Pine",
                 "nav.features": "Что умеет",
                 "nav.install": "Установка",
+                "nav.screenshots": "Скриншоты",
                 "header.cta": "Скачать",
-                "hero.eyebrow": "Нативный редактор кода для macOS",
-                "hero.title": "Меньше редактора. Больше кода.",
-                "hero.desc": "Pine — нативный редактор кода для macOS с быстрым темпом работы: открыл репозиторий, поправил код, запустил команду, проверил Git и пошел дальше.",
+                "hero.eyebrow": "Быстрый · Минимальный · Нативный",
+                "hero.title": "Редактор кода, который не мешает работать.",
+                "hero.desc": "Pine — быстрый, минимальный, нативный редактор кода для macOS. Открыл папку, поправил код, запустил команду, проверил Git — и дальше.",
                 "hero.noElectron": "Без Electron",
                 "hero.minimalDeps": "Минимум зависимостей",
                 "hero.terminal": "Полноценный терминал",
@@ -1184,7 +1213,7 @@
                 "hero.github": "Открыть на GitHub",
                 "hero.installLabel": "Установка за 10 секунд",
                 "hero.alt": "Скриншот редактора Pine",
-                "hero.chipTabs": "Нативные вкладки",
+                "hero.chipTabs": "Превью Markdown",
                 "hero.chipTerminal": "Полноценный терминал",
                 "hero.chipGit": "Статусы Git в дереве файлов",
                 "mini.nativeKicker": "Нативный",
@@ -1221,15 +1250,15 @@
                 "features.title": "Все необходимое, как и должно быть в нормальном Mac-приложении.",
                 "features.desc": "Pine не пытается стать платформой. Он просто закрывает повседневные задачи разработчика без лишней возни.",
                 "features.01title": "Открыл репозиторий и сразу работаешь.",
-                "features.01desc": "Дерево файлов с папками сверху, понятные пустые экраны, скрытые файлы не мешают по умолчанию, нативные вкладки и защита от потери несохраненных изменений.",
+                "features.01desc": "Дерево файлов с папками сверху, понятные пустые экраны, скрытые файлы не мешают по умолчанию, вкладки редактора и защита от потери несохранённых изменений.",
                 "features.02title": "Пишешь код без визуального шума.",
-                "features.02desc": "Номера строк, подсветка текущей строки, отмена, поиск, умные отступы и подсветка синтаксиса на основе грамматик.",
+                "features.02desc": "Номера строк, подсветка текущей строки, отмена, поиск, умные отступы и подсветка синтаксиса для Swift, TypeScript, JavaScript, Python, Go, Rust и других.",
                 "features.03title": "Запускаешь команды в том же окне.",
                 "features.03desc": "Несколько вкладок терминала на SwiftTerm: полноценный VT100/xterm-эмулятор с цветами, oh-my-zsh и поддержкой TUI-приложений.",
                 "features.04title": "Git-контекст там, где ты принимаешь решения.",
                 "features.04desc": "Статусы в дереве файлов, diff-маркеры на полях, переключение веток и компактный статус-бар.",
-                "features.05title": "Поддержка языков, с которыми ты реально работаешь каждый день.",
-                "features.05desc": "Swift, TypeScript, JavaScript, Python, Go, Rust, Shell, HTML, CSS, JSON, YAML, Markdown и Dockerfile поддерживаются из коробки через JSON-грамматики.",
+                "features.05title": "Превью Markdown и не-текстовых файлов.",
+                "features.05desc": "Нативный просмотр Markdown: исходник, рендер и split-режим. Quick Look для изображений и бинарных файлов прямо в редакторе.",
                 "screenshots.kicker": "Скриншоты",
                 "screenshots.title": "Pine в работе.",
                 "screenshots.alt1": "Редактор Pine с подсветкой синтаксиса и деревом файлов",
@@ -1239,8 +1268,8 @@
                 "screenshots.alt3": "Окно приветствия Pine со списком недавних проектов",
                 "screenshots.cap3": "Окно приветствия с недавними проектами",
                 "manifesto.kicker": "Позиционирование",
-                "manifesto.title": "Pine не пытается стать самым навороченным редактором на Mac. Его задача — быть тем редактором, который у тебя открыт весь день.",
-                "manifesto.desc": "Если VS Code кажется тяжеловесным, а Xcode — слишком громоздким для повседневной работы, Pine оказывается ровно посередине.",
+                "manifesto.title": "Pine не пытается стать самым навороченным редактором. Он просто быстро открывается и не лезет под руку.",
+                "manifesto.desc": "Если VS Code кажется тяжеловесным, а Xcode — слишком громоздким для повседневной работы, Pine — ровно посередине.",
                 "manifesto.chip1": "Без Electron",
                 "manifesto.chip2": "Без магазина плагинов",
                 "manifesto.chip3": "Без лабиринта настроек",
@@ -1251,19 +1280,669 @@
                 "install.download": "Скачать последнюю версию",
                 "install.source": "Открыть исходный код",
                 "install.shellNote": "Если хочешь полностью нативный стек на своем Mac, собери Pine из исходников командой <code>xcodebuild -project Pine.xcodeproj -scheme Pine build</code>.",
-                "footer.text": "Pine — редактор с открытым исходным кодом для macOS-разработчиков, которым нужен рабочий инструмент без лишнего шума.",
-                "meta.title": "Pine — Нативный редактор кода для macOS без лишнего",
-                "meta.description": "Pine — нативный редактор кода для macOS на SwiftUI и AppKit. Открывай репозиторий, редактируй код, запускай команды и работай с Git без Electron и лишнего веса.",
-                "meta.ogTitle": "Pine — Нативный редактор кода для macOS без лишнего",
-                "meta.ogDescription": "Меньше редактора. Больше кода. Pine — нативный редактор кода для Mac с полноценным терминалом, Git под рукой и минимумом зависимостей."
+                "footer.text": "Pine — редактор с открытым исходным кодом для macOS-разработчиков, которым нужен быстрый, минимальный, нативный инструмент.",
+                "meta.title": "Pine — Быстрый, минимальный, нативный редактор кода для macOS",
+                "meta.description": "Pine — быстрый, минимальный, нативный редактор кода для macOS на SwiftUI и AppKit. Редактируй код, запускай команды, работай с Git — без Electron и лишнего веса.",
+                "meta.ogTitle": "Pine — Быстрый, минимальный, нативный редактор кода для macOS",
+                "meta.ogDescription": "Быстрый, минимальный, нативный редактор кода для macOS. Код, команды, Git — без Electron и лишнего.",
+                "meta.twitterTitle": "Pine — Быстрый, минимальный, нативный редактор кода для macOS",
+                "meta.twitterDescription": "Быстрый, минимальный, нативный редактор кода для macOS. Код, команды, Git — без Electron и лишнего."
+            },
+            de: {
+                "nav.why": "Warum Pine",
+                "nav.features": "Funktionen",
+                "nav.install": "Installation",
+                "nav.screenshots": "Screenshots",
+                "header.cta": "Download",
+                "hero.eyebrow": "Schnell · Minimal · Nativ",
+                "hero.title": "Ein Code-Editor, der nicht im Weg steht.",
+                "hero.desc": "Pine ist ein schneller, minimaler, nativer macOS-Code-Editor. Ordner öffnen, Code bearbeiten, Befehle ausführen, Git prüfen — und weiter.",
+                "hero.noElectron": "Kein Electron",
+                "hero.minimalDeps": "Minimale Abhängigkeiten",
+                "hero.terminal": "Vollständiger Terminalemulator",
+                "hero.gitAware": "Git-fähiger Workflow",
+                "hero.download": "Pine herunterladen",
+                "hero.github": "Auf GitHub ansehen",
+                "hero.installLabel": "Installation in 10 Sekunden",
+                "hero.alt": "Pine Editor Screenshot",
+                "hero.chipTabs": "Markdown-Vorschau",
+                "hero.chipTerminal": "Vollständiger Terminalemulator",
+                "hero.chipGit": "Git-fähiger Dateibaum",
+                "mini.nativeKicker": "Nativ",
+                "mini.nativeTitle": "SwiftUI + AppKit",
+                "mini.nativeDesc": "Wie eine echte Mac-App gebaut, nicht ein Browser, der eine vorspielt.",
+                "mini.focusedKicker": "Fokussiert",
+                "mini.focusedTitle": "Repo-first-Workflow",
+                "mini.focusedDesc": "Ordner öffnen, Dateien durchsuchen, schnell bearbeiten, Befehle ausführen, weitermachen.",
+                "mini.leanKicker": "Schlank",
+                "mini.leanTitle": "Minimaler Fußabdruck",
+                "mini.leanDesc": "Eine Abhängigkeit (SwiftTerm), kein Plugin-Marktplatz, keine Konfigurationsflut.",
+                "mini.practicalKicker": "Praktisch",
+                "mini.practicalTitle": "Git dort, wo es zählt",
+                "mini.practicalDesc": "Status im Dateibaum, Branch-Wechsel und Diff-Markierungen direkt im Editor.",
+                "why.kicker": "Warum Pine",
+                "why.title": "Für die Lücke zwischen aufgeblähten Editoren und vollständigen IDEs.",
+                "why.desc": "Pine behält die Teile, die im täglichen Coding wichtig sind, und entfernt die Schichten, die Editoren normalerweise verlangsamen.",
+                "why.keepsTitle": "Was Pine behält",
+                "why.keepsLi1": "Nativer Projektbaum und Mac-Fensterverhalten",
+                "why.keepsLi2": "Syntaxhervorhebung, Zeilennummern und Suche",
+                "why.keepsLi3": "Mehrere Terminal-Tabs mit echtem PTY",
+                "why.keepsLi4": "Git-Status, Gutter-Diffs und Branch-Wechsel",
+                "why.cutsTitle": "Was Pine weglässt",
+                "why.cutsLi1": "Browser-Engine-Overhead",
+                "why.cutsLi2": "Plugin-Wildwuchs und Extension-Abhängigkeitsketten",
+                "why.cutsLi3": "Einstellungs-Archäologie vor dem Arbeiten",
+                "why.cutsLi4": "Chrome-lastiges UI, das mit dem Code konkurriert",
+                "why.feelsTitle": "Wie sich das anfühlt",
+                "why.feelsDesc": "Weniger Zeit für die Editor-Konfiguration, mehr Zeit für Code schreiben, ausführen und reviewen. Pine bleibt im Hintergrund und hält den Zyklus straff.",
+                "why.feelsChip1": "Schnell öffnen",
+                "why.feelsChip2": "Fokussiert bleiben",
+                "why.feelsChip3": "Schneller liefern",
+                "features.kicker": "Funktionen",
+                "features.title": "Das Wesentliche, gemacht wie eine Mac-App.",
+                "features.desc": "Pine versucht nicht, eine Plattform zu werden. Es versucht, den täglichen Arbeitszyklus mit weniger Reibung abzudecken.",
+                "features.01title": "Repo öffnen und sofort loslegen.",
+                "features.01desc": "Ordner-first-Dateibaum, saubere Leerzustände, versteckte Dateien standardmäßig ausgeblendet, Editor-Tabs und Schutz vor ungespeicherten Änderungen.",
+                "features.02title": "Code schreiben ohne visuelles Rauschen.",
+                "features.02desc": "Zeilennummern, aktuelle Zeile hervorgehoben, Undo, Suchleiste, intelligenter Einzug und Syntaxhervorhebung für Swift, TypeScript, JavaScript, Python, Go, Rust und mehr.",
+                "features.03title": "Befehle im selben Fenster ausführen.",
+                "features.03desc": "Mehrere Terminal-Tabs mit SwiftTerm — ein vollständiger VT100/xterm-Emulator mit Farben, oh-my-zsh und TUI-App-Unterstützung.",
+                "features.04title": "Git-Kontext dort, wo Entscheidungen fallen.",
+                "features.04desc": "Status im Dateibaum, Diff-Markierungen im Gutter, Branch-Wechsel und eine kompakte Statusleiste.",
+                "features.05title": "Markdown und Nicht-Textdateien in der Vorschau.",
+                "features.05desc": "Native Markdown-Vorschau mit Quelltext-, Render- und Split-Modus. Quick Look für Bilder und Binärdateien direkt im Editor.",
+                "screenshots.kicker": "Screenshots",
+                "screenshots.title": "Pine in Aktion.",
+                "screenshots.alt1": "Pine-Code-Editor mit Syntaxhervorhebung und Dateibaum",
+                "screenshots.cap1": "Code-Editor mit Syntaxhervorhebung und Git-Gutter",
+                "screenshots.alt2": "Eingebautes Pine-Terminal",
+                "screenshots.cap2": "Eingebautes Terminal mit SwiftTerm",
+                "screenshots.alt3": "Pine-Willkommensfenster mit letzten Projekten",
+                "screenshots.cap3": "Willkommensfenster mit letzten Projekten",
+                "manifesto.kicker": "Positionierung",
+                "manifesto.title": "Pine versucht nicht, der größte Editor auf Ihrem Mac zu sein. Es ist der, der schnell öffnet und nie im Weg steht.",
+                "manifesto.desc": "Wenn VS Code sich schwer anfühlt und Xcode zu viel für den Alltag ist, ist Pine der goldene Mittelweg.",
+                "manifesto.chip1": "Kein Electron",
+                "manifesto.chip2": "Kein Plugin-Marktplatz",
+                "manifesto.chip3": "Kein Einstellungs-Labyrinth",
+                "manifesto.chip4": "Minimale Abhängigkeiten",
+                "install.kicker": "Erste Schritte",
+                "install.title": "Pine in 10 Sekunden installieren.",
+                "install.desc": "Über Homebrew, das neueste DMG oder direkt aus den Quellen in Xcode bauen. Der Stack bleibt klein: SwiftUI, AppKit, JSON-Grammatiken und SwiftTerm für das Terminal.",
+                "install.download": "Neueste Version herunterladen",
+                "install.source": "Quellcode ansehen",
+                "install.shellNote": "Aus den Quellen bauen mit <code>xcodebuild -project Pine.xcodeproj -scheme Pine build</code>, wenn Sie den vollen nativen Stack auf Ihrem Mac wollen.",
+                "footer.text": "Pine ist Open Source und für macOS-Entwickler gebaut, die einen schnellen, minimalen, nativen Code-Editor wollen.",
+                "meta.title": "Pine — Schneller, minimaler, nativer macOS-Code-Editor",
+                "meta.description": "Pine ist ein schneller, minimaler, nativer macOS-Code-Editor mit SwiftUI und AppKit. Code bearbeiten, Befehle ausführen, Git nutzen — ohne Electron und Ballast.",
+                "meta.ogTitle": "Pine — Schneller, minimaler, nativer macOS-Code-Editor",
+                "meta.ogDescription": "Schneller, minimaler, nativer macOS-Code-Editor. Code, Befehle, Git — ohne Electron und Ballast.",
+                "meta.twitterTitle": "Pine — Schneller, minimaler, nativer macOS-Code-Editor",
+                "meta.twitterDescription": "Schneller, minimaler, nativer macOS-Code-Editor. Code, Befehle, Git — ohne Electron und Ballast."
+            },
+            es: {
+                "nav.why": "Por qué Pine",
+                "nav.features": "Funciones",
+                "nav.install": "Instalar",
+                "nav.screenshots": "Capturas",
+                "header.cta": "Descargar",
+                "hero.eyebrow": "Rápido · Mínimo · Nativo",
+                "hero.title": "Un editor de código que no estorba.",
+                "hero.desc": "Pine es un editor de código rápido, mínimo y nativo para macOS. Abre una carpeta, edita código, ejecuta comandos, revisa git — y sigue adelante.",
+                "hero.noElectron": "Sin Electron",
+                "hero.minimalDeps": "Dependencias mínimas",
+                "hero.terminal": "Emulador de terminal completo",
+                "hero.gitAware": "Flujo de trabajo con Git",
+                "hero.download": "Descargar Pine",
+                "hero.github": "Ver en GitHub",
+                "hero.installLabel": "Instalar en 10 segundos",
+                "hero.alt": "Captura del editor Pine",
+                "hero.chipTabs": "Vista previa Markdown",
+                "hero.chipTerminal": "Emulador de terminal completo",
+                "hero.chipGit": "Árbol de archivos con Git",
+                "mini.nativeKicker": "Nativo",
+                "mini.nativeTitle": "SwiftUI + AppKit",
+                "mini.nativeDesc": "Construido como una app de Mac real, no un navegador disfrazado.",
+                "mini.focusedKicker": "Enfocado",
+                "mini.focusedTitle": "Flujo centrado en el repo",
+                "mini.focusedDesc": "Abrir carpeta, navegar archivos, editar rápido, ejecutar comandos y seguir adelante.",
+                "mini.leanKicker": "Ligero",
+                "mini.leanTitle": "Huella mínima",
+                "mini.leanDesc": "Una dependencia (SwiftTerm), sin marketplace de plugins, sin exceso de configuración.",
+                "mini.practicalKicker": "Práctico",
+                "mini.practicalTitle": "Git donde importa",
+                "mini.practicalDesc": "Estado en el árbol, cambio de rama y marcadores de diff directamente en el editor.",
+                "why.kicker": "Por qué Pine",
+                "why.title": "Para el hueco entre editores inflados e IDEs completos.",
+                "why.desc": "Pine conserva lo que importa en el día a día y elimina las capas que suelen frenar a los editores.",
+                "why.keepsTitle": "Lo que Pine conserva",
+                "why.keepsLi1": "Árbol de proyecto nativo y comportamiento de ventanas Mac",
+                "why.keepsLi2": "Resaltado de sintaxis, números de línea y búsqueda",
+                "why.keepsLi3": "Múltiples pestañas de terminal con PTY real",
+                "why.keepsLi4": "Estado de Git, diffs en el margen y cambio de rama",
+                "why.cutsTitle": "Lo que Pine elimina",
+                "why.cutsLi1": "Sobrecarga del motor del navegador",
+                "why.cutsLi2": "Exceso de plugins y cadenas de dependencias",
+                "why.cutsLi3": "Arqueología de ajustes antes de empezar a trabajar",
+                "why.cutsLi4": "UI pesada que compite con el código",
+                "why.feelsTitle": "Cómo se siente",
+                "why.feelsDesc": "Menos tiempo configurando el editor, más tiempo escribiendo, ejecutando y revisando código. Pine se mantiene en segundo plano y mantiene el ciclo ágil.",
+                "why.feelsChip1": "Apertura rápida",
+                "why.feelsChip2": "Mantén el foco",
+                "why.feelsChip3": "Entrega antes",
+                "features.kicker": "Funciones",
+                "features.title": "Lo esencial, hecho como una app de Mac.",
+                "features.desc": "Pine no intenta ser una plataforma. Intenta cubrir el ciclo diario con menos fricción.",
+                "features.01title": "Abrir un repo y empezar a trabajar de inmediato.",
+                "features.01desc": "Árbol de archivos con carpetas primero, estados vacíos limpios, archivos ocultos omitidos por defecto, pestañas del editor y protección de cambios sin guardar.",
+                "features.02title": "Escribir código sin ruido visual.",
+                "features.02desc": "Números de línea, resaltado de línea actual, deshacer, barra de búsqueda, indentación inteligente y resaltado de sintaxis para Swift, TypeScript, JavaScript, Python, Go, Rust y más.",
+                "features.03title": "Ejecutar comandos en la misma ventana.",
+                "features.03desc": "Múltiples pestañas de terminal con SwiftTerm — un emulador VT100/xterm completo con colores, oh-my-zsh y soporte para apps TUI.",
+                "features.04title": "Ver el contexto de Git donde se toman las decisiones.",
+                "features.04desc": "Estado en el árbol de archivos, marcadores de diff en el margen, cambio de rama y barra de estado compacta.",
+                "features.05title": "Vista previa de Markdown y archivos no textuales.",
+                "features.05desc": "Vista previa nativa de Markdown con modos fuente, renderizado y dividido. Quick Look para imágenes y archivos binarios sin salir del editor.",
+                "screenshots.kicker": "Capturas",
+                "screenshots.title": "Pine en acción.",
+                "screenshots.alt1": "Editor Pine con resaltado de sintaxis y árbol de archivos",
+                "screenshots.cap1": "Editor de código con resaltado de sintaxis y marcadores Git",
+                "screenshots.alt2": "Terminal integrado de Pine",
+                "screenshots.cap2": "Terminal integrado con SwiftTerm",
+                "screenshots.alt3": "Ventana de bienvenida de Pine con proyectos recientes",
+                "screenshots.cap3": "Ventana de bienvenida con proyectos recientes",
+                "manifesto.kicker": "Posicionamiento",
+                "manifesto.title": "Pine no intenta ser el editor más grande de tu Mac. Es el que abre rápido y nunca estorba.",
+                "manifesto.desc": "Si VS Code se siente pesado y Xcode es demasiado para la edición diaria, Pine es el punto medio.",
+                "manifesto.chip1": "Sin Electron",
+                "manifesto.chip2": "Sin marketplace de plugins",
+                "manifesto.chip3": "Sin laberinto de ajustes",
+                "manifesto.chip4": "Dependencias mínimas",
+                "install.kicker": "Empezar",
+                "install.title": "Instalar Pine en 10 segundos.",
+                "install.desc": "Usa Homebrew, descarga el último DMG o compila desde el código fuente en Xcode. El stack se mantiene pequeño: SwiftUI, AppKit, gramáticas JSON y SwiftTerm para el terminal.",
+                "install.download": "Descargar la última versión",
+                "install.source": "Ver el código fuente",
+                "install.shellNote": "Compila desde el código fuente con <code>xcodebuild -project Pine.xcodeproj -scheme Pine build</code> si quieres el stack nativo completo en tu Mac.",
+                "footer.text": "Pine es open source y está hecho para desarrolladores de macOS que quieren un editor de código rápido, mínimo y nativo.",
+                "meta.title": "Pine — Editor de código rápido, mínimo y nativo para macOS",
+                "meta.description": "Pine es un editor de código rápido, mínimo y nativo para macOS con SwiftUI y AppKit. Edita código, ejecuta comandos, trabaja con Git — sin Electron ni sobrecarga.",
+                "meta.ogTitle": "Pine — Editor de código rápido, mínimo y nativo para macOS",
+                "meta.ogDescription": "Editor de código rápido, mínimo y nativo para macOS. Código, comandos, Git — sin Electron ni sobrecarga.",
+                "meta.twitterTitle": "Pine — Editor de código rápido, mínimo y nativo para macOS",
+                "meta.twitterDescription": "Editor de código rápido, mínimo y nativo para macOS. Código, comandos, Git — sin Electron ni sobrecarga."
+            },
+            fr: {
+                "nav.why": "Pourquoi Pine",
+                "nav.features": "Fonctionnalités",
+                "nav.install": "Installation",
+                "nav.screenshots": "Captures",
+                "header.cta": "Télécharger",
+                "hero.eyebrow": "Rapide · Minimal · Natif",
+                "hero.title": "Un éditeur de code qui ne gêne jamais.",
+                "hero.desc": "Pine est un éditeur de code rapide, minimal et natif pour macOS. Ouvrir un dossier, éditer le code, lancer des commandes, vérifier git — et avancer.",
+                "hero.noElectron": "Sans Electron",
+                "hero.minimalDeps": "Dépendances minimales",
+                "hero.terminal": "Émulateur de terminal complet",
+                "hero.gitAware": "Workflow intégré à Git",
+                "hero.download": "Télécharger Pine",
+                "hero.github": "Voir sur GitHub",
+                "hero.installLabel": "Installation en 10 secondes",
+                "hero.alt": "Capture d'écran de l'éditeur Pine",
+                "hero.chipTabs": "Aperçu Markdown",
+                "hero.chipTerminal": "Émulateur de terminal complet",
+                "hero.chipGit": "Arborescence avec statut Git",
+                "mini.nativeKicker": "Natif",
+                "mini.nativeTitle": "SwiftUI + AppKit",
+                "mini.nativeDesc": "Conçu comme une vraie app Mac, pas un navigateur déguisé.",
+                "mini.focusedKicker": "Focalisé",
+                "mini.focusedTitle": "Workflow centré sur le dépôt",
+                "mini.focusedDesc": "Ouvrir un dossier, parcourir les fichiers, éditer vite, lancer des commandes, avancer.",
+                "mini.leanKicker": "Léger",
+                "mini.leanTitle": "Empreinte minimale",
+                "mini.leanDesc": "Une seule dépendance (SwiftTerm), pas de marketplace de plugins, pas de prolifération de configuration.",
+                "mini.practicalKicker": "Pratique",
+                "mini.practicalTitle": "Git là où ça compte",
+                "mini.practicalDesc": "Statut dans l'arborescence, changement de branche et marqueurs de diff directement dans l'éditeur.",
+                "why.kicker": "Pourquoi Pine",
+                "why.title": "Pour l'espace entre les éditeurs bloated et les IDE complets.",
+                "why.desc": "Pine garde ce qui compte au quotidien et supprime les couches qui ralentissent habituellement les éditeurs.",
+                "why.keepsTitle": "Ce que Pine garde",
+                "why.keepsLi1": "Arborescence de projet native et comportement de fenêtres Mac",
+                "why.keepsLi2": "Coloration syntaxique, numéros de ligne et recherche",
+                "why.keepsLi3": "Plusieurs onglets de terminal avec vrai PTY",
+                "why.keepsLi4": "Statut Git, diffs dans la gouttière et changement de branche",
+                "why.cutsTitle": "Ce que Pine supprime",
+                "why.cutsLi1": "Surcharge du moteur navigateur",
+                "why.cutsLi2": "Prolifération de plugins et chaînes de dépendances",
+                "why.cutsLi3": "Archéologie des paramètres avant de commencer à travailler",
+                "why.cutsLi4": "UI lourde qui rivalise avec le code",
+                "why.feelsTitle": "Ce que ça fait",
+                "why.feelsDesc": "Moins de temps à configurer l'éditeur, plus de temps à écrire, exécuter et relire du code. Pine reste en arrière-plan et maintient le cycle fluide.",
+                "why.feelsChip1": "Ouverture rapide",
+                "why.feelsChip2": "Rester concentré",
+                "why.feelsChip3": "Livrer plus vite",
+                "features.kicker": "Fonctionnalités",
+                "features.title": "L'essentiel, fait comme une app Mac.",
+                "features.desc": "Pine n'essaie pas de devenir une plateforme. Il essaie de couvrir le cycle quotidien avec moins de friction.",
+                "features.01title": "Ouvrir un dépôt et commencer immédiatement.",
+                "features.01desc": "Arborescence dossiers-first, états vides propres, fichiers cachés masqués par défaut, onglets de l'éditeur et protection des modifications non enregistrées.",
+                "features.02title": "Écrire du code sans bruit visuel.",
+                "features.02desc": "Numéros de ligne, mise en surbrillance de la ligne courante, annulation, barre de recherche, indentation intelligente et coloration syntaxique pour Swift, TypeScript, JavaScript, Python, Go, Rust et plus.",
+                "features.03title": "Lancer des commandes dans la même fenêtre.",
+                "features.03desc": "Plusieurs onglets de terminal avec SwiftTerm — un émulateur VT100/xterm complet avec couleurs, oh-my-zsh et support des apps TUI.",
+                "features.04title": "Voir le contexte Git là où les décisions se prennent.",
+                "features.04desc": "Statut dans l'arborescence, marqueurs de diff dans la gouttière, changement de branche et barre d'état compacte.",
+                "features.05title": "Aperçu Markdown et fichiers non textuels.",
+                "features.05desc": "Aperçu Markdown natif avec modes source, rendu et côte à côte. Quick Look pour les images et fichiers binaires sans quitter l'éditeur.",
+                "screenshots.kicker": "Captures",
+                "screenshots.title": "Pine en action.",
+                "screenshots.alt1": "Éditeur Pine avec coloration syntaxique et arborescence",
+                "screenshots.cap1": "Éditeur de code avec coloration syntaxique et gouttière Git",
+                "screenshots.alt2": "Terminal intégré de Pine",
+                "screenshots.cap2": "Terminal intégré avec SwiftTerm",
+                "screenshots.alt3": "Fenêtre d'accueil de Pine avec projets récents",
+                "screenshots.cap3": "Fenêtre d'accueil avec projets récents",
+                "manifesto.kicker": "Positionnement",
+                "manifesto.title": "Pine n'essaie pas d'être le plus gros éditeur sur votre Mac. C'est celui qui ouvre vite et ne gêne jamais.",
+                "manifesto.desc": "Si VS Code semble lourd et Xcode semble excessif pour l'édition quotidienne, Pine est le juste milieu.",
+                "manifesto.chip1": "Sans Electron",
+                "manifesto.chip2": "Sans marketplace de plugins",
+                "manifesto.chip3": "Sans labyrinthe de paramètres",
+                "manifesto.chip4": "Dépendances minimales",
+                "install.kicker": "Démarrer",
+                "install.title": "Installer Pine en 10 secondes.",
+                "install.desc": "Utilisez Homebrew, téléchargez le dernier DMG ou compilez depuis les sources dans Xcode. Le stack reste petit : SwiftUI, AppKit, grammaires JSON et SwiftTerm pour le terminal.",
+                "install.download": "Télécharger la dernière version",
+                "install.source": "Voir le code source",
+                "install.shellNote": "Compilez depuis les sources avec <code>xcodebuild -project Pine.xcodeproj -scheme Pine build</code> si vous voulez le stack natif complet sur votre Mac.",
+                "footer.text": "Pine est open source et conçu pour les développeurs macOS qui veulent un éditeur de code rapide, minimal et natif.",
+                "meta.title": "Pine — Éditeur de code rapide, minimal et natif pour macOS",
+                "meta.description": "Pine est un éditeur de code rapide, minimal et natif pour macOS avec SwiftUI et AppKit. Éditez du code, lancez des commandes, travaillez avec Git — sans Electron ni surcharge.",
+                "meta.ogTitle": "Pine — Éditeur de code rapide, minimal et natif pour macOS",
+                "meta.ogDescription": "Éditeur de code rapide, minimal et natif pour macOS. Code, commandes, Git — sans Electron ni surcharge.",
+                "meta.twitterTitle": "Pine — Éditeur de code rapide, minimal et natif pour macOS",
+                "meta.twitterDescription": "Éditeur de code rapide, minimal et natif pour macOS. Code, commandes, Git — sans Electron ni surcharge."
+            },
+            ja: {
+                "nav.why": "Pine とは",
+                "nav.features": "機能",
+                "nav.install": "インストール",
+                "nav.screenshots": "スクリーンショット",
+                "header.cta": "ダウンロード",
+                "hero.eyebrow": "高速 · ミニマル · ネイティブ",
+                "hero.title": "邪魔しないコードエディタ。",
+                "hero.desc": "Pine は高速でミニマル、ネイティブな macOS コードエディタ。フォルダを開き、コードを編集し、コマンドを実行し、Git を確認して、次へ進む。",
+                "hero.noElectron": "Electron 不要",
+                "hero.minimalDeps": "最小限の依存関係",
+                "hero.terminal": "フルターミナルエミュレータ",
+                "hero.gitAware": "Git 対応ワークフロー",
+                "hero.download": "Pine をダウンロード",
+                "hero.github": "GitHub で見る",
+                "hero.installLabel": "10秒でインストール",
+                "hero.alt": "Pine エディタのスクリーンショット",
+                "hero.chipTabs": "Markdown プレビュー",
+                "hero.chipTerminal": "フルターミナルエミュレータ",
+                "hero.chipGit": "Git 対応ファイルツリー",
+                "mini.nativeKicker": "ネイティブ",
+                "mini.nativeTitle": "SwiftUI + AppKit",
+                "mini.nativeDesc": "ブラウザの仮面ではなく、本物の Mac アプリとして構築。",
+                "mini.focusedKicker": "フォーカス",
+                "mini.focusedTitle": "リポジトリファーストのワークフロー",
+                "mini.focusedDesc": "フォルダを開き、ファイルを閲覧し、素早く編集し、コマンドを実行し、先に進む。",
+                "mini.leanKicker": "軽量",
+                "mini.leanTitle": "最小限のフットプリント",
+                "mini.leanDesc": "依存関係は SwiftTerm のみ。プラグインマーケットプレイスなし、設定の氾濫なし。",
+                "mini.practicalKicker": "実用的",
+                "mini.practicalTitle": "必要な場所に Git",
+                "mini.practicalDesc": "ファイルツリーにステータス、ブランチ切替、エディタに直接 diff マーカー。",
+                "why.kicker": "Pine とは",
+                "why.title": "肥大化したエディタとフル IDE の間のギャップに。",
+                "why.desc": "Pine は日々のコーディングで重要な部分を残し、通常エディタを遅くするレイヤーを削除します。",
+                "why.keepsTitle": "Pine が残すもの",
+                "why.keepsLi1": "ネイティブプロジェクトツリーと Mac のウィンドウ動作",
+                "why.keepsLi2": "シンタックスハイライト、行番号、検索",
+                "why.keepsLi3": "実 PTY による複数ターミナルタブ",
+                "why.keepsLi4": "Git ステータス、ガターの diff、ブランチ切替",
+                "why.cutsTitle": "Pine が削除するもの",
+                "why.cutsLi1": "ブラウザエンジンのオーバーヘッド",
+                "why.cutsLi2": "プラグインの肥大化と拡張機能の依存チェーン",
+                "why.cutsLi3": "作業開始前の設定の発掘作業",
+                "why.cutsLi4": "コードと競合する重厚な UI",
+                "why.feelsTitle": "その体験",
+                "why.feelsDesc": "エディタの設定に費やす時間が減り、コードの作成、実行、レビューに使える時間が増えます。Pine はバックグラウンドに留まり、ループを引き締めます。",
+                "why.feelsChip1": "素早く開く",
+                "why.feelsChip2": "集中を維持",
+                "why.feelsChip3": "早く出荷",
+                "features.kicker": "機能",
+                "features.title": "Mac アプリらしく作られた、必要な機能。",
+                "features.desc": "Pine はプラットフォームになろうとはしていません。日常のループをより少ない摩擦でカバーしようとしています。",
+                "features.01title": "リポジトリを開いてすぐに作業開始。",
+                "features.01desc": "フォルダ優先のファイルツリー、クリーンな空の状態、デフォルトで隠しファイルをスキップ、エディタタブ、未保存の変更保護。",
+                "features.02title": "視覚的なノイズなくコードを書く。",
+                "features.02desc": "行番号、現在行ハイライト、アンドゥ、検索バー、スマートインデント、Swift・TypeScript・JavaScript・Python・Go・Rust 等のシンタックスハイライト。",
+                "features.03title": "同じウィンドウでコマンドを実行。",
+                "features.03desc": "SwiftTerm による複数ターミナルタブ — カラー、oh-my-zsh、TUI アプリ対応の完全な VT100/xterm エミュレータ。",
+                "features.04title": "判断を下す場所に Git コンテキスト。",
+                "features.04desc": "ファイルツリーにステータス、ガターに diff マーカー、ブランチ切替、コンパクトなステータスバー。",
+                "features.05title": "Markdown とテキスト以外のファイルをプレビュー。",
+                "features.05desc": "ソース、レンダリング、分割モードのネイティブ Markdown プレビュー。画像やバイナリファイルを Quick Look でエディタから直接確認。",
+                "screenshots.kicker": "スクリーンショット",
+                "screenshots.title": "Pine の動作画面。",
+                "screenshots.alt1": "シンタックスハイライトとファイルツリーを備えた Pine コードエディタ",
+                "screenshots.cap1": "シンタックスハイライトと Git ガター付きコードエディタ",
+                "screenshots.alt2": "Pine 内蔵ターミナル",
+                "screenshots.cap2": "SwiftTerm による内蔵ターミナル",
+                "screenshots.alt3": "最近のプロジェクト付き Pine ウェルカムウィンドウ",
+                "screenshots.cap3": "最近のプロジェクト付きウェルカムウィンドウ",
+                "manifesto.kicker": "ポジショニング",
+                "manifesto.title": "Pine は Mac で最大のエディタを目指していません。素早く開き、決して邪魔にならないエディタです。",
+                "manifesto.desc": "VS Code が重く感じ、Xcode が日常の編集には大げさすぎるなら、Pine がちょうどいい中間地点です。",
+                "manifesto.chip1": "Electron 不要",
+                "manifesto.chip2": "プラグインマーケットプレイスなし",
+                "manifesto.chip3": "設定の迷路なし",
+                "manifesto.chip4": "最小限の依存関係",
+                "install.kicker": "始めよう",
+                "install.title": "Pine を10秒でインストール。",
+                "install.desc": "Homebrew で、最新の DMG をダウンロードするか、Xcode でソースからビルド。スタックはコンパクト：SwiftUI、AppKit、JSON グラマー、ターミナル用 SwiftTerm。",
+                "install.download": "最新リリースをダウンロード",
+                "install.source": "ソースコードを見る",
+                "install.shellNote": "Mac でフルネイティブスタックが必要なら、<code>xcodebuild -project Pine.xcodeproj -scheme Pine build</code> でソースからビルドできます。",
+                "footer.text": "Pine はオープンソースで、高速・ミニマル・ネイティブなコードエディタを求める macOS 開発者のために作られています。",
+                "meta.title": "Pine — 高速・ミニマル・ネイティブな macOS コードエディタ",
+                "meta.description": "Pine は SwiftUI と AppKit で構築された高速・ミニマル・ネイティブな macOS コードエディタ。コード編集、コマンド実行、Git 操作 — Electron 不要、余分なものなし。",
+                "meta.ogTitle": "Pine — 高速・ミニマル・ネイティブな macOS コードエディタ",
+                "meta.ogDescription": "高速・ミニマル・ネイティブな macOS コードエディタ。コード、コマンド、Git — Electron 不要。",
+                "meta.twitterTitle": "Pine — 高速・ミニマル・ネイティブな macOS コードエディタ",
+                "meta.twitterDescription": "高速・ミニマル・ネイティブな macOS コードエディタ。コード、コマンド、Git — Electron 不要。"
+            },
+            ko: {
+                "nav.why": "왜 Pine인가",
+                "nav.features": "기능",
+                "nav.install": "설치",
+                "nav.screenshots": "스크린샷",
+                "header.cta": "다운로드",
+                "hero.eyebrow": "빠름 · 미니멀 · 네이티브",
+                "hero.title": "방해하지 않는 코드 편집기.",
+                "hero.desc": "Pine은 빠르고, 미니멀하고, 네이티브한 macOS 코드 편집기입니다. 폴더 열기, 코드 편집, 명령 실행, git 확인 — 그리고 다음으로.",
+                "hero.noElectron": "Electron 없음",
+                "hero.minimalDeps": "최소 의존성",
+                "hero.terminal": "풀 터미널 에뮬레이터",
+                "hero.gitAware": "Git 인식 워크플로",
+                "hero.download": "Pine 다운로드",
+                "hero.github": "GitHub에서 보기",
+                "hero.installLabel": "10초 만에 설치",
+                "hero.alt": "Pine 편집기 스크린샷",
+                "hero.chipTabs": "Markdown 미리보기",
+                "hero.chipTerminal": "풀 터미널 에뮬레이터",
+                "hero.chipGit": "Git 인식 파일 트리",
+                "mini.nativeKicker": "네이티브",
+                "mini.nativeTitle": "SwiftUI + AppKit",
+                "mini.nativeDesc": "브라우저가 아닌 진짜 Mac 앱으로 제작.",
+                "mini.focusedKicker": "집중",
+                "mini.focusedTitle": "리포 중심 워크플로",
+                "mini.focusedDesc": "폴더 열기, 파일 탐색, 빠른 편집, 명령 실행, 계속 진행.",
+                "mini.leanKicker": "가벼움",
+                "mini.leanTitle": "최소 풋프린트",
+                "mini.leanDesc": "의존성은 SwiftTerm 하나. 플러그인 마켓플레이스 없음, 설정 난잡함 없음.",
+                "mini.practicalKicker": "실용적",
+                "mini.practicalTitle": "필요한 곳에 Git",
+                "mini.practicalDesc": "파일 트리에 상태, 브랜치 전환, 편집기에 직접 diff 마커.",
+                "why.kicker": "왜 Pine인가",
+                "why.title": "비대한 편집기와 풀 IDE 사이의 빈 공간을 위해.",
+                "why.desc": "Pine은 일상적인 코딩에서 중요한 부분을 유지하고 편집기를 느리게 만드는 레이어를 제거합니다.",
+                "why.keepsTitle": "Pine이 유지하는 것",
+                "why.keepsLi1": "네이티브 프로젝트 트리와 Mac 윈도우 동작",
+                "why.keepsLi2": "구문 강조, 줄 번호, 검색",
+                "why.keepsLi3": "실제 PTY 기반 다중 터미널 탭",
+                "why.keepsLi4": "Git 상태, 거터 diff, 브랜치 전환",
+                "why.cutsTitle": "Pine이 제거하는 것",
+                "why.cutsLi1": "브라우저 엔진 오버헤드",
+                "why.cutsLi2": "플러그인 난잡함과 확장 의존성 체인",
+                "why.cutsLi3": "작업 전 설정 고고학",
+                "why.cutsLi4": "코드와 경쟁하는 무거운 UI",
+                "why.feelsTitle": "그 느낌",
+                "why.feelsDesc": "편집기 설정에 쓰는 시간은 줄이고 코드 작성, 실행, 리뷰에 쓰는 시간은 늘립니다. Pine은 배경에 머물며 루프를 단단하게 유지합니다.",
+                "why.feelsChip1": "빠른 시작",
+                "why.feelsChip2": "집중 유지",
+                "why.feelsChip3": "빠른 배포",
+                "features.kicker": "기능",
+                "features.title": "Mac 앱답게 만든 필수 기능.",
+                "features.desc": "Pine은 플랫폼이 되려 하지 않습니다. 일상적인 루프를 더 적은 마찰로 커버하려 합니다.",
+                "features.01title": "리포를 열고 즉시 작업 시작.",
+                "features.01desc": "폴더 우선 파일 트리, 깔끔한 빈 상태, 숨김 파일 기본 스킵, 편집기 탭, 미저장 변경 보호.",
+                "features.02title": "시각적 노이즈 없이 코드 작성.",
+                "features.02desc": "줄 번호, 현재 줄 강조, 실행 취소, 검색 바, 스마트 들여쓰기, Swift·TypeScript·JavaScript·Python·Go·Rust 등의 구문 강조.",
+                "features.03title": "같은 창에서 명령 실행.",
+                "features.03desc": "SwiftTerm 기반 다중 터미널 탭 — 색상, oh-my-zsh, TUI 앱을 지원하는 완전한 VT100/xterm 에뮬레이터.",
+                "features.04title": "결정이 이루어지는 곳에서 Git 컨텍스트 확인.",
+                "features.04desc": "파일 트리에 상태, 거터에 diff 마커, 브랜치 전환, 컴팩트 상태 바.",
+                "features.05title": "Markdown과 비텍스트 파일 미리보기.",
+                "features.05desc": "소스, 렌더링, 분할 모드의 네이티브 Markdown 미리보기. Quick Look으로 이미지와 바이너리 파일을 편집기에서 바로 확인.",
+                "screenshots.kicker": "스크린샷",
+                "screenshots.title": "Pine 실행 화면.",
+                "screenshots.alt1": "구문 강조와 파일 트리가 있는 Pine 코드 편집기",
+                "screenshots.cap1": "구문 강조와 Git 거터가 있는 코드 편집기",
+                "screenshots.alt2": "Pine 내장 터미널",
+                "screenshots.cap2": "SwiftTerm 기반 내장 터미널",
+                "screenshots.alt3": "최근 프로젝트가 있는 Pine 환영 창",
+                "screenshots.cap3": "최근 프로젝트가 있는 환영 창",
+                "manifesto.kicker": "포지셔닝",
+                "manifesto.title": "Pine은 Mac에서 가장 큰 편집기가 되려 하지 않습니다. 빠르게 열리고 절대 방해하지 않는 편집기입니다.",
+                "manifesto.desc": "VS Code가 무겁고 Xcode가 일상 편집에 과하다면, Pine이 딱 맞는 중간 지점입니다.",
+                "manifesto.chip1": "Electron 없음",
+                "manifesto.chip2": "플러그인 마켓플레이스 없음",
+                "manifesto.chip3": "설정 미로 없음",
+                "manifesto.chip4": "최소 의존성",
+                "install.kicker": "시작하기",
+                "install.title": "Pine을 10초 만에 설치.",
+                "install.desc": "Homebrew로, 최신 DMG를 다운로드하거나, Xcode에서 소스로 빌드. 스택은 작게 유지: SwiftUI, AppKit, JSON 문법, 터미널용 SwiftTerm.",
+                "install.download": "최신 릴리스 다운로드",
+                "install.source": "소스 코드 보기",
+                "install.shellNote": "Mac에서 풀 네이티브 스택을 원하면 <code>xcodebuild -project Pine.xcodeproj -scheme Pine build</code>로 소스에서 빌드하세요.",
+                "footer.text": "Pine은 오픈 소스이며 빠르고, 미니멀하고, 네이티브한 코드 편집기를 원하는 macOS 개발자를 위해 만들어졌습니다.",
+                "meta.title": "Pine — 빠르고, 미니멀하고, 네이티브한 macOS 코드 편집기",
+                "meta.description": "Pine은 SwiftUI와 AppKit으로 만든 빠르고, 미니멀하고, 네이티브한 macOS 코드 편집기. 코드 편집, 명령 실행, Git 작업 — Electron 없이, 군더더기 없이.",
+                "meta.ogTitle": "Pine — 빠르고, 미니멀하고, 네이티브한 macOS 코드 편집기",
+                "meta.ogDescription": "빠르고, 미니멀하고, 네이티브한 macOS 코드 편집기. 코드, 명령, Git — Electron 없이.",
+                "meta.twitterTitle": "Pine — 빠르고, 미니멀하고, 네이티브한 macOS 코드 편집기",
+                "meta.twitterDescription": "빠르고, 미니멀하고, 네이티브한 macOS 코드 편집기. 코드, 명령, Git — Electron 없이."
+            },
+            "pt-BR": {
+                "nav.why": "Por que Pine",
+                "nav.features": "Recursos",
+                "nav.install": "Instalação",
+                "nav.screenshots": "Capturas",
+                "header.cta": "Baixar",
+                "hero.eyebrow": "Rápido · Mínimo · Nativo",
+                "hero.title": "Um editor de código que não atrapalha.",
+                "hero.desc": "Pine é um editor de código rápido, mínimo e nativo para macOS. Abra uma pasta, edite código, rode comandos, verifique git — e siga em frente.",
+                "hero.noElectron": "Sem Electron",
+                "hero.minimalDeps": "Dependências mínimas",
+                "hero.terminal": "Emulador de terminal completo",
+                "hero.gitAware": "Fluxo de trabalho com Git",
+                "hero.download": "Baixar Pine",
+                "hero.github": "Ver no GitHub",
+                "hero.installLabel": "Instalação em 10 segundos",
+                "hero.alt": "Captura de tela do editor Pine",
+                "hero.chipTabs": "Pré-visualização Markdown",
+                "hero.chipTerminal": "Emulador de terminal completo",
+                "hero.chipGit": "Árvore de arquivos com Git",
+                "mini.nativeKicker": "Nativo",
+                "mini.nativeTitle": "SwiftUI + AppKit",
+                "mini.nativeDesc": "Construído como um app de Mac de verdade, não um navegador disfarçado.",
+                "mini.focusedKicker": "Focado",
+                "mini.focusedTitle": "Fluxo centrado no repo",
+                "mini.focusedDesc": "Abrir pasta, navegar arquivos, editar rápido, rodar comandos e seguir em frente.",
+                "mini.leanKicker": "Leve",
+                "mini.leanTitle": "Pegada mínima",
+                "mini.leanDesc": "Uma dependência (SwiftTerm), sem marketplace de plugins, sem excesso de configuração.",
+                "mini.practicalKicker": "Prático",
+                "mini.practicalTitle": "Git onde importa",
+                "mini.practicalDesc": "Status na árvore, troca de branch e marcadores de diff direto no editor.",
+                "why.kicker": "Por que Pine",
+                "why.title": "Para o espaço entre editores inchados e IDEs completas.",
+                "why.desc": "Pine mantém o que importa no dia a dia e remove as camadas que costumam deixar os editores lentos.",
+                "why.keepsTitle": "O que Pine mantém",
+                "why.keepsLi1": "Árvore de projeto nativa e comportamento de janelas Mac",
+                "why.keepsLi2": "Destaque de sintaxe, números de linha e busca",
+                "why.keepsLi3": "Múltiplas abas de terminal com PTY real",
+                "why.keepsLi4": "Status Git, diffs na margem e troca de branch",
+                "why.cutsTitle": "O que Pine remove",
+                "why.cutsLi1": "Sobrecarga do motor do navegador",
+                "why.cutsLi2": "Excesso de plugins e cadeias de dependências",
+                "why.cutsLi3": "Arqueologia de configurações antes de começar a trabalhar",
+                "why.cutsLi4": "UI pesada que compete com o código",
+                "why.feelsTitle": "Como isso se sente",
+                "why.feelsDesc": "Menos tempo configurando o editor, mais tempo escrevendo, rodando e revisando código. Pine fica em segundo plano e mantém o ciclo enxuto.",
+                "why.feelsChip1": "Abertura rápida",
+                "why.feelsChip2": "Mantenha o foco",
+                "why.feelsChip3": "Entregue antes",
+                "features.kicker": "Recursos",
+                "features.title": "O essencial, feito como um app de Mac.",
+                "features.desc": "Pine não tenta ser uma plataforma. Tenta cobrir o ciclo diário com menos atrito.",
+                "features.01title": "Abrir um repo e começar a trabalhar imediatamente.",
+                "features.01desc": "Árvore de arquivos com pastas primeiro, estados vazios limpos, arquivos ocultos ignorados por padrão, abas do editor e proteção de alterações não salvas.",
+                "features.02title": "Escrever código sem ruído visual.",
+                "features.02desc": "Números de linha, destaque da linha atual, desfazer, barra de busca, indentação inteligente e destaque de sintaxe para Swift, TypeScript, JavaScript, Python, Go, Rust e mais.",
+                "features.03title": "Rodar comandos na mesma janela.",
+                "features.03desc": "Múltiplas abas de terminal com SwiftTerm — um emulador VT100/xterm completo com cores, oh-my-zsh e suporte a apps TUI.",
+                "features.04title": "Ver o contexto Git onde as decisões acontecem.",
+                "features.04desc": "Status na árvore de arquivos, marcadores de diff na margem, troca de branch e barra de status compacta.",
+                "features.05title": "Pré-visualização de Markdown e arquivos não textuais.",
+                "features.05desc": "Pré-visualização nativa de Markdown com modos fonte, renderizado e dividido. Quick Look para imagens e arquivos binários sem sair do editor.",
+                "screenshots.kicker": "Capturas",
+                "screenshots.title": "Pine em ação.",
+                "screenshots.alt1": "Editor Pine com destaque de sintaxe e árvore de arquivos",
+                "screenshots.cap1": "Editor de código com destaque de sintaxe e margem Git",
+                "screenshots.alt2": "Terminal integrado do Pine",
+                "screenshots.cap2": "Terminal integrado com SwiftTerm",
+                "screenshots.alt3": "Janela de boas-vindas do Pine com projetos recentes",
+                "screenshots.cap3": "Janela de boas-vindas com projetos recentes",
+                "manifesto.kicker": "Posicionamento",
+                "manifesto.title": "Pine não tenta ser o maior editor do seu Mac. É aquele que abre rápido e nunca atrapalha.",
+                "manifesto.desc": "Se VS Code parece pesado e Xcode parece demais para edição do dia a dia, Pine é o meio-termo.",
+                "manifesto.chip1": "Sem Electron",
+                "manifesto.chip2": "Sem marketplace de plugins",
+                "manifesto.chip3": "Sem labirinto de configurações",
+                "manifesto.chip4": "Dependências mínimas",
+                "install.kicker": "Começar",
+                "install.title": "Instalar Pine em 10 segundos.",
+                "install.desc": "Use Homebrew, baixe o último DMG ou compile a partir do código-fonte no Xcode. O stack se mantém pequeno: SwiftUI, AppKit, gramáticas JSON e SwiftTerm para o terminal.",
+                "install.download": "Baixar a última versão",
+                "install.source": "Ver o código-fonte",
+                "install.shellNote": "Compile a partir do código-fonte com <code>xcodebuild -project Pine.xcodeproj -scheme Pine build</code> se quiser o stack nativo completo no seu Mac.",
+                "footer.text": "Pine é open source e feito para desenvolvedores macOS que querem um editor de código rápido, mínimo e nativo.",
+                "meta.title": "Pine — Editor de código rápido, mínimo e nativo para macOS",
+                "meta.description": "Pine é um editor de código rápido, mínimo e nativo para macOS com SwiftUI e AppKit. Edite código, rode comandos, trabalhe com Git — sem Electron nem peso.",
+                "meta.ogTitle": "Pine — Editor de código rápido, mínimo e nativo para macOS",
+                "meta.ogDescription": "Editor de código rápido, mínimo e nativo para macOS. Código, comandos, Git — sem Electron nem peso.",
+                "meta.twitterTitle": "Pine — Editor de código rápido, mínimo e nativo para macOS",
+                "meta.twitterDescription": "Editor de código rápido, mínimo e nativo para macOS. Código, comandos, Git — sem Electron nem peso."
+            },
+            "zh-Hans": {
+                "nav.why": "为什么选 Pine",
+                "nav.features": "功能",
+                "nav.install": "安装",
+                "nav.screenshots": "截图",
+                "header.cta": "下载",
+                "hero.eyebrow": "快速 · 极简 · 原生",
+                "hero.title": "不碍事的代码编辑器。",
+                "hero.desc": "Pine 是一款快速、极简、原生的 macOS 代码编辑器。打开文件夹、编辑代码、运行命令、查看 git——然后继续前进。",
+                "hero.noElectron": "无 Electron",
+                "hero.minimalDeps": "最少依赖",
+                "hero.terminal": "完整终端模拟器",
+                "hero.gitAware": "Git 感知工作流",
+                "hero.download": "下载 Pine",
+                "hero.github": "在 GitHub 查看",
+                "hero.installLabel": "10 秒完成安装",
+                "hero.alt": "Pine 编辑器截图",
+                "hero.chipTabs": "Markdown 预览",
+                "hero.chipTerminal": "完整终端模拟器",
+                "hero.chipGit": "Git 感知文件树",
+                "mini.nativeKicker": "原生",
+                "mini.nativeTitle": "SwiftUI + AppKit",
+                "mini.nativeDesc": "像真正的 Mac 应用一样构建，不是伪装成应用的浏览器。",
+                "mini.focusedKicker": "专注",
+                "mini.focusedTitle": "以仓库为中心的工作流",
+                "mini.focusedDesc": "打开文件夹、浏览文件、快速编辑、运行命令、继续前进。",
+                "mini.leanKicker": "轻量",
+                "mini.leanTitle": "最小占用",
+                "mini.leanDesc": "仅一个依赖（SwiftTerm），没有插件市场，没有配置泛滥。",
+                "mini.practicalKicker": "实用",
+                "mini.practicalTitle": "Git 在需要的地方",
+                "mini.practicalDesc": "文件树中的状态、分支切换和编辑器中的 diff 标记。",
+                "why.kicker": "为什么选 Pine",
+                "why.title": "为臃肿编辑器和完整 IDE 之间的空白而生。",
+                "why.desc": "Pine 保留日常编码中重要的部分，去除通常拖慢编辑器的层层负担。",
+                "why.keepsTitle": "Pine 保留的",
+                "why.keepsLi1": "原生项目树和 Mac 窗口行为",
+                "why.keepsLi2": "语法高亮、行号和搜索",
+                "why.keepsLi3": "基于真实 PTY 的多终端标签页",
+                "why.keepsLi4": "Git 状态、行间 diff 和分支切换",
+                "why.cutsTitle": "Pine 去除的",
+                "why.cutsLi1": "浏览器引擎开销",
+                "why.cutsLi2": "插件泛滥和扩展依赖链",
+                "why.cutsLi3": "开始工作前的设置考古",
+                "why.cutsLi4": "与代码争抢注意力的厚重 UI",
+                "why.feelsTitle": "使用体验",
+                "why.feelsDesc": "花更少的时间配置编辑器，花更多的时间编写、运行和审查代码。Pine 安静地待在后台，保持循环紧凑。",
+                "why.feelsChip1": "快速打开",
+                "why.feelsChip2": "保持专注",
+                "why.feelsChip3": "更快交付",
+                "features.kicker": "功能",
+                "features.title": "必备功能，Mac 应用般的体验。",
+                "features.desc": "Pine 不试图成为平台，只是用更少的摩擦覆盖日常工作循环。",
+                "features.01title": "打开仓库，立即开始工作。",
+                "features.01desc": "文件夹优先的文件树、干净的空状态、默认隐藏隐藏文件、编辑器标签页和未保存更改保护。",
+                "features.02title": "无视觉干扰地编写代码。",
+                "features.02desc": "行号、当前行高亮、撤销、搜索栏、智能缩进，以及 Swift、TypeScript、JavaScript、Python、Go、Rust 等语言的语法高亮。",
+                "features.03title": "在同一窗口运行命令。",
+                "features.03desc": "基于 SwiftTerm 的多终端标签页——完整的 VT100/xterm 模拟器，支持颜色、oh-my-zsh 和 TUI 应用。",
+                "features.04title": "在做决策的地方查看 Git 上下文。",
+                "features.04desc": "文件树中的状态、行间 diff 标记、分支切换和紧凑的状态栏。",
+                "features.05title": "预览 Markdown 和非文本文件。",
+                "features.05desc": "原生 Markdown 预览，支持源码、渲染和分屏模式。通过 Quick Look 直接在编辑器中查看图片和二进制文件。",
+                "screenshots.kicker": "截图",
+                "screenshots.title": "Pine 实际效果。",
+                "screenshots.alt1": "带语法高亮和文件树的 Pine 代码编辑器",
+                "screenshots.cap1": "带语法高亮和 Git 行间标记的代码编辑器",
+                "screenshots.alt2": "Pine 内置终端",
+                "screenshots.cap2": "基于 SwiftTerm 的内置终端",
+                "screenshots.alt3": "带最近项目的 Pine 欢迎窗口",
+                "screenshots.cap3": "带最近项目的欢迎窗口",
+                "manifesto.kicker": "定位",
+                "manifesto.title": "Pine 不试图成为 Mac 上最大的编辑器，而是那个打开飞快、从不碍事的编辑器。",
+                "manifesto.desc": "如果 VS Code 感觉太重，Xcode 对日常编辑来说太大，Pine 就是恰到好处的中间地带。",
+                "manifesto.chip1": "无 Electron",
+                "manifesto.chip2": "无插件市场",
+                "manifesto.chip3": "无设置迷宫",
+                "manifesto.chip4": "最少依赖",
+                "install.kicker": "开始使用",
+                "install.title": "10 秒安装 Pine。",
+                "install.desc": "通过 Homebrew、下载最新 DMG 或在 Xcode 中从源码构建。技术栈保持精简：SwiftUI、AppKit、JSON 语法文件和用于终端的 SwiftTerm。",
+                "install.download": "下载最新版本",
+                "install.source": "查看源代码",
+                "install.shellNote": "如果你想要完整的原生技术栈，可以用 <code>xcodebuild -project Pine.xcodeproj -scheme Pine build</code> 从源码构建。",
+                "footer.text": "Pine 是开源的，专为需要快速、极简、原生代码编辑器的 macOS 开发者打造。",
+                "meta.title": "Pine — 快速、极简、原生的 macOS 代码编辑器",
+                "meta.description": "Pine 是基于 SwiftUI 和 AppKit 的快速、极简、原生 macOS 代码编辑器。编辑代码、运行命令、使用 Git——无需 Electron，无多余负担。",
+                "meta.ogTitle": "Pine — 快速、极简、原生的 macOS 代码编辑器",
+                "meta.ogDescription": "快速、极简、原生的 macOS 代码编辑器。代码、命令、Git——无需 Electron。",
+                "meta.twitterTitle": "Pine — 快速、极简、原生的 macOS 代码编辑器",
+                "meta.twitterDescription": "快速、极简、原生的 macOS 代码编辑器。代码、命令、Git——无需 Electron。"
             }
         };
 
         function getLang() {
             var stored = localStorage.getItem("pine-lang");
             if (stored && T[stored]) return stored;
-            var br = (navigator.language || "").slice(0, 2);
-            return T[br] ? br : "en";
+            var nav = navigator.language || "";
+            if (T[nav]) return nav;
+            var map = {"zh": "zh-Hans", "pt": "pt-BR"};
+            var short = nav.slice(0, 2);
+            if (map[short]) return map[short];
+            return T[short] ? short : "en";
         }
 
         function applyLang(lang) {
@@ -1275,6 +1954,10 @@
             if (ogT) ogT.content = T[lang]["meta.ogTitle"];
             var ogD = document.querySelector('meta[property="og:description"]');
             if (ogD) ogD.content = T[lang]["meta.ogDescription"];
+            var twT = document.querySelector('meta[name="twitter:title"]');
+            if (twT) twT.content = T[lang]["meta.twitterTitle"];
+            var twD = document.querySelector('meta[name="twitter:description"]');
+            if (twD) twD.content = T[lang]["meta.twitterDescription"];
 
             document.querySelectorAll("[data-i18n]").forEach(function(el) {
                 var key = el.getAttribute("data-i18n");
@@ -1289,16 +1972,16 @@
                 if (T[lang][key]) el.alt = T[lang][key];
             });
 
-            var btn = document.getElementById("lang-toggle");
-            if (btn) btn.textContent = lang === "en" ? "RU" : "EN";
             localStorage.setItem("pine-lang", lang);
         }
 
         var currentLang = getLang();
         applyLang(currentLang);
+        var sel = document.getElementById("lang-toggle");
+        sel.value = currentLang;
 
-        document.getElementById("lang-toggle").addEventListener("click", function() {
-            currentLang = currentLang === "en" ? "ru" : "en";
+        sel.addEventListener("change", function() {
+            currentLang = this.value;
             applyLang(currentLang);
         });
     </script>
