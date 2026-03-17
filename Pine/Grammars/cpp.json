@@ -1,0 +1,76 @@
+{
+    "name": "C++",
+    "extensions": ["cpp", "cc", "cxx", "hpp", "hxx", "hh"],
+    "rules": [
+        {
+            "pattern": "//.*$",
+            "scope": "comment",
+            "options": ["anchorsMatchLines"]
+        },
+        {
+            "pattern": "/\\*[\\s\\S]*?\\*/",
+            "scope": "comment"
+        },
+        {
+            "pattern": "R\"\\([^)]*\\)\"",
+            "scope": "string"
+        },
+        {
+            "pattern": "\"(?:[^\"\\\\]|\\\\.)*\"",
+            "scope": "string"
+        },
+        {
+            "pattern": "'(?:[^'\\\\]|\\\\.)'",
+            "scope": "string"
+        },
+        {
+            "pattern": "#\\s*(include|define|undef|ifdef|ifndef|if|elif|else|endif|pragma|error|warning|line)\\b.*$",
+            "scope": "attribute",
+            "options": ["anchorsMatchLines"]
+        },
+        {
+            "pattern": "\\b(if|else|for|while|do|switch|case|default|break|continue|return|goto|typedef|struct|union|enum|sizeof|static|extern|inline|volatile|const|register|class|namespace|template|typename|public|private|protected|virtual|override|final|friend|operator|new|delete|this|throw|try|catch|noexcept|constexpr|consteval|constinit|decltype|static_assert|static_cast|dynamic_cast|reinterpret_cast|const_cast|using|concept|requires|co_await|co_return|co_yield|export|module|import|mutable|explicit)\\b",
+            "scope": "keyword"
+        },
+        {
+            "pattern": "\\b(true|false|nullptr|NULL)\\b",
+            "scope": "keyword"
+        },
+        {
+            "pattern": "\\b(int|char|float|double|void|short|long|signed|unsigned|bool|auto|size_t|ssize_t|ptrdiff_t|intptr_t|uintptr_t|int8_t|int16_t|int32_t|int64_t|uint8_t|uint16_t|uint32_t|uint64_t|wchar_t|char8_t|char16_t|char32_t)\\b",
+            "scope": "type"
+        },
+        {
+            "pattern": "\\b(string|wstring|vector|map|unordered_map|set|unordered_set|list|deque|array|pair|tuple|optional|variant|any|unique_ptr|shared_ptr|weak_ptr|span|string_view|function|thread|mutex|atomic|future|promise|iostream|ostream|istream|fstream|stringstream)\\b",
+            "scope": "type"
+        },
+        {
+            "pattern": "\\b(std|cout|cin|cerr|clog|endl)\\b",
+            "scope": "type"
+        },
+        {
+            "pattern": "\\b\\d+(\\.\\d+)?([eE][+-]?\\d+)?[fFlLuU]*\\b",
+            "scope": "number"
+        },
+        {
+            "pattern": "0x[0-9a-fA-F]+[uUlL]*",
+            "scope": "number"
+        },
+        {
+            "pattern": "0b[01]+[uUlL]*",
+            "scope": "number"
+        },
+        {
+            "pattern": "\\b[A-Z_][A-Z0-9_]{2,}\\b",
+            "scope": "attribute"
+        },
+        {
+            "pattern": "\\b\\w+(?=\\s*\\()",
+            "scope": "function"
+        },
+        {
+            "pattern": "->|::|<<|>>",
+            "scope": "keyword"
+        }
+    ]
+}
