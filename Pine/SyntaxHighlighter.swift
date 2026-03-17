@@ -303,8 +303,7 @@ final class SyntaxHighlighter {
         var ranges: [NSRange] = []
 
         for rule in rules where rule.scope == "comment" || rule.scope == "string" {
-            let scanRange = rule.isMultiline ? fullRange : fullRange
-            rule.regex.enumerateMatches(in: text, range: scanRange) { match, _, _ in
+            rule.regex.enumerateMatches(in: text, range: fullRange) { match, _, _ in
                 if let range = match?.range {
                     ranges.append(range)
                 }

@@ -339,6 +339,10 @@ struct CodeEditorView: NSViewRepresentable {
             guard let textView = notification.object as? NSTextView else { return }
             parent.text = textView.string
 
+            // Подсветка синтаксиса сбросит backgroundColor —
+            // считаем bracket highlight невалидным
+            previousBracketRanges = []
+
             // Report state change
             reportStateChange()
 
@@ -408,41 +412,42 @@ struct CodeEditorView: NSViewRepresentable {
                   let textView = sv.documentView as? NSTextView,
                   let storage = textView.textStorage else { return }
 
-            // Снимаем предыдущую подсветку
             storage.beginEditing()
+
+            // Снимаем предыдущую подсветку
             for range in previousBracketRanges where range.location + range.length <= storage.length {
                 storage.removeAttribute(CodeEditorView.bracketHighlightKey, range: range)
                 storage.removeAttribute(.backgroundColor, range: range)
             }
-            storage.endEditing()
             previousBracketRanges = []
 
+            // Ищем новую пару скобок
             let cursorRange = textView.selectedRange()
-            guard cursorRange.length == 0 else { return }
+            if cursorRange.length == 0 {
+                let skipRanges = SyntaxHighlighter.shared.commentAndStringRanges(
+                    in: textView.string,
+                    language: parent.language,
+                    fileName: parent.fileName
+                )
 
-            let skipRanges = SyntaxHighlighter.shared.commentAndStringRanges(
-                in: textView.string,
-                language: parent.language,
-                fileName: parent.fileName
-            )
+                if let match = BracketMatcher.findMatch(
+                    in: textView.string,
+                    cursorPosition: cursorRange.location,
+                    skipRanges: skipRanges
+                ) {
+                    let openerRange = NSRange(location: match.opener, length: 1)
+                    let closerRange = NSRange(location: match.closer, length: 1)
 
-            guard let match = BracketMatcher.findMatch(
-                in: textView.string,
-                cursorPosition: cursorRange.location,
-                skipRanges: skipRanges
-            ) else { return }
+                    for range in [openerRange, closerRange] {
+                        storage.addAttribute(.backgroundColor, value: bracketHighlightColor, range: range)
+                        storage.addAttribute(CodeEditorView.bracketHighlightKey, value: true, range: range)
+                    }
 
-            let openerRange = NSRange(location: match.opener, length: 1)
-            let closerRange = NSRange(location: match.closer, length: 1)
-
-            storage.beginEditing()
-            for range in [openerRange, closerRange] {
-                storage.addAttribute(.backgroundColor, value: bracketHighlightColor, range: range)
-                storage.addAttribute(CodeEditorView.bracketHighlightKey, value: true, range: range)
+                    previousBracketRanges = [openerRange, closerRange]
+                }
             }
-            storage.endEditing()
 
-            previousBracketRanges = [openerRange, closerRange]
+            storage.endEditing()
         }
 
         @objc func scrollViewDidScroll(_ notification: Notification) {
