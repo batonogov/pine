@@ -774,10 +774,7 @@ private struct DocumentEditedTracker: NSViewRepresentable {
     }
 
     func updateNSView(_ nsView: NSView, context: Context) {
-        // Defer to next run loop so the window reference is available
-        DispatchQueue.main.async {
-            nsView.window?.isDocumentEdited = isEdited
-        }
+        nsView.window?.isDocumentEdited = isEdited
     }
 }
 
