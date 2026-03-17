@@ -69,6 +69,23 @@ struct PineApp: App {
                     MinimapSettings.toggle()
                 }
                 .keyboardShortcut("m", modifiers: [.command, .shift])
+
+                Divider()
+
+                Button(Strings.menuRevealFileInFinder) {
+                    guard let pm = focusedProject,
+                          let url = pm.tabManager.activeTab?.url else { return }
+                    NSWorkspace.shared.activateFileViewerSelecting([url])
+                }
+                .keyboardShortcut("r", modifiers: [.command, .shift])
+                .disabled(focusedProject?.tabManager.activeTab == nil)
+
+                Button(Strings.menuRevealProjectInFinder) {
+                    guard let pm = focusedProject,
+                          let rootURL = pm.workspace.rootURL else { return }
+                    NSWorkspace.shared.activateFileViewerSelecting([rootURL])
+                }
+                .disabled(focusedProject?.workspace.rootURL == nil)
             }
             // Terminal menu: New Tab (Cmd+T)
             CommandMenu(Strings.menuTerminal) {
@@ -80,6 +97,14 @@ struct PineApp: App {
                     pm.addTerminalTab()
                 }
                 .keyboardShortcut("t", modifiers: .command)
+            }
+            // Git menu
+            CommandMenu(Strings.menuGit) {
+                Button(Strings.menuSwitchBranch) {
+                    NotificationCenter.default.post(name: .switchBranch, object: nil)
+                }
+                .keyboardShortcut("b", modifiers: [.command, .shift])
+                .disabled(focusedProject?.workspace.gitProvider.isGitRepository != true)
             }
             // Edit menu: Toggle Comment
             CommandGroup(after: .pasteboard) {
@@ -538,18 +563,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             } else {
                 window.performClose(nil)
             }
-            return nil // consume event
-        }
-
-        // Intercept Cmd+Shift+B to open branch switcher sheet.
-        NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
-            guard event.modifierFlags.intersection(.deviceIndependentFlagsMask) == [.command, .shift],
-                  event.charactersIgnoringModifiers == "b",
-                  let window = NSApp.keyWindow,
-                  window.delegate is CloseDelegate else {
-                return event
-            }
-            NotificationCenter.default.post(name: .switchBranch, object: nil)
             return nil // consume event
         }
 

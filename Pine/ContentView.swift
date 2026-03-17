@@ -72,6 +72,7 @@ struct ContentView: View {
                 onSwitchBranch: switchBranch
             )
             DocumentEditedTracker(isEdited: tabManager.hasUnsavedChanges)
+            RepresentedFileTracker(url: activeTab?.url ?? workspace.rootURL)
         }
         .task {
             restoreSessionIfNeeded()
@@ -267,6 +268,17 @@ struct ContentView: View {
     /// Switches to the given branch via toolbarTitleMenu, showing an alert on error.
     private func switchBranch(_ branch: String) {
         guard branch != workspace.gitProvider.currentBranch else { return }
+
+        if workspace.gitProvider.hasUncommittedChanges {
+            let alert = NSAlert()
+            alert.messageText = Strings.branchUncommittedChangesTitle
+            alert.informativeText = Strings.branchUncommittedChangesMessage(branch)
+            alert.addButton(withTitle: Strings.branchUncommittedChangesSwitch)
+            alert.addButton(withTitle: Strings.dialogCancel)
+            alert.alertStyle = .warning
+            guard alert.runModal() == .alertFirstButtonReturn else { return }
+        }
+
         let result = workspace.gitProvider.checkoutBranch(branch)
         if !result.success {
             let alert = NSAlert()

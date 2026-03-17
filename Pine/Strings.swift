@@ -117,6 +117,9 @@ enum Strings {
     static let menuGit: LocalizedStringKey = "menu.git"
     static let menuOpenFolder: LocalizedStringKey = "menu.openFolder"
     static let menuSwitchBranch: LocalizedStringKey = "menu.switchBranch"
+    static let menuRevealFileInFinder: LocalizedStringKey = "menu.revealFileInFinder"
+    static let menuRevealProjectInFinder: LocalizedStringKey = "menu.revealProjectInFinder"
+
     // MARK: - Branch Switcher
 
     static let branchFilterPlaceholder: LocalizedStringKey = "branch.filterPlaceholder"
@@ -127,6 +130,18 @@ enum Strings {
 
     static let menuToggleComment: LocalizedStringKey = "menu.toggleComment"
     static let menuToggleMinimap: LocalizedStringKey = "menu.toggleMinimap"
+
+    static var branchUncommittedChangesTitle: String {
+        String(localized: "branch.uncommittedChanges.title")
+    }
+
+    static func branchUncommittedChangesMessage(_ branch: String) -> String {
+        String(localized: "branch.uncommittedChanges.message \(branch)")
+    }
+
+    static var branchUncommittedChangesSwitch: String {
+        String(localized: "branch.uncommittedChanges.switch")
+    }
 
     static let menuSave: LocalizedStringKey = "menu.save"
     static let menuSaveAll: LocalizedStringKey = "menu.saveAll"

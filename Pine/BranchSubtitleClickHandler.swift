@@ -46,7 +46,11 @@ struct BranchSubtitleClickHandler: NSViewRepresentable {
         }
 
         @objc func branchSelected(_ sender: NSMenuItem) {
-            parent.onSwitchBranch(sender.title)
+            let branch = sender.title
+            // Dispatch async so the NSMenu closes before any alert appears.
+            DispatchQueue.main.async { [weak self] in
+                self?.parent.onSwitchBranch(branch)
+            }
         }
     }
 
