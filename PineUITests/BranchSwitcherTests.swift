@@ -2,11 +2,14 @@
 //  BranchSwitcherTests.swift
 //  PineUITests
 //
-//  Tests for branch switching via status bar button and popover.
+//  Tests for branch switching UI.
 //
-//  Note: Cmd+Shift+B opens the full branch sheet but is handled via
-//  NSEvent.addLocalMonitorForEvents, which XCUITest's typeKey() bypasses.
-//  These tests use the status bar branch button instead.
+//  Note: The branch subtitle is made clickable via an AppKit gesture
+//  recognizer (BranchSubtitleClickHandler), which XCUITest cannot
+//  interact with directly (window chrome is not an accessibility element).
+//  Cmd+Shift+B is handled via NSEvent.addLocalMonitorForEvents, which
+//  XCUITest's typeKey() bypasses. Therefore, these tests verify the
+//  display of branch information and external branch switch detection.
 //
 
 import XCTest
@@ -67,11 +70,6 @@ final class BranchSwitcherTests: PineUITestCase {
         return String(data: data, encoding: .utf8) ?? ""
     }
 
-    /// Finds and returns the branch switcher button in the status bar.
-    private var branchButton: XCUIElement {
-        app.descendants(matching: .any)["branchSwitcherButton"].firstMatch
-    }
-
     // MARK: - Title bar shows branch name
 
     func testTitleBarShowsBranchName() throws {
@@ -89,114 +87,21 @@ final class BranchSwitcherTests: PineUITestCase {
         )
     }
 
-    // MARK: - Branch button visible in status bar
+    // MARK: - Subtitle contains clickable indicator
 
-    func testBranchButtonVisibleInStatusBar() throws {
+    func testSubtitleShowsBranchIndicator() throws {
         launchWithProject(projectURL)
 
         let window = app.windows.firstMatch
         XCTAssertTrue(window.waitForExistence(timeout: 10))
 
-        XCTAssertTrue(
-            waitForExistence(branchButton, timeout: 10),
-            "Branch switcher button should be visible in status bar"
-        )
-    }
-
-    // MARK: - Branch button opens popover with branches
-
-    func testBranchButtonOpensPopoverWithBranches() throws {
-        launchWithProject(projectURL)
-
-        let window = app.windows.firstMatch
-        XCTAssertTrue(window.waitForExistence(timeout: 10))
-        sleep(2)
-
-        // Click branch button to open popover
-        XCTAssertTrue(waitForExistence(branchButton, timeout: 10))
-        branchButton.click()
-        sleep(1)
-
-        // Search field should appear in the popover
-        let searchField = app.textFields["branchSearchField"]
-        XCTAssertTrue(
-            waitForExistence(searchField, timeout: 5),
-            "Branch popover should show search field"
-        )
-
-        // Branch items should be visible
-        let mainBranch = app.descendants(matching: .any)["branchItem_main"].firstMatch
-        let testBranch = app.descendants(matching: .any)["branchItem_test-branch"].firstMatch
-        XCTAssertTrue(
-            waitForExistence(mainBranch, timeout: 5),
-            "main branch should appear in branch list"
-        )
-        XCTAssertTrue(
-            waitForExistence(testBranch, timeout: 5),
-            "test-branch should appear in branch list"
-        )
-    }
-
-    // MARK: - Search filters branches
-
-    func testSearchFiltersBranches() throws {
-        launchWithProject(projectURL)
-
-        let window = app.windows.firstMatch
-        XCTAssertTrue(window.waitForExistence(timeout: 10))
-        sleep(2)
-
-        XCTAssertTrue(waitForExistence(branchButton, timeout: 10))
-        branchButton.click()
-        sleep(1)
-
-        let searchField = app.textFields["branchSearchField"]
-        XCTAssertTrue(waitForExistence(searchField, timeout: 5))
-
-        // Type "test" to filter
-        searchField.click()
-        searchField.typeText("test")
-        sleep(1)
-
-        let testBranch = app.descendants(matching: .any)["branchItem_test-branch"].firstMatch
-        let featureBranch = app.descendants(matching: .any)["branchItem_feature-xyz"].firstMatch
-        XCTAssertTrue(testBranch.exists, "test-branch should match filter")
-        XCTAssertFalse(featureBranch.exists, "feature-xyz should be filtered out")
-    }
-
-    // MARK: - Switch branch via popover updates UI
-
-    func testSwitchBranchViaPopoverUpdatesUI() throws {
-        launchWithProject(projectURL)
-
-        let window = app.windows.firstMatch
-        XCTAssertTrue(window.waitForExistence(timeout: 10))
-        sleep(2)
-
-        XCTAssertTrue(waitForExistence(branchButton, timeout: 10))
-        branchButton.click()
-        sleep(1)
-
-        // Click on test-branch
-        let testBranch = app.descendants(matching: .any)["branchItem_test-branch"].firstMatch
-        XCTAssertTrue(waitForExistence(testBranch, timeout: 5))
-        testBranch.click()
-        sleep(2)
-
-        // Popover should dismiss
-        let searchField = app.textFields["branchSearchField"]
-        XCTAssertTrue(
-            searchField.waitForNonExistence(timeout: 5),
-            "Popover should dismiss after branch switch"
-        )
-
-        // Title bar subtitle should update
-        let branchText = app.staticTexts.matching(
-            NSPredicate(format: "value CONTAINS 'test-branch'")
+        // Subtitle should contain the branch indicator "▾"
+        let indicator = app.staticTexts.matching(
+            NSPredicate(format: "value CONTAINS '▾'")
         ).firstMatch
         XCTAssertTrue(
-            waitForExistence(branchText, timeout: 5),
-            "Title bar should update to show test-branch"
+            waitForExistence(indicator, timeout: 10),
+            "Subtitle should contain ▾ indicator showing it is clickable"
         )
     }
 
@@ -210,5 +115,35 @@ final class BranchSwitcherTests: PineUITestCase {
 
         let gitMenu = app.menuBars.menuBarItems["Git"]
         XCTAssertFalse(gitMenu.exists, "Git menu should not exist in the menu bar")
+    }
+
+    // MARK: - External branch switch updates subtitle
+
+    func testExternalBranchSwitchUpdatesSubtitle() throws {
+        launchWithProject(projectURL)
+
+        let window = app.windows.firstMatch
+        XCTAssertTrue(window.waitForExistence(timeout: 10))
+
+        // Verify initial branch is main
+        let mainText = app.staticTexts.matching(
+            NSPredicate(format: "value CONTAINS 'main'")
+        ).firstMatch
+        XCTAssertTrue(
+            waitForExistence(mainText, timeout: 10),
+            "Initial branch should be main"
+        )
+
+        // Switch branch externally via git
+        try shell("git switch test-branch", at: projectURL)
+
+        // The app polls git status periodically — subtitle should update
+        let testBranchText = app.staticTexts.matching(
+            NSPredicate(format: "value CONTAINS 'test-branch'")
+        ).firstMatch
+        XCTAssertTrue(
+            waitForExistence(testBranchText, timeout: 15),
+            "Subtitle should update to show test-branch after external switch"
+        )
     }
 }
