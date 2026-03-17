@@ -45,6 +45,13 @@ struct PineApp: App {
                     pm.tabManager.togglePreviewMode()
                 }
                 .keyboardShortcut("p", modifiers: [.command, .shift])
+
+                Divider()
+
+                Button(Strings.menuToggleMinimap) {
+                    MinimapSettings.toggle()
+                }
+                .keyboardShortcut("m", modifiers: [.command, .shift])
             }
             // File menu: Save, Save All, Save As, Duplicate
             CommandGroup(replacing: .saveItem) {
