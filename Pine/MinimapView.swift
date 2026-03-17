@@ -83,6 +83,10 @@ final class MinimapView: NSView {
         self.textView = textView
         super.init(frame: .zero)
         wantsLayer = true
+        setAccessibilityIdentifier(AccessibilityID.minimap)
+        setAccessibilityElement(true)
+        setAccessibilityRole(.group)
+        setAccessibilityLabel("Minimap")
 
         // Observe text changes to invalidate cache
         NotificationCenter.default.addObserver(

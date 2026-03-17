@@ -24,6 +24,7 @@ enum AccessibilityID {
     static func editorTabCloseButton(_ name: String) -> String { "editorTabClose_\(name)" }
     static let editorPlaceholder = "editorPlaceholder"
     static let codeEditor = "codeEditor"
+    static let minimap = "minimap"
     static let quickLookPreview = "quickLookPreview"
 
     // MARK: - Terminal
