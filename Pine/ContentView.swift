@@ -63,6 +63,14 @@ struct ContentView: View {
         .frame(minWidth: 800, minHeight: 500)
         .navigationTitle(workspace.projectName)
         .navigationSubtitle(branchSubtitle)
+        .background {
+            BranchSubtitleClickHandler(
+                branches: workspace.gitProvider.branches,
+                currentBranch: workspace.gitProvider.currentBranch,
+                isGitRepository: workspace.gitProvider.isGitRepository,
+                onSwitchBranch: switchBranch
+            )
+        }
         .task {
             restoreSessionIfNeeded()
             syncSidebarSelection()
@@ -143,7 +151,7 @@ struct ContentView: View {
 
     /// Branch subtitle as a plain String to avoid generating a localization key.
     private var branchSubtitle: String {
-        workspace.gitProvider.isGitRepository ? "⎇ \(workspace.gitProvider.currentBranch)" : ""
+        workspace.gitProvider.isGitRepository ? "⎇ \(workspace.gitProvider.currentBranch) ▾" : ""
     }
 
     // MARK: - Session restoration
@@ -960,32 +968,10 @@ struct FileNodeRow: View {
 struct StatusBarView: View {
     var gitProvider: GitStatusProvider
     var terminal: TerminalManager
-    @State private var showBranchPopover = false
 
     var body: some View {
         HStack(spacing: 6) {
             if gitProvider.isGitRepository {
-                // Branch switcher button
-                Button {
-                    showBranchPopover.toggle()
-                } label: {
-                    HStack(spacing: 3) {
-                        Image(systemName: "arrow.triangle.branch")
-                            .font(.system(size: 10))
-                        Text(gitProvider.currentBranch)
-                            .font(.system(size: 11))
-                    }
-                    .foregroundStyle(.secondary)
-                }
-                .buttonStyle(.plain)
-                .accessibilityIdentifier(AccessibilityID.branchSwitcherButton)
-                .popover(isPresented: $showBranchPopover, arrowEdge: .top) {
-                    BranchSwitcherView(
-                        gitProvider: gitProvider,
-                        isPresented: $showBranchPopover
-                    )
-                }
-
                 // Git file change summary
                 if !gitProvider.fileStatuses.isEmpty {
                     let counts = gitStatusCounts
