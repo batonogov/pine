@@ -1,0 +1,56 @@
+{
+    "name": "C",
+    "extensions": ["c", "h"],
+    "rules": [
+        {
+            "pattern": "//.*$",
+            "scope": "comment",
+            "options": ["anchorsMatchLines"]
+        },
+        {
+            "pattern": "/\\*[\\s\\S]*?\\*/",
+            "scope": "comment"
+        },
+        {
+            "pattern": "\"(?:[^\"\\\\]|\\\\.)*\"",
+            "scope": "string"
+        },
+        {
+            "pattern": "'(?:[^'\\\\]|\\\\.)'",
+            "scope": "string"
+        },
+        {
+            "pattern": "#\\s*(include|define|undef|ifdef|ifndef|if|elif|else|endif|pragma|error|warning|line)\\b.*$",
+            "scope": "attribute",
+            "options": ["anchorsMatchLines"]
+        },
+        {
+            "pattern": "\\b(if|else|for|while|do|switch|case|default|break|continue|return|goto|typedef|struct|union|enum|sizeof|static|extern|inline|volatile|const|register|restrict|_Alignas|_Alignof|_Atomic|_Generic|_Noreturn|_Static_assert|_Thread_local)\\b",
+            "scope": "keyword"
+        },
+        {
+            "pattern": "\\b(true|false|NULL)\\b",
+            "scope": "keyword"
+        },
+        {
+            "pattern": "\\b(int|char|float|double|void|short|long|signed|unsigned|size_t|ssize_t|ptrdiff_t|intptr_t|uintptr_t|int8_t|int16_t|int32_t|int64_t|uint8_t|uint16_t|uint32_t|uint64_t|bool|FILE|wchar_t)\\b",
+            "scope": "type"
+        },
+        {
+            "pattern": "\\b(printf|fprintf|sprintf|snprintf|scanf|fscanf|sscanf|malloc|calloc|realloc|free|memcpy|memset|memmove|strlen|strcpy|strncpy|strcmp|strncmp|strcat|strncat|fopen|fclose|fread|fwrite|fgets|fputs|exit|abort|assert)\\b",
+            "scope": "function"
+        },
+        {
+            "pattern": "\\b\\d+(\\.\\d+)?([eE][+-]?\\d+)?[fFlLuU]*\\b",
+            "scope": "number"
+        },
+        {
+            "pattern": "0x[0-9a-fA-F]+[uUlL]*",
+            "scope": "number"
+        },
+        {
+            "pattern": "0b[01]+[uUlL]*",
+            "scope": "number"
+        }
+    ]
+}
