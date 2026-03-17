@@ -90,8 +90,8 @@ final class GutterTextView: NSTextView {
         if shouldChangeText(in: fullRange, replacementString: result.newText) {
             replaceCharacters(in: fullRange, with: result.newText)
             didChangeText()
+            setSelectedRange(result.newRange)
         }
-        setSelectedRange(result.newRange)
     }
 
     // MARK: - Auto-indent
@@ -443,7 +443,8 @@ struct CodeEditorView: NSViewRepresentable {
 
         @objc func handleToggleComment() {
             guard let sv = scrollView,
-                  let gutterView = sv.documentView as? GutterTextView else { return }
+                  let gutterView = sv.documentView as? GutterTextView,
+                  gutterView.window?.isKeyWindow == true else { return }
             gutterView.toggleLineComment()
         }
 

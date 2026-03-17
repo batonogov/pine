@@ -21,13 +21,8 @@ enum CommentToggler {
         let nsText = text as NSString
         let totalLength = nsText.length
 
-        // Determine affected line range
-        let affectedRange: NSRange
-        if selectedRange.length == 0 {
-            affectedRange = nsText.lineRange(for: selectedRange)
-        } else {
-            affectedRange = nsText.lineRange(for: selectedRange)
-        }
+        // Determine affected line range (expands to full lines)
+        let affectedRange = nsText.lineRange(for: selectedRange)
 
         // Split into lines (preserving line endings)
         var lines: [(content: String, range: NSRange)] = []

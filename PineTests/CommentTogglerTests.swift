@@ -158,12 +158,47 @@ struct CommentTogglerTests {
         #expect(result.newText == "\n\n")
     }
 
-    // MARK: - CSS comment style
+    // MARK: - Misc
 
-    @Test func commentWithCSSStyle() {
+    @Test func commentWithSlashOnNonCodeText() {
         let text = "color: red;"
         let range = NSRange(location: 0, length: 0)
         let result = CommentToggler.toggle(text: text, selectedRange: range, lineComment: "//")
         #expect(result.newText == "// color: red;")
+    }
+
+    // MARK: - Unicode / emoji
+
+    @Test func commentLineWithEmoji() {
+        // 🎉 is 2 UTF-16 code units — verify NSRange offsets are correct
+        let text = "let x = \"🎉\""
+        let range = NSRange(location: 0, length: 0)
+        let result = CommentToggler.toggle(text: text, selectedRange: range, lineComment: "//")
+        #expect(result.newText == "// let x = \"🎉\"")
+    }
+
+    @Test func uncommentLineWithEmoji() {
+        let text = "// let x = \"🎉\""
+        let range = NSRange(location: 0, length: 0)
+        let result = CommentToggler.toggle(text: text, selectedRange: range, lineComment: "//")
+        #expect(result.newText == "let x = \"🎉\"")
+    }
+
+    @Test func commentMultipleLinesWithEmoji() {
+        let text = "let a = \"🎉\"\nlet b = \"🚀\""
+        let range = NSRange(location: 0, length: text.utf16.count)
+        let result = CommentToggler.toggle(text: text, selectedRange: range, lineComment: "//")
+        #expect(result.newText == "// let a = \"🎉\"\n// let b = \"🚀\"")
+    }
+
+    @Test func cursorAfterEmojiAdjustsCorrectly() {
+        let text = "let x = \"🎉\""
+        // Cursor after the emoji: "🎉" ends at UTF-16 offset 12 (l-e-t- -x- -=- -"-🎉(2)-")
+        let cursorPos = (text as NSString).length // end of string
+        let range = NSRange(location: cursorPos, length: 0)
+        let result = CommentToggler.toggle(text: text, selectedRange: range, lineComment: "//")
+        #expect(result.newText == "// let x = \"🎉\"")
+        // Cursor should shift by 3 ("// ")
+        #expect(result.newRange.location == cursorPos + 3)
     }
 }
