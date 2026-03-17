@@ -1,5 +1,16 @@
 # Changelog
 
+## [1.0.0](https://github.com/batonogov/pine/compare/v0.12.8...v1.0.0) (2026-03-17)
+
+
+### ⚠ BREAKING CHANGES
+
+* prepare for 1.0.0 release ([#137](https://github.com/batonogov/pine/issues/137))
+
+### Miscellaneous
+
+* prepare for 1.0.0 release ([#137](https://github.com/batonogov/pine/issues/137)) ([40b56da](https://github.com/batonogov/pine/commit/40b56da1fac846c06f2efb4e4012d35977d111d6))
+
 ## [0.12.8](https://github.com/batonogov/pine/compare/v0.12.7...v0.12.8) (2026-03-17)
 
 
