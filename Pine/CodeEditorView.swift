@@ -119,6 +119,8 @@ struct CodeEditorView: NSViewRepresentable {
     var language: String
     var fileName: String?
     var lineDiffs: [GitLineDiff] = []
+    /// Whether the minimap panel is visible.
+    var isMinimapVisible: Bool = true
     /// Cursor position to restore when the view is created (tab switch).
     var initialCursorPosition: Int = 0
     /// Scroll offset to restore when the view is created (tab switch).
@@ -194,8 +196,15 @@ struct CodeEditorView: NSViewRepresentable {
         lineNumberView.autoresizingMask = [.height]
         container.addSubview(lineNumberView)
 
+        // ── Minimap — справа от scroll view ──
+        let minimapView = MinimapView(textView: textView)
+        minimapView.autoresizingMask = [.height]
+        minimapView.isHidden = !isMinimapVisible
+        container.addSubview(minimapView)
+
         context.coordinator.scrollView = scrollView
         context.coordinator.lineNumberView = lineNumberView
+        context.coordinator.minimapView = minimapView
 
         textView.string = text
         applyHighlighting(to: textView)
@@ -235,11 +244,32 @@ struct CodeEditorView: NSViewRepresentable {
         // Обновляем parent, чтобы binding в coordinator был актуальным
         context.coordinator.parent = self
 
-        guard let scrollView = context.coordinator.scrollView,
-              let textView = scrollView.documentView as? NSTextView else { return }
+        guard let scrollView = context.coordinator.scrollView else { return }
 
-        // Scroll view заполняет весь контейнер
-        scrollView.frame = container.bounds
+        // Minimap visibility and layout
+        let minimapWidth: CGFloat
+        if let minimapView = context.coordinator.minimapView {
+            minimapView.isHidden = !isMinimapVisible
+            minimapWidth = isMinimapVisible ? MinimapView.defaultWidth : 0
+
+            if isMinimapVisible {
+                minimapView.frame = NSRect(
+                    x: container.bounds.width - minimapWidth,
+                    y: 0,
+                    width: minimapWidth,
+                    height: container.bounds.height
+                )
+            }
+        } else {
+            minimapWidth = 0
+        }
+
+        // Scroll view заполняет контейнер минус minimap
+        scrollView.frame = NSRect(
+            x: 0, y: 0,
+            width: container.bounds.width - minimapWidth,
+            height: container.bounds.height
+        )
 
         context.coordinator.updateContentIfNeeded(
             text: text,
@@ -267,6 +297,7 @@ struct CodeEditorView: NSViewRepresentable {
         var parent: CodeEditorView
         var scrollView: NSScrollView?
         var lineNumberView: LineNumberView?
+        var minimapView: MinimapView?
 
         /// Последние язык/имя файла — для обнаружения смены грамматики
         /// при одинаковом содержимом файлов

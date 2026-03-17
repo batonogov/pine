@@ -45,6 +45,13 @@ struct PineApp: App {
                     pm.tabManager.togglePreviewMode()
                 }
                 .keyboardShortcut("p", modifiers: [.command, .shift])
+
+                Divider()
+
+                Button(Strings.menuToggleMinimap) {
+                    NotificationCenter.default.post(name: .toggleMinimap, object: nil)
+                }
+                .keyboardShortcut("m", modifiers: [.command, .shift])
             }
             // File menu: Save, Save All, Save As, Duplicate
             CommandGroup(replacing: .saveItem) {
@@ -602,4 +609,5 @@ extension Notification.Name {
     static let fileRenamed = Notification.Name("fileRenamed")
     /// userInfo: ["url": URL]
     static let fileDeleted = Notification.Name("fileDeleted")
+    static let toggleMinimap = Notification.Name("toggleMinimap")
 }
