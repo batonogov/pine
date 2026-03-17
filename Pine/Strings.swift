@@ -184,6 +184,25 @@ enum Strings {
         String(localized: "openPanel.prompt")
     }
 
+    // MARK: - Large File Warning
+
+    static var largeFileWarningTitle: String {
+        String(localized: "largeFile.warning.title")
+    }
+
+    static func largeFileWarningMessage(_ fileName: String, _ sizeMB: Double) -> String {
+        let formatted = String(format: "%.1f", sizeMB)
+        return String(localized: "largeFile.warning.message \(fileName) \(formatted)")
+    }
+
+    static var largeFileOpenWithHighlighting: String {
+        String(localized: "largeFile.openWithHighlighting")
+    }
+
+    static var largeFileOpenWithoutHighlighting: String {
+        String(localized: "largeFile.openWithoutHighlighting")
+    }
+
     // MARK: - Welcome Window
 
     static let welcomeTitle: LocalizedStringKey = "welcome.title"
