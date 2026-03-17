@@ -22,57 +22,57 @@ enum MinimapSettings {
     static func setVisible(_ visible: Bool, in defaults: UserDefaults = .standard) {
         defaults.set(visible, forKey: key)
     }
+
+    static func toggle(in defaults: UserDefaults = .standard) {
+        setVisible(!isVisible(in: defaults), in: defaults)
+    }
 }
 
 // MARK: - MinimapView
 
 /// A miniature overview of the entire file, displayed alongside the code editor.
-/// Shows a scaled-down representation of the syntax-highlighted text with a
-/// viewport indicator showing the currently visible region.
-/// Supports click-to-scroll and drag-to-scroll.
+/// Renders each line as a thin (~2px) strip with syntax-colored segments.
+/// The minimap scrolls proportionally with the editor — it does NOT squeeze
+/// the entire document into the panel height. A viewport indicator shows
+/// the currently visible region. Supports click-to-scroll and drag-to-scroll.
 final class MinimapView: NSView {
     weak var textView: NSTextView?
 
     /// Default width of the minimap panel.
-    static let defaultWidth: CGFloat = 80
+    static let defaultWidth: CGFloat = 100
 
-    /// Scale factor for rendering the minimap text.
-    static let scaleFactor: CGFloat = 0.15
+    /// Scale factor: each editor line becomes this many points tall in the minimap.
+    static let scaleFactor: CGFloat = 0.12
 
-    /// Font for minimap rendering — very small monospace.
-    private let minimapFont = NSFont.monospacedSystemFont(ofSize: 2, weight: .regular)
+    /// Width of one character in minimap coordinates.
+    private let charWidth: CGFloat = 0.8
 
-    /// Background color — slightly different from editor for visual separation.
+    /// Background color — matches editor background.
     private let bgColor = NSColor(name: nil) { appearance in
         if appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua {
-            return NSColor(srgbRed: 0.14, green: 0.14, blue: 0.16, alpha: 1)
+            return NSColor(srgbRed: 0.15, green: 0.15, blue: 0.17, alpha: 1)
         } else {
-            return NSColor(srgbRed: 0.96, green: 0.96, blue: 0.97, alpha: 1)
+            return NSColor(srgbRed: 0.97, green: 0.97, blue: 0.98, alpha: 1)
         }
     }
 
-    /// Viewport indicator color.
+    /// Viewport indicator fill.
     private let viewportColor = NSColor(name: nil) { appearance in
         if appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua {
-            return NSColor.white.withAlphaComponent(0.12)
+            return NSColor.white.withAlphaComponent(0.08)
         } else {
-            return NSColor.black.withAlphaComponent(0.08)
+            return NSColor.black.withAlphaComponent(0.05)
         }
     }
 
-    /// Viewport indicator border color.
+    /// Viewport indicator border.
     private let viewportBorderColor = NSColor(name: nil) { appearance in
         if appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua {
-            return NSColor.white.withAlphaComponent(0.2)
+            return NSColor.white.withAlphaComponent(0.15)
         } else {
-            return NSColor.black.withAlphaComponent(0.12)
+            return NSColor.black.withAlphaComponent(0.10)
         }
     }
-
-    /// Cached attributed string for the minimap content.
-    private var cachedContent: NSAttributedString?
-    /// Text hash to detect when content changes.
-    private var cachedTextHash: Int = 0
 
     /// Whether user is currently dragging in the minimap.
     private var isDragging = false
@@ -88,14 +88,17 @@ final class MinimapView: NSView {
         setAccessibilityRole(.group)
         setAccessibilityLabel("Minimap")
 
-        // Observe text changes to invalidate cache
         NotificationCenter.default.addObserver(
             self, selector: #selector(contentDidChange),
             name: NSText.didChangeNotification,
             object: textView
         )
-
-        // Observe scroll changes for viewport indicator
+        // Frame changes cover initial layout completion and window resize
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(contentDidChange),
+            name: NSView.frameDidChangeNotification,
+            object: textView
+        )
         NotificationCenter.default.addObserver(
             self, selector: #selector(scrollDidChange(_:)),
             name: NSView.boundsDidChangeNotification,
@@ -106,6 +109,16 @@ final class MinimapView: NSView {
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError() }
 
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        if window != nil {
+            // Defer to ensure layout is complete after initial text setup
+            DispatchQueue.main.async { [weak self] in
+                self?.needsDisplay = true
+            }
+        }
+    }
+
     deinit {
         NotificationCenter.default.removeObserver(self)
     }
@@ -113,7 +126,6 @@ final class MinimapView: NSView {
     // MARK: - Notifications
 
     @objc private func contentDidChange() {
-        cachedContent = nil
         needsDisplay = true
     }
 
@@ -123,12 +135,47 @@ final class MinimapView: NSView {
         needsDisplay = true
     }
 
+    // MARK: - Coordinate mapping
+
+    /// The vertical offset applied to the minimap content so the viewport indicator
+    /// stays within the visible panel area. When the document is taller than the
+    /// minimap panel, the minimap "scrolls" proportionally.
+    private func minimapOffset() -> (offset: CGFloat, scaledDocHeight: CGFloat) {
+        guard let textView = textView,
+              let layoutManager = textView.layoutManager,
+              let textContainer = textView.textContainer,
+              let scrollView = textView.enclosingScrollView else {
+            return (0, 0)
+        }
+
+        let usedRect = layoutManager.usedRect(for: textContainer)
+        let docHeight = usedRect.height + textView.textContainerOrigin.y
+        let scaledDocHeight = docHeight * Self.scaleFactor
+        let panelHeight = bounds.height
+
+        // If scaled document fits in panel — no offset needed
+        guard scaledDocHeight > panelHeight else { return (0, scaledDocHeight) }
+
+        // Scroll proportionally: when editor is scrolled to bottom,
+        // minimap is scrolled to show the bottom of the document.
+        let visibleRect = scrollView.contentView.bounds
+        let maxEditorScroll = max(1, docHeight - visibleRect.height)
+        let currentScroll = visibleRect.origin.y
+        let scrollFraction = min(max(currentScroll / maxEditorScroll, 0), 1)
+
+        let maxMinimapOffset = scaledDocHeight - panelHeight
+        let offset = scrollFraction * maxMinimapOffset
+
+        return (offset, scaledDocHeight)
+    }
+
     // MARK: - Drawing
 
     override func draw(_ dirtyRect: NSRect) {
         guard let textView = textView,
               let layoutManager = textView.layoutManager,
-              let textContainer = textView.textContainer else { return }
+              let textContainer = textView.textContainer,
+              let textStorage = textView.textStorage else { return }
 
         // Background
         bgColor.setFill()
@@ -137,72 +184,32 @@ final class MinimapView: NSView {
         let source = textView.string as NSString
         guard source.length > 0 else { return }
 
-        // Ensure layout is complete
         layoutManager.ensureLayout(for: textContainer)
 
-        // Total document height
-        let usedRect = layoutManager.usedRect(for: textContainer)
-        let documentHeight = usedRect.height + textView.textContainerOrigin.y
-
-        guard documentHeight > 0 else { return }
-
-        // Scale factor: map entire document height to minimap height
-        let scale = bounds.height / documentHeight
-
-        // Draw minimap content using colored rectangles per line
-        drawMinimapContent(
-            layoutManager: layoutManager,
-            textContainer: textContainer,
-            textView: textView,
-            source: source,
-            scale: scale
-        )
-
-        // Draw viewport indicator
-        if let vpRect = computeViewportRect() {
-            viewportColor.setFill()
-            vpRect.fill()
-
-            viewportBorderColor.setStroke()
-            let border = NSBezierPath(rect: vpRect)
-            border.lineWidth = 1
-            border.stroke()
-        }
-    }
-
-    /// Draws colored lines representing the code content.
-    /// Uses the text storage attributes (syntax highlighting colors) directly.
-    private func drawMinimapContent(
-        layoutManager: NSLayoutManager,
-        textContainer: NSTextContainer,
-        textView: NSTextView,
-        source: NSString,
-        scale: CGFloat
-    ) {
-        guard let textStorage = textView.textStorage else { return }
-
+        let (offset, _) = minimapOffset()
+        let scale = Self.scaleFactor
         let originY = textView.textContainerOrigin.y
-        let lineHeight = max(1, 2 * scale / Self.scaleFactor)
+        let lineHeight: CGFloat = 2
+
         let fullGlyphRange = layoutManager.glyphRange(for: textContainer)
 
         layoutManager.enumerateLineFragments(forGlyphRange: fullGlyphRange) { lineRect, _, _, glyphRange, _ in
             let charRange = layoutManager.characterRange(forGlyphRange: glyphRange, actualGlyphRange: nil)
-            let y = (lineRect.origin.y + originY) * scale
+            let y = (lineRect.origin.y + originY) * scale - offset
 
-            // Skip lines outside visible area
-            guard y + lineHeight >= 0 && y <= self.bounds.height else { return }
+            // Cull lines outside visible area
+            guard y + lineHeight > 0 && y < self.bounds.height else { return }
 
-            // Get the visible text for this line (skip empty lines)
+            // Skip blank lines
             let lineText = source.substring(with: charRange)
             let trimmed = lineText.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !trimmed.isEmpty else { return }
 
-            // Calculate leading whitespace offset
+            // Leading whitespace → x offset
             let leadingSpaces = lineText.prefix(while: { $0 == " " || $0 == "\t" }).count
-            let charWidth: CGFloat = 1.2
-            let xOffset: CGFloat = CGFloat(leadingSpaces) * charWidth + 4
+            let xStart: CGFloat = CGFloat(leadingSpaces) * self.charWidth + 4
 
-            // Draw colored segments based on syntax highlighting attributes
+            // Walk through syntax-colored segments
             var pos = charRange.location
             let end = NSMaxRange(charRange)
 
@@ -219,26 +226,36 @@ final class MinimapView: NSView {
                 let segLen = segEnd - segStart
 
                 if segLen > 0 {
-                    // Map character position within line to x coordinate
                     let localStart = segStart - charRange.location
-                    let x = xOffset + CGFloat(localStart) * charWidth
-                    let width = CGFloat(segLen) * charWidth
+                    let x = xStart + CGFloat(localStart) * self.charWidth
+                    let width = CGFloat(segLen) * self.charWidth
 
                     let segRect = NSRect(
                         x: x,
                         y: y,
                         width: min(width, self.bounds.width - x),
-                        height: max(lineHeight, 1.5)
+                        height: lineHeight
                     )
 
                     if segRect.maxX > 0 && segRect.minX < self.bounds.width {
-                        color.withAlphaComponent(0.7).setFill()
+                        color.withAlphaComponent(0.55).setFill()
                         segRect.fill()
                     }
                 }
 
                 pos = segEnd
             }
+        }
+
+        // Draw viewport indicator
+        if let vpRect = computeViewportRect() {
+            viewportColor.setFill()
+            vpRect.fill()
+
+            viewportBorderColor.setStroke()
+            let border = NSBezierPath(rect: vpRect.insetBy(dx: 0.5, dy: 0.5))
+            border.lineWidth = 1
+            border.stroke()
         }
     }
 
@@ -252,21 +269,22 @@ final class MinimapView: NSView {
               let scrollView = textView.enclosingScrollView else { return nil }
 
         let usedRect = layoutManager.usedRect(for: textContainer)
-        let documentHeight = usedRect.height + textView.textContainerOrigin.y
-        guard documentHeight > 0 else { return nil }
+        let docHeight = usedRect.height + textView.textContainerOrigin.y
+        guard docHeight > 0 else { return nil }
 
-        let scale = bounds.height / documentHeight
+        let scale = Self.scaleFactor
+        let (offset, _) = minimapOffset()
         let visibleRect = scrollView.contentView.bounds
 
-        let y = visibleRect.origin.y * scale
+        let y = visibleRect.origin.y * scale - offset
         let height = visibleRect.height * scale
 
-        return NSRect(
-            x: 0,
-            y: max(0, y),
-            width: bounds.width,
-            height: min(height, bounds.height - max(0, y))
-        )
+        let clampedY = max(0, y)
+        let clampedHeight = min(height, bounds.height - clampedY)
+
+        guard clampedHeight > 0 else { return nil }
+
+        return NSRect(x: 0, y: clampedY, width: bounds.width, height: clampedHeight)
     }
 
     // MARK: - Click / Drag to scroll
@@ -279,17 +297,18 @@ final class MinimapView: NSView {
               let scrollView = textView.enclosingScrollView else { return }
 
         let usedRect = layoutManager.usedRect(for: textContainer)
-        let documentHeight = usedRect.height + textView.textContainerOrigin.y
-        guard documentHeight > 0, bounds.height > 0 else { return }
+        let docHeight = usedRect.height + textView.textContainerOrigin.y
+        guard docHeight > 0, bounds.height > 0 else { return }
 
-        let scale = bounds.height / documentHeight
+        let scale = Self.scaleFactor
+        let (offset, _) = minimapOffset()
         let visibleHeight = scrollView.contentView.bounds.height
 
-        // Convert minimap Y to document Y, centering the viewport
-        let documentY = (minimapY / scale) - (visibleHeight / 2)
+        // Convert minimap Y back to document Y, centering the viewport
+        let documentY = ((minimapY + offset) / scale) - (visibleHeight / 2)
 
-        // Clamp to valid range
-        let maxScroll = max(0, documentHeight - visibleHeight)
+        // Clamp
+        let maxScroll = max(0, docHeight - visibleHeight)
         let clampedY = min(max(0, documentY), maxScroll)
 
         scrollView.contentView.scroll(to: NSPoint(x: 0, y: clampedY))

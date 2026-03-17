@@ -24,7 +24,7 @@ struct ContentView: View {
     @State private var lineDiffs: [GitLineDiff] = []
     @State private var didRestoreSession = false
     @State private var showBranchSwitcher = false
-    @State private var isMinimapVisible = MinimapSettings.isVisible()
+    @AppStorage("minimapVisible") private var isMinimapVisible = true
 
     private var activeTab: EditorTab? { tabManager.activeTab }
 
@@ -137,11 +137,6 @@ struct ContentView: View {
             guard controlActiveState == .key,
                   workspace.gitProvider.isGitRepository else { return }
             showBranchSwitcher = true
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .toggleMinimap)) { _ in
-            guard controlActiveState == .key else { return }
-            isMinimapVisible.toggle()
-            MinimapSettings.setVisible(isMinimapVisible)
         }
         .sheet(isPresented: $showBranchSwitcher) {
             BranchSwitcherView(

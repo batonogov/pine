@@ -49,7 +49,7 @@ struct PineApp: App {
                 Divider()
 
                 Button(Strings.menuToggleMinimap) {
-                    NotificationCenter.default.post(name: .toggleMinimap, object: nil)
+                    MinimapSettings.toggle()
                 }
                 .keyboardShortcut("m", modifiers: [.command, .shift])
             }
@@ -609,5 +609,4 @@ extension Notification.Name {
     static let fileRenamed = Notification.Name("fileRenamed")
     /// userInfo: ["url": URL]
     static let fileDeleted = Notification.Name("fileDeleted")
-    static let toggleMinimap = Notification.Name("toggleMinimap")
 }

@@ -114,6 +114,46 @@ final class GutterTextView: NSTextView {
     }
 }
 
+// MARK: - Editor container that manages scroll view + minimap layout
+
+/// Custom container view that lays out the scroll view and minimap side by side.
+/// Replaces autoresizingMask with explicit layout so the minimap width is
+/// always accounted for.
+final class EditorContainerView: NSView {
+    var minimapWidth: CGFloat = 0
+
+    override func layout() {
+        super.layout()
+        for sub in subviews {
+            if let minimap = sub as? MinimapView {
+                if minimap.isHidden {
+                    continue
+                }
+                minimap.frame = NSRect(
+                    x: bounds.width - minimapWidth,
+                    y: 0,
+                    width: minimapWidth,
+                    height: bounds.height
+                )
+                minimap.needsDisplay = true
+            } else if sub is NSScrollView {
+                sub.frame = NSRect(
+                    x: 0, y: 0,
+                    width: bounds.width - minimapWidth,
+                    height: bounds.height
+                )
+            } else {
+                // LineNumberView — keep x=0, full height, its own width
+                sub.frame = NSRect(
+                    x: 0, y: 0,
+                    width: sub.frame.width,
+                    height: bounds.height
+                )
+            }
+        }
+    }
+}
+
 struct CodeEditorView: NSViewRepresentable {
     @Binding var text: String
     var language: String
@@ -133,9 +173,10 @@ struct CodeEditorView: NSViewRepresentable {
     func makeNSView(context: Context) -> NSView {
         let gutterWidth: CGFloat = 40
 
-        // ── Контейнер — держит scroll view и line number view как сиблингов ──
-        let container = NSView()
+        // ── Контейнер — держит scroll view, line number view и minimap ──
+        let container = EditorContainerView()
         container.wantsLayer = true
+        container.minimapWidth = isMinimapVisible ? MinimapView.defaultWidth : 0
 
         // ── ScrollView ──
         let scrollView = NSScrollView()
@@ -144,7 +185,8 @@ struct CodeEditorView: NSViewRepresentable {
         scrollView.autohidesScrollers = true
         scrollView.drawsBackground = true
         scrollView.backgroundColor = .textBackgroundColor
-        scrollView.autoresizingMask = [.width, .height]
+        // Layout managed by EditorContainerView.layout()
+        scrollView.autoresizingMask = []
 
         // ── Текстовый стек: Storage → LayoutManager → Container → TextView ──
         // Создаём вручную, чтобы всё было корректно инициализировано
@@ -193,12 +235,10 @@ struct CodeEditorView: NSViewRepresentable {
         // ── Номера строк — поверх scroll view, как отдельный сиблинг ──
         let lineNumberView = LineNumberView(textView: textView)
         lineNumberView.gutterWidth = gutterWidth
-        lineNumberView.autoresizingMask = [.height]
         container.addSubview(lineNumberView)
 
         // ── Minimap — справа от scroll view ──
         let minimapView = MinimapView(textView: textView)
-        minimapView.autoresizingMask = [.height]
         minimapView.isHidden = !isMinimapVisible
         container.addSubview(minimapView)
 
@@ -226,6 +266,8 @@ struct CodeEditorView: NSViewRepresentable {
             } else if safePosition > 0 {
                 textView.scrollRangeToVisible(NSRange(location: safePosition, length: 0))
             }
+            // Redraw minimap after layout is complete
+            minimapView.needsDisplay = true
         }
 
         // Observe scroll changes to persist scroll offset.
@@ -244,32 +286,14 @@ struct CodeEditorView: NSViewRepresentable {
         // Обновляем parent, чтобы binding в coordinator был актуальным
         context.coordinator.parent = self
 
-        guard let scrollView = context.coordinator.scrollView else { return }
+        guard let editorContainer = container as? EditorContainerView else { return }
 
-        // Minimap visibility and layout
-        let minimapWidth: CGFloat
+        // Minimap visibility — triggers relayout via needsLayout
         if let minimapView = context.coordinator.minimapView {
             minimapView.isHidden = !isMinimapVisible
-            minimapWidth = isMinimapVisible ? MinimapView.defaultWidth : 0
-
-            if isMinimapVisible {
-                minimapView.frame = NSRect(
-                    x: container.bounds.width - minimapWidth,
-                    y: 0,
-                    width: minimapWidth,
-                    height: container.bounds.height
-                )
-            }
-        } else {
-            minimapWidth = 0
         }
-
-        // Scroll view заполняет контейнер минус minimap
-        scrollView.frame = NSRect(
-            x: 0, y: 0,
-            width: container.bounds.width - minimapWidth,
-            height: container.bounds.height
-        )
+        editorContainer.minimapWidth = isMinimapVisible ? MinimapView.defaultWidth : 0
+        editorContainer.needsLayout = true
 
         context.coordinator.updateContentIfNeeded(
             text: text,
@@ -278,14 +302,9 @@ struct CodeEditorView: NSViewRepresentable {
             font: editorFont
         )
 
-        // Обновляем размер и diff-данные LineNumberView
+        // Обновляем diff-данные LineNumberView
         if let lineNumberView = context.coordinator.lineNumberView {
             lineNumberView.lineDiffs = lineDiffs
-            lineNumberView.frame = NSRect(
-                x: 0, y: 0,
-                width: lineNumberView.gutterWidth,
-                height: container.bounds.height
-            )
         }
     }
 

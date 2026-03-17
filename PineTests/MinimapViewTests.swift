@@ -46,7 +46,7 @@ struct MinimapViewTests {
 
     @Test("MinimapView has correct default width")
     func defaultWidth() {
-        #expect(MinimapView.defaultWidth == 80)
+        #expect(MinimapView.defaultWidth == 100)
     }
 
     @Test("MinimapView scale factor is small enough for overview")

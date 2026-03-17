@@ -34,6 +34,13 @@ final class MinimapTests: PineUITestCase {
         app.groups["minimap"]
     }
 
+    /// Toggles minimap visibility using Cmd+Shift+M keyboard shortcut.
+    /// This works because Toggle Minimap is a SwiftUI .keyboardShortcut,
+    /// not a local event monitor (which XCUITest's typeKey bypasses).
+    private func toggleMinimap() {
+        app.typeKey("m", modifierFlags: [.command, .shift])
+    }
+
     // MARK: - Minimap visibility
 
     func testMinimapVisibleByDefault() throws {
@@ -67,30 +74,15 @@ final class MinimapTests: PineUITestCase {
 
         XCTAssertTrue(waitForExistence(minimap, timeout: 5), "Minimap should appear")
 
-        // Toggle minimap off via View menu
-        // Use firstMatch to avoid "multiple matching elements" when system adds duplicate menu bars
-        app.menuBars.firstMatch.menuBarItems["View"].click()
-        let toggleItem = app.menuItems["Toggle Minimap"]
-        guard waitForExistence(toggleItem, timeout: 3) else {
-            XCTFail("Toggle Minimap menu item should exist")
-            return
-        }
-        toggleItem.click()
+        // Toggle minimap off
+        toggleMinimap()
 
-        // Give UI time to update
-        Thread.sleep(forTimeInterval: 0.5)
+        // Wait for minimap to disappear (NSView.isHidden removes from accessibility tree)
+        let disappeared = minimap.waitForNonExistence(timeout: 3)
+        XCTAssertTrue(disappeared, "Minimap should be hidden after toggle off")
 
-        // Minimap should be hidden — NSView.isHidden removes it from accessibility tree
-        XCTAssertFalse(minimap.exists, "Minimap should be hidden after toggle off")
-
-        // Toggle minimap back on via View menu
-        app.menuBars.firstMatch.menuBarItems["View"].click()
-        let toggleItemAgain = app.menuItems["Toggle Minimap"]
-        guard waitForExistence(toggleItemAgain, timeout: 3) else {
-            XCTFail("Toggle Minimap menu item should still exist")
-            return
-        }
-        toggleItemAgain.click()
+        // Toggle minimap back on
+        toggleMinimap()
 
         // Minimap should reappear
         XCTAssertTrue(
