@@ -37,22 +37,26 @@ final class BranchSwitcherTests: PineUITestCase {
         let dir = try createTempProject(files: [
             "main.swift": "// Hello\n"
         ])
-        try shell("git init", at: dir)
-        try shell("git config user.email 'test@test.com'", at: dir)
-        try shell("git config user.name 'Test'", at: dir)
-        try shell("git add .", at: dir)
-        try shell("git commit -m 'initial'", at: dir)
-        try shell("git branch test-branch", at: dir)
-        try shell("git branch feature-xyz", at: dir)
+        try git("init", at: dir)
+        try git("config", "user.email", "test@test.com", at: dir)
+        try git("config", "user.name", "Test", at: dir)
+        try git("add", ".", at: dir)
+        try git("commit", "-m", "initial", at: dir)
+        try git("branch", "test-branch", at: dir)
+        try git("branch", "feature-xyz", at: dir)
         return dir
     }
 
-    /// Runs a shell command in the given directory.
+    /// Path to git binary, bypassing the xcrun shim which fails in App Sandbox.
+    private let gitPath = "/Applications/Xcode.app/Contents/Developer/usr/bin/git"
+
+    /// Runs a git command in the given directory.
+    /// Uses the direct git binary path to avoid xcrun sandbox issues.
     @discardableResult
-    private func shell(_ command: String, at dir: URL) throws -> String {
+    private func git(_ arguments: String..., at dir: URL) throws -> String {
         let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/bin/zsh")
-        process.arguments = ["-c", command]
+        process.executableURL = URL(fileURLWithPath: gitPath)
+        process.arguments = Array(arguments)
         process.currentDirectoryURL = dir
         let pipe = Pipe()
         process.standardOutput = pipe
@@ -135,7 +139,7 @@ final class BranchSwitcherTests: PineUITestCase {
         )
 
         // Switch branch externally via git
-        try shell("git switch test-branch", at: projectURL)
+        try git("switch", "test-branch", at: projectURL)
 
         // The app polls git status periodically — subtitle should update
         let testBranchText = app.staticTexts.matching(
