@@ -30,6 +30,9 @@ struct EditorTab: Identifiable, Hashable {
     /// Markdown preview mode (source/preview/split). Only meaningful for markdown files.
     var previewMode: MarkdownPreviewMode = .source
 
+    /// Whether syntax highlighting is disabled for this tab (e.g. large files).
+    var syntaxHighlightingDisabled: Bool = false
+
     var isDirty: Bool { kind == .text && content != savedContent }
 
     /// Whether this tab's file is a Markdown file (.md or .markdown).

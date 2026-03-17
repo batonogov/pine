@@ -166,6 +166,37 @@ struct ProjectManagerSessionTests {
         #expect(pm2.tabManager.tabs.map(\.url) == files)
     }
 
+    @Test func saveSessionPersistsHighlightingDisabled() throws {
+        let (dir, files) = try makeTempProject()
+        defer { cleanup(dir) }
+
+        let pm = ProjectManager()
+        pm.workspace.loadDirectory(url: dir)
+
+        pm.tabManager.openTab(url: files[0])
+        pm.tabManager.openTab(url: files[1])
+        // Simulate opening files[1] without highlighting (large file)
+        pm.tabManager.tabs[1].syntaxHighlightingDisabled = true
+        pm.saveSession()
+
+        let canonical = dir.resolvingSymlinksInPath()
+        let session = try #require(SessionState.load(for: canonical))
+
+        #expect(session.highlightingDisabledPaths?.count == 1)
+        #expect(session.highlightingDisabledPaths?.first == files[1].path)
+
+        // Phase 2: restore — use overload that skips alert
+        let pm2 = ProjectManager()
+        pm2.workspace.loadDirectory(url: dir)
+        let disabledSet = Set(session.highlightingDisabledPaths ?? [])
+        for url in session.existingFileURLs {
+            pm2.tabManager.openTab(url: url, syntaxHighlightingDisabled: disabledSet.contains(url.path))
+        }
+
+        #expect(pm2.tabManager.tabs[0].syntaxHighlightingDisabled == false)
+        #expect(pm2.tabManager.tabs[1].syntaxHighlightingDisabled == true)
+    }
+
     @Test func sessionSurvivedWindowClose() throws {
         let (dir, files) = try makeTempProject()
         defer { cleanup(dir) }

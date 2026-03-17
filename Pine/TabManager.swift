@@ -11,6 +11,9 @@ import UniformTypeIdentifiers
 /// Manages the set of open editor tabs and the active selection.
 @Observable
 final class TabManager {
+    /// File size threshold (in bytes) above which a warning is shown before opening.
+    static let largeFileThreshold = 1_048_576 // 1 MB
+
     var tabs: [EditorTab] = []
     var activeTabID: UUID?
 
@@ -41,7 +44,45 @@ final class TabManager {
             return
         }
 
-        // Load file content
+        // Large file warning
+        if let size = fileSize(url: url), size >= Self.largeFileThreshold {
+            let sizeMB = Double(size) / 1_048_576.0
+            let result = showLargeFileAlert(fileName: url.lastPathComponent, sizeMB: sizeMB)
+            switch result {
+            case .cancel:
+                return
+            case .openWithHighlighting:
+                break
+            case .openWithoutHighlighting:
+                openTabInternal(url: url, syntaxHighlightingDisabled: true)
+                return
+            }
+        }
+
+        openTabInternal(url: url, syntaxHighlightingDisabled: false)
+    }
+
+    /// Opens a file with an explicit syntax highlighting override (skips the large file alert).
+    /// Used by session restoration to reopen files in their saved state.
+    func openTab(url: URL, syntaxHighlightingDisabled: Bool) {
+        if let existing = tabs.first(where: { $0.url == url }) {
+            activeTabID = existing.id
+            return
+        }
+
+        if isPreviewFile(url: url) {
+            var tab = EditorTab(url: url, kind: .preview)
+            tab.lastModDate = modDate(for: url)
+            tabs.append(tab)
+            activeTabID = tab.id
+            return
+        }
+
+        openTabInternal(url: url, syntaxHighlightingDisabled: syntaxHighlightingDisabled)
+    }
+
+    /// Internal method to create and append a text tab.
+    private func openTabInternal(url: URL, syntaxHighlightingDisabled: Bool) {
         let content: String
         do {
             content = try String(contentsOf: url, encoding: .utf8)
@@ -51,8 +92,37 @@ final class TabManager {
 
         var tab = EditorTab(url: url, content: content, savedContent: content)
         tab.lastModDate = modDate(for: url)
+        tab.syntaxHighlightingDisabled = syntaxHighlightingDisabled
         tabs.append(tab)
         activeTabID = tab.id
+    }
+
+    /// Result of the large file warning alert.
+    enum LargeFileAlertResult {
+        case openWithHighlighting
+        case openWithoutHighlighting
+        case cancel
+    }
+
+    /// Shows a warning alert for large files. Returns the user's choice.
+    private func showLargeFileAlert(fileName: String, sizeMB: Double) -> LargeFileAlertResult {
+        let alert = NSAlert()
+        alert.messageText = Strings.largeFileWarningTitle
+        alert.informativeText = Strings.largeFileWarningMessage(fileName, sizeMB)
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: Strings.largeFileOpenWithoutHighlighting)
+        alert.addButton(withTitle: Strings.largeFileOpenWithHighlighting)
+        alert.addButton(withTitle: Strings.dialogCancel)
+
+        let response = alert.runModal()
+        switch response {
+        case .alertFirstButtonReturn:
+            return .openWithoutHighlighting
+        case .alertSecondButtonReturn:
+            return .openWithHighlighting
+        default:
+            return .cancel
+        }
     }
 
     /// Closes a tab by ID. Selects an adjacent tab if the closed tab was active.
@@ -353,6 +423,21 @@ final class TabManager {
     /// Returns the modification date of a file, or nil on error.
     private func modDate(for url: URL) -> Date? {
         try? FileManager.default.attributesOfItem(atPath: url.path)[.modificationDate] as? Date
+    }
+
+    // MARK: - Large file detection
+
+    /// Returns the file size in bytes, or nil on error.
+    func fileSize(url: URL) -> Int? {
+        guard let attrs = try? FileManager.default.attributesOfItem(atPath: url.path),
+              let size = attrs[.size] as? Int else { return nil }
+        return size
+    }
+
+    /// Returns true if the file at the given URL is larger than `largeFileThreshold`.
+    func isLargeFile(url: URL) -> Bool {
+        guard let size = fileSize(url: url) else { return false }
+        return size >= Self.largeFileThreshold
     }
 
     // MARK: - Preview file detection
