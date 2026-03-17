@@ -1,6 +1,7 @@
 {
     "name": "YAML",
     "extensions": ["yml", "yaml"],
+    "lineComment": "#",
     "rules": [
         {
             "pattern": "#.*$",

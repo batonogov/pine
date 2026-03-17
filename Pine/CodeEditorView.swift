@@ -60,6 +60,40 @@ final class GutterTextView: NSTextView {
         needsDisplay = true
     }
 
+    // MARK: - Toggle line comment
+
+    /// File extension for looking up the line comment prefix.
+    var fileExtension: String?
+    /// File name for looking up the line comment prefix (e.g. "Dockerfile").
+    var exactFileName: String?
+
+    func toggleLineComment() {
+        let comment: String?
+        if let name = exactFileName {
+            comment = SyntaxHighlighter.shared.lineComment(forFileName: name)
+        } else if let ext = fileExtension {
+            comment = SyntaxHighlighter.shared.lineComment(forExtension: ext)
+        } else {
+            comment = nil
+        }
+        guard let lineComment = comment else { return }
+
+        let currentRange = selectedRange()
+        let result = CommentToggler.toggle(
+            text: string,
+            selectedRange: currentRange,
+            lineComment: lineComment
+        )
+
+        // Apply via replaceCharacters to support undo
+        let fullRange = NSRange(location: 0, length: (string as NSString).length)
+        if shouldChangeText(in: fullRange, replacementString: result.newText) {
+            replaceCharacters(in: fullRange, with: result.newText)
+            didChangeText()
+            setSelectedRange(result.newRange)
+        }
+    }
+
     // MARK: - Auto-indent
 
     /// Символы, после которых увеличиваем отступ
@@ -238,6 +272,8 @@ struct CodeEditorView: NSViewRepresentable {
         textView.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude,
                                    height: CGFloat.greatestFiniteMagnitude)
 
+        textView.fileExtension = language
+        textView.exactFileName = fileName
         textView.delegate = context.coordinator
         scrollView.documentView = textView
 
@@ -292,6 +328,14 @@ struct CodeEditorView: NSViewRepresentable {
             object: scrollView.contentView
         )
 
+        // Observe toggle comment notification (Cmd+/)
+        NotificationCenter.default.addObserver(
+            context.coordinator,
+            selector: #selector(Coordinator.handleToggleComment),
+            name: .toggleComment,
+            object: nil
+        )
+
         return container
     }
 
@@ -307,6 +351,13 @@ struct CodeEditorView: NSViewRepresentable {
         }
         editorContainer.minimapWidth = isMinimapVisible ? MinimapView.defaultWidth : 0
         editorContainer.needsLayout = true
+
+        // Keep GutterTextView's language info in sync for toggle comment
+        if let sv = context.coordinator.scrollView,
+           let gutterView = sv.documentView as? GutterTextView {
+            gutterView.fileExtension = language
+            gutterView.exactFileName = fileName
+        }
 
         context.coordinator.updateContentIfNeeded(
             text: text,
@@ -542,6 +593,13 @@ struct CodeEditorView: NSViewRepresentable {
 
         @objc func scrollViewDidScroll(_ notification: Notification) {
             reportStateChange()
+        }
+
+        @objc func handleToggleComment() {
+            guard let sv = scrollView,
+                  let gutterView = sv.documentView as? GutterTextView,
+                  gutterView.window?.isKeyWindow == true else { return }
+            gutterView.toggleLineComment()
         }
 
         private func reportStateChange() {

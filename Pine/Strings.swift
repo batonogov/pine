@@ -125,6 +125,7 @@ enum Strings {
         String(localized: "branch.switchError.title")
     }
 
+    static let menuToggleComment: LocalizedStringKey = "menu.toggleComment"
     static let menuToggleMinimap: LocalizedStringKey = "menu.toggleMinimap"
 
     static let menuSave: LocalizedStringKey = "menu.save"

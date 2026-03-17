@@ -22,6 +22,7 @@ struct Grammar: Codable {
     let extensions: [String]     // ["swift"], ["py", "pyw"]
     let rules: [GrammarRule]     // Правила подсветки
     var fileNames: [String]?     // Точные имена файлов: ["Dockerfile", "Makefile"]
+    var lineComment: String?     // Символ однострочного комментария: "//", "#" и т.д.
 }
 
 // MARK: - Тема (маппинг scope → цвет)
@@ -197,6 +198,18 @@ final class SyntaxHighlighter {
         }
 
         compiledRules[grammar.name] = rules
+    }
+
+    // MARK: - Line comment lookup
+
+    /// Returns the line comment prefix for a file extension (e.g. "swift" → "//").
+    func lineComment(forExtension ext: String) -> String? {
+        grammarsByExtension[ext.lowercased()]?.lineComment
+    }
+
+    /// Returns the line comment prefix for an exact file name (e.g. "Dockerfile" → "#").
+    func lineComment(forFileName name: String) -> String? {
+        grammarsByFileName[name]?.lineComment
     }
 
     // MARK: - Подсветка

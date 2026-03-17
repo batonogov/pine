@@ -81,6 +81,13 @@ struct PineApp: App {
                 }
                 .keyboardShortcut("t", modifiers: .command)
             }
+            // Edit menu: Toggle Comment
+            CommandGroup(after: .pasteboard) {
+                Button(Strings.menuToggleComment) {
+                    NotificationCenter.default.post(name: .toggleComment, object: nil)
+                }
+                .keyboardShortcut("/", modifiers: .command)
+            }
             // File menu: Save, Save All, Save As, Duplicate
             CommandGroup(replacing: .saveItem) {
                 Button(Strings.menuSave) {
@@ -663,4 +670,5 @@ extension Notification.Name {
     static let fileRenamed = Notification.Name("fileRenamed")
     /// userInfo: ["url": URL]
     static let fileDeleted = Notification.Name("fileDeleted")
+    static let toggleComment = Notification.Name("toggleComment")
 }

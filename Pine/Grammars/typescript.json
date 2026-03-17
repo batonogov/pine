@@ -1,6 +1,7 @@
 {
     "name": "TypeScript",
     "extensions": ["ts", "tsx"],
+    "lineComment": "//",
     "rules": [
         {
             "pattern": "//.*$",
