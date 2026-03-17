@@ -2397,7 +2397,7 @@
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Переключить превью"
+            "value" : "Переключить предпросмотр"
           }
         },
         "zh-Hans" : {
