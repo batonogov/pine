@@ -53,6 +53,13 @@ struct SQLGrammarTests {
         #expect(rule != nil)
     }
 
+    @Test func keywordsAreCaseInsensitive() {
+        let keywordRules = grammar.rules.filter { $0.scope == "keyword" }
+        for rule in keywordRules {
+            #expect(rule.options?.contains("caseInsensitive") == true)
+        }
+    }
+
     @Test func keywordsIncludeSelect() {
         let rule = grammar.rules.first { $0.scope == "keyword" && $0.pattern.contains("SELECT") }
         #expect(rule != nil)
@@ -86,5 +93,19 @@ struct SQLGrammarTests {
     @Test func functionRule() {
         let rule = grammar.rules.first { $0.scope == "function" && $0.pattern.contains("COUNT") }
         #expect(rule != nil)
+    }
+
+    @Test func noDuplicateKeywordsAcrossRules() throws {
+        let keywordRules = grammar.rules.filter { $0.scope == "keyword" }
+        var allKeywords: [String] = []
+        let wordPattern = try NSRegularExpression(pattern: "[A-Z_]+", options: [])
+        for rule in keywordRules {
+            let range = NSRange(rule.pattern.startIndex..., in: rule.pattern)
+            let matches = wordPattern.matches(in: rule.pattern, range: range)
+            let words = matches.compactMap { Range($0.range, in: rule.pattern).map { String(rule.pattern[$0]) } }
+            allKeywords.append(contentsOf: words)
+        }
+        let unique = Set(allKeywords)
+        #expect(allKeywords.count == unique.count, "Duplicate keywords found across rules")
     }
 }
