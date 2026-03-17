@@ -192,6 +192,15 @@ struct ContentView: View {
                 }
             }
 
+            // Restore syntax highlighting disabled state
+            if let disabledPaths = session.highlightingDisabledPaths {
+                let disabledSet = Set(disabledPaths)
+                for index in tabManager.tabs.indices
+                where disabledSet.contains(tabManager.tabs[index].url.path) {
+                    tabManager.tabs[index].syntaxHighlightingDisabled = true
+                }
+            }
+
             if let activeURL = session.activeFileURL,
                let tab = tabManager.tab(for: activeURL) {
                 tabManager.activeTabID = tab.id
