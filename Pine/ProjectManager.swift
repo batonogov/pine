@@ -37,11 +37,21 @@ final class ProjectManager {
             }
         }
 
+        // Terminal state
+        let terminalTabCount = terminal.terminalTabs.count
+        let activeTerminalIndex: Int? = terminal.activeTerminalID.flatMap { id in
+            terminal.terminalTabs.firstIndex { $0.id == id }
+        }
+
         SessionState.save(
             projectURL: rootURL,
             openFileURLs: openFileURLs,
             activeFileURL: activeFileURL,
-            previewModes: previewModes
+            previewModes: previewModes,
+            terminalTabCount: terminalTabCount,
+            activeTerminalIndex: activeTerminalIndex,
+            isTerminalVisible: terminal.isTerminalVisible,
+            isTerminalMaximized: terminal.isTerminalMaximized
         )
     }
 

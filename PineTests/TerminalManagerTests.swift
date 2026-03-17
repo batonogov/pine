@@ -147,4 +147,25 @@ struct TerminalManagerTests {
         #expect(manager.terminalTabs.count == 4) // 1 initial + 3 added
         #expect(manager.activeTerminalID == manager.terminalTabs.last?.id)
     }
+
+    @Test("terminateAll stops all tabs")
+    func terminateAll() {
+        let manager = TerminalManager()
+        manager.addTerminalTab(workingDirectory: nil)
+        manager.addTerminalTab(workingDirectory: nil)
+        #expect(manager.terminalTabs.count == 3)
+
+        manager.terminateAll()
+
+        for tab in manager.terminalTabs {
+            #expect(tab.isTerminated)
+        }
+    }
+
+    @Test("hasActiveProcesses returns false when no processes started")
+    func hasActiveProcessesNoProcesses() {
+        let manager = TerminalManager()
+        #expect(!manager.hasActiveProcesses)
+        #expect(manager.tabsWithForegroundProcesses.isEmpty)
+    }
 }

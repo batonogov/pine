@@ -396,8 +396,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // when the user reopens this project from Welcome or Open Recent.
         let canonical = projectURL.resolvingSymlinksInPath()
         registry.openProjects[canonical]?.saveSession()
-        registry.closeProject(projectURL)
-        if registry.openProjects.isEmpty {
+        registry.closeProjectWindow(projectURL)
+        // Show Welcome if no windows are open (check non-background projects)
+        let hasOpenWindows = registry.openProjects.keys.contains { url in
+            !registry.backgroundProjects.contains(url)
+        }
+        if !hasOpenWindows {
             showWelcome()
         }
     }
@@ -530,9 +534,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     /// Called when the user clicks the dock icon with no visible windows.
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
         if !flag {
-            if registry.openProjects.isEmpty {
-                // No open projects — always show Welcome, don't resurrect zombie windows
-                // (SwiftUI WindowGroup keeps closed project windows alive but hidden)
+            let hasOpenWindows = registry.openProjects.keys.contains { url in
+                !registry.backgroundProjects.contains(url)
+            }
+            if !hasOpenWindows {
+                // No open project windows — show Welcome
                 showWelcome()
             } else if let window = NSApp.windows.first(where: {
                 !$0.isVisible && !$0.title.isEmpty && $0.contentView != nil
@@ -551,15 +557,17 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
-        // Save per-project tab state so sessions can be restored from Welcome.
+        // Save sessions before terminating processes.
         for (_, pm) in registry.openProjects {
             pm.saveSession()
         }
+        registry.destroyAllProjects()
     }
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         isTerminating = true
 
+        // Check for unsaved files
         for (_, pm) in registry.openProjects {
             let dirty = pm.tabManager.dirtyTabs
             guard !dirty.isEmpty else { continue }
@@ -587,6 +595,23 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 return .terminateCancel
             }
         }
+
+        // Check for active terminal processes
+        let hasActiveProcesses = registry.openProjects.values.contains { $0.terminal.hasActiveProcesses }
+        if hasActiveProcesses {
+            let alert = NSAlert()
+            alert.messageText = Strings.terminalActiveProcessWarningTitle
+            alert.informativeText = Strings.terminalActiveProcessWarningMessage
+            alert.addButton(withTitle: Strings.terminalActiveProcessWarningQuit)
+            alert.addButton(withTitle: Strings.dialogCancel)
+            alert.alertStyle = .warning
+
+            if alert.runModal() != .alertFirstButtonReturn {
+                isTerminating = false
+                return .terminateCancel
+            }
+        }
+
         return .terminateNow
     }
 }

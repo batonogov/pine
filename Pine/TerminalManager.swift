@@ -44,4 +44,23 @@ final class TerminalManager {
             activeTerminalID = terminalTabs.last?.id
         }
     }
+
+    // MARK: - Process management
+
+    /// Whether any terminal tab has a foreground child process running.
+    var hasActiveProcesses: Bool {
+        terminalTabs.contains { $0.hasForegroundProcess }
+    }
+
+    /// Terminal tabs that currently have a foreground child process.
+    var tabsWithForegroundProcesses: [TerminalTab] {
+        terminalTabs.filter { $0.hasForegroundProcess }
+    }
+
+    /// Terminates all terminal processes.
+    func terminateAll() {
+        for tab in terminalTabs {
+            tab.stop()
+        }
+    }
 }

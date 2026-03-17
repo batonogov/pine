@@ -3671,6 +3671,114 @@
         }
       }
     },
+    "terminal.activeProcessWarning.title" : {
+      "comment" : "Alert title when quitting with active terminal processes.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Active Terminal Processes"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Активные процессы в терминале"
+          }
+        }
+      }
+    },
+    "terminal.activeProcessWarning.message" : {
+      "comment" : "Alert message when quitting with active terminal processes.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Active terminal processes will be terminated. Quit anyway?"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Активные процессы в терминале будут завершены. Всё равно выйти?"
+          }
+        }
+      }
+    },
+    "terminal.activeProcessWarning.quit" : {
+      "comment" : "Button to confirm quitting despite active terminal processes.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Quit"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Выйти"
+          }
+        }
+      }
+    },
+    "terminal.tabCloseWarning.title" : {
+      "comment" : "Alert title when closing a terminal tab with an active process.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Active Process"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Активный процесс"
+          }
+        }
+      }
+    },
+    "terminal.tabCloseWarning.message" : {
+      "comment" : "Alert message when closing a terminal tab with an active process.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Terminal has an active process. Close anyway?"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "В терминале запущен активный процесс. Всё равно закрыть?"
+          }
+        }
+      }
+    },
+    "terminal.tabCloseWarning.close" : {
+      "comment" : "Button to confirm closing a terminal tab with an active process.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Close Terminal"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Закрыть терминал"
+          }
+        }
+      }
+    },
     "welcome.noRecent" : {
       "comment" : "Placeholder when no recent projects exist.",
       "extractionState" : "manual",

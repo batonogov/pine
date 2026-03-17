@@ -18,6 +18,13 @@ struct SessionState: Codable {
     /// Optional for backwards compatibility with sessions saved before this field existed.
     var previewModes: [String: String]?
 
+    // MARK: - Terminal state (optional for backwards compatibility)
+
+    var terminalTabCount: Int?
+    var activeTerminalIndex: Int?
+    var isTerminalVisible: Bool?
+    var isTerminalMaximized: Bool?
+
     // MARK: - UserDefaults keys
 
     /// Legacy single-project key (kept for migration from older versions).
@@ -52,13 +59,21 @@ struct SessionState: Codable {
         openFileURLs: [URL],
         activeFileURL: URL? = nil,
         previewModes: [String: String]? = nil,
+        terminalTabCount: Int? = nil,
+        activeTerminalIndex: Int? = nil,
+        isTerminalVisible: Bool? = nil,
+        isTerminalMaximized: Bool? = nil,
         defaults: UserDefaults = .standard
     ) {
         let state = SessionState(
             projectPath: projectURL.path,
             openFilePaths: openFileURLs.map(\.path),
             activeFilePath: activeFileURL?.path,
-            previewModes: previewModes
+            previewModes: previewModes,
+            terminalTabCount: terminalTabCount,
+            activeTerminalIndex: activeTerminalIndex,
+            isTerminalVisible: isTerminalVisible,
+            isTerminalMaximized: isTerminalMaximized
         )
         guard let data = try? JSONEncoder().encode(state) else { return }
         defaults.set(data, forKey: key(for: projectURL))

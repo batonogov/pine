@@ -46,7 +46,10 @@ struct WindowLifecycleTests {
 
         delegate.handleProjectWindowDisappear(projectURL: dir, registry: registry)
 
-        #expect(registry.openProjects.isEmpty)
+        // Project stays in openProjects as background
+        let canonical = dir.resolvingSymlinksInPath()
+        #expect(registry.backgroundProjects.contains(canonical))
+        #expect(!registry.isWindowOpen(dir))
         #expect(welcomeCalled)
     }
 
@@ -67,7 +70,10 @@ struct WindowLifecycleTests {
 
         delegate.handleProjectWindowDisappear(projectURL: dir1, registry: registry)
 
-        #expect(registry.openProjects.count == 1)
+        // One project still has open window, one is background
+        #expect(registry.openProjects.count == 2)
+        #expect(registry.isWindowOpen(dir2))
+        #expect(!registry.isWindowOpen(dir1))
         #expect(!welcomeCalled)
     }
 
@@ -84,11 +90,11 @@ struct WindowLifecycleTests {
         delegate.openNamedWindow = { _ in }
         delegate.handleProjectWindowDisappear(projectURL: dir, registry: registry)
 
-        // Project removed from registry
-        #expect(registry.openProjects.isEmpty)
+        // Project stays in openProjects as background
+        let canonical = dir.resolvingSymlinksInPath()
+        #expect(registry.backgroundProjects.contains(canonical))
 
         // But session was saved BEFORE close — it must be loadable
-        let canonical = dir.resolvingSymlinksInPath()
         let session = SessionState.load(for: canonical)
         #expect(session != nil)
         #expect(session?.existingFileURLs.count == 1)
