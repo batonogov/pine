@@ -26,22 +26,11 @@ final class ToggleCommentTests: PineUITestCase {
     func testToggleCommentMenuItemExists() throws {
         launchWithProject(projectURL)
 
-        // Click on the file in the sidebar to open it
-        let sidebar = app.outlines["sidebar"]
-        XCTAssertTrue(waitForExistence(sidebar, timeout: 10), "Sidebar should appear")
+        // Wait for the window to be ready
+        let window = app.windows.firstMatch
+        XCTAssertTrue(window.waitForExistence(timeout: 10), "Window should appear")
 
-        let fileRow = app.staticTexts["fileNode_hello.swift"]
-        guard waitForExistence(fileRow, timeout: 5) else {
-            XCTFail("hello.swift should appear in the sidebar")
-            return
-        }
-        fileRow.click()
-
-        // Verify the editor tab appeared
-        let tab = app.buttons["editorTab_hello.swift"].firstMatch
-        XCTAssertTrue(waitForExistence(tab, timeout: 5), "Editor tab should appear")
-
-        // Verify Edit menu has "Toggle Comment" item
+        // Verify Edit menu has "Toggle Comment" item — doesn't require a file to be open
         app.menuBars.menuBarItems["Edit"].click()
         let toggleCommentItem = app.menuItems["Toggle Comment"]
         XCTAssertTrue(toggleCommentItem.waitForExistence(timeout: 3), "Toggle Comment menu item should exist")
