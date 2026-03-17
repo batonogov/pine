@@ -9,6 +9,8 @@
 /* Begin PBXBuildFile section */
 		9FA7317B2F61803400E91711 /* SwiftTerm in Frameworks */ = {isa = PBXBuildFile; productRef = 9FA7317A2F61803400E91711 /* SwiftTerm */; };
 		CF0000030000000000000003 /* Markdown in Frameworks */ = {isa = PBXBuildFile; productRef = CF0000030000000000000002 /* Markdown */; };
+		CF0000040000000000000003 /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = CF0000040000000000000002 /* Sparkle */; };
+		CF0000050000000000000003 /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = CF0000050000000000000002 /* Sparkle */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -59,6 +61,7 @@
 			files = (
 				9FA7317B2F61803400E91711 /* SwiftTerm in Frameworks */,
 				CF0000030000000000000003 /* Markdown in Frameworks */,
+				CF0000040000000000000003 /* Sparkle in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -66,6 +69,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				CF0000050000000000000003 /* Sparkle in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -122,6 +126,7 @@
 			packageProductDependencies = (
 				9FA7317A2F61803400E91711 /* SwiftTerm */,
 				CF0000030000000000000002 /* Markdown */,
+				CF0000040000000000000002 /* Sparkle */,
 			);
 			productName = Pine;
 			productReference = 9FA1A7282F5EFA8100BDDA8C /* Pine.app */;
@@ -144,6 +149,9 @@
 				CF0000010000000000000006 /* PineTests */,
 			);
 			name = PineTests;
+			packageProductDependencies = (
+				CF0000050000000000000002 /* Sparkle */,
+			);
 			productName = PineTests;
 			productReference = CF0000010000000000000005 /* PineTests.xctest */;
 			productType = "com.apple.product-type.bundle.unit-test";
@@ -212,6 +220,7 @@
 			packageReferences = (
 				9FA731792F61803400E91711 /* XCRemoteSwiftPackageReference "SwiftTerm" */,
 				CF0000030000000000000001 /* XCRemoteSwiftPackageReference "swift-markdown" */,
+				CF0000040000000000000001 /* XCRemoteSwiftPackageReference "Sparkle" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 9FA1A7292F5EFA8100BDDA8C /* Products */;
@@ -639,6 +648,14 @@
 				minimumVersion = 0.5.0;
 			};
 		};
+		CF0000040000000000000001 /* XCRemoteSwiftPackageReference "Sparkle" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/sparkle-project/Sparkle.git";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 2.6.0;
+			};
+		};
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
@@ -651,6 +668,16 @@
 			isa = XCSwiftPackageProductDependency;
 			package = CF0000030000000000000001 /* XCRemoteSwiftPackageReference "swift-markdown" */;
 			productName = Markdown;
+		};
+		CF0000040000000000000002 /* Sparkle */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = CF0000040000000000000001 /* XCRemoteSwiftPackageReference "Sparkle" */;
+			productName = Sparkle;
+		};
+		CF0000050000000000000002 /* Sparkle */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = CF0000040000000000000001 /* XCRemoteSwiftPackageReference "Sparkle" */;
+			productName = Sparkle;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};
