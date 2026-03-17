@@ -70,6 +70,7 @@ struct ContentView: View {
                 isGitRepository: workspace.gitProvider.isGitRepository,
                 onSwitchBranch: switchBranch
             )
+            DocumentEditedTracker(isEdited: tabManager.hasUnsavedChanges)
         }
         .task {
             restoreSessionIfNeeded()
@@ -759,6 +760,25 @@ struct SidebarView: View {
         openWindow(value: url)
     }
 
+}
+
+// MARK: - Window document-edited dot tracker
+
+/// Sets `NSWindow.isDocumentEdited` based on whether any tab has unsaved changes.
+/// This shows/hides the dot in the window's close button (standard macOS behavior).
+private struct DocumentEditedTracker: NSViewRepresentable {
+    let isEdited: Bool
+
+    func makeNSView(context: Context) -> NSView {
+        NSView()
+    }
+
+    func updateNSView(_ nsView: NSView, context: Context) {
+        // Defer to next run loop so the window reference is available
+        DispatchQueue.main.async {
+            nsView.window?.isDocumentEdited = isEdited
+        }
+    }
 }
 
 // MARK: - Строка файла/папки в дереве

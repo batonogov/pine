@@ -173,21 +173,16 @@ final class TabManager {
         return true
     }
 
-    /// Duplicates the active tab with Finder-like naming ("file copy.ext",
-    /// "file copy 2.ext", etc.). Returns true on success.
+    /// Duplicates the active tab without UI. Throws on write failure.
     @discardableResult
-    func duplicateActiveTab() -> Bool {
+    func tryDuplicateActiveTab() throws -> Bool {
         guard let index = activeTabIndex else { return false }
         let tab = tabs[index]
         let originalURL = tab.url
 
         guard let duplicateURL = finderCopyURL(for: originalURL) else { return false }
 
-        do {
-            try tab.content.write(to: duplicateURL, atomically: true, encoding: .utf8)
-        } catch {
-            return false
-        }
+        try tab.content.write(to: duplicateURL, atomically: true, encoding: .utf8)
 
         var newTab = EditorTab(
             url: duplicateURL,
@@ -198,6 +193,22 @@ final class TabManager {
         tabs.insert(newTab, at: index + 1)
         activeTabID = newTab.id
         return true
+    }
+
+    /// Duplicates the active tab with Finder-like naming ("file copy.ext",
+    /// "file copy 2.ext", etc.). Returns true on success, shows alert on failure.
+    @discardableResult
+    func duplicateActiveTab() -> Bool {
+        do {
+            return try tryDuplicateActiveTab()
+        } catch {
+            let alert = NSAlert()
+            alert.messageText = Strings.fileOperationErrorTitle
+            alert.informativeText = error.localizedDescription
+            alert.alertStyle = .critical
+            alert.runModal()
+            return false
+        }
     }
 
     /// Generates a Finder-style copy URL: "file copy.ext", "file copy 2.ext", etc.
