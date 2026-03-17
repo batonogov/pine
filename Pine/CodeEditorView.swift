@@ -168,6 +168,9 @@ struct CodeEditorView: NSViewRepresentable {
     /// Called when cursor position or scroll offset changes, so the caller can persist them.
     var onStateChange: ((Int, CGFloat) -> Void)?
 
+    /// Пользовательский ключ атрибута для подсветки парных скобок.
+    static let bracketHighlightKey = NSAttributedString.Key("PineBracketHighlight")
+
     private let editorFont = NSFont.monospacedSystemFont(ofSize: 13, weight: .regular)
 
     func makeNSView(context: Context) -> NSView {
@@ -386,6 +389,10 @@ struct CodeEditorView: NSViewRepresentable {
             guard let textView = notification.object as? NSTextView else { return }
             parent.text = textView.string
 
+            // Подсветка синтаксиса сбросит backgroundColor —
+            // считаем bracket highlight невалидным
+            previousBracketRanges = []
+
             // Report state change
             reportStateChange()
 
@@ -435,6 +442,62 @@ struct CodeEditorView: NSViewRepresentable {
 
         func textViewDidChangeSelection(_ notification: Notification) {
             reportStateChange()
+            updateBracketHighlight()
+        }
+
+        /// Предыдущие позиции подсвеченных скобок (для очистки).
+        private var previousBracketRanges: [NSRange] = []
+
+        /// Цвет подсветки парных скобок.
+        private let bracketHighlightColor = NSColor(name: nil) { appearance in
+            if appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua {
+                return NSColor.white.withAlphaComponent(0.15)
+            } else {
+                return NSColor.black.withAlphaComponent(0.12)
+            }
+        }
+
+        private func updateBracketHighlight() {
+            guard let sv = scrollView,
+                  let textView = sv.documentView as? NSTextView,
+                  let storage = textView.textStorage else { return }
+
+            storage.beginEditing()
+
+            // Снимаем предыдущую подсветку
+            for range in previousBracketRanges where range.location + range.length <= storage.length {
+                storage.removeAttribute(CodeEditorView.bracketHighlightKey, range: range)
+                storage.removeAttribute(.backgroundColor, range: range)
+            }
+            previousBracketRanges = []
+
+            // Ищем новую пару скобок
+            let cursorRange = textView.selectedRange()
+            if cursorRange.length == 0 {
+                let skipRanges = SyntaxHighlighter.shared.commentAndStringRanges(
+                    in: textView.string,
+                    language: parent.language,
+                    fileName: parent.fileName
+                )
+
+                if let match = BracketMatcher.findMatch(
+                    in: textView.string,
+                    cursorPosition: cursorRange.location,
+                    skipRanges: skipRanges
+                ) {
+                    let openerRange = NSRange(location: match.opener, length: 1)
+                    let closerRange = NSRange(location: match.closer, length: 1)
+
+                    for range in [openerRange, closerRange] {
+                        storage.addAttribute(.backgroundColor, value: bracketHighlightColor, range: range)
+                        storage.addAttribute(CodeEditorView.bracketHighlightKey, value: true, range: range)
+                    }
+
+                    previousBracketRanges = [openerRange, closerRange]
+                }
+            }
+
+            storage.endEditing()
         }
 
         @objc func scrollViewDidScroll(_ notification: Notification) {
