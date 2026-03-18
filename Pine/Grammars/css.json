@@ -1,6 +1,7 @@
 {
     "name": "CSS",
     "extensions": ["css", "scss", "less"],
+    "blockComment": {"open": "/*", "close": "*/"},
     "rules": [
         {
             "pattern": "/\\*[\\s\\S]*?\\*/",

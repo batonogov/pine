@@ -1,6 +1,8 @@
 {
     "name": "SQL",
     "extensions": ["sql"],
+    "lineComment": "--",
+    "blockComment": {"open": "/*", "close": "*/"},
     "rules": [
         {
             "pattern": "--.*$",

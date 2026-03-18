@@ -1,6 +1,7 @@
 {
     "name": "HTML",
     "extensions": ["html", "htm", "xml", "svg"],
+    "blockComment": {"open": "<!--", "close": "-->"},
     "rules": [
         {
             "pattern": "<!--[\\s\\S]*?-->",

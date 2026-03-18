@@ -60,30 +60,37 @@ final class GutterTextView: NSTextView {
         needsDisplay = true
     }
 
-    // MARK: - Toggle line comment
+    // MARK: - Toggle comment
 
     /// File extension for looking up the line comment prefix.
     var fileExtension: String?
     /// File name for looking up the line comment prefix (e.g. "Dockerfile").
     var exactFileName: String?
 
-    func toggleLineComment() {
-        let comment: String?
-        if let name = exactFileName {
-            comment = SyntaxHighlighter.shared.lineComment(forFileName: name)
-        } else if let ext = fileExtension {
-            comment = SyntaxHighlighter.shared.lineComment(forExtension: ext)
-        } else {
-            comment = nil
-        }
-        guard let lineComment = comment else { return }
+    func toggleComment() {
+        guard let style = SyntaxHighlighter.shared.commentStyle(
+            forExtension: fileExtension,
+            fileName: exactFileName
+        ) else { return }
 
         let currentRange = selectedRange()
-        let result = CommentToggler.toggle(
-            text: string,
-            selectedRange: currentRange,
-            lineComment: lineComment
-        )
+        let result: CommentToggler.Result
+
+        switch style {
+        case .line(let prefix):
+            result = CommentToggler.toggle(
+                text: string,
+                selectedRange: currentRange,
+                lineComment: prefix
+            )
+        case .block(let open, let close):
+            result = CommentToggler.toggleBlock(
+                text: string,
+                selectedRange: currentRange,
+                open: open,
+                close: close
+            )
+        }
 
         // Apply via replaceCharacters to support undo
         let fullRange = NSRange(location: 0, length: (string as NSString).length)
@@ -652,7 +659,7 @@ struct CodeEditorView: NSViewRepresentable {
             guard let sv = scrollView,
                   let gutterView = sv.documentView as? GutterTextView,
                   gutterView.window?.isKeyWindow == true else { return }
-            gutterView.toggleLineComment()
+            gutterView.toggleComment()
         }
 
         private func reportStateChange() {
