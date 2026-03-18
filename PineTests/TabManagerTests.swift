@@ -847,4 +847,29 @@ struct TabManagerTests {
         #expect(manager.activeTab?.cursorPosition == 15)
         #expect(manager.activeTab?.scrollOffset == 200)
     }
+
+    @Test("openTabAndGoToLine opens tab and sets pending line")
+    func openTabAndGoToLine() {
+        let manager = TabManager()
+        let url = tempFileURL(content: "line 1\nline 2\nline 3")
+
+        manager.openTabAndGoToLine(url: url, line: 3)
+
+        #expect(manager.tabs.count == 1)
+        #expect(manager.activeTab?.url == url)
+        #expect(manager.pendingGoToLine == 3)
+    }
+
+    @Test("openTabAndGoToLine on already open tab sets pending line")
+    func openTabAndGoToLineExistingTab() {
+        let manager = TabManager()
+        let url = tempFileURL(content: "line 1\nline 2")
+
+        manager.openTab(url: url)
+        #expect(manager.pendingGoToLine == nil)
+
+        manager.openTabAndGoToLine(url: url, line: 2)
+        #expect(manager.tabs.count == 1)
+        #expect(manager.pendingGoToLine == 2)
+    }
 }

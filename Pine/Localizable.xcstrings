@@ -2288,6 +2288,24 @@
         }
       }
     },
+    "menu.findInProject" : {
+      "comment" : "Menu item for Find in Project (⌘⇧F).",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Find in Project"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Найти в проекте"
+          }
+        }
+      }
+    },
     "menu.git" : {
       "comment" : "Top-level Git menu title in the menu bar.",
       "extractionState" : "manual",
@@ -3716,6 +3734,78 @@
         }
       }
     },
+    "search.caseSensitive" : {
+      "comment" : "Tooltip for case-sensitive toggle in project search.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Case Sensitive"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "С учётом регистра"
+          }
+        }
+      }
+    },
+    "search.noResults" : {
+      "comment" : "Shown when project search finds no results.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No Results"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Нет результатов"
+          }
+        }
+      }
+    },
+    "search.placeholder" : {
+      "comment" : "Placeholder text in the project search field.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Search in Project"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Поиск в проекте"
+          }
+        }
+      }
+    },
+    "sidebar.files" : {
+      "comment" : "Sidebar mode picker label for file tree.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Files"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Файлы"
+          }
+        }
+      }
+    },
     "sidebar.filesTitle" : {
       "comment" : "Navigation title for the sidebar when no project is loaded.",
       "extractionState" : "manual",
@@ -4012,6 +4102,24 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "打开文件夹"
+          }
+        }
+      }
+    },
+    "sidebar.search" : {
+      "comment" : "Sidebar mode picker label for project search.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Search"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Поиск"
           }
         }
       }

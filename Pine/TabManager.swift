@@ -16,6 +16,8 @@ final class TabManager {
 
     var tabs: [EditorTab] = []
     var activeTabID: UUID?
+    /// Line number to scroll to after opening a tab (1-based). Consumed by the editor view.
+    var pendingGoToLine: Int?
 
     var activeTab: EditorTab? {
         guard let id = activeTabID else { return nil }
@@ -60,6 +62,12 @@ final class TabManager {
         }
 
         openTabInternal(url: url, syntaxHighlightingDisabled: false)
+    }
+
+    /// Opens a file and scrolls to a specific line.
+    func openTabAndGoToLine(url: URL, line: Int) {
+        openTab(url: url)
+        pendingGoToLine = line
     }
 
     /// Opens a file with an explicit syntax highlighting override (skips the large file alert).
