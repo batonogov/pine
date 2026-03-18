@@ -163,6 +163,38 @@ struct WorkspaceManagerTests {
         #expect(manager.gitProvider.ignoredPaths.contains(".env"))
     }
 
+    @Test("refreshFileTree updates file tree synchronously but does not run git synchronously")
+    func refreshFileTreeGitAsync() throws {
+        let dir = try makeGitRepo()
+        defer { cleanup(dir) }
+
+        let manager = WorkspaceManager()
+        manager.loadDirectory(url: dir)
+        manager.gitProvider.setup(repositoryURL: dir)
+        manager.refreshFileTree()
+
+        // Create an untracked file — git status should detect it after refresh
+        try "new".write(
+            to: dir.appendingPathComponent("untracked.txt"),
+            atomically: true,
+            encoding: .utf8
+        )
+
+        // refreshFileTree() should update the file tree synchronously
+        // but NOT update git status synchronously (that's the fix).
+        manager.refreshFileTree()
+
+        // File tree is updated immediately (synchronous)
+        let names = manager.rootNodes.map(\.url.lastPathComponent)
+        #expect(names.contains("untracked.txt"))
+        #expect(names.contains("README.md"))
+
+        // Git status has NOT been updated yet — refreshAsync() is still in-flight.
+        // The untracked file should NOT appear in fileStatuses immediately,
+        // proving that git refresh is no longer synchronous.
+        #expect(manager.gitProvider.fileStatuses["untracked.txt"] == nil)
+    }
+
     @discardableResult
     private func runShell(_ command: String, at dir: URL) throws -> String {
         let process = Process()
@@ -183,6 +215,21 @@ struct WorkspaceManagerTests {
                           userInfo: [NSLocalizedDescriptionKey: stderr])
         }
         return String(data: outData, encoding: .utf8) ?? ""
+    }
+
+    private func makeGitRepo() throws -> URL {
+        let dir = try makeTempDirectory()
+        try runShell("git init", at: dir)
+        try runShell("git config user.email 'test@test.com'", at: dir)
+        try runShell("git config user.name 'Test'", at: dir)
+        try "initial".write(
+            to: dir.appendingPathComponent("README.md"),
+            atomically: true,
+            encoding: .utf8
+        )
+        try runShell("git add .", at: dir)
+        try runShell("git -c commit.gpgsign=false commit -m 'initial'", at: dir)
+        return dir
     }
 
     @Test("loadDirectory twice quickly uses latest directory")
