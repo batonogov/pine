@@ -175,19 +175,25 @@ jobs:
           </rss>
           APPCAST_EOF
 
+      - name: Rename DMG with version
+        run: |
+          VERSION=${{ steps.version.outputs.VERSION }}
+          mv "$RUNNER_TEMP/Pine.dmg" "$RUNNER_TEMP/Pine-${VERSION}.dmg"
+
       - name: Upload DMG to GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          VERSION=${{ steps.version.outputs.VERSION }}
           if gh release view "$GITHUB_REF_NAME" > /dev/null 2>&1; then
             gh release upload "$GITHUB_REF_NAME" \
-              "$RUNNER_TEMP/Pine.dmg#Pine-${{ steps.version.outputs.VERSION }}.dmg" \
-              "$RUNNER_TEMP/appcast.xml#appcast.xml"
+              "$RUNNER_TEMP/Pine-${VERSION}.dmg" \
+              "$RUNNER_TEMP/appcast.xml"
           else
             gh release create "$GITHUB_REF_NAME" \
-              "$RUNNER_TEMP/Pine.dmg#Pine-${{ steps.version.outputs.VERSION }}.dmg" \
-              "$RUNNER_TEMP/appcast.xml#appcast.xml" \
-              --title "Pine ${{ steps.version.outputs.VERSION }}" \
+              "$RUNNER_TEMP/Pine-${VERSION}.dmg" \
+              "$RUNNER_TEMP/appcast.xml" \
+              --title "Pine ${VERSION}" \
               --generate-notes
           fi
 
@@ -196,7 +202,7 @@ jobs:
           TAP_GITHUB_TOKEN: ${{ secrets.TAP_GITHUB_TOKEN }}
         run: |
           VERSION=${{ steps.version.outputs.VERSION }}
-          SHA256=$(shasum -a 256 "$RUNNER_TEMP/Pine.dmg" | awk '{print $1}')
+          SHA256=$(shasum -a 256 "$RUNNER_TEMP/Pine-${VERSION}.dmg" | awk '{print $1}')
 
           git clone https://x-access-token:${TAP_GITHUB_TOKEN}@github.com/batonogov/homebrew-tap.git $RUNNER_TEMP/homebrew-tap
           cd $RUNNER_TEMP/homebrew-tap
