@@ -75,8 +75,7 @@ final class GitStatusProvider {
     func refresh() {
         guard isGitRepository, let url = repositoryURL else { return }
         refreshBranch(at: url)
-        refreshFileStatuses(at: url)
-        refreshIgnoredPaths(at: url)
+        refreshFileStatusesAndIgnored(at: url)
         refreshBranches(at: url)
     }
 
@@ -89,19 +88,18 @@ final class GitStatusProvider {
 
     func isIgnored(at url: URL) -> Bool {
         guard let path = relativePath(for: url) else { return false }
-        if ignoredPaths.contains(path) { return true }
-        // Check if any parent directory is ignored
-        let prefix = path.hasSuffix("/") ? path : path + "/"
-        return ignoredPaths.contains(where: { prefix.hasPrefix($0.hasSuffix("/") ? $0 : $0 + "/") })
+        return isPathIgnored(path)
     }
 
-    func isDirectoryIgnored(at url: URL) -> Bool {
-        guard let dirPath = relativePath(for: url) else { return false }
-        let prefix = dirPath.hasSuffix("/") ? dirPath : dirPath + "/"
-        // Directory itself is in the ignored set
-        if ignoredPaths.contains(dirPath) || ignoredPaths.contains(prefix) { return true }
-        // A parent directory is ignored
-        return ignoredPaths.contains(where: { prefix.hasPrefix($0.hasSuffix("/") ? $0 : $0 + "/") })
+    private func isPathIgnored(_ path: String) -> Bool {
+        if ignoredPaths.contains(path) { return true }
+        // Walk up parent directories — O(depth) instead of O(ignoredPaths.count)
+        var components = path.components(separatedBy: "/")
+        while components.count > 1 {
+            components.removeLast()
+            if ignoredPaths.contains(components.joined(separator: "/")) { return true }
+        }
+        return false
     }
 
     func statusForDirectory(at url: URL) -> GitFileStatus? {
@@ -173,10 +171,11 @@ final class GitStatusProvider {
         }
     }
 
-    private func refreshFileStatuses(at url: URL) {
-        let result = runGit(["status", "--porcelain"], at: url)
+    private func refreshFileStatusesAndIgnored(at url: URL) {
+        let result = runGit(["status", "--ignored", "--porcelain"], at: url)
         guard result.exitCode == 0 else { return }
         fileStatuses = Self.parseStatusOutput(result.output)
+        ignoredPaths = Self.parseIgnoredOutput(result.output)
     }
 
     static func parseStatusOutput(_ output: String) -> [String: GitFileStatus] {
@@ -222,12 +221,6 @@ final class GitStatusProvider {
         }
 
         return statuses
-    }
-
-    private func refreshIgnoredPaths(at url: URL) {
-        let result = runGit(["status", "--ignored", "--porcelain"], at: url)
-        guard result.exitCode == 0 else { return }
-        ignoredPaths = Self.parseIgnoredOutput(result.output)
     }
 
     static func parseIgnoredOutput(_ output: String) -> Set<String> {
