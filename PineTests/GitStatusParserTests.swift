@@ -92,6 +92,18 @@ struct GitStatusParserTests {
         #expect(statuses.isEmpty)
     }
 
+    @Test func parsesUntrackedDirectory() {
+        let output = "?? newdir/\n"
+        let statuses = GitStatusProvider.parseStatusOutput(output)
+        #expect(statuses["newdir/"] == .untracked)
+    }
+
+    @Test func parsesUntrackedDirectoryWithSpaces() {
+        let output = "?? Pine copy/\n"
+        let statuses = GitStatusProvider.parseStatusOutput(output)
+        #expect(statuses["Pine copy/"] == .untracked)
+    }
+
     // MARK: - statusForDirectory
 
     @Test func directoryStatusShowsConflictOverOthers() {

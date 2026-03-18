@@ -276,6 +276,51 @@ struct GitStatusProviderTests {
         #expect(status == .untracked)
     }
 
+    @Test("statusForFile returns untracked for file inside untracked directory")
+    func statusForFileInsideUntrackedDir() throws {
+        let dir = try makeGitRepo()
+        defer { cleanup(dir) }
+
+        let subdir = dir.appendingPathComponent("newdir")
+        try FileManager.default.createDirectory(at: subdir, withIntermediateDirectories: true)
+        try "code".write(
+            to: subdir.appendingPathComponent("file.swift"),
+            atomically: true,
+            encoding: .utf8
+        )
+
+        let provider = GitStatusProvider()
+        provider.setup(repositoryURL: dir)
+
+        // git status --porcelain reports "?? newdir/" (single entry),
+        // so the file inside should inherit untracked status.
+        let fileStatus = provider.statusForFile(at: subdir.appendingPathComponent("file.swift"))
+        #expect(fileStatus == .untracked)
+    }
+
+    @Test("statusForDirectory returns untracked for subdirectory inside untracked directory")
+    func statusForSubdirInsideUntrackedDir() throws {
+        let dir = try makeGitRepo()
+        defer { cleanup(dir) }
+
+        let subdir = dir.appendingPathComponent("newdir")
+        let nested = subdir.appendingPathComponent("nested")
+        try FileManager.default.createDirectory(at: nested, withIntermediateDirectories: true)
+        try "code".write(
+            to: nested.appendingPathComponent("file.swift"),
+            atomically: true,
+            encoding: .utf8
+        )
+
+        let provider = GitStatusProvider()
+        provider.setup(repositoryURL: dir)
+
+        // git status --porcelain reports "?? newdir/" (single entry),
+        // so nested subdirectory should also be untracked.
+        let nestedStatus = provider.statusForDirectory(at: nested)
+        #expect(nestedStatus == .untracked)
+    }
+
     // MARK: - diffForFile
 
     @Test("diffForFile returns diffs for modified file")

@@ -80,8 +80,14 @@ final class GitStatusProvider {
     // MARK: - Status Queries
 
     func statusForFile(at url: URL) -> GitFileStatus? {
-        let relativePath = relativePath(for: url)
-        return relativePath.flatMap { fileStatuses[$0] }
+        guard let path = relativePath(for: url) else { return nil }
+        if let status = fileStatuses[path] { return status }
+        // git status --porcelain reports untracked directories as a single
+        // entry with a trailing slash (e.g. "?? newdir/") without listing
+        // individual files inside. Check if this file lives inside such
+        // a directory so it inherits the untracked status.
+        if isInsideUntrackedDirectory(path) { return .untracked }
+        return nil
     }
 
     func statusForDirectory(at url: URL) -> GitFileStatus? {
@@ -108,6 +114,9 @@ final class GitStatusProvider {
         if hasModified { return .modified }
         if hasStaged { return .staged }
         if hasUntracked { return .untracked }
+        // This directory may itself be inside a wholly untracked parent
+        // directory (git reports only the top-level entry "?? parent/").
+        if isInsideUntrackedDirectory(prefix) { return .untracked }
         return nil
     }
 
@@ -137,6 +146,15 @@ final class GitStatusProvider {
     }
 
     // MARK: - Private Helpers
+
+    /// Returns true when `path` falls inside a directory that git reports as
+    /// wholly untracked (i.e. there is a "?? dir/" entry in `fileStatuses`).
+    private func isInsideUntrackedDirectory(_ path: String) -> Bool {
+        for (key, status) in fileStatuses where status == .untracked && key.hasSuffix("/") {
+            if path.hasPrefix(key) { return true }
+        }
+        return false
+    }
 
     private func relativePath(for url: URL) -> String? {
         guard let rootPath = gitRootPath else { return nil }
