@@ -1,0 +1,53 @@
+{
+    "name": "Java",
+    "extensions": ["java"],
+    "lineComment": "//",
+    "blockComment": {"open": "/*", "close": "*/"},
+    "rules": [
+        {
+            "pattern": "//.*$",
+            "scope": "comment",
+            "options": ["anchorsMatchLines"]
+        },
+        {
+            "pattern": "/\\*[\\s\\S]*?\\*/",
+            "scope": "comment"
+        },
+        {
+            "pattern": "\"(?:[^\"\\\\]|\\\\.)*\"",
+            "scope": "string"
+        },
+        {
+            "pattern": "'(?:[^'\\\\]|\\\\.)*'",
+            "scope": "string"
+        },
+        {
+            "pattern": "\\b(abstract|assert|break|case|catch|class|const|continue|default|do|else|enum|extends|final|finally|for|goto|if|implements|import|instanceof|interface|native|new|package|private|protected|public|return|static|strictfp|super|switch|synchronized|this|throw|throws|transient|try|volatile|while|void|true|false|null)\\b",
+            "scope": "keyword"
+        },
+        {
+            "pattern": "\\b(boolean|byte|char|double|float|int|long|short|var|String|Integer|Long|Double|Float|Boolean|List|Map|Set|Array|Object|Class|Exception|Thread|System|Optional|Stream|Collections|Arrays)\\b",
+            "scope": "type"
+        },
+        {
+            "pattern": "@[a-zA-Z_][a-zA-Z0-9_.]*",
+            "scope": "attribute"
+        },
+        {
+            "pattern": "0x[0-9a-fA-F_]+[lL]?",
+            "scope": "number"
+        },
+        {
+            "pattern": "\\b\\d[\\d_]*\\.\\d[\\d_]*([eE][+-]?\\d[\\d_]*)?[fFdD]?\\b",
+            "scope": "number"
+        },
+        {
+            "pattern": "\\b\\d[\\d_]*[lLfFdD]?\\b",
+            "scope": "number"
+        },
+        {
+            "pattern": "\\b[a-zA-Z_][a-zA-Z0-9_]*(?=\\s*\\()",
+            "scope": "function"
+        }
+    ]
+}

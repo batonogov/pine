@@ -1,0 +1,57 @@
+{
+    "name": "Nix",
+    "extensions": ["nix"],
+    "lineComment": "#",
+    "blockComment": {"open": "/*", "close": "*/"},
+    "rules": [
+        {
+            "pattern": "#.*$",
+            "scope": "comment",
+            "options": ["anchorsMatchLines"]
+        },
+        {
+            "pattern": "/\\*[\\s\\S]*?\\*/",
+            "scope": "comment"
+        },
+        {
+            "pattern": "''(?:[^']|'[^'])*''",
+            "scope": "string"
+        },
+        {
+            "pattern": "\"(?:[^\"\\\\]|\\\\.)*\"",
+            "scope": "string"
+        },
+        {
+            "pattern": "\\$\\{[^}]+\\}",
+            "scope": "attribute"
+        },
+        {
+            "pattern": "\\b(if|then|else|let|in|with|rec|inherit|assert|or|import|builtins|true|false|null|throw|abort)\\b",
+            "scope": "keyword"
+        },
+        {
+            "pattern": "<[a-zA-Z_][a-zA-Z0-9_./-]*>",
+            "scope": "string"
+        },
+        {
+            "pattern": "(?<![a-zA-Z0-9_])/[a-zA-Z0-9_./-]+",
+            "scope": "string"
+        },
+        {
+            "pattern": "\\./[a-zA-Z0-9_./-]+",
+            "scope": "string"
+        },
+        {
+            "pattern": "\\.\\./[a-zA-Z0-9_./-]+",
+            "scope": "string"
+        },
+        {
+            "pattern": "\\b\\d+(\\.\\d+)?([eE][+-]?\\d+)?\\b",
+            "scope": "number"
+        },
+        {
+            "pattern": "\\b[a-zA-Z_][a-zA-Z0-9_'-]*(?=\\s*=)",
+            "scope": "function"
+        }
+    ]
+}

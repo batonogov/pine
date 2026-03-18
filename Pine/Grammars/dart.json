@@ -1,0 +1,65 @@
+{
+    "name": "Dart",
+    "extensions": ["dart"],
+    "lineComment": "//",
+    "blockComment": {"open": "/*", "close": "*/"},
+    "rules": [
+        {
+            "pattern": "//.*$",
+            "scope": "comment",
+            "options": ["anchorsMatchLines"]
+        },
+        {
+            "pattern": "/\\*[\\s\\S]*?\\*/",
+            "scope": "comment"
+        },
+        {
+            "pattern": "\"\"\"[\\s\\S]*?\"\"\"",
+            "scope": "string"
+        },
+        {
+            "pattern": "'''[\\s\\S]*?'''",
+            "scope": "string"
+        },
+        {
+            "pattern": "\"(?:[^\"\\\\]|\\\\.)*\"",
+            "scope": "string"
+        },
+        {
+            "pattern": "'(?:[^'\\\\]|\\\\.)*'",
+            "scope": "string"
+        },
+        {
+            "pattern": "\\$\\{[^}]+\\}",
+            "scope": "attribute"
+        },
+        {
+            "pattern": "\\$[a-zA-Z_][a-zA-Z0-9_]*",
+            "scope": "attribute"
+        },
+        {
+            "pattern": "@[a-zA-Z_][a-zA-Z0-9_.]*",
+            "scope": "attribute"
+        },
+        {
+            "pattern": "\\b(abstract|as|assert|async|await|break|case|catch|class|const|continue|covariant|default|deferred|do|dynamic|else|enum|export|extends|extension|external|factory|false|final|finally|for|Function|get|hide|if|implements|import|in|interface|is|late|library|mixin|new|null|on|operator|part|required|rethrow|return|set|show|static|super|switch|sync|this|throw|true|try|typedef|var|void|while|with|yield)\\b",
+            "scope": "keyword"
+        },
+        {
+            "pattern": "\\b(bool|double|dynamic|int|num|String|List|Map|Set|Future|Stream|Iterable|Object|Type|Symbol|Null|Never|Duration|DateTime|RegExp|Uri|BigInt)\\b",
+            "scope": "type"
+        },
+        {
+            "pattern": "\\b\\d+(\\.\\d+)?([eE][+-]?\\d+)?\\b",
+            "scope": "number"
+        },
+        {
+            "pattern": "0[xX][0-9a-fA-F]+",
+            "scope": "number"
+        },
+        {
+            "pattern": "\\b[a-zA-Z_][a-zA-Z0-9_]*(?=\\s*\\()",
+            "scope": "function"
+        }
+    ]
+}

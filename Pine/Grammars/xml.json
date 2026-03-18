@@ -1,0 +1,51 @@
+{
+    "name": "XML",
+    "extensions": ["xml", "svg", "xsl", "xslt", "xsd", "plist", "csproj", "fsproj", "vcxproj", "props", "targets"],
+    "blockComment": {"open": "<!--", "close": "-->"},
+    "rules": [
+        {
+            "pattern": "<!--[\\s\\S]*?-->",
+            "scope": "comment"
+        },
+        {
+            "pattern": "<!\\[CDATA\\[[\\s\\S]*?\\]\\]>",
+            "scope": "string"
+        },
+        {
+            "pattern": "\"[^\"]*\"",
+            "scope": "string"
+        },
+        {
+            "pattern": "'[^']*'",
+            "scope": "string"
+        },
+        {
+            "pattern": "<\\?[a-zA-Z][a-zA-Z0-9-]*",
+            "scope": "keyword"
+        },
+        {
+            "pattern": "\\?>",
+            "scope": "keyword"
+        },
+        {
+            "pattern": "</?[a-zA-Z][a-zA-Z0-9_:.-]*",
+            "scope": "keyword"
+        },
+        {
+            "pattern": "/?>",
+            "scope": "keyword"
+        },
+        {
+            "pattern": "\\b[a-zA-Z_][a-zA-Z0-9_.-]*:[a-zA-Z][a-zA-Z0-9_.-]*(?==)",
+            "scope": "type"
+        },
+        {
+            "pattern": "\\b[a-zA-Z_][a-zA-Z0-9_.-]*(?==)",
+            "scope": "attribute"
+        },
+        {
+            "pattern": "&[a-zA-Z][a-zA-Z0-9]*;|&#\\d+;|&#x[0-9a-fA-F]+;",
+            "scope": "number"
+        }
+    ]
+}

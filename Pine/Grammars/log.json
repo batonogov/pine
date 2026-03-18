@@ -1,0 +1,55 @@
+{
+    "name": "Log",
+    "extensions": ["log"],
+    "rules": [
+        {
+            "pattern": "\\d{4}-\\d{2}-\\d{2}[T ]\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?([+-]\\d{2}:?\\d{2}|Z)?",
+            "scope": "attribute"
+        },
+        {
+            "pattern": "\\b(ERROR|FATAL|CRITICAL)\\b",
+            "scope": "string"
+        },
+        {
+            "pattern": "\\b(WARN|WARNING)\\b",
+            "scope": "number"
+        },
+        {
+            "pattern": "\\bINFO\\b",
+            "scope": "keyword"
+        },
+        {
+            "pattern": "\\b(DEBUG|TRACE)\\b",
+            "scope": "comment"
+        },
+        {
+            "pattern": "\"(?:[^\"\\\\]|\\\\.)*\"",
+            "scope": "string"
+        },
+        {
+            "pattern": "'(?:[^'\\\\]|\\\\.)*'",
+            "scope": "string"
+        },
+        {
+            "pattern": "https?://[^\\s\"']+",
+            "scope": "attribute"
+        },
+        {
+            "pattern": "\\b\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}(:\\d+)?\\b",
+            "scope": "attribute"
+        },
+        {
+            "pattern": "(?:/[\\w.-]+)+(?::\\d+)?",
+            "scope": "function"
+        },
+        {
+            "pattern": "^\\s+at\\s+.*$",
+            "scope": "comment",
+            "options": ["anchorsMatchLines"]
+        },
+        {
+            "pattern": "\\b\\d+(\\.\\d+)?\\b",
+            "scope": "number"
+        }
+    ]
+}

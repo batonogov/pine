@@ -99,7 +99,7 @@ Pine is a minimal native macOS code editor built with SwiftUI + AppKit. Targets 
 - Editor tabs use an internal SwiftUI tab bar (`EditorTabBar`), not native macOS window tabs
 - Project windows use `WindowGroup(for: URL.self)` where URL = project directory; `ProjectRegistry` prevents duplicate windows for the same project
 - **Conventional Commits** — all commit messages must follow the format: `feat:`, `fix:`, `chore:`, `docs:`, `refactor:`, `perf:`, `test:`. Use `feat!:` or `BREAKING CHANGE:` footer for breaking changes
-- **Test coverage** — every new feature or bug fix must include unit tests (and UI tests where applicable). Aim for high coverage: test public API, edge cases, and error paths. Do not merge code without corresponding tests
+- **Test coverage** — every new feature or bug fix must include unit tests (and UI tests where applicable). Aim for comprehensive coverage: test public API, edge cases, error paths, boundary conditions, and integration between components. Cover the maximum number of cases — not just the happy path. Do not merge code without corresponding tests
 
 ## GitHub Issues
 

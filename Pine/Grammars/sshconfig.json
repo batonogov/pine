@@ -1,0 +1,34 @@
+{
+    "name": "SSH Config",
+    "extensions": ["sshconfig"],
+    "fileNames": ["ssh_config", "sshd_config"],
+    "lineComment": "#",
+    "rules": [
+        {
+            "pattern": "#.*$",
+            "scope": "comment",
+            "options": ["anchorsMatchLines"]
+        },
+        {
+            "pattern": "\"(?:[^\"\\\\]|\\\\.)*\"",
+            "scope": "string"
+        },
+        {
+            "pattern": "^\\s*(Host|HostName|User|Port|IdentityFile|IdentityAgent|ForwardAgent|ForwardX11|ProxyCommand|ProxyJump|Match|AddKeysToAgent|AddressFamily|BatchMode|BindAddress|CanonicalDomains|ChallengeResponseAuthentication|Ciphers|Compression|ConnectionAttempts|ConnectTimeout|ControlMaster|ControlPath|ControlPersist|DynamicForward|EnableSSHKeysign|EscapeChar|ExitOnForwardFailure|FingerprintHash|GatewayPorts|GlobalKnownHostsFile|GSSAPIAuthentication|HashKnownHosts|Include|IPQoS|KbdInteractiveAuthentication|KexAlgorithms|LocalCommand|LocalForward|LogLevel|MACs|NoHostAuthenticationForLocalhost|NumberOfPasswordPrompts|PasswordAuthentication|PermitLocalCommand|PKCS11Provider|PreferredAuthentications|Protocol|PubkeyAcceptedAlgorithms|PubkeyAuthentication|RekeyLimit|RemoteCommand|RemoteForward|RequestTTY|RevokedHostKeys|SendEnv|ServerAliveCountMax|ServerAliveInterval|SetEnv|StreamLocalBindMask|StreamLocalBindUnlink|StrictHostKeyChecking|TCPKeepAlive|Tunnel|TunnelDevice|UpdateHostKeys|UseKeychain|UserKnownHostsFile|VerifyHostKeyDNS|VisualHostKey|XAuthLocation)\\b",
+            "scope": "keyword",
+            "options": ["anchorsMatchLines"]
+        },
+        {
+            "pattern": "\\b(yes|no|ask|auto|any)\\b",
+            "scope": "keyword"
+        },
+        {
+            "pattern": "\\b\\d+\\b",
+            "scope": "number"
+        },
+        {
+            "pattern": "[*?]",
+            "scope": "attribute"
+        }
+    ]
+}

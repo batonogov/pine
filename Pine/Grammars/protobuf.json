@@ -1,0 +1,41 @@
+{
+    "name": "Protocol Buffers",
+    "extensions": ["proto"],
+    "lineComment": "//",
+    "blockComment": {"open": "/*", "close": "*/"},
+    "rules": [
+        {
+            "pattern": "//.*$",
+            "scope": "comment",
+            "options": ["anchorsMatchLines"]
+        },
+        {
+            "pattern": "/\\*[\\s\\S]*?\\*/",
+            "scope": "comment"
+        },
+        {
+            "pattern": "\"(?:[^\"\\\\]|\\\\.)*\"",
+            "scope": "string"
+        },
+        {
+            "pattern": "\\b(syntax|package|import|option|message|enum|service|rpc|returns|oneof|map|repeated|optional|required|reserved|extensions|extend|stream|weak|public|true|false)\\b",
+            "scope": "keyword"
+        },
+        {
+            "pattern": "\\b(double|float|int32|int64|uint32|uint64|sint32|sint64|fixed32|fixed64|sfixed32|sfixed64|bool|string|bytes)\\b",
+            "scope": "type"
+        },
+        {
+            "pattern": "=\\s*(\\d+)",
+            "scope": "number"
+        },
+        {
+            "pattern": "\\b\\d+(\\.\\d+)?([eE][+-]?\\d+)?\\b",
+            "scope": "number"
+        },
+        {
+            "pattern": "0x[0-9a-fA-F]+",
+            "scope": "number"
+        }
+    ]
+}
