@@ -27,6 +27,46 @@ struct WorkspaceManagerTests {
         try? FileManager.default.removeItem(at: url)
     }
 
+    @discardableResult
+    private func runShell(_ command: String, at dir: URL) throws -> String {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/bin/sh")
+        process.arguments = ["-c", command]
+        process.currentDirectoryURL = dir
+        let outPipe = Pipe()
+        let errPipe = Pipe()
+        process.standardOutput = outPipe
+        process.standardError = errPipe
+        try process.run()
+        process.waitUntilExit()
+        let outData = outPipe.fileHandleForReading.readDataToEndOfFile()
+        let errData = errPipe.fileHandleForReading.readDataToEndOfFile()
+        guard process.terminationStatus == 0 else {
+            let stderr = String(data: errData, encoding: .utf8) ?? ""
+            throw NSError(
+                domain: "ShellError",
+                code: Int(process.terminationStatus),
+                userInfo: [NSLocalizedDescriptionKey: "'\(command)' failed: \(stderr)"]
+            )
+        }
+        return String(data: outData, encoding: .utf8) ?? ""
+    }
+
+    private func makeGitRepo() throws -> URL {
+        let dir = try makeTempDirectory()
+        try runShell("git init", at: dir)
+        try runShell("git config user.email 'test@test.com'", at: dir)
+        try runShell("git config user.name 'Test'", at: dir)
+        try "initial".write(
+            to: dir.appendingPathComponent("README.md"),
+            atomically: true,
+            encoding: .utf8
+        )
+        try runShell("git add .", at: dir)
+        try runShell("git -c commit.gpgsign=false commit -m 'initial'", at: dir)
+        return dir
+    }
+
     @Test("Initial state has empty rootNodes and default project name")
     func initialState() {
         let manager = WorkspaceManager()
@@ -153,8 +193,6 @@ struct WorkspaceManagerTests {
 
         let manager = WorkspaceManager()
         manager.loadDirectory(url: dir)
-        // setup() runs in background via loadDirectoryContentsAsync;
-        // call it directly so the test doesn't need to await async dispatch.
         manager.gitProvider.setup(repositoryURL: dir)
         manager.refreshFileTree()
 
@@ -193,43 +231,6 @@ struct WorkspaceManagerTests {
         // The untracked file should NOT appear in fileStatuses immediately,
         // proving that git refresh is no longer synchronous.
         #expect(manager.gitProvider.fileStatuses["untracked.txt"] == nil)
-    }
-
-    @discardableResult
-    private func runShell(_ command: String, at dir: URL) throws -> String {
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/bin/sh")
-        process.arguments = ["-c", command]
-        process.currentDirectoryURL = dir
-        let outPipe = Pipe()
-        let errPipe = Pipe()
-        process.standardOutput = outPipe
-        process.standardError = errPipe
-        try process.run()
-        process.waitUntilExit()
-        let outData = outPipe.fileHandleForReading.readDataToEndOfFile()
-        let errData = errPipe.fileHandleForReading.readDataToEndOfFile()
-        guard process.terminationStatus == 0 else {
-            let stderr = String(data: errData, encoding: .utf8) ?? ""
-            throw NSError(domain: "ShellError", code: Int(process.terminationStatus),
-                          userInfo: [NSLocalizedDescriptionKey: stderr])
-        }
-        return String(data: outData, encoding: .utf8) ?? ""
-    }
-
-    private func makeGitRepo() throws -> URL {
-        let dir = try makeTempDirectory()
-        try runShell("git init", at: dir)
-        try runShell("git config user.email 'test@test.com'", at: dir)
-        try runShell("git config user.name 'Test'", at: dir)
-        try "initial".write(
-            to: dir.appendingPathComponent("README.md"),
-            atomically: true,
-            encoding: .utf8
-        )
-        try runShell("git add .", at: dir)
-        try runShell("git -c commit.gpgsign=false commit -m 'initial'", at: dir)
-        return dir
     }
 
     @Test("loadDirectory twice quickly uses latest directory")

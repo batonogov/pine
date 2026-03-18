@@ -82,7 +82,6 @@ final class DeleteTests: PineUITestCase {
         let sidebar = app.outlines["sidebar"]
         XCTAssertTrue(waitForExistence(sidebar, timeout: 10))
 
-        // Expand the folder first by clicking on it
         let folderNode = app.staticTexts["fileNode_subfolder"]
         XCTAssertTrue(waitForExistence(folderNode, timeout: 5))
 
