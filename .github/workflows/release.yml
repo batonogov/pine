@@ -146,6 +146,11 @@ jobs:
           SIGN_OUTPUT=$("$RUNNER_TEMP/sparkle/bin/sign_update" "$RUNNER_TEMP/Pine.dmg" --ed-key-file <(echo "$SPARKLE_PRIVATE_KEY"))
           echo "SPARKLE_SIGNATURE=$SIGN_OUTPUT" >> $GITHUB_ENV
 
+      - name: Generate release notes HTML
+        run: |
+          VERSION=${{ steps.version.outputs.VERSION }}
+          python3 .github/scripts/changelog_to_html.py "$VERSION" > "$RUNNER_TEMP/release-notes.html"
+
       - name: Generate appcast.xml
         run: |
           VERSION=${{ steps.version.outputs.VERSION }}
@@ -153,6 +158,8 @@ jobs:
           # Extract edSignature and length from sign_update output
           ED_SIGNATURE=$(echo "$SPARKLE_SIGNATURE" | sed -n 's/.*sparkle:edSignature="\([^"]*\)".*/\1/p')
           LENGTH=$(echo "$SPARKLE_SIGNATURE" | sed -n 's/.*length="\([^"]*\)".*/\1/p')
+
+          RELEASE_NOTES=$(cat "$RUNNER_TEMP/release-notes.html")
 
           cat > "$RUNNER_TEMP/appcast.xml" << APPCAST_EOF
           <?xml version="1.0" encoding="utf-8"?>
@@ -165,7 +172,7 @@ jobs:
                 <sparkle:version>${GITHUB_RUN_NUMBER}</sparkle:version>
                 <sparkle:shortVersionString>${VERSION}</sparkle:shortVersionString>
                 <sparkle:minimumSystemVersion>26.0</sparkle:minimumSystemVersion>
-                <sparkle:releaseNotesLink>https://github.com/batonogov/pine/releases/tag/v${VERSION}</sparkle:releaseNotesLink>
+                <description><![CDATA[${RELEASE_NOTES}]]></description>
                 <enclosure url="https://github.com/batonogov/pine/releases/download/v${VERSION}/Pine-${VERSION}.dmg"
                   sparkle:edSignature="${ED_SIGNATURE}"
                   length="${LENGTH}"
