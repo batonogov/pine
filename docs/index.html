@@ -454,6 +454,8 @@
             max-height: 90vh;
             border-radius: var(--radius-md);
             display: block;
+            object-fit: contain;
+            cursor: pointer;
         }
 
         .screenshot-gallery figcaption {
@@ -2075,9 +2077,7 @@
         });
 
         lightbox.addEventListener("click", function(e) {
-            if (e.target === lightbox) {
-                lightbox.close();
-            }
+            lightbox.close();
         });
     </script>
 </body>
