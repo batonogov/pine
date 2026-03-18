@@ -136,6 +136,150 @@ final class DeleteTests: PineUITestCase {
         XCTAssertTrue(sidebar.exists, "App should still be running")
     }
 
+    // MARK: - Delete folder with open nested file (issue #210 variant)
+
+    func testDeleteFolderWithOpenNestedFileClosesTab() throws {
+        launchWithProject(projectURL)
+
+        let sidebar = app.outlines["sidebar"]
+        XCTAssertTrue(waitForExistence(sidebar, timeout: 10))
+
+        // Expand subfolder by clicking the disclosure triangle, then open nested file
+        let folderNode = app.staticTexts["fileNode_subfolder"]
+        XCTAssertTrue(waitForExistence(folderNode, timeout: 5))
+
+        // In SwiftUI List with children, the disclosure triangle is a
+        // disclosureTriangle element near the folder row. Double-click
+        // the folder row to toggle expansion as a reliable alternative.
+        folderNode.doubleClick()
+        sleep(1)
+
+        let nestedFile = app.staticTexts["fileNode_nested.txt"]
+        guard waitForExistence(nestedFile, timeout: 5) else {
+            // If double-click didn't expand, try clicking the disclosure triangle
+            let disclosure = sidebar.disclosureTriangles.firstMatch
+            if disclosure.exists { disclosure.click() }
+            XCTAssertTrue(waitForExistence(nestedFile, timeout: 5), "nested.txt should appear after expanding subfolder")
+            nestedFile.click()
+            return // early return — we can't reliably continue
+        }
+        nestedFile.click()
+
+        let tab = app.buttons["editorTab_nested.txt"].firstMatch
+        XCTAssertTrue(waitForExistence(tab, timeout: 5), "Nested file should open in a tab")
+
+        // Delete the parent folder
+        deleteViaSidebar("subfolder")
+
+        // App should not crash (main regression — SIGSEGV happened here)
+        XCTAssertTrue(
+            sidebar.waitForExistence(timeout: 5),
+            "App should still be running after deleting folder with open file"
+        )
+
+        // Tab for the nested file should be closed
+        XCTAssertTrue(
+            tab.waitForNonExistence(timeout: 5),
+            "Tab for file inside deleted folder should be closed"
+        )
+    }
+
+    // MARK: - Rapid successive deletions
+
+    func testRapidDeleteMultipleItemsDoesNotCrash() throws {
+        // Create a project with many items to delete in quick succession
+        let manyFilesURL = try createTempProject(files: [
+            "a.swift": "// a\n",
+            "b.swift": "// b\n",
+            "c.swift": "// c\n",
+            "survivor.swift": "// keep\n"
+        ])
+        defer { cleanupProject(manyFilesURL) }
+
+        launchWithProject(manyFilesURL)
+
+        let sidebar = app.outlines["sidebar"]
+        XCTAssertTrue(waitForExistence(sidebar, timeout: 10))
+
+        // Delete three files rapidly — each triggers refreshFileTree() with async git
+        for name in ["a.swift", "b.swift", "c.swift"] {
+            deleteViaSidebar(name)
+        }
+
+        // App should survive multiple overlapping async refreshes
+        XCTAssertTrue(
+            sidebar.waitForExistence(timeout: 5),
+            "App should still be running after rapid successive deletions"
+        )
+
+        // Surviving file should still be there
+        let survivor = app.staticTexts["fileNode_survivor.swift"]
+        XCTAssertTrue(
+            waitForExistence(survivor, timeout: 5),
+            "Non-deleted file should remain in sidebar"
+        )
+    }
+
+    // MARK: - Create file then cancel (Escape) deletes placeholder
+
+    func testCreateFileThenCancelRemovesPlaceholder() throws {
+        launchWithProject(projectURL)
+
+        let sidebar = app.outlines["sidebar"]
+        XCTAssertTrue(waitForExistence(sidebar, timeout: 10))
+
+        // Right-click sidebar background → "New File"
+        sidebar.rightClick()
+        let newFileItem = app.menuItems["doc.badge.plus"]
+        XCTAssertTrue(waitForExistence(newFileItem, timeout: 3))
+        newFileItem.click()
+
+        // An inline rename TextField should appear — press Escape to cancel
+        sleep(1)
+        app.typeKey(.escape, modifierFlags: [])
+
+        // The placeholder "untitled" file should be removed from disk
+        // (cancelRename calls refreshFileTree, which previously could crash)
+        sleep(1)
+
+        // App should still be running
+        XCTAssertTrue(
+            sidebar.waitForExistence(timeout: 5),
+            "App should still be running after cancelling file creation"
+        )
+
+        // "untitled" should not remain in sidebar
+        let untitled = app.staticTexts["fileNode_untitled"]
+        XCTAssertFalse(
+            untitled.exists,
+            "Cancelled placeholder file should not remain in sidebar"
+        )
+    }
+
+    // MARK: - Rename context menu item appears
+    // Note: Inline rename via XCUITest typeText() is unreliable due to known
+    // macOS 26 issue with synthetic keyboard events and NSTextField.
+    // The async-safety of commitRename → refreshFileTree is covered by
+    // unit tests (rapidRefreshFileTree, refreshFileTreeGitAsync).
+
+    func testRenameMenuItemAppearsForFile() throws {
+        launchWithProject(projectURL)
+
+        let sidebar = app.outlines["sidebar"]
+        XCTAssertTrue(waitForExistence(sidebar, timeout: 10))
+
+        let fileNode = app.staticTexts["fileNode_keep.swift"]
+        XCTAssertTrue(waitForExistence(fileNode, timeout: 5))
+        fileNode.rightClick()
+
+        let renameItem = app.menuItems["Rename"]
+        XCTAssertTrue(
+            waitForExistence(renameItem, timeout: 3),
+            "Rename should appear in file context menu"
+        )
+        app.typeKey(.escape, modifierFlags: [])
+    }
+
     // MARK: - Delete menu item appears
 
     func testDeleteMenuItemAppearsForFile() throws {

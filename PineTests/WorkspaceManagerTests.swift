@@ -233,6 +233,55 @@ struct WorkspaceManagerTests {
         #expect(manager.gitProvider.fileStatuses["untracked.txt"] == nil)
     }
 
+    @Test("multiple rapid refreshFileTree calls do not crash")
+    func rapidRefreshFileTree() throws {
+        let dir = try makeGitRepo()
+        defer { cleanup(dir) }
+
+        let manager = WorkspaceManager()
+        manager.loadDirectory(url: dir)
+        manager.refreshFileTree()
+
+        // Simulate rapid user actions (create, rename, delete) that each
+        // trigger refreshFileTree(). Each spawns a Task with refreshAsync() —
+        // multiple overlapping async git processes should not crash.
+        for i in 0..<5 {
+            try "file\(i)".write(
+                to: dir.appendingPathComponent("file\(i).txt"),
+                atomically: true,
+                encoding: .utf8
+            )
+            manager.refreshFileTree()
+        }
+
+        // File tree should reflect the latest state
+        let names = manager.rootNodes.map(\.url.lastPathComponent)
+        for i in 0..<5 {
+            #expect(names.contains("file\(i).txt"))
+        }
+    }
+
+    @Test("refreshFileTree works on non-git directory without crash")
+    func refreshFileTreeNonGitDirectory() throws {
+        let dir = try makeTempDirectory()
+        defer { cleanup(dir) }
+
+        try "hello".write(
+            to: dir.appendingPathComponent("hello.txt"),
+            atomically: true,
+            encoding: .utf8
+        )
+
+        let manager = WorkspaceManager()
+        manager.loadDirectory(url: dir)
+        // refreshFileTree on non-git dir — refreshAsync() should bail out
+        // (guard isGitRepository) without crash
+        manager.refreshFileTree()
+
+        #expect(manager.rootNodes.count == 1)
+        #expect(manager.gitProvider.isGitRepository == false)
+    }
+
     @Test("loadDirectory twice quickly uses latest directory")
     func loadDirectoryRaceProtection() throws {
         let dir1 = try makeTempDirectory()
