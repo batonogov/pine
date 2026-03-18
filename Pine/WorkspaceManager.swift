@@ -113,14 +113,18 @@ final class WorkspaceManager {
     }
 
     /// Reload the file tree from disk (e.g. after creating/renaming/deleting files).
-    /// Runs synchronously on the main thread for immediate UI feedback
-    /// after explicit user actions (create/rename/delete).
+    /// File tree is updated synchronously for immediate UI feedback;
+    /// git status refresh runs asynchronously on a background queue
+    /// to avoid blocking the main thread (prevents SIGSEGV when SwiftUI
+    /// re-renders during Process.waitUntilExit — see issue #210).
     func refreshFileTree() {
         guard let url = rootURL else { return }
         loadGeneration += 1
         let root = FileNode(url: url, projectRoot: url)
         rootNodes = root.children ?? []
-        gitProvider.refresh()
+        // Run git refresh asynchronously — never block the main thread
+        // with synchronous Process.waitUntilExit() calls.
+        Task { await gitProvider.refreshAsync() }
         // Suppress watcher echoes — we just refreshed, so any watcher event
         // within the next second is redundant and could break inline editing.
         suppressWatcherUntil = Date().addingTimeInterval(1.0)

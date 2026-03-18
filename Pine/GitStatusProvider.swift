@@ -79,6 +79,30 @@ final class GitStatusProvider {
         refreshBranches(at: url)
     }
 
+    /// Runs git refresh on a background queue and updates properties on the main thread.
+    /// Safe to call from the main thread — does not block.
+    func refreshAsync() async {
+        guard isGitRepository, let url = repositoryURL else { return }
+        let rootPath = gitRootPath
+
+        let (branch, statuses, branchList) = await withCheckedContinuation { continuation in
+            DispatchQueue.global(qos: .userInitiated).async {
+                let bg = GitStatusProvider()
+                bg.repositoryURL = url
+                bg.isGitRepository = true
+                bg.gitRootPath = rootPath
+                bg.refresh()
+                continuation.resume(returning: (bg.currentBranch, bg.fileStatuses, bg.branches))
+            }
+        }
+
+        await MainActor.run {
+            self.currentBranch = branch
+            self.fileStatuses = statuses
+            self.branches = branchList
+        }
+    }
+
     // MARK: - Status Queries
 
     func statusForFile(at url: URL) -> GitFileStatus? {

@@ -463,6 +463,35 @@ struct GitStatusProviderTests {
         #expect(provider.fileStatuses.isEmpty)
     }
 
+    // MARK: - refreshAsync
+
+    @Test("refreshAsync updates fileStatuses asynchronously")
+    func refreshAsyncUpdatesStatuses() async throws {
+        let dir = try makeGitRepo()
+        defer { cleanup(dir) }
+
+        let provider = GitStatusProvider()
+        provider.setup(repositoryURL: dir)
+
+        // Create a new file after initial setup
+        try "new".write(
+            to: dir.appendingPathComponent("async-new.txt"),
+            atomically: true,
+            encoding: .utf8
+        )
+
+        // refreshAsync runs git on background queue — await completion
+        await provider.refreshAsync()
+        #expect(provider.fileStatuses["async-new.txt"] == .untracked)
+    }
+
+    @Test("refreshAsync does nothing without repository")
+    func refreshAsyncNoRepo() async {
+        let provider = GitStatusProvider()
+        await provider.refreshAsync() // Should not crash
+        #expect(provider.fileStatuses.isEmpty)
+    }
+
     // MARK: - hasUncommittedChanges
 
     @Test("hasUncommittedChanges is false for clean repo")
