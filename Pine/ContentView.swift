@@ -858,6 +858,13 @@ struct FileNodeRow: View {
             : provider.statusForFile(at: node.url)
     }
 
+    private var isGitIgnored: Bool {
+        let provider = workspace.gitProvider
+        return node.isDirectory
+            ? provider.isDirectoryIgnored(at: node.url)
+            : provider.isIgnored(at: node.url)
+    }
+
     private var iconName: String {
         node.isDirectory
             ? FileIconMapper.iconForFolder(node.name)
@@ -870,7 +877,8 @@ struct FileNodeRow: View {
                 inlineEditor
             } else {
                 Label(node.name, systemImage: iconName)
-                    .foregroundStyle(gitStatus?.color ?? .primary)
+                    .foregroundStyle(isGitIgnored ? .secondary : gitStatus?.color ?? .primary)
+                    .opacity(isGitIgnored ? 0.6 : 1.0)
             }
         }
         .tag(node)

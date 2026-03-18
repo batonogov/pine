@@ -152,4 +152,75 @@ struct GitStatusParserTests {
         // So we test the priority logic indirectly via fileStatuses
         #expect(provider.fileStatuses["src/file2.swift"] == .conflict)
     }
+
+    // MARK: - parseIgnoredOutput
+
+    @Test func parsesIgnoredFiles() {
+        let output = "!! build/\n!! .env\n!! node_modules/\n"
+        let ignored = GitStatusProvider.parseIgnoredOutput(output)
+        #expect(ignored.count == 3)
+        #expect(ignored.contains("build"))
+        #expect(ignored.contains(".env"))
+        #expect(ignored.contains("node_modules"))
+    }
+
+    @Test func parsesIgnoredMixedWithStatus() {
+        let output = """
+         M Sources/main.swift
+        ?? newfile.swift
+        !! .build/
+        !! .DS_Store
+        """
+        let ignored = GitStatusProvider.parseIgnoredOutput(output)
+        #expect(ignored.count == 2)
+        #expect(ignored.contains(".build"))
+        #expect(ignored.contains(".DS_Store"))
+    }
+
+    @Test func parsesEmptyIgnoredOutput() {
+        let ignored = GitStatusProvider.parseIgnoredOutput("")
+        #expect(ignored.isEmpty)
+    }
+
+    @Test func parsesIgnoredNestedPaths() {
+        let output = "!! vendor/cache/\n!! tmp/pids/\n"
+        let ignored = GitStatusProvider.parseIgnoredOutput(output)
+        #expect(ignored.contains("vendor/cache"))
+        #expect(ignored.contains("tmp/pids"))
+    }
+
+    // MARK: - isIgnored / isDirectoryIgnored
+
+    @Test func isIgnoredReturnsTrueForIgnoredFile() {
+        let provider = GitStatusProvider()
+        provider.gitRootPath = "/repo"
+        provider.ignoredPaths = [".env", "build"]
+
+        let envURL = URL(fileURLWithPath: "/repo/.env")
+        #expect(provider.isIgnored(at: envURL) == true)
+
+        let srcURL = URL(fileURLWithPath: "/repo/src/main.swift")
+        #expect(provider.isIgnored(at: srcURL) == false)
+    }
+
+    @Test func isIgnoredReturnsTrueForFileInIgnoredDirectory() {
+        let provider = GitStatusProvider()
+        provider.gitRootPath = "/repo"
+        provider.ignoredPaths = ["build"]
+
+        let fileURL = URL(fileURLWithPath: "/repo/build/output.o")
+        #expect(provider.isIgnored(at: fileURL) == true)
+    }
+
+    @Test func isDirectoryIgnoredReturnsTrueForIgnoredDir() {
+        let provider = GitStatusProvider()
+        provider.gitRootPath = "/repo"
+        provider.ignoredPaths = ["node_modules"]
+
+        let dirURL = URL(fileURLWithPath: "/repo/node_modules")
+        #expect(provider.isDirectoryIgnored(at: dirURL) == true)
+
+        let srcURL = URL(fileURLWithPath: "/repo/src")
+        #expect(provider.isDirectoryIgnored(at: srcURL) == false)
+    }
 }

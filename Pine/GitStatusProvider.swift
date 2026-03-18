@@ -45,6 +45,7 @@ struct GitLineDiff: Equatable {
 final class GitStatusProvider {
     var currentBranch: String = ""
     var fileStatuses: [String: GitFileStatus] = [:]
+    var ignoredPaths: Set<String> = []
     var isGitRepository: Bool = false
     var branches: [String] = []
 
@@ -66,6 +67,7 @@ final class GitStatusProvider {
         } else {
             currentBranch = ""
             fileStatuses = [:]
+            ignoredPaths = []
             branches = []
         }
     }
@@ -74,6 +76,7 @@ final class GitStatusProvider {
         guard isGitRepository, let url = repositoryURL else { return }
         refreshBranch(at: url)
         refreshFileStatuses(at: url)
+        refreshIgnoredPaths(at: url)
         refreshBranches(at: url)
     }
 
@@ -88,6 +91,23 @@ final class GitStatusProvider {
         // a directory so it inherits the untracked status.
         if isInsideUntrackedDirectory(path) { return .untracked }
         return nil
+    }
+
+    func isIgnored(at url: URL) -> Bool {
+        guard let path = relativePath(for: url) else { return false }
+        if ignoredPaths.contains(path) { return true }
+        // Check if any parent directory is ignored
+        let prefix = path.hasSuffix("/") ? path : path + "/"
+        return ignoredPaths.contains(where: { prefix.hasPrefix($0.hasSuffix("/") ? $0 : $0 + "/") })
+    }
+
+    func isDirectoryIgnored(at url: URL) -> Bool {
+        guard let dirPath = relativePath(for: url) else { return false }
+        let prefix = dirPath.hasSuffix("/") ? dirPath : dirPath + "/"
+        // Directory itself is in the ignored set
+        if ignoredPaths.contains(dirPath) || ignoredPaths.contains(prefix) { return true }
+        // A parent directory is ignored
+        return ignoredPaths.contains(where: { prefix.hasPrefix($0.hasSuffix("/") ? $0 : $0 + "/") })
     }
 
     func statusForDirectory(at url: URL) -> GitFileStatus? {
@@ -299,6 +319,24 @@ final class GitStatusProvider {
         }
 
         return statuses
+    }
+
+    private func refreshIgnoredPaths(at url: URL) {
+        let result = runGit(["status", "--ignored", "--porcelain"], at: url)
+        guard result.exitCode == 0 else { return }
+        ignoredPaths = Self.parseIgnoredOutput(result.output)
+    }
+
+    static func parseIgnoredOutput(_ output: String) -> Set<String> {
+        var paths: Set<String> = []
+        for line in output.components(separatedBy: "\n") {
+            guard line.hasPrefix("!! ") else { continue }
+            var path = String(line.dropFirst(3))
+            // Remove trailing slash for directories to normalize
+            if path.hasSuffix("/") { path = String(path.dropLast()) }
+            paths.insert(path)
+        }
+        return paths
     }
 
     private func refreshBranches(at url: URL) {
