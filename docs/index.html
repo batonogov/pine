@@ -426,6 +426,36 @@
             border-radius: var(--radius-md);
             border: 1px solid var(--line);
             box-shadow: 0 18px 48px rgba(0, 0, 0, 0.3);
+            cursor: pointer;
+            transition: transform 0.2s ease, box-shadow 0.2s ease;
+        }
+
+        .screenshot-gallery img:hover {
+            transform: scale(1.02);
+            box-shadow: 0 22px 56px rgba(0, 0, 0, 0.4);
+        }
+
+        .lightbox {
+            border: none;
+            background: transparent;
+            padding: 0;
+            max-width: 90vw;
+            max-height: 90vh;
+        }
+
+        .lightbox::backdrop {
+            background: rgba(0, 0, 0, 0.8);
+            backdrop-filter: blur(8px);
+            -webkit-backdrop-filter: blur(8px);
+        }
+
+        .lightbox img {
+            max-width: 90vw;
+            max-height: 90vh;
+            border-radius: var(--radius-md);
+            display: block;
+            object-fit: contain;
+            cursor: pointer;
         }
 
         .screenshot-gallery figcaption {
@@ -1110,6 +1140,10 @@
             <a href="https://github.com/batonogov/pine">github.com/batonogov/pine</a>
         </footer>
     </div>
+
+    <dialog class="lightbox" id="lightbox">
+        <img id="lightbox-img" src="" alt="">
+    </dialog>
 
     <script>
         var T = {
@@ -2028,6 +2062,22 @@
         sel.addEventListener("change", function() {
             currentLang = this.value;
             applyLang(currentLang);
+        });
+
+        // Lightbox for screenshots
+        var lightbox = document.getElementById("lightbox");
+        var lightboxImg = document.getElementById("lightbox-img");
+
+        document.querySelectorAll(".screenshot-gallery img").forEach(function(img) {
+            img.addEventListener("click", function() {
+                lightboxImg.src = this.src;
+                lightboxImg.alt = this.alt;
+                lightbox.showModal();
+            });
+        });
+
+        lightbox.addEventListener("click", function(e) {
+            lightbox.close();
         });
     </script>
 </body>
