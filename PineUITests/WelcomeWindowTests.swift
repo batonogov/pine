@@ -144,6 +144,58 @@ final class WelcomeWindowTests: PineUITestCase {
         XCTAssertTrue(welcomeGone, "Welcome window should close after opening a project")
     }
 
+    // MARK: - Recent project path shows abbreviated ~/...
+
+    func testRecentProjectShowsAbbreviatedPath() throws {
+        // Create project inside home directory so the path gets abbreviated
+        let homeDir = NSHomeDirectory()
+        let projectDir = URL(fileURLWithPath: homeDir)
+            .appendingPathComponent("PineUITest-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: projectDir, withIntermediateDirectories: true)
+        try "// hi\n".write(
+            to: projectDir.appendingPathComponent("hello.swift"),
+            atomically: true,
+            encoding: .utf8
+        )
+        projectURLs.append(projectDir)
+
+        launchWithProject(projectDir)
+
+        let sidebar = app.outlines["sidebar"]
+        XCTAssertTrue(waitForExistence(sidebar, timeout: 10), "Project should open")
+
+        app.terminate()
+
+        app = XCUIApplication()
+        app.launchArguments += [
+            "--reset-state",
+            "-AppleLanguages", "(en)",
+            "-AppleLocale", "en_US"
+        ]
+        app.launch()
+        app.activate()
+
+        let welcomeWindow = app.windows["welcome"]
+        XCTAssertTrue(waitForExistence(welcomeWindow, timeout: 10), "Welcome should appear")
+
+        let projectName = projectDir.lastPathComponent
+        let recentItem = app.descendants(matching: .any)[
+            "welcomeRecentProject_\(projectName)"
+        ].firstMatch
+        XCTAssertTrue(waitForExistence(recentItem, timeout: 5), "Recent project should appear")
+
+        // Check that the path is abbreviated: the full home directory should not appear
+        // in any static text, but a ~/ prefixed version should
+        let allTexts = welcomeWindow.staticTexts
+        for index in 0..<allTexts.count {
+            let val = (allTexts.element(boundBy: index).value as? String) ?? ""
+            XCTAssertFalse(
+                val.contains(homeDir),
+                "Path should not contain full home dir '\(homeDir)', got: '\(val)'"
+            )
+        }
+    }
+
     // MARK: - P0: Close project → Welcome reappears
 
     func testWelcomeReappearsAfterClosingProjectWindow() throws {

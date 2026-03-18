@@ -72,7 +72,7 @@ Pine is a minimal native macOS code editor built with SwiftUI + AppKit. Targets 
 - `FocusedProjectKey.swift` — FocusedValueKey for passing active ProjectManager to menu commands
 - `AccessibilityIdentifiers.swift` — Shared accessibility ID constants for UI testing
 - `Pine/TabManager.swift` — Editor tab lifecycle: open, close, save, saveAll, saveAs, duplicate, dirty tracking, external change detection
-- `PineTests/` — Unit tests: GitStatusParserTests, GitDiffParserTests, FileNodeTests, GrammarModelTests, TabManagerTests, WindowLifecycleTests
+- `PineTests/` — Unit tests: GitStatusParserTests, GitDiffParserTests, FileNodeTests, GrammarModelTests, TabManagerTests, WindowLifecycleTests, URLAbbreviatedPathTests
 - `PineUITests/` — XCUITest suite: WelcomeWindowTests, EditorWindowTests, TerminalTests, MultiWindowTests, BranchSwitcherTests
 
 ## Release & CI
