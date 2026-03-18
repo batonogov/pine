@@ -7,6 +7,13 @@
 
 import SwiftUI
 
+// MARK: - Sidebar mode
+
+enum SidebarMode: String, CaseIterable {
+    case files
+    case search
+}
+
 // MARK: - Главный ContentView
 
 struct ContentView: View {
@@ -23,6 +30,7 @@ struct ContentView: View {
     @State private var columnVisibility: NavigationSplitViewVisibility = .all
     @State private var lineDiffs: [GitLineDiff] = []
     @State private var didRestoreSession = false
+    @State private var sidebarMode: SidebarMode = .files
     @AppStorage("minimapVisible") private var isMinimapVisible = true
 
     private var activeTab: EditorTab? { tabManager.activeTab }
@@ -33,8 +41,27 @@ struct ContentView: View {
 
     var body: some View {
         NavigationSplitView(columnVisibility: $columnVisibility) {
-            SidebarView(workspace: workspace, selectedFile: $selectedNode)
-                .accessibilityIdentifier(AccessibilityID.sidebar)
+            VStack(spacing: 0) {
+                // Mode picker
+                Picker("", selection: $sidebarMode) {
+                    Image(systemName: "folder")
+                        .tag(SidebarMode.files)
+                    Image(systemName: "magnifyingglass")
+                        .tag(SidebarMode.search)
+                }
+                .pickerStyle(.segmented)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+                .accessibilityIdentifier(AccessibilityID.sidebarModePicker)
+
+                switch sidebarMode {
+                case .files:
+                    SidebarView(workspace: workspace, selectedFile: $selectedNode)
+                case .search:
+                    ProjectSearchView()
+                }
+            }
+            .accessibilityIdentifier(AccessibilityID.sidebar)
         } detail: {
             VStack(spacing: 0) {
                 if terminal.isTerminalVisible {
@@ -139,6 +166,10 @@ struct ContentView: View {
             guard controlActiveState == .key else { return }
             let conflicts = tabManager.checkExternalChanges()
             handleExternalConflicts(conflicts)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .showProjectSearch)) { _ in
+            sidebarMode = .search
+            columnVisibility = .all
         }
     }
 
@@ -407,6 +438,7 @@ struct ContentView: View {
 
     @ViewBuilder
     private func codeEditorView(for tab: EditorTab) -> some View {
+        let cursorPosition = consumePendingGoToLine(tab: tab)
         CodeEditorView(
             text: Binding(
                 get: { tab.content },
@@ -417,14 +449,31 @@ struct ContentView: View {
             lineDiffs: lineDiffs,
             isMinimapVisible: isMinimapVisible,
             syntaxHighlightingDisabled: tab.syntaxHighlightingDisabled,
-            initialCursorPosition: tab.cursorPosition,
-            initialScrollOffset: tab.scrollOffset,
+            initialCursorPosition: cursorPosition,
+            initialScrollOffset: cursorPosition != tab.cursorPosition ? 0 : tab.scrollOffset,
             onStateChange: { cursor, scroll in
                 tabManager.updateEditorState(cursorPosition: cursor, scrollOffset: scroll)
             },
             fontSize: FontSizeSettings.shared.fontSize
         )
         .accessibilityIdentifier(AccessibilityID.codeEditor)
+    }
+
+    /// Converts `pendingGoToLine` to a UTF-16 cursor offset and consumes it.
+    private func consumePendingGoToLine(tab: EditorTab) -> Int {
+        guard let line = tabManager.pendingGoToLine else {
+            return tab.cursorPosition
+        }
+        tabManager.pendingGoToLine = nil
+        let nsContent = tab.content as NSString
+        var currentLine = 1
+        var offset = 0
+        while currentLine < line && offset < nsContent.length {
+            let lineRange = nsContent.lineRange(for: NSRange(location: offset, length: 0))
+            offset = NSMaxRange(lineRange)
+            currentLine += 1
+        }
+        return min(offset, nsContent.length)
     }
 
     // MARK: - Область терминала

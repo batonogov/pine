@@ -104,12 +104,19 @@ struct PineApp: App {
                 }
                 .keyboardShortcut("t", modifiers: .command)
             }
-            // Edit menu: Toggle Comment
+            // Edit menu: Toggle Comment, Find in Project
             CommandGroup(after: .pasteboard) {
                 Button(Strings.menuToggleComment) {
                     NotificationCenter.default.post(name: .toggleComment, object: nil)
                 }
                 .keyboardShortcut("/", modifiers: .command)
+
+                Divider()
+
+                Button(Strings.menuFindInProject) {
+                    NotificationCenter.default.post(name: .showProjectSearch, object: nil)
+                }
+                .keyboardShortcut("f", modifiers: [.command, .shift])
             }
             // File menu: Save, Save All, Save As, Duplicate
             CommandGroup(replacing: .saveItem) {
@@ -739,4 +746,5 @@ extension Notification.Name {
     /// userInfo: ["url": URL]
     static let fileDeleted = Notification.Name("fileDeleted")
     static let toggleComment = Notification.Name("toggleComment")
+    static let showProjectSearch = Notification.Name("showProjectSearch")
 }
