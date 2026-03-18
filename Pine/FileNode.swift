@@ -18,6 +18,9 @@ final class FileNode: Identifiable, Hashable {
     /// Project root used for symlink boundary checks during loadChildren().
     private let projectRoot: URL?
 
+    /// Ignored paths passed at construction time, forwarded to loadChildren().
+    private let ignoredPaths: Set<String>?
+
     var children: [FileNode]?
 
     /// Для List(children:): nil = лист (файл), непустой массив = папка с содержимым.
@@ -38,12 +41,19 @@ final class FileNode: Identifiable, Hashable {
         self.init(url: url, context: context)
     }
 
+    /// Initializer with project root boundary, cycle protection, and gitignored path skipping.
+    convenience init(url: URL, projectRoot: URL, ignoredPaths: Set<String>) {
+        let context = LoadContext(projectRoot: projectRoot, ignoredPaths: ignoredPaths)
+        self.init(url: url, context: context)
+    }
+
     /// Internal designated initializer.
     private init(url: URL, context: LoadContext?) {
         self.id = url
         self.url = url
         self.name = url.lastPathComponent
         self.projectRoot = context.map { URL(fileURLWithPath: $0.rootRealPath) }
+        self.ignoredPaths = context?.ignoredPaths
 
         let resourceValues = try? url.resourceValues(forKeys: [.isSymbolicLinkKey])
         self.isSymlink = resourceValues?.isSymbolicLink ?? false
@@ -78,16 +88,38 @@ final class FileNode: Identifiable, Hashable {
     /// Names always hidden from the file tree.
     private static let hiddenNames: Set<String> = [".git", ".DS_Store"]
 
+    /// Returns true if the directory at `url` is gitignored based on its relative path from the project root.
+    private static func isIgnoredDirectory(_ url: URL, context: LoadContext) -> Bool {
+        guard !context.ignoredPaths.isEmpty else { return false }
+        let rootPath = context.rootRealPath
+        let prefix = rootPath.hasSuffix("/") ? rootPath : rootPath + "/"
+        let fullPath = url.resolvingSymlinksInPath().path
+        guard fullPath.hasPrefix(prefix) else { return false }
+        let relativePath = String(fullPath.dropFirst(prefix.count))
+        return context.ignoredPaths.contains(relativePath)
+    }
+
     private static func loadContents(of url: URL, context: LoadContext?) -> [FileNode] {
         do {
             let contents = try FileManager.default.contentsOfDirectory(
                 at: url,
-                includingPropertiesForKeys: [.isDirectoryKey],
+                includingPropertiesForKeys: [.isDirectoryKey, .isSymbolicLinkKey],
                 options: []
             )
 
             return contents
-                .filter { !hiddenNames.contains($0.lastPathComponent) }
+                .filter { childURL in
+                    let name = childURL.lastPathComponent
+                    if hiddenNames.contains(name) { return false }
+                    // Skip gitignored directories (but keep gitignored files — they show grey in sidebar)
+                    if let context {
+                        let isDir = (try? childURL.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory ?? false
+                        if isDir && isIgnoredDirectory(childURL, context: context) {
+                            return false
+                        }
+                    }
+                    return true
+                }
                 .map { FileNode(url: $0, context: context) }
                 .sorted { lhs, rhs in
                     if lhs.isDirectory == rhs.isDirectory {
@@ -102,7 +134,9 @@ final class FileNode: Identifiable, Hashable {
     }
 
     func loadChildren() {
-        let context = projectRoot.map { LoadContext(projectRoot: $0) }
+        let context = projectRoot.map {
+            LoadContext(projectRoot: $0, ignoredPaths: ignoredPaths ?? [])
+        }
         children = Self.loadContents(of: url, context: context)
     }
 
@@ -136,11 +170,13 @@ final class FileNode: Identifiable, Hashable {
 /// Tracks state during recursive file tree loading for cycle and boundary protection.
 private class LoadContext {
     let rootRealPath: String
+    let ignoredPaths: Set<String>
     var visitedRealPaths: Set<String>
 
-    init(projectRoot: URL) {
+    init(projectRoot: URL, ignoredPaths: Set<String> = []) {
         let realPath = projectRoot.resolvingSymlinksInPath().path
         self.rootRealPath = realPath
+        self.ignoredPaths = ignoredPaths
         self.visitedRealPaths = []
     }
 }

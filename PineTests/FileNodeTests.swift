@@ -151,4 +151,140 @@ struct FileNodeTests {
         let node2 = FileNode(url: url)
         #expect(node1 == node2)
     }
+
+    // MARK: - Gitignored directory filtering
+
+    @Test func fileNodeSkipsIgnoredDirectories() throws {
+        let tempDir = try makeTempDirectory()
+        defer { cleanup(tempDir) }
+
+        let nodeModules = tempDir.appendingPathComponent("node_modules")
+        try FileManager.default.createDirectory(at: nodeModules, withIntermediateDirectories: true)
+        FileManager.default.createFile(
+            atPath: nodeModules.appendingPathComponent("package.json").path, contents: nil
+        )
+        FileManager.default.createFile(
+            atPath: tempDir.appendingPathComponent("index.js").path, contents: nil
+        )
+
+        let node = FileNode(url: tempDir, projectRoot: tempDir, ignoredPaths: ["node_modules"])
+        let names = node.children?.map(\.name) ?? []
+        #expect(!names.contains("node_modules"))
+        #expect(names.contains("index.js"))
+    }
+
+    @Test func fileNodeKeepsNonIgnoredSiblings() throws {
+        let tempDir = try makeTempDirectory()
+        defer { cleanup(tempDir) }
+
+        let src = tempDir.appendingPathComponent("src")
+        try FileManager.default.createDirectory(at: src, withIntermediateDirectories: true)
+        let vendor = tempDir.appendingPathComponent("vendor")
+        try FileManager.default.createDirectory(at: vendor, withIntermediateDirectories: true)
+
+        let node = FileNode(url: tempDir, projectRoot: tempDir, ignoredPaths: ["vendor"])
+        let names = node.children?.map(\.name) ?? []
+        #expect(names.contains("src"))
+        #expect(!names.contains("vendor"))
+    }
+
+    @Test func fileNodeKeepsIgnoredFiles() throws {
+        let tempDir = try makeTempDirectory()
+        defer { cleanup(tempDir) }
+
+        // .env is a gitignored file (not a directory) — should remain visible
+        FileManager.default.createFile(
+            atPath: tempDir.appendingPathComponent(".env").path, contents: nil
+        )
+
+        let node = FileNode(url: tempDir, projectRoot: tempDir, ignoredPaths: [".env"])
+        let names = node.children?.map(\.name) ?? []
+        #expect(names.contains(".env"))
+    }
+
+    @Test func fileNodeEmptyIgnoredPathsDoesNotFilter() throws {
+        let tempDir = try makeTempDirectory()
+        defer { cleanup(tempDir) }
+
+        let src = tempDir.appendingPathComponent("src")
+        try FileManager.default.createDirectory(at: src, withIntermediateDirectories: true)
+        FileManager.default.createFile(
+            atPath: tempDir.appendingPathComponent("file.txt").path, contents: nil
+        )
+
+        // Empty ignoredPaths should not filter anything
+        let node = FileNode(url: tempDir, projectRoot: tempDir, ignoredPaths: [])
+        let names = node.children?.map(\.name) ?? []
+        #expect(names.contains("src"))
+        #expect(names.contains("file.txt"))
+    }
+
+    @Test func fileNodeSkipsMultipleIgnoredDirectories() throws {
+        let tempDir = try makeTempDirectory()
+        defer { cleanup(tempDir) }
+
+        let nodeModules = tempDir.appendingPathComponent("node_modules")
+        try FileManager.default.createDirectory(at: nodeModules, withIntermediateDirectories: true)
+        let build = tempDir.appendingPathComponent(".build")
+        try FileManager.default.createDirectory(at: build, withIntermediateDirectories: true)
+        let src = tempDir.appendingPathComponent("src")
+        try FileManager.default.createDirectory(at: src, withIntermediateDirectories: true)
+
+        let node = FileNode(url: tempDir, projectRoot: tempDir, ignoredPaths: ["node_modules", ".build"])
+        let names = node.children?.map(\.name) ?? []
+        #expect(!names.contains("node_modules"))
+        #expect(!names.contains(".build"))
+        #expect(names.contains("src"))
+    }
+
+    @Test func loadChildrenRespectsIgnoredPaths() throws {
+        let tempDir = try makeTempDirectory()
+        defer { cleanup(tempDir) }
+
+        let vendor = tempDir.appendingPathComponent("vendor")
+        try FileManager.default.createDirectory(at: vendor, withIntermediateDirectories: true)
+        FileManager.default.createFile(
+            atPath: tempDir.appendingPathComponent("main.swift").path, contents: nil
+        )
+
+        let node = FileNode(url: tempDir, projectRoot: tempDir, ignoredPaths: ["vendor"])
+        // Verify initial load skipped vendor
+        let initialNames = node.children?.map(\.name) ?? []
+        #expect(!initialNames.contains("vendor"))
+
+        // Add a new file and reload via loadChildren
+        FileManager.default.createFile(
+            atPath: tempDir.appendingPathComponent("new.swift").path, contents: nil
+        )
+        node.loadChildren()
+
+        let names = node.children?.map(\.name) ?? []
+        #expect(names.contains("main.swift"))
+        #expect(names.contains("new.swift"))
+        #expect(!names.contains("vendor")) // Still filtered after reload
+    }
+
+    @Test func fileNodeSkipsNestedIgnoredPaths() throws {
+        let tempDir = try makeTempDirectory()
+        defer { cleanup(tempDir) }
+
+        let src = tempDir.appendingPathComponent("src")
+        try FileManager.default.createDirectory(at: src, withIntermediateDirectories: true)
+        let vendor = src.appendingPathComponent("vendor")
+        try FileManager.default.createDirectory(at: vendor, withIntermediateDirectories: true)
+        FileManager.default.createFile(
+            atPath: vendor.appendingPathComponent("lib.js").path, contents: nil
+        )
+        FileManager.default.createFile(
+            atPath: src.appendingPathComponent("main.js").path, contents: nil
+        )
+
+        let node = FileNode(url: tempDir, projectRoot: tempDir, ignoredPaths: ["src/vendor"])
+        // src should exist, but src/vendor should be skipped
+        let srcNode = node.children?.first { $0.name == "src" }
+        #expect(srcNode != nil)
+        let srcNames = srcNode?.children?.map(\.name) ?? []
+        #expect(srcNames.contains("main.js"))
+        #expect(!srcNames.contains("vendor"))
+    }
 }

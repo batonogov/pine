@@ -95,11 +95,12 @@ final class WorkspaceManager {
         completion: (() -> Void)? = nil
     ) {
         DispatchQueue.global(qos: .userInitiated).async {
-            let root = FileNode(url: url, projectRoot: url)
-            let children = root.children ?? []
-
+            // Run git setup first so we know which paths are ignored
             let bgGit = GitStatusProvider()
             bgGit.setup(repositoryURL: url)
+
+            let root = FileNode(url: url, projectRoot: url, ignoredPaths: bgGit.ignoredPaths)
+            let children = root.children ?? []
 
             DispatchQueue.main.async { [weak self] in
                 guard let self, self.loadGeneration == generation else { return }
@@ -124,7 +125,7 @@ final class WorkspaceManager {
     func refreshFileTree() {
         guard let url = rootURL else { return }
         loadGeneration += 1
-        let root = FileNode(url: url, projectRoot: url)
+        let root = FileNode(url: url, projectRoot: url, ignoredPaths: gitProvider.ignoredPaths)
         rootNodes = root.children ?? []
         // Cancel any in-flight git refresh to avoid stale data overwriting newer results.
         gitRefreshTask?.cancel()
