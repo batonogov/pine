@@ -181,6 +181,24 @@ jobs:
           </rss>
           APPCAST_EOF
 
+      - name: Validate appcast.xml
+        run: |
+          VERSION=${{ steps.version.outputs.VERSION }}
+          DMG_FILENAME="Pine-${VERSION}.dmg"
+          EXPECTED_URL="https://github.com/batonogov/pine/releases/download/v${VERSION}/${DMG_FILENAME}"
+          ACTUAL_URL=$(sed -n 's/.*enclosure url="\([^"]*\)".*/\1/p' "$RUNNER_TEMP/appcast.xml" | tr -d ' ')
+          if [ "$ACTUAL_URL" != "$EXPECTED_URL" ]; then
+            echo "::error::Appcast DMG URL mismatch"
+            echo "  Expected: $EXPECTED_URL"
+            echo "  Actual:   $ACTUAL_URL"
+            exit 1
+          fi
+          if [ ! -f "$RUNNER_TEMP/$DMG_FILENAME" ]; then
+            echo "::error::DMG file not found: $DMG_FILENAME"
+            exit 1
+          fi
+          echo "Appcast URL and DMG file validated successfully"
+
       - name: Upload DMG to GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
