@@ -244,11 +244,18 @@ final class TabManager {
     }
 
     /// Duplicates the active tab without UI. Throws on write failure.
+    /// If `projectRoot` is provided, blocks duplication of files outside the project root.
     @discardableResult
-    func tryDuplicateActiveTab() throws -> Bool {
+    func tryDuplicateActiveTab(projectRoot: URL? = nil) throws -> Bool {
         guard let index = activeTabIndex else { return false }
         let tab = tabs[index]
         let originalURL = tab.url
+
+        if let root = projectRoot, !FileNode.isWithinProjectRoot(originalURL, projectRoot: root) {
+            throw CocoaError(.fileWriteNoPermission, userInfo: [
+                NSLocalizedDescriptionKey: Strings.operationOutsideProject
+            ])
+        }
 
         guard let duplicateURL = finderCopyURL(for: originalURL) else { return false }
 
@@ -267,10 +274,11 @@ final class TabManager {
 
     /// Duplicates the active tab with Finder-like naming ("file copy.ext",
     /// "file copy 2.ext", etc.). Returns true on success, shows alert on failure.
+    /// If `projectRoot` is provided, blocks duplication of files outside the project root.
     @discardableResult
-    func duplicateActiveTab() -> Bool {
+    func duplicateActiveTab(projectRoot: URL? = nil) -> Bool {
         do {
-            return try tryDuplicateActiveTab()
+            return try tryDuplicateActiveTab(projectRoot: projectRoot)
         } catch {
             let alert = NSAlert()
             alert.messageText = Strings.fileOperationErrorTitle

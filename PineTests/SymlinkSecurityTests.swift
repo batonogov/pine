@@ -127,6 +127,45 @@ struct SymlinkSecurityTests {
         #expect(ancestorNode?.children == nil || ancestorNode?.children?.isEmpty == true)
     }
 
+    @Test func mutualSymlinkCycleDoesNotCrash() throws {
+        let projectDir = try makeTempDirectory()
+        defer { cleanup(projectDir) }
+
+        // A -> B, B -> A
+        let dirA = projectDir.appendingPathComponent("a")
+        let dirB = projectDir.appendingPathComponent("b")
+        try FileManager.default.createSymbolicLink(at: dirA, withDestinationURL: dirB)
+        try FileManager.default.createSymbolicLink(at: dirB, withDestinationURL: dirA)
+
+        // Must not hang or crash
+        let root = FileNode(url: projectDir, projectRoot: projectDir)
+
+        let nodeA = root.children?.first { $0.name == "a" }
+        let nodeB = root.children?.first { $0.name == "b" }
+        #expect(nodeA != nil)
+        #expect(nodeB != nil)
+        #expect(nodeA?.isSymlink == true)
+        #expect(nodeB?.isSymlink == true)
+    }
+
+    @Test func danglingSymlinkDoesNotCrash() throws {
+        let projectDir = try makeTempDirectory()
+        defer { cleanup(projectDir) }
+
+        // Symlink to a path that does not exist
+        try FileManager.default.createSymbolicLink(
+            atPath: projectDir.appendingPathComponent("broken").path,
+            withDestinationPath: "/nonexistent/path/that/does/not/exist"
+        )
+
+        // Must not crash
+        let root = FileNode(url: projectDir, projectRoot: projectDir)
+
+        let brokenNode = root.children?.first { $0.name == "broken" }
+        #expect(brokenNode != nil)
+        #expect(brokenNode?.isSymlink == true)
+    }
+
     // MARK: - Valid symlinks within project are fine
 
     @Test func symlinkWithinProjectRootIsVisible() throws {
