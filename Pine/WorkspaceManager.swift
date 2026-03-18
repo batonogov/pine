@@ -65,6 +65,7 @@ final class WorkspaceManager {
         gitProvider.isGitRepository = false
         gitProvider.currentBranch = ""
         gitProvider.fileStatuses = [:]
+        gitProvider.ignoredPaths = []
         gitProvider.branches = []
 
         loadDirectoryContentsAsync(url: url, generation: generation) { [weak self] in
@@ -104,6 +105,7 @@ final class WorkspaceManager {
                 self.gitProvider.isGitRepository = bgGit.isGitRepository
                 self.gitProvider.currentBranch = bgGit.currentBranch
                 self.gitProvider.fileStatuses = bgGit.fileStatuses
+                self.gitProvider.ignoredPaths = bgGit.ignoredPaths
                 self.gitProvider.branches = bgGit.branches
                 completion?()
             }
