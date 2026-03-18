@@ -4,10 +4,6 @@
 
 ![Pine Editor](assets/screenshot-editor.png)
 
-![Pine Welcome](assets/screenshot-welcome.png)
-
-![Pine Terminal](assets/screenshot-terminal.png)
-
 Pine is a code editor for macOS purists. Native SwiftUI + AppKit, Liquid Glass on macOS 26, zero Electron. One window, one project — just a real Mac app.
 
 ## Why Pine
