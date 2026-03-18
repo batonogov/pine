@@ -2,6 +2,7 @@
     "name": "Kotlin",
     "extensions": ["kt", "kts"],
     "lineComment": "//",
+    "blockComment": {"open": "/*", "close": "*/"},
     "rules": [
         {
             "pattern": "//.*$",

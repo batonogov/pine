@@ -2,6 +2,7 @@
     "name": "Protocol Buffers",
     "extensions": ["proto"],
     "lineComment": "//",
+    "blockComment": {"open": "/*", "close": "*/"},
     "rules": [
         {
             "pattern": "//.*$",

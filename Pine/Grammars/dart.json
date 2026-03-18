@@ -2,6 +2,7 @@
     "name": "Dart",
     "extensions": ["dart"],
     "lineComment": "//",
+    "blockComment": {"open": "/*", "close": "*/"},
     "rules": [
         {
             "pattern": "//.*$",

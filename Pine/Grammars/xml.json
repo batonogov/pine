@@ -1,6 +1,7 @@
 {
     "name": "XML",
     "extensions": ["xml", "svg", "xsl", "xslt", "xsd", "plist", "csproj", "fsproj", "vcxproj", "props", "targets"],
+    "blockComment": {"open": "<!--", "close": "-->"},
     "rules": [
         {
             "pattern": "<!--[\\s\\S]*?-->",

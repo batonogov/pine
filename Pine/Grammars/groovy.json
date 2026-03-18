@@ -3,6 +3,7 @@
     "extensions": ["groovy", "gradle", "gvy", "gy", "gsh"],
     "fileNames": ["Jenkinsfile"],
     "lineComment": "//",
+    "blockComment": {"open": "/*", "close": "*/"},
     "rules": [
         {
             "pattern": "//.*$",

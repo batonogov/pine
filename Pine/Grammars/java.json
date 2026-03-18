@@ -2,6 +2,7 @@
     "name": "Java",
     "extensions": ["java"],
     "lineComment": "//",
+    "blockComment": {"open": "/*", "close": "*/"},
     "rules": [
         {
             "pattern": "//.*$",

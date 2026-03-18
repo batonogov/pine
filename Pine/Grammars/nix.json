@@ -2,6 +2,7 @@
     "name": "Nix",
     "extensions": ["nix"],
     "lineComment": "#",
+    "blockComment": {"open": "/*", "close": "*/"},
     "rules": [
         {
             "pattern": "#.*$",

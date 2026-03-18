@@ -2,6 +2,7 @@
     "name": "HCL",
     "extensions": ["hcl", "tf", "tfvars"],
     "lineComment": "#",
+    "blockComment": {"open": "/*", "close": "*/"},
     "rules": [
         {
             "pattern": "#.*$",
