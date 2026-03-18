@@ -127,6 +127,11 @@ jobs:
         id: version
         run: echo "VERSION=${GITHUB_REF_NAME#v}" >> $GITHUB_OUTPUT
 
+      - name: Rename DMG with version
+        run: |
+          VERSION=${{ steps.version.outputs.VERSION }}
+          mv "$RUNNER_TEMP/Pine.dmg" "$RUNNER_TEMP/Pine-${VERSION}.dmg"
+
       - name: Download Sparkle tools
         run: |
           SPARKLE_VERSION="2.9.0"
@@ -143,7 +148,8 @@ jobs:
             echo "::error::SPARKLE_PRIVATE_KEY secret is not set"
             exit 1
           fi
-          SIGN_OUTPUT=$("$RUNNER_TEMP/sparkle/bin/sign_update" "$RUNNER_TEMP/Pine.dmg" --ed-key-file <(echo "$SPARKLE_PRIVATE_KEY"))
+          VERSION=${{ steps.version.outputs.VERSION }}
+          SIGN_OUTPUT=$("$RUNNER_TEMP/sparkle/bin/sign_update" "$RUNNER_TEMP/Pine-${VERSION}.dmg" --ed-key-file <(echo "$SPARKLE_PRIVATE_KEY"))
           echo "SPARKLE_SIGNATURE=$SIGN_OUTPUT" >> $GITHUB_ENV
 
       - name: Generate appcast.xml
@@ -174,11 +180,6 @@ jobs:
             </channel>
           </rss>
           APPCAST_EOF
-
-      - name: Rename DMG with version
-        run: |
-          VERSION=${{ steps.version.outputs.VERSION }}
-          mv "$RUNNER_TEMP/Pine.dmg" "$RUNNER_TEMP/Pine-${VERSION}.dmg"
 
       - name: Upload DMG to GitHub Release
         env:
