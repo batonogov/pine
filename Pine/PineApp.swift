@@ -644,7 +644,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate {
         return menu
     }
 
-    @objc private func dockMenuOpenProject(_ sender: NSMenuItem) {
+    @objc func dockMenuOpenProject(_ sender: NSMenuItem) {
         guard let url = sender.representedObject as? URL else { return }
         let canonical = url.resolvingSymlinksInPath()
         // If the project is already open with a visible window, just bring it front
