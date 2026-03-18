@@ -113,9 +113,8 @@ final class FileNode: Identifiable, Hashable {
                     if hiddenNames.contains(name) { return false }
                     // Skip gitignored directories (but keep gitignored files — they show grey in sidebar)
                     if let context {
-                        var isDir: ObjCBool = false
-                        FileManager.default.fileExists(atPath: childURL.path, isDirectory: &isDir)
-                        if isDir.boolValue && isIgnoredDirectory(childURL, context: context) {
+                        let isDir = (try? childURL.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory ?? false
+                        if isDir && isIgnoredDirectory(childURL, context: context) {
                             return false
                         }
                     }
@@ -135,13 +134,8 @@ final class FileNode: Identifiable, Hashable {
     }
 
     func loadChildren() {
-        var context: LoadContext?
-        if let projectRoot {
-            if let ignoredPaths {
-                context = LoadContext(projectRoot: projectRoot, ignoredPaths: ignoredPaths)
-            } else {
-                context = LoadContext(projectRoot: projectRoot)
-            }
+        let context = projectRoot.map {
+            LoadContext(projectRoot: $0, ignoredPaths: ignoredPaths ?? [])
         }
         children = Self.loadContents(of: url, context: context)
     }

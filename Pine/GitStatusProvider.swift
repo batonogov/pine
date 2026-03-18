@@ -109,18 +109,43 @@ final class GitStatusProvider {
         branches = branchList
     }
 
-    /// Runs refresh on a background queue, then assigns results on main.
+    /// Runs refresh on a background queue with parallel fetches, then assigns results on main.
     func refreshAsync() {
         guard isGitRepository, let url = repositoryURL else { return }
         DispatchQueue.global(qos: .userInitiated).async {
-            let branch = Self.fetchBranch(at: url)
-            let statusResult = Self.fetchStatusAndIgnored(at: url)
-            let branchList = Self.fetchBranches(at: url)
+            let group = DispatchGroup()
+            var branch = ""
+            var statuses: [String: GitFileStatus] = [:]
+            var ignored: Set<String> = []
+            var branchList: [String] = []
+
+            group.enter()
+            DispatchQueue.global(qos: .userInitiated).async {
+                branch = Self.fetchBranch(at: url)
+                group.leave()
+            }
+
+            group.enter()
+            DispatchQueue.global(qos: .userInitiated).async {
+                let result = Self.fetchStatusAndIgnored(at: url)
+                statuses = result.statuses
+                ignored = result.ignored
+                group.leave()
+            }
+
+            group.enter()
+            DispatchQueue.global(qos: .userInitiated).async {
+                branchList = Self.fetchBranches(at: url)
+                group.leave()
+            }
+
+            group.wait()
+
             DispatchQueue.main.async { [weak self] in
                 guard let self else { return }
                 self.currentBranch = branch
-                self.fileStatuses = statusResult.statuses
-                self.ignoredPaths = statusResult.ignored
+                self.fileStatuses = statuses
+                self.ignoredPaths = ignored
                 self.branches = branchList
             }
         }
