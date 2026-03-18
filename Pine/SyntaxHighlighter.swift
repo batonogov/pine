@@ -248,16 +248,6 @@ final class SyntaxHighlighter {
         return nil
     }
 
-    /// Returns block comment delimiters for a file extension (e.g. "html" → `<!-- -->`).
-    func blockComment(forExtension ext: String) -> BlockCommentDelimiters? {
-        grammarsByExtension[ext.lowercased()]?.blockComment
-    }
-
-    /// Returns block comment delimiters for an exact file name.
-    func blockComment(forFileName name: String) -> BlockCommentDelimiters? {
-        grammarsByFileName[name]?.blockComment
-    }
-
     // MARK: - Подсветка
 
     /// Количество строк контекста вокруг изменённого региона для инкрементальной подсветки.

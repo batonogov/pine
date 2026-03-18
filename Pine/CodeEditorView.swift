@@ -60,14 +60,14 @@ final class GutterTextView: NSTextView {
         needsDisplay = true
     }
 
-    // MARK: - Toggle line comment
+    // MARK: - Toggle comment
 
     /// File extension for looking up the line comment prefix.
     var fileExtension: String?
     /// File name for looking up the line comment prefix (e.g. "Dockerfile").
     var exactFileName: String?
 
-    func toggleLineComment() {
+    func toggleComment() {
         guard let style = SyntaxHighlighter.shared.commentStyle(
             forExtension: fileExtension,
             fileName: exactFileName
@@ -659,7 +659,7 @@ struct CodeEditorView: NSViewRepresentable {
             guard let sv = scrollView,
                   let gutterView = sv.documentView as? GutterTextView,
                   gutterView.window?.isKeyWindow == true else { return }
-            gutterView.toggleLineComment()
+            gutterView.toggleComment()
         }
 
         private func reportStateChange() {

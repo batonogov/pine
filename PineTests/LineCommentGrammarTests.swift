@@ -93,47 +93,12 @@ struct LineCommentGrammarTests {
         #expect(highlighter.lineComment(forExtension: "xyz") == nil)
     }
 
-    // MARK: - blockComment lookup by extension
-
-    @Test func htmlBlockComment() {
-        let highlighter = SyntaxHighlighter.shared
-        let bc = highlighter.blockComment(forExtension: "html")
-        #expect(bc?.open == "<!--")
-        #expect(bc?.close == "-->")
-    }
-
-    @Test func cssBlockComment() {
-        let highlighter = SyntaxHighlighter.shared
-        let bc = highlighter.blockComment(forExtension: "css")
-        #expect(bc?.open == "/*")
-        #expect(bc?.close == "*/")
-    }
-
-    @Test func markdownBlockComment() {
-        let highlighter = SyntaxHighlighter.shared
-        let bc = highlighter.blockComment(forExtension: "md")
-        #expect(bc?.open == "<!--")
-        #expect(bc?.close == "-->")
-    }
-
-    @Test func sqlBlockComment() {
-        let highlighter = SyntaxHighlighter.shared
-        let bc = highlighter.blockComment(forExtension: "sql")
-        #expect(bc?.open == "/*")
-        #expect(bc?.close == "*/")
-    }
+    // MARK: - commentStyle
 
     @Test func sqlLineComment() {
         let highlighter = SyntaxHighlighter.shared
         #expect(highlighter.lineComment(forExtension: "sql") == "--")
     }
-
-    @Test func swiftHasNoBlockComment() {
-        let highlighter = SyntaxHighlighter.shared
-        #expect(highlighter.blockComment(forExtension: "swift") == nil)
-    }
-
-    // MARK: - commentStyle: line preferred over block
 
     @Test func commentStylePrefersLineComment() {
         let highlighter = SyntaxHighlighter.shared
@@ -145,9 +110,8 @@ struct LineCommentGrammarTests {
         }
     }
 
-    @Test func commentStyleFallsBackToBlock() {
+    @Test func commentStyleHTMLBlock() {
         let highlighter = SyntaxHighlighter.shared
-        // HTML has no lineComment — should return block
         if case .block(let open, let close) = highlighter.commentStyle(forExtension: "html", fileName: nil) {
             #expect(open == "<!--")
             #expect(close == "-->")
@@ -156,9 +120,37 @@ struct LineCommentGrammarTests {
         }
     }
 
+    @Test func commentStyleCSSBlock() {
+        let highlighter = SyntaxHighlighter.shared
+        if case .block(let open, let close) = highlighter.commentStyle(forExtension: "css", fileName: nil) {
+            #expect(open == "/*")
+            #expect(close == "*/")
+        } else {
+            Issue.record("Expected .block for CSS, got line or nil")
+        }
+    }
+
+    @Test func commentStyleMarkdownBlock() {
+        let highlighter = SyntaxHighlighter.shared
+        if case .block(let open, let close) = highlighter.commentStyle(forExtension: "md", fileName: nil) {
+            #expect(open == "<!--")
+            #expect(close == "-->")
+        } else {
+            Issue.record("Expected .block for Markdown, got line or nil")
+        }
+    }
+
+    @Test func commentStyleSwiftLine() {
+        let highlighter = SyntaxHighlighter.shared
+        if case .line(let prefix) = highlighter.commentStyle(forExtension: "swift", fileName: nil) {
+            #expect(prefix == "//")
+        } else {
+            Issue.record("Expected .line for Swift, got block or nil")
+        }
+    }
+
     @Test func commentStyleReturnsNilForJson() {
         let highlighter = SyntaxHighlighter.shared
-        // JSON has neither lineComment nor blockComment
         #expect(highlighter.commentStyle(forExtension: "json", fileName: nil) == nil)
     }
 
