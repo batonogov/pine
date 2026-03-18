@@ -49,6 +49,35 @@ struct GrammarModelTests {
         #expect(grammar.fileNames == ["Dockerfile", "Containerfile"])
     }
 
+    @Test func decodesGrammarWithFilePatterns() throws {
+        let json = """
+        {
+            "name": "Dockerfile",
+            "extensions": [],
+            "rules": [],
+            "filePatterns": ["Dockerfile.*", "*.Dockerfile", "Containerfile"]
+        }
+        """
+        let data = Data(json.utf8)
+        let grammar = try JSONDecoder().decode(Grammar.self, from: data)
+
+        #expect(grammar.filePatterns == ["Dockerfile.*", "*.Dockerfile", "Containerfile"])
+    }
+
+    @Test func filePatternsDefaultsToNil() throws {
+        let json = """
+        {
+            "name": "TestLang",
+            "extensions": ["tl"],
+            "rules": []
+        }
+        """
+        let data = Data(json.utf8)
+        let grammar = try JSONDecoder().decode(Grammar.self, from: data)
+
+        #expect(grammar.filePatterns == nil)
+    }
+
     @Test func decodesGrammarRule() throws {
         let json = """
         {"pattern": "test", "scope": "string"}
@@ -89,6 +118,37 @@ struct GrammarModelTests {
     @Test func themeReturnsNilForUnknownScope() {
         let theme = Theme.default
         #expect(theme.color(for: "nonexistent") == nil)
+    }
+
+    // MARK: - File Pattern Glob Matching
+
+    @Test func globMatchesPrefixStar() {
+        #expect(SyntaxHighlighter.fileNameMatchesGlob("prod.Dockerfile", pattern: "*.Dockerfile"))
+        #expect(!SyntaxHighlighter.fileNameMatchesGlob("prod.dockerfile", pattern: "*.Dockerfile"))
+    }
+
+    @Test func globMatchesSuffixStar() {
+        #expect(SyntaxHighlighter.fileNameMatchesGlob("Dockerfile.prod", pattern: "Dockerfile.*"))
+        #expect(SyntaxHighlighter.fileNameMatchesGlob("Dockerfile.dev", pattern: "Dockerfile.*"))
+        #expect(!SyntaxHighlighter.fileNameMatchesGlob("MyDockerfile.prod", pattern: "Dockerfile.*"))
+    }
+
+    @Test func globMatchesExactName() {
+        #expect(SyntaxHighlighter.fileNameMatchesGlob("Containerfile", pattern: "Containerfile"))
+        #expect(!SyntaxHighlighter.fileNameMatchesGlob("Containerfile2", pattern: "Containerfile"))
+    }
+
+    @Test func globMatchesDotfiles() {
+        #expect(SyntaxHighlighter.fileNameMatchesGlob(".bashrc", pattern: ".bashrc"))
+        #expect(SyntaxHighlighter.fileNameMatchesGlob(".env.local", pattern: ".env.*"))
+        #expect(!SyntaxHighlighter.fileNameMatchesGlob(".envrc", pattern: ".env.*"))
+    }
+
+    @Test func globMatchesMiddleStar() {
+        #expect(SyntaxHighlighter.fileNameMatchesGlob("GNUmakefile", pattern: "*makefile"))
+        #expect(SyntaxHighlighter.fileNameMatchesGlob("Makefile", pattern: "*akefile"))
+        // Glob is case-sensitive
+        #expect(!SyntaxHighlighter.fileNameMatchesGlob("makefile", pattern: "Makefile"))
     }
 
     // MARK: - Bundled Grammar Files

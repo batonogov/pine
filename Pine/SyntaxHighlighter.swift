@@ -23,6 +23,7 @@ struct Grammar: Codable {
     let rules: [GrammarRule]     // Правила подсветки
     var fileNames: [String]?     // Точные имена файлов: ["Dockerfile", "Makefile"]
     var lineComment: String?     // Символ однострочного комментария: "//", "#" и т.д.
+    var filePatterns: [String]?  // Glob-паттерны: ["Dockerfile.*", "*.Dockerfile", ".bashrc"]
 }
 
 // MARK: - Тема (маппинг scope → цвет)
@@ -77,6 +78,9 @@ final class SyntaxHighlighter {
     /// Грамматики по точному имени файла (Dockerfile, Makefile и т.д.)
     private var grammarsByFileName: [String: Grammar] = [:]
 
+    /// Грамматики с glob-паттернами для имён файлов (Dockerfile.*, *.Dockerfile, .bashrc и т.д.)
+    private var grammarPatterns: [(pattern: String, grammar: Grammar)] = []
+
     /// Скомпилированное правило подсветки.
     struct CompiledRule {
         let regex: NSRegularExpression
@@ -115,6 +119,11 @@ final class SyntaxHighlighter {
                 grammarsByFileName[name] = grammar
             }
         }
+        if let patterns = grammar.filePatterns {
+            for pattern in patterns {
+                grammarPatterns.append((pattern: pattern, grammar: grammar))
+            }
+        }
         compileRules(for: grammar)
     }
 
@@ -145,6 +154,13 @@ final class SyntaxHighlighter {
                 if let fileNames = grammar.fileNames {
                     for name in fileNames {
                         grammarsByFileName[name] = grammar
+                    }
+                }
+
+                // Индексируем glob-паттерны (если указаны)
+                if let patterns = grammar.filePatterns {
+                    for pattern in patterns {
+                        grammarPatterns.append((pattern: pattern, grammar: grammar))
                     }
                 }
 
@@ -207,9 +223,10 @@ final class SyntaxHighlighter {
         grammarsByExtension[ext.lowercased()]?.lineComment
     }
 
-    /// Returns the line comment prefix for an exact file name (e.g. "Dockerfile" → "#").
+    /// Returns the line comment prefix for a file name (e.g. "Dockerfile" → "#").
+    /// Checks exact name first, then glob patterns.
     func lineComment(forFileName name: String) -> String? {
-        grammarsByFileName[name]?.lineComment
+        grammarsByFileName[name]?.lineComment ?? matchFilePattern(name)?.lineComment
     }
 
     // MARK: - Подсветка
@@ -331,12 +348,48 @@ final class SyntaxHighlighter {
     private func resolveGrammar(language: String, fileName: String?) -> (Grammar, [CompiledRule])? {
         let grammar: Grammar?
         if let name = fileName, let g = grammarsByFileName[name] {
+            // 1. Exact fileName match (highest priority)
+            grammar = g
+        } else if let g = grammarsByExtension[language.lowercased()], !language.isEmpty {
+            // 2. Extension match
+            grammar = g
+        } else if let name = fileName, let g = matchFilePattern(name) {
+            // 3. Glob pattern match (lowest priority)
             grammar = g
         } else {
-            grammar = grammarsByExtension[language.lowercased()]
+            grammar = nil
         }
         guard let grammar, let rules = compiledRules[grammar.name] else { return nil }
         return (grammar, rules)
+    }
+
+    /// Matches a filename against registered glob patterns.
+    /// Supports `*` (any characters) glob syntax.
+    private func matchFilePattern(_ fileName: String) -> Grammar? {
+        for entry in grammarPatterns where Self.fileNameMatchesGlob(fileName, pattern: entry.pattern) {
+            return entry.grammar
+        }
+        return nil
+    }
+
+    /// Simple glob matching: `*` matches any sequence of characters (no path separators needed).
+    static func fileNameMatchesGlob(_ fileName: String, pattern: String) -> Bool {
+        // Convert glob pattern to regex: escape special chars, replace `*` with `.*`
+        var regex = "^"
+        for char in pattern {
+            switch char {
+            case "*":
+                regex += ".*"
+            case ".":
+                regex += "\\."
+            case "\\", "(", ")", "[", "]", "{", "}", "^", "$", "+", "?", "|":
+                regex += "\\\(char)"
+            default:
+                regex += String(char)
+            }
+        }
+        regex += "$"
+        return fileName.range(of: regex, options: .regularExpression) != nil
     }
 
     /// Собирает отпечаток многострочных матчей — упорядоченный массив длин.

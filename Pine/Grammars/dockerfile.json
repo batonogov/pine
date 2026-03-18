@@ -2,6 +2,7 @@
     "name": "Dockerfile",
     "extensions": ["dockerfile"],
     "fileNames": ["Dockerfile", "Containerfile"],
+    "filePatterns": ["Dockerfile.*", "*.Dockerfile"],
     "lineComment": "#",
     "rules": [
         {

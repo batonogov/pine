@@ -267,7 +267,147 @@ struct SyntaxHighlighterTests {
                 "After cache invalidation, full repaint must overwrite marker with comment color")
     }
 
-    // MARK: - 6. Coordinator.updateContentIfNeeded detects language change with identical text
+    // MARK: - 6. File pattern matching resolves grammar for variant filenames
+
+    @Test func filePatternMatchesPrefixGlob() {
+        let docker = Grammar(
+            name: "DockerTest",
+            extensions: ["dockerfile"],
+            rules: [
+                GrammarRule(pattern: "\\bFROM\\b", scope: "keyword")
+            ],
+            fileNames: ["Dockerfile"],
+            filePatterns: ["Dockerfile.*", "*.Dockerfile", "Containerfile"]
+        )
+        register(docker)
+
+        let text = "FROM ubuntu:22.04"
+        let storage = NSTextStorage(string: text)
+        let hl = SyntaxHighlighter.shared
+        let keywordColor = hl.theme.color(for: "keyword")
+
+        // "Dockerfile.prod" should match pattern "Dockerfile.*"
+        hl.highlight(textStorage: storage, language: "prod", fileName: "Dockerfile.prod", font: font)
+        #expect(foregroundColor(in: storage, at: 0) == keywordColor,
+                "Dockerfile.prod should match 'Dockerfile.*' pattern")
+    }
+
+    @Test func filePatternMatchesSuffixGlob() {
+        let docker = Grammar(
+            name: "DockerTest2",
+            extensions: ["dockerfile"],
+            rules: [
+                GrammarRule(pattern: "\\bFROM\\b", scope: "keyword")
+            ],
+            filePatterns: ["*.Dockerfile"]
+        )
+        register(docker)
+
+        let text = "FROM ubuntu:22.04"
+        let storage = NSTextStorage(string: text)
+        let hl = SyntaxHighlighter.shared
+        let keywordColor = hl.theme.color(for: "keyword")
+
+        // "prod.Dockerfile" should match pattern "*.Dockerfile"
+        hl.highlight(textStorage: storage, language: "dockerfile", fileName: "prod.Dockerfile", font: font)
+        #expect(foregroundColor(in: storage, at: 0) == keywordColor,
+                "prod.Dockerfile should match '*.Dockerfile' pattern")
+    }
+
+    @Test func filePatternExactMatchInPatterns() {
+        let docker = Grammar(
+            name: "DockerTest3",
+            extensions: [],
+            rules: [
+                GrammarRule(pattern: "\\bFROM\\b", scope: "keyword")
+            ],
+            filePatterns: ["Containerfile"]
+        )
+        register(docker)
+
+        let text = "FROM ubuntu:22.04"
+        let storage = NSTextStorage(string: text)
+        let hl = SyntaxHighlighter.shared
+        let keywordColor = hl.theme.color(for: "keyword")
+
+        // "Containerfile" should match exact pattern
+        hl.highlight(textStorage: storage, language: "", fileName: "Containerfile", font: font)
+        #expect(foregroundColor(in: storage, at: 0) == keywordColor,
+                "Containerfile should match exact pattern in filePatterns")
+    }
+
+    @Test func filePatternPriorityAfterExactMatch() {
+        // Exact fileName match should take priority over pattern match
+        let exactGrammar = Grammar(
+            name: "ExactMatch",
+            extensions: [],
+            rules: [
+                GrammarRule(pattern: "\\bFROM\\b", scope: "comment")  // comment scope
+            ],
+            fileNames: ["Dockerfile"]
+        )
+        let patternGrammar = Grammar(
+            name: "PatternMatch",
+            extensions: [],
+            rules: [
+                GrammarRule(pattern: "\\bFROM\\b", scope: "keyword")  // keyword scope
+            ],
+            filePatterns: ["Dockerfile", "Dockerfile.*"]
+        )
+        register(exactGrammar, patternGrammar)
+
+        let text = "FROM ubuntu"
+        let storage = NSTextStorage(string: text)
+        let hl = SyntaxHighlighter.shared
+        let commentColor = hl.theme.color(for: "comment")
+
+        // Exact fileName match should win
+        hl.highlight(textStorage: storage, language: "", fileName: "Dockerfile", font: font)
+        #expect(foregroundColor(in: storage, at: 0) == commentColor,
+                "Exact fileName match should take priority over pattern match")
+    }
+
+    @Test func filePatternNoMatchFallsThrough() {
+        let docker = Grammar(
+            name: "DockerTest4",
+            extensions: [],
+            rules: [
+                GrammarRule(pattern: "\\bFROM\\b", scope: "keyword")
+            ],
+            filePatterns: ["Dockerfile.*"]
+        )
+        register(docker)
+
+        let text = "FROM ubuntu"
+        let storage = NSTextStorage(string: text)
+        let hl = SyntaxHighlighter.shared
+        let keywordColor = hl.theme.color(for: "keyword")
+
+        // "random.txt" should NOT match
+        hl.highlight(textStorage: storage, language: "txt", fileName: "random.txt", font: font)
+        #expect(foregroundColor(in: storage, at: 0) != keywordColor,
+                "random.txt should not match Dockerfile patterns")
+    }
+
+    @Test func lineCommentForFilePattern() {
+        let shell = Grammar(
+            name: "ShellTest",
+            extensions: ["sh"],
+            rules: [
+                GrammarRule(pattern: "#.*$", scope: "comment", options: ["anchorsMatchLines"])
+            ],
+            lineComment: "#",
+            filePatterns: [".bashrc", ".zshrc", ".profile", ".bash_profile"]
+        )
+        register(shell)
+
+        let hl = SyntaxHighlighter.shared
+        // lineComment should work via pattern match too
+        #expect(hl.lineComment(forFileName: ".bashrc") == "#",
+                "lineComment should resolve via file pattern match")
+    }
+
+    // MARK: - 7. Coordinator.updateContentIfNeeded detects language change with identical text
 
     @Test func coordinatorReHighlightsOnLanguageChangeWithSameText() {
         register(langA, langB)
