@@ -1,6 +1,6 @@
 # Pine
 
-> A fast, minimal, native macOS code editor.
+> A code editor that belongs on your Mac.
 
 ![Pine Editor](assets/screenshot-editor.png)
 
@@ -8,9 +8,7 @@
 
 ![Pine Terminal](assets/screenshot-terminal.png)
 
-Pine is a code editor for macOS 26+ built with SwiftUI and AppKit. One window, one project: open a folder, edit code, run commands, check git.
-
-No Electron. No extension marketplace. No settings to dig through. Just a native Mac app that stays out of your way.
+Pine is a code editor for macOS purists. Native SwiftUI + AppKit, Liquid Glass on macOS 26, zero Electron. One window, one project — just a real Mac app.
 
 ## Why Pine
 
@@ -24,13 +22,16 @@ If VS Code feels heavy and Xcode feels like overkill for everyday editing, Pine 
 
 ## Features
 
-- **Editor** — Line numbers, current-line highlight, smart indent, find bar, undo, and grammar-based syntax highlighting
-- **Syntax highlighting** — Swift, TypeScript, JavaScript, Python, Go, Rust, Shell, HTML, CSS, JSON, YAML, Markdown, Dockerfile
+- **Editor** — Line numbers, current-line highlight, smart indent, find bar, undo, bracket matching, and grammar-based syntax highlighting
+- **Minimap** — Code overview panel with proportional scrolling and click-to-navigate
+- **Syntax highlighting** — Swift, TypeScript, JavaScript, Python, Go, Rust, C, C++, SQL, Shell, HTML, CSS, JSON, YAML, Markdown, Dockerfile
 - **Terminal** — Multiple tabs powered by [SwiftTerm](https://github.com/migueldeicaza/SwiftTerm) (full VT100/xterm with colors, oh-my-zsh, TUI apps)
 - **Git** — File status in the sidebar, diff markers in the gutter, branch switching via title bar click or search sheet
 - **Markdown preview** — Source, preview, and side-by-side split modes
 - **Quick Look** — Preview images and non-text files without leaving the editor
 - **File management** — New file/folder, rename, duplicate, delete, reveal in Finder from the sidebar context menu
+- **Large file warning** — Prompts before opening files over 1 MB with the option to skip syntax highlighting
+- **Auto-updates** — Built-in update mechanism via [Sparkle](https://sparkle-project.org)
 - **Session restore** — Reopens your tabs and project state between launches
 - **Localized** — English, German, Spanish, French, Japanese, Korean, Portuguese (BR), Russian, Simplified Chinese
 
@@ -45,8 +46,13 @@ If VS Code feels heavy and Xcode feels like overkill for everyday editing, Pine 
 | `Cmd+Shift+D` | Duplicate tab |
 | `Cmd+W` | Close tab |
 | ``Cmd+` `` | Toggle terminal |
+| `Cmd+T` | New terminal tab |
 | `Cmd+Shift+B` | Switch branch |
+| `Cmd+Shift+M` | Toggle minimap |
 | `Cmd+Shift+P` | Toggle Markdown preview |
+| `Cmd+/` | Toggle line comment |
+| `Cmd++` / `Cmd+-` | Zoom in / out |
+| `Cmd+0` | Reset font size |
 
 ## Install
 
