@@ -10,8 +10,7 @@
 		9FA7317B2F61803400E91711 /* SwiftTerm in Frameworks */ = {isa = PBXBuildFile; productRef = 9FA7317A2F61803400E91711 /* SwiftTerm */; };
 		CF0000030000000000000003 /* Markdown in Frameworks */ = {isa = PBXBuildFile; productRef = CF0000030000000000000002 /* Markdown */; };
 		CF0000040000000000000003 /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = CF0000040000000000000002 /* Sparkle */; };
-		CF0000050000000000000003 /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = CF0000050000000000000002 /* Sparkle */; };
-/* End PBXBuildFile section */
+	/* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
 		CF000001000000000000000A /* PBXContainerItemProxy */ = {
@@ -69,7 +68,6 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				CF0000050000000000000003 /* Sparkle in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -149,9 +147,6 @@
 				CF0000010000000000000006 /* PineTests */,
 			);
 			name = PineTests;
-			packageProductDependencies = (
-				CF0000050000000000000002 /* Sparkle */,
-			);
 			productName = PineTests;
 			productReference = CF0000010000000000000005 /* PineTests.xctest */;
 			productType = "com.apple.product-type.bundle.unit-test";
@@ -670,11 +665,6 @@
 			productName = Markdown;
 		};
 		CF0000040000000000000002 /* Sparkle */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = CF0000040000000000000001 /* XCRemoteSwiftPackageReference "Sparkle" */;
-			productName = Sparkle;
-		};
-		CF0000050000000000000002 /* Sparkle */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = CF0000040000000000000001 /* XCRemoteSwiftPackageReference "Sparkle" */;
 			productName = Sparkle;

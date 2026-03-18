@@ -35,11 +35,7 @@ final class CheckForUpdatesViewModel: ObservableObject {
 
 /// Menu button for "Check for Updates…" in the app menu.
 struct CheckForUpdatesView: View {
-    @ObservedObject private var viewModel: CheckForUpdatesViewModel
-
-    init(updater: SPUUpdater) {
-        self.viewModel = CheckForUpdatesViewModel(updater: updater)
-    }
+    @ObservedObject var viewModel: CheckForUpdatesViewModel
 
     var body: some View {
         Button(Strings.menuCheckForUpdates) {

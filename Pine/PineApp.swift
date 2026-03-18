@@ -25,7 +25,7 @@ struct PineApp: App {
         .defaultLaunchBehavior(.suppressed)
         .commands {
             CommandGroup(after: .appInfo) {
-                CheckForUpdatesView(updater: appDelegate.updaterController.updater)
+                CheckForUpdatesView(viewModel: appDelegate.checkForUpdatesViewModel)
             }
             // Убираем стандартный "New Window" (Cmd+N) — табы создаются кликом по файлу
             CommandGroup(replacing: .newItem) { }
@@ -378,6 +378,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate {
         startingUpdater: true, updaterDelegate: self, userDriverDelegate: nil
     )
 
+    /// ViewModel for CheckForUpdatesView — created once, shared across menu rebuilds.
+    lazy var checkForUpdatesViewModel = CheckForUpdatesViewModel(
+        updater: updaterController.updater
+    )
+
     /// Central project registry — created early so it's available for AppKit fallback.
     var registry = ProjectRegistry()
 
@@ -386,6 +391,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate {
     nonisolated func feedURLString(for updater: SPUUpdater) -> String? {
         SparkleConstants.appcastURLString
     }
+
     /// Set to true once applicationShouldTerminate is called, so onDisappear
     /// handlers know not to clear the saved session during app quit.
     private(set) var isTerminating = false

@@ -3,23 +3,15 @@
 //  PineTests
 //
 
-import Sparkle
 import Testing
 import Foundation
 @testable import Pine
 
-@MainActor
 struct SparkleUpdaterTests {
 
-    @Test func updaterControllerIsInitialized() {
-        let appDelegate = AppDelegate()
-        let updater = appDelegate.updaterController.updater
-
-        #expect(updater != nil)
-    }
-
-    @Test func appcastURLIsConfigured() {
-        let expectedURL = "https://github.com/batonogov/pine/releases/latest/download/appcast.xml"
-        #expect(SparkleConstants.appcastURLString == expectedURL)
+    @Test func appcastURLIsValid() {
+        let urlString = SparkleConstants.appcastURLString
+        #expect(urlString == "https://github.com/batonogov/pine/releases/latest/download/appcast.xml")
+        #expect(URL(string: urlString) != nil)
     }
 }
