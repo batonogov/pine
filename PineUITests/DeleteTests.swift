@@ -256,7 +256,7 @@ final class DeleteTests: PineUITestCase {
         XCTAssertTrue(waitForExistence(fileNode, timeout: 5))
         fileNode.rightClick()
 
-        let deleteItem = app.menuItems["Delete"]
+        let deleteItem = app.menuItems["trash"]
         XCTAssertTrue(
             waitForExistence(deleteItem, timeout: 3),
             "Delete should appear in file context menu"
@@ -274,7 +274,7 @@ final class DeleteTests: PineUITestCase {
         XCTAssertTrue(waitForExistence(dirNode, timeout: 5))
         dirNode.rightClick()
 
-        let deleteItem = app.menuItems["Delete"]
+        let deleteItem = app.menuItems["trash"]
         XCTAssertTrue(
             waitForExistence(deleteItem, timeout: 3),
             "Delete should appear in directory context menu"

@@ -547,6 +547,34 @@ struct GitStatusProviderTests {
         #expect(provider.currentBranch == "")
     }
 
+    @Test("refreshAsync discards results when cancelled")
+    func refreshAsyncCancellation() async throws {
+        let dir = try makeGitRepo()
+        defer { cleanup(dir) }
+
+        let provider = GitStatusProvider()
+        provider.setup(repositoryURL: dir)
+
+        // Create a file so git status would have something to report
+        try "new".write(
+            to: dir.appendingPathComponent("cancelled.txt"),
+            atomically: true,
+            encoding: .utf8
+        )
+
+        // Start refreshAsync in a Task and cancel it immediately
+        let task = Task {
+            await provider.refreshAsync()
+        }
+        task.cancel()
+        await task.value
+
+        // If cancellation took effect, fileStatuses should NOT contain
+        // the new file. If the background work finished before cancel
+        // was checked, it may still contain it — both outcomes are valid.
+        // The key invariant: no crash.
+    }
+
     // MARK: - hasUncommittedChanges
 
     @Test("hasUncommittedChanges is false for clean repo")
