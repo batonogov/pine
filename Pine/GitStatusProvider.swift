@@ -264,7 +264,7 @@ final class GitStatusProvider {
     }
 
     private func refreshFileStatusesAndIgnored(at url: URL) {
-        let result = runGit(["status", "--ignored", "--porcelain"], at: url)
+        let result = runGit(["--no-optional-locks", "status", "--ignored", "--porcelain"], at: url)
         guard result.exitCode == 0 else { return }
         fileStatuses = Self.parseStatusOutput(result.output)
         ignoredPaths = Self.parseIgnoredOutput(result.output)
