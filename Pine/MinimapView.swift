@@ -184,16 +184,20 @@ final class MinimapView: NSView {
         let source = textView.string as NSString
         guard source.length > 0 else { return }
 
-        layoutManager.ensureLayout(for: textContainer)
-
         let (offset, _) = minimapOffset()
         let scale = Self.scaleFactor
         let originY = textView.textContainerOrigin.y
         let lineHeight: CGFloat = 2
 
-        let fullGlyphRange = layoutManager.glyphRange(for: textContainer)
+        // Calculate the document Y range that maps to the visible minimap area.
+        // Only enumerate line fragments within this range to avoid iterating the entire document.
+        let docYStart = max(0, offset / scale - originY)
+        let docYEnd = (offset + bounds.height) / scale - originY
+        let visibleDocRect = NSRect(x: 0, y: docYStart, width: textContainer.size.width, height: docYEnd - docYStart)
+        let visibleGlyphRange = layoutManager.glyphRange(forBoundingRect: visibleDocRect, in: textContainer)
+        guard visibleGlyphRange.location != NSNotFound else { return }
 
-        layoutManager.enumerateLineFragments(forGlyphRange: fullGlyphRange) { lineRect, _, _, glyphRange, _ in
+        layoutManager.enumerateLineFragments(forGlyphRange: visibleGlyphRange) { lineRect, _, _, glyphRange, _ in
             let charRange = layoutManager.characterRange(forGlyphRange: glyphRange, actualGlyphRange: nil)
             let y = (lineRect.origin.y + originY) * scale - offset
 

@@ -570,30 +570,78 @@ struct CodeEditorView: NSViewRepresentable {
             // Ищем новую пару скобок
             let cursorRange = textView.selectedRange()
             if cursorRange.length == 0 {
-                let skipRanges = SyntaxHighlighter.shared.commentAndStringRanges(
-                    in: textView.string,
-                    language: parent.language,
-                    fileName: parent.fileName
+                let fullText = textView.string
+                let nsFullText = fullText as NSString
+
+                // Try windowed search first (±5000 chars) to avoid scanning the entire
+                // file with regex on every cursor move. Window boundaries are aligned to
+                // line starts/ends via NSString.lineRange to avoid slicing through
+                // comment/string delimiters (e.g. cutting "/*" in half).
+                let bracketSearchRadius = 5000
+                let rawStart = max(0, cursorRange.location - bracketSearchRadius)
+                let rawEnd = min(nsFullText.length, cursorRange.location + bracketSearchRadius)
+                let alignedStart = nsFullText.lineRange(
+                    for: NSRange(location: rawStart, length: 0)
+                ).location
+                let alignedEndRange = nsFullText.lineRange(
+                    for: NSRange(location: rawEnd, length: 0)
                 )
+                let alignedEnd = min(NSMaxRange(alignedEndRange), nsFullText.length)
+                let searchRange = NSRange(location: alignedStart, length: alignedEnd - alignedStart)
+                let isFullRange = alignedStart == 0 && alignedEnd == nsFullText.length
 
-                if let match = BracketMatcher.findMatch(
-                    in: textView.string,
-                    cursorPosition: cursorRange.location,
-                    skipRanges: skipRanges
+                if let result = bracketMatchInRange(
+                    nsFullText, searchRange: searchRange,
+                    cursorLocation: cursorRange.location, storage: storage
                 ) {
-                    let openerRange = NSRange(location: match.opener, length: 1)
-                    let closerRange = NSRange(location: match.closer, length: 1)
-
-                    for range in [openerRange, closerRange] {
-                        storage.addAttribute(.backgroundColor, value: bracketHighlightColor, range: range)
-                        storage.addAttribute(CodeEditorView.bracketHighlightKey, value: true, range: range)
+                    previousBracketRanges = result
+                } else if !isFullRange {
+                    // Fallback: full-file scan when the match is beyond the window
+                    let fullRange = NSRange(location: 0, length: nsFullText.length)
+                    if let result = bracketMatchInRange(
+                        nsFullText, searchRange: fullRange,
+                        cursorLocation: cursorRange.location, storage: storage
+                    ) {
+                        previousBracketRanges = result
                     }
-
-                    previousBracketRanges = [openerRange, closerRange]
                 }
             }
 
             storage.endEditing()
+        }
+
+        /// Searches for a bracket match within the given range and applies highlight attributes.
+        /// Returns the highlighted ranges on success, nil if no match found.
+        private func bracketMatchInRange(
+            _ source: NSString,
+            searchRange: NSRange,
+            cursorLocation: Int,
+            storage: NSTextStorage
+        ) -> [NSRange]? {
+            let substring = source.substring(with: searchRange)
+            let localCursor = cursorLocation - searchRange.location
+
+            let skipRanges = SyntaxHighlighter.shared.commentAndStringRanges(
+                in: substring,
+                language: parent.language,
+                fileName: parent.fileName
+            )
+
+            guard let match = BracketMatcher.findMatch(
+                in: substring,
+                cursorPosition: localCursor,
+                skipRanges: skipRanges
+            ) else { return nil }
+
+            let openerRange = NSRange(location: match.opener + searchRange.location, length: 1)
+            let closerRange = NSRange(location: match.closer + searchRange.location, length: 1)
+
+            for range in [openerRange, closerRange] {
+                storage.addAttribute(.backgroundColor, value: bracketHighlightColor, range: range)
+                storage.addAttribute(CodeEditorView.bracketHighlightKey, value: true, range: range)
+            }
+
+            return [openerRange, closerRange]
         }
 
         @objc func scrollViewDidScroll(_ notification: Notification) {

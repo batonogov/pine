@@ -19,13 +19,21 @@ final class LineNumberView: NSView {
 
     var gutterWidth: CGFloat = 40
     var lineDiffs: [GitLineDiff] = [] {
-        didSet { needsDisplay = true }
+        didSet {
+            rebuildDiffMap()
+            needsDisplay = true
+        }
     }
 
-    /// Pre-indexed diff lookup: line number → kind
-    private var diffMap: [Int: GitLineDiff.Kind] {
-        Dictionary(lineDiffs.map { ($0.line, $0.kind) }, uniquingKeysWith: { _, last in last })
+    /// Pre-indexed diff lookup: line number → kind (cached, rebuilt when lineDiffs changes)
+    private var diffMap: [Int: GitLineDiff.Kind] = [:]
+
+    private func rebuildDiffMap() {
+        diffMap = Dictionary(lineDiffs.map { ($0.line, $0.kind) }, uniquingKeysWith: { _, last in last })
     }
+
+    /// Cached total line count — updated on text change, not on every draw.
+    private var cachedTotalLines = 1
 
     // Diff marker colors
     private let addedColor = NSColor.systemGreen
@@ -61,6 +69,8 @@ final class LineNumberView: NSView {
         super.viewDidMoveToWindow()
         // Гарантируем что clipView шлёт уведомления о скролле
         textView?.enclosingScrollView?.contentView.postsBoundsChangedNotifications = true
+        // Initialize cached line count from the current text
+        recountTotalLines()
     }
 
     @available(*, unavailable)
@@ -74,11 +84,24 @@ final class LineNumberView: NSView {
         // Реагируем только на скролл нашего scroll view
         guard let clipView = notification.object as? NSClipView,
               clipView == textView?.enclosingScrollView?.contentView else { return }
-        display()
+        needsDisplay = true
     }
 
     @objc private func contentDidChange() {
+        recountTotalLines()
         needsDisplay = true
+    }
+
+    private func recountTotalLines() {
+        guard let source = textView?.string as NSString? else {
+            cachedTotalLines = 1
+            return
+        }
+        var count = 1
+        for i in 0..<source.length where source.character(at: i) == 0x0A {
+            count += 1
+        }
+        cachedTotalLines = count
     }
 
     override func draw(_ dirtyRect: NSRect) {
@@ -87,9 +110,6 @@ final class LineNumberView: NSView {
               let textContainer = textView.textContainer,
               let scrollView = textView.enclosingScrollView
         else { return }
-
-        // Принудительно завершаем layout
-        layoutManager.ensureLayout(for: textContainer)
 
         // ── Фон ──
         gutterBgColor.setFill()
@@ -132,18 +152,18 @@ final class LineNumberView: NSView {
         let firstVisibleCharIndex = layoutManager.characterIndexForGlyph(
             at: visibleGlyphRange.location
         )
-        var lineNumber: Int
-        if firstVisibleCharIndex == 0 {
-            lineNumber = 1
-        } else {
-            let textBefore = source.substring(to: firstVisibleCharIndex)
-            lineNumber = textBefore.components(separatedBy: "\n").count
+        var lineNumber = 1
+        if firstVisibleCharIndex > 0 {
+            var count = 0
+            for i in 0..<firstVisibleCharIndex where source.character(at: i) == 0x0A {
+                count += 1
+            }
+            lineNumber = count + 1
         }
 
         // ── Рисуем номера видимых строк через enumerateLineFragments ──
         // Этот метод проходит только по видимым фрагментам строк — быстро.
         var previousLineCharIndex = -1
-        let currentDiffMap = self.diffMap
         let diffBarWidth: CGFloat = 3
 
         layoutManager.enumerateLineFragments(
@@ -175,7 +195,7 @@ final class LineNumberView: NSView {
                 numStr.draw(at: NSPoint(x: x, y: y), withAttributes: attrs)
 
                 // ── Git diff marker ──
-                if let diffKind = currentDiffMap[lineNumber] {
+                if let diffKind = self.diffMap[lineNumber] {
                     let markerColor: NSColor
                     switch diffKind {
                     case .added:    markerColor = self.addedColor
@@ -227,8 +247,7 @@ final class LineNumberView: NSView {
         }
 
         // ── Обновляем ширину гуттера если изменилось количество цифр ──
-        let totalLines = source.components(separatedBy: "\n").count
-        let digits = max(String(totalLines).count, 2)
+        let digits = max(String(cachedTotalLines).count, 2)
         let charWidth = "0".size(withAttributes: [.font: gutterFont]).width
         let newWidth = CGFloat(digits) * charWidth + 20
         if abs(gutterWidth - newWidth) > 1 {
