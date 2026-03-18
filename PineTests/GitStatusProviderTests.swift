@@ -298,6 +298,31 @@ struct GitStatusProviderTests {
         #expect(fileStatus == .untracked)
     }
 
+    @Test("statusForDirectory returns untracked for C-quoted directory with spaces")
+    func statusForDirectoryWithSpaces() throws {
+        let dir = try makeGitRepo()
+        defer { cleanup(dir) }
+
+        // Reproduce the exact scenario from issue #201:
+        // git status --porcelain C-quotes paths with spaces as "examples copy/"
+        let subdir = dir.appendingPathComponent("examples copy")
+        try FileManager.default.createDirectory(at: subdir, withIntermediateDirectories: true)
+        try "code".write(
+            to: subdir.appendingPathComponent("file.txt"),
+            atomically: true,
+            encoding: .utf8
+        )
+
+        let provider = GitStatusProvider()
+        provider.setup(repositoryURL: dir)
+
+        let dirStatus = provider.statusForDirectory(at: subdir)
+        #expect(dirStatus == .untracked)
+
+        let fileStatus = provider.statusForFile(at: subdir.appendingPathComponent("file.txt"))
+        #expect(fileStatus == .untracked)
+    }
+
     @Test("statusForDirectory returns untracked for subdirectory inside untracked directory")
     func statusForSubdirInsideUntrackedDir() throws {
         let dir = try makeGitRepo()
