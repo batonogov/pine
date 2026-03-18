@@ -2,7 +2,7 @@
     "name": "Git Config",
     "extensions": ["gitignore", "gitattributes", "gitmodules", "gitconfig"],
     "fileNames": [".gitignore", ".gitattributes", ".gitmodules", ".gitconfig"],
-    "filePatterns": [".gitignore_global", ".git/config"],
+    "filePatterns": [".gitignore_global"],
     "lineComment": "#",
     "rules": [
         {
@@ -34,7 +34,7 @@
             "scope": "attribute"
         },
         {
-            "pattern": "!.*$",
+            "pattern": "^!.*$",
             "scope": "type",
             "options": ["anchorsMatchLines"]
         }

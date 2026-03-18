@@ -2,7 +2,6 @@
     "name": "Ruby",
     "extensions": ["rb", "gemspec", "rake"],
     "fileNames": ["Gemfile", "Rakefile", "Guardfile", "Vagrantfile", "Podfile", "Fastfile"],
-    "filePatterns": ["*.gemspec", "*.rake"],
     "lineComment": "#",
     "rules": [
         {

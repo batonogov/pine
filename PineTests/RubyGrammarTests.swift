@@ -38,9 +38,9 @@ struct RubyGrammarTests {
         #expect(grammar.fileNames?.contains("Fastfile") == true)
     }
 
-    @Test func filePatterns() {
-        #expect(grammar.filePatterns?.contains("*.gemspec") == true)
-        #expect(grammar.filePatterns?.contains("*.rake") == true)
+    @Test func noRedundantFilePatterns() {
+        // *.gemspec and *.rake are covered by extensions, no filePatterns needed
+        #expect(grammar.filePatterns == nil)
     }
 
     @Test func hasExpectedScopes() {

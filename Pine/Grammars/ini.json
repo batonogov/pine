@@ -2,7 +2,6 @@
     "name": "INI",
     "extensions": ["ini", "cfg", "conf", "properties"],
     "fileNames": [".editorconfig"],
-    "filePatterns": ["*.ini", "*.cfg", "*.conf"],
     "lineComment": "#",
     "rules": [
         {

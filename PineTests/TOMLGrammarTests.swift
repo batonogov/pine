@@ -33,8 +33,9 @@ struct TOMLGrammarTests {
         #expect(grammar.fileNames?.contains("pyproject.toml") == true)
     }
 
-    @Test func filePatterns() {
-        #expect(grammar.filePatterns?.contains("*.toml") == true)
+    @Test func noRedundantFilePatterns() {
+        // *.toml is covered by extensions, no filePatterns needed
+        #expect(grammar.filePatterns == nil)
     }
 
     @Test func hasExpectedScopes() {

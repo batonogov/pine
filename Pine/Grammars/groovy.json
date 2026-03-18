@@ -2,7 +2,7 @@
     "name": "Groovy",
     "extensions": ["groovy", "gradle"],
     "fileNames": ["Jenkinsfile"],
-    "filePatterns": ["Jenkinsfile.*", "*.Jenkinsfile", "*.gradle"],
+    "filePatterns": ["Jenkinsfile.*", "*.Jenkinsfile"],
     "lineComment": "//",
     "rules": [
         {

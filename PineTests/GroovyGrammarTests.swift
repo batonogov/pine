@@ -35,7 +35,6 @@ struct GroovyGrammarTests {
     @Test func filePatterns() {
         #expect(grammar.filePatterns?.contains("Jenkinsfile.*") == true)
         #expect(grammar.filePatterns?.contains("*.Jenkinsfile") == true)
-        #expect(grammar.filePatterns?.contains("*.gradle") == true)
     }
 
     @Test func hasExpectedScopes() {
