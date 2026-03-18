@@ -155,7 +155,7 @@ struct PineApp: App {
 
                 Button(Strings.menuDuplicate) {
                     guard let pm = focusedProject else { return }
-                    pm.tabManager.duplicateActiveTab()
+                    pm.tabManager.duplicateActiveTab(projectRoot: pm.workspace.rootURL)
                 }
                 .keyboardShortcut("d", modifiers: [.command, .shift])
             }

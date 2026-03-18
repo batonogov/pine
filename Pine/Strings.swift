@@ -64,6 +64,10 @@ enum Strings {
         String(localized: "fileOperation.createError \(name)")
     }
 
+    static var operationOutsideProject: String {
+        String(localized: "fileOperation.outsideProject")
+    }
+
     static var fileDeletedTitle: String {
         String(localized: "fileOperation.deleted.title")
     }

@@ -90,8 +90,7 @@ final class WorkspaceManager {
         completion: (() -> Void)? = nil
     ) {
         DispatchQueue.global(qos: .userInitiated).async {
-            let root = FileNode(url: url)
-            root.loadChildren()
+            let root = FileNode(url: url, projectRoot: url)
             let children = root.children ?? []
 
             let bgGit = GitStatusProvider()
@@ -117,8 +116,7 @@ final class WorkspaceManager {
     func refreshFileTree() {
         guard let url = rootURL else { return }
         loadGeneration += 1
-        let root = FileNode(url: url)
-        root.loadChildren()
+        let root = FileNode(url: url, projectRoot: url)
         rootNodes = root.children ?? []
         gitProvider.refresh()
         // Suppress watcher echoes — we just refreshed, so any watcher event

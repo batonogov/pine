@@ -598,6 +598,33 @@ struct TabManagerTests {
         #expect(manager.activeTab?.url == badURL)
     }
 
+    @Test("tryDuplicateActiveTab blocks files outside project root")
+    func duplicateActiveTabBlockedOutsideRoot() throws {
+        let projectDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("TabMgrProject-\(UUID().uuidString)")
+        let outsideDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("TabMgrOutside-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: projectDir, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: outsideDir, withIntermediateDirectories: true)
+        defer {
+            try? FileManager.default.removeItem(at: projectDir)
+            try? FileManager.default.removeItem(at: outsideDir)
+        }
+
+        let outsideFile = outsideDir.appendingPathComponent("secret.txt")
+        try "secret".write(to: outsideFile, atomically: true, encoding: .utf8)
+
+        let manager = TabManager()
+        manager.openTab(url: outsideFile)
+
+        #expect(throws: (any Error).self) {
+            try manager.tryDuplicateActiveTab(projectRoot: projectDir)
+        }
+        // No copy should exist
+        let copyPath = outsideDir.appendingPathComponent("secret copy.txt").path
+        #expect(FileManager.default.fileExists(atPath: copyPath) == false)
+    }
+
     // MARK: - Preview file detection
 
     @Test("isPreviewFile returns true for images")

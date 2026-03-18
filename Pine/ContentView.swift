@@ -630,6 +630,11 @@ final class SidebarEditState {
 
     /// Creates a file or folder with a unique "untitled" name, then starts inline rename.
     func createNewItem(in parentURL: URL, isDirectory: Bool, workspace: WorkspaceManager) {
+        if let root = workspace.rootURL, !FileNode.isWithinProjectRoot(parentURL, projectRoot: root) {
+            Self.showFileError(Strings.operationOutsideProject)
+            return
+        }
+
         let baseName = isDirectory ? "untitled folder" : "untitled"
         let name = Self.uniqueName(baseName, in: parentURL)
         let newURL = parentURL.appendingPathComponent(name)
@@ -655,6 +660,11 @@ final class SidebarEditState {
         workspace: WorkspaceManager,
         tabManager: TabManager
     ) {
+        if let root = workspace.rootURL, !FileNode.isWithinProjectRoot(url, projectRoot: root) {
+            Self.showFileError(Strings.operationOutsideProject)
+            return
+        }
+
         guard let copyURL = Self.finderCopyURL(for: url) else { return }
 
         do {
@@ -968,6 +978,14 @@ struct FileNodeRow: View {
 
         let oldURL = node.url
         let newURL = oldURL.deletingLastPathComponent().appendingPathComponent(newName)
+
+        if let root = workspace.rootURL,
+           !FileNode.isWithinProjectRoot(oldURL, projectRoot: root)
+            || !FileNode.isWithinProjectRoot(newURL, projectRoot: root) {
+            SidebarEditState.showFileError(Strings.operationOutsideProject)
+            editState.clear()
+            return
+        }
         let wasNewlyCreated = editState.isNewlyCreated
 
         // Name unchanged — accept as-is
@@ -1012,6 +1030,12 @@ struct FileNodeRow: View {
 
     private func deleteItem() {
         let deletedURL = node.url
+
+        if let root = workspace.rootURL, !FileNode.isWithinProjectRoot(deletedURL, projectRoot: root) {
+            SidebarEditState.showFileError(Strings.operationOutsideProject)
+            return
+        }
+
         do {
             try FileManager.default.trashItem(at: deletedURL, resultingItemURL: nil)
             workspace.refreshFileTree()
