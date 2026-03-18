@@ -226,6 +226,120 @@ struct SymlinkSecurityTests {
         #expect(root.children?[0].name == "a.swift")
     }
 
+    // MARK: - Deep symlink chain
+
+    @Test func deepSymlinkChainOutsideRootIsBlocked() throws {
+        let projectDir = try makeTempDirectory()
+        let outsideDir = try makeTempDirectory()
+        defer {
+            cleanup(projectDir)
+            cleanup(outsideDir)
+        }
+
+        // Chain: project/a -> project/b -> outside
+        let dirB = projectDir.appendingPathComponent("b")
+        try FileManager.default.createSymbolicLink(at: dirB, withDestinationURL: outsideDir)
+
+        let dirA = projectDir.appendingPathComponent("a")
+        try FileManager.default.createSymbolicLink(at: dirA, withDestinationURL: dirB)
+
+        let root = FileNode(url: projectDir, projectRoot: projectDir)
+
+        // "a" resolves through "b" to outside — should be blocked
+        let nodeA = root.children?.first { $0.name == "a" }
+        #expect(nodeA != nil)
+        #expect(nodeA?.isSymlink == true)
+        #expect(nodeA?.children == nil || nodeA?.children?.isEmpty == true)
+    }
+
+    // MARK: - Relative symlink outside root
+
+    @Test func relativeSymlinkOutsideRootIsBlocked() throws {
+        let baseDir = try makeTempDirectory()
+        defer { cleanup(baseDir) }
+
+        // Create project as a subdirectory so relative ../.. escapes
+        let projectDir = baseDir.appendingPathComponent("project")
+        try FileManager.default.createDirectory(at: projectDir, withIntermediateDirectories: true)
+
+        let secretDir = baseDir.appendingPathComponent("secrets")
+        try FileManager.default.createDirectory(at: secretDir, withIntermediateDirectories: true)
+        FileManager.default.createFile(
+            atPath: secretDir.appendingPathComponent("password.txt").path,
+            contents: Data("hunter2".utf8)
+        )
+
+        // Relative symlink: project/escape -> ../secrets
+        try FileManager.default.createSymbolicLink(
+            atPath: projectDir.appendingPathComponent("escape").path,
+            withDestinationPath: "../secrets"
+        )
+
+        let root = FileNode(url: projectDir, projectRoot: projectDir)
+
+        let escapeNode = root.children?.first { $0.name == "escape" }
+        #expect(escapeNode != nil)
+        #expect(escapeNode?.isSymlink == true)
+        #expect(escapeNode?.children == nil || escapeNode?.children?.isEmpty == true)
+    }
+
+    // MARK: - Symlink in nested directory
+
+    @Test func nestedSymlinkOutsideRootIsBlocked() throws {
+        let projectDir = try makeTempDirectory()
+        let outsideDir = try makeTempDirectory()
+        defer {
+            cleanup(projectDir)
+            cleanup(outsideDir)
+        }
+
+        // project/sub/link -> outside
+        let subDir = projectDir.appendingPathComponent("sub")
+        try FileManager.default.createDirectory(at: subDir, withIntermediateDirectories: true)
+
+        try FileManager.default.createSymbolicLink(
+            at: subDir.appendingPathComponent("link"),
+            withDestinationURL: outsideDir
+        )
+
+        let root = FileNode(url: projectDir, projectRoot: projectDir)
+
+        let subNode = root.children?.first { $0.name == "sub" }
+        let linkNode = subNode?.children?.first { $0.name == "link" }
+        #expect(linkNode != nil)
+        #expect(linkNode?.isSymlink == true)
+        #expect(linkNode?.children == nil || linkNode?.children?.isEmpty == true)
+    }
+
+    // MARK: - Path traversal via rename
+
+    @Test func isWithinProjectRootRejectsPathTraversal() throws {
+        let projectDir = try makeTempDirectory()
+        defer { cleanup(projectDir) }
+
+        // Simulate a rename to ../../escape — newURL would resolve outside
+        let traversalURL = projectDir
+            .appendingPathComponent("sub")
+            .appendingPathComponent("..")
+            .appendingPathComponent("..")
+            .appendingPathComponent("escape")
+
+        #expect(FileNode.isWithinProjectRoot(traversalURL, projectRoot: projectDir) == false)
+    }
+
+    @Test func isWithinProjectRootRejectsSimilarPrefix() throws {
+        let baseDir = try makeTempDirectory()
+        defer { cleanup(baseDir) }
+
+        // project vs project-evil — must not pass prefix check
+        let projectDir = baseDir.appendingPathComponent("project")
+        let evilDir = baseDir.appendingPathComponent("project-evil")
+        try FileManager.default.createDirectory(at: projectDir, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: evilDir, withIntermediateDirectories: true)
+
+        #expect(FileNode.isWithinProjectRoot(evilDir, projectRoot: projectDir) == false)
+    }
+
     // MARK: - Root boundary check for file operations
 
     @Test func isWithinProjectRootAcceptsInternalPaths() throws {

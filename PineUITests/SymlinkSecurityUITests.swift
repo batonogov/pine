@@ -123,6 +123,58 @@ final class SymlinkSecurityUITests: PineUITestCase {
         )
     }
 
+    func testNewFileInsideOutsideSymlinkIsBlocked() throws {
+        launchWithProject(projectURL)
+
+        let sidebar = app.outlines["sidebar"]
+        XCTAssertTrue(waitForExistence(sidebar, timeout: 10))
+
+        // The outside symlink is a directory node — its context menu should have New File
+        let externalNode = app.staticTexts["fileNode_external"]
+        XCTAssertTrue(waitForExistence(externalNode, timeout: 5))
+
+        externalNode.rightClick()
+        let newFileItem = app.menuItems["doc.badge.plus"]
+        XCTAssertTrue(waitForExistence(newFileItem, timeout: 3))
+        newFileItem.click()
+
+        // Wait for potential error alert
+        sleep(2)
+
+        // No file should have been created inside the outside directory
+        let contents = try? FileManager.default.contentsOfDirectory(atPath: outsideDir.path)
+        XCTAssertEqual(
+            contents?.count, 1,
+            "No new file should be created inside outside-root symlink target (only secret.txt)"
+        )
+    }
+
+    func testRenameOnOutsideSymlinkIsBlocked() throws {
+        launchWithProject(projectURL)
+
+        let sidebar = app.outlines["sidebar"]
+        XCTAssertTrue(waitForExistence(sidebar, timeout: 10))
+
+        let externalNode = app.staticTexts["fileNode_external"]
+        XCTAssertTrue(waitForExistence(externalNode, timeout: 5))
+
+        // Right-click and select Rename
+        externalNode.rightClick()
+        let renameItem = app.menuItems["pencil"]
+        XCTAssertTrue(waitForExistence(renameItem, timeout: 3))
+        renameItem.click()
+
+        // Type a new name and press Enter
+        app.typeText("renamed\r")
+        sleep(2)
+
+        // The outside directory should still exist under its original name
+        XCTAssertTrue(
+            FileManager.default.fileExists(atPath: outsideDir.path),
+            "Outside directory must not be renamed via symlink"
+        )
+    }
+
     func testDuplicateOnOutsideSymlinkIsBlocked() throws {
         launchWithProject(projectURL)
 
