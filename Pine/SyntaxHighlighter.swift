@@ -82,7 +82,9 @@ final class SyntaxHighlighter {
     private var grammarPatterns: [(regex: NSRegularExpression, grammar: Grammar)] = []
 
     /// Кэш результатов pattern matching по имени файла.
-    private var patternMatchCache: [String: Grammar?] = [:]
+    private var patternMatchCache: [String: Grammar] = [:]
+    /// Имена файлов, для которых ни один паттерн не подошёл.
+    private var patternMatchNegativeCache: Set<String> = []
 
     /// Скомпилированное правило подсветки.
     struct CompiledRule {
@@ -130,6 +132,7 @@ final class SyntaxHighlighter {
             }
         }
         patternMatchCache.removeAll()
+        patternMatchNegativeCache.removeAll()
         compileRules(for: grammar)
     }
 
@@ -141,6 +144,7 @@ final class SyntaxHighlighter {
         compiledRules.removeAll()
         multilineMatchCache.removeAll()
         patternMatchCache.removeAll()
+        patternMatchNegativeCache.removeAll()
         loadGrammars()
     }
 
@@ -161,31 +165,7 @@ final class SyntaxHighlighter {
             do {
                 let data = try Data(contentsOf: url)
                 let grammar = try decoder.decode(Grammar.self, from: data)
-
-                // Индексируем по каждому расширению
-                for ext in grammar.extensions {
-                    grammarsByExtension[ext.lowercased()] = grammar
-                }
-
-                // Индексируем по имени файла (если указано)
-                if let fileNames = grammar.fileNames {
-                    for name in fileNames {
-                        grammarsByFileName[name] = grammar
-                    }
-                }
-
-                // Индексируем glob-паттерны (если указаны)
-                if let patterns = grammar.filePatterns {
-                    for pattern in patterns {
-                        if let regex = Self.compileGlob(pattern) {
-                            grammarPatterns.append((regex: regex, grammar: grammar))
-                        }
-                    }
-                }
-
-                // Компилируем regex один раз при загрузке
-                compileRules(for: grammar)
-
+                registerGrammar(grammar)
             } catch {
                 // Пропускаем файлы, которые не являются грамматиками (например Assets JSON)
                 continue
@@ -387,12 +367,15 @@ final class SyntaxHighlighter {
         if let cached = patternMatchCache[fileName] {
             return cached
         }
+        if patternMatchNegativeCache.contains(fileName) {
+            return nil
+        }
         let range = NSRange(location: 0, length: (fileName as NSString).length)
         for entry in grammarPatterns where entry.regex.firstMatch(in: fileName, range: range) != nil {
             patternMatchCache[fileName] = entry.grammar
             return entry.grammar
         }
-        patternMatchCache[fileName] = nil
+        patternMatchNegativeCache.insert(fileName)
         return nil
     }
 

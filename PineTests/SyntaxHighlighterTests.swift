@@ -288,7 +288,8 @@ struct SyntaxHighlighterTests {
         let keywordColor = hl.theme.color(for: "keyword")
 
         // "Dockerfile.prod" should match pattern "Dockerfile.*"
-        hl.highlight(textStorage: storage, language: "prod", fileName: "Dockerfile.prod", font: font)
+        // Use empty language to ensure pattern matching is tested (not extension matching)
+        hl.highlight(textStorage: storage, language: "", fileName: "Dockerfile.prod", font: font)
         #expect(foregroundColor(in: storage, at: 0) == keywordColor,
                 "Dockerfile.prod should match 'Dockerfile.*' pattern")
     }
