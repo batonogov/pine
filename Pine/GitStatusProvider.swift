@@ -79,6 +79,37 @@ final class GitStatusProvider {
         refreshBranches(at: url)
     }
 
+    /// Runs git refresh on a background queue and updates properties on the main thread.
+    /// Safe to call from the main thread — does not block.
+    /// Supports cooperative cancellation — if the Task is cancelled before
+    /// the background work completes, stale results are discarded.
+    func refreshAsync() async {
+        guard isGitRepository, let url = repositoryURL else { return }
+        let rootPath = gitRootPath
+
+        let (branch, statuses, ignored, branchList) = await withCheckedContinuation { continuation in
+            DispatchQueue.global(qos: .userInitiated).async {
+                let bg = GitStatusProvider()
+                bg.repositoryURL = url
+                bg.isGitRepository = true
+                bg.gitRootPath = rootPath
+                bg.refresh()
+                continuation.resume(returning: (bg.currentBranch, bg.fileStatuses, bg.ignoredPaths, bg.branches))
+            }
+        }
+
+        // If the Task was cancelled (e.g. a newer refresh started),
+        // discard stale results to avoid overwriting newer data.
+        guard !Task.isCancelled else { return }
+
+        await MainActor.run {
+            self.currentBranch = branch
+            self.fileStatuses = statuses
+            self.ignoredPaths = ignored
+            self.branches = branchList
+        }
+    }
+
     // MARK: - Status Queries
 
     func statusForFile(at url: URL) -> GitFileStatus? {

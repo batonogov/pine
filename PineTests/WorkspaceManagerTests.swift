@@ -27,6 +27,46 @@ struct WorkspaceManagerTests {
         try? FileManager.default.removeItem(at: url)
     }
 
+    @discardableResult
+    private func runShell(_ command: String, at dir: URL) throws -> String {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/bin/sh")
+        process.arguments = ["-c", command]
+        process.currentDirectoryURL = dir
+        let outPipe = Pipe()
+        let errPipe = Pipe()
+        process.standardOutput = outPipe
+        process.standardError = errPipe
+        try process.run()
+        process.waitUntilExit()
+        let outData = outPipe.fileHandleForReading.readDataToEndOfFile()
+        let errData = errPipe.fileHandleForReading.readDataToEndOfFile()
+        guard process.terminationStatus == 0 else {
+            let stderr = String(data: errData, encoding: .utf8) ?? ""
+            throw NSError(
+                domain: "ShellError",
+                code: Int(process.terminationStatus),
+                userInfo: [NSLocalizedDescriptionKey: "'\(command)' failed: \(stderr)"]
+            )
+        }
+        return String(data: outData, encoding: .utf8) ?? ""
+    }
+
+    private func makeGitRepo() throws -> URL {
+        let dir = try makeTempDirectory()
+        try runShell("git init", at: dir)
+        try runShell("git config user.email 'test@test.com'", at: dir)
+        try runShell("git config user.name 'Test'", at: dir)
+        try "initial".write(
+            to: dir.appendingPathComponent("README.md"),
+            atomically: true,
+            encoding: .utf8
+        )
+        try runShell("git add .", at: dir)
+        try runShell("git -c commit.gpgsign=false commit -m 'initial'", at: dir)
+        return dir
+    }
+
     @Test("Initial state has empty rootNodes and default project name")
     func initialState() {
         let manager = WorkspaceManager()
@@ -153,8 +193,6 @@ struct WorkspaceManagerTests {
 
         let manager = WorkspaceManager()
         manager.loadDirectory(url: dir)
-        // setup() runs in background via loadDirectoryContentsAsync;
-        // call it directly so the test doesn't need to await async dispatch.
         manager.gitProvider.setup(repositoryURL: dir)
         manager.refreshFileTree()
 
@@ -163,26 +201,113 @@ struct WorkspaceManagerTests {
         #expect(manager.gitProvider.ignoredPaths.contains(".env"))
     }
 
-    @discardableResult
-    private func runShell(_ command: String, at dir: URL) throws -> String {
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/bin/sh")
-        process.arguments = ["-c", command]
-        process.currentDirectoryURL = dir
-        let outPipe = Pipe()
-        let errPipe = Pipe()
-        process.standardOutput = outPipe
-        process.standardError = errPipe
-        try process.run()
-        process.waitUntilExit()
-        let outData = outPipe.fileHandleForReading.readDataToEndOfFile()
-        let errData = errPipe.fileHandleForReading.readDataToEndOfFile()
-        guard process.terminationStatus == 0 else {
-            let stderr = String(data: errData, encoding: .utf8) ?? ""
-            throw NSError(domain: "ShellError", code: Int(process.terminationStatus),
-                          userInfo: [NSLocalizedDescriptionKey: stderr])
+    @Test("refreshFileTree updates file tree synchronously but does not run git synchronously")
+    func refreshFileTreeGitAsync() throws {
+        let dir = try makeGitRepo()
+        defer { cleanup(dir) }
+
+        let manager = WorkspaceManager()
+        manager.loadDirectory(url: dir)
+        manager.gitProvider.setup(repositoryURL: dir)
+        manager.refreshFileTree()
+
+        // Create an untracked file — git status should detect it after refresh
+        try "new".write(
+            to: dir.appendingPathComponent("untracked.txt"),
+            atomically: true,
+            encoding: .utf8
+        )
+
+        // refreshFileTree() should update the file tree synchronously
+        // but NOT update git status synchronously (that's the fix).
+        manager.refreshFileTree()
+
+        // File tree is updated immediately (synchronous)
+        let names = manager.rootNodes.map(\.url.lastPathComponent)
+        #expect(names.contains("untracked.txt"))
+        #expect(names.contains("README.md"))
+
+        // Git status has NOT been updated yet — refreshAsync() is still in-flight.
+        // The untracked file should NOT appear in fileStatuses immediately,
+        // proving that git refresh is no longer synchronous.
+        #expect(manager.gitProvider.fileStatuses["untracked.txt"] == nil)
+    }
+
+    @Test("multiple rapid refreshFileTree calls do not crash")
+    func rapidRefreshFileTree() throws {
+        let dir = try makeGitRepo()
+        defer { cleanup(dir) }
+
+        let manager = WorkspaceManager()
+        manager.loadDirectory(url: dir)
+        manager.refreshFileTree()
+
+        // Simulate rapid user actions (create, rename, delete) that each
+        // trigger refreshFileTree(). Each spawns a Task with refreshAsync() —
+        // multiple overlapping async git processes should not crash.
+        for i in 0..<5 {
+            try "file\(i)".write(
+                to: dir.appendingPathComponent("file\(i).txt"),
+                atomically: true,
+                encoding: .utf8
+            )
+            manager.refreshFileTree()
         }
-        return String(data: outData, encoding: .utf8) ?? ""
+
+        // File tree should reflect the latest state
+        let names = manager.rootNodes.map(\.url.lastPathComponent)
+        for i in 0..<5 {
+            #expect(names.contains("file\(i).txt"))
+        }
+    }
+
+    @Test("refreshFileTree works on non-git directory without crash")
+    func refreshFileTreeNonGitDirectory() throws {
+        let dir = try makeTempDirectory()
+        defer { cleanup(dir) }
+
+        try "hello".write(
+            to: dir.appendingPathComponent("hello.txt"),
+            atomically: true,
+            encoding: .utf8
+        )
+
+        let manager = WorkspaceManager()
+        manager.loadDirectory(url: dir)
+        // refreshFileTree on non-git dir — refreshAsync() should bail out
+        // (guard isGitRepository) without crash
+        manager.refreshFileTree()
+
+        #expect(manager.rootNodes.count == 1)
+        #expect(manager.gitProvider.isGitRepository == false)
+    }
+
+    @Test("refreshFileTree then loadDirectory does not crash from stale async git")
+    func refreshFileTreeThenSwitchProject() throws {
+        let dir1 = try makeGitRepo()
+        let dir2 = try makeTempDirectory()
+        defer { cleanup(dir1); cleanup(dir2) }
+
+        try "file".write(
+            to: dir2.appendingPathComponent("other.txt"),
+            atomically: true,
+            encoding: .utf8
+        )
+
+        let manager = WorkspaceManager()
+        manager.loadDirectory(url: dir1)
+        manager.gitProvider.setup(repositoryURL: dir1)
+        // Trigger async git refresh on dir1
+        manager.refreshFileTree()
+
+        // Immediately switch to dir2 (non-git) — async git Task for dir1
+        // is still in-flight but should not crash or corrupt state
+        manager.loadDirectory(url: dir2)
+        manager.refreshFileTree()
+
+        #expect(manager.rootURL == dir2)
+        let names = manager.rootNodes.map(\.url.lastPathComponent)
+        #expect(names.contains("other.txt"))
     }
 
     @Test("loadDirectory twice quickly uses latest directory")
