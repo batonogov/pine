@@ -129,7 +129,7 @@ jobs:
 
       - name: Download Sparkle tools
         run: |
-          SPARKLE_VERSION="2.6.4"
+          SPARKLE_VERSION="2.9.0"
           curl -L -o "$RUNNER_TEMP/Sparkle.tar.xz" \
             "https://github.com/sparkle-project/Sparkle/releases/download/${SPARKLE_VERSION}/Sparkle-${SPARKLE_VERSION}.tar.xz"
           mkdir -p "$RUNNER_TEMP/sparkle"
