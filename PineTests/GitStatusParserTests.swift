@@ -137,6 +137,19 @@ struct GitStatusParserTests {
         #expect(GitStatusProvider.unquoteGitPath("\"a\\tb\\nc\"") == "a\tb\nc")
     }
 
+    @Test func parseStatusOutputSkipsIgnoredEntries() {
+        let output = """
+         M src/main.swift
+        !! .claude/
+        !! default.profraw
+        """
+        let statuses = GitStatusProvider.parseStatusOutput(output)
+        #expect(statuses.count == 1)
+        #expect(statuses["src/main.swift"] == .modified)
+        #expect(statuses[".claude/"] == nil)
+        #expect(statuses["default.profraw"] == nil)
+    }
+
     // MARK: - statusForDirectory
 
     @Test func directoryStatusShowsConflictOverOthers() {

@@ -874,7 +874,8 @@ struct FileNodeRow: View {
                 inlineEditor
             } else {
                 Label(node.name, systemImage: iconName)
-                    .foregroundStyle(isGitIgnored ? .secondary : gitStatus?.color ?? .primary)
+                    .foregroundStyle(gitStatus?.color ?? .primary)
+                    .opacity(isGitIgnored ? 0.5 : 1.0)
             }
         }
         .tag(node)
