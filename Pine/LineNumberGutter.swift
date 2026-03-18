@@ -32,6 +32,9 @@ final class LineNumberView: NSView {
         diffMap = Dictionary(lineDiffs.map { ($0.line, $0.kind) }, uniquingKeysWith: { _, last in last })
     }
 
+    /// Cached total line count — updated on text change, not on every draw.
+    private var cachedTotalLines = 1
+
     // Diff marker colors
     private let addedColor = NSColor.systemGreen
     private let modifiedColor = NSColor.systemBlue
@@ -83,7 +86,20 @@ final class LineNumberView: NSView {
     }
 
     @objc private func contentDidChange() {
+        recountTotalLines()
         needsDisplay = true
+    }
+
+    private func recountTotalLines() {
+        guard let source = textView?.string as NSString? else {
+            cachedTotalLines = 1
+            return
+        }
+        var count = 1
+        for i in 0..<source.length where source.character(at: i) == 0x0A {
+            count += 1
+        }
+        cachedTotalLines = count
     }
 
     override func draw(_ dirtyRect: NSRect) {
@@ -136,11 +152,8 @@ final class LineNumberView: NSView {
         )
         var lineNumber = 1
         if firstVisibleCharIndex > 0 {
-            // Быстрый подсчёт \n без аллокации массива строк
-            let ptr = source as String
             var count = 0
-            let endIndex = ptr.utf16.index(ptr.utf16.startIndex, offsetBy: firstVisibleCharIndex)
-            for ch in ptr.utf16[ptr.utf16.startIndex..<endIndex] where ch == 0x0A {
+            for i in 0..<firstVisibleCharIndex where source.character(at: i) == 0x0A {
                 count += 1
             }
             lineNumber = count + 1
@@ -232,11 +245,7 @@ final class LineNumberView: NSView {
         }
 
         // ── Обновляем ширину гуттера если изменилось количество цифр ──
-        var totalLines = 1
-        for i in 0..<source.length where source.character(at: i) == 0x0A {
-            totalLines += 1
-        }
-        let digits = max(String(totalLines).count, 2)
+        let digits = max(String(cachedTotalLines).count, 2)
         let charWidth = "0".size(withAttributes: [.font: gutterFont]).width
         let newWidth = CGFloat(digits) * charWidth + 20
         if abs(gutterWidth - newWidth) > 1 {
