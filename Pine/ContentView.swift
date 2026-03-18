@@ -319,7 +319,7 @@ struct ContentView: View {
             case .alertFirstButtonReturn:
                 guard let index = tabManager.tabs.firstIndex(where: { $0.id == tab.id }) else { return }
                 guard tabManager.saveTab(at: index) else { return }
-                workspace.gitProvider.refresh()
+                workspace.gitProvider.refreshAsync()
                 tabManager.closeTab(id: tab.id)
             case .alertSecondButtonReturn:
                 tabManager.closeTab(id: tab.id)

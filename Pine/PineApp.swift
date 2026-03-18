@@ -123,7 +123,7 @@ struct PineApp: App {
                 Button(Strings.menuSave) {
                     guard let pm = focusedProject else { return }
                     if pm.tabManager.saveActiveTab() {
-                        pm.workspace.gitProvider.refresh()
+                        pm.workspace.gitProvider.refreshAsync()
                         NotificationCenter.default.post(name: .refreshLineDiffs, object: nil)
                     }
                 }
@@ -132,7 +132,7 @@ struct PineApp: App {
                 Button(Strings.menuSaveAll) {
                     guard let pm = focusedProject else { return }
                     if pm.tabManager.saveAllTabs() {
-                        pm.workspace.gitProvider.refresh()
+                        pm.workspace.gitProvider.refreshAsync()
                         NotificationCenter.default.post(name: .refreshLineDiffs, object: nil)
                     }
                 }
@@ -152,7 +152,7 @@ struct PineApp: App {
                     guard panel.runModal() == .OK, let url = panel.url else { return }
                     do {
                         try pm.tabManager.saveActiveTabAs(to: url)
-                        pm.workspace.gitProvider.refresh()
+                        pm.workspace.gitProvider.refreshAsync()
                         NotificationCenter.default.post(name: .refreshLineDiffs, object: nil)
                     } catch {
                         let alert = NSAlert()
