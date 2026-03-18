@@ -189,7 +189,7 @@ struct GitStatusParserTests {
         #expect(ignored.contains("tmp/pids"))
     }
 
-    // MARK: - isIgnored / isDirectoryIgnored
+    // MARK: - isIgnored
 
     @Test func isIgnoredReturnsTrueForIgnoredFile() {
         let provider = GitStatusProvider()
@@ -212,15 +212,28 @@ struct GitStatusParserTests {
         #expect(provider.isIgnored(at: fileURL) == true)
     }
 
-    @Test func isDirectoryIgnoredReturnsTrueForIgnoredDir() {
+    @Test func isIgnoredReturnsTrueForIgnoredDir() {
         let provider = GitStatusProvider()
         provider.gitRootPath = "/repo"
         provider.ignoredPaths = ["node_modules"]
 
         let dirURL = URL(fileURLWithPath: "/repo/node_modules")
-        #expect(provider.isDirectoryIgnored(at: dirURL) == true)
+        #expect(provider.isIgnored(at: dirURL) == true)
 
         let srcURL = URL(fileURLWithPath: "/repo/src")
-        #expect(provider.isDirectoryIgnored(at: srcURL) == false)
+        #expect(provider.isIgnored(at: srcURL) == false)
+    }
+
+    @Test func isIgnoredDoesNotFalsePositiveOnCommonPrefix() {
+        let provider = GitStatusProvider()
+        provider.gitRootPath = "/repo"
+        provider.ignoredPaths = ["build"]
+
+        // "buildtools" shares prefix with "build" but is NOT ignored
+        let toolsURL = URL(fileURLWithPath: "/repo/buildtools/script.sh")
+        #expect(provider.isIgnored(at: toolsURL) == false)
+
+        let toolsDirURL = URL(fileURLWithPath: "/repo/buildtools")
+        #expect(provider.isIgnored(at: toolsDirURL) == false)
     }
 }
