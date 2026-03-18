@@ -2,7 +2,7 @@
     "name": "INI",
     "extensions": ["ini", "conf", "cfg", "properties", "env"],
     "fileNames": [".editorconfig", ".gitconfig", ".npmrc", ".pylintrc"],
-    "filePatterns": [".env.*", "*.conf", "*.cfg"],
+    "filePatterns": [".env.*"],
     "lineComment": "#",
     "rules": [
         {

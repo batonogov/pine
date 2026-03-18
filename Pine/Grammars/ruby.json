@@ -27,7 +27,7 @@
             "scope": "string"
         },
         {
-            "pattern": "<<~?[A-Z_][A-Z0-9_]*[\\s\\S]*?^\\s*[A-Z_][A-Z0-9_]*$",
+            "pattern": "<<~?([A-Z_][A-Z0-9_]*)[\\s\\S]*?^\\s*\\1$",
             "scope": "string",
             "options": ["anchorsMatchLines"]
         },

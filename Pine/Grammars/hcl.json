@@ -18,7 +18,7 @@
             "scope": "comment"
         },
         {
-            "pattern": "<<-?\\w+[\\s\\S]*?^\\s*\\w+$",
+            "pattern": "<<-?(\\w+)[\\s\\S]*?^\\s*\\1$",
             "scope": "string",
             "options": ["anchorsMatchLines"]
         },

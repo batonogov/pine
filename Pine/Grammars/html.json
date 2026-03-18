@@ -60,7 +60,7 @@
             "scope": "function"
         },
         {
-            "pattern": "!(important)\\b",
+            "pattern": "!important\\b",
             "scope": "keyword"
         }
     ]
