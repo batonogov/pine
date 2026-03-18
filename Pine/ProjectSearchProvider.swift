@@ -11,11 +11,12 @@ import UniformTypeIdentifiers
 // MARK: - Models
 
 struct SearchMatch: Identifiable, Hashable {
-    let id = UUID()
     let lineNumber: Int
     let lineContent: String
     let matchRangeStart: Int
     let matchRangeLength: Int
+
+    var id: Int { lineNumber &* 100_003 &+ matchRangeStart }
 }
 
 struct SearchFileGroup: Identifiable {
@@ -90,15 +91,18 @@ final class ProjectSearchProvider {
         isCaseSensitive: Bool,
         rootURL: URL
     ) async -> [SearchFileGroup] {
-        let ignoredPaths = await gitIgnoredPaths(rootURL: rootURL)
-        let files = collectSearchableFiles(rootURL: rootURL, ignoredPaths: ignoredPaths)
+        guard !query.isEmpty else { return [] }
 
-        var groups: [SearchFileGroup] = []
-        var totalMatches = 0
+        let ignoredDirs = await gitIgnoredDirectories(rootURL: rootURL)
         let resolvedRoot = rootURL.resolvingSymlinksInPath()
         let rootPath = resolvedRoot.path.hasSuffix("/") ? resolvedRoot.path : resolvedRoot.path + "/"
 
-        for fileURL in files {
+        let files = collectSearchableFiles(rootURL: rootURL, ignoredDirs: ignoredDirs, resolvedRootPath: rootPath)
+
+        var groups: [SearchFileGroup] = []
+        var totalMatches = 0
+
+        for (fileURL, relativePath) in files {
             guard !Task.isCancelled else { break }
             guard totalMatches < maxResults else { break }
 
@@ -110,11 +114,6 @@ final class ProjectSearchProvider {
             )
 
             if !matches.isEmpty {
-                let resolvedFile = fileURL.resolvingSymlinksInPath().path
-                let relativePath = resolvedFile.hasPrefix(rootPath)
-                    ? String(resolvedFile.dropFirst(rootPath.count))
-                    : fileURL.lastPathComponent
-
                 groups.append(SearchFileGroup(
                     url: fileURL,
                     relativePath: relativePath,
@@ -171,16 +170,21 @@ final class ProjectSearchProvider {
 
     // MARK: - File collection
 
-    /// Collects all searchable text files under rootURL.
-    static func collectSearchableFiles(rootURL: URL, ignoredPaths: Set<String>) -> [URL] {
+    /// Collects all searchable text files under rootURL in a single pass.
+    /// Returns tuples of (fileURL, relativePath) to avoid resolving symlinks per-file later.
+    static func collectSearchableFiles(
+        rootURL: URL,
+        ignoredDirs: Set<String>,
+        resolvedRootPath: String
+    ) -> [(URL, String)] {
         let fm = FileManager.default
         guard let enumerator = fm.enumerator(
             at: rootURL,
-            includingPropertiesForKeys: [.isRegularFileKey, .fileSizeKey, .typeIdentifierKey],
+            includingPropertiesForKeys: [.isRegularFileKey, .fileSizeKey],
             options: [.skipsHiddenFiles]
         ) else { return [] }
 
-        var files: [URL] = []
+        var files: [(URL, String)] = []
 
         for case let fileURL as URL in enumerator {
             // Skip .git directory
@@ -189,16 +193,9 @@ final class ProjectSearchProvider {
                 continue
             }
 
-            // Skip ignored paths (check both exact match and parent directory match)
-            let filePath = fileURL.resolvingSymlinksInPath().path
-            if ignoredPaths.contains(filePath) {
-                enumerator.skipDescendants()
-                continue
-            }
-            let isInsideIgnored = ignoredPaths.contains { ignoredPath in
-                filePath.hasPrefix(ignoredPath + "/")
-            }
-            if isInsideIgnored {
+            // Skip ignored directories (O(1) lookup per path component)
+            let resolved = fileURL.resolvingSymlinksInPath().path
+            if ignoredDirs.contains(resolved) {
                 enumerator.skipDescendants()
                 continue
             }
@@ -212,7 +209,11 @@ final class ProjectSearchProvider {
             // Skip binary files
             if isBinaryFile(url: fileURL) { continue }
 
-            files.append(fileURL)
+            let relativePath = resolved.hasPrefix(resolvedRootPath)
+                ? String(resolved.dropFirst(resolvedRootPath.count))
+                : fileURL.lastPathComponent
+
+            files.append((fileURL, relativePath))
         }
 
         return files
@@ -231,57 +232,30 @@ final class ProjectSearchProvider {
 
     // MARK: - .gitignore support
 
-    /// Uses `git check-ignore` to find ignored paths.
-    /// Runs FileManager enumeration and Process on a background thread
-    /// to avoid Swift 6 sendability warnings on the main actor.
-    static func gitIgnoredPaths(rootURL: URL) async -> Set<String> {
+    /// Uses `git ls-files` to find ignored directories in a single git call
+    /// (no need to enumerate the filesystem first).
+    static func gitIgnoredDirectories(rootURL: URL) async -> Set<String> {
         await withCheckedContinuation { continuation in
             DispatchQueue.global(qos: .userInitiated).async {
-                let result = gitIgnoredPathsSync(rootURL: rootURL)
+                let result = gitIgnoredDirectoriesSync(rootURL: rootURL)
                 continuation.resume(returning: result)
             }
         }
     }
 
-    /// Synchronous implementation of .gitignore path collection.
-    static func gitIgnoredPathsSync(rootURL: URL) -> Set<String> {
-        // Check if this is a git repo
+    /// Synchronous implementation — returns absolute paths of ignored directories.
+    static func gitIgnoredDirectoriesSync(rootURL: URL) -> Set<String> {
         let gitDir = rootURL.appendingPathComponent(".git")
         guard FileManager.default.fileExists(atPath: gitDir.path) else { return [] }
 
-        // Collect all paths relative to root
-        let fm = FileManager.default
-        guard let enumerator = fm.enumerator(
-            at: rootURL,
-            includingPropertiesForKeys: nil,
-            options: [.skipsHiddenFiles]
-        ) else { return [] }
-
-        var relativePaths: [String] = []
-        let rootPath = rootURL.path.hasSuffix("/") ? rootURL.path : rootURL.path + "/"
-
-        for case let fileURL as URL in enumerator {
-            if fileURL.lastPathComponent == ".git" {
-                enumerator.skipDescendants()
-                continue
-            }
-            let path = fileURL.path
-            if path.hasPrefix(rootPath) {
-                relativePaths.append(String(path.dropFirst(rootPath.count)))
-            }
-        }
-
-        guard !relativePaths.isEmpty else { return [] }
-
-        // Run git check-ignore --stdin
+        // Use git ls-files to get ignored files, then extract their parent directories.
+        // This avoids a full filesystem enumeration just to feed git check-ignore.
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
-        process.arguments = ["check-ignore", "--stdin"]
+        process.arguments = ["ls-files", "--others", "--ignored", "--exclude-standard", "--directory"]
         process.currentDirectoryURL = rootURL
 
-        let inputPipe = Pipe()
         let outputPipe = Pipe()
-        process.standardInput = inputPipe
         process.standardOutput = outputPipe
         process.standardError = FileHandle.nullDevice
 
@@ -291,21 +265,22 @@ final class ProjectSearchProvider {
             return []
         }
 
-        let inputData = relativePaths.joined(separator: "\n").data(using: .utf8) ?? Data()
-        inputPipe.fileHandleForWriting.write(inputData)
-        inputPipe.fileHandleForWriting.closeFile()
-
         process.waitUntilExit()
 
         let outputData = outputPipe.fileHandleForReading.readDataToEndOfFile()
         guard let output = String(data: outputData, encoding: .utf8) else { return [] }
 
-        var ignored = Set<String>()
+        let rootPath = rootURL.resolvingSymlinksInPath().path
+        let base = rootPath.hasSuffix("/") ? rootPath : rootPath + "/"
+
+        var dirs = Set<String>()
         for line in output.components(separatedBy: "\n") where !line.isEmpty {
-            let fullPath = rootPath + line
-            ignored.insert(fullPath)
+            // --directory flag outputs directory names with trailing /
+            let cleaned = line.hasSuffix("/") ? String(line.dropLast()) : line
+            let fullPath = base + cleaned
+            dirs.insert(fullPath)
         }
 
-        return ignored
+        return dirs
     }
 }

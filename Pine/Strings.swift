@@ -234,6 +234,7 @@ enum Strings {
 
     static let searchPlaceholder: LocalizedStringKey = "search.placeholder"
     static let searchNoResults: LocalizedStringKey = "search.noResults"
+    static let searchCaseSensitive: LocalizedStringKey = "search.caseSensitive"
     static let menuFindInProject: LocalizedStringKey = "menu.findInProject"
     static let sidebarFiles: LocalizedStringKey = "sidebar.files"
     static let sidebarSearch: LocalizedStringKey = "sidebar.search"

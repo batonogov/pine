@@ -31,6 +31,12 @@ struct ProjectSearchProviderTests {
         try? FileManager.default.removeItem(at: dir)
     }
 
+    /// Helper to resolve root path for collectSearchableFiles.
+    private func resolvedRootPath(for dir: URL) -> String {
+        let resolved = dir.resolvingSymlinksInPath().path
+        return resolved.hasSuffix("/") ? resolved : resolved + "/"
+    }
+
     // MARK: - searchFile tests
 
     @Test("searchFile finds matches in file content")
@@ -162,8 +168,11 @@ struct ProjectSearchProviderTests {
         ])
         defer { cleanup(dir) }
 
-        let files = ProjectSearchProvider.collectSearchableFiles(rootURL: dir, ignoredPaths: [])
-        let names = Set(files.map(\.lastPathComponent))
+        let rootPath = resolvedRootPath(for: dir)
+        let files = ProjectSearchProvider.collectSearchableFiles(
+            rootURL: dir, ignoredDirs: [], resolvedRootPath: rootPath
+        )
+        let names = Set(files.map(\.0.lastPathComponent))
 
         #expect(names.contains("main.swift"))
         #expect(!names.contains("config"))
@@ -177,15 +186,18 @@ struct ProjectSearchProviderTests {
         ])
         defer { cleanup(dir) }
 
-        let files = ProjectSearchProvider.collectSearchableFiles(rootURL: dir, ignoredPaths: [])
-        let names = Set(files.map(\.lastPathComponent))
+        let rootPath = resolvedRootPath(for: dir)
+        let files = ProjectSearchProvider.collectSearchableFiles(
+            rootURL: dir, ignoredDirs: [], resolvedRootPath: rootPath
+        )
+        let names = Set(files.map(\.0.lastPathComponent))
 
         #expect(names.contains("main.swift"))
         #expect(!names.contains("image.png"))
     }
 
-    @Test("collectSearchableFiles skips ignored paths")
-    func collectSkipsIgnoredPaths() throws {
+    @Test("collectSearchableFiles skips ignored directories")
+    func collectSkipsIgnoredDirs() throws {
         let dir = try createTestProject(files: [
             "main.swift": "code",
             "build/output.txt": "build output"
@@ -193,11 +205,11 @@ struct ProjectSearchProviderTests {
         defer { cleanup(dir) }
 
         let buildPath = dir.appendingPathComponent("build").resolvingSymlinksInPath().path
+        let rootPath = resolvedRootPath(for: dir)
         let files = ProjectSearchProvider.collectSearchableFiles(
-            rootURL: dir,
-            ignoredPaths: [buildPath]
+            rootURL: dir, ignoredDirs: [buildPath], resolvedRootPath: rootPath
         )
-        let names = Set(files.map(\.lastPathComponent))
+        let names = Set(files.map(\.0.lastPathComponent))
 
         #expect(names.contains("main.swift"))
         #expect(!names.contains("output.txt"))
@@ -213,11 +225,28 @@ struct ProjectSearchProviderTests {
         let largeData = Data(count: ProjectSearchProvider.maxFileSize + 1)
         try largeData.write(to: largeURL)
 
-        let files = ProjectSearchProvider.collectSearchableFiles(rootURL: dir, ignoredPaths: [])
-        let names = Set(files.map(\.lastPathComponent))
+        let rootPath = resolvedRootPath(for: dir)
+        let files = ProjectSearchProvider.collectSearchableFiles(
+            rootURL: dir, ignoredDirs: [], resolvedRootPath: rootPath
+        )
+        let names = Set(files.map(\.0.lastPathComponent))
 
         #expect(names.contains("main.swift"))
         #expect(!names.contains("large.txt"))
+    }
+
+    @Test("collectSearchableFiles returns relative paths")
+    func collectReturnsRelativePaths() throws {
+        let dir = try createTestProject(files: ["sub/file.txt": "content"])
+        defer { cleanup(dir) }
+
+        let rootPath = resolvedRootPath(for: dir)
+        let files = ProjectSearchProvider.collectSearchableFiles(
+            rootURL: dir, ignoredDirs: [], resolvedRootPath: rootPath
+        )
+
+        #expect(files.count == 1)
+        #expect(files[0].1 == "sub/file.txt")
     }
 
     // MARK: - performSearch integration tests
@@ -243,14 +272,11 @@ struct ProjectSearchProviderTests {
     }
 
     @Test("performSearch with empty query returns empty results")
-    func performSearchEmptyQuery() async throws {
-        let dir = try createTestProject(files: ["test.txt": "content"])
-        defer { cleanup(dir) }
-
+    func performSearchEmptyQuery() async {
         let groups = await ProjectSearchProvider.performSearch(
             query: "",
             isCaseSensitive: false,
-            rootURL: dir
+            rootURL: URL(fileURLWithPath: "/tmp")
         )
 
         #expect(groups.isEmpty)
@@ -289,6 +315,22 @@ struct ProjectSearchProviderTests {
     func isBinaryAllowsUnknown() {
         let url = URL(fileURLWithPath: "/tmp/test.xyz123")
         #expect(!ProjectSearchProvider.isBinaryFile(url: url))
+    }
+
+    // MARK: - SearchMatch identity tests
+
+    @Test("SearchMatch id is deterministic from lineNumber and matchRangeStart")
+    func searchMatchIdDeterministic() {
+        let match1 = SearchMatch(lineNumber: 5, lineContent: "test", matchRangeStart: 10, matchRangeLength: 4)
+        let match2 = SearchMatch(lineNumber: 5, lineContent: "test", matchRangeStart: 10, matchRangeLength: 4)
+        #expect(match1.id == match2.id)
+    }
+
+    @Test("SearchMatch id differs for different positions")
+    func searchMatchIdDiffers() {
+        let match1 = SearchMatch(lineNumber: 5, lineContent: "test", matchRangeStart: 10, matchRangeLength: 4)
+        let match2 = SearchMatch(lineNumber: 6, lineContent: "test", matchRangeStart: 10, matchRangeLength: 4)
+        #expect(match1.id != match2.id)
     }
 
     // MARK: - Provider state tests

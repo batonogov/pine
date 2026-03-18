@@ -48,7 +48,7 @@ struct ProjectSearchView: View {
                         )
                 }
                 .buttonStyle(.plain)
-                .help("Case Sensitive")
+                .help(Strings.searchCaseSensitive)
                 .accessibilityIdentifier(AccessibilityID.projectSearchCaseSensitiveToggle)
             }
             .padding(.horizontal, 8)
@@ -97,7 +97,6 @@ struct ProjectSearchView: View {
 
     @ViewBuilder
     private func fileGroupView(_ group: SearchFileGroup) -> some View {
-        // File header
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 4) {
                 Image(systemName: FileIconMapper.iconForFile(group.url.lastPathComponent))
@@ -120,14 +119,36 @@ struct ProjectSearchView: View {
             .padding(.vertical, 4)
             .background(.bar)
 
-            // Match rows
             ForEach(group.matches) { match in
-                matchRow(match, fileURL: group.url)
+                MatchRowView(
+                    match: match,
+                    query: projectManager.searchProvider.query,
+                    isCaseSensitive: projectManager.searchProvider.isCaseSensitive,
+                    fileURL: group.url,
+                    tabManager: tabManager
+                )
             }
         }
     }
 
-    private func matchRow(_ match: SearchMatch, fileURL: URL) -> some View {
+    private func triggerSearch() {
+        guard let rootURL = projectManager.rootURL else { return }
+        projectManager.searchProvider.search(in: rootURL)
+    }
+}
+
+// MARK: - Match row with hover highlight
+
+private struct MatchRowView: View {
+    let match: SearchMatch
+    let query: String
+    let isCaseSensitive: Bool
+    let fileURL: URL
+    let tabManager: TabManager
+
+    @State private var isHovered = false
+
+    var body: some View {
         Button {
             tabManager.openTabAndGoToLine(url: fileURL, line: match.lineNumber)
         } label: {
@@ -137,25 +158,38 @@ struct ProjectSearchView: View {
                     .foregroundStyle(.tertiary)
                     .frame(width: 30, alignment: .trailing)
 
-                Text(match.lineContent)
+                highlightedText
                     .font(.system(size: 11, design: .monospaced))
                     .lineLimit(1)
                     .truncationMode(.tail)
-                    .foregroundStyle(.primary)
             }
             .padding(.horizontal, 8)
             .padding(.vertical, 2)
             .frame(maxWidth: .infinity, alignment: .leading)
             .contentShape(Rectangle())
+            .background(isHovered ? Color.primary.opacity(0.06) : Color.clear)
         }
         .buttonStyle(.plain)
-        .background {
-            Rectangle().fill(.clear)
-        }
+        .onHover { isHovered = $0 }
     }
 
-    private func triggerSearch() {
-        guard let rootURL = projectManager.rootURL else { return }
-        projectManager.searchProvider.search(in: rootURL)
+    /// Builds a Text view with the match highlighted in bold.
+    private var highlightedText: Text {
+        let content = match.lineContent
+        let options: String.CompareOptions = isCaseSensitive ? [] : [.caseInsensitive]
+
+        guard let range = content.range(of: query, options: options) else {
+            return Text(content).foregroundColor(.primary)
+        }
+
+        let before = Text(content[content.startIndex..<range.lowerBound])
+            .foregroundColor(.primary)
+        let matched = Text(content[range])
+            .foregroundColor(.accentColor)
+            .bold()
+        let after = Text(content[range.upperBound..<content.endIndex])
+            .foregroundColor(.primary)
+
+        return before + matched + after
     }
 }

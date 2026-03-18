@@ -31,6 +31,7 @@ struct ContentView: View {
     @State private var lineDiffs: [GitLineDiff] = []
     @State private var didRestoreSession = false
     @State private var sidebarMode: SidebarMode = .files
+    @State private var goToLineOffset: Int?
     @AppStorage("minimapVisible") private var isMinimapVisible = true
 
     private var activeTab: EditorTab? { tabManager.activeTab }
@@ -62,6 +63,18 @@ struct ContentView: View {
                 }
             }
             .accessibilityIdentifier(AccessibilityID.sidebar)
+            .toolbar {
+                ToolbarItem {
+                    Button {
+                        if let url = registry.openProjectViaPanel() {
+                            openWindow(value: url)
+                        }
+                    } label: {
+                        Image(systemName: "folder.badge.plus")
+                    }
+                    .help(Strings.openFolderTooltip)
+                }
+            }
         } detail: {
             VStack(spacing: 0) {
                 if terminal.isTerminalVisible {
@@ -170,6 +183,11 @@ struct ContentView: View {
         .onReceive(NotificationCenter.default.publisher(for: .showProjectSearch)) { _ in
             sidebarMode = .search
             columnVisibility = .all
+        }
+        .onChange(of: tabManager.pendingGoToLine) { _, newLine in
+            guard let line = newLine, let tab = tabManager.activeTab else { return }
+            tabManager.pendingGoToLine = nil
+            goToLineOffset = Self.cursorOffset(forLine: line, in: tab.content)
         }
     }
 
@@ -438,7 +456,6 @@ struct ContentView: View {
 
     @ViewBuilder
     private func codeEditorView(for tab: EditorTab) -> some View {
-        let cursorPosition = consumePendingGoToLine(tab: tab)
         CodeEditorView(
             text: Binding(
                 get: { tab.content },
@@ -449,23 +466,20 @@ struct ContentView: View {
             lineDiffs: lineDiffs,
             isMinimapVisible: isMinimapVisible,
             syntaxHighlightingDisabled: tab.syntaxHighlightingDisabled,
-            initialCursorPosition: cursorPosition,
-            initialScrollOffset: cursorPosition != tab.cursorPosition ? 0 : tab.scrollOffset,
+            initialCursorPosition: goToLineOffset ?? tab.cursorPosition,
+            initialScrollOffset: goToLineOffset != nil ? 0 : tab.scrollOffset,
             onStateChange: { cursor, scroll in
                 tabManager.updateEditorState(cursorPosition: cursor, scrollOffset: scroll)
             },
             fontSize: FontSizeSettings.shared.fontSize
         )
         .accessibilityIdentifier(AccessibilityID.codeEditor)
+        .onAppear { goToLineOffset = nil }
     }
 
-    /// Converts `pendingGoToLine` to a UTF-16 cursor offset and consumes it.
-    private func consumePendingGoToLine(tab: EditorTab) -> Int {
-        guard let line = tabManager.pendingGoToLine else {
-            return tab.cursorPosition
-        }
-        tabManager.pendingGoToLine = nil
-        let nsContent = tab.content as NSString
+    /// Converts a 1-based line number to a UTF-16 cursor offset within content.
+    static func cursorOffset(forLine line: Int, in content: String) -> Int {
+        let nsContent = content as NSString
         var currentLine = 1
         var offset = 0
         while currentLine < line && offset < nsContent.length {
@@ -847,16 +861,6 @@ struct SidebarView: View {
         }
         .listStyle(.sidebar)
         .frame(minWidth: 200, idealWidth: 250)
-        .toolbar {
-            ToolbarItem {
-                Button {
-                    openNewProject()
-                } label: {
-                    Image(systemName: "folder.badge.plus")
-                }
-                .help(Strings.openFolderTooltip)
-            }
-        }
     }
 
     /// Opens a new project via folder picker in a new window.
