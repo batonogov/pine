@@ -109,9 +109,6 @@ final class SyntaxHighlighter {
     /// Скомпилированные регионы встроенных языков, ключ — имя хост-грамматики.
     private var compiledEmbedded: [String: [CompiledEmbeddedRegion]] = [:]
 
-    /// Грамматики по имени (для поиска встроенных грамматик).
-    private var grammarsByName: [String: Grammar] = [:]
-
     /// Кэш «отпечатка» многострочных токенов по ObjectIdentifier текстового хранилища.
     /// Отпечаток — упорядоченный массив длин матчей (без позиций).
     /// Вставка/удаление выше токена сдвигает location, но не меняет длину,
@@ -184,8 +181,6 @@ final class SyntaxHighlighter {
 
     /// Компилирует regex-паттерны грамматики в NSRegularExpression.
     private func compileRules(for grammar: Grammar) {
-        grammarsByName[grammar.name] = grammar
-
         var rules: [CompiledRule] = []
 
         for rule in grammar.rules {
@@ -229,7 +224,7 @@ final class SyntaxHighlighter {
             for lang in embedded {
                 // Строим regex: begin([\s\S]*?)end — группа 1 = содержимое
                 let pattern = "(?:\(lang.begin))([\\s\\S]*?)(?:\(lang.end))"
-                if let regex = try? NSRegularExpression(pattern: pattern, options: []) {
+                if let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]) {
                     regions.append(CompiledEmbeddedRegion(
                         regionRegex: regex,
                         grammarName: lang.grammar

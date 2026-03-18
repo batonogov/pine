@@ -428,6 +428,37 @@ struct SyntaxHighlighterTests {
                 "CSS property inside HTML comment should be comment-colored (comment wins)")
     }
 
+    @Test func embeddedStyleTagIsCaseInsensitive() {
+        register(htmlGrammar, cssGrammar)
+
+        let text = """
+        <STYLE>
+        body { color: red; }
+        </STYLE>
+        """
+        let storage = NSTextStorage(string: text)
+        let hl = SyntaxHighlighter.shared
+        let typeColor = hl.theme.color(for: "type")
+
+        hl.highlight(textStorage: storage, language: "testhtml", font: font)
+
+        let colorPos = (text as NSString).range(of: "color").location
+        #expect(foregroundColor(in: storage, at: colorPos) == typeColor,
+                "CSS property inside <STYLE> (uppercase) should be type-colored")
+    }
+
+    @Test func emptyStyleBlockDoesNotCrash() {
+        register(htmlGrammar, cssGrammar)
+
+        let text = "<style></style>"
+        let storage = NSTextStorage(string: text)
+        let hl = SyntaxHighlighter.shared
+
+        hl.highlight(textStorage: storage, language: "testhtml", font: font)
+        // No crash = pass
+        #expect(storage.length == text.count)
+    }
+
     @Test func multipleEmbeddedStyleBlocks() {
         register(htmlGrammar, cssGrammar)
 
