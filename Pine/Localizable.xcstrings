@@ -1868,6 +1868,66 @@
         }
       }
     },
+    "fileOperation.outsideProject" : {
+      "comment" : "Error message when a file operation targets a path outside the project root (e.g. via symlink).",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Diese Aktion kann nicht außerhalb des Projektstammverzeichnisses ausgeführt werden."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This operation cannot be performed outside the project root."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Esta operación no se puede realizar fuera de la raíz del proyecto."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cette opération ne peut pas être effectuée en dehors de la racine du projet."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "この操作はプロジェクトルートの外部では実行できません。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "이 작업은 프로젝트 루트 외부에서 수행할 수 없습니다."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Esta operação não pode ser realizada fora da raiz do projeto."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Эта операция не может быть выполнена за пределами корневой директории проекта."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "此操作无法在项目根目录之外执行。"
+          }
+        }
+      }
+    },
     "largeFile.openWithHighlighting" : {
       "comment" : "Button: open a large file with syntax highlighting enabled.",
       "extractionState" : "manual",
