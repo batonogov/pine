@@ -5,6 +5,7 @@
 //  Created by Федор Батоногов on 09.03.2026.
 //
 
+import Sparkle
 import SwiftUI
 
 @main
@@ -23,6 +24,9 @@ struct PineApp: App {
         .defaultSize(width: 1280, height: 800)
         .defaultLaunchBehavior(.suppressed)
         .commands {
+            CommandGroup(after: .appInfo) {
+                CheckForUpdatesView(viewModel: appDelegate.checkForUpdatesViewModel)
+            }
             // Убираем стандартный "New Window" (Cmd+N) — табы создаются кликом по файлу
             CommandGroup(replacing: .newItem) { }
             // Cmd+Shift+O — открыть папку
@@ -428,9 +432,27 @@ class CloseDelegate: NSObject, NSWindowDelegate {
 
 // MARK: - AppDelegate
 
-class AppDelegate: NSObject, NSApplicationDelegate {
+class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate {
+    /// Sparkle updater controller — `startingUpdater: true` enables automatic
+    /// background checks respecting `SUScheduledCheckInterval`.
+    lazy var updaterController = SPUStandardUpdaterController(
+        startingUpdater: true, updaterDelegate: self, userDriverDelegate: nil
+    )
+
+    /// ViewModel for CheckForUpdatesView — created once, shared across menu rebuilds.
+    lazy var checkForUpdatesViewModel = CheckForUpdatesViewModel(
+        updater: updaterController.updater
+    )
+
     /// Central project registry — created early so it's available for AppKit fallback.
     var registry = ProjectRegistry()
+
+    // MARK: - SPUUpdaterDelegate
+
+    nonisolated func feedURLString(for updater: SPUUpdater) -> String? {
+        SparkleConstants.appcastURLString
+    }
+
     /// Set to true once applicationShouldTerminate is called, so onDisappear
     /// handlers know not to clear the saved session during app quit.
     private(set) var isTerminating = false

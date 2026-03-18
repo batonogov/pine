@@ -127,16 +127,66 @@ jobs:
         id: version
         run: echo "VERSION=${GITHUB_REF_NAME#v}" >> $GITHUB_OUTPUT
 
+      - name: Download Sparkle tools
+        run: |
+          SPARKLE_VERSION="2.9.0"
+          curl -L -o "$RUNNER_TEMP/Sparkle.tar.xz" \
+            "https://github.com/sparkle-project/Sparkle/releases/download/${SPARKLE_VERSION}/Sparkle-${SPARKLE_VERSION}.tar.xz"
+          mkdir -p "$RUNNER_TEMP/sparkle"
+          tar -xf "$RUNNER_TEMP/Sparkle.tar.xz" -C "$RUNNER_TEMP/sparkle"
+
+      - name: Sign DMG with EdDSA
+        env:
+          SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
+        run: |
+          if [ -z "$SPARKLE_PRIVATE_KEY" ]; then
+            echo "::error::SPARKLE_PRIVATE_KEY secret is not set"
+            exit 1
+          fi
+          SIGN_OUTPUT=$("$RUNNER_TEMP/sparkle/bin/sign_update" "$RUNNER_TEMP/Pine.dmg" --ed-key-file <(echo "$SPARKLE_PRIVATE_KEY"))
+          echo "SPARKLE_SIGNATURE=$SIGN_OUTPUT" >> $GITHUB_ENV
+
+      - name: Generate appcast.xml
+        run: |
+          VERSION=${{ steps.version.outputs.VERSION }}
+          PUB_DATE=$(date -u +"%a, %d %b %Y %H:%M:%S %z")
+          # Extract edSignature and length from sign_update output
+          ED_SIGNATURE=$(echo "$SPARKLE_SIGNATURE" | sed -n 's/.*sparkle:edSignature="\([^"]*\)".*/\1/p')
+          LENGTH=$(echo "$SPARKLE_SIGNATURE" | sed -n 's/.*length="\([^"]*\)".*/\1/p')
+
+          cat > "$RUNNER_TEMP/appcast.xml" << APPCAST_EOF
+          <?xml version="1.0" encoding="utf-8"?>
+          <rss version="2.0" xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle" xmlns:dc="http://purl.org/dc/elements/1.1/">
+            <channel>
+              <title>Pine</title>
+              <item>
+                <title>Version ${VERSION}</title>
+                <pubDate>${PUB_DATE}</pubDate>
+                <sparkle:version>${GITHUB_RUN_NUMBER}</sparkle:version>
+                <sparkle:shortVersionString>${VERSION}</sparkle:shortVersionString>
+                <sparkle:minimumSystemVersion>26.0</sparkle:minimumSystemVersion>
+                <sparkle:releaseNotesLink>https://github.com/batonogov/pine/releases/tag/v${VERSION}</sparkle:releaseNotesLink>
+                <enclosure url="https://github.com/batonogov/pine/releases/download/v${VERSION}/Pine-${VERSION}.dmg"
+                  sparkle:edSignature="${ED_SIGNATURE}"
+                  length="${LENGTH}"
+                  type="application/octet-stream" />
+              </item>
+            </channel>
+          </rss>
+          APPCAST_EOF
+
       - name: Upload DMG to GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           if gh release view "$GITHUB_REF_NAME" > /dev/null 2>&1; then
             gh release upload "$GITHUB_REF_NAME" \
-              "$RUNNER_TEMP/Pine.dmg#Pine-${{ steps.version.outputs.VERSION }}.dmg"
+              "$RUNNER_TEMP/Pine.dmg#Pine-${{ steps.version.outputs.VERSION }}.dmg" \
+              "$RUNNER_TEMP/appcast.xml#appcast.xml"
           else
             gh release create "$GITHUB_REF_NAME" \
               "$RUNNER_TEMP/Pine.dmg#Pine-${{ steps.version.outputs.VERSION }}.dmg" \
+              "$RUNNER_TEMP/appcast.xml#appcast.xml" \
               --title "Pine ${{ steps.version.outputs.VERSION }}" \
               --generate-notes
           fi
