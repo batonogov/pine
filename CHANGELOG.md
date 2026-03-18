@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.1](https://github.com/batonogov/pine/compare/v1.2.0...v1.2.1) (2026-03-18)
+
+
+### Bug Fixes
+
+* show abbreviated path (~/) in Welcome recent projects ([#185](https://github.com/batonogov/pine/issues/185)) ([2e24b80](https://github.com/batonogov/pine/commit/2e24b807b8ae87c4fda4510de1836791c754a48d))
+
 ## [1.2.0](https://github.com/batonogov/pine/compare/v1.1.0...v1.2.0) (2026-03-18)
 
 
