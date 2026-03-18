@@ -1,7 +1,7 @@
 {
     "name": "YAML",
     "extensions": ["yml", "yaml"],
-    "filePatterns": [".gitlab-ci.yml"],
+    "filePatterns": [".gitlab-ci.yml", "*.yml.j2", "*.yaml.j2"],
     "lineComment": "#",
     "rules": [
         {

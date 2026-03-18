@@ -1,6 +1,7 @@
 {
     "name": "JSON",
     "extensions": ["json"],
+    "filePatterns": ["*.json.j2"],
     "rules": [
         {
             "pattern": "\"(?:[^\"\\\\]|\\\\.)*\"\\s*(?=:)",
