@@ -32,8 +32,10 @@ struct PineApp: App {
                 }
                 .keyboardShortcut("o", modifiers: [.command, .shift])
             }
-            // Cmd+` — показать/скрыть терминал
-            CommandMenu(Strings.menuView) {
+            // View menu — add items to the existing system View menu
+            CommandGroup(after: .toolbar) {
+                Divider()
+
                 Button(Strings.menuIncreaseFontSize) {
                     FontSizeSettings.shared.increase()
                 }
@@ -97,14 +99,6 @@ struct PineApp: App {
                     pm.addTerminalTab()
                 }
                 .keyboardShortcut("t", modifiers: .command)
-            }
-            // Git menu
-            CommandMenu(Strings.menuGit) {
-                Button(Strings.menuSwitchBranch) {
-                    NotificationCenter.default.post(name: .switchBranch, object: nil)
-                }
-                .keyboardShortcut("b", modifiers: [.command, .shift])
-                .disabled(focusedProject?.workspace.gitProvider.isGitRepository != true)
             }
             // Edit menu: Toggle Comment
             CommandGroup(after: .pasteboard) {
