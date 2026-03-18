@@ -7,6 +7,13 @@
 
 import SwiftUI
 
+extension URL {
+    /// Returns the path with the home directory replaced by `~`.
+    var abbreviatedPath: String {
+        path.replacingOccurrences(of: NSHomeDirectory(), with: "~")
+    }
+}
+
 /// Welcome window shown when no project is open.
 struct WelcomeView: View {
     var registry: ProjectRegistry
@@ -72,7 +79,7 @@ struct WelcomeView: View {
                                 VStack(alignment: .leading, spacing: 2) {
                                     Text(url.lastPathComponent)
                                         .font(.system(size: 13))
-                                    Text(url.path)
+                                    Text(url.abbreviatedPath)
                                         .font(.system(size: 10))
                                         .foregroundStyle(.tertiary)
                                         .lineLimit(1)
