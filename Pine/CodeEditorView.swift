@@ -68,22 +68,43 @@ final class GutterTextView: NSTextView {
     var exactFileName: String?
 
     func toggleLineComment() {
-        let comment: String?
+        // Try line comment first
+        let lineCommentStr: String?
         if let name = exactFileName {
-            comment = SyntaxHighlighter.shared.lineComment(forFileName: name)
+            lineCommentStr = SyntaxHighlighter.shared.lineComment(forFileName: name)
         } else if let ext = fileExtension {
-            comment = SyntaxHighlighter.shared.lineComment(forExtension: ext)
+            lineCommentStr = SyntaxHighlighter.shared.lineComment(forExtension: ext)
         } else {
-            comment = nil
+            lineCommentStr = nil
         }
-        guard let lineComment = comment else { return }
 
         let currentRange = selectedRange()
-        let result = CommentToggler.toggle(
-            text: string,
-            selectedRange: currentRange,
-            lineComment: lineComment
-        )
+        let result: CommentToggler.Result
+
+        if let lineComment = lineCommentStr {
+            result = CommentToggler.toggle(
+                text: string,
+                selectedRange: currentRange,
+                lineComment: lineComment
+            )
+        } else {
+            // Fallback to block comment
+            let block: BlockCommentDelimiters?
+            if let name = exactFileName {
+                block = SyntaxHighlighter.shared.blockComment(forFileName: name)
+            } else if let ext = fileExtension {
+                block = SyntaxHighlighter.shared.blockComment(forExtension: ext)
+            } else {
+                block = nil
+            }
+            guard let blockComment = block else { return }
+            result = CommentToggler.toggleBlock(
+                text: string,
+                selectedRange: currentRange,
+                open: blockComment.open,
+                close: blockComment.close
+            )
+        }
 
         // Apply via replaceCharacters to support undo
         let fullRange = NSRange(location: 0, length: (string as NSString).length)

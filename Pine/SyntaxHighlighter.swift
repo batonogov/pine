@@ -16,6 +16,12 @@ struct GrammarRule: Codable {
     var options: [String]?   // Опции regex: ["anchorsMatchLines"]
 }
 
+/// Block comment delimiters (e.g. `/* */`, `<!-- -->`).
+struct BlockCommentDelimiters: Codable {
+    let open: String
+    let close: String
+}
+
 /// Грамматика языка, загружаемая из JSON-файла.
 struct Grammar: Codable {
     let name: String             // "Swift", "Python" и т.д.
@@ -23,6 +29,7 @@ struct Grammar: Codable {
     let rules: [GrammarRule]     // Правила подсветки
     var fileNames: [String]?     // Точные имена файлов: ["Dockerfile", "Makefile"]
     var lineComment: String?     // Символ однострочного комментария: "//", "#" и т.д.
+    var blockComment: BlockCommentDelimiters? // Блочный комментарий: {"open": "/*", "close": "*/"}
 }
 
 // MARK: - Тема (маппинг scope → цвет)
@@ -210,6 +217,18 @@ final class SyntaxHighlighter {
     /// Returns the line comment prefix for an exact file name (e.g. "Dockerfile" → "#").
     func lineComment(forFileName name: String) -> String? {
         grammarsByFileName[name]?.lineComment
+    }
+
+    // MARK: - Block comment lookup
+
+    /// Returns block comment delimiters for a file extension (e.g. "html" → `<!-- -->`).
+    func blockComment(forExtension ext: String) -> BlockCommentDelimiters? {
+        grammarsByExtension[ext.lowercased()]?.blockComment
+    }
+
+    /// Returns block comment delimiters for an exact file name.
+    func blockComment(forFileName name: String) -> BlockCommentDelimiters? {
+        grammarsByFileName[name]?.blockComment
     }
 
     // MARK: - Подсветка

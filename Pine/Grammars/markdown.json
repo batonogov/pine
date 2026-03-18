@@ -1,6 +1,7 @@
 {
     "name": "Markdown",
     "extensions": ["md", "markdown"],
+    "blockComment": {"open": "<!--", "close": "-->"},
     "rules": [
         {
             "pattern": "```[\\s\\S]*?```",

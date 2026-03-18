@@ -201,4 +201,152 @@ struct CommentTogglerTests {
         // Cursor should shift by 3 ("// ")
         #expect(result.newRange.location == cursorPos + 3)
     }
+
+    // MARK: - Block comment: single line
+
+    @Test func blockCommentSingleLine() {
+        let text = "color: red;"
+        let range = NSRange(location: 0, length: 0)
+        let result = CommentToggler.toggleBlock(text: text, selectedRange: range, open: "/*", close: "*/")
+        #expect(result.newText == "/* color: red; */")
+    }
+
+    @Test func blockUncommentSingleLine() {
+        let text = "/* color: red; */"
+        let range = NSRange(location: 0, length: 0)
+        let result = CommentToggler.toggleBlock(text: text, selectedRange: range, open: "/*", close: "*/")
+        #expect(result.newText == "color: red;")
+    }
+
+    @Test func blockCommentSingleLineHTML() {
+        let text = "<div>hello</div>"
+        let range = NSRange(location: 0, length: 0)
+        let result = CommentToggler.toggleBlock(text: text, selectedRange: range, open: "<!--", close: "-->")
+        #expect(result.newText == "<!-- <div>hello</div> -->")
+    }
+
+    @Test func blockUncommentSingleLineHTML() {
+        let text = "<!-- <div>hello</div> -->"
+        let range = NSRange(location: 0, length: 0)
+        let result = CommentToggler.toggleBlock(text: text, selectedRange: range, open: "<!--", close: "-->")
+        #expect(result.newText == "<div>hello</div>")
+    }
+
+    // MARK: - Block comment: without space
+
+    @Test func blockUncommentWithoutSpace() {
+        let text = "/*color: red;*/"
+        let range = NSRange(location: 0, length: 0)
+        let result = CommentToggler.toggleBlock(text: text, selectedRange: range, open: "/*", close: "*/")
+        #expect(result.newText == "color: red;")
+    }
+
+    // MARK: - Block comment: multiple lines
+
+    @Test func blockCommentMultipleLines() {
+        let text = "color: red;\nfont-size: 12px;"
+        let range = NSRange(location: 0, length: text.utf16.count)
+        let result = CommentToggler.toggleBlock(text: text, selectedRange: range, open: "/*", close: "*/")
+        #expect(result.newText == "/* color: red;\nfont-size: 12px; */")
+    }
+
+    @Test func blockUncommentMultipleLines() {
+        let text = "/* color: red;\nfont-size: 12px; */"
+        let range = NSRange(location: 0, length: text.utf16.count)
+        let result = CommentToggler.toggleBlock(text: text, selectedRange: range, open: "/*", close: "*/")
+        #expect(result.newText == "color: red;\nfont-size: 12px;")
+    }
+
+    // MARK: - Block comment: preserves indentation
+
+    @Test func blockCommentPreservesIndentation() {
+        let text = "    color: red;"
+        let range = NSRange(location: 0, length: 0)
+        let result = CommentToggler.toggleBlock(text: text, selectedRange: range, open: "/*", close: "*/")
+        #expect(result.newText == "    /* color: red; */")
+    }
+
+    @Test func blockUncommentPreservesIndentation() {
+        let text = "    /* color: red; */"
+        let range = NSRange(location: 0, length: 0)
+        let result = CommentToggler.toggleBlock(text: text, selectedRange: range, open: "/*", close: "*/")
+        #expect(result.newText == "    color: red;")
+    }
+
+    // MARK: - Block comment: empty lines
+
+    @Test func blockCommentAllEmptyLinesNoChange() {
+        let text = "\n\n"
+        let range = NSRange(location: 0, length: text.utf16.count)
+        let result = CommentToggler.toggleBlock(text: text, selectedRange: range, open: "/*", close: "*/")
+        #expect(result.newText == "\n\n")
+    }
+
+    // MARK: - Block comment: range adjustment
+
+    @Test func blockCommentAdjustsRange() {
+        let text = "color: red;"
+        let range = NSRange(location: 0, length: 11)
+        let result = CommentToggler.toggleBlock(text: text, selectedRange: range, open: "/*", close: "*/")
+        // "/* " (3) + "color: red;" (11) + " */" (3) = 17
+        #expect(result.newRange.length == 17)
+    }
+
+    @Test func blockUncommentAdjustsRange() {
+        let text = "/* color: red; */"
+        let range = NSRange(location: 0, length: 17)
+        let result = CommentToggler.toggleBlock(text: text, selectedRange: range, open: "/*", close: "*/")
+        #expect(result.newRange.length == 11) // "color: red;"
+    }
+
+    @Test func blockCommentCursorAdjusted() {
+        let text = "color: red;"
+        let range = NSRange(location: 5, length: 0) // cursor in middle
+        let result = CommentToggler.toggleBlock(text: text, selectedRange: range, open: "/*", close: "*/")
+        // "/* " added before content, cursor shifts by 3
+        #expect(result.newRange.location == 8)
+    }
+
+    // MARK: - Block comment: cursor on middle line
+
+    @Test func blockCommentCursorOnMiddleLine() {
+        let text = "a: 1;\nb: 2;\nc: 3;"
+        let range = NSRange(location: 6, length: 0) // cursor on line "b: 2;"
+        let result = CommentToggler.toggleBlock(text: text, selectedRange: range, open: "/*", close: "*/")
+        #expect(result.newText == "a: 1;\n/* b: 2; */\nc: 3;")
+    }
+
+    // MARK: - Block comment: unicode
+
+    @Test func blockCommentWithEmoji() {
+        let text = "let x = \"🎉\""
+        let range = NSRange(location: 0, length: 0)
+        let result = CommentToggler.toggleBlock(text: text, selectedRange: range, open: "/*", close: "*/")
+        #expect(result.newText == "/* let x = \"🎉\" */")
+    }
+
+    @Test func blockUncommentWithEmoji() {
+        let text = "/* let x = \"🎉\" */"
+        let range = NSRange(location: 0, length: 0)
+        let result = CommentToggler.toggleBlock(text: text, selectedRange: range, open: "/*", close: "*/")
+        #expect(result.newText == "let x = \"🎉\"")
+    }
+
+    // MARK: - Block comment: partial selection within a line
+
+    @Test func blockCommentPartialSelection() {
+        let text = "a: 1; b: 2; c: 3;"
+        // Select just "b: 2;"
+        let range = NSRange(location: 6, length: 5) // "b: 2;"
+        let result = CommentToggler.toggleBlock(text: text, selectedRange: range, open: "/*", close: "*/")
+        #expect(result.newText == "a: 1; /* b: 2; */ c: 3;")
+    }
+
+    @Test func blockUncommentPartialSelection() {
+        let text = "a: 1; /* b: 2; */ c: 3;"
+        // Select "/* b: 2; */"
+        let range = NSRange(location: 6, length: 11) // "/* b: 2; */"
+        let result = CommentToggler.toggleBlock(text: text, selectedRange: range, open: "/*", close: "*/")
+        #expect(result.newText == "a: 1; b: 2; c: 3;")
+    }
 }
