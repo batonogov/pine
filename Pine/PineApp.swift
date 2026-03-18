@@ -628,6 +628,45 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate {
         false
     }
 
+    // MARK: - Dock Menu
+
+    func applicationDockMenu(_ sender: NSApplication) -> NSMenu? {
+        let menu = NSMenu()
+        let projects = Array(registry.recentProjects.prefix(10))
+        guard !projects.isEmpty else { return nil }
+        for url in projects {
+            let title = "\(url.lastPathComponent) — \(url.abbreviatedPath)"
+            let item = NSMenuItem(title: title, action: #selector(dockMenuOpenProject(_:)), keyEquivalent: "")
+            item.target = self
+            item.representedObject = url
+            menu.addItem(item)
+        }
+        return menu
+    }
+
+    @objc private func dockMenuOpenProject(_ sender: NSMenuItem) {
+        guard let url = sender.representedObject as? URL else { return }
+        let canonical = url.resolvingSymlinksInPath()
+        // If the project is already open with a visible window, just bring it front
+        if registry.isWindowOpen(canonical),
+           let window = NSApp.windows.first(where: {
+               $0.isVisible && (($0.delegate as? CloseDelegate)?.projectURL.resolvingSymlinksInPath() == canonical)
+           }) {
+            window.makeKeyAndOrderFront(nil)
+            NSApp.activate()
+            return
+        }
+        // Close background project to recreate fresh
+        if registry.isProjectOpen(canonical) {
+            registry.openProjects[canonical]?.saveSession()
+            registry.closeProject(canonical)
+        }
+        guard registry.projectManager(for: canonical) != nil else { return }
+        openProjectWindow?(canonical)
+        // Hide Welcome window if visible
+        welcomeWindow?.orderOut(nil)
+    }
+
     func applicationWillTerminate(_ notification: Notification) {
         // Save sessions before terminating processes.
         for (_, pm) in registry.openProjects {
