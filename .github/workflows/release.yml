@@ -139,10 +139,12 @@ jobs:
         env:
           SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
         run: |
+          if [ -z "$SPARKLE_PRIVATE_KEY" ]; then
+            echo "::error::SPARKLE_PRIVATE_KEY secret is not set"
+            exit 1
+          fi
           SIGN_OUTPUT=$("$RUNNER_TEMP/sparkle/bin/sign_update" "$RUNNER_TEMP/Pine.dmg" --ed-key-file <(echo "$SPARKLE_PRIVATE_KEY"))
           echo "SPARKLE_SIGNATURE=$SIGN_OUTPUT" >> $GITHUB_ENV
-          DMG_SIZE=$(stat -f%z "$RUNNER_TEMP/Pine.dmg")
-          echo "DMG_SIZE=$DMG_SIZE" >> $GITHUB_ENV
 
       - name: Generate appcast.xml
         run: |

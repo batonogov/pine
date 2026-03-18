@@ -10,7 +10,7 @@
 		9FA7317B2F61803400E91711 /* SwiftTerm in Frameworks */ = {isa = PBXBuildFile; productRef = 9FA7317A2F61803400E91711 /* SwiftTerm */; };
 		CF0000030000000000000003 /* Markdown in Frameworks */ = {isa = PBXBuildFile; productRef = CF0000030000000000000002 /* Markdown */; };
 		CF0000040000000000000003 /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = CF0000040000000000000002 /* Sparkle */; };
-	/* End PBXBuildFile section */
+/* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
 		CF000001000000000000000A /* PBXContainerItemProxy */ = {
