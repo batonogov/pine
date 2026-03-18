@@ -202,6 +202,68 @@ struct FileNodeTests {
         #expect(names.contains(".env"))
     }
 
+    @Test func fileNodeEmptyIgnoredPathsDoesNotFilter() throws {
+        let tempDir = try makeTempDirectory()
+        defer { cleanup(tempDir) }
+
+        let src = tempDir.appendingPathComponent("src")
+        try FileManager.default.createDirectory(at: src, withIntermediateDirectories: true)
+        FileManager.default.createFile(
+            atPath: tempDir.appendingPathComponent("file.txt").path, contents: nil
+        )
+
+        // Empty ignoredPaths should not filter anything
+        let node = FileNode(url: tempDir, projectRoot: tempDir, ignoredPaths: [])
+        let names = node.children?.map(\.name) ?? []
+        #expect(names.contains("src"))
+        #expect(names.contains("file.txt"))
+    }
+
+    @Test func fileNodeSkipsMultipleIgnoredDirectories() throws {
+        let tempDir = try makeTempDirectory()
+        defer { cleanup(tempDir) }
+
+        let nodeModules = tempDir.appendingPathComponent("node_modules")
+        try FileManager.default.createDirectory(at: nodeModules, withIntermediateDirectories: true)
+        let build = tempDir.appendingPathComponent(".build")
+        try FileManager.default.createDirectory(at: build, withIntermediateDirectories: true)
+        let src = tempDir.appendingPathComponent("src")
+        try FileManager.default.createDirectory(at: src, withIntermediateDirectories: true)
+
+        let node = FileNode(url: tempDir, projectRoot: tempDir, ignoredPaths: ["node_modules", ".build"])
+        let names = node.children?.map(\.name) ?? []
+        #expect(!names.contains("node_modules"))
+        #expect(!names.contains(".build"))
+        #expect(names.contains("src"))
+    }
+
+    @Test func loadChildrenRespectsIgnoredPaths() throws {
+        let tempDir = try makeTempDirectory()
+        defer { cleanup(tempDir) }
+
+        let vendor = tempDir.appendingPathComponent("vendor")
+        try FileManager.default.createDirectory(at: vendor, withIntermediateDirectories: true)
+        FileManager.default.createFile(
+            atPath: tempDir.appendingPathComponent("main.swift").path, contents: nil
+        )
+
+        let node = FileNode(url: tempDir, projectRoot: tempDir, ignoredPaths: ["vendor"])
+        // Verify initial load skipped vendor
+        let initialNames = node.children?.map(\.name) ?? []
+        #expect(!initialNames.contains("vendor"))
+
+        // Add a new file and reload via loadChildren
+        FileManager.default.createFile(
+            atPath: tempDir.appendingPathComponent("new.swift").path, contents: nil
+        )
+        node.loadChildren()
+
+        let names = node.children?.map(\.name) ?? []
+        #expect(names.contains("main.swift"))
+        #expect(names.contains("new.swift"))
+        #expect(!names.contains("vendor")) // Still filtered after reload
+    }
+
     @Test func fileNodeSkipsNestedIgnoredPaths() throws {
         let tempDir = try makeTempDirectory()
         defer { cleanup(tempDir) }

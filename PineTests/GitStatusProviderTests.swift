@@ -461,7 +461,10 @@ struct GitStatusProviderTests {
         let dir = try makeGitRepo()
         defer { cleanup(dir) }
 
-        // Create a branch and a modified file so all three fetch methods have data
+        let provider = GitStatusProvider()
+        provider.setup(repositoryURL: dir)
+
+        // Make changes after setup so refresh() has new data to fetch
         try runShell("git branch feature-branch", at: dir)
         try "changed".write(
             to: dir.appendingPathComponent("README.md"),
@@ -469,8 +472,7 @@ struct GitStatusProviderTests {
             encoding: .utf8
         )
 
-        let provider = GitStatusProvider()
-        provider.setup(repositoryURL: dir)
+        provider.refresh()
 
         // Verify all three parallel fetches populated correctly
         #expect(!provider.currentBranch.isEmpty)
@@ -483,6 +485,116 @@ struct GitStatusProviderTests {
         let provider = GitStatusProvider()
         provider.refresh() // Should not crash
         #expect(provider.fileStatuses.isEmpty)
+    }
+
+    // MARK: - Static fetch methods
+
+    @Test("fetchBranch returns current branch name")
+    func fetchBranchReturnsName() throws {
+        let dir = try makeGitRepo()
+        defer { cleanup(dir) }
+
+        let branch = GitStatusProvider.fetchBranch(at: dir)
+        #expect(!branch.isEmpty)
+    }
+
+    @Test("fetchBranch returns empty for non-git directory")
+    func fetchBranchNonGit() throws {
+        let rawDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("pine-nogit-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: rawDir, withIntermediateDirectories: true)
+        let dir = try resolveURL(rawDir)
+        defer { cleanup(dir) }
+
+        let branch = GitStatusProvider.fetchBranch(at: dir)
+        #expect(branch.isEmpty)
+    }
+
+    @Test("fetchStatusAndIgnored returns statuses and ignored paths")
+    func fetchStatusAndIgnoredWorks() throws {
+        let dir = try makeGitRepo()
+        defer { cleanup(dir) }
+
+        // Create an untracked file and a gitignored directory
+        try "new".write(
+            to: dir.appendingPathComponent("new.txt"),
+            atomically: true,
+            encoding: .utf8
+        )
+        try "build/\n".write(
+            to: dir.appendingPathComponent(".gitignore"),
+            atomically: true,
+            encoding: .utf8
+        )
+        let buildDir = dir.appendingPathComponent("build")
+        try FileManager.default.createDirectory(at: buildDir, withIntermediateDirectories: true)
+        try "out".write(
+            to: buildDir.appendingPathComponent("output.o"),
+            atomically: true,
+            encoding: .utf8
+        )
+
+        let result = GitStatusProvider.fetchStatusAndIgnored(at: dir)
+        #expect(result.statuses["new.txt"] == .untracked)
+        #expect(result.ignored.contains("build"))
+    }
+
+    @Test("fetchBranches returns list of branches")
+    func fetchBranchesWorks() throws {
+        let dir = try makeGitRepo()
+        defer { cleanup(dir) }
+
+        try runShell("git branch dev", at: dir)
+        try runShell("git branch staging", at: dir)
+
+        let branches = GitStatusProvider.fetchBranches(at: dir)
+        #expect(branches.count >= 3) // main/master + dev + staging
+        #expect(branches.contains("dev"))
+        #expect(branches.contains("staging"))
+    }
+
+    @Test("fetchBranches returns empty for non-git directory")
+    func fetchBranchesNonGit() throws {
+        let rawDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("pine-nogit-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: rawDir, withIntermediateDirectories: true)
+        let dir = try resolveURL(rawDir)
+        defer { cleanup(dir) }
+
+        let branches = GitStatusProvider.fetchBranches(at: dir)
+        #expect(branches.isEmpty)
+    }
+
+    // MARK: - refreshAsync
+
+    @Test("refreshAsync updates state on main thread")
+    @MainActor
+    func refreshAsyncUpdatesState() async throws {
+        let dir = try makeGitRepo()
+        defer { cleanup(dir) }
+
+        let provider = GitStatusProvider()
+        provider.setup(repositoryURL: dir)
+
+        // Create changes after setup
+        try "changed".write(
+            to: dir.appendingPathComponent("README.md"),
+            atomically: true,
+            encoding: .utf8
+        )
+
+        #expect(provider.fileStatuses["README.md"] == nil)
+
+        provider.refreshAsync()
+
+        // refreshAsync dispatches to background then to main.async —
+        // yield to allow main queue dispatches to execute.
+        let deadline = ContinuousClock.now + .seconds(5)
+        while provider.fileStatuses["README.md"] == nil && ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(50))
+        }
+
+        #expect(provider.fileStatuses["README.md"] == .modified)
     }
 
     // MARK: - hasUncommittedChanges
