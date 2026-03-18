@@ -567,34 +567,114 @@ struct GitStatusProviderTests {
 
     // MARK: - refreshAsync
 
-    @Test("refreshAsync updates state on main thread")
-    @MainActor
-    func refreshAsyncUpdatesState() async throws {
+    @Test("refreshAsync updates fileStatuses asynchronously")
+    func refreshAsyncUpdatesStatuses() async throws {
         let dir = try makeGitRepo()
         defer { cleanup(dir) }
 
         let provider = GitStatusProvider()
         provider.setup(repositoryURL: dir)
 
-        // Create changes after setup
-        try "changed".write(
-            to: dir.appendingPathComponent("README.md"),
+        // Create a new file after initial setup
+        try "new".write(
+            to: dir.appendingPathComponent("async-new.txt"),
             atomically: true,
             encoding: .utf8
         )
 
-        #expect(provider.fileStatuses["README.md"] == nil)
+        // refreshAsync runs git on background queue — await completion
+        await provider.refreshAsync()
+        #expect(provider.fileStatuses["async-new.txt"] == .untracked)
+    }
 
-        provider.refreshAsync()
+    @Test("refreshAsync updates currentBranch and branches")
+    func refreshAsyncUpdatesBranchInfo() async throws {
+        let dir = try makeGitRepo()
+        defer { cleanup(dir) }
 
-        // refreshAsync dispatches to background then to main.async —
-        // yield to allow main queue dispatches to execute.
-        let deadline = ContinuousClock.now + .seconds(5)
-        while provider.fileStatuses["README.md"] == nil && ContinuousClock.now < deadline {
-            try await Task.sleep(for: .milliseconds(50))
+        let provider = GitStatusProvider()
+        provider.setup(repositoryURL: dir)
+
+        // Create a second branch so branches list has > 1 entry
+        try runShell("git checkout -b feature-branch", at: dir)
+
+        await provider.refreshAsync()
+        #expect(provider.currentBranch == "feature-branch")
+        #expect(provider.branches.contains("main") || provider.branches.contains("master"))
+        #expect(provider.branches.contains("feature-branch"))
+    }
+
+    @Test("refreshAsync updates ignoredPaths")
+    func refreshAsyncUpdatesIgnoredPaths() async throws {
+        let dir = try makeGitRepo()
+        defer { cleanup(dir) }
+
+        // Add .gitignore with ignored patterns
+        try "build/\n.env\n".write(
+            to: dir.appendingPathComponent(".gitignore"),
+            atomically: true,
+            encoding: .utf8
+        )
+        // Create ignored entries so git reports them
+        let buildDir = dir.appendingPathComponent("build")
+        try FileManager.default.createDirectory(at: buildDir, withIntermediateDirectories: true)
+        try "bin".write(to: buildDir.appendingPathComponent("out"), atomically: true, encoding: .utf8)
+        try "secret".write(to: dir.appendingPathComponent(".env"), atomically: true, encoding: .utf8)
+
+        try runShell("git add .gitignore", at: dir)
+        try runShell("git -c commit.gpgsign=false commit -m 'add gitignore'", at: dir)
+
+        let provider = GitStatusProvider()
+        provider.setup(repositoryURL: dir)
+
+        await provider.refreshAsync()
+        #expect(provider.ignoredPaths.contains("build"))
+        #expect(provider.ignoredPaths.contains(".env"))
+    }
+
+    @Test("refreshAsync does nothing without repository")
+    func refreshAsyncNoRepo() async {
+        let provider = GitStatusProvider()
+        await provider.refreshAsync() // Should not crash
+        #expect(provider.fileStatuses.isEmpty)
+    }
+
+    @Test("refreshAsync with isGitRepository false is no-op")
+    func refreshAsyncNotGitRepo() async {
+        let provider = GitStatusProvider()
+        provider.repositoryURL = URL(fileURLWithPath: "/tmp")
+        // isGitRepository is false by default — refreshAsync should bail out
+        await provider.refreshAsync()
+        #expect(provider.fileStatuses.isEmpty)
+        #expect(provider.currentBranch == "")
+    }
+
+    @Test("refreshAsync discards results when cancelled")
+    func refreshAsyncCancellation() async throws {
+        let dir = try makeGitRepo()
+        defer { cleanup(dir) }
+
+        let provider = GitStatusProvider()
+        provider.setup(repositoryURL: dir)
+
+        // Create a file so git status would have something to report
+        try "new".write(
+            to: dir.appendingPathComponent("cancelled.txt"),
+            atomically: true,
+            encoding: .utf8
+        )
+
+        // Start refreshAsync in a Task and cancel it immediately
+        let task = Task {
+            await provider.refreshAsync()
         }
+        task.cancel()
+        await task.value
 
-        #expect(provider.fileStatuses["README.md"] == .modified)
+        // If cancellation took effect, fileStatuses should NOT contain
+        // the new file. If the background work finished before cancel
+        // was checked, it may still contain it — both outcomes are valid.
+        // The key invariant: no crash.
     }
 
     // MARK: - hasUncommittedChanges

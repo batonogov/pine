@@ -123,8 +123,10 @@ struct PineApp: App {
                 Button(Strings.menuSave) {
                     guard let pm = focusedProject else { return }
                     if pm.tabManager.saveActiveTab() {
-                        pm.workspace.gitProvider.refreshAsync()
-                        NotificationCenter.default.post(name: .refreshLineDiffs, object: nil)
+                        Task {
+                            await pm.workspace.gitProvider.refreshAsync()
+                            NotificationCenter.default.post(name: .refreshLineDiffs, object: nil)
+                        }
                     }
                 }
                 .keyboardShortcut("s", modifiers: .command)
@@ -132,8 +134,10 @@ struct PineApp: App {
                 Button(Strings.menuSaveAll) {
                     guard let pm = focusedProject else { return }
                     if pm.tabManager.saveAllTabs() {
-                        pm.workspace.gitProvider.refreshAsync()
-                        NotificationCenter.default.post(name: .refreshLineDiffs, object: nil)
+                        Task {
+                            await pm.workspace.gitProvider.refreshAsync()
+                            NotificationCenter.default.post(name: .refreshLineDiffs, object: nil)
+                        }
                     }
                 }
                 .keyboardShortcut("s", modifiers: [.command, .option])
@@ -152,8 +156,10 @@ struct PineApp: App {
                     guard panel.runModal() == .OK, let url = panel.url else { return }
                     do {
                         try pm.tabManager.saveActiveTabAs(to: url)
-                        pm.workspace.gitProvider.refreshAsync()
-                        NotificationCenter.default.post(name: .refreshLineDiffs, object: nil)
+                        Task {
+                            await pm.workspace.gitProvider.refreshAsync()
+                            NotificationCenter.default.post(name: .refreshLineDiffs, object: nil)
+                        }
                     } catch {
                         let alert = NSAlert()
                         alert.messageText = Strings.fileOperationErrorTitle

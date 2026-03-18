@@ -92,4 +92,90 @@ struct LineCommentGrammarTests {
         let highlighter = SyntaxHighlighter.shared
         #expect(highlighter.lineComment(forExtension: "xyz") == nil)
     }
+
+    // MARK: - commentStyle
+
+    @Test func sqlLineComment() {
+        let highlighter = SyntaxHighlighter.shared
+        #expect(highlighter.lineComment(forExtension: "sql") == "--")
+    }
+
+    @Test func commentStylePrefersLineComment() {
+        let highlighter = SyntaxHighlighter.shared
+        // SQL has both lineComment and blockComment — line should win
+        if case .line(let prefix) = highlighter.commentStyle(forExtension: "sql", fileName: nil) {
+            #expect(prefix == "--")
+        } else {
+            Issue.record("Expected .line for SQL, got block or nil")
+        }
+    }
+
+    @Test func commentStyleHTMLBlock() {
+        let highlighter = SyntaxHighlighter.shared
+        if case .block(let open, let close) = highlighter.commentStyle(forExtension: "html", fileName: nil) {
+            #expect(open == "<!--")
+            #expect(close == "-->")
+        } else {
+            Issue.record("Expected .block for HTML, got line or nil")
+        }
+    }
+
+    @Test func commentStyleCSSBlock() {
+        let highlighter = SyntaxHighlighter.shared
+        if case .block(let open, let close) = highlighter.commentStyle(forExtension: "css", fileName: nil) {
+            #expect(open == "/*")
+            #expect(close == "*/")
+        } else {
+            Issue.record("Expected .block for CSS, got line or nil")
+        }
+    }
+
+    @Test func commentStyleMarkdownBlock() {
+        let highlighter = SyntaxHighlighter.shared
+        if case .block(let open, let close) = highlighter.commentStyle(forExtension: "md", fileName: nil) {
+            #expect(open == "<!--")
+            #expect(close == "-->")
+        } else {
+            Issue.record("Expected .block for Markdown, got line or nil")
+        }
+    }
+
+    @Test func commentStyleSwiftLine() {
+        let highlighter = SyntaxHighlighter.shared
+        if case .line(let prefix) = highlighter.commentStyle(forExtension: "swift", fileName: nil) {
+            #expect(prefix == "//")
+        } else {
+            Issue.record("Expected .line for Swift, got block or nil")
+        }
+    }
+
+    @Test func commentStyleReturnsNilForJson() {
+        let highlighter = SyntaxHighlighter.shared
+        #expect(highlighter.commentStyle(forExtension: "json", fileName: nil) == nil)
+    }
+
+    @Test func commentStyleReturnsNilForUnknown() {
+        let highlighter = SyntaxHighlighter.shared
+        #expect(highlighter.commentStyle(forExtension: "xyz", fileName: nil) == nil)
+    }
+
+    @Test func commentStyleByFileName() {
+        let highlighter = SyntaxHighlighter.shared
+        // Dockerfile has lineComment "#" via fileName match
+        if case .line(let prefix) = highlighter.commentStyle(forExtension: nil, fileName: "Dockerfile") {
+            #expect(prefix == "#")
+        } else {
+            Issue.record("Expected .line for Dockerfile, got block or nil")
+        }
+    }
+
+    @Test func commentStyleFileNameTakesPriorityOverExtension() {
+        let highlighter = SyntaxHighlighter.shared
+        // fileName match should win over extension
+        if case .line(let prefix) = highlighter.commentStyle(forExtension: "swift", fileName: "Dockerfile") {
+            #expect(prefix == "#")
+        } else {
+            Issue.record("Expected .line('#') for Dockerfile, got something else")
+        }
+    }
 }

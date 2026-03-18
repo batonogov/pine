@@ -1,9 +1,14 @@
 {
     "name": "HTML",
-    "extensions": ["html", "htm", "xml", "svg"],
+    "extensions": ["html", "htm"],
+    "blockComment": {"open": "<!--", "close": "-->"},
     "rules": [
         {
             "pattern": "<!--[\\s\\S]*?-->",
+            "scope": "comment"
+        },
+        {
+            "pattern": "/\\*[\\s\\S]*?\\*/",
             "scope": "comment"
         },
         {
@@ -29,6 +34,34 @@
         {
             "pattern": "&[a-zA-Z]+;",
             "scope": "number"
+        },
+        {
+            "pattern": "[.#][a-zA-Z_][a-zA-Z0-9_-]*",
+            "scope": "type"
+        },
+        {
+            "pattern": "@(media|keyframes|import|font-face|charset|supports|page|layer)\\b",
+            "scope": "keyword"
+        },
+        {
+            "pattern": "\\b(display|position|margin|padding|border|width|height|color|background|font|text|flex|grid|align|justify|overflow|opacity|transition|transform|animation|z-index|top|right|bottom|left|float|clear|cursor|visibility|outline|box-shadow|border-radius|max-width|min-width|max-height|min-height|line-height|letter-spacing|text-align|text-decoration|text-transform|white-space|word-wrap|content|list-style|vertical-align|gap|order|flex-grow|flex-shrink|flex-basis|flex-direction|flex-wrap|grid-template|place-items|appearance|resize|pointer-events|user-select|object-fit|aspect-ratio|backdrop-filter|filter|mix-blend-mode|isolation|contain|container)[a-zA-Z-]*\\s*:",
+            "scope": "attribute"
+        },
+        {
+            "pattern": "\\b\\d+(\\.\\d+)?(px|em|rem|%|vh|vw|vmin|vmax|ch|ex|cm|mm|in|pt|pc|deg|rad|grad|turn|s|ms|fr)\\b",
+            "scope": "number"
+        },
+        {
+            "pattern": "#[0-9a-fA-F]{3,8}\\b",
+            "scope": "number"
+        },
+        {
+            "pattern": "\\b(rgb|rgba|hsl|hsla|var|calc|min|max|clamp|url|linear-gradient|radial-gradient|conic-gradient|repeat|minmax|fit-content|env)\\s*\\(",
+            "scope": "function"
+        },
+        {
+            "pattern": "!important\\b",
+            "scope": "keyword"
         }
     ]
 }

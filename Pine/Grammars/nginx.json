@@ -1,0 +1,41 @@
+{
+    "name": "Nginx",
+    "extensions": ["nginx"],
+    "fileNames": ["nginx.conf"],
+    "lineComment": "#",
+    "rules": [
+        {
+            "pattern": "#.*$",
+            "scope": "comment",
+            "options": ["anchorsMatchLines"]
+        },
+        {
+            "pattern": "\"(?:[^\"\\\\]|\\\\.)*\"",
+            "scope": "string"
+        },
+        {
+            "pattern": "'(?:[^'\\\\]|\\\\.)*'",
+            "scope": "string"
+        },
+        {
+            "pattern": "[~][*]?\\s+[^{;]+",
+            "scope": "string"
+        },
+        {
+            "pattern": "\\b(server|location|upstream|http|events|stream|mail|map|geo|types|if|set|return|rewrite|proxy_pass|proxy_set_header|fastcgi_pass|include|listen|server_name|root|index|error_page|access_log|error_log|try_files|ssl_certificate|ssl_certificate_key|worker_processes|worker_connections|sendfile|keepalive_timeout|gzip|add_header|deny|allow|limit_req|limit_conn)\\b",
+            "scope": "keyword"
+        },
+        {
+            "pattern": "\\$[a-zA-Z_][a-zA-Z0-9_]*",
+            "scope": "attribute"
+        },
+        {
+            "pattern": "\\b(text/[a-zA-Z0-9.+-]+|application/[a-zA-Z0-9.+-]+|image/[a-zA-Z0-9.+-]+|font/[a-zA-Z0-9.+-]+)\\b",
+            "scope": "type"
+        },
+        {
+            "pattern": "\\b\\d+(\\.\\d+)?[kmgKMG]?\\b",
+            "scope": "number"
+        }
+    ]
+}

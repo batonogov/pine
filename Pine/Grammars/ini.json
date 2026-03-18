@@ -1,12 +1,17 @@
 {
-    "name": "Dockerfile",
-    "extensions": ["dockerfile"],
-    "fileNames": ["Dockerfile", "Containerfile"],
-    "filePatterns": ["Dockerfile.*", "*.Dockerfile", "Containerfile.*"],
+    "name": "INI",
+    "extensions": ["ini", "conf", "cfg", "properties", "env"],
+    "fileNames": [".editorconfig", ".gitconfig", ".npmrc", ".pylintrc"],
+    "filePatterns": [".env.*"],
     "lineComment": "#",
     "rules": [
         {
             "pattern": "#.*$",
+            "scope": "comment",
+            "options": ["anchorsMatchLines"]
+        },
+        {
+            "pattern": ";.*$",
             "scope": "comment",
             "options": ["anchorsMatchLines"]
         },
@@ -19,12 +24,17 @@
             "scope": "string"
         },
         {
-            "pattern": "^(FROM|RUN|CMD|LABEL|MAINTAINER|EXPOSE|ENV|ADD|COPY|ENTRYPOINT|VOLUME|USER|WORKDIR|ARG|ONBUILD|STOPSIGNAL|HEALTHCHECK|SHELL)\\b",
+            "pattern": "^\\s*\\[[^\\]]+\\]",
             "scope": "keyword",
             "options": ["anchorsMatchLines"]
         },
         {
-            "pattern": "\\b(AS)\\b",
+            "pattern": "^\\s*[a-zA-Z_][a-zA-Z0-9_.-]*(?=\\s*[=:])",
+            "scope": "attribute",
+            "options": ["anchorsMatchLines"]
+        },
+        {
+            "pattern": "\\b(true|false|yes|no)\\b",
             "scope": "keyword"
         },
         {
@@ -32,7 +42,7 @@
             "scope": "attribute"
         },
         {
-            "pattern": "\\b\\d+(\\.\\d+)*\\b",
+            "pattern": "\\b\\d+(\\.\\d+)?\\b",
             "scope": "number"
         }
     ]

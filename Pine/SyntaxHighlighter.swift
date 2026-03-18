@@ -16,13 +16,21 @@ struct GrammarRule: Codable {
     var options: [String]?   // Опции regex: ["anchorsMatchLines"]
 }
 
+/// Block comment delimiters (e.g. `/* */`, `<!-- -->`).
+struct BlockCommentDelimiters: Codable {
+    let open: String
+    let close: String
+}
+
 /// Грамматика языка, загружаемая из JSON-файла.
 struct Grammar: Codable {
     let name: String             // "Swift", "Python" и т.д.
     let extensions: [String]     // ["swift"], ["py", "pyw"]
     let rules: [GrammarRule]     // Правила подсветки
     var fileNames: [String]?     // Точные имена файлов: ["Dockerfile", "Makefile"]
+    var filePatterns: [String]?  // Glob-паттерны: ["Dockerfile.*", "*.Dockerfile"]
     var lineComment: String?     // Символ однострочного комментария: "//", "#" и т.д.
+    var blockComment: BlockCommentDelimiters? // Блочный комментарий: {"open": "/*", "close": "*/"}
 }
 
 // MARK: - Тема (маппинг scope → цвет)
@@ -77,6 +85,10 @@ final class SyntaxHighlighter {
     /// Грамматики по точному имени файла (Dockerfile, Makefile и т.д.)
     private var grammarsByFileName: [String: Grammar] = [:]
 
+    /// Грамматики с glob-паттернами для имён файлов.
+    /// Каждый элемент: (паттерн, грамматика). Проверяются после exact match.
+    private var grammarsByFilePattern: [(pattern: String, grammar: Grammar)] = []
+
     /// Скомпилированное правило подсветки.
     struct CompiledRule {
         let regex: NSRegularExpression
@@ -115,6 +127,11 @@ final class SyntaxHighlighter {
                 grammarsByFileName[name] = grammar
             }
         }
+        if let patterns = grammar.filePatterns {
+            for pattern in patterns {
+                grammarsByFilePattern.append((pattern: pattern, grammar: grammar))
+            }
+        }
         compileRules(for: grammar)
     }
 
@@ -145,6 +162,13 @@ final class SyntaxHighlighter {
                 if let fileNames = grammar.fileNames {
                     for name in fileNames {
                         grammarsByFileName[name] = grammar
+                    }
+                }
+
+                // Индексируем glob-паттерны
+                if let patterns = grammar.filePatterns {
+                    for pattern in patterns {
+                        grammarsByFilePattern.append((pattern: pattern, grammar: grammar))
                     }
                 }
 
@@ -209,7 +233,36 @@ final class SyntaxHighlighter {
 
     /// Returns the line comment prefix for an exact file name (e.g. "Dockerfile" → "#").
     func lineComment(forFileName name: String) -> String? {
-        grammarsByFileName[name]?.lineComment
+        grammarsByFileName[name]?.lineComment ?? matchFilePattern(name)?.lineComment
+    }
+
+    // MARK: - Comment info lookup
+
+    /// Resolved comment style for a file — line comment preferred, block comment as fallback.
+    enum CommentStyle {
+        case line(String)
+        case block(open: String, close: String)
+    }
+
+    /// Returns the preferred comment style for a file, resolving by exact name first, then extension.
+    /// Line comments take priority over block comments.
+    func commentStyle(forExtension ext: String?, fileName: String?) -> CommentStyle? {
+        let grammar: Grammar?
+        if let name = fileName, let g = grammarsByFileName[name] {
+            grammar = g
+        } else if let ext, let g = grammarsByExtension[ext.lowercased()] {
+            grammar = g
+        } else {
+            grammar = nil
+        }
+        guard let grammar else { return nil }
+
+        if let lc = grammar.lineComment {
+            return .line(lc)
+        } else if let bc = grammar.blockComment {
+            return .block(open: bc.open, close: bc.close)
+        }
+        return nil
     }
 
     // MARK: - Подсветка
@@ -331,12 +384,39 @@ final class SyntaxHighlighter {
     private func resolveGrammar(language: String, fileName: String?) -> (Grammar, [CompiledRule])? {
         let grammar: Grammar?
         if let name = fileName, let g = grammarsByFileName[name] {
+            // Приоритет 1: точное совпадение имени файла
+            grammar = g
+        } else if let g = grammarsByExtension[language.lowercased()] {
+            // Приоритет 2: совпадение по расширению
+            grammar = g
+        } else if let name = fileName, let g = matchFilePattern(name) {
+            // Приоритет 3: glob-паттерн имени файла
             grammar = g
         } else {
-            grammar = grammarsByExtension[language.lowercased()]
+            grammar = nil
         }
         guard let grammar, let rules = compiledRules[grammar.name] else { return nil }
         return (grammar, rules)
+    }
+
+    /// Проверяет имя файла по glob-паттернам. `*` матчит любые символы.
+    private func matchFilePattern(_ fileName: String) -> Grammar? {
+        for entry in grammarsByFilePattern where globMatch(pattern: entry.pattern, string: fileName) {
+            return entry.grammar
+        }
+        return nil
+    }
+
+    /// Простой glob-matching: `*` матчит любую последовательность символов (кроме пустой, если не в начале/конце).
+    private func globMatch(pattern: String, string: String) -> Bool {
+        // Конвертируем glob в regex: экранируем спецсимволы, заменяем * на .*
+        let escaped = NSRegularExpression.escapedPattern(for: pattern)
+            .replacingOccurrences(of: "\\*", with: ".*")
+            .replacingOccurrences(of: "\\?", with: ".")
+        let regexPattern = "^" + escaped + "$"
+        guard let regex = try? NSRegularExpression(pattern: regexPattern) else { return false }
+        let range = NSRange(location: 0, length: (string as NSString).length)
+        return regex.firstMatch(in: string, range: range) != nil
     }
 
     /// Собирает отпечаток многострочных матчей — упорядоченный массив длин.

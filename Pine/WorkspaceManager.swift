@@ -28,6 +28,10 @@ final class WorkspaceManager {
     /// a slow background task never overwrites a newer result.
     private var loadGeneration: Int = 0
 
+    /// Tracks the in-flight async git refresh so it can be cancelled
+    /// when a new refresh starts (prevents stale data from overwriting newer results).
+    private var gitRefreshTask: Task<Void, Never>?
+
     /// After a synchronous refreshFileTree(), watcher events within this
     /// window are suppressed because they echo the action we just handled.
     private var suppressWatcherUntil: Date?
@@ -114,14 +118,18 @@ final class WorkspaceManager {
     }
 
     /// Reload the file tree from disk (e.g. after creating/renaming/deleting files).
-    /// Runs synchronously on the main thread for immediate UI feedback
-    /// after explicit user actions (create/rename/delete).
+    /// File tree is updated synchronously for immediate UI feedback;
+    /// git status refresh runs asynchronously on a background queue
+    /// to avoid blocking the main thread (prevents SIGSEGV when SwiftUI
+    /// re-renders during Process.waitUntilExit — see issue #210).
     func refreshFileTree() {
         guard let url = rootURL else { return }
         loadGeneration += 1
         let root = FileNode(url: url, projectRoot: url, ignoredPaths: gitProvider.ignoredPaths)
         rootNodes = root.children ?? []
-        gitProvider.refresh()
+        // Cancel any in-flight git refresh to avoid stale data overwriting newer results.
+        gitRefreshTask?.cancel()
+        gitRefreshTask = Task { await gitProvider.refreshAsync() }
         // Suppress watcher echoes — we just refreshed, so any watcher event
         // within the next second is redundant and could break inline editing.
         suppressWatcherUntil = Date().addingTimeInterval(1.0)

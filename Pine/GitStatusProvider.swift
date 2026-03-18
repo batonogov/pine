@@ -109,48 +109,6 @@ final class GitStatusProvider {
         branches = branchList
     }
 
-    /// Runs refresh on a background queue with parallel fetches, then assigns results on main.
-    func refreshAsync() {
-        guard isGitRepository, let url = repositoryURL else { return }
-        DispatchQueue.global(qos: .userInitiated).async {
-            let group = DispatchGroup()
-            var branch = ""
-            var statuses: [String: GitFileStatus] = [:]
-            var ignored: Set<String> = []
-            var branchList: [String] = []
-
-            group.enter()
-            DispatchQueue.global(qos: .userInitiated).async {
-                branch = Self.fetchBranch(at: url)
-                group.leave()
-            }
-
-            group.enter()
-            DispatchQueue.global(qos: .userInitiated).async {
-                let result = Self.fetchStatusAndIgnored(at: url)
-                statuses = result.statuses
-                ignored = result.ignored
-                group.leave()
-            }
-
-            group.enter()
-            DispatchQueue.global(qos: .userInitiated).async {
-                branchList = Self.fetchBranches(at: url)
-                group.leave()
-            }
-
-            group.wait()
-
-            DispatchQueue.main.async { [weak self] in
-                guard let self else { return }
-                self.currentBranch = branch
-                self.fileStatuses = statuses
-                self.ignoredPaths = ignored
-                self.branches = branchList
-            }
-        }
-    }
-
     // MARK: - Static Fetch Methods
 
     static func fetchBranch(at url: URL) -> String {
@@ -174,6 +132,37 @@ final class GitStatusProvider {
         return result.output
             .components(separatedBy: "\n")
             .filter { !$0.isEmpty }
+    }
+
+    /// Runs git refresh on a background queue and updates properties on the main thread.
+    /// Safe to call from the main thread — does not block.
+    /// Supports cooperative cancellation — if the Task is cancelled before
+    /// the background work completes, stale results are discarded.
+    func refreshAsync() async {
+        guard isGitRepository, let url = repositoryURL else { return }
+        let rootPath = gitRootPath
+
+        let (branch, statuses, ignored, branchList) = await withCheckedContinuation { continuation in
+            DispatchQueue.global(qos: .userInitiated).async {
+                let bg = GitStatusProvider()
+                bg.repositoryURL = url
+                bg.isGitRepository = true
+                bg.gitRootPath = rootPath
+                bg.refresh()
+                continuation.resume(returning: (bg.currentBranch, bg.fileStatuses, bg.ignoredPaths, bg.branches))
+            }
+        }
+
+        // If the Task was cancelled (e.g. a newer refresh started),
+        // discard stale results to avoid overwriting newer data.
+        guard !Task.isCancelled else { return }
+
+        await MainActor.run {
+            self.currentBranch = branch
+            self.fileStatuses = statuses
+            self.ignoredPaths = ignored
+            self.branches = branchList
+        }
     }
 
     // MARK: - Status Queries
