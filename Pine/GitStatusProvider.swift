@@ -51,6 +51,9 @@ final class GitStatusProvider {
     var repositoryURL: URL?
     var gitRootPath: String?
 
+    /// True when the working tree has any uncommitted changes (modified, staged, untracked, etc.).
+    var hasUncommittedChanges: Bool { !fileStatuses.isEmpty }
+
     // MARK: - Setup & Refresh
 
     func setup(repositoryURL: URL) {

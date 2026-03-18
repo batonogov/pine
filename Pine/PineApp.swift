@@ -36,8 +36,27 @@ struct PineApp: App {
                 }
                 .keyboardShortcut("o", modifiers: [.command, .shift])
             }
-            // Cmd+` — показать/скрыть терминал
-            CommandMenu(Strings.menuView) {
+            // View menu — add items to the existing system View menu
+            CommandGroup(after: .toolbar) {
+                Divider()
+
+                Button(Strings.menuIncreaseFontSize) {
+                    FontSizeSettings.shared.increase()
+                }
+                .keyboardShortcut("+", modifiers: .command)
+
+                Button(Strings.menuDecreaseFontSize) {
+                    FontSizeSettings.shared.decrease()
+                }
+                .keyboardShortcut("-", modifiers: .command)
+
+                Button(Strings.menuResetFontSize) {
+                    FontSizeSettings.shared.reset()
+                }
+                .keyboardShortcut("0", modifiers: .command)
+
+                Divider()
+
                 Button(Strings.toggleTerminal) {
                     guard let pm = focusedProject else { return }
                     pm.terminal.isTerminalVisible.toggle()
@@ -49,6 +68,48 @@ struct PineApp: App {
                     pm.tabManager.togglePreviewMode()
                 }
                 .keyboardShortcut("p", modifiers: [.command, .shift])
+
+                Divider()
+
+                Button(Strings.menuToggleMinimap) {
+                    MinimapSettings.toggle()
+                }
+                .keyboardShortcut("m", modifiers: [.command, .shift])
+
+                Divider()
+
+                Button(Strings.menuRevealFileInFinder) {
+                    guard let pm = focusedProject,
+                          let url = pm.tabManager.activeTab?.url else { return }
+                    NSWorkspace.shared.activateFileViewerSelecting([url])
+                }
+                .keyboardShortcut("r", modifiers: [.command, .shift])
+                .disabled(focusedProject?.tabManager.activeTab == nil)
+
+                Button(Strings.menuRevealProjectInFinder) {
+                    guard let pm = focusedProject,
+                          let rootURL = pm.workspace.rootURL else { return }
+                    NSWorkspace.shared.activateFileViewerSelecting([rootURL])
+                }
+                .disabled(focusedProject?.workspace.rootURL == nil)
+            }
+            // Terminal menu: New Tab (Cmd+T)
+            CommandMenu(Strings.menuTerminal) {
+                Button(Strings.menuNewTerminalTab) {
+                    guard let pm = focusedProject else { return }
+                    if !pm.terminal.isTerminalVisible {
+                        pm.terminal.isTerminalVisible = true
+                    }
+                    pm.addTerminalTab()
+                }
+                .keyboardShortcut("t", modifiers: .command)
+            }
+            // Edit menu: Toggle Comment
+            CommandGroup(after: .pasteboard) {
+                Button(Strings.menuToggleComment) {
+                    NotificationCenter.default.post(name: .toggleComment, object: nil)
+                }
+                .keyboardShortcut("/", modifiers: .command)
             }
             // File menu: Save, Save All, Save As, Duplicate
             CommandGroup(replacing: .saveItem) {
@@ -418,8 +479,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate {
         // when the user reopens this project from Welcome or Open Recent.
         let canonical = projectURL.resolvingSymlinksInPath()
         registry.openProjects[canonical]?.saveSession()
-        registry.closeProject(projectURL)
-        if registry.openProjects.isEmpty {
+        registry.closeProjectWindow(projectURL)
+        // Show Welcome if no windows are open (check non-background projects)
+        let hasOpenWindows = registry.openProjects.keys.contains { url in
+            !registry.backgroundProjects.contains(url)
+        }
+        if !hasOpenWindows {
             showWelcome()
         }
     }
@@ -485,6 +550,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate {
         // UI testing support: clear persisted state for a clean launch
         if CommandLine.arguments.contains("--reset-state") {
             SessionState.removeAll()
+            FontSizeSettings.shared.reset()
         }
 
         // UI testing support: read project path from environment variable.
@@ -516,18 +582,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate {
             return nil // consume event
         }
 
-        // Intercept Cmd+Shift+B to open branch switcher sheet.
-        NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
-            guard event.modifierFlags.intersection(.deviceIndependentFlagsMask) == [.command, .shift],
-                  event.charactersIgnoringModifiers == "b",
-                  let window = NSApp.keyWindow,
-                  window.delegate is CloseDelegate else {
-                return event
-            }
-            NotificationCenter.default.post(name: .switchBranch, object: nil)
-            return nil // consume event
-        }
-
         // Ensure Welcome is visible if SwiftUI didn't present it automatically
         // (e.g. when window restoration state interferes with defaultLaunchBehavior)
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
@@ -552,9 +606,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate {
     /// Called when the user clicks the dock icon with no visible windows.
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
         if !flag {
-            if registry.openProjects.isEmpty {
-                // No open projects — always show Welcome, don't resurrect zombie windows
-                // (SwiftUI WindowGroup keeps closed project windows alive but hidden)
+            let hasOpenWindows = registry.openProjects.keys.contains { url in
+                !registry.backgroundProjects.contains(url)
+            }
+            if !hasOpenWindows {
+                // No open project windows — show Welcome
                 showWelcome()
             } else if let window = NSApp.windows.first(where: {
                 !$0.isVisible && !$0.title.isEmpty && $0.contentView != nil
@@ -573,15 +629,17 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
-        // Save per-project tab state so sessions can be restored from Welcome.
+        // Save sessions before terminating processes.
         for (_, pm) in registry.openProjects {
             pm.saveSession()
         }
+        registry.destroyAllProjects()
     }
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         isTerminating = true
 
+        // Check for unsaved files
         for (_, pm) in registry.openProjects {
             let dirty = pm.tabManager.dirtyTabs
             guard !dirty.isEmpty else { continue }
@@ -609,6 +667,23 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate {
                 return .terminateCancel
             }
         }
+
+        // Check for active terminal processes
+        let hasActiveProcesses = registry.openProjects.values.contains { $0.terminal.hasActiveProcesses }
+        if hasActiveProcesses {
+            let alert = NSAlert()
+            alert.messageText = Strings.terminalActiveProcessWarningTitle
+            alert.informativeText = Strings.terminalActiveProcessWarningMessage
+            alert.addButton(withTitle: Strings.terminalActiveProcessWarningQuit)
+            alert.addButton(withTitle: Strings.dialogCancel)
+            alert.alertStyle = .warning
+
+            if alert.runModal() != .alertFirstButtonReturn {
+                isTerminating = false
+                return .terminateCancel
+            }
+        }
+
         return .terminateNow
     }
 }
@@ -624,4 +699,5 @@ extension Notification.Name {
     static let fileRenamed = Notification.Name("fileRenamed")
     /// userInfo: ["url": URL]
     static let fileDeleted = Notification.Name("fileDeleted")
+    static let toggleComment = Notification.Name("toggleComment")
 }

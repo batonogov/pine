@@ -109,7 +109,7 @@ final class BranchSwitcherTests: PineUITestCase {
         )
     }
 
-    // MARK: - Git menu no longer in menu bar
+    // MARK: - Git menu not in menu bar (lives in subtitle popup instead)
 
     func testGitMenuDoesNotExist() throws {
         launchWithProject(projectURL)

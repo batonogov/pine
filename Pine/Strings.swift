@@ -107,11 +107,19 @@ enum Strings {
 
     // MARK: - Menu Commands
 
+    static let menuIncreaseFontSize: LocalizedStringKey = "menu.increaseFontSize"
+    static let menuDecreaseFontSize: LocalizedStringKey = "menu.decreaseFontSize"
+    static let menuResetFontSize: LocalizedStringKey = "menu.resetFontSize"
+    static let menuTerminal: LocalizedStringKey = "menu.terminal"
+    static let menuNewTerminalTab: LocalizedStringKey = "menu.newTerminalTab"
     static let menuTogglePreview: LocalizedStringKey = "menu.togglePreview"
     static let menuView: LocalizedStringKey = "menu.view"
     static let menuGit: LocalizedStringKey = "menu.git"
     static let menuOpenFolder: LocalizedStringKey = "menu.openFolder"
     static let menuSwitchBranch: LocalizedStringKey = "menu.switchBranch"
+    static let menuRevealFileInFinder: LocalizedStringKey = "menu.revealFileInFinder"
+    static let menuRevealProjectInFinder: LocalizedStringKey = "menu.revealProjectInFinder"
+
     // MARK: - Branch Switcher
 
     static let branchFilterPlaceholder: LocalizedStringKey = "branch.filterPlaceholder"
@@ -121,6 +129,21 @@ enum Strings {
     }
 
     static let menuCheckForUpdates: LocalizedStringKey = "menu.checkForUpdates"
+    static let menuToggleComment: LocalizedStringKey = "menu.toggleComment"
+    static let menuToggleMinimap: LocalizedStringKey = "menu.toggleMinimap"
+
+    static var branchUncommittedChangesTitle: String {
+        String(localized: "branch.uncommittedChanges.title")
+    }
+
+    static func branchUncommittedChangesMessage(_ branch: String) -> String {
+        String(localized: "branch.uncommittedChanges.message \(branch)")
+    }
+
+    static var branchUncommittedChangesSwitch: String {
+        String(localized: "branch.uncommittedChanges.switch")
+    }
+
     static let menuSave: LocalizedStringKey = "menu.save"
     static let menuSaveAll: LocalizedStringKey = "menu.saveAll"
     static let menuSaveAs: LocalizedStringKey = "menu.saveAs"
@@ -177,6 +200,25 @@ enum Strings {
         String(localized: "openPanel.prompt")
     }
 
+    // MARK: - Large File Warning
+
+    static var largeFileWarningTitle: String {
+        String(localized: "largeFile.warning.title")
+    }
+
+    static func largeFileWarningMessage(_ fileName: String, _ sizeMB: Double) -> String {
+        let formatted = String(format: "%.1f", sizeMB)
+        return String(localized: "largeFile.warning.message \(fileName) \(formatted)")
+    }
+
+    static var largeFileOpenWithHighlighting: String {
+        String(localized: "largeFile.openWithHighlighting")
+    }
+
+    static var largeFileOpenWithoutHighlighting: String {
+        String(localized: "largeFile.openWithoutHighlighting")
+    }
+
     // MARK: - Welcome Window
 
     static let welcomeTitle: LocalizedStringKey = "welcome.title"
@@ -192,5 +234,31 @@ enum Strings {
 
     static func terminalNumberedName(_ number: Int) -> String {
         String(localized: "terminal.numberedName \(number)")
+    }
+
+    // MARK: - Terminal Process Warnings
+
+    static var terminalActiveProcessWarningTitle: String {
+        String(localized: "terminal.activeProcessWarning.title")
+    }
+
+    static var terminalActiveProcessWarningMessage: String {
+        String(localized: "terminal.activeProcessWarning.message")
+    }
+
+    static var terminalActiveProcessWarningQuit: String {
+        String(localized: "terminal.activeProcessWarning.quit")
+    }
+
+    static var terminalTabCloseWarningTitle: String {
+        String(localized: "terminal.tabCloseWarning.title")
+    }
+
+    static var terminalTabCloseWarningMessage: String {
+        String(localized: "terminal.tabCloseWarning.message")
+    }
+
+    static var terminalTabCloseWarningClose: String {
+        String(localized: "terminal.tabCloseWarning.close")
     }
 }

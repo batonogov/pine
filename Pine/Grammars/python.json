@@ -1,6 +1,7 @@
 {
     "name": "Python",
     "extensions": ["py", "pyw"],
+    "lineComment": "#",
     "rules": [
         {
             "pattern": "#.*$",

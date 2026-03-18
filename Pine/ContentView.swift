@@ -23,7 +23,7 @@ struct ContentView: View {
     @State private var columnVisibility: NavigationSplitViewVisibility = .all
     @State private var lineDiffs: [GitLineDiff] = []
     @State private var didRestoreSession = false
-    @State private var showBranchSwitcher = false
+    @AppStorage("minimapVisible") private var isMinimapVisible = true
 
     private var activeTab: EditorTab? { tabManager.activeTab }
 
@@ -65,11 +65,11 @@ struct ContentView: View {
         .navigationSubtitle(branchSubtitle)
         .background {
             BranchSubtitleClickHandler(
-                branches: workspace.gitProvider.branches,
-                currentBranch: workspace.gitProvider.currentBranch,
-                isGitRepository: workspace.gitProvider.isGitRepository,
-                onSwitchBranch: switchBranch
+                gitProvider: workspace.gitProvider,
+                isGitRepository: workspace.gitProvider.isGitRepository
             )
+            DocumentEditedTracker(isEdited: tabManager.hasUnsavedChanges)
+            RepresentedFileTracker(url: activeTab?.url ?? workspace.rootURL)
         }
         .task {
             restoreSessionIfNeeded()
@@ -95,6 +95,10 @@ struct ContentView: View {
         .onChange(of: tabManager.tabs.count) { _, _ in
             projectManager.saveSession()
         }
+        .modifier(TerminalSessionObserver(
+            terminal: terminal,
+            onSave: { projectManager.saveSession() }
+        ))
         .onChange(of: workspace.gitProvider.isGitRepository) { _, isRepo in
             if isRepo {
                 refreshLineDiffs()
@@ -131,17 +135,6 @@ struct ContentView: View {
             guard let deletedURL = notification.userInfo?["url"] as? URL else { return }
             handleFileDeletion(deletedURL)
         }
-        .onReceive(NotificationCenter.default.publisher(for: .switchBranch)) { _ in
-            guard controlActiveState == .key,
-                  workspace.gitProvider.isGitRepository else { return }
-            showBranchSwitcher = true
-        }
-        .sheet(isPresented: $showBranchSwitcher) {
-            BranchSwitcherView(
-                gitProvider: workspace.gitProvider,
-                isPresented: $showBranchSwitcher
-            )
-        }
         .onChange(of: workspace.externalChangeToken) { _, _ in
             guard controlActiveState == .key else { return }
             let conflicts = tabManager.checkExternalChanges()
@@ -166,26 +159,51 @@ struct ContentView: View {
         }
 
         guard let session = SessionState.load(for: rootURL) else { return }
-        guard tabManager.tabs.isEmpty else { return }
 
-        for url in session.existingFileURLs {
-            tabManager.openTab(url: url)
-        }
+        // Restore editor tabs only if PM has no tabs (fresh or after restart)
+        if tabManager.tabs.isEmpty {
+            let disabledSet = Set(session.highlightingDisabledPaths ?? [])
+            for url in session.existingFileURLs {
+                let disabled = disabledSet.contains(url.path)
+                tabManager.openTab(url: url, syntaxHighlightingDisabled: disabled)
+            }
 
-        // Restore preview modes for markdown tabs
-        if let previewModes = session.previewModes {
-            for index in tabManager.tabs.indices {
-                let path = tabManager.tabs[index].url.path
-                if let rawMode = previewModes[path],
-                   let mode = MarkdownPreviewMode(rawValue: rawMode) {
-                    tabManager.tabs[index].previewMode = mode
+            // Restore preview modes for markdown tabs
+            if let previewModes = session.previewModes {
+                for index in tabManager.tabs.indices {
+                    let path = tabManager.tabs[index].url.path
+                    if let rawMode = previewModes[path],
+                       let mode = MarkdownPreviewMode(rawValue: rawMode) {
+                        tabManager.tabs[index].previewMode = mode
+                    }
                 }
+            }
+
+            if let activeURL = session.activeFileURL,
+               let tab = tabManager.tab(for: activeURL) {
+                tabManager.activeTabID = tab.id
             }
         }
 
-        if let activeURL = session.activeFileURL,
-           let tab = tabManager.tab(for: activeURL) {
-            tabManager.activeTabID = tab.id
+        // Restore terminal state
+        if let visible = session.isTerminalVisible {
+            terminal.isTerminalVisible = visible
+        }
+        if let maximized = session.isTerminalMaximized {
+            terminal.isTerminalMaximized = maximized
+        }
+
+        // Create terminal tabs only if PM has a single default (unused) tab
+        // (i.e., fresh PM after restart, not reused from background)
+        if let count = session.terminalTabCount, count > 1,
+           terminal.terminalTabs.count == 1 {
+            for _ in 1..<count {
+                terminal.addTerminalTab(workingDirectory: rootURL)
+            }
+        }
+        if let activeIndex = session.activeTerminalIndex,
+           activeIndex < terminal.terminalTabs.count {
+            terminal.activeTerminalID = terminal.terminalTabs[activeIndex].id
         }
     }
 
@@ -233,19 +251,6 @@ struct ContentView: View {
             return
         }
         lineDiffs = workspace.gitProvider.diffForFile(at: tab.url)
-    }
-
-    /// Switches to the given branch via toolbarTitleMenu, showing an alert on error.
-    private func switchBranch(_ branch: String) {
-        guard branch != workspace.gitProvider.currentBranch else { return }
-        let result = workspace.gitProvider.checkoutBranch(branch)
-        if !result.success {
-            let alert = NSAlert()
-            alert.messageText = Strings.branchSwitchErrorTitle
-            alert.informativeText = result.error
-            alert.alertStyle = .warning
-            alert.runModal()
-        }
     }
 
     /// Closes a tab with unsaved-changes protection.
@@ -410,11 +415,14 @@ struct ContentView: View {
             language: tab.language,
             fileName: tab.fileName,
             lineDiffs: lineDiffs,
+            isMinimapVisible: isMinimapVisible,
+            syntaxHighlightingDisabled: tab.syntaxHighlightingDisabled,
             initialCursorPosition: tab.cursorPosition,
             initialScrollOffset: tab.scrollOffset,
             onStateChange: { cursor, scroll in
                 tabManager.updateEditorState(cursorPosition: cursor, scrollOffset: scroll)
-            }
+            },
+            fontSize: FontSizeSettings.shared.fontSize
         )
         .accessibilityIdentifier(AccessibilityID.codeEditor)
     }
@@ -434,11 +442,42 @@ struct ContentView: View {
     }
 }
 
+// MARK: - Terminal session state observer
+
+/// Saves terminal state to session when visibility, tab count, or active tab changes.
+/// Extracted into a ViewModifier to reduce body complexity for the type-checker.
+private struct TerminalSessionObserver: ViewModifier {
+    let terminal: TerminalManager
+    let onSave: () -> Void
+
+    func body(content: Content) -> some View {
+        content
+            .onChange(of: terminal.isTerminalVisible) { _, _ in onSave() }
+            .onChange(of: terminal.isTerminalMaximized) { _, _ in onSave() }
+            .onChange(of: terminal.terminalTabs.count) { _, _ in onSave() }
+            .onChange(of: terminal.activeTerminalID) { _, _ in onSave() }
+    }
+}
+
 // MARK: - Панель вкладок терминала (стиль нативных macOS window tabs)
 
 struct TerminalNativeTabBar: View {
     var terminal: TerminalManager
     var workingDirectory: URL?
+
+    private func closeTerminalTabWithConfirmation(_ tab: TerminalTab) {
+        if tab.hasForegroundProcess {
+            let alert = NSAlert()
+            alert.messageText = Strings.terminalTabCloseWarningTitle
+            alert.informativeText = Strings.terminalTabCloseWarningMessage
+            alert.addButton(withTitle: Strings.terminalTabCloseWarningClose)
+            alert.addButton(withTitle: Strings.dialogCancel)
+            alert.alertStyle = .warning
+
+            guard alert.runModal() == .alertFirstButtonReturn else { return }
+        }
+        terminal.closeTerminalTab(tab)
+    }
 
     var body: some View {
         HStack(spacing: 0) {
@@ -451,7 +490,7 @@ struct TerminalNativeTabBar: View {
                             isActive: tab.id == terminal.activeTerminalID,
                             canClose: terminal.terminalTabs.count > 1,
                             onSelect: { terminal.activeTerminalID = tab.id },
-                            onClose: { terminal.closeTerminalTab(tab) }
+                            onClose: { closeTerminalTabWithConfirmation(tab) }
                         )
                     }
                 }
@@ -726,6 +765,14 @@ struct SidebarView: View {
                         } label: {
                             Label(Strings.contextNewFolder, systemImage: "folder.badge.plus")
                         }
+
+                        Divider()
+
+                        Button {
+                            NSWorkspace.shared.activateFileViewerSelecting([rootURL])
+                        } label: {
+                            Label(Strings.contextRevealInFinder, systemImage: "arrow.right.circle")
+                        }
                     }
                 }
                 .navigationTitle(workspace.projectName)
@@ -759,6 +806,22 @@ struct SidebarView: View {
         openWindow(value: url)
     }
 
+}
+
+// MARK: - Window document-edited dot tracker
+
+/// Sets `NSWindow.isDocumentEdited` based on whether any tab has unsaved changes.
+/// This shows/hides the dot in the window's close button (standard macOS behavior).
+private struct DocumentEditedTracker: NSViewRepresentable {
+    let isEdited: Bool
+
+    func makeNSView(context: Context) -> NSView {
+        NSView()
+    }
+
+    func updateNSView(_ nsView: NSView, context: Context) {
+        nsView.window?.isDocumentEdited = isEdited
+    }
 }
 
 // MARK: - Строка файла/папки в дереве

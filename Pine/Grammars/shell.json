@@ -1,6 +1,7 @@
 {
     "name": "Shell",
     "extensions": ["sh", "bash", "zsh", "fish"],
+    "lineComment": "#",
     "rules": [
         {
             "pattern": "#.*$",

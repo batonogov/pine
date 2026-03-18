@@ -91,7 +91,7 @@ struct ProjectRegistryTests {
 
     // MARK: - Close
 
-    @Test func closeProjectRemovesFromOpenProjects() throws {
+    @Test func closeProjectKeepsInOpenProjectsAsBackground() throws {
         let tempDir = try makeTempDirectory()
         defer { cleanup(tempDir) }
 
@@ -102,21 +102,23 @@ struct ProjectRegistryTests {
         #expect(registry.openProjects[canonical] != nil)
 
         registry.closeProject(tempDir)
-        #expect(registry.openProjects[canonical] == nil)
+        // PM stays in openProjects but is marked as background
+        #expect(registry.openProjects[canonical] != nil)
+        #expect(registry.backgroundProjects.contains(canonical))
     }
 
-    @Test func closeAndReopenCreatesNewInstance() throws {
+    @Test func closeWindowAndReopenReturnsSameInstance() throws {
         let tempDir = try makeTempDirectory()
         defer { cleanup(tempDir) }
 
         let registry = ProjectRegistry()
         let pm1 = registry.projectManager(for: tempDir)
-        registry.closeProject(tempDir)
+        registry.closeProjectWindow(tempDir)
         let pm2 = registry.projectManager(for: tempDir)
 
         #expect(pm1 != nil)
         #expect(pm2 != nil)
-        #expect(pm1 !== pm2)
+        #expect(pm1 === pm2)
     }
 
     // MARK: - Recent projects
@@ -168,9 +170,72 @@ struct ProjectRegistryTests {
         let canonical = tempDir.resolvingSymlinksInPath()
         registry.closeProject(tempDir)
 
-        // Close removes from openProjects but NOT from recentProjects
-        #expect(registry.openProjects[canonical] == nil)
+        // Close keeps PM in openProjects (as background) and in recentProjects
+        #expect(registry.openProjects[canonical] != nil)
         #expect(registry.recentProjects.contains(canonical))
+    }
+
+    // MARK: - isProjectOpen
+
+    @Test func closeWindowPreservesProjectManager() throws {
+        let tempDir = try makeTempDirectory()
+        defer { cleanup(tempDir) }
+
+        let registry = ProjectRegistry()
+        let pm = registry.projectManager(for: tempDir)
+        let canonical = tempDir.resolvingSymlinksInPath()
+
+        registry.closeProjectWindow(tempDir)
+
+        // PM is still in openProjects
+        #expect(registry.openProjects[canonical] === pm)
+    }
+
+    @Test func closeWindowMarksAsBackground() throws {
+        let tempDir = try makeTempDirectory()
+        defer { cleanup(tempDir) }
+
+        let registry = ProjectRegistry()
+        _ = registry.projectManager(for: tempDir)
+        let canonical = tempDir.resolvingSymlinksInPath()
+
+        #expect(!registry.backgroundProjects.contains(canonical))
+
+        registry.closeProjectWindow(tempDir)
+        #expect(registry.backgroundProjects.contains(canonical))
+    }
+
+    @Test func reopenRemovesFromBackground() throws {
+        let tempDir = try makeTempDirectory()
+        defer { cleanup(tempDir) }
+
+        let registry = ProjectRegistry()
+        _ = registry.projectManager(for: tempDir)
+        let canonical = tempDir.resolvingSymlinksInPath()
+
+        registry.closeProjectWindow(tempDir)
+        #expect(registry.backgroundProjects.contains(canonical))
+
+        _ = registry.projectManager(for: tempDir)
+        #expect(!registry.backgroundProjects.contains(canonical))
+    }
+
+    @Test func isWindowOpenReflectsState() throws {
+        let tempDir = try makeTempDirectory()
+        defer { cleanup(tempDir) }
+
+        let registry = ProjectRegistry()
+        #expect(!registry.isWindowOpen(tempDir))
+
+        _ = registry.projectManager(for: tempDir)
+        #expect(registry.isWindowOpen(tempDir))
+
+        registry.closeProjectWindow(tempDir)
+        #expect(!registry.isWindowOpen(tempDir))
+
+        // Reopen — window open again
+        _ = registry.projectManager(for: tempDir)
+        #expect(registry.isWindowOpen(tempDir))
     }
 
     // MARK: - isProjectOpen
@@ -185,7 +250,9 @@ struct ProjectRegistryTests {
         _ = registry.projectManager(for: tempDir)
         #expect(registry.isProjectOpen(tempDir))
 
+        // After closing, project is still "open" (background), use isWindowOpen for window state
         registry.closeProject(tempDir)
-        #expect(!registry.isProjectOpen(tempDir))
+        #expect(registry.isProjectOpen(tempDir))
+        #expect(!registry.isWindowOpen(tempDir))
     }
 }

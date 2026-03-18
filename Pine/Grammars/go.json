@@ -1,6 +1,7 @@
 {
     "name": "Go",
     "extensions": ["go"],
+    "lineComment": "//",
     "rules": [
         {
             "pattern": "//.*$",

@@ -266,4 +266,49 @@ final class EditorWindowTests: PineUITestCase {
         let terminalToggle = app.descendants(matching: .any)["terminalToggleButton"].firstMatch
         XCTAssertTrue(waitForExistence(terminalToggle, timeout: 10), "Terminal toggle button should be visible in status bar")
     }
+
+    // MARK: - View menu structure
+
+    func testSingleViewMenuWithRevealItems() throws {
+        launchWithProject(projectURL)
+
+        // Open a file so "Reveal File in Finder" is enabled
+        let mainFile = app.staticTexts["fileNode_main.swift"]
+        XCTAssertTrue(waitForExistence(mainFile, timeout: 10))
+        mainFile.click()
+        XCTAssertTrue(waitForExistence(editorTab("main.swift"), timeout: 5))
+
+        // There should be exactly one View menu item in the menu bar
+        let viewMenuItems = app.menuBars.menuBarItems.matching(
+            NSPredicate(format: "title == 'View'")
+        )
+        XCTAssertEqual(viewMenuItems.count, 1, "There should be exactly one View menu")
+
+        // Open View menu and check for Reveal items
+        app.menuBars.menuBarItems["View"].click()
+
+        let revealFile = app.menuItems["Reveal File in Finder"]
+        XCTAssertTrue(revealFile.exists, "View menu should contain 'Reveal File in Finder'")
+
+        let revealProject = app.menuItems["Reveal Project in Finder"]
+        XCTAssertTrue(revealProject.exists, "View menu should contain 'Reveal Project in Finder'")
+    }
+
+    // MARK: - Sidebar context menu has Reveal in Finder
+
+    func testSidebarContextMenuRevealInFinder() throws {
+        launchWithProject(projectURL)
+
+        let sidebar = app.outlines["sidebar"]
+        XCTAssertTrue(waitForExistence(sidebar, timeout: 10))
+
+        // Right-click on empty area of sidebar
+        sidebar.rightClick()
+
+        let revealItem = app.menuItems["Reveal in Finder"]
+        XCTAssertTrue(
+            waitForExistence(revealItem, timeout: 5),
+            "Sidebar context menu should contain 'Reveal in Finder'"
+        )
+    }
 }

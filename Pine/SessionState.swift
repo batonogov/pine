@@ -17,6 +17,16 @@ struct SessionState: Codable {
     /// Preview modes for markdown files. Key is file path, value is MarkdownPreviewMode raw value.
     /// Optional for backwards compatibility with sessions saved before this field existed.
     var previewModes: [String: String]?
+    /// File paths where syntax highlighting was disabled (e.g. large files opened without highlighting).
+    /// Optional for backwards compatibility with sessions saved before this field existed.
+    var highlightingDisabledPaths: [String]?
+
+    // MARK: - Terminal state (optional for backwards compatibility)
+
+    var terminalTabCount: Int?
+    var activeTerminalIndex: Int?
+    var isTerminalVisible: Bool?
+    var isTerminalMaximized: Bool?
 
     // MARK: - UserDefaults keys
 
@@ -52,13 +62,23 @@ struct SessionState: Codable {
         openFileURLs: [URL],
         activeFileURL: URL? = nil,
         previewModes: [String: String]? = nil,
+        highlightingDisabledPaths: [String]? = nil,
+        terminalTabCount: Int? = nil,
+        activeTerminalIndex: Int? = nil,
+        isTerminalVisible: Bool? = nil,
+        isTerminalMaximized: Bool? = nil,
         defaults: UserDefaults = .standard
     ) {
         let state = SessionState(
             projectPath: projectURL.path,
             openFilePaths: openFileURLs.map(\.path),
             activeFilePath: activeFileURL?.path,
-            previewModes: previewModes
+            previewModes: previewModes,
+            highlightingDisabledPaths: highlightingDisabledPaths,
+            terminalTabCount: terminalTabCount,
+            activeTerminalIndex: activeTerminalIndex,
+            isTerminalVisible: isTerminalVisible,
+            isTerminalMaximized: isTerminalMaximized
         )
         guard let data = try? JSONEncoder().encode(state) else { return }
         defaults.set(data, forKey: key(for: projectURL))

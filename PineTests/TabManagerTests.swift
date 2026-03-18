@@ -560,6 +560,44 @@ struct TabManagerTests {
         #expect(result == false)
     }
 
+    @Test("tryDuplicateActiveTab succeeds and creates copy")
+    func tryDuplicateActiveTabSuccess() throws {
+        let manager = TabManager()
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let url = dir.appendingPathComponent("file.swift")
+        try "content".write(to: url, atomically: true, encoding: .utf8)
+
+        manager.openTab(url: url)
+        let originalID = manager.activeTabID
+
+        let success = try manager.tryDuplicateActiveTab()
+        #expect(success == true)
+        #expect(manager.tabs.count == 2)
+        #expect(manager.activeTabID != originalID)
+        #expect(manager.activeTab?.url.lastPathComponent == "file copy.swift")
+        #expect(manager.activeTab?.isDirty == false)
+    }
+
+    @Test("tryDuplicateActiveTab throws for non-writable path")
+    func duplicateActiveTabThrowsForBadPath() {
+        let manager = TabManager()
+        let badDir = URL(fileURLWithPath: "/nonexistent_dir_\(UUID().uuidString)")
+        let badURL = badDir.appendingPathComponent("file.swift")
+
+        let tab = EditorTab(url: badURL, content: "data", savedContent: "data")
+        manager.tabs.append(tab)
+        manager.activeTabID = tab.id
+
+        #expect(throws: (any Error).self) {
+            try manager.tryDuplicateActiveTab()
+        }
+        // Original tab should remain unchanged
+        #expect(manager.tabs.count == 1)
+        #expect(manager.activeTab?.url == badURL)
+    }
+
     // MARK: - Preview file detection
 
     @Test("isPreviewFile returns true for images")
@@ -706,6 +744,61 @@ struct TabManagerTests {
         // Switch back to markdown tab
         manager.activeTabID = manager.tabs[0].id
         #expect(manager.activeTab?.previewMode == .split)
+    }
+
+    // MARK: - Large file detection
+
+    @Test("isLargeFile returns true for files >= 1 MB")
+    func isLargeFileAboveThreshold() throws {
+        let manager = TabManager()
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let url = dir.appendingPathComponent("large.log")
+        // Create a file exactly at the threshold (1 MB)
+        let data = Data(count: TabManager.largeFileThreshold)
+        try data.write(to: url)
+
+        #expect(manager.isLargeFile(url: url) == true)
+    }
+
+    @Test("isLargeFile returns false for files < 1 MB")
+    func isLargeFileBelowThreshold() throws {
+        let manager = TabManager()
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let url = dir.appendingPathComponent("small.swift")
+        let data = Data(count: TabManager.largeFileThreshold - 1)
+        try data.write(to: url)
+
+        #expect(manager.isLargeFile(url: url) == false)
+    }
+
+    @Test("isLargeFile returns false for nonexistent file")
+    func isLargeFileNonexistent() {
+        let manager = TabManager()
+        let url = URL(fileURLWithPath: "/nonexistent_\(UUID().uuidString)/file.txt")
+        #expect(manager.isLargeFile(url: url) == false)
+    }
+
+    @Test("Open small file has syntaxHighlightingDisabled == false")
+    func openSmallFileHasHighlighting() {
+        let manager = TabManager()
+        let url = tempFileURL(content: "let x = 1")
+
+        manager.openTab(url: url)
+
+        #expect(manager.activeTab?.syntaxHighlightingDisabled == false)
+    }
+
+    @Test("EditorTab with syntaxHighlightingDisabled creates correctly")
+    func editorTabWithDisabledHighlighting() {
+        var tab = EditorTab(url: URL(fileURLWithPath: "/tmp/large.log"), content: "data", savedContent: "data")
+        tab.syntaxHighlightingDisabled = true
+
+        #expect(tab.syntaxHighlightingDisabled == true)
+        #expect(tab.isDirty == false)
     }
 
     @Test("Rename preserves editor state")
