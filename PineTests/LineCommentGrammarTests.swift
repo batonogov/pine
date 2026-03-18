@@ -158,4 +158,24 @@ struct LineCommentGrammarTests {
         let highlighter = SyntaxHighlighter.shared
         #expect(highlighter.commentStyle(forExtension: "xyz", fileName: nil) == nil)
     }
+
+    @Test func commentStyleByFileName() {
+        let highlighter = SyntaxHighlighter.shared
+        // Dockerfile has lineComment "#" via fileName match
+        if case .line(let prefix) = highlighter.commentStyle(forExtension: nil, fileName: "Dockerfile") {
+            #expect(prefix == "#")
+        } else {
+            Issue.record("Expected .line for Dockerfile, got block or nil")
+        }
+    }
+
+    @Test func commentStyleFileNameTakesPriorityOverExtension() {
+        let highlighter = SyntaxHighlighter.shared
+        // fileName match should win over extension
+        if case .line(let prefix) = highlighter.commentStyle(forExtension: "swift", fileName: "Dockerfile") {
+            #expect(prefix == "#")
+        } else {
+            Issue.record("Expected .line('#') for Dockerfile, got something else")
+        }
+    }
 }
