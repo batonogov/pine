@@ -30,5 +30,17 @@
             "pattern": "&[a-zA-Z]+;",
             "scope": "number"
         }
+    ],
+    "embeddedLanguages": [
+        {
+            "begin": "<style[^>]*>",
+            "end": "</style>",
+            "grammar": "CSS"
+        },
+        {
+            "begin": "<script[^>]*>",
+            "end": "</script>",
+            "grammar": "JavaScript"
+        }
     ]
 }

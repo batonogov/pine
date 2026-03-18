@@ -325,4 +325,129 @@ struct SyntaxHighlighterTests {
         #expect(foregroundColor(in: textStorage, at: funcPos) != keywordColor,
                 "`func` must lose keyword color after language switch to langB")
     }
+
+    // MARK: - 7. Embedded languages: CSS inside <style> in HTML
+
+    /// Host grammar (HTML-like) with embedded CSS grammar
+    private var htmlGrammar: Grammar {
+        Grammar(
+            name: "TestHTML",
+            extensions: ["testhtml"],
+            rules: [
+                GrammarRule(pattern: "<!--[\\s\\S]*?-->", scope: "comment"),
+                GrammarRule(pattern: "</?[a-zA-Z][a-zA-Z0-9-]*", scope: "keyword"),
+                GrammarRule(pattern: "/?>", scope: "keyword")
+            ],
+            embeddedLanguages: [
+                EmbeddedLanguage(begin: "<style[^>]*>", end: "</style>", grammar: "TestCSS")
+            ]
+        )
+    }
+
+    /// Embedded CSS grammar
+    private var cssGrammar: Grammar {
+        Grammar(
+            name: "TestCSS",
+            extensions: ["testcss"],
+            rules: [
+                GrammarRule(pattern: "/\\*[\\s\\S]*?\\*/", scope: "comment"),
+                GrammarRule(pattern: "\\b(color|display|margin)\\b", scope: "type")
+            ]
+        )
+    }
+
+    @Test func embeddedCSSInsideStyleTagGetsHighlighted() {
+        register(htmlGrammar, cssGrammar)
+
+        let text = """
+        <html>
+        <style>
+        body { color: red; }
+        </style>
+        </html>
+        """
+        let storage = NSTextStorage(string: text)
+        let hl = SyntaxHighlighter.shared
+        let typeColor = hl.theme.color(for: "type")
+        let keywordColor = hl.theme.color(for: "keyword")
+
+        hl.highlight(textStorage: storage, language: "testhtml", font: font)
+
+        // "color" inside <style> should be highlighted as type (CSS rule)
+        let colorPos = (text as NSString).range(of: "color").location
+        #expect(foregroundColor(in: storage, at: colorPos) == typeColor,
+                "CSS property 'color' inside <style> should be type-colored")
+
+        // "<html" should be highlighted as keyword (host HTML rule)
+        let htmlPos = (text as NSString).range(of: "<html").location
+        #expect(foregroundColor(in: storage, at: htmlPos) == keywordColor,
+                "HTML tag should be keyword-colored")
+    }
+
+    @Test func embeddedCSSDoesNotAffectOutsideStyleTag() {
+        register(htmlGrammar, cssGrammar)
+
+        let text = """
+        <div>color</div>
+        <style>
+        body { display: flex; }
+        </style>
+        """
+        let storage = NSTextStorage(string: text)
+        let hl = SyntaxHighlighter.shared
+        let typeColor = hl.theme.color(for: "type")
+
+        hl.highlight(textStorage: storage, language: "testhtml", font: font)
+
+        // "color" outside <style> should NOT be type-colored (not a CSS context)
+        let outsideColorPos = (text as NSString).range(of: "color").location
+        #expect(foregroundColor(in: storage, at: outsideColorPos) != typeColor,
+                "CSS property outside <style> should not be type-colored")
+
+        // "display" inside <style> SHOULD be type-colored
+        let displayPos = (text as NSString).range(of: "display").location
+        #expect(foregroundColor(in: storage, at: displayPos) == typeColor,
+                "CSS property inside <style> should be type-colored")
+    }
+
+    @Test func htmlCommentOverridesEmbeddedCSS() {
+        register(htmlGrammar, cssGrammar)
+
+        let text = """
+        <!-- <style>body { color: red; }</style> -->
+        """
+        let storage = NSTextStorage(string: text)
+        let hl = SyntaxHighlighter.shared
+        let commentColor = hl.theme.color(for: "comment")
+
+        hl.highlight(textStorage: storage, language: "testhtml", font: font)
+
+        // "color" inside HTML comment should be comment-colored, not CSS type-colored
+        let colorPos = (text as NSString).range(of: "color").location
+        #expect(foregroundColor(in: storage, at: colorPos) == commentColor,
+                "CSS property inside HTML comment should be comment-colored (comment wins)")
+    }
+
+    @Test func multipleEmbeddedStyleBlocks() {
+        register(htmlGrammar, cssGrammar)
+
+        let text = """
+        <style>body { color: red; }</style>
+        <div>hello</div>
+        <style>p { margin: 0; }</style>
+        """
+        let storage = NSTextStorage(string: text)
+        let hl = SyntaxHighlighter.shared
+        let typeColor = hl.theme.color(for: "type")
+
+        hl.highlight(textStorage: storage, language: "testhtml", font: font)
+
+        // Both "color" and "margin" should be type-colored
+        let colorPos = (text as NSString).range(of: "color").location
+        let marginPos = (text as NSString).range(of: "margin").location
+        #expect(foregroundColor(in: storage, at: colorPos) == typeColor,
+                "CSS property in first <style> should be type-colored")
+        #expect(foregroundColor(in: storage, at: marginPos) == typeColor,
+                "CSS property in second <style> should be type-colored")
+    }
 }

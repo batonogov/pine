@@ -34,6 +34,30 @@ struct GrammarModelTests {
         #expect(grammar.fileNames == nil)
     }
 
+    @Test func decodesGrammarWithEmbeddedLanguages() throws {
+        let json = """
+        {
+            "name": "TestHTML",
+            "extensions": ["html"],
+            "rules": [
+                {"pattern": "<[a-z]+", "scope": "keyword"}
+            ],
+            "embeddedLanguages": [
+                {"begin": "<style[^>]*>", "end": "</style>", "grammar": "CSS"},
+                {"begin": "<script[^>]*>", "end": "</script>", "grammar": "JavaScript"}
+            ]
+        }
+        """
+        let data = Data(json.utf8)
+        let grammar = try JSONDecoder().decode(Grammar.self, from: data)
+
+        #expect(grammar.embeddedLanguages?.count == 2)
+        #expect(grammar.embeddedLanguages?[0].begin == "<style[^>]*>")
+        #expect(grammar.embeddedLanguages?[0].end == "</style>")
+        #expect(grammar.embeddedLanguages?[0].grammar == "CSS")
+        #expect(grammar.embeddedLanguages?[1].grammar == "JavaScript")
+    }
+
     @Test func decodesGrammarWithFileNames() throws {
         let json = """
         {

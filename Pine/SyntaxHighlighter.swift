@@ -16,6 +16,13 @@ struct GrammarRule: Codable {
     var options: [String]?   // Опции regex: ["anchorsMatchLines"]
 }
 
+/// Встроенный язык — регион в хост-грамматике, подсвечиваемый другой грамматикой.
+struct EmbeddedLanguage: Codable {
+    let begin: String    // Regex начала региона, напр. "<style[^>]*>"
+    let end: String      // Regex конца региона, напр. "</style>"
+    let grammar: String  // Имя грамматики для содержимого, напр. "CSS"
+}
+
 /// Грамматика языка, загружаемая из JSON-файла.
 struct Grammar: Codable {
     let name: String             // "Swift", "Python" и т.д.
@@ -23,6 +30,7 @@ struct Grammar: Codable {
     let rules: [GrammarRule]     // Правила подсветки
     var fileNames: [String]?     // Точные имена файлов: ["Dockerfile", "Makefile"]
     var lineComment: String?     // Символ однострочного комментария: "//", "#" и т.д.
+    var embeddedLanguages: [EmbeddedLanguage]?  // Встроенные языки (CSS в HTML и т.д.)
 }
 
 // MARK: - Тема (маппинг scope → цвет)
@@ -89,6 +97,20 @@ final class SyntaxHighlighter {
     /// Скомпилированные regex для каждой грамматики (кэшируем для производительности).
     /// Ключ — имя языка.
     private var compiledRules: [String: [CompiledRule]] = [:]
+
+    /// Скомпилированный регион встроенного языка.
+    struct CompiledEmbeddedRegion {
+        /// Regex для всего региона: begin([\s\S]*?)end — группа 1 = содержимое.
+        let regionRegex: NSRegularExpression
+        /// Имя грамматики для содержимого (напр. "CSS").
+        let grammarName: String
+    }
+
+    /// Скомпилированные регионы встроенных языков, ключ — имя хост-грамматики.
+    private var compiledEmbedded: [String: [CompiledEmbeddedRegion]] = [:]
+
+    /// Грамматики по имени (для поиска встроенных грамматик).
+    private var grammarsByName: [String: Grammar] = [:]
 
     /// Кэш «отпечатка» многострочных токенов по ObjectIdentifier текстового хранилища.
     /// Отпечаток — упорядоченный массив длин матчей (без позиций).
@@ -162,6 +184,8 @@ final class SyntaxHighlighter {
 
     /// Компилирует regex-паттерны грамматики в NSRegularExpression.
     private func compileRules(for grammar: Grammar) {
+        grammarsByName[grammar.name] = grammar
+
         var rules: [CompiledRule] = []
 
         for rule in grammar.rules {
@@ -198,6 +222,25 @@ final class SyntaxHighlighter {
         }
 
         compiledRules[grammar.name] = rules
+
+        // Компилируем регионы встроенных языков
+        if let embedded = grammar.embeddedLanguages {
+            var regions: [CompiledEmbeddedRegion] = []
+            for lang in embedded {
+                // Строим regex: begin([\s\S]*?)end — группа 1 = содержимое
+                let pattern = "(?:\(lang.begin))([\\s\\S]*?)(?:\(lang.end))"
+                if let regex = try? NSRegularExpression(pattern: pattern, options: []) {
+                    regions.append(CompiledEmbeddedRegion(
+                        regionRegex: regex,
+                        grammarName: lang.grammar
+                    ))
+                } else {
+                    print("SyntaxHighlighter: Invalid embedded region regex in \(grammar.name) " +
+                          "for \(lang.grammar): \(pattern)")
+                }
+            }
+            compiledEmbedded[grammar.name] = regions
+        }
     }
 
     // MARK: - Line comment lookup
@@ -230,7 +273,7 @@ final class SyntaxHighlighter {
         fileName: String? = nil,
         font: NSFont
     ) {
-        guard let (_, rules) = resolveGrammar(language: language, fileName: fileName) else {
+        guard let (grammar, rules) = resolveGrammar(language: language, fileName: fileName) else {
             resetAttributes(textStorage: textStorage,
                             range: NSRange(location: 0, length: textStorage.length),
                             font: font)
@@ -238,12 +281,14 @@ final class SyntaxHighlighter {
         }
 
         let fullRange = NSRange(location: 0, length: textStorage.length)
-        applyRules(rules, to: textStorage, repaintRange: fullRange, searchRange: fullRange, font: font)
+        applyRules(rules, grammarName: grammar.name,
+                   to: textStorage, repaintRange: fullRange, searchRange: fullRange, font: font)
 
         // Обновляем кэш отпечатка многострочных матчей
         let key = ObjectIdentifier(textStorage)
         multilineMatchCache[key] = collectMultilineFingerprint(
-            rules: rules, source: textStorage.string, searchRange: fullRange
+            rules: rules, grammarName: grammar.name,
+            source: textStorage.string, searchRange: fullRange
         )
     }
 
@@ -266,7 +311,7 @@ final class SyntaxHighlighter {
         let totalLength = textStorage.length
         guard totalLength > 0 else { return }
 
-        guard let (_, rules) = resolveGrammar(language: language, fileName: fileName) else {
+        guard let (grammar, rules) = resolveGrammar(language: language, fileName: fileName) else {
             resetAttributes(textStorage: textStorage,
                             range: NSRange(location: 0, length: totalLength),
                             font: font)
@@ -278,7 +323,8 @@ final class SyntaxHighlighter {
 
         // Сканируем многострочные правила по всему тексту
         let currentFingerprint = collectMultilineFingerprint(
-            rules: rules, source: source, searchRange: fullRange
+            rules: rules, grammarName: grammar.name,
+            source: source, searchRange: fullRange
         )
 
         let key = ObjectIdentifier(textStorage)
@@ -287,13 +333,15 @@ final class SyntaxHighlighter {
         // Если структура многострочных токенов изменилась — полная перекраска
         if cachedFingerprint != currentFingerprint {
             multilineMatchCache[key] = currentFingerprint
-            applyRules(rules, to: textStorage, repaintRange: fullRange, searchRange: fullRange, font: font)
+            applyRules(rules, grammarName: grammar.name,
+                       to: textStorage, repaintRange: fullRange, searchRange: fullRange, font: font)
             return
         }
 
         // Границы не изменились — инкрементальная подсветка
         let repaintRange = expandToContext(editedRange, in: source as NSString, totalLength: totalLength)
-        applyRules(rules, to: textStorage, repaintRange: repaintRange, searchRange: repaintRange, font: font)
+        applyRules(rules, grammarName: grammar.name,
+                   to: textStorage, repaintRange: repaintRange, searchRange: repaintRange, font: font)
     }
 
     /// Удаляет кэш для textStorage (вызывать при смене файла).
@@ -344,6 +392,7 @@ final class SyntaxHighlighter {
     /// length — нет), поэтому обычные правки не вызывают ложного full repaint.
     private func collectMultilineFingerprint(
         rules: [CompiledRule],
+        grammarName: String,
         source: String,
         searchRange: NSRange
     ) -> [Int] {
@@ -352,6 +401,17 @@ final class SyntaxHighlighter {
             rule.regex.enumerateMatches(in: source, range: searchRange) { match, _, _ in
                 if let r = match?.range {
                     lengths.append(r.length)
+                }
+            }
+        }
+        // Включаем регионы встроенных языков в отпечаток —
+        // добавление/удаление <style> или <script> изменит fingerprint и запустит full repaint.
+        if let regions = compiledEmbedded[grammarName] {
+            for region in regions {
+                region.regionRegex.enumerateMatches(in: source, range: searchRange) { match, _, _ in
+                    if let r = match?.range {
+                        lengths.append(r.length)
+                    }
                 }
             }
         }
@@ -390,14 +450,14 @@ final class SyntaxHighlighter {
         textStorage.endEditing()
     }
 
-    /// Применяет правила подсветки.
-    ///
-    /// - `repaintRange`: диапазон, в котором сбрасываются и перекрашиваются атрибуты.
-    /// - `searchRange`: диапазон поиска для однострочных правил.
-    ///   Многострочные правила всегда ищут по всему тексту (через fullRange),
-    ///   чтобы обнаружить токены, начинающиеся до repaintRange.
+    // Применяет правила подсветки.
+    // repaintRange — диапазон сброса/перекраски атрибутов.
+    // searchRange — диапазон поиска для однострочных правил.
+    // Многострочные правила ищут по всему тексту (fullRange).
+    // swiftlint:disable:next function_parameter_count
     private func applyRules(
         _ rules: [CompiledRule],
+        grammarName: String,
         to textStorage: NSTextStorage,
         repaintRange: NSRange,
         searchRange: NSRange,
@@ -437,6 +497,49 @@ final class SyntaxHighlighter {
                 if !isOverridden {
                     textStorage.addAttribute(.foregroundColor, value: color, range: clipped)
                     highlightedRanges.append((range: clipped, priority: priority))
+                }
+            }
+        }
+
+        // Подсветка встроенных языков (CSS в <style>, JS в <script> и т.д.)
+        if let regions = compiledEmbedded[grammarName] {
+            for region in regions {
+                guard let embeddedRules = compiledRules[region.grammarName] else { continue }
+
+                // Ищем все регионы встроенного языка по всему тексту
+                region.regionRegex.enumerateMatches(in: source, range: fullRange) { match, _, _ in
+                    guard let contentRange = match?.range(at: 1) else { return }
+
+                    // Пересекаем с repaintRange — красим только видимую часть
+                    let regionClipped = NSIntersectionRange(contentRange, repaintRange)
+                    guard regionClipped.length > 0 else { return }
+
+                    // Применяем правила встроенной грамматики внутри региона
+                    for rule in embeddedRules {
+                        let priority = self.scopePriority[rule.scope] ?? 0
+                        guard let color = self.theme.color(for: rule.scope) else { continue }
+
+                        // Ограничиваем поиск регионом содержимого
+                        let scanRange = NSIntersectionRange(contentRange,
+                                                            rule.isMultiline ? contentRange : regionClipped)
+
+                        rule.regex.enumerateMatches(in: source, range: scanRange) { ruleMatch, _, _ in
+                            guard let matchRange = ruleMatch?.range else { return }
+
+                            let clipped = NSIntersectionRange(matchRange, repaintRange)
+                            guard clipped.length > 0 else { return }
+
+                            let isOverridden = highlightedRanges.contains { existing in
+                                existing.priority > priority &&
+                                NSIntersectionRange(existing.range, clipped).length > 0
+                            }
+
+                            if !isOverridden {
+                                textStorage.addAttribute(.foregroundColor, value: color, range: clipped)
+                                highlightedRanges.append((range: clipped, priority: priority))
+                            }
+                        }
+                    }
                 }
             }
         }
