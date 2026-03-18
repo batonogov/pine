@@ -19,12 +19,17 @@ final class LineNumberView: NSView {
 
     var gutterWidth: CGFloat = 40
     var lineDiffs: [GitLineDiff] = [] {
-        didSet { needsDisplay = true }
+        didSet {
+            rebuildDiffMap()
+            needsDisplay = true
+        }
     }
 
-    /// Pre-indexed diff lookup: line number → kind
-    private var diffMap: [Int: GitLineDiff.Kind] {
-        Dictionary(lineDiffs.map { ($0.line, $0.kind) }, uniquingKeysWith: { _, last in last })
+    /// Pre-indexed diff lookup: line number → kind (cached, rebuilt when lineDiffs changes)
+    private var diffMap: [Int: GitLineDiff.Kind] = [:]
+
+    private func rebuildDiffMap() {
+        diffMap = Dictionary(lineDiffs.map { ($0.line, $0.kind) }, uniquingKeysWith: { _, last in last })
     }
 
     // Diff marker colors
@@ -74,7 +79,7 @@ final class LineNumberView: NSView {
         // Реагируем только на скролл нашего scroll view
         guard let clipView = notification.object as? NSClipView,
               clipView == textView?.enclosingScrollView?.contentView else { return }
-        display()
+        needsDisplay = true
     }
 
     @objc private func contentDidChange() {
@@ -87,9 +92,6 @@ final class LineNumberView: NSView {
               let textContainer = textView.textContainer,
               let scrollView = textView.enclosingScrollView
         else { return }
-
-        // Принудительно завершаем layout
-        layoutManager.ensureLayout(for: textContainer)
 
         // ── Фон ──
         gutterBgColor.setFill()
@@ -132,18 +134,21 @@ final class LineNumberView: NSView {
         let firstVisibleCharIndex = layoutManager.characterIndexForGlyph(
             at: visibleGlyphRange.location
         )
-        var lineNumber: Int
-        if firstVisibleCharIndex == 0 {
-            lineNumber = 1
-        } else {
-            let textBefore = source.substring(to: firstVisibleCharIndex)
-            lineNumber = textBefore.components(separatedBy: "\n").count
+        var lineNumber = 1
+        if firstVisibleCharIndex > 0 {
+            // Быстрый подсчёт \n без аллокации массива строк
+            let ptr = source as String
+            var count = 0
+            let endIndex = ptr.utf16.index(ptr.utf16.startIndex, offsetBy: firstVisibleCharIndex)
+            for ch in ptr.utf16[ptr.utf16.startIndex..<endIndex] where ch == 0x0A {
+                count += 1
+            }
+            lineNumber = count + 1
         }
 
         // ── Рисуем номера видимых строк через enumerateLineFragments ──
         // Этот метод проходит только по видимым фрагментам строк — быстро.
         var previousLineCharIndex = -1
-        let currentDiffMap = self.diffMap
         let diffBarWidth: CGFloat = 3
 
         layoutManager.enumerateLineFragments(
@@ -175,7 +180,7 @@ final class LineNumberView: NSView {
                 numStr.draw(at: NSPoint(x: x, y: y), withAttributes: attrs)
 
                 // ── Git diff marker ──
-                if let diffKind = currentDiffMap[lineNumber] {
+                if let diffKind = self.diffMap[lineNumber] {
                     let markerColor: NSColor
                     switch diffKind {
                     case .added:    markerColor = self.addedColor
@@ -227,7 +232,10 @@ final class LineNumberView: NSView {
         }
 
         // ── Обновляем ширину гуттера если изменилось количество цифр ──
-        let totalLines = source.components(separatedBy: "\n").count
+        var totalLines = 1
+        for i in 0..<source.length where source.character(at: i) == 0x0A {
+            totalLines += 1
+        }
         let digits = max(String(totalLines).count, 2)
         let charWidth = "0".size(withAttributes: [.font: gutterFont]).width
         let newWidth = CGFloat(digits) * charWidth + 20

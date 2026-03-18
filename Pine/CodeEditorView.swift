@@ -570,19 +570,31 @@ struct CodeEditorView: NSViewRepresentable {
             // Ищем новую пару скобок
             let cursorRange = textView.selectedRange()
             if cursorRange.length == 0 {
+                // For large files, limit bracket matching to a window around the cursor
+                // to avoid scanning the entire file with regex on every cursor move.
+                let bracketSearchRadius = 5000
+                let fullText = textView.string
+                let nsFullText = fullText as NSString
+                let searchStart = max(0, cursorRange.location - bracketSearchRadius)
+                let searchEnd = min(nsFullText.length, cursorRange.location + bracketSearchRadius)
+                let searchRange = NSRange(location: searchStart, length: searchEnd - searchStart)
+                let searchSubstring = nsFullText.substring(with: searchRange)
+                let localCursor = cursorRange.location - searchStart
+
                 let skipRanges = SyntaxHighlighter.shared.commentAndStringRanges(
-                    in: textView.string,
+                    in: searchSubstring,
                     language: parent.language,
                     fileName: parent.fileName
                 )
 
                 if let match = BracketMatcher.findMatch(
-                    in: textView.string,
-                    cursorPosition: cursorRange.location,
+                    in: searchSubstring,
+                    cursorPosition: localCursor,
                     skipRanges: skipRanges
                 ) {
-                    let openerRange = NSRange(location: match.opener, length: 1)
-                    let closerRange = NSRange(location: match.closer, length: 1)
+                    // Convert local match positions back to global document positions
+                    let openerRange = NSRange(location: match.opener + searchStart, length: 1)
+                    let closerRange = NSRange(location: match.closer + searchStart, length: 1)
 
                     for range in [openerRange, closerRange] {
                         storage.addAttribute(.backgroundColor, value: bracketHighlightColor, range: range)
