@@ -133,7 +133,7 @@ final class SyntaxHighlighter {
         compileRules(for: grammar)
     }
 
-    /// Сбрасывает всё внутреннее состояние (для тестов).
+    /// Сбрасывает состояние и перезагружает грамматики из бандла (для тестов).
     func resetForTesting() {
         grammarsByExtension.removeAll()
         grammarsByFileName.removeAll()
@@ -141,6 +141,7 @@ final class SyntaxHighlighter {
         compiledRules.removeAll()
         multilineMatchCache.removeAll()
         patternMatchCache.removeAll()
+        loadGrammars()
     }
 
     // MARK: - Загрузка грамматик
