@@ -27,4 +27,10 @@ struct URLAbbreviatedPathTests {
         let url = URL(fileURLWithPath: home)
         #expect(url.abbreviatedPath == "~")
     }
+
+    @Test func doesNotReplaceHomeDirSubstring() {
+        let home = NSHomeDirectory()
+        let url = URL(fileURLWithPath: "/other\(home)/project")
+        #expect(url.abbreviatedPath == "/other\(home)/project")
+    }
 }

@@ -10,7 +10,9 @@ import SwiftUI
 extension URL {
     /// Returns the path with the home directory replaced by `~`.
     var abbreviatedPath: String {
-        path.replacingOccurrences(of: NSHomeDirectory(), with: "~")
+        let home = NSHomeDirectory()
+        guard path.hasPrefix(home) else { return path }
+        return "~" + path.dropFirst(home.count)
     }
 }
 
