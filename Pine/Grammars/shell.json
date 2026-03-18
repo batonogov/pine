@@ -1,6 +1,7 @@
 {
     "name": "Shell",
     "extensions": ["sh", "bash", "zsh", "fish"],
+    "filePatterns": [".bashrc", ".zshrc", ".bash_profile", ".zprofile", ".profile", ".bash_aliases", ".zshenv"],
     "lineComment": "#",
     "rules": [
         {

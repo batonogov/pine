@@ -49,6 +49,36 @@ struct GrammarModelTests {
         #expect(grammar.fileNames == ["Dockerfile", "Containerfile"])
     }
 
+    @Test func decodesGrammarWithFilePatterns() throws {
+        let json = """
+        {
+            "name": "Dockerfile",
+            "extensions": [],
+            "rules": [{"pattern": "FROM", "scope": "keyword"}],
+            "fileNames": ["Dockerfile"],
+            "filePatterns": ["Dockerfile.*", "*.Dockerfile"]
+        }
+        """
+        let data = Data(json.utf8)
+        let grammar = try JSONDecoder().decode(Grammar.self, from: data)
+
+        #expect(grammar.filePatterns == ["Dockerfile.*", "*.Dockerfile"])
+    }
+
+    @Test func decodesGrammarWithoutFilePatterns() throws {
+        let json = """
+        {
+            "name": "Go",
+            "extensions": ["go"],
+            "rules": [{"pattern": "func", "scope": "keyword"}]
+        }
+        """
+        let data = Data(json.utf8)
+        let grammar = try JSONDecoder().decode(Grammar.self, from: data)
+
+        #expect(grammar.filePatterns == nil)
+    }
+
     @Test func decodesGrammarRule() throws {
         let json = """
         {"pattern": "test", "scope": "string"}
@@ -89,6 +119,53 @@ struct GrammarModelTests {
     @Test func themeReturnsNilForUnknownScope() {
         let theme = Theme.default
         #expect(theme.color(for: "nonexistent") == nil)
+    }
+
+    // MARK: - File Pattern Matching
+
+    @Test func highlighterResolvesExactFileName() {
+        let highlighter = SyntaxHighlighter.shared
+        let grammar = Grammar(
+            name: "TestExact",
+            extensions: [],
+            rules: [GrammarRule(pattern: "test", scope: "keyword")],
+            fileNames: ["Vagrantfile"],
+            lineComment: "#"
+        )
+        highlighter.registerGrammar(grammar)
+        // lineComment lookup verifies the grammar was resolved by exact name
+        #expect(highlighter.lineComment(forFileName: "Vagrantfile") == "#")
+    }
+
+    @Test func highlighterResolvesFilePattern() {
+        let highlighter = SyntaxHighlighter.shared
+        let grammar = Grammar(
+            name: "TestPattern",
+            extensions: [],
+            rules: [GrammarRule(pattern: "test", scope: "keyword")],
+            filePatterns: ["TestPattern.*", "*.testpat"],
+            lineComment: "//"
+        )
+        highlighter.registerGrammar(grammar)
+        // Pattern should match via lineComment(forFileName:) fallback
+        #expect(highlighter.lineComment(forFileName: "TestPattern.prod") == "//")
+        #expect(highlighter.lineComment(forFileName: "app.testpat") == "//")
+        // Non-matching names return nil
+        #expect(highlighter.lineComment(forFileName: "other.txt") == nil)
+    }
+
+    @Test func highlighterPrioritizesExtensionOverPattern() {
+        let highlighter = SyntaxHighlighter.shared
+        // Register grammar with both extension and pattern
+        let grammar = Grammar(
+            name: "TestPriority",
+            extensions: ["tpri"],
+            rules: [GrammarRule(pattern: "x", scope: "keyword")],
+            filePatterns: ["*.tpri"],
+            lineComment: "//"
+        )
+        highlighter.registerGrammar(grammar)
+        #expect(highlighter.lineComment(forExtension: "tpri") == "//")
     }
 
     // MARK: - Bundled Grammar Files

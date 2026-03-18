@@ -1,0 +1,79 @@
+{
+    "name": "Ruby",
+    "extensions": ["rb", "rake", "gemspec", "podspec", "rbw"],
+    "fileNames": ["Gemfile", "Rakefile", "Guardfile", "Podfile", "Vagrantfile", "Fastfile", "Appfile", "Matchfile"],
+    "lineComment": "#",
+    "rules": [
+        {
+            "pattern": "#.*$",
+            "scope": "comment",
+            "options": ["anchorsMatchLines"]
+        },
+        {
+            "pattern": "^=begin[\\s\\S]*?^=end",
+            "scope": "comment",
+            "options": ["anchorsMatchLines"]
+        },
+        {
+            "pattern": "\"(?:[^\"\\\\]|\\\\.)*\"",
+            "scope": "string"
+        },
+        {
+            "pattern": "'(?:[^'\\\\]|\\\\.)*'",
+            "scope": "string"
+        },
+        {
+            "pattern": "/(?:[^/\\\\]|\\\\.)+/[gimxo]*",
+            "scope": "string"
+        },
+        {
+            "pattern": "<<~?[A-Z_][A-Z0-9_]*[\\s\\S]*?^\\s*[A-Z_][A-Z0-9_]*$",
+            "scope": "string",
+            "options": ["anchorsMatchLines"]
+        },
+        {
+            "pattern": ":[a-zA-Z_][a-zA-Z0-9_]*[?!]?",
+            "scope": "string"
+        },
+        {
+            "pattern": "\\b(def|end|class|module|if|elsif|else|unless|while|until|for|do|begin|rescue|ensure|raise|return|yield|block_given\\?|self|super|nil|true|false|and|or|not|in|then|when|case|require|require_relative|include|extend|attr_reader|attr_writer|attr_accessor|private|protected|public|puts|print|p|lambda|proc)\\b",
+            "scope": "keyword"
+        },
+        {
+            "pattern": "\\b[A-Z][a-zA-Z0-9_]*\\b",
+            "scope": "type"
+        },
+        {
+            "pattern": "@@?[a-zA-Z_][a-zA-Z0-9_]*",
+            "scope": "attribute"
+        },
+        {
+            "pattern": "\\$[a-zA-Z_][a-zA-Z0-9_]*",
+            "scope": "attribute"
+        },
+        {
+            "pattern": "0x[0-9a-fA-F_]+",
+            "scope": "number"
+        },
+        {
+            "pattern": "0o[0-7_]+",
+            "scope": "number"
+        },
+        {
+            "pattern": "0b[01_]+",
+            "scope": "number"
+        },
+        {
+            "pattern": "\\b\\d[\\d_]*(\\.\\d[\\d_]*)?([eE][+-]?\\d[\\d_]*)?\\b",
+            "scope": "number"
+        },
+        {
+            "pattern": "\\.[a-zA-Z_][a-zA-Z0-9_]*[?!]?(?=\\s*[({]|\\s+\\S)",
+            "scope": "function"
+        },
+        {
+            "pattern": "\\bdef\\s+([a-zA-Z_][a-zA-Z0-9_]*[?!=]?)",
+            "scope": "function"
+        }
+    ]
+}

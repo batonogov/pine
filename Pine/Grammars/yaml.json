@@ -1,6 +1,7 @@
 {
     "name": "YAML",
     "extensions": ["yml", "yaml"],
+    "filePatterns": [".clang-format", ".clang-tidy"],
     "lineComment": "#",
     "rules": [
         {

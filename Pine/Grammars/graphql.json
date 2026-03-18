@@ -1,0 +1,48 @@
+{
+    "name": "GraphQL",
+    "extensions": ["graphql", "gql"],
+    "lineComment": "#",
+    "rules": [
+        {
+            "pattern": "#.*$",
+            "scope": "comment",
+            "options": ["anchorsMatchLines"]
+        },
+        {
+            "pattern": "\"\"\"[\\s\\S]*?\"\"\"",
+            "scope": "string"
+        },
+        {
+            "pattern": "\"(?:[^\"\\\\]|\\\\.)*\"",
+            "scope": "string"
+        },
+        {
+            "pattern": "\\b(query|mutation|subscription|fragment|on|type|interface|union|enum|scalar|input|extend|implements|directive|schema|true|false|null|repeatable)\\b",
+            "scope": "keyword"
+        },
+        {
+            "pattern": "\\b(Int|Float|String|Boolean|ID)\\b",
+            "scope": "type"
+        },
+        {
+            "pattern": "@[a-zA-Z_][a-zA-Z0-9_]*",
+            "scope": "attribute"
+        },
+        {
+            "pattern": "\\$[a-zA-Z_][a-zA-Z0-9_]*",
+            "scope": "attribute"
+        },
+        {
+            "pattern": "\\b\\d+(\\.\\d+)?([eE][+-]?\\d+)?\\b",
+            "scope": "number"
+        },
+        {
+            "pattern": "\\b[a-zA-Z_][a-zA-Z0-9_]*(?=\\s*:)",
+            "scope": "function"
+        },
+        {
+            "pattern": "!",
+            "scope": "keyword"
+        }
+    ]
+}

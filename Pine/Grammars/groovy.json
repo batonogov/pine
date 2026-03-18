@@ -1,0 +1,65 @@
+{
+    "name": "Groovy",
+    "extensions": ["groovy", "gradle", "gvy", "gy", "gsh"],
+    "fileNames": ["Jenkinsfile"],
+    "lineComment": "//",
+    "rules": [
+        {
+            "pattern": "//.*$",
+            "scope": "comment",
+            "options": ["anchorsMatchLines"]
+        },
+        {
+            "pattern": "/\\*[\\s\\S]*?\\*/",
+            "scope": "comment"
+        },
+        {
+            "pattern": "\"\"\"[\\s\\S]*?\"\"\"",
+            "scope": "string"
+        },
+        {
+            "pattern": "'''[\\s\\S]*?'''",
+            "scope": "string"
+        },
+        {
+            "pattern": "\"(?:[^\"\\\\]|\\\\.)*\"",
+            "scope": "string"
+        },
+        {
+            "pattern": "'(?:[^'\\\\]|\\\\.)*'",
+            "scope": "string"
+        },
+        {
+            "pattern": "/(?![/*])[^/\\n]*/",
+            "scope": "string"
+        },
+        {
+            "pattern": "@[a-zA-Z_][a-zA-Z0-9_.]*",
+            "scope": "attribute"
+        },
+        {
+            "pattern": "\\$\\{[^}]+\\}",
+            "scope": "attribute"
+        },
+        {
+            "pattern": "\\b(def|var|class|interface|trait|enum|extends|implements|import|package|return|if|else|for|while|do|switch|case|default|break|continue|try|catch|finally|throw|throws|new|this|super|in|as|instanceof|static|final|abstract|private|protected|public|void|true|false|null|assert|println)\\b",
+            "scope": "keyword"
+        },
+        {
+            "pattern": "\\b(String|Integer|Long|Double|Float|Boolean|List|Map|Set|Closure|GString|Object|BigDecimal|BigInteger)\\b",
+            "scope": "type"
+        },
+        {
+            "pattern": "\\b\\d+(\\.\\d+)?([eE][+-]?\\d+)?[fFdDgGlL]?\\b",
+            "scope": "number"
+        },
+        {
+            "pattern": "0x[0-9a-fA-F]+",
+            "scope": "number"
+        },
+        {
+            "pattern": "\\b([a-zA-Z_][a-zA-Z0-9_]*)\\s*\\(",
+            "scope": "function"
+        }
+    ]
+}

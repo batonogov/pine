@@ -1,0 +1,26 @@
+{
+    "name": "Diff",
+    "extensions": ["diff", "patch"],
+    "rules": [
+        {
+            "pattern": "^(diff|---|\\+\\+\\+|index)\\s.*$",
+            "scope": "comment",
+            "options": ["anchorsMatchLines"]
+        },
+        {
+            "pattern": "^@@\\s.*?@@.*$",
+            "scope": "attribute",
+            "options": ["anchorsMatchLines"]
+        },
+        {
+            "pattern": "^\\+(?!\\+).*$",
+            "scope": "keyword",
+            "options": ["anchorsMatchLines"]
+        },
+        {
+            "pattern": "^-(?!-).*$",
+            "scope": "string",
+            "options": ["anchorsMatchLines"]
+        }
+    ]
+}
