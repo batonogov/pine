@@ -2,22 +2,22 @@
 //  BranchSubtitleClickHandler.swift
 //  Pine
 //
-//  Makes the window subtitle (branch name) clickable, showing an NSMenu
-//  with all branches. Works around toolbarTitleMenu not functioning on macOS 26.
+//  Makes the window subtitle (branch name) clickable.
+//  Clicking shows a popover with BranchSwitcherView anchored to the subtitle.
+//  Works around toolbarTitleMenu not functioning on macOS 26.
 //
 
 import AppKit
 import SwiftUI
 
 struct BranchSubtitleClickHandler: NSViewRepresentable {
-    var branches: [String]
-    var currentBranch: String
+    var gitProvider: GitStatusProvider
     var isGitRepository: Bool
-    var onSwitchBranch: (String) -> Void
 
-    final class Coordinator: NSObject {
+    final class Coordinator: NSObject, NSPopoverDelegate {
         var parent: BranchSubtitleClickHandler
         weak var gestureTarget: NSTextField?
+        var popover: NSPopover?
 
         init(parent: BranchSubtitleClickHandler) {
             self.parent = parent
@@ -25,28 +25,38 @@ struct BranchSubtitleClickHandler: NSViewRepresentable {
 
         @objc func subtitleClicked(_ sender: NSClickGestureRecognizer) {
             guard let view = sender.view else { return }
-            let menu = NSMenu()
-            for branch in parent.branches {
-                let item = NSMenuItem(
-                    title: branch,
-                    action: #selector(branchSelected(_:)),
-                    keyEquivalent: ""
-                )
-                item.target = self
-                if branch == parent.currentBranch {
-                    item.state = .on
-                }
-                menu.addItem(item)
+
+            // If popover is already shown, close it.
+            if let popover, popover.isShown {
+                popover.close()
+                return
             }
-            menu.popUp(
-                positioning: nil,
-                at: NSPoint(x: 0, y: view.bounds.height + 4),
-                in: view
+
+            let isPresented = Binding<Bool>(
+                get: { [weak self] in self?.popover?.isShown ?? false },
+                set: { [weak self] newValue in
+                    if !newValue { self?.popover?.close() }
+                }
             )
+
+            let content = BranchSwitcherView(
+                gitProvider: parent.gitProvider,
+                isPresented: isPresented
+            )
+
+            let hostingController = NSHostingController(rootView: content)
+            hostingController.preferredContentSize = NSSize(width: 280, height: 340)
+
+            let pop = NSPopover()
+            pop.contentViewController = hostingController
+            pop.behavior = .transient
+            pop.delegate = self
+            pop.show(relativeTo: view.bounds, of: view, preferredEdge: .maxY)
+            self.popover = pop
         }
 
-        @objc func branchSelected(_ sender: NSMenuItem) {
-            parent.onSwitchBranch(sender.title)
+        func popoverDidClose(_ notification: Notification) {
+            popover = nil
         }
     }
 

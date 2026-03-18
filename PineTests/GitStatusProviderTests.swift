@@ -392,4 +392,51 @@ struct GitStatusProviderTests {
         provider.refresh() // Should not crash
         #expect(provider.fileStatuses.isEmpty)
     }
+
+    // MARK: - hasUncommittedChanges
+
+    @Test("hasUncommittedChanges is false for clean repo")
+    func hasUncommittedChangesClean() throws {
+        let dir = try makeGitRepo()
+        defer { cleanup(dir) }
+
+        let provider = GitStatusProvider()
+        provider.setup(repositoryURL: dir)
+
+        #expect(provider.hasUncommittedChanges == false)
+    }
+
+    @Test("hasUncommittedChanges is true when files are modified")
+    func hasUncommittedChangesModified() throws {
+        let dir = try makeGitRepo()
+        defer { cleanup(dir) }
+
+        try "changed".write(
+            to: dir.appendingPathComponent("README.md"),
+            atomically: true,
+            encoding: .utf8
+        )
+
+        let provider = GitStatusProvider()
+        provider.setup(repositoryURL: dir)
+
+        #expect(provider.hasUncommittedChanges == true)
+    }
+
+    @Test("hasUncommittedChanges is true when files are untracked")
+    func hasUncommittedChangesUntracked() throws {
+        let dir = try makeGitRepo()
+        defer { cleanup(dir) }
+
+        try "new".write(
+            to: dir.appendingPathComponent("new.txt"),
+            atomically: true,
+            encoding: .utf8
+        )
+
+        let provider = GitStatusProvider()
+        provider.setup(repositoryURL: dir)
+
+        #expect(provider.hasUncommittedChanges == true)
+    }
 }

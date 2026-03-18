@@ -23,7 +23,6 @@ struct ContentView: View {
     @State private var columnVisibility: NavigationSplitViewVisibility = .all
     @State private var lineDiffs: [GitLineDiff] = []
     @State private var didRestoreSession = false
-    @State private var showBranchSwitcher = false
     @AppStorage("minimapVisible") private var isMinimapVisible = true
 
     private var activeTab: EditorTab? { tabManager.activeTab }
@@ -66,12 +65,11 @@ struct ContentView: View {
         .navigationSubtitle(branchSubtitle)
         .background {
             BranchSubtitleClickHandler(
-                branches: workspace.gitProvider.branches,
-                currentBranch: workspace.gitProvider.currentBranch,
-                isGitRepository: workspace.gitProvider.isGitRepository,
-                onSwitchBranch: switchBranch
+                gitProvider: workspace.gitProvider,
+                isGitRepository: workspace.gitProvider.isGitRepository
             )
             DocumentEditedTracker(isEdited: tabManager.hasUnsavedChanges)
+            RepresentedFileTracker(url: activeTab?.url ?? workspace.rootURL)
         }
         .task {
             restoreSessionIfNeeded()
@@ -136,17 +134,6 @@ struct ContentView: View {
         .onReceive(NotificationCenter.default.publisher(for: .fileDeleted)) { notification in
             guard let deletedURL = notification.userInfo?["url"] as? URL else { return }
             handleFileDeletion(deletedURL)
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .switchBranch)) { _ in
-            guard controlActiveState == .key,
-                  workspace.gitProvider.isGitRepository else { return }
-            showBranchSwitcher = true
-        }
-        .sheet(isPresented: $showBranchSwitcher) {
-            BranchSwitcherView(
-                gitProvider: workspace.gitProvider,
-                isPresented: $showBranchSwitcher
-            )
         }
         .onChange(of: workspace.externalChangeToken) { _, _ in
             guard controlActiveState == .key else { return }
@@ -264,19 +251,6 @@ struct ContentView: View {
             return
         }
         lineDiffs = workspace.gitProvider.diffForFile(at: tab.url)
-    }
-
-    /// Switches to the given branch via toolbarTitleMenu, showing an alert on error.
-    private func switchBranch(_ branch: String) {
-        guard branch != workspace.gitProvider.currentBranch else { return }
-        let result = workspace.gitProvider.checkoutBranch(branch)
-        if !result.success {
-            let alert = NSAlert()
-            alert.messageText = Strings.branchSwitchErrorTitle
-            alert.informativeText = result.error
-            alert.alertStyle = .warning
-            alert.runModal()
-        }
     }
 
     /// Closes a tab with unsaved-changes protection.
@@ -790,6 +764,14 @@ struct SidebarView: View {
                             editState.createNewItem(in: rootURL, isDirectory: true, workspace: workspace)
                         } label: {
                             Label(Strings.contextNewFolder, systemImage: "folder.badge.plus")
+                        }
+
+                        Divider()
+
+                        Button {
+                            NSWorkspace.shared.activateFileViewerSelecting([rootURL])
+                        } label: {
+                            Label(Strings.contextRevealInFinder, systemImage: "arrow.right.circle")
                         }
                     }
                 }

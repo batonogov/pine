@@ -71,6 +71,17 @@ struct BranchSwitcherView: View {
             isPresented = false
             return
         }
+
+        if gitProvider.hasUncommittedChanges {
+            let alert = NSAlert()
+            alert.messageText = Strings.branchUncommittedChangesTitle
+            alert.informativeText = Strings.branchUncommittedChangesMessage(branch)
+            alert.addButton(withTitle: Strings.branchUncommittedChangesSwitch)
+            alert.addButton(withTitle: Strings.dialogCancel)
+            alert.alertStyle = .warning
+            guard alert.runModal() == .alertFirstButtonReturn else { return }
+        }
+
         let result = gitProvider.checkoutBranch(branch)
         if result.success {
             errorMessage = ""
