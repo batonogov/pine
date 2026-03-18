@@ -219,7 +219,34 @@ final class SyntaxHighlighter {
         grammarsByFileName[name]?.lineComment
     }
 
-    // MARK: - Block comment lookup
+    // MARK: - Comment info lookup
+
+    /// Resolved comment style for a file — line comment preferred, block comment as fallback.
+    enum CommentStyle {
+        case line(String)
+        case block(open: String, close: String)
+    }
+
+    /// Returns the preferred comment style for a file, resolving by exact name first, then extension.
+    /// Line comments take priority over block comments.
+    func commentStyle(forExtension ext: String?, fileName: String?) -> CommentStyle? {
+        let grammar: Grammar?
+        if let name = fileName, let g = grammarsByFileName[name] {
+            grammar = g
+        } else if let ext, let g = grammarsByExtension[ext.lowercased()] {
+            grammar = g
+        } else {
+            grammar = nil
+        }
+        guard let grammar else { return nil }
+
+        if let lc = grammar.lineComment {
+            return .line(lc)
+        } else if let bc = grammar.blockComment {
+            return .block(open: bc.open, close: bc.close)
+        }
+        return nil
+    }
 
     /// Returns block comment delimiters for a file extension (e.g. "html" → `<!-- -->`).
     func blockComment(forExtension ext: String) -> BlockCommentDelimiters? {

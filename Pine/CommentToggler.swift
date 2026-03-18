@@ -12,11 +12,6 @@ enum CommentToggler {
         let newRange: NSRange
     }
 
-    struct BlockComment {
-        let open: String
-        let close: String
-    }
-
     /// Toggles line comments for lines touched by `selectedRange`.
     ///
     /// - If all non-empty affected lines are commented → uncomment.

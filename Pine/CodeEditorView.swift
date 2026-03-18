@@ -68,41 +68,27 @@ final class GutterTextView: NSTextView {
     var exactFileName: String?
 
     func toggleLineComment() {
-        // Try line comment first
-        let lineCommentStr: String?
-        if let name = exactFileName {
-            lineCommentStr = SyntaxHighlighter.shared.lineComment(forFileName: name)
-        } else if let ext = fileExtension {
-            lineCommentStr = SyntaxHighlighter.shared.lineComment(forExtension: ext)
-        } else {
-            lineCommentStr = nil
-        }
+        guard let style = SyntaxHighlighter.shared.commentStyle(
+            forExtension: fileExtension,
+            fileName: exactFileName
+        ) else { return }
 
         let currentRange = selectedRange()
         let result: CommentToggler.Result
 
-        if let lineComment = lineCommentStr {
+        switch style {
+        case .line(let prefix):
             result = CommentToggler.toggle(
                 text: string,
                 selectedRange: currentRange,
-                lineComment: lineComment
+                lineComment: prefix
             )
-        } else {
-            // Fallback to block comment
-            let block: BlockCommentDelimiters?
-            if let name = exactFileName {
-                block = SyntaxHighlighter.shared.blockComment(forFileName: name)
-            } else if let ext = fileExtension {
-                block = SyntaxHighlighter.shared.blockComment(forExtension: ext)
-            } else {
-                block = nil
-            }
-            guard let blockComment = block else { return }
+        case .block(let open, let close):
             result = CommentToggler.toggleBlock(
                 text: string,
                 selectedRange: currentRange,
-                open: blockComment.open,
-                close: blockComment.close
+                open: open,
+                close: close
             )
         }
 
