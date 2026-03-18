@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.2.0](https://github.com/batonogov/pine/compare/v1.1.0...v1.2.0) (2026-03-18)
+
+
+### Features
+
+* integrate Sparkle for in-app auto-updates ([#152](https://github.com/batonogov/pine/issues/152)) ([8f2f477](https://github.com/batonogov/pine/commit/8f2f4774b6dbd7dbd8ddc52c2fef13d332263198))
+* polish project window chrome ([#181](https://github.com/batonogov/pine/issues/181)) ([fd3a51a](https://github.com/batonogov/pine/commit/fd3a51a009363929494960c9cc5d97c3a395c522))
+
+
+### Bug Fixes
+
+* prevent file tree symlink traversal outside project root and break cycles ([#183](https://github.com/batonogov/pine/issues/183)) ([c93b86a](https://github.com/batonogov/pine/commit/c93b86ae978c024672bc8d6f29588c34d6077e3d))
+
 ## [1.1.0](https://github.com/batonogov/pine/compare/v1.0.0...v1.1.0) (2026-03-17)
 
 
