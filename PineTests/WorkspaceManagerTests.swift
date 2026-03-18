@@ -282,6 +282,34 @@ struct WorkspaceManagerTests {
         #expect(manager.gitProvider.isGitRepository == false)
     }
 
+    @Test("refreshFileTree then loadDirectory does not crash from stale async git")
+    func refreshFileTreeThenSwitchProject() throws {
+        let dir1 = try makeGitRepo()
+        let dir2 = try makeTempDirectory()
+        defer { cleanup(dir1); cleanup(dir2) }
+
+        try "file".write(
+            to: dir2.appendingPathComponent("other.txt"),
+            atomically: true,
+            encoding: .utf8
+        )
+
+        let manager = WorkspaceManager()
+        manager.loadDirectory(url: dir1)
+        manager.gitProvider.setup(repositoryURL: dir1)
+        // Trigger async git refresh on dir1
+        manager.refreshFileTree()
+
+        // Immediately switch to dir2 (non-git) — async git Task for dir1
+        // is still in-flight but should not crash or corrupt state
+        manager.loadDirectory(url: dir2)
+        manager.refreshFileTree()
+
+        #expect(manager.rootURL == dir2)
+        let names = manager.rootNodes.map(\.url.lastPathComponent)
+        #expect(names.contains("other.txt"))
+    }
+
     @Test("loadDirectory twice quickly uses latest directory")
     func loadDirectoryRaceProtection() throws {
         let dir1 = try makeTempDirectory()

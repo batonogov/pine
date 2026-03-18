@@ -485,11 +485,66 @@ struct GitStatusProviderTests {
         #expect(provider.fileStatuses["async-new.txt"] == .untracked)
     }
 
+    @Test("refreshAsync updates currentBranch and branches")
+    func refreshAsyncUpdatesBranchInfo() async throws {
+        let dir = try makeGitRepo()
+        defer { cleanup(dir) }
+
+        let provider = GitStatusProvider()
+        provider.setup(repositoryURL: dir)
+
+        // Create a second branch so branches list has > 1 entry
+        try runShell("git checkout -b feature-branch", at: dir)
+
+        await provider.refreshAsync()
+        #expect(provider.currentBranch == "feature-branch")
+        #expect(provider.branches.contains("main") || provider.branches.contains("master"))
+        #expect(provider.branches.contains("feature-branch"))
+    }
+
+    @Test("refreshAsync updates ignoredPaths")
+    func refreshAsyncUpdatesIgnoredPaths() async throws {
+        let dir = try makeGitRepo()
+        defer { cleanup(dir) }
+
+        // Add .gitignore with ignored patterns
+        try "build/\n.env\n".write(
+            to: dir.appendingPathComponent(".gitignore"),
+            atomically: true,
+            encoding: .utf8
+        )
+        // Create ignored entries so git reports them
+        let buildDir = dir.appendingPathComponent("build")
+        try FileManager.default.createDirectory(at: buildDir, withIntermediateDirectories: true)
+        try "bin".write(to: buildDir.appendingPathComponent("out"), atomically: true, encoding: .utf8)
+        try "secret".write(to: dir.appendingPathComponent(".env"), atomically: true, encoding: .utf8)
+
+        try runShell("git add .gitignore", at: dir)
+        try runShell("git -c commit.gpgsign=false commit -m 'add gitignore'", at: dir)
+
+        let provider = GitStatusProvider()
+        provider.setup(repositoryURL: dir)
+
+        await provider.refreshAsync()
+        #expect(provider.ignoredPaths.contains("build"))
+        #expect(provider.ignoredPaths.contains(".env"))
+    }
+
     @Test("refreshAsync does nothing without repository")
     func refreshAsyncNoRepo() async {
         let provider = GitStatusProvider()
         await provider.refreshAsync() // Should not crash
         #expect(provider.fileStatuses.isEmpty)
+    }
+
+    @Test("refreshAsync with isGitRepository false is no-op")
+    func refreshAsyncNotGitRepo() async {
+        let provider = GitStatusProvider()
+        provider.repositoryURL = URL(fileURLWithPath: "/tmp")
+        // isGitRepository is false by default — refreshAsync should bail out
+        await provider.refreshAsync()
+        #expect(provider.fileStatuses.isEmpty)
+        #expect(provider.currentBranch == "")
     }
 
     // MARK: - hasUncommittedChanges

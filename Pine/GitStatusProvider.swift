@@ -85,20 +85,21 @@ final class GitStatusProvider {
         guard isGitRepository, let url = repositoryURL else { return }
         let rootPath = gitRootPath
 
-        let (branch, statuses, branchList) = await withCheckedContinuation { continuation in
+        let (branch, statuses, ignored, branchList) = await withCheckedContinuation { continuation in
             DispatchQueue.global(qos: .userInitiated).async {
                 let bg = GitStatusProvider()
                 bg.repositoryURL = url
                 bg.isGitRepository = true
                 bg.gitRootPath = rootPath
                 bg.refresh()
-                continuation.resume(returning: (bg.currentBranch, bg.fileStatuses, bg.branches))
+                continuation.resume(returning: (bg.currentBranch, bg.fileStatuses, bg.ignoredPaths, bg.branches))
             }
         }
 
         await MainActor.run {
             self.currentBranch = branch
             self.fileStatuses = statuses
+            self.ignoredPaths = ignored
             self.branches = branchList
         }
     }
