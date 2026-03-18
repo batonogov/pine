@@ -92,6 +92,51 @@ struct GitStatusParserTests {
         #expect(statuses.isEmpty)
     }
 
+    @Test func parsesUntrackedDirectory() {
+        let output = "?? newdir/\n"
+        let statuses = GitStatusProvider.parseStatusOutput(output)
+        #expect(statuses["newdir/"] == .untracked)
+    }
+
+    @Test func parsesUntrackedDirectoryWithSpaces() {
+        // git status --porcelain C-quotes paths with spaces
+        let output = "?? \"Pine copy/\"\n"
+        let statuses = GitStatusProvider.parseStatusOutput(output)
+        #expect(statuses["Pine copy/"] == .untracked)
+    }
+
+    @Test func parsesUntrackedFileWithCyrillicName() {
+        // git status --porcelain C-quotes paths with non-ASCII using octal escapes
+        // "Тест.txt" in UTF-8: \320\242\320\265\321\201\321\202.txt
+        let output = "?? \"\\320\\242\\320\\265\\321\\201\\321\\202.txt\"\n"
+        let statuses = GitStatusProvider.parseStatusOutput(output)
+        #expect(statuses["Тест.txt"] == .untracked)
+    }
+
+    // MARK: - unquoteGitPath
+
+    @Test func unquotePassthroughForPlainPath() {
+        #expect(GitStatusProvider.unquoteGitPath("simple/path.txt") == "simple/path.txt")
+    }
+
+    @Test func unquoteStripsQuotesAndSpaces() {
+        #expect(GitStatusProvider.unquoteGitPath("\"examples copy/\"") == "examples copy/")
+    }
+
+    @Test func unquoteHandlesOctalEscapes() {
+        // "Тест" in UTF-8 octal
+        let input = "\"\\320\\242\\320\\265\\321\\201\\321\\202\""
+        #expect(GitStatusProvider.unquoteGitPath(input) == "Тест")
+    }
+
+    @Test func unquoteHandlesBackslashEscapes() {
+        #expect(GitStatusProvider.unquoteGitPath("\"path\\\\to\\\"file\"") == "path\\to\"file")
+    }
+
+    @Test func unquoteHandlesTabAndNewline() {
+        #expect(GitStatusProvider.unquoteGitPath("\"a\\tb\\nc\"") == "a\tb\nc")
+    }
+
     // MARK: - statusForDirectory
 
     @Test func directoryStatusShowsConflictOverOthers() {

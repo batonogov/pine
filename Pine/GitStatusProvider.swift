@@ -80,8 +80,14 @@ final class GitStatusProvider {
     // MARK: - Status Queries
 
     func statusForFile(at url: URL) -> GitFileStatus? {
-        let relativePath = relativePath(for: url)
-        return relativePath.flatMap { fileStatuses[$0] }
+        guard let path = relativePath(for: url) else { return nil }
+        if let status = fileStatuses[path] { return status }
+        // git status --porcelain reports untracked directories as a single
+        // entry with a trailing slash (e.g. "?? newdir/") without listing
+        // individual files inside. Check if this file lives inside such
+        // a directory so it inherits the untracked status.
+        if isInsideUntrackedDirectory(path) { return .untracked }
+        return nil
     }
 
     func statusForDirectory(at url: URL) -> GitFileStatus? {
@@ -108,6 +114,9 @@ final class GitStatusProvider {
         if hasModified { return .modified }
         if hasStaged { return .staged }
         if hasUntracked { return .untracked }
+        // This directory may itself be inside a wholly untracked parent
+        // directory (git reports only the top-level entry "?? parent/").
+        if isInsideUntrackedDirectory(prefix) { return .untracked }
         return nil
     }
 
@@ -138,6 +147,89 @@ final class GitStatusProvider {
 
     // MARK: - Private Helpers
 
+    /// Strips C-style quoting that git applies to paths containing spaces,
+    /// non-ASCII characters, or special characters.
+    /// `"examples copy/"` → `examples copy/`
+    /// `"\320\241\320\275\320\270\320\274\320\276\320\272.png"` → `Снимок.png`
+    static func unquoteGitPath(_ path: String) -> String {
+        guard path.hasPrefix("\"") && path.hasSuffix("\"") && path.count >= 2 else {
+            return path
+        }
+        // Strip surrounding quotes
+        let inner = path.dropFirst().dropLast()
+        var bytes: [UInt8] = []
+        var i = inner.startIndex
+        while i < inner.endIndex {
+            if inner[i] == "\\" {
+                let next = inner.index(after: i)
+                guard next < inner.endIndex else {
+                    bytes.append(UInt8(ascii: "\\"))
+                    break
+                }
+                switch inner[next] {
+                case "\\":
+                    bytes.append(UInt8(ascii: "\\"))
+                    i = inner.index(after: next)
+                case "\"":
+                    bytes.append(UInt8(ascii: "\""))
+                    i = inner.index(after: next)
+                case "n":
+                    bytes.append(UInt8(ascii: "\n"))
+                    i = inner.index(after: next)
+                case "t":
+                    bytes.append(UInt8(ascii: "\t"))
+                    i = inner.index(after: next)
+                case "a":
+                    bytes.append(0x07)
+                    i = inner.index(after: next)
+                case "b":
+                    bytes.append(0x08)
+                    i = inner.index(after: next)
+                case "f":
+                    bytes.append(0x0C)
+                    i = inner.index(after: next)
+                case "r":
+                    bytes.append(UInt8(ascii: "\r"))
+                    i = inner.index(after: next)
+                case "v":
+                    bytes.append(0x0B)
+                    i = inner.index(after: next)
+                case "0"..."3":
+                    // Octal escape: 1-3 digits
+                    var octal = String(inner[next])
+                    var end = inner.index(after: next)
+                    for _ in 0..<2 {
+                        guard end < inner.endIndex, inner[end] >= "0", inner[end] <= "7" else { break }
+                        octal.append(inner[end])
+                        end = inner.index(after: end)
+                    }
+                    if let value = UInt8(octal, radix: 8) {
+                        bytes.append(value)
+                    }
+                    i = end
+                default:
+                    bytes.append(UInt8(ascii: "\\"))
+                    i = next
+                }
+            } else {
+                for byte in String(inner[i]).utf8 {
+                    bytes.append(byte)
+                }
+                i = inner.index(after: i)
+            }
+        }
+        return String(bytes: bytes, encoding: .utf8) ?? ""
+    }
+
+    /// Returns true when `path` falls inside a directory that git reports as
+    /// wholly untracked (i.e. there is a "?? dir/" entry in `fileStatuses`).
+    private func isInsideUntrackedDirectory(_ path: String) -> Bool {
+        for (key, status) in fileStatuses where status == .untracked && key.hasSuffix("/") {
+            if path.hasPrefix(key) { return true }
+        }
+        return false
+    }
+
     private func relativePath(for url: URL) -> String? {
         guard let rootPath = gitRootPath else { return nil }
         let filePath = url.path
@@ -167,6 +259,11 @@ final class GitStatusProvider {
             let indexChar = line[line.startIndex]
             let workTreeChar = line[line.index(after: line.startIndex)]
             var path = String(line.dropFirst(3))
+
+            // git status --porcelain C-quotes paths containing spaces,
+            // non-ASCII, or special characters (e.g. "examples copy/"
+            // or "\320\241\320\275\320\270\320\274\320\276\320\272.png").
+            path = Self.unquoteGitPath(path)
 
             // Handle renames: "R  old -> new"
             if path.contains(" -> ") {
@@ -312,8 +409,8 @@ final class GitStatusProvider {
             let outData = outPipe.fileHandleForReading.readDataToEndOfFile()
             let errData = errPipe.fileHandleForReading.readDataToEndOfFile()
             return (
-                String(data: outData, encoding: .utf8) ?? "",
-                String(data: errData, encoding: .utf8) ?? "",
+                String(bytes: outData, encoding: .utf8) ?? "",
+                String(bytes: errData, encoding: .utf8) ?? "",
                 process.terminationStatus
             )
         } catch {
