@@ -157,6 +157,35 @@ struct SymlinkSecurityTests {
         #expect(realNode?.isSymlink == false)
     }
 
+    // MARK: - loadChildren preserves protection
+
+    @Test func loadChildrenPreservesSymlinkProtection() throws {
+        let projectDir = try makeTempDirectory()
+        let outsideDir = try makeTempDirectory()
+        defer {
+            cleanup(projectDir)
+            cleanup(outsideDir)
+        }
+
+        FileManager.default.createFile(
+            atPath: outsideDir.appendingPathComponent("secret.txt").path,
+            contents: Data("secret".utf8)
+        )
+
+        let symlinkURL = projectDir.appendingPathComponent("external")
+        try FileManager.default.createSymbolicLink(at: symlinkURL, withDestinationURL: outsideDir)
+
+        let root = FileNode(url: projectDir, projectRoot: projectDir)
+
+        // After loadChildren (simulating a refresh), protection must still be active
+        root.loadChildren()
+
+        let externalNode = root.children?.first { $0.name == "external" }
+        #expect(externalNode != nil)
+        #expect(externalNode?.isSymlink == true)
+        #expect(externalNode?.children == nil || externalNode?.children?.isEmpty == true)
+    }
+
     // MARK: - isSymlink property
 
     @Test func regularFileIsNotSymlink() throws {

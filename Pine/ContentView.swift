@@ -997,7 +997,9 @@ struct FileNodeRow: View {
         let oldURL = node.url
         let newURL = oldURL.deletingLastPathComponent().appendingPathComponent(newName)
 
-        if let root = workspace.rootURL, !FileNode.isWithinProjectRoot(oldURL, projectRoot: root) {
+        if let root = workspace.rootURL,
+           !FileNode.isWithinProjectRoot(oldURL, projectRoot: root)
+            || !FileNode.isWithinProjectRoot(newURL, projectRoot: root) {
             SidebarEditState.showFileError(Strings.operationOutsideProject)
             editState.clear()
             return

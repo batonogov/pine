@@ -15,6 +15,9 @@ final class FileNode: Identifiable, Hashable {
     let isDirectory: Bool      // true = папка, false = файл
     let isSymlink: Bool        // true = символическая ссылка
 
+    /// Project root used for symlink boundary checks during loadChildren().
+    private let projectRoot: URL?
+
     var children: [FileNode]?
 
     /// Для List(children:): nil = лист (файл), непустой массив = папка с содержимым.
@@ -40,6 +43,7 @@ final class FileNode: Identifiable, Hashable {
         self.id = url
         self.url = url
         self.name = url.lastPathComponent
+        self.projectRoot = context.map { URL(fileURLWithPath: $0.rootRealPath) }
 
         let resourceValues = try? url.resourceValues(forKeys: [.isSymbolicLinkKey])
         self.isSymlink = resourceValues?.isSymbolicLink ?? false
@@ -98,7 +102,8 @@ final class FileNode: Identifiable, Hashable {
     }
 
     func loadChildren() {
-        children = Self.loadContents(of: url, context: nil)
+        let context = projectRoot.map { LoadContext(projectRoot: $0) }
+        children = Self.loadContents(of: url, context: context)
     }
 
     // MARK: - Root boundary check
