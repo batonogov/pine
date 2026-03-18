@@ -1,5 +1,23 @@
 # Changelog
 
+## [1.3.0](https://github.com/batonogov/pine/compare/v1.2.1...v1.3.0) (2026-03-18)
+
+
+### Features
+
+* show formatted changelog in Sparkle update dialog ([#194](https://github.com/batonogov/pine/issues/194)) ([f12de06](https://github.com/batonogov/pine/commit/f12de063948e78166bb85145125fb2469f062c80))
+
+
+### Bug Fixes
+
+* rename DMG file before upload to match appcast URL ([#192](https://github.com/batonogov/pine/issues/192)) ([a752e09](https://github.com/batonogov/pine/commit/a752e090bd3183d00cbb82acbe5c977a48f378a8))
+
+
+### Documentation
+
+* update README and landing page for v1.1.0 ([#186](https://github.com/batonogov/pine/issues/186)) ([9b9b5b6](https://github.com/batonogov/pine/commit/9b9b5b63a77dfcab15c4491ed888125fd224cc12))
+* update screenshots for macOS 26 Liquid Glass UI ([#193](https://github.com/batonogov/pine/issues/193)) ([18bdcee](https://github.com/batonogov/pine/commit/18bdcee99787c548cd894923d080ae4dc1d99a2b))
+
 ## [1.2.1](https://github.com/batonogov/pine/compare/v1.2.0...v1.2.1) (2026-03-18)
 
 
