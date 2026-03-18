@@ -37,6 +37,7 @@ struct SyntaxHighlighterTests {
     // MARK: - Helpers
 
     private func register(_ grammars: Grammar...) {
+        SyntaxHighlighter.shared.resetForTesting()
         for g in grammars {
             SyntaxHighlighter.shared.registerGrammar(g)
         }
@@ -309,7 +310,8 @@ struct SyntaxHighlighterTests {
         let keywordColor = hl.theme.color(for: "keyword")
 
         // "prod.Dockerfile" should match pattern "*.Dockerfile"
-        hl.highlight(textStorage: storage, language: "dockerfile", fileName: "prod.Dockerfile", font: font)
+        // Use empty language to ensure pattern matching is tested (not extension matching)
+        hl.highlight(textStorage: storage, language: "", fileName: "prod.Dockerfile", font: font)
         #expect(foregroundColor(in: storage, at: 0) == keywordColor,
                 "prod.Dockerfile should match '*.Dockerfile' pattern")
     }

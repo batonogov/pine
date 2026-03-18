@@ -78,8 +78,11 @@ final class SyntaxHighlighter {
     /// Грамматики по точному имени файла (Dockerfile, Makefile и т.д.)
     private var grammarsByFileName: [String: Grammar] = [:]
 
-    /// Грамматики с glob-паттернами для имён файлов (Dockerfile.*, *.Dockerfile, .bashrc и т.д.)
-    private var grammarPatterns: [(pattern: String, grammar: Grammar)] = []
+    /// Грамматики с glob-паттернами (regex прекомпилирован при загрузке).
+    private var grammarPatterns: [(regex: NSRegularExpression, grammar: Grammar)] = []
+
+    /// Кэш результатов pattern matching по имени файла.
+    private var patternMatchCache: [String: Grammar?] = [:]
 
     /// Скомпилированное правило подсветки.
     struct CompiledRule {
@@ -121,10 +124,23 @@ final class SyntaxHighlighter {
         }
         if let patterns = grammar.filePatterns {
             for pattern in patterns {
-                grammarPatterns.append((pattern: pattern, grammar: grammar))
+                if let regex = Self.compileGlob(pattern) {
+                    grammarPatterns.append((regex: regex, grammar: grammar))
+                }
             }
         }
+        patternMatchCache.removeAll()
         compileRules(for: grammar)
+    }
+
+    /// Сбрасывает всё внутреннее состояние (для тестов).
+    func resetForTesting() {
+        grammarsByExtension.removeAll()
+        grammarsByFileName.removeAll()
+        grammarPatterns.removeAll()
+        compiledRules.removeAll()
+        multilineMatchCache.removeAll()
+        patternMatchCache.removeAll()
     }
 
     // MARK: - Загрузка грамматик
@@ -160,7 +176,9 @@ final class SyntaxHighlighter {
                 // Индексируем glob-паттерны (если указаны)
                 if let patterns = grammar.filePatterns {
                     for pattern in patterns {
-                        grammarPatterns.append((pattern: pattern, grammar: grammar))
+                        if let regex = Self.compileGlob(pattern) {
+                            grammarPatterns.append((regex: regex, grammar: grammar))
+                        }
                     }
                 }
 
@@ -363,18 +381,23 @@ final class SyntaxHighlighter {
         return (grammar, rules)
     }
 
-    /// Matches a filename against registered glob patterns.
-    /// Supports `*` (any characters) glob syntax.
+    /// Matches a filename against registered glob patterns (with caching).
     private func matchFilePattern(_ fileName: String) -> Grammar? {
-        for entry in grammarPatterns where Self.fileNameMatchesGlob(fileName, pattern: entry.pattern) {
+        if let cached = patternMatchCache[fileName] {
+            return cached
+        }
+        let range = NSRange(location: 0, length: (fileName as NSString).length)
+        for entry in grammarPatterns where entry.regex.firstMatch(in: fileName, range: range) != nil {
+            patternMatchCache[fileName] = entry.grammar
             return entry.grammar
         }
+        patternMatchCache[fileName] = nil
         return nil
     }
 
-    /// Simple glob matching: `*` matches any sequence of characters (no path separators needed).
-    static func fileNameMatchesGlob(_ fileName: String, pattern: String) -> Bool {
-        // Convert glob pattern to regex: escape special chars, replace `*` with `.*`
+    /// Compiles a glob pattern to NSRegularExpression.
+    /// `*` matches any sequence of characters (no path separators needed).
+    static func compileGlob(_ pattern: String) -> NSRegularExpression? {
         var regex = "^"
         for char in pattern {
             switch char {
@@ -389,7 +412,14 @@ final class SyntaxHighlighter {
             }
         }
         regex += "$"
-        return fileName.range(of: regex, options: .regularExpression) != nil
+        return try? NSRegularExpression(pattern: regex)
+    }
+
+    /// Simple glob matching (convenience for testing).
+    static func fileNameMatchesGlob(_ fileName: String, pattern: String) -> Bool {
+        guard let regex = compileGlob(pattern) else { return false }
+        let range = NSRange(location: 0, length: (fileName as NSString).length)
+        return regex.firstMatch(in: fileName, range: range) != nil
     }
 
     /// Собирает отпечаток многострочных матчей — упорядоченный массив длин.
