@@ -19,7 +19,7 @@ REPO_URL = "https://github.com/batonogov/pine"
 
 HTML_TEMPLATE = """\
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <style>
@@ -63,7 +63,7 @@ HTML_TEMPLATE = """\
 
 FALLBACK_HTML = """\
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head><meta charset="utf-8">
 <style>
   body {{

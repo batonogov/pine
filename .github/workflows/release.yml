@@ -152,6 +152,8 @@ jobs:
           python3 .github/scripts/changelog_to_html.py "$VERSION" > "$RUNNER_TEMP/release-notes.html"
 
       - name: Generate appcast.xml
+        env:
+          APPCAST_BUILD_NUMBER: ${{ github.run_number }}
         run: |
           VERSION=${{ steps.version.outputs.VERSION }}
           PUB_DATE=$(date -u +"%a, %d %b %Y %H:%M:%S %z")
@@ -159,28 +161,37 @@ jobs:
           ED_SIGNATURE=$(echo "$SPARKLE_SIGNATURE" | sed -n 's/.*sparkle:edSignature="\([^"]*\)".*/\1/p')
           LENGTH=$(echo "$SPARKLE_SIGNATURE" | sed -n 's/.*length="\([^"]*\)".*/\1/p')
 
-          RELEASE_NOTES=$(cat "$RUNNER_TEMP/release-notes.html")
+          APPCAST_VERSION="$VERSION" \
+          APPCAST_PUB_DATE="$PUB_DATE" \
+          APPCAST_ED_SIGNATURE="$ED_SIGNATURE" \
+          APPCAST_LENGTH="$LENGTH" \
+          APPCAST_NOTES_FILE="$RUNNER_TEMP/release-notes.html" \
+          python3 -c '
+          import os
+          from pathlib import Path
 
-          cat > "$RUNNER_TEMP/appcast.xml" << APPCAST_EOF
-          <?xml version="1.0" encoding="utf-8"?>
+          notes = Path(os.environ["APPCAST_NOTES_FILE"]).read_text()
+          version = os.environ["APPCAST_VERSION"]
+
+          print(f"""<?xml version="1.0" encoding="utf-8"?>
           <rss version="2.0" xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle" xmlns:dc="http://purl.org/dc/elements/1.1/">
             <channel>
               <title>Pine</title>
               <item>
-                <title>Version ${VERSION}</title>
-                <pubDate>${PUB_DATE}</pubDate>
-                <sparkle:version>${GITHUB_RUN_NUMBER}</sparkle:version>
-                <sparkle:shortVersionString>${VERSION}</sparkle:shortVersionString>
+                <title>Version {version}</title>
+                <pubDate>{os.environ["APPCAST_PUB_DATE"]}</pubDate>
+                <sparkle:version>{os.environ["APPCAST_BUILD_NUMBER"]}</sparkle:version>
+                <sparkle:shortVersionString>{version}</sparkle:shortVersionString>
                 <sparkle:minimumSystemVersion>26.0</sparkle:minimumSystemVersion>
-                <description><![CDATA[${RELEASE_NOTES}]]></description>
-                <enclosure url="https://github.com/batonogov/pine/releases/download/v${VERSION}/Pine-${VERSION}.dmg"
-                  sparkle:edSignature="${ED_SIGNATURE}"
-                  length="${LENGTH}"
+                <description><![CDATA[{notes}]]></description>
+                <enclosure url="https://github.com/batonogov/pine/releases/download/v{version}/Pine-{version}.dmg"
+                  sparkle:edSignature="{os.environ["APPCAST_ED_SIGNATURE"]}"
+                  length="{os.environ["APPCAST_LENGTH"]}"
                   type="application/octet-stream" />
               </item>
             </channel>
-          </rss>
-          APPCAST_EOF
+          </rss>""")
+          ' > "$RUNNER_TEMP/appcast.xml"
 
       - name: Upload DMG to GitHub Release
         env:

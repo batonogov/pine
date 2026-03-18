@@ -73,10 +73,11 @@ class TestExtractSection(unittest.TestCase):
         section = extract_section(SAMPLE_CHANGELOG, "9.9.9")
         assert section is None
 
-    def test_strips_v_prefix_not_needed(self):
-        # extract_section expects version without 'v'
-        section = extract_section(SAMPLE_CHANGELOG, "1.2.1")
+    def test_extracts_section_with_empty_subsections(self):
+        changelog = "## [2.0.0](url) (date)\n\n\n### Features\n\n* feat one\n"
+        section = extract_section(changelog, "2.0.0")
         assert section is not None
+        assert "feat one" in section
 
 
 class TestMdToHtml(unittest.TestCase):
@@ -110,7 +111,31 @@ class TestMdToHtml(unittest.TestCase):
         assert html == ""
 
 
-class TestInline(unittest.TestCase):
+class TestMdToHtmlShellSafety(unittest.TestCase):
+    """Ensure output is safe when interpolated in shell heredocs."""
+
+    def test_dollar_signs_preserved(self):
+        # $ is not an HTML special char — it passes through escape() as-is.
+        # This is safe because the HTML is written to a file and read by
+        # Python (not interpolated in a shell heredoc).
+        md = "### Bug Fixes\n\n* fix $HOME expansion in path"
+        html = md_to_html(md)
+        assert "fix $HOME expansion in path" in html
+
+    def test_backticks_converted_to_code_tags(self):
+        md = "### Features\n\n* add `$PATH` helper"
+        html = md_to_html(md)
+        # Backticks should become <code> tags, no raw backticks in output
+        assert "`" not in html
+        assert "<code>" in html
+
+    def test_backslash_preserved(self):
+        md = "### Bug Fixes\n\n* fix path\\separator issue"
+        html = md_to_html(md)
+        assert "path\\separator" in html
+
+
+
     def test_link(self):
         result = _inline("[text](https://example.com)")
         assert '<a href="https://example.com">text</a>' in result
@@ -148,6 +173,7 @@ class TestCLI(unittest.TestCase):
         )
         assert result.returncode == 0
         assert "<!DOCTYPE html>" in result.stdout
+        assert '<html lang="en">' in result.stdout
         assert "show abbreviated path" in result.stdout
 
     def test_missing_version_outputs_fallback(self):
