@@ -183,6 +183,8 @@ final class GitStatusProvider {
 
         for line in output.components(separatedBy: "\n") {
             guard line.count >= 3 else { continue }
+            // Skip ignored entries (!! prefix) from --ignored output
+            guard !line.hasPrefix("!!") else { continue }
             let indexChar = line[line.startIndex]
             let workTreeChar = line[line.index(after: line.startIndex)]
             var path = String(line.dropFirst(3))
