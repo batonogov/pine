@@ -73,6 +73,7 @@ struct WorkspaceManagerTests {
         #expect(manager.gitProvider.isGitRepository == false)
         #expect(manager.gitProvider.currentBranch == "")
         #expect(manager.gitProvider.fileStatuses.isEmpty)
+        #expect(manager.gitProvider.ignoredPaths.isEmpty)
         #expect(manager.gitProvider.branches.isEmpty)
     }
 
@@ -125,6 +126,63 @@ struct WorkspaceManagerTests {
         manager.refreshFileTree()
 
         #expect(manager.rootNodes.count == 2)
+    }
+
+    @Test("refreshFileTree populates ignoredPaths in git repo")
+    func refreshFileTreePopulatesIgnoredPaths() throws {
+        let dir = try makeTempDirectory()
+        defer { cleanup(dir) }
+
+        try runShell("git init", at: dir)
+        try runShell("git config user.email 'test@test.com'", at: dir)
+        try runShell("git config user.name 'Test'", at: dir)
+
+        try "build/\n.env\n".write(
+            to: dir.appendingPathComponent(".gitignore"),
+            atomically: true,
+            encoding: .utf8
+        )
+        // Create ignored entries so git reports them
+        let buildDir = dir.appendingPathComponent("build")
+        try FileManager.default.createDirectory(at: buildDir, withIntermediateDirectories: true)
+        try "bin".write(to: buildDir.appendingPathComponent("out"), atomically: true, encoding: .utf8)
+        try "secret".write(to: dir.appendingPathComponent(".env"), atomically: true, encoding: .utf8)
+
+        try runShell("git add .gitignore", at: dir)
+        try runShell("git -c commit.gpgsign=false commit -m 'init'", at: dir)
+
+        let manager = WorkspaceManager()
+        manager.loadDirectory(url: dir)
+        // setup() runs in background via loadDirectoryContentsAsync;
+        // call it directly so the test doesn't need to await async dispatch.
+        manager.gitProvider.setup(repositoryURL: dir)
+        manager.refreshFileTree()
+
+        #expect(manager.gitProvider.isGitRepository == true)
+        #expect(manager.gitProvider.ignoredPaths.contains("build"))
+        #expect(manager.gitProvider.ignoredPaths.contains(".env"))
+    }
+
+    @discardableResult
+    private func runShell(_ command: String, at dir: URL) throws -> String {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/bin/sh")
+        process.arguments = ["-c", command]
+        process.currentDirectoryURL = dir
+        let outPipe = Pipe()
+        let errPipe = Pipe()
+        process.standardOutput = outPipe
+        process.standardError = errPipe
+        try process.run()
+        process.waitUntilExit()
+        let outData = outPipe.fileHandleForReading.readDataToEndOfFile()
+        let errData = errPipe.fileHandleForReading.readDataToEndOfFile()
+        guard process.terminationStatus == 0 else {
+            let stderr = String(data: errData, encoding: .utf8) ?? ""
+            throw NSError(domain: "ShellError", code: Int(process.terminationStatus),
+                          userInfo: [NSLocalizedDescriptionKey: stderr])
+        }
+        return String(data: outData, encoding: .utf8) ?? ""
     }
 
     @Test("loadDirectory twice quickly uses latest directory")

@@ -137,6 +137,19 @@ struct GitStatusParserTests {
         #expect(GitStatusProvider.unquoteGitPath("\"a\\tb\\nc\"") == "a\tb\nc")
     }
 
+    @Test func parseStatusOutputSkipsIgnoredEntries() {
+        let output = """
+         M src/main.swift
+        !! .claude/
+        !! default.profraw
+        """
+        let statuses = GitStatusProvider.parseStatusOutput(output)
+        #expect(statuses.count == 1)
+        #expect(statuses["src/main.swift"] == .modified)
+        #expect(statuses[".claude/"] == nil)
+        #expect(statuses["default.profraw"] == nil)
+    }
+
     // MARK: - statusForDirectory
 
     @Test func directoryStatusShowsConflictOverOthers() {
@@ -151,5 +164,89 @@ struct GitStatusParserTests {
         // statusForDirectory uses relativePath which depends on gitRootPath
         // So we test the priority logic indirectly via fileStatuses
         #expect(provider.fileStatuses["src/file2.swift"] == .conflict)
+    }
+
+    // MARK: - parseIgnoredOutput
+
+    @Test func parsesIgnoredFiles() {
+        let output = "!! build/\n!! .env\n!! node_modules/\n"
+        let ignored = GitStatusProvider.parseIgnoredOutput(output)
+        #expect(ignored.count == 3)
+        #expect(ignored.contains("build"))
+        #expect(ignored.contains(".env"))
+        #expect(ignored.contains("node_modules"))
+    }
+
+    @Test func parsesIgnoredMixedWithStatus() {
+        let output = """
+         M Sources/main.swift
+        ?? newfile.swift
+        !! .build/
+        !! .DS_Store
+        """
+        let ignored = GitStatusProvider.parseIgnoredOutput(output)
+        #expect(ignored.count == 2)
+        #expect(ignored.contains(".build"))
+        #expect(ignored.contains(".DS_Store"))
+    }
+
+    @Test func parsesEmptyIgnoredOutput() {
+        let ignored = GitStatusProvider.parseIgnoredOutput("")
+        #expect(ignored.isEmpty)
+    }
+
+    @Test func parsesIgnoredNestedPaths() {
+        let output = "!! vendor/cache/\n!! tmp/pids/\n"
+        let ignored = GitStatusProvider.parseIgnoredOutput(output)
+        #expect(ignored.contains("vendor/cache"))
+        #expect(ignored.contains("tmp/pids"))
+    }
+
+    // MARK: - isIgnored
+
+    @Test func isIgnoredReturnsTrueForIgnoredFile() {
+        let provider = GitStatusProvider()
+        provider.gitRootPath = "/repo"
+        provider.ignoredPaths = [".env", "build"]
+
+        let envURL = URL(fileURLWithPath: "/repo/.env")
+        #expect(provider.isIgnored(at: envURL) == true)
+
+        let srcURL = URL(fileURLWithPath: "/repo/src/main.swift")
+        #expect(provider.isIgnored(at: srcURL) == false)
+    }
+
+    @Test func isIgnoredReturnsTrueForFileInIgnoredDirectory() {
+        let provider = GitStatusProvider()
+        provider.gitRootPath = "/repo"
+        provider.ignoredPaths = ["build"]
+
+        let fileURL = URL(fileURLWithPath: "/repo/build/output.o")
+        #expect(provider.isIgnored(at: fileURL) == true)
+    }
+
+    @Test func isIgnoredReturnsTrueForIgnoredDir() {
+        let provider = GitStatusProvider()
+        provider.gitRootPath = "/repo"
+        provider.ignoredPaths = ["node_modules"]
+
+        let dirURL = URL(fileURLWithPath: "/repo/node_modules")
+        #expect(provider.isIgnored(at: dirURL) == true)
+
+        let srcURL = URL(fileURLWithPath: "/repo/src")
+        #expect(provider.isIgnored(at: srcURL) == false)
+    }
+
+    @Test func isIgnoredDoesNotFalsePositiveOnCommonPrefix() {
+        let provider = GitStatusProvider()
+        provider.gitRootPath = "/repo"
+        provider.ignoredPaths = ["build"]
+
+        // "buildtools" shares prefix with "build" but is NOT ignored
+        let toolsURL = URL(fileURLWithPath: "/repo/buildtools/script.sh")
+        #expect(provider.isIgnored(at: toolsURL) == false)
+
+        let toolsDirURL = URL(fileURLWithPath: "/repo/buildtools")
+        #expect(provider.isIgnored(at: toolsDirURL) == false)
     }
 }

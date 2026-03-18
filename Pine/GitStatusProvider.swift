@@ -45,6 +45,7 @@ struct GitLineDiff: Equatable {
 final class GitStatusProvider {
     var currentBranch: String = ""
     var fileStatuses: [String: GitFileStatus] = [:]
+    var ignoredPaths: Set<String> = []
     var isGitRepository: Bool = false
     var branches: [String] = []
 
@@ -66,6 +67,7 @@ final class GitStatusProvider {
         } else {
             currentBranch = ""
             fileStatuses = [:]
+            ignoredPaths = []
             branches = []
         }
     }
@@ -73,7 +75,7 @@ final class GitStatusProvider {
     func refresh() {
         guard isGitRepository, let url = repositoryURL else { return }
         refreshBranch(at: url)
-        refreshFileStatuses(at: url)
+        refreshFileStatusesAndIgnored(at: url)
         refreshBranches(at: url)
     }
 
@@ -88,6 +90,22 @@ final class GitStatusProvider {
         // a directory so it inherits the untracked status.
         if isInsideUntrackedDirectory(path) { return .untracked }
         return nil
+    }
+
+    func isIgnored(at url: URL) -> Bool {
+        guard let path = relativePath(for: url) else { return false }
+        return isPathIgnored(path)
+    }
+
+    private func isPathIgnored(_ path: String) -> Bool {
+        if ignoredPaths.contains(path) { return true }
+        // Walk up parent directories — O(depth) instead of O(ignoredPaths.count)
+        var components = path.components(separatedBy: "/")
+        while components.count > 1 {
+            components.removeLast()
+            if ignoredPaths.contains(components.joined(separator: "/")) { return true }
+        }
+        return false
     }
 
     func statusForDirectory(at url: URL) -> GitFileStatus? {
@@ -245,10 +263,11 @@ final class GitStatusProvider {
         }
     }
 
-    private func refreshFileStatuses(at url: URL) {
-        let result = runGit(["status", "--porcelain"], at: url)
+    private func refreshFileStatusesAndIgnored(at url: URL) {
+        let result = runGit(["status", "--ignored", "--porcelain"], at: url)
         guard result.exitCode == 0 else { return }
         fileStatuses = Self.parseStatusOutput(result.output)
+        ignoredPaths = Self.parseIgnoredOutput(result.output)
     }
 
     static func parseStatusOutput(_ output: String) -> [String: GitFileStatus] {
@@ -256,6 +275,8 @@ final class GitStatusProvider {
 
         for line in output.components(separatedBy: "\n") {
             guard line.count >= 3 else { continue }
+            // Skip ignored entries (!! prefix) from --ignored output
+            guard !line.hasPrefix("!!") else { continue }
             let indexChar = line[line.startIndex]
             let workTreeChar = line[line.index(after: line.startIndex)]
             var path = String(line.dropFirst(3))
@@ -299,6 +320,18 @@ final class GitStatusProvider {
         }
 
         return statuses
+    }
+
+    static func parseIgnoredOutput(_ output: String) -> Set<String> {
+        var paths: Set<String> = []
+        for line in output.components(separatedBy: "\n") {
+            guard line.hasPrefix("!! ") else { continue }
+            var path = String(line.dropFirst(3))
+            // Remove trailing slash for directories to normalize
+            if path.hasSuffix("/") { path = String(path.dropLast()) }
+            paths.insert(path)
+        }
+        return paths
     }
 
     private func refreshBranches(at url: URL) {
