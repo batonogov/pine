@@ -1,5 +1,24 @@
 # Changelog
 
+## [1.4.0](https://github.com/batonogov/pine/compare/v1.3.0...v1.4.0) (2026-03-18)
+
+
+### Features
+
+* add lightbox for landing page screenshots ([#202](https://github.com/batonogov/pine/issues/202)) ([97f3665](https://github.com/batonogov/pine/commit/97f366525acbd71e2a693b1c002cd076f5917988))
+* show recent projects in Dock context menu ([#206](https://github.com/batonogov/pine/issues/206)) ([7d2d845](https://github.com/batonogov/pine/commit/7d2d8459ef867beffe1f613410caf1165967dc4c))
+
+
+### Bug Fixes
+
+* propagate untracked status to files and subdirectories inside untracked dirs ([#205](https://github.com/batonogov/pine/issues/205)) ([ea75208](https://github.com/batonogov/pine/commit/ea7520834e28fc357277f4837b28640d8a6383e3))
+* update Homebrew tap with versioned DMG filename ([#198](https://github.com/batonogov/pine/issues/198)) ([29fced4](https://github.com/batonogov/pine/commit/29fced412c00b76fb85bd96fc649f7dcbd4b112a))
+
+
+### Performance Improvements
+
+* fix editor scroll lag on large files ([#203](https://github.com/batonogov/pine/issues/203)) ([d4a1435](https://github.com/batonogov/pine/commit/d4a1435f069f3e7eed49d3750e0aae27cda3a2f1))
+
 ## [1.3.0](https://github.com/batonogov/pine/compare/v1.2.1...v1.3.0) (2026-03-18)
 
 
