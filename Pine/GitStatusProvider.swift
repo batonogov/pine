@@ -218,7 +218,7 @@ final class GitStatusProvider {
                 i = inner.index(after: i)
             }
         }
-        return String(decoding: bytes, as: UTF8.self)
+        return String(bytes: bytes, encoding: .utf8) ?? ""
     }
 
     /// Returns true when `path` falls inside a directory that git reports as
@@ -409,8 +409,8 @@ final class GitStatusProvider {
             let outData = outPipe.fileHandleForReading.readDataToEndOfFile()
             let errData = errPipe.fileHandleForReading.readDataToEndOfFile()
             return (
-                String(data: outData, encoding: .utf8) ?? "",
-                String(data: errData, encoding: .utf8) ?? "",
+                String(bytes: outData, encoding: .utf8) ?? "",
+                String(bytes: errData, encoding: .utf8) ?? "",
                 process.terminationStatus
             )
         } catch {
