@@ -59,7 +59,7 @@ final class GitStatusProvider {
 
     func setup(repositoryURL: URL) {
         self.repositoryURL = repositoryURL
-        let result = runGit(["rev-parse", "--show-toplevel"], at: repositoryURL)
+        let result = Self.runGit(["rev-parse", "--show-toplevel"], at: repositoryURL)
         isGitRepository = result.exitCode == 0
         if isGitRepository {
             gitRootPath = result.output.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -74,9 +74,81 @@ final class GitStatusProvider {
 
     func refresh() {
         guard isGitRepository, let url = repositoryURL else { return }
-        refreshBranch(at: url)
-        refreshFileStatusesAndIgnored(at: url)
-        refreshBranches(at: url)
+
+        let group = DispatchGroup()
+        var branch = ""
+        var statuses: [String: GitFileStatus] = [:]
+        var ignored: Set<String> = []
+        var branchList: [String] = []
+
+        group.enter()
+        DispatchQueue.global(qos: .userInitiated).async {
+            branch = Self.fetchBranch(at: url)
+            group.leave()
+        }
+
+        group.enter()
+        DispatchQueue.global(qos: .userInitiated).async {
+            let result = Self.fetchStatusAndIgnored(at: url)
+            statuses = result.statuses
+            ignored = result.ignored
+            group.leave()
+        }
+
+        group.enter()
+        DispatchQueue.global(qos: .userInitiated).async {
+            branchList = Self.fetchBranches(at: url)
+            group.leave()
+        }
+
+        group.wait()
+
+        currentBranch = branch
+        fileStatuses = statuses
+        ignoredPaths = ignored
+        branches = branchList
+    }
+
+    /// Runs refresh on a background queue, then assigns results on main.
+    func refreshAsync() {
+        guard isGitRepository, let url = repositoryURL else { return }
+        DispatchQueue.global(qos: .userInitiated).async {
+            let branch = Self.fetchBranch(at: url)
+            let statusResult = Self.fetchStatusAndIgnored(at: url)
+            let branchList = Self.fetchBranches(at: url)
+            DispatchQueue.main.async { [weak self] in
+                guard let self else { return }
+                self.currentBranch = branch
+                self.fileStatuses = statusResult.statuses
+                self.ignoredPaths = statusResult.ignored
+                self.branches = branchList
+            }
+        }
+    }
+
+    // MARK: - Static Fetch Methods
+
+    static func fetchBranch(at url: URL) -> String {
+        let result = runGit(["rev-parse", "--abbrev-ref", "HEAD"], at: url)
+        return result.exitCode == 0
+            ? result.output.trimmingCharacters(in: .whitespacesAndNewlines)
+            : ""
+    }
+
+    static func fetchStatusAndIgnored(
+        at url: URL
+    ) -> (statuses: [String: GitFileStatus], ignored: Set<String>) {
+        let result = runGit(["--no-optional-locks", "status", "--ignored", "--porcelain"], at: url)
+        guard result.exitCode == 0 else { return ([:], []) }
+        return (parseStatusOutput(result.output), parseIgnoredOutput(result.output))
+    }
+
+    static func fetchBranches(at url: URL) -> [String] {
+        let result = runGit(["branch", "--sort=-committerdate", "--format=%(refname:short)"], at: url)
+        guard result.exitCode == 0 else { return [] }
+        return result.output
+            .components(separatedBy: "\n")
+            .filter { !$0.isEmpty }
     }
 
     // MARK: - Status Queries
@@ -143,10 +215,10 @@ final class GitStatusProvider {
     func diffForFile(at url: URL) -> [GitLineDiff] {
         guard isGitRepository, let repoURL = repositoryURL else { return [] }
         // Check if HEAD exists (new repo without commits)
-        let headCheck = runGit(["rev-parse", "HEAD"], at: repoURL)
+        let headCheck = Self.runGit(["rev-parse", "HEAD"], at: repoURL)
         guard headCheck.exitCode == 0 else { return [] }
 
-        let result = runGit(["diff", "HEAD", "--unified=0", "--", url.path], at: repoURL)
+        let result = Self.runGit(["diff", "HEAD", "--unified=0", "--", url.path], at: repoURL)
         guard result.exitCode == 0, !result.output.isEmpty else { return [] }
         return parseDiff(result.output)
     }
@@ -155,7 +227,7 @@ final class GitStatusProvider {
 
     func checkoutBranch(_ branch: String) -> (success: Bool, error: String) {
         guard let url = repositoryURL else { return (false, "No repository") }
-        let result = runGit(["switch", branch], at: url)
+        let result = Self.runGit(["switch", branch], at: url)
         if result.exitCode == 0 {
             refresh()
             return (true, "")
@@ -256,20 +328,6 @@ final class GitStatusProvider {
         return String(filePath.dropFirst(prefix.count))
     }
 
-    private func refreshBranch(at url: URL) {
-        let result = runGit(["rev-parse", "--abbrev-ref", "HEAD"], at: url)
-        if result.exitCode == 0 {
-            currentBranch = result.output.trimmingCharacters(in: .whitespacesAndNewlines)
-        }
-    }
-
-    private func refreshFileStatusesAndIgnored(at url: URL) {
-        let result = runGit(["--no-optional-locks", "status", "--ignored", "--porcelain"], at: url)
-        guard result.exitCode == 0 else { return }
-        fileStatuses = Self.parseStatusOutput(result.output)
-        ignoredPaths = Self.parseIgnoredOutput(result.output)
-    }
-
     static func parseStatusOutput(_ output: String) -> [String: GitFileStatus] {
         var statuses: [String: GitFileStatus] = [:]
 
@@ -332,14 +390,6 @@ final class GitStatusProvider {
             paths.insert(path)
         }
         return paths
-    }
-
-    private func refreshBranches(at url: URL) {
-        let result = runGit(["branch", "--sort=-committerdate", "--format=%(refname:short)"], at: url)
-        guard result.exitCode == 0 else { return }
-        branches = result.output
-            .components(separatedBy: "\n")
-            .filter { !$0.isEmpty }
     }
 
     // MARK: - Diff Parser
@@ -425,7 +475,7 @@ final class GitStatusProvider {
 
     // MARK: - Git Command Runner
 
-    private func runGit(_ arguments: [String], at directory: URL) -> (output: String, errorOutput: String, exitCode: Int32) {
+    static func runGit(_ arguments: [String], at directory: URL) -> (output: String, errorOutput: String, exitCode: Int32) {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
         process.arguments = arguments

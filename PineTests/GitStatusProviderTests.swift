@@ -456,6 +456,28 @@ struct GitStatusProviderTests {
         #expect(provider.fileStatuses["new.txt"] == .untracked)
     }
 
+    @Test("refresh populates branch, fileStatuses, and branches in parallel")
+    func refreshPopulatesAllFields() throws {
+        let dir = try makeGitRepo()
+        defer { cleanup(dir) }
+
+        // Create a branch and a modified file so all three fetch methods have data
+        try runShell("git branch feature-branch", at: dir)
+        try "changed".write(
+            to: dir.appendingPathComponent("README.md"),
+            atomically: true,
+            encoding: .utf8
+        )
+
+        let provider = GitStatusProvider()
+        provider.setup(repositoryURL: dir)
+
+        // Verify all three parallel fetches populated correctly
+        #expect(!provider.currentBranch.isEmpty)
+        #expect(provider.fileStatuses["README.md"] == .modified)
+        #expect(provider.branches.contains("feature-branch"))
+    }
+
     @Test("refresh does nothing without repository")
     func refreshNoRepo() {
         let provider = GitStatusProvider()
