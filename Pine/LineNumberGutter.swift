@@ -69,6 +69,8 @@ final class LineNumberView: NSView {
         super.viewDidMoveToWindow()
         // Гарантируем что clipView шлёт уведомления о скролле
         textView?.enclosingScrollView?.contentView.postsBoundsChangedNotifications = true
+        // Initialize cached line count from the current text
+        recountTotalLines()
     }
 
     @available(*, unavailable)
