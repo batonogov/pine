@@ -163,6 +163,7 @@ jobs:
                 <sparkle:version>${GITHUB_RUN_NUMBER}</sparkle:version>
                 <sparkle:shortVersionString>${VERSION}</sparkle:shortVersionString>
                 <sparkle:minimumSystemVersion>26.0</sparkle:minimumSystemVersion>
+                <sparkle:releaseNotesLink>https://github.com/batonogov/pine/releases/tag/v${VERSION}</sparkle:releaseNotesLink>
                 <enclosure url="https://github.com/batonogov/pine/releases/download/v${VERSION}/Pine-${VERSION}.dmg"
                   sparkle:edSignature="${ED_SIGNATURE}"
                   length="${LENGTH}"
