@@ -1,0 +1,52 @@
+{
+    "name": "TOML",
+    "extensions": ["toml"],
+    "fileNames": ["Cargo.toml", "Pipfile", "pyproject.toml"],
+    "filePatterns": ["*.toml"],
+    "lineComment": "#",
+    "rules": [
+        {
+            "pattern": "#.*$",
+            "scope": "comment",
+            "options": ["anchorsMatchLines"]
+        },
+        {
+            "pattern": "\"\"\"[\\s\\S]*?\"\"\"",
+            "scope": "string"
+        },
+        {
+            "pattern": "'''[\\s\\S]*?'''",
+            "scope": "string"
+        },
+        {
+            "pattern": "\"(?:[^\"\\\\]|\\\\.)*\"",
+            "scope": "string"
+        },
+        {
+            "pattern": "'[^']*'",
+            "scope": "string"
+        },
+        {
+            "pattern": "^\\s*\\[\\[?[^\\]]+\\]\\]?",
+            "scope": "keyword",
+            "options": ["anchorsMatchLines"]
+        },
+        {
+            "pattern": "^\\s*[a-zA-Z_][a-zA-Z0-9_.-]*\\s*(?==)",
+            "scope": "attribute",
+            "options": ["anchorsMatchLines"]
+        },
+        {
+            "pattern": "\\b(true|false)\\b",
+            "scope": "keyword"
+        },
+        {
+            "pattern": "\\b\\d{4}-\\d{2}-\\d{2}([T ]\\d{2}:\\d{2}:\\d{2})?\\b",
+            "scope": "number"
+        },
+        {
+            "pattern": "\\b[+-]?\\d+(\\.\\d+)?([eE][+-]?\\d+)?\\b",
+            "scope": "number"
+        }
+    ]
+}

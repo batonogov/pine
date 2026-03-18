@@ -1,0 +1,42 @@
+{
+    "name": "Git Config",
+    "extensions": ["gitignore", "gitattributes", "gitmodules", "gitconfig"],
+    "fileNames": [".gitignore", ".gitattributes", ".gitmodules", ".gitconfig"],
+    "filePatterns": [".gitignore_global", ".git/config"],
+    "lineComment": "#",
+    "rules": [
+        {
+            "pattern": "#.*$",
+            "scope": "comment",
+            "options": ["anchorsMatchLines"]
+        },
+        {
+            "pattern": "\"(?:[^\"\\\\]|\\\\.)*\"",
+            "scope": "string"
+        },
+        {
+            "pattern": "^\\s*\\[[^\\]]+\\]",
+            "scope": "keyword",
+            "options": ["anchorsMatchLines"]
+        },
+        {
+            "pattern": "^\\s*[a-zA-Z][a-zA-Z0-9-]*\\s*(?==)",
+            "scope": "attribute",
+            "options": ["anchorsMatchLines"]
+        },
+        {
+            "pattern": "\\b(true|false|yes|no|on|off)\\b",
+            "scope": "keyword",
+            "options": ["caseInsensitive"]
+        },
+        {
+            "pattern": "\\*\\*?|\\?|\\[.+?\\]",
+            "scope": "attribute"
+        },
+        {
+            "pattern": "!.*$",
+            "scope": "type",
+            "options": ["anchorsMatchLines"]
+        }
+    ]
+}

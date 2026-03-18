@@ -1,0 +1,50 @@
+{
+    "name": "Groovy",
+    "extensions": ["groovy", "gradle"],
+    "fileNames": ["Jenkinsfile"],
+    "filePatterns": ["Jenkinsfile.*", "*.Jenkinsfile", "*.gradle"],
+    "lineComment": "//",
+    "rules": [
+        {
+            "pattern": "//.*$",
+            "scope": "comment",
+            "options": ["anchorsMatchLines"]
+        },
+        {
+            "pattern": "/\\*[\\s\\S]*?\\*/",
+            "scope": "comment"
+        },
+        {
+            "pattern": "\"(?:[^\"\\\\]|\\\\.)*\"",
+            "scope": "string"
+        },
+        {
+            "pattern": "'(?:[^'\\\\]|\\\\.)*'",
+            "scope": "string"
+        },
+        {
+            "pattern": "\\b(def|var|class|interface|enum|trait|extends|implements|import|package|return|if|else|for|while|do|switch|case|default|break|continue|try|catch|finally|throw|throws|new|this|super|in|as|instanceof|static|final|abstract|native|synchronized|volatile|transient|assert|true|false|null|void|pipeline|agent|stages|stage|steps|post|environment|options|parameters|triggers|tools|input|when|parallel|script|node|checkout|sh|bat|echo|error|timeout|retry|sleep|dir|deleteDir|fileExists|readFile|writeFile|stash|unstash|build|step|withCredentials|withEnv)\\b",
+            "scope": "keyword"
+        },
+        {
+            "pattern": "@[A-Za-z_][A-Za-z0-9_]*",
+            "scope": "attribute"
+        },
+        {
+            "pattern": "\\b[A-Z][a-zA-Z0-9_]*\\b",
+            "scope": "type"
+        },
+        {
+            "pattern": "\\b[a-z_][a-zA-Z0-9_]*\\s*(?=\\()",
+            "scope": "function"
+        },
+        {
+            "pattern": "\\b\\d+(\\.\\d+)?[fFdDlL]?\\b",
+            "scope": "number"
+        },
+        {
+            "pattern": "\\$\\{[^}]+\\}|\\$[a-zA-Z_][a-zA-Z0-9_]*",
+            "scope": "attribute"
+        }
+    ]
+}
