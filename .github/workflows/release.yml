@@ -245,6 +245,7 @@ jobs:
           cd $RUNNER_TEMP/homebrew-tap
           sed -i '' "s/version \".*\"/version \"$VERSION\"/" Casks/pine-editor.rb
           sed -i '' "s/sha256 \".*\"/sha256 \"$SHA256\"/" Casks/pine-editor.rb
+          sed -i '' "s|Pine.dmg|Pine-#{version}.dmg|" Casks/pine-editor.rb
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add Casks/pine-editor.rb
