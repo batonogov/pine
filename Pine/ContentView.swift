@@ -7,13 +7,6 @@
 
 import SwiftUI
 
-// MARK: - Sidebar mode
-
-enum SidebarMode: String, CaseIterable {
-    case files
-    case search
-}
-
 // MARK: - Главный ContentView
 
 struct ContentView: View {
@@ -30,7 +23,7 @@ struct ContentView: View {
     @State private var columnVisibility: NavigationSplitViewVisibility = .all
     @State private var lineDiffs: [GitLineDiff] = []
     @State private var didRestoreSession = false
-    @State private var sidebarMode: SidebarMode = .files
+    @State private var searchText: String = ""
     @State private var goToLineOffset: Int?
     @AppStorage("minimapVisible") private var isMinimapVisible = true
 
@@ -42,27 +35,18 @@ struct ContentView: View {
 
     var body: some View {
         NavigationSplitView(columnVisibility: $columnVisibility) {
-            VStack(spacing: 0) {
-                // Mode picker
-                Picker("", selection: $sidebarMode) {
-                    Image(systemName: "folder")
-                        .tag(SidebarMode.files)
-                    Image(systemName: "magnifyingglass")
-                        .tag(SidebarMode.search)
-                }
-                .pickerStyle(.segmented)
-                .padding(.horizontal, 8)
-                .padding(.vertical, 4)
-                .accessibilityIdentifier(AccessibilityID.sidebarModePicker)
-
-                switch sidebarMode {
-                case .files:
-                    SidebarView(workspace: workspace, selectedFile: $selectedNode)
-                case .search:
-                    ProjectSearchView()
-                }
-            }
+            SidebarSearchableContent(
+                searchText: $searchText,
+                selectedNode: $selectedNode,
+                workspace: workspace
+            )
+            .searchable(text: $searchText, placement: .sidebar, prompt: Strings.searchPlaceholder)
             .accessibilityIdentifier(AccessibilityID.sidebar)
+            .onChange(of: searchText) { _, _ in
+                guard let rootURL = projectManager.rootURL else { return }
+                projectManager.searchProvider.query = searchText
+                projectManager.searchProvider.search(in: rootURL)
+            }
             .toolbar {
                 ToolbarItem {
                     Button {
@@ -181,7 +165,6 @@ struct ContentView: View {
             handleExternalConflicts(conflicts)
         }
         .onReceive(NotificationCenter.default.publisher(for: .showProjectSearch)) { _ in
-            sidebarMode = .search
             columnVisibility = .all
         }
         .onChange(of: tabManager.pendingGoToLine) { _, newLine in
@@ -532,6 +515,25 @@ struct ContentView: View {
         }
         .background(Color(nsColor: .textBackgroundColor))
         .onAppear { terminal.startTerminals(workingDirectory: workspace.rootURL) }
+    }
+}
+
+// MARK: - Sidebar searchable content
+
+/// Wrapper view that reads `isSearching` environment to switch between file tree and search results.
+/// `isSearching` is only available inside a `.searchable` modifier, hence the separate view.
+private struct SidebarSearchableContent: View {
+    @Binding var searchText: String
+    @Binding var selectedNode: FileNode?
+    var workspace: WorkspaceManager
+    @Environment(\.isSearching) var isSearching
+
+    var body: some View {
+        if isSearching && !searchText.isEmpty {
+            SearchResultsView()
+        } else {
+            SidebarView(workspace: workspace, selectedFile: $selectedNode)
+        }
     }
 }
 
