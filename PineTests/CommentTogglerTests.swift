@@ -141,6 +141,42 @@ struct CommentTogglerTests {
         #expect(uncommented.newText == text)
     }
 
+    @Test func commentMixedIndentationMultipleLines() {
+        let text = "    line1\n        line2\n    line3"
+        let range = NSRange(location: 0, length: text.utf16.count)
+        let result = CommentToggler.toggle(text: text, selectedRange: range, lineComment: "//")
+        #expect(result.newText == "//     line1\n//         line2\n//     line3")
+    }
+
+    @Test func uncommentWithoutSpaceAfterHashIndented() {
+        let text = "#text"
+        let range = NSRange(location: 0, length: 0)
+        let result = CommentToggler.toggle(text: text, selectedRange: range, lineComment: "#")
+        #expect(result.newText == "text")
+    }
+
+    @Test func commentUncommentRoundTripWithSlash() {
+        let text = "    let x = 1\n        let y = 2"
+        let range = NSRange(location: 0, length: text.utf16.count)
+        let commented = CommentToggler.toggle(text: text, selectedRange: range, lineComment: "//")
+        let uncommented = CommentToggler.toggle(
+            text: commented.newText,
+            selectedRange: NSRange(location: 0, length: commented.newText.utf16.count),
+            lineComment: "//"
+        )
+        #expect(uncommented.newText == text)
+    }
+
+    @Test func cursorOnIndentedLineAdjustsRange() {
+        let text = "    let x = 1"
+        let range = NSRange(location: 6, length: 0) // cursor after "    le"
+        let result = CommentToggler.toggle(text: text, selectedRange: range, lineComment: "//")
+        #expect(result.newText == "//     let x = 1")
+        // "// " (3 chars) inserted at column 0, cursor shifts by 3
+        #expect(result.newRange.location == 9)
+        #expect(result.newRange.length == 0)
+    }
+
     // MARK: - Range adjustment
 
     @Test func adjustsRangeAfterCommenting() {

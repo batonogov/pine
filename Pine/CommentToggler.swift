@@ -54,12 +54,10 @@ enum CommentToggler {
 
         for line in lines {
             let lineContent = line.content
-            let stripped = lineContent.replacingOccurrences(of: "\n", with: "")
+            let contentWithoutNewline = lineContent.trimmingCharacters(in: .newlines)
 
             // Skip empty lines
-            guard !stripped.trimmingCharacters(in: .whitespaces).isEmpty else { continue }
-
-            let contentWithoutNewline = lineContent.trimmingCharacters(in: .newlines)
+            guard !contentWithoutNewline.trimmingCharacters(in: .whitespaces).isEmpty else { continue }
 
             let adjustedLocation = line.range.location + offset
             let nsNew = newText as NSString
