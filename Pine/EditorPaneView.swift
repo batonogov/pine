@@ -81,8 +81,8 @@ struct EditorPaneView: View {
         .overlay(alignment: .top) {
             if isFocused {
                 Rectangle()
-                    .fill(Color.accentColor)
-                    .frame(height: 2)
+                    .fill(Color.accentColor.opacity(0.6))
+                    .frame(height: 1)
             }
         }
     }

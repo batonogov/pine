@@ -159,32 +159,44 @@ struct SplitEditorTests {
 
     // MARK: - TabManager split operations
 
-    @Test("splitRight creates split pane")
-    func splitRightCreatesSplitPane() {
+    @Test("splitRight duplicates active tab into trailing pane")
+    func splitRightDuplicatesActiveTab() {
         let manager = TabManager()
-        let url = tempFileURL()
+        let url = tempFileURL(content: "let x = 1")
         manager.openTab(url: url)
 
         manager.splitRight()
 
         #expect(manager.isSplitActive == true)
-        #expect(manager.splitPane != nil)
-        #expect(manager.splitPane?.tabs.isEmpty == true)
-    }
-
-    @Test("splitRight with moveActiveTab moves tab to trailing pane")
-    func splitRightMoveActiveTab() {
-        let manager = TabManager()
-        let url = tempFileURL(content: "let x = 1")
-        manager.openTab(url: url)
-
-        manager.splitRight(moveActiveTab: true)
-
-        #expect(manager.isSplitActive == true)
-        #expect(manager.tabs.isEmpty)
+        // Primary pane still has the tab
+        #expect(manager.tabs.count == 1)
+        // Trailing pane has a copy of the same file
         #expect(manager.splitPane?.tabs.count == 1)
         #expect(manager.splitPane?.activeTab?.url == url)
         #expect(manager.focusedSide == .trailing)
+    }
+
+    @Test("splitRight without active tab creates empty pane")
+    func splitRightNoActiveTab() {
+        let manager = TabManager()
+
+        manager.splitRight()
+
+        #expect(manager.isSplitActive == true)
+        #expect(manager.splitPane?.tabs.isEmpty == true)
+        #expect(manager.focusedSide == .leading)
+    }
+
+    @Test("splitRight with duplicateActiveTab false creates empty pane")
+    func splitRightNoDuplicate() {
+        let manager = TabManager()
+        let url = tempFileURL()
+        manager.openTab(url: url)
+
+        manager.splitRight(duplicateActiveTab: false)
+
+        #expect(manager.isSplitActive == true)
+        #expect(manager.splitPane?.tabs.isEmpty == true)
     }
 
     @Test("splitRight does nothing if already split")
@@ -205,7 +217,7 @@ struct SplitEditorTests {
         let url2 = tempFileURL(name: "b.swift")
 
         manager.openTab(url: url1)
-        manager.splitRight()
+        manager.splitRight(duplicateActiveTab: false)
         manager.splitPane?.openTab(url: url2)
 
         manager.closeSplit()
@@ -240,13 +252,13 @@ struct SplitEditorTests {
 
         manager.openTab(url: url1)
         manager.openTab(url: url2)
-        manager.splitRight()
+        manager.splitRight(duplicateActiveTab: false)
 
         manager.focusedSide = .leading
         manager.moveTabToOtherPane()
 
         #expect(manager.tabs.count == 1)
-        #expect(manager.tabs[0].url == url1) // url2 moved, url1 became active then b was moved
+        #expect(manager.tabs[0].url == url1)
         #expect(manager.splitPane?.tabs.count == 1)
         #expect(manager.splitPane?.activeTab?.url == url2)
         #expect(manager.focusedSide == .trailing)
@@ -259,7 +271,7 @@ struct SplitEditorTests {
         let url2 = tempFileURL(name: "b.swift")
 
         manager.openTab(url: url1)
-        manager.splitRight()
+        manager.splitRight(duplicateActiveTab: false)
         manager.splitPane?.openTab(url: url2)
 
         manager.focusedSide = .trailing
@@ -304,7 +316,7 @@ struct SplitEditorTests {
         let url2 = tempFileURL(name: "b.swift")
 
         manager.openTab(url: url1)
-        manager.splitRight()
+        manager.splitRight(duplicateActiveTab: false)
         manager.splitPane?.openTab(url: url2)
 
         // Close the only tab in split pane
@@ -326,7 +338,7 @@ struct SplitEditorTests {
         let url2 = tempFileURL(name: "b.swift", content: "clean")
 
         manager.openTab(url: url1)
-        manager.splitRight()
+        manager.splitRight(duplicateActiveTab: false)
         manager.splitPane?.openTab(url: url2)
 
         #expect(manager.hasAnyUnsavedChanges == false)
@@ -345,7 +357,7 @@ struct SplitEditorTests {
 
         manager.openTab(url: url1)
         manager.updateContent("dirty1")
-        manager.splitRight()
+        manager.splitRight(duplicateActiveTab: false)
         manager.splitPane?.openTab(url: url2)
         manager.splitPane?.updateContent("dirty2")
 
@@ -365,7 +377,7 @@ struct SplitEditorTests {
         try? "content".write(to: oldURL, atomically: true, encoding: .utf8)
 
         manager.openTab(url: oldURL)
-        manager.splitRight()
+        manager.splitRight(duplicateActiveTab: false)
 
         let oldURL2 = dir.appendingPathComponent("old2.swift")
         let newURL2 = dir.appendingPathComponent("new2.swift")
@@ -388,7 +400,7 @@ struct SplitEditorTests {
 
         manager.openTab(url: url1)
         manager.openTab(url: url3)
-        manager.splitRight()
+        manager.splitRight(duplicateActiveTab: false)
         manager.splitPane?.openTab(url: url2)
 
         manager.closeTabsForDeletedFileIncludingSplit(url: url2)
@@ -407,7 +419,7 @@ struct SplitEditorTests {
         let url2 = tempFileURL(name: "b.swift")
 
         manager.openTab(url: url1)
-        manager.splitRight()
+        manager.splitRight(duplicateActiveTab: false)
         manager.splitPane?.openTab(url: url2)
 
         manager.focusedSide = .leading
@@ -424,7 +436,7 @@ struct SplitEditorTests {
         let url2 = tempFileURL(name: "b.swift", content: "original2")
 
         manager.openTab(url: url1)
-        manager.splitRight()
+        manager.splitRight(duplicateActiveTab: false)
         manager.splitPane?.openTab(url: url2)
 
         manager.focusedSide = .trailing
@@ -446,7 +458,7 @@ struct SplitEditorTests {
         let url2 = tempFileURL(name: "b.swift", content: "original2")
 
         manager.openTab(url: url1)
-        manager.splitRight()
+        manager.splitRight(duplicateActiveTab: false)
         manager.splitPane?.openTab(url: url2)
         manager.splitPane?.updateContent("modified2")
 
@@ -467,7 +479,7 @@ struct SplitEditorTests {
         let url2 = tempFileURL(name: "b.swift")
 
         manager.openTab(url: url1)
-        manager.splitRight()
+        manager.splitRight(duplicateActiveTab: false)
         manager.splitPane?.openTab(url: url2)
 
         manager.focusedSide = .trailing
@@ -486,7 +498,7 @@ struct SplitEditorTests {
 
         manager.openTab(url: url1)
         manager.updateContent("modified1")
-        manager.splitRight()
+        manager.splitRight(duplicateActiveTab: false)
         manager.splitPane?.openTab(url: url2)
         manager.splitPane?.updateContent("modified2")
 
@@ -545,7 +557,7 @@ struct SplitEditorTests {
         let url = tempFileURL()
 
         manager.openTab(url: url)
-        manager.splitRight()
+        manager.splitRight(duplicateActiveTab: false)
         manager.splitPane?.openTab(url: url) // same file in both panes
 
         manager.focusedSide = .leading

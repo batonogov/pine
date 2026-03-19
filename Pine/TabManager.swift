@@ -244,20 +244,19 @@ final class TabManager: TabContainer {
     /// Whether split view is active.
     var isSplitActive: Bool { splitPane != nil }
 
-    /// Creates a split pane. If `moveActiveTab` is true, moves the current
-    /// active tab to the new pane (like VS Code's "Split Editor Right").
-    func splitRight(moveActiveTab: Bool = false) {
+    /// Creates a split pane. By default, duplicates the active tab into the
+    /// new pane (like VS Code's "Split Editor Right"). If `duplicateActiveTab`
+    /// is false, creates an empty pane (used by session restore and openInSplit).
+    func splitRight(duplicateActiveTab: Bool = true) {
         guard splitPane == nil else { return }
         let pane = SplitPane()
 
-        if moveActiveTab, let tab = activeTab {
-            pane.tabs.append(tab)
-            pane.activeTabID = tab.id
-            closeTab(id: tab.id)
+        if duplicateActiveTab, let tab = activeTab {
+            pane.openTab(url: tab.url)
         }
 
         splitPane = pane
-        if moveActiveTab {
+        if duplicateActiveTab && pane.activeTab != nil {
             focusedSide = .trailing
         }
     }
@@ -304,7 +303,7 @@ final class TabManager: TabContainer {
     /// Opens a file in the split pane (trailing side), creating split if needed.
     func openInSplit(url: URL) {
         if splitPane == nil {
-            splitRight()
+            splitRight(duplicateActiveTab: false)
         }
         splitPane?.openTab(url: url)
         focusedSide = .trailing

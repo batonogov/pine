@@ -249,7 +249,7 @@ struct ContentView: View {
 
             // Restore split pane state
             if let splitURLs = session.splitExistingFileURLs, !splitURLs.isEmpty {
-                tabManager.splitRight()
+                tabManager.splitRight(duplicateActiveTab: false)
                 if let pane = tabManager.splitPane {
                     let splitDisabledSet = Set(session.splitHighlightingDisabledPaths ?? [])
                     for url in splitURLs {
