@@ -86,6 +86,7 @@ Pine is a minimal native macOS code editor built with SwiftUI + AppKit. Targets 
 - Pipeline: build → code sign → notarize → create DMG → GitHub Release → update Homebrew Tap
 - Secrets: `CERTIFICATE_P12`, `CERTIFICATE_PASSWORD`, `APPLE_ID`, `APPLE_ID_PASSWORD`, `APPLE_TEAM_ID`, `TAP_GITHUB_TOKEN`, `RELEASE_PLEASE_TOKEN`
 - Homebrew: `brew tap batonogov/tap && brew install --cask pine-editor`
+- **Action pinning** — all third-party GitHub Actions are pinned by full commit SHA (not mutable tags) for supply-chain safety. To update: find the new version's commit SHA on GitHub (Tags → verify the commit), replace the SHA in the workflow file, and keep the `# vX` comment in sync
 
 ## Conventions
 

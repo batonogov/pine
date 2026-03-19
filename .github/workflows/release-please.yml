@@ -1,3 +1,6 @@
+# NOTE: All third-party actions are pinned by full commit SHA for supply-chain safety.
+# To update an action: find the new version's commit SHA on GitHub (Tags → verify commit),
+# replace the SHA, and keep the "# vX" comment in sync.
 name: Release Please
 
 on:
