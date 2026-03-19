@@ -429,6 +429,12 @@ struct CodeEditorView: NSViewRepresentable {
         /// Последний размер шрифта — для обнаружения изменений (Cmd+Plus/Minus)
         var lastFontSize: CGFloat = 0
 
+        /// Flag: text was just changed by the user (NSTextView delegate).
+        /// Prevents updateContentIfNeeded from overwriting the text
+        /// (and resetting the cursor) on the SwiftUI re-render that follows.
+        /// Internal access for testability (`@testable import`).
+        var didChangeFromTextView = false
+
         /// Отложенная задача подсветки (дебаунсинг)
         private var highlightWorkItem: DispatchWorkItem?
         /// Задержка дебаунсинга
@@ -486,7 +492,21 @@ struct CodeEditorView: NSViewRepresentable {
                   let textView = sv.documentView as? NSTextView else { return }
 
             let languageChanged = lastLanguage != language || lastFileName != fileName
+
+            // If the text change originated from the user typing (textDidChange),
+            // the NSTextView already has the correct text and textDidChange already
+            // scheduled its own debounced highlighting. We only need to sync the
+            // version counter — overwriting the string would reset the cursor
+            // position (the root cause of issue #250).
+            let fromTextView = didChangeFromTextView
+            didChangeFromTextView = false
+
             let textChanged = parent.contentVersion != lastContentVersion
+
+            if fromTextView && !languageChanged {
+                lastContentVersion = parent.contentVersion
+                return
+            }
 
             guard textChanged || languageChanged else { return }
             lastContentVersion = parent.contentVersion
@@ -553,9 +573,10 @@ struct CodeEditorView: NSViewRepresentable {
 
         func textDidChange(_ notification: Notification) {
             guard let textView = notification.object as? NSTextView else { return }
+            // Mark that this change originated from the user typing,
+            // so the upcoming updateNSView won't overwrite the text and reset the cursor.
+            didChangeFromTextView = true
             parent.text = textView.string
-            // Sync version so the next updateNSView doesn't re-trigger updateContentIfNeeded
-            lastContentVersion = parent.contentVersion
 
             // Подсветка синтаксиса сбросит backgroundColor —
             // считаем bracket highlight невалидным
