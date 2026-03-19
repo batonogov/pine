@@ -513,12 +513,15 @@ final class SyntaxHighlighter {
 
     /// Сбрасывает атрибуты на базовый стиль (без грамматики).
     private func resetAttributes(textStorage: NSTextStorage, range: NSRange, font: NSFont) {
+        let undoManager = textStorage.layoutManagers.first?.firstTextView?.undoManager
+        undoManager?.disableUndoRegistration()
         textStorage.beginEditing()
         textStorage.addAttributes([
             .foregroundColor: NSColor.textColor,
             .font: font
         ], range: range)
         textStorage.endEditing()
+        undoManager?.enableUndoRegistration()
     }
 
     /// Применяет правила подсветки.
@@ -537,6 +540,8 @@ final class SyntaxHighlighter {
         let source = textStorage.string
         let fullRange = NSRange(location: 0, length: textStorage.length)
 
+        let undoManager = textStorage.layoutManagers.first?.firstTextView?.undoManager
+        undoManager?.disableUndoRegistration()
         textStorage.beginEditing()
         textStorage.addAttributes([
             .foregroundColor: NSColor.textColor,
@@ -573,5 +578,6 @@ final class SyntaxHighlighter {
         }
 
         textStorage.endEditing()
+        undoManager?.enableUndoRegistration()
     }
 }

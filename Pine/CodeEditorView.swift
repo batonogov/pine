@@ -641,6 +641,8 @@ struct CodeEditorView: NSViewRepresentable {
                   let textView = sv.documentView as? NSTextView,
                   let storage = textView.textStorage else { return }
 
+            let undoManager = textView.undoManager
+            undoManager?.disableUndoRegistration()
             storage.beginEditing()
 
             // Снимаем предыдущую подсветку
@@ -691,6 +693,7 @@ struct CodeEditorView: NSViewRepresentable {
             }
 
             storage.endEditing()
+            undoManager?.enableUndoRegistration()
         }
 
         /// Searches for a bracket match within the given range and applies highlight attributes.
