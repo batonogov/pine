@@ -24,6 +24,7 @@ struct ContentView: View {
     @State private var lineDiffs: [GitLineDiff] = []
     @State private var didRestoreSession = false
     @State private var goToLineOffset: Int?
+    @State private var isSearchPresented = false
     @AppStorage("minimapVisible") private var isMinimapVisible = true
 
     private var activeTab: EditorTab? { tabManager.activeTab }
@@ -40,7 +41,7 @@ struct ContentView: View {
             )
             .searchable(
                 text: Bindable(projectManager.searchProvider).query,
-                placement: .sidebar,
+                placement: .toolbar,
                 prompt: Strings.searchPlaceholder
             )
             .accessibilityIdentifier(AccessibilityID.sidebar)
@@ -49,14 +50,6 @@ struct ContentView: View {
                 projectManager.searchProvider.search(in: rootURL)
             }
             .toolbar {
-                ToolbarItem {
-                    Button {
-                        focusSidebarSearchField()
-                    } label: {
-                        Image(systemName: "magnifyingglass")
-                    }
-                    .help(Strings.searchPlaceholder)
-                }
                 ToolbarItem {
                     Button {
                         if let url = registry.openProjectViaPanel() {
@@ -175,9 +168,7 @@ struct ContentView: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: .showProjectSearch)) { _ in
             columnVisibility = .all
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                focusSidebarSearchField()
-            }
+            isSearchPresented = true
         }
         .onChange(of: tabManager.pendingGoToLine) { _, newLine in
             guard let line = newLine, let tab = tabManager.activeTab else { return }
@@ -189,26 +180,6 @@ struct ContentView: View {
     /// Branch subtitle as a plain String to avoid generating a localization key.
     private var branchSubtitle: String {
         workspace.gitProvider.isGitRepository ? "⎇ \(workspace.gitProvider.currentBranch) ▾" : ""
-    }
-
-    // MARK: - Search focus
-
-    /// Finds the NSSearchField in the key window and makes it first responder.
-    private func focusSidebarSearchField() {
-        guard let window = NSApp.keyWindow else { return }
-        if let searchField = Self.findSearchField(in: window.contentView) {
-            window.makeFirstResponder(searchField)
-        }
-    }
-
-    /// Recursively walks the view hierarchy to find an NSSearchField.
-    private static func findSearchField(in view: NSView?) -> NSSearchField? {
-        guard let view else { return nil }
-        if let searchField = view as? NSSearchField { return searchField }
-        for subview in view.subviews {
-            if let found = findSearchField(in: subview) { return found }
-        }
-        return nil
     }
 
     // MARK: - Session restoration

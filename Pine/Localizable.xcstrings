@@ -3877,6 +3877,24 @@
         }
       }
     },
+    "search.close" : {
+      "comment" : "Tooltip for close button in project search panel.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Close Search"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Закрыть поиск"
+          }
+        }
+      }
+    },
     "search.caseSensitive" : {
       "comment" : "Tooltip for case-sensitive toggle in project search.",
       "extractionState" : "manual",
