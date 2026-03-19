@@ -337,20 +337,29 @@ struct ContentView: View {
     /// Refreshes cached line diffs for the active tab in the primary pane.
     /// Runs git diff on a background thread to avoid blocking the UI.
     private func refreshLineDiffs() {
-        refreshLineDiffsForTab(tabManager.activeTab) { diffs in
-            lineDiffs = diffs
-        }
+        refreshLineDiffsForTab(
+            tabManager.activeTab,
+            isStillActive: { url in tabManager.activeTab?.url == url },
+            completion: { diffs in lineDiffs = diffs }
+        )
     }
 
     /// Refreshes cached line diffs for the active tab in the split pane.
     private func refreshSplitLineDiffs() {
-        refreshLineDiffsForTab(tabManager.splitPane?.activeTab) { diffs in
-            splitLineDiffs = diffs
-        }
+        refreshLineDiffsForTab(
+            tabManager.splitPane?.activeTab,
+            isStillActive: { url in tabManager.splitPane?.activeTab?.url == url },
+            completion: { diffs in splitLineDiffs = diffs }
+        )
     }
 
     /// Shared implementation for refreshing git line diffs for a given tab.
-    private func refreshLineDiffsForTab(_ tab: EditorTab?, completion: @escaping ([GitLineDiff]) -> Void) {
+    /// `isStillActive` is checked after the async git call to discard stale results.
+    private func refreshLineDiffsForTab(
+        _ tab: EditorTab?,
+        isStillActive: @escaping (URL) -> Bool,
+        completion: @escaping ([GitLineDiff]) -> Void
+    ) {
         guard let tab else {
             completion([])
             return
@@ -378,6 +387,7 @@ struct ContentView: View {
                 diffs = []
             }
             await MainActor.run {
+                guard isStillActive(fileURL) else { return }
                 completion(diffs)
             }
         }
@@ -513,16 +523,19 @@ struct ContentView: View {
                 leadingPane
                     .frame(minWidth: 200)
                     .accessibilityIdentifier(AccessibilityID.editorPaneLeading)
-                    .onTapGesture { tabManager.focusedSide = .leading }
+                    .simultaneousGesture(TapGesture().onEnded {
+                        tabManager.focusedSide = .leading
+                    })
 
                 trailingPane
                     .frame(minWidth: 200)
                     .accessibilityIdentifier(AccessibilityID.editorPaneTrailing)
-                    .onTapGesture { tabManager.focusedSide = .trailing }
+                    .simultaneousGesture(TapGesture().onEnded {
+                        tabManager.focusedSide = .trailing
+                    })
             }
         } else {
             leadingPane
-                .onTapGesture { tabManager.focusedSide = .leading }
         }
     }
 
@@ -533,9 +546,9 @@ struct ContentView: View {
             activeTab: activeTab,
             activeTabID: tabManager.activeTabID,
             isFocused: tabManager.isSplitActive && tabManager.focusedSide == .leading,
-            lineDiffs: tabManager.focusedSide == .leading ? lineDiffs : [],
+            lineDiffs: lineDiffs,
             isMinimapVisible: isMinimapVisible,
-            goToLineOffset: tabManager.focusedSide == .leading ? goToLineOffset : nil,
+            goToLineOffset: goToLineOffset,
             onSelectTab: { id in
                 tabManager.activeTabID = id
                 tabManager.focusedSide = .leading
@@ -548,7 +561,10 @@ struct ContentView: View {
             onStateChange: { cursor, scroll in
                 tabManager.updateEditorState(cursorPosition: cursor, scrollOffset: scroll)
             },
-            onReorder: { projectManager.saveSession() },
+            onReorder: { newTabs in
+                tabManager.tabs = newTabs
+                projectManager.saveSession()
+            },
             onTogglePreview: { tabManager.togglePreviewMode() },
             onSplitRight: tabManager.isSplitActive ? nil : {
                 tabManager.splitRight()
@@ -570,7 +586,7 @@ struct ContentView: View {
                 activeTab: splitPane.activeTab,
                 activeTabID: splitPane.activeTabID,
                 isFocused: tabManager.focusedSide == .trailing,
-                lineDiffs: tabManager.focusedSide == .trailing ? splitLineDiffs : [],
+                lineDiffs: splitLineDiffs,
                 isMinimapVisible: isMinimapVisible,
                 goToLineOffset: nil,
                 onSelectTab: { id in
@@ -585,7 +601,10 @@ struct ContentView: View {
                 onStateChange: { cursor, scroll in
                     splitPane.updateEditorState(cursorPosition: cursor, scrollOffset: scroll)
                 },
-                onReorder: { projectManager.saveSession() },
+                onReorder: { newTabs in
+                    splitPane.tabs = newTabs
+                    projectManager.saveSession()
+                },
                 onTogglePreview: { splitPane.togglePreviewMode() },
                 onSplitRight: nil,
                 onOpenInSplit: nil

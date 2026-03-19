@@ -21,7 +21,7 @@ struct EditorPaneView: View {
     let onCloseTab: (EditorTab) -> Void
     let onContentChange: (String) -> Void
     let onStateChange: (Int, CGFloat) -> Void
-    let onReorder: () -> Void
+    let onReorder: ([EditorTab]) -> Void
     let onTogglePreview: () -> Void
     let onSplitRight: (() -> Void)?
     let onOpenInSplit: ((URL) -> Void)?

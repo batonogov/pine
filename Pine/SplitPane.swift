@@ -8,7 +8,7 @@
 import SwiftUI
 
 /// Identifies which side of a split editor is focused.
-enum SplitSide: Codable {
+enum SplitSide {
     case leading
     case trailing
 }

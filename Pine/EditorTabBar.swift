@@ -14,8 +14,8 @@ struct EditorTabBar: View {
     var activeTabID: UUID?
     var onSelectTab: (UUID) -> Void
     var onCloseTab: (EditorTab) -> Void
-    /// Called after tabs are reordered via drag-and-drop.
-    var onReorder: (() -> Void)?
+    /// Called after tabs are reordered via drag-and-drop, with the new tab order.
+    var onReorder: (([EditorTab]) -> Void)?
     /// Whether the active tab is a Markdown file.
     var isMarkdownFile: Bool = false
     /// Current preview mode of the active tab.
@@ -122,7 +122,12 @@ extension EditorTabBar {
         self.activeTabID = tabManager.activeTabID
         self.onSelectTab = { tabManager.activeTabID = $0 }
         self.onCloseTab = onCloseTab
-        self.onReorder = onReorder
+        self.onReorder = onReorder.map { callback in
+            { newTabs in
+                tabManager.tabs = newTabs
+                callback()
+            }
+        }
         self.isMarkdownFile = isMarkdownFile
         self.previewMode = previewMode
         self.onTogglePreview = onTogglePreview
@@ -136,11 +141,11 @@ struct TabDropDelegate: DropDelegate {
     @Binding var tabs: [EditorTab]
     let targetTabID: UUID
     @Binding var draggingTabID: UUID?
-    var onReorder: (() -> Void)?
+    var onReorder: (([EditorTab]) -> Void)?
 
     func performDrop(info: DropInfo) -> Bool {
         draggingTabID = nil
-        onReorder?()
+        onReorder?(tabs)
         return true
     }
 

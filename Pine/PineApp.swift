@@ -420,31 +420,29 @@ class CloseDelegate: NSObject, NSWindowDelegate {
                     if let idx = tm.splitPane?.tabs.firstIndex(where: { $0.id == tab.id }) {
                         guard tm.splitPane?.saveTab(at: idx) == true else { return }
                     }
-                    tm.splitPane?.closeTab(id: tab.id)
-                    tm.autoCloseSplitIfEmpty()
                 } else {
                     if let idx = tm.tabs.firstIndex(where: { $0.id == tab.id }) {
                         guard tm.saveTab(at: idx) else { return }
                     }
-                    tm.closeTab(id: tab.id)
                 }
+                closeTabOnSide(tm: tm, tabID: tab.id, isTrailing: isTrailing)
             case .alertSecondButtonReturn:
-                if isTrailing {
-                    tm.splitPane?.closeTab(id: tab.id)
-                    tm.autoCloseSplitIfEmpty()
-                } else {
-                    tm.closeTab(id: tab.id)
-                }
+                closeTabOnSide(tm: tm, tabID: tab.id, isTrailing: isTrailing)
             default:
                 break
             }
         } else {
-            if isTrailing {
-                tm.splitPane?.closeTab(id: tab.id)
-                tm.autoCloseSplitIfEmpty()
-            } else {
-                tm.closeTab(id: tab.id)
-            }
+            closeTabOnSide(tm: tm, tabID: tab.id, isTrailing: isTrailing)
+        }
+    }
+
+    /// Closes a tab on the given side and auto-closes split if needed.
+    private func closeTabOnSide(tm: TabManager, tabID: UUID, isTrailing: Bool) {
+        if isTrailing {
+            tm.splitPane?.closeTab(id: tabID)
+            tm.autoCloseSplitIfEmpty()
+        } else {
+            tm.closeTab(id: tabID)
         }
     }
 
