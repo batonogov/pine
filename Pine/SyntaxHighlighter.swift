@@ -329,6 +329,10 @@ final class SyntaxHighlighter {
             visibleCharRange, in: source, totalLength: totalLength, lines: viewportContextLines
         )
 
+        // NB: applyRules uses fullRange for multiline rules (comment/string blocks),
+        // so they scan the entire text even in viewport mode. This is intentional —
+        // a block comment starting above the viewport must color the visible portion.
+        // Typically only 2-3 simple multiline regexes per grammar, so the cost is low.
         applyRules(rules, to: textStorage, repaintRange: expanded, searchRange: expanded, font: font)
 
         // Build multiline match cache (needed for subsequent highlightEdited calls)

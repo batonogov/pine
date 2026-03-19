@@ -446,15 +446,6 @@ struct CodeEditorView: NSViewRepresentable {
             highlightWorkItem = nil
         }
 
-        /// Текущий файл использует viewport-based подсветку?
-        private var isViewportHighlighting: Bool {
-            guard let sv = scrollView,
-                  let textView = sv.documentView as? NSTextView,
-                  let storage = textView.textStorage else { return false }
-            return storage.length > CodeEditorView.viewportHighlightThreshold
-                && !parent.syntaxHighlightingDisabled
-        }
-
         /// Запускает viewport-based подсветку видимой области (deferred на следующий run loop).
         /// Сбрасывает `highlightedCharRange` и вызывает `applyViewportHighlighting`.
         private func scheduleViewportHighlighting(textView: NSTextView) {
