@@ -15,9 +15,15 @@ struct EditorTab: Identifiable, Hashable {
 
     let id: UUID
     var url: URL
-    var content: String
+    var content: String {
+        didSet { contentVersion &+= 1 }
+    }
     var savedContent: String
     var kind: TabKind
+
+    /// Monotonic counter incremented on every content mutation.
+    /// Used for O(1) change detection instead of O(n) string comparison.
+    private(set) var contentVersion: UInt64 = 0
 
     // Per-tab editor state — preserved across tab switches.
     var cursorPosition: Int = 0

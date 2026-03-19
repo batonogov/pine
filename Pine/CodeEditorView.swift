@@ -197,6 +197,8 @@ final class EditorContainerView: NSView {
 
 struct CodeEditorView: NSViewRepresentable {
     @Binding var text: String
+    /// Monotonic version counter from EditorTab — O(1) change detection.
+    var contentVersion: UInt64 = 0
     var language: String
     var fileName: String?
     var lineDiffs: [GitLineDiff] = []
@@ -213,6 +215,14 @@ struct CodeEditorView: NSViewRepresentable {
 
     /// Пользовательский ключ атрибута для подсветки парных скобок.
     static let bracketHighlightKey = NSAttributedString.Key("PineBracketHighlight")
+
+    /// Порог (в символах) для переключения на viewport-based подсветку.
+    static let viewportHighlightThreshold = 100_000
+
+    /// Файл достаточно большой для viewport-based подсветки?
+    private var useViewportHighlighting: Bool {
+        (text as NSString).length > Self.viewportHighlightThreshold && !syntaxHighlightingDisabled
+    }
 
     var fontSize: CGFloat = FontSizeSettings.shared.fontSize
 
@@ -303,9 +313,27 @@ struct CodeEditorView: NSViewRepresentable {
         context.coordinator.lineNumberView = lineNumberView
         context.coordinator.minimapView = minimapView
         context.coordinator.lastFontSize = editorFont.pointSize
+        context.coordinator.syncContentVersion()
 
         textView.string = text
-        applyHighlighting(to: textView)
+        if useViewportHighlighting {
+            // Layout not yet complete — highlight first screenful synchronously
+            // to avoid a flash of unstyled text, then refine after layout.
+            let initialRange = Self.estimateInitialRange(
+                text: text, scrollOffset: initialScrollOffset,
+                cursorPosition: initialCursorPosition, fontSize: fontSize
+            )
+            SyntaxHighlighter.shared.highlightVisibleRange(
+                textStorage: textStorage,
+                visibleCharRange: initialRange,
+                language: language,
+                fileName: fileName,
+                font: editorFont
+            )
+            context.coordinator.highlightedCharRange = initialRange
+        } else {
+            applyHighlighting(to: textView)
+        }
 
         // Restore cursor and scroll from saved per-tab state.
         // initialCursorPosition is stored as NSRange.location (UTF-16 offset),
@@ -406,6 +434,14 @@ struct CodeEditorView: NSViewRepresentable {
         /// Задержка дебаунсинга
         private let highlightDelay: TimeInterval = 0.05
 
+        /// Диапазон символов, уже подсвеченных viewport-based подсветкой.
+        /// Internal access — записывается из `applyViewportHighlighting` и `highlightOnScrollIfNeeded`.
+        var highlightedCharRange: NSRange?
+        /// Дебаунс для подсветки при скролле.
+        private var scrollHighlightWorkItem: DispatchWorkItem?
+        /// Задержка дебаунсинга скролла (~1 кадр при 60fps)
+        private let scrollHighlightDelay: TimeInterval = 0.016
+
         init(parent: CodeEditorView) {
             self.parent = parent
         }
@@ -421,17 +457,39 @@ struct CodeEditorView: NSViewRepresentable {
             highlightWorkItem = nil
         }
 
+        /// Запускает viewport-based подсветку видимой области (deferred на следующий run loop).
+        /// Сбрасывает `highlightedCharRange` и вызывает `applyViewportHighlighting`.
+        private func scheduleViewportHighlighting(textView: NSTextView) {
+            highlightedCharRange = nil
+            DispatchQueue.main.async { [weak self] in
+                guard let self, let sv = self.scrollView else { return }
+                self.parent.applyViewportHighlighting(
+                    textView: textView, scrollView: sv, coordinator: self
+                )
+            }
+        }
+
         /// Обновляет текст и подсветку при смене файла или языка.
         /// Вызывается из updateNSView. Выделен в отдельный метод
         /// для возможности прямого тестирования.
+        /// Последняя версия контента — для O(1) обнаружения изменений
+        /// вместо O(n) сравнения строк.
+        private(set) var lastContentVersion: UInt64 = 0
+
+        /// Синхронизирует версию контента (вызывается из makeNSView).
+        func syncContentVersion() {
+            lastContentVersion = parent.contentVersion
+        }
+
         func updateContentIfNeeded(text: String, language: String, fileName: String?, font: NSFont) {
             guard let sv = scrollView,
                   let textView = sv.documentView as? NSTextView else { return }
 
             let languageChanged = lastLanguage != language || lastFileName != fileName
-            let textChanged = textView.string != text
+            let textChanged = parent.contentVersion != lastContentVersion
 
             guard textChanged || languageChanged else { return }
+            lastContentVersion = parent.contentVersion
 
             cancelPendingHighlight()
             if let storage = textView.textStorage {
@@ -443,12 +501,16 @@ struct CodeEditorView: NSViewRepresentable {
             }
 
             if !parent.syntaxHighlightingDisabled, let storage = textView.textStorage {
-                SyntaxHighlighter.shared.highlight(
-                    textStorage: storage,
-                    language: language,
-                    fileName: fileName,
-                    font: font
-                )
+                if storage.length > CodeEditorView.viewportHighlightThreshold {
+                    scheduleViewportHighlighting(textView: textView)
+                } else {
+                    SyntaxHighlighter.shared.highlight(
+                        textStorage: storage,
+                        language: language,
+                        fileName: fileName,
+                        font: font
+                    )
+                }
             }
 
             lastLanguage = language
@@ -472,12 +534,16 @@ struct CodeEditorView: NSViewRepresentable {
 
             // Re-highlight with new font
             if !parent.syntaxHighlightingDisabled, let storage = textView.textStorage {
-                SyntaxHighlighter.shared.highlight(
-                    textStorage: storage,
-                    language: parent.language,
-                    fileName: parent.fileName,
-                    font: font
-                )
+                if storage.length > CodeEditorView.viewportHighlightThreshold {
+                    scheduleViewportHighlighting(textView: textView)
+                } else {
+                    SyntaxHighlighter.shared.highlight(
+                        textStorage: storage,
+                        language: parent.language,
+                        fileName: parent.fileName,
+                        font: font
+                    )
+                }
             }
 
             // Update gutter font
@@ -488,6 +554,8 @@ struct CodeEditorView: NSViewRepresentable {
         func textDidChange(_ notification: Notification) {
             guard let textView = notification.object as? NSTextView else { return }
             parent.text = textView.string
+            // Sync version so the next updateNSView doesn't re-trigger updateContentIfNeeded
+            lastContentVersion = parent.contentVersion
 
             // Подсветка синтаксиса сбросит backgroundColor —
             // считаем bracket highlight невалидным
@@ -509,12 +577,17 @@ struct CodeEditorView: NSViewRepresentable {
             // Skip highlighting for large files opened without syntax highlighting
             guard !parent.syntaxHighlightingDisabled else { return }
 
+            // Инвалидируем highlightedCharRange — вставка/удаление текста
+            // сдвигает символьные смещения, старый диапазон некорректен
+            highlightedCharRange = nil
+
             // Дебаунсинг: откладываем подсветку до паузы в вводе.
             // Не накапливаем диапазоны — каждый textDidChange работает
             // в своих координатах; union между версиями некорректен.
             // При быстром вводе последовательные правки обычно смежны,
             // и 20-строчный контекст в highlightEdited покрывает их.
             highlightWorkItem?.cancel()
+            let isLargeFile = (textView.string as NSString).length > CodeEditorView.viewportHighlightThreshold
             let workItem = DispatchWorkItem { [weak self] in
                 guard let self else { return }
                 guard let sv = self.scrollView,
@@ -529,6 +602,9 @@ struct CodeEditorView: NSViewRepresentable {
                         fileName: self.parent.fileName,
                         font: self.parent.editorFont
                     )
+                } else if isLargeFile {
+                    // Большой файл — viewport-based подсветка вместо полной
+                    self.scheduleViewportHighlighting(textView: tv)
                 } else {
                     // Диапазон не определён или невалиден — полная подсветка
                     SyntaxHighlighter.shared.highlight(
@@ -653,6 +729,59 @@ struct CodeEditorView: NSViewRepresentable {
 
         @objc func scrollViewDidScroll(_ notification: Notification) {
             reportStateChange()
+            highlightOnScrollIfNeeded()
+        }
+
+        /// Подсвечивает видимую область при скролле (для больших файлов).
+        private func highlightOnScrollIfNeeded() {
+            guard let sv = scrollView,
+                  let textView = sv.documentView as? NSTextView,
+                  let storage = textView.textStorage,
+                  let layoutManager = textView.layoutManager,
+                  let textContainer = textView.textContainer else { return }
+
+            let textLength = storage.length
+            guard textLength > CodeEditorView.viewportHighlightThreshold,
+                  !parent.syntaxHighlightingDisabled else { return }
+
+            let visibleRect = sv.contentView.bounds
+            let glyphRange = layoutManager.glyphRange(forBoundingRect: visibleRect, in: textContainer)
+            let charRange = layoutManager.characterRange(
+                forGlyphRange: glyphRange, actualGlyphRange: nil
+            )
+
+            // Skip if visible range is already within highlighted range
+            if let highlighted = highlightedCharRange,
+               highlighted.location <= charRange.location,
+               NSMaxRange(highlighted) >= NSMaxRange(charRange) {
+                return
+            }
+
+            // Debounce 16ms (1 frame)
+            scrollHighlightWorkItem?.cancel()
+            let workItem = DispatchWorkItem { [weak self] in
+                guard let self,
+                      let storage = textView.textStorage else { return }
+
+                SyntaxHighlighter.shared.highlightVisibleRange(
+                    textStorage: storage,
+                    visibleCharRange: charRange,
+                    language: self.parent.language,
+                    fileName: self.parent.fileName,
+                    font: self.parent.editorFont
+                )
+
+                // Union new highlighted range with existing
+                if let existing = self.highlightedCharRange {
+                    let newStart = min(existing.location, charRange.location)
+                    let newEnd = max(NSMaxRange(existing), NSMaxRange(charRange))
+                    self.highlightedCharRange = NSRange(location: newStart, length: newEnd - newStart)
+                } else {
+                    self.highlightedCharRange = charRange
+                }
+            }
+            scrollHighlightWorkItem = workItem
+            DispatchQueue.main.asyncAfter(deadline: .now() + scrollHighlightDelay, execute: workItem)
         }
 
         @objc func handleToggleComment() {
@@ -669,6 +798,89 @@ struct CodeEditorView: NSViewRepresentable {
             let scroll = sv.contentView.bounds.origin.y
             parent.onStateChange?(cursor, scroll)
         }
+    }
+
+    /// Estimates the initial visible char range before layout is complete.
+    /// Uses cursor position or scroll offset to guess which part of the file is visible.
+    /// Falls back to the first ~200 lines if no saved state.
+    private static let estimatedScreenLines = 200
+
+    private static func estimateInitialRange(
+        text: String,
+        scrollOffset: CGFloat,
+        cursorPosition: Int,
+        fontSize: CGFloat
+    ) -> NSRange {
+        let source = text as NSString
+        let totalLength = source.length
+        guard totalLength > 0 else { return NSRange(location: 0, length: 0) }
+
+        // If restoring scroll position, estimate start from line height
+        let startChar: Int
+        if scrollOffset > 0 {
+            let lineHeight = fontSize * 1.2
+            let estimatedLine = Int(scrollOffset / lineHeight)
+            startChar = charOffsetForLine(estimatedLine, in: source, totalLength: totalLength)
+        } else if cursorPosition > 0 && cursorPosition < totalLength {
+            // Center around cursor
+            let linesBefore = estimatedScreenLines / 2
+            let cursorLine = lineNumber(at: cursorPosition, in: source)
+            let startLine = max(0, cursorLine - linesBefore)
+            startChar = charOffsetForLine(startLine, in: source, totalLength: totalLength)
+        } else {
+            startChar = 0
+        }
+
+        // Find end: startChar + estimatedScreenLines lines
+        var linesFound = 0
+        var end = startChar
+        while end < totalLength && linesFound < estimatedScreenLines {
+            if source.character(at: end) == 0x0A { linesFound += 1 }
+            end += 1
+        }
+
+        return NSRange(location: startChar, length: end - startChar)
+    }
+
+    private static func charOffsetForLine(_ line: Int, in source: NSString, totalLength: Int) -> Int {
+        var currentLine = 0
+        for i in 0..<totalLength {
+            if currentLine >= line { return i }
+            if source.character(at: i) == 0x0A { currentLine += 1 }
+        }
+        return totalLength
+    }
+
+    private static func lineNumber(at charOffset: Int, in source: NSString) -> Int {
+        var line = 0
+        for i in 0..<min(charOffset, source.length) where source.character(at: i) == 0x0A {
+            line += 1
+        }
+        return line
+    }
+
+    /// Применяет viewport-based подсветку: подсвечивает только видимую область.
+    private func applyViewportHighlighting(
+        textView: NSTextView,
+        scrollView: NSScrollView,
+        coordinator: Coordinator
+    ) {
+        guard let storage = textView.textStorage,
+              let layoutManager = textView.layoutManager,
+              let textContainer = textView.textContainer else { return }
+
+        let visibleRect = scrollView.contentView.bounds
+        let glyphRange = layoutManager.glyphRange(forBoundingRect: visibleRect, in: textContainer)
+        let charRange = layoutManager.characterRange(forGlyphRange: glyphRange, actualGlyphRange: nil)
+
+        SyntaxHighlighter.shared.highlightVisibleRange(
+            textStorage: storage,
+            visibleCharRange: charRange,
+            language: language,
+            fileName: fileName,
+            font: editorFont
+        )
+        coordinator.highlightedCharRange = charRange
     }
 
     private func applyHighlighting(to textView: NSTextView) {

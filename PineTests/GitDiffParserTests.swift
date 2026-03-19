@@ -9,44 +9,34 @@ import Testing
 
 struct GitDiffParserTests {
 
-    private func makeProvider() -> GitStatusProvider {
-        GitStatusProvider()
-    }
-
     // MARK: - parseHunkNewStart
 
     @Test func parsesSimpleHunkHeader() {
-        let provider = makeProvider()
-        let result = provider.parseHunkNewStart("@@ -1,3 +5,4 @@ func foo()")
+        let result = GitStatusProvider.parseHunkNewStart("@@ -1,3 +5,4 @@ func foo()")
         #expect(result == 5)
     }
 
     @Test func parsesHunkHeaderWithoutCount() {
-        let provider = makeProvider()
-        let result = provider.parseHunkNewStart("@@ -1 +10 @@")
+        let result = GitStatusProvider.parseHunkNewStart("@@ -1 +10 @@")
         #expect(result == 10)
     }
 
     @Test func parsesHunkHeaderLineOne() {
-        let provider = makeProvider()
-        let result = provider.parseHunkNewStart("@@ -0,0 +1,5 @@")
+        let result = GitStatusProvider.parseHunkNewStart("@@ -0,0 +1,5 @@")
         #expect(result == 1)
     }
 
     @Test func returnsNilForInvalidHeader() {
-        let provider = makeProvider()
-        #expect(provider.parseHunkNewStart("not a hunk header") == nil)
+        #expect(GitStatusProvider.parseHunkNewStart("not a hunk header") == nil)
     }
 
     @Test func returnsNilForMissingPlus() {
-        let provider = makeProvider()
-        #expect(provider.parseHunkNewStart("@@ -1,3 @@") == nil)
+        #expect(GitStatusProvider.parseHunkNewStart("@@ -1,3 @@") == nil)
     }
 
     // MARK: - parseDiff
 
     @Test func parsesAddedLines() {
-        let provider = makeProvider()
         let diff = """
         diff --git a/file.swift b/file.swift
         @@ -0,0 +1,3 @@
@@ -54,7 +44,7 @@ struct GitDiffParserTests {
         +line2
         +line3
         """
-        let result = provider.parseDiff(diff)
+        let result = GitStatusProvider.parseDiff(diff)
         #expect(result.count == 3)
         #expect(result[0] == GitLineDiff(line: 1, kind: .added))
         #expect(result[1] == GitLineDiff(line: 2, kind: .added))
@@ -62,33 +52,33 @@ struct GitDiffParserTests {
     }
 
     @Test func parsesDeletedLines() {
-        let provider = makeProvider()
+
         let diff = """
         diff --git a/file.swift b/file.swift
         @@ -1,2 +1,0 @@
         -old line 1
         -old line 2
         """
-        let result = provider.parseDiff(diff)
+        let result = GitStatusProvider.parseDiff(diff)
         #expect(result.count == 1)
         #expect(result[0] == GitLineDiff(line: 1, kind: .deleted))
     }
 
     @Test func parsesModifiedLines() {
-        let provider = makeProvider()
+
         let diff = """
         diff --git a/file.swift b/file.swift
         @@ -5,2 +5,2 @@
         -old line
         +new line
         """
-        let result = provider.parseDiff(diff)
+        let result = GitStatusProvider.parseDiff(diff)
         #expect(result.count == 1)
         #expect(result[0] == GitLineDiff(line: 5, kind: .modified))
     }
 
     @Test func parsesMixedAdditionsAndModifications() {
-        let provider = makeProvider()
+
         let diff = """
         diff --git a/file.swift b/file.swift
         @@ -10,1 +10,3 @@
@@ -97,7 +87,7 @@ struct GitDiffParserTests {
         +added1
         +added2
         """
-        let result = provider.parseDiff(diff)
+        let result = GitStatusProvider.parseDiff(diff)
         #expect(result.count == 3)
         #expect(result[0] == GitLineDiff(line: 10, kind: .modified))
         #expect(result[1] == GitLineDiff(line: 11, kind: .added))
@@ -105,7 +95,7 @@ struct GitDiffParserTests {
     }
 
     @Test func parsesMultipleHunks() {
-        let provider = makeProvider()
+
         let diff = """
         diff --git a/file.swift b/file.swift
         @@ -1,1 +1,1 @@
@@ -115,7 +105,7 @@ struct GitDiffParserTests {
         +added1
         +added2
         """
-        let result = provider.parseDiff(diff)
+        let result = GitStatusProvider.parseDiff(diff)
         #expect(result.count == 3)
         #expect(result[0] == GitLineDiff(line: 1, kind: .modified))
         #expect(result[1] == GitLineDiff(line: 20, kind: .added))
@@ -123,8 +113,8 @@ struct GitDiffParserTests {
     }
 
     @Test func parsesEmptyDiff() {
-        let provider = makeProvider()
-        let result = provider.parseDiff("")
+
+        let result = GitStatusProvider.parseDiff("")
         #expect(result.isEmpty)
     }
 }

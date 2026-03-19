@@ -234,7 +234,7 @@ final class GitStatusProvider {
 
         let result = Self.runGit(["diff", "HEAD", "--unified=0", "--", url.path], at: repoURL)
         guard result.exitCode == 0, !result.output.isEmpty else { return [] }
-        return parseDiff(result.output)
+        return Self.parseDiff(result.output)
     }
 
     // MARK: - Branch Operations
@@ -408,7 +408,7 @@ final class GitStatusProvider {
 
     // MARK: - Diff Parser
 
-    func parseDiff(_ diffOutput: String) -> [GitLineDiff] {
+    nonisolated static func parseDiff(_ diffOutput: String) -> [GitLineDiff] {
         var diffs: [GitLineDiff] = []
         let lines = diffOutput.components(separatedBy: "\n")
 
@@ -479,7 +479,7 @@ final class GitStatusProvider {
         return diffs
     }
 
-    func parseHunkNewStart(_ header: String) -> Int? {
+    nonisolated static func parseHunkNewStart(_ header: String) -> Int? {
         // Format: @@ -old[,count] +new[,count] @@
         guard let plusIndex = header.firstIndex(of: "+") else { return nil }
         let afterPlus = header[header.index(after: plusIndex)...]
@@ -489,7 +489,7 @@ final class GitStatusProvider {
 
     // MARK: - Git Command Runner
 
-    static func runGit(_ arguments: [String], at directory: URL) -> (output: String, errorOutput: String, exitCode: Int32) {
+    nonisolated static func runGit(_ arguments: [String], at directory: URL) -> (output: String, errorOutput: String, exitCode: Int32) {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
         process.arguments = arguments
