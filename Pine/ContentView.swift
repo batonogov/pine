@@ -294,12 +294,41 @@ struct ContentView: View {
     }
 
     /// Refreshes cached line diffs for the active tab.
+    /// Runs git diff on a background thread to avoid blocking the UI.
     private func refreshLineDiffs() {
         guard let tab = tabManager.activeTab else {
             lineDiffs = []
             return
         }
-        lineDiffs = workspace.gitProvider.diffForFile(at: tab.url)
+        let fileURL = tab.url
+        let provider = workspace.gitProvider
+        guard provider.isGitRepository, let repoURL = provider.repositoryURL else {
+            lineDiffs = []
+            return
+        }
+        let filePath = fileURL.path
+        Task.detached {
+            // Run git commands off the main thread
+            let headCheck = GitStatusProvider.runGit(["rev-parse", "HEAD"], at: repoURL)
+            guard headCheck.exitCode == 0 else {
+                await MainActor.run { lineDiffs = [] }
+                return
+            }
+            let result = GitStatusProvider.runGit(
+                ["diff", "HEAD", "--unified=0", "--", filePath], at: repoURL
+            )
+            let diffs: [GitLineDiff]
+            if result.exitCode == 0, !result.output.isEmpty {
+                diffs = GitStatusProvider.parseDiff(result.output)
+            } else {
+                diffs = []
+            }
+            await MainActor.run {
+                if tabManager.activeTab?.url == fileURL {
+                    lineDiffs = diffs
+                }
+            }
+        }
     }
 
     /// Closes a tab with unsaved-changes protection.
