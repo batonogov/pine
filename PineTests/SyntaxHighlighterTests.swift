@@ -267,7 +267,154 @@ struct SyntaxHighlighterTests {
                 "After cache invalidation, full repaint must overwrite marker with comment color")
     }
 
-    // MARK: - 6. Coordinator.updateContentIfNeeded detects language change with identical text
+    // MARK: - 6. highlightVisibleRange only paints the requested region
+
+    @Test func highlightVisibleRangeOnlyPaintsRequestedRegion() {
+        register(langA)
+
+        // 500 lines of "func lineN()" — keyword "func" on each line
+        let lines = (0..<500).map { "func line\($0)()" }
+        let text = lines.joined(separator: "\n")
+        let storage = NSTextStorage(string: text)
+        let hl = SyntaxHighlighter.shared
+        let keywordColor = hl.theme.color(for: "keyword")
+
+        // Highlight only lines 300-310 (far from line 0, beyond 100-line buffer)
+        let rangeStart = lineOffset(300, in: text)
+        let rangeEnd = lineOffset(311, in: text)
+        let visibleRange = NSRange(location: rangeStart, length: rangeEnd - rangeStart)
+
+        hl.highlightVisibleRange(
+            textStorage: storage,
+            visibleCharRange: visibleRange,
+            language: "langa",
+            font: font
+        )
+
+        // Line 305 should have keyword color
+        let line305Offset = lineOffset(305, in: text)
+        #expect(foregroundColor(in: storage, at: line305Offset) == keywordColor,
+                "Line 305 (within visible range) should have keyword color")
+
+        // Line 0 should NOT have keyword color (outside visible range + 100-line buffer)
+        let line0Color = foregroundColor(in: storage, at: 0)
+        #expect(line0Color != keywordColor,
+                "Line 0 (outside visible range + buffer) should not have keyword color")
+    }
+
+    // MARK: - 7. highlightVisibleRange detects multiline tokens
+
+    @Test func highlightVisibleRangeDetectsMultilineTokens() {
+        register(langA)
+
+        // Block comment spanning lines 0-100, then ask to highlight lines 50-60
+        let text = makeLongComment(prefixLines: 0, commentLines: 100)
+        let storage = NSTextStorage(string: text)
+        let hl = SyntaxHighlighter.shared
+        let commentColor = hl.theme.color(for: "comment")
+
+        let rangeStart = lineOffset(50, in: text)
+        let rangeEnd = lineOffset(61, in: text)
+        let visibleRange = NSRange(location: rangeStart, length: rangeEnd - rangeStart)
+
+        hl.highlightVisibleRange(
+            textStorage: storage,
+            visibleCharRange: visibleRange,
+            language: "langa",
+            font: font
+        )
+
+        // Line 55 should be comment-colored (multiline rules scan full text)
+        let line55Offset = lineOffset(55, in: text) + 3
+        #expect(foregroundColor(in: storage, at: line55Offset) == commentColor,
+                "Line 55 inside block comment should have comment color")
+    }
+
+    // MARK: - 8. highlightVisibleRange builds multiline cache
+
+    @Test func highlightVisibleRangeBuildsMultilineCache() {
+        register(langA)
+
+        let text = makeLongComment(prefixLines: 0, commentLines: 40)
+        let storage = NSTextStorage(string: text)
+        let hl = SyntaxHighlighter.shared
+        let commentColor = hl.theme.color(for: "comment")
+
+        // Use highlightVisibleRange instead of full highlight
+        let rangeStart = lineOffset(10, in: text)
+        let rangeEnd = lineOffset(20, in: text)
+        let visibleRange = NSRange(location: rangeStart, length: rangeEnd - rangeStart)
+
+        hl.highlightVisibleRange(
+            textStorage: storage,
+            visibleCharRange: visibleRange,
+            language: "langa",
+            font: font
+        )
+
+        // Now call highlightEdited — it should use incremental path (cache exists)
+        let editPos = lineOffset(15, in: text)
+        hl.highlightEdited(
+            textStorage: storage,
+            editedRange: NSRange(location: editPos, length: 1),
+            language: "langa",
+            font: font
+        )
+
+        // Line 15 should still be comment-colored
+        let checkPos = lineOffset(15, in: text) + 3
+        #expect(foregroundColor(in: storage, at: checkPos) == commentColor,
+                "After highlightEdited following highlightVisibleRange, comment color should persist")
+    }
+
+    // MARK: - 9. highlightVisibleRange with overlapping calls
+
+    @Test func highlightVisibleRangeOverlappingCalls() {
+        register(langA)
+
+        let lines = (0..<200).map { "func line\($0)()" }
+        let text = lines.joined(separator: "\n")
+        let storage = NSTextStorage(string: text)
+        let hl = SyntaxHighlighter.shared
+        let keywordColor = hl.theme.color(for: "keyword")
+
+        // First call: lines 40-60
+        let range1Start = lineOffset(40, in: text)
+        let range1End = lineOffset(61, in: text)
+        hl.highlightVisibleRange(
+            textStorage: storage,
+            visibleCharRange: NSRange(location: range1Start, length: range1End - range1Start),
+            language: "langa",
+            font: font
+        )
+
+        // Second call: lines 50-80 (overlapping)
+        let range2Start = lineOffset(50, in: text)
+        let range2End = lineOffset(81, in: text)
+        hl.highlightVisibleRange(
+            textStorage: storage,
+            visibleCharRange: NSRange(location: range2Start, length: range2End - range2Start),
+            language: "langa",
+            font: font
+        )
+
+        // Overlap zone (line 55) should have correct keyword color
+        let line55Offset = lineOffset(55, in: text)
+        #expect(foregroundColor(in: storage, at: line55Offset) == keywordColor,
+                "Overlap zone should have correct keyword color")
+
+        // Line 45 (only in first call) should still have keyword color
+        let line45Offset = lineOffset(45, in: text)
+        #expect(foregroundColor(in: storage, at: line45Offset) == keywordColor,
+                "Line from first call should retain keyword color")
+
+        // Line 75 (only in second call) should have keyword color
+        let line75Offset = lineOffset(75, in: text)
+        #expect(foregroundColor(in: storage, at: line75Offset) == keywordColor,
+                "Line from second call should have keyword color")
+    }
+
+    // MARK: - 10. Coordinator.updateContentIfNeeded detects language change with identical text
 
     @Test func coordinatorReHighlightsOnLanguageChangeWithSameText() {
         register(langA, langB)

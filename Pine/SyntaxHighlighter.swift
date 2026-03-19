@@ -300,6 +300,47 @@ final class SyntaxHighlighter {
         )
     }
 
+    /// Количество строк контекста для viewport-based подсветки (больше, чем для edit).
+    private let viewportContextLines = 100
+
+    /// Подсветка только видимой области + буфер.
+    /// Используется для больших файлов вместо полного `highlight()`.
+    func highlightVisibleRange(
+        textStorage: NSTextStorage,
+        visibleCharRange: NSRange,
+        language: String,
+        fileName: String? = nil,
+        font: NSFont
+    ) {
+        let totalLength = textStorage.length
+        guard totalLength > 0 else { return }
+
+        guard let (_, rules) = resolveGrammar(language: language, fileName: fileName) else {
+            resetAttributes(textStorage: textStorage,
+                            range: visibleCharRange,
+                            font: font)
+            return
+        }
+
+        let source = textStorage.string as NSString
+
+        // Expand visible range by viewportContextLines
+        let expanded = expandToContext(
+            visibleCharRange, in: source, totalLength: totalLength, lines: viewportContextLines
+        )
+
+        applyRules(rules, to: textStorage, repaintRange: expanded, searchRange: expanded, font: font)
+
+        // Build multiline match cache (needed for subsequent highlightEdited calls)
+        let key = ObjectIdentifier(textStorage)
+        if multilineMatchCache[key] == nil {
+            let fullRange = NSRange(location: 0, length: totalLength)
+            multilineMatchCache[key] = collectMultilineFingerprint(
+                rules: rules, source: textStorage.string, searchRange: fullRange
+            )
+        }
+    }
+
     /// Инкрементальная подсветка: подсвечивает только изменённый регион.
     ///
     /// Стратегия:
@@ -438,13 +479,19 @@ final class SyntaxHighlighter {
         return lengths
     }
 
-    /// Расширяет диапазон до границ строк + contextLines контекста.
-    private func expandToContext(_ range: NSRange, in source: NSString, totalLength: Int) -> NSRange {
+    /// Расширяет диапазон до границ строк + N строк контекста.
+    private func expandToContext(
+        _ range: NSRange,
+        in source: NSString,
+        totalLength: Int,
+        lines: Int? = nil
+    ) -> NSRange {
+        let contextCount = lines ?? contextLines
         let expanded = source.lineRange(for: range)
 
         var linesAdded = 0
         var start = expanded.location
-        while start > 0 && linesAdded < contextLines {
+        while start > 0 && linesAdded < contextCount {
             start -= 1
             if source.character(at: start) == 0x0A { linesAdded += 1 }
         }
@@ -452,7 +499,7 @@ final class SyntaxHighlighter {
 
         linesAdded = 0
         var end = NSMaxRange(expanded)
-        while end < totalLength && linesAdded < contextLines {
+        while end < totalLength && linesAdded < contextCount {
             if source.character(at: end) == 0x0A { linesAdded += 1 }
             end += 1
         }

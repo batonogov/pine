@@ -105,6 +105,14 @@ struct ScrollPerformanceTests {
         #expect(lineNumberView.lineDiffs.isEmpty)
     }
 
+    // MARK: - Viewport highlighting threshold
+
+    @Test("Viewport highlight threshold is 100_000 characters")
+    @MainActor func viewportHighlightThresholdCheck() {
+        // Verify threshold constant value
+        #expect(CodeEditorView.viewportHighlightThreshold == 100_000)
+    }
+
     // MARK: - commentAndStringRanges on substring
 
     @Test("commentAndStringRanges works on substring")
