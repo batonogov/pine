@@ -11,6 +11,9 @@ on:
       - "docs/**"
       - "assets/**"
       - "LICENSE"
+      - ".github/ISSUE_TEMPLATE/**"
+      - ".release-please-manifest.json"
+      - "release-please-config.json"
   push:
     branches: [main]
     paths-ignore:
@@ -18,6 +21,9 @@ on:
       - "docs/**"
       - "assets/**"
       - "LICENSE"
+      - ".github/ISSUE_TEMPLATE/**"
+      - ".release-please-manifest.json"
+      - "release-please-config.json"
 
 permissions:
   contents: read
