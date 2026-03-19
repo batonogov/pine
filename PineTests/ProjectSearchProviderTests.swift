@@ -353,4 +353,68 @@ struct ProjectSearchProviderTests {
         provider.cancel()
         #expect(!provider.isSearching)
     }
+
+    @Test("Toggling case sensitivity re-searches with different results")
+    func toggleCaseSensitivityChangesResults() async throws {
+        let dir = try createTestProject(files: [
+            "test.txt": "Hello\nhello\nHELLO"
+        ])
+        defer { cleanup(dir) }
+
+        // Case-insensitive: should find all 3
+        let allMatches = await ProjectSearchProvider.performSearch(
+            query: "hello",
+            isCaseSensitive: false,
+            rootURL: dir
+        )
+        #expect(allMatches.flatMap(\.matches).count == 3)
+
+        // Case-sensitive: should find only "hello"
+        let exactMatches = await ProjectSearchProvider.performSearch(
+            query: "hello",
+            isCaseSensitive: true,
+            rootURL: dir
+        )
+        #expect(exactMatches.flatMap(\.matches).count == 1)
+        #expect(exactMatches[0].matches[0].lineNumber == 2)
+    }
+
+    @Test("Search clears previous results when query changes")
+    func searchClearsPreviousResults() async throws {
+        let dir = try createTestProject(files: [
+            "test.txt": "alpha beta gamma"
+        ])
+        defer { cleanup(dir) }
+
+        let first = await ProjectSearchProvider.performSearch(
+            query: "alpha",
+            isCaseSensitive: false,
+            rootURL: dir
+        )
+        #expect(first.flatMap(\.matches).count == 1)
+
+        let second = await ProjectSearchProvider.performSearch(
+            query: "notfound",
+            isCaseSensitive: false,
+            rootURL: dir
+        )
+        #expect(second.isEmpty)
+    }
+
+    @Test("performSearch respects maxResults limit")
+    func performSearchRespectsMaxResults() async throws {
+        // Create a file with many matches
+        let lines = (1...1500).map { "match \($0)" }.joined(separator: "\n")
+        let dir = try createTestProject(files: ["big.txt": lines])
+        defer { cleanup(dir) }
+
+        let groups = await ProjectSearchProvider.performSearch(
+            query: "match",
+            isCaseSensitive: false,
+            rootURL: dir
+        )
+        let totalMatches = groups.flatMap(\.matches).count
+
+        #expect(totalMatches <= ProjectSearchProvider.maxResults)
+    }
 }
