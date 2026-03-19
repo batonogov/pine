@@ -515,13 +515,13 @@ final class SyntaxHighlighter {
     private func resetAttributes(textStorage: NSTextStorage, range: NSRange, font: NSFont) {
         let undoManager = textStorage.layoutManagers.first?.firstTextView?.undoManager
         undoManager?.disableUndoRegistration()
+        defer { undoManager?.enableUndoRegistration() }
         textStorage.beginEditing()
         textStorage.addAttributes([
             .foregroundColor: NSColor.textColor,
             .font: font
         ], range: range)
         textStorage.endEditing()
-        undoManager?.enableUndoRegistration()
     }
 
     /// Применяет правила подсветки.
@@ -542,6 +542,7 @@ final class SyntaxHighlighter {
 
         let undoManager = textStorage.layoutManagers.first?.firstTextView?.undoManager
         undoManager?.disableUndoRegistration()
+        defer { undoManager?.enableUndoRegistration() }
         textStorage.beginEditing()
         textStorage.addAttributes([
             .foregroundColor: NSColor.textColor,
@@ -578,6 +579,5 @@ final class SyntaxHighlighter {
         }
 
         textStorage.endEditing()
-        undoManager?.enableUndoRegistration()
     }
 }

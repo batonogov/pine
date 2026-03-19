@@ -418,7 +418,7 @@ struct SyntaxHighlighterTests {
 
     /// Helper: creates a full text system (NSTextStorage → NSLayoutManager → NSTextContainer → NSTextView)
     /// so that `textStorage.layoutManagers.first?.firstTextView?.undoManager` resolves.
-    private func makeTextSystem(string: String) -> (NSTextStorage, NSTextView, UndoManager) {
+    private func makeTextSystem(string: String) -> (NSTextStorage, NSTextView, UndoManager, NSWindow) {
         let storage = NSTextStorage(string: string)
         let layoutManager = NSLayoutManager()
         storage.addLayoutManager(layoutManager)
@@ -432,7 +432,9 @@ struct SyntaxHighlighterTests {
         )
         textView.allowsUndo = true
 
-        // NSTextView needs a window to vend an undoManager
+        // NSTextView needs a window to vend an undoManager.
+        // Return window so callers hold a strong reference and it is not deallocated
+        // before the test finishes.
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 500, height: 500),
             styleMask: [.titled],
@@ -441,14 +443,17 @@ struct SyntaxHighlighterTests {
         )
         window.contentView = textView
 
-        return (storage, textView, textView.undoManager!)
+        guard let undoManager = textView.undoManager else {
+            fatalError("NSTextView has no undoManager — ensure it is attached to a window")
+        }
+        return (storage, textView, undoManager, window)
     }
 
     @Test func highlightDoesNotRegisterUndoActions() {
         register(langA)
 
         let text = "func hello() /* comment */"
-        let (storage, _, undoManager) = makeTextSystem(string: text)
+        let (storage, _, undoManager, retainedWindow) = makeTextSystem(string: text)
 
         #expect(!undoManager.canUndo, "UndoManager should be empty before highlighting")
 
@@ -464,7 +469,7 @@ struct SyntaxHighlighterTests {
         register(langA)
 
         let text = "func hello() /* comment */"
-        let (storage, _, undoManager) = makeTextSystem(string: text)
+        let (storage, _, undoManager, retainedWindow) = makeTextSystem(string: text)
 
         // Full highlight first (populates cache)
         SyntaxHighlighter.shared.highlight(
@@ -491,7 +496,7 @@ struct SyntaxHighlighterTests {
         register(langA)
 
         let text = "func hello() /* comment */"
-        let (storage, _, undoManager) = makeTextSystem(string: text)
+        let (storage, _, undoManager, retainedWindow) = makeTextSystem(string: text)
 
         SyntaxHighlighter.shared.highlightVisibleRange(
             textStorage: storage,
@@ -507,7 +512,7 @@ struct SyntaxHighlighterTests {
     @Test func undoRedoWorksCorrectlyAfterHighlighting() {
         register(langA)
 
-        let (storage, textView, undoManager) = makeTextSystem(string: "func hello()")
+        let (storage, textView, undoManager, retainedWindow) = makeTextSystem(string: "func hello()")
 
         // Type some text via textStorage to register an undoable edit
         textView.insertText("// added\n", replacementRange: NSRange(location: 0, length: 0))
