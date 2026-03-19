@@ -320,7 +320,8 @@ struct CodeEditorView: NSViewRepresentable {
             // Layout not yet complete — highlight first screenful synchronously
             // to avoid a flash of unstyled text, then refine after layout.
             let initialRange = Self.estimateInitialRange(
-                text: text, scrollOffset: initialScrollOffset, cursorPosition: initialCursorPosition
+                text: text, scrollOffset: initialScrollOffset,
+                cursorPosition: initialCursorPosition, fontSize: fontSize
             )
             SyntaxHighlighter.shared.highlightVisibleRange(
                 textStorage: textStorage,
@@ -807,7 +808,8 @@ struct CodeEditorView: NSViewRepresentable {
     private static func estimateInitialRange(
         text: String,
         scrollOffset: CGFloat,
-        cursorPosition: Int
+        cursorPosition: Int,
+        fontSize: CGFloat
     ) -> NSRange {
         let source = text as NSString
         let totalLength = source.length
@@ -816,8 +818,8 @@ struct CodeEditorView: NSViewRepresentable {
         // If restoring scroll position, estimate start from line height
         let startChar: Int
         if scrollOffset > 0 {
-            // Rough estimate: 14pt line height for monospaced font
-            let estimatedLine = Int(scrollOffset / 14)
+            let lineHeight = fontSize * 1.2
+            let estimatedLine = Int(scrollOffset / lineHeight)
             startChar = charOffsetForLine(estimatedLine, in: source, totalLength: totalLength)
         } else if cursorPosition > 0 && cursorPosition < totalLength {
             // Center around cursor
