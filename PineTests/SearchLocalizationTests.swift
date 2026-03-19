@@ -66,11 +66,11 @@ struct SearchLocalizationTests {
         }
 
         for lang in Self.supportedLanguages {
-            let value = translations[lang]
-            #expect(
-                value != nil && !value!.isEmpty,
-                "Key '\(key)' missing translation for '\(lang)'"
-            )
+            guard let value = translations[lang], !value.isEmpty else {
+                Issue.record("Key '\(key)' missing translation for '\(lang)'")
+                continue
+            }
+            #expect(!value.isEmpty)
         }
     }
 
