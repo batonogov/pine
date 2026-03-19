@@ -25,17 +25,6 @@ final class SidebarSearchTests: PineUITestCase {
         try super.tearDownWithError()
     }
 
-    /// Waits for search field to be ready and types a query, then waits for debounce + search.
-    private func typeSearchQuery(_ query: String) {
-        let searchField = app.searchFields.firstMatch
-        XCTAssertTrue(waitForExistence(searchField, timeout: 10),
-                       "Search field should exist")
-        searchField.click()
-        sleep(1) // Wait for focus
-        searchField.typeText(query)
-        sleep(2) // Wait for debounce (300ms) + async search
-    }
-
     // MARK: - Search field exists
 
     func testSearchFieldVisibleInSidebar() throws {
@@ -51,69 +40,37 @@ final class SidebarSearchTests: PineUITestCase {
         )
     }
 
-    // MARK: - Typing in search shows results
+    // MARK: - Search shows results (via env var)
 
     func testSearchShowsResults() throws {
-        launchWithProject(projectURL)
+        launchWithProjectAndSearch(projectURL, query: "greeting")
 
-        let sidebar = app.outlines["sidebar"]
+        // Search results appear inside the sidebar ScrollView as Buttons.
+        // The inner "projectSearchResultsList" ScrollView is merged into
+        // the NavigationSplitView sidebar in the accessibility tree.
+        let sidebar = app.scrollViews["sidebar"].firstMatch
         XCTAssertTrue(waitForExistence(sidebar, timeout: 10))
 
-        typeSearchQuery("greeting")
-
-        let resultsList = app.scrollViews["projectSearchResultsList"].firstMatch
+        let resultButton = sidebar.buttons.firstMatch
         XCTAssertTrue(
-            waitForExistence(resultsList, timeout: 10),
+            waitForExistence(resultButton, timeout: 10),
             "Search results should appear when typing a query"
-        )
-    }
-
-    // MARK: - Clearing search returns to file tree
-
-    func testClearSearchReturnsToFileTree() throws {
-        launchWithProject(projectURL)
-
-        let sidebar = app.outlines["sidebar"]
-        XCTAssertTrue(waitForExistence(sidebar, timeout: 10))
-
-        typeSearchQuery("greeting")
-
-        let resultsList = app.scrollViews["projectSearchResultsList"].firstMatch
-        XCTAssertTrue(waitForExistence(resultsList, timeout: 10))
-
-        // Clear the search field — select all and delete
-        let searchField = app.searchFields.firstMatch
-        searchField.click()
-        searchField.typeKey("a", modifierFlags: .command)
-        searchField.typeKey(.delete, modifierFlags: [])
-        searchField.typeKey(.escape, modifierFlags: [])
-        sleep(2)
-
-        // File tree should be visible again
-        XCTAssertTrue(
-            waitForExistence(sidebar, timeout: 10),
-            "Sidebar should return after clearing search"
         )
     }
 
     // MARK: - No results message for unmatched query
 
     func testNoResultsMessageForUnmatchedQuery() throws {
-        launchWithProject(projectURL)
+        launchWithProjectAndSearch(projectURL, query: "zzz_nonexistent_zzz")
 
-        let sidebar = app.outlines["sidebar"]
-        XCTAssertTrue(waitForExistence(sidebar, timeout: 10))
-
-        typeSearchQuery("zzz_nonexistent_zzz")
-
-        // "No results" / "No Results" / "Нет результатов"
-        let noResults = app.staticTexts.matching(
-            NSPredicate(format: "label CONTAINS[c] 'no results' OR label CONTAINS[c] 'Нет результатов'")
-        ).firstMatch
+        // The "No Results" text gets identifier "sidebar" from the parent
+        // SidebarSearchableContent wrapper, so match by value instead.
+        let noResults = app.staticTexts["sidebar"].firstMatch
         XCTAssertTrue(
             waitForExistence(noResults, timeout: 10),
             "No results message should appear for unmatched query"
         )
+        XCTAssertEqual(noResults.value as? String, "No Results")
     }
 
     // MARK: - Magnifying glass toolbar button exists
@@ -162,17 +119,12 @@ final class SidebarSearchTests: PineUITestCase {
     // MARK: - Clicking search result opens file
 
     func testClickingSearchResultOpensFile() throws {
-        launchWithProject(projectURL)
+        launchWithProjectAndSearch(projectURL, query: "helper")
 
-        let sidebar = app.outlines["sidebar"]
+        let sidebar = app.scrollViews["sidebar"].firstMatch
         XCTAssertTrue(waitForExistence(sidebar, timeout: 10))
 
-        typeSearchQuery("helper")
-
-        let resultsList = app.scrollViews["projectSearchResultsList"].firstMatch
-        XCTAssertTrue(waitForExistence(resultsList, timeout: 10))
-
-        let firstResult = resultsList.buttons.firstMatch
+        let firstResult = sidebar.buttons.firstMatch
         XCTAssertTrue(waitForExistence(firstResult, timeout: 5))
         firstResult.click()
 
@@ -180,6 +132,35 @@ final class SidebarSearchTests: PineUITestCase {
         XCTAssertTrue(
             waitForExistence(tab, timeout: 10),
             "Clicking a search result should open the file in an editor tab"
+        )
+    }
+
+    // MARK: - Clearing search returns to file tree
+
+    func testClearSearchReturnsToFileTree() throws {
+        launchWithProjectAndSearch(projectURL, query: "greeting")
+
+        let sidebar = app.scrollViews["sidebar"].firstMatch
+        XCTAssertTrue(waitForExistence(sidebar, timeout: 10))
+
+        // Verify results are showing
+        let resultButton = sidebar.buttons.firstMatch
+        XCTAssertTrue(waitForExistence(resultButton, timeout: 5))
+
+        // Clear the search field — select all and delete
+        let searchField = app.searchFields.firstMatch
+        XCTAssertTrue(waitForExistence(searchField, timeout: 5))
+        searchField.click()
+        searchField.typeKey("a", modifierFlags: .command)
+        searchField.typeKey(.delete, modifierFlags: [])
+        searchField.typeKey(.escape, modifierFlags: [])
+        sleep(2)
+
+        // File tree (Outline) should be visible again
+        let fileTree = app.outlines["sidebar"]
+        XCTAssertTrue(
+            waitForExistence(fileTree, timeout: 10),
+            "Sidebar should return to file tree after clearing search"
         )
     }
 }

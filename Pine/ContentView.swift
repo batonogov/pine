@@ -96,6 +96,7 @@ struct ContentView: View {
         .task {
             restoreSessionIfNeeded()
             syncSidebarSelection()
+            applySearchQueryFromEnvironment()
         }
         .onChange(of: selectedNode) { _, newNode in
             guard let node = newNode, !node.isDirectory else { return }
@@ -104,6 +105,7 @@ struct ContentView: View {
         .onChange(of: workspace.rootURL) { _, _ in
             lineDiffs = []
             projectManager.saveSession()
+            applySearchQueryFromEnvironment()
         }
         .onChange(of: tabManager.activeTabID) { _, _ in
             syncSidebarSelection()
@@ -238,6 +240,17 @@ struct ContentView: View {
            activeIndex < terminal.terminalTabs.count {
             terminal.activeTerminalID = terminal.terminalTabs[activeIndex].id
         }
+    }
+
+    /// Reads `PINE_SEARCH_QUERY` from the environment (used by UI tests) and
+    /// applies it to the search provider, activating the search UI.
+    private func applySearchQueryFromEnvironment() {
+        guard let query = ProcessInfo.processInfo.environment["PINE_SEARCH_QUERY"],
+              !query.isEmpty,
+              let rootURL = workspace.rootURL else { return }
+        projectManager.searchProvider.query = query
+        isSearchPresented = true
+        projectManager.searchProvider.search(in: rootURL)
     }
 
     // MARK: - Открытие нового проекта
@@ -558,16 +571,16 @@ private struct ProjectSearchModifier: ViewModifier {
     }
 }
 
-/// Wrapper view that reads `isSearching` environment to switch between file tree and search results.
-/// `isSearching` is only available inside a `.searchable` modifier, hence the separate view.
+/// Wrapper view that switches between file tree and search results based on query state.
+/// Does not rely on `@Environment(\.isSearching)` or `isSearchPresented` because neither
+/// updates reliably when text is entered via XCUITest synthetic events into `NSSearchToolbarItem`.
 private struct SidebarSearchableContent: View {
     @Binding var selectedNode: FileNode?
     var workspace: WorkspaceManager
     @Environment(ProjectManager.self) var projectManager
-    @Environment(\.isSearching) var isSearching
 
     var body: some View {
-        if isSearching && !projectManager.searchProvider.query.isEmpty {
+        if !projectManager.searchProvider.query.isEmpty {
             SearchResultsView()
         } else {
             SidebarView(workspace: workspace, selectedFile: $selectedNode)
