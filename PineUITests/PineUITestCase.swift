@@ -62,6 +62,17 @@ class PineUITestCase: XCTestCase {
         _ = app.windows.firstMatch.waitForExistence(timeout: 10)
     }
 
+    /// Launches the app with a project and a pre-filled search query.
+    /// Uses `PINE_SEARCH_QUERY` env var because XCUITest synthetic events
+    /// do not reliably update SwiftUI `.searchable` bindings on `NSSearchToolbarItem`.
+    func launchWithProjectAndSearch(_ projectURL: URL, query: String) {
+        app.launchEnvironment["PINE_OPEN_PROJECT"] = projectURL.path
+        app.launchEnvironment["PINE_SEARCH_QUERY"] = query
+        app.launch()
+        app.activate()
+        _ = app.windows.firstMatch.waitForExistence(timeout: 10)
+    }
+
     /// Launches the app in clean state (Welcome window should appear).
     func launchClean() {
         app.launch()

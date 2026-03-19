@@ -7,13 +7,6 @@
 
 import SwiftUI
 
-// MARK: - Sidebar mode
-
-enum SidebarMode: String, CaseIterable {
-    case files
-    case search
-}
-
 // MARK: - Главный ContentView
 
 struct ContentView: View {
@@ -30,7 +23,7 @@ struct ContentView: View {
     @State private var columnVisibility: NavigationSplitViewVisibility = .all
     @State private var lineDiffs: [GitLineDiff] = []
     @State private var didRestoreSession = false
-    @State private var sidebarMode: SidebarMode = .files
+    @State private var isSearchPresented = false
     @State private var goToLineOffset: Int?
     @AppStorage("minimapVisible") private var isMinimapVisible = true
 
@@ -42,27 +35,12 @@ struct ContentView: View {
 
     var body: some View {
         NavigationSplitView(columnVisibility: $columnVisibility) {
-            VStack(spacing: 0) {
-                // Mode picker
-                Picker("", selection: $sidebarMode) {
-                    Image(systemName: "folder")
-                        .tag(SidebarMode.files)
-                    Image(systemName: "magnifyingglass")
-                        .tag(SidebarMode.search)
-                }
-                .pickerStyle(.segmented)
-                .padding(.horizontal, 8)
-                .padding(.vertical, 4)
-                .accessibilityIdentifier(AccessibilityID.sidebarModePicker)
-
-                switch sidebarMode {
-                case .files:
-                    SidebarView(workspace: workspace, selectedFile: $selectedNode)
-                case .search:
-                    ProjectSearchView()
-                }
-            }
+            SidebarSearchableContent(
+                selectedNode: $selectedNode,
+                workspace: workspace
+            )
             .accessibilityIdentifier(AccessibilityID.sidebar)
+            .navigationSplitViewColumnWidth(min: 200, ideal: 240, max: 400)
             .toolbar {
                 ToolbarItem {
                     Button {
@@ -100,6 +78,10 @@ struct ContentView: View {
                 )
             }
         }
+        .modifier(ProjectSearchModifier(
+            projectManager: projectManager,
+            isSearchPresented: $isSearchPresented
+        ))
         .frame(minWidth: 800, minHeight: 500)
         .navigationTitle(workspace.projectName)
         .navigationSubtitle(branchSubtitle)
@@ -114,6 +96,7 @@ struct ContentView: View {
         .task {
             restoreSessionIfNeeded()
             syncSidebarSelection()
+            applySearchQueryFromEnvironment()
         }
         .onChange(of: selectedNode) { _, newNode in
             guard let node = newNode, !node.isDirectory else { return }
@@ -122,6 +105,7 @@ struct ContentView: View {
         .onChange(of: workspace.rootURL) { _, _ in
             lineDiffs = []
             projectManager.saveSession()
+            applySearchQueryFromEnvironment()
         }
         .onChange(of: tabManager.activeTabID) { _, _ in
             syncSidebarSelection()
@@ -181,8 +165,8 @@ struct ContentView: View {
             handleExternalConflicts(conflicts)
         }
         .onReceive(NotificationCenter.default.publisher(for: .showProjectSearch)) { _ in
-            sidebarMode = .search
             columnVisibility = .all
+            isSearchPresented = true
         }
         .onChange(of: tabManager.pendingGoToLine) { _, newLine in
             guard let line = newLine, let tab = tabManager.activeTab else { return }
@@ -195,6 +179,8 @@ struct ContentView: View {
     private var branchSubtitle: String {
         workspace.gitProvider.isGitRepository ? "⎇ \(workspace.gitProvider.currentBranch) ▾" : ""
     }
+
+    // MARK: - Search
 
     // MARK: - Session restoration
 
@@ -254,6 +240,17 @@ struct ContentView: View {
            activeIndex < terminal.terminalTabs.count {
             terminal.activeTerminalID = terminal.terminalTabs[activeIndex].id
         }
+    }
+
+    /// Reads `PINE_SEARCH_QUERY` from the environment (used by UI tests) and
+    /// applies it to the search provider, activating the search UI.
+    private func applySearchQueryFromEnvironment() {
+        guard let query = ProcessInfo.processInfo.environment["PINE_SEARCH_QUERY"],
+              !query.isEmpty,
+              let rootURL = workspace.rootURL else { return }
+        projectManager.searchProvider.query = query
+        isSearchPresented = true
+        projectManager.searchProvider.search(in: rootURL)
     }
 
     // MARK: - Открытие нового проекта
@@ -532,6 +529,62 @@ struct ContentView: View {
         }
         .background(Color(nsColor: .textBackgroundColor))
         .onAppear { terminal.startTerminals(workingDirectory: workspace.rootURL) }
+    }
+}
+
+// MARK: - Sidebar search field
+
+/// Extracted modifier to reduce body complexity for the type-checker.
+private struct ProjectSearchModifier: ViewModifier {
+    var projectManager: ProjectManager
+    @Binding var isSearchPresented: Bool
+
+    func body(content: Content) -> some View {
+        content
+            .searchable(
+                text: Bindable(projectManager.searchProvider).query,
+                isPresented: $isSearchPresented,
+                placement: .toolbar,
+                prompt: Strings.searchPlaceholder
+            )
+            .onChange(of: projectManager.searchProvider.query) { _, _ in
+                guard let rootURL = projectManager.rootURL else { return }
+                projectManager.searchProvider.search(in: rootURL)
+            }
+            .onAppear {
+                configureSearchToolbarItem()
+            }
+    }
+
+    /// Finds the NSSearchToolbarItem in the window toolbar and sets preferred width (Finder-style).
+    private func configureSearchToolbarItem() {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+            guard let window = NSApp.keyWindow,
+                  let toolbar = window.toolbar else { return }
+            for item in toolbar.items {
+                if let searchItem = item as? NSSearchToolbarItem {
+                    searchItem.preferredWidthForSearchField = 180
+                    break
+                }
+            }
+        }
+    }
+}
+
+/// Wrapper view that switches between file tree and search results based on query state.
+/// Does not rely on `@Environment(\.isSearching)` or `isSearchPresented` because neither
+/// updates reliably when text is entered via XCUITest synthetic events into `NSSearchToolbarItem`.
+private struct SidebarSearchableContent: View {
+    @Binding var selectedNode: FileNode?
+    var workspace: WorkspaceManager
+    @Environment(ProjectManager.self) var projectManager
+
+    var body: some View {
+        if !projectManager.searchProvider.query.isEmpty {
+            SearchResultsView()
+        } else {
+            SidebarView(workspace: workspace, selectedFile: $selectedNode)
+        }
     }
 }
 

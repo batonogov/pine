@@ -1,5 +1,5 @@
 //
-//  ProjectSearchView.swift
+//  SearchResultsView.swift
 //  Pine
 //
 //  Created by Claude on 18.03.2026.
@@ -7,80 +7,32 @@
 
 import SwiftUI
 
-struct ProjectSearchView: View {
+struct SearchResultsView: View {
     @Environment(ProjectManager.self) var projectManager
     @Environment(TabManager.self) var tabManager
 
-    @FocusState private var isSearchFieldFocused: Bool
-
     var body: some View {
-        @Bindable var search = projectManager.searchProvider
+        let search = projectManager.searchProvider
 
-        VStack(spacing: 0) {
-            // Search field + case toggle
-            HStack(spacing: 4) {
-                Image(systemName: "magnifyingglass")
+        if search.isSearching {
+            VStack {
+                Spacer()
+                ProgressView()
+                    .controlSize(.small)
+                Spacer()
+            }
+            .frame(maxWidth: .infinity)
+        } else if search.results.isEmpty && !search.query.isEmpty {
+            VStack {
+                Spacer()
+                Text(Strings.searchNoResults)
                     .foregroundStyle(.secondary)
                     .font(.system(size: 12))
-
-                TextField(Strings.searchPlaceholder, text: $search.query)
-                    .textFieldStyle(.plain)
-                    .font(.system(size: 12))
-                    .focused($isSearchFieldFocused)
-                    .accessibilityIdentifier(AccessibilityID.projectSearchField)
-                    .onSubmit { triggerSearch() }
-                    .onChange(of: search.query) { _, _ in
-                        triggerSearch()
-                    }
-
-                // Case sensitivity toggle
-                Button {
-                    search.isCaseSensitive.toggle()
-                    triggerSearch()
-                } label: {
-                    Text("Aa")
-                        .font(.system(size: 11, weight: search.isCaseSensitive ? .bold : .regular))
-                        .foregroundStyle(search.isCaseSensitive ? .primary : .secondary)
-                        .frame(width: 22, height: 18)
-                        .background(
-                            RoundedRectangle(cornerRadius: 3)
-                                .fill(search.isCaseSensitive ? AnyShapeStyle(.quaternary) : AnyShapeStyle(.clear))
-                        )
-                }
-                .buttonStyle(.plain)
-                .help(Strings.searchCaseSensitive)
-                .accessibilityIdentifier(AccessibilityID.projectSearchCaseSensitiveToggle)
+                Spacer()
             }
-            .padding(.horizontal, 8)
-            .padding(.vertical, 6)
-            .background(.bar)
-
-            Divider()
-
-            // Results
-            if search.isSearching {
-                VStack {
-                    Spacer()
-                    ProgressView()
-                        .controlSize(.small)
-                    Spacer()
-                }
-                .frame(maxWidth: .infinity)
-            } else if search.results.isEmpty && !search.query.isEmpty {
-                VStack {
-                    Spacer()
-                    Text(Strings.searchNoResults)
-                        .foregroundStyle(.secondary)
-                        .font(.system(size: 12))
-                    Spacer()
-                }
-                .frame(maxWidth: .infinity)
-            } else {
-                searchResultsList
-            }
-        }
-        .onAppear {
-            isSearchFieldFocused = true
+            .frame(maxWidth: .infinity)
+        } else {
+            searchResultsList
         }
     }
 
@@ -129,11 +81,6 @@ struct ProjectSearchView: View {
                 )
             }
         }
-    }
-
-    private func triggerSearch() {
-        guard let rootURL = projectManager.rootURL else { return }
-        projectManager.searchProvider.search(in: rootURL)
     }
 }
 
