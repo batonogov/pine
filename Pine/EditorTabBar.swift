@@ -10,9 +10,9 @@ import UniformTypeIdentifiers
 
 /// Internal tab bar for editor tabs, styled like the terminal tab bar.
 struct EditorTabBar: View {
-    var tabManager: TabManager
-    /// Called when user clicks the close button on a tab.
-    /// The caller is responsible for unsaved-changes protection.
+    var tabs: [EditorTab]
+    var activeTabID: UUID?
+    var onSelectTab: (UUID) -> Void
     var onCloseTab: (EditorTab) -> Void
     /// Called after tabs are reordered via drag-and-drop.
     var onReorder: (() -> Void)?
@@ -22,8 +22,13 @@ struct EditorTabBar: View {
     var previewMode: MarkdownPreviewMode = .source
     /// Called when the user toggles the Markdown preview mode.
     var onTogglePreview: (() -> Void)?
+    /// Called when the user clicks the split editor button.
+    var onSplitRight: (() -> Void)?
+    /// Called when the user chooses "Open in Split Right" from context menu.
+    var onOpenInSplit: ((URL) -> Void)?
 
     @State private var draggingTabID: UUID?
+    @State private var orderedTabs: [EditorTab] = []
 
     private var previewIcon: String {
         switch previewMode {
@@ -37,19 +42,20 @@ struct EditorTabBar: View {
         HStack(spacing: 0) {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 2) {
-                    ForEach(tabManager.tabs) { tab in
+                    ForEach(orderedTabs) { tab in
                         EditorTabItem(
                             tab: tab,
-                            isActive: tab.id == tabManager.activeTabID,
-                            onSelect: { tabManager.activeTabID = tab.id },
-                            onClose: { onCloseTab(tab) }
+                            isActive: tab.id == activeTabID,
+                            onSelect: { onSelectTab(tab.id) },
+                            onClose: { onCloseTab(tab) },
+                            onOpenInSplit: onOpenInSplit != nil ? { onOpenInSplit?(tab.url) } : nil
                         )
                         .onDrag {
                             draggingTabID = tab.id
                             return NSItemProvider(object: tab.id.uuidString as NSString)
                         }
                         .onDrop(of: [.text], delegate: TabDropDelegate(
-                            tabManager: tabManager,
+                            tabs: $orderedTabs,
                             targetTabID: tab.id,
                             draggingTabID: $draggingTabID,
                             onReorder: onReorder
@@ -75,16 +81,59 @@ struct EditorTabBar: View {
                 .accessibilityIdentifier(AccessibilityID.markdownPreviewToggle)
                 .padding(.trailing, 4)
             }
+
+            if let onSplitRight {
+                Button {
+                    onSplitRight()
+                } label: {
+                    Image(systemName: "rectangle.split.2x1")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(.secondary)
+                        .frame(width: 24, height: 24)
+                }
+                .buttonStyle(.plain)
+                .help(Strings.menuSplitEditorRight)
+                .accessibilityIdentifier(AccessibilityID.splitEditorButton)
+                .padding(.trailing, 4)
+            }
         }
         .frame(height: 30)
         .background(.bar)
         .accessibilityIdentifier(AccessibilityID.editorTabBar)
+        .onAppear { orderedTabs = tabs }
+        .onChange(of: tabs) { _, newTabs in orderedTabs = newTabs }
+    }
+}
+
+/// Convenience initializer preserving the old TabManager-based API
+/// so existing call sites don't need to change all at once.
+extension EditorTabBar {
+    init(
+        tabManager: TabManager,
+        onCloseTab: @escaping (EditorTab) -> Void,
+        onReorder: (() -> Void)? = nil,
+        isMarkdownFile: Bool = false,
+        previewMode: MarkdownPreviewMode = .source,
+        onTogglePreview: (() -> Void)? = nil,
+        onSplitRight: (() -> Void)? = nil,
+        onOpenInSplit: ((URL) -> Void)? = nil
+    ) {
+        self.tabs = tabManager.tabs
+        self.activeTabID = tabManager.activeTabID
+        self.onSelectTab = { tabManager.activeTabID = $0 }
+        self.onCloseTab = onCloseTab
+        self.onReorder = onReorder
+        self.isMarkdownFile = isMarkdownFile
+        self.previewMode = previewMode
+        self.onTogglePreview = onTogglePreview
+        self.onSplitRight = onSplitRight
+        self.onOpenInSplit = onOpenInSplit
     }
 }
 
 /// Handles drag-to-reorder for editor tabs.
 struct TabDropDelegate: DropDelegate {
-    let tabManager: TabManager
+    @Binding var tabs: [EditorTab]
     let targetTabID: UUID
     @Binding var draggingTabID: UUID?
     var onReorder: (() -> Void)?
@@ -97,10 +146,10 @@ struct TabDropDelegate: DropDelegate {
 
     func dropEntered(info: DropInfo) {
         guard let dragging = draggingTabID, dragging != targetTabID else { return }
-        guard let fromIndex = tabManager.tabs.firstIndex(where: { $0.id == dragging }),
-              let toIndex = tabManager.tabs.firstIndex(where: { $0.id == targetTabID }) else { return }
+        guard let fromIndex = tabs.firstIndex(where: { $0.id == dragging }),
+              let toIndex = tabs.firstIndex(where: { $0.id == targetTabID }) else { return }
         withAnimation(.easeInOut(duration: 0.2)) {
-            tabManager.tabs.move(fromOffsets: IndexSet(integer: fromIndex), toOffset: toIndex > fromIndex ? toIndex + 1 : toIndex)
+            tabs.move(fromOffsets: IndexSet(integer: fromIndex), toOffset: toIndex > fromIndex ? toIndex + 1 : toIndex)
         }
     }
 
@@ -115,6 +164,7 @@ struct EditorTabItem: View {
     let isActive: Bool
     let onSelect: () -> Void
     let onClose: () -> Void
+    var onOpenInSplit: (() -> Void)?
 
     @State private var isHovering = false
 
@@ -163,6 +213,15 @@ struct EditorTabItem: View {
         .contentShape(Capsule())
         .onTapGesture(perform: onSelect)
         .onHover { isHovering = $0 }
+        .contextMenu {
+            if let onOpenInSplit {
+                Button {
+                    onOpenInSplit()
+                } label: {
+                    Label(Strings.contextOpenInSplitRight, systemImage: "rectangle.split.2x1")
+                }
+            }
+        }
         .accessibilityRepresentation {
             HStack {
                 Button(tab.fileName, action: onSelect)

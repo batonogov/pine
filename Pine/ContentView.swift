@@ -29,6 +29,7 @@ struct ContentView: View {
     @State private var selectedNode: FileNode?
     @State private var columnVisibility: NavigationSplitViewVisibility = .all
     @State private var lineDiffs: [GitLineDiff] = []
+    @State private var splitLineDiffs: [GitLineDiff] = []
     @State private var didRestoreSession = false
     @State private var sidebarMode: SidebarMode = .files
     @State private var goToLineOffset: Int?
@@ -108,7 +109,7 @@ struct ContentView: View {
                 gitProvider: workspace.gitProvider,
                 isGitRepository: workspace.gitProvider.isGitRepository
             )
-            DocumentEditedTracker(isEdited: tabManager.hasUnsavedChanges)
+            DocumentEditedTracker(isEdited: tabManager.hasAnyUnsavedChanges)
             RepresentedFileTracker(url: activeTab?.url ?? workspace.rootURL)
         }
         .task {
@@ -128,6 +129,11 @@ struct ContentView: View {
             refreshLineDiffs()
             projectManager.saveSession()
         }
+        .modifier(SplitStateObserver(
+            tabManager: tabManager,
+            onSplitChanged: { projectManager.saveSession() },
+            onRefreshSplitDiffs: { refreshSplitLineDiffs() }
+        ))
         .onChange(of: workspace.rootNodes) { _, _ in
             restoreSessionIfNeeded()
             syncSidebarSelection()
@@ -148,18 +154,26 @@ struct ContentView: View {
         }
         .onChange(of: workspace.gitProvider.currentBranch) { _, _ in
             refreshLineDiffs()
+            refreshSplitLineDiffs()
         }
         .onChange(of: workspace.gitProvider.fileStatuses) { _, _ in
             refreshLineDiffs()
+            refreshSplitLineDiffs()
         }
         .onReceive(NotificationCenter.default.publisher(for: .refreshLineDiffs)) { _ in
             guard controlActiveState == .key else { return }
             refreshLineDiffs()
+            refreshSplitLineDiffs()
         }
         .onReceive(NotificationCenter.default.publisher(for: .closeTab)) { _ in
-            guard controlActiveState == .key,
-                  let tab = tabManager.activeTab else { return }
-            closeTabWithConfirmation(tab)
+            guard controlActiveState == .key else { return }
+            if tabManager.isSplitActive && tabManager.focusedSide == .trailing {
+                guard let tab = tabManager.splitPane?.activeTab else { return }
+                closeTabWithConfirmation(tab, side: .trailing)
+            } else {
+                guard let tab = tabManager.activeTab else { return }
+                closeTabWithConfirmation(tab, side: .leading)
+            }
         }
         .onReceive(NotificationCenter.default.publisher(for: .openFolder)) { _ in
             guard controlActiveState == .key else { return }
@@ -168,7 +182,7 @@ struct ContentView: View {
         .onReceive(NotificationCenter.default.publisher(for: .fileRenamed)) { notification in
             guard let oldURL = notification.userInfo?["oldURL"] as? URL,
                   let newURL = notification.userInfo?["newURL"] as? URL else { return }
-            tabManager.handleFileRenamed(oldURL: oldURL, newURL: newURL)
+            tabManager.handleFileRenamedIncludingSplit(oldURL: oldURL, newURL: newURL)
             projectManager.saveSession()
         }
         .onReceive(NotificationCenter.default.publisher(for: .fileDeleted)) { notification in
@@ -177,7 +191,7 @@ struct ContentView: View {
         }
         .onChange(of: workspace.externalChangeToken) { _, _ in
             guard controlActiveState == .key else { return }
-            let conflicts = tabManager.checkExternalChanges()
+            let conflicts = tabManager.checkExternalChangesIncludingSplit()
             handleExternalConflicts(conflicts)
         }
         .onReceive(NotificationCenter.default.publisher(for: .showProjectSearch)) { _ in
@@ -231,6 +245,33 @@ struct ContentView: View {
             if let activeURL = session.activeFileURL,
                let tab = tabManager.tab(for: activeURL) {
                 tabManager.activeTabID = tab.id
+            }
+
+            // Restore split pane state
+            if let splitURLs = session.splitExistingFileURLs, !splitURLs.isEmpty {
+                tabManager.splitRight()
+                if let pane = tabManager.splitPane {
+                    let splitDisabledSet = Set(session.splitHighlightingDisabledPaths ?? [])
+                    for url in splitURLs {
+                        let disabled = splitDisabledSet.contains(url.path)
+                        pane.openTab(url: url, syntaxHighlightingDisabled: disabled)
+                    }
+
+                    if let splitPreviewModes = session.splitPreviewModes {
+                        for index in pane.tabs.indices {
+                            let path = pane.tabs[index].url.path
+                            if let rawMode = splitPreviewModes[path],
+                               let mode = MarkdownPreviewMode(rawValue: rawMode) {
+                                pane.tabs[index].previewMode = mode
+                            }
+                        }
+                    }
+
+                    if let activeURL = session.splitActiveFileURL,
+                       let tab = pane.tab(for: activeURL) {
+                        pane.activeTabID = tab.id
+                    }
+                }
             }
         }
 
@@ -293,25 +334,38 @@ struct ContentView: View {
         return nil
     }
 
-    /// Refreshes cached line diffs for the active tab.
+    /// Refreshes cached line diffs for the active tab in the primary pane.
     /// Runs git diff on a background thread to avoid blocking the UI.
     private func refreshLineDiffs() {
-        guard let tab = tabManager.activeTab else {
-            lineDiffs = []
+        refreshLineDiffsForTab(tabManager.activeTab) { diffs in
+            lineDiffs = diffs
+        }
+    }
+
+    /// Refreshes cached line diffs for the active tab in the split pane.
+    private func refreshSplitLineDiffs() {
+        refreshLineDiffsForTab(tabManager.splitPane?.activeTab) { diffs in
+            splitLineDiffs = diffs
+        }
+    }
+
+    /// Shared implementation for refreshing git line diffs for a given tab.
+    private func refreshLineDiffsForTab(_ tab: EditorTab?, completion: @escaping ([GitLineDiff]) -> Void) {
+        guard let tab else {
+            completion([])
             return
         }
         let fileURL = tab.url
         let provider = workspace.gitProvider
         guard provider.isGitRepository, let repoURL = provider.repositoryURL else {
-            lineDiffs = []
+            completion([])
             return
         }
         let filePath = fileURL.path
         Task.detached {
-            // Run git commands off the main thread
             let headCheck = GitStatusProvider.runGit(["rev-parse", "HEAD"], at: repoURL)
             guard headCheck.exitCode == 0 else {
-                await MainActor.run { lineDiffs = [] }
+                await MainActor.run { completion([]) }
                 return
             }
             let result = GitStatusProvider.runGit(
@@ -324,16 +378,14 @@ struct ContentView: View {
                 diffs = []
             }
             await MainActor.run {
-                if tabManager.activeTab?.url == fileURL {
-                    lineDiffs = diffs
-                }
+                completion(diffs)
             }
         }
     }
 
     /// Closes a tab with unsaved-changes protection.
     /// Used by both the tab bar close button and Cmd+W.
-    private func closeTabWithConfirmation(_ tab: EditorTab) {
+    private func closeTabWithConfirmation(_ tab: EditorTab, side: SplitSide = .leading) {
         if tab.isDirty {
             let alert = NSAlert()
             alert.messageText = Strings.unsavedChangesTitle
@@ -346,15 +398,30 @@ struct ContentView: View {
             let response = alert.runModal()
             switch response {
             case .alertFirstButtonReturn:
-                guard let index = tabManager.tabs.firstIndex(where: { $0.id == tab.id }) else { return }
-                guard tabManager.saveTab(at: index) else { return }
+                if side == .trailing, let pane = tabManager.splitPane {
+                    guard let index = pane.tabs.firstIndex(where: { $0.id == tab.id }) else { return }
+                    guard pane.saveTab(at: index) else { return }
+                } else {
+                    guard let index = tabManager.tabs.firstIndex(where: { $0.id == tab.id }) else { return }
+                    guard tabManager.saveTab(at: index) else { return }
+                }
                 Task { await workspace.gitProvider.refreshAsync() }
-                tabManager.closeTab(id: tab.id)
+                closeTabOnSide(tab: tab, side: side)
             case .alertSecondButtonReturn:
-                tabManager.closeTab(id: tab.id)
+                closeTabOnSide(tab: tab, side: side)
             default:
                 return
             }
+        } else {
+            closeTabOnSide(tab: tab, side: side)
+        }
+    }
+
+    /// Closes a tab on the specified side and auto-closes split if empty.
+    private func closeTabOnSide(tab: EditorTab, side: SplitSide) {
+        if side == .trailing {
+            tabManager.splitPane?.closeTab(id: tab.id)
+            tabManager.autoCloseSplitIfEmpty()
         } else {
             tabManager.closeTab(id: tab.id)
         }
@@ -388,7 +455,14 @@ struct ContentView: View {
     }
 
     private func handleFileDeletion(_ deletedURL: URL) {
-        let affected = tabManager.tabsAffectedByDeletion(url: deletedURL)
+        // Collect affected from both panes
+        var affected = tabManager.tabsAffectedByDeletion(url: deletedURL)
+        if let pane = tabManager.splitPane {
+            let splitAffected = pane.tabs.filter { tab in
+                tab.url == deletedURL || tab.url.path.hasPrefix(deletedURL.path + "/")
+            }
+            affected.append(contentsOf: splitAffected)
+        }
         guard !affected.isEmpty else { return }
 
         let dirtyTabs = affected.filter { $0.isDirty }
@@ -427,84 +501,96 @@ struct ContentView: View {
             }
         }
 
-        tabManager.closeTabsForDeletedFile(url: deletedURL)
+        tabManager.closeTabsForDeletedFileIncludingSplit(url: deletedURL)
     }
 
     // MARK: - Область редактора
 
     @ViewBuilder
     private var editorArea: some View {
-        VStack(spacing: 0) {
-            if !tabManager.tabs.isEmpty {
-                EditorTabBar(
-                    tabManager: tabManager,
-                    onCloseTab: { tab in closeTabWithConfirmation(tab) },
-                    onReorder: { projectManager.saveSession() },
-                    isMarkdownFile: activeTab?.isMarkdownFile ?? false,
-                    previewMode: activeTab?.previewMode ?? .source,
-                    onTogglePreview: { tabManager.togglePreviewMode() }
-                )
-            }
+        if tabManager.isSplitActive {
+            HSplitView {
+                leadingPane
+                    .frame(minWidth: 200)
+                    .accessibilityIdentifier(AccessibilityID.editorPaneLeading)
+                    .onTapGesture { tabManager.focusedSide = .leading }
 
-            if let tab = activeTab {
-                Group {
-                    if tab.kind == .preview {
-                        QuickLookPreviewView(url: tab.url)
-                            .accessibilityIdentifier(AccessibilityID.quickLookPreview)
-                    } else if tab.isMarkdownFile {
-                        switch tab.previewMode {
-                        case .source:
-                            codeEditorView(for: tab)
-                        case .preview:
-                            MarkdownPreviewView(content: tab.content)
-                                .accessibilityIdentifier(AccessibilityID.markdownPreviewView)
-                        case .split:
-                            HSplitView {
-                                codeEditorView(for: tab)
-                                    .frame(minWidth: 200)
-                                MarkdownPreviewView(content: tab.content)
-                                    .accessibilityIdentifier(AccessibilityID.markdownPreviewView)
-                                    .frame(minWidth: 200)
-                            }
-                        }
-                    } else {
-                        codeEditorView(for: tab)
-                    }
-                }
-                .id(tab.id)
-            } else {
-                ContentUnavailableView {
-                    Label(Strings.noFileSelected, systemImage: "doc.text")
-                } description: {
-                    Text(Strings.selectFilePrompt)
-                }
-                .accessibilityIdentifier(AccessibilityID.editorPlaceholder)
+                trailingPane
+                    .frame(minWidth: 200)
+                    .accessibilityIdentifier(AccessibilityID.editorPaneTrailing)
+                    .onTapGesture { tabManager.focusedSide = .trailing }
             }
+        } else {
+            leadingPane
+                .onTapGesture { tabManager.focusedSide = .leading }
         }
     }
 
     @ViewBuilder
-    private func codeEditorView(for tab: EditorTab) -> some View {
-        CodeEditorView(
-            text: Binding(
-                get: { tab.content },
-                set: { tabManager.updateContent($0) }
-            ),
-            contentVersion: tab.contentVersion,
-            language: tab.language,
-            fileName: tab.fileName,
-            lineDiffs: lineDiffs,
+    private var leadingPane: some View {
+        EditorPaneView(
+            tabs: tabManager.tabs,
+            activeTab: activeTab,
+            activeTabID: tabManager.activeTabID,
+            isFocused: tabManager.isSplitActive && tabManager.focusedSide == .leading,
+            lineDiffs: tabManager.focusedSide == .leading ? lineDiffs : [],
             isMinimapVisible: isMinimapVisible,
-            syntaxHighlightingDisabled: tab.syntaxHighlightingDisabled,
-            initialCursorPosition: goToLineOffset ?? tab.cursorPosition,
-            initialScrollOffset: goToLineOffset != nil ? 0 : tab.scrollOffset,
+            goToLineOffset: tabManager.focusedSide == .leading ? goToLineOffset : nil,
+            onSelectTab: { id in
+                tabManager.activeTabID = id
+                tabManager.focusedSide = .leading
+            },
+            onCloseTab: { tab in
+                tabManager.focusedSide = .leading
+                closeTabWithConfirmation(tab, side: .leading)
+            },
+            onContentChange: { tabManager.updateContent($0) },
             onStateChange: { cursor, scroll in
                 tabManager.updateEditorState(cursorPosition: cursor, scrollOffset: scroll)
             },
-            fontSize: FontSizeSettings.shared.fontSize
+            onReorder: { projectManager.saveSession() },
+            onTogglePreview: { tabManager.togglePreviewMode() },
+            onSplitRight: tabManager.isSplitActive ? nil : {
+                tabManager.splitRight()
+            },
+            onOpenInSplit: { url in
+                tabManager.openInSplit(url: url)
+            }
         )
-        .accessibilityIdentifier(AccessibilityID.codeEditor)
-        .onAppear { goToLineOffset = nil }
+        .onAppear {
+            if tabManager.focusedSide == .leading { goToLineOffset = nil }
+        }
+    }
+
+    @ViewBuilder
+    private var trailingPane: some View {
+        if let splitPane = tabManager.splitPane {
+            EditorPaneView(
+                tabs: splitPane.tabs,
+                activeTab: splitPane.activeTab,
+                activeTabID: splitPane.activeTabID,
+                isFocused: tabManager.focusedSide == .trailing,
+                lineDiffs: tabManager.focusedSide == .trailing ? splitLineDiffs : [],
+                isMinimapVisible: isMinimapVisible,
+                goToLineOffset: nil,
+                onSelectTab: { id in
+                    splitPane.activeTabID = id
+                    tabManager.focusedSide = .trailing
+                },
+                onCloseTab: { tab in
+                    tabManager.focusedSide = .trailing
+                    closeTabWithConfirmation(tab, side: .trailing)
+                },
+                onContentChange: { splitPane.updateContent($0) },
+                onStateChange: { cursor, scroll in
+                    splitPane.updateEditorState(cursorPosition: cursor, scrollOffset: scroll)
+                },
+                onReorder: { projectManager.saveSession() },
+                onTogglePreview: { splitPane.togglePreviewMode() },
+                onSplitRight: nil,
+                onOpenInSplit: nil
+            )
+        }
     }
 
     /// Converts a 1-based line number to a UTF-16 cursor offset within content.
@@ -532,6 +618,26 @@ struct ContentView: View {
         }
         .background(Color(nsColor: .textBackgroundColor))
         .onAppear { terminal.startTerminals(workingDirectory: workspace.rootURL) }
+    }
+}
+
+// MARK: - Split state observer
+
+/// Observes split pane state changes and triggers session saves + diff refreshes.
+/// Extracted into a ViewModifier to reduce body complexity for the type-checker.
+private struct SplitStateObserver: ViewModifier {
+    let tabManager: TabManager
+    let onSplitChanged: () -> Void
+    let onRefreshSplitDiffs: () -> Void
+
+    func body(content: Content) -> some View {
+        content
+            .onChange(of: tabManager.isSplitActive) { _, _ in onSplitChanged() }
+            .onChange(of: tabManager.splitPane?.activeTabID) { _, _ in
+                onRefreshSplitDiffs()
+                onSplitChanged()
+            }
+            .onChange(of: tabManager.splitPane?.tabs.count) { _, _ in onSplitChanged() }
     }
 }
 

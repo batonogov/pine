@@ -27,6 +27,11 @@ enum AccessibilityID {
     static let minimap = "minimap"
     static let quickLookPreview = "quickLookPreview"
 
+    // MARK: - Split editor
+    static let splitEditorButton = "splitEditorButton"
+    static let editorPaneLeading = "editorPaneLeading"
+    static let editorPaneTrailing = "editorPaneTrailing"
+
     // MARK: - Terminal
     static let terminalArea = "terminalArea"
     static let terminalTabBar = "terminalTabBar"

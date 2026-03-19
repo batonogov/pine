@@ -362,6 +362,202 @@ final class TabManager {
         }
     }
 
+    // MARK: - Split editor
+
+    /// Secondary pane for split view. Nil when not in split mode.
+    var splitPane: SplitPane?
+
+    /// Which pane currently has keyboard focus.
+    var focusedSide: SplitSide = .leading
+
+    /// Whether split view is active.
+    var isSplitActive: Bool { splitPane != nil }
+
+    /// Creates a split pane. If `moveActiveTab` is true, moves the current
+    /// active tab to the new pane (like VS Code's "Split Editor Right").
+    func splitRight(moveActiveTab: Bool = false) {
+        guard splitPane == nil else { return }
+        let pane = SplitPane()
+
+        if moveActiveTab, let tab = activeTab {
+            pane.tabs.append(tab)
+            pane.activeTabID = tab.id
+            closeTab(id: tab.id)
+        }
+
+        splitPane = pane
+        if moveActiveTab {
+            focusedSide = .trailing
+        }
+    }
+
+    /// Closes the split, merging any remaining trailing tabs into the primary pane.
+    func closeSplit() {
+        guard let pane = splitPane else { return }
+        for tab in pane.tabs where !tabs.contains(where: { $0.url == tab.url }) {
+            tabs.append(tab)
+        }
+        if tabs.contains(where: { $0.id == pane.activeTabID }) {
+            activeTabID = pane.activeTabID
+        }
+        splitPane = nil
+        focusedSide = .leading
+    }
+
+    /// Moves the active tab from the focused pane to the other pane.
+    func moveTabToOtherPane() {
+        guard let pane = splitPane else { return }
+
+        switch focusedSide {
+        case .leading:
+            guard let tab = activeTab else { return }
+            // Don't move if already open in the other pane
+            guard !pane.tabs.contains(where: { $0.url == tab.url }) else { return }
+            pane.tabs.append(tab)
+            pane.activeTabID = tab.id
+            closeTab(id: tab.id)
+            focusedSide = .trailing
+            autoCloseSplitIfEmpty()
+
+        case .trailing:
+            guard let tab = pane.activeTab else { return }
+            guard !tabs.contains(where: { $0.url == tab.url }) else { return }
+            tabs.append(tab)
+            activeTabID = tab.id
+            pane.closeTab(id: tab.id)
+            focusedSide = .leading
+            autoCloseSplitIfEmpty()
+        }
+    }
+
+    /// Opens a file in the split pane (trailing side), creating split if needed.
+    func openInSplit(url: URL) {
+        if splitPane == nil {
+            splitRight()
+        }
+        splitPane?.openTab(url: url)
+        focusedSide = .trailing
+    }
+
+    /// Auto-closes split if the trailing pane has no tabs.
+    func autoCloseSplitIfEmpty() {
+        guard let pane = splitPane, pane.tabs.isEmpty else { return }
+        splitPane = nil
+        focusedSide = .leading
+    }
+
+    // MARK: - Focused pane routing
+
+    /// The active tab in whichever pane is focused.
+    var focusedActiveTab: EditorTab? {
+        if isSplitActive && focusedSide == .trailing {
+            return splitPane?.activeTab
+        }
+        return activeTab
+    }
+
+    /// Updates content in the focused pane's active tab.
+    func updateFocusedContent(_ newContent: String) {
+        if isSplitActive && focusedSide == .trailing {
+            splitPane?.updateContent(newContent)
+        } else {
+            updateContent(newContent)
+        }
+    }
+
+    /// Updates editor state in the focused pane's active tab.
+    func updateFocusedEditorState(cursorPosition: Int, scrollOffset: CGFloat) {
+        if isSplitActive && focusedSide == .trailing {
+            splitPane?.updateEditorState(cursorPosition: cursorPosition, scrollOffset: scrollOffset)
+        } else {
+            updateEditorState(cursorPosition: cursorPosition, scrollOffset: scrollOffset)
+        }
+    }
+
+    /// Saves the active tab in the focused pane.
+    @discardableResult
+    func saveFocusedActiveTab() -> Bool {
+        if isSplitActive && focusedSide == .trailing {
+            return splitPane?.saveActiveTab() ?? false
+        }
+        return saveActiveTab()
+    }
+
+    /// Closes the active tab in the focused pane.
+    /// Returns the tab that was closed, or nil if nothing to close.
+    func closeFocusedActiveTab() -> EditorTab? {
+        if isSplitActive && focusedSide == .trailing {
+            guard let tab = splitPane?.activeTab else { return nil }
+            splitPane?.closeTab(id: tab.id)
+            autoCloseSplitIfEmpty()
+            return tab
+        }
+        guard let tab = activeTab else { return nil }
+        closeTab(id: tab.id)
+        return tab
+    }
+
+    // MARK: - Aggregate properties (including split pane)
+
+    /// Whether any tab (in either pane) has unsaved changes.
+    var hasAnyUnsavedChanges: Bool {
+        hasUnsavedChanges || (splitPane?.hasUnsavedChanges ?? false)
+    }
+
+    /// All dirty tabs across both panes.
+    var allDirtyTabs: [EditorTab] {
+        var result = dirtyTabs
+        if let pane = splitPane {
+            result.append(contentsOf: pane.dirtyTabs)
+        }
+        return result
+    }
+
+    /// Saves all dirty tabs in both panes. Throws on first failure.
+    func trySaveAllTabsIncludingSplit() throws {
+        try trySaveAllTabs()
+        try splitPane?.trySaveAllTabs()
+    }
+
+    /// Saves all dirty tabs in both panes. Returns true if all succeeded.
+    @discardableResult
+    func saveAllTabsIncludingSplit() -> Bool {
+        do {
+            try trySaveAllTabsIncludingSplit()
+            return true
+        } catch {
+            let alert = NSAlert()
+            alert.messageText = Strings.fileOperationErrorTitle
+            alert.informativeText = error.localizedDescription
+            alert.alertStyle = .critical
+            alert.runModal()
+            return false
+        }
+    }
+
+    /// Handles file rename across both panes.
+    func handleFileRenamedIncludingSplit(oldURL: URL, newURL: URL) {
+        handleFileRenamed(oldURL: oldURL, newURL: newURL)
+        splitPane?.handleFileRenamed(oldURL: oldURL, newURL: newURL)
+    }
+
+    /// Closes tabs for deleted file in both panes.
+    func closeTabsForDeletedFileIncludingSplit(url: URL) {
+        closeTabsForDeletedFile(url: url)
+        splitPane?.closeTabsForDeletedFile(url: url)
+        autoCloseSplitIfEmpty()
+    }
+
+    /// Checks external changes in both panes.
+    func checkExternalChangesIncludingSplit() -> [ExternalConflict] {
+        var conflicts = checkExternalChanges()
+        if let pane = splitPane {
+            conflicts.append(contentsOf: pane.checkExternalChanges())
+        }
+        autoCloseSplitIfEmpty()
+        return conflicts
+    }
+
     // MARK: - Markdown preview
 
     /// Cycles the preview mode for the active tab if it's a Markdown file.

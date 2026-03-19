@@ -239,6 +239,13 @@ enum Strings {
     static let sidebarFiles: LocalizedStringKey = "sidebar.files"
     static let sidebarSearch: LocalizedStringKey = "sidebar.search"
 
+    // MARK: - Split Editor
+
+    static let menuSplitEditorRight: LocalizedStringKey = "menu.splitEditorRight"
+    static let menuCloseSplit: LocalizedStringKey = "menu.closeSplit"
+    static let menuMoveTabToOtherPane: LocalizedStringKey = "menu.moveTabToOtherPane"
+    static let contextOpenInSplitRight: LocalizedStringKey = "context.openInSplitRight"
+
     // MARK: - Terminal Tab Names (runtime)
 
     static var terminalDefaultName: String {

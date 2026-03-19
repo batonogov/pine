@@ -44,6 +44,32 @@ final class ProjectManager {
             ? nil
             : disabledTabs.map(\.url.path)
 
+        // Split pane state
+        var splitOpenFileURLs: [URL]?
+        var splitActiveFileURL: URL?
+        var splitHighlightingDisabledPaths: [String]?
+        var splitPreviewModes: [String: String]?
+
+        if let splitPane = tabManager.splitPane {
+            splitOpenFileURLs = splitPane.tabs
+                .map(\.url)
+                .filter { $0.path.hasPrefix(rootPath) }
+            splitActiveFileURL = splitPane.activeTab?.url
+
+            let splitDisabled = splitPane.tabs.filter(\.syntaxHighlightingDisabled)
+            splitHighlightingDisabledPaths = splitDisabled.isEmpty
+                ? nil
+                : splitDisabled.map(\.url.path)
+
+            let splitMdTabs = splitPane.tabs.filter { $0.isMarkdownFile && $0.previewMode != .source }
+            if !splitMdTabs.isEmpty {
+                splitPreviewModes = [:]
+                for tab in splitMdTabs {
+                    splitPreviewModes?[tab.url.path] = tab.previewMode.rawValue
+                }
+            }
+        }
+
         // Terminal state
         let terminalTabCount = terminal.terminalTabs.count
         let activeTerminalIndex: Int? = terminal.activeTerminalID.flatMap { id in
@@ -56,6 +82,10 @@ final class ProjectManager {
             activeFileURL: activeFileURL,
             previewModes: previewModes,
             highlightingDisabledPaths: highlightingDisabledPaths,
+            splitOpenFileURLs: splitOpenFileURLs,
+            splitActiveFileURL: splitActiveFileURL,
+            splitHighlightingDisabledPaths: splitHighlightingDisabledPaths,
+            splitPreviewModes: splitPreviewModes,
             terminalTabCount: terminalTabCount,
             activeTerminalIndex: activeTerminalIndex,
             isTerminalVisible: terminal.isTerminalVisible,

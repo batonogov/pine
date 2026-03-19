@@ -78,6 +78,31 @@ struct PineApp: App {
 
                 Divider()
 
+                Button {
+                    guard let pm = focusedProject else { return }
+                    if pm.tabManager.isSplitActive {
+                        pm.tabManager.closeSplit()
+                    } else {
+                        pm.tabManager.splitRight()
+                    }
+                } label: {
+                    if focusedProject?.tabManager.isSplitActive == true {
+                        Text(Strings.menuCloseSplit)
+                    } else {
+                        Text(Strings.menuSplitEditorRight)
+                    }
+                }
+                .keyboardShortcut("\\", modifiers: .command)
+
+                Button(Strings.menuMoveTabToOtherPane) {
+                    guard let pm = focusedProject else { return }
+                    pm.tabManager.moveTabToOtherPane()
+                }
+                .keyboardShortcut("\\", modifiers: [.command, .option])
+                .disabled(focusedProject?.tabManager.isSplitActive != true)
+
+                Divider()
+
                 Button(Strings.menuRevealFileInFinder) {
                     guard let pm = focusedProject,
                           let url = pm.tabManager.activeTab?.url else { return }
@@ -122,7 +147,7 @@ struct PineApp: App {
             CommandGroup(replacing: .saveItem) {
                 Button(Strings.menuSave) {
                     guard let pm = focusedProject else { return }
-                    if pm.tabManager.saveActiveTab() {
+                    if pm.tabManager.saveFocusedActiveTab() {
                         Task {
                             await pm.workspace.gitProvider.refreshAsync()
                             NotificationCenter.default.post(name: .refreshLineDiffs, object: nil)
@@ -133,7 +158,7 @@ struct PineApp: App {
 
                 Button(Strings.menuSaveAll) {
                     guard let pm = focusedProject else { return }
-                    if pm.tabManager.saveAllTabs() {
+                    if pm.tabManager.saveAllTabsIncludingSplit() {
                         Task {
                             await pm.workspace.gitProvider.refreshAsync()
                             NotificationCenter.default.post(name: .refreshLineDiffs, object: nil)
@@ -363,8 +388,23 @@ class CloseDelegate: NSObject, NSWindowDelegate {
     }
 
     /// Closes the active tab with unsaved-changes dialog. Called by the Cmd+W event monitor.
+    /// Respects focused pane in split mode.
     func closeActiveTab() {
-        guard let tab = projectManager.tabManager.activeTab else { return }
+        let tm = projectManager.tabManager
+
+        // Determine which tab to close based on focused pane
+        let tab: EditorTab?
+        let isTrailing: Bool
+        if tm.isSplitActive && tm.focusedSide == .trailing {
+            tab = tm.splitPane?.activeTab
+            isTrailing = true
+        } else {
+            tab = tm.activeTab
+            isTrailing = false
+        }
+
+        guard let tab else { return }
+
         if tab.isDirty {
             let alert = NSAlert()
             alert.messageText = Strings.unsavedChangesTitle
@@ -376,17 +416,35 @@ class CloseDelegate: NSObject, NSWindowDelegate {
             let response = alert.runModal()
             switch response {
             case .alertFirstButtonReturn:
-                if let idx = projectManager.tabManager.tabs.firstIndex(where: { $0.id == tab.id }) {
-                    guard projectManager.tabManager.saveTab(at: idx) else { return }
+                if isTrailing {
+                    if let idx = tm.splitPane?.tabs.firstIndex(where: { $0.id == tab.id }) {
+                        guard tm.splitPane?.saveTab(at: idx) == true else { return }
+                    }
+                    tm.splitPane?.closeTab(id: tab.id)
+                    tm.autoCloseSplitIfEmpty()
+                } else {
+                    if let idx = tm.tabs.firstIndex(where: { $0.id == tab.id }) {
+                        guard tm.saveTab(at: idx) else { return }
+                    }
+                    tm.closeTab(id: tab.id)
                 }
-                projectManager.tabManager.closeTab(id: tab.id)
             case .alertSecondButtonReturn:
-                projectManager.tabManager.closeTab(id: tab.id)
+                if isTrailing {
+                    tm.splitPane?.closeTab(id: tab.id)
+                    tm.autoCloseSplitIfEmpty()
+                } else {
+                    tm.closeTab(id: tab.id)
+                }
             default:
                 break
             }
         } else {
-            projectManager.tabManager.closeTab(id: tab.id)
+            if isTrailing {
+                tm.splitPane?.closeTab(id: tab.id)
+                tm.autoCloseSplitIfEmpty()
+            } else {
+                tm.closeTab(id: tab.id)
+            }
         }
     }
 
@@ -397,7 +455,7 @@ class CloseDelegate: NSObject, NSWindowDelegate {
         }
 
         // Close button → close the entire window.
-        let dirty = projectManager.tabManager.dirtyTabs
+        let dirty = projectManager.tabManager.allDirtyTabs
         guard !dirty.isEmpty else { return true }
 
         let fileList = dirty.map { "  • \($0.fileName)" }.joined(separator: "\n")
@@ -412,7 +470,7 @@ class CloseDelegate: NSObject, NSWindowDelegate {
         let response = alert.runModal()
         switch response {
         case .alertFirstButtonReturn:
-            guard projectManager.tabManager.saveAllTabs() else {
+            guard projectManager.tabManager.saveAllTabsIncludingSplit() else {
                 return false // Save failed — abort close
             }
             return true
@@ -587,7 +645,14 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate {
                   let closeDelegate = window.delegate as? CloseDelegate else {
                 return event
             }
-            if closeDelegate.projectManager.tabManager.activeTab != nil {
+            let tm = closeDelegate.projectManager.tabManager
+            let hasActiveTab: Bool
+            if tm.isSplitActive && tm.focusedSide == .trailing {
+                hasActiveTab = tm.splitPane?.activeTab != nil
+            } else {
+                hasActiveTab = tm.activeTab != nil
+            }
+            if hasActiveTab {
                 closeDelegate.closeActiveTab()
             } else {
                 window.performClose(nil)
@@ -693,7 +758,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate {
 
         // Check for unsaved files
         for (_, pm) in registry.openProjects {
-            let dirty = pm.tabManager.dirtyTabs
+            let dirty = pm.tabManager.allDirtyTabs
             guard !dirty.isEmpty else { continue }
 
             let fileList = dirty.map { "  • \($0.fileName)" }.joined(separator: "\n")
@@ -708,7 +773,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate {
             let response = alert.runModal()
             switch response {
             case .alertFirstButtonReturn:
-                guard pm.tabManager.saveAllTabs() else {
+                guard pm.tabManager.saveAllTabsIncludingSplit() else {
                     isTerminating = false
                     return .terminateCancel
                 }

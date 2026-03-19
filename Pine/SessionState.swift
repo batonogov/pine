@@ -21,6 +21,13 @@ struct SessionState: Codable {
     /// Optional for backwards compatibility with sessions saved before this field existed.
     var highlightingDisabledPaths: [String]?
 
+    // MARK: - Split editor state (optional for backwards compatibility)
+
+    var splitOpenFilePaths: [String]?
+    var splitActiveFilePath: String?
+    var splitHighlightingDisabledPaths: [String]?
+    var splitPreviewModes: [String: String]?
+
     // MARK: - Terminal state (optional for backwards compatibility)
 
     var terminalTabCount: Int?
@@ -63,6 +70,10 @@ struct SessionState: Codable {
         activeFileURL: URL? = nil,
         previewModes: [String: String]? = nil,
         highlightingDisabledPaths: [String]? = nil,
+        splitOpenFileURLs: [URL]? = nil,
+        splitActiveFileURL: URL? = nil,
+        splitHighlightingDisabledPaths: [String]? = nil,
+        splitPreviewModes: [String: String]? = nil,
         terminalTabCount: Int? = nil,
         activeTerminalIndex: Int? = nil,
         isTerminalVisible: Bool? = nil,
@@ -75,6 +86,10 @@ struct SessionState: Codable {
             activeFilePath: activeFileURL?.path,
             previewModes: previewModes,
             highlightingDisabledPaths: highlightingDisabledPaths,
+            splitOpenFilePaths: splitOpenFileURLs?.map(\.path),
+            splitActiveFilePath: splitActiveFileURL?.path,
+            splitHighlightingDisabledPaths: splitHighlightingDisabledPaths,
+            splitPreviewModes: splitPreviewModes,
             terminalTabCount: terminalTabCount,
             activeTerminalIndex: activeTerminalIndex,
             isTerminalVisible: isTerminalVisible,
@@ -130,6 +145,25 @@ struct SessionState: Codable {
     /// The active file URL if it still exists on disk.
     var activeFileURL: URL? {
         guard let path = activeFilePath,
+              FileManager.default.fileExists(atPath: path) else { return nil }
+        return URL(fileURLWithPath: path)
+    }
+
+    // MARK: - Split resolved URLs
+
+    /// Split pane file URLs filtered to those that still exist on disk.
+    var splitExistingFileURLs: [URL]? {
+        guard let paths = splitOpenFilePaths else { return nil }
+        let urls = paths.compactMap { path -> URL? in
+            let url = URL(fileURLWithPath: path)
+            return FileManager.default.fileExists(atPath: path) ? url : nil
+        }
+        return urls.isEmpty ? nil : urls
+    }
+
+    /// The split pane active file URL if it still exists on disk.
+    var splitActiveFileURL: URL? {
+        guard let path = splitActiveFilePath,
               FileManager.default.fileExists(atPath: path) else { return nil }
         return URL(fileURLWithPath: path)
     }

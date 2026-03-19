@@ -3574,6 +3574,78 @@
         }
       }
     },
+    "menu.splitEditorRight" : {
+      "comment" : "Menu command: split editor to show two panes side by side.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Split Editor Right"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Разделить редактор"
+          }
+        }
+      }
+    },
+    "menu.closeSplit" : {
+      "comment" : "Menu command: close the split editor and merge panes.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Close Split"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Закрыть разделение"
+          }
+        }
+      }
+    },
+    "menu.moveTabToOtherPane" : {
+      "comment" : "Menu command: move the current tab to the other split pane.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Move Tab to Other Pane"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Переместить вкладку в другую панель"
+          }
+        }
+      }
+    },
+    "context.openInSplitRight" : {
+      "comment" : "Tab context menu: open this file in a split pane on the right.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Open in Split Right"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Открыть в правой панели"
+          }
+        }
+      }
+    },
     "menu.togglePreview" : {
       "comment" : "Menu command: toggle markdown preview pane.",
       "extractionState" : "manual",
