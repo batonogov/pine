@@ -1,5 +1,34 @@
 # Changelog
 
+## [1.5.0](https://github.com/batonogov/pine/compare/v1.4.0...v1.5.0) (2026-03-19)
+
+
+### Features
+
+* add 18 syntax grammars, pattern-based filename matching, and CSS-in-HTML highlighting ([#239](https://github.com/batonogov/pine/issues/239)) ([6d47261](https://github.com/batonogov/pine/commit/6d47261a879edf679cb9e25267d4f0e45dccdc3d))
+* add global project search (Cmd+Shift+F) ([#226](https://github.com/batonogov/pine/issues/226)) ([2482421](https://github.com/batonogov/pine/commit/2482421f5b2bc65de8fe3d8eff1d92e7aed16de6))
+* replace sidebar segmented picker with native .searchable ([#246](https://github.com/batonogov/pine/issues/246)) ([598162a](https://github.com/batonogov/pine/commit/598162a11c26d541c8b3093eb1975650ff210238))
+* support block comments (Cmd+/) for HTML, CSS, Markdown, and SQL ([#238](https://github.com/batonogov/pine/issues/238)) ([d047755](https://github.com/batonogov/pine/commit/d047755258751212c603f7e6ee8b8ddf43a7e005))
+
+
+### Bug Fixes
+
+* copy ignoredPaths from background git provider ([#211](https://github.com/batonogov/pine/issues/211)) ([e9dfb30](https://github.com/batonogov/pine/commit/e9dfb30316d5035e191716cc6f9dd684a037696f))
+* place comment character at column 0, preserving indentation after it ([#255](https://github.com/batonogov/pine/issues/255)) ([da68b3b](https://github.com/batonogov/pine/commit/da68b3b55b45693c142968529d69a2257582b17f))
+* prevent cursor jumping to end of file after deleting a character ([#253](https://github.com/batonogov/pine/issues/253)) ([75531bb](https://github.com/batonogov/pine/commit/75531bb72d8aa30d9765bba1e57bc3e3a3aeebbd)), closes [#250](https://github.com/batonogov/pine/issues/250)
+* prevent deadlock by disabling undo registration during syntax highlighting ([#254](https://github.com/batonogov/pine/issues/254)) ([32a1283](https://github.com/batonogov/pine/commit/32a128374c97972a7df2f512a219b1c2fa6f0ca8))
+* run git refresh asynchronously to prevent SIGSEGV on folder delete ([#213](https://github.com/batonogov/pine/issues/213)) ([96ad0cc](https://github.com/batonogov/pine/commit/96ad0cc89de9e865747a13ed3aa5c801a2ac1992))
+
+
+### Performance Improvements
+
+* speed up opening large projects ([#240](https://github.com/batonogov/pine/issues/240)) ([e3870d0](https://github.com/batonogov/pine/commit/e3870d0f5a49028dc8f15f0b766f90123d8fa541))
+
+
+### Miscellaneous
+
+* update localizations for new UI strings ([#241](https://github.com/batonogov/pine/issues/241)) ([65aa881](https://github.com/batonogov/pine/commit/65aa8816b2eb43686be85a9f80edb4a7f3af4290))
+
 ## [1.4.0](https://github.com/batonogov/pine/compare/v1.3.0...v1.4.0) (2026-03-18)
 
 
