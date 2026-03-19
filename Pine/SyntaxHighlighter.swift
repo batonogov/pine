@@ -513,6 +513,9 @@ final class SyntaxHighlighter {
 
     /// Сбрасывает атрибуты на базовый стиль (без грамматики).
     private func resetAttributes(textStorage: NSTextStorage, range: NSRange, font: NSFont) {
+        let undoManager = textStorage.layoutManagers.first?.firstTextView?.undoManager
+        undoManager?.disableUndoRegistration()
+        defer { undoManager?.enableUndoRegistration() }
         textStorage.beginEditing()
         textStorage.addAttributes([
             .foregroundColor: NSColor.textColor,
@@ -537,6 +540,9 @@ final class SyntaxHighlighter {
         let source = textStorage.string
         let fullRange = NSRange(location: 0, length: textStorage.length)
 
+        let undoManager = textStorage.layoutManagers.first?.firstTextView?.undoManager
+        undoManager?.disableUndoRegistration()
+        defer { undoManager?.enableUndoRegistration() }
         textStorage.beginEditing()
         textStorage.addAttributes([
             .foregroundColor: NSColor.textColor,

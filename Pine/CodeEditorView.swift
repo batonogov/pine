@@ -662,6 +662,9 @@ struct CodeEditorView: NSViewRepresentable {
                   let textView = sv.documentView as? NSTextView,
                   let storage = textView.textStorage else { return }
 
+            let undoManager = textView.undoManager
+            undoManager?.disableUndoRegistration()
+            defer { undoManager?.enableUndoRegistration() }
             storage.beginEditing()
 
             // Снимаем предыдущую подсветку

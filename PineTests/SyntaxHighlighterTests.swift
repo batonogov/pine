@@ -414,7 +414,124 @@ struct SyntaxHighlighterTests {
                 "Line from second call should have keyword color")
     }
 
-    // MARK: - 10. Coordinator.updateContentIfNeeded detects language change with identical text
+    // MARK: - 10. Syntax highlighting does not register undo actions
+
+    /// Helper: creates a full text system (NSTextStorage → NSLayoutManager → NSTextContainer → NSTextView)
+    /// so that `textStorage.layoutManagers.first?.firstTextView?.undoManager` resolves.
+    private func makeTextSystem(string: String) -> (NSTextStorage, NSTextView, UndoManager, NSWindow) {
+        let storage = NSTextStorage(string: string)
+        let layoutManager = NSLayoutManager()
+        storage.addLayoutManager(layoutManager)
+        let container = NSTextContainer(
+            containerSize: NSSize(width: 500, height: CGFloat.greatestFiniteMagnitude)
+        )
+        layoutManager.addTextContainer(container)
+        let textView = NSTextView(
+            frame: NSRect(x: 0, y: 0, width: 500, height: 500),
+            textContainer: container
+        )
+        textView.allowsUndo = true
+
+        // NSTextView needs a window to vend an undoManager.
+        // Return window so callers hold a strong reference and it is not deallocated
+        // before the test finishes.
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 500, height: 500),
+            styleMask: [.titled],
+            backing: .buffered,
+            defer: false
+        )
+        window.contentView = textView
+
+        guard let undoManager = textView.undoManager else {
+            fatalError("NSTextView has no undoManager — ensure it is attached to a window")
+        }
+        return (storage, textView, undoManager, window)
+    }
+
+    @Test func highlightDoesNotRegisterUndoActions() {
+        register(langA)
+
+        let text = "func hello() /* comment */"
+        let (storage, _, undoManager, retainedWindow) = makeTextSystem(string: text)
+
+        #expect(!undoManager.canUndo, "UndoManager should be empty before highlighting")
+
+        SyntaxHighlighter.shared.highlight(
+            textStorage: storage, language: "langa", font: font
+        )
+
+        #expect(!undoManager.canUndo,
+                "Syntax highlighting must NOT register undo actions")
+    }
+
+    @Test func highlightEditedDoesNotRegisterUndoActions() {
+        register(langA)
+
+        let text = "func hello() /* comment */"
+        let (storage, _, undoManager, retainedWindow) = makeTextSystem(string: text)
+
+        // Full highlight first (populates cache)
+        SyntaxHighlighter.shared.highlight(
+            textStorage: storage, language: "langa", font: font
+        )
+
+        // Clear undo state
+        undoManager.removeAllActions()
+        #expect(!undoManager.canUndo)
+
+        // Incremental highlight
+        SyntaxHighlighter.shared.highlightEdited(
+            textStorage: storage,
+            editedRange: NSRange(location: 0, length: 4),
+            language: "langa",
+            font: font
+        )
+
+        #expect(!undoManager.canUndo,
+                "Incremental highlighting must NOT register undo actions")
+    }
+
+    @Test func highlightVisibleRangeDoesNotRegisterUndoActions() {
+        register(langA)
+
+        let text = "func hello() /* comment */"
+        let (storage, _, undoManager, retainedWindow) = makeTextSystem(string: text)
+
+        SyntaxHighlighter.shared.highlightVisibleRange(
+            textStorage: storage,
+            visibleCharRange: NSRange(location: 0, length: storage.length),
+            language: "langa",
+            font: font
+        )
+
+        #expect(!undoManager.canUndo,
+                "Viewport highlighting must NOT register undo actions")
+    }
+
+    @Test func undoRedoWorksCorrectlyAfterHighlighting() {
+        register(langA)
+
+        let (storage, textView, undoManager, retainedWindow) = makeTextSystem(string: "func hello()")
+
+        // Type some text via textStorage to register an undoable edit
+        textView.insertText("// added\n", replacementRange: NSRange(location: 0, length: 0))
+
+        // Apply syntax highlighting (should not pollute undo stack)
+        SyntaxHighlighter.shared.highlight(
+            textStorage: storage, language: "langa", font: font
+        )
+
+        #expect(undoManager.canUndo, "Should be able to undo the text edit")
+        #expect(storage.string.hasPrefix("// added\n"))
+
+        // Undo should revert the text, not the highlighting attributes
+        undoManager.undo()
+        #expect(storage.string == "func hello()",
+                "Undo should revert text change, not highlighting")
+    }
+
+    // MARK: - 11. Coordinator.updateContentIfNeeded detects language change with identical text
 
     @Test func coordinatorReHighlightsOnLanguageChangeWithSameText() {
         register(langA, langB)
