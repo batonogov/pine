@@ -51,16 +51,11 @@ struct ContentView: View {
             .toolbar {
                 ToolbarItem {
                     Button {
-                        projectManager.searchProvider.isCaseSensitive.toggle()
-                        if let rootURL = projectManager.rootURL {
-                            projectManager.searchProvider.search(in: rootURL)
-                        }
+                        focusSidebarSearchField()
                     } label: {
-                        Image(systemName: projectManager.searchProvider.isCaseSensitive
-                              ? "textformat.size" : "textformat")
+                        Image(systemName: "magnifyingglass")
                     }
-                    .help(Strings.searchCaseSensitive)
-                    .accessibilityIdentifier(AccessibilityID.projectSearchCaseSensitiveToggle)
+                    .help(Strings.searchPlaceholder)
                 }
                 ToolbarItem {
                     Button {
@@ -180,6 +175,9 @@ struct ContentView: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: .showProjectSearch)) { _ in
             columnVisibility = .all
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                focusSidebarSearchField()
+            }
         }
         .onChange(of: tabManager.pendingGoToLine) { _, newLine in
             guard let line = newLine, let tab = tabManager.activeTab else { return }
@@ -191,6 +189,26 @@ struct ContentView: View {
     /// Branch subtitle as a plain String to avoid generating a localization key.
     private var branchSubtitle: String {
         workspace.gitProvider.isGitRepository ? "⎇ \(workspace.gitProvider.currentBranch) ▾" : ""
+    }
+
+    // MARK: - Search focus
+
+    /// Finds the NSSearchField in the key window and makes it first responder.
+    private func focusSidebarSearchField() {
+        guard let window = NSApp.keyWindow else { return }
+        if let searchField = Self.findSearchField(in: window.contentView) {
+            window.makeFirstResponder(searchField)
+        }
+    }
+
+    /// Recursively walks the view hierarchy to find an NSSearchField.
+    private static func findSearchField(in view: NSView?) -> NSSearchField? {
+        guard let view else { return nil }
+        if let searchField = view as? NSSearchField { return searchField }
+        for subview in view.subviews {
+            if let found = findSearchField(in: subview) { return found }
+        }
+        return nil
     }
 
     // MARK: - Session restoration

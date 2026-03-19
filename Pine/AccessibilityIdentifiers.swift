@@ -45,7 +45,6 @@ enum AccessibilityID {
     static func branchItem(_ name: String) -> String { "branchItem_\(name)" }
 
     // MARK: - Project Search
-    static let projectSearchCaseSensitiveToggle = "projectSearchCaseSensitiveToggle"
     static let projectSearchResultsList = "projectSearchResultsList"
 
     // MARK: - Status bar
