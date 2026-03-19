@@ -317,12 +317,19 @@ struct CodeEditorView: NSViewRepresentable {
 
         textView.string = text
         if useViewportHighlighting {
-            // Layout not yet complete — defer to next run loop
-            DispatchQueue.main.async {
-                self.applyViewportHighlighting(
-                    textView: textView, scrollView: scrollView, coordinator: context.coordinator
-                )
-            }
+            // Layout not yet complete — highlight first screenful synchronously
+            // to avoid a flash of unstyled text, then refine after layout.
+            let initialRange = Self.estimateInitialRange(
+                text: text, scrollOffset: initialScrollOffset, cursorPosition: initialCursorPosition
+            )
+            SyntaxHighlighter.shared.highlightVisibleRange(
+                textStorage: textStorage,
+                visibleCharRange: initialRange,
+                language: language,
+                fileName: fileName,
+                font: editorFont
+            )
+            context.coordinator.highlightedCharRange = initialRange
         } else {
             applyHighlighting(to: textView)
         }
@@ -790,6 +797,64 @@ struct CodeEditorView: NSViewRepresentable {
             let scroll = sv.contentView.bounds.origin.y
             parent.onStateChange?(cursor, scroll)
         }
+    }
+
+    /// Estimates the initial visible char range before layout is complete.
+    /// Uses cursor position or scroll offset to guess which part of the file is visible.
+    /// Falls back to the first ~200 lines if no saved state.
+    private static let estimatedScreenLines = 200
+
+    private static func estimateInitialRange(
+        text: String,
+        scrollOffset: CGFloat,
+        cursorPosition: Int
+    ) -> NSRange {
+        let source = text as NSString
+        let totalLength = source.length
+        guard totalLength > 0 else { return NSRange(location: 0, length: 0) }
+
+        // If restoring scroll position, estimate start from line height
+        let startChar: Int
+        if scrollOffset > 0 {
+            // Rough estimate: 14pt line height for monospaced font
+            let estimatedLine = Int(scrollOffset / 14)
+            startChar = charOffsetForLine(estimatedLine, in: source, totalLength: totalLength)
+        } else if cursorPosition > 0 && cursorPosition < totalLength {
+            // Center around cursor
+            let linesBefore = estimatedScreenLines / 2
+            let cursorLine = lineNumber(at: cursorPosition, in: source)
+            let startLine = max(0, cursorLine - linesBefore)
+            startChar = charOffsetForLine(startLine, in: source, totalLength: totalLength)
+        } else {
+            startChar = 0
+        }
+
+        // Find end: startChar + estimatedScreenLines lines
+        var linesFound = 0
+        var end = startChar
+        while end < totalLength && linesFound < estimatedScreenLines {
+            if source.character(at: end) == 0x0A { linesFound += 1 }
+            end += 1
+        }
+
+        return NSRange(location: startChar, length: end - startChar)
+    }
+
+    private static func charOffsetForLine(_ line: Int, in source: NSString, totalLength: Int) -> Int {
+        var currentLine = 0
+        for i in 0..<totalLength {
+            if currentLine >= line { return i }
+            if source.character(at: i) == 0x0A { currentLine += 1 }
+        }
+        return totalLength
+    }
+
+    private static func lineNumber(at charOffset: Int, in source: NSString) -> Int {
+        var line = 0
+        for i in 0..<min(charOffset, source.length) where source.character(at: i) == 0x0A {
+            line += 1
+        }
+        return line
     }
 
     /// Применяет viewport-based подсветку: подсвечивает только видимую область.
