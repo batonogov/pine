@@ -424,9 +424,12 @@ struct CodeEditorView: NSViewRepresentable {
         private let highlightDelay: TimeInterval = 0.05
 
         /// Диапазон символов, уже подсвеченных viewport-based подсветкой.
+        /// Internal access — записывается из `applyViewportHighlighting` и `highlightOnScrollIfNeeded`.
         var highlightedCharRange: NSRange?
         /// Дебаунс для подсветки при скролле.
         private var scrollHighlightWorkItem: DispatchWorkItem?
+        /// Задержка дебаунсинга скролла (~1 кадр при 60fps)
+        private let scrollHighlightDelay: TimeInterval = 0.016
 
         init(parent: CodeEditorView) {
             self.parent = parent
@@ -441,6 +444,27 @@ struct CodeEditorView: NSViewRepresentable {
         func cancelPendingHighlight() {
             highlightWorkItem?.cancel()
             highlightWorkItem = nil
+        }
+
+        /// Текущий файл использует viewport-based подсветку?
+        private var isViewportHighlighting: Bool {
+            guard let sv = scrollView,
+                  let textView = sv.documentView as? NSTextView,
+                  let storage = textView.textStorage else { return false }
+            return storage.length > CodeEditorView.viewportHighlightThreshold
+                && !parent.syntaxHighlightingDisabled
+        }
+
+        /// Запускает viewport-based подсветку видимой области (deferred на следующий run loop).
+        /// Сбрасывает `highlightedCharRange` и вызывает `applyViewportHighlighting`.
+        private func scheduleViewportHighlighting(textView: NSTextView) {
+            highlightedCharRange = nil
+            DispatchQueue.main.async { [weak self] in
+                guard let self, let sv = self.scrollView else { return }
+                self.parent.applyViewportHighlighting(
+                    textView: textView, scrollView: sv, coordinator: self
+                )
+            }
         }
 
         /// Обновляет текст и подсветку при смене файла или языка.
@@ -466,14 +490,7 @@ struct CodeEditorView: NSViewRepresentable {
 
             if !parent.syntaxHighlightingDisabled, let storage = textView.textStorage {
                 if storage.length > CodeEditorView.viewportHighlightThreshold {
-                    // Large file — viewport-based highlighting
-                    highlightedCharRange = nil
-                    DispatchQueue.main.async { [weak self] in
-                        guard let self, let sv = self.scrollView else { return }
-                        self.parent.applyViewportHighlighting(
-                            textView: textView, scrollView: sv, coordinator: self
-                        )
-                    }
+                    scheduleViewportHighlighting(textView: textView)
                 } else {
                     SyntaxHighlighter.shared.highlight(
                         textStorage: storage,
@@ -506,13 +523,7 @@ struct CodeEditorView: NSViewRepresentable {
             // Re-highlight with new font
             if !parent.syntaxHighlightingDisabled, let storage = textView.textStorage {
                 if storage.length > CodeEditorView.viewportHighlightThreshold {
-                    highlightedCharRange = nil
-                    DispatchQueue.main.async { [weak self] in
-                        guard let self, let sv = self.scrollView else { return }
-                        self.parent.applyViewportHighlighting(
-                            textView: textView, scrollView: sv, coordinator: self
-                        )
-                    }
+                    scheduleViewportHighlighting(textView: textView)
                 } else {
                     SyntaxHighlighter.shared.highlight(
                         textStorage: storage,
@@ -552,12 +563,17 @@ struct CodeEditorView: NSViewRepresentable {
             // Skip highlighting for large files opened without syntax highlighting
             guard !parent.syntaxHighlightingDisabled else { return }
 
+            // Инвалидируем highlightedCharRange — вставка/удаление текста
+            // сдвигает символьные смещения, старый диапазон некорректен
+            highlightedCharRange = nil
+
             // Дебаунсинг: откладываем подсветку до паузы в вводе.
             // Не накапливаем диапазоны — каждый textDidChange работает
             // в своих координатах; union между версиями некорректен.
             // При быстром вводе последовательные правки обычно смежны,
             // и 20-строчный контекст в highlightEdited покрывает их.
             highlightWorkItem?.cancel()
+            let isLargeFile = (textView.string as NSString).length > CodeEditorView.viewportHighlightThreshold
             let workItem = DispatchWorkItem { [weak self] in
                 guard let self else { return }
                 guard let sv = self.scrollView,
@@ -572,6 +588,9 @@ struct CodeEditorView: NSViewRepresentable {
                         fileName: self.parent.fileName,
                         font: self.parent.editorFont
                     )
+                } else if isLargeFile {
+                    // Большой файл — viewport-based подсветка вместо полной
+                    self.scheduleViewportHighlighting(textView: tv)
                 } else {
                     // Диапазон не определён или невалиден — полная подсветка
                     SyntaxHighlighter.shared.highlight(
@@ -748,7 +767,7 @@ struct CodeEditorView: NSViewRepresentable {
                 }
             }
             scrollHighlightWorkItem = workItem
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.016, execute: workItem)
+            DispatchQueue.main.asyncAfter(deadline: .now() + scrollHighlightDelay, execute: workItem)
         }
 
         @objc func handleToggleComment() {
