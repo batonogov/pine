@@ -96,11 +96,11 @@ struct CommentTogglerTests {
         let text = "    let x = 1"
         let range = NSRange(location: 0, length: 0)
         let result = CommentToggler.toggle(text: text, selectedRange: range, lineComment: "//")
-        #expect(result.newText == "    // let x = 1")
+        #expect(result.newText == "//     let x = 1")
     }
 
     @Test func uncommentsPreservingIndentation() {
-        let text = "    // let x = 1"
+        let text = "//     let x = 1"
         let range = NSRange(location: 0, length: 0)
         let result = CommentToggler.toggle(text: text, selectedRange: range, lineComment: "//")
         #expect(result.newText == "    let x = 1")
@@ -110,7 +110,35 @@ struct CommentTogglerTests {
         let text = "\tlet x = 1"
         let range = NSRange(location: 0, length: 0)
         let result = CommentToggler.toggle(text: text, selectedRange: range, lineComment: "//")
-        #expect(result.newText == "\t// let x = 1")
+        #expect(result.newText == "// \tlet x = 1")
+    }
+
+    // MARK: - YAML indentation (issue #251)
+
+    @Test func commentYAMLIndentedLines() {
+        let text = "    - name: Test\n      become: true"
+        let range = NSRange(location: 0, length: text.utf16.count)
+        let result = CommentToggler.toggle(text: text, selectedRange: range, lineComment: "#")
+        #expect(result.newText == "#     - name: Test\n#       become: true")
+    }
+
+    @Test func uncommentYAMLIndentedLines() {
+        let text = "#     - name: Test\n#       become: true"
+        let range = NSRange(location: 0, length: text.utf16.count)
+        let result = CommentToggler.toggle(text: text, selectedRange: range, lineComment: "#")
+        #expect(result.newText == "    - name: Test\n      become: true")
+    }
+
+    @Test func commentUncommentRoundTripWithIndentation() {
+        let text = "    - name: Test\n      become: true"
+        let range = NSRange(location: 0, length: text.utf16.count)
+        let commented = CommentToggler.toggle(text: text, selectedRange: range, lineComment: "#")
+        let uncommented = CommentToggler.toggle(
+            text: commented.newText,
+            selectedRange: NSRange(location: 0, length: commented.newText.utf16.count),
+            lineComment: "#"
+        )
+        #expect(uncommented.newText == text)
     }
 
     // MARK: - Range adjustment

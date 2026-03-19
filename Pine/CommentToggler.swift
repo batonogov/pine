@@ -44,8 +44,8 @@ enum CommentToggler {
         }
 
         let allCommented = nonEmptyLines.allSatisfy { line in
-            let trimmed = line.content.drop(while: { $0 == " " || $0 == "\t" })
-            return trimmed.hasPrefix(lineComment)
+            let content = line.content.trimmingCharacters(in: .newlines)
+            return content.hasPrefix(lineComment)
         }
 
         // Build new text
@@ -59,30 +59,27 @@ enum CommentToggler {
             // Skip empty lines
             guard !stripped.trimmingCharacters(in: .whitespaces).isEmpty else { continue }
 
-            let leadingWhitespace = String(lineContent.prefix(while: { $0 == " " || $0 == "\t" }))
-            let afterWhitespace = String(lineContent.dropFirst(leadingWhitespace.count))
+            let contentWithoutNewline = lineContent.trimmingCharacters(in: .newlines)
 
             let adjustedLocation = line.range.location + offset
             let nsNew = newText as NSString
 
             if allCommented {
-                // Uncomment: remove lineComment (+ optional space)
-                if afterWhitespace.hasPrefix(lineComment + " ") {
+                // Uncomment: remove lineComment (+ optional space) from start of line (column 0)
+                if contentWithoutNewline.hasPrefix(lineComment + " ") {
                     let removeCount = (lineComment + " ").utf16.count
-                    let removeStart = adjustedLocation + leadingWhitespace.utf16.count
-                    let removeRange = NSRange(location: removeStart, length: removeCount)
+                    let removeRange = NSRange(location: adjustedLocation, length: removeCount)
                     newText = nsNew.replacingCharacters(in: removeRange, with: "")
                     offset -= removeCount
-                } else if afterWhitespace.hasPrefix(lineComment) {
+                } else if contentWithoutNewline.hasPrefix(lineComment) {
                     let removeCount = lineComment.utf16.count
-                    let removeStart = adjustedLocation + leadingWhitespace.utf16.count
-                    let removeRange = NSRange(location: removeStart, length: removeCount)
+                    let removeRange = NSRange(location: adjustedLocation, length: removeCount)
                     newText = nsNew.replacingCharacters(in: removeRange, with: "")
                     offset -= removeCount
                 }
             } else {
-                // Comment: insert lineComment + " " after leading whitespace
-                let insertPos = adjustedLocation + leadingWhitespace.utf16.count
+                // Comment: insert lineComment + " " at column 0 (before indentation)
+                let insertPos = adjustedLocation
                 let insertion = lineComment + " "
                 newText = nsNew.replacingCharacters(
                     in: NSRange(location: insertPos, length: 0),
