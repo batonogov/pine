@@ -190,6 +190,6 @@ private struct MatchRowView: View {
         let after = Text(content[range.upperBound..<content.endIndex])
             .foregroundColor(.primary)
 
-        return before + matched + after
+        return Text("\(before)\(matched)\(after)")
     }
 }
