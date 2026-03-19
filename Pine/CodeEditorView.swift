@@ -197,6 +197,8 @@ final class EditorContainerView: NSView {
 
 struct CodeEditorView: NSViewRepresentable {
     @Binding var text: String
+    /// Monotonic version counter from EditorTab — O(1) change detection.
+    var contentVersion: UInt64 = 0
     var language: String
     var fileName: String?
     var lineDiffs: [GitLineDiff] = []
@@ -311,6 +313,7 @@ struct CodeEditorView: NSViewRepresentable {
         context.coordinator.lineNumberView = lineNumberView
         context.coordinator.minimapView = minimapView
         context.coordinator.lastFontSize = editorFont.pointSize
+        context.coordinator.syncContentVersion()
 
         textView.string = text
         if useViewportHighlighting {
@@ -461,14 +464,24 @@ struct CodeEditorView: NSViewRepresentable {
         /// Обновляет текст и подсветку при смене файла или языка.
         /// Вызывается из updateNSView. Выделен в отдельный метод
         /// для возможности прямого тестирования.
+        /// Последняя версия контента — для O(1) обнаружения изменений
+        /// вместо O(n) сравнения строк.
+        private(set) var lastContentVersion: UInt64 = 0
+
+        /// Синхронизирует версию контента (вызывается из makeNSView).
+        func syncContentVersion() {
+            lastContentVersion = parent.contentVersion
+        }
+
         func updateContentIfNeeded(text: String, language: String, fileName: String?, font: NSFont) {
             guard let sv = scrollView,
                   let textView = sv.documentView as? NSTextView else { return }
 
             let languageChanged = lastLanguage != language || lastFileName != fileName
-            let textChanged = textView.string != text
+            let textChanged = parent.contentVersion != lastContentVersion
 
             guard textChanged || languageChanged else { return }
+            lastContentVersion = parent.contentVersion
 
             cancelPendingHighlight()
             if let storage = textView.textStorage {
@@ -533,6 +546,8 @@ struct CodeEditorView: NSViewRepresentable {
         func textDidChange(_ notification: Notification) {
             guard let textView = notification.object as? NSTextView else { return }
             parent.text = textView.string
+            // Sync version so the next updateNSView doesn't re-trigger updateContentIfNeeded
+            lastContentVersion = parent.contentVersion
 
             // Подсветка синтаксиса сбросит backgroundColor —
             // считаем bracket highlight невалидным

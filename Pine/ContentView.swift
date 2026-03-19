@@ -490,6 +490,7 @@ struct ContentView: View {
                 get: { tab.content },
                 set: { tabManager.updateContent($0) }
             ),
+            contentVersion: tab.contentVersion,
             language: tab.language,
             fileName: tab.fileName,
             lineDiffs: lineDiffs,
