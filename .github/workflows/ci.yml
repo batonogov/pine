@@ -1,3 +1,6 @@
+# NOTE: All third-party actions are pinned by full commit SHA for supply-chain safety.
+# To update an action: find the new version's commit SHA on GitHub (Tags → verify commit),
+# replace the SHA, and keep the "# vX" comment in sync.
 name: CI
 
 on:
@@ -16,12 +19,15 @@ on:
       - "assets/**"
       - "LICENSE"
 
+permissions:
+  contents: read
+
 jobs:
   lint:
     name: SwiftLint
     runs-on: macos-26
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
 
       - name: Install SwiftLint
         run: brew install swiftlint
@@ -33,7 +39,7 @@ jobs:
     name: Build & Test
     runs-on: macos-26
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
 
       - name: Select Xcode
         run: |
