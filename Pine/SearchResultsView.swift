@@ -1,5 +1,5 @@
 //
-//  ProjectSearchView.swift
+//  SearchResultsView.swift
 //  Pine
 //
 //  Created by Claude on 18.03.2026.

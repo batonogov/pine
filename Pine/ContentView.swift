@@ -562,10 +562,44 @@ private struct SidebarSearchableContent: View {
 
     var body: some View {
         if isSearching && !projectManager.searchProvider.query.isEmpty {
-            SearchResultsView()
+            VStack(spacing: 0) {
+                CaseSensitivityToggle()
+                SearchResultsView()
+            }
         } else {
             SidebarView(workspace: workspace, selectedFile: $selectedNode)
         }
+    }
+}
+
+/// Toggle for case-sensitive search, shown above search results.
+private struct CaseSensitivityToggle: View {
+    @Environment(ProjectManager.self) var projectManager
+
+    var body: some View {
+        @Bindable var search = projectManager.searchProvider
+
+        HStack {
+            Spacer()
+            Button {
+                search.isCaseSensitive.toggle()
+                guard let rootURL = projectManager.rootURL else { return }
+                search.search(in: rootURL)
+            } label: {
+                Text("Aa")
+                    .font(.system(size: 11, weight: search.isCaseSensitive ? .bold : .regular))
+                    .foregroundStyle(search.isCaseSensitive ? .primary : .secondary)
+                    .frame(width: 22, height: 18)
+                    .background(
+                        RoundedRectangle(cornerRadius: 3)
+                            .fill(search.isCaseSensitive ? AnyShapeStyle(.quaternary) : AnyShapeStyle(.clear))
+                    )
+            }
+            .buttonStyle(.plain)
+            .help(Strings.searchCaseSensitive)
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 4)
     }
 }
 
