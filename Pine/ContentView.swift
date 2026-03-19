@@ -23,7 +23,6 @@ struct ContentView: View {
     @State private var columnVisibility: NavigationSplitViewVisibility = .all
     @State private var lineDiffs: [GitLineDiff] = []
     @State private var didRestoreSession = false
-    @State private var searchText: String = ""
     @State private var goToLineOffset: Int?
     @AppStorage("minimapVisible") private var isMinimapVisible = true
 
@@ -36,18 +35,33 @@ struct ContentView: View {
     var body: some View {
         NavigationSplitView(columnVisibility: $columnVisibility) {
             SidebarSearchableContent(
-                searchText: $searchText,
                 selectedNode: $selectedNode,
                 workspace: workspace
             )
-            .searchable(text: $searchText, placement: .sidebar, prompt: Strings.searchPlaceholder)
+            .searchable(
+                text: Bindable(projectManager.searchProvider).query,
+                placement: .sidebar,
+                prompt: Strings.searchPlaceholder
+            )
             .accessibilityIdentifier(AccessibilityID.sidebar)
-            .onChange(of: searchText) { _, _ in
+            .onChange(of: projectManager.searchProvider.query) { _, _ in
                 guard let rootURL = projectManager.rootURL else { return }
-                projectManager.searchProvider.query = searchText
                 projectManager.searchProvider.search(in: rootURL)
             }
             .toolbar {
+                ToolbarItem {
+                    Button {
+                        projectManager.searchProvider.isCaseSensitive.toggle()
+                        if let rootURL = projectManager.rootURL {
+                            projectManager.searchProvider.search(in: rootURL)
+                        }
+                    } label: {
+                        Image(systemName: projectManager.searchProvider.isCaseSensitive
+                              ? "textformat.size" : "textformat")
+                    }
+                    .help(Strings.searchCaseSensitive)
+                    .accessibilityIdentifier(AccessibilityID.projectSearchCaseSensitiveToggle)
+                }
                 ToolbarItem {
                     Button {
                         if let url = registry.openProjectViaPanel() {
@@ -523,13 +537,13 @@ struct ContentView: View {
 /// Wrapper view that reads `isSearching` environment to switch between file tree and search results.
 /// `isSearching` is only available inside a `.searchable` modifier, hence the separate view.
 private struct SidebarSearchableContent: View {
-    @Binding var searchText: String
     @Binding var selectedNode: FileNode?
     var workspace: WorkspaceManager
+    @Environment(ProjectManager.self) var projectManager
     @Environment(\.isSearching) var isSearching
 
     var body: some View {
-        if isSearching && !searchText.isEmpty {
+        if isSearching && !projectManager.searchProvider.query.isEmpty {
             SearchResultsView()
         } else {
             SidebarView(workspace: workspace, selectedFile: $selectedNode)
