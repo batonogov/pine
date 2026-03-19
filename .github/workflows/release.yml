@@ -1,3 +1,6 @@
+# NOTE: All third-party actions are pinned by full commit SHA for supply-chain safety.
+# To update an action: find the new version's commit SHA on GitHub (Tags → verify commit),
+# replace the SHA, and keep the "# vX" comment in sync.
 name: Release
 
 on:
@@ -5,15 +8,16 @@ on:
     tags:
       - 'v*'
 
-permissions:
-  contents: write
+permissions: {}
 
 jobs:
   build-and-release:
     runs-on: macos-26
+    permissions:
+      contents: write
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
 
       - name: Select Xcode
         run: |

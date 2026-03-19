@@ -1,3 +1,6 @@
+# NOTE: All third-party actions are pinned by full commit SHA for supply-chain safety.
+# To update an action: find the new version's commit SHA on GitHub (Tags → verify commit),
+# replace the SHA, and keep the "# vX" comment in sync.
 name: Release Please
 
 on:
@@ -5,14 +8,15 @@ on:
     branches:
       - main
 
-permissions:
-  contents: write
-  pull-requests: write
+permissions: {}
 
 jobs:
   release-please:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
     steps:
-      - uses: googleapis/release-please-action@v4
+      - uses: googleapis/release-please-action@16a9c90856f42705d54a6fda1823352bdc62cf38 # v4
         with:
           token: ${{ secrets.RELEASE_PLEASE_TOKEN }}
