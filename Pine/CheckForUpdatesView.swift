@@ -11,7 +11,7 @@ import SwiftUI
 
 /// Sparkle configuration constants.
 enum SparkleConstants {
-    static let appcastURLString = "https://github.com/batonogov/pine/releases/latest/download/appcast.xml"
+    nonisolated static let appcastURLString = "https://github.com/batonogov/pine/releases/latest/download/appcast.xml"
 }
 
 /// ViewModel that observes `SPUUpdater.canCheckForUpdates` via Combine.
