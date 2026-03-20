@@ -28,7 +28,7 @@ struct ContentView: View {
     @State private var isSearchPresented = false
     @State private var goToLineOffset: GoToRequest?
     @AppStorage("minimapVisible") private var isMinimapVisible = true
-    @AppStorage("blameVisible") private var isBlameVisible = false
+    @AppStorage(BlameConstants.storageKey) private var isBlameVisible = false
 
     private var activeTab: EditorTab? { tabManager.activeTab }
 

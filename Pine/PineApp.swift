@@ -91,8 +91,8 @@ struct PineApp: App {
                 .keyboardShortcut("m", modifiers: [.command, .shift])
 
                 Button {
-                    let current = UserDefaults.standard.bool(forKey: "blameVisible")
-                    UserDefaults.standard.set(!current, forKey: "blameVisible")
+                    let key = BlameConstants.storageKey
+                    UserDefaults.standard.set(!UserDefaults.standard.bool(forKey: key), forKey: key)
                 } label: {
                     Label(Strings.menuToggleBlame, systemImage: MenuIcons.toggleBlame)
                 }

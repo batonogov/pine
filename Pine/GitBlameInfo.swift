@@ -17,3 +17,9 @@ struct GitBlameLine: Equatable {
     /// Whether this line is uncommitted (all-zeros hash).
     var isUncommitted: Bool { hash.allSatisfy { $0 == "0" } }
 }
+
+/// Shared constants for blame feature.
+enum BlameConstants {
+    /// UserDefaults / @AppStorage key for blame visibility.
+    static let storageKey = "blameVisible"
+}

@@ -153,8 +153,15 @@ final class GutterTextView: NSTextView {
         (text as NSString).draw(at: NSPoint(x: drawX, y: drawY), withAttributes: attrs)
     }
 
+    /// Invalidates cursor line cache. Must be called when text content changes
+    /// (insert/delete shifts character offsets, making the cached location stale).
+    func invalidateCursorLineCache() {
+        cachedCursorLocation = -1
+    }
+
     /// Updates cached cursor line number incrementally.
     /// Counts newlines only in the delta between old and new cursor position.
+    /// Falls back to full recount when the cache was invalidated by a text edit.
     private func updateCachedCursorLine() {
         let source = string as NSString
         guard source.length > 0 else {
@@ -163,11 +170,22 @@ final class GutterTextView: NSTextView {
             return
         }
         let newLocation = min(selectedRange().location, source.length)
-        let oldLocation = min(cachedCursorLocation, source.length)
 
+        // Cache invalidated (text changed) — full recount
+        if cachedCursorLocation < 0 || cachedCursorLocation > source.length {
+            var line = 1
+            for i in 0..<newLocation where source.character(at: i) == 0x0A {
+                line += 1
+            }
+            cachedCursorLine = line
+            cachedCursorLocation = newLocation
+            return
+        }
+
+        let oldLocation = cachedCursorLocation
         if newLocation == oldLocation { return }
 
-        // Count newlines in the delta range
+        // Incremental: count newlines only in the delta
         var delta = 0
         if newLocation > oldLocation {
             for i in oldLocation..<newLocation where source.character(at: i) == 0x0A {
@@ -337,7 +355,7 @@ struct CodeEditorView: NSViewRepresentable {
     var language: String
     var fileName: String?
     var lineDiffs: [GitLineDiff] = []
-    /// Whether the blame gutter is visible.
+    /// Whether inline blame annotation is visible on the cursor line.
     var isBlameVisible: Bool = false
     /// Blame data for the current file.
     var blameLines: [GitBlameLine] = []
@@ -738,6 +756,11 @@ struct CodeEditorView: NSViewRepresentable {
             // so the upcoming updateNSView won't overwrite the text and reset the cursor.
             didChangeFromTextView = true
             parent.text = textView.string
+
+            // Text changed — invalidate cursor line cache (character offsets shifted)
+            if let gutterView = textView as? GutterTextView {
+                gutterView.invalidateCursorLineCache()
+            }
 
             // Подсветка синтаксиса сбросит backgroundColor —
             // считаем bracket highlight невалидным
