@@ -152,9 +152,9 @@ struct FileNodeTests {
         #expect(node1 == node2)
     }
 
-    // MARK: - Gitignored directories are visible (shown dimmed in UI)
+    // MARK: - Gitignored directories: visible but lazy-loaded
 
-    @Test func fileNodeShowsGitignoredDirectories() throws {
+    @Test func gitignoredDirectoryVisibleWithEmptyChildren() throws {
         let tempDir = try makeTempDirectory()
         defer { cleanup(tempDir) }
 
@@ -167,33 +167,73 @@ struct FileNodeTests {
             atPath: tempDir.appendingPathComponent("index.js").path, contents: nil
         )
 
-        // Gitignored directories should be visible in the file tree (dimmed in UI via opacity)
+        // Gitignored directories are visible but their contents are not loaded eagerly
         let node = FileNode(url: tempDir, projectRoot: tempDir, ignoredPaths: ["node_modules"])
         let names = node.children?.map(\.name) ?? []
         #expect(names.contains("node_modules"))
         #expect(names.contains("index.js"))
+
+        // Children are empty (lazy) — not recursed into during tree construction
+        let nmNode = node.children?.first { $0.name == "node_modules" }
+        #expect(nmNode?.isDirectory == true)
+        #expect(nmNode?.children?.isEmpty == true)
     }
 
-    @Test func fileNodeShowsDotDirectories() throws {
+    @Test func gitignoredDirectoryLoadsChildrenOnDemand() throws {
+        let tempDir = try makeTempDirectory()
+        defer { cleanup(tempDir) }
+
+        let nodeModules = tempDir.appendingPathComponent("node_modules")
+        try FileManager.default.createDirectory(at: nodeModules, withIntermediateDirectories: true)
+        FileManager.default.createFile(
+            atPath: nodeModules.appendingPathComponent("package.json").path, contents: nil
+        )
+
+        let node = FileNode(url: tempDir, projectRoot: tempDir, ignoredPaths: ["node_modules"])
+        let nmNode = node.children?.first { $0.name == "node_modules" }
+        #expect(nmNode?.children?.isEmpty == true)
+
+        // After explicit loadChildren(), contents appear
+        nmNode?.loadChildren()
+        let nmNames = nmNode?.children?.map(\.name) ?? []
+        #expect(nmNames.contains("package.json"))
+    }
+
+    @Test func gitignoredDotDirectoriesVisible() throws {
         let tempDir = try makeTempDirectory()
         defer { cleanup(tempDir) }
 
         let claude = tempDir.appendingPathComponent(".claude")
         try FileManager.default.createDirectory(at: claude, withIntermediateDirectories: true)
+        FileManager.default.createFile(
+            atPath: claude.appendingPathComponent("settings.json").path, contents: nil
+        )
         let cache = tempDir.appendingPathComponent(".cache")
         try FileManager.default.createDirectory(at: cache, withIntermediateDirectories: true)
         let github = tempDir.appendingPathComponent(".github")
         try FileManager.default.createDirectory(at: github, withIntermediateDirectories: true)
 
-        // .claude and .cache (typically gitignored) should still appear in the tree
         let node = FileNode(url: tempDir, projectRoot: tempDir, ignoredPaths: [".claude", ".cache"])
         let names = node.children?.map(\.name) ?? []
         #expect(names.contains(".claude"))
         #expect(names.contains(".cache"))
         #expect(names.contains(".github"))
+
+        // .claude is ignored — lazy-loaded (empty children)
+        let claudeNode = node.children?.first { $0.name == ".claude" }
+        #expect(claudeNode?.children?.isEmpty == true)
+
+        // .github is NOT ignored — children loaded eagerly
+        let githubNode = node.children?.first { $0.name == ".github" }
+        #expect(githubNode?.children?.isEmpty == true) // empty dir, but was loaded
+
+        // After loadChildren, .claude contents appear
+        claudeNode?.loadChildren()
+        let claudeNames = claudeNode?.children?.map(\.name) ?? []
+        #expect(claudeNames.contains("settings.json"))
     }
 
-    @Test func fileNodeShowsGitignoredFiles() throws {
+    @Test func gitignoredFilesStillVisible() throws {
         let tempDir = try makeTempDirectory()
         defer { cleanup(tempDir) }
 
@@ -201,12 +241,13 @@ struct FileNodeTests {
             atPath: tempDir.appendingPathComponent(".env").path, contents: nil
         )
 
+        // ignoredPaths only affects directories, not files
         let node = FileNode(url: tempDir, projectRoot: tempDir, ignoredPaths: [".env"])
         let names = node.children?.map(\.name) ?? []
         #expect(names.contains(".env"))
     }
 
-    @Test func fileNodeShowsNestedGitignoredDirectories() throws {
+    @Test func nestedGitignoredDirectoryLazyLoaded() throws {
         let tempDir = try makeTempDirectory()
         defer { cleanup(tempDir) }
 
@@ -221,16 +262,66 @@ struct FileNodeTests {
             atPath: src.appendingPathComponent("main.js").path, contents: nil
         )
 
-        // Nested gitignored directories should be visible too
         let node = FileNode(url: tempDir, projectRoot: tempDir, ignoredPaths: ["src/vendor"])
         let srcNode = node.children?.first { $0.name == "src" }
         #expect(srcNode != nil)
         let srcNames = srcNode?.children?.map(\.name) ?? []
         #expect(srcNames.contains("main.js"))
         #expect(srcNames.contains("vendor"))
+
+        // vendor is visible but lazy — empty children
+        let vendorNode = srcNode?.children?.first { $0.name == "vendor" }
+        #expect(vendorNode?.children?.isEmpty == true)
+
+        // On-demand load reveals contents
+        vendorNode?.loadChildren()
+        let vendorNames = vendorNode?.children?.map(\.name) ?? []
+        #expect(vendorNames.contains("lib.js"))
     }
 
-    @Test func loadChildrenShowsGitignoredDirectories() throws {
+    @Test func emptyIgnoredPathsDoesNotAffectLoading() throws {
+        let tempDir = try makeTempDirectory()
+        defer { cleanup(tempDir) }
+
+        let src = tempDir.appendingPathComponent("src")
+        try FileManager.default.createDirectory(at: src, withIntermediateDirectories: true)
+        FileManager.default.createFile(
+            atPath: src.appendingPathComponent("main.swift").path, contents: nil
+        )
+
+        // Empty ignoredPaths — all directories loaded eagerly as usual
+        let node = FileNode(url: tempDir, projectRoot: tempDir, ignoredPaths: [])
+        let srcNode = node.children?.first { $0.name == "src" }
+        let srcNames = srcNode?.children?.map(\.name) ?? []
+        #expect(srcNames.contains("main.swift"))
+    }
+
+    @Test func multipleIgnoredDirectoriesAllLazy() throws {
+        let tempDir = try makeTempDirectory()
+        defer { cleanup(tempDir) }
+
+        let nodeModules = tempDir.appendingPathComponent("node_modules")
+        try FileManager.default.createDirectory(at: nodeModules, withIntermediateDirectories: true)
+        let build = tempDir.appendingPathComponent(".build")
+        try FileManager.default.createDirectory(at: build, withIntermediateDirectories: true)
+        let src = tempDir.appendingPathComponent("src")
+        try FileManager.default.createDirectory(at: src, withIntermediateDirectories: true)
+
+        let node = FileNode(url: tempDir, projectRoot: tempDir, ignoredPaths: ["node_modules", ".build"])
+        let names = node.children?.map(\.name) ?? []
+        // All visible
+        #expect(names.contains("node_modules"))
+        #expect(names.contains(".build"))
+        #expect(names.contains("src"))
+
+        // Ignored ones are lazy (empty children)
+        let nmNode = node.children?.first { $0.name == "node_modules" }
+        let buildNode = node.children?.first { $0.name == ".build" }
+        #expect(nmNode?.children?.isEmpty == true)
+        #expect(buildNode?.children?.isEmpty == true)
+    }
+
+    @Test func loadChildrenPreservesVisibilityOfIgnored() throws {
         let tempDir = try makeTempDirectory()
         defer { cleanup(tempDir) }
 
@@ -245,7 +336,7 @@ struct FileNodeTests {
         #expect(initialNames.contains("vendor"))
         #expect(initialNames.contains("main.swift"))
 
-        // Add a new file and reload — vendor should still be visible
+        // Add a new file and reload
         FileManager.default.createFile(
             atPath: tempDir.appendingPathComponent("new.swift").path, contents: nil
         )
