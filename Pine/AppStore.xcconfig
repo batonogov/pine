@@ -1,0 +1,10 @@
+// AppStore.xcconfig
+// Build configuration overlay for Mac App Store (sandboxed) builds.
+//
+// Usage:
+//   xcodebuild -project Pine.xcodeproj -scheme Pine -xcconfig Pine/AppStore.xcconfig build
+//
+// This enables App Sandbox via entitlements. The Homebrew/DMG build
+// does not use this xcconfig and runs without sandbox.
+
+CODE_SIGN_ENTITLEMENTS = Pine/Pine.entitlements
