@@ -98,7 +98,7 @@ struct TerraformGrammarTests {
         let keywordRules = grammar.rules.filter { $0.scope == "keyword" }
         let allPatterns = keywordRules.map(\.pattern).joined(separator: " ")
 
-        let metaArgs = ["for_each", "count", "depends_on", "lifecycle",
+        let metaArgs = ["for_each", "depends_on", "lifecycle",
                         "provisioner", "connection"]
         for arg in metaArgs {
             #expect(allPatterns.contains(arg), "Missing meta-argument: \(arg)")
@@ -126,14 +126,11 @@ struct TerraformGrammarTests {
 
         #expect(allPatterns.contains("self"))
         #expect(allPatterns.contains("each"))
-    }
-
-    @Test func pathAndTerraformExpressions() {
-        let rules = grammar.rules
-        let allPatterns = rules.map(\.pattern).joined(separator: " ")
-
-        #expect(allPatterns.contains("path"))
-        #expect(allPatterns.contains("terraform"))
+        #expect(allPatterns.contains("count\\.index"))
+        #expect(allPatterns.contains("path\\.module"))
+        #expect(allPatterns.contains("path\\.root"))
+        #expect(allPatterns.contains("path\\.cwd"))
+        #expect(allPatterns.contains("terraform\\.workspace"))
     }
 
     // MARK: - Built-in functions
@@ -158,7 +155,7 @@ struct TerraformGrammarTests {
         let typeRules = grammar.rules.filter { $0.scope == "type" }
         let allPatterns = typeRules.map(\.pattern).joined(separator: " ")
 
-        let types = ["string", "number", "bool", "list", "map", "set", "object", "tuple", "any"]
+        let types = ["string", "number", "bool", "list", "map", "set", "object", "tuple", "any", "optional"]
         for type in types {
             #expect(allPatterns.contains(type), "Missing type: \(type)")
         }

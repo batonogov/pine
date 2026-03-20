@@ -36,7 +36,7 @@
             "scope": "keyword"
         },
         {
-            "pattern": "\\b(for_each|count|depends_on|lifecycle|provisioner|connection|source|version|required_providers|required_version|backend)\\b",
+            "pattern": "\\b(for_each|depends_on|lifecycle|provisioner|connection|source|version|required_providers|required_version|backend)\\b",
             "scope": "keyword"
         },
         {
