@@ -155,4 +155,56 @@ struct DiffNavigationTests {
         // When on the only region, previous wraps back to it
         #expect(GitLineDiff.previousChangeLine(from: 10, in: diffs) == 10)
     }
+
+    // MARK: - lineNumber(forOffset:in:)
+
+    @Test func lineNumberAtStartOfFile() {
+        let content = "first\nsecond\nthird\n"
+        #expect(ContentView.lineNumber(forOffset: 0, in: content) == 1)
+    }
+
+    @Test func lineNumberAtSecondLine() {
+        let content = "first\nsecond\nthird\n"
+        // offset 6 = start of "second"
+        #expect(ContentView.lineNumber(forOffset: 6, in: content) == 2)
+    }
+
+    @Test func lineNumberAtThirdLine() {
+        let content = "first\nsecond\nthird\n"
+        // offset 13 = start of "third"
+        #expect(ContentView.lineNumber(forOffset: 13, in: content) == 3)
+    }
+
+    @Test func lineNumberAtEndOfFile() {
+        let content = "first\nsecond\nthird\n"
+        let nsContent = content as NSString
+        #expect(ContentView.lineNumber(forOffset: nsContent.length, in: content) == 4)
+    }
+
+    @Test func lineNumberInEmptyString() {
+        #expect(ContentView.lineNumber(forOffset: 0, in: "") == 1)
+    }
+
+    @Test func lineNumberWithOffsetBeyondLength() {
+        let content = "abc"
+        #expect(ContentView.lineNumber(forOffset: 999, in: content) == 1)
+    }
+
+    // MARK: - Round-trip: cursorOffset ↔ lineNumber
+
+    @Test func cursorOffsetAndLineNumberRoundTrip() {
+        let content = "line1\nline2\nline3\nline4\n"
+        for line in 1...4 {
+            let offset = ContentView.cursorOffset(forLine: line, in: content)
+            let back = ContentView.lineNumber(forOffset: offset, in: content)
+            #expect(back == line, "Round-trip failed for line \(line)")
+        }
+    }
+
+    @Test func roundTripWithSingleLine() {
+        let content = "hello"
+        let offset = ContentView.cursorOffset(forLine: 1, in: content)
+        let back = ContentView.lineNumber(forOffset: offset, in: content)
+        #expect(back == 1)
+    }
 }

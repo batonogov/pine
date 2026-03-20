@@ -124,11 +124,13 @@ struct PineApp: App {
                     NotificationCenter.default.post(name: .goToNextChange, object: nil)
                 }
                 .keyboardShortcut(.downArrow, modifiers: [.control, .option])
+                .disabled(focusedProject?.tabManager.activeTab == nil)
 
                 Button(Strings.menuPreviousChange) {
                     NotificationCenter.default.post(name: .goToPreviousChange, object: nil)
                 }
                 .keyboardShortcut(.upArrow, modifiers: [.control, .option])
+                .disabled(focusedProject?.tabManager.activeTab == nil)
             }
             // File menu: Save, Save All, Save As, Duplicate
             CommandGroup(replacing: .saveItem) {

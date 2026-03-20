@@ -303,12 +303,13 @@ struct ContentView: View {
     private func navigateToChange(direction: ChangeDirection) {
         guard let tab = tabManager.activeTab, !lineDiffs.isEmpty else { return }
         let currentLine = Self.lineNumber(forOffset: tab.cursorPosition, in: tab.content)
+        let starts = GitLineDiff.changeRegionStarts(lineDiffs)
         let targetLine: Int?
         switch direction {
         case .next:
-            targetLine = GitLineDiff.nextChangeLine(from: currentLine, in: lineDiffs)
+            targetLine = GitLineDiff.nextChangeLine(from: currentLine, regionStarts: starts, diffs: lineDiffs)
         case .previous:
-            targetLine = GitLineDiff.previousChangeLine(from: currentLine, in: lineDiffs)
+            targetLine = GitLineDiff.previousChangeLine(from: currentLine, regionStarts: starts, diffs: lineDiffs)
         }
         if let line = targetLine {
             goToLineOffset = Self.cursorOffset(forLine: line, in: tab.content)
@@ -552,6 +553,10 @@ struct ContentView: View {
             let lineRange = nsContent.lineRange(for: NSRange(location: pos, length: 0))
             let lineEnd = NSMaxRange(lineRange)
             if lineEnd > clamped { break }
+            // Only advance to next line if a newline actually ends this line
+            if lineEnd == clamped && (clamped == 0 || nsContent.character(at: clamped - 1) != 0x0A) {
+                break
+            }
             line += 1
             pos = lineEnd
         }
