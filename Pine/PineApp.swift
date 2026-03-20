@@ -31,8 +31,10 @@ struct PineApp: App {
             CommandGroup(replacing: .newItem) { }
             // Cmd+Shift+O — открыть папку
             CommandGroup(after: .newItem) {
-                Button(Strings.menuOpenFolder) {
+                Button {
                     NotificationCenter.default.post(name: .openFolder, object: nil)
+                } label: {
+                    Label(Strings.menuOpenFolder, systemImage: MenuIcons.openFolder)
                 }
                 .keyboardShortcut("o", modifiers: [.command, .shift])
             }
@@ -40,107 +42,133 @@ struct PineApp: App {
             CommandGroup(after: .toolbar) {
                 Divider()
 
-                Button(Strings.menuIncreaseFontSize) {
+                Button {
                     FontSizeSettings.shared.increase()
+                } label: {
+                    Label(Strings.menuIncreaseFontSize, systemImage: MenuIcons.increaseFontSize)
                 }
                 .keyboardShortcut("+", modifiers: .command)
 
-                Button(Strings.menuDecreaseFontSize) {
+                Button {
                     FontSizeSettings.shared.decrease()
+                } label: {
+                    Label(Strings.menuDecreaseFontSize, systemImage: MenuIcons.decreaseFontSize)
                 }
                 .keyboardShortcut("-", modifiers: .command)
 
-                Button(Strings.menuResetFontSize) {
+                Button {
                     FontSizeSettings.shared.reset()
+                } label: {
+                    Label(Strings.menuResetFontSize, systemImage: MenuIcons.resetFontSize)
                 }
                 .keyboardShortcut("0", modifiers: .command)
 
                 Divider()
 
-                Button(Strings.toggleTerminal) {
+                Button {
                     guard let pm = focusedProject else { return }
                     pm.terminal.isTerminalVisible.toggle()
+                } label: {
+                    Label(Strings.toggleTerminal, systemImage: MenuIcons.toggleTerminal)
                 }
                 .keyboardShortcut("`", modifiers: .command)
 
-                Button(Strings.menuTogglePreview) {
+                Button {
                     guard let pm = focusedProject else { return }
                     pm.tabManager.togglePreviewMode()
+                } label: {
+                    Label(Strings.menuTogglePreview, systemImage: MenuIcons.togglePreview)
                 }
                 .keyboardShortcut("p", modifiers: [.command, .shift])
 
                 Divider()
 
-                Button(Strings.menuToggleMinimap) {
+                Button {
                     MinimapSettings.toggle()
+                } label: {
+                    Label(Strings.menuToggleMinimap, systemImage: MenuIcons.toggleMinimap)
                 }
                 .keyboardShortcut("m", modifiers: [.command, .shift])
 
                 Divider()
 
-                Button(Strings.menuRevealFileInFinder) {
+                Button {
                     guard let pm = focusedProject,
                           let url = pm.tabManager.activeTab?.url else { return }
                     NSWorkspace.shared.activateFileViewerSelecting([url])
+                } label: {
+                    Label(Strings.menuRevealFileInFinder, systemImage: MenuIcons.revealFileInFinder)
                 }
                 .keyboardShortcut("r", modifiers: [.command, .shift])
                 .disabled(focusedProject?.tabManager.activeTab == nil)
 
-                Button(Strings.menuRevealProjectInFinder) {
+                Button {
                     guard let pm = focusedProject,
                           let rootURL = pm.workspace.rootURL else { return }
                     NSWorkspace.shared.activateFileViewerSelecting([rootURL])
+                } label: {
+                    Label(Strings.menuRevealProjectInFinder, systemImage: MenuIcons.revealProjectInFinder)
                 }
                 .disabled(focusedProject?.workspace.rootURL == nil)
             }
             // Terminal menu: New Tab (Cmd+T)
             CommandMenu(Strings.menuTerminal) {
-                Button(Strings.menuNewTerminalTab) {
+                Button {
                     guard let pm = focusedProject else { return }
                     if !pm.terminal.isTerminalVisible {
                         pm.terminal.isTerminalVisible = true
                     }
                     pm.addTerminalTab()
+                } label: {
+                    Label(Strings.menuNewTerminalTab, systemImage: MenuIcons.newTerminalTab)
                 }
                 .keyboardShortcut("t", modifiers: .command)
             }
             // Edit menu: Toggle Comment, Find in Project
             CommandGroup(after: .pasteboard) {
-                Button(Strings.menuToggleComment) {
+                Button {
                     NotificationCenter.default.post(name: .toggleComment, object: nil)
+                } label: {
+                    Label(Strings.menuToggleComment, systemImage: MenuIcons.toggleComment)
                 }
                 .keyboardShortcut("/", modifiers: .command)
 
                 Divider()
 
-                Button(Strings.menuFindInProject) {
+                Button {
                     NotificationCenter.default.post(name: .showProjectSearch, object: nil)
+                } label: {
+                    Label(Strings.menuFindInProject, systemImage: MenuIcons.findInProject)
                 }
                 .keyboardShortcut("f", modifiers: [.command, .shift])
 
                 Divider()
 
-                Button(Strings.menuNextChange) {
+                Button {
                     NotificationCenter.default.post(
                         name: .navigateChange, object: nil,
                         userInfo: ["direction": "next"]
                     )
+                } label: {
+                    Label(Strings.menuNextChange, systemImage: MenuIcons.nextChange)
                 }
                 .keyboardShortcut(.downArrow, modifiers: [.control, .option])
                 .disabled(focusedProject?.tabManager.activeTab == nil)
 
-                Button(Strings.menuPreviousChange) {
+                Button {
                     NotificationCenter.default.post(
                         name: .navigateChange, object: nil,
                         userInfo: ["direction": "previous"]
                     )
+                } label: {
+                    Label(Strings.menuPreviousChange, systemImage: MenuIcons.previousChange)
                 }
                 .keyboardShortcut(.upArrow, modifiers: [.control, .option])
                 .disabled(focusedProject?.tabManager.activeTab == nil)
             }
             // File menu: Save, Save All, Save As, Duplicate
             CommandGroup(replacing: .saveItem) {
-                Button(Strings.menuSave) {
+                Button {
                     guard let pm = focusedProject else { return }
                     if pm.tabManager.saveActiveTab() {
                         Task {
@@ -148,10 +176,12 @@ struct PineApp: App {
                             NotificationCenter.default.post(name: .refreshLineDiffs, object: nil)
                         }
                     }
+                } label: {
+                    Label(Strings.menuSave, systemImage: MenuIcons.save)
                 }
                 .keyboardShortcut("s", modifiers: .command)
 
-                Button(Strings.menuSaveAll) {
+                Button {
                     guard let pm = focusedProject else { return }
                     if pm.tabManager.saveAllTabs() {
                         Task {
@@ -159,12 +189,14 @@ struct PineApp: App {
                             NotificationCenter.default.post(name: .refreshLineDiffs, object: nil)
                         }
                     }
+                } label: {
+                    Label(Strings.menuSaveAll, systemImage: MenuIcons.saveAll)
                 }
                 .keyboardShortcut("s", modifiers: [.command, .option])
 
                 Divider()
 
-                Button(Strings.menuSaveAs) {
+                Button {
                     guard let pm = focusedProject else { return }
                     guard pm.tabManager.activeTab != nil else { return }
                     let panel = NSSavePanel()
@@ -187,12 +219,16 @@ struct PineApp: App {
                         alert.alertStyle = .critical
                         alert.runModal()
                     }
+                } label: {
+                    Label(Strings.menuSaveAs, systemImage: MenuIcons.saveAs)
                 }
                 .keyboardShortcut("s", modifiers: [.command, .shift])
 
-                Button(Strings.menuDuplicate) {
+                Button {
                     guard let pm = focusedProject else { return }
                     pm.tabManager.duplicateActiveTab(projectRoot: pm.workspace.rootURL)
+                } label: {
+                    Label(Strings.menuDuplicate, systemImage: MenuIcons.duplicate)
                 }
                 .keyboardShortcut("d", modifiers: [.command, .shift])
             }
