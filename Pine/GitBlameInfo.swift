@@ -20,10 +20,3 @@ struct GitBlameLine: Equatable, Identifiable {
     /// Whether this line is uncommitted (all-zeros hash).
     var isUncommitted: Bool { hash.allSatisfy { $0 == "0" } }
 }
-
-/// Container for blame data for an entire file.
-struct GitBlameInfo: Equatable {
-    let lines: [GitBlameLine]
-
-    static let empty = GitBlameInfo(lines: [])
-}

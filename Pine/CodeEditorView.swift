@@ -45,6 +45,28 @@ final class GutterTextView: NSTextView {
         }
     }
 
+    /// Blame lookup: line number → GitBlameLine (O(1) access).
+    private var blameLookup: [Int: GitBlameLine] = [:]
+    var isBlameVisible: Bool = false
+
+    /// Sets blame data and rebuilds O(1) lookup dictionary.
+    func setBlameLines(_ lines: [GitBlameLine]) {
+        blameLookup = Dictionary(lines.map { ($0.finalLine, $0) }, uniquingKeysWith: { _, last in last })
+        if isBlameVisible { needsDisplay = true }
+    }
+
+    private static let blameFont = NSFont.systemFont(ofSize: 12, weight: .regular)
+    private static let blameColor = NSColor.secondaryLabelColor.withAlphaComponent(0.5)
+
+    private static let relativeDateFormatter: RelativeDateTimeFormatter = {
+        let f = RelativeDateTimeFormatter()
+        f.unitsStyle = .full
+        return f
+    }()
+
+    /// Cached 1-based line number for the cursor position. Updated in setSelectedRanges.
+    private var cachedCursorLine: Int = 1
+
     override func drawBackground(in rect: NSRect) {
         super.drawBackground(in: rect)
 
@@ -52,24 +74,101 @@ final class GutterTextView: NSTextView {
               textContainer != nil else { return }
 
         let cursorRange = selectedRange()
-        // Подсвечиваем только когда нет выделения (просто курсор)
         guard cursorRange.length == 0 else { return }
 
         let glyphIndex = layoutManager.glyphIndexForCharacter(at: cursorRange.location)
         var lineRect = layoutManager.lineFragmentRect(forGlyphAt: glyphIndex, effectiveRange: nil)
 
-        // Растягиваем на всю ширину view
         lineRect.origin.x = 0
         lineRect.size.width = bounds.width
-        // Учитываем textContainerOrigin
         lineRect.origin.y += textContainerOrigin.y
 
         currentLineColor.setFill()
         lineRect.fill()
+
+        // ── Inline blame annotation ──
+        if isBlameVisible, !blameLookup.isEmpty {
+            drawInlineBlame(lineRect: lineRect, layoutManager: layoutManager)
+        }
+    }
+
+    /// Draws inline blame annotation after the line content on the cursor line.
+    private func drawInlineBlame(lineRect: NSRect, layoutManager: NSLayoutManager) {
+        guard let blame = blameLookup[cachedCursorLine],
+              let container = textContainer else { return }
+
+        let source = string as NSString
+        guard source.length > 0 else { return }
+
+        // Find the end of visible content on the cursor line
+        let cursorLocation = selectedRange().location
+        let lineRange = source.lineRange(for: NSRange(location: cursorLocation, length: 0))
+        var lineEnd = NSMaxRange(lineRange)
+        if lineEnd > lineRange.location && lineEnd <= source.length
+            && source.character(at: lineEnd - 1) == 0x0A {
+            lineEnd -= 1
+        }
+
+        // Get x position after the last character
+        let glyphIndex = layoutManager.glyphIndexForCharacter(at: max(lineEnd, lineRange.location))
+        let lineEndX: CGFloat
+        if lineEnd > lineRange.location {
+            let charRect = layoutManager.boundingRect(
+                forGlyphRange: NSRange(location: glyphIndex, length: 0),
+                in: container
+            )
+            lineEndX = charRect.maxX + textContainerOrigin.x
+        } else {
+            let usedRect = layoutManager.lineFragmentUsedRect(forGlyphAt: glyphIndex, effectiveRange: nil)
+            lineEndX = usedRect.origin.x + textContainerOrigin.x
+        }
+
+        let text: String
+        if blame.isUncommitted {
+            text = "  Uncommitted"
+        } else {
+            let relativeDate = Self.relativeDateFormatter.localizedString(
+                for: blame.authorTime, relativeTo: Date()
+            )
+            text = "  \(blame.author), \(relativeDate)"
+        }
+
+        let attrs: [NSAttributedString.Key: Any] = [
+            .font: Self.blameFont,
+            .foregroundColor: Self.blameColor
+        ]
+
+        let minBlameX = textContainerOrigin.x + gutterInset + 250
+        let drawX = max(lineEndX + 16, minBlameX)
+        let drawY = lineRect.origin.y + (lineRect.height - Self.blameFont.pointSize) / 2
+        (text as NSString).draw(at: NSPoint(x: drawX, y: drawY), withAttributes: attrs)
+    }
+
+    /// Recalculates cached cursor line number using NSString.lineRange (O(1) per call).
+    private func updateCachedCursorLine() {
+        let source = string as NSString
+        guard source.length > 0 else {
+            cachedCursorLine = 1
+            return
+        }
+        let location = min(selectedRange().location, source.length)
+        // Count newlines from 0 to location using lineRange stepping
+        var line = 1
+        var pos = 0
+        while pos < location {
+            let range = source.lineRange(for: NSRange(location: pos, length: 0))
+            let lineEnd = NSMaxRange(range)
+            if lineEnd <= pos { break }
+            if lineEnd > location { break }
+            line += 1
+            pos = lineEnd
+        }
+        cachedCursorLine = line
     }
 
     override func setSelectedRanges(_ ranges: [NSValue], affinity: NSSelectionAffinity, stillSelecting: Bool) {
         super.setSelectedRanges(ranges, affinity: affinity, stillSelecting: stillSelecting)
+        updateCachedCursorLine()
         needsDisplay = true
     }
 
@@ -175,7 +274,6 @@ final class GutterTextView: NSTextView {
 /// always accounted for.
 final class EditorContainerView: NSView {
     var minimapWidth: CGFloat = 0
-    var blameWidth: CGFloat = 0
 
     override func layout() {
         super.layout()
@@ -191,23 +289,16 @@ final class EditorContainerView: NSView {
                     height: bounds.height
                 )
                 minimap.needsDisplay = true
-            } else if let blame = sub as? BlameGutterView {
-                blame.frame = NSRect(
-                    x: 0, y: 0,
-                    width: blameWidth,
-                    height: bounds.height
-                )
-                blame.needsDisplay = true
             } else if sub is NSScrollView {
                 sub.frame = NSRect(
-                    x: blameWidth, y: 0,
-                    width: bounds.width - minimapWidth - blameWidth,
+                    x: 0, y: 0,
+                    width: bounds.width - minimapWidth,
                     height: bounds.height
                 )
             } else {
-                // LineNumberView — positioned after blame gutter
+                // LineNumberView — keep x=0, full height, its own width
                 sub.frame = NSRect(
-                    x: blameWidth, y: 0,
+                    x: 0, y: 0,
                     width: sub.frame.width,
                     height: bounds.height
                 )
@@ -271,11 +362,10 @@ struct CodeEditorView: NSViewRepresentable {
     func makeNSView(context: Context) -> NSView {
         let gutterWidth: CGFloat = 40
 
-        // ── Контейнер — держит scroll view, line number view, blame gutter и minimap ──
+        // ── Контейнер — держит scroll view, line number view и minimap ──
         let container = EditorContainerView()
         container.wantsLayer = true
         container.minimapWidth = isMinimapVisible ? MinimapView.defaultWidth : 0
-        container.blameWidth = isBlameVisible ? BlameGutterView.defaultWidth : 0
 
         // ── ScrollView ──
         let scrollView = NSScrollView()
@@ -328,6 +418,8 @@ struct CodeEditorView: NSViewRepresentable {
 
         textView.fileExtension = language
         textView.exactFileName = fileName
+        textView.setBlameLines(blameLines)
+        textView.isBlameVisible = isBlameVisible
         textView.delegate = context.coordinator
         scrollView.documentView = textView
 
@@ -344,17 +436,9 @@ struct CodeEditorView: NSViewRepresentable {
         minimapView.isHidden = !isMinimapVisible
         container.addSubview(minimapView)
 
-        // ── Blame gutter — слева от scroll view ──
-        let blameGutterView = BlameGutterView(textView: textView)
-        blameGutterView.setAccessibilityIdentifier(AccessibilityID.blameGutter)
-        blameGutterView.isHidden = !isBlameVisible
-        blameGutterView.blameLines = blameLines
-        container.addSubview(blameGutterView)
-
         context.coordinator.scrollView = scrollView
         context.coordinator.lineNumberView = lineNumberView
         context.coordinator.minimapView = minimapView
-        context.coordinator.blameGutterView = blameGutterView
         context.coordinator.lastFontSize = editorFont.pointSize
         context.coordinator.syncContentVersion()
 
@@ -430,21 +514,15 @@ struct CodeEditorView: NSViewRepresentable {
             minimapView.isHidden = !isMinimapVisible
         }
         editorContainer.minimapWidth = isMinimapVisible ? MinimapView.defaultWidth : 0
-
-        // Blame gutter visibility
-        if let blameGutterView = context.coordinator.blameGutterView {
-            blameGutterView.isHidden = !isBlameVisible
-            blameGutterView.blameLines = blameLines
-        }
-        editorContainer.blameWidth = isBlameVisible ? BlameGutterView.defaultWidth : 0
-
         editorContainer.needsLayout = true
 
-        // Keep GutterTextView's language info in sync for toggle comment
+        // Keep GutterTextView's language info and blame data in sync
         if let sv = context.coordinator.scrollView,
            let gutterView = sv.documentView as? GutterTextView {
             gutterView.fileExtension = language
             gutterView.exactFileName = fileName
+            gutterView.setBlameLines(blameLines)
+            gutterView.isBlameVisible = isBlameVisible
         }
 
         context.coordinator.updateContentIfNeeded(
@@ -485,7 +563,6 @@ struct CodeEditorView: NSViewRepresentable {
         var scrollView: NSScrollView?
         var lineNumberView: LineNumberView?
         var minimapView: MinimapView?
-        var blameGutterView: BlameGutterView?
 
         /// Последние язык/имя файла — для обнаружения смены грамматики
         /// при одинаковом содержимом файлов

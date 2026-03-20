@@ -23,10 +23,10 @@ struct ContentView: View {
     @State private var columnVisibility: NavigationSplitViewVisibility = .all
     @State private var lineDiffs: [GitLineDiff] = []
     @State private var blameLines: [GitBlameLine] = []
+    @State private var blameTask: Task<Void, Never>?
     @State private var didRestoreSession = false
     @State private var isSearchPresented = false
     @State private var goToLineOffset: GoToRequest?
-    @State private var blamePopoverLine: GitBlameLine?
     @AppStorage("minimapVisible") private var isMinimapVisible = true
     @AppStorage("blameVisible") private var isBlameVisible = false
 
@@ -178,14 +178,6 @@ struct ContentView: View {
             columnVisibility = .all
             isSearchPresented = true
         }
-        .onReceive(NotificationCenter.default.publisher(for: .blameLineClicked)) { notification in
-            guard controlActiveState == .key,
-                  let blame = notification.userInfo?["blameLine"] as? GitBlameLine else { return }
-            blamePopoverLine = blame
-        }
-        .popover(item: $blamePopoverLine) { blame in
-            CommitDetailView(blame: blame, repoURL: workspace.gitProvider.repositoryURL)
-        }
         .onReceive(NotificationCenter.default.publisher(for: .navigateChange)) { notification in
             guard controlActiveState == .key,
                   let direction = notification.userInfo?["direction"] as? String else { return }
@@ -332,8 +324,9 @@ struct ContentView: View {
     }
 
     /// Refreshes cached blame data for the active tab.
-    /// Runs git blame on a background thread to avoid blocking the UI.
+    /// Cancels any in-flight blame task to avoid stale results.
     private func refreshBlame() {
+        blameTask?.cancel()
         guard isBlameVisible else {
             blameLines = []
             return
@@ -349,16 +342,18 @@ struct ContentView: View {
             return
         }
         let filePath = fileURL.path
-        Task.detached {
+        blameTask = Task.detached {
             let result = GitStatusProvider.runGit(
                 ["blame", "--porcelain", "--", filePath], at: repoURL
             )
+            guard !Task.isCancelled else { return }
             let lines: [GitBlameLine]
             if result.exitCode == 0, !result.output.isEmpty {
                 lines = GitStatusProvider.parseBlame(result.output)
             } else {
                 lines = []
             }
+            guard !Task.isCancelled else { return }
             await MainActor.run {
                 if tabManager.activeTab?.url == fileURL {
                     blameLines = lines
