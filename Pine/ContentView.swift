@@ -74,7 +74,8 @@ struct ContentView: View {
                 }
                 StatusBarView(
                     gitProvider: workspace.gitProvider,
-                    terminal: terminal
+                    terminal: terminal,
+                    tabManager: tabManager
                 )
             }
         }
@@ -1240,6 +1241,7 @@ struct FileNodeRow: View {
 struct StatusBarView: View {
     var gitProvider: GitStatusProvider
     var terminal: TerminalManager
+    var tabManager: TabManager
 
     var body: some View {
         HStack(spacing: 6) {
@@ -1278,6 +1280,31 @@ struct StatusBarView: View {
             }
 
             Spacer()
+
+            // File encoding indicator with menu to change encoding
+            if let activeTab = tabManager.activeTab, activeTab.kind == .text {
+                Menu {
+                    ForEach(String.Encoding.availableEncodings, id: \.rawValue) { encoding in
+                        Button {
+                            tabManager.reopenActiveTab(withEncoding: encoding)
+                        } label: {
+                            HStack {
+                                Text(encoding.displayName)
+                                if encoding == activeTab.encoding {
+                                    Image(systemName: "checkmark")
+                                }
+                            }
+                        }
+                    }
+                } label: {
+                    Text(activeTab.encoding.displayName)
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                }
+                .menuStyle(.borderlessButton)
+                .fixedSize()
+                .accessibilityIdentifier(AccessibilityID.encodingMenu)
+            }
 
             // Кнопка показа/скрытия терминала
             Button {

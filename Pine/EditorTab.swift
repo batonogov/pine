@@ -39,6 +39,9 @@ struct EditorTab: Identifiable, Hashable {
     /// Whether syntax highlighting is disabled for this tab (e.g. large files).
     var syntaxHighlightingDisabled: Bool = false
 
+    /// The detected file encoding. Used for saving the file in its original encoding.
+    var encoding: String.Encoding = .utf8
+
     var isDirty: Bool { kind == .text && content != savedContent }
 
     /// Whether this tab's file is a Markdown file (.md or .markdown).

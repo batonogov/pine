@@ -92,15 +92,19 @@ final class TabManager {
     /// Internal method to create and append a text tab.
     private func openTabInternal(url: URL, syntaxHighlightingDisabled: Bool) {
         let content: String
+        let encoding: String.Encoding
         do {
-            content = try String(contentsOf: url, encoding: .utf8)
+            let data = try Data(contentsOf: url)
+            (content, encoding) = String.Encoding.detect(from: data)
         } catch {
             content = "// Error: \(error.localizedDescription)"
+            encoding = .utf8
         }
 
         var tab = EditorTab(url: url, content: content, savedContent: content)
         tab.lastModDate = modDate(for: url)
         tab.syntaxHighlightingDisabled = syntaxHighlightingDisabled
+        tab.encoding = encoding
         tabs.append(tab)
         activeTabID = tab.id
     }
@@ -178,7 +182,7 @@ final class TabManager {
     func trySaveTab(at index: Int) throws -> Bool {
         let tab = tabs[index]
         guard tab.kind == .text else { return false }
-        try tab.content.write(to: tab.url, atomically: true, encoding: .utf8)
+        try tab.content.write(to: tab.url, atomically: true, encoding: tab.encoding)
         tabs[index].savedContent = tab.content
         tabs[index].lastModDate = modDate(for: tab.url)
         return true
@@ -244,7 +248,7 @@ final class TabManager {
     func saveActiveTabAs(to newURL: URL) throws -> Bool {
         guard let index = activeTabIndex else { return false }
         let tab = tabs[index]
-        try tab.content.write(to: newURL, atomically: true, encoding: .utf8)
+        try tab.content.write(to: newURL, atomically: true, encoding: tab.encoding)
         tabs[index].url = newURL
         tabs[index].savedContent = tab.content
         tabs[index].lastModDate = modDate(for: newURL)
@@ -267,7 +271,7 @@ final class TabManager {
 
         guard let duplicateURL = finderCopyURL(for: originalURL) else { return false }
 
-        try tab.content.write(to: duplicateURL, atomically: true, encoding: .utf8)
+        try tab.content.write(to: duplicateURL, atomically: true, encoding: tab.encoding)
 
         var newTab = EditorTab(
             url: duplicateURL,
@@ -275,6 +279,7 @@ final class TabManager {
             savedContent: tab.content
         )
         newTab.lastModDate = modDate(for: duplicateURL)
+        newTab.encoding = tab.encoding
         tabs.insert(newTab, at: index + 1)
         activeTabID = newTab.id
         return true
@@ -411,7 +416,7 @@ final class TabManager {
                 tabs[index].lastModDate = diskMod
             } else {
                 // Safe to reload silently
-                if let content = try? String(contentsOf: tab.url, encoding: .utf8) {
+                if let content = try? String(contentsOf: tab.url, encoding: tab.encoding) {
                     tabs[index].content = content
                     tabs[index].savedContent = content
                     tabs[index].lastModDate = diskMod
@@ -429,11 +434,25 @@ final class TabManager {
     /// Reloads a tab's content from disk (used after user chooses "reload" in conflict dialog).
     func reloadTab(url: URL) {
         guard let index = tabs.firstIndex(where: { $0.url == url }) else { return }
-        if let content = try? String(contentsOf: url, encoding: .utf8) {
+        if let content = try? String(contentsOf: url, encoding: tabs[index].encoding) {
             tabs[index].content = content
             tabs[index].savedContent = content
             tabs[index].lastModDate = modDate(for: url)
         }
+    }
+
+    /// Reopens the active tab with a different encoding.
+    /// Re-reads the file from disk using the specified encoding.
+    func reopenActiveTab(withEncoding encoding: String.Encoding) {
+        guard let index = activeTabIndex else { return }
+        let tab = tabs[index]
+        guard let data = try? Data(contentsOf: tab.url),
+              let content = String(data: data, encoding: encoding)
+        else { return }
+        tabs[index].content = content
+        tabs[index].savedContent = content
+        tabs[index].encoding = encoding
+        tabs[index].lastModDate = modDate(for: tab.url)
     }
 
     /// Returns the modification date of a file, or nil on error.
