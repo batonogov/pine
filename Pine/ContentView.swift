@@ -957,13 +957,13 @@ struct SidebarView: View {
                         Button {
                             editState.createNewItem(in: rootURL, isDirectory: false, workspace: workspace)
                         } label: {
-                            Label(Strings.contextNewFile, systemImage: "doc.badge.plus")
+                            Label(Strings.contextNewFile, systemImage: MenuIcons.newFile)
                         }
 
                         Button {
                             editState.createNewItem(in: rootURL, isDirectory: true, workspace: workspace)
                         } label: {
-                            Label(Strings.contextNewFolder, systemImage: "folder.badge.plus")
+                            Label(Strings.contextNewFolder, systemImage: MenuIcons.newFolder)
                         }
 
                         Divider()
@@ -971,7 +971,7 @@ struct SidebarView: View {
                         Button {
                             NSWorkspace.shared.activateFileViewerSelecting([rootURL])
                         } label: {
-                            Label(Strings.contextRevealInFinder, systemImage: "arrow.right.circle")
+                            Label(Strings.contextRevealInFinder, systemImage: MenuIcons.revealInFinder)
                         }
                     }
                 }
@@ -1098,13 +1098,13 @@ struct FileNodeRow: View {
             Button {
                 createNewItem(isDirectory: false)
             } label: {
-                Label(Strings.contextNewFile, systemImage: "doc.badge.plus")
+                Label(Strings.contextNewFile, systemImage: MenuIcons.newFile)
             }
 
             Button {
                 createNewItem(isDirectory: true)
             } label: {
-                Label(Strings.contextNewFolder, systemImage: "folder.badge.plus")
+                Label(Strings.contextNewFolder, systemImage: MenuIcons.newFolder)
             }
 
             Divider()
@@ -1113,19 +1113,19 @@ struct FileNodeRow: View {
         Button {
             duplicateItem()
         } label: {
-            Label(Strings.contextDuplicate, systemImage: "plus.square.on.square")
+            Label(Strings.contextDuplicate, systemImage: MenuIcons.duplicate)
         }
 
         Button {
             editState.startRename(for: node)
         } label: {
-            Label(Strings.contextRename, systemImage: "pencil")
+            Label(Strings.contextRename, systemImage: MenuIcons.rename)
         }
 
         Button(role: .destructive) {
             deleteItem()
         } label: {
-            Label(Strings.contextDelete, systemImage: "trash")
+            Label(Strings.contextDelete, systemImage: MenuIcons.delete)
         }
 
         Divider()
@@ -1133,7 +1133,7 @@ struct FileNodeRow: View {
         Button {
             NSWorkspace.shared.activateFileViewerSelecting([node.url])
         } label: {
-            Label(Strings.contextRevealInFinder, systemImage: "arrow.right.circle")
+            Label(Strings.contextRevealInFinder, systemImage: MenuIcons.revealInFinder)
         }
     }
 

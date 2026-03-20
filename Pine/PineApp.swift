@@ -34,7 +34,7 @@ struct PineApp: App {
                 Button {
                     NotificationCenter.default.post(name: .openFolder, object: nil)
                 } label: {
-                    Label(Strings.menuOpenFolder, systemImage: "folder")
+                    Label(Strings.menuOpenFolder, systemImage: MenuIcons.openFolder)
                 }
                 .keyboardShortcut("o", modifiers: [.command, .shift])
             }
@@ -45,21 +45,21 @@ struct PineApp: App {
                 Button {
                     FontSizeSettings.shared.increase()
                 } label: {
-                    Label(Strings.menuIncreaseFontSize, systemImage: "plus.magnifyingglass")
+                    Label(Strings.menuIncreaseFontSize, systemImage: MenuIcons.increaseFontSize)
                 }
                 .keyboardShortcut("+", modifiers: .command)
 
                 Button {
                     FontSizeSettings.shared.decrease()
                 } label: {
-                    Label(Strings.menuDecreaseFontSize, systemImage: "minus.magnifyingglass")
+                    Label(Strings.menuDecreaseFontSize, systemImage: MenuIcons.decreaseFontSize)
                 }
                 .keyboardShortcut("-", modifiers: .command)
 
                 Button {
                     FontSizeSettings.shared.reset()
                 } label: {
-                    Label(Strings.menuResetFontSize, systemImage: "textformat.size")
+                    Label(Strings.menuResetFontSize, systemImage: MenuIcons.resetFontSize)
                 }
                 .keyboardShortcut("0", modifiers: .command)
 
@@ -69,7 +69,7 @@ struct PineApp: App {
                     guard let pm = focusedProject else { return }
                     pm.terminal.isTerminalVisible.toggle()
                 } label: {
-                    Label(Strings.toggleTerminal, systemImage: "terminal")
+                    Label(Strings.toggleTerminal, systemImage: MenuIcons.toggleTerminal)
                 }
                 .keyboardShortcut("`", modifiers: .command)
 
@@ -77,7 +77,7 @@ struct PineApp: App {
                     guard let pm = focusedProject else { return }
                     pm.tabManager.togglePreviewMode()
                 } label: {
-                    Label(Strings.menuTogglePreview, systemImage: "doc.richtext")
+                    Label(Strings.menuTogglePreview, systemImage: MenuIcons.togglePreview)
                 }
                 .keyboardShortcut("p", modifiers: [.command, .shift])
 
@@ -86,7 +86,7 @@ struct PineApp: App {
                 Button {
                     MinimapSettings.toggle()
                 } label: {
-                    Label(Strings.menuToggleMinimap, systemImage: "sidebar.right")
+                    Label(Strings.menuToggleMinimap, systemImage: MenuIcons.toggleMinimap)
                 }
                 .keyboardShortcut("m", modifiers: [.command, .shift])
 
@@ -97,7 +97,7 @@ struct PineApp: App {
                           let url = pm.tabManager.activeTab?.url else { return }
                     NSWorkspace.shared.activateFileViewerSelecting([url])
                 } label: {
-                    Label(Strings.menuRevealFileInFinder, systemImage: "doc.viewfinder")
+                    Label(Strings.menuRevealFileInFinder, systemImage: MenuIcons.revealFileInFinder)
                 }
                 .keyboardShortcut("r", modifiers: [.command, .shift])
                 .disabled(focusedProject?.tabManager.activeTab == nil)
@@ -107,7 +107,7 @@ struct PineApp: App {
                           let rootURL = pm.workspace.rootURL else { return }
                     NSWorkspace.shared.activateFileViewerSelecting([rootURL])
                 } label: {
-                    Label(Strings.menuRevealProjectInFinder, systemImage: "folder")
+                    Label(Strings.menuRevealProjectInFinder, systemImage: MenuIcons.revealProjectInFinder)
                 }
                 .disabled(focusedProject?.workspace.rootURL == nil)
             }
@@ -120,7 +120,7 @@ struct PineApp: App {
                     }
                     pm.addTerminalTab()
                 } label: {
-                    Label(Strings.menuNewTerminalTab, systemImage: "plus")
+                    Label(Strings.menuNewTerminalTab, systemImage: MenuIcons.newTerminalTab)
                 }
                 .keyboardShortcut("t", modifiers: .command)
             }
@@ -129,7 +129,7 @@ struct PineApp: App {
                 Button {
                     NotificationCenter.default.post(name: .toggleComment, object: nil)
                 } label: {
-                    Label(Strings.menuToggleComment, systemImage: "slash.circle")
+                    Label(Strings.menuToggleComment, systemImage: MenuIcons.toggleComment)
                 }
                 .keyboardShortcut("/", modifiers: .command)
 
@@ -138,7 +138,7 @@ struct PineApp: App {
                 Button {
                     NotificationCenter.default.post(name: .showProjectSearch, object: nil)
                 } label: {
-                    Label(Strings.menuFindInProject, systemImage: "magnifyingglass")
+                    Label(Strings.menuFindInProject, systemImage: MenuIcons.findInProject)
                 }
                 .keyboardShortcut("f", modifiers: [.command, .shift])
 
@@ -150,7 +150,7 @@ struct PineApp: App {
                         userInfo: ["direction": "next"]
                     )
                 } label: {
-                    Label(Strings.menuNextChange, systemImage: "chevron.down")
+                    Label(Strings.menuNextChange, systemImage: MenuIcons.nextChange)
                 }
                 .keyboardShortcut(.downArrow, modifiers: [.control, .option])
                 .disabled(focusedProject?.tabManager.activeTab == nil)
@@ -161,7 +161,7 @@ struct PineApp: App {
                         userInfo: ["direction": "previous"]
                     )
                 } label: {
-                    Label(Strings.menuPreviousChange, systemImage: "chevron.up")
+                    Label(Strings.menuPreviousChange, systemImage: MenuIcons.previousChange)
                 }
                 .keyboardShortcut(.upArrow, modifiers: [.control, .option])
                 .disabled(focusedProject?.tabManager.activeTab == nil)
@@ -177,7 +177,7 @@ struct PineApp: App {
                         }
                     }
                 } label: {
-                    Label(Strings.menuSave, systemImage: "square.and.arrow.down")
+                    Label(Strings.menuSave, systemImage: MenuIcons.save)
                 }
                 .keyboardShortcut("s", modifiers: .command)
 
@@ -190,7 +190,7 @@ struct PineApp: App {
                         }
                     }
                 } label: {
-                    Label(Strings.menuSaveAll, systemImage: "square.and.arrow.down.on.square")
+                    Label(Strings.menuSaveAll, systemImage: MenuIcons.saveAll)
                 }
                 .keyboardShortcut("s", modifiers: [.command, .option])
 
@@ -220,7 +220,7 @@ struct PineApp: App {
                         alert.runModal()
                     }
                 } label: {
-                    Label(Strings.menuSaveAs, systemImage: "doc.on.doc")
+                    Label(Strings.menuSaveAs, systemImage: MenuIcons.saveAs)
                 }
                 .keyboardShortcut("s", modifiers: [.command, .shift])
 
@@ -228,7 +228,7 @@ struct PineApp: App {
                     guard let pm = focusedProject else { return }
                     pm.tabManager.duplicateActiveTab(projectRoot: pm.workspace.rootURL)
                 } label: {
-                    Label(Strings.menuDuplicate, systemImage: "plus.square.on.square")
+                    Label(Strings.menuDuplicate, systemImage: MenuIcons.duplicate)
                 }
                 .keyboardShortcut("d", modifiers: [.command, .shift])
             }
