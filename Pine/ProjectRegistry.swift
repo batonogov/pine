@@ -39,6 +39,7 @@ final class ProjectRegistry {
                       isDir.boolValue else {
                     // Directory was deleted while in background — clean up
                     existing.terminal.terminateAll()
+                    SecurityScopedBookmarkStore.stopAccessing(canonical)
                     openProjects.removeValue(forKey: canonical)
                     backgroundProjects.remove(canonical)
                     recentProjects.removeAll { $0 == canonical }
@@ -57,6 +58,8 @@ final class ProjectRegistry {
             saveRecentProjects()
             return nil
         }
+        SecurityScopedBookmarkStore.saveBookmark(for: canonical)
+        SecurityScopedBookmarkStore.startAccessing(canonical)
         let pm = ProjectManager()
         pm.workspace.loadDirectory(url: canonical)
         openProjects[canonical] = pm
@@ -96,8 +99,9 @@ final class ProjectRegistry {
 
     /// Fully destroys all project managers. Called during app termination.
     func destroyAllProjects() {
-        for (_, pm) in openProjects {
+        for (url, pm) in openProjects {
             pm.terminal.terminateAll()
+            SecurityScopedBookmarkStore.stopAccessing(url)
         }
         openProjects.removeAll()
         backgroundProjects.removeAll()
@@ -130,6 +134,11 @@ final class ProjectRegistry {
             return
         }
         recentProjects = paths.compactMap { path in
+            // In sandbox, try to resolve via security-scoped bookmark first
+            if SandboxEnvironment.isSandboxed,
+               let resolved = SecurityScopedBookmarkStore.resolveBookmark(forPath: path) {
+                return resolved.resolvingSymlinksInPath()
+            }
             var isDir: ObjCBool = false
             guard FileManager.default.fileExists(atPath: path, isDirectory: &isDir),
                   isDir.boolValue else { return nil }
