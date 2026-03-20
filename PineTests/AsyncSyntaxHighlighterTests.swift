@@ -192,23 +192,66 @@ struct AsyncSyntaxHighlighterTests {
         #expect(foregroundColor(in: storage, at: line55Offset) == keywordColor)
     }
 
-    // MARK: - Cancellation: stale generation is discarded
+    // MARK: - HighlightGeneration counter
 
-    @Test func staleGenerationDoesNotApply() async {
+    @Test func generationCounterWorks() {
+        let gen = HighlightGeneration()
+        #expect(gen.current == 0, "Initial value should be 0")
+
+        gen.increment()
+        #expect(gen.current == 1, "After one increment should be 1")
+
+        let captured = gen.current
+        gen.increment()
+        #expect(gen.current != captured,
+                "After increment, current must differ from previously captured value")
+        #expect(gen.current == 2)
+    }
+
+    // MARK: - highlightAsync respects generation
+
+    @Test func highlightAsyncAppliesWhenGenerationIsCurrent() async {
         register(langA)
 
-        let text = "func hello()"
-        let storage = NSTextStorage(string: text)
         let hl = SyntaxHighlighter.shared
         let keywordColor = hl.theme.color(for: "keyword")
 
-        // Start highlight with generation 1, but immediately bump to 2
-        // The first should be cancelled
-        let gen = HighlightGeneration()
-        gen.increment()  // now 1
+        // Without generation — always applies
+        let storage1 = NSTextStorage(string: "func hello()")
+        await hl.highlightAsync(
+            textStorage: storage1, language: "langasync", font: font
+        )
+        #expect(foregroundColor(in: storage1, at: 0) == keywordColor,
+                "Without generation, highlight must apply")
 
-        // Start async highlight with generation 1
-        let task1 = Task {
+        // With current (non-bumped) generation — applies
+        let gen = HighlightGeneration()
+        gen.increment() // 1
+        let storage2 = NSTextStorage(string: "func hello()")
+        await hl.highlightAsync(
+            textStorage: storage2, language: "langasync", font: font, generation: gen
+        )
+        #expect(foregroundColor(in: storage2, at: 0) == keywordColor,
+                "With current generation, highlight must apply")
+    }
+
+    @Test func highlightAsyncDiscardsWhenGenerationIsStale() async throws {
+        register(langA)
+
+        let hl = SyntaxHighlighter.shared
+        let keywordColor = hl.theme.color(for: "keyword")
+
+        // Use large text so background computation takes non-trivial time.
+        // Start the highlight in a separate Task, then bump generation while
+        // background is running. By the time it resumes, generation will be stale.
+        let lines = (0..<5000).map { "func line\($0)()" }
+        let bigText = lines.joined(separator: "\n")
+        let storage = NSTextStorage(string: bigText)
+
+        let gen = HighlightGeneration()
+        gen.increment() // 1
+
+        let task = Task {
             await hl.highlightAsync(
                 textStorage: storage,
                 language: "langasync",
@@ -217,16 +260,48 @@ struct AsyncSyntaxHighlighterTests {
             )
         }
 
-        // Immediately bump generation — this should invalidate task1
-        gen.increment()  // now 2
+        // Yield to let the task start and begin background computation.
+        // Then bump generation to invalidate the result.
+        try await Task.sleep(for: .milliseconds(1))
+        gen.increment() // 2
 
-        await task1.value
+        await task.value
 
-        // If cancellation worked, the highlight should NOT have been applied
-        // (because generation was bumped before main-thread application)
-        // Note: this test is timing-dependent — the background work might complete
-        // before the generation bump. That's OK — the point is that it CAN be cancelled.
-        // The important thing is that the API supports cancellation.
+        // Result should be discarded — no keyword color at a line in the middle
+        let checkPos = lineOffset(2500, in: bigText)
+        #expect(foregroundColor(in: storage, at: checkPos) != keywordColor,
+                "Highlight must be discarded when generation is bumped during computation")
+    }
+
+    // MARK: - applyMatches validates ranges
+
+    @Test func applyMatchesDiscardsWhenRangesAreStale() {
+        register(langA)
+
+        let hl = SyntaxHighlighter.shared
+
+        // Compute matches for a longer text
+        let text = "func hello() /* comment */"
+        let fullRange = NSRange(location: 0, length: (text as NSString).length)
+        guard let result = hl.computeMatches(
+            text: text, language: "langasync",
+            repaintRange: fullRange, searchRange: fullRange
+        ) else {
+            Issue.record("computeMatches returned nil")
+            return
+        }
+
+        // Apply to a SHORTER textStorage — repaintRange is out of bounds
+        let shortStorage = NSTextStorage(string: "hi")
+
+        // Should not crash — applyMatches must validate ranges
+        hl.applyMatches(result, to: shortStorage, font: font)
+
+        // Storage should be unmodified (no attributes applied)
+        let color = foregroundColor(in: shortStorage, at: 0)
+        let keywordColor = hl.theme.color(for: "keyword")
+        #expect(color != keywordColor,
+                "applyMatches must skip when repaintRange exceeds textStorage.length")
     }
 
     // MARK: - multilineFingerprint computed correctly

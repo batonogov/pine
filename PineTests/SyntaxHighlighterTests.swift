@@ -565,16 +565,19 @@ struct SyntaxHighlighterTests {
         let coordinator = CodeEditorView.Coordinator(parent: editorView)
         coordinator.scrollView = scrollView
 
-        // First call — highlights as langA (now async, need to wait)
+        let hashPos = 0
+        let funcPos = (text as NSString).range(of: "func").location
+
+        // First call — highlights as langA (async, poll for completion)
         coordinator.updateContentIfNeeded(
             text: text, language: "langa", fileName: "test.langa", font: font
         )
 
-        // Wait for async highlight to complete
-        try await Task.sleep(for: .milliseconds(200))
-
-        let hashPos = 0
-        let funcPos = (text as NSString).range(of: "func").location
+        // Poll until async highlight completes (max 2s to avoid CI timeouts)
+        for _ in 0..<40 {
+            try await Task.sleep(for: .milliseconds(50))
+            if foregroundColor(in: textStorage, at: funcPos) == keywordColor { break }
+        }
 
         #expect(foregroundColor(in: textStorage, at: hashPos) != commentColor,
                 "`#` should not be comment in langA")
@@ -586,8 +589,11 @@ struct SyntaxHighlighterTests {
             text: text, language: "langb", fileName: "test.langb", font: font
         )
 
-        // Wait for async highlight to complete
-        try await Task.sleep(for: .milliseconds(200))
+        // Poll until async highlight completes
+        for _ in 0..<40 {
+            try await Task.sleep(for: .milliseconds(50))
+            if foregroundColor(in: textStorage, at: hashPos) == commentColor { break }
+        }
 
         // Verify re-highlighting happened with the new grammar
         #expect(foregroundColor(in: textStorage, at: hashPos) == commentColor,

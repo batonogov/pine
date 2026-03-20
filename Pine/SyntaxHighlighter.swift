@@ -559,6 +559,7 @@ final class SyntaxHighlighter: @unchecked Sendable {
     }
 
     /// Применяет правила подсветки.
+    /// Делегирует в `computeMatches` + `applyMatches` для единой логики.
     ///
     /// - `repaintRange`: диапазон, в котором сбрасываются и перекрашиваются атрибуты.
     /// - `searchRange`: диапазон поиска для однострочных правил.
@@ -572,47 +573,21 @@ final class SyntaxHighlighter: @unchecked Sendable {
         font: NSFont
     ) {
         let source = textStorage.string
-        let fullRange = NSRange(location: 0, length: textStorage.length)
-
-        let undoManager = textStorage.layoutManagers.first?.firstTextView?.undoManager
-        undoManager?.disableUndoRegistration()
-        defer { undoManager?.enableUndoRegistration() }
-        textStorage.beginEditing()
-        textStorage.addAttributes([
-            .foregroundColor: NSColor.textColor,
-            .font: font
-        ], range: repaintRange)
-
-        var highlightedRanges: [(range: NSRange, priority: Int)] = []
-
-        for rule in rules {
-            let priority = scopePriority[rule.scope] ?? 0
-            guard let color = theme.color(for: rule.scope) else { continue }
-
-            // Многострочные правила ищут по всему тексту,
-            // однострочные — только в searchRange
-            let scanRange = rule.isMultiline ? fullRange : searchRange
-
-            rule.regex.enumerateMatches(in: source, range: scanRange) { match, _, _ in
-                guard let matchRange = match?.range else { return }
-
-                // Красим только пересечение с repaintRange
-                let clipped = NSIntersectionRange(matchRange, repaintRange)
-                guard clipped.length > 0 else { return }
-
-                let isOverridden = highlightedRanges.contains { existing in
-                    existing.priority > priority &&
-                    NSIntersectionRange(existing.range, clipped).length > 0
-                }
-
-                if !isOverridden {
-                    textStorage.addAttribute(.foregroundColor, value: color, range: clipped)
-                    highlightedRanges.append((range: clipped, priority: priority))
-                }
-            }
-        }
-
-        textStorage.endEditing()
+        let grammar = rules // already resolved by caller
+        // Find the language name to pass to computeMatches — not needed,
+        // call computeMatchesWithRules directly
+        let result = computeMatchesWithRules(
+            grammar, text: source, repaintRange: repaintRange, searchRange: searchRange
+        )
+        applyMatches(
+            HighlightMatchResult(
+                matches: result.matches,
+                repaintRange: repaintRange,
+                multilineFingerprint: result.multilineFingerprint
+            ),
+            to: textStorage,
+            font: font
+        )
     }
 
     // MARK: - Async highlighting (background computation)
@@ -643,7 +618,17 @@ final class SyntaxHighlighter: @unchecked Sendable {
         guard let (_, rules) = resolveGrammar(language: language, fileName: fileName) else {
             return nil
         }
+        return computeMatchesWithRules(rules, text: text, repaintRange: repaintRange, searchRange: searchRange)
+    }
 
+    /// Core match computation — used by both `computeMatches` and `applyRules`.
+    /// Thread-safe: only reads immutable compiled rules and the provided text snapshot.
+    private func computeMatchesWithRules(
+        _ rules: [CompiledRule],
+        text: String,
+        repaintRange: NSRange,
+        searchRange: NSRange
+    ) -> HighlightMatchResult {
         let fullRange = NSRange(location: 0, length: (text as NSString).length)
         var matches: [HighlightMatch] = []
         var highlightedRanges: [(range: NSRange, priority: Int)] = []
@@ -686,11 +671,19 @@ final class SyntaxHighlighter: @unchecked Sendable {
     }
 
     /// Applies pre-computed matches to NSTextStorage. Must be called on main thread.
+    /// Validates that ranges are still valid — text may have changed between
+    /// computation and application.
     func applyMatches(
         _ result: HighlightMatchResult,
         to textStorage: NSTextStorage,
         font: NSFont
     ) {
+        let currentLength = textStorage.length
+        // Discard if text changed and repaintRange is now out of bounds
+        guard result.repaintRange.location + result.repaintRange.length <= currentLength else {
+            return
+        }
+
         let undoManager = textStorage.layoutManagers.first?.firstTextView?.undoManager
         undoManager?.disableUndoRegistration()
         defer { undoManager?.enableUndoRegistration() }
@@ -702,6 +695,7 @@ final class SyntaxHighlighter: @unchecked Sendable {
         ], range: result.repaintRange)
 
         for match in result.matches {
+            guard match.range.location + match.range.length <= currentLength else { continue }
             guard let color = theme.color(for: match.scope) else { continue }
             textStorage.addAttribute(.foregroundColor, value: color, range: match.range)
         }
@@ -717,7 +711,9 @@ final class SyntaxHighlighter: @unchecked Sendable {
         font: NSFont,
         generation: HighlightGeneration? = nil
     ) async {
-        let text = textStorage.string
+        // Explicit copy — NSTextStorage.string returns a reference to the internal
+        // NSMutableString which may mutate while background work is in progress.
+        let text = String(textStorage.string)
         let textLength = (text as NSString).length
         guard textLength > 0 else { return }
 
@@ -761,7 +757,7 @@ final class SyntaxHighlighter: @unchecked Sendable {
         font: NSFont,
         generation: HighlightGeneration? = nil
     ) async {
-        let text = textStorage.string
+        let text = String(textStorage.string)
         let textLength = (text as NSString).length
         guard textLength > 0 else { return }
 
@@ -826,7 +822,7 @@ final class SyntaxHighlighter: @unchecked Sendable {
         font: NSFont,
         generation: HighlightGeneration? = nil
     ) async {
-        let text = textStorage.string
+        let text = String(textStorage.string)
         let textLength = (text as NSString).length
         guard textLength > 0 else { return }
 

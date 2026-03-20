@@ -1016,8 +1016,8 @@ struct CodeEditorView: NSViewRepresentable {
             // Debounce 16ms (1 frame)
             scrollHighlightWorkItem?.cancel()
             highlightTask?.cancel()
-            let gen = highlightGeneration
             highlightGeneration.increment()
+            let gen = highlightGeneration
             let lang = self.parent.language
             let name = self.parent.fileName
             let font = self.parent.editorFont
