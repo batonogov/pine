@@ -50,9 +50,12 @@ final class ShellSettings {
         }
     }
 
-    /// Validated shell path — falls back to default if the configured path is not executable.
+    /// Validated shell path — falls back to `$SHELL`, then `/bin/zsh` if configured path is not executable.
     var resolvedShellPath: String {
-        fileManager.isExecutableFile(atPath: shellPath) ? shellPath : Self.defaultShellPath
+        if fileManager.isExecutableFile(atPath: shellPath) { return shellPath }
+        let fallback = Self.defaultShellPath
+        if fileManager.isExecutableFile(atPath: fallback) { return fallback }
+        return "/bin/zsh"
     }
 
     init(defaults: UserDefaults = .standard, fileManager: FileManager = .default) {
@@ -75,6 +78,6 @@ final class ShellSettings {
 
     func reset() {
         shellPath = Self.defaultShellPath
-        shellArgs = Self.defaultShellArgs
+        shellArgs = Self.commonShells.first { $0.path == shellPath }?.defaultArgs ?? Self.defaultShellArgs
     }
 }

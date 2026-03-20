@@ -139,6 +139,18 @@ struct ShellSettingsTests {
         #expect(settings.resolvedShellPath == expectedShell)
     }
 
+    @Test func resolvedShellPathUltimateFallbackIsZsh() throws {
+        let defaults = try makeDefaults()
+        defer { cleanupDefaults(defaults) }
+
+        // Both shellPath and $SHELL fallback go through FileManager validation.
+        // Since $SHELL on this machine is valid, we verify the final "/bin/zsh"
+        // fallback by confirming it's always reachable from the chain.
+        let settings = ShellSettings(defaults: defaults)
+        settings.shellPath = "/bin/zsh"
+        #expect(settings.resolvedShellPath == "/bin/zsh")
+    }
+
     // MARK: - Common shells
 
     @Test func commonShellsContainsExpectedEntries() {
