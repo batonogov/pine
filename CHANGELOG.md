@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.5.1](https://github.com/batonogov/pine/compare/v1.5.0...v1.5.1) (2026-03-20)
+
+
+### Bug Fixes
+
+* add bottom inset to editor so last line is not clipped ([#264](https://github.com/batonogov/pine/issues/264)) ([b21a5d7](https://github.com/batonogov/pine/commit/b21a5d73197957bcc5ff520791b46a2aff67ec30))
+* remove contentMargins that clips first item in Welcome recent projects list ([#263](https://github.com/batonogov/pine/issues/263)) ([1b58c22](https://github.com/batonogov/pine/commit/1b58c220b10462bf9a8c57862e482723ad78b434)), closes [#207](https://github.com/batonogov/pine/issues/207)
+
 ## [1.5.0](https://github.com/batonogov/pine/compare/v1.4.0...v1.5.0) (2026-03-19)
 
 
