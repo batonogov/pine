@@ -2,8 +2,8 @@
 //  GitignoreFilterTests.swift
 //  PineUITests
 //
-//  UI tests verifying that gitignored directories are hidden from the sidebar
-//  while gitignored files remain visible.
+//  UI tests verifying that gitignored directories appear dimmed in the sidebar
+//  (visible but lazy-loaded) while gitignored files also remain visible.
 //
 
 import XCTest
@@ -19,9 +19,10 @@ final class GitignoreFilterTests: PineUITestCase {
         // a gitignored directory, and a gitignored file.
         projectURL = try createTempProject(files: [
             "main.swift": "// Hello\n",
-            ".gitignore": "node_modules/\n.env\n",
+            ".gitignore": "node_modules/\n.env\n.claude/\n",
             "node_modules/express/index.js": "module.exports = {};\n",
-            ".env": "SECRET=123\n"
+            ".env": "SECRET=123\n",
+            ".claude/settings.json": "{}\n"
         ])
 
         // Initialize git so gitProvider picks up .gitignore
@@ -66,7 +67,7 @@ final class GitignoreFilterTests: PineUITestCase {
 
     // MARK: - Tests
 
-    func testGitignoredDirectoryHiddenFromSidebar() throws {
+    func testGitignoredDirectoryVisibleInSidebar() throws {
         launchWithProject(projectURL)
 
         let sidebar = app.outlines["sidebar"]
@@ -79,11 +80,25 @@ final class GitignoreFilterTests: PineUITestCase {
             "main.swift should appear in sidebar"
         )
 
-        // node_modules directory should NOT be visible (gitignored directory)
+        // node_modules directory should be visible (gitignored but shown dimmed)
         let nodeModules = app.staticTexts["fileNode_node_modules"]
-        XCTAssertFalse(
-            nodeModules.waitForExistence(timeout: 2),
-            "node_modules should be hidden from sidebar (gitignored directory)"
+        XCTAssertTrue(
+            waitForExistence(nodeModules, timeout: 5),
+            "node_modules should appear in sidebar (gitignored directories are visible but dimmed)"
+        )
+    }
+
+    func testGitignoredDotDirectoryVisibleInSidebar() throws {
+        launchWithProject(projectURL)
+
+        let sidebar = app.outlines["sidebar"]
+        XCTAssertTrue(waitForExistence(sidebar, timeout: 10), "Sidebar should appear")
+
+        // .claude directory should be visible (gitignored but shown dimmed)
+        let claudeDir = app.staticTexts["fileNode_.claude"]
+        XCTAssertTrue(
+            waitForExistence(claudeDir, timeout: 5),
+            ".claude should appear in sidebar (gitignored directories are visible but dimmed)"
         )
     }
 

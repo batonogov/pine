@@ -18,7 +18,7 @@ final class FileNode: Identifiable, Hashable {
     /// Project root used for symlink boundary checks during loadChildren().
     private let projectRoot: URL?
 
-    /// Ignored paths passed at construction time, forwarded to loadChildren().
+    /// Ignored paths forwarded to loadChildren() for lazy-loading gitignored directories.
     private let ignoredPaths: Set<String>?
 
     var children: [FileNode]?
@@ -41,7 +41,7 @@ final class FileNode: Identifiable, Hashable {
         self.init(url: url, context: context)
     }
 
-    /// Initializer with project root boundary, cycle protection, and gitignored path skipping.
+    /// Initializer with project root boundary, cycle protection, and gitignored lazy-loading.
     convenience init(url: URL, projectRoot: URL, ignoredPaths: Set<String>) {
         let context = LoadContext(projectRoot: projectRoot, ignoredPaths: ignoredPaths)
         self.init(url: url, context: context)
@@ -69,6 +69,14 @@ final class FileNode: Identifiable, Hashable {
                 let isOutsideRoot = isSymlink && !Self.pathIsWithinRoot(realPath, rootRealPath: context.rootRealPath)
 
                 if isCycle || isOutsideRoot {
+                    self.children = []
+                    return
+                }
+
+                // Gitignored directories are visible but lazy-loaded:
+                // show them in the tree with empty children (collapsed),
+                // their contents load on-demand via loadChildren().
+                if Self.isIgnoredDirectory(url, context: context) {
                     self.children = []
                     return
                 }
@@ -110,15 +118,7 @@ final class FileNode: Identifiable, Hashable {
             return contents
                 .filter { childURL in
                     let name = childURL.lastPathComponent
-                    if hiddenNames.contains(name) { return false }
-                    // Skip gitignored directories (but keep gitignored files — they show grey in sidebar)
-                    if let context {
-                        let isDir = (try? childURL.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory ?? false
-                        if isDir && isIgnoredDirectory(childURL, context: context) {
-                            return false
-                        }
-                    }
-                    return true
+                    return !hiddenNames.contains(name)
                 }
                 .map { FileNode(url: $0, context: context) }
                 .sorted { lhs, rhs in
