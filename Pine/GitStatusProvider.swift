@@ -141,21 +141,75 @@ final class GitStatusProvider {
     func refresh() {
         guard isGitRepository, let url = repositoryURL else { return }
 
+        let result = Self.fetchAllInParallel(at: url)
+        currentBranch = result.branch
+        fileStatuses = result.statuses
+        ignoredPaths = result.ignored
+        branches = result.branches
+    }
+
+    /// Async version of setup — runs git detection and initial refresh
+    /// on a background thread using parallel DispatchGroup, then updates
+    /// properties on the main thread.
+    func setupAsync(repositoryURL: URL) async {
+        let (isRepo, rootPath, branch, statuses, ignored, branchList) = await withCheckedContinuation { continuation in
+            DispatchQueue.global(qos: .userInitiated).async {
+                let result = Self.runGit(["rev-parse", "--show-toplevel"], at: repositoryURL)
+                let isRepo = result.exitCode == 0
+                guard isRepo else {
+                    continuation.resume(returning: (false, nil as String?, "", [:] as [String: GitFileStatus], Set<String>(), [String]()))
+                    return
+                }
+                let rootPath = result.output.trimmingCharacters(in: .whitespacesAndNewlines)
+                let fetched = Self.fetchAllInParallel(at: repositoryURL)
+                continuation.resume(returning: (true, rootPath, fetched.branch, fetched.statuses, fetched.ignored, fetched.branches))
+            }
+        }
+
+        await MainActor.run {
+            self.repositoryURL = repositoryURL
+            self.isGitRepository = isRepo
+            self.gitRootPath = rootPath
+            if isRepo {
+                self.currentBranch = branch
+                self.fileStatuses = statuses
+                self.ignoredPaths = ignored
+                self.branches = branchList
+            } else {
+                self.currentBranch = ""
+                self.fileStatuses = [:]
+                self.ignoredPaths = []
+                self.branches = []
+            }
+        }
+    }
+
+    // MARK: - Static Fetch Methods
+
+    /// Runs branch, status+ignored, and branch-list fetches in parallel.
+    /// Safe to call from any thread (all work happens on background queues).
+    /// Each variable is written by exactly one thread; `group.wait()` ensures
+    /// happens-before ordering so the reads after wait are safe.
+    static func fetchAllInParallel(
+        at url: URL
+    ) -> (branch: String, statuses: [String: GitFileStatus], ignored: Set<String>, branches: [String]) {
         let group = DispatchGroup()
-        var branch = ""
-        var statuses: [String: GitFileStatus] = [:]
-        var ignored: Set<String> = []
-        var branchList: [String] = []
+        // nonisolated(unsafe): each var is written by exactly one dispatch block,
+        // and group.wait() provides happens-before guarantee before reads.
+        nonisolated(unsafe) var branch = ""
+        nonisolated(unsafe) var statuses: [String: GitFileStatus] = [:]
+        nonisolated(unsafe) var ignored: Set<String> = []
+        nonisolated(unsafe) var branchList: [String] = []
 
         group.enter()
         DispatchQueue.global(qos: .userInitiated).async {
-            branch = Self.fetchBranch(at: url)
+            branch = fetchBranch(at: url)
             group.leave()
         }
 
         group.enter()
         DispatchQueue.global(qos: .userInitiated).async {
-            let result = Self.fetchStatusAndIgnored(at: url)
+            let result = fetchStatusAndIgnored(at: url)
             statuses = result.statuses
             ignored = result.ignored
             group.leave()
@@ -163,19 +217,13 @@ final class GitStatusProvider {
 
         group.enter()
         DispatchQueue.global(qos: .userInitiated).async {
-            branchList = Self.fetchBranches(at: url)
+            branchList = fetchBranches(at: url)
             group.leave()
         }
 
         group.wait()
-
-        currentBranch = branch
-        fileStatuses = statuses
-        ignoredPaths = ignored
-        branches = branchList
+        return (branch, statuses, ignored, branchList)
     }
-
-    // MARK: - Static Fetch Methods
 
     static func fetchBranch(at url: URL) -> String {
         let result = runGit(["rev-parse", "--abbrev-ref", "HEAD"], at: url)
@@ -202,20 +250,16 @@ final class GitStatusProvider {
 
     /// Runs git refresh on a background queue and updates properties on the main thread.
     /// Safe to call from the main thread — does not block.
+    /// Uses `DispatchGroup` for parallel git operations (branch, status, branches).
     /// Supports cooperative cancellation — if the Task is cancelled before
     /// the background work completes, stale results are discarded.
     func refreshAsync() async {
         guard isGitRepository, let url = repositoryURL else { return }
-        let rootPath = gitRootPath
 
         let (branch, statuses, ignored, branchList) = await withCheckedContinuation { continuation in
             DispatchQueue.global(qos: .userInitiated).async {
-                let bg = GitStatusProvider()
-                bg.repositoryURL = url
-                bg.isGitRepository = true
-                bg.gitRootPath = rootPath
-                bg.refresh()
-                continuation.resume(returning: (bg.currentBranch, bg.fileStatuses, bg.ignoredPaths, bg.branches))
+                let fetched = Self.fetchAllInParallel(at: url)
+                continuation.resume(returning: fetched)
             }
         }
 
@@ -303,6 +347,29 @@ final class GitStatusProvider {
         return Self.parseDiff(result.output)
     }
 
+    /// Async version of diffForFile — runs git diff on a background thread.
+    /// Safe to call from the main thread.
+    func diffForFileAsync(at url: URL) async -> [GitLineDiff] {
+        guard isGitRepository, let repoURL = repositoryURL else { return [] }
+        let filePath = url.path
+
+        return await withCheckedContinuation { continuation in
+            DispatchQueue.global(qos: .userInitiated).async {
+                let headCheck = Self.runGit(["rev-parse", "HEAD"], at: repoURL)
+                guard headCheck.exitCode == 0 else {
+                    continuation.resume(returning: [])
+                    return
+                }
+                let result = Self.runGit(["diff", "HEAD", "--unified=0", "--", filePath], at: repoURL)
+                guard result.exitCode == 0, !result.output.isEmpty else {
+                    continuation.resume(returning: [])
+                    return
+                }
+                continuation.resume(returning: Self.parseDiff(result.output))
+            }
+        }
+    }
+
     // MARK: - Branch Operations
 
     func checkoutBranch(_ branch: String) -> (success: Bool, error: String) {
@@ -313,6 +380,26 @@ final class GitStatusProvider {
             return (true, "")
         }
         return (false, result.errorOutput.trimmingCharacters(in: .whitespacesAndNewlines))
+    }
+
+    /// Async version of checkoutBranch — runs git switch on a background thread,
+    /// then refreshes status asynchronously. Safe to call from the main thread.
+    func checkoutBranchAsync(_ branch: String) async -> (success: Bool, error: String) {
+        guard let url = repositoryURL else { return (false, "No repository") }
+
+        let result = await withCheckedContinuation { continuation in
+            DispatchQueue.global(qos: .userInitiated).async {
+                let gitResult = Self.runGit(["switch", branch], at: url)
+                continuation.resume(returning: gitResult)
+            }
+        }
+
+        guard result.exitCode == 0 else {
+            return (false, result.errorOutput.trimmingCharacters(in: .whitespacesAndNewlines))
+        }
+
+        await refreshAsync()
+        return (true, "")
     }
 
     // MARK: - Private Helpers
@@ -651,7 +738,14 @@ final class GitStatusProvider {
 
     // MARK: - Git Command Runner
 
-    nonisolated static func runGit(_ arguments: [String], at directory: URL) -> (output: String, errorOutput: String, exitCode: Int32) {
+    /// Default timeout for git commands (30 seconds).
+    static let defaultGitTimeout: TimeInterval = 30.0
+
+    nonisolated static func runGit(
+        _ arguments: [String],
+        at directory: URL,
+        timeout: TimeInterval = defaultGitTimeout
+    ) -> (output: String, errorOutput: String, exitCode: Int32) {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
         process.arguments = arguments
@@ -664,9 +758,25 @@ final class GitStatusProvider {
 
         do {
             try process.run()
-            process.waitUntilExit()
+
+            // Schedule a timeout to terminate hung processes
+            let timer = DispatchSource.makeTimerSource(queue: .global(qos: .utility))
+            timer.schedule(deadline: .now() + timeout)
+            timer.setEventHandler {
+                if process.isRunning {
+                    process.terminate()
+                }
+            }
+            timer.resume()
+
+            // Read pipe data before waitUntilExit to avoid deadlock:
+            // if the process fills the pipe buffer, it blocks on write
+            // and never exits, while we block on waitUntilExit.
             let outData = outPipe.fileHandleForReading.readDataToEndOfFile()
             let errData = errPipe.fileHandleForReading.readDataToEndOfFile()
+
+            process.waitUntilExit()
+            timer.cancel()
             return (
                 String(bytes: outData, encoding: .utf8) ?? "",
                 String(bytes: errData, encoding: .utf8) ?? "",
