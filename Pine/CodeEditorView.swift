@@ -17,6 +17,19 @@ final class GutterTextView: NSTextView {
     /// Ширина гуттера — задаётся извне.
     var gutterInset: CGFloat = 44
 
+    /// Bottom padding so the last line is not clipped (issue #258).
+    static let defaultBottomInset: CGFloat = 5
+
+    override init(frame frameRect: NSRect, textContainer container: NSTextContainer?) {
+        super.init(frame: frameRect, textContainer: container)
+        textContainerInset = NSSize(width: 0, height: Self.defaultBottomInset)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
     override var textContainerOrigin: NSPoint {
         // Сдвигаем текст вправо на ширину гуттера, вниз на 8pt для отступа сверху
         NSPoint(x: gutterInset, y: 8)
