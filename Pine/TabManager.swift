@@ -169,6 +169,12 @@ final class TabManager {
         tabs[index].scrollOffset = scrollOffset
     }
 
+    /// Updates the fold state for the active tab.
+    func updateFoldState(_ state: FoldState) {
+        guard let index = activeTabIndex else { return }
+        tabs[index].foldState = state
+    }
+
     /// Saves the active tab to disk. Returns true on success.
     @discardableResult
     func saveActiveTab() -> Bool {

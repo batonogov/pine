@@ -25,11 +25,37 @@ final class LineNumberView: NSView {
         }
     }
 
+    /// Складываемые регионы для отрисовки disclosure triangles.
+    var foldableRanges: [FoldableRange] = [] {
+        didSet {
+            rebuildFoldStartMap()
+            needsDisplay = true
+        }
+    }
+
+    /// Текущее состояние свёрнутых регионов.
+    var foldState: FoldState = FoldState() {
+        didSet { needsDisplay = true }
+    }
+
+    /// Callback при клике по fold indicator.
+    var onFoldToggle: ((FoldableRange) -> Void)?
+
     /// Pre-indexed diff lookup: line number → kind (cached, rebuilt when lineDiffs changes)
     private var diffMap: [Int: GitLineDiff.Kind] = [:]
 
+    /// Pre-indexed fold lookup: start line → FoldableRange.
+    private var foldStartMap: [Int: FoldableRange] = [:]
+
+    /// Whether the mouse is currently inside the gutter (for showing fold indicators).
+    private var isMouseInside = false
+
     private func rebuildDiffMap() {
         diffMap = Dictionary(lineDiffs.map { ($0.line, $0.kind) }, uniquingKeysWith: { _, last in last })
+    }
+
+    private func rebuildFoldStartMap() {
+        foldStartMap = Dictionary(foldableRanges.map { ($0.startLine, $0) }, uniquingKeysWith: { _, last in last })
     }
 
     /// Cached total line count — updated on text change, not on every draw.
@@ -39,6 +65,9 @@ final class LineNumberView: NSView {
     private let addedColor = NSColor.systemGreen
     private let modifiedColor = NSColor.systemBlue
     private let deletedColor = NSColor.systemRed
+
+    // Fold indicator colors
+    private let foldIndicatorColor = NSColor.secondaryLabelColor
 
     override var isFlipped: Bool { true }
 
@@ -71,6 +100,8 @@ final class LineNumberView: NSView {
         textView?.enclosingScrollView?.contentView.postsBoundsChangedNotifications = true
         // Initialize cached line count from the current text
         recountTotalLines()
+        // Tracking area for hover — fold indicators appear on hover
+        updateTrackingAreas()
     }
 
     @available(*, unavailable)
@@ -78,6 +109,71 @@ final class LineNumberView: NSView {
 
     deinit {
         NotificationCenter.default.removeObserver(self)
+    }
+
+    // MARK: - Mouse tracking for fold indicators
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        for area in trackingAreas {
+            removeTrackingArea(area)
+        }
+        let area = NSTrackingArea(
+            rect: bounds,
+            options: [.mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect],
+            owner: self,
+            userInfo: nil
+        )
+        addTrackingArea(area)
+    }
+
+    override func mouseEntered(with event: NSEvent) {
+        isMouseInside = true
+        needsDisplay = true
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        isMouseInside = false
+        needsDisplay = true
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        let point = convert(event.locationInWindow, from: nil)
+        // Only handle clicks on the fold indicator area (left portion of gutter)
+        let foldIndicatorWidth: CGFloat = 14
+        guard point.x < foldIndicatorWidth else {
+            super.mouseDown(with: event)
+            return
+        }
+
+        // Find which line was clicked
+        if let lineNumber = lineNumber(at: point),
+           let foldable = foldStartMap[lineNumber] {
+            onFoldToggle?(foldable)
+        }
+    }
+
+    /// Returns the line number (1-based) at the given point in view coordinates.
+    private func lineNumber(at point: NSPoint) -> Int? {
+        guard let textView = textView,
+              let layoutManager = textView.layoutManager,
+              let textContainer = textView.textContainer,
+              let scrollView = textView.enclosingScrollView else { return nil }
+
+        let visibleRect = scrollView.contentView.bounds
+        let originY = textView.textContainerOrigin.y
+
+        // Convert point to text container coordinates
+        let textY = point.y - originY + visibleRect.origin.y
+        let glyphIndex = layoutManager.glyphIndex(for: NSPoint(x: 0, y: textY), in: textContainer)
+        let charIndex = layoutManager.characterIndexForGlyph(at: glyphIndex)
+
+        let source = textView.string as NSString
+        var line = 1
+        for i in 0..<min(charIndex, source.length) where source.character(at: i) == 0x0A {
+            line += 1
+        }
+        return line
     }
 
     @objc private func handleBoundsChange(_ notification: Notification) {
@@ -165,6 +261,7 @@ final class LineNumberView: NSView {
         // Этот метод проходит только по видимым фрагментам строк — быстро.
         var previousLineCharIndex = -1
         let diffBarWidth: CGFloat = 3
+        let showFoldIndicators = isMouseInside && !foldStartMap.isEmpty
 
         layoutManager.enumerateLineFragments(
             forGlyphRange: visibleGlyphRange
@@ -193,6 +290,17 @@ final class LineNumberView: NSView {
                 let size = numStr.size(withAttributes: attrs)
                 let x = self.gutterWidth - size.width - 8
                 numStr.draw(at: NSPoint(x: x, y: y), withAttributes: attrs)
+
+                // ── Fold disclosure triangle ──
+                if showFoldIndicators || self.foldState.foldedRanges.contains(where: { $0.startLine == lineNumber }) {
+                    if let foldable = self.foldStartMap[lineNumber] {
+                        let isFolded = self.foldState.isFolded(foldable)
+                        self.drawFoldIndicator(
+                            at: y, lineHeight: lineRect.height,
+                            isFolded: isFolded
+                        )
+                    }
+                }
 
                 // ── Git diff marker ──
                 if let diffKind = self.diffMap[lineNumber] {
@@ -259,5 +367,30 @@ final class LineNumberView: NSView {
                 gutterTextView.needsDisplay = true
             }
         }
+    }
+
+    // MARK: - Fold indicator drawing
+
+    /// Draws a disclosure triangle for fold indicators.
+    private func drawFoldIndicator(at y: CGFloat, lineHeight: CGFloat, isFolded: Bool) {
+        let size: CGFloat = 8
+        let centerY = y + lineHeight / 2
+        let x: CGFloat = 3
+
+        let path = NSBezierPath()
+        if isFolded {
+            // ▶ (pointing right — folded)
+            path.move(to: NSPoint(x: x, y: centerY - size / 2))
+            path.line(to: NSPoint(x: x + size * 0.75, y: centerY))
+            path.line(to: NSPoint(x: x, y: centerY + size / 2))
+        } else {
+            // ▼ (pointing down — expanded)
+            path.move(to: NSPoint(x: x, y: centerY - size / 4))
+            path.line(to: NSPoint(x: x + size, y: centerY - size / 4))
+            path.line(to: NSPoint(x: x + size / 2, y: centerY + size / 2))
+        }
+        path.close()
+        foldIndicatorColor.setFill()
+        path.fill()
     }
 }

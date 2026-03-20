@@ -565,6 +565,10 @@ struct ContentView: View {
             lineDiffs: lineDiffs,
             isBlameVisible: isBlameVisible,
             blameLines: blameLines,
+            foldState: Binding(
+                get: { tab.foldState },
+                set: { tabManager.updateFoldState($0) }
+            ),
             isMinimapVisible: isMinimapVisible,
             syntaxHighlightingDisabled: tab.syntaxHighlightingDisabled,
             initialCursorPosition: goToLineOffset?.offset ?? tab.cursorPosition,
