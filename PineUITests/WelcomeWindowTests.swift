@@ -196,6 +196,43 @@ final class WelcomeWindowTests: PineUITestCase {
         }
     }
 
+    // MARK: - First recent project is not obscured by header
+
+    func testFirstRecentProjectIsHittable() throws {
+        // Step 1: Launch with a project to create a recent entry
+        let url = try createTempProject(files: ["hello.swift": "// hi\n"])
+        projectURLs.append(url)
+        launchWithProject(url)
+
+        let sidebar = app.outlines["sidebar"]
+        XCTAssertTrue(waitForExistence(sidebar, timeout: 10), "Project should open")
+
+        // Step 2: Terminate and relaunch to see Welcome with recent projects
+        app.terminate()
+
+        app = XCUIApplication()
+        app.launchArguments += ["--reset-state"]
+        app.launch()
+        app.activate()
+
+        let welcomeWindow = app.windows["welcome"]
+        XCTAssertTrue(waitForExistence(welcomeWindow, timeout: 10), "Welcome should appear")
+
+        // Step 3: Verify the first recent project is fully visible and clickable
+        let projectName = url.lastPathComponent
+        let recentItem = app.descendants(matching: .any)[
+            "welcomeRecentProject_\(projectName)"
+        ].firstMatch
+        XCTAssertTrue(
+            waitForExistence(recentItem, timeout: 5),
+            "Recent project should appear in Welcome"
+        )
+        XCTAssertTrue(
+            recentItem.isHittable,
+            "First recent project should not be obscured by the header"
+        )
+    }
+
     // MARK: - P0: Close project → Welcome reappears
 
     func testWelcomeReappearsAfterClosingProjectWindow() throws {
