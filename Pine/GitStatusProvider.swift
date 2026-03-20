@@ -141,38 +141,11 @@ final class GitStatusProvider {
     func refresh() {
         guard isGitRepository, let url = repositoryURL else { return }
 
-        let group = DispatchGroup()
-        var branch = ""
-        var statuses: [String: GitFileStatus] = [:]
-        var ignored: Set<String> = []
-        var branchList: [String] = []
-
-        group.enter()
-        DispatchQueue.global(qos: .userInitiated).async {
-            branch = Self.fetchBranch(at: url)
-            group.leave()
-        }
-
-        group.enter()
-        DispatchQueue.global(qos: .userInitiated).async {
-            let result = Self.fetchStatusAndIgnored(at: url)
-            statuses = result.statuses
-            ignored = result.ignored
-            group.leave()
-        }
-
-        group.enter()
-        DispatchQueue.global(qos: .userInitiated).async {
-            branchList = Self.fetchBranches(at: url)
-            group.leave()
-        }
-
-        group.wait()
-
-        currentBranch = branch
-        fileStatuses = statuses
-        ignoredPaths = ignored
-        branches = branchList
+        let result = Self.fetchAllInParallel(at: url)
+        currentBranch = result.branch
+        fileStatuses = result.statuses
+        ignoredPaths = result.ignored
+        branches = result.branches
     }
 
     /// Async version of setup — runs git detection and initial refresh
@@ -188,36 +161,8 @@ final class GitStatusProvider {
                     return
                 }
                 let rootPath = result.output.trimmingCharacters(in: .whitespacesAndNewlines)
-
-                // Run all three git operations in parallel
-                let group = DispatchGroup()
-                var branch = ""
-                var statuses: [String: GitFileStatus] = [:]
-                var ignored: Set<String> = []
-                var branchList: [String] = []
-
-                group.enter()
-                DispatchQueue.global(qos: .userInitiated).async {
-                    branch = Self.fetchBranch(at: repositoryURL)
-                    group.leave()
-                }
-
-                group.enter()
-                DispatchQueue.global(qos: .userInitiated).async {
-                    let statusResult = Self.fetchStatusAndIgnored(at: repositoryURL)
-                    statuses = statusResult.statuses
-                    ignored = statusResult.ignored
-                    group.leave()
-                }
-
-                group.enter()
-                DispatchQueue.global(qos: .userInitiated).async {
-                    branchList = Self.fetchBranches(at: repositoryURL)
-                    group.leave()
-                }
-
-                group.wait()
-                continuation.resume(returning: (true, rootPath, branch, statuses, ignored, branchList))
+                let fetched = Self.fetchAllInParallel(at: repositoryURL)
+                continuation.resume(returning: (true, rootPath, fetched.branch, fetched.statuses, fetched.ignored, fetched.branches))
             }
         }
 
@@ -240,6 +185,41 @@ final class GitStatusProvider {
     }
 
     // MARK: - Static Fetch Methods
+
+    /// Runs branch, status+ignored, and branch-list fetches in parallel.
+    /// Safe to call from any thread (all work happens on background queues).
+    static func fetchAllInParallel(
+        at url: URL
+    ) -> (branch: String, statuses: [String: GitFileStatus], ignored: Set<String>, branches: [String]) {
+        let group = DispatchGroup()
+        var branch = ""
+        var statuses: [String: GitFileStatus] = [:]
+        var ignored: Set<String> = []
+        var branchList: [String] = []
+
+        group.enter()
+        DispatchQueue.global(qos: .userInitiated).async {
+            branch = fetchBranch(at: url)
+            group.leave()
+        }
+
+        group.enter()
+        DispatchQueue.global(qos: .userInitiated).async {
+            let result = fetchStatusAndIgnored(at: url)
+            statuses = result.statuses
+            ignored = result.ignored
+            group.leave()
+        }
+
+        group.enter()
+        DispatchQueue.global(qos: .userInitiated).async {
+            branchList = fetchBranches(at: url)
+            group.leave()
+        }
+
+        group.wait()
+        return (branch, statuses, ignored, branchList)
+    }
 
     static func fetchBranch(at url: URL) -> String {
         let result = runGit(["rev-parse", "--abbrev-ref", "HEAD"], at: url)
@@ -274,35 +254,8 @@ final class GitStatusProvider {
 
         let (branch, statuses, ignored, branchList) = await withCheckedContinuation { continuation in
             DispatchQueue.global(qos: .userInitiated).async {
-                // Run all three git operations in parallel using DispatchGroup
-                let group = DispatchGroup()
-                var branch = ""
-                var statuses: [String: GitFileStatus] = [:]
-                var ignored: Set<String> = []
-                var branchList: [String] = []
-
-                group.enter()
-                DispatchQueue.global(qos: .userInitiated).async {
-                    branch = Self.fetchBranch(at: url)
-                    group.leave()
-                }
-
-                group.enter()
-                DispatchQueue.global(qos: .userInitiated).async {
-                    let result = Self.fetchStatusAndIgnored(at: url)
-                    statuses = result.statuses
-                    ignored = result.ignored
-                    group.leave()
-                }
-
-                group.enter()
-                DispatchQueue.global(qos: .userInitiated).async {
-                    branchList = Self.fetchBranches(at: url)
-                    group.leave()
-                }
-
-                group.wait()
-                continuation.resume(returning: (branch, statuses, ignored, branchList))
+                let fetched = Self.fetchAllInParallel(at: url)
+                continuation.resume(returning: fetched)
             }
         }
 
@@ -812,11 +765,14 @@ final class GitStatusProvider {
             }
             timer.resume()
 
-            process.waitUntilExit()
-            timer.cancel()
-
+            // Read pipe data before waitUntilExit to avoid deadlock:
+            // if the process fills the pipe buffer, it blocks on write
+            // and never exits, while we block on waitUntilExit.
             let outData = outPipe.fileHandleForReading.readDataToEndOfFile()
             let errData = errPipe.fileHandleForReading.readDataToEndOfFile()
+
+            process.waitUntilExit()
+            timer.cancel()
             return (
                 String(bytes: outData, encoding: .utf8) ?? "",
                 String(bytes: errData, encoding: .utf8) ?? "",
