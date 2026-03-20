@@ -188,14 +188,18 @@ final class GitStatusProvider {
 
     /// Runs branch, status+ignored, and branch-list fetches in parallel.
     /// Safe to call from any thread (all work happens on background queues).
+    /// Each variable is written by exactly one thread; `group.wait()` ensures
+    /// happens-before ordering so the reads after wait are safe.
     static func fetchAllInParallel(
         at url: URL
     ) -> (branch: String, statuses: [String: GitFileStatus], ignored: Set<String>, branches: [String]) {
         let group = DispatchGroup()
-        var branch = ""
-        var statuses: [String: GitFileStatus] = [:]
-        var ignored: Set<String> = []
-        var branchList: [String] = []
+        // nonisolated(unsafe): each var is written by exactly one dispatch block,
+        // and group.wait() provides happens-before guarantee before reads.
+        nonisolated(unsafe) var branch = ""
+        nonisolated(unsafe) var statuses: [String: GitFileStatus] = [:]
+        nonisolated(unsafe) var ignored: Set<String> = []
+        nonisolated(unsafe) var branchList: [String] = []
 
         group.enter()
         DispatchQueue.global(qos: .userInitiated).async {
