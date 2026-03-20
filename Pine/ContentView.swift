@@ -24,7 +24,7 @@ struct ContentView: View {
     @State private var lineDiffs: [GitLineDiff] = []
     @State private var didRestoreSession = false
     @State private var isSearchPresented = false
-    @State private var goToLineOffset: Int?
+    @State private var goToLineOffset: GoToRequest?
     @AppStorage("minimapVisible") private var isMinimapVisible = true
 
     private var activeTab: EditorTab? { tabManager.activeTab }
@@ -168,10 +168,15 @@ struct ContentView: View {
             columnVisibility = .all
             isSearchPresented = true
         }
+        .onReceive(NotificationCenter.default.publisher(for: .navigateChange)) { notification in
+            guard controlActiveState == .key,
+                  let direction = notification.userInfo?["direction"] as? String else { return }
+            navigateToChange(direction: direction == "next" ? .next : .previous)
+        }
         .onChange(of: tabManager.pendingGoToLine) { _, newLine in
             guard let line = newLine, let tab = tabManager.activeTab else { return }
             tabManager.pendingGoToLine = nil
-            goToLineOffset = Self.cursorOffset(forLine: line, in: tab.content)
+            goToLineOffset = GoToRequest(offset: Self.cursorOffset(forLine: line, in: tab.content))
         }
     }
 
@@ -288,6 +293,24 @@ struct ContentView: View {
             }
         }
         return nil
+    }
+
+    private enum ChangeDirection { case next, previous }
+
+    private func navigateToChange(direction: ChangeDirection) {
+        guard let tab = tabManager.activeTab, !lineDiffs.isEmpty else { return }
+        let currentLine = Self.lineNumber(forOffset: tab.cursorPosition, in: tab.content)
+        let starts = GitLineDiff.changeRegionStarts(lineDiffs)
+        let targetLine: Int?
+        switch direction {
+        case .next:
+            targetLine = GitLineDiff.nextChangeLine(from: currentLine, regionStarts: starts, diffs: lineDiffs)
+        case .previous:
+            targetLine = GitLineDiff.previousChangeLine(from: currentLine, regionStarts: starts, diffs: lineDiffs)
+        }
+        if let line = targetLine {
+            goToLineOffset = GoToRequest(offset: Self.cursorOffset(forLine: line, in: tab.content))
+        }
     }
 
     /// Refreshes cached line diffs for the active tab.
@@ -493,11 +516,12 @@ struct ContentView: View {
             lineDiffs: lineDiffs,
             isMinimapVisible: isMinimapVisible,
             syntaxHighlightingDisabled: tab.syntaxHighlightingDisabled,
-            initialCursorPosition: goToLineOffset ?? tab.cursorPosition,
+            initialCursorPosition: goToLineOffset?.offset ?? tab.cursorPosition,
             initialScrollOffset: goToLineOffset != nil ? 0 : tab.scrollOffset,
             onStateChange: { cursor, scroll in
                 tabManager.updateEditorState(cursorPosition: cursor, scrollOffset: scroll)
             },
+            goToOffset: goToLineOffset,
             fontSize: FontSizeSettings.shared.fontSize
         )
         .accessibilityIdentifier(AccessibilityID.codeEditor)
@@ -515,6 +539,26 @@ struct ContentView: View {
             currentLine += 1
         }
         return min(offset, nsContent.length)
+    }
+
+    /// Converts a UTF-16 cursor offset to a 1-based line number.
+    static func lineNumber(forOffset offset: Int, in content: String) -> Int {
+        let nsContent = content as NSString
+        let clamped = min(offset, nsContent.length)
+        var line = 1
+        var pos = 0
+        while pos < clamped {
+            let lineRange = nsContent.lineRange(for: NSRange(location: pos, length: 0))
+            let lineEnd = NSMaxRange(lineRange)
+            if lineEnd > clamped { break }
+            // Only advance to next line if a newline actually ends this line
+            if lineEnd == clamped && (clamped == 0 || nsContent.character(at: clamped - 1) != 0x0A) {
+                break
+            }
+            line += 1
+            pos = lineEnd
+        }
+        return line
     }
 
     // MARK: - Область терминала

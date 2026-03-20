@@ -208,6 +208,13 @@ final class EditorContainerView: NSView {
     }
 }
 
+/// A unique navigation request so each "go to" action is processed exactly once.
+/// Each instance gets a unique `id`, so two requests to the same offset are distinct.
+struct GoToRequest {
+    let offset: Int
+    let id: UUID = UUID()
+}
+
 struct CodeEditorView: NSViewRepresentable {
     @Binding var text: String
     /// Monotonic version counter from EditorTab — O(1) change detection.
@@ -225,6 +232,8 @@ struct CodeEditorView: NSViewRepresentable {
     var initialScrollOffset: CGFloat = 0
     /// Called when cursor position or scroll offset changes, so the caller can persist them.
     var onStateChange: ((Int, CGFloat) -> Void)?
+    /// When non-nil, the editor scrolls to this offset. The `id` ensures each request is unique.
+    var goToOffset: GoToRequest?
 
     /// Пользовательский ключ атрибута для подсветки парных скобок.
     static let bracketHighlightKey = NSAttributedString.Key("PineBracketHighlight")
@@ -419,9 +428,22 @@ struct CodeEditorView: NSViewRepresentable {
         // Обновляем шрифт при изменении размера (Cmd+Plus/Minus)
         context.coordinator.updateFontIfNeeded(font: editorFont, gutterFont: gutterFont)
 
-        // Обновляем diff-данные LineNumberView
+        // Обновляем diff-данные LineNumberView и MinimapView
         if let lineNumberView = context.coordinator.lineNumberView {
             lineNumberView.lineDiffs = lineDiffs
+        }
+        if let minimapView = context.coordinator.minimapView {
+            minimapView.lineDiffs = lineDiffs
+        }
+
+        // Navigate to a specific offset (e.g. next/previous change)
+        if let request = goToOffset, request.id != context.coordinator.lastGoToID,
+           let sv = context.coordinator.scrollView,
+           let textView = sv.documentView as? GutterTextView {
+            context.coordinator.lastGoToID = request.id
+            let safeOffset = min(request.offset, (textView.string as NSString).length)
+            textView.setSelectedRange(NSRange(location: safeOffset, length: 0))
+            textView.scrollRangeToVisible(NSRange(location: safeOffset, length: 0))
         }
     }
 
@@ -447,6 +469,9 @@ struct CodeEditorView: NSViewRepresentable {
         /// (and resetting the cursor) on the SwiftUI re-render that follows.
         /// Internal access for testability (`@testable import`).
         var didChangeFromTextView = false
+
+        /// Last consumed navigation request ID — prevents re-processing.
+        var lastGoToID: UUID?
 
         /// Отложенная задача подсветки (дебаунсинг)
         private var highlightWorkItem: DispatchWorkItem?

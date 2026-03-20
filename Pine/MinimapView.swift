@@ -38,6 +38,15 @@ enum MinimapSettings {
 final class MinimapView: NSView {
     weak var textView: NSTextView?
 
+    /// Git diff data — when set, colored markers appear on the right edge.
+    var lineDiffs: [GitLineDiff] = [] {
+        didSet {
+            diffMap = Dictionary(uniqueKeysWithValues: lineDiffs.map { ($0.line, $0.kind) })
+            needsDisplay = true
+        }
+    }
+    private var diffMap: [Int: GitLineDiff.Kind] = [:]
+
     /// Default width of the minimap panel.
     static let defaultWidth: CGFloat = 100
 
@@ -206,14 +215,42 @@ final class MinimapView: NSView {
         let visibleGlyphRange = layoutManager.glyphRange(forBoundingRect: visibleDocRect, in: textContainer)
         guard visibleGlyphRange.location != NSNotFound else { return }
 
+        // Diff marker state — tracked incrementally across fragments
+        let hasDiffMarkers = !diffMap.isEmpty
+        let markerWidth: CGFloat = 4
+        let markerX = bounds.width - markerWidth
+        var diffLineNumber = 1
+        var diffLastCharPos = 0
+
         layoutManager.enumerateLineFragments(forGlyphRange: visibleGlyphRange) { lineRect, _, _, glyphRange, _ in
             let charRange = layoutManager.characterRange(forGlyphRange: glyphRange, actualGlyphRange: nil)
             let y = (lineRect.origin.y + originY) * scale - offset
 
+            // Advance diff line counter for newlines between last position and this fragment
+            if hasDiffMarkers {
+                let scanEnd = min(charRange.location, source.length)
+                for i in diffLastCharPos..<scanEnd where source.character(at: i) == 0x0A {
+                    diffLineNumber += 1
+                }
+                diffLastCharPos = scanEnd
+            }
+
             // Cull lines outside visible area
             guard y + lineHeight > 0 && y < self.bounds.height else { return }
 
-            // Skip blank lines
+            // Draw diff marker on the right edge
+            if hasDiffMarkers, let kind = self.diffMap[diffLineNumber] {
+                let color: NSColor
+                switch kind {
+                case .added:    color = .systemGreen
+                case .modified: color = .systemBlue
+                case .deleted:  color = .systemRed
+                }
+                color.setFill()
+                NSRect(x: markerX, y: y, width: markerWidth, height: lineHeight).fill()
+            }
+
+            // Skip blank lines for syntax rendering
             let lineText = source.substring(with: charRange)
             let trimmed = lineText.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !trimmed.isEmpty else { return }

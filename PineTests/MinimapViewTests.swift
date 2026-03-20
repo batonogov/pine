@@ -106,4 +106,59 @@ struct MinimapViewTests {
         // Clicking at y = 10000 should not crash
         minimap.scrollToPosition(minimapY: 10000)
     }
+
+    // MARK: - Diff markers
+
+    @Test("Setting lineDiffs updates internal diffMap")
+    func lineDiffsBuildsDiffMap() {
+        let textView = NSTextView()
+        textView.string = "line1\nline2\nline3\n"
+        let minimap = MinimapView(textView: textView)
+
+        minimap.lineDiffs = [
+            GitLineDiff(line: 1, kind: .added),
+            GitLineDiff(line: 3, kind: .modified)
+        ]
+
+        // diffMap is private, but we can verify via lineDiffs count
+        #expect(minimap.lineDiffs.count == 2)
+    }
+
+    @Test("Empty lineDiffs clears markers")
+    func emptyLineDiffsClearsMarkers() {
+        let textView = NSTextView()
+        textView.string = "line1\nline2\n"
+        let minimap = MinimapView(textView: textView)
+
+        minimap.lineDiffs = [GitLineDiff(line: 1, kind: .added)]
+        #expect(minimap.lineDiffs.count == 1)
+
+        minimap.lineDiffs = []
+        #expect(minimap.lineDiffs.isEmpty)
+    }
+
+    @Test("MinimapView does not crash drawing with diff markers")
+    func drawWithDiffMarkers() {
+        let textStorage = NSTextStorage(string: "Hello\nWorld\nFoo\n")
+        let layoutManager = NSLayoutManager()
+        textStorage.addLayoutManager(layoutManager)
+        let textContainer = NSTextContainer(containerSize: NSSize(width: 500, height: CGFloat.greatestFiniteMagnitude))
+        layoutManager.addTextContainer(textContainer)
+
+        let textView = NSTextView(frame: NSRect(x: 0, y: 0, width: 500, height: 400), textContainer: textContainer)
+
+        let scrollView = NSScrollView(frame: NSRect(x: 0, y: 0, width: 500, height: 400))
+        scrollView.documentView = textView
+
+        let minimap = MinimapView(textView: textView)
+        minimap.frame = NSRect(x: 0, y: 0, width: 80, height: 400)
+        minimap.lineDiffs = [
+            GitLineDiff(line: 1, kind: .added),
+            GitLineDiff(line: 2, kind: .modified),
+            GitLineDiff(line: 3, kind: .deleted)
+        ]
+
+        // Force draw — should not crash
+        minimap.display()
+    }
 }

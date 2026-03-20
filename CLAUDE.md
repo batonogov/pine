@@ -93,7 +93,7 @@ Pine is a minimal native macOS code editor built with SwiftUI + AppKit. Targets 
 - Uses `@Observable` macro (Swift 5.9+), not ObservableObject/Published
 - Models are either structs (EditorTab) or @Observable classes (FileNode, TerminalTab) depending on identity semantics
 - Grammar files are JSON in `Pine/Grammars/` — add new languages by adding a new JSON file following the existing format
-- Keyboard shortcuts: Save (Cmd+S), Save All (Cmd+Option+S), Save As (Cmd+Shift+S), Duplicate (Cmd+Shift+D), Open Folder (Cmd+Shift+O), Close Tab (Cmd+W), Toggle Terminal (Cmd+`), New Terminal Tab (Cmd+T), Switch Branch (Cmd+Shift+B). Menu commands flow through `@FocusedValue(\.projectManager)` to `TabManager`. Cmd+W is intercepted via `NSEvent.addLocalMonitorForEvents` in AppDelegate (not a SwiftUI menu command) to close the active tab; the window close button goes through `CloseDelegate.windowShouldClose` to close the entire window
+- Keyboard shortcuts: Save (Cmd+S), Save All (Cmd+Option+S), Save As (Cmd+Shift+S), Duplicate (Cmd+Shift+D), Open Folder (Cmd+Shift+O), Close Tab (Cmd+W), Toggle Terminal (Cmd+`), New Terminal Tab (Cmd+T), Switch Branch (Cmd+Shift+B), Next Change (Ctrl+Opt+↓), Previous Change (Ctrl+Opt+↑). Menu commands flow through `@FocusedValue(\.projectManager)` to `TabManager`. Cmd+W is intercepted via `NSEvent.addLocalMonitorForEvents` in AppDelegate (not a SwiftUI menu command) to close the active tab; the window close button goes through `CloseDelegate.windowShouldClose` to close the entire window
 - UI uses semantic system colors (migrated from hardcoded dark theme values)
 - macOS 26 SDK renamed `NSColor(sRGBRed:)` → `NSColor(srgbRed:)` (lowercase)
 - Editor features: auto-indent on newline, current line highlight, git diff gutter markers
