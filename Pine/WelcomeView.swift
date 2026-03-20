@@ -71,29 +71,37 @@ struct WelcomeView: View {
                     }
                     .frame(maxHeight: .infinity)
                 } else {
-                    List(registry.recentProjects, id: \.self) { url in
-                        Button {
-                            openProject(at: url)
-                        } label: {
-                            HStack {
-                                Image(systemName: "folder")
-                                    .foregroundStyle(.secondary)
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text(url.lastPathComponent)
-                                        .font(.system(size: 13))
-                                    Text(url.abbreviatedPath)
-                                        .font(.system(size: 10))
-                                        .foregroundStyle(.tertiary)
-                                        .lineLimit(1)
-                                        .truncationMode(.middle)
+                    ScrollView {
+                        LazyVStack(spacing: 0) {
+                            ForEach(registry.recentProjects, id: \.self) { url in
+                                Button {
+                                    openProject(at: url)
+                                } label: {
+                                    HStack {
+                                        Image(systemName: "folder")
+                                            .foregroundStyle(.secondary)
+                                        VStack(alignment: .leading, spacing: 2) {
+                                            Text(url.lastPathComponent)
+                                                .font(.system(size: 13))
+                                            Text(url.abbreviatedPath)
+                                                .font(.system(size: 10))
+                                                .foregroundStyle(.tertiary)
+                                                .lineLimit(1)
+                                                .truncationMode(.middle)
+                                        }
+                                        Spacer()
+                                    }
+                                    .padding(.horizontal)
+                                    .padding(.vertical, 6)
+                                    .contentShape(Rectangle())
                                 }
+                                .buttonStyle(.plain)
+                                .accessibilityIdentifier(
+                                    AccessibilityID.welcomeRecentProject(url.lastPathComponent)
+                                )
                             }
-                            .contentShape(Rectangle())
                         }
-                        .buttonStyle(.plain)
-                        .accessibilityIdentifier(AccessibilityID.welcomeRecentProject(url.lastPathComponent))
                     }
-                    .listStyle(.plain)
                     .accessibilityIdentifier(AccessibilityID.welcomeRecentProjectsList)
                 }
             }
