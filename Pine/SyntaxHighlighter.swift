@@ -325,13 +325,10 @@ final class SyntaxHighlighter: @unchecked Sendable {
         }
 
         let fullRange = NSRange(location: 0, length: textStorage.length)
-        applyRules(rules, to: textStorage, repaintRange: fullRange, searchRange: fullRange, font: font)
-
-        // Обновляем кэш отпечатка многострочных матчей
-        let key = ObjectIdentifier(textStorage)
-        multilineMatchCache[key] = collectMultilineFingerprint(
-            rules: rules, source: textStorage.string, searchRange: fullRange
+        let result = applyRules(
+            rules, to: textStorage, repaintRange: fullRange, searchRange: fullRange, font: font
         )
+        multilineMatchCache[ObjectIdentifier(textStorage)] = result.multilineFingerprint
     }
 
     /// Количество строк контекста для viewport-based подсветки (больше, чем для edit).
@@ -367,15 +364,14 @@ final class SyntaxHighlighter: @unchecked Sendable {
         // so they scan the entire text even in viewport mode. This is intentional —
         // a block comment starting above the viewport must color the visible portion.
         // Typically only 2-3 simple multiline regexes per grammar, so the cost is low.
-        applyRules(rules, to: textStorage, repaintRange: expanded, searchRange: expanded, font: font)
+        let result = applyRules(
+            rules, to: textStorage, repaintRange: expanded, searchRange: expanded, font: font
+        )
 
         // Build multiline match cache (needed for subsequent highlightEdited calls)
         let key = ObjectIdentifier(textStorage)
         if multilineMatchCache[key] == nil {
-            let fullRange = NSRange(location: 0, length: totalLength)
-            multilineMatchCache[key] = collectMultilineFingerprint(
-                rules: rules, source: textStorage.string, searchRange: fullRange
-            )
+            multilineMatchCache[key] = result.multilineFingerprint
         }
     }
 
@@ -418,8 +414,10 @@ final class SyntaxHighlighter: @unchecked Sendable {
 
         // Если структура многострочных токенов изменилась — полная перекраска
         if cachedFingerprint != currentFingerprint {
-            multilineMatchCache[key] = currentFingerprint
-            applyRules(rules, to: textStorage, repaintRange: fullRange, searchRange: fullRange, font: font)
+            let result = applyRules(
+                rules, to: textStorage, repaintRange: fullRange, searchRange: fullRange, font: font
+            )
+            multilineMatchCache[key] = result.multilineFingerprint
             return
         }
 
@@ -546,7 +544,16 @@ final class SyntaxHighlighter: @unchecked Sendable {
     }
 
     /// Сбрасывает атрибуты на базовый стиль (без грамматики).
+    /// Clamps range to textStorage.length to avoid crash if text changed.
     private func resetAttributes(textStorage: NSTextStorage, range: NSRange, font: NSFont) {
+        let currentLength = textStorage.length
+        guard currentLength > 0 else { return }
+        let safeRange = NSRange(
+            location: min(range.location, currentLength),
+            length: min(range.length, currentLength - min(range.location, currentLength))
+        )
+        guard safeRange.length > 0 else { return }
+
         let undoManager = textStorage.layoutManagers.first?.firstTextView?.undoManager
         undoManager?.disableUndoRegistration()
         defer { undoManager?.enableUndoRegistration() }
@@ -554,7 +561,7 @@ final class SyntaxHighlighter: @unchecked Sendable {
         textStorage.addAttributes([
             .foregroundColor: NSColor.textColor,
             .font: font
-        ], range: range)
+        ], range: safeRange)
         textStorage.endEditing()
     }
 
@@ -565,29 +572,19 @@ final class SyntaxHighlighter: @unchecked Sendable {
     /// - `searchRange`: диапазон поиска для однострочных правил.
     ///   Многострочные правила всегда ищут по всему тексту (через fullRange),
     ///   чтобы обнаружить токены, начинающиеся до repaintRange.
+    @discardableResult
     private func applyRules(
         _ rules: [CompiledRule],
         to textStorage: NSTextStorage,
         repaintRange: NSRange,
         searchRange: NSRange,
         font: NSFont
-    ) {
-        let source = textStorage.string
-        let grammar = rules // already resolved by caller
-        // Find the language name to pass to computeMatches — not needed,
-        // call computeMatchesWithRules directly
+    ) -> HighlightMatchResult {
         let result = computeMatchesWithRules(
-            grammar, text: source, repaintRange: repaintRange, searchRange: searchRange
+            rules, text: textStorage.string, repaintRange: repaintRange, searchRange: searchRange
         )
-        applyMatches(
-            HighlightMatchResult(
-                matches: result.matches,
-                repaintRange: repaintRange,
-                multilineFingerprint: result.multilineFingerprint
-            ),
-            to: textStorage,
-            font: font
-        )
+        applyMatches(result, to: textStorage, font: font)
+        return result
     }
 
     // MARK: - Async highlighting (background computation)

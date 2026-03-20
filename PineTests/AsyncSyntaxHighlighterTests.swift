@@ -241,10 +241,10 @@ struct AsyncSyntaxHighlighterTests {
         let hl = SyntaxHighlighter.shared
         let keywordColor = hl.theme.color(for: "keyword")
 
-        // Use large text so background computation takes non-trivial time.
+        // Use large text so background computation takes non-trivial time (~10ms+).
         // Start the highlight in a separate Task, then bump generation while
         // background is running. By the time it resumes, generation will be stale.
-        let lines = (0..<5000).map { "func line\($0)()" }
+        let lines = (0..<20_000).map { "func line\($0)()" }
         let bigText = lines.joined(separator: "\n")
         let storage = NSTextStorage(string: bigText)
 
@@ -268,7 +268,7 @@ struct AsyncSyntaxHighlighterTests {
         await task.value
 
         // Result should be discarded — no keyword color at a line in the middle
-        let checkPos = lineOffset(2500, in: bigText)
+        let checkPos = lineOffset(10_000, in: bigText)
         #expect(foregroundColor(in: storage, at: checkPos) != keywordColor,
                 "Highlight must be discarded when generation is bumped during computation")
     }
