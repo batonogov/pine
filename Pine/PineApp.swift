@@ -356,11 +356,66 @@ private struct WindowCloseInterceptor: NSViewRepresentable {
     let projectURL: URL
     let appDelegate: AppDelegate
 
-    func makeNSView(context: Context) -> NSView {
-        let view = NSView()
-        // Defer to next run loop so the window is set
-        DispatchQueue.main.async {
-            guard let window = view.window else { return }
+    func makeNSView(context: Context) -> InterceptorView {
+        let view = InterceptorView()
+        let coordinator = context.coordinator
+        view.onMovedToWindow = { [weak coordinator] window in
+            coordinator?.installDelegate(
+                on: window,
+                projectManager: projectManager,
+                registry: registry,
+                projectURL: projectURL,
+                appDelegate: appDelegate
+            )
+        }
+        return view
+    }
+
+    func updateNSView(_ nsView: InterceptorView, context: Context) {
+        // Install delegate if makeNSView's viewDidMoveToWindow fired before
+        // the coordinator was fully wired (defensive — belt and suspenders).
+        if context.coordinator.closeDelegate == nil, let window = nsView.window {
+            context.coordinator.installDelegate(
+                on: window,
+                projectManager: projectManager,
+                registry: registry,
+                projectURL: projectURL,
+                appDelegate: appDelegate
+            )
+        }
+    }
+
+    func makeCoordinator() -> Coordinator { Coordinator() }
+
+    /// Custom NSView that fires a callback synchronously when added to a window.
+    /// Replaces the previous DispatchQueue.main.async approach that could race
+    /// with fast window closes in XCUITest (#138).
+    class InterceptorView: NSView {
+        var onMovedToWindow: ((NSWindow) -> Void)?
+
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            if let window {
+                onMovedToWindow?(window)
+            }
+        }
+    }
+
+    class Coordinator {
+        // Strong reference to keep our delegate alive (NSWindow.delegate is weak)
+        var closeDelegate: CloseDelegate?
+        // Strong reference to keep the original delegate alive
+        var originalDelegate: (any NSWindowDelegate)?
+
+        func installDelegate(
+            on window: NSWindow,
+            projectManager: ProjectManager,
+            registry: ProjectRegistry,
+            projectURL: URL,
+            appDelegate: AppDelegate
+        ) {
+            // Guard against double installation
+            guard closeDelegate == nil else { return }
             let original = window.delegate
             let delegate = CloseDelegate(
                 projectManager: projectManager,
@@ -369,23 +424,13 @@ private struct WindowCloseInterceptor: NSViewRepresentable {
                 appDelegate: appDelegate,
                 original: original
             )
-            context.coordinator.closeDelegate = delegate
-            // Coordinator keeps the original alive (NSWindow.delegate is weak)
-            context.coordinator.originalDelegate = original
+            closeDelegate = delegate
+            originalDelegate = original
             window.delegate = delegate
+            // Fallback: observe willCloseNotification in case SwiftUI
+            // replaces the window delegate after our installation (#138).
+            delegate.observeWindowClose(window)
         }
-        return view
-    }
-
-    func updateNSView(_ nsView: NSView, context: Context) {}
-
-    func makeCoordinator() -> Coordinator { Coordinator() }
-
-    class Coordinator {
-        // Strong reference to keep our delegate alive (NSWindow.delegate is weak)
-        var closeDelegate: CloseDelegate?
-        // Strong reference to keep the original delegate alive
-        var originalDelegate: (any NSWindowDelegate)?
     }
 
     /// Proxy NSWindowDelegate that intercepts windowShouldClose and windowWillClose.
@@ -404,6 +449,13 @@ class CloseDelegate: NSObject, NSWindowDelegate {
     /// to avoid a potential retain cycle through the delegate chain.
     weak var original: (any NSWindowDelegate)?
 
+    /// Tracks whether windowWillClose has already been handled, to prevent
+    /// the NotificationCenter fallback from double-firing.
+    private var didHandleClose = false
+
+    /// NotificationCenter observer token for the willClose fallback.
+    private var closeObserver: Any?
+
     init(
         projectManager: ProjectManager,
         registry: ProjectRegistry,
@@ -416,6 +468,25 @@ class CloseDelegate: NSObject, NSWindowDelegate {
         self.projectURL = projectURL
         self.appDelegate = appDelegate
         self.original = original
+        super.init()
+    }
+
+    /// Installs a NotificationCenter observer as a fallback for windowWillClose.
+    /// If SwiftUI later replaces the window delegate, the notification still fires.
+    func observeWindowClose(_ window: NSWindow) {
+        closeObserver = NotificationCenter.default.addObserver(
+            forName: NSWindow.willCloseNotification,
+            object: window,
+            queue: .main
+        ) { [weak self] notification in
+            self?.handleClose(notification)
+        }
+    }
+
+    deinit {
+        if let closeObserver {
+            NotificationCenter.default.removeObserver(closeObserver)
+        }
     }
 
     /// Closes the active tab with unsaved-changes dialog. Called by the Cmd+W event monitor.
@@ -482,9 +553,14 @@ class CloseDelegate: NSObject, NSWindowDelegate {
     // Forward other delegate calls to the original
     func windowWillClose(_ notification: Notification) {
         original?.windowWillClose?(notification)
-        // Trigger Welcome window when last project closes.
-        // Using windowWillClose instead of SwiftUI onDisappear
-        // because onDisappear may not fire reliably for AppKit-closed windows.
+        handleClose(notification)
+    }
+
+    /// Shared close handler used by both the delegate method and the
+    /// NotificationCenter fallback. Guarded by `didHandleClose` to run once.
+    private func handleClose(_ notification: Notification) {
+        guard !didHandleClose else { return }
+        didHandleClose = true
         appDelegate?.handleProjectWindowDisappear(
             projectURL: projectURL, registry: registry
         )
