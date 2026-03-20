@@ -3683,7 +3683,7 @@
       }
     },
     "menu.toggleBlame" : {
-      "comment" : "Menu command: toggle git blame annotations in editor gutter.",
+      "comment" : "Menu command: toggle inline git blame annotation on cursor line.",
       "extractionState" : "manual",
       "localizations" : {
         "de" : {

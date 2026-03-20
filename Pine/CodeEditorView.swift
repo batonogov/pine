@@ -47,10 +47,17 @@ final class GutterTextView: NSTextView {
 
     /// Blame lookup: line number → GitBlameLine (O(1) access).
     private var blameLookup: [Int: GitBlameLine] = [:]
+    /// Previous blame lines array identity — avoids rebuilding the dictionary on every updateNSView.
+    private var blameLineCount: Int = -1
     var isBlameVisible: Bool = false
 
     /// Sets blame data and rebuilds O(1) lookup dictionary.
+    /// Skips rebuild if the data hasn't changed (same count as last call).
     func setBlameLines(_ lines: [GitBlameLine]) {
+        guard lines.count != blameLineCount || lines.first != blameLookup[lines.first?.finalLine ?? 0] else {
+            return
+        }
+        blameLineCount = lines.count
         blameLookup = Dictionary(lines.map { ($0.finalLine, $0) }, uniquingKeysWith: { _, last in last })
         if isBlameVisible { needsDisplay = true }
     }
@@ -64,8 +71,10 @@ final class GutterTextView: NSTextView {
         return f
     }()
 
-    /// Cached 1-based line number for the cursor position. Updated in setSelectedRanges.
+    /// Cached 1-based line number for the cursor position.
+    /// Updated incrementally in setSelectedRanges using delta from previous position.
     private var cachedCursorLine: Int = 1
+    private var cachedCursorLocation: Int = 0
 
     override func drawBackground(in rect: NSRect) {
         super.drawBackground(in: rect)
@@ -144,26 +153,33 @@ final class GutterTextView: NSTextView {
         (text as NSString).draw(at: NSPoint(x: drawX, y: drawY), withAttributes: attrs)
     }
 
-    /// Recalculates cached cursor line number using NSString.lineRange (O(1) per call).
+    /// Updates cached cursor line number incrementally.
+    /// Counts newlines only in the delta between old and new cursor position.
     private func updateCachedCursorLine() {
         let source = string as NSString
         guard source.length > 0 else {
             cachedCursorLine = 1
+            cachedCursorLocation = 0
             return
         }
-        let location = min(selectedRange().location, source.length)
-        // Count newlines from 0 to location using lineRange stepping
-        var line = 1
-        var pos = 0
-        while pos < location {
-            let range = source.lineRange(for: NSRange(location: pos, length: 0))
-            let lineEnd = NSMaxRange(range)
-            if lineEnd <= pos { break }
-            if lineEnd > location { break }
-            line += 1
-            pos = lineEnd
+        let newLocation = min(selectedRange().location, source.length)
+        let oldLocation = min(cachedCursorLocation, source.length)
+
+        if newLocation == oldLocation { return }
+
+        // Count newlines in the delta range
+        var delta = 0
+        if newLocation > oldLocation {
+            for i in oldLocation..<newLocation where source.character(at: i) == 0x0A {
+                delta += 1
+            }
+        } else {
+            for i in newLocation..<oldLocation where source.character(at: i) == 0x0A {
+                delta -= 1
+            }
         }
-        cachedCursorLine = line
+        cachedCursorLine += delta
+        cachedCursorLocation = newLocation
     }
 
     override func setSelectedRanges(_ ranges: [NSValue], affinity: NSSelectionAffinity, stillSelecting: Bool) {
