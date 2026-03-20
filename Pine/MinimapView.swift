@@ -38,6 +38,15 @@ enum MinimapSettings {
 final class MinimapView: NSView {
     weak var textView: NSTextView?
 
+    /// Git diff data — when set, colored markers appear on the right edge.
+    var lineDiffs: [GitLineDiff] = [] {
+        didSet {
+            diffMap = Dictionary(uniqueKeysWithValues: lineDiffs.map { ($0.line, $0.kind) })
+            needsDisplay = true
+        }
+    }
+    private var diffMap: [Int: GitLineDiff.Kind] = [:]
+
     /// Default width of the minimap panel.
     static let defaultWidth: CGFloat = 100
 
@@ -248,6 +257,36 @@ final class MinimapView: NSView {
                 }
 
                 pos = segEnd
+            }
+        }
+
+        // Draw diff markers on the right edge
+        if !diffMap.isEmpty {
+            let markerWidth: CGFloat = 4
+            let markerX = bounds.width - markerWidth
+            // Track line number incrementally across fragments
+            var currentLine = 1
+            var lastCharPos = 0
+            layoutManager.enumerateLineFragments(forGlyphRange: visibleGlyphRange) { lineRect, _, _, glyphRange, _ in
+                let charRange = layoutManager.characterRange(forGlyphRange: glyphRange, actualGlyphRange: nil)
+                let y = (lineRect.origin.y + originY) * scale - offset
+                // Advance line counter for newlines between last position and this fragment
+                let scanEnd = min(charRange.location, source.length)
+                for i in lastCharPos..<scanEnd where source.character(at: i) == 0x0A {
+                    currentLine += 1
+                }
+                lastCharPos = scanEnd
+                guard y + lineHeight > 0 && y < self.bounds.height else { return }
+                if let kind = self.diffMap[currentLine] {
+                    let color: NSColor
+                    switch kind {
+                    case .added:    color = .systemGreen
+                    case .modified: color = .systemBlue
+                    case .deleted:  color = .systemRed
+                    }
+                    color.setFill()
+                    NSRect(x: markerX, y: y, width: markerWidth, height: lineHeight).fill()
+                }
             }
         }
 

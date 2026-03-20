@@ -414,9 +414,12 @@ struct CodeEditorView: NSViewRepresentable {
         // Обновляем шрифт при изменении размера (Cmd+Plus/Minus)
         context.coordinator.updateFontIfNeeded(font: editorFont, gutterFont: gutterFont)
 
-        // Обновляем diff-данные LineNumberView
+        // Обновляем diff-данные LineNumberView и MinimapView
         if let lineNumberView = context.coordinator.lineNumberView {
             lineNumberView.lineDiffs = lineDiffs
+        }
+        if let minimapView = context.coordinator.minimapView {
+            minimapView.lineDiffs = lineDiffs
         }
 
         // Navigate to a specific offset (e.g. next/previous change)
