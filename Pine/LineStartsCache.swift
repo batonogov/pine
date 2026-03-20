@@ -16,13 +16,7 @@ struct LineStartsCache {
 
     /// Создаёт кэш из текста, сканируя позиции '\n'.
     init(text: String) {
-        let source = text as NSString
-        let length = source.length
-        var starts: [Int] = [0]
-        for i in 0..<length where source.character(at: i) == 0x0A {
-            starts.append(i + 1)
-        }
-        lineStarts = starts
+        self.init(source: text as NSString)
     }
 
     /// Создаёт кэш из NSString, сканируя позиции '\n'.

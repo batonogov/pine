@@ -897,7 +897,10 @@ struct CodeEditorView: NSViewRepresentable {
             guard let sv = scrollView,
                   let textView = sv.documentView as? NSTextView else { return }
             let text = textView.string
-            lineStartsCache = LineStartsCache(text: text)
+            // Update cache if not yet initialized (e.g. called from updateNSView on first load)
+            if lineStartsCache == nil {
+                lineStartsCache = LineStartsCache(text: text)
+            }
             let skipRanges = SyntaxHighlighter.shared.commentAndStringRanges(
                 in: text,
                 language: parent.language,
