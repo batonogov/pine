@@ -55,9 +55,18 @@ jobs:
           sudo xcode-select -s "$XCODE_PATH/Contents/Developer"
           xcodebuild -version
 
+      - name: Build
+        run: |
+          xcodebuild build-for-testing \
+            -project Pine.xcodeproj \
+            -scheme Pine \
+            -destination "platform=macOS" \
+            CODE_SIGN_IDENTITY=- \
+            CODE_SIGNING_ALLOWED=NO
+
       - name: Unit Tests
         run: |
-          xcodebuild test \
+          xcodebuild test-without-building \
             -project Pine.xcodeproj \
             -scheme Pine \
             -destination "platform=macOS" \
@@ -79,9 +88,18 @@ jobs:
           sudo xcode-select -s "$XCODE_PATH/Contents/Developer"
           xcodebuild -version
 
+      - name: Build
+        run: |
+          xcodebuild build-for-testing \
+            -project Pine.xcodeproj \
+            -scheme Pine \
+            -destination "platform=macOS" \
+            CODE_SIGN_IDENTITY=- \
+            CODE_SIGNING_ALLOWED=NO
+
       - name: UI Tests
         run: |
-          xcodebuild test \
+          xcodebuild test-without-building \
             -project Pine.xcodeproj \
             -scheme Pine \
             -destination "platform=macOS" \
