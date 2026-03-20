@@ -1,6 +1,6 @@
 {
     "name": "HCL",
-    "extensions": ["hcl", "tf", "tfvars"],
+    "extensions": ["hcl"],
     "lineComment": "#",
     "blockComment": {"open": "/*", "close": "*/"},
     "rules": [
