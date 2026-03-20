@@ -1303,6 +1303,7 @@ struct StatusBarView: View {
                 }
                 .menuStyle(.borderlessButton)
                 .fixedSize()
+                .disabled(activeTab.isDirty)
                 .accessibilityIdentifier(AccessibilityID.encodingMenu)
             }
 

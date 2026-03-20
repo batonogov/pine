@@ -79,17 +79,16 @@ struct FileEncodingTests {
     @Test("Open UTF-16 Big Endian file detects encoding")
     func openUTF16BEFile() {
         let manager = TabManager()
-        let url = tempFileURL(content: "Hello, world!", encoding: .utf16BigEndian)
 
-        // UTF-16 BE without BOM — write with BOM manually
+        // UTF-16 BE with BOM
         let bom: [UInt8] = [0xFE, 0xFF]
         var data = Data(bom)
         if let encoded = "Hello, world!".data(using: .utf16BigEndian) {
             data.append(encoded)
         }
-        let bomUrl = tempFileURL(name: "test_be.txt", data: data)
+        let url = tempFileURL(name: "test_be.txt", data: data)
 
-        manager.openTab(url: bomUrl)
+        manager.openTab(url: url)
 
         #expect(manager.activeTab?.content == "Hello, world!")
     }
@@ -208,6 +207,22 @@ struct FileEncodingTests {
 
         #expect(manager.activeTab?.encoding == .isoLatin1)
         #expect(manager.activeTab?.content == content)
+    }
+
+    @Test("Reopen with different encoding refuses when tab is dirty")
+    func reopenRefusesWhenDirty() {
+        let manager = TabManager()
+        let url = tempFileURL(content: "Hello", encoding: .utf8)
+
+        manager.openTab(url: url)
+        manager.updateContent("Modified")
+        #expect(manager.activeTab?.isDirty == true)
+
+        let result = manager.reopenActiveTab(withEncoding: .isoLatin1)
+
+        #expect(result == false)
+        #expect(manager.activeTab?.encoding == .utf8)
+        #expect(manager.activeTab?.content == "Modified")
     }
 
     // MARK: - Encoding display name

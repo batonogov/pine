@@ -443,16 +443,20 @@ final class TabManager {
 
     /// Reopens the active tab with a different encoding.
     /// Re-reads the file from disk using the specified encoding.
-    func reopenActiveTab(withEncoding encoding: String.Encoding) {
-        guard let index = activeTabIndex else { return }
+    /// Refuses to reopen if the tab has unsaved changes (returns false).
+    @discardableResult
+    func reopenActiveTab(withEncoding encoding: String.Encoding) -> Bool {
+        guard let index = activeTabIndex else { return false }
         let tab = tabs[index]
+        guard !tab.isDirty else { return false }
         guard let data = try? Data(contentsOf: tab.url),
               let content = String(data: data, encoding: encoding)
-        else { return }
+        else { return false }
         tabs[index].content = content
         tabs[index].savedContent = content
         tabs[index].encoding = encoding
         tabs[index].lastModDate = modDate(for: tab.url)
+        return true
     }
 
     /// Returns the modification date of a file, or nil on error.

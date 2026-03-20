@@ -57,7 +57,7 @@ extension String.Encoding {
 
     /// Detects the encoding of file data. Tries UTF-8 first, then uses
     /// NSString's encoding detection as a fallback.
-    static func detect(from data: Data) -> (String, String.Encoding) {
+    static func detect(from data: Data) -> (content: String, encoding: String.Encoding) {
         // Try UTF-8 first (most common for source code)
         if let string = String(data: data, encoding: .utf8) {
             return (string, .utf8)
