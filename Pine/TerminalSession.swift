@@ -138,9 +138,10 @@ final class TerminalTab: Identifiable, Hashable {
         let envStrings = env.map { "\($0.key)=\($0.value)" }
         let dir = workingDirectory?.path ?? (env["HOME"] ?? "/")
 
+        let shell = ShellSettings.shared
         terminalView.startProcess(
-            executable: "/bin/zsh",
-            args: ["--login"],
+            executable: shell.shellPath,
+            args: shell.shellArgs,
             environment: envStrings,
             execName: nil,
             currentDirectory: dir
