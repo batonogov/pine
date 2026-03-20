@@ -168,13 +168,10 @@ struct ContentView: View {
             columnVisibility = .all
             isSearchPresented = true
         }
-        .onReceive(NotificationCenter.default.publisher(for: .goToNextChange)) { _ in
-            guard controlActiveState == .key else { return }
-            navigateToChange(direction: .next)
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .goToPreviousChange)) { _ in
-            guard controlActiveState == .key else { return }
-            navigateToChange(direction: .previous)
+        .onReceive(NotificationCenter.default.publisher(for: .navigateChange)) { notification in
+            guard controlActiveState == .key,
+                  let direction = notification.userInfo?["direction"] as? String else { return }
+            navigateToChange(direction: direction == "next" ? .next : .previous)
         }
         .onChange(of: tabManager.pendingGoToLine) { _, newLine in
             guard let line = newLine, let tab = tabManager.activeTab else { return }
