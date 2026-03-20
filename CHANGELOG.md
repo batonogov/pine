@@ -1,5 +1,21 @@
 # Changelog
 
+## [1.6.0](https://github.com/batonogov/pine/compare/v1.5.1...v1.6.0) (2026-03-20)
+
+
+### Features
+
+* configurable terminal shell ([#267](https://github.com/batonogov/pine/issues/267)) ([276166c](https://github.com/batonogov/pine/commit/276166c7ab58d025a50764c5d7f34df709ef5a86))
+* navigate between git changes in editor ([#265](https://github.com/batonogov/pine/issues/265)) ([2ec7a80](https://github.com/batonogov/pine/commit/2ec7a80e5df67368ec947503a181f95b97d4a138))
+* support file encoding detection beyond UTF-8 ([#271](https://github.com/batonogov/pine/issues/271)) ([ee17cfd](https://github.com/batonogov/pine/commit/ee17cfda2287ddce0da7ba1494537be51270ad06))
+
+
+### Bug Fixes
+
+* add SF Symbol icons to all menu items for consistent alignment ([#269](https://github.com/batonogov/pine/issues/269)) ([f21d688](https://github.com/batonogov/pine/commit/f21d688eed18510f0c4a4ef312875047e6b103a9))
+* resolve session restore UI test flaky on CI ([#272](https://github.com/batonogov/pine/issues/272)) ([691308e](https://github.com/batonogov/pine/commit/691308e96d36a9afe7718657ac38109c0267702b))
+* scope all session metadata to project root files only ([#270](https://github.com/batonogov/pine/issues/270)) ([42ac8bd](https://github.com/batonogov/pine/commit/42ac8bd5ca2de5f93ec65af571e6cbf580713e22))
+
 ## [1.5.1](https://github.com/batonogov/pine/compare/v1.5.0...v1.5.1) (2026-03-20)
 
 
