@@ -28,7 +28,7 @@ struct ContentView: View {
     @State private var isSearchPresented = false
     @State private var goToLineOffset: GoToRequest?
     @AppStorage("minimapVisible") private var isMinimapVisible = true
-    @AppStorage(BlameConstants.storageKey) private var isBlameVisible = false
+    @AppStorage(BlameConstants.storageKey) private var isBlameVisible = true
 
     private var activeTab: EditorTab? { tabManager.activeTab }
 
@@ -101,6 +101,7 @@ struct ContentView: View {
             restoreSessionIfNeeded()
             syncSidebarSelection()
             applySearchQueryFromEnvironment()
+            refreshBlame()
         }
         .onChange(of: selectedNode) { _, newNode in
             guard let node = newNode, !node.isDirectory else { return }

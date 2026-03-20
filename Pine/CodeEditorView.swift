@@ -47,34 +47,38 @@ final class GutterTextView: NSTextView {
 
     /// Blame lookup: line number → GitBlameLine (O(1) access).
     private var blameLookup: [Int: GitBlameLine] = [:]
-    /// Previous blame lines array identity — avoids rebuilding the dictionary on every updateNSView.
+    /// Previous blame data count — avoids rebuilding the dictionary on every updateNSView.
     private var blameLineCount: Int = -1
     var isBlameVisible: Bool = false
 
     /// Sets blame data and rebuilds O(1) lookup dictionary.
-    /// Skips rebuild if the data hasn't changed (same count as last call).
     func setBlameLines(_ lines: [GitBlameLine]) {
         guard lines.count != blameLineCount || lines.first != blameLookup[lines.first?.finalLine ?? 0] else {
             return
         }
         blameLineCount = lines.count
         blameLookup = Dictionary(lines.map { ($0.finalLine, $0) }, uniquingKeysWith: { _, last in last })
-        if isBlameVisible { needsDisplay = true }
+        if isBlameVisible { display() }
     }
 
-    private static let blameFont = NSFont.systemFont(ofSize: 12, weight: .regular)
-    private static let blameColor = NSColor.secondaryLabelColor.withAlphaComponent(0.5)
+    private static let blameFont: NSFont = {
+        let descriptor = NSFont.systemFont(ofSize: 12, weight: .regular)
+            .fontDescriptor.withSymbolicTraits(.italic)
+        return NSFont(descriptor: descriptor, size: 12) ?? NSFont.systemFont(ofSize: 12)
+    }()
+    private static let blameColor = NSColor(name: nil) { appearance in
+        if appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua {
+            return NSColor.white.withAlphaComponent(0.3)
+        } else {
+            return NSColor.black.withAlphaComponent(0.3)
+        }
+    }
 
     private static let relativeDateFormatter: RelativeDateTimeFormatter = {
         let f = RelativeDateTimeFormatter()
         f.unitsStyle = .full
         return f
     }()
-
-    /// Cached 1-based line number for the cursor position.
-    /// Updated incrementally in setSelectedRanges using delta from previous position.
-    private var cachedCursorLine: Int = 1
-    private var cachedCursorLocation: Int = 0
 
     override func drawBackground(in rect: NSRect) {
         super.drawBackground(in: rect)
@@ -102,15 +106,24 @@ final class GutterTextView: NSTextView {
     }
 
     /// Draws inline blame annotation after the line content on the cursor line.
+    /// Computes line number directly from selectedRange() to stay in sync with
+    /// the actual selection state during each draw call (no caching — drawBackground
+    /// can be called multiple times per display cycle with different selection states).
     private func drawInlineBlame(lineRect: NSRect, layoutManager: NSLayoutManager) {
-        guard let blame = blameLookup[cachedCursorLine],
-              let container = textContainer else { return }
-
         let source = string as NSString
-        guard source.length > 0 else { return }
+        guard source.length > 0, let container = textContainer else { return }
 
-        // Find the end of visible content on the cursor line
-        let cursorLocation = selectedRange().location
+        let cursorLocation = min(selectedRange().location, source.length)
+
+        // Compute 1-based line number from cursor position
+        var lineNumber = 1
+        for i in 0..<cursorLocation where source.character(at: i) == 0x0A {
+            lineNumber += 1
+        }
+
+        guard let blame = blameLookup[lineNumber] else { return }
+
+        // Find end of line content
         let lineRange = source.lineRange(for: NSRange(location: cursorLocation, length: 0))
         var lineEnd = NSMaxRange(lineRange)
         if lineEnd > lineRange.location && lineEnd <= source.length
@@ -134,12 +147,12 @@ final class GutterTextView: NSTextView {
 
         let text: String
         if blame.isUncommitted {
-            text = "  Uncommitted"
+            text = "Uncommitted"
         } else {
             let relativeDate = Self.relativeDateFormatter.localizedString(
                 for: blame.authorTime, relativeTo: Date()
             )
-            text = "  \(blame.author), \(relativeDate)"
+            text = "\(blame.author), \(relativeDate)"
         }
 
         let attrs: [NSAttributedString.Key: Any] = [
@@ -148,61 +161,30 @@ final class GutterTextView: NSTextView {
         ]
 
         let minBlameX = textContainerOrigin.x + gutterInset + 250
-        let drawX = max(lineEndX + 16, minBlameX)
+        var drawX = max(lineEndX + 24, minBlameX)
         let drawY = lineRect.origin.y + (lineRect.height - Self.blameFont.pointSize) / 2
+
+        // Git branch icon
+        let iconConfig = NSImage.SymbolConfiguration(pointSize: 11, weight: .light)
+        if let icon = NSImage(systemSymbolName: "arrow.triangle.branch", accessibilityDescription: nil)?
+            .withSymbolConfiguration(iconConfig) {
+            let tintedIcon = icon.tinted(with: Self.blameColor)
+            let iconY = lineRect.origin.y + (lineRect.height - tintedIcon.size.height) / 2
+            tintedIcon.draw(
+                in: NSRect(x: drawX, y: iconY, width: tintedIcon.size.width, height: tintedIcon.size.height),
+                from: .zero, operation: .sourceOver, fraction: 1
+            )
+            drawX += tintedIcon.size.width + 4
+        }
+
         (text as NSString).draw(at: NSPoint(x: drawX, y: drawY), withAttributes: attrs)
     }
 
-    /// Invalidates cursor line cache. Must be called when text content changes
-    /// (insert/delete shifts character offsets, making the cached location stale).
-    func invalidateCursorLineCache() {
-        cachedCursorLocation = -1
-    }
-
-    /// Updates cached cursor line number incrementally.
-    /// Counts newlines only in the delta between old and new cursor position.
-    /// Falls back to full recount when the cache was invalidated by a text edit.
-    private func updateCachedCursorLine() {
-        let source = string as NSString
-        guard source.length > 0 else {
-            cachedCursorLine = 1
-            cachedCursorLocation = 0
-            return
-        }
-        let newLocation = min(selectedRange().location, source.length)
-
-        // Cache invalidated (text changed) — full recount
-        if cachedCursorLocation < 0 || cachedCursorLocation > source.length {
-            var line = 1
-            for i in 0..<newLocation where source.character(at: i) == 0x0A {
-                line += 1
-            }
-            cachedCursorLine = line
-            cachedCursorLocation = newLocation
-            return
-        }
-
-        let oldLocation = cachedCursorLocation
-        if newLocation == oldLocation { return }
-
-        // Incremental: count newlines only in the delta
-        var delta = 0
-        if newLocation > oldLocation {
-            for i in oldLocation..<newLocation where source.character(at: i) == 0x0A {
-                delta += 1
-            }
-        } else {
-            for i in newLocation..<oldLocation where source.character(at: i) == 0x0A {
-                delta -= 1
-            }
-        }
-        cachedCursorLine += delta
-        cachedCursorLocation = newLocation
-    }
-
     override func setSelectedRanges(_ ranges: [NSValue], affinity: NSSelectionAffinity, stillSelecting: Bool) {
+        // Mark full bounds dirty BEFORE super so its drawing pass erases the
+        // old blame annotation in a single frame (no flicker).
+        if isBlameVisible { setNeedsDisplay(bounds) }
         super.setSelectedRanges(ranges, affinity: affinity, stillSelecting: stillSelecting)
-        updateCachedCursorLine()
         needsDisplay = true
     }
 
@@ -577,7 +559,10 @@ struct CodeEditorView: NSViewRepresentable {
             gutterView.fileExtension = language
             gutterView.exactFileName = fileName
             gutterView.setBlameLines(blameLines)
-            gutterView.isBlameVisible = isBlameVisible
+            if gutterView.isBlameVisible != isBlameVisible {
+                gutterView.isBlameVisible = isBlameVisible
+                gutterView.display()
+            }
         }
 
         context.coordinator.updateContentIfNeeded(
@@ -781,11 +766,6 @@ struct CodeEditorView: NSViewRepresentable {
             // so the upcoming updateNSView won't overwrite the text and reset the cursor.
             didChangeFromTextView = true
             parent.text = textView.string
-
-            // Text changed — invalidate cursor line cache (character offsets shifted)
-            if let gutterView = textView as? GutterTextView {
-                gutterView.invalidateCursorLineCache()
-            }
 
             // Подсветка синтаксиса сбросит backgroundColor —
             // считаем bracket highlight невалидным
@@ -1266,5 +1246,19 @@ struct CodeEditorView: NSViewRepresentable {
             fileName: fileName,
             font: editorFont
         )
+    }
+}
+
+// MARK: - NSImage tinting
+
+private extension NSImage {
+    func tinted(with color: NSColor) -> NSImage {
+        let image = copy() as! NSImage // swiftlint:disable:this force_cast
+        image.lockFocus()
+        color.set()
+        NSRect(origin: .zero, size: size).fill(using: .sourceAtop)
+        image.unlockFocus()
+        image.isTemplate = false
+        return image
     }
 }
