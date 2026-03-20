@@ -196,7 +196,8 @@ final class EditorContainerView: NSView {
 }
 
 /// A unique navigation request so each "go to" action is processed exactly once.
-struct GoToRequest: Equatable {
+/// Each instance gets a unique `id`, so two requests to the same offset are distinct.
+struct GoToRequest {
     let offset: Int
     let id: UUID = UUID()
 }

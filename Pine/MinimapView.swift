@@ -206,14 +206,42 @@ final class MinimapView: NSView {
         let visibleGlyphRange = layoutManager.glyphRange(forBoundingRect: visibleDocRect, in: textContainer)
         guard visibleGlyphRange.location != NSNotFound else { return }
 
+        // Diff marker state — tracked incrementally across fragments
+        let hasDiffMarkers = !diffMap.isEmpty
+        let markerWidth: CGFloat = 4
+        let markerX = bounds.width - markerWidth
+        var diffLineNumber = 1
+        var diffLastCharPos = 0
+
         layoutManager.enumerateLineFragments(forGlyphRange: visibleGlyphRange) { lineRect, _, _, glyphRange, _ in
             let charRange = layoutManager.characterRange(forGlyphRange: glyphRange, actualGlyphRange: nil)
             let y = (lineRect.origin.y + originY) * scale - offset
 
+            // Advance diff line counter for newlines between last position and this fragment
+            if hasDiffMarkers {
+                let scanEnd = min(charRange.location, source.length)
+                for i in diffLastCharPos..<scanEnd where source.character(at: i) == 0x0A {
+                    diffLineNumber += 1
+                }
+                diffLastCharPos = scanEnd
+            }
+
             // Cull lines outside visible area
             guard y + lineHeight > 0 && y < self.bounds.height else { return }
 
-            // Skip blank lines
+            // Draw diff marker on the right edge
+            if hasDiffMarkers, let kind = self.diffMap[diffLineNumber] {
+                let color: NSColor
+                switch kind {
+                case .added:    color = .systemGreen
+                case .modified: color = .systemBlue
+                case .deleted:  color = .systemRed
+                }
+                color.setFill()
+                NSRect(x: markerX, y: y, width: markerWidth, height: lineHeight).fill()
+            }
+
+            // Skip blank lines for syntax rendering
             let lineText = source.substring(with: charRange)
             let trimmed = lineText.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !trimmed.isEmpty else { return }
@@ -257,36 +285,6 @@ final class MinimapView: NSView {
                 }
 
                 pos = segEnd
-            }
-        }
-
-        // Draw diff markers on the right edge
-        if !diffMap.isEmpty {
-            let markerWidth: CGFloat = 4
-            let markerX = bounds.width - markerWidth
-            // Track line number incrementally across fragments
-            var currentLine = 1
-            var lastCharPos = 0
-            layoutManager.enumerateLineFragments(forGlyphRange: visibleGlyphRange) { lineRect, _, _, glyphRange, _ in
-                let charRange = layoutManager.characterRange(forGlyphRange: glyphRange, actualGlyphRange: nil)
-                let y = (lineRect.origin.y + originY) * scale - offset
-                // Advance line counter for newlines between last position and this fragment
-                let scanEnd = min(charRange.location, source.length)
-                for i in lastCharPos..<scanEnd where source.character(at: i) == 0x0A {
-                    currentLine += 1
-                }
-                lastCharPos = scanEnd
-                guard y + lineHeight > 0 && y < self.bounds.height else { return }
-                if let kind = self.diffMap[currentLine] {
-                    let color: NSColor
-                    switch kind {
-                    case .added:    color = .systemGreen
-                    case .modified: color = .systemBlue
-                    case .deleted:  color = .systemRed
-                    }
-                    color.setFill()
-                    NSRect(x: markerX, y: y, width: markerWidth, height: lineHeight).fill()
-                }
             }
         }
 
