@@ -117,6 +117,18 @@ struct PineApp: App {
                     NotificationCenter.default.post(name: .showProjectSearch, object: nil)
                 }
                 .keyboardShortcut("f", modifiers: [.command, .shift])
+
+                Divider()
+
+                Button(Strings.menuNextChange) {
+                    NotificationCenter.default.post(name: .goToNextChange, object: nil)
+                }
+                .keyboardShortcut(.downArrow, modifiers: [.control, .option])
+
+                Button(Strings.menuPreviousChange) {
+                    NotificationCenter.default.post(name: .goToPreviousChange, object: nil)
+                }
+                .keyboardShortcut(.upArrow, modifiers: [.control, .option])
             }
             // File menu: Save, Save All, Save As, Duplicate
             CommandGroup(replacing: .saveItem) {
@@ -753,4 +765,6 @@ extension Notification.Name {
     static let fileDeleted = Notification.Name("fileDeleted")
     static let toggleComment = Notification.Name("toggleComment")
     static let showProjectSearch = Notification.Name("showProjectSearch")
+    static let goToNextChange = Notification.Name("goToNextChange")
+    static let goToPreviousChange = Notification.Name("goToPreviousChange")
 }

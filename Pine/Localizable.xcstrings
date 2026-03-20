@@ -2734,6 +2734,42 @@
         }
       }
     },
+    "menu.nextChange" : {
+      "comment" : "Menu item for Go to Next Change (⌃⌥↓).",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Go to Next Change"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Перейти к следующему изменению"
+          }
+        }
+      }
+    },
+    "menu.previousChange" : {
+      "comment" : "Menu item for Go to Previous Change (⌃⌥↑).",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Go to Previous Change"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Перейти к предыдущему изменению"
+          }
+        }
+      }
+    },
     "menu.git" : {
       "comment" : "Top-level Git menu title in the menu bar.",
       "extractionState" : "manual",

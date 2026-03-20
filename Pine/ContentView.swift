@@ -168,6 +168,14 @@ struct ContentView: View {
             columnVisibility = .all
             isSearchPresented = true
         }
+        .onReceive(NotificationCenter.default.publisher(for: .goToNextChange)) { _ in
+            guard controlActiveState == .key else { return }
+            navigateToChange(direction: .next)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .goToPreviousChange)) { _ in
+            guard controlActiveState == .key else { return }
+            navigateToChange(direction: .previous)
+        }
         .onChange(of: tabManager.pendingGoToLine) { _, newLine in
             guard let line = newLine, let tab = tabManager.activeTab else { return }
             tabManager.pendingGoToLine = nil
@@ -288,6 +296,23 @@ struct ContentView: View {
             }
         }
         return nil
+    }
+
+    private enum ChangeDirection { case next, previous }
+
+    private func navigateToChange(direction: ChangeDirection) {
+        guard let tab = tabManager.activeTab, !lineDiffs.isEmpty else { return }
+        let currentLine = Self.lineNumber(forOffset: tab.cursorPosition, in: tab.content)
+        let targetLine: Int?
+        switch direction {
+        case .next:
+            targetLine = GitLineDiff.nextChangeLine(from: currentLine, in: lineDiffs)
+        case .previous:
+            targetLine = GitLineDiff.previousChangeLine(from: currentLine, in: lineDiffs)
+        }
+        if let line = targetLine {
+            goToLineOffset = Self.cursorOffset(forLine: line, in: tab.content)
+        }
     }
 
     /// Refreshes cached line diffs for the active tab.
@@ -515,6 +540,22 @@ struct ContentView: View {
             currentLine += 1
         }
         return min(offset, nsContent.length)
+    }
+
+    /// Converts a UTF-16 cursor offset to a 1-based line number.
+    static func lineNumber(forOffset offset: Int, in content: String) -> Int {
+        let nsContent = content as NSString
+        let clamped = min(offset, nsContent.length)
+        var line = 1
+        var pos = 0
+        while pos < clamped {
+            let lineRange = nsContent.lineRange(for: NSRange(location: pos, length: 0))
+            let lineEnd = NSMaxRange(lineRange)
+            if lineEnd > clamped { break }
+            line += 1
+            pos = lineEnd
+        }
+        return line
     }
 
     // MARK: - Область терминала
