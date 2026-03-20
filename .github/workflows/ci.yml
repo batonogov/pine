@@ -57,7 +57,7 @@ jobs:
 
       - name: Build
         run: |
-          xcodebuild build-for-testing \
+          xcodebuild build \
             -project Pine.xcodeproj \
             -scheme Pine \
             -destination "platform=macOS" \
@@ -66,7 +66,7 @@ jobs:
 
       - name: Unit Tests
         run: |
-          xcodebuild test-without-building \
+          xcodebuild test \
             -project Pine.xcodeproj \
             -scheme Pine \
             -destination "platform=macOS" \
@@ -90,7 +90,7 @@ jobs:
 
       - name: Build
         run: |
-          xcodebuild build-for-testing \
+          xcodebuild build \
             -project Pine.xcodeproj \
             -scheme Pine \
             -destination "platform=macOS" \
@@ -99,7 +99,7 @@ jobs:
 
       - name: UI Tests
         run: |
-          xcodebuild test-without-building \
+          xcodebuild test \
             -project Pine.xcodeproj \
             -scheme Pine \
             -destination "platform=macOS" \
