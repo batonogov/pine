@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.6.1](https://github.com/batonogov/pine/compare/v1.6.0...v1.6.1) (2026-03-20)
+
+
+### Bug Fixes
+
+* show gitignored directories in sidebar with dimmed appearance ([#282](https://github.com/batonogov/pine/issues/282)) ([b5fa8ab](https://github.com/batonogov/pine/commit/b5fa8ab3d50e67d82b8ec8b74366143bb1144553))
+
 ## [1.6.0](https://github.com/batonogov/pine/compare/v1.5.1...v1.6.0) (2026-03-20)
 
 
