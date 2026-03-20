@@ -33,6 +33,9 @@ struct EditorTab: Identifiable, Hashable {
     /// Used to detect external changes by comparing with the current stat.
     var lastModDate: Date?
 
+    /// Состояние свёрнутых регионов кода.
+    var foldState: FoldState = FoldState()
+
     /// Markdown preview mode (source/preview/split). Only meaningful for markdown files.
     var previewMode: MarkdownPreviewMode = .source
 

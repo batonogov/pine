@@ -165,6 +165,52 @@ struct PineApp: App {
                 }
                 .keyboardShortcut(.upArrow, modifiers: [.control, .option])
                 .disabled(focusedProject?.tabManager.activeTab == nil)
+
+                Divider()
+
+                Button {
+                    NotificationCenter.default.post(
+                        name: .foldCode, object: nil,
+                        userInfo: ["action": "fold"]
+                    )
+                } label: {
+                    Label(Strings.menuFoldCode, systemImage: MenuIcons.foldCode)
+                }
+                .keyboardShortcut(.leftArrow, modifiers: [.command, .option])
+                .disabled(focusedProject?.tabManager.activeTab == nil)
+
+                Button {
+                    NotificationCenter.default.post(
+                        name: .foldCode, object: nil,
+                        userInfo: ["action": "unfold"]
+                    )
+                } label: {
+                    Label(Strings.menuUnfoldCode, systemImage: MenuIcons.unfoldCode)
+                }
+                .keyboardShortcut(.rightArrow, modifiers: [.command, .option])
+                .disabled(focusedProject?.tabManager.activeTab == nil)
+
+                Button {
+                    NotificationCenter.default.post(
+                        name: .foldCode, object: nil,
+                        userInfo: ["action": "foldAll"]
+                    )
+                } label: {
+                    Label(Strings.menuFoldAll, systemImage: MenuIcons.foldAll)
+                }
+                .keyboardShortcut(.leftArrow, modifiers: [.command, .option, .shift])
+                .disabled(focusedProject?.tabManager.activeTab == nil)
+
+                Button {
+                    NotificationCenter.default.post(
+                        name: .foldCode, object: nil,
+                        userInfo: ["action": "unfoldAll"]
+                    )
+                } label: {
+                    Label(Strings.menuUnfoldAll, systemImage: MenuIcons.unfoldAll)
+                }
+                .keyboardShortcut(.rightArrow, modifiers: [.command, .option, .shift])
+                .disabled(focusedProject?.tabManager.activeTab == nil)
             }
             // File menu: Save, Save All, Save As, Duplicate
             CommandGroup(replacing: .saveItem) {
@@ -887,4 +933,6 @@ extension Notification.Name {
     static let showProjectSearch = Notification.Name("showProjectSearch")
     /// userInfo: ["direction": "next" | "previous"]
     static let navigateChange = Notification.Name("navigateChange")
+    /// userInfo: ["action": "fold" | "unfold" | "foldAll" | "unfoldAll"]
+    static let foldCode = Notification.Name("foldCode")
 }

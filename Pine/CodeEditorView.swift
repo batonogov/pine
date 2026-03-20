@@ -222,6 +222,8 @@ struct CodeEditorView: NSViewRepresentable {
     var language: String
     var fileName: String?
     var lineDiffs: [GitLineDiff] = []
+    /// Binding to the fold state for the active tab.
+    @Binding var foldState: FoldState
     /// Whether the minimap panel is visible.
     var isMinimapVisible: Bool = true
     /// Whether syntax highlighting is disabled for this tab (e.g. large files).
@@ -320,10 +322,18 @@ struct CodeEditorView: NSViewRepresentable {
 
         container.addSubview(scrollView)
 
+        // ── NSLayoutManager delegate for code folding ──
+        layoutManager.delegate = context.coordinator
+
         // ── Номера строк — поверх scroll view, как отдельный сиблинг ──
         let lineNumberView = LineNumberView(textView: textView)
         lineNumberView.gutterWidth = gutterWidth
         lineNumberView.gutterFont = gutterFont
+        lineNumberView.foldState = foldState
+        let coordinator = context.coordinator
+        lineNumberView.onFoldToggle = { [weak coordinator] foldable in
+            coordinator?.handleFoldToggle(foldable)
+        }
         container.addSubview(lineNumberView)
 
         // ── Minimap — справа от scroll view ──
@@ -395,6 +405,17 @@ struct CodeEditorView: NSViewRepresentable {
             object: nil
         )
 
+        // Observe fold code notifications (Cmd+Option+arrows)
+        NotificationCenter.default.addObserver(
+            context.coordinator,
+            selector: #selector(Coordinator.handleFoldCode(_:)),
+            name: .foldCode,
+            object: nil
+        )
+
+        // Calculate initial foldable ranges
+        context.coordinator.recalculateFoldableRanges()
+
         return container
     }
 
@@ -431,6 +452,7 @@ struct CodeEditorView: NSViewRepresentable {
         // Обновляем diff-данные LineNumberView и MinimapView
         if let lineNumberView = context.coordinator.lineNumberView {
             lineNumberView.lineDiffs = lineDiffs
+            lineNumberView.foldState = foldState
         }
         if let minimapView = context.coordinator.minimapView {
             minimapView.lineDiffs = lineDiffs
@@ -451,11 +473,14 @@ struct CodeEditorView: NSViewRepresentable {
         Coordinator(parent: self)
     }
 
-    class Coordinator: NSObject, NSTextViewDelegate {
+    class Coordinator: NSObject, NSTextViewDelegate, NSLayoutManagerDelegate {
         var parent: CodeEditorView
         var scrollView: NSScrollView?
         var lineNumberView: LineNumberView?
         var minimapView: MinimapView?
+
+        /// Cached foldable ranges for the current text.
+        var foldableRanges: [FoldableRange] = []
 
         /// Последние язык/имя файла — для обнаружения смены грамматики
         /// при одинаковом содержимом файлов
@@ -622,6 +647,9 @@ struct CodeEditorView: NSViewRepresentable {
 
             // Report state change
             reportStateChange()
+
+            // Recalculate foldable ranges (debounced with highlighting)
+            recalculateFoldableRanges()
 
             // Захватываем editedRange из textStorage сейчас,
             // пока он валиден в координатах текущей версии текста
@@ -851,6 +879,144 @@ struct CodeEditorView: NSViewRepresentable {
                   let gutterView = sv.documentView as? GutterTextView,
                   gutterView.window?.isKeyWindow == true else { return }
             gutterView.toggleComment()
+        }
+
+        // MARK: - Code folding
+
+        /// Recalculates foldable ranges from the current text.
+        func recalculateFoldableRanges() {
+            guard let sv = scrollView,
+                  let textView = sv.documentView as? NSTextView else { return }
+            let text = textView.string
+            let skipRanges = SyntaxHighlighter.shared.commentAndStringRanges(
+                in: text,
+                language: parent.language,
+                fileName: parent.fileName
+            )
+            foldableRanges = FoldRangeCalculator.calculate(text: text, skipRanges: skipRanges)
+            lineNumberView?.foldableRanges = foldableRanges
+        }
+
+        /// Handles fold toggle from gutter click.
+        func handleFoldToggle(_ foldable: FoldableRange) {
+            parent.foldState.toggle(foldable)
+            applyFoldState()
+        }
+
+        /// Handles fold code notifications from menu/keyboard shortcuts.
+        @objc func handleFoldCode(_ notification: Notification) {
+            guard let sv = scrollView,
+                  let textView = sv.documentView as? GutterTextView,
+                  textView.window?.isKeyWindow == true,
+                  let action = notification.userInfo?["action"] as? String else { return }
+
+            switch action {
+            case "fold":
+                foldAtCursor()
+            case "unfold":
+                unfoldAtCursor()
+            case "foldAll":
+                parent.foldState.foldAll(foldableRanges)
+                applyFoldState()
+            case "unfoldAll":
+                parent.foldState.unfoldAll()
+                applyFoldState()
+            default:
+                break
+            }
+        }
+
+        /// Folds the innermost foldable range containing the cursor.
+        private func foldAtCursor() {
+            guard let sv = scrollView,
+                  let textView = sv.documentView as? NSTextView else { return }
+            let cursorLocation = textView.selectedRange().location
+            let source = textView.string as NSString
+
+            // Find cursor's line number
+            var cursorLine = 1
+            for i in 0..<min(cursorLocation, source.length) where source.character(at: i) == 0x0A {
+                cursorLine += 1
+            }
+
+            // Find innermost unfoldable range at cursor line
+            let candidates = foldableRanges.filter {
+                cursorLine >= $0.startLine && cursorLine <= $0.endLine
+                    && !parent.foldState.isFolded($0)
+            }
+            // Pick the innermost (smallest span)
+            if let best = candidates.min(by: { ($0.endLine - $0.startLine) < ($1.endLine - $1.startLine) }) {
+                parent.foldState.fold(best)
+                applyFoldState()
+            }
+        }
+
+        /// Unfolds the fold at the cursor position.
+        private func unfoldAtCursor() {
+            guard let sv = scrollView,
+                  let textView = sv.documentView as? NSTextView else { return }
+            let cursorLocation = textView.selectedRange().location
+            let source = textView.string as NSString
+
+            var cursorLine = 1
+            for i in 0..<min(cursorLocation, source.length) where source.character(at: i) == 0x0A {
+                cursorLine += 1
+            }
+
+            // Find folded range whose startLine matches cursor line
+            if let folded = parent.foldState.foldedRanges.first(where: { $0.startLine == cursorLine }) {
+                parent.foldState.unfold(folded)
+                applyFoldState()
+            }
+        }
+
+        /// Applies the current fold state to the layout manager and redraws.
+        private func applyFoldState() {
+            guard let sv = scrollView,
+                  let textView = sv.documentView as? NSTextView,
+                  let layoutManager = textView.layoutManager else { return }
+
+            lineNumberView?.foldState = parent.foldState
+            // Invalidate layout so the delegate methods re-evaluate which lines are hidden
+            layoutManager.invalidateLayout(
+                forCharacterRange: NSRange(location: 0, length: (textView.string as NSString).length),
+                actualCharacterRange: nil
+            )
+            textView.needsDisplay = true
+            lineNumberView?.needsDisplay = true
+            minimapView?.needsDisplay = true
+        }
+
+        // MARK: - NSLayoutManagerDelegate (code folding)
+
+        // swiftlint:disable:next function_parameter_count
+        func layoutManager(
+            _ layoutManager: NSLayoutManager,
+            shouldSetLineFragmentRect lineFragmentRect: UnsafeMutablePointer<NSRect>,
+            lineFragmentUsedRect: UnsafeMutablePointer<NSRect>,
+            baselineOffset: UnsafeMutablePointer<CGFloat>,
+            in textContainer: NSTextContainer,
+            forGlyphRange glyphRange: NSRange
+        ) -> Bool {
+            let charRange = layoutManager.characterRange(forGlyphRange: glyphRange, actualGlyphRange: nil)
+            guard let textStorage = layoutManager.textStorage else { return false }
+            let source = textStorage.string as NSString
+
+            // Find line number for the start of this glyph range
+            var line = 1
+            for i in 0..<min(charRange.location, source.length) where source.character(at: i) == 0x0A {
+                line += 1
+            }
+
+            // If this line is hidden (inside a folded region), collapse it to zero height
+            if parent.foldState.isLineHidden(line) {
+                lineFragmentRect.pointee.size.height = 0
+                lineFragmentUsedRect.pointee.size.height = 0
+                baselineOffset.pointee = 0
+                return true
+            }
+
+            return false
         }
 
         private func reportStateChange() {

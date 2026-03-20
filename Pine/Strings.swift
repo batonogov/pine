@@ -239,6 +239,10 @@ enum Strings {
     static let menuFindInProject: LocalizedStringKey = "menu.findInProject"
     static let menuNextChange: LocalizedStringKey = "menu.nextChange"
     static let menuPreviousChange: LocalizedStringKey = "menu.previousChange"
+    static let menuFoldCode: LocalizedStringKey = "menu.foldCode"
+    static let menuUnfoldCode: LocalizedStringKey = "menu.unfoldCode"
+    static let menuFoldAll: LocalizedStringKey = "menu.foldAll"
+    static let menuUnfoldAll: LocalizedStringKey = "menu.unfoldAll"
     static let sidebarFiles: LocalizedStringKey = "sidebar.files"
     static let sidebarSearch: LocalizedStringKey = "sidebar.search"
 
