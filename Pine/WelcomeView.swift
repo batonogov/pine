@@ -73,29 +73,17 @@ struct WelcomeView: View {
                 } else {
                     ScrollView {
                         LazyVStack(spacing: 0) {
-                            ForEach(registry.recentProjects, id: \.self) { url in
-                                Button {
-                                    openProject(at: url)
-                                } label: {
-                                    HStack {
-                                        Image(systemName: "folder")
-                                            .foregroundStyle(.secondary)
-                                        VStack(alignment: .leading, spacing: 2) {
-                                            Text(url.lastPathComponent)
-                                                .font(.system(size: 13))
-                                            Text(url.abbreviatedPath)
-                                                .font(.system(size: 10))
-                                                .foregroundStyle(.tertiary)
-                                                .lineLimit(1)
-                                                .truncationMode(.middle)
-                                        }
-                                        Spacer()
-                                    }
-                                    .padding(.horizontal)
-                                    .padding(.vertical, 6)
-                                    .contentShape(Rectangle())
+                            ForEach(
+                                Array(registry.recentProjects.enumerated()),
+                                id: \.element
+                            ) { index, url in
+                                if index > 0 {
+                                    Divider()
+                                        .padding(.leading)
                                 }
-                                .buttonStyle(.plain)
+                                RecentProjectRow(url: url) {
+                                    openProject(at: url)
+                                }
                                 .accessibilityIdentifier(
                                     AccessibilityID.welcomeRecentProject(url.lastPathComponent)
                                 )
@@ -161,5 +149,38 @@ struct WelcomeView: View {
             where window.identifier?.rawValue == "welcome" && window.isVisible {
             window.close()
         }
+    }
+}
+
+/// A single row in the recent projects list with hover highlight.
+private struct RecentProjectRow: View {
+    let url: URL
+    let action: () -> Void
+
+    @State private var isHovered = false
+
+    var body: some View {
+        Button(action: action) {
+            HStack {
+                Image(systemName: "folder")
+                    .foregroundStyle(.secondary)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(url.lastPathComponent)
+                        .font(.system(size: 13))
+                    Text(url.abbreviatedPath)
+                        .font(.system(size: 10))
+                        .foregroundStyle(.tertiary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                }
+                Spacer()
+            }
+            .padding(.horizontal)
+            .padding(.vertical, 6)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .background(isHovered ? Color.primary.opacity(0.06) : .clear)
+        .onHover { isHovered = $0 }
     }
 }
