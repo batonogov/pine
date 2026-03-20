@@ -26,11 +26,16 @@ final class ProjectManager {
             .map(\.url)
             .filter { $0.path.hasPrefix(rootPath) }
 
-        let activeFileURL = tabManager.activeTab?.url
+        // Only persist active file if it belongs to the project
+        let activeFileURL: URL? = if let url = tabManager.activeTab?.url,
+                                      url.path.hasPrefix(rootPath) { url } else { nil }
 
         // Collect preview modes for markdown tabs that aren't in default (.source) state
+        // and belong to the project root
         var previewModes: [String: String]?
-        let mdTabs = tabManager.tabs.filter { $0.isMarkdownFile && $0.previewMode != .source }
+        let mdTabs = tabManager.tabs.filter {
+            $0.isMarkdownFile && $0.previewMode != .source && $0.url.path.hasPrefix(rootPath)
+        }
         if !mdTabs.isEmpty {
             previewModes = [:]
             for tab in mdTabs {
@@ -38,8 +43,10 @@ final class ProjectManager {
             }
         }
 
-        // Collect tabs with syntax highlighting disabled (large files)
-        let disabledTabs = tabManager.tabs.filter(\.syntaxHighlightingDisabled)
+        // Collect tabs with syntax highlighting disabled (large files), scoped to project root
+        let disabledTabs = tabManager.tabs.filter {
+            $0.syntaxHighlightingDisabled && $0.url.path.hasPrefix(rootPath)
+        }
         let highlightingDisabledPaths: [String]? = disabledTabs.isEmpty
             ? nil
             : disabledTabs.map(\.url.path)

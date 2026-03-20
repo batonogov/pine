@@ -119,18 +119,40 @@ struct SessionState: Codable {
 
     var projectURL: URL { URL(fileURLWithPath: projectPath) }
 
-    /// File URLs filtered to those that still exist on disk.
+    /// Project root path prefix used for scoping (includes trailing slash).
+    private var rootPrefix: String { projectPath + "/" }
+
+    /// File URLs filtered to those that still exist on disk and belong to the project root.
     var existingFileURLs: [URL] {
-        openFilePaths.compactMap { path in
-            let url = URL(fileURLWithPath: path)
-            return FileManager.default.fileExists(atPath: path) ? url : nil
+        let prefix = rootPrefix
+        return openFilePaths.compactMap { path in
+            guard path.hasPrefix(prefix),
+                  FileManager.default.fileExists(atPath: path) else { return nil }
+            return URL(fileURLWithPath: path)
         }
     }
 
-    /// The active file URL if it still exists on disk.
+    /// The active file URL if it still exists on disk and belongs to the project root.
     var activeFileURL: URL? {
         guard let path = activeFilePath,
+              path.hasPrefix(rootPrefix),
               FileManager.default.fileExists(atPath: path) else { return nil }
         return URL(fileURLWithPath: path)
+    }
+
+    /// Preview modes filtered to entries within the project root.
+    var existingPreviewModes: [String: String]? {
+        guard let modes = previewModes else { return nil }
+        let prefix = rootPrefix
+        let filtered = modes.filter { $0.key.hasPrefix(prefix) }
+        return filtered.isEmpty ? nil : filtered
+    }
+
+    /// Highlighting-disabled paths filtered to entries within the project root.
+    var existingHighlightingDisabledPaths: [String]? {
+        guard let paths = highlightingDisabledPaths else { return nil }
+        let prefix = rootPrefix
+        let filtered = paths.filter { $0.hasPrefix(prefix) }
+        return filtered.isEmpty ? nil : filtered
     }
 }
