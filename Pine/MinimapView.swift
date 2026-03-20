@@ -149,7 +149,7 @@ final class MinimapView: NSView {
         }
 
         let usedRect = layoutManager.usedRect(for: textContainer)
-        let docHeight = usedRect.height + textView.textContainerOrigin.y
+        let docHeight = usedRect.height + textView.textContainerOrigin.y + textView.textContainerInset.height
         let scaledDocHeight = docHeight * Self.scaleFactor
         let panelHeight = bounds.height
 
@@ -273,7 +273,7 @@ final class MinimapView: NSView {
               let scrollView = textView.enclosingScrollView else { return nil }
 
         let usedRect = layoutManager.usedRect(for: textContainer)
-        let docHeight = usedRect.height + textView.textContainerOrigin.y
+        let docHeight = usedRect.height + textView.textContainerOrigin.y + textView.textContainerInset.height
         guard docHeight > 0 else { return nil }
 
         let scale = Self.scaleFactor
@@ -301,7 +301,7 @@ final class MinimapView: NSView {
               let scrollView = textView.enclosingScrollView else { return }
 
         let usedRect = layoutManager.usedRect(for: textContainer)
-        let docHeight = usedRect.height + textView.textContainerOrigin.y
+        let docHeight = usedRect.height + textView.textContainerOrigin.y + textView.textContainerInset.height
         guard docHeight > 0, bounds.height > 0 else { return }
 
         let scale = Self.scaleFactor
