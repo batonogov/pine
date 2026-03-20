@@ -74,7 +74,41 @@ struct Theme {
 /// Единый движок подсветки синтаксиса.
 /// Загружает грамматики из JSON-файлов в папке Grammars/ в бандле приложения.
 /// При подсветке выбирает грамматику по расширению файла и применяет правила.
-final class SyntaxHighlighter {
+/// Thread-safe generation counter for cancelling stale highlight requests.
+final class HighlightGeneration: @unchecked Sendable {
+    private let lock = NSLock()
+    private var value: Int = 0
+
+    var current: Int {
+        lock.lock()
+        defer { lock.unlock() }
+        return value
+    }
+
+    @discardableResult
+    func increment() -> Int {
+        lock.lock()
+        defer { lock.unlock() }
+        value += 1
+        return value
+    }
+}
+
+/// A single match found by regex computation (value type, safe to pass between threads).
+struct HighlightMatch: Sendable {
+    let range: NSRange
+    let scope: String
+    let priority: Int
+}
+
+/// Result of background match computation.
+struct HighlightMatchResult: Sendable {
+    let matches: [HighlightMatch]
+    let repaintRange: NSRange
+    let multilineFingerprint: [Int]
+}
+
+final class SyntaxHighlighter: @unchecked Sendable {
     /// Singleton — один экземпляр на всё приложение (грамматики загружаются один раз).
     static let shared = SyntaxHighlighter()
 
@@ -579,5 +613,258 @@ final class SyntaxHighlighter {
         }
 
         textStorage.endEditing()
+    }
+
+    // MARK: - Async highlighting (background computation)
+
+    /// Background queue for regex computation.
+    private let highlightQueue = DispatchQueue(
+        label: "com.pine.syntax-highlight",
+        qos: .userInitiated
+    )
+
+    /// Pure computation: finds regex matches without touching NSTextStorage.
+    /// Thread-safe — operates only on the provided String snapshot.
+    ///
+    /// - Parameters:
+    ///   - text: snapshot of the text to search
+    ///   - language: file extension for grammar lookup
+    ///   - fileName: optional file name for grammar lookup
+    ///   - repaintRange: range to clip matches to
+    ///   - searchRange: range to search for single-line rules
+    /// - Returns: match results, or nil if no grammar found
+    func computeMatches(
+        text: String,
+        language: String,
+        fileName: String? = nil,
+        repaintRange: NSRange,
+        searchRange: NSRange
+    ) -> HighlightMatchResult? {
+        guard let (_, rules) = resolveGrammar(language: language, fileName: fileName) else {
+            return nil
+        }
+
+        let fullRange = NSRange(location: 0, length: (text as NSString).length)
+        var matches: [HighlightMatch] = []
+        var highlightedRanges: [(range: NSRange, priority: Int)] = []
+
+        for rule in rules {
+            let priority = scopePriority[rule.scope] ?? 0
+            guard theme.color(for: rule.scope) != nil else { continue }
+
+            let scanRange = rule.isMultiline ? fullRange : searchRange
+
+            rule.regex.enumerateMatches(in: text, range: scanRange) { match, _, _ in
+                guard let matchRange = match?.range else { return }
+
+                let clipped = NSIntersectionRange(matchRange, repaintRange)
+                guard clipped.length > 0 else { return }
+
+                let isOverridden = highlightedRanges.contains { existing in
+                    existing.priority > priority &&
+                    NSIntersectionRange(existing.range, clipped).length > 0
+                }
+
+                if !isOverridden {
+                    matches.append(HighlightMatch(
+                        range: clipped, scope: rule.scope, priority: priority
+                    ))
+                    highlightedRanges.append((range: clipped, priority: priority))
+                }
+            }
+        }
+
+        let fingerprint = collectMultilineFingerprint(
+            rules: rules, source: text, searchRange: fullRange
+        )
+
+        return HighlightMatchResult(
+            matches: matches,
+            repaintRange: repaintRange,
+            multilineFingerprint: fingerprint
+        )
+    }
+
+    /// Applies pre-computed matches to NSTextStorage. Must be called on main thread.
+    func applyMatches(
+        _ result: HighlightMatchResult,
+        to textStorage: NSTextStorage,
+        font: NSFont
+    ) {
+        let undoManager = textStorage.layoutManagers.first?.firstTextView?.undoManager
+        undoManager?.disableUndoRegistration()
+        defer { undoManager?.enableUndoRegistration() }
+
+        textStorage.beginEditing()
+        textStorage.addAttributes([
+            .foregroundColor: NSColor.textColor,
+            .font: font
+        ], range: result.repaintRange)
+
+        for match in result.matches {
+            guard let color = theme.color(for: match.scope) else { continue }
+            textStorage.addAttribute(.foregroundColor, value: color, range: match.range)
+        }
+
+        textStorage.endEditing()
+    }
+
+    /// Async full highlight: computes on background queue, applies on main thread.
+    func highlightAsync(
+        textStorage: NSTextStorage,
+        language: String,
+        fileName: String? = nil,
+        font: NSFont,
+        generation: HighlightGeneration? = nil
+    ) async {
+        let text = textStorage.string
+        let textLength = (text as NSString).length
+        guard textLength > 0 else { return }
+
+        let fullRange = NSRange(location: 0, length: textLength)
+        let gen = generation?.current ?? 0
+
+        let result: HighlightMatchResult? = await withCheckedContinuation { continuation in
+            highlightQueue.async {
+                let r = self.computeMatches(
+                    text: text,
+                    language: language,
+                    fileName: fileName,
+                    repaintRange: fullRange,
+                    searchRange: fullRange
+                )
+                continuation.resume(returning: r)
+            }
+        }
+
+        // Check generation — if bumped, discard stale results
+        if let generation, generation.current != gen { return }
+
+        if let result {
+            applyMatches(result, to: textStorage, font: font)
+            multilineMatchCache[ObjectIdentifier(textStorage)] = result.multilineFingerprint
+        } else {
+            resetAttributes(
+                textStorage: textStorage,
+                range: fullRange,
+                font: font
+            )
+        }
+    }
+
+    /// Async incremental highlight after an edit.
+    func highlightEditedAsync(
+        textStorage: NSTextStorage,
+        editedRange: NSRange,
+        language: String,
+        fileName: String? = nil,
+        font: NSFont,
+        generation: HighlightGeneration? = nil
+    ) async {
+        let text = textStorage.string
+        let textLength = (text as NSString).length
+        guard textLength > 0 else { return }
+
+        let fullRange = NSRange(location: 0, length: textLength)
+        let key = ObjectIdentifier(textStorage)
+        let cachedFingerprint = multilineMatchCache[key]
+        let gen = generation?.current ?? 0
+
+        // Compute on background
+        let bgResult: (HighlightMatchResult?, Bool) = await withCheckedContinuation { continuation in
+            highlightQueue.async {
+                let currentFingerprint = self.collectMultilineFingerprint(
+                    rules: self.resolveGrammar(language: language, fileName: fileName)?.1 ?? [],
+                    source: text,
+                    searchRange: fullRange
+                )
+
+                let needsFullRepaint = (cachedFingerprint != currentFingerprint)
+
+                let repaintRange: NSRange
+                let searchRange: NSRange
+                if needsFullRepaint {
+                    repaintRange = fullRange
+                    searchRange = fullRange
+                } else {
+                    let expanded = self.expandToContext(
+                        editedRange, in: text as NSString, totalLength: textLength
+                    )
+                    repaintRange = expanded
+                    searchRange = expanded
+                }
+
+                let result = self.computeMatches(
+                    text: text,
+                    language: language,
+                    fileName: fileName,
+                    repaintRange: repaintRange,
+                    searchRange: searchRange
+                )
+
+                continuation.resume(returning: (result, needsFullRepaint))
+            }
+        }
+
+        if let generation, generation.current != gen { return }
+
+        let (result, _) = bgResult
+        if let result {
+            applyMatches(result, to: textStorage, font: font)
+            multilineMatchCache[key] = result.multilineFingerprint
+        } else {
+            resetAttributes(textStorage: textStorage, range: fullRange, font: font)
+        }
+    }
+
+    /// Async viewport-based highlight.
+    func highlightVisibleRangeAsync(
+        textStorage: NSTextStorage,
+        visibleCharRange: NSRange,
+        language: String,
+        fileName: String? = nil,
+        font: NSFont,
+        generation: HighlightGeneration? = nil
+    ) async {
+        let text = textStorage.string
+        let textLength = (text as NSString).length
+        guard textLength > 0 else { return }
+
+        let key = ObjectIdentifier(textStorage)
+        let gen = generation?.current ?? 0
+
+        let result: HighlightMatchResult? = await withCheckedContinuation { continuation in
+            highlightQueue.async {
+                let source = text as NSString
+                let expanded = self.expandToContext(
+                    visibleCharRange, in: source,
+                    totalLength: textLength, lines: self.viewportContextLines
+                )
+
+                let r = self.computeMatches(
+                    text: text,
+                    language: language,
+                    fileName: fileName,
+                    repaintRange: expanded,
+                    searchRange: expanded
+                )
+                continuation.resume(returning: r)
+            }
+        }
+
+        if let generation, generation.current != gen { return }
+
+        if let result {
+            applyMatches(result, to: textStorage, font: font)
+            if multilineMatchCache[key] == nil {
+                multilineMatchCache[key] = result.multilineFingerprint
+            }
+        } else {
+            resetAttributes(
+                textStorage: textStorage,
+                range: visibleCharRange,
+                font: font
+            )
+        }
     }
 }

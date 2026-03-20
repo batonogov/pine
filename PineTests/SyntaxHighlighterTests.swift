@@ -533,7 +533,7 @@ struct SyntaxHighlighterTests {
 
     // MARK: - 11. Coordinator.updateContentIfNeeded detects language change with identical text
 
-    @Test func coordinatorReHighlightsOnLanguageChangeWithSameText() {
+    @Test func coordinatorReHighlightsOnLanguageChangeWithSameText() async throws {
         register(langA, langB)
 
         let text = "# this is a comment\nfunc hello()"
@@ -565,10 +565,13 @@ struct SyntaxHighlighterTests {
         let coordinator = CodeEditorView.Coordinator(parent: editorView)
         coordinator.scrollView = scrollView
 
-        // First call — highlights as langA and records lastLanguage/lastFileName
+        // First call — highlights as langA (now async, need to wait)
         coordinator.updateContentIfNeeded(
             text: text, language: "langa", fileName: "test.langa", font: font
         )
+
+        // Wait for async highlight to complete
+        try await Task.sleep(for: .milliseconds(200))
 
         let hashPos = 0
         let funcPos = (text as NSString).range(of: "func").location
@@ -579,10 +582,12 @@ struct SyntaxHighlighterTests {
                 "`func` should be keyword in langA")
 
         // Second call — same text, different language.
-        // This is the production code path from updateNSView.
         coordinator.updateContentIfNeeded(
             text: text, language: "langb", fileName: "test.langb", font: font
         )
+
+        // Wait for async highlight to complete
+        try await Task.sleep(for: .milliseconds(200))
 
         // Verify re-highlighting happened with the new grammar
         #expect(foregroundColor(in: textStorage, at: hashPos) == commentColor,
