@@ -84,6 +84,21 @@ struct ShellSettingsTests {
         #expect(settings.shellArgs == ["--login", "-c", "echo hello"])
     }
 
+    // MARK: - Round-trip persistence
+
+    @Test func settingsPersistAcrossInstances() throws {
+        let defaults = try makeDefaults()
+        defer { cleanupDefaults(defaults) }
+
+        let s1 = ShellSettings(defaults: defaults)
+        s1.shellPath = "/bin/bash"
+        s1.shellArgs = ["-i"]
+
+        let s2 = ShellSettings(defaults: defaults)
+        #expect(s2.shellPath == "/bin/bash")
+        #expect(s2.shellArgs == ["-i"])
+    }
+
     // MARK: - Reset
 
     @Test func resetRestoresDefaults() throws {
@@ -101,6 +116,29 @@ struct ShellSettingsTests {
         #expect(settings.shellArgs == ["--login"])
     }
 
+    // MARK: - Resolved shell path
+
+    @Test func resolvedShellPathReturnsPathWhenExecutable() throws {
+        let defaults = try makeDefaults()
+        defer { cleanupDefaults(defaults) }
+
+        let settings = ShellSettings(defaults: defaults)
+        settings.shellPath = "/bin/zsh"
+
+        #expect(settings.resolvedShellPath == "/bin/zsh")
+    }
+
+    @Test func resolvedShellPathFallsBackForNonexistentBinary() throws {
+        let defaults = try makeDefaults()
+        defer { cleanupDefaults(defaults) }
+
+        let settings = ShellSettings(defaults: defaults)
+        settings.shellPath = "/nonexistent/path/to/shell"
+
+        let expectedShell = ProcessInfo.processInfo.environment["SHELL"] ?? "/bin/zsh"
+        #expect(settings.resolvedShellPath == expectedShell)
+    }
+
     // MARK: - Common shells
 
     @Test func commonShellsContainsExpectedEntries() {
@@ -113,7 +151,24 @@ struct ShellSettingsTests {
         for shell in ShellSettings.commonShells {
             #expect(!shell.name.isEmpty)
             #expect(!shell.path.isEmpty)
+            #expect(!shell.defaultArgs.isEmpty)
         }
+    }
+
+    @Test func commonShellsHaveCorrectDefaultArgs() {
+        let shells = ShellSettings.commonShells
+        let zsh = shells.first { $0.path == "/bin/zsh" }
+        let fish = shells.first { $0.path == "/usr/local/bin/fish" }
+
+        #expect(zsh?.defaultArgs == ["--login"])
+        #expect(fish?.defaultArgs == ["-l"])
+    }
+
+    @Test func shellOptionIsIdentifiableByPath() {
+        let shells = ShellSettings.commonShells
+        let ids = shells.map(\.id)
+        let uniqueIDs = Set(ids)
+        #expect(ids.count == uniqueIDs.count)
     }
 
     // MARK: - Empty path fallback
