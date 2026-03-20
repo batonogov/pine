@@ -94,7 +94,6 @@ struct WelcomeView: View {
                         .accessibilityIdentifier(AccessibilityID.welcomeRecentProject(url.lastPathComponent))
                     }
                     .listStyle(.plain)
-                    .contentMargins(.top, 0, for: .scrollContent)
                     .accessibilityIdentifier(AccessibilityID.welcomeRecentProjectsList)
                 }
             }
