@@ -2842,6 +2842,78 @@
         }
       }
     },
+    "menu.foldCode" : {
+      "comment" : "Menu item for Fold Code (⌘⌥←).",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fold"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Свернуть"
+          }
+        }
+      }
+    },
+    "menu.unfoldCode" : {
+      "comment" : "Menu item for Unfold Code (⌘⌥→).",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Unfold"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Развернуть"
+          }
+        }
+      }
+    },
+    "menu.foldAll" : {
+      "comment" : "Menu item for Fold All (⌘⌥⇧←).",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fold All"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Свернуть все"
+          }
+        }
+      }
+    },
+    "menu.unfoldAll" : {
+      "comment" : "Menu item for Unfold All (⌘⌥⇧→).",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Unfold All"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Развернуть все"
+          }
+        }
+      }
+    },
     "menu.git" : {
       "comment" : "Top-level Git menu title in the menu bar.",
       "extractionState" : "manual",

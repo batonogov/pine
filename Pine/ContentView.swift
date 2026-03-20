@@ -515,6 +515,10 @@ struct ContentView: View {
             language: tab.language,
             fileName: tab.fileName,
             lineDiffs: lineDiffs,
+            foldState: Binding(
+                get: { tab.foldState },
+                set: { tabManager.updateFoldState($0) }
+            ),
             isMinimapVisible: isMinimapVisible,
             syntaxHighlightingDisabled: tab.syntaxHighlightingDisabled,
             initialCursorPosition: goToLineOffset?.offset ?? tab.cursorPosition,

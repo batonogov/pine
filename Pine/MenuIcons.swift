@@ -18,6 +18,10 @@ enum MenuIcons {
     static let findInProject = "magnifyingglass"
     static let nextChange = "chevron.down"
     static let previousChange = "chevron.up"
+    static let foldCode = "chevron.down.square"
+    static let unfoldCode = "chevron.right.square"
+    static let foldAll = "rectangle.compress.vertical"
+    static let unfoldAll = "rectangle.expand.vertical"
 
     // MARK: - View menu
     static let increaseFontSize = "plus.magnifyingglass"
