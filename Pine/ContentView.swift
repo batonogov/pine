@@ -24,7 +24,7 @@ struct ContentView: View {
     @State private var lineDiffs: [GitLineDiff] = []
     @State private var didRestoreSession = false
     @State private var isSearchPresented = false
-    @State private var goToLineOffset: Int?
+    @State private var goToLineOffset: GoToRequest?
     @AppStorage("minimapVisible") private var isMinimapVisible = true
 
     private var activeTab: EditorTab? { tabManager.activeTab }
@@ -176,7 +176,7 @@ struct ContentView: View {
         .onChange(of: tabManager.pendingGoToLine) { _, newLine in
             guard let line = newLine, let tab = tabManager.activeTab else { return }
             tabManager.pendingGoToLine = nil
-            goToLineOffset = Self.cursorOffset(forLine: line, in: tab.content)
+            goToLineOffset = GoToRequest(offset: Self.cursorOffset(forLine: line, in: tab.content))
         }
     }
 
@@ -309,7 +309,7 @@ struct ContentView: View {
             targetLine = GitLineDiff.previousChangeLine(from: currentLine, regionStarts: starts, diffs: lineDiffs)
         }
         if let line = targetLine {
-            goToLineOffset = Self.cursorOffset(forLine: line, in: tab.content)
+            goToLineOffset = GoToRequest(offset: Self.cursorOffset(forLine: line, in: tab.content))
         }
     }
 
@@ -516,11 +516,12 @@ struct ContentView: View {
             lineDiffs: lineDiffs,
             isMinimapVisible: isMinimapVisible,
             syntaxHighlightingDisabled: tab.syntaxHighlightingDisabled,
-            initialCursorPosition: goToLineOffset ?? tab.cursorPosition,
+            initialCursorPosition: goToLineOffset?.offset ?? tab.cursorPosition,
             initialScrollOffset: goToLineOffset != nil ? 0 : tab.scrollOffset,
             onStateChange: { cursor, scroll in
                 tabManager.updateEditorState(cursorPosition: cursor, scrollOffset: scroll)
             },
+            goToOffset: goToLineOffset,
             fontSize: FontSizeSettings.shared.fontSize
         )
         .accessibilityIdentifier(AccessibilityID.codeEditor)
