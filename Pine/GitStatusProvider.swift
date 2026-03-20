@@ -176,9 +176,9 @@ final class GitStatusProvider {
     }
 
     /// Async version of setup — runs git detection and initial refresh
-    /// on a background thread, then updates properties on the main thread.
+    /// on a background thread using parallel DispatchGroup, then updates
+    /// properties on the main thread.
     func setupAsync(repositoryURL: URL) async {
-        self.repositoryURL = repositoryURL
         let (isRepo, rootPath, branch, statuses, ignored, branchList) = await withCheckedContinuation { continuation in
             DispatchQueue.global(qos: .userInitiated).async {
                 let result = Self.runGit(["rev-parse", "--show-toplevel"], at: repositoryURL)
@@ -188,14 +188,41 @@ final class GitStatusProvider {
                     return
                 }
                 let rootPath = result.output.trimmingCharacters(in: .whitespacesAndNewlines)
-                let branch = Self.fetchBranch(at: repositoryURL)
-                let statusResult = Self.fetchStatusAndIgnored(at: repositoryURL)
-                let branchList = Self.fetchBranches(at: repositoryURL)
-                continuation.resume(returning: (true, rootPath, branch, statusResult.statuses, statusResult.ignored, branchList))
+
+                // Run all three git operations in parallel
+                let group = DispatchGroup()
+                var branch = ""
+                var statuses: [String: GitFileStatus] = [:]
+                var ignored: Set<String> = []
+                var branchList: [String] = []
+
+                group.enter()
+                DispatchQueue.global(qos: .userInitiated).async {
+                    branch = Self.fetchBranch(at: repositoryURL)
+                    group.leave()
+                }
+
+                group.enter()
+                DispatchQueue.global(qos: .userInitiated).async {
+                    let statusResult = Self.fetchStatusAndIgnored(at: repositoryURL)
+                    statuses = statusResult.statuses
+                    ignored = statusResult.ignored
+                    group.leave()
+                }
+
+                group.enter()
+                DispatchQueue.global(qos: .userInitiated).async {
+                    branchList = Self.fetchBranches(at: repositoryURL)
+                    group.leave()
+                }
+
+                group.wait()
+                continuation.resume(returning: (true, rootPath, branch, statuses, ignored, branchList))
             }
         }
 
         await MainActor.run {
+            self.repositoryURL = repositoryURL
             self.isGitRepository = isRepo
             self.gitRootPath = rootPath
             if isRepo {
@@ -239,7 +266,7 @@ final class GitStatusProvider {
 
     /// Runs git refresh on a background queue and updates properties on the main thread.
     /// Safe to call from the main thread — does not block.
-    /// Uses `async let` for parallel git operations (branch, status, branches).
+    /// Uses `DispatchGroup` for parallel git operations (branch, status, branches).
     /// Supports cooperative cancellation — if the Task is cancelled before
     /// the background work completes, stale results are discarded.
     func refreshAsync() async {

@@ -373,31 +373,14 @@ struct ContentView: View {
         }
         let fileURL = tab.url
         let provider = workspace.gitProvider
-        guard provider.isGitRepository, let repoURL = provider.repositoryURL else {
+        guard provider.isGitRepository else {
             lineDiffs = []
             return
         }
-        let filePath = fileURL.path
-        Task.detached {
-            // Run git commands off the main thread
-            let headCheck = GitStatusProvider.runGit(["rev-parse", "HEAD"], at: repoURL)
-            guard headCheck.exitCode == 0 else {
-                await MainActor.run { lineDiffs = [] }
-                return
-            }
-            let result = GitStatusProvider.runGit(
-                ["diff", "HEAD", "--unified=0", "--", filePath], at: repoURL
-            )
-            let diffs: [GitLineDiff]
-            if result.exitCode == 0, !result.output.isEmpty {
-                diffs = GitStatusProvider.parseDiff(result.output)
-            } else {
-                diffs = []
-            }
-            await MainActor.run {
-                if tabManager.activeTab?.url == fileURL {
-                    lineDiffs = diffs
-                }
+        Task {
+            let diffs = await provider.diffForFileAsync(at: fileURL)
+            if tabManager.activeTab?.url == fileURL {
+                lineDiffs = diffs
             }
         }
     }

@@ -798,12 +798,16 @@ struct GitStatusProviderTests {
 
     @Test("runGit terminates process after timeout")
     func runGitTimeout() {
-        // Use a command that would hang forever (cat with no input)
+        // Use git hash-object --stdin which blocks waiting for input
+        let start = Date()
         let result = GitStatusProvider.runGit(
-            ["sleep", "60"],
+            ["hash-object", "--stdin"],
             at: URL(fileURLWithPath: "/tmp"),
             timeout: 1.0
         )
+        let elapsed = Date().timeIntervalSince(start)
+        // Process should be terminated by timeout, not hang for 30s+
+        #expect(elapsed < 5.0)
         #expect(result.exitCode != 0)
     }
 
