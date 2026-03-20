@@ -65,13 +65,15 @@ struct PineApp: App {
 
                 Divider()
 
-                Button {
-                    guard let pm = focusedProject else { return }
-                    pm.terminal.isTerminalVisible.toggle()
-                } label: {
-                    Label(Strings.toggleTerminal, systemImage: MenuIcons.toggleTerminal)
+                if SandboxEnvironment.isTerminalAvailable {
+                    Button {
+                        guard let pm = focusedProject else { return }
+                        pm.terminal.isTerminalVisible.toggle()
+                    } label: {
+                        Label(Strings.toggleTerminal, systemImage: MenuIcons.toggleTerminal)
+                    }
+                    .keyboardShortcut("`", modifiers: .command)
                 }
-                .keyboardShortcut("`", modifiers: .command)
 
                 Button {
                     guard let pm = focusedProject else { return }
@@ -111,18 +113,20 @@ struct PineApp: App {
                 }
                 .disabled(focusedProject?.workspace.rootURL == nil)
             }
-            // Terminal menu: New Tab (Cmd+T)
-            CommandMenu(Strings.menuTerminal) {
-                Button {
-                    guard let pm = focusedProject else { return }
-                    if !pm.terminal.isTerminalVisible {
-                        pm.terminal.isTerminalVisible = true
+            // Terminal menu: New Tab (Cmd+T) — hidden in sandbox
+            if SandboxEnvironment.isTerminalAvailable {
+                CommandMenu(Strings.menuTerminal) {
+                    Button {
+                        guard let pm = focusedProject else { return }
+                        if !pm.terminal.isTerminalVisible {
+                            pm.terminal.isTerminalVisible = true
+                        }
+                        pm.addTerminalTab()
+                    } label: {
+                        Label(Strings.menuNewTerminalTab, systemImage: MenuIcons.newTerminalTab)
                     }
-                    pm.addTerminalTab()
-                } label: {
-                    Label(Strings.menuNewTerminalTab, systemImage: MenuIcons.newTerminalTab)
+                    .keyboardShortcut("t", modifiers: .command)
                 }
-                .keyboardShortcut("t", modifiers: .command)
             }
             // Edit menu: Toggle Comment, Find in Project
             CommandGroup(after: .pasteboard) {
@@ -852,8 +856,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate {
             }
         }
 
-        // Check for active terminal processes
-        let hasActiveProcesses = registry.openProjects.values.contains { $0.terminal.hasActiveProcesses }
+        // Check for active terminal processes (skip in sandbox — terminal is unavailable)
+        let hasActiveProcesses = SandboxEnvironment.isTerminalAvailable
+            && registry.openProjects.values.contains { $0.terminal.hasActiveProcesses }
         if hasActiveProcesses {
             let alert = NSAlert()
             alert.messageText = Strings.terminalActiveProcessWarningTitle

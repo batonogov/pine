@@ -21,6 +21,7 @@ final class TerminalManager {
     }
 
     func startTerminals(workingDirectory: URL?) {
+        guard SandboxEnvironment.isTerminalAvailable else { return }
         for tab in terminalTabs {
             tab.configure(workingDirectory: workingDirectory)
         }
@@ -30,6 +31,7 @@ final class TerminalManager {
     }
 
     func addTerminalTab(workingDirectory: URL?) {
+        guard SandboxEnvironment.isTerminalAvailable else { return }
         let number = terminalTabs.count + 1
         let tab = TerminalTab(name: Strings.terminalNumberedName(number))
         tab.configure(workingDirectory: workingDirectory)

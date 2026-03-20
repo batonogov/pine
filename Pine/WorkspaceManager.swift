@@ -96,8 +96,11 @@ final class WorkspaceManager {
     ) {
         DispatchQueue.global(qos: .userInitiated).async {
             // Run git setup first so we know which paths are ignored
+            // (skipped in sandbox — Process() is unavailable)
             let bgGit = GitStatusProvider()
-            bgGit.setup(repositoryURL: url)
+            if SandboxEnvironment.isGitAvailable {
+                bgGit.setup(repositoryURL: url)
+            }
 
             let root = FileNode(url: url, projectRoot: url, ignoredPaths: bgGit.ignoredPaths)
             let children = root.children ?? []
@@ -128,6 +131,8 @@ final class WorkspaceManager {
         let root = FileNode(url: url, projectRoot: url, ignoredPaths: gitProvider.ignoredPaths)
         rootNodes = root.children ?? []
         // Cancel any in-flight git refresh to avoid stale data overwriting newer results.
+        // (skipped in sandbox — Process() is unavailable)
+        guard SandboxEnvironment.isGitAvailable else { return }
         gitRefreshTask?.cancel()
         gitRefreshTask = Task { await gitProvider.refreshAsync() }
         // Suppress watcher echoes — we just refreshed, so any watcher event

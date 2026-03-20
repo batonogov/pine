@@ -55,7 +55,7 @@ struct ContentView: View {
             }
         } detail: {
             VStack(spacing: 0) {
-                if terminal.isTerminalVisible {
+                if SandboxEnvironment.isTerminalAvailable && terminal.isTerminalVisible {
                     if terminal.isTerminalMaximized {
                         terminalArea
                             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -182,7 +182,8 @@ struct ContentView: View {
 
     /// Branch subtitle as a plain String to avoid generating a localization key.
     private var branchSubtitle: String {
-        workspace.gitProvider.isGitRepository ? "⎇ \(workspace.gitProvider.currentBranch) ▾" : ""
+        guard SandboxEnvironment.isGitAvailable else { return "" }
+        return workspace.gitProvider.isGitRepository ? "⎇ \(workspace.gitProvider.currentBranch) ▾" : ""
     }
 
     // MARK: - Search
@@ -225,25 +226,27 @@ struct ContentView: View {
             }
         }
 
-        // Restore terminal state
-        if let visible = session.isTerminalVisible {
-            terminal.isTerminalVisible = visible
-        }
-        if let maximized = session.isTerminalMaximized {
-            terminal.isTerminalMaximized = maximized
-        }
-
-        // Create terminal tabs only if PM has a single default (unused) tab
-        // (i.e., fresh PM after restart, not reused from background)
-        if let count = session.terminalTabCount, count > 1,
-           terminal.terminalTabs.count == 1 {
-            for _ in 1..<count {
-                terminal.addTerminalTab(workingDirectory: rootURL)
+        // Restore terminal state (skip in sandbox — terminal is unavailable)
+        if SandboxEnvironment.isTerminalAvailable {
+            if let visible = session.isTerminalVisible {
+                terminal.isTerminalVisible = visible
             }
-        }
-        if let activeIndex = session.activeTerminalIndex,
-           activeIndex < terminal.terminalTabs.count {
-            terminal.activeTerminalID = terminal.terminalTabs[activeIndex].id
+            if let maximized = session.isTerminalMaximized {
+                terminal.isTerminalMaximized = maximized
+            }
+
+            // Create terminal tabs only if PM has a single default (unused) tab
+            // (i.e., fresh PM after restart, not reused from background)
+            if let count = session.terminalTabCount, count > 1,
+               terminal.terminalTabs.count == 1 {
+                for _ in 1..<count {
+                    terminal.addTerminalTab(workingDirectory: rootURL)
+                }
+            }
+            if let activeIndex = session.activeTerminalIndex,
+               activeIndex < terminal.terminalTabs.count {
+                terminal.activeTerminalID = terminal.terminalTabs[activeIndex].id
+            }
         }
     }
 
@@ -316,6 +319,10 @@ struct ContentView: View {
     /// Refreshes cached line diffs for the active tab.
     /// Runs git diff on a background thread to avoid blocking the UI.
     private func refreshLineDiffs() {
+        guard SandboxEnvironment.isGitAvailable else {
+            lineDiffs = []
+            return
+        }
         guard let tab = tabManager.activeTab else {
             lineDiffs = []
             return
@@ -1279,25 +1286,27 @@ struct StatusBarView: View {
 
             Spacer()
 
-            // Кнопка показа/скрытия терминала
-            Button {
-                withAnimation { terminal.isTerminalVisible.toggle() }
-            } label: {
-                HStack(spacing: 3) {
-                    Image(systemName: terminal.isTerminalVisible
-                          ? "chevron.down" : "chevron.up")
-                        .font(.system(size: 9, weight: .semibold))
-                    Image(systemName: "terminal")
-                        .font(.system(size: 10))
-                    Text(Strings.terminalLabel)
-                        .font(.system(size: 11))
+            // Кнопка показа/скрытия терминала (скрыта в sandbox)
+            if SandboxEnvironment.isTerminalAvailable {
+                Button {
+                    withAnimation { terminal.isTerminalVisible.toggle() }
+                } label: {
+                    HStack(spacing: 3) {
+                        Image(systemName: terminal.isTerminalVisible
+                              ? "chevron.down" : "chevron.up")
+                            .font(.system(size: 9, weight: .semibold))
+                        Image(systemName: "terminal")
+                            .font(.system(size: 10))
+                        Text(Strings.terminalLabel)
+                            .font(.system(size: 11))
+                    }
+                    .foregroundStyle(terminal.isTerminalVisible ? .primary : .secondary)
                 }
-                .foregroundStyle(terminal.isTerminalVisible ? .primary : .secondary)
+                .buttonStyle(.plain)
+                .help(terminal.isTerminalVisible ? Strings.hideTerminalShortcut : Strings.showTerminalShortcut)
+                .accessibilityIdentifier(AccessibilityID.terminalToggleButton)
+                .accessibilityAddTraits(.isButton)
             }
-            .buttonStyle(.plain)
-            .help(terminal.isTerminalVisible ? Strings.hideTerminalShortcut : Strings.showTerminalShortcut)
-            .accessibilityIdentifier(AccessibilityID.terminalToggleButton)
-            .accessibilityAddTraits(.isButton)
         }
         .padding(.leading, 8)
         .padding(.trailing, 14)

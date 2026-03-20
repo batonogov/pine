@@ -245,6 +245,8 @@ final class ProjectSearchProvider {
 
     /// Synchronous implementation — returns absolute paths of ignored directories.
     static func gitIgnoredDirectoriesSync(rootURL: URL) -> Set<String> {
+        // Process() is unavailable in App Sandbox
+        guard SandboxEnvironment.isGitAvailable else { return [] }
         let gitDir = rootURL.appendingPathComponent(".git")
         guard FileManager.default.fileExists(atPath: gitDir.path) else { return [] }
 
