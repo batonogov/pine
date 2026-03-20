@@ -81,11 +81,13 @@ final class TerminalTab: Identifiable, Hashable {
     fileprivate(set) var isTerminated = false
 
     private let delegate: TerminalTabDelegate
+    private let shellSettings: ShellSettings
     private var processStarted = false
     private var workingDirectory: URL?
 
-    init(name: String) {
+    init(name: String, shellSettings: ShellSettings = .shared) {
         self.name = name
+        self.shellSettings = shellSettings
         self.terminalView = LocalProcessTerminalView(frame: NSRect(x: 0, y: 0, width: 800, height: 300))
         self.delegate = TerminalTabDelegate()
         self.delegate.tab = self
@@ -139,8 +141,8 @@ final class TerminalTab: Identifiable, Hashable {
         let dir = workingDirectory?.path ?? (env["HOME"] ?? "/")
 
         terminalView.startProcess(
-            executable: "/bin/zsh",
-            args: ["--login"],
+            executable: shellSettings.resolvedShellPath,
+            args: shellSettings.shellArgs,
             environment: envStrings,
             execName: nil,
             currentDirectory: dir
