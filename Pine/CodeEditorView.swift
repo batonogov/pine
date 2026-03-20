@@ -1125,12 +1125,12 @@ struct CodeEditorView: NSViewRepresentable {
                   let textView = sv.documentView as? NSTextView,
                   let layoutManager = textView.layoutManager else { return }
 
+            let fullRange = NSRange(location: 0, length: (textView.string as NSString).length)
             lineNumberView?.foldState = parent.foldState
-            // Invalidate layout so the delegate methods re-evaluate which lines are hidden
-            layoutManager.invalidateLayout(
-                forCharacterRange: NSRange(location: 0, length: (textView.string as NSString).length),
-                actualCharacterRange: nil
-            )
+            // Invalidate glyphs so shouldGenerateGlyphs re-evaluates hidden lines,
+            // then invalidate layout so shouldSetLineFragmentRect collapses heights.
+            layoutManager.invalidateGlyphs(forCharacterRange: fullRange, changeInLength: 0, actualCharacterRange: nil)
+            layoutManager.invalidateLayout(forCharacterRange: fullRange, actualCharacterRange: nil)
             textView.needsDisplay = true
             lineNumberView?.needsDisplay = true
             minimapView?.needsDisplay = true
@@ -1141,15 +1141,67 @@ struct CodeEditorView: NSViewRepresentable {
         // swiftlint:disable:next function_parameter_count
         func layoutManager(
             _ layoutManager: NSLayoutManager,
+            shouldGenerateGlyphs glyphs: UnsafePointer<CGGlyph>,
+            properties props: UnsafePointer<NSLayoutManager.GlyphProperty>,
+            characterIndexes charIndexes: UnsafePointer<Int>,
+            font aFont: NSFont,
+            forGlyphRange glyphRange: NSRange
+        ) -> Int {
+            guard !parent.foldState.foldedRanges.isEmpty,
+                  let cache = lineStartsCache else { return 0 }
+
+            let count = glyphRange.length
+            let modifiedProps = UnsafeMutablePointer<NSLayoutManager.GlyphProperty>.allocate(capacity: count)
+            defer { modifiedProps.deallocate() }
+
+            // Single pass: cache hidden state per charIndex to avoid redundant lookups
+            // (adjacent glyphs often share the same charIndex or line).
+            var hasHidden = false
+            var prevCharIndex = -1
+            var prevHidden = false
+
+            for i in 0..<count {
+                let charIndex = charIndexes[i]
+                let isHidden: Bool
+                if charIndex == prevCharIndex {
+                    isHidden = prevHidden
+                } else {
+                    let line = cache.lineNumber(at: charIndex)
+                    isHidden = parent.foldState.isLineHidden(line)
+                    prevCharIndex = charIndex
+                    prevHidden = isHidden
+                }
+                if isHidden {
+                    modifiedProps[i] = .null
+                    hasHidden = true
+                } else {
+                    modifiedProps[i] = props[i]
+                }
+            }
+
+            guard hasHidden else { return 0 }
+
+            layoutManager.setGlyphs(
+                glyphs, properties: modifiedProps,
+                characterIndexes: charIndexes, font: aFont,
+                forGlyphRange: glyphRange
+            )
+            return count
+        }
+
+        // swiftlint:disable:next function_parameter_count
+        func layoutManager(
+            _ layoutManager: NSLayoutManager,
             shouldSetLineFragmentRect lineFragmentRect: UnsafeMutablePointer<NSRect>,
             lineFragmentUsedRect: UnsafeMutablePointer<NSRect>,
             baselineOffset: UnsafeMutablePointer<CGFloat>,
             in textContainer: NSTextContainer,
             forGlyphRange glyphRange: NSRange
         ) -> Bool {
+            guard !parent.foldState.foldedRanges.isEmpty else { return false }
             let charRange = layoutManager.characterRange(forGlyphRange: glyphRange, actualGlyphRange: nil)
 
-            // Use cached line starts for O(log n) lookup instead of O(n) linear scan
+            // Use cached line starts for O(log n) lookup
             guard let cache = lineStartsCache else { return false }
             let line = cache.lineNumber(at: charRange.location)
 

@@ -154,4 +154,45 @@ struct FoldStateTests {
         let state = FoldState()
         #expect(state.hiddenLineCount(for: makeFoldable(start: 1, end: 5)) == 3)
     }
+
+    // MARK: - Adjacent folds
+
+    @Test func twoAdjacentFoldsHideCorrectLines() {
+        var state = FoldState()
+        // First block: lines 1-4, second block: lines 5-8
+        let first = makeFoldable(start: 1, end: 4)
+        let second = makeFoldable(start: 5, end: 8)
+        state.fold(first)
+        state.fold(second)
+
+        // First fold hides lines 2-3
+        #expect(!state.isLineHidden(1))
+        #expect(state.isLineHidden(2))
+        #expect(state.isLineHidden(3))
+        #expect(!state.isLineHidden(4))
+
+        // Second fold hides lines 6-7
+        #expect(!state.isLineHidden(5))
+        #expect(state.isLineHidden(6))
+        #expect(state.isLineHidden(7))
+        #expect(!state.isLineHidden(8))
+
+        // Line 9+ not hidden
+        #expect(!state.isLineHidden(9))
+    }
+
+    @Test func foldSecondAfterFirst() {
+        var state = FoldState()
+        let first = makeFoldable(start: 1, end: 4)
+        let second = makeFoldable(start: 5, end: 8)
+        state.fold(first)
+
+        // After folding first, second should still be foldable
+        #expect(!state.isFolded(second))
+        #expect(!state.isLineHidden(5))
+
+        state.fold(second)
+        #expect(state.isFolded(second))
+        #expect(state.isLineHidden(6))
+    }
 }

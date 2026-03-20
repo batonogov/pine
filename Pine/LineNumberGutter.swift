@@ -252,17 +252,21 @@ final class LineNumberView: NSView {
         if visibleGlyphRange.location == NSNotFound { return }
 
         // ── Считаем номер первой видимой строки ──
-        // (количество \n до первого видимого символа + 1)
         let firstVisibleCharIndex = layoutManager.characterIndexForGlyph(
             at: visibleGlyphRange.location
         )
-        var lineNumber = 1
-        if firstVisibleCharIndex > 0 {
-            var count = 0
-            for i in 0..<firstVisibleCharIndex where source.character(at: i) == 0x0A {
-                count += 1
+        var lineNumber: Int
+        if let cache = lineStartsCache {
+            lineNumber = cache.lineNumber(at: firstVisibleCharIndex)
+        } else {
+            lineNumber = 1
+            if firstVisibleCharIndex > 0 {
+                var count = 0
+                for i in 0..<firstVisibleCharIndex where source.character(at: i) == 0x0A {
+                    count += 1
+                }
+                lineNumber = count + 1
             }
-            lineNumber = count + 1
         }
 
         // ── Рисуем номера видимых строк через enumerateLineFragments ──
@@ -270,6 +274,7 @@ final class LineNumberView: NSView {
         var previousLineCharIndex = -1
         let diffBarWidth: CGFloat = 3
         let showFoldIndicators = isMouseInside && !foldStartMap.isEmpty
+        let hasFolds = !foldState.foldedRanges.isEmpty
 
         layoutManager.enumerateLineFragments(
             forGlyphRange: visibleGlyphRange
@@ -291,6 +296,13 @@ final class LineNumberView: NSView {
             }
 
             if isNewLogicalLine {
+                // Skip hidden lines (inside folded regions) — only increment counter
+                if hasFolds && self.foldState.isLineHidden(lineNumber) {
+                    lineNumber += 1
+                    previousLineCharIndex = charIndex
+                    return
+                }
+
                 // Y: позиция фрагмента в textContainer + сдвиг контейнера − скролл
                 let y = lineRect.origin.y + originY - visibleRect.origin.y
 
