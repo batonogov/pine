@@ -359,8 +359,8 @@ private struct WindowCloseInterceptor: NSViewRepresentable {
     func makeNSView(context: Context) -> InterceptorView {
         let view = InterceptorView()
         let coordinator = context.coordinator
-        view.onMovedToWindow = { window in
-            coordinator.installDelegate(
+        view.onMovedToWindow = { [weak coordinator] window in
+            coordinator?.installDelegate(
                 on: window,
                 projectManager: projectManager,
                 registry: registry,
@@ -429,7 +429,7 @@ private struct WindowCloseInterceptor: NSViewRepresentable {
             window.delegate = delegate
             // Fallback: observe willCloseNotification in case SwiftUI
             // replaces the window delegate after our installation (#138).
-            delegate.observeWindowClose(for: window)
+            delegate.observeWindowClose(window)
         }
     }
 
@@ -472,9 +472,8 @@ class CloseDelegate: NSObject, NSWindowDelegate {
     }
 
     /// Installs a NotificationCenter observer as a fallback for windowWillClose.
-    /// Call after setting window.delegate — if SwiftUI later replaces the delegate,
-    /// the notification still fires.
-    func observeWindowClose(for window: NSWindow) {
+    /// If SwiftUI later replaces the window delegate, the notification still fires.
+    func observeWindowClose(_ window: NSWindow) {
         closeObserver = NotificationCenter.default.addObserver(
             forName: NSWindow.willCloseNotification,
             object: window,
