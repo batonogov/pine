@@ -45,6 +45,48 @@ final class GutterTextView: NSTextView {
         }
     }
 
+    /// Blame lookup: line number → GitBlameLine (O(1) access).
+    private var blameLookup: [Int: GitBlameLine] = [:]
+    /// Previous blame data count — avoids rebuilding the dictionary on every updateNSView.
+    private var blameLineCount: Int = -1
+    var isBlameVisible: Bool = false
+
+    /// Sets blame data and rebuilds O(1) lookup dictionary.
+    func setBlameLines(_ lines: [GitBlameLine]) {
+        guard lines.count != blameLineCount || lines.first != blameLookup[lines.first?.finalLine ?? 0] else {
+            return
+        }
+        blameLineCount = lines.count
+        blameLookup = Dictionary(lines.map { ($0.finalLine, $0) }, uniquingKeysWith: { _, last in last })
+        if isBlameVisible { display() }
+    }
+
+    private static let blameFont: NSFont = {
+        let descriptor = NSFont.systemFont(ofSize: 12, weight: .regular)
+            .fontDescriptor.withSymbolicTraits(.italic)
+        return NSFont(descriptor: descriptor, size: 12) ?? NSFont.systemFont(ofSize: 12)
+    }()
+    private static let blameColor = NSColor(name: nil) { appearance in
+        if appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua {
+            return NSColor.white.withAlphaComponent(0.3)
+        } else {
+            return NSColor.black.withAlphaComponent(0.3)
+        }
+    }
+
+    private static let blameIcon: NSImage? = {
+        let config = NSImage.SymbolConfiguration(pointSize: 11, weight: .light)
+        return NSImage(systemSymbolName: "arrow.triangle.branch", accessibilityDescription: nil)?
+            .withSymbolConfiguration(config)?
+            .tinted(with: blameColor)
+    }()
+
+    private static let relativeDateFormatter: RelativeDateTimeFormatter = {
+        let f = RelativeDateTimeFormatter()
+        f.unitsStyle = .full
+        return f
+    }()
+
     override func drawBackground(in rect: NSRect) {
         super.drawBackground(in: rect)
 
@@ -52,23 +94,100 @@ final class GutterTextView: NSTextView {
               textContainer != nil else { return }
 
         let cursorRange = selectedRange()
-        // Подсвечиваем только когда нет выделения (просто курсор)
         guard cursorRange.length == 0 else { return }
 
         let glyphIndex = layoutManager.glyphIndexForCharacter(at: cursorRange.location)
         var lineRect = layoutManager.lineFragmentRect(forGlyphAt: glyphIndex, effectiveRange: nil)
 
-        // Растягиваем на всю ширину view
         lineRect.origin.x = 0
         lineRect.size.width = bounds.width
-        // Учитываем textContainerOrigin
         lineRect.origin.y += textContainerOrigin.y
 
         currentLineColor.setFill()
         lineRect.fill()
+
+        // ── Inline blame annotation ──
+        if isBlameVisible, !blameLookup.isEmpty {
+            drawInlineBlame(lineRect: lineRect, layoutManager: layoutManager)
+        }
+    }
+
+    /// Draws inline blame annotation after the line content on the cursor line.
+    /// Computes line number directly from selectedRange() to stay in sync with
+    /// the actual selection state during each draw call (no caching — drawBackground
+    /// can be called multiple times per display cycle with different selection states).
+    private func drawInlineBlame(lineRect: NSRect, layoutManager: NSLayoutManager) {
+        let source = string as NSString
+        guard source.length > 0, let container = textContainer else { return }
+
+        let cursorLocation = min(selectedRange().location, source.length)
+
+        // Compute 1-based line number from cursor position
+        var lineNumber = 1
+        for i in 0..<cursorLocation where source.character(at: i) == 0x0A {
+            lineNumber += 1
+        }
+
+        guard let blame = blameLookup[lineNumber] else { return }
+
+        // Find end of line content
+        let lineRange = source.lineRange(for: NSRange(location: cursorLocation, length: 0))
+        var lineEnd = NSMaxRange(lineRange)
+        if lineEnd > lineRange.location && lineEnd <= source.length
+            && source.character(at: lineEnd - 1) == 0x0A {
+            lineEnd -= 1
+        }
+
+        // Get x position after the last character
+        let glyphIndex = layoutManager.glyphIndexForCharacter(at: max(lineEnd, lineRange.location))
+        let lineEndX: CGFloat
+        if lineEnd > lineRange.location {
+            let charRect = layoutManager.boundingRect(
+                forGlyphRange: NSRange(location: glyphIndex, length: 0),
+                in: container
+            )
+            lineEndX = charRect.maxX + textContainerOrigin.x
+        } else {
+            let usedRect = layoutManager.lineFragmentUsedRect(forGlyphAt: glyphIndex, effectiveRange: nil)
+            lineEndX = usedRect.origin.x + textContainerOrigin.x
+        }
+
+        let text: String
+        if blame.isUncommitted {
+            text = "Uncommitted"
+        } else {
+            let relativeDate = Self.relativeDateFormatter.localizedString(
+                for: blame.authorTime, relativeTo: Date()
+            )
+            text = "\(blame.author), \(relativeDate)"
+        }
+
+        let attrs: [NSAttributedString.Key: Any] = [
+            .font: Self.blameFont,
+            .foregroundColor: Self.blameColor
+        ]
+
+        let minBlameX = textContainerOrigin.x + gutterInset + 250
+        var drawX = max(lineEndX + 24, minBlameX)
+        let drawY = lineRect.origin.y + (lineRect.height - Self.blameFont.pointSize) / 2
+
+        // Git branch icon (cached to avoid copy+tint on every draw)
+        if let icon = Self.blameIcon {
+            let iconY = lineRect.origin.y + (lineRect.height - icon.size.height) / 2
+            icon.draw(
+                in: NSRect(x: drawX, y: iconY, width: icon.size.width, height: icon.size.height),
+                from: .zero, operation: .sourceOver, fraction: 1
+            )
+            drawX += icon.size.width + 4
+        }
+
+        (text as NSString).draw(at: NSPoint(x: drawX, y: drawY), withAttributes: attrs)
     }
 
     override func setSelectedRanges(_ ranges: [NSValue], affinity: NSSelectionAffinity, stillSelecting: Bool) {
+        // Mark full bounds dirty BEFORE super so its drawing pass erases the
+        // old blame annotation in a single frame (no flicker).
+        if isBlameVisible { setNeedsDisplay(bounds) }
         super.setSelectedRanges(ranges, affinity: affinity, stillSelecting: stillSelecting)
         needsDisplay = true
     }
@@ -222,6 +341,10 @@ struct CodeEditorView: NSViewRepresentable {
     var language: String
     var fileName: String?
     var lineDiffs: [GitLineDiff] = []
+    /// Whether inline blame annotation is visible on the cursor line.
+    var isBlameVisible: Bool = false
+    /// Blame data for the current file.
+    var blameLines: [GitBlameLine] = []
     /// Binding to the fold state for the active tab.
     @Binding var foldState: FoldState
     /// Whether the minimap panel is visible.
@@ -317,6 +440,8 @@ struct CodeEditorView: NSViewRepresentable {
 
         textView.fileExtension = language
         textView.exactFileName = fileName
+        textView.setBlameLines(blameLines)
+        textView.isBlameVisible = isBlameVisible
         textView.delegate = context.coordinator
         scrollView.documentView = textView
 
@@ -432,11 +557,16 @@ struct CodeEditorView: NSViewRepresentable {
         editorContainer.minimapWidth = isMinimapVisible ? MinimapView.defaultWidth : 0
         editorContainer.needsLayout = true
 
-        // Keep GutterTextView's language info in sync for toggle comment
+        // Keep GutterTextView's language info and blame data in sync
         if let sv = context.coordinator.scrollView,
            let gutterView = sv.documentView as? GutterTextView {
             gutterView.fileExtension = language
             gutterView.exactFileName = fileName
+            gutterView.setBlameLines(blameLines)
+            if gutterView.isBlameVisible != isBlameVisible {
+                gutterView.isBlameVisible = isBlameVisible
+                gutterView.display()
+            }
         }
 
         context.coordinator.updateContentIfNeeded(
@@ -1120,5 +1250,19 @@ struct CodeEditorView: NSViewRepresentable {
             fileName: fileName,
             font: editorFont
         )
+    }
+}
+
+// MARK: - NSImage tinting
+
+private extension NSImage {
+    func tinted(with color: NSColor) -> NSImage {
+        let image = copy() as! NSImage // swiftlint:disable:this force_cast
+        image.lockFocus()
+        color.set()
+        NSRect(origin: .zero, size: size).fill(using: .sourceAtop)
+        image.unlockFocus()
+        image.isTemplate = false
+        return image
     }
 }

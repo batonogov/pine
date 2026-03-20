@@ -30,6 +30,7 @@ enum MenuIcons {
     static let toggleTerminal = "terminal"
     static let togglePreview = "doc.richtext"
     static let toggleMinimap = "sidebar.right"
+    static let toggleBlame = "person.text.rectangle"
     static let revealFileInFinder = "doc.viewfinder"
     static let revealProjectInFinder = "arrow.right.circle"
 

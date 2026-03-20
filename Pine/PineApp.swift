@@ -90,6 +90,14 @@ struct PineApp: App {
                 }
                 .keyboardShortcut("m", modifiers: [.command, .shift])
 
+                Button {
+                    let key = BlameConstants.storageKey
+                    UserDefaults.standard.set(!UserDefaults.standard.bool(forKey: key), forKey: key)
+                } label: {
+                    Label(Strings.menuToggleBlame, systemImage: MenuIcons.toggleBlame)
+                }
+                .keyboardShortcut("b", modifiers: [.command, .control])
+
                 Divider()
 
                 Button {
@@ -737,6 +745,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate {
         // Must be set before applicationDidFinishLaunching — the system runs
         // window restoration between willFinishLaunching and didFinishLaunching.
         UserDefaults.standard.set(false, forKey: "NSQuitAlwaysKeepsWindows")
+        // Default blame to ON for first launch
+        if UserDefaults.standard.object(forKey: BlameConstants.storageKey) == nil {
+            UserDefaults.standard.set(true, forKey: BlameConstants.storageKey)
+        }
 
         // UI testing support: clear persisted state for a clean launch
         if CommandLine.arguments.contains("--reset-state") {
