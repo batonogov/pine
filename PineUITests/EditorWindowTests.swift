@@ -213,12 +213,55 @@ final class EditorWindowTests: PineUITestCase {
 
     // MARK: - P1: Session restore highlights active file in sidebar
 
-    // TODO: (#138) Fix flaky on CI — CloseDelegate.windowWillClose doesn't fire in XCUITest,
-    // leaving stale ProjectManager in registry. WelcomeView cleanup added but needs
-    // CI verification.
-    // func testSidebarHighlightsActiveFileAfterSessionRestore() throws {
-    //     ...
-    // }
+    func testSidebarHighlightsActiveFileAfterSessionRestore() throws {
+        launchWithProject(projectURL)
+
+        let sidebar = app.outlines["sidebar"]
+        XCTAssertTrue(waitForExistence(sidebar, timeout: 10))
+
+        // Open a file to create a session
+        let mainFile = app.staticTexts["fileNode_main.swift"]
+        XCTAssertTrue(waitForExistence(mainFile, timeout: 5))
+        mainFile.click()
+
+        let mainTab = editorTab("main.swift")
+        XCTAssertTrue(waitForExistence(mainTab, timeout: 5))
+
+        // Give SwiftUI time to trigger onChange → saveSession
+        sleep(1)
+
+        // Close the project window → Welcome appears
+        let closeButton = app.windows.firstMatch.buttons["_XCUI:CloseWindow"].firstMatch
+        XCTAssertTrue(closeButton.exists)
+        closeButton.click()
+
+        let welcomeWindow = app.windows["welcome"]
+        XCTAssertTrue(waitForExistence(welcomeWindow, timeout: 10), "Welcome should appear")
+
+        // Reopen the same project from recent projects list
+        let projectName = projectURL.lastPathComponent
+        let recentProject = app.buttons["welcomeRecentProject_\(projectName)"]
+        XCTAssertTrue(waitForExistence(recentProject, timeout: 5), "Project should be in recents")
+        recentProject.click()
+
+        // Wait for project window to appear
+        let sidebarAfterRestore = app.outlines["sidebar"]
+        XCTAssertTrue(waitForExistence(sidebarAfterRestore, timeout: 15), "Project should reopen")
+
+        // Tab should be restored from session
+        let restoredTab = editorTab("main.swift")
+        XCTAssertTrue(waitForExistence(restoredTab, timeout: 15), "Tab should be restored from session")
+
+        // Wait for async file tree load + syncSidebarSelection via onChange(of: rootNodes)
+        let mainRow = sidebarAfterRestore.cells.containing(
+            .staticText, identifier: "fileNode_main.swift"
+        ).firstMatch
+        XCTAssertTrue(waitForExistence(mainRow, timeout: 15), "main.swift row should exist in sidebar")
+
+        let selectedPredicate = NSPredicate(format: "isSelected == true")
+        expectation(for: selectedPredicate, evaluatedWith: mainRow, handler: nil)
+        waitForExpectations(timeout: 10)
+    }
 
     // MARK: - P1: Unrecognized file extensions open as text, not preview
 
