@@ -50,4 +50,5 @@ enum AccessibilityID {
     // MARK: - Status bar
     static let statusBar = "statusBar"
     static let terminalToggleButton = "terminalToggleButton"
+    static let encodingMenu = "encodingMenu"
 }
