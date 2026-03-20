@@ -342,6 +342,121 @@ struct SessionStateTests {
 
     // MARK: - Corrupt data
 
+    // MARK: - Project-root scoping on load (issue #170)
+
+    @Test func existingFileURLsFiltersOutsideProjectRoot() throws {
+        let tempDir = try makeTempDirectory()
+        defer { cleanup(tempDir) }
+
+        let insideFile = tempDir.appendingPathComponent("inside.swift")
+        FileManager.default.createFile(atPath: insideFile.path, contents: nil)
+
+        let outsideDir = try makeTempDirectory()
+        defer { cleanup(outsideDir) }
+        let outsideFile = outsideDir.appendingPathComponent("outside.swift")
+        FileManager.default.createFile(atPath: outsideFile.path, contents: nil)
+
+        let state = SessionState(
+            projectPath: tempDir.path,
+            openFilePaths: [insideFile.path, outsideFile.path]
+        )
+
+        #expect(state.existingFileURLs.count == 1)
+        #expect(state.existingFileURLs[0].path == insideFile.path)
+    }
+
+    @Test func activeFileURLReturnsNilWhenOutsideProjectRoot() throws {
+        let tempDir = try makeTempDirectory()
+        defer { cleanup(tempDir) }
+
+        let outsideDir = try makeTempDirectory()
+        defer { cleanup(outsideDir) }
+        let outsideFile = outsideDir.appendingPathComponent("outside.swift")
+        FileManager.default.createFile(atPath: outsideFile.path, contents: nil)
+
+        let state = SessionState(
+            projectPath: tempDir.path,
+            openFilePaths: [],
+            activeFilePath: outsideFile.path
+        )
+
+        #expect(state.activeFileURL == nil)
+    }
+
+    @Test func previewModesFilteredToProjectRootOnLoad() throws {
+        let tempDir = try makeTempDirectory()
+        defer { cleanup(tempDir) }
+
+        let outsideDir = try makeTempDirectory()
+        defer { cleanup(outsideDir) }
+
+        let insideFile = tempDir.appendingPathComponent("readme.md")
+        let outsideFile = outsideDir.appendingPathComponent("notes.md")
+        FileManager.default.createFile(atPath: insideFile.path, contents: nil)
+        FileManager.default.createFile(atPath: outsideFile.path, contents: nil)
+
+        let state = SessionState(
+            projectPath: tempDir.path,
+            openFilePaths: [insideFile.path],
+            previewModes: [insideFile.path: "split", outsideFile.path: "preview"]
+        )
+
+        #expect(state.existingPreviewModes?.count == 1)
+        #expect(state.existingPreviewModes?[insideFile.path] == "split")
+    }
+
+    @Test func previewModesFilteredWhenFileDeleted() throws {
+        let tempDir = try makeTempDirectory()
+        defer { cleanup(tempDir) }
+
+        let deletedFile = tempDir.appendingPathComponent("gone.md")
+
+        let state = SessionState(
+            projectPath: tempDir.path,
+            openFilePaths: [],
+            previewModes: [deletedFile.path: "split"]
+        )
+
+        #expect(state.existingPreviewModes == nil)
+    }
+
+    @Test func highlightingDisabledPathsFilteredToProjectRootOnLoad() throws {
+        let tempDir = try makeTempDirectory()
+        defer { cleanup(tempDir) }
+
+        let outsideDir = try makeTempDirectory()
+        defer { cleanup(outsideDir) }
+
+        let insideFile = tempDir.appendingPathComponent("big.swift")
+        let outsideFile = outsideDir.appendingPathComponent("huge.swift")
+        FileManager.default.createFile(atPath: insideFile.path, contents: nil)
+        FileManager.default.createFile(atPath: outsideFile.path, contents: nil)
+
+        let state = SessionState(
+            projectPath: tempDir.path,
+            openFilePaths: [insideFile.path],
+            highlightingDisabledPaths: [insideFile.path, outsideFile.path]
+        )
+
+        #expect(state.existingHighlightingDisabledPaths?.count == 1)
+        #expect(state.existingHighlightingDisabledPaths?.first == insideFile.path)
+    }
+
+    @Test func highlightingDisabledPathsFilteredWhenFileDeleted() throws {
+        let tempDir = try makeTempDirectory()
+        defer { cleanup(tempDir) }
+
+        let deletedFile = tempDir.appendingPathComponent("gone.swift")
+
+        let state = SessionState(
+            projectPath: tempDir.path,
+            openFilePaths: [],
+            highlightingDisabledPaths: [deletedFile.path]
+        )
+
+        #expect(state.existingHighlightingDisabledPaths == nil)
+    }
+
     @Test func loadReturnsNilOnCorruptData() throws {
         let tempDir = try makeTempDirectory()
         defer { cleanup(tempDir) }

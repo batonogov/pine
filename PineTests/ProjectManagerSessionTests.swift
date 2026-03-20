@@ -166,6 +166,94 @@ struct ProjectManagerSessionTests {
         #expect(pm2.tabManager.tabs.map(\.url) == files)
     }
 
+    // MARK: - Outside-root filtering (issue #170)
+
+    @Test func saveSessionFiltersActiveFileOutsideProject() throws {
+        let (dir, files) = try makeTempProject()
+        defer { cleanup(dir) }
+
+        let outsideDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("PineTests-outside-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: outsideDir, withIntermediateDirectories: true)
+        defer { cleanup(outsideDir) }
+        let outsideFile = outsideDir.appendingPathComponent("external.swift")
+        try "external".write(to: outsideFile, atomically: true, encoding: .utf8)
+
+        let pm = ProjectManager()
+        pm.workspace.loadDirectory(url: dir)
+
+        pm.tabManager.openTab(url: files[0])
+        pm.tabManager.openTab(url: outsideFile)
+        // outsideFile is now active (last opened)
+        pm.saveSession()
+
+        let canonical = dir.resolvingSymlinksInPath()
+        let session = SessionState.load(for: canonical)
+        // Active file outside project root should be cleared
+        #expect(session?.activeFilePath == nil)
+    }
+
+    @Test func saveSessionFiltersPreviewModesOutsideProject() throws {
+        let (dir, _) = try makeTempProject()
+        defer { cleanup(dir) }
+
+        let outsideDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("PineTests-outside-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: outsideDir, withIntermediateDirectories: true)
+        defer { cleanup(outsideDir) }
+
+        let insideMd = dir.appendingPathComponent("readme.md")
+        let outsideMd = outsideDir.appendingPathComponent("notes.md")
+        try "# Inside".write(to: insideMd, atomically: true, encoding: .utf8)
+        try "# Outside".write(to: outsideMd, atomically: true, encoding: .utf8)
+
+        let pm = ProjectManager()
+        pm.workspace.loadDirectory(url: dir)
+
+        pm.tabManager.openTab(url: insideMd)
+        pm.tabManager.openTab(url: outsideMd)
+        // Set non-default preview mode on both
+        for index in pm.tabManager.tabs.indices where pm.tabManager.tabs[index].isMarkdownFile {
+            pm.tabManager.tabs[index].previewMode = .split
+        }
+        pm.saveSession()
+
+        let canonical = dir.resolvingSymlinksInPath()
+        let session = SessionState.load(for: canonical)
+        // Only inside markdown should have preview mode persisted
+        #expect(session?.previewModes?.count == 1)
+        #expect(session?.previewModes?[insideMd.path] == "split")
+        #expect(session?.previewModes?[outsideMd.path] == nil)
+    }
+
+    @Test func saveSessionFiltersHighlightingDisabledOutsideProject() throws {
+        let (dir, files) = try makeTempProject()
+        defer { cleanup(dir) }
+
+        let outsideDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("PineTests-outside-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: outsideDir, withIntermediateDirectories: true)
+        defer { cleanup(outsideDir) }
+        let outsideFile = outsideDir.appendingPathComponent("big.swift")
+        try "big".write(to: outsideFile, atomically: true, encoding: .utf8)
+
+        let pm = ProjectManager()
+        pm.workspace.loadDirectory(url: dir)
+
+        pm.tabManager.openTab(url: files[0])
+        pm.tabManager.openTab(url: outsideFile)
+        // Disable highlighting on both
+        pm.tabManager.tabs[0].syntaxHighlightingDisabled = true
+        pm.tabManager.tabs[1].syntaxHighlightingDisabled = true
+        pm.saveSession()
+
+        let canonical = dir.resolvingSymlinksInPath()
+        let session = SessionState.load(for: canonical)
+        // Only inside file should be persisted
+        #expect(session?.highlightingDisabledPaths?.count == 1)
+        #expect(session?.highlightingDisabledPaths?.first == files[0].path)
+    }
+
     @Test func saveSessionPersistsHighlightingDisabled() throws {
         let (dir, files) = try makeTempProject()
         defer { cleanup(dir) }
