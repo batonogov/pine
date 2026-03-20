@@ -41,9 +41,10 @@ jobs:
       - name: Run SwiftLint
         run: swiftlint --strict
 
-  test:
-    name: Build & Test
+  unit-tests:
+    name: Unit Tests
     runs-on: macos-26
+    needs: lint
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
 
@@ -54,20 +55,36 @@ jobs:
           sudo xcode-select -s "$XCODE_PATH/Contents/Developer"
           xcodebuild -version
 
-      - name: Build
-        run: |
-          xcodebuild build \
-            -project Pine.xcodeproj \
-            -scheme Pine \
-            -destination "platform=macOS" \
-            CODE_SIGN_IDENTITY=- \
-            CODE_SIGNING_ALLOWED=NO
-
-      - name: Test
+      - name: Unit Tests
         run: |
           xcodebuild test \
             -project Pine.xcodeproj \
             -scheme Pine \
             -destination "platform=macOS" \
+            -only-testing:PineTests \
+            CODE_SIGN_IDENTITY=- \
+            CODE_SIGNING_ALLOWED=NO
+
+  ui-tests:
+    name: UI Tests
+    runs-on: macos-26
+    needs: lint
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+
+      - name: Select Xcode
+        run: |
+          XCODE_PATH=$(ls -d /Applications/Xcode*.app 2>/dev/null | sort -V | tail -1)
+          echo "Using Xcode at: $XCODE_PATH"
+          sudo xcode-select -s "$XCODE_PATH/Contents/Developer"
+          xcodebuild -version
+
+      - name: UI Tests
+        run: |
+          xcodebuild test \
+            -project Pine.xcodeproj \
+            -scheme Pine \
+            -destination "platform=macOS" \
+            -only-testing:PineUITests \
             CODE_SIGN_IDENTITY=- \
             CODE_SIGNING_ALLOWED=NO
