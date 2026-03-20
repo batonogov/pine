@@ -77,7 +77,7 @@ struct PineApp: App {
                     guard let pm = focusedProject else { return }
                     pm.tabManager.togglePreviewMode()
                 } label: {
-                    Label(Strings.menuTogglePreview, systemImage: "eye")
+                    Label(Strings.menuTogglePreview, systemImage: "doc.richtext")
                 }
                 .keyboardShortcut("p", modifiers: [.command, .shift])
 
@@ -129,7 +129,7 @@ struct PineApp: App {
                 Button {
                     NotificationCenter.default.post(name: .toggleComment, object: nil)
                 } label: {
-                    Label(Strings.menuToggleComment, systemImage: "number")
+                    Label(Strings.menuToggleComment, systemImage: "slash.circle")
                 }
                 .keyboardShortcut("/", modifiers: .command)
 
@@ -220,7 +220,7 @@ struct PineApp: App {
                         alert.runModal()
                     }
                 } label: {
-                    Label(Strings.menuSaveAs, systemImage: "square.and.arrow.down.badge.clock")
+                    Label(Strings.menuSaveAs, systemImage: "doc.badge.arrow.down")
                 }
                 .keyboardShortcut("s", modifiers: [.command, .shift])
 
