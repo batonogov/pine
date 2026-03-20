@@ -47,6 +47,16 @@ final class MinimapView: NSView {
     /// Width of one character in minimap coordinates.
     private let charWidth: CGFloat = 0.8
 
+    /// Total document height including top origin offset and bottom inset.
+    private func documentHeight(
+        layoutManager: NSLayoutManager,
+        textContainer: NSTextContainer,
+        textView: NSTextView
+    ) -> CGFloat {
+        let usedRect = layoutManager.usedRect(for: textContainer)
+        return usedRect.height + textView.textContainerOrigin.y + textView.textContainerInset.height
+    }
+
     /// Background color — matches editor background.
     private let bgColor = NSColor(name: nil) { appearance in
         if appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua {
@@ -148,8 +158,7 @@ final class MinimapView: NSView {
             return (0, 0)
         }
 
-        let usedRect = layoutManager.usedRect(for: textContainer)
-        let docHeight = usedRect.height + textView.textContainerOrigin.y + textView.textContainerInset.height
+        let docHeight = documentHeight(layoutManager: layoutManager, textContainer: textContainer, textView: textView)
         let scaledDocHeight = docHeight * Self.scaleFactor
         let panelHeight = bounds.height
 
@@ -272,8 +281,7 @@ final class MinimapView: NSView {
               let textContainer = textView.textContainer,
               let scrollView = textView.enclosingScrollView else { return nil }
 
-        let usedRect = layoutManager.usedRect(for: textContainer)
-        let docHeight = usedRect.height + textView.textContainerOrigin.y + textView.textContainerInset.height
+        let docHeight = documentHeight(layoutManager: layoutManager, textContainer: textContainer, textView: textView)
         guard docHeight > 0 else { return nil }
 
         let scale = Self.scaleFactor
@@ -300,8 +308,7 @@ final class MinimapView: NSView {
               let textContainer = textView.textContainer,
               let scrollView = textView.enclosingScrollView else { return }
 
-        let usedRect = layoutManager.usedRect(for: textContainer)
-        let docHeight = usedRect.height + textView.textContainerOrigin.y + textView.textContainerInset.height
+        let docHeight = documentHeight(layoutManager: layoutManager, textContainer: textContainer, textView: textView)
         guard docHeight > 0, bounds.height > 0 else { return }
 
         let scale = Self.scaleFactor
