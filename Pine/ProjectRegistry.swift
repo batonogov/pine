@@ -23,6 +23,9 @@ final class ProjectRegistry {
     private static let maxRecentProjects = 10
 
     init() {
+        if CommandLine.arguments.contains("--clear-recent-projects") {
+            UserDefaults.standard.removeObject(forKey: Self.recentProjectsKey)
+        }
         loadRecentProjects()
     }
 
