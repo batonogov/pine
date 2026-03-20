@@ -140,19 +140,23 @@ struct SessionState: Codable {
         return URL(fileURLWithPath: path)
     }
 
-    /// Preview modes filtered to entries within the project root.
+    /// Preview modes filtered to entries within the project root that still exist on disk.
     var existingPreviewModes: [String: String]? {
         guard let modes = previewModes else { return nil }
         let prefix = rootPrefix
-        let filtered = modes.filter { $0.key.hasPrefix(prefix) }
+        let filtered = modes.filter {
+            $0.key.hasPrefix(prefix) && FileManager.default.fileExists(atPath: $0.key)
+        }
         return filtered.isEmpty ? nil : filtered
     }
 
-    /// Highlighting-disabled paths filtered to entries within the project root.
+    /// Highlighting-disabled paths filtered to entries within the project root that still exist on disk.
     var existingHighlightingDisabledPaths: [String]? {
         guard let paths = highlightingDisabledPaths else { return nil }
         let prefix = rootPrefix
-        let filtered = paths.filter { $0.hasPrefix(prefix) }
+        let filtered = paths.filter {
+            $0.hasPrefix(prefix) && FileManager.default.fileExists(atPath: $0)
+        }
         return filtered.isEmpty ? nil : filtered
     }
 }

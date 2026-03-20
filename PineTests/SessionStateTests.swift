@@ -405,6 +405,21 @@ struct SessionStateTests {
         #expect(state.existingPreviewModes?[insideFile.path] == "split")
     }
 
+    @Test func previewModesFilteredWhenFileDeleted() throws {
+        let tempDir = try makeTempDirectory()
+        defer { cleanup(tempDir) }
+
+        let deletedFile = tempDir.appendingPathComponent("gone.md")
+
+        let state = SessionState(
+            projectPath: tempDir.path,
+            openFilePaths: [],
+            previewModes: [deletedFile.path: "split"]
+        )
+
+        #expect(state.existingPreviewModes == nil)
+    }
+
     @Test func highlightingDisabledPathsFilteredToProjectRootOnLoad() throws {
         let tempDir = try makeTempDirectory()
         defer { cleanup(tempDir) }
@@ -425,6 +440,21 @@ struct SessionStateTests {
 
         #expect(state.existingHighlightingDisabledPaths?.count == 1)
         #expect(state.existingHighlightingDisabledPaths?.first == insideFile.path)
+    }
+
+    @Test func highlightingDisabledPathsFilteredWhenFileDeleted() throws {
+        let tempDir = try makeTempDirectory()
+        defer { cleanup(tempDir) }
+
+        let deletedFile = tempDir.appendingPathComponent("gone.swift")
+
+        let state = SessionState(
+            projectPath: tempDir.path,
+            openFilePaths: [],
+            highlightingDisabledPaths: [deletedFile.path]
+        )
+
+        #expect(state.existingHighlightingDisabledPaths == nil)
     }
 
     @Test func loadReturnsNilOnCorruptData() throws {
