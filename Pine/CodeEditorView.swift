@@ -74,6 +74,13 @@ final class GutterTextView: NSTextView {
         }
     }
 
+    private static let blameIcon: NSImage? = {
+        let config = NSImage.SymbolConfiguration(pointSize: 11, weight: .light)
+        return NSImage(systemSymbolName: "arrow.triangle.branch", accessibilityDescription: nil)?
+            .withSymbolConfiguration(config)?
+            .tinted(with: blameColor)
+    }()
+
     private static let relativeDateFormatter: RelativeDateTimeFormatter = {
         let f = RelativeDateTimeFormatter()
         f.unitsStyle = .full
@@ -164,17 +171,14 @@ final class GutterTextView: NSTextView {
         var drawX = max(lineEndX + 24, minBlameX)
         let drawY = lineRect.origin.y + (lineRect.height - Self.blameFont.pointSize) / 2
 
-        // Git branch icon
-        let iconConfig = NSImage.SymbolConfiguration(pointSize: 11, weight: .light)
-        if let icon = NSImage(systemSymbolName: "arrow.triangle.branch", accessibilityDescription: nil)?
-            .withSymbolConfiguration(iconConfig) {
-            let tintedIcon = icon.tinted(with: Self.blameColor)
-            let iconY = lineRect.origin.y + (lineRect.height - tintedIcon.size.height) / 2
-            tintedIcon.draw(
-                in: NSRect(x: drawX, y: iconY, width: tintedIcon.size.width, height: tintedIcon.size.height),
+        // Git branch icon (cached to avoid copy+tint on every draw)
+        if let icon = Self.blameIcon {
+            let iconY = lineRect.origin.y + (lineRect.height - icon.size.height) / 2
+            icon.draw(
+                in: NSRect(x: drawX, y: iconY, width: icon.size.width, height: icon.size.height),
                 from: .zero, operation: .sourceOver, fraction: 1
             )
-            drawX += tintedIcon.size.width + 4
+            drawX += icon.size.width + 4
         }
 
         (text as NSString).draw(at: NSPoint(x: drawX, y: drawY), withAttributes: attrs)
