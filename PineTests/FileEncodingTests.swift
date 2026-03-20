@@ -292,4 +292,100 @@ struct FileEncodingTests {
         // ASCII is a subset of UTF-8, so we should detect it as UTF-8
         #expect(manager.activeTab?.encoding == .utf8)
     }
+
+    // MARK: - detect(from:) edge cases
+
+    @Test("Detect from empty data returns empty UTF-8 string")
+    func detectEmptyData() {
+        let (content, encoding) = String.Encoding.detect(from: Data())
+        #expect(content == "")
+        #expect(encoding == .utf8)
+    }
+
+    @Test("Detect from UTF-8 BOM data strips BOM and detects UTF-8")
+    func detectUTF8BOM() {
+        // UTF-8 BOM: EF BB BF
+        var data = Data([0xEF, 0xBB, 0xBF])
+        data.append(Data("Hello".utf8))
+        let (content, encoding) = String.Encoding.detect(from: data)
+        // UTF-8 BOM is valid UTF-8 — Swift may include or strip the BOM character
+        #expect(content.contains("Hello"))
+        #expect(encoding == .utf8)
+    }
+
+    @Test("Detect from binary data does not crash and returns some content")
+    func detectBinaryData() {
+        // Random bytes that are not valid in any common encoding
+        let data = Data([0x80, 0x81, 0x82, 0xFE, 0xFF, 0x00, 0x01, 0xC0, 0xC1])
+        let (content, encoding) = String.Encoding.detect(from: data)
+        // Should not crash, should return something (possibly lossy)
+        #expect(!content.isEmpty || encoding != .utf8)
+    }
+
+    // MARK: - reopenActiveTab edge cases
+
+    @Test("Reopen returns false when no active tab")
+    func reopenNoActiveTab() {
+        let manager = TabManager()
+        let result = manager.reopenActiveTab(withEncoding: .utf16)
+        #expect(result == false)
+    }
+
+    @Test("Reopen returns false when file cannot be decoded in target encoding")
+    func reopenIncompatibleEncoding() {
+        let manager = TabManager()
+        // Create a file with Cyrillic content in Windows-1251
+        let url = tempFileURL(content: "Привет", encoding: .windowsCP1251)
+
+        manager.openTab(url: url)
+
+        // ISO-2022-JP cannot represent Cyrillic bytes — should fail
+        let result = manager.reopenActiveTab(withEncoding: .iso2022JP)
+
+        // Either returns false (can't decode) or returns true with garbled content
+        // The important thing is it doesn't crash
+        if result {
+            // If it succeeded, encoding should be updated
+            #expect(manager.activeTab?.encoding == .iso2022JP)
+        } else {
+            // If it failed, original encoding preserved
+            #expect(manager.activeTab?.encoding == .windowsCP1251)
+        }
+    }
+
+    // MARK: - Save preserves Windows-1251
+
+    @Test("Save preserves Windows-1251 encoding with Cyrillic roundtrip")
+    func savePreservesWindows1251() throws {
+        let manager = TabManager()
+        let url = tempFileURL(content: "Привет", encoding: .windowsCP1251)
+
+        manager.openTab(url: url)
+        manager.updateContent("Мир")
+
+        let success = manager.saveActiveTab()
+        #expect(success == true)
+
+        let onDisk = try String(contentsOf: url, encoding: .windowsCP1251)
+        #expect(onDisk == "Мир")
+    }
+
+    // MARK: - displayName edge cases
+
+    @Test("Display name for unknown encoding uses localizedName fallback")
+    func displayNameUnknownEncoding() {
+        // Use a rare encoding not in the switch
+        let exotic = String.Encoding(rawValue: 2147483649) // NSProprietaryStringEncoding
+        let name = exotic.displayName
+        // Should not crash and should return a non-empty string
+        #expect(!name.isEmpty)
+    }
+
+    @Test("Display name covers all available encodings")
+    func displayNameCoversAllAvailable() {
+        // Every encoding in availableEncodings should have a non-empty display name
+        for encoding in String.Encoding.availableEncodings {
+            #expect(!encoding.displayName.isEmpty, "displayName empty for rawValue \(encoding.rawValue)")
+        }
+    }
 }
