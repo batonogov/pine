@@ -124,8 +124,8 @@ struct TerraformGrammarTests {
         let keywordRules = grammar.rules.filter { $0.scope == "keyword" }
         let allPatterns = keywordRules.map(\.pattern).joined(separator: " ")
 
-        #expect(allPatterns.contains("self"))
-        #expect(allPatterns.contains("each"))
+        #expect(allPatterns.contains("|self|") || allPatterns.contains("(self|") || allPatterns.contains("|self)"))
+        #expect(allPatterns.contains("|each|") || allPatterns.contains("(each|") || allPatterns.contains("|each)"))
         #expect(allPatterns.contains("count\\.index"))
         #expect(allPatterns.contains("path\\.module"))
         #expect(allPatterns.contains("path\\.root"))
@@ -145,7 +145,15 @@ struct TerraformGrammarTests {
                         "format", "join", "split", "replace", "length",
                         "element", "keys", "values"]
         for fn in builtins {
-            #expect(allPatterns.contains(fn), "Missing built-in function: \(fn)")
+            let delimited = "|\(fn)|"
+            let atStart = "(\(fn)|"
+            let atEnd = "|\(fn))"
+            #expect(
+                allPatterns.contains(delimited) ||
+                allPatterns.contains(atStart) ||
+                allPatterns.contains(atEnd),
+                "Missing built-in function: \(fn)"
+            )
         }
     }
 
