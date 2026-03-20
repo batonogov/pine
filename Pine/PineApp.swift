@@ -107,7 +107,7 @@ struct PineApp: App {
                           let rootURL = pm.workspace.rootURL else { return }
                     NSWorkspace.shared.activateFileViewerSelecting([rootURL])
                 } label: {
-                    Label(Strings.menuRevealProjectInFinder, systemImage: "folder.viewfinder")
+                    Label(Strings.menuRevealProjectInFinder, systemImage: "folder")
                 }
                 .disabled(focusedProject?.workspace.rootURL == nil)
             }
@@ -220,7 +220,7 @@ struct PineApp: App {
                         alert.runModal()
                     }
                 } label: {
-                    Label(Strings.menuSaveAs, systemImage: "doc.badge.arrow.down")
+                    Label(Strings.menuSaveAs, systemImage: "doc.on.doc")
                 }
                 .keyboardShortcut("s", modifiers: [.command, .shift])
 
