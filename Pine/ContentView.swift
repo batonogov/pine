@@ -117,9 +117,10 @@ struct ContentView: View {
             refreshBlame()
             projectManager.saveSession()
         }
-        .onChange(of: isBlameVisible) { _, _ in
-            refreshBlame()
-        }
+        .modifier(BlameObserver(
+            isBlameVisible: isBlameVisible,
+            onRefresh: { refreshBlame() }
+        ))
         .onChange(of: workspace.rootNodes) { _, _ in
             restoreSessionIfNeeded()
             syncSidebarSelection()
@@ -691,6 +692,18 @@ private struct SidebarSearchableContent: View {
 
 /// Saves terminal state to session when visibility, tab count, or active tab changes.
 /// Extracted into a ViewModifier to reduce body complexity for the type-checker.
+/// Refreshes blame when visibility changes.
+/// Extracted into a ViewModifier to reduce body complexity for the type-checker.
+private struct BlameObserver: ViewModifier {
+    let isBlameVisible: Bool
+    let onRefresh: () -> Void
+
+    func body(content: Content) -> some View {
+        content
+            .onChange(of: isBlameVisible) { _, _ in onRefresh() }
+    }
+}
+
 private struct TerminalSessionObserver: ViewModifier {
     let terminal: TerminalManager
     let onSave: () -> Void
