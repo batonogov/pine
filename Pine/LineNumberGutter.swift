@@ -153,6 +153,9 @@ final class LineNumberView: NSView {
         }
     }
 
+    /// Cached line starts for O(log n) line number lookups in click handling.
+    var lineStartsCache: LineStartsCache?
+
     /// Returns the line number (1-based) at the given point in view coordinates.
     private func lineNumber(at point: NSPoint) -> Int? {
         guard let textView = textView,
@@ -168,6 +171,11 @@ final class LineNumberView: NSView {
         let glyphIndex = layoutManager.glyphIndex(for: NSPoint(x: 0, y: textY), in: textContainer)
         let charIndex = layoutManager.characterIndexForGlyph(at: glyphIndex)
 
+        if let cache = lineStartsCache {
+            return cache.lineNumber(at: charIndex)
+        }
+
+        // Fallback: linear scan if cache not available
         let source = textView.string as NSString
         var line = 1
         for i in 0..<min(charIndex, source.length) where source.character(at: i) == 0x0A {

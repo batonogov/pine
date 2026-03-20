@@ -482,6 +482,12 @@ struct CodeEditorView: NSViewRepresentable {
         /// Cached foldable ranges for the current text.
         var foldableRanges: [FoldableRange] = []
 
+        /// Cached line starts for O(log n) line number lookups.
+        var lineStartsCache: LineStartsCache?
+
+        /// Debounced fold recalculation work item.
+        private var foldWorkItem: DispatchWorkItem?
+
         /// Последние язык/имя файла — для обнаружения смены грамматики
         /// при одинаковом содержимом файлов
         var lastLanguage: String = ""
@@ -648,8 +654,11 @@ struct CodeEditorView: NSViewRepresentable {
             // Report state change
             reportStateChange()
 
-            // Recalculate foldable ranges (debounced with highlighting)
-            recalculateFoldableRanges()
+            // Update line starts cache immediately (fast O(n) scan, needed for layout)
+            lineStartsCache = LineStartsCache(text: textView.string)
+
+            // Recalculate foldable ranges (debounced — expensive operation)
+            scheduleFoldRecalculation()
 
             // Захватываем editedRange из textStorage сейчас,
             // пока он валиден в координатах текущей версии текста
@@ -888,6 +897,7 @@ struct CodeEditorView: NSViewRepresentable {
             guard let sv = scrollView,
                   let textView = sv.documentView as? NSTextView else { return }
             let text = textView.string
+            lineStartsCache = LineStartsCache(text: text)
             let skipRanges = SyntaxHighlighter.shared.commentAndStringRanges(
                 in: text,
                 language: parent.language,
@@ -895,6 +905,17 @@ struct CodeEditorView: NSViewRepresentable {
             )
             foldableRanges = FoldRangeCalculator.calculate(text: text, skipRanges: skipRanges)
             lineNumberView?.foldableRanges = foldableRanges
+            lineNumberView?.lineStartsCache = lineStartsCache
+        }
+
+        /// Schedules a debounced fold recalculation.
+        private func scheduleFoldRecalculation() {
+            foldWorkItem?.cancel()
+            let workItem = DispatchWorkItem { [weak self] in
+                self?.recalculateFoldableRanges()
+            }
+            foldWorkItem = workItem
+            DispatchQueue.main.asyncAfter(deadline: .now() + highlightDelay, execute: workItem)
         }
 
         /// Handles fold toggle from gutter click.
@@ -929,15 +950,12 @@ struct CodeEditorView: NSViewRepresentable {
         /// Folds the innermost foldable range containing the cursor.
         private func foldAtCursor() {
             guard let sv = scrollView,
-                  let textView = sv.documentView as? NSTextView else { return }
+                  let textView = sv.documentView as? NSTextView,
+                  let cache = lineStartsCache else { return }
             let cursorLocation = textView.selectedRange().location
-            let source = textView.string as NSString
 
-            // Find cursor's line number
-            var cursorLine = 1
-            for i in 0..<min(cursorLocation, source.length) where source.character(at: i) == 0x0A {
-                cursorLine += 1
-            }
+            // Find cursor's line number using cached binary search
+            let cursorLine = cache.lineNumber(at: cursorLocation)
 
             // Find innermost unfoldable range at cursor line
             let candidates = foldableRanges.filter {
@@ -954,14 +972,12 @@ struct CodeEditorView: NSViewRepresentable {
         /// Unfolds the fold at the cursor position.
         private func unfoldAtCursor() {
             guard let sv = scrollView,
-                  let textView = sv.documentView as? NSTextView else { return }
+                  let textView = sv.documentView as? NSTextView,
+                  let cache = lineStartsCache else { return }
             let cursorLocation = textView.selectedRange().location
-            let source = textView.string as NSString
 
-            var cursorLine = 1
-            for i in 0..<min(cursorLocation, source.length) where source.character(at: i) == 0x0A {
-                cursorLine += 1
-            }
+            // Find cursor's line number using cached binary search
+            let cursorLine = cache.lineNumber(at: cursorLocation)
 
             // Find folded range whose startLine matches cursor line
             if let folded = parent.foldState.foldedRanges.first(where: { $0.startLine == cursorLine }) {
@@ -999,14 +1015,10 @@ struct CodeEditorView: NSViewRepresentable {
             forGlyphRange glyphRange: NSRange
         ) -> Bool {
             let charRange = layoutManager.characterRange(forGlyphRange: glyphRange, actualGlyphRange: nil)
-            guard let textStorage = layoutManager.textStorage else { return false }
-            let source = textStorage.string as NSString
 
-            // Find line number for the start of this glyph range
-            var line = 1
-            for i in 0..<min(charRange.location, source.length) where source.character(at: i) == 0x0A {
-                line += 1
-            }
+            // Use cached line starts for O(log n) lookup instead of O(n) linear scan
+            guard let cache = lineStartsCache else { return false }
+            let line = cache.lineNumber(at: charRange.location)
 
             // If this line is hidden (inside a folded region), collapse it to zero height
             if parent.foldState.isLineHidden(line) {
