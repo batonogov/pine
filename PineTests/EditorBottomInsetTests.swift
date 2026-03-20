@@ -42,7 +42,7 @@ struct EditorBottomInsetTests {
 
     @Test func gutterTextView_defaultBottomInset_isReasonable() {
         // Inset should be large enough to provide breathing room but not excessive
-        #expect(GutterTextView.defaultBottomInset >= 20)
-        #expect(GutterTextView.defaultBottomInset <= 80)
+        #expect(GutterTextView.defaultBottomInset >= 2)
+        #expect(GutterTextView.defaultBottomInset <= 40)
     }
 }

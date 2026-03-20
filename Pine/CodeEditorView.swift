@@ -18,7 +18,7 @@ final class GutterTextView: NSTextView {
     var gutterInset: CGFloat = 44
 
     /// Bottom padding so the last line is not clipped (issue #258).
-    static let defaultBottomInset: CGFloat = 40
+    static let defaultBottomInset: CGFloat = 5
 
     override init(frame frameRect: NSRect, textContainer container: NSTextContainer?) {
         super.init(frame: frameRect, textContainer: container)
