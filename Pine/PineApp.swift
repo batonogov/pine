@@ -90,6 +90,13 @@ struct PineApp: App {
                 }
                 .keyboardShortcut("m", modifiers: [.command, .shift])
 
+                Button {
+                    BlameSettings.toggle()
+                } label: {
+                    Label(Strings.menuToggleBlame, systemImage: MenuIcons.toggleBlame)
+                }
+                .keyboardShortcut("b", modifiers: [.command, .control])
+
                 Divider()
 
                 Button {

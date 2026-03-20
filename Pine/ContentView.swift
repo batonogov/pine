@@ -22,10 +22,13 @@ struct ContentView: View {
     @State private var selectedNode: FileNode?
     @State private var columnVisibility: NavigationSplitViewVisibility = .all
     @State private var lineDiffs: [GitLineDiff] = []
+    @State private var blameLines: [GitBlameLine] = []
     @State private var didRestoreSession = false
     @State private var isSearchPresented = false
     @State private var goToLineOffset: GoToRequest?
+    @State private var blamePopoverLine: GitBlameLine?
     @AppStorage("minimapVisible") private var isMinimapVisible = true
+    @AppStorage("blameVisible") private var isBlameVisible = false
 
     private var activeTab: EditorTab? { tabManager.activeTab }
 
@@ -111,7 +114,11 @@ struct ContentView: View {
         .onChange(of: tabManager.activeTabID) { _, _ in
             syncSidebarSelection()
             refreshLineDiffs()
+            refreshBlame()
             projectManager.saveSession()
+        }
+        .onChange(of: isBlameVisible) { _, _ in
+            refreshBlame()
         }
         .onChange(of: workspace.rootNodes) { _, _ in
             restoreSessionIfNeeded()
@@ -133,6 +140,7 @@ struct ContentView: View {
         }
         .onChange(of: workspace.gitProvider.currentBranch) { _, _ in
             refreshLineDiffs()
+            refreshBlame()
         }
         .onChange(of: workspace.gitProvider.fileStatuses) { _, _ in
             refreshLineDiffs()
@@ -140,6 +148,7 @@ struct ContentView: View {
         .onReceive(NotificationCenter.default.publisher(for: .refreshLineDiffs)) { _ in
             guard controlActiveState == .key else { return }
             refreshLineDiffs()
+            refreshBlame()
         }
         .onReceive(NotificationCenter.default.publisher(for: .closeTab)) { _ in
             guard controlActiveState == .key,
@@ -168,6 +177,14 @@ struct ContentView: View {
         .onReceive(NotificationCenter.default.publisher(for: .showProjectSearch)) { _ in
             columnVisibility = .all
             isSearchPresented = true
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .blameLineClicked)) { notification in
+            guard controlActiveState == .key,
+                  let blame = notification.userInfo?["blameLine"] as? GitBlameLine else { return }
+            blamePopoverLine = blame
+        }
+        .popover(item: $blamePopoverLine) { blame in
+            CommitDetailView(blame: blame, repoURL: workspace.gitProvider.repositoryURL)
         }
         .onReceive(NotificationCenter.default.publisher(for: .navigateChange)) { notification in
             guard controlActiveState == .key,
@@ -311,6 +328,42 @@ struct ContentView: View {
         }
         if let line = targetLine {
             goToLineOffset = GoToRequest(offset: Self.cursorOffset(forLine: line, in: tab.content))
+        }
+    }
+
+    /// Refreshes cached blame data for the active tab.
+    /// Runs git blame on a background thread to avoid blocking the UI.
+    private func refreshBlame() {
+        guard isBlameVisible else {
+            blameLines = []
+            return
+        }
+        guard let tab = tabManager.activeTab else {
+            blameLines = []
+            return
+        }
+        let fileURL = tab.url
+        let provider = workspace.gitProvider
+        guard provider.isGitRepository, let repoURL = provider.repositoryURL else {
+            blameLines = []
+            return
+        }
+        let filePath = fileURL.path
+        Task.detached {
+            let result = GitStatusProvider.runGit(
+                ["blame", "--porcelain", "--", filePath], at: repoURL
+            )
+            let lines: [GitBlameLine]
+            if result.exitCode == 0, !result.output.isEmpty {
+                lines = GitStatusProvider.parseBlame(result.output)
+            } else {
+                lines = []
+            }
+            await MainActor.run {
+                if tabManager.activeTab?.url == fileURL {
+                    blameLines = lines
+                }
+            }
         }
     }
 
@@ -515,6 +568,8 @@ struct ContentView: View {
             language: tab.language,
             fileName: tab.fileName,
             lineDiffs: lineDiffs,
+            isBlameVisible: isBlameVisible,
+            blameLines: blameLines,
             isMinimapVisible: isMinimapVisible,
             syntaxHighlightingDisabled: tab.syntaxHighlightingDisabled,
             initialCursorPosition: goToLineOffset?.offset ?? tab.cursorPosition,

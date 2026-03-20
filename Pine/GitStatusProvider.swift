@@ -472,6 +472,102 @@ final class GitStatusProvider {
         return paths
     }
 
+    // MARK: - Blame Parser
+
+    /// Parses `git blame --porcelain` output into an array of `GitBlameLine`.
+    ///
+    /// Porcelain format:
+    /// ```
+    /// <hash> <orig-line> <final-line> [<num-lines>]   ← first occurrence of commit
+    /// author <name>
+    /// author-time <unix-timestamp>
+    /// summary <text>
+    /// \t<content>
+    ///
+    /// <hash> <orig-line> <final-line>                  ← subsequent lines from same commit
+    /// \t<content>
+    /// ```
+    nonisolated static func parseBlame(_ output: String) -> [GitBlameLine] {
+        guard !output.isEmpty else { return [] }
+
+        var result: [GitBlameLine] = []
+        let lines = output.components(separatedBy: "\n")
+
+        // Cache: hash → (author, authorTime, summary)
+        var commitCache: [String: (author: String, authorTime: Date, summary: String)] = [:]
+
+        var i = 0
+        while i < lines.count {
+            let line = lines[i]
+
+            // Skip empty lines
+            guard !line.isEmpty else {
+                i += 1
+                continue
+            }
+
+            // Commit header line: <40-char-hash> <orig> <final> [<count>]
+            let parts = line.split(separator: " ", maxSplits: 4)
+            guard parts.count >= 3,
+                  parts[0].count == 40,
+                  parts[0].allSatisfy({ $0.isHexDigit }),
+                  let finalLine = Int(parts[2]) else {
+                i += 1
+                continue
+            }
+
+            let hash = String(parts[0])
+            i += 1
+
+            // If this is the first occurrence, read header fields
+            var author = ""
+            var authorTime = Date(timeIntervalSince1970: 0)
+            var summary = ""
+            var hasHeaders = false
+
+            while i < lines.count {
+                let headerLine = lines[i]
+                if headerLine.hasPrefix("\t") {
+                    // Content line — end of headers
+                    break
+                } else if headerLine.hasPrefix("author ") {
+                    author = String(headerLine.dropFirst(7))
+                    hasHeaders = true
+                } else if headerLine.hasPrefix("author-time ") {
+                    if let ts = TimeInterval(headerLine.dropFirst(12)) {
+                        authorTime = Date(timeIntervalSince1970: ts)
+                    }
+                } else if headerLine.hasPrefix("summary ") {
+                    summary = String(headerLine.dropFirst(8))
+                }
+                i += 1
+            }
+
+            // Skip the content line (starts with \t)
+            if i < lines.count && lines[i].hasPrefix("\t") {
+                i += 1
+            }
+
+            if hasHeaders {
+                commitCache[hash] = (author, authorTime, summary)
+            } else if let cached = commitCache[hash] {
+                author = cached.author
+                authorTime = cached.authorTime
+                summary = cached.summary
+            }
+
+            result.append(GitBlameLine(
+                hash: hash,
+                author: author,
+                authorTime: authorTime,
+                summary: summary,
+                finalLine: finalLine
+            ))
+        }
+
+        return result
+    }
+
     // MARK: - Diff Parser
 
     nonisolated static func parseDiff(_ diffOutput: String) -> [GitLineDiff] {

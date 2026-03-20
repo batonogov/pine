@@ -47,6 +47,9 @@ enum AccessibilityID {
     // MARK: - Project Search
     static let projectSearchResultsList = "projectSearchResultsList"
 
+    // MARK: - Blame gutter
+    static let blameGutter = "blameGutter"
+
     // MARK: - Status bar
     static let statusBar = "statusBar"
     static let terminalToggleButton = "terminalToggleButton"

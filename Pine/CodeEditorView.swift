@@ -175,6 +175,7 @@ final class GutterTextView: NSTextView {
 /// always accounted for.
 final class EditorContainerView: NSView {
     var minimapWidth: CGFloat = 0
+    var blameWidth: CGFloat = 0
 
     override func layout() {
         super.layout()
@@ -190,16 +191,23 @@ final class EditorContainerView: NSView {
                     height: bounds.height
                 )
                 minimap.needsDisplay = true
+            } else if let blame = sub as? BlameGutterView {
+                blame.frame = NSRect(
+                    x: 0, y: 0,
+                    width: blameWidth,
+                    height: bounds.height
+                )
+                blame.needsDisplay = true
             } else if sub is NSScrollView {
                 sub.frame = NSRect(
-                    x: 0, y: 0,
-                    width: bounds.width - minimapWidth,
+                    x: blameWidth, y: 0,
+                    width: bounds.width - minimapWidth - blameWidth,
                     height: bounds.height
                 )
             } else {
-                // LineNumberView — keep x=0, full height, its own width
+                // LineNumberView — positioned after blame gutter
                 sub.frame = NSRect(
-                    x: 0, y: 0,
+                    x: blameWidth, y: 0,
                     width: sub.frame.width,
                     height: bounds.height
                 )
@@ -222,6 +230,10 @@ struct CodeEditorView: NSViewRepresentable {
     var language: String
     var fileName: String?
     var lineDiffs: [GitLineDiff] = []
+    /// Whether the blame gutter is visible.
+    var isBlameVisible: Bool = false
+    /// Blame data for the current file.
+    var blameLines: [GitBlameLine] = []
     /// Whether the minimap panel is visible.
     var isMinimapVisible: Bool = true
     /// Whether syntax highlighting is disabled for this tab (e.g. large files).
@@ -259,10 +271,11 @@ struct CodeEditorView: NSViewRepresentable {
     func makeNSView(context: Context) -> NSView {
         let gutterWidth: CGFloat = 40
 
-        // ── Контейнер — держит scroll view, line number view и minimap ──
+        // ── Контейнер — держит scroll view, line number view, blame gutter и minimap ──
         let container = EditorContainerView()
         container.wantsLayer = true
         container.minimapWidth = isMinimapVisible ? MinimapView.defaultWidth : 0
+        container.blameWidth = isBlameVisible ? BlameGutterView.defaultWidth : 0
 
         // ── ScrollView ──
         let scrollView = NSScrollView()
@@ -331,9 +344,17 @@ struct CodeEditorView: NSViewRepresentable {
         minimapView.isHidden = !isMinimapVisible
         container.addSubview(minimapView)
 
+        // ── Blame gutter — слева от scroll view ──
+        let blameGutterView = BlameGutterView(textView: textView)
+        blameGutterView.setAccessibilityIdentifier(AccessibilityID.blameGutter)
+        blameGutterView.isHidden = !isBlameVisible
+        blameGutterView.blameLines = blameLines
+        container.addSubview(blameGutterView)
+
         context.coordinator.scrollView = scrollView
         context.coordinator.lineNumberView = lineNumberView
         context.coordinator.minimapView = minimapView
+        context.coordinator.blameGutterView = blameGutterView
         context.coordinator.lastFontSize = editorFont.pointSize
         context.coordinator.syncContentVersion()
 
@@ -409,6 +430,14 @@ struct CodeEditorView: NSViewRepresentable {
             minimapView.isHidden = !isMinimapVisible
         }
         editorContainer.minimapWidth = isMinimapVisible ? MinimapView.defaultWidth : 0
+
+        // Blame gutter visibility
+        if let blameGutterView = context.coordinator.blameGutterView {
+            blameGutterView.isHidden = !isBlameVisible
+            blameGutterView.blameLines = blameLines
+        }
+        editorContainer.blameWidth = isBlameVisible ? BlameGutterView.defaultWidth : 0
+
         editorContainer.needsLayout = true
 
         // Keep GutterTextView's language info in sync for toggle comment
@@ -456,6 +485,7 @@ struct CodeEditorView: NSViewRepresentable {
         var scrollView: NSScrollView?
         var lineNumberView: LineNumberView?
         var minimapView: MinimapView?
+        var blameGutterView: BlameGutterView?
 
         /// Последние язык/имя файла — для обнаружения смены грамматики
         /// при одинаковом содержимом файлов
