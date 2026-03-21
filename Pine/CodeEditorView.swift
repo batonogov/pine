@@ -403,6 +403,9 @@ struct CodeEditorView: NSViewRepresentable {
     /// Пользовательский ключ атрибута для подсветки парных скобок.
     static let bracketHighlightKey = NSAttributedString.Key("PineBracketHighlight")
 
+    /// Attribute key marking a secret highlight range (for targeted cleanup).
+    static let secretHighlightKey = NSAttributedString.Key("PineSecretHighlight")
+
     /// Порог (в символах) для переключения на viewport-based подсветку.
     static let viewportHighlightThreshold = 100_000
 
@@ -706,6 +709,12 @@ struct CodeEditorView: NSViewRepresentable {
         /// Задержка дебаунсинга скролла (~1 кадр при 60fps)
         private let scrollHighlightDelay: TimeInterval = 0.016
 
+        /// Previously detected secret ranges — for targeted cleanup on next scan.
+        private var previousSecretRanges: [NSRange] = []
+        /// Debounced work item for secret detection.
+        private var secretWorkItem: DispatchWorkItem?
+        private let secretHighlightDelay: TimeInterval = 0.15
+
         init(parent: CodeEditorView) {
             self.parent = parent
         }
@@ -806,6 +815,12 @@ struct CodeEditorView: NSViewRepresentable {
             lastLanguage = language
             lastFileName = fileName
 
+            // Schedule secret masking after content update
+            if textChanged {
+                previousSecretRanges = []
+                scheduleSecretHighlighting()
+            }
+
             // Note: cursor/scroll restoration on tab switch is handled by makeNSView
             // (since .id(tab.id) recreates the view). This path only fires for
             // in-place content changes from updateNSView, where we should not
@@ -857,8 +872,11 @@ struct CodeEditorView: NSViewRepresentable {
             parent.text = textView.string
 
             // Подсветка синтаксиса сбросит backgroundColor —
-            // считаем bracket highlight невалидным
+            // считаем bracket highlight и secret highlight невалидными
             previousBracketRanges = []
+            previousSecretRanges = []
+
+            scheduleSecretHighlighting()
 
             // Report state change
             reportStateChange()
@@ -1055,6 +1073,75 @@ struct CodeEditorView: NSViewRepresentable {
             }
 
             return [openerRange, closerRange]
+        }
+
+        // MARK: - Secret highlighting
+
+        /// Applies amber background highlights to detected secret ranges (debounced 150ms).
+        func scheduleSecretHighlighting() {
+            secretWorkItem?.cancel()
+            let workItem = DispatchWorkItem { [weak self] in
+                self?.applySecretHighlighting()
+            }
+            secretWorkItem = workItem
+            DispatchQueue.main.asyncAfter(deadline: .now() + secretHighlightDelay, execute: workItem)
+        }
+
+        /// Immediately applies secret highlights to the current text view content.
+        /// Internal access for testability.
+        func applySecretHighlighting() {
+            guard SecretMaskingSettings.shared.isEnabled,
+                  let sv = scrollView,
+                  let textView = sv.documentView as? NSTextView,
+                  let storage = textView.textStorage else { return }
+
+            let text = textView.string
+            let matches = SecretDetector.detect(in: text)
+
+            let undoManager = textView.undoManager
+            undoManager?.disableUndoRegistration()
+            defer { undoManager?.enableUndoRegistration() }
+            storage.beginEditing()
+
+            // Remove previous secret highlights
+            for range in previousSecretRanges where range.location + range.length <= storage.length {
+                storage.removeAttribute(CodeEditorView.secretHighlightKey, range: range)
+                storage.removeAttribute(.backgroundColor, range: range)
+            }
+
+            // Apply new highlights
+            let color = NSColor.systemOrange.withAlphaComponent(0.25)
+            var newRanges: [NSRange] = []
+            for match in matches where match.range.location + match.range.length <= storage.length {
+                storage.addAttribute(.backgroundColor, value: color, range: match.range)
+                storage.addAttribute(CodeEditorView.secretHighlightKey, value: match.kind, range: match.range)
+                newRanges.append(match.range)
+            }
+            previousSecretRanges = newRanges
+
+            storage.endEditing()
+        }
+
+        /// Clears all secret highlights (called when masking is toggled off or file changes).
+        func clearSecretHighlighting() {
+            guard let sv = scrollView,
+                  let textView = sv.documentView as? NSTextView,
+                  let storage = textView.textStorage else { return }
+
+            guard !previousSecretRanges.isEmpty else { return }
+
+            let undoManager = textView.undoManager
+            undoManager?.disableUndoRegistration()
+            defer { undoManager?.enableUndoRegistration() }
+            storage.beginEditing()
+
+            for range in previousSecretRanges where range.location + range.length <= storage.length {
+                storage.removeAttribute(CodeEditorView.secretHighlightKey, range: range)
+                storage.removeAttribute(.backgroundColor, range: range)
+            }
+            previousSecretRanges = []
+
+            storage.endEditing()
         }
 
         @objc func scrollViewDidScroll(_ notification: Notification) {

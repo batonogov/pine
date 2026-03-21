@@ -99,6 +99,12 @@ struct PineApp: App {
                 }
                 .keyboardShortcut("b", modifiers: [.command, .control])
 
+                Button {
+                    SecretMaskingSettings.toggle()
+                } label: {
+                    Label(Strings.menuToggleSecretMasking, systemImage: MenuIcons.toggleSecretMasking)
+                }
+
                 Divider()
 
                 Button {
