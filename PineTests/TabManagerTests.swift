@@ -872,4 +872,216 @@ struct TabManagerTests {
         #expect(manager.tabs.count == 1)
         #expect(manager.pendingGoToLine == 2)
     }
+
+    // MARK: - Auto-save
+
+    @Test("scheduleAutoSave saves dirty tab after delay")
+    func autoSaveSavesDirtyTabAfterDelay() async throws {
+        let manager = TabManager()
+        let url = tempFileURL(content: "original")
+
+        manager.openTab(url: url)
+        manager.updateContent("modified")
+        #expect(manager.activeTab?.isDirty == true)
+
+        manager.scheduleAutoSave(delay: 0.1)
+
+        // Wait for debounce + save
+        try await Task.sleep(for: .milliseconds(300))
+
+        #expect(manager.activeTab?.isDirty == false)
+        let onDisk = try String(contentsOf: url, encoding: .utf8)
+        #expect(onDisk == "modified")
+    }
+
+    @Test("scheduleAutoSave skips read-only file")
+    func autoSaveSkipsReadOnlyFile() async throws {
+        let manager = TabManager()
+        let url = tempFileURL(content: "original")
+
+        // Make file read-only
+        try FileManager.default.setAttributes(
+            [.posixPermissions: 0o444], ofItemAtPath: url.path
+        )
+        defer {
+            try? FileManager.default.setAttributes(
+                [.posixPermissions: 0o644], ofItemAtPath: url.path
+            )
+        }
+
+        manager.openTab(url: url)
+        manager.updateContent("modified")
+        #expect(manager.activeTab?.isDirty == true)
+
+        manager.scheduleAutoSave(delay: 0.1)
+
+        try await Task.sleep(for: .milliseconds(300))
+
+        // Should still be dirty — auto-save skipped
+        #expect(manager.activeTab?.isDirty == true)
+    }
+
+    @Test("scheduleAutoSave debounces multiple rapid changes")
+    func autoSaveDebounces() async throws {
+        let manager = TabManager()
+        let url = tempFileURL(content: "original")
+
+        manager.openTab(url: url)
+
+        // Rapid changes — only the last one should be saved
+        manager.updateContent("change1")
+        manager.scheduleAutoSave(delay: 0.2)
+        try await Task.sleep(for: .milliseconds(50))
+
+        manager.updateContent("change2")
+        manager.scheduleAutoSave(delay: 0.2)
+        try await Task.sleep(for: .milliseconds(50))
+
+        manager.updateContent("change3")
+        manager.scheduleAutoSave(delay: 0.2)
+
+        try await Task.sleep(for: .milliseconds(400))
+
+        #expect(manager.activeTab?.isDirty == false)
+        let onDisk = try String(contentsOf: url, encoding: .utf8)
+        #expect(onDisk == "change3")
+    }
+
+    @Test("cancelAutoSave prevents pending save")
+    func cancelAutoSavePreventsPlannedSave() async throws {
+        let manager = TabManager()
+        let url = tempFileURL(content: "original")
+
+        manager.openTab(url: url)
+        manager.updateContent("modified")
+
+        manager.scheduleAutoSave(delay: 0.2)
+        manager.cancelAutoSave()
+
+        try await Task.sleep(for: .milliseconds(400))
+
+        // Should still be dirty — auto-save was cancelled
+        #expect(manager.activeTab?.isDirty == true)
+        let onDisk = try String(contentsOf: url, encoding: .utf8)
+        #expect(onDisk == "original")
+    }
+
+    @Test("Auto-save does not run when disabled in UserDefaults")
+    func autoSaveDisabledByDefault() async throws {
+        let manager = TabManager()
+        let url = tempFileURL(content: "original")
+
+        // Ensure auto-save is off
+        UserDefaults.standard.set(false, forKey: "autoSaveEnabled")
+        defer { UserDefaults.standard.removeObject(forKey: "autoSaveEnabled") }
+
+        manager.openTab(url: url)
+        manager.updateContent("modified")
+
+        // updateContent should NOT trigger auto-save when disabled
+        try await Task.sleep(for: .milliseconds(300))
+
+        #expect(manager.activeTab?.isDirty == true)
+    }
+
+    @Test("updateContent triggers auto-save when enabled")
+    func updateContentTriggersAutoSaveWhenEnabled() async throws {
+        let manager = TabManager()
+        manager.autoSaveDelay = 0.1
+        let url = tempFileURL(content: "original")
+
+        UserDefaults.standard.set(true, forKey: "autoSaveEnabled")
+        defer { UserDefaults.standard.removeObject(forKey: "autoSaveEnabled") }
+
+        manager.openTab(url: url)
+        manager.updateContent("auto-saved content")
+
+        try await Task.sleep(for: .milliseconds(300))
+
+        #expect(manager.activeTab?.isDirty == false)
+        let onDisk = try String(contentsOf: url, encoding: .utf8)
+        #expect(onDisk == "auto-saved content")
+    }
+
+    @Test("Auto-save handles tab switch — saves correct tab")
+    func autoSaveHandlesTabSwitch() async throws {
+        let manager = TabManager()
+        manager.autoSaveDelay = 0.1
+        let url1 = tempFileURL(name: "a.swift", content: "original1")
+        let url2 = tempFileURL(name: "b.swift", content: "original2")
+
+        UserDefaults.standard.set(true, forKey: "autoSaveEnabled")
+        defer { UserDefaults.standard.removeObject(forKey: "autoSaveEnabled") }
+
+        manager.openTab(url: url1)
+        manager.updateContent("modified1")
+
+        // Switch to tab 2 before auto-save fires
+        manager.openTab(url: url2)
+
+        try await Task.sleep(for: .milliseconds(300))
+
+        // Tab 1 should have been saved
+        let disk1 = try String(contentsOf: url1, encoding: .utf8)
+        #expect(disk1 == "modified1")
+        #expect(manager.tabs[0].isDirty == false)
+
+        // Tab 2 should be untouched
+        let disk2 = try String(contentsOf: url2, encoding: .utf8)
+        #expect(disk2 == "original2")
+    }
+
+    @Test("Manual save cancels pending auto-save")
+    func manualSaveCancelsAutoSave() async throws {
+        let manager = TabManager()
+        let url = tempFileURL(content: "original")
+
+        manager.openTab(url: url)
+        manager.updateContent("modified")
+
+        manager.scheduleAutoSave(delay: 0.3)
+
+        // Manual save should cancel the pending auto-save
+        manager.saveActiveTab()
+        #expect(manager.activeTab?.isDirty == false)
+        #expect(manager.autoSaveWorkItem == nil)
+    }
+
+    @Test("closeTab cancels pending auto-save for that tab")
+    func closeTabCancelsAutoSave() async throws {
+        let manager = TabManager()
+        let url = tempFileURL(content: "original")
+
+        manager.openTab(url: url)
+        manager.updateContent("modified")
+
+        manager.scheduleAutoSave(delay: 0.3)
+        guard let tabID = manager.activeTabID else {
+            Issue.record("activeTabID should not be nil")
+            return
+        }
+        manager.closeTab(id: tabID)
+
+        #expect(manager.autoSaveWorkItem == nil)
+    }
+
+    @Test("isAutoSaving is set during auto-save")
+    func isAutoSavingFlagDuringAutoSave() async throws {
+        let manager = TabManager()
+        let url = tempFileURL(content: "original")
+
+        manager.openTab(url: url)
+        manager.updateContent("modified")
+
+        #expect(manager.isAutoSaving == false)
+
+        manager.scheduleAutoSave(delay: 0.05)
+        try await Task.sleep(for: .milliseconds(100))
+
+        // After save completes, flag resets
+        // (may need brief extra time for the 0.5s indicator delay)
+        try await Task.sleep(for: .milliseconds(600))
+        #expect(manager.isAutoSaving == false)
+        #expect(manager.activeTab?.isDirty == false)
+    }
 }

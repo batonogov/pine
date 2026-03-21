@@ -12,6 +12,7 @@ import SwiftUI
 struct PineApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
     @FocusedValue(\.projectManager) private var focusedProject: ProjectManager?
+    @AppStorage("autoSaveEnabled") private var autoSaveEnabled = false
 
     private var registry: ProjectRegistry { appDelegate.registry }
 
@@ -285,6 +286,12 @@ struct PineApp: App {
                     Label(Strings.menuDuplicate, systemImage: MenuIcons.duplicate)
                 }
                 .keyboardShortcut("d", modifiers: [.command, .shift])
+
+                Divider()
+
+                Toggle(isOn: $autoSaveEnabled) {
+                    Label(Strings.menuAutoSave, systemImage: MenuIcons.autoSave)
+                }
             }
             // Cmd+W is intercepted by AppDelegate's local event monitor
             // to close the active tab. The close button goes through

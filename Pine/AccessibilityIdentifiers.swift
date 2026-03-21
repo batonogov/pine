@@ -25,6 +25,7 @@ enum AccessibilityID {
     static let editorPlaceholder = "editorPlaceholder"
     static let codeEditor = "codeEditor"
     static let minimap = "minimap"
+    static let autoSaveIndicator = "autoSaveIndicator"
     static let quickLookPreview = "quickLookPreview"
 
     // MARK: - Terminal

@@ -22,6 +22,8 @@ struct EditorTabBar: View {
     var previewMode: MarkdownPreviewMode = .source
     /// Called when the user toggles the Markdown preview mode.
     var onTogglePreview: (() -> Void)?
+    /// Whether an auto-save is in progress (shows a subtle indicator).
+    var isAutoSaving: Bool = false
 
     @State private var draggingTabID: UUID?
 
@@ -60,6 +62,15 @@ struct EditorTabBar: View {
             }
 
             Spacer()
+
+            if isAutoSaving {
+                Text(Strings.autoSaving)
+                    .font(.system(size: 10))
+                    .foregroundStyle(.tertiary)
+                    .transition(.opacity)
+                    .accessibilityIdentifier(AccessibilityID.autoSaveIndicator)
+                    .padding(.trailing, 4)
+            }
 
             if isMarkdownFile {
                 Button {

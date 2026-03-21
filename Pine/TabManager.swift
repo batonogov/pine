@@ -138,8 +138,11 @@ final class TabManager {
     }
 
     /// Closes a tab by ID. Selects an adjacent tab if the closed tab was active.
+    /// Cancels any pending auto-save for the closed tab.
     func closeTab(id: UUID) {
         guard let index = tabs.firstIndex(where: { $0.id == id }) else { return }
+
+        cancelAutoSave()
 
         let wasActive = activeTabID == id
         tabs.remove(at: index)
@@ -156,10 +159,15 @@ final class TabManager {
     }
 
     /// Updates the content of the active tab (text tabs only).
+    /// When auto-save is enabled in UserDefaults, schedules a debounced save.
     func updateContent(_ newContent: String) {
         guard let index = activeTabIndex else { return }
         guard tabs[index].kind == .text else { return }
         tabs[index].content = newContent
+
+        if UserDefaults.standard.bool(forKey: "autoSaveEnabled") {
+            scheduleAutoSave(delay: autoSaveDelay)
+        }
     }
 
     /// Updates the saved editor state (cursor, scroll) for the active tab.
@@ -176,9 +184,11 @@ final class TabManager {
     }
 
     /// Saves the active tab to disk. Returns true on success.
+    /// Cancels any pending auto-save since the user saved manually.
     @discardableResult
     func saveActiveTab() -> Bool {
         guard let index = activeTabIndex else { return false }
+        cancelAutoSave()
         return saveTab(at: index)
     }
 
@@ -225,7 +235,9 @@ final class TabManager {
     }
 
     /// Saves all dirty tabs without showing UI. Throws on first failure.
+    /// Cancels any pending auto-save.
     func trySaveAllTabs() throws {
+        cancelAutoSave()
         for index in tabs.indices where tabs[index].isDirty {
             try trySaveTab(at: index)
         }
@@ -371,6 +383,58 @@ final class TabManager {
         for tab in affected {
             closeTab(id: tab.id)
         }
+    }
+
+    // MARK: - Auto-save
+
+    /// Whether auto-save is currently in progress (for UI indicator).
+    private(set) var isAutoSaving = false
+
+    /// Auto-save delay in seconds. Configurable for testing.
+    var autoSaveDelay: TimeInterval = 1.0
+
+    /// Debounce work item for auto-save.
+    private(set) var autoSaveWorkItem: DispatchWorkItem?
+
+    /// Schedules a debounced auto-save for the active tab.
+    /// The save fires after `delay` seconds of inactivity.
+    func scheduleAutoSave(delay: TimeInterval? = nil) {
+        autoSaveWorkItem?.cancel()
+
+        guard let index = activeTabIndex else { return }
+        let tabID = tabs[index].id
+        let url = tabs[index].url
+
+        // Skip read-only files
+        guard FileManager.default.isWritableFile(atPath: url.path) else { return }
+
+        let effectiveDelay = delay ?? autoSaveDelay
+
+        let workItem = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            guard let idx = self.tabs.firstIndex(where: { $0.id == tabID }),
+                  self.tabs[idx].isDirty else { return }
+
+            self.isAutoSaving = true
+            do {
+                try self.trySaveTab(at: idx)
+            } catch {
+                // Silent failure — auto-save should not show alerts
+            }
+
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+                self?.isAutoSaving = false
+            }
+        }
+
+        autoSaveWorkItem = workItem
+        DispatchQueue.main.asyncAfter(deadline: .now() + effectiveDelay, execute: workItem)
+    }
+
+    /// Cancels any pending auto-save.
+    func cancelAutoSave() {
+        autoSaveWorkItem?.cancel()
+        autoSaveWorkItem = nil
     }
 
     // MARK: - Markdown preview
