@@ -47,6 +47,7 @@ jobs:
               - 'Pine/**/*.swift'
               - 'Pine.xcodeproj/**'
               - 'PineUITests/**'
+              - 'Pine.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/**'
               - '.github/workflows/ci.yml'
 
   lint:
