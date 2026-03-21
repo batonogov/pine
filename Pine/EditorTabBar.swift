@@ -181,6 +181,7 @@ struct EditorTabItem: View {
             HStack {
                 Button(tab.fileName, action: onSelect)
                     .accessibilityIdentifier(AccessibilityID.editorTab(tab.fileName))
+                    .accessibilityAddTraits(isActive ? .isSelected : [])
                 Button("Close", action: onClose)
                     .accessibilityIdentifier(AccessibilityID.editorTabCloseButton(tab.fileName))
             }
