@@ -1,0 +1,5 @@
+# Use custom merge driver for Xcode string catalogs to prevent
+# cosmetic build-artifact conflicts. Keeps local version on conflict;
+# real changes should be merged manually.
+# Setup: git config merge.ours.driver true
+*.xcstrings merge=ours

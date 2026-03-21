@@ -1,0 +1,6 @@
+#!/bin/bash
+# Pre-commit hook for Pine
+# Install: git config core.hooksPath .githooks
+
+# Unstage cosmetic-only xcstrings changes (Xcode build artifacts)
+scripts/normalize-xcstrings.sh
