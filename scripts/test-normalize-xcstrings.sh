@@ -120,8 +120,9 @@ setup_repo
 
 # Modify but don't stage
 echo "modified" >> Pine/Localizable.xcstrings
-"$NORMALIZE" 2>&1 || true
-assert_eq "exits cleanly when not staged" "0" "$?"
+"$NORMALIZE" 2>&1
+exit_code=$?
+assert_eq "exits cleanly when not staged" "0" "$exit_code"
 
 cleanup
 

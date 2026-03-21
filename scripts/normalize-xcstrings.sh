@@ -10,8 +10,11 @@
 
 set -euo pipefail
 
-REPO_ROOT="$(git rev-parse --show-toplevel)"
 XCSTRINGS="Pine/Localizable.xcstrings"
+
+# Ensure we run from repo root (git hooks do this by default,
+# but be explicit for standalone usage)
+cd "$(git rev-parse --show-toplevel)"
 
 # Only act when the file is staged
 if ! git diff --cached --name-only | grep -qx "$XCSTRINGS"; then
@@ -44,8 +47,7 @@ if [ "$HEAD_JSON" = "$STAGED_JSON" ]; then
         exit 1
     fi
     echo "xcstrings: unstaging cosmetic-only changes"
-    git restore --staged -- "$REPO_ROOT/$XCSTRINGS"
-    git checkout HEAD -- "$REPO_ROOT/$XCSTRINGS"
+    git checkout HEAD -- "$XCSTRINGS"
     exit 0
 fi
 
