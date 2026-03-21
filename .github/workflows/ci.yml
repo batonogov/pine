@@ -65,12 +65,16 @@ jobs:
             CODE_SIGN_IDENTITY=- \
             CODE_SIGNING_ALLOWED=NO
 
+      - name: Archive Build Products
+        run: tar -cf build-products.tar --exclude='DerivedData/ModuleCache' DerivedData
+
       - name: Upload Build Products
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: build-products
-          path: DerivedData
+          path: build-products.tar
           retention-days: 1
+          compression-level: 1
 
   unit-tests:
     name: Unit Tests
@@ -89,7 +93,9 @@ jobs:
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: build-products
-          path: DerivedData
+
+      - name: Extract Build Products
+        run: tar -xf build-products.tar
 
       - name: Unit Tests
         run: |
@@ -154,8 +160,11 @@ jobs:
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: build-products
-          path: DerivedData
 
+      - name: Extract Build Products
+        run: tar -xf build-products.tar
+
+      # matrix.test-classes expands to multiple -only-testing: flags via YAML folded scalar (>-)
       - name: UI Tests
         run: |
           xcodebuild test-without-building \
