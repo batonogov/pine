@@ -1,5 +1,32 @@
 # Changelog
 
+## [1.7.0](https://github.com/batonogov/pine/compare/v1.6.1...v1.7.0) (2026-03-21)
+
+
+### Features
+
+* add auto-save files after delay ([#329](https://github.com/batonogov/pine/issues/329)) ([1bde1d9](https://github.com/batonogov/pine/commit/1bde1d9a7681793362959e7130c702e398cd54da))
+* add code folding for collapsible regions ([#276](https://github.com/batonogov/pine/issues/276)) ([#287](https://github.com/batonogov/pine/issues/287)) ([9583dcd](https://github.com/batonogov/pine/commit/9583dcd0568b6d4f1bb7a83d1b5cd9af574365ff))
+* add dedicated Terraform syntax highlighting grammar ([#286](https://github.com/batonogov/pine/issues/286)) ([a88925b](https://github.com/batonogov/pine/commit/a88925b5018fe51b69e836e39735b10b079988ca))
+* add find & replace in editor via native macOS find bar ([#341](https://github.com/batonogov/pine/issues/341)) ([c49b729](https://github.com/batonogov/pine/commit/c49b729d088808bd040723212a5916a3bdff94ef))
+* add git blame view with toggle via View menu ([#288](https://github.com/batonogov/pine/issues/288)) ([db303a0](https://github.com/batonogov/pine/commit/db303a060fc6491dd25004d2c8248a59ec7bcdaa))
+* show line/column, indentation, line ending and file size in status bar ([#339](https://github.com/batonogov/pine/issues/339)) ([43330eb](https://github.com/batonogov/pine/commit/43330eb255797c9e50f68236ffb9d664f93bd3a1))
+
+
+### Bug Fixes
+
+* replace List with ScrollView+LazyVStack in welcome recent projects ([#285](https://github.com/batonogov/pine/issues/285)) ([faca3c1](https://github.com/batonogov/pine/commit/faca3c15c69122b992993802371534702448d642))
+* resolve corrupted rendering and multi-region fold issues ([#291](https://github.com/batonogov/pine/issues/291)) ([#321](https://github.com/batonogov/pine/issues/321)) ([0c1ddee](https://github.com/batonogov/pine/commit/0c1ddee14ea8409843c0322d02bca23664958136))
+* resolve performance regression in code folding ([#320](https://github.com/batonogov/pine/issues/320)) ([1a722d2](https://github.com/batonogov/pine/commit/1a722d26e99ca77d7064537feb24abbd8ad217b7))
+
+
+### Performance Improvements
+
+* cache line number offsets for O(log n) lookups ([#326](https://github.com/batonogov/pine/issues/326)) ([24c578a](https://github.com/batonogov/pine/commit/24c578a6df2457be133ff0dd53bc471c163e0598))
+* make file tree loading async and incremental ([#325](https://github.com/batonogov/pine/issues/325)) ([4a3d0ca](https://github.com/batonogov/pine/commit/4a3d0ca452319e60425cbb3491703858f4551eca))
+* make git operations async to unblock main thread ([#319](https://github.com/batonogov/pine/issues/319)) ([846fd01](https://github.com/batonogov/pine/commit/846fd0133d06fb48d40ee58bef7dfbbec84748d9))
+* make syntax highlighting async and incremental ([#322](https://github.com/batonogov/pine/issues/322)) ([95e38c4](https://github.com/batonogov/pine/commit/95e38c47c7c6861b4efa3b9118228f6f32538e9e))
+
 ## [1.6.1](https://github.com/batonogov/pine/compare/v1.6.0...v1.6.1) (2026-03-20)
 
 
