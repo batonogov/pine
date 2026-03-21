@@ -35,6 +35,29 @@ final class GutterTextView: NSTextView {
         NSPoint(x: gutterInset, y: 8)
     }
 
+    // MARK: - Indent guides
+
+    /// Indentation style for the current file — drives guide positions.
+    var indentationStyle: IndentationStyle = .spaces(4) {
+        didSet { needsDisplay = true }
+    }
+
+    private static let guideColor = NSColor(name: nil) { appearance in
+        if appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua {
+            return NSColor.white.withAlphaComponent(0.1)
+        } else {
+            return NSColor.black.withAlphaComponent(0.1)
+        }
+    }
+
+    private static let activeGuideColor = NSColor(name: nil) { appearance in
+        if appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua {
+            return NSColor.white.withAlphaComponent(0.25)
+        } else {
+            return NSColor.black.withAlphaComponent(0.25)
+        }
+    }
+
     // MARK: - Highlight current line
 
     private let currentLineColor = NSColor(name: nil) { appearance in
@@ -90,6 +113,9 @@ final class GutterTextView: NSTextView {
     override func drawBackground(in rect: NSRect) {
         super.drawBackground(in: rect)
 
+        // ── Indent guides — drawn first so text and line highlight appear above ──
+        drawIndentGuides()
+
         guard let layoutManager = layoutManager,
               textContainer != nil else { return }
 
@@ -109,6 +135,57 @@ final class GutterTextView: NSTextView {
         // ── Inline blame annotation ──
         if isBlameVisible, !blameLookup.isEmpty {
             drawInlineBlame(lineRect: lineRect, layoutManager: layoutManager)
+        }
+    }
+
+    /// Draws subtle vertical lines at each indentation level for all visible lines.
+    private func drawIndentGuides() {
+        guard let layoutManager = layoutManager,
+              let textContainer = textContainer else { return }
+
+        let textString = string as NSString
+        guard textString.length > 0 else { return }
+
+        let font = self.font ?? NSFont.monospacedSystemFont(ofSize: 13, weight: .regular)
+        let charWidth = font.maximumAdvancement.width
+        let textOriginX = textContainerOrigin.x + textContainer.lineFragmentPadding
+        let textOriginY = textContainerOrigin.y
+
+        // Determine cursor line's indent level for the active guide highlight
+        let cursorCharIndex = min(selectedRange().location, textString.length)
+        let cursorLineRange = textString.lineRange(for: NSRange(location: cursorCharIndex, length: 0))
+        let cursorLine = textString.substring(with: cursorLineRange)
+        let cursorLevel = IndentGuideCalculator.indentLevel(of: cursorLine, style: indentationStyle)
+
+        // Only iterate over visible line fragments for performance
+        let visibleGlyphRange = layoutManager.glyphRange(forBoundingRect: visibleRect, in: textContainer)
+        guard visibleGlyphRange.location != NSNotFound else { return }
+
+        layoutManager.enumerateLineFragments(forGlyphRange: visibleGlyphRange) { lineRect, _, _, glyphRange, _ in
+            let charIndex = layoutManager.characterIndexForGlyph(at: glyphRange.location)
+            let lineRange = textString.lineRange(for: NSRange(location: charIndex, length: 0))
+            let lineText = textString.substring(with: lineRange)
+            let level = IndentGuideCalculator.indentLevel(of: lineText, style: self.indentationStyle)
+            guard level > 0 else { return }
+
+            let yTop = lineRect.origin.y + textOriginY
+            let yBottom = yTop + lineRect.height
+
+            for guideLevel in 1...level {
+                let xOffset = IndentGuideCalculator.guideXOffset(
+                    level: guideLevel,
+                    style: self.indentationStyle,
+                    charWidth: charWidth
+                )
+                let x = (textOriginX + xOffset).rounded(.toNearestOrAwayFromZero) + 0.5
+                let color = (guideLevel == cursorLevel) ? Self.activeGuideColor : Self.guideColor
+                color.setStroke()
+                let path = NSBezierPath()
+                path.move(to: NSPoint(x: x, y: yTop))
+                path.line(to: NSPoint(x: x, y: yBottom))
+                path.lineWidth = 1.0
+                path.stroke()
+            }
         }
     }
 
@@ -482,6 +559,10 @@ struct CodeEditorView: NSViewRepresentable {
         textView.exactFileName = fileName
         textView.setBlameLines(blameLines)
         textView.isBlameVisible = isBlameVisible
+        let initialIndentStyle = IndentationStyle.detect(in: text)
+        textView.indentationStyle = initialIndentStyle
+        context.coordinator.lastIndentationStyle = initialIndentStyle
+        context.coordinator.indentStyleVersion = contentVersion
         textView.delegate = context.coordinator
         scrollView.documentView = textView
 
@@ -621,6 +702,14 @@ struct CodeEditorView: NSViewRepresentable {
                 gutterView.isBlameVisible = isBlameVisible
                 gutterView.display()
             }
+            let currentVersion = context.coordinator.parent.contentVersion
+            if currentVersion != context.coordinator.indentStyleVersion {
+                context.coordinator.lastIndentationStyle = IndentationStyle.detect(in: text)
+                context.coordinator.indentStyleVersion = currentVersion
+            }
+            if gutterView.indentationStyle != context.coordinator.lastIndentationStyle {
+                gutterView.indentationStyle = context.coordinator.lastIndentationStyle
+            }
         }
 
         context.coordinator.updateContentIfNeeded(
@@ -687,6 +776,11 @@ struct CodeEditorView: NSViewRepresentable {
 
         /// Last consumed navigation request ID — prevents re-processing.
         var lastGoToID: UUID?
+
+        /// Cached indentation style — recomputed only when content changes.
+        var lastIndentationStyle: IndentationStyle = .spaces(4)
+        /// Content version at which `lastIndentationStyle` was computed.
+        private var indentStyleVersion: UInt64 = UInt64.max
 
         /// Generation counter for cancelling stale async highlight requests.
         let highlightGeneration = HighlightGeneration()
