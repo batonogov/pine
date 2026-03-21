@@ -103,9 +103,9 @@ struct FileSortOrderTests {
         let tempDir = try makeTempDirectory()
         defer { cleanup(tempDir) }
 
-        let small = "hi".data(using: .utf8)!
-        let medium = String(repeating: "x", count: 100).data(using: .utf8)!
-        let large = String(repeating: "y", count: 1000).data(using: .utf8)!
+        let small = Data("hi".utf8)
+        let medium = Data(String(repeating: "x", count: 100).utf8)
+        let large = Data(String(repeating: "y", count: 1000).utf8)
 
         FileManager.default.createFile(atPath: tempDir.appendingPathComponent("large.txt").path, contents: large)
         FileManager.default.createFile(atPath: tempDir.appendingPathComponent("small.txt").path, contents: small)
@@ -121,8 +121,8 @@ struct FileSortOrderTests {
         let tempDir = try makeTempDirectory()
         defer { cleanup(tempDir) }
 
-        let small = "hi".data(using: .utf8)!
-        let large = String(repeating: "y", count: 1000).data(using: .utf8)!
+        let small = Data("hi".utf8)
+        let large = Data(String(repeating: "y", count: 1000).utf8)
 
         FileManager.default.createFile(atPath: tempDir.appendingPathComponent("large.txt").path, contents: large)
         FileManager.default.createFile(atPath: tempDir.appendingPathComponent("small.txt").path, contents: small)
@@ -137,7 +137,7 @@ struct FileSortOrderTests {
         let tempDir = try makeTempDirectory()
         defer { cleanup(tempDir) }
 
-        let data = "abc".data(using: .utf8)!
+        let data = Data("abc".utf8)
         FileManager.default.createFile(atPath: tempDir.appendingPathComponent("z.txt").path, contents: data)
         FileManager.default.createFile(atPath: tempDir.appendingPathComponent("a.txt").path, contents: data)
 
@@ -155,7 +155,7 @@ struct FileSortOrderTests {
         defer { cleanup(tempDir) }
 
         FileManager.default.createFile(atPath: tempDir.appendingPathComponent("a.txt").path,
-                                       contents: "large content to be big".data(using: .utf8))
+                                       contents: Data("large content to be big".utf8))
         try FileManager.default.createDirectory(
             at: tempDir.appendingPathComponent("zDir"), withIntermediateDirectories: true
         )
@@ -285,7 +285,7 @@ struct FileSortOrderTests {
         let tempDir = try makeTempDirectory()
         defer { cleanup(tempDir) }
 
-        let data = "hello world".data(using: .utf8)!
+        let data = Data("hello world".utf8)
         let fileURL = tempDir.appendingPathComponent("test.txt")
         FileManager.default.createFile(atPath: fileURL.path, contents: data)
 
