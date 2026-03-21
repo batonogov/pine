@@ -120,6 +120,24 @@ struct PineApp: App {
                 }
                 .disabled(focusedProject?.workspace.rootURL == nil)
             }
+            // Git menu: Show Changes, Switch Branch
+            CommandMenu(Strings.menuGit) {
+                Button {
+                    NotificationCenter.default.post(name: .showDiffPanel, object: nil)
+                } label: {
+                    Label(Strings.menuShowChanges, systemImage: MenuIcons.showChanges)
+                }
+                .keyboardShortcut("c", modifiers: [.command, .shift])
+                .disabled(focusedProject?.workspace.gitProvider.isGitRepository != true)
+
+                Button {
+                    NotificationCenter.default.post(name: .switchBranch, object: nil)
+                } label: {
+                    Label(Strings.menuSwitchBranch, systemImage: MenuIcons.switchBranch)
+                }
+                .keyboardShortcut("b", modifiers: [.command, .shift])
+                .disabled(focusedProject?.workspace.gitProvider.isGitRepository != true)
+            }
             // Terminal menu: New Tab (Cmd+T)
             CommandMenu(Strings.menuTerminal) {
                 Button {
@@ -1002,4 +1020,5 @@ extension Notification.Name {
     static let findNext = Notification.Name("findNext")
     static let findPrevious = Notification.Name("findPrevious")
     static let useSelectionForFind = Notification.Name("useSelectionForFind")
+    static let showDiffPanel = Notification.Name("showDiffPanel")
 }

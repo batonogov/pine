@@ -26,6 +26,8 @@ struct ContentView: View {
     @State private var blameTask: Task<Void, Never>?
     @State private var didRestoreSession = false
     @State private var isSearchPresented = false
+    @State private var isDiffPanelVisible = false
+    @State private var isBranchSwitcherPresented = false
     @State private var goToLineOffset: GoToRequest?
     @AppStorage("minimapVisible") private var isMinimapVisible = true
     @AppStorage(BlameConstants.storageKey) private var isBlameVisible = true
@@ -189,6 +191,24 @@ struct ContentView: View {
             guard let line = newLine, let tab = tabManager.activeTab else { return }
             tabManager.pendingGoToLine = nil
             goToLineOffset = GoToRequest(offset: Self.cursorOffset(forLine: line, in: tab.content))
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .showDiffPanel)) { _ in
+            guard controlActiveState == .key else { return }
+            isDiffPanelVisible = true
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .switchBranch)) { _ in
+            guard controlActiveState == .key,
+                  workspace.gitProvider.isGitRepository else { return }
+            isBranchSwitcherPresented = true
+        }
+        .sheet(isPresented: $isDiffPanelVisible) {
+            GitDiffView(gitProvider: workspace.gitProvider)
+        }
+        .sheet(isPresented: $isBranchSwitcherPresented) {
+            BranchSwitcherView(
+                gitProvider: workspace.gitProvider,
+                isPresented: $isBranchSwitcherPresented
+            )
         }
     }
 

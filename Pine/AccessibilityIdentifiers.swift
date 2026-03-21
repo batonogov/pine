@@ -48,6 +48,17 @@ enum AccessibilityID {
     // MARK: - Project Search
     static let projectSearchResultsList = "projectSearchResultsList"
 
+    // MARK: - Diff panel
+    static let diffFileList = "diffFileList"
+    static let diffHunk = "diffHunk"
+    static let diffStageButton = "diffStageButton"
+    static let diffUnstageButton = "diffUnstageButton"
+    static let diffDiscardButton = "diffDiscardButton"
+    static let diffPanelRefreshButton = "diffPanelRefreshButton"
+    static func diffFileRow(_ path: String, staged: Bool) -> String {
+        "diffFile_\(staged ? "staged" : "unstaged")_\(path)"
+    }
+
     // MARK: - Status bar
     static let statusBar = "statusBar"
     static let terminalToggleButton = "terminalToggleButton"

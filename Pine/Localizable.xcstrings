@@ -1331,6 +1331,66 @@
         }
       }
     },
+    "dialog.done" : {
+      "comment" : "Done button in sheets.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fertig"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Done"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Listo"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Terminé"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "完了"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "완료"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Concluído"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Готово"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "完成"
+          }
+        }
+      }
+    },
     "dialog.unsavedChanges.cancel" : {
       "comment" : "Button to cancel closing the tab in the unsaved-changes alert.",
       "extractionState" : "manual",
@@ -1749,6 +1809,216 @@
             "value" : "未保存的更改"
           }
         }
+      }
+    },
+    "diff.discard" : {
+      "comment" : "Button label to discard a hunk in the diff panel.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : { "stringUnit" : { "state" : "translated", "value" : "Verwerfen" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Discard" } },
+        "es" : { "stringUnit" : { "state" : "translated", "value" : "Descartar" } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Ignorer" } },
+        "ja" : { "stringUnit" : { "state" : "translated", "value" : "破棄" } },
+        "ko" : { "stringUnit" : { "state" : "translated", "value" : "취소" } },
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Descartar" } },
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Отменить" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "丢弃" } }
+      }
+    },
+    "diff.discard.confirm" : {
+      "comment" : "Confirm button in the discard-hunk alert.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : { "stringUnit" : { "state" : "translated", "value" : "Änderungen verwerfen" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Discard Changes" } },
+        "es" : { "stringUnit" : { "state" : "translated", "value" : "Descartar cambios" } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Supprimer les modifications" } },
+        "ja" : { "stringUnit" : { "state" : "translated", "value" : "変更を破棄" } },
+        "ko" : { "stringUnit" : { "state" : "translated", "value" : "변경 사항 취소" } },
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Descartar alterações" } },
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Отменить изменения" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "丢弃更改" } }
+      }
+    },
+    "diff.discard.message" : {
+      "comment" : "Informative text in the discard-hunk confirmation alert.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : { "stringUnit" : { "state" : "translated", "value" : "Diese Änderungen können nicht rückgängig gemacht werden." } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "This action cannot be undone." } },
+        "es" : { "stringUnit" : { "state" : "translated", "value" : "Esta acción no se puede deshacer." } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Cette action est irréversible." } },
+        "ja" : { "stringUnit" : { "state" : "translated", "value" : "この操作は元に戻せません。" } },
+        "ko" : { "stringUnit" : { "state" : "translated", "value" : "이 작업은 되돌릴 수 없습니다." } },
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Esta ação não pode ser desfeita." } },
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Это действие нельзя отменить." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "此操作无法撤销。" } }
+      }
+    },
+    "diff.discard.title" : {
+      "comment" : "Title of the discard-hunk confirmation alert.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : { "stringUnit" : { "state" : "translated", "value" : "Änderungen verwerfen?" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Discard Changes?" } },
+        "es" : { "stringUnit" : { "state" : "translated", "value" : "¿Descartar cambios?" } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Supprimer les modifications ?" } },
+        "ja" : { "stringUnit" : { "state" : "translated", "value" : "変更を破棄しますか?" } },
+        "ko" : { "stringUnit" : { "state" : "translated", "value" : "변경 사항을 취소하시겠습니까?" } },
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Descartar alterações?" } },
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Отменить изменения?" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "丢弃更改？" } }
+      }
+    },
+    "diff.noChanges" : {
+      "comment" : "Heading shown when no git changes are found in the diff panel.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : { "stringUnit" : { "state" : "translated", "value" : "Keine Änderungen" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "No Changes" } },
+        "es" : { "stringUnit" : { "state" : "translated", "value" : "Sin cambios" } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Aucune modification" } },
+        "ja" : { "stringUnit" : { "state" : "translated", "value" : "変更なし" } },
+        "ko" : { "stringUnit" : { "state" : "translated", "value" : "변경 없음" } },
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Sem alterações" } },
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Нет изменений" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "无更改" } }
+      }
+    },
+    "diff.noChanges.message" : {
+      "comment" : "Subtext shown when no git changes are found.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : { "stringUnit" : { "state" : "translated", "value" : "Der Arbeitsbaum ist sauber." } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "The working tree is clean." } },
+        "es" : { "stringUnit" : { "state" : "translated", "value" : "El árbol de trabajo está limpio." } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "L'arbre de travail est propre." } },
+        "ja" : { "stringUnit" : { "state" : "translated", "value" : "作業ツリーはクリーンです。" } },
+        "ko" : { "stringUnit" : { "state" : "translated", "value" : "작업 트리가 깨끗합니다." } },
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "A árvore de trabalho está limpa." } },
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Рабочее дерево чистое." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "工作区是干净的。" } }
+      }
+    },
+    "diff.panelTitle" : {
+      "comment" : "Title of the git diff panel sheet.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : { "stringUnit" : { "state" : "translated", "value" : "Änderungen" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Changes" } },
+        "es" : { "stringUnit" : { "state" : "translated", "value" : "Cambios" } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Modifications" } },
+        "ja" : { "stringUnit" : { "state" : "translated", "value" : "変更" } },
+        "ko" : { "stringUnit" : { "state" : "translated", "value" : "변경 사항" } },
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Alterações" } },
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Изменения" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "更改" } }
+      }
+    },
+    "diff.refresh" : {
+      "comment" : "Tooltip for the refresh button in the diff panel.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : { "stringUnit" : { "state" : "translated", "value" : "Aktualisieren" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Refresh" } },
+        "es" : { "stringUnit" : { "state" : "translated", "value" : "Actualizar" } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Actualiser" } },
+        "ja" : { "stringUnit" : { "state" : "translated", "value" : "更新" } },
+        "ko" : { "stringUnit" : { "state" : "translated", "value" : "새로 고침" } },
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Atualizar" } },
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Обновить" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "刷新" } }
+      }
+    },
+    "diff.selectFile" : {
+      "comment" : "Placeholder heading when no file is selected in the diff panel.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : { "stringUnit" : { "state" : "translated", "value" : "Datei auswählen" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Select a File" } },
+        "es" : { "stringUnit" : { "state" : "translated", "value" : "Seleccionar archivo" } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Sélectionner un fichier" } },
+        "ja" : { "stringUnit" : { "state" : "translated", "value" : "ファイルを選択" } },
+        "ko" : { "stringUnit" : { "state" : "translated", "value" : "파일 선택" } },
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Selecionar arquivo" } },
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Выберите файл" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "选择文件" } }
+      }
+    },
+    "diff.selectFile.message" : {
+      "comment" : "Subtext shown when no file is selected in the diff panel.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : { "stringUnit" : { "state" : "translated", "value" : "Wählen Sie eine Datei aus der Liste aus, um ihre Änderungen anzuzeigen." } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Choose a file from the list to view its changes." } },
+        "es" : { "stringUnit" : { "state" : "translated", "value" : "Elige un archivo de la lista para ver sus cambios." } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Choisissez un fichier dans la liste pour afficher ses modifications." } },
+        "ja" : { "stringUnit" : { "state" : "translated", "value" : "リストからファイルを選択して変更を表示します。" } },
+        "ko" : { "stringUnit" : { "state" : "translated", "value" : "목록에서 파일을 선택하여 변경 사항을 확인하세요." } },
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Escolha um arquivo da lista para ver suas alterações." } },
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Выберите файл из списка, чтобы просмотреть изменения." } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "从列表中选择文件以查看其更改。" } }
+      }
+    },
+    "diff.stage" : {
+      "comment" : "Button label to stage a hunk in the diff panel.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : { "stringUnit" : { "state" : "translated", "value" : "Stage" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Stage" } },
+        "es" : { "stringUnit" : { "state" : "translated", "value" : "Preparar" } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Indexer" } },
+        "ja" : { "stringUnit" : { "state" : "translated", "value" : "ステージ" } },
+        "ko" : { "stringUnit" : { "state" : "translated", "value" : "스테이지" } },
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Preparar" } },
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Добавить" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "暂存" } }
+      }
+    },
+    "diff.staged" : {
+      "comment" : "Section heading for staged changes in the diff panel.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : { "stringUnit" : { "state" : "translated", "value" : "Vorbereitete Änderungen" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Staged Changes" } },
+        "es" : { "stringUnit" : { "state" : "translated", "value" : "Cambios preparados" } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Modifications indexées" } },
+        "ja" : { "stringUnit" : { "state" : "translated", "value" : "ステージ済みの変更" } },
+        "ko" : { "stringUnit" : { "state" : "translated", "value" : "스테이지된 변경 사항" } },
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Alterações preparadas" } },
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Подготовленные изменения" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "已暂存的更改" } }
+      }
+    },
+    "diff.unstage" : {
+      "comment" : "Button label to unstage a hunk in the diff panel.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : { "stringUnit" : { "state" : "translated", "value" : "Unstage" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Unstage" } },
+        "es" : { "stringUnit" : { "state" : "translated", "value" : "Desindexar" } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Désindexer" } },
+        "ja" : { "stringUnit" : { "state" : "translated", "value" : "アンステージ" } },
+        "ko" : { "stringUnit" : { "state" : "translated", "value" : "언스테이지" } },
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Desindexar" } },
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Убрать" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "取消暂存" } }
+      }
+    },
+    "diff.unstaged" : {
+      "comment" : "Section heading for unstaged changes in the diff panel.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : { "stringUnit" : { "state" : "translated", "value" : "Nicht vorbereitete Änderungen" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Unstaged Changes" } },
+        "es" : { "stringUnit" : { "state" : "translated", "value" : "Cambios sin preparar" } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Modifications non indexées" } },
+        "ja" : { "stringUnit" : { "state" : "translated", "value" : "ステージされていない変更" } },
+        "ko" : { "stringUnit" : { "state" : "translated", "value" : "스테이지되지 않은 변경 사항" } },
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Alterações não preparadas" } },
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Неподготовленные изменения" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "未暂存的更改" } }
       }
     },
     "editor.autoSaving" : {
@@ -3777,6 +4047,21 @@
             "value" : "另存为…"
           }
         }
+      }
+    },
+    "menu.showChanges" : {
+      "comment" : "Menu command: open the git diff panel (⌘⇧C).",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : { "stringUnit" : { "state" : "translated", "value" : "Änderungen anzeigen" } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Show Changes" } },
+        "es" : { "stringUnit" : { "state" : "translated", "value" : "Mostrar cambios" } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Afficher les modifications" } },
+        "ja" : { "stringUnit" : { "state" : "translated", "value" : "変更を表示" } },
+        "ko" : { "stringUnit" : { "state" : "translated", "value" : "변경 사항 표시" } },
+        "pt-BR" : { "stringUnit" : { "state" : "translated", "value" : "Mostrar alterações" } },
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Показать изменения" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "显示更改" } }
       }
     },
     "menu.switchBranch" : {
