@@ -123,7 +123,11 @@ final class WorkspaceManager {
                 self.gitProvider.fileStatuses = bgGit.fileStatuses
                 self.gitProvider.ignoredPaths = bgGit.ignoredPaths
                 self.gitProvider.branches = bgGit.branches
-                completion?()
+
+                // For shallow projects, start watcher now — no Phase 2 needed.
+                if !shallowResult.wasDepthLimited {
+                    completion?()
+                }
             }
 
             // Phase 2: full tree only if Phase 1 hit the depth limit.
@@ -134,9 +138,12 @@ final class WorkspaceManager {
             let fullChildren = fullRoot.children ?? []
 
             // Safe ordering: main queue is FIFO, so Phase 2 always runs after Phase 1.
+            // Completion (file watcher) starts after Phase 2 to avoid watcher events
+            // racing with and invalidating the in-flight full tree load.
             DispatchQueue.main.async { [weak self] in
                 guard let self, self.loadGeneration == generation else { return }
                 self.rootNodes = fullChildren
+                completion?()
             }
         }
     }

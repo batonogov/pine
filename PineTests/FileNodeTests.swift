@@ -394,6 +394,35 @@ struct FileNodeTests {
         #expect(names.contains("deep.txt"))
     }
 
+    @Test func loadTreeReportsDepthLimitReached() throws {
+        let tempDir = try makeTempDirectory()
+        defer { cleanup(tempDir) }
+
+        let sub = tempDir.appendingPathComponent("sub")
+        try FileManager.default.createDirectory(at: sub, withIntermediateDirectories: true)
+        FileManager.default.createFile(atPath: sub.appendingPathComponent("file.txt").path, contents: nil)
+
+        // Deep enough to hit limit
+        let limited = FileNode.loadTree(url: tempDir, projectRoot: tempDir, ignoredPaths: [], maxDepth: 0)
+        #expect(limited.wasDepthLimited == true)
+
+        // Shallow enough — no limit hit
+        let full = FileNode.loadTree(url: tempDir, projectRoot: tempDir, ignoredPaths: [], maxDepth: 100)
+        #expect(full.wasDepthLimited == false)
+    }
+
+    @Test func loadTreeReportsNotLimitedForFlatProject() throws {
+        let tempDir = try makeTempDirectory()
+        defer { cleanup(tempDir) }
+
+        FileManager.default.createFile(atPath: tempDir.appendingPathComponent("a.txt").path, contents: nil)
+        FileManager.default.createFile(atPath: tempDir.appendingPathComponent("b.txt").path, contents: nil)
+
+        // No directories at all — depth limit can never be reached
+        let result = FileNode.loadTree(url: tempDir, projectRoot: tempDir, ignoredPaths: [], maxDepth: 0)
+        #expect(result.wasDepthLimited == false)
+    }
+
     @Test func shallowDirectoryLoadsChildrenOnDemand() throws {
         let tempDir = try makeTempDirectory()
         defer { cleanup(tempDir) }
