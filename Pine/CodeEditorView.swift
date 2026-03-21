@@ -83,7 +83,6 @@ final class GutterTextView: NSTextView {
             symbol.draw(in: rect)
             return true
         }
-        flipped.isTemplate = symbol.isTemplate
         return flipped
     }()
 
