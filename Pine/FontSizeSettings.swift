@@ -58,6 +58,7 @@ final class FontSizeSettings {
 
     func reset() {
         fontSize = Self.defaultSize
+        fontFamily = Self.defaultFontFamily
     }
 
     func setFontFamily(_ family: String) {
@@ -65,13 +66,25 @@ final class FontSizeSettings {
     }
 
     /// Returns a font for the given family and size.
-    /// Falls back to system monospace if the family is empty or unavailable.
+    /// Falls back to system monospace if the family is empty, unavailable, or not monospaced.
     static func makeFont(family: String, size: CGFloat) -> NSFont {
         if !family.isEmpty,
-           let font = NSFontManager.shared.font(withFamily: family, traits: [], weight: 5, size: size) {
+           let font = NSFontManager.shared.font(withFamily: family, traits: [], weight: 5, size: size),
+           isMonospaced(font) {
             return font
         }
         return NSFont.monospacedSystemFont(ofSize: size, weight: .regular)
+    }
+
+    /// Returns `true` if the font is monospaced.
+    /// Uses `isFixedPitch` first, then falls back to comparing glyph advances
+    /// for 'i' and 'm' — this catches fonts like SF Mono and JetBrains Mono
+    /// where `isFixedPitch` incorrectly returns `false`.
+    static func isMonospaced(_ font: NSFont) -> Bool {
+        if font.isFixedPitch { return true }
+        let iAdvance = font.advancement(forGlyph: font.glyph(withName: "i"))
+        let mAdvance = font.advancement(forGlyph: font.glyph(withName: "m"))
+        return iAdvance.width > 0 && abs(iAdvance.width - mAdvance.width) < 0.01
     }
 
     /// Returns all monospaced font families available on the system, sorted alphabetically.
@@ -80,7 +93,7 @@ final class FontSizeSettings {
             guard let font = NSFontManager.shared.font(
                 withFamily: family, traits: [], weight: 5, size: 12
             ) else { return false }
-            return font.isFixedPitch
+            return isMonospaced(font)
         }
     }
 }

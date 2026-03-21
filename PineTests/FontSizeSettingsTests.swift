@@ -276,11 +276,59 @@ struct FontSizeSettingsTests {
         #expect(families.contains("Courier New"))
     }
 
-    @Test func availableMonospacedFontFamiliesAreAllFixed() throws {
+    @Test func availableMonospacedFontFamiliesAreAllMonospaced() throws {
         let families = FontSizeSettings.availableMonospacedFontFamilies()
         for family in families {
-            let font = FontSizeSettings.makeFont(family: family, size: 12)
-            #expect(font.isFixedPitch, "Expected \(family) to be fixed-pitch")
+            guard let font = NSFontManager.shared.font(
+                withFamily: family, traits: [], weight: 5, size: 12
+            ) else { continue }
+            #expect(FontSizeSettings.isMonospaced(font), "Expected \(family) to be monospaced")
         }
+    }
+
+    // MARK: - Reset also resets font family
+
+    @Test func resetAlsoResetsFontFamily() throws {
+        let defaults = try makeDefaults()
+        defer { cleanupDefaults(defaults) }
+
+        let settings = FontSizeSettings(defaults: defaults)
+        settings.setFontFamily("Menlo")
+        #expect(settings.fontFamily == "Menlo")
+
+        settings.reset()
+        #expect(settings.fontFamily == FontSizeSettings.defaultFontFamily)
+        #expect(settings.fontSize == FontSizeSettings.defaultSize)
+    }
+
+    // MARK: - isMonospaced
+
+    @Test func isMonospacedReturnsTrueForMenlo() throws {
+        let font = try #require(NSFont(name: "Menlo-Regular", size: 13))
+        #expect(FontSizeSettings.isMonospaced(font))
+    }
+
+    @Test func isMonospacedReturnsTrueForCourierNew() throws {
+        let font = try #require(NSFont(name: "CourierNewPSMT", size: 13))
+        #expect(FontSizeSettings.isMonospaced(font))
+    }
+
+    @Test func isMonospacedReturnsFalseForHelvetica() throws {
+        let font = try #require(NSFont(name: "Helvetica", size: 13))
+        #expect(!FontSizeSettings.isMonospaced(font))
+    }
+
+    @Test func isMonospacedReturnsFalseForTimesNewRoman() throws {
+        let font = try #require(NSFont(name: "TimesNewRomanPSMT", size: 13))
+        #expect(!FontSizeSettings.isMonospaced(font))
+    }
+
+    // MARK: - makeFont rejects proportional fonts from UserDefaults
+
+    @Test func makeFontRejectsProportionalFamily() throws {
+        let font = FontSizeSettings.makeFont(family: "Helvetica", size: 13)
+        // Helvetica is proportional, should fall back to system monospace
+        #expect(font.familyName != "Helvetica")
+        #expect(FontSizeSettings.isMonospaced(font))
     }
 }

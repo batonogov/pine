@@ -24,7 +24,10 @@ final class GutterTextView: NSTextView {
         guard let fontManager = sender as? NSFontManager,
               let currentFont = font else { return }
         let newFont = fontManager.convert(currentFont)
-        guard newFont.isFixedPitch else { return }
+        guard FontSizeSettings.isMonospaced(newFont) else {
+            NSSound.beep()
+            return
+        }
         onFontChanged?(newFont)
     }
 
@@ -703,7 +706,7 @@ struct CodeEditorView: NSViewRepresentable {
         var lastFileName: String?
         /// Последний размер шрифта — для обнаружения изменений (Cmd+Plus/Minus)
         var lastFontSize: CGFloat = 0
-        /// Последнее семейство шрифта — для обнаружения изменений семейства.
+        /// Last font family — used to detect family changes.
         var lastFontFamily: String = ""
 
         /// Flag: text was just changed by the user (NSTextView delegate).
