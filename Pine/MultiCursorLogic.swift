@@ -36,25 +36,40 @@ enum MultiCursorLogic {
         }
     }
 
+    /// A single text replacement in **original** (pre-edit) coordinates.
+    struct Replacement {
+        /// Range to replace in the original text (location in original UTF-16 offsets).
+        let range: NSRange
+        /// String to insert.
+        let string: String
+    }
+
     /// Result of a multi-cursor text operation.
     struct Result {
         let newText: String
         let newCursors: [Cursor]
+        /// Replacements in **original** coordinates, sorted by location ascending.
+        /// Apply in reverse order to preserve offsets.
+        let replacements: [Replacement]
     }
 
     // MARK: - Insert
 
     /// Inserts `string` at every cursor position (replacing selections if any).
-    /// Cursors must be sorted by location. Returns new text and adjusted cursors.
+    /// Returns new text, adjusted cursors, and per-cursor replacements in original coordinates.
     static func insert(in text: String, cursors: [Cursor], string: String) -> Result {
         let sorted = cursors.sorted { $0.range.location < $1.range.location }
         let insertLength = (string as NSString).length
         var newText = text
         var newCursors: [Cursor] = []
+        var replacements: [Replacement] = []
         var cumulativeOffset = 0
 
         for cursor in sorted {
             let range = cursor.range
+            // Record replacement in original coordinates
+            replacements.append(Replacement(range: range, string: string))
+
             let adjustedLocation = range.location + cumulativeOffset
             let adjustedRange = NSRange(location: adjustedLocation, length: range.length)
 
@@ -67,7 +82,7 @@ enum MultiCursorLogic {
             cumulativeOffset += insertLength - range.length
         }
 
-        return Result(newText: newText, newCursors: newCursors)
+        return Result(newText: newText, newCursors: mergeCursors(newCursors), replacements: replacements)
     }
 
     // MARK: - Delete backward
@@ -77,11 +92,14 @@ enum MultiCursorLogic {
         let sorted = cursors.sorted { $0.range.location < $1.range.location }
         var newText = text
         var newCursors: [Cursor] = []
+        var replacements: [Replacement] = []
         var cumulativeOffset = 0
 
         for cursor in sorted {
             if cursor.hasSelection {
                 let range = cursor.range
+                replacements.append(Replacement(range: range, string: ""))
+
                 let adjustedRange = NSRange(
                     location: range.location + cumulativeOffset,
                     length: range.length
@@ -96,16 +114,22 @@ enum MultiCursorLogic {
                     newCursors.append(Cursor(location: 0))
                     continue
                 }
-                // Delete one UTF-16 composed character sequence
                 let nsNew = newText as NSString
                 let deleteRange = nsNew.rangeOfComposedCharacterSequence(at: loc - 1)
+                // Convert back to original coordinates for the replacement
+                let origRange = NSRange(
+                    location: deleteRange.location - cumulativeOffset,
+                    length: deleteRange.length
+                )
+                replacements.append(Replacement(range: origRange, string: ""))
+
                 newText = nsNew.replacingCharacters(in: deleteRange, with: "")
                 newCursors.append(Cursor(location: deleteRange.location))
                 cumulativeOffset -= deleteRange.length
             }
         }
 
-        return Result(newText: newText, newCursors: newCursors)
+        return Result(newText: newText, newCursors: mergeCursors(newCursors), replacements: replacements)
     }
 
     // MARK: - Delete forward
@@ -115,11 +139,14 @@ enum MultiCursorLogic {
         let sorted = cursors.sorted { $0.range.location < $1.range.location }
         var newText = text
         var newCursors: [Cursor] = []
+        var replacements: [Replacement] = []
         var cumulativeOffset = 0
 
         for cursor in sorted {
             if cursor.hasSelection {
                 let range = cursor.range
+                replacements.append(Replacement(range: range, string: ""))
+
                 let adjustedRange = NSRange(
                     location: range.location + cumulativeOffset,
                     length: range.length
@@ -136,13 +163,19 @@ enum MultiCursorLogic {
                     continue
                 }
                 let deleteRange = nsNew.rangeOfComposedCharacterSequence(at: loc)
+                let origRange = NSRange(
+                    location: deleteRange.location - cumulativeOffset,
+                    length: deleteRange.length
+                )
+                replacements.append(Replacement(range: origRange, string: ""))
+
                 newText = nsNew.replacingCharacters(in: deleteRange, with: "")
                 newCursors.append(Cursor(location: loc))
                 cumulativeOffset -= deleteRange.length
             }
         }
 
-        return Result(newText: newText, newCursors: newCursors)
+        return Result(newText: newText, newCursors: mergeCursors(newCursors), replacements: replacements)
     }
 
     // MARK: - Select next occurrence (Cmd+D)
@@ -209,7 +242,7 @@ enum MultiCursorLogic {
         newCursors.append(newCursor)
         newCursors.sort { ($0.selection?.location ?? $0.location) < ($1.selection?.location ?? $1.location) }
 
-        return newCursors
+        return mergeCursors(newCursors)
     }
 
     // MARK: - Split selection into lines (Cmd+Shift+L)
@@ -263,7 +296,7 @@ enum MultiCursorLogic {
             }
         }
 
-        return result
+        return mergeCursors(result)
     }
 
     // MARK: - Add cursor (Option+Click)
@@ -285,7 +318,7 @@ enum MultiCursorLogic {
         var result = cursors.map { Cursor(location: $0.location) } // Drop selections on Option+Click
         result.append(Cursor(location: position))
         result.sort { $0.location < $1.location }
-        return result
+        return mergeCursors(result)
     }
 
     // MARK: - Merge overlapping cursors
@@ -329,6 +362,7 @@ enum MultiCursorLogic {
     // MARK: - Word boundary detection
 
     /// Returns the range of the word at the given UTF-16 position, or nil if not on a word character.
+    /// Handles surrogate pairs by skipping high/low surrogates that are part of emoji or CJK characters.
     static func wordRange(in text: String, at position: Int) -> NSRange? {
         let source = text as NSString
         guard source.length > 0, position <= source.length else { return nil }
@@ -341,17 +375,29 @@ enum MultiCursorLogic {
             checkPos = position
         }
 
-        guard isWordCharacter(source.character(at: checkPos)) else { return nil }
+        // Skip surrogate pairs — they are not word characters
+        let char = source.character(at: checkPos)
+        if CFStringIsSurrogateHighCharacter(char) || CFStringIsSurrogateLowCharacter(char) {
+            return nil
+        }
+
+        guard isWordCharacter(char) else { return nil }
 
         // Scan backward to find word start
         var start = checkPos
-        while start > 0 && isWordCharacter(source.character(at: start - 1)) {
+        while start > 0 {
+            let prev = source.character(at: start - 1)
+            if CFStringIsSurrogateHighCharacter(prev) || CFStringIsSurrogateLowCharacter(prev) { break }
+            if !isWordCharacter(prev) { break }
             start -= 1
         }
 
         // Scan forward to find word end
         var end = checkPos
-        while end < source.length - 1 && isWordCharacter(source.character(at: end + 1)) {
+        while end < source.length - 1 {
+            let next = source.character(at: end + 1)
+            if CFStringIsSurrogateHighCharacter(next) || CFStringIsSurrogateLowCharacter(next) { break }
+            if !isWordCharacter(next) { break }
             end += 1
         }
 
@@ -359,12 +405,12 @@ enum MultiCursorLogic {
     }
 
     private static func isWordCharacter(_ char: unichar) -> Bool {
-        // Letters, digits, underscore — standard word boundary
-        let cf = CharacterSet.alphanumerics
-        let scalar = Unicode.Scalar(char)
-        if let scalar {
-            return cf.contains(scalar) || char == 0x5F // underscore
+        // Skip surrogate pairs entirely — they represent multi-codeunit characters (emoji, etc.)
+        if CFStringIsSurrogateHighCharacter(char) || CFStringIsSurrogateLowCharacter(char) {
+            return false
         }
-        return false
+        let scalar = Unicode.Scalar(char)
+        guard let scalar else { return false }
+        return CharacterSet.alphanumerics.contains(scalar) || char == 0x5F // underscore
     }
 }

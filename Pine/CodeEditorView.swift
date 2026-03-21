@@ -43,15 +43,35 @@ final class GutterTextView: NSTextView {
     /// Current set of cursors. Empty means single-cursor mode (use NSTextView default).
     private(set) var multiCursors: [MultiCursorLogic.Cursor] = []
 
-    /// Applies multi-cursor edit result to the text view with undo support.
+    /// Flag to distinguish multi-cursor edits from external text changes.
+    /// Internal access for Coordinator to check in textDidChange.
+    var isApplyingMultiCursorEdit = false
+
+    /// Applies multi-cursor edit result using per-cursor targeted replacements (preserves attributes).
+    /// Replacements are applied in reverse order so earlier offsets remain valid.
     private func applyMultiCursorResult(_ result: MultiCursorLogic.Result) {
-        let fullRange = NSRange(location: 0, length: (string as NSString).length)
-        if shouldChangeText(in: fullRange, replacementString: result.newText) {
-            replaceCharacters(in: fullRange, with: result.newText)
+        isApplyingMultiCursorEdit = true
+        defer { isApplyingMultiCursorEdit = false }
+
+        // Group all replacements into a single undo step
+        undoManager?.beginUndoGrouping()
+
+        // Apply replacements in reverse order (from end to start) to preserve offsets
+        for replacement in result.replacements.reversed()
+            where shouldChangeText(in: replacement.range, replacementString: replacement.string) {
+            replaceCharacters(in: replacement.range, with: replacement.string)
             didChangeText()
         }
+
+        undoManager?.endUndoGrouping()
+
         multiCursors = result.newCursors
         syncSelectionsFromCursors()
+    }
+
+    /// Resets multi-cursor state. Called when text changes externally (not from multi-cursor edit).
+    func invalidateMultiCursors() {
+        multiCursors = []
     }
 
     /// Syncs NSTextView selections from multiCursors using setSelectedRanges (Apple API).
@@ -131,6 +151,8 @@ final class GutterTextView: NSTextView {
     }
 
     // MARK: - Option+Click for multi-cursor
+    // Note: This overrides NSTextView's default Option+Click behavior (rectangular/column selection).
+    // Multi-cursor editing (like Xcode/VS Code) is more useful in a code editor context.
 
     override func mouseDown(with event: NSEvent) {
         if event.modifierFlags.contains(.option) && !event.modifierFlags.contains(.shift) {
@@ -936,6 +958,11 @@ struct CodeEditorView: NSViewRepresentable {
             guard textChanged || languageChanged else { return }
             lastContentVersion = parent.contentVersion
 
+            // External text change (e.g., tab switch, file reload) → invalidate multi-cursors
+            if let gutterView = textView as? GutterTextView {
+                gutterView.invalidateMultiCursors()
+            }
+
             cancelPendingHighlight()
             if let storage = textView.textStorage {
                 SyntaxHighlighter.shared.invalidateCache(for: storage)
@@ -1019,6 +1046,11 @@ struct CodeEditorView: NSViewRepresentable {
             // so the upcoming updateNSView won't overwrite the text and reset the cursor.
             didChangeFromTextView = true
             parent.text = textView.string
+
+            // Invalidate multi-cursor state when text changes externally (not from multi-cursor edit)
+            if let gutterView = textView as? GutterTextView, !gutterView.isApplyingMultiCursorEdit {
+                gutterView.invalidateMultiCursors()
+            }
 
             // Подсветка синтаксиса сбросит backgroundColor —
             // считаем bracket highlight невалидным

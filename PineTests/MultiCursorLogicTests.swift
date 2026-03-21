@@ -434,4 +434,76 @@ struct MultiCursorLogicTests {
         let range = MultiCursorLogic.wordRange(in: text, at: 0)
         #expect(range == nil)
     }
+
+    @Test func wordAtPositionOnEmoji() {
+        // 🎉 is a surrogate pair — not a word character
+        let text = "foo🎉bar"
+        let range = MultiCursorLogic.wordRange(in: text, at: 3) // high surrogate of 🎉
+        #expect(range == nil)
+    }
+
+    @Test func wordRangeStopsAtEmoji() {
+        // Word boundary should stop before emoji
+        let text = "foo🎉bar"
+        let range = MultiCursorLogic.wordRange(in: text, at: 1) // inside "foo"
+        #expect(range == NSRange(location: 0, length: 3)) // just "foo"
+    }
+
+    // MARK: - Delete backward with emoji
+
+    @Test func deleteBackwardEmoji() {
+        // "a🎉b" — cursor after 🎉 (offset 3, since 🎉 is 2 UTF-16 units)
+        let text = "a🎉b"
+        let cursors = [MultiCursorLogic.Cursor(location: 3)]
+        let result = MultiCursorLogic.deleteBackward(in: text, cursors: cursors)
+        #expect(result.newText == "ab")
+        #expect(result.newCursors[0].location == 1)
+    }
+
+    @Test func deleteBackwardEmojiMultipleCursors() {
+        // "🎉a🎉" — cursors after each emoji
+        let text = "🎉a🎉"
+        let cursors = [
+            MultiCursorLogic.Cursor(location: 2), // after first 🎉
+            MultiCursorLogic.Cursor(location: 5)  // after second 🎉
+        ]
+        let result = MultiCursorLogic.deleteBackward(in: text, cursors: cursors)
+        #expect(result.newText == "a")
+        #expect(result.newCursors[0].location == 0)
+        #expect(result.newCursors[1].location == 1)
+    }
+
+    // MARK: - Replacements in original coordinates
+
+    @Test func insertReplacementsInOriginalCoordinates() {
+        let text = "abcdef"
+        let cursors = [
+            MultiCursorLogic.Cursor(location: 2),
+            MultiCursorLogic.Cursor(location: 4)
+        ]
+        let result = MultiCursorLogic.insert(in: text, cursors: cursors, string: "X")
+        #expect(result.replacements.count == 2)
+        // First replacement at original offset 2
+        #expect(result.replacements[0].range == NSRange(location: 2, length: 0))
+        #expect(result.replacements[0].string == "X")
+        // Second replacement at original offset 4
+        #expect(result.replacements[1].range == NSRange(location: 4, length: 0))
+        #expect(result.replacements[1].string == "X")
+    }
+
+    @Test func deleteReplacementsInOriginalCoordinates() {
+        let text = "abcdef"
+        let cursors = [
+            MultiCursorLogic.Cursor(location: 2),
+            MultiCursorLogic.Cursor(location: 5)
+        ]
+        let result = MultiCursorLogic.deleteBackward(in: text, cursors: cursors)
+        #expect(result.replacements.count == 2)
+        // First: delete char at offset 1 (before cursor at 2)
+        #expect(result.replacements[0].range == NSRange(location: 1, length: 1))
+        #expect(result.replacements[0].string == "")
+        // Second: delete char at offset 4 (before cursor at 5)
+        #expect(result.replacements[1].range == NSRange(location: 4, length: 1))
+        #expect(result.replacements[1].string == "")
+    }
 }
