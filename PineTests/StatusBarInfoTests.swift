@@ -188,4 +188,45 @@ struct StatusBarInfoTests {
     func formatExactKB() {
         #expect(FileSizeFormatter.format(1_024) == "1.0 KB")
     }
+
+    // MARK: - EditorTab cached values
+
+    @Test("EditorTab caches indentation and line ending")
+    func editorTabCaching() {
+        var tab = EditorTab(
+            url: URL(fileURLWithPath: "/tmp/test.swift"),
+            content: "func foo() {\n    let x = 1\n}\n",
+            savedContent: ""
+        )
+        #expect(tab.indentation() == .spaces(4))
+        #expect(tab.lineEnding() == .lf)
+    }
+
+    @Test("EditorTab recomputes cache on content change")
+    func editorTabCacheInvalidation() {
+        var tab = EditorTab(
+            url: URL(fileURLWithPath: "/tmp/test.swift"),
+            content: "func foo() {\n    let x = 1\n}\n",
+            savedContent: ""
+        )
+        _ = tab.indentation()
+        // Change content to use tabs
+        tab.content = "func foo() {\n\tlet x = 1\n}\n"
+        #expect(tab.indentation() == .tabs)
+    }
+
+    @Test("TabManager.updateEditorState computes line and column")
+    func tabManagerCursorUpdate() {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let url = dir.appendingPathComponent("test.swift")
+        try? "hello\nworld".write(to: url, atomically: true, encoding: .utf8)
+
+        let manager = TabManager()
+        manager.openTab(url: url)
+        // Position 8 = "wo" on second line → Ln 2, Col 3
+        manager.updateEditorState(cursorPosition: 8, scrollOffset: 0)
+        #expect(manager.activeTab?.cursorLine == 2)
+        #expect(manager.activeTab?.cursorColumn == 3)
+    }
 }

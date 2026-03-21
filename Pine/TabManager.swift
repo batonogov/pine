@@ -105,6 +105,7 @@ final class TabManager {
         tab.lastModDate = modDate(for: url)
         tab.syntaxHighlightingDisabled = syntaxHighlightingDisabled
         tab.encoding = encoding
+        tab.fileSizeBytes = fileSize(url: url)
         tabs.append(tab)
         activeTabID = tab.id
     }
@@ -167,6 +168,21 @@ final class TabManager {
         guard let index = activeTabIndex else { return }
         tabs[index].cursorPosition = cursorPosition
         tabs[index].scrollOffset = scrollOffset
+        let loc = CursorLocation(position: cursorPosition, in: tabs[index].content)
+        tabs[index].cursorLine = loc.line
+        tabs[index].cursorColumn = loc.column
+    }
+
+    /// Returns the cached indentation style of the active tab.
+    var activeTabIndentation: IndentationStyle {
+        guard let index = activeTabIndex else { return .spaces(4) }
+        return tabs[index].indentation()
+    }
+
+    /// Returns the cached line ending of the active tab.
+    var activeTabLineEnding: LineEnding {
+        guard let index = activeTabIndex else { return .lf }
+        return tabs[index].lineEnding()
     }
 
     /// Updates the fold state for the active tab.
@@ -191,6 +207,7 @@ final class TabManager {
         try tab.content.write(to: tab.url, atomically: true, encoding: tab.encoding)
         tabs[index].savedContent = tab.content
         tabs[index].lastModDate = modDate(for: tab.url)
+        tabs[index].fileSizeBytes = fileSize(url: tab.url)
         return true
     }
 

@@ -1333,30 +1333,24 @@ struct StatusBarView: View {
             Spacer()
 
             if let activeTab = tabManager.activeTab, activeTab.kind == .text {
-                // Line / Column indicator
-                let cursor = CursorLocation(
-                    position: activeTab.cursorPosition,
-                    in: activeTab.content
-                )
-                Text(verbatim: "Ln \(cursor.line), Col \(cursor.column)")
+                // Line / Column indicator (cached in EditorTab by TabManager)
+                Text(verbatim: "Ln \(activeTab.cursorLine), Col \(activeTab.cursorColumn)")
                     .font(.system(size: 11))
                     .foregroundStyle(.secondary)
                     .accessibilityIdentifier(AccessibilityID.cursorPosition)
 
                 statusDivider
 
-                // Indentation style indicator
-                let indent = IndentationStyle.detect(in: activeTab.content)
-                Text(verbatim: indent.displayName)
+                // Indentation style indicator (cached, recomputed on content change)
+                Text(verbatim: tabManager.activeTabIndentation.displayName)
                     .font(.system(size: 11))
                     .foregroundStyle(.secondary)
                     .accessibilityIdentifier(AccessibilityID.indentationIndicator)
 
                 statusDivider
 
-                // Line ending indicator
-                let lineEnding = LineEnding.detect(in: activeTab.content)
-                Text(verbatim: lineEnding.displayName)
+                // Line ending indicator (cached, recomputed on content change)
+                Text(verbatim: tabManager.activeTabLineEnding.displayName)
                     .font(.system(size: 11))
                     .foregroundStyle(.secondary)
                     .accessibilityIdentifier(AccessibilityID.lineEndingIndicator)
@@ -1387,8 +1381,8 @@ struct StatusBarView: View {
                 .disabled(activeTab.isDirty)
                 .accessibilityIdentifier(AccessibilityID.encodingMenu)
 
-                // File size indicator
-                if let size = tabManager.fileSize(url: activeTab.url) {
+                // File size indicator (cached in EditorTab)
+                if let size = activeTab.fileSizeBytes {
                     statusDivider
 
                     Text(verbatim: FileSizeFormatter.format(size))
