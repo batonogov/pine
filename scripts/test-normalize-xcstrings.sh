@@ -2,6 +2,8 @@
 # Tests for normalize-xcstrings.sh
 # Usage: scripts/test-normalize-xcstrings.sh
 
+# Note: -e is intentionally omitted — ((PASS++)) returns 1 when
+# the variable is 0, which would abort the script under set -e.
 set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -39,8 +41,10 @@ XCSTRINGS
 
 cleanup() {
     cd /
-    rm -rf "$TEST_DIR"
+    [ -n "${TEST_DIR:-}" ] && rm -rf "$TEST_DIR"
+    TEST_DIR=""
 }
+trap cleanup EXIT
 
 assert_eq() {
     local desc="$1" expected="$2" actual="$3"
@@ -172,6 +176,39 @@ if "$NORMALIZE" --check 2>&1; then
 else
     assert_eq "--check exits zero for real changes" "0" "1"
 fi
+
+cleanup
+
+# --- Test 6: key reordering is detected as cosmetic ---
+echo "Test 6: key reordering is cosmetic"
+setup_repo
+
+# Swap top-level key order: put "version" before "strings"
+cat > Pine/Localizable.xcstrings << 'XCSTRINGS'
+{
+  "version" : "1.0",
+  "sourceLanguage" : "en",
+  "strings" : {
+    "hello" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hello"
+          }
+        }
+      }
+    }
+  }
+}
+XCSTRINGS
+git add Pine/Localizable.xcstrings
+
+output=$("$NORMALIZE" 2>&1) || true
+staged=$(git diff --cached --name-only | grep -c "Localizable.xcstrings" || true)
+assert_eq "key reordering unstaged" "0" "$staged"
+assert_eq "output mentions unstaging" "1" "$(echo "$output" | grep -c 'unstaging' || true)"
 
 cleanup
 
