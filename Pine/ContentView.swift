@@ -158,6 +158,11 @@ struct ContentView: View {
         }
         .onChange(of: workspace.gitProvider.fileStatuses) { _, _ in
             refreshLineDiffs()
+            if isDiffPanelVisible {
+                Task {
+                    await projectManager.diffPanel.refresh(gitProvider: projectManager.gitProvider)
+                }
+            }
         }
         .onReceive(NotificationCenter.default.publisher(for: .refreshLineDiffs)) { _ in
             guard controlActiveState == .key else { return }

@@ -9,7 +9,6 @@ import SwiftUI
 
 struct DiffPanelView: View {
     @Environment(ProjectManager.self) var projectManager
-    @Environment(TabManager.self) var tabManager
 
     var body: some View {
         let diffPanel = projectManager.diffPanel
@@ -58,10 +57,9 @@ struct DiffPanelView: View {
                     ForEach(diffPanel.stagedEntries) { entry in
                         DiffFileRowView(
                             entry: entry,
-                            isExpanded: diffPanel.expandedFilePath == entry.relativePath,
+                            isExpanded: diffPanel.expandedFilePaths.contains(entry.relativePath),
                             gitProvider: gitProvider,
-                            diffPanel: diffPanel,
-                            tabManager: tabManager
+                            diffPanel: diffPanel
                         )
                     }
                 }
@@ -82,10 +80,9 @@ struct DiffPanelView: View {
                     ForEach(diffPanel.unstagedEntries) { entry in
                         DiffFileRowView(
                             entry: entry,
-                            isExpanded: diffPanel.expandedFilePath == entry.relativePath,
+                            isExpanded: diffPanel.expandedFilePaths.contains(entry.relativePath),
                             gitProvider: gitProvider,
-                            diffPanel: diffPanel,
-                            tabManager: tabManager
+                            diffPanel: diffPanel
                         )
                     }
                 }
@@ -135,7 +132,6 @@ private struct DiffFileRowView: View {
     let isExpanded: Bool
     let gitProvider: GitStatusProvider
     let diffPanel: DiffPanelProvider
-    let tabManager: TabManager
 
     @State private var isHovered = false
 
@@ -188,10 +184,10 @@ private struct DiffFileRowView: View {
         .contentShape(Rectangle())
         .background(isHovered ? Color.primary.opacity(0.06) : Color.clear)
         .onTapGesture {
-            if diffPanel.expandedFilePath == entry.relativePath {
-                diffPanel.expandedFilePath = nil
+            if diffPanel.expandedFilePaths.contains(entry.relativePath) {
+                diffPanel.expandedFilePaths.remove(entry.relativePath)
             } else {
-                diffPanel.expandedFilePath = entry.relativePath
+                diffPanel.expandedFilePaths.insert(entry.relativePath)
             }
         }
         .onHover { isHovered = $0 }
@@ -315,9 +311,12 @@ private struct DiffHunkView: View {
     }
 
     private var hunkSummary: String {
-        let added = hunk.lines.filter { $0.kind == .added }.count
-        let removed = hunk.lines.filter { $0.kind == .removed }.count
-        return "@@ \(hunk.oldStart) +\(added) -\(removed)"
+        // Show the original git hunk header, trimming the trailing @@
+        let header = hunk.header
+        guard let endRange = header.range(of: "@@", options: .backwards, range: header.index(header.startIndex, offsetBy: 2)..<header.endIndex) else {
+            return header
+        }
+        return String(header[...endRange.upperBound]).trimmingCharacters(in: .whitespaces)
     }
 
     private var hunkLines: some View {

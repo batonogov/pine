@@ -13,8 +13,8 @@ final class DiffPanelProvider {
     private(set) var unstagedEntries: [DiffFileEntry] = []
     private(set) var isLoading = false
 
-    /// Currently expanded file path in the panel.
-    var expandedFilePath: String?
+    /// Currently expanded file paths in the panel.
+    var expandedFilePaths: Set<String> = []
 
     /// Refreshes both staged and unstaged file lists with their hunks.
     func refresh(gitProvider: GitStatusProvider) async {

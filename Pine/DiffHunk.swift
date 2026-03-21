@@ -9,7 +9,7 @@ import Foundation
 
 // MARK: - Diff Line
 
-struct DiffLine: Identifiable, Equatable {
+struct DiffLine: Identifiable, Equatable, Sendable {
     enum Kind: Equatable {
         case context
         case added
@@ -27,7 +27,7 @@ struct DiffLine: Identifiable, Equatable {
 
 // MARK: - Diff Hunk
 
-struct DiffHunk: Identifiable, Equatable {
+struct DiffHunk: Identifiable, Equatable, Sendable {
     let id = UUID()
     let oldStart: Int
     let oldCount: Int
@@ -48,7 +48,7 @@ struct DiffHunk: Identifiable, Equatable {
 
 // MARK: - Diff File Entry
 
-struct DiffFileEntry: Identifiable, Equatable {
+struct DiffFileEntry: Identifiable, Equatable, Sendable {
     let id = UUID()
     let relativePath: String
     let status: GitFileStatus
@@ -130,8 +130,8 @@ extension GitStatusProvider {
             }
         }
 
-        // Standard unquoted: find " b/" separator
-        guard let range = content.range(of: " b/") else { return nil }
+        // Standard unquoted: find last " b/" separator to handle paths containing " b/"
+        guard let range = content.range(of: " b/", options: .backwards) else { return nil }
         return String(content[range.upperBound...])
     }
 
@@ -254,42 +254,6 @@ extension GitStatusProvider {
         return Self.parseFullDiff(result.output)
     }
 
-    /// Async versions
-    func stagedDiffAsync() async -> [String: [DiffHunk]] {
-        guard isGitRepository, let url = repositoryURL else { return [:] }
-        return await withCheckedContinuation { continuation in
-            DispatchQueue.global(qos: .userInitiated).async {
-                let headCheck = Self.runGit(["rev-parse", "HEAD"], at: url)
-                let args: [String]
-                if headCheck.exitCode == 0 {
-                    args = ["diff", "--cached"]
-                } else {
-                    args = ["diff", "--cached", "--diff-filter=A"]
-                }
-                let result = Self.runGit(args, at: url)
-                guard result.exitCode == 0 else {
-                    continuation.resume(returning: [:])
-                    return
-                }
-                continuation.resume(returning: Self.parseFullDiff(result.output))
-            }
-        }
-    }
-
-    func unstagedDiffAsync() async -> [String: [DiffHunk]] {
-        guard isGitRepository, let url = repositoryURL else { return [:] }
-        return await withCheckedContinuation { continuation in
-            DispatchQueue.global(qos: .userInitiated).async {
-                let result = Self.runGit(["diff"], at: url)
-                guard result.exitCode == 0 else {
-                    continuation.resume(returning: [:])
-                    return
-                }
-                continuation.resume(returning: Self.parseFullDiff(result.output))
-            }
-        }
-    }
-
     // MARK: - Staging Operations
 
     /// Stages a single hunk using `git apply --cached`.
@@ -324,13 +288,6 @@ extension GitStatusProvider {
     func unstageFile(_ relativePath: String) -> Bool {
         guard let url = repositoryURL else { return false }
         let result = Self.runGit(["reset", "HEAD", "--", relativePath], at: url)
-        return result.exitCode == 0
-    }
-
-    /// Discards all unstaged changes in a file.
-    func discardFile(_ relativePath: String) -> Bool {
-        guard let url = repositoryURL else { return false }
-        let result = Self.runGit(["checkout", "--", relativePath], at: url)
         return result.exitCode == 0
     }
 
@@ -395,11 +352,20 @@ extension GitStatusProvider {
 
         do {
             try process.run()
+
+            let timer = DispatchSource.makeTimerSource(queue: .global(qos: .utility))
+            timer.schedule(deadline: .now() + Self.defaultGitTimeout)
+            timer.setEventHandler {
+                if process.isRunning { process.terminate() }
+            }
+            timer.resume()
+
             if let data = patch.data(using: .utf8) {
                 inPipe.fileHandleForWriting.write(data)
             }
             inPipe.fileHandleForWriting.closeFile()
             process.waitUntilExit()
+            timer.cancel()
             return process.terminationStatus == 0
         } catch {
             return false
