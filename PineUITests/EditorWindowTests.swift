@@ -2,7 +2,7 @@
 //  EditorWindowTests.swift
 //  PineUITests
 //
-//  P1: Editor window — file selection, tabs, save, close.
+//  P1: Editor window — file selection, tabs, save, close
 //
 
 import XCTest
@@ -85,23 +85,19 @@ final class EditorWindowTests: PineUITestCase {
         // Open two files
         let mainFile = app.staticTexts["fileNode_main.swift"]
         if waitForExistence(mainFile, timeout: 5) { mainFile.click() }
-        sleep(1)
+        let mainTab = editorTab("main.swift")
+        XCTAssertTrue(waitForExistence(mainTab, timeout: 5), "main.swift tab should appear")
+
         let utilsFile = app.staticTexts["fileNode_utils.swift"]
         if waitForExistence(utilsFile, timeout: 5) { utilsFile.click() }
-        sleep(1)
-
-        // Both tabs should exist
-        let mainTab = editorTab("main.swift")
         let utilsTab = editorTab("utils.swift")
-        XCTAssertTrue(mainTab.exists, "main.swift tab should exist")
-        XCTAssertTrue(utilsTab.exists, "utils.swift tab should exist")
+        XCTAssertTrue(waitForExistence(utilsTab, timeout: 5), "utils.swift tab should appear")
 
         // Click on main.swift tab to switch back
         mainTab.click()
-        sleep(1)
 
-        // main.swift tab should still exist (switching doesn't close tabs)
-        XCTAssertTrue(mainTab.exists, "main.swift tab should still exist after clicking it")
+        // Both tabs should still exist (switching doesn't close tabs)
+        XCTAssertTrue(mainTab.waitForExistence(timeout: 5), "main.swift tab should still exist after clicking it")
         XCTAssertTrue(utilsTab.exists, "utils.swift tab should still exist")
     }
 
