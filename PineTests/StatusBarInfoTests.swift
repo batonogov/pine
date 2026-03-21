@@ -191,15 +191,16 @@ struct StatusBarInfoTests {
 
     // MARK: - EditorTab cached values
 
-    @Test("EditorTab caches indentation and line ending")
+    @Test("EditorTab caches indentation and line ending after recompute")
     func editorTabCaching() {
         var tab = EditorTab(
             url: URL(fileURLWithPath: "/tmp/test.swift"),
             content: "func foo() {\n    let x = 1\n}\n",
             savedContent: ""
         )
-        #expect(tab.indentation() == .spaces(4))
-        #expect(tab.lineEnding() == .lf)
+        tab.recomputeContentCaches()
+        #expect(tab.cachedIndentation == .spaces(4))
+        #expect(tab.cachedLineEnding == .lf)
     }
 
     @Test("EditorTab recomputes cache on content change")
@@ -209,10 +210,12 @@ struct StatusBarInfoTests {
             content: "func foo() {\n    let x = 1\n}\n",
             savedContent: ""
         )
-        _ = tab.indentation()
-        // Change content to use tabs
+        tab.recomputeContentCaches()
+        #expect(tab.cachedIndentation == .spaces(4))
+        // Change content to use tabs and recompute
         tab.content = "func foo() {\n\tlet x = 1\n}\n"
-        #expect(tab.indentation() == .tabs)
+        tab.recomputeContentCaches()
+        #expect(tab.cachedIndentation == .tabs)
     }
 
     @Test("TabManager.updateEditorState computes line and column")

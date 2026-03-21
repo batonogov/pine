@@ -1342,7 +1342,7 @@ struct StatusBarView: View {
                 statusDivider
 
                 // Indentation style indicator (cached, recomputed on content change)
-                Text(verbatim: tabManager.activeTabIndentation.displayName)
+                Text(verbatim: activeTab.cachedIndentation.displayName)
                     .font(.system(size: 11))
                     .foregroundStyle(.secondary)
                     .accessibilityIdentifier(AccessibilityID.indentationIndicator)
@@ -1350,7 +1350,7 @@ struct StatusBarView: View {
                 statusDivider
 
                 // Line ending indicator (cached, recomputed on content change)
-                Text(verbatim: tabManager.activeTabLineEnding.displayName)
+                Text(verbatim: activeTab.cachedLineEnding.displayName)
                     .font(.system(size: 11))
                     .foregroundStyle(.secondary)
                     .accessibilityIdentifier(AccessibilityID.lineEndingIndicator)

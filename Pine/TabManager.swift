@@ -106,6 +106,7 @@ final class TabManager {
         tab.syntaxHighlightingDisabled = syntaxHighlightingDisabled
         tab.encoding = encoding
         tab.fileSizeBytes = fileSize(url: url)
+        tab.recomputeContentCaches()
         tabs.append(tab)
         activeTabID = tab.id
     }
@@ -157,10 +158,12 @@ final class TabManager {
     }
 
     /// Updates the content of the active tab (text tabs only).
+    /// Also eagerly recomputes indentation/line-ending caches so reads are mutation-free.
     func updateContent(_ newContent: String) {
         guard let index = activeTabIndex else { return }
         guard tabs[index].kind == .text else { return }
         tabs[index].content = newContent
+        tabs[index].recomputeContentCaches()
     }
 
     /// Updates the saved editor state (cursor, scroll) for the active tab.
@@ -171,18 +174,6 @@ final class TabManager {
         let loc = CursorLocation(position: cursorPosition, in: tabs[index].content)
         tabs[index].cursorLine = loc.line
         tabs[index].cursorColumn = loc.column
-    }
-
-    /// Returns the cached indentation style of the active tab.
-    var activeTabIndentation: IndentationStyle {
-        guard let index = activeTabIndex else { return .spaces(4) }
-        return tabs[index].indentation()
-    }
-
-    /// Returns the cached line ending of the active tab.
-    var activeTabLineEnding: LineEnding {
-        guard let index = activeTabIndex else { return .lf }
-        return tabs[index].lineEnding()
     }
 
     /// Updates the fold state for the active tab.

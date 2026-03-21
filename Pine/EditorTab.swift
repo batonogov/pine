@@ -36,30 +36,16 @@ struct EditorTab: Identifiable, Hashable {
     /// Cached file size in bytes — set on open and after save.
     var fileSizeBytes: Int?
 
-    /// Cached indentation style — recomputed when contentVersion changes.
+    /// Cached indentation style — recomputed by `recomputeContentCaches()`.
     private(set) var cachedIndentation: IndentationStyle = .spaces(4)
-    /// Cached line ending style — recomputed when contentVersion changes.
+    /// Cached line ending style — recomputed by `recomputeContentCaches()`.
     private(set) var cachedLineEnding: LineEnding = .lf
-    /// contentVersion at which caches were last computed.
-    private var cachedContentVersion: UInt64 = UInt64.max
 
-    /// Returns cached indentation, recomputing if content has changed.
-    mutating func indentation() -> IndentationStyle {
-        recomputeCachesIfNeeded()
-        return cachedIndentation
-    }
-
-    /// Returns cached line ending, recomputing if content has changed.
-    mutating func lineEnding() -> LineEnding {
-        recomputeCachesIfNeeded()
-        return cachedLineEnding
-    }
-
-    private mutating func recomputeCachesIfNeeded() {
-        guard cachedContentVersion != contentVersion else { return }
+    /// Recomputes indentation and line ending caches from current content.
+    /// Called by TabManager when content changes — keeps reads mutation-free.
+    mutating func recomputeContentCaches() {
         cachedIndentation = IndentationStyle.detect(in: content)
         cachedLineEnding = LineEnding.detect(in: content)
-        cachedContentVersion = contentVersion
     }
 
     /// Last known modification date of the file on disk.
