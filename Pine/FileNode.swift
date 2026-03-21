@@ -27,12 +27,6 @@ final class FileNode: Identifiable, Hashable {
     /// Ignored paths forwarded to loadChildren() for lazy-loading gitignored directories.
     private let ignoredPaths: Set<String>?
 
-    /// Sort order forwarded to loadChildren() for on-demand expansion of lazy directories.
-    private let sortOrder: FileSortOrder
-
-    /// Sort direction forwarded to loadChildren() for on-demand expansion of lazy directories.
-    private let sortDirection: FileSortDirection
-
     var children: [FileNode]?
 
     /// Для List(children:): nil = лист (файл), непустой массив = папка с содержимым.
@@ -54,31 +48,14 @@ final class FileNode: Identifiable, Hashable {
     }
 
     /// Initializer with project root boundary, cycle protection, and gitignored lazy-loading.
-    convenience init(
-        url: URL, projectRoot: URL, ignoredPaths: Set<String>,
-        sortOrder: FileSortOrder = .name, sortDirection: FileSortDirection = .ascending
-    ) {
-        let context = LoadContext(
-            projectRoot: projectRoot,
-            ignoredPaths: ignoredPaths,
-            sortOrder: sortOrder,
-            sortDirection: sortDirection
-        )
+    convenience init(url: URL, projectRoot: URL, ignoredPaths: Set<String>) {
+        let context = LoadContext(projectRoot: projectRoot, ignoredPaths: ignoredPaths)
         self.init(url: url, context: context)
     }
 
     /// Initializer with depth-limited loading for progressive/async tree construction.
-    convenience init(
-        url: URL, projectRoot: URL, ignoredPaths: Set<String>, maxDepth: Int,
-        sortOrder: FileSortOrder = .name, sortDirection: FileSortDirection = .ascending
-    ) {
-        let context = LoadContext(
-            projectRoot: projectRoot,
-            ignoredPaths: ignoredPaths,
-            maxDepth: maxDepth,
-            sortOrder: sortOrder,
-            sortDirection: sortDirection
-        )
+    convenience init(url: URL, projectRoot: URL, ignoredPaths: Set<String>, maxDepth: Int) {
+        let context = LoadContext(projectRoot: projectRoot, ignoredPaths: ignoredPaths, maxDepth: maxDepth)
         self.init(url: url, context: context)
     }
 
@@ -89,8 +66,6 @@ final class FileNode: Identifiable, Hashable {
         self.name = url.lastPathComponent
         self.projectRoot = context.map { URL(fileURLWithPath: $0.rootRealPath) }
         self.ignoredPaths = context?.ignoredPaths
-        self.sortOrder = context?.sortOrder ?? .name
-        self.sortDirection = context?.sortDirection ?? .ascending
 
         let resourceValues = try? url.resourceValues(
             forKeys: [.isSymbolicLinkKey, .contentModificationDateKey, .fileSizeKey]
@@ -169,71 +144,27 @@ final class FileNode: Identifiable, Hashable {
                 options: []
             )
 
-            let nodes = contents
+            return contents
                 .filter { childURL in
                     let name = childURL.lastPathComponent
                     return !hiddenNames.contains(name)
                 }
                 .map { FileNode(url: $0, context: context, depth: depth) }
-
-            let order = context?.sortOrder ?? .name
-            let direction = context?.sortDirection ?? .ascending
-            return Self.sorted(nodes, by: order, direction: direction)
+                .sorted { lhs, rhs in
+                    if lhs.isDirectory == rhs.isDirectory {
+                        return lhs.name.localizedCaseInsensitiveCompare(rhs.name) == .orderedAscending
+                    }
+                    return lhs.isDirectory && !rhs.isDirectory
+                }
         } catch {
             print("Error loading directory \(url.path): \(error)")
             return []
         }
     }
 
-    /// Sorts `nodes` with directories always first, then applies the given order and direction.
-    static func sorted(
-        _ nodes: [FileNode],
-        by order: FileSortOrder,
-        direction: FileSortDirection
-    ) -> [FileNode] {
-        nodes.sorted { lhs, rhs in
-            // Directories always come before files regardless of sort order.
-            if lhs.isDirectory != rhs.isDirectory {
-                return lhs.isDirectory
-            }
-
-            let ascending: Bool
-            switch order {
-            case .name:
-                ascending = lhs.name.localizedCaseInsensitiveCompare(rhs.name) == .orderedAscending
-            case .dateModified:
-                let lDate = lhs.modificationDate ?? .distantPast
-                let rDate = rhs.modificationDate ?? .distantPast
-                ascending = lDate < rDate
-            case .size:
-                let lSize = lhs.fileSize ?? 0
-                let rSize = rhs.fileSize ?? 0
-                if lSize == rSize {
-                    ascending = lhs.name.localizedCaseInsensitiveCompare(rhs.name) == .orderedAscending
-                } else {
-                    ascending = lSize < rSize
-                }
-            case .type:
-                let lExt = lhs.url.pathExtension.lowercased()
-                let rExt = rhs.url.pathExtension.lowercased()
-                if lExt == rExt {
-                    ascending = lhs.name.localizedCaseInsensitiveCompare(rhs.name) == .orderedAscending
-                } else {
-                    ascending = lExt.localizedCaseInsensitiveCompare(rExt) == .orderedAscending
-                }
-            }
-            return direction == .ascending ? ascending : !ascending
-        }
-    }
-
     func loadChildren() {
         let context = projectRoot.map {
-            LoadContext(
-                projectRoot: $0,
-                ignoredPaths: ignoredPaths ?? [],
-                sortOrder: sortOrder,
-                sortDirection: sortDirection
-            )
+            LoadContext(projectRoot: $0, ignoredPaths: ignoredPaths ?? [])
         }
         children = Self.loadContents(of: url, context: context)
     }
@@ -247,17 +178,9 @@ final class FileNode: Identifiable, Hashable {
     /// Builds a file tree with an optional depth limit and reports whether the limit was hit.
     static func loadTree(
         url: URL, projectRoot: URL,
-        ignoredPaths: Set<String>, maxDepth: Int,
-        sortOrder: FileSortOrder = .name,
-        sortDirection: FileSortDirection = .ascending
+        ignoredPaths: Set<String>, maxDepth: Int
     ) -> LoadResult {
-        let context = LoadContext(
-            projectRoot: projectRoot,
-            ignoredPaths: ignoredPaths,
-            maxDepth: maxDepth,
-            sortOrder: sortOrder,
-            sortDirection: sortDirection
-        )
+        let context = LoadContext(projectRoot: projectRoot, ignoredPaths: ignoredPaths, maxDepth: maxDepth)
         let root = FileNode(url: url, context: context)
         return LoadResult(root: root, wasDepthLimited: context.reachedDepthLimit)
     }
@@ -294,8 +217,6 @@ private class LoadContext {
     let rootRealPath: String
     let ignoredPaths: Set<String>
     let maxDepth: Int
-    let sortOrder: FileSortOrder
-    let sortDirection: FileSortDirection
     var visitedRealPaths: Set<String>
 
     /// Set to true when at least one directory was skipped due to maxDepth.
@@ -305,19 +226,11 @@ private class LoadContext {
     /// Cache for resolved symlink paths to avoid redundant I/O.
     private var symlinkCache: [URL: String] = [:]
 
-    init(
-        projectRoot: URL,
-        ignoredPaths: Set<String> = [],
-        maxDepth: Int = .max,
-        sortOrder: FileSortOrder = .name,
-        sortDirection: FileSortDirection = .ascending
-    ) {
+    init(projectRoot: URL, ignoredPaths: Set<String> = [], maxDepth: Int = .max) {
         let realPath = projectRoot.resolvingSymlinksInPath().path
         self.rootRealPath = realPath
         self.ignoredPaths = ignoredPaths
         self.maxDepth = maxDepth
-        self.sortOrder = sortOrder
-        self.sortDirection = sortDirection
         self.visitedRealPaths = []
     }
 

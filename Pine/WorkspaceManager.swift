@@ -28,7 +28,7 @@ final class WorkspaceManager {
     }() {
         didSet {
             UserDefaults.standard.set(sortOrder.rawValue, forKey: FileSortOrder.storageKey)
-            refreshFileTree()
+            resortTree()
         }
     }
 
@@ -39,7 +39,7 @@ final class WorkspaceManager {
     }() {
         didSet {
             UserDefaults.standard.set(sortDirection.rawValue, forKey: FileSortDirection.storageKey)
-            refreshFileTree()
+            resortTree()
         }
     }
 
@@ -135,11 +135,10 @@ final class WorkspaceManager {
             let shallowResult = FileNode.loadTree(
                 url: url, projectRoot: url,
                 ignoredPaths: bgGit.ignoredPaths,
-                maxDepth: Self.shallowDepth,
-                sortOrder: order,
-                sortDirection: direction
+                maxDepth: Self.shallowDepth
             )
-            let shallowChildren = shallowResult.root.children ?? []
+            let shallowChildren = (shallowResult.root.children ?? [])
+                .recursiveSorted(by: order, direction: direction)
 
             DispatchQueue.main.async { [weak self] in
                 guard let self, self.loadGeneration == generation else { return }
@@ -162,13 +161,9 @@ final class WorkspaceManager {
             // For shallow projects this avoids redundant tree construction.
             guard shallowResult.wasDepthLimited else { return }
 
-            let fullRoot = FileNode(
-                url: url, projectRoot: url,
-                ignoredPaths: bgGit.ignoredPaths,
-                sortOrder: order,
-                sortDirection: direction
-            )
-            let fullChildren = fullRoot.children ?? []
+            let fullRoot = FileNode(url: url, projectRoot: url, ignoredPaths: bgGit.ignoredPaths)
+            let fullChildren = (fullRoot.children ?? [])
+                .recursiveSorted(by: order, direction: direction)
 
             // Safe ordering: main queue is FIFO, so Phase 2 always runs after Phase 1.
             // Completion (file watcher) starts after Phase 2 to avoid watcher events
@@ -196,22 +191,17 @@ final class WorkspaceManager {
         let shallowResult = FileNode.loadTree(
             url: url, projectRoot: url,
             ignoredPaths: ignoredPaths,
-            maxDepth: Self.shallowDepth,
-            sortOrder: order,
-            sortDirection: direction
+            maxDepth: Self.shallowDepth
         )
-        rootNodes = shallowResult.root.children ?? []
+        rootNodes = (shallowResult.root.children ?? [])
+            .recursiveSorted(by: order, direction: direction)
 
         // Phase 2 (async): full tree only if Phase 1 hit the depth limit
         if shallowResult.wasDepthLimited {
             DispatchQueue.global(qos: .userInitiated).async {
-                let fullRoot = FileNode(
-                    url: url, projectRoot: url,
-                    ignoredPaths: ignoredPaths,
-                    sortOrder: order,
-                    sortDirection: direction
-                )
-                let fullChildren = fullRoot.children ?? []
+                let fullRoot = FileNode(url: url, projectRoot: url, ignoredPaths: ignoredPaths)
+                let fullChildren = (fullRoot.children ?? [])
+                    .recursiveSorted(by: order, direction: direction)
                 DispatchQueue.main.async { [weak self] in
                     guard let self, self.loadGeneration == generation else { return }
                     self.rootNodes = fullChildren
@@ -225,6 +215,12 @@ final class WorkspaceManager {
         // Suppress watcher echoes — we just refreshed, so any watcher event
         // within the next second is redundant and could break inline editing.
         suppressWatcherUntil = Date().addingTimeInterval(1.0)
+    }
+
+    /// Re-sort the already-loaded tree in memory — no disk I/O.
+    /// Called when the user changes sort order or direction.
+    private func resortTree() {
+        rootNodes = rootNodes.recursiveSorted(by: sortOrder, direction: sortDirection)
     }
 
     /// Background variant called by the file watcher.

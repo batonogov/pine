@@ -20,6 +20,11 @@ struct FileSortOrderTests {
         try? FileManager.default.removeItem(at: url)
     }
 
+    private func loadChildren(at tempDir: URL) -> [FileNode] {
+        let node = FileNode(url: tempDir, projectRoot: tempDir, ignoredPaths: [])
+        return node.children ?? []
+    }
+
     // MARK: - Sort by name
 
     @Test func sortByNameAscending() throws {
@@ -30,10 +35,8 @@ struct FileSortOrderTests {
         FileManager.default.createFile(atPath: tempDir.appendingPathComponent("a.swift").path, contents: nil)
         FileManager.default.createFile(atPath: tempDir.appendingPathComponent("b.swift").path, contents: nil)
 
-        let node = FileNode(url: tempDir, projectRoot: tempDir, ignoredPaths: [],
-                            sortOrder: .name, sortDirection: .ascending)
-        let names = node.children?.map(\.name) ?? []
-        #expect(names == ["a.swift", "b.swift", "c.swift"])
+        let sorted = loadChildren(at: tempDir).sorted(by: .name, direction: .ascending)
+        #expect(sorted.map(\.name) == ["a.swift", "b.swift", "c.swift"])
     }
 
     @Test func sortByNameDescending() throws {
@@ -44,10 +47,8 @@ struct FileSortOrderTests {
         FileManager.default.createFile(atPath: tempDir.appendingPathComponent("a.swift").path, contents: nil)
         FileManager.default.createFile(atPath: tempDir.appendingPathComponent("b.swift").path, contents: nil)
 
-        let node = FileNode(url: tempDir, projectRoot: tempDir, ignoredPaths: [],
-                            sortOrder: .name, sortDirection: .descending)
-        let names = node.children?.map(\.name) ?? []
-        #expect(names == ["c.swift", "b.swift", "a.swift"])
+        let sorted = loadChildren(at: tempDir).sorted(by: .name, direction: .descending)
+        #expect(sorted.map(\.name) == ["c.swift", "b.swift", "a.swift"])
     }
 
     // MARK: - Sort by type
@@ -60,11 +61,9 @@ struct FileSortOrderTests {
         FileManager.default.createFile(atPath: tempDir.appendingPathComponent("a.json").path, contents: nil)
         FileManager.default.createFile(atPath: tempDir.appendingPathComponent("c.md").path, contents: nil)
 
-        let node = FileNode(url: tempDir, projectRoot: tempDir, ignoredPaths: [],
-                            sortOrder: .type, sortDirection: .ascending)
-        let names = node.children?.map(\.name) ?? []
+        let sorted = loadChildren(at: tempDir).sorted(by: .type, direction: .ascending)
         // Sorted by extension: json < md < swift
-        #expect(names == ["a.json", "c.md", "b.swift"])
+        #expect(sorted.map(\.name) == ["a.json", "c.md", "b.swift"])
     }
 
     @Test func sortByTypeSameExtensionFallsBackToName() throws {
@@ -75,11 +74,9 @@ struct FileSortOrderTests {
         FileManager.default.createFile(atPath: tempDir.appendingPathComponent("a.swift").path, contents: nil)
         FileManager.default.createFile(atPath: tempDir.appendingPathComponent("m.swift").path, contents: nil)
 
-        let node = FileNode(url: tempDir, projectRoot: tempDir, ignoredPaths: [],
-                            sortOrder: .type, sortDirection: .ascending)
-        let names = node.children?.map(\.name) ?? []
+        let sorted = loadChildren(at: tempDir).sorted(by: .type, direction: .ascending)
         // Same extension → alphabetical by name
-        #expect(names == ["a.swift", "m.swift", "z.swift"])
+        #expect(sorted.map(\.name) == ["a.swift", "m.swift", "z.swift"])
     }
 
     @Test func sortByTypeDescending() throws {
@@ -90,11 +87,9 @@ struct FileSortOrderTests {
         FileManager.default.createFile(atPath: tempDir.appendingPathComponent("a.json").path, contents: nil)
         FileManager.default.createFile(atPath: tempDir.appendingPathComponent("c.md").path, contents: nil)
 
-        let node = FileNode(url: tempDir, projectRoot: tempDir, ignoredPaths: [],
-                            sortOrder: .type, sortDirection: .descending)
-        let names = node.children?.map(\.name) ?? []
+        let sorted = loadChildren(at: tempDir).sorted(by: .type, direction: .descending)
         // Descending by extension: swift > md > json
-        #expect(names == ["b.swift", "c.md", "a.json"])
+        #expect(sorted.map(\.name) == ["b.swift", "c.md", "a.json"])
     }
 
     // MARK: - Sort by size
@@ -111,10 +106,8 @@ struct FileSortOrderTests {
         FileManager.default.createFile(atPath: tempDir.appendingPathComponent("small.txt").path, contents: small)
         FileManager.default.createFile(atPath: tempDir.appendingPathComponent("medium.txt").path, contents: medium)
 
-        let node = FileNode(url: tempDir, projectRoot: tempDir, ignoredPaths: [],
-                            sortOrder: .size, sortDirection: .ascending)
-        let names = node.children?.map(\.name) ?? []
-        #expect(names == ["small.txt", "medium.txt", "large.txt"])
+        let sorted = loadChildren(at: tempDir).sorted(by: .size, direction: .ascending)
+        #expect(sorted.map(\.name) == ["small.txt", "medium.txt", "large.txt"])
     }
 
     @Test func sortBySizeDescending() throws {
@@ -127,10 +120,8 @@ struct FileSortOrderTests {
         FileManager.default.createFile(atPath: tempDir.appendingPathComponent("large.txt").path, contents: large)
         FileManager.default.createFile(atPath: tempDir.appendingPathComponent("small.txt").path, contents: small)
 
-        let node = FileNode(url: tempDir, projectRoot: tempDir, ignoredPaths: [],
-                            sortOrder: .size, sortDirection: .descending)
-        let names = node.children?.map(\.name) ?? []
-        #expect(names == ["large.txt", "small.txt"])
+        let sorted = loadChildren(at: tempDir).sorted(by: .size, direction: .descending)
+        #expect(sorted.map(\.name) == ["large.txt", "small.txt"])
     }
 
     @Test func sortBySizeSameSizeFallsBackToName() throws {
@@ -141,11 +132,9 @@ struct FileSortOrderTests {
         FileManager.default.createFile(atPath: tempDir.appendingPathComponent("z.txt").path, contents: data)
         FileManager.default.createFile(atPath: tempDir.appendingPathComponent("a.txt").path, contents: data)
 
-        let node = FileNode(url: tempDir, projectRoot: tempDir, ignoredPaths: [],
-                            sortOrder: .size, sortDirection: .ascending)
-        let names = node.children?.map(\.name) ?? []
+        let sorted = loadChildren(at: tempDir).sorted(by: .size, direction: .ascending)
         // Same size → alphabetical by name
-        #expect(names == ["a.txt", "z.txt"])
+        #expect(sorted.map(\.name) == ["a.txt", "z.txt"])
     }
 
     // MARK: - Directories always first
@@ -161,11 +150,9 @@ struct FileSortOrderTests {
         )
 
         // Even sorted by size ascending, directory should appear first
-        let node = FileNode(url: tempDir, projectRoot: tempDir, ignoredPaths: [],
-                            sortOrder: .size, sortDirection: .ascending)
-        let children = node.children ?? []
-        #expect(children.first?.isDirectory == true)
-        #expect(children.first?.name == "zDir")
+        let sorted = loadChildren(at: tempDir).sorted(by: .size, direction: .ascending)
+        #expect(sorted.first?.isDirectory == true)
+        #expect(sorted.first?.name == "zDir")
     }
 
     // MARK: - Date modified
@@ -174,12 +161,10 @@ struct FileSortOrderTests {
         let tempDir = try makeTempDirectory()
         defer { cleanup(tempDir) }
 
-        // Create files with deliberate modification date ordering
         let olderURL = tempDir.appendingPathComponent("older.txt")
         let newerURL = tempDir.appendingPathComponent("newer.txt")
 
         FileManager.default.createFile(atPath: olderURL.path, contents: nil)
-        // Force modification dates to be meaningfully different
         let oldDate = Date(timeIntervalSinceNow: -3600)
         let newDate = Date(timeIntervalSinceNow: -10)
         try FileManager.default.setAttributes(
@@ -190,10 +175,8 @@ struct FileSortOrderTests {
             [.modificationDate: newDate], ofItemAtPath: newerURL.path
         )
 
-        let node = FileNode(url: tempDir, projectRoot: tempDir, ignoredPaths: [],
-                            sortOrder: .dateModified, sortDirection: .ascending)
-        let names = node.children?.map(\.name) ?? []
-        #expect(names == ["older.txt", "newer.txt"])
+        let sorted = loadChildren(at: tempDir).sorted(by: .dateModified, direction: .ascending)
+        #expect(sorted.map(\.name) == ["older.txt", "newer.txt"])
     }
 
     @Test func sortByDateModifiedDescending() throws {
@@ -214,38 +197,30 @@ struct FileSortOrderTests {
             [.modificationDate: newDate], ofItemAtPath: newerURL.path
         )
 
-        let node = FileNode(url: tempDir, projectRoot: tempDir, ignoredPaths: [],
-                            sortOrder: .dateModified, sortDirection: .descending)
-        let names = node.children?.map(\.name) ?? []
-        #expect(names == ["newer.txt", "older.txt"])
+        let sorted = loadChildren(at: tempDir).sorted(by: .dateModified, direction: .descending)
+        #expect(sorted.map(\.name) == ["newer.txt", "older.txt"])
     }
 
-    // MARK: - Static sorted() helper
+    // MARK: - Recursive sort
 
-    @Test func staticSortedByNameAscending() throws {
+    @Test func recursiveSortSortsNestedChildren() throws {
         let tempDir = try makeTempDirectory()
         defer { cleanup(tempDir) }
 
-        let urls = ["c.txt", "a.txt", "b.txt"].map { tempDir.appendingPathComponent($0) }
-        for url in urls {
-            FileManager.default.createFile(atPath: url.path, contents: nil)
-        }
-        let nodes = urls.map { FileNode(url: $0) }
-        let sorted = FileNode.sorted(nodes, by: .name, direction: .ascending)
-        #expect(sorted.map(\.name) == ["a.txt", "b.txt", "c.txt"])
-    }
+        let subDir = tempDir.appendingPathComponent("sub")
+        try FileManager.default.createDirectory(at: subDir, withIntermediateDirectories: true)
+        FileManager.default.createFile(atPath: subDir.appendingPathComponent("z.txt").path, contents: nil)
+        FileManager.default.createFile(atPath: subDir.appendingPathComponent("a.txt").path, contents: nil)
+        FileManager.default.createFile(atPath: tempDir.appendingPathComponent("m.txt").path, contents: nil)
 
-    @Test func staticSortedByNameDescending() throws {
-        let tempDir = try makeTempDirectory()
-        defer { cleanup(tempDir) }
+        let children = loadChildren(at: tempDir)
+        let sorted = children.recursiveSorted(by: .name, direction: .descending)
 
-        let urls = ["c.txt", "a.txt", "b.txt"].map { tempDir.appendingPathComponent($0) }
-        for url in urls {
-            FileManager.default.createFile(atPath: url.path, contents: nil)
-        }
-        let nodes = urls.map { FileNode(url: $0) }
-        let sorted = FileNode.sorted(nodes, by: .name, direction: .descending)
-        #expect(sorted.map(\.name) == ["c.txt", "b.txt", "a.txt"])
+        // Top level: directory first, then file
+        #expect(sorted.map(\.name) == ["sub", "m.txt"])
+        // Nested children also sorted descending
+        let subChildren = sorted.first?.children ?? []
+        #expect(subChildren.map(\.name) == ["z.txt", "a.txt"])
     }
 
     // MARK: - Sort preferences persistence
@@ -261,11 +236,6 @@ struct FileSortOrderTests {
         #expect(FileSortDirection(rawValue: "ascending") == .ascending)
         #expect(FileSortDirection(rawValue: "descending") == .descending)
         #expect(FileSortDirection(rawValue: "invalid") == nil)
-    }
-
-    @Test func sortDirectionToggled() {
-        #expect(FileSortDirection.ascending.toggled == .descending)
-        #expect(FileSortDirection.descending.toggled == .ascending)
     }
 
     // MARK: - Metadata properties
@@ -293,7 +263,7 @@ struct FileSortOrderTests {
         #expect(node.fileSize == data.count)
     }
 
-    @Test func loadTreePassesSortOrderToChildren() throws {
+    @Test func loadTreeChildrenCanBeSorted() throws {
         let tempDir = try makeTempDirectory()
         defer { cleanup(tempDir) }
 
@@ -302,10 +272,9 @@ struct FileSortOrderTests {
 
         let result = FileNode.loadTree(
             url: tempDir, projectRoot: tempDir,
-            ignoredPaths: [], maxDepth: 5,
-            sortOrder: .name, sortDirection: .descending
+            ignoredPaths: [], maxDepth: 5
         )
-        let names = result.root.children?.map(\.name) ?? []
-        #expect(names == ["z.txt", "a.txt"])
+        let sorted = (result.root.children ?? []).sorted(by: .name, direction: .descending)
+        #expect(sorted.map(\.name) == ["z.txt", "a.txt"])
     }
 }
