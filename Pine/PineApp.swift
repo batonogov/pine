@@ -145,6 +145,24 @@ struct PineApp: App {
                 Divider()
 
                 Button {
+                    NotificationCenter.default.post(name: .selectNextOccurrence, object: nil)
+                } label: {
+                    Label(Strings.menuSelectNextOccurrence, systemImage: MenuIcons.selectNextOccurrence)
+                }
+                .keyboardShortcut("d", modifiers: .command)
+                .disabled(focusedProject?.tabManager.activeTab == nil)
+
+                Button {
+                    NotificationCenter.default.post(name: .splitIntoLineCursors, object: nil)
+                } label: {
+                    Label(Strings.menuSplitIntoLineCursors, systemImage: MenuIcons.splitIntoLineCursors)
+                }
+                .keyboardShortcut("l", modifiers: [.command, .shift])
+                .disabled(focusedProject?.tabManager.activeTab == nil)
+
+                Divider()
+
+                Button {
                     NotificationCenter.default.post(name: .findInFile, object: nil)
                 } label: {
                     Label(Strings.menuFind, systemImage: MenuIcons.find)
@@ -1010,4 +1028,7 @@ extension Notification.Name {
     static let findNext = Notification.Name("findNext")
     static let findPrevious = Notification.Name("findPrevious")
     static let useSelectionForFind = Notification.Name("useSelectionForFind")
+    // Multiple cursors (issue #333)
+    static let selectNextOccurrence = Notification.Name("selectNextOccurrence")
+    static let splitIntoLineCursors = Notification.Name("splitIntoLineCursors")
 }
