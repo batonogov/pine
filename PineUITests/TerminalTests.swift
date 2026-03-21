@@ -36,7 +36,7 @@ final class TerminalTests: PineUITestCase {
         }
 
         // Create first terminal tab via menu — this also shows the terminal
-        app.menuBars.menuBarItems["Terminal"].click()
+        clickMenuBarItem("Terminal")
         app.menuItems["New Tab"].click()
 
         // Wait for terminal to become visible
@@ -47,7 +47,7 @@ final class TerminalTests: PineUITestCase {
         }
 
         // Create second terminal tab via menu
-        app.menuBars.menuBarItems["Terminal"].click()
+        clickMenuBarItem("Terminal")
         app.menuItems["New Tab"].click()
 
         // Verify second terminal tab appeared — tab bar should have "Terminal 2"
@@ -73,7 +73,7 @@ final class TerminalTests: PineUITestCase {
         XCTAssertFalse(newTerminalButton.isHittable, "Terminal should be hidden initially")
 
         // Create new terminal tab via menu — should make terminal visible
-        app.menuBars.menuBarItems["Terminal"].click()
+        clickMenuBarItem("Terminal")
         app.menuItems["New Tab"].click()
 
         // Terminal should now be visible
