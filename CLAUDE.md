@@ -17,9 +17,9 @@ Pine is a minimal native macOS code editor built with SwiftUI + AppKit. Targets 
 - **Git hooks:** Run once after cloning: `git config core.hooksPath .githooks && git config merge.ours.driver true`. Enables pre-commit hook that auto-unstages cosmetic-only changes to `Localizable.xcstrings` (Xcode build artifacts) and `ours` merge driver for xcstrings conflicts
 - **SwiftLint:** `brew install swiftlint` — runs as a build phase; config in `.swiftlint.yml`. Run `swiftlint` before every commit and fix all warnings/errors. If `swiftlint` crashes with `sourcekitdInProc` error, prefix with `DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer`
 - **Unit Tests:** `DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer xcodebuild test -project Pine.xcodeproj -scheme Pine -destination 'platform=macOS' -only-testing:PineTests`
-- Unit test target: `PineTests` (Swift Testing framework) — covers git parsing, grammar models, file tree
+- Unit test target: `PineTests` (Swift Testing framework) — covers git parsing, grammar models, file tree, syntax highlighting, find & replace, code folding, minimap, status bar, project search, and more (46+ test files)
 - **UI Tests:** `DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer xcodebuild test -project Pine.xcodeproj -scheme Pine -destination 'platform=macOS' -only-testing:PineUITests`
-- UI test target: `PineUITests` (XCTest/XCUITest) — end-to-end tests for Welcome window, editor tabs, terminal, multi-window
+- UI test target: `PineUITests` (XCTest/XCUITest) — end-to-end tests for Welcome window, editor tabs, terminal, multi-window, minimap, git blame, branch switcher, and more (17+ test files)
 - Launch arguments for UI testing: `--reset-state` (clears persisted sessions), `-ApplePersistenceIgnoreState YES` (ignores macOS saved window state), `-AppleLanguages (en)`, `-AppleLocale en_US` (force English locale so menu item names are predictable)
 - Environment variable for UI testing: `PINE_OPEN_PROJECT=<path>` (opens project without file dialog — uses env var because macOS interprets bare paths in launch arguments as files to open)
 - **Known issue:** On macOS 26, `XCUIApplication.launch()` bypasses LaunchServices, so SwiftUI `.defaultLaunchBehavior(.presented)` does not create windows. The app includes an AppKit fallback (`createWelcomeWindowViaAppKit`) that activates after 0.5s if no windows appear.
@@ -44,9 +44,25 @@ Pine is a minimal native macOS code editor built with SwiftUI + AppKit. Targets 
 
 **Terminal:** Uses [SwiftTerm](https://github.com/migueldeicaza/SwiftTerm) — a full VT100/xterm terminal emulator in pure Swift. `TerminalTab` wraps `LocalProcessTerminalView` which handles PTY creation, escape sequence parsing, keyboard input, and rendering. Supports colors, cursor positioning, TUI apps (vim, htop), oh-my-zsh, and all standard terminal features. Terminal tabs use a custom tab bar with shared state across editor windows.
 
-**Git integration:** `GitStatusProvider` runs `git status` and `git diff` to show file status indicators in the sidebar and diff markers (added/modified/deleted) in the editor gutter. Branch switching is available via clickable subtitle in the title bar (shows NSMenu with all branches) and via Cmd+Shift+B (opens `BranchSwitcherView` sheet with search). The subtitle click is implemented via AppKit (`BranchSubtitleClickHandler`) because SwiftUI's `toolbarTitleMenu` does not work on macOS 26 with Liquid Glass.
+**Git integration:** `GitStatusProvider` runs `git status` and `git diff` to show file status indicators in the sidebar and diff markers (added/modified/deleted) in the editor gutter. Branch switching is available via clickable subtitle in the title bar (shows NSMenu with all branches) and via Cmd+Shift+B (opens `BranchSwitcherView` sheet with search). The subtitle click is implemented via AppKit (`BranchSubtitleClickHandler`) because SwiftUI's `toolbarTitleMenu` does not work on macOS 26 with Liquid Glass. Git blame display shows per-line commit info (hash, author, timestamp, message) alongside code; toggled via menu. `GitBlameInfo` holds the parsed blame data structures.
 
-**Syntax highlighting:** `SyntaxHighlighter` singleton loads JSON grammar files from `Pine/Grammars/` at startup. Each grammar defines regex rules with scopes (comment, string, keyword, etc.) and a priority system prevents nested matches (comments > strings > keywords).
+**Syntax highlighting:** `SyntaxHighlighter` singleton loads JSON grammar files from `Pine/Grammars/` at startup. Each grammar defines regex rules with scopes (comment, string, keyword, etc.) and a priority system prevents nested matches (comments > strings > keywords). Highlighting runs asynchronously using generation tokens to discard stale results.
+
+**Minimap:** `MinimapView` renders a scaled-down (12%) document overview on the right edge of the editor showing syntax colors and git diff markers. Click or drag to scroll the editor proportionally. A viewport indicator rectangle shows the visible region. Toggle visibility via menu.
+
+**Code folding:** `FoldRangeCalculator` identifies foldable ranges by scanning matched bracket pairs (`{}`, `[]`, `()`). `FoldState` tracks which ranges are folded for the active tab using a sorted set for O(1) hidden-line lookups. Fold/unfold/toggle operations are available via menu and gutter clicks.
+
+**Find & Replace:** Uses NSTextView's native find bar (`usesFindBar = true`) triggered via NotificationCenter. Notifications: `findInFile` (Cmd+F), `findAndReplace` (Cmd+Option+F), `findNext` (Cmd+G), `findPrevious` (Cmd+Shift+G), `useSelectionForFind` (Cmd+E). The find bar is presented by `GutterTextView`'s coordinator in response to menu commands.
+
+**Project-wide search:** `ProjectSearchProvider` performs async full-project text search with debounce, `.gitignore` support, binary file detection, and a 1 MB per-file limit. Results are grouped by file and displayed in `SearchResultsView` with match highlighting and case-sensitivity toggle.
+
+**Status bar:** `StatusBarInfo` computes cursor position (line:column, 1-based), line ending style (LF/CRLF), indentation style (spaces/tabs with width), and human-readable file size. These values are displayed in `StatusBarView` at the bottom of the editor.
+
+**Auto-save:** Auto-save support is accessible via menu (menu icon defined in `MenuIcons.autoSave`, string in `Strings.menuAutoSave`).
+
+**File system watching:** `FileSystemWatcher` uses FSEvents to monitor a directory tree and fires a debounced callback on the main thread when changes occur. Generation tokens prevent stale callbacks from firing after `stop()` is called.
+
+**Async file tree:** `WorkspaceManager` loads the project file tree in two phases — a shallow pass renders immediately for responsiveness, followed by a full async load. Generation tokens prevent stale async results from overwriting newer ones.
 
 **Window & tab management:** Uses `WindowGroup(for: URL.self)` where URL identifies the project directory (not individual files). Each project gets one native macOS window with an internal editor tab bar (`EditorTabBar`). `ProjectRegistry` (owned by `AppDelegate`, shared with `PineApp` via computed property) deduplicates open projects — opening the same directory twice returns the same `ProjectManager`. A `Welcome` window (`WelcomeView`) shows on launch with a recent projects list and an Open Folder button. `FocusedProjectKey` passes the active `ProjectManager` to menu commands via `@FocusedValue`. On macOS 26, XCUITest and direct binary launches bypass LaunchServices, causing SwiftUI to skip window creation despite `.defaultLaunchBehavior(.presented)`. `AppDelegate.createWelcomeWindowViaAppKit()` uses `NSHostingController` as a fallback to guarantee the Welcome window appears.
 
@@ -60,10 +76,21 @@ Pine is a minimal native macOS code editor built with SwiftUI + AppKit. Targets 
 - `ContentView.swift` — NavigationSplitView layout: sidebar (file tree) + detail (editor tabs + terminal), session restoration
 - `SessionState.swift` — Codable session persistence (project path + open file paths) via UserDefaults
 - `ProjectManager.swift` — Central state: file tree, terminal tabs, git provider, project I/O, saveSession()
+- `WorkspaceManager.swift` — Async file tree loading with two-phase progressive rendering (shallow then full), git integration, file watching; generation tokens prevent stale async results
 - `FileNode.swift` — Recursive tree model for filesystem
-- `CodeEditorView.swift` — NSViewRepresentable editor with GutterTextView and LineNumberView
-- `SyntaxHighlighter.swift` — Grammar loading, regex compilation, theme colors, highlighting application
+- `FileSystemWatcher.swift` — FSEvents-based directory watcher with debounced main-thread callback and generation tokens to prevent stale callbacks after stop()
+- `CodeEditorView.swift` — NSViewRepresentable editor with GutterTextView and LineNumberView; handles syntax highlighting, find & replace, code folding, git blame display, bracket matching, and diff markers
+- `SyntaxHighlighter.swift` — Grammar loading, regex compilation, theme colors, async highlighting application
 - `LineNumberGutter.swift` — Line number rendering (enumerates only visible line fragments)
+- `MinimapView.swift` — Scaled-down (12%) document overview with syntax colors and git diff markers; click/drag scrolls the editor; viewport indicator shows visible region
+- `StatusBarInfo.swift` — Computes cursor position (line:column), line ending style (LF/CRLF), indentation style (spaces/tabs), and file size for the status bar
+- `FoldState.swift` — Tracks folded code regions for the active tab; O(1) hidden-line lookups via sorted set
+- `FoldRangeCalculator.swift` — Identifies foldable ranges from matched bracket pairs `{}`, `[]`, `()` using binary search for line number resolution
+- `GitBlameInfo.swift` — Data structures for git blame output (GitBlameLine: hash, author, timestamp, summary; BlameConstants for storage key)
+- `BracketMatcher.swift` — Finds matching bracket pairs while skipping comment and string ranges
+- `CommentToggler.swift` — Toggles line and block comments for the active selection
+- `ProjectSearchProvider.swift` — Async full-project text search with debounce, .gitignore support, binary file detection, and 1 MB per-file limit
+- `SearchResultsView.swift` — Search results UI grouped by file with match highlighting and case-sensitivity toggle
 - `TerminalSession.swift` — SwiftTerm integration: TerminalTab, TerminalContentView (NSViewRepresentable), TerminalTabDelegate
 - `GitStatusProvider.swift` — Git status/diff parsing for sidebar indicators and gutter markers, branch listing and checkout
 - `BranchSubtitleClickHandler.swift` — NSViewRepresentable that makes the window subtitle clickable for branch switching (AppKit workaround for broken `toolbarTitleMenu`)
@@ -73,8 +100,8 @@ Pine is a minimal native macOS code editor built with SwiftUI + AppKit. Targets 
 - `FocusedProjectKey.swift` — FocusedValueKey for passing active ProjectManager to menu commands
 - `AccessibilityIdentifiers.swift` — Shared accessibility ID constants for UI testing
 - `Pine/TabManager.swift` — Editor tab lifecycle: open, close, save, saveAll, saveAs, duplicate, dirty tracking, external change detection
-- `PineTests/` — Unit tests: GitStatusParserTests, GitDiffParserTests, FileNodeTests, GrammarModelTests, TabManagerTests, WindowLifecycleTests, URLAbbreviatedPathTests
-- `PineUITests/` — XCUITest suite: WelcomeWindowTests, EditorWindowTests, TerminalTests, MultiWindowTests, BranchSwitcherTests
+- `PineTests/` — Unit tests (46+ files): GitStatusParserTests, GitDiffParserTests, GitBlameParserTests, GitStatusProviderTests, FileNodeTests, GrammarModelTests, SyntaxHighlighterTests, AsyncSyntaxHighlighterTests, TabManagerTests, WindowLifecycleTests, URLAbbreviatedPathTests, FindReplaceTests, FoldStateTests, FoldRangeCalculatorTests, BracketMatcherTests, MinimapViewTests, StatusBarInfoTests, ProjectSearchProviderTests, WorkspaceManagerTests, and more
+- `PineUITests/` — XCUITest suite (17+ files): WelcomeWindowTests, EditorWindowTests, TerminalTests, MultiWindowTests, BranchSwitcherTests, BlameViewTests, MinimapTests, DiffNavigationUITests, ToggleCommentTests, FontSizeTests, DuplicateTests, DeleteTests, SidebarSearchTests, and more
 
 ## Release & CI
 
@@ -94,10 +121,10 @@ Pine is a minimal native macOS code editor built with SwiftUI + AppKit. Targets 
 - Uses `@Observable` macro (Swift 5.9+), not ObservableObject/Published
 - Models are either structs (EditorTab) or @Observable classes (FileNode, TerminalTab) depending on identity semantics
 - Grammar files are JSON in `Pine/Grammars/` — add new languages by adding a new JSON file following the existing format
-- Keyboard shortcuts: Save (Cmd+S), Save All (Cmd+Option+S), Save As (Cmd+Shift+S), Duplicate (Cmd+Shift+D), Open Folder (Cmd+Shift+O), Close Tab (Cmd+W), Toggle Terminal (Cmd+`), New Terminal Tab (Cmd+T), Switch Branch (Cmd+Shift+B), Next Change (Ctrl+Opt+↓), Previous Change (Ctrl+Opt+↑). Menu commands flow through `@FocusedValue(\.projectManager)` to `TabManager`. Cmd+W is intercepted via `NSEvent.addLocalMonitorForEvents` in AppDelegate (not a SwiftUI menu command) to close the active tab; the window close button goes through `CloseDelegate.windowShouldClose` to close the entire window
+- Keyboard shortcuts: Save (Cmd+S), Save All (Cmd+Option+S), Save As (Cmd+Shift+S), Duplicate (Cmd+Shift+D), Open Folder (Cmd+Shift+O), Close Tab (Cmd+W), Toggle Terminal (Cmd+`), New Terminal Tab (Cmd+T), Switch Branch (Cmd+Shift+B), Next Change (Ctrl+Opt+↓), Previous Change (Ctrl+Opt+↑), Find (Cmd+F), Find & Replace (Cmd+Option+F), Find Next (Cmd+G), Find Previous (Cmd+Shift+G), Use Selection for Find (Cmd+E). Menu commands flow through `@FocusedValue(\.projectManager)` to `TabManager`. Cmd+W is intercepted via `NSEvent.addLocalMonitorForEvents` in AppDelegate (not a SwiftUI menu command) to close the active tab; the window close button goes through `CloseDelegate.windowShouldClose` to close the entire window
 - UI uses semantic system colors (migrated from hardcoded dark theme values)
 - macOS 26 SDK renamed `NSColor(sRGBRed:)` → `NSColor(srgbRed:)` (lowercase)
-- Editor features: auto-indent on newline, current line highlight, git diff gutter markers
+- Editor features: auto-indent on newline, current line highlight, git diff gutter markers, minimap, code folding, git blame, find & replace, status bar (line/col, indentation, encoding, line endings, file size), auto-save, async syntax highlighting, bracket matching, comment toggling, markdown preview
 - Editor tabs use an internal SwiftUI tab bar (`EditorTabBar`), not native macOS window tabs
 - Project windows use `WindowGroup(for: URL.self)` where URL = project directory; `ProjectRegistry` prevents duplicate windows for the same project
 - **Conventional Commits** — all commit messages must follow the format: `feat:`, `fix:`, `chore:`, `docs:`, `refactor:`, `perf:`, `test:`. Use `feat!:` or `BREAKING CHANGE:` footer for breaking changes
