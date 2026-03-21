@@ -15,6 +15,7 @@ final class ProjectManager {
     let terminal = TerminalManager()
     let tabManager = TabManager()
     let searchProvider = ProjectSearchProvider()
+    let diffPanel = DiffPanelProvider()
     private(set) var recoveryManager: RecoveryManager?
 
     deinit {

@@ -40,6 +40,9 @@ enum MenuIcons {
     // MARK: - Terminal menu
     static let newTerminalTab = "plus"
 
+    // MARK: - Git menu
+    static let diffPanel = "arrow.triangle.branch"
+
     // MARK: - Context menu
     static let newFile = "doc.badge.plus"
     static let newFolder = "folder.badge.plus"

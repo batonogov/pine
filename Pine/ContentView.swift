@@ -29,6 +29,7 @@ struct ContentView: View {
     @State private var goToLineOffset: GoToRequest?
     @State private var recoveryEntries: [(UUID, RecoveryEntry)] = []
     @State private var showRecoveryDialog = false
+    @State private var isDiffPanelVisible = false
     @AppStorage("minimapVisible") private var isMinimapVisible = true
     @AppStorage(BlameConstants.storageKey) private var isBlameVisible = true
 
@@ -42,7 +43,8 @@ struct ContentView: View {
         NavigationSplitView(columnVisibility: $columnVisibility) {
             SidebarSearchableContent(
                 selectedNode: $selectedNode,
-                workspace: workspace
+                workspace: workspace,
+                isDiffPanelVisible: isDiffPanelVisible
             )
             .accessibilityIdentifier(AccessibilityID.sidebar)
             .navigationSplitViewColumnWidth(min: 200, ideal: 240, max: 400)
@@ -188,7 +190,20 @@ struct ContentView: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: .showProjectSearch)) { _ in
             columnVisibility = .all
+            isDiffPanelVisible = false
             isSearchPresented = true
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .showDiffPanel)) { _ in
+            guard controlActiveState == .key else { return }
+            isDiffPanelVisible.toggle()
+            if isDiffPanelVisible {
+                isSearchPresented = false
+                projectManager.searchProvider.query = ""
+                columnVisibility = .all
+                Task {
+                    await projectManager.diffPanel.refresh(gitProvider: projectManager.gitProvider)
+                }
+            }
         }
         .onReceive(NotificationCenter.default.publisher(for: .navigateChange)) { notification in
             guard controlActiveState == .key,
@@ -707,10 +722,13 @@ private struct ProjectSearchModifier: ViewModifier {
 private struct SidebarSearchableContent: View {
     @Binding var selectedNode: FileNode?
     var workspace: WorkspaceManager
+    var isDiffPanelVisible: Bool
     @Environment(ProjectManager.self) var projectManager
 
     var body: some View {
-        if !projectManager.searchProvider.query.isEmpty {
+        if isDiffPanelVisible {
+            DiffPanelView()
+        } else if !projectManager.searchProvider.query.isEmpty {
             SearchResultsView()
         } else {
             SidebarView(workspace: workspace, selectedFile: $selectedNode)

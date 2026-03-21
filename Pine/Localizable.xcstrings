@@ -1811,6 +1811,276 @@
         }
       }
     },
+    "diffPanel.discardConfirm.cancel" : {
+      "comment" : "Cancel button in discard hunk confirmation dialog.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cancel"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Отмена"
+          }
+        }
+      }
+    },
+    "diffPanel.discardConfirm.discard" : {
+      "comment" : "Destructive button in discard hunk confirmation dialog.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Discard"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Отменить изменения"
+          }
+        }
+      }
+    },
+    "diffPanel.discardConfirm.message" : {
+      "comment" : "Message in discard hunk confirmation dialog.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This change will be permanently lost."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Это изменение будет безвозвратно потеряно."
+          }
+        }
+      }
+    },
+    "diffPanel.discardConfirm.title" : {
+      "comment" : "Title for discard hunk confirmation dialog.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Discard this change?"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Отменить это изменение?"
+          }
+        }
+      }
+    },
+    "diffPanel.discardHunk" : {
+      "comment" : "Tooltip for discard hunk button.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Discard Hunk"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Отменить фрагмент"
+          }
+        }
+      }
+    },
+    "diffPanel.noChanges" : {
+      "comment" : "Shown when there are no git changes.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No Changes"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Нет изменений"
+          }
+        }
+      }
+    },
+    "diffPanel.stageAll" : {
+      "comment" : "Tooltip for stage all button.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stage All"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Добавить всё"
+          }
+        }
+      }
+    },
+    "diffPanel.stageFile" : {
+      "comment" : "Tooltip for stage file button.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stage File"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Добавить файл"
+          }
+        }
+      }
+    },
+    "diffPanel.stageHunk" : {
+      "comment" : "Tooltip for stage hunk button.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stage Hunk"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Добавить фрагмент"
+          }
+        }
+      }
+    },
+    "diffPanel.stagedChanges" : {
+      "comment" : "Section header for staged changes in diff panel.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Staged Changes"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Подготовленные изменения"
+          }
+        }
+      }
+    },
+    "diffPanel.unstageAll" : {
+      "comment" : "Tooltip for unstage all button.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Unstage All"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Убрать всё"
+          }
+        }
+      }
+    },
+    "diffPanel.unstageFile" : {
+      "comment" : "Tooltip for unstage file button.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Unstage File"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Убрать файл"
+          }
+        }
+      }
+    },
+    "diffPanel.unstageHunk" : {
+      "comment" : "Tooltip for unstage hunk button.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Unstage Hunk"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Убрать фрагмент"
+          }
+        }
+      }
+    },
+    "diffPanel.unstagedChanges" : {
+      "comment" : "Section header for unstaged changes in diff panel.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Unstaged Changes"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Неподготовленные изменения"
+          }
+        }
+      }
+    },
+    "sidebar.changes" : {
+      "comment" : "Sidebar tab label for git changes.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Changes"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Изменения"
+          }
+        }
+      }
+    },
     "editor.noFileSelected" : {
       "comment" : "Placeholder title shown in the editor area when no file is open.",
       "extractionState" : "manual",
@@ -4267,6 +4537,66 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "切换 Git Blame"
+          }
+        }
+      }
+    },
+    "menu.toggleDiffPanel" : {
+      "comment" : "Menu command: toggle git diff panel in sidebar.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Änderungen anzeigen"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Toggle Changes"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Alternar cambios"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Afficher/masquer les modifications"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "変更を切り替え"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "변경사항 전환"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Alternar alterações"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Переключить панель изменений"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "切换更改面板"
           }
         }
       }

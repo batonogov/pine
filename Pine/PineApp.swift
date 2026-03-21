@@ -99,6 +99,13 @@ struct PineApp: App {
                 }
                 .keyboardShortcut("b", modifiers: [.command, .control])
 
+                Button {
+                    NotificationCenter.default.post(name: .showDiffPanel, object: nil)
+                } label: {
+                    Label(Strings.menuToggleDiffPanel, systemImage: MenuIcons.diffPanel)
+                }
+                .keyboardShortcut("c", modifiers: [.command, .shift])
+
                 Divider()
 
                 Button {
@@ -1010,4 +1017,5 @@ extension Notification.Name {
     static let findNext = Notification.Name("findNext")
     static let findPrevious = Notification.Name("findPrevious")
     static let useSelectionForFind = Notification.Name("useSelectionForFind")
+    static let showDiffPanel = Notification.Name("showDiffPanel")
 }
