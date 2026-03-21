@@ -141,7 +141,7 @@
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Sie haben nicht commitete Änderungen. Das Wechseln zu \"%@\" kann diese überschreiben."
+            "value" : "Sie haben nicht festgeschriebene Änderungen. Das Wechseln zu \"%@\" kann diese überschreiben."
           }
         },
         "en" : {
@@ -261,7 +261,7 @@
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Nicht commitete Änderungen"
+            "value" : "Nicht festgeschriebene Änderungen"
           }
         },
         "en" : {
@@ -488,7 +488,7 @@
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Перезагрузить с диска"
+            "value" : "Обновить с диска"
           }
         },
         "zh-Hans" : {
@@ -3674,7 +3674,7 @@
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Sichern unter …"
+            "value" : "Sichern unter…"
           }
         },
         "en" : {
@@ -4505,7 +4505,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "无結果"
+            "value" : "无结果"
           }
         }
       }
