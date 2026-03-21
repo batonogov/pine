@@ -142,6 +142,25 @@ struct PineApp: App {
                 }
                 .keyboardShortcut("/", modifiers: .command)
 
+                Button {
+                    NotificationCenter.default.post(name: .selectNextOccurrence, object: nil)
+                } label: {
+                    Label(Strings.menuSelectNextOccurrence, systemImage: MenuIcons.selectNextOccurrence)
+                }
+                .keyboardShortcut("d", modifiers: .command)
+                .disabled(focusedProject?.tabManager.activeTab == nil)
+
+                Button {
+                    NotificationCenter.default.post(name: .splitSelectionIntoLines, object: nil)
+                } label: {
+                    Label(
+                        Strings.menuSplitSelectionIntoLines,
+                        systemImage: MenuIcons.splitSelectionIntoLines
+                    )
+                }
+                .keyboardShortcut("l", modifiers: [.command, .shift])
+                .disabled(focusedProject?.tabManager.activeTab == nil)
+
                 Divider()
 
                 Button {
@@ -1010,4 +1029,6 @@ extension Notification.Name {
     static let findNext = Notification.Name("findNext")
     static let findPrevious = Notification.Name("findPrevious")
     static let useSelectionForFind = Notification.Name("useSelectionForFind")
+    static let selectNextOccurrence = Notification.Name("selectNextOccurrence")
+    static let splitSelectionIntoLines = Notification.Name("splitSelectionIntoLines")
 }

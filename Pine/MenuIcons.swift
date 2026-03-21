@@ -21,6 +21,8 @@ enum MenuIcons {
     static let findInProject = "magnifyingglass"
     static let nextChange = "chevron.down"
     static let previousChange = "chevron.up"
+    static let selectNextOccurrence = "text.cursor"
+    static let splitSelectionIntoLines = "text.line.last.and.arrowtriangle.forward"
     static let foldCode = "chevron.down.square"
     static let unfoldCode = "chevron.right.square"
     static let foldAll = "rectangle.compress.vertical"

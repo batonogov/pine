@@ -35,6 +35,195 @@ final class GutterTextView: NSTextView {
         NSPoint(x: gutterInset, y: 8)
     }
 
+    // MARK: - Multi-cursor state
+
+    /// Whether multi-cursor mode is active (2+ cursors).
+    var isMultiCursorActive: Bool { multiCursors.count > 1 }
+
+    /// Current set of cursors. Empty means single-cursor mode (use NSTextView default).
+    private(set) var multiCursors: [MultiCursorLogic.Cursor] = []
+
+    /// Flag to distinguish multi-cursor edits from external text changes.
+    private(set) var isApplyingMultiCursorEdit = false
+
+    /// Applies multi-cursor edit result using per-cursor targeted replacements (preserves attributes).
+    /// Replacements are applied in reverse order so earlier offsets remain valid.
+    private func applyMultiCursorResult(_ result: MultiCursorLogic.Result) {
+        isApplyingMultiCursorEdit = true
+        defer { isApplyingMultiCursorEdit = false }
+
+        // Group all replacements into a single undo step
+        undoManager?.beginUndoGrouping()
+
+        // Apply replacements in reverse order (from end to start) to preserve offsets
+        for replacement in result.replacements.reversed()
+            where shouldChangeText(in: replacement.range, replacementString: replacement.string) {
+            replaceCharacters(in: replacement.range, with: replacement.string)
+            didChangeText()
+        }
+
+        undoManager?.endUndoGrouping()
+
+        multiCursors = result.newCursors
+        syncSelectionsFromCursors()
+    }
+
+    /// Resets multi-cursor state. Called when text changes externally (not from multi-cursor edit).
+    func invalidateMultiCursors() {
+        multiCursors = []
+    }
+
+    /// Syncs NSTextView selections from multiCursors using setSelectedRanges (Apple API).
+    private func syncSelectionsFromCursors() {
+        guard !multiCursors.isEmpty else { return }
+        let textLength = (string as NSString).length
+        let ranges = multiCursors.map { cursor -> NSValue in
+            let range = cursor.range
+            let loc = min(range.location, textLength)
+            let len = min(range.length, textLength - loc)
+            return NSValue(range: NSRange(location: loc, length: len))
+        }
+        setSelectedRanges(ranges, affinity: .downstream, stillSelecting: false)
+    }
+
+    /// Activates multi-cursor mode from the current single selection.
+    private func ensureMultiCursorsFromSelection() {
+        if multiCursors.isEmpty {
+            let sel = selectedRange()
+            if sel.length > 0 {
+                multiCursors = [MultiCursorLogic.Cursor(
+                    location: NSMaxRange(sel),
+                    selection: sel
+                )]
+            } else {
+                multiCursors = [MultiCursorLogic.Cursor(location: sel.location)]
+            }
+        }
+    }
+
+    /// Collapses multi-cursor mode to a single cursor.
+    func collapseToSingleCursor() {
+        guard isMultiCursorActive else { return }
+        let first = multiCursors[0]
+        multiCursors = []
+        setSelectedRange(NSRange(location: first.location, length: 0))
+    }
+
+    // MARK: - Multi-cursor text input overrides
+
+    override func insertText(_ string: Any, replacementRange: NSRange) {
+        guard isMultiCursorActive, let str = string as? String else {
+            super.insertText(string, replacementRange: replacementRange)
+            return
+        }
+        let result = MultiCursorLogic.insert(
+            in: self.string, cursors: multiCursors, string: str
+        )
+        applyMultiCursorResult(result)
+    }
+
+    override func deleteBackward(_ sender: Any?) {
+        guard isMultiCursorActive else {
+            super.deleteBackward(sender)
+            return
+        }
+        let result = MultiCursorLogic.deleteBackward(in: string, cursors: multiCursors)
+        applyMultiCursorResult(result)
+    }
+
+    override func deleteForward(_ sender: Any?) {
+        guard isMultiCursorActive else {
+            super.deleteForward(sender)
+            return
+        }
+        let result = MultiCursorLogic.deleteForward(in: string, cursors: multiCursors)
+        applyMultiCursorResult(result)
+    }
+
+    override func cancelOperation(_ sender: Any?) {
+        if isMultiCursorActive {
+            collapseToSingleCursor()
+            return
+        }
+        super.cancelOperation(sender)
+    }
+
+    // MARK: - Multi-cursor arrow key movement
+
+    override func moveLeft(_ sender: Any?) {
+        guard isMultiCursorActive else { super.moveLeft(sender); return }
+        multiCursors = MultiCursorLogic.moveLeft(in: string, cursors: multiCursors)
+        syncSelectionsFromCursors()
+    }
+
+    override func moveRight(_ sender: Any?) {
+        guard isMultiCursorActive else { super.moveRight(sender); return }
+        multiCursors = MultiCursorLogic.moveRight(in: string, cursors: multiCursors)
+        syncSelectionsFromCursors()
+    }
+
+    override func moveUp(_ sender: Any?) {
+        guard isMultiCursorActive else { super.moveUp(sender); return }
+        multiCursors = MultiCursorLogic.moveUp(in: string, cursors: multiCursors)
+        syncSelectionsFromCursors()
+    }
+
+    override func moveDown(_ sender: Any?) {
+        guard isMultiCursorActive else { super.moveDown(sender); return }
+        multiCursors = MultiCursorLogic.moveDown(in: string, cursors: multiCursors)
+        syncSelectionsFromCursors()
+    }
+
+    // MARK: - Option+Click for multi-cursor
+    // Note: This overrides NSTextView's default Option+Click behavior (rectangular/column selection).
+    // Multi-cursor editing (like Xcode/VS Code) is more useful in a code editor context.
+
+    override func mouseDown(with event: NSEvent) {
+        if event.modifierFlags.contains(.option) && !event.modifierFlags.contains(.shift) {
+            let point = convert(event.locationInWindow, from: nil)
+            let adjustedPoint = NSPoint(
+                x: point.x - textContainerOrigin.x,
+                y: point.y - textContainerOrigin.y
+            )
+            guard let layoutManager, let textContainer else {
+                super.mouseDown(with: event)
+                return
+            }
+            let charIndex = layoutManager.characterIndex(
+                for: adjustedPoint, in: textContainer,
+                fractionOfDistanceBetweenInsertionPoints: nil
+            )
+            ensureMultiCursorsFromSelection()
+            multiCursors = MultiCursorLogic.addCursor(to: multiCursors, at: charIndex)
+            syncSelectionsFromCursors()
+            return
+        }
+        // Regular click collapses multi-cursors
+        if isMultiCursorActive {
+            multiCursors = []
+        }
+        super.mouseDown(with: event)
+    }
+
+    // MARK: - Cmd+D: select next occurrence
+
+    func selectNextOccurrence() {
+        ensureMultiCursorsFromSelection()
+        multiCursors = MultiCursorLogic.selectNextOccurrence(in: string, cursors: multiCursors)
+        syncSelectionsFromCursors()
+    }
+
+    // MARK: - Cmd+Shift+L: split selection into lines
+
+    func splitSelectionIntoLines() {
+        ensureMultiCursorsFromSelection()
+        let result = MultiCursorLogic.splitSelectionIntoLines(in: string, cursors: multiCursors)
+        if result.count > 1 {
+            multiCursors = result
+            syncSelectionsFromCursors()
+        }
+    }
+
     // MARK: - Highlight current line
 
     private let currentLineColor = NSColor(name: nil) { appearance in
@@ -242,6 +431,13 @@ final class GutterTextView: NSTextView {
     private static let indentClosers: Set<Character> = ["}", ")"]
 
     override func insertNewline(_ sender: Any?) {
+        if isMultiCursorActive {
+            // In multi-cursor mode, insert newline at each cursor (no auto-indent for simplicity)
+            let result = MultiCursorLogic.insert(in: string, cursors: multiCursors, string: "\n")
+            applyMultiCursorResult(result)
+            return
+        }
+
         let source = string as NSString
         let cursorLocation = selectedRange().location
 
@@ -584,6 +780,20 @@ struct CodeEditorView: NSViewRepresentable {
             )
         }
 
+        // Observe multi-cursor notifications (Cmd+D, Cmd+Shift+L)
+        NotificationCenter.default.addObserver(
+            context.coordinator,
+            selector: #selector(Coordinator.handleSelectNextOccurrence),
+            name: .selectNextOccurrence,
+            object: nil
+        )
+        NotificationCenter.default.addObserver(
+            context.coordinator,
+            selector: #selector(Coordinator.handleSplitSelectionIntoLines),
+            name: .splitSelectionIntoLines,
+            object: nil
+        )
+
         // Observe fold code notifications (Cmd+Option+arrows)
         NotificationCenter.default.addObserver(
             context.coordinator,
@@ -772,6 +982,11 @@ struct CodeEditorView: NSViewRepresentable {
             guard textChanged || languageChanged else { return }
             lastContentVersion = parent.contentVersion
 
+            // External text change (e.g., tab switch, file reload) → invalidate multi-cursors
+            if let gutterView = textView as? GutterTextView {
+                gutterView.invalidateMultiCursors()
+            }
+
             cancelPendingHighlight()
             if let storage = textView.textStorage {
                 SyntaxHighlighter.shared.invalidateCache(for: storage)
@@ -855,6 +1070,11 @@ struct CodeEditorView: NSViewRepresentable {
             // so the upcoming updateNSView won't overwrite the text and reset the cursor.
             didChangeFromTextView = true
             parent.text = textView.string
+
+            // Invalidate multi-cursor state when text changes externally (not from multi-cursor edit)
+            if let gutterView = textView as? GutterTextView, !gutterView.isApplyingMultiCursorEdit {
+                gutterView.invalidateMultiCursors()
+            }
 
             // Подсветка синтаксиса сбросит backgroundColor —
             // считаем bracket highlight невалидным
@@ -1129,6 +1349,22 @@ struct CodeEditorView: NSViewRepresentable {
                   let gutterView = sv.documentView as? GutterTextView,
                   gutterView.window?.isKeyWindow == true else { return }
             gutterView.toggleComment()
+        }
+
+        // MARK: - Multi-cursor (Cmd+D, Cmd+Shift+L)
+
+        @objc func handleSelectNextOccurrence() {
+            guard let sv = scrollView,
+                  let gutterView = sv.documentView as? GutterTextView,
+                  gutterView.window?.isKeyWindow == true else { return }
+            gutterView.selectNextOccurrence()
+        }
+
+        @objc func handleSplitSelectionIntoLines() {
+            guard let sv = scrollView,
+                  let gutterView = sv.documentView as? GutterTextView,
+                  gutterView.window?.isKeyWindow == true else { return }
+            gutterView.splitSelectionIntoLines()
         }
 
         // MARK: - Find & Replace (issue #275)
