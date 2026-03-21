@@ -26,7 +26,6 @@ struct ContentView: View {
     @State private var blameTask: Task<Void, Never>?
     @State private var didRestoreSession = false
     @State private var isSearchPresented = false
-    @State private var terminalSearchTask: Task<Void, Never>?
     @State private var goToLineOffset: GoToRequest?
     @AppStorage("minimapVisible") private var isMinimapVisible = true
     @AppStorage(BlameConstants.storageKey) private var isBlameVisible = true
@@ -639,38 +638,7 @@ struct ContentView: View {
         }
         .background(Color(nsColor: .textBackgroundColor))
         .onAppear { terminal.startTerminals(workingDirectory: workspace.rootURL) }
-        .onChange(of: terminal.terminalSearchQuery) { _, newQuery in
-            terminalSearchTask?.cancel()
-            terminalSearchTask = Task {
-                try? await Task.sleep(for: .milliseconds(150))
-                guard !Task.isCancelled else { return }
-                await terminal.activeTerminalTab?.search(
-                    for: newQuery,
-                    caseSensitive: terminal.isSearchCaseSensitive
-                )
-            }
-        }
-        .onChange(of: terminal.isSearchCaseSensitive) { _, _ in
-            guard terminal.isSearchVisible, !terminal.terminalSearchQuery.isEmpty else { return }
-            terminalSearchTask?.cancel()
-            terminalSearchTask = Task {
-                await terminal.activeTerminalTab?.search(
-                    for: terminal.terminalSearchQuery,
-                    caseSensitive: terminal.isSearchCaseSensitive
-                )
-            }
-        }
-        .onChange(of: terminal.activeTerminalID) { _, _ in
-            // Re-run search on tab switch if search bar is open
-            guard terminal.isSearchVisible, !terminal.terminalSearchQuery.isEmpty else { return }
-            terminalSearchTask?.cancel()
-            terminalSearchTask = Task {
-                await terminal.activeTerminalTab?.search(
-                    for: terminal.terminalSearchQuery,
-                    caseSensitive: terminal.isSearchCaseSensitive
-                )
-            }
-        }
+        .modifier(TerminalSearchObserver(terminal: terminal))
     }
 }
 
@@ -756,6 +724,50 @@ private struct TerminalSessionObserver: ViewModifier {
             .onChange(of: terminal.isTerminalMaximized) { _, _ in onSave() }
             .onChange(of: terminal.terminalTabs.count) { _, _ in onSave() }
             .onChange(of: terminal.activeTerminalID) { _, _ in onSave() }
+    }
+}
+
+// MARK: - Terminal search observer
+
+/// Extracted modifier to reduce body complexity for the type-checker.
+/// Handles debounced search, case-sensitivity changes, and tab switching.
+private struct TerminalSearchObserver: ViewModifier {
+    var terminal: TerminalManager
+    @State private var searchTask: Task<Void, Never>?
+
+    func body(content: Content) -> some View {
+        content
+            .onChange(of: terminal.terminalSearchQuery) { _, newQuery in
+                searchTask?.cancel()
+                searchTask = Task {
+                    try? await Task.sleep(for: .milliseconds(150))
+                    guard !Task.isCancelled else { return }
+                    await terminal.activeTerminalTab?.search(
+                        for: newQuery,
+                        caseSensitive: terminal.isSearchCaseSensitive
+                    )
+                }
+            }
+            .onChange(of: terminal.isSearchCaseSensitive) { _, _ in
+                guard terminal.isSearchVisible, !terminal.terminalSearchQuery.isEmpty else { return }
+                searchTask?.cancel()
+                searchTask = Task {
+                    await terminal.activeTerminalTab?.search(
+                        for: terminal.terminalSearchQuery,
+                        caseSensitive: terminal.isSearchCaseSensitive
+                    )
+                }
+            }
+            .onChange(of: terminal.activeTerminalID) { _, _ in
+                guard terminal.isSearchVisible, !terminal.terminalSearchQuery.isEmpty else { return }
+                searchTask?.cancel()
+                searchTask = Task {
+                    await terminal.activeTerminalTab?.search(
+                        for: terminal.terminalSearchQuery,
+                        caseSensitive: terminal.isSearchCaseSensitive
+                    )
+                }
+            }
     }
 }
 
