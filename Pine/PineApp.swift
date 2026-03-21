@@ -816,8 +816,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSWindow.allowsAutomaticWindowTabbing = false
 
-        // Clean up stale recovery files older than 7 days
-        RecoveryManager().cleanupStaleEntries(olderThan: 7)
+        // Clean up stale recovery files older than 7 days across all projects
+        RecoveryManager.cleanupAllStaleEntries(olderThan: 7)
 
         // Intercept Cmd+W before the system "Close" menu item.
         // For project windows: close active tab (or close window if no tabs).
@@ -928,9 +928,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate {
             pm.saveSession()
             // Clean up recovery files if all tabs are saved
             if !pm.tabManager.hasUnsavedChanges {
-                pm.recoveryManager.deleteAllRecoveryFiles()
+                pm.recoveryManager?.deleteAllRecoveryFiles()
             }
-            pm.recoveryManager.stopPeriodicSnapshots()
+            pm.recoveryManager?.stopPeriodicSnapshots()
         }
         registry.destroyAllProjects()
     }

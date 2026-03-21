@@ -64,7 +64,7 @@ struct RecoveryDialogView: View {
     }
 
     private func fileName(from path: String) -> String {
-        if path.isEmpty { return "Untitled" }
+        if path.isEmpty { return Strings.recoveryUntitled }
         return (path as NSString).lastPathComponent
     }
 }

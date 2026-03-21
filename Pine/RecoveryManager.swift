@@ -3,18 +3,27 @@
 //  Pine
 //
 
+import CommonCrypto
 import Foundation
 
 /// Manages crash recovery snapshots of unsaved editor content.
 ///
 /// Periodically writes dirty tab content to a recovery directory so it can
 /// be restored after a crash, force quit, or power loss.
+/// Each project gets its own subdirectory to avoid mixing recovery files.
 final class RecoveryManager {
 
-    /// Default recovery directory under Application Support.
-    static var defaultDirectory: URL {
+    /// Root recovery directory under Application Support.
+    static var rootDirectory: URL {
         FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("Pine/Recovery")
+    }
+
+    /// Returns a per-project recovery subdirectory based on a SHA-256 hash of the project path.
+    static func directory(for projectURL: URL) -> URL {
+        let path = projectURL.resolvingSymlinksInPath().path
+        let hash = sha256(path)
+        return rootDirectory.appendingPathComponent(hash)
     }
 
     /// Periodic snapshot interval in seconds.
@@ -27,11 +36,16 @@ final class RecoveryManager {
     private var periodicTimer: Timer?
     private var debounceWorkItem: DispatchWorkItem?
 
-    /// Tabs provider — set by TabManager so periodic snapshots can access current tabs.
+    /// Tabs provider — set by ProjectManager so periodic snapshots can access current tabs.
     var tabsProvider: (() -> [EditorTab])?
 
-    init(recoveryDirectory: URL? = nil) {
-        self.recoveryDirectory = recoveryDirectory ?? Self.defaultDirectory
+    init(recoveryDirectory: URL) {
+        self.recoveryDirectory = recoveryDirectory
+    }
+
+    /// Convenience initializer for a specific project.
+    convenience init(projectURL: URL) {
+        self.init(recoveryDirectory: Self.directory(for: projectURL))
     }
 
     // MARK: - Snapshot
@@ -66,7 +80,7 @@ final class RecoveryManager {
         try? FileManager.default.removeItem(at: fileURL)
     }
 
-    /// Removes all recovery files (e.g., on clean quit).
+    /// Removes all recovery files for this project (e.g., on clean quit).
     func deleteAllRecoveryFiles() {
         guard let files = try? FileManager.default.contentsOfDirectory(
             at: recoveryDirectory,
@@ -104,11 +118,37 @@ final class RecoveryManager {
     }
 
     /// Whether there are any pending recovery files.
+    /// More efficient than `pendingRecoveryEntries()` — returns as soon as one valid file is found.
     var hasPendingRecovery: Bool {
-        !pendingRecoveryEntries().isEmpty
+        guard let files = try? FileManager.default.contentsOfDirectory(
+            at: recoveryDirectory,
+            includingPropertiesForKeys: nil
+        ) else { return false }
+        return files.contains { $0.pathExtension == "json" }
     }
 
     // MARK: - Stale cleanup
+
+    /// Removes recovery files with timestamps older than the given number of days
+    /// across *all* project subdirectories.
+    static func cleanupAllStaleEntries(olderThan days: Int) {
+        let fm = FileManager.default
+        guard let subdirs = try? fm.contentsOfDirectory(
+            at: rootDirectory,
+            includingPropertiesForKeys: [.isDirectoryKey]
+        ) else { return }
+
+        for subdir in subdirs {
+            let manager = RecoveryManager(recoveryDirectory: subdir)
+            manager.cleanupStaleEntries(olderThan: days)
+
+            // Remove empty subdirectories
+            if let remaining = try? fm.contentsOfDirectory(atPath: subdir.path),
+               remaining.isEmpty {
+                try? fm.removeItem(at: subdir)
+            }
+        }
+    }
 
     /// Removes recovery files with timestamps older than the given number of days.
     func cleanupStaleEntries(olderThan days: Int) {
@@ -180,5 +220,15 @@ final class RecoveryManager {
                 withIntermediateDirectories: true
             )
         }
+    }
+
+    /// Returns a hex-encoded SHA-256 hash of the given string.
+    private static func sha256(_ string: String) -> String {
+        let data = Data(string.utf8)
+        var hash = [UInt8](repeating: 0, count: Int(CC_SHA256_DIGEST_LENGTH))
+        data.withUnsafeBytes { buffer in
+            _ = CC_SHA256(buffer.baseAddress, CC_LONG(buffer.count), &hash)
+        }
+        return hash.map { String(format: "%02x", $0) }.joined()
     }
 }

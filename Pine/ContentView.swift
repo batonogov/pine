@@ -272,14 +272,17 @@ struct ContentView: View {
     // MARK: - Crash recovery
 
     private func checkForRecovery() {
-        let entries = projectManager.recoveryManager.pendingRecoveryEntries()
-        guard !entries.isEmpty else { return }
+        guard let entries = projectManager.recoveryManager?.pendingRecoveryEntries(),
+              !entries.isEmpty else { return }
         recoveryEntries = entries
         showRecoveryDialog = true
     }
 
     private func recoverTabs() {
         for (_, entry) in recoveryEntries {
+            // Skip untitled tabs with empty paths — the original file no longer exists
+            guard !entry.originalPath.isEmpty else { continue }
+
             let url = URL(fileURLWithPath: entry.originalPath)
             tabManager.openTab(url: url)
 
@@ -290,13 +293,13 @@ struct ContentView: View {
                 tabManager.tabs[index].recomputeContentCaches()
             }
         }
-        projectManager.recoveryManager.deleteAllRecoveryFiles()
+        projectManager.recoveryManager?.deleteAllRecoveryFiles()
         showRecoveryDialog = false
         recoveryEntries = []
     }
 
     private func discardRecovery() {
-        projectManager.recoveryManager.deleteAllRecoveryFiles()
+        projectManager.recoveryManager?.deleteAllRecoveryFiles()
         showRecoveryDialog = false
         recoveryEntries = []
     }

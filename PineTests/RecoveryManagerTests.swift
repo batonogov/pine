@@ -118,7 +118,7 @@ struct RecoveryManagerTests {
         #expect(entries[0].1.content == "version2")
     }
 
-    @Test func snapshotRemovesRecoveryForTabsThatBecameClean() throws {
+    @Test func recoveryFileRemovedWhenTabSaved() throws {
         let dir = try makeTempDir()
         defer { cleanup(dir) }
         let manager = RecoveryManager(recoveryDirectory: dir)
@@ -127,11 +127,9 @@ struct RecoveryManagerTests {
         manager.snapshotDirtyTabs([tab])
         #expect(manager.pendingRecoveryEntries().count == 1)
 
-        // Tab became clean (content == savedContent)
-        let cleanVersion = EditorTab(url: tab.url, content: "saved content", savedContent: "saved content")
-        // Note: cleanVersion has a different ID, so the old recovery file persists.
-        // Real cleanup happens via deleteRecoveryFile(for:) in TabManager.
-        // snapshotDirtyTabs only writes for dirty tabs — it doesn't clean up old files.
+        // Simulate save — TabManager calls deleteRecoveryFile after trySaveTab
+        manager.deleteRecoveryFile(for: tab.id)
+        #expect(manager.pendingRecoveryEntries().isEmpty)
     }
 
     // MARK: - Delete recovery file
@@ -366,5 +364,52 @@ struct RecoveryManagerTests {
         manager.snapshotDirtyTabs([previewTab])
 
         #expect(manager.pendingRecoveryEntries().isEmpty)
+    }
+
+    // MARK: - Per-project isolation
+
+    @Test func differentProjectsGetDifferentDirectories() {
+        let url1 = URL(fileURLWithPath: "/Users/test/project-a")
+        let url2 = URL(fileURLWithPath: "/Users/test/project-b")
+
+        let dir1 = RecoveryManager.directory(for: url1)
+        let dir2 = RecoveryManager.directory(for: url2)
+
+        #expect(dir1 != dir2)
+    }
+
+    @Test func sameProjectGetsSameDirectory() {
+        let url = URL(fileURLWithPath: "/Users/test/project")
+
+        let dir1 = RecoveryManager.directory(for: url)
+        let dir2 = RecoveryManager.directory(for: url)
+
+        #expect(dir1 == dir2)
+    }
+
+    @Test func perProjectRecoveryFilesDoNotMix() throws {
+        let root = try makeTempDir()
+        defer { cleanup(root) }
+
+        let dirA = root.appendingPathComponent("project-a")
+        let dirB = root.appendingPathComponent("project-b")
+
+        let managerA = RecoveryManager(recoveryDirectory: dirA)
+        let managerB = RecoveryManager(recoveryDirectory: dirB)
+
+        let tabA = makeDirtyTab(content: "from project A")
+        let tabB = makeDirtyTab(content: "from project B")
+
+        managerA.snapshotDirtyTabs([tabA])
+        managerB.snapshotDirtyTabs([tabB])
+
+        #expect(managerA.pendingRecoveryEntries().count == 1)
+        #expect(managerB.pendingRecoveryEntries().count == 1)
+        #expect(managerA.pendingRecoveryEntries()[0].1.content == "from project A")
+        #expect(managerB.pendingRecoveryEntries()[0].1.content == "from project B")
+
+        managerA.deleteAllRecoveryFiles()
+        #expect(managerA.pendingRecoveryEntries().isEmpty)
+        #expect(managerB.pendingRecoveryEntries().count == 1)
     }
 }

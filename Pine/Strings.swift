@@ -266,10 +266,14 @@ enum Strings {
 
     // MARK: - Crash Recovery Dialog
 
-    static var recoveryTitle: LocalizedStringKey { "recovery.title" }
-    static var recoveryMessage: LocalizedStringKey { "recovery.message" }
-    static var recoveryRecoverAll: LocalizedStringKey { "recovery.recoverAll" }
-    static var recoveryDiscard: LocalizedStringKey { "recovery.discard" }
+    static let recoveryTitle: LocalizedStringKey = "recovery.title"
+    static let recoveryMessage: LocalizedStringKey = "recovery.message"
+    static let recoveryRecoverAll: LocalizedStringKey = "recovery.recoverAll"
+    static let recoveryDiscard: LocalizedStringKey = "recovery.discard"
+
+    static var recoveryUntitled: String {
+        String(localized: "recovery.untitled")
+    }
 
     // MARK: - Terminal Process Warnings
 
