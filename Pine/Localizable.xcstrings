@@ -5006,6 +5006,90 @@
         }
       }
     },
+    "sidebar.sort.ascending" : {
+      "comment" : "Sort direction option: ascending order (A→Z, oldest first, smallest first).",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ascending"
+          }
+        }
+      }
+    },
+    "sidebar.sort.descending" : {
+      "comment" : "Sort direction option: descending order (Z→A, newest first, largest first).",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Descending"
+          }
+        }
+      }
+    },
+    "sidebar.sortBy" : {
+      "comment" : "Label for the Sort By submenu in the sidebar context menu.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sort By"
+          }
+        }
+      }
+    },
+    "sidebar.sortBy.dateModified" : {
+      "comment" : "Sort option: sort files by their last modification date.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Date Modified"
+          }
+        }
+      }
+    },
+    "sidebar.sortBy.name" : {
+      "comment" : "Sort option: sort files alphabetically by name.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Name"
+          }
+        }
+      }
+    },
+    "sidebar.sortBy.size" : {
+      "comment" : "Sort option: sort files by size.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Size"
+          }
+        }
+      }
+    },
+    "sidebar.sortBy.type" : {
+      "comment" : "Sort option: sort files by file type (extension).",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kind"
+          }
+        }
+      }
+    },
     "terminal.activeProcessWarning.message" : {
       "comment" : "Alert message when quitting with active terminal processes.",
       "extractionState" : "manual",

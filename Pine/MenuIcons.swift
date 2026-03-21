@@ -46,4 +46,7 @@ enum MenuIcons {
     static let revealInFinder = "arrow.right.circle"
     static let rename = "pencil"
     static let delete = "trash"
+    static let sortBy = "arrow.up.arrow.down"
+    static let sortAscending = "chevron.up"
+    static let sortDescending = "chevron.down"
 }

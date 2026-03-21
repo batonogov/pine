@@ -17,6 +17,16 @@ enum Strings {
     static let filesTitle: LocalizedStringKey = "sidebar.filesTitle"
     static let openFolderTooltip: LocalizedStringKey = "sidebar.openFolderTooltip"
 
+    // MARK: - Sort
+
+    static let sortBy: LocalizedStringKey = "sidebar.sortBy"
+    static let sortByName: LocalizedStringKey = "sidebar.sortBy.name"
+    static let sortByDateModified: LocalizedStringKey = "sidebar.sortBy.dateModified"
+    static let sortBySize: LocalizedStringKey = "sidebar.sortBy.size"
+    static let sortByType: LocalizedStringKey = "sidebar.sortBy.type"
+    static let sortAscending: LocalizedStringKey = "sidebar.sort.ascending"
+    static let sortDescending: LocalizedStringKey = "sidebar.sort.descending"
+
     // MARK: - Context Menu
 
     static let contextNewFile: LocalizedStringKey = "context.newFile"

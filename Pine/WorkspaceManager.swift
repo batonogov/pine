@@ -19,6 +19,30 @@ final class WorkspaceManager {
     let gitProvider = GitStatusProvider()
     private var fileWatcher: FileSystemWatcher?
 
+    // MARK: - Sort preferences (persisted globally via UserDefaults)
+
+    var sortOrder: FileSortOrder = {
+        guard let raw = UserDefaults.standard.string(forKey: FileSortOrder.storageKey),
+              let order = FileSortOrder(rawValue: raw) else { return .name }
+        return order
+    }() {
+        didSet {
+            UserDefaults.standard.set(sortOrder.rawValue, forKey: FileSortOrder.storageKey)
+            refreshFileTree()
+        }
+    }
+
+    var sortDirection: FileSortDirection = {
+        guard let raw = UserDefaults.standard.string(forKey: FileSortDirection.storageKey),
+              let dir = FileSortDirection(rawValue: raw) else { return .ascending }
+        return dir
+    }() {
+        didSet {
+            UserDefaults.standard.set(sortDirection.rawValue, forKey: FileSortDirection.storageKey)
+            refreshFileTree()
+        }
+    }
+
     /// Incremented on every file-watcher event so ContentView can trigger
     /// external change detection on open tabs.
     var externalChangeToken: Int = 0
@@ -100,6 +124,8 @@ final class WorkspaceManager {
         generation: Int,
         completion: (() -> Void)? = nil
     ) {
+        let order = sortOrder
+        let direction = sortDirection
         DispatchQueue.global(qos: .userInitiated).async {
             // Run git setup first so we know which paths are ignored
             let bgGit = GitStatusProvider()
@@ -109,7 +135,9 @@ final class WorkspaceManager {
             let shallowResult = FileNode.loadTree(
                 url: url, projectRoot: url,
                 ignoredPaths: bgGit.ignoredPaths,
-                maxDepth: Self.shallowDepth
+                maxDepth: Self.shallowDepth,
+                sortOrder: order,
+                sortDirection: direction
             )
             let shallowChildren = shallowResult.root.children ?? []
 
@@ -134,7 +162,12 @@ final class WorkspaceManager {
             // For shallow projects this avoids redundant tree construction.
             guard shallowResult.wasDepthLimited else { return }
 
-            let fullRoot = FileNode(url: url, projectRoot: url, ignoredPaths: bgGit.ignoredPaths)
+            let fullRoot = FileNode(
+                url: url, projectRoot: url,
+                ignoredPaths: bgGit.ignoredPaths,
+                sortOrder: order,
+                sortDirection: direction
+            )
             let fullChildren = fullRoot.children ?? []
 
             // Safe ordering: main queue is FIFO, so Phase 2 always runs after Phase 1.
@@ -156,19 +189,28 @@ final class WorkspaceManager {
         loadGeneration += 1
         let generation = loadGeneration
         let ignoredPaths = gitProvider.ignoredPaths
+        let order = sortOrder
+        let direction = sortDirection
 
         // Phase 1 (sync): shallow tree for immediate feedback
         let shallowResult = FileNode.loadTree(
             url: url, projectRoot: url,
             ignoredPaths: ignoredPaths,
-            maxDepth: Self.shallowDepth
+            maxDepth: Self.shallowDepth,
+            sortOrder: order,
+            sortDirection: direction
         )
         rootNodes = shallowResult.root.children ?? []
 
         // Phase 2 (async): full tree only if Phase 1 hit the depth limit
         if shallowResult.wasDepthLimited {
             DispatchQueue.global(qos: .userInitiated).async {
-                let fullRoot = FileNode(url: url, projectRoot: url, ignoredPaths: ignoredPaths)
+                let fullRoot = FileNode(
+                    url: url, projectRoot: url,
+                    ignoredPaths: ignoredPaths,
+                    sortOrder: order,
+                    sortDirection: direction
+                )
                 let fullChildren = fullRoot.children ?? []
                 DispatchQueue.main.async { [weak self] in
                     guard let self, self.loadGeneration == generation else { return }
