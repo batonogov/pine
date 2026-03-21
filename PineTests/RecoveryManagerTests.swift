@@ -308,7 +308,7 @@ struct RecoveryManagerTests {
 
         // Write corrupted file
         let corruptPath = dir.appendingPathComponent("\(UUID().uuidString).json")
-        try "not valid json".data(using: .utf8)!.write(to: corruptPath, options: .atomic)
+        try Data("not valid json".utf8).write(to: corruptPath, options: .atomic)
 
         // Should return only the valid entry, not crash
         let entries = manager.pendingRecoveryEntries()
@@ -323,7 +323,7 @@ struct RecoveryManagerTests {
 
         // Write a non-json file
         let otherFile = dir.appendingPathComponent("notes.txt")
-        try "hello".data(using: .utf8)!.write(to: otherFile, options: .atomic)
+        try Data("hello".utf8).write(to: otherFile, options: .atomic)
 
         #expect(manager.pendingRecoveryEntries().isEmpty)
     }
