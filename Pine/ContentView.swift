@@ -496,7 +496,8 @@ struct ContentView: View {
                     onReorder: { projectManager.saveSession() },
                     isMarkdownFile: activeTab?.isMarkdownFile ?? false,
                     previewMode: activeTab?.previewMode ?? .source,
-                    onTogglePreview: { tabManager.togglePreviewMode() }
+                    onTogglePreview: { tabManager.togglePreviewMode() },
+                    isAutoSaving: tabManager.isAutoSaving
                 )
             }
 

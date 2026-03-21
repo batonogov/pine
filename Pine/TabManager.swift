@@ -140,8 +140,11 @@ final class TabManager {
     }
 
     /// Closes a tab by ID. Selects an adjacent tab if the closed tab was active.
+    /// Cancels any pending auto-save for the closed tab.
     func closeTab(id: UUID) {
         guard let index = tabs.firstIndex(where: { $0.id == id }) else { return }
+
+        cancelAutoSave()
 
         let wasActive = activeTabID == id
         tabs.remove(at: index)
@@ -157,13 +160,23 @@ final class TabManager {
         }
     }
 
+    /// Whether auto-save is enabled. Bound to UserDefaults by the view layer.
+    var isAutoSaveEnabled: Bool {
+        UserDefaults.standard.bool(forKey: Self.autoSaveKey)
+    }
+
     /// Updates the content of the active tab (text tabs only).
     /// Also eagerly recomputes indentation/line-ending caches so reads are mutation-free.
+    /// When auto-save is enabled, schedules a debounced save.
     func updateContent(_ newContent: String) {
         guard let index = activeTabIndex else { return }
         guard tabs[index].kind == .text else { return }
         tabs[index].content = newContent
         tabs[index].recomputeContentCaches()
+
+        if isAutoSaveEnabled {
+            scheduleAutoSave()
+        }
     }
 
     /// Updates the saved editor state (cursor, scroll) for the active tab.
@@ -183,9 +196,11 @@ final class TabManager {
     }
 
     /// Saves the active tab to disk. Returns true on success.
+    /// Cancels any pending auto-save since the user saved manually.
     @discardableResult
     func saveActiveTab() -> Bool {
         guard let index = activeTabIndex else { return false }
+        cancelAutoSave()
         return saveTab(at: index)
     }
 
@@ -233,7 +248,9 @@ final class TabManager {
     }
 
     /// Saves all dirty tabs without showing UI. Throws on first failure.
+    /// Cancels any pending auto-save.
     func trySaveAllTabs() throws {
+        cancelAutoSave()
         for index in tabs.indices where tabs[index].isDirty {
             try trySaveTab(at: index)
         }
@@ -379,6 +396,69 @@ final class TabManager {
         for tab in affected {
             closeTab(id: tab.id)
         }
+    }
+
+    // MARK: - Auto-save
+
+    /// UserDefaults key for the auto-save toggle.
+    static let autoSaveKey = "autoSaveEnabled"
+
+    /// Whether auto-save is currently in progress (for UI indicator).
+    private(set) var isAutoSaving = false
+
+    /// Auto-save delay in seconds. Use `setAutoSaveDelay(_:)` in tests.
+    private(set) var autoSaveDelay: TimeInterval = 1.0
+
+    /// Debounce work item for auto-save.
+    private var autoSaveWorkItem: DispatchWorkItem?
+
+    /// Sets the auto-save delay. Intended for tests only.
+    func setAutoSaveDelay(_ delay: TimeInterval) {
+        autoSaveDelay = delay
+    }
+
+    /// Schedules a debounced auto-save for the active tab.
+    /// The save fires after `autoSaveDelay` seconds of inactivity.
+    ///
+    /// Note: `checkExternalChanges()` may detect the file we just wrote
+    /// and silently reload it. This is harmless — the content matches.
+    func scheduleAutoSave() {
+        autoSaveWorkItem?.cancel()
+
+        guard let index = activeTabIndex else { return }
+        let tabID = tabs[index].id
+        let url = tabs[index].url
+
+        // Skip read-only files
+        guard FileManager.default.isWritableFile(atPath: url.path) else { return }
+
+        let workItem = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            guard let idx = self.tabs.firstIndex(where: { $0.id == tabID }),
+                  self.tabs[idx].isDirty else { return }
+
+            self.isAutoSaving = true
+            do {
+                try self.trySaveTab(at: idx)
+            } catch {
+                // Silent failure — auto-save should not show alerts
+            }
+            self.isAutoSaving = false
+        }
+
+        autoSaveWorkItem = workItem
+        DispatchQueue.main.asyncAfter(deadline: .now() + autoSaveDelay, execute: workItem)
+    }
+
+    /// Cancels any pending auto-save.
+    func cancelAutoSave() {
+        autoSaveWorkItem?.cancel()
+        autoSaveWorkItem = nil
+    }
+
+    /// Whether a pending auto-save is scheduled (for testing).
+    var hasScheduledAutoSave: Bool {
+        autoSaveWorkItem != nil
     }
 
     // MARK: - Markdown preview
