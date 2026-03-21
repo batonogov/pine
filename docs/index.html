@@ -557,6 +557,7 @@
         .compare-card,
         .feature-card,
         .manifesto-card,
+        .story-card,
         .install-panel {
             position: relative;
             overflow: hidden;
@@ -707,6 +708,42 @@
             margin-top: 22px;
         }
 
+        .story-card {
+            padding: 34px;
+            background:
+                radial-gradient(circle at bottom right, rgba(241, 210, 122, 0.1), transparent 32%),
+                linear-gradient(180deg, rgba(255, 255, 255, 0.045), rgba(255, 255, 255, 0.02));
+        }
+
+        .story-card .section-kicker {
+            color: var(--gold);
+        }
+
+        .story-card h2 {
+            font-size: 28px;
+            letter-spacing: -0.04em;
+            line-height: 1.05;
+        }
+
+        .story-card blockquote {
+            margin-top: 22px;
+            padding: 20px 24px;
+            border-left: 3px solid var(--gold);
+            background: rgba(241, 210, 122, 0.06);
+            border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+            color: var(--text);
+            font-size: 18px;
+            font-style: italic;
+            line-height: 1.55;
+        }
+
+        .story-card p {
+            margin-top: 18px;
+            color: var(--muted-strong);
+            font-size: 17px;
+            line-height: 1.65;
+        }
+
         .install-panel {
             display: grid;
             grid-template-columns: 1.05fr 0.95fr;
@@ -853,6 +890,7 @@
             .compare-card h3,
             .feature-card h3,
             .manifesto-card h2,
+            .story-card h2,
             .install-panel h2 {
                 max-width: none;
             }
@@ -1110,6 +1148,15 @@
                 </div>
             </section>
 
+            <section class="section" id="story">
+                <div class="story-card">
+                    <span class="section-kicker" data-i18n="story.kicker">Origin</span>
+                    <h2 data-i18n="story.title">Built in 12 days by a DevOps engineer who had never written a line of Swift.</h2>
+                    <blockquote data-i18n="story.quote">"I just wanted a fast native editor for my Ansible and Helm files. VS Code felt too heavy. So I built one."</blockquote>
+                    <p data-i18n="story.body">Pine started as a personal experiment. Working daily with Ansible, Helm, and Terraform meant editing YAML, not writing apps. VS Code felt too heavy for the task. Zed was promising but not native enough. No editor felt right. Over 12 days — with AI assistance and no prior Swift knowledge — Pine was built. That experiment became a real product. It is now open source and growing with its community.</p>
+                </div>
+            </section>
+
             <section class="section" id="install">
                 <div class="install-panel">
                     <div>
@@ -1229,6 +1276,10 @@
                 "manifesto.chip2": "No plugin marketplace",
                 "manifesto.chip3": "No settings maze",
                 "manifesto.chip4": "Minimal dependencies",
+                "story.kicker": "Origin",
+                "story.title": "Built in 12 days by a DevOps engineer who had never written a line of Swift.",
+                "story.quote": "\"I just wanted a fast native editor for my Ansible and Helm files. VS Code felt too heavy. So I built one.\"",
+                "story.body": "Pine started as a personal experiment. Working daily with Ansible, Helm, and Terraform meant editing YAML, not writing apps. VS Code felt too heavy for the task. Zed was promising but not native enough. No editor felt right. Over 12 days — with AI assistance and no prior Swift knowledge — Pine was built. That experiment became a real product. It is now open source and growing with its community.",
                 "install.kicker": "Get Started",
                 "install.title": "Install Pine in 10 seconds.",
                 "install.desc": "Use Homebrew, grab the latest DMG, or build from source in Xcode. The stack stays small: SwiftUI, AppKit, JSON grammars, and SwiftTerm for the terminal.",
@@ -1325,6 +1376,10 @@
                 "manifesto.chip2": "Без магазина плагинов",
                 "manifesto.chip3": "Без лабиринта настроек",
                 "manifesto.chip4": "Минимум зависимостей",
+                "story.kicker": "История",
+                "story.title": "Собран за 12 дней DevOps-инженером, который никогда не писал на Swift.",
+                "story.quote": "«Мне просто нужен был быстрый нативный редактор для файлов Ansible и Helm. VS Code казался слишком тяжёлым. Я решил сделать свой.»",
+                "story.body": "Pine начинался как личный эксперимент. Работа с Ansible, Helm и Terraform каждый день — это редактирование YAML, а не написание приложений. VS Code ощущался избыточным. Zed выглядел интересно, но не был достаточно нативным. Ни один редактор не подходил. За 12 дней — с помощью ИИ и без знания Swift — Pine был написан. Из эксперимента вырос настоящий продукт. Теперь он открыт и развивается вместе с сообществом.",
                 "install.kicker": "Начало работы",
                 "install.title": "Установить Pine можно за 10 секунд.",
                 "install.desc": "Можно поставить через Homebrew, скачать свежий DMG или собрать из исходников в Xcode. Стек небольшой: SwiftUI, AppKit, JSON-грамматики и SwiftTerm для терминала.",
@@ -1421,6 +1476,10 @@
                 "manifesto.chip2": "Kein Plugin-Marktplatz",
                 "manifesto.chip3": "Kein Einstellungs-Labyrinth",
                 "manifesto.chip4": "Minimale Abhängigkeiten",
+                "story.kicker": "Entstehungsgeschichte",
+                "story.title": "In 12 Tagen gebaut von einem DevOps-Ingenieur, der noch nie eine Zeile Swift geschrieben hatte.",
+                "story.quote": "\"Ich wollte einfach einen schnellen nativen Editor für meine Ansible- und Helm-Dateien. VS Code fühlte sich zu schwer an. Also baute ich einen.\"",
+                "story.body": "Pine begann als persönliches Experiment. Tägliche Arbeit mit Ansible, Helm und Terraform bedeutet YAML bearbeiten, keine Apps schreiben. VS Code fühlte sich für diese Aufgabe zu schwer an. Zed sah vielversprechend aus, war aber nicht nativ genug. Kein Editor fühlte sich richtig an. In 12 Tagen — mit KI-Unterstützung und ohne Swift-Kenntnisse — entstand Pine. Aus diesem Experiment wurde ein echtes Produkt. Es ist jetzt Open Source und wächst mit seiner Community.",
                 "install.kicker": "Erste Schritte",
                 "install.title": "Pine in 10 Sekunden installieren.",
                 "install.desc": "Über Homebrew, das neueste DMG oder direkt aus den Quellen in Xcode bauen. Der Stack bleibt klein: SwiftUI, AppKit, JSON-Grammatiken und SwiftTerm für das Terminal.",
@@ -1517,6 +1576,10 @@
                 "manifesto.chip2": "Sin marketplace de plugins",
                 "manifesto.chip3": "Sin laberinto de ajustes",
                 "manifesto.chip4": "Dependencias mínimas",
+                "story.kicker": "Origen",
+                "story.title": "Construido en 12 días por un ingeniero DevOps que nunca había escrito una línea de Swift.",
+                "story.quote": "\"Solo quería un editor nativo rápido para mis archivos de Ansible y Helm. VS Code se sentía demasiado pesado. Así que construí uno.\"",
+                "story.body": "Pine comenzó como un experimento personal. Trabajar a diario con Ansible, Helm y Terraform significa editar YAML, no escribir aplicaciones. VS Code se sentía demasiado pesado para la tarea. Zed era prometedor, pero no lo suficientemente nativo. Ningún editor era el adecuado. En 12 días — con ayuda de IA y sin conocimiento previo de Swift — se construyó Pine. Ese experimento se convirtió en un producto real. Ahora es de código abierto y crece con su comunidad.",
                 "install.kicker": "Empezar",
                 "install.title": "Instalar Pine en 10 segundos.",
                 "install.desc": "Usa Homebrew, descarga el último DMG o compila desde el código fuente en Xcode. El stack se mantiene pequeño: SwiftUI, AppKit, gramáticas JSON y SwiftTerm para el terminal.",
@@ -1613,6 +1676,10 @@
                 "manifesto.chip2": "Sans marketplace de plugins",
                 "manifesto.chip3": "Sans labyrinthe de paramètres",
                 "manifesto.chip4": "Dépendances minimales",
+                "story.kicker": "Origine",
+                "story.title": "Construit en 12 jours par un ingénieur DevOps qui n'avait jamais écrit une ligne de Swift.",
+                "story.quote": "\"Je voulais juste un éditeur natif rapide pour mes fichiers Ansible et Helm. VS Code me semblait trop lourd. Alors j'en ai construit un.\"",
+                "story.body": "Pine a commencé comme une expérience personnelle. Travailler quotidiennement avec Ansible, Helm et Terraform signifie modifier du YAML, pas écrire des applications. VS Code semblait trop lourd pour la tâche. Zed était prometteur mais pas assez natif. Aucun éditeur ne convenait. En 12 jours — avec l'aide de l'IA et sans connaissance préalable de Swift — Pine a été construit. Cette expérience est devenue un vrai produit. Il est maintenant open source et grandit avec sa communauté.",
                 "install.kicker": "Démarrer",
                 "install.title": "Installer Pine en 10 secondes.",
                 "install.desc": "Utilisez Homebrew, téléchargez le dernier DMG ou compilez depuis les sources dans Xcode. Le stack reste petit : SwiftUI, AppKit, grammaires JSON et SwiftTerm pour le terminal.",
@@ -1709,6 +1776,10 @@
                 "manifesto.chip2": "プラグインマーケットプレイスなし",
                 "manifesto.chip3": "設定の迷路なし",
                 "manifesto.chip4": "最小限の依存関係",
+                "story.kicker": "誕生の経緯",
+                "story.title": "Swift を一度も書いたことのない DevOps エンジニアが 12 日間で作り上げた。",
+                "story.quote": "「Ansible や Helm のファイルを編集するための高速なネイティブエディタが欲しかっただけです。VS Code は重すぎた。だから自分で作りました。」",
+                "story.body": "Pine は個人的な実験として始まりました。Ansible、Helm、Terraform を毎日使う仕事は、アプリを書くのではなく YAML を編集することを意味します。VS Code はこの用途には重すぎると感じました。Zed は有望でしたが、ネイティブさが十分ではありませんでした。どのエディタもしっくりきませんでした。AI の助けを借り、Swift の知識なしに、12 日間で Pine が作られました。その実験が本物のプロダクトになりました。今やオープンソースとなり、コミュニティとともに成長しています。",
                 "install.kicker": "始めよう",
                 "install.title": "Pine を10秒でインストール。",
                 "install.desc": "Homebrew で、最新の DMG をダウンロードするか、Xcode でソースからビルド。スタックはコンパクト：SwiftUI、AppKit、JSON グラマー、ターミナル用 SwiftTerm。",
@@ -1805,6 +1876,10 @@
                 "manifesto.chip2": "플러그인 마켓플레이스 없음",
                 "manifesto.chip3": "설정 미로 없음",
                 "manifesto.chip4": "최소 의존성",
+                "story.kicker": "탄생 스토리",
+                "story.title": "Swift를 한 줄도 써본 적 없는 DevOps 엔지니어가 12일 만에 만들었습니다.",
+                "story.quote": "\"Ansible과 Helm 파일을 편집할 빠른 네이티브 에디터가 필요했을 뿐입니다. VS Code는 너무 무거웠습니다. 그래서 직접 만들었습니다.\"",
+                "story.body": "Pine은 개인적인 실험으로 시작되었습니다. Ansible, Helm, Terraform으로 매일 작업한다는 것은 앱을 작성하는 게 아니라 YAML을 편집하는 것을 의미합니다. VS Code는 이 작업에 너무 무거운 느낌이었습니다. Zed는 유망했지만 충분히 네이티브하지 않았습니다. 어떤 에디터도 맞지 않았습니다. AI의 도움을 받아 Swift 지식 없이 12일 만에 Pine이 만들어졌습니다. 그 실험이 진짜 제품이 되었습니다. 이제 오픈 소스로 커뮤니티와 함께 성장하고 있습니다.",
                 "install.kicker": "시작하기",
                 "install.title": "Pine을 10초 만에 설치.",
                 "install.desc": "Homebrew로, 최신 DMG를 다운로드하거나, Xcode에서 소스로 빌드. 스택은 작게 유지: SwiftUI, AppKit, JSON 문법, 터미널용 SwiftTerm.",
@@ -1901,6 +1976,10 @@
                 "manifesto.chip2": "Sem marketplace de plugins",
                 "manifesto.chip3": "Sem labirinto de configurações",
                 "manifesto.chip4": "Dependências mínimas",
+                "story.kicker": "Origem",
+                "story.title": "Construído em 12 dias por um engenheiro DevOps que nunca tinha escrito uma linha de Swift.",
+                "story.quote": "\"Eu só queria um editor nativo rápido para meus arquivos Ansible e Helm. O VS Code parecia pesado demais. Então eu construí um.\"",
+                "story.body": "Pine começou como um experimento pessoal. Trabalhar diariamente com Ansible, Helm e Terraform significa editar YAML, não escrever aplicativos. O VS Code parecia pesado demais para a tarefa. O Zed era promissor, mas não nativo o suficiente. Nenhum editor parecia certo. Em 12 dias — com ajuda de IA e sem conhecimento prévio de Swift — Pine foi construído. Esse experimento se tornou um produto real. Agora é open source e cresce com sua comunidade.",
                 "install.kicker": "Começar",
                 "install.title": "Instalar Pine em 10 segundos.",
                 "install.desc": "Use Homebrew, baixe o último DMG ou compile a partir do código-fonte no Xcode. O stack se mantém pequeno: SwiftUI, AppKit, gramáticas JSON e SwiftTerm para o terminal.",
@@ -1997,6 +2076,10 @@
                 "manifesto.chip2": "无插件市场",
                 "manifesto.chip3": "无设置迷宫",
                 "manifesto.chip4": "最少依赖",
+                "story.kicker": "起源",
+                "story.title": "由一位从未写过一行 Swift 的 DevOps 工程师在 12 天内构建完成。",
+                "story.quote": "「我只是想要一个快速的原生编辑器来处理 Ansible 和 Helm 文件。VS Code 感觉太重了。所以我自己构建了一个。」",
+                "story.body": "Pine 起源于一个个人实验。每天与 Ansible、Helm 和 Terraform 打交道意味着编辑 YAML，而不是编写应用程序。VS Code 对于这个任务来说感觉太重了。Zed 很有前途，但原生程度不够。没有哪个编辑器感觉是对的。在 AI 的帮助下，在没有任何 Swift 知识的情况下，Pine 在 12 天内被构建出来。这个实验成为了一个真正的产品。现在它是开源的，并与社区一起成长。",
                 "install.kicker": "开始使用",
                 "install.title": "10 秒安装 Pine。",
                 "install.desc": "通过 Homebrew、下载最新 DMG 或在 Xcode 中从源码构建。技术栈保持精简：SwiftUI、AppKit、JSON 语法文件和用于终端的 SwiftTerm。",
