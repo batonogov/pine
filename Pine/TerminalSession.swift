@@ -69,6 +69,15 @@ class TerminalContainerView: NSView {
     override var isFlipped: Bool { true }
 }
 
+// MARK: - Terminal search
+
+/// A match found in the terminal scrollback buffer.
+struct TerminalSearchMatch {
+    let row: Int
+    let col: Int
+    let length: Int
+}
+
 // MARK: - Модель вкладки терминала
 
 /// Одна вкладка терминала. Содержит SwiftTerm LocalProcessTerminalView.
@@ -79,6 +88,13 @@ final class TerminalTab: Identifiable, Hashable {
     var name: String
     let terminalView: LocalProcessTerminalView
     fileprivate(set) var isTerminated = false
+
+    // MARK: - Search state
+
+    /// All matches found by the most recent search.
+    var searchMatches: [TerminalSearchMatch] = []
+    /// Index into `searchMatches` for the currently highlighted match, or -1 if none.
+    var currentMatchIndex: Int = -1
 
     private let delegate: TerminalTabDelegate
     private let shellSettings: ShellSettings
@@ -169,6 +185,88 @@ final class TerminalTab: Identifiable, Hashable {
         let foregroundPgid = tcgetpgrp(fd)
         let shellPid = terminalView.process.shellPid
         return foregroundPgid > 0 && foregroundPgid != shellPid
+    }
+
+    // MARK: - Search
+
+    /// Searches the terminal scrollback buffer for `query` and stores matches.
+    /// Scrolls to the first match if any are found.
+    ///
+    /// - Note: Uses SwiftTerm's `Terminal.buffer` for text extraction.
+    ///   `terminal.buffer.lines` is a `CircularList<BufferLine>` and
+    ///   `BufferLine.translateToString(trimRight:)` extracts the line as a String.
+    func search(for query: String, caseSensitive: Bool = false) {
+        guard !query.isEmpty else {
+            searchMatches = []
+            currentMatchIndex = -1
+            return
+        }
+
+        let terminal = terminalView.getTerminal()
+        let buffer = terminal.buffer
+        let totalRows = buffer.lines.count
+        let searchText = caseSensitive ? query : query.lowercased()
+
+        var matches: [TerminalSearchMatch] = []
+
+        for row in 0..<totalRows {
+            let lineText: String = {
+                let raw = buffer.lines[row].translateToString(trimRight: true)
+                return caseSensitive ? raw : raw.lowercased()
+            }()
+
+            var searchStart = lineText.startIndex
+            while let range = lineText.range(of: searchText, range: searchStart..<lineText.endIndex) {
+                let col = lineText.distance(from: lineText.startIndex, to: range.lowerBound)
+                matches.append(TerminalSearchMatch(row: row, col: col, length: query.count))
+                searchStart = range.upperBound
+            }
+        }
+
+        searchMatches = matches
+        if matches.isEmpty {
+            currentMatchIndex = -1
+        } else {
+            currentMatchIndex = 0
+            scrollToCurrentMatch()
+        }
+    }
+
+    /// Advances to the next match and scrolls to it.
+    func nextMatch() {
+        guard !searchMatches.isEmpty else { return }
+        currentMatchIndex = (currentMatchIndex + 1) % searchMatches.count
+        scrollToCurrentMatch()
+    }
+
+    /// Goes back to the previous match and scrolls to it.
+    func previousMatch() {
+        guard !searchMatches.isEmpty else { return }
+        currentMatchIndex = (currentMatchIndex - 1 + searchMatches.count) % searchMatches.count
+        scrollToCurrentMatch()
+    }
+
+    /// Clears search results and resets state.
+    func clearSearch() {
+        searchMatches = []
+        currentMatchIndex = -1
+    }
+
+    /// Scrolls the terminal view to show the row of the current match.
+    ///
+    /// - Note: Uses SwiftTerm's `Buffer.yDisp` to control the scroll offset.
+    ///   `yDisp` is the index of the first visible line in the scrollback buffer.
+    ///   Setting it and triggering a redraw scrolls the terminal to the target row.
+    private func scrollToCurrentMatch() {
+        guard currentMatchIndex >= 0, currentMatchIndex < searchMatches.count else { return }
+        let targetRow = searchMatches[currentMatchIndex].row
+        let terminal = terminalView.getTerminal()
+        let buffer = terminal.buffer
+        let halfRows = max(1, terminal.rows / 2)
+        // Place the match in the middle of the viewport
+        let targetDisp = max(0, min(targetRow - halfRows, buffer.lines.count - terminal.rows))
+        buffer.yDisp = targetDisp
+        terminalView.setNeedsDisplay(terminalView.bounds)
     }
 
     static func == (lhs: TerminalTab, rhs: TerminalTab) -> Bool { lhs.id == rhs.id }

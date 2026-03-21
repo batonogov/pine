@@ -168,4 +168,76 @@ struct TerminalManagerTests {
         #expect(!manager.hasActiveProcesses)
         #expect(manager.tabsWithForegroundProcesses.isEmpty)
     }
+
+    // MARK: - Search state tests
+
+    @Test("initial search state is hidden with empty query")
+    func initialSearchState() {
+        let manager = TerminalManager()
+        #expect(manager.isSearchVisible == false)
+        #expect(manager.terminalSearchQuery == "")
+    }
+
+    @Test("isSearchVisible can be toggled")
+    func searchVisibilityToggle() {
+        let manager = TerminalManager()
+        manager.isSearchVisible = true
+        #expect(manager.isSearchVisible == true)
+        manager.isSearchVisible = false
+        #expect(manager.isSearchVisible == false)
+    }
+
+    @Test("terminalSearchQuery can be updated")
+    func searchQueryUpdate() {
+        let manager = TerminalManager()
+        manager.terminalSearchQuery = "hello"
+        #expect(manager.terminalSearchQuery == "hello")
+        manager.terminalSearchQuery = ""
+        #expect(manager.terminalSearchQuery == "")
+    }
+
+    @Test("search on unstarted tab returns no matches")
+    func searchOnUnstartedTabReturnsNoMatches() {
+        let tab = TerminalTab(name: "Test")
+        tab.search(for: "anything")
+        // Empty terminal buffer produces no matches
+        #expect(tab.searchMatches.isEmpty)
+        #expect(tab.currentMatchIndex == -1)
+    }
+
+    @Test("search with empty query clears matches")
+    func searchWithEmptyQueryClearsMatches() {
+        let tab = TerminalTab(name: "Test")
+        tab.search(for: "something")
+        tab.search(for: "")
+        #expect(tab.searchMatches.isEmpty)
+        #expect(tab.currentMatchIndex == -1)
+    }
+
+    @Test("nextMatch and previousMatch do nothing when no matches")
+    func navigationWithNoMatches() {
+        let tab = TerminalTab(name: "Test")
+        // No matches — navigation should not crash
+        tab.nextMatch()
+        tab.previousMatch()
+        #expect(tab.currentMatchIndex == -1)
+    }
+
+    @Test("clearSearch resets state")
+    func clearSearchResetsState() {
+        let tab = TerminalTab(name: "Test")
+        tab.searchMatches = [TerminalSearchMatch(row: 0, col: 0, length: 3)]
+        tab.currentMatchIndex = 0
+        tab.clearSearch()
+        #expect(tab.searchMatches.isEmpty)
+        #expect(tab.currentMatchIndex == -1)
+    }
+
+    @Test("TerminalSearchMatch stores row, col, and length")
+    func terminalSearchMatchProperties() {
+        let match = TerminalSearchMatch(row: 5, col: 10, length: 3)
+        #expect(match.row == 5)
+        #expect(match.col == 10)
+        #expect(match.length == 3)
+    }
 }

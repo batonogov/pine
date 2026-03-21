@@ -15,6 +15,13 @@ final class TerminalManager {
     var terminalTabs: [TerminalTab] = [TerminalTab(name: Strings.terminalDefaultName)]
     var activeTerminalID: UUID?
 
+    // MARK: - Search state (Cmd+F in terminal)
+
+    /// Whether the terminal search bar is currently visible.
+    var isSearchVisible = false
+    /// The current search query typed in the terminal search bar.
+    var terminalSearchQuery = ""
+
     var activeTerminalTab: TerminalTab? {
         guard let id = activeTerminalID else { return nil }
         return terminalTabs.first { $0.id == id }

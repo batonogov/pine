@@ -180,6 +180,10 @@ struct ContentView: View {
             columnVisibility = .all
             isSearchPresented = true
         }
+        .onReceive(NotificationCenter.default.publisher(for: .findInTerminal)) { _ in
+            guard controlActiveState == .key, terminal.isTerminalVisible else { return }
+            terminal.isSearchVisible = true
+        }
         .onReceive(NotificationCenter.default.publisher(for: .navigateChange)) { notification in
             guard controlActiveState == .key,
                   let direction = notification.userInfo?["direction"] as? String else { return }
@@ -610,10 +614,38 @@ struct ContentView: View {
             // Tab bar, стилизованный под нативные macOS window tabs
             TerminalNativeTabBar(terminal: terminal, workingDirectory: workspace.rootURL)
 
+            if terminal.isSearchVisible {
+                TerminalSearchBar(
+                    query: Bindable(terminal).terminalSearchQuery,
+                    matchCount: terminal.activeTerminalTab?.searchMatches.count ?? 0,
+                    currentMatch: terminal.activeTerminalTab?.currentMatchIndex ?? -1,
+                    onNext: {
+                        terminal.activeTerminalTab?.nextMatch()
+                    },
+                    onPrevious: {
+                        terminal.activeTerminalTab?.previousMatch()
+                    },
+                    onDismiss: {
+                        terminal.isSearchVisible = false
+                        terminal.terminalSearchQuery = ""
+                        terminal.activeTerminalTab?.clearSearch()
+                    }
+                )
+            }
+
             TerminalContentView(terminal: terminal)
         }
         .background(Color(nsColor: .textBackgroundColor))
         .onAppear { terminal.startTerminals(workingDirectory: workspace.rootURL) }
+        .onChange(of: terminal.terminalSearchQuery) { _, newQuery in
+            terminal.activeTerminalTab?.search(for: newQuery)
+        }
+        .onChange(of: terminal.activeTerminalID) { _, _ in
+            // Re-run search on tab switch if search bar is open
+            if terminal.isSearchVisible, !terminal.terminalSearchQuery.isEmpty {
+                terminal.activeTerminalTab?.search(for: terminal.terminalSearchQuery)
+            }
+        }
     }
 }
 

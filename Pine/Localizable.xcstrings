@@ -2903,6 +2903,18 @@
         }
       }
     },
+    "menu.findInTerminal" : {
+      "comment" : "Menu item for Find in Terminal — opens the terminal search bar.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Find in Terminal"
+          }
+        }
+      }
+    },
     "menu.findNext" : {
       "comment" : "Menu item for Find Next (⌘G).",
       "extractionState" : "manual",
@@ -5554,6 +5566,78 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "恢复终端"
+          }
+        }
+      }
+    },
+    "terminal.search.closeTooltip" : {
+      "comment" : "Tooltip for the close button in the terminal search bar.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Close Search Bar"
+          }
+        }
+      }
+    },
+    "terminal.search.matchCount %lld %lld" : {
+      "comment" : "Shows current match index and total match count in terminal search, e.g. '2 of 5'.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$lld of %2$lld"
+          }
+        }
+      }
+    },
+    "terminal.search.nextTooltip" : {
+      "comment" : "Tooltip for the next-match button in the terminal search bar.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Next Match"
+          }
+        }
+      }
+    },
+    "terminal.search.noMatches" : {
+      "comment" : "Label shown in terminal search bar when no matches are found.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No matches"
+          }
+        }
+      }
+    },
+    "terminal.search.placeholder" : {
+      "comment" : "Placeholder text in the terminal search field.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Search terminal…"
+          }
+        }
+      }
+    },
+    "terminal.search.previousTooltip" : {
+      "comment" : "Tooltip for the previous-match button in the terminal search bar.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Previous Match"
           }
         }
       }
