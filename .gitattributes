@@ -1,0 +1,2 @@
+# Prevent merge conflicts in Xcode string catalogs
+*.xcstrings merge=union
