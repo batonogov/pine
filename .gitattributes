@@ -1,2 +1,3 @@
-# Prevent merge conflicts in Xcode string catalogs
-*.xcstrings merge=union
+# Use ours merge strategy for Xcode string catalogs to prevent
+# cosmetic build-artifact conflicts. Real changes should be merged manually.
+*.xcstrings merge=ours

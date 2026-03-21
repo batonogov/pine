@@ -10,6 +10,7 @@
 
 set -euo pipefail
 
+REPO_ROOT="$(git rev-parse --show-toplevel)"
 XCSTRINGS="Pine/Localizable.xcstrings"
 
 # Only act when the file is staged
@@ -17,7 +18,14 @@ if ! git diff --cached --name-only | grep -qx "$XCSTRINGS"; then
     exit 0
 fi
 
+if ! command -v python3 >/dev/null 2>&1; then
+    echo "warning: python3 not found, skipping xcstrings normalization"
+    exit 0
+fi
+
 # Compare semantic JSON (sorted keys, no whitespace differences)
+# On first commit HEAD doesn't exist — HEAD_JSON will be empty,
+# which differs from STAGED_JSON, so new files are left staged.
 HEAD_JSON=$(git show "HEAD:$XCSTRINGS" 2>/dev/null | python3 -c "
 import sys, json
 data = json.load(sys.stdin)
@@ -36,7 +44,8 @@ if [ "$HEAD_JSON" = "$STAGED_JSON" ]; then
         exit 1
     fi
     echo "xcstrings: unstaging cosmetic-only changes"
-    git checkout HEAD -- "$XCSTRINGS"
+    git restore --staged -- "$REPO_ROOT/$XCSTRINGS"
+    git checkout HEAD -- "$REPO_ROOT/$XCSTRINGS"
     exit 0
 fi
 
