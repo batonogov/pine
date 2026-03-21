@@ -108,6 +108,37 @@ jobs:
             CODE_SIGN_IDENTITY=- \
             CODE_SIGNING_ALLOWED=NO
 
+  # Verify every UI test class is listed in the shard matrix below.
+  # Fails CI if someone adds a new test class and forgets to shard it.
+  verify-ui-shards:
+    name: Verify UI Test Shards
+    runs-on: macos-26
+    needs: lint
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+
+      - name: Check all UI test classes are sharded
+        run: |
+          # Extract concrete test class names (exclude base class PineUITestCase)
+          ACTUAL=$(grep -rh 'class.*:.*PineUITestCase' PineUITests/ \
+            | sed -E 's/.*class ([A-Za-z0-9_]+).*/\1/' \
+            | sort)
+
+          # Extract class names from this workflow's shard matrix
+          SHARDED=$(grep -E '^\s+\-only-testing:PineUITests/' .github/workflows/ci.yml \
+            | sed -E 's/.*PineUITests\/([A-Za-z0-9_]+).*/\1/' \
+            | sort)
+
+          MISSING=$(comm -23 <(echo "$ACTUAL") <(echo "$SHARDED"))
+          if [ -n "$MISSING" ]; then
+            echo "::error::UI test classes not included in any shard:"
+            echo "$MISSING"
+            echo ""
+            echo "Add them to the ui-tests matrix in .github/workflows/ci.yml"
+            exit 1
+          fi
+          echo "All $(echo "$ACTUAL" | wc -l | tr -d ' ') UI test classes are sharded."
+
   # UI test shards — 4 parallel jobs, ~21 tests each.
   # To rebalance: count tests per class, redistribute so shards stay within ±3 tests.
   # List classes with: grep -r "func test" PineUITests/ | sed 's/:.*//' | sort | uniq -c | sort -rn
