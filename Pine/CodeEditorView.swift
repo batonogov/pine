@@ -76,14 +76,9 @@ final class GutterTextView: NSTextView {
 
     private static let blameIcon: NSImage? = {
         let config = NSImage.SymbolConfiguration(pointSize: 11, weight: .light)
-        guard let symbol = NSImage(systemSymbolName: "arrow.triangle.branch", accessibilityDescription: nil)?
+        return NSImage(systemSymbolName: "arrow.triangle.branch", accessibilityDescription: nil)?
             .withSymbolConfiguration(config)?
-            .tinted(with: blameColor) else { return nil }
-        let flipped = NSImage(size: symbol.size, flipped: true) { rect in
-            symbol.draw(in: rect)
-            return true
-        }
-        return flipped
+            .tinted(with: blameColor)
     }()
 
     private static let relativeDateFormatter: RelativeDateTimeFormatter = {
@@ -181,7 +176,8 @@ final class GutterTextView: NSTextView {
             let iconY = lineRect.origin.y + (lineRect.height - icon.size.height) / 2
             icon.draw(
                 in: NSRect(x: drawX, y: iconY, width: icon.size.width, height: icon.size.height),
-                from: .zero, operation: .sourceOver, fraction: 1
+                from: .zero, operation: .sourceOver, fraction: 1,
+                respectFlipped: true, hints: nil
             )
             drawX += icon.size.width + 4
         }
