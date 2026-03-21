@@ -634,8 +634,13 @@ struct CodeEditorView: NSViewRepresentable {
         /// Last consumed navigation request ID — prevents re-processing.
         var lastGoToID: UUID?
 
+        /// Generation counter for cancelling stale async highlight requests.
+        let highlightGeneration = HighlightGeneration()
+
         /// Отложенная задача подсветки (дебаунсинг)
         private var highlightWorkItem: DispatchWorkItem?
+        /// Active async highlight task (cancelled when new highlight is scheduled)
+        private var highlightTask: Task<Void, Never>?
         /// Задержка дебаунсинга
         private let highlightDelay: TimeInterval = 0.05
 
@@ -660,6 +665,9 @@ struct CodeEditorView: NSViewRepresentable {
         func cancelPendingHighlight() {
             highlightWorkItem?.cancel()
             highlightWorkItem = nil
+            highlightTask?.cancel()
+            highlightTask = nil
+            highlightGeneration.increment()
         }
 
         /// Запускает viewport-based подсветку видимой области (deferred на следующий run loop).
@@ -723,12 +731,21 @@ struct CodeEditorView: NSViewRepresentable {
                 if storage.length > CodeEditorView.viewportHighlightThreshold {
                     scheduleViewportHighlighting(textView: textView)
                 } else {
-                    SyntaxHighlighter.shared.highlight(
-                        textStorage: storage,
-                        language: language,
-                        fileName: fileName,
-                        font: font
-                    )
+                    highlightGeneration.increment()
+                    let gen = highlightGeneration
+                    let lang = language
+                    let name = fileName
+                    let editorFont = font
+                    highlightTask?.cancel()
+                    highlightTask = Task { @MainActor in
+                        await SyntaxHighlighter.shared.highlightAsync(
+                            textStorage: storage,
+                            language: lang,
+                            fileName: name,
+                            font: editorFont,
+                            generation: gen
+                        )
+                    }
                 }
             }
 
@@ -756,12 +773,20 @@ struct CodeEditorView: NSViewRepresentable {
                 if storage.length > CodeEditorView.viewportHighlightThreshold {
                     scheduleViewportHighlighting(textView: textView)
                 } else {
-                    SyntaxHighlighter.shared.highlight(
-                        textStorage: storage,
-                        language: parent.language,
-                        fileName: parent.fileName,
-                        font: font
-                    )
+                    highlightGeneration.increment()
+                    let gen = highlightGeneration
+                    let lang = parent.language
+                    let name = parent.fileName
+                    highlightTask?.cancel()
+                    highlightTask = Task { @MainActor in
+                        await SyntaxHighlighter.shared.highlightAsync(
+                            textStorage: storage,
+                            language: lang,
+                            fileName: name,
+                            font: font,
+                            generation: gen
+                        )
+                    }
                 }
             }
 
@@ -813,6 +838,7 @@ struct CodeEditorView: NSViewRepresentable {
             // При быстром вводе последовательные правки обычно смежны,
             // и 20-строчный контекст в highlightEdited покрывает их.
             highlightWorkItem?.cancel()
+            highlightTask?.cancel()
             let isLargeFile = (textView.string as NSString).length > CodeEditorView.viewportHighlightThreshold
             let workItem = DispatchWorkItem { [weak self] in
                 guard let self else { return }
@@ -820,25 +846,35 @@ struct CodeEditorView: NSViewRepresentable {
                       let tv = sv.documentView as? NSTextView,
                       let storage = tv.textStorage else { return }
 
+                self.highlightGeneration.increment()
+                let gen = self.highlightGeneration
+                let lang = self.parent.language
+                let name = self.parent.fileName
+                let font = self.parent.editorFont
+
                 if let range = editedRange, range.location + range.length <= storage.length {
-                    SyntaxHighlighter.shared.highlightEdited(
-                        textStorage: storage,
-                        editedRange: range,
-                        language: self.parent.language,
-                        fileName: self.parent.fileName,
-                        font: self.parent.editorFont
-                    )
+                    self.highlightTask = Task { @MainActor in
+                        await SyntaxHighlighter.shared.highlightEditedAsync(
+                            textStorage: storage,
+                            editedRange: range,
+                            language: lang,
+                            fileName: name,
+                            font: font,
+                            generation: gen
+                        )
+                    }
                 } else if isLargeFile {
-                    // Большой файл — viewport-based подсветка вместо полной
                     self.scheduleViewportHighlighting(textView: tv)
                 } else {
-                    // Диапазон не определён или невалиден — полная подсветка
-                    SyntaxHighlighter.shared.highlight(
-                        textStorage: storage,
-                        language: self.parent.language,
-                        fileName: self.parent.fileName,
-                        font: self.parent.editorFont
-                    )
+                    self.highlightTask = Task { @MainActor in
+                        await SyntaxHighlighter.shared.highlightAsync(
+                            textStorage: storage,
+                            language: lang,
+                            fileName: name,
+                            font: font,
+                            generation: gen
+                        )
+                    }
                 }
             }
             highlightWorkItem = workItem
@@ -988,25 +1024,35 @@ struct CodeEditorView: NSViewRepresentable {
 
             // Debounce 16ms (1 frame)
             scrollHighlightWorkItem?.cancel()
+            highlightTask?.cancel()
+            highlightGeneration.increment()
+            let gen = highlightGeneration
+            let lang = self.parent.language
+            let name = self.parent.fileName
+            let font = self.parent.editorFont
             let workItem = DispatchWorkItem { [weak self] in
                 guard let self,
                       let storage = textView.textStorage else { return }
 
-                SyntaxHighlighter.shared.highlightVisibleRange(
-                    textStorage: storage,
-                    visibleCharRange: charRange,
-                    language: self.parent.language,
-                    fileName: self.parent.fileName,
-                    font: self.parent.editorFont
-                )
+                self.highlightTask = Task { @MainActor [weak self] in
+                    await SyntaxHighlighter.shared.highlightVisibleRangeAsync(
+                        textStorage: storage,
+                        visibleCharRange: charRange,
+                        language: lang,
+                        fileName: name,
+                        font: font,
+                        generation: gen
+                    )
 
-                // Union new highlighted range with existing
-                if let existing = self.highlightedCharRange {
-                    let newStart = min(existing.location, charRange.location)
-                    let newEnd = max(NSMaxRange(existing), NSMaxRange(charRange))
-                    self.highlightedCharRange = NSRange(location: newStart, length: newEnd - newStart)
-                } else {
-                    self.highlightedCharRange = charRange
+                    guard let self else { return }
+                    // Union new highlighted range with existing
+                    if let existing = self.highlightedCharRange {
+                        let newStart = min(existing.location, charRange.location)
+                        let newEnd = max(NSMaxRange(existing), NSMaxRange(charRange))
+                        self.highlightedCharRange = NSRange(location: newStart, length: newEnd - newStart)
+                    } else {
+                        self.highlightedCharRange = charRange
+                    }
                 }
             }
             scrollHighlightWorkItem = workItem
