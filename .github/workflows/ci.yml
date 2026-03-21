@@ -41,8 +41,8 @@ jobs:
       - name: Run SwiftLint
         run: swiftlint --strict
 
-  unit-tests:
-    name: Unit Tests
+  build:
+    name: Build for Testing
     runs-on: macos-26
     needs: lint
     steps:
@@ -55,29 +55,92 @@ jobs:
           sudo xcode-select -s "$XCODE_PATH/Contents/Developer"
           xcodebuild -version
 
-      - name: Build
+      - name: Build for Testing
         run: |
-          xcodebuild build \
+          xcodebuild build-for-testing \
             -project Pine.xcodeproj \
             -scheme Pine \
             -destination "platform=macOS" \
+            -derivedDataPath DerivedData \
             CODE_SIGN_IDENTITY=- \
             CODE_SIGNING_ALLOWED=NO
 
+      - name: Upload Build Products
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: build-products
+          path: DerivedData
+          retention-days: 1
+
+  unit-tests:
+    name: Unit Tests
+    runs-on: macos-26
+    needs: build
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+
+      - name: Select Xcode
+        run: |
+          XCODE_PATH=$(ls -d /Applications/Xcode*.app 2>/dev/null | sort -V | tail -1)
+          echo "Using Xcode at: $XCODE_PATH"
+          sudo xcode-select -s "$XCODE_PATH/Contents/Developer"
+
+      - name: Download Build Products
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: build-products
+          path: DerivedData
+
       - name: Unit Tests
         run: |
-          xcodebuild test \
+          xcodebuild test-without-building \
             -project Pine.xcodeproj \
             -scheme Pine \
             -destination "platform=macOS" \
+            -derivedDataPath DerivedData \
             -only-testing:PineTests \
             CODE_SIGN_IDENTITY=- \
             CODE_SIGNING_ALLOWED=NO
 
+  # UI test shards — 4 parallel jobs, ~21 tests each.
+  # To rebalance: count tests per class, redistribute so shards stay within ±3 tests.
+  # List classes with: grep -r "func test" PineUITests/ | sed 's/:.*//' | sort | uniq -c | sort -rn
   ui-tests:
-    name: UI Tests
+    name: "UI Tests (${{ matrix.shard-name }})"
     runs-on: macos-26
-    needs: lint
+    needs: build
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Shard 1 — Window & Welcome (21 tests)
+          - shard-name: "Window & Welcome"
+            test-classes: >-
+              -only-testing:PineUITests/WelcomeWindowTests
+              -only-testing:PineUITests/SidebarSearchTests
+          # Shard 2 — Editor Core (21 tests)
+          - shard-name: "Editor Core"
+            test-classes: >-
+              -only-testing:PineUITests/EditorWindowTests
+              -only-testing:PineUITests/FontSizeTests
+              -only-testing:PineUITests/DiffNavigationUITests
+          # Shard 3 — File Operations (20 tests)
+          - shard-name: "File Operations"
+            test-classes: >-
+              -only-testing:PineUITests/DeleteTests
+              -only-testing:PineUITests/DuplicateTests
+              -only-testing:PineUITests/MultiWindowTests
+              -only-testing:PineUITests/MinimapTests
+          # Shard 4 — Git, Terminal & Misc (21 tests)
+          - shard-name: "Git, Terminal & Misc"
+            test-classes: >-
+              -only-testing:PineUITests/SymlinkSecurityUITests
+              -only-testing:PineUITests/BranchSwitcherTests
+              -only-testing:PineUITests/GitignoreFilterTests
+              -only-testing:PineUITests/TerminalTests
+              -only-testing:PineUITests/CheckForUpdatesTests
+              -only-testing:PineUITests/BlameViewTests
+              -only-testing:PineUITests/ToggleCommentTests
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
 
@@ -86,23 +149,20 @@ jobs:
           XCODE_PATH=$(ls -d /Applications/Xcode*.app 2>/dev/null | sort -V | tail -1)
           echo "Using Xcode at: $XCODE_PATH"
           sudo xcode-select -s "$XCODE_PATH/Contents/Developer"
-          xcodebuild -version
 
-      - name: Build
-        run: |
-          xcodebuild build \
-            -project Pine.xcodeproj \
-            -scheme Pine \
-            -destination "platform=macOS" \
-            CODE_SIGN_IDENTITY=- \
-            CODE_SIGNING_ALLOWED=NO
+      - name: Download Build Products
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: build-products
+          path: DerivedData
 
       - name: UI Tests
         run: |
-          xcodebuild test \
+          xcodebuild test-without-building \
             -project Pine.xcodeproj \
             -scheme Pine \
             -destination "platform=macOS" \
-            -only-testing:PineUITests \
+            -derivedDataPath DerivedData \
+            ${{ matrix.test-classes }} \
             CODE_SIGN_IDENTITY=- \
             CODE_SIGNING_ALLOWED=NO
