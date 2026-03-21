@@ -17,6 +17,17 @@ final class GutterTextView: NSTextView {
     /// Ширина гуттера — задаётся извне.
     var gutterInset: CGFloat = 44
 
+    /// Called when the user changes the font via NSFontPanel (only monospaced fonts are forwarded).
+    var onFontChanged: ((NSFont) -> Void)?
+
+    override func changeFont(_ sender: Any?) {
+        guard let fontManager = sender as? NSFontManager,
+              let currentFont = font else { return }
+        let newFont = fontManager.convert(currentFont)
+        guard newFont.isFixedPitch else { return }
+        onFontChanged?(newFont)
+    }
+
     /// Bottom padding so the last line is not clipped (issue #258).
     static let defaultBottomInset: CGFloat = 5
 
@@ -412,13 +423,14 @@ struct CodeEditorView: NSViewRepresentable {
     }
 
     var fontSize: CGFloat = FontSizeSettings.shared.fontSize
+    var fontFamily: String = FontSizeSettings.shared.fontFamily
 
     private var editorFont: NSFont {
-        NSFont.monospacedSystemFont(ofSize: fontSize, weight: .regular)
+        FontSizeSettings.makeFont(family: fontFamily, size: fontSize)
     }
 
     private var gutterFont: NSFont {
-        NSFont.monospacedSystemFont(ofSize: max(fontSize - 2, FontSizeSettings.minSize), weight: .regular)
+        FontSizeSettings.makeFont(family: fontFamily, size: max(fontSize - 2, FontSizeSettings.minSize))
     }
 
     func makeNSView(context: Context) -> NSView {
@@ -483,6 +495,10 @@ struct CodeEditorView: NSViewRepresentable {
         textView.setBlameLines(blameLines)
         textView.isBlameVisible = isBlameVisible
         textView.delegate = context.coordinator
+        textView.onFontChanged = { newFont in
+            guard let family = newFont.familyName else { return }
+            FontSizeSettings.shared.setFontFamily(family)
+        }
         scrollView.documentView = textView
 
         container.addSubview(scrollView)
@@ -511,6 +527,7 @@ struct CodeEditorView: NSViewRepresentable {
         context.coordinator.lineNumberView = lineNumberView
         context.coordinator.minimapView = minimapView
         context.coordinator.lastFontSize = editorFont.pointSize
+        context.coordinator.lastFontFamily = editorFont.familyName ?? ""
         context.coordinator.syncContentVersion()
 
         textView.string = text
@@ -589,6 +606,14 @@ struct CodeEditorView: NSViewRepresentable {
             context.coordinator,
             selector: #selector(Coordinator.handleFoldCode(_:)),
             name: .foldCode,
+            object: nil
+        )
+
+        // Observe choose font notification (View → Choose Font…)
+        NotificationCenter.default.addObserver(
+            context.coordinator,
+            selector: #selector(Coordinator.handleChooseFont),
+            name: .chooseFontFamily,
             object: nil
         )
 
@@ -678,6 +703,8 @@ struct CodeEditorView: NSViewRepresentable {
         var lastFileName: String?
         /// Последний размер шрифта — для обнаружения изменений (Cmd+Plus/Minus)
         var lastFontSize: CGFloat = 0
+        /// Последнее семейство шрифта — для обнаружения изменений семейства.
+        var lastFontFamily: String = ""
 
         /// Flag: text was just changed by the user (NSTextView delegate).
         /// Prevents updateContentIfNeeded from overwriting the text
@@ -812,10 +839,12 @@ struct CodeEditorView: NSViewRepresentable {
             // reset the cursor.
         }
 
-        /// Updates font on both editor and gutter when font size changes.
+        /// Updates font on both editor and gutter when font size or family changes.
         func updateFontIfNeeded(font: NSFont, gutterFont: NSFont) {
-            guard font.pointSize != lastFontSize else { return }
+            let newFamily = font.familyName ?? ""
+            guard font.pointSize != lastFontSize || newFamily != lastFontFamily else { return }
             lastFontSize = font.pointSize
+            lastFontFamily = newFamily
 
             guard let sv = scrollView,
                   let textView = sv.documentView as? NSTextView else { return }
@@ -1208,6 +1237,15 @@ struct CodeEditorView: NSViewRepresentable {
             default:
                 break
             }
+        }
+
+        @objc func handleChooseFont() {
+            guard let sv = scrollView,
+                  let textView = sv.documentView as? GutterTextView,
+                  let currentFont = textView.font else { return }
+            NSFontManager.shared.setSelectedFont(currentFont, isMultiple: false)
+            NSFontPanel.shared.makeKeyAndOrderFront(nil)
+            textView.window?.makeFirstResponder(textView)
         }
 
         /// Folds the innermost foldable range containing the cursor.

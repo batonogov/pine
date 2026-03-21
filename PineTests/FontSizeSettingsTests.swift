@@ -172,4 +172,115 @@ struct FontSizeSettingsTests {
         settings.increase()
         #expect(settings.gutterFont.pointSize == 12)
     }
+
+    // MARK: - Font Family
+
+    @Test func defaultFontFamilyIsEmpty() throws {
+        let defaults = try makeDefaults()
+        defer { cleanupDefaults(defaults) }
+
+        let settings = FontSizeSettings(defaults: defaults)
+        #expect(settings.fontFamily == "")
+    }
+
+    @Test func setFontFamilyUpdatesFontFamily() throws {
+        let defaults = try makeDefaults()
+        defer { cleanupDefaults(defaults) }
+
+        let settings = FontSizeSettings(defaults: defaults)
+        settings.setFontFamily("Courier New")
+        #expect(settings.fontFamily == "Courier New")
+    }
+
+    @Test func fontFamilyPersistsToUserDefaults() throws {
+        let defaults = try makeDefaults()
+        defer { cleanupDefaults(defaults) }
+
+        let settings = FontSizeSettings(defaults: defaults)
+        settings.setFontFamily("Menlo")
+        #expect(defaults.string(forKey: "editorFontFamily") == "Menlo")
+    }
+
+    @Test func fontFamilyLoadsFromUserDefaults() throws {
+        let defaults = try makeDefaults()
+        defer { cleanupDefaults(defaults) }
+
+        defaults.set("Monaco", forKey: "editorFontFamily")
+        let settings = FontSizeSettings(defaults: defaults)
+        #expect(settings.fontFamily == "Monaco")
+    }
+
+    @Test func editorFontUsesCustomFamilyWhenSet() throws {
+        let defaults = try makeDefaults()
+        defer { cleanupDefaults(defaults) }
+
+        let settings = FontSizeSettings(defaults: defaults)
+        settings.setFontFamily("Courier New")
+        let font = settings.editorFont
+        // Courier New is a fixed-pitch font, so it should be returned
+        #expect(font.familyName == "Courier New")
+        #expect(font.pointSize == FontSizeSettings.defaultSize)
+    }
+
+    @Test func editorFontFallsBackToSystemMonospaceForEmptyFamily() throws {
+        let defaults = try makeDefaults()
+        defer { cleanupDefaults(defaults) }
+
+        let settings = FontSizeSettings(defaults: defaults)
+        // Empty family → system monospace
+        let font = settings.editorFont
+        #expect(font.pointSize == FontSizeSettings.defaultSize)
+        #expect(font.isFixedPitch)
+    }
+
+    @Test func gutterFontUsesCustomFamilyWhenSet() throws {
+        let defaults = try makeDefaults()
+        defer { cleanupDefaults(defaults) }
+
+        let settings = FontSizeSettings(defaults: defaults)
+        settings.setFontFamily("Courier New")
+        let font = settings.gutterFont
+        #expect(font.familyName == "Courier New")
+        #expect(font.pointSize == FontSizeSettings.defaultSize - 2)
+    }
+
+    @Test func makeFontReturnsFontForValidFamily() throws {
+        // Courier New is available on all macOS systems
+        let font = FontSizeSettings.makeFont(family: "Courier New", size: 14)
+        #expect(font.familyName == "Courier New")
+        #expect(font.pointSize == 14)
+    }
+
+    @Test func makeFontFallsBackForEmptyFamily() throws {
+        let font = FontSizeSettings.makeFont(family: "", size: 13)
+        #expect(font.pointSize == 13)
+        #expect(font.isFixedPitch)
+    }
+
+    @Test func makeFontFallsBackForInvalidFamily() throws {
+        let font = FontSizeSettings.makeFont(family: "NotARealFontFamilyXYZ", size: 13)
+        // Falls back to system monospace
+        #expect(font.isFixedPitch)
+        #expect(font.pointSize == 13)
+    }
+
+    @Test func availableMonospacedFontFamiliesIsNonEmpty() throws {
+        let families = FontSizeSettings.availableMonospacedFontFamilies()
+        #expect(!families.isEmpty)
+    }
+
+    @Test func availableMonospacedFontFamiliesContainsKnownFonts() throws {
+        let families = FontSizeSettings.availableMonospacedFontFamilies()
+        // Menlo and Courier New are always present on macOS
+        #expect(families.contains("Menlo"))
+        #expect(families.contains("Courier New"))
+    }
+
+    @Test func availableMonospacedFontFamiliesAreAllFixed() throws {
+        let families = FontSizeSettings.availableMonospacedFontFamilies()
+        for family in families {
+            let font = FontSizeSettings.makeFont(family: family, size: 12)
+            #expect(font.isFixedPitch, "Expected \(family) to be fixed-pitch")
+        }
+    }
 }

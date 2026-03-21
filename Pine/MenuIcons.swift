@@ -30,6 +30,7 @@ enum MenuIcons {
     static let increaseFontSize = "plus.magnifyingglass"
     static let decreaseFontSize = "minus.magnifyingglass"
     static let resetFontSize = "textformat.size"
+    static let chooseFont = "textformat"
     static let toggleTerminal = "terminal"
     static let togglePreview = "doc.richtext"
     static let toggleMinimap = "sidebar.right"

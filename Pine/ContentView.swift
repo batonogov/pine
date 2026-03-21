@@ -563,7 +563,8 @@ struct ContentView: View {
                 tabManager.updateEditorState(cursorPosition: cursor, scrollOffset: scroll)
             },
             goToOffset: goToLineOffset,
-            fontSize: FontSizeSettings.shared.fontSize
+            fontSize: FontSizeSettings.shared.fontSize,
+            fontFamily: FontSizeSettings.shared.fontFamily
         )
         .accessibilityIdentifier(AccessibilityID.codeEditor)
         .onAppear { goToLineOffset = nil }

@@ -114,6 +114,7 @@ enum Strings {
     static let menuIncreaseFontSize: LocalizedStringKey = "menu.increaseFontSize"
     static let menuDecreaseFontSize: LocalizedStringKey = "menu.decreaseFontSize"
     static let menuResetFontSize: LocalizedStringKey = "menu.resetFontSize"
+    static let menuChooseFont: LocalizedStringKey = "menu.chooseFont"
     static let menuTerminal: LocalizedStringKey = "menu.terminal"
     static let menuNewTerminalTab: LocalizedStringKey = "menu.newTerminalTab"
     static let menuTogglePreview: LocalizedStringKey = "menu.togglePreview"

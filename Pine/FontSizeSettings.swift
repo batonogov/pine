@@ -1,7 +1,6 @@
 //
 //  FontSizeSettings.swift
 //  Pine
-//
 
 import AppKit
 
@@ -12,8 +11,10 @@ final class FontSizeSettings {
     static let defaultSize: CGFloat = 13
     static let minSize: CGFloat = 8
     static let maxSize: CGFloat = 32
+    static let defaultFontFamily: String = ""
 
     private static let userDefaultsKey = "editorFontSize"
+    private static let fontFamilyKey = "editorFontFamily"
     private let defaults: UserDefaults
 
     private(set) var fontSize: CGFloat {
@@ -22,12 +23,18 @@ final class FontSizeSettings {
         }
     }
 
+    private(set) var fontFamily: String {
+        didSet {
+            defaults.set(fontFamily, forKey: Self.fontFamilyKey)
+        }
+    }
+
     var editorFont: NSFont {
-        NSFont.monospacedSystemFont(ofSize: fontSize, weight: .regular)
+        Self.makeFont(family: fontFamily, size: fontSize)
     }
 
     var gutterFont: NSFont {
-        NSFont.monospacedSystemFont(ofSize: fontSize - 2, weight: .regular)
+        Self.makeFont(family: fontFamily, size: max(fontSize - 2, Self.minSize))
     }
 
     init(defaults: UserDefaults = .standard) {
@@ -38,6 +45,7 @@ final class FontSizeSettings {
         } else {
             self.fontSize = Self.defaultSize
         }
+        self.fontFamily = defaults.string(forKey: Self.fontFamilyKey) ?? Self.defaultFontFamily
     }
 
     func increase() {
@@ -50,5 +58,29 @@ final class FontSizeSettings {
 
     func reset() {
         fontSize = Self.defaultSize
+    }
+
+    func setFontFamily(_ family: String) {
+        fontFamily = family
+    }
+
+    /// Returns a font for the given family and size.
+    /// Falls back to system monospace if the family is empty or unavailable.
+    static func makeFont(family: String, size: CGFloat) -> NSFont {
+        if !family.isEmpty,
+           let font = NSFontManager.shared.font(withFamily: family, traits: [], weight: 5, size: size) {
+            return font
+        }
+        return NSFont.monospacedSystemFont(ofSize: size, weight: .regular)
+    }
+
+    /// Returns all monospaced font families available on the system, sorted alphabetically.
+    static func availableMonospacedFontFamilies() -> [String] {
+        NSFontManager.shared.availableFontFamilies.filter { family in
+            guard let font = NSFontManager.shared.font(
+                withFamily: family, traits: [], weight: 5, size: 12
+            ) else { return false }
+            return font.isFixedPitch
+        }
     }
 }

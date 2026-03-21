@@ -64,6 +64,12 @@ struct PineApp: App {
                 }
                 .keyboardShortcut("0", modifiers: .command)
 
+                Button {
+                    NotificationCenter.default.post(name: .chooseFontFamily, object: nil)
+                } label: {
+                    Label(Strings.menuChooseFont, systemImage: MenuIcons.chooseFont)
+                }
+
                 Divider()
 
                 Button {
@@ -1002,4 +1008,5 @@ extension Notification.Name {
     static let findNext = Notification.Name("findNext")
     static let findPrevious = Notification.Name("findPrevious")
     static let useSelectionForFind = Notification.Name("useSelectionForFind")
+    static let chooseFontFamily = Notification.Name("chooseFontFamily")
 }
