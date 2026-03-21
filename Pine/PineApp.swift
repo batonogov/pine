@@ -12,7 +12,7 @@ import SwiftUI
 struct PineApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
     @FocusedValue(\.projectManager) private var focusedProject: ProjectManager?
-    @AppStorage("autoSaveEnabled") private var autoSaveEnabled = false
+    @AppStorage(TabManager.autoSaveKey) private var autoSaveEnabled = false
 
     private var registry: ProjectRegistry { appDelegate.registry }
 

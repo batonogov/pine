@@ -878,13 +878,14 @@ struct TabManagerTests {
     @Test("scheduleAutoSave saves dirty tab after delay")
     func autoSaveSavesDirtyTabAfterDelay() async throws {
         let manager = TabManager()
+        manager.setAutoSaveDelay(0.1)
         let url = tempFileURL(content: "original")
 
         manager.openTab(url: url)
         manager.updateContent("modified")
         #expect(manager.activeTab?.isDirty == true)
 
-        manager.scheduleAutoSave(delay: 0.1)
+        manager.scheduleAutoSave()
 
         // Wait for debounce + save
         try await Task.sleep(for: .milliseconds(300))
@@ -897,6 +898,7 @@ struct TabManagerTests {
     @Test("scheduleAutoSave skips read-only file")
     func autoSaveSkipsReadOnlyFile() async throws {
         let manager = TabManager()
+        manager.setAutoSaveDelay(0.1)
         let url = tempFileURL(content: "original")
 
         // Make file read-only
@@ -913,7 +915,7 @@ struct TabManagerTests {
         manager.updateContent("modified")
         #expect(manager.activeTab?.isDirty == true)
 
-        manager.scheduleAutoSave(delay: 0.1)
+        manager.scheduleAutoSave()
 
         try await Task.sleep(for: .milliseconds(300))
 
@@ -924,21 +926,22 @@ struct TabManagerTests {
     @Test("scheduleAutoSave debounces multiple rapid changes")
     func autoSaveDebounces() async throws {
         let manager = TabManager()
+        manager.setAutoSaveDelay(0.2)
         let url = tempFileURL(content: "original")
 
         manager.openTab(url: url)
 
         // Rapid changes — only the last one should be saved
         manager.updateContent("change1")
-        manager.scheduleAutoSave(delay: 0.2)
+        manager.scheduleAutoSave()
         try await Task.sleep(for: .milliseconds(50))
 
         manager.updateContent("change2")
-        manager.scheduleAutoSave(delay: 0.2)
+        manager.scheduleAutoSave()
         try await Task.sleep(for: .milliseconds(50))
 
         manager.updateContent("change3")
-        manager.scheduleAutoSave(delay: 0.2)
+        manager.scheduleAutoSave()
 
         try await Task.sleep(for: .milliseconds(400))
 
@@ -950,12 +953,13 @@ struct TabManagerTests {
     @Test("cancelAutoSave prevents pending save")
     func cancelAutoSavePreventsPlannedSave() async throws {
         let manager = TabManager()
+        manager.setAutoSaveDelay(0.2)
         let url = tempFileURL(content: "original")
 
         manager.openTab(url: url)
         manager.updateContent("modified")
 
-        manager.scheduleAutoSave(delay: 0.2)
+        manager.scheduleAutoSave()
         manager.cancelAutoSave()
 
         try await Task.sleep(for: .milliseconds(400))
@@ -969,11 +973,12 @@ struct TabManagerTests {
     @Test("Auto-save does not run when disabled in UserDefaults")
     func autoSaveDisabledByDefault() async throws {
         let manager = TabManager()
+        manager.setAutoSaveDelay(0.1)
         let url = tempFileURL(content: "original")
 
         // Ensure auto-save is off
-        UserDefaults.standard.set(false, forKey: "autoSaveEnabled")
-        defer { UserDefaults.standard.removeObject(forKey: "autoSaveEnabled") }
+        UserDefaults.standard.set(false, forKey: TabManager.autoSaveKey)
+        defer { UserDefaults.standard.removeObject(forKey: TabManager.autoSaveKey) }
 
         manager.openTab(url: url)
         manager.updateContent("modified")
@@ -987,11 +992,11 @@ struct TabManagerTests {
     @Test("updateContent triggers auto-save when enabled")
     func updateContentTriggersAutoSaveWhenEnabled() async throws {
         let manager = TabManager()
-        manager.autoSaveDelay = 0.1
+        manager.setAutoSaveDelay(0.1)
         let url = tempFileURL(content: "original")
 
-        UserDefaults.standard.set(true, forKey: "autoSaveEnabled")
-        defer { UserDefaults.standard.removeObject(forKey: "autoSaveEnabled") }
+        UserDefaults.standard.set(true, forKey: TabManager.autoSaveKey)
+        defer { UserDefaults.standard.removeObject(forKey: TabManager.autoSaveKey) }
 
         manager.openTab(url: url)
         manager.updateContent("auto-saved content")
@@ -1006,12 +1011,12 @@ struct TabManagerTests {
     @Test("Auto-save handles tab switch — saves correct tab")
     func autoSaveHandlesTabSwitch() async throws {
         let manager = TabManager()
-        manager.autoSaveDelay = 0.1
+        manager.setAutoSaveDelay(0.1)
         let url1 = tempFileURL(name: "a.swift", content: "original1")
         let url2 = tempFileURL(name: "b.swift", content: "original2")
 
-        UserDefaults.standard.set(true, forKey: "autoSaveEnabled")
-        defer { UserDefaults.standard.removeObject(forKey: "autoSaveEnabled") }
+        UserDefaults.standard.set(true, forKey: TabManager.autoSaveKey)
+        defer { UserDefaults.standard.removeObject(forKey: TabManager.autoSaveKey) }
 
         manager.openTab(url: url1)
         manager.updateContent("modified1")
@@ -1034,40 +1039,43 @@ struct TabManagerTests {
     @Test("Manual save cancels pending auto-save")
     func manualSaveCancelsAutoSave() async throws {
         let manager = TabManager()
+        manager.setAutoSaveDelay(0.3)
         let url = tempFileURL(content: "original")
 
         manager.openTab(url: url)
         manager.updateContent("modified")
 
-        manager.scheduleAutoSave(delay: 0.3)
+        manager.scheduleAutoSave()
 
         // Manual save should cancel the pending auto-save
         manager.saveActiveTab()
         #expect(manager.activeTab?.isDirty == false)
-        #expect(manager.autoSaveWorkItem == nil)
+        #expect(manager.hasScheduledAutoSave == false)
     }
 
     @Test("closeTab cancels pending auto-save for that tab")
     func closeTabCancelsAutoSave() async throws {
         let manager = TabManager()
+        manager.setAutoSaveDelay(0.3)
         let url = tempFileURL(content: "original")
 
         manager.openTab(url: url)
         manager.updateContent("modified")
 
-        manager.scheduleAutoSave(delay: 0.3)
+        manager.scheduleAutoSave()
         guard let tabID = manager.activeTabID else {
             Issue.record("activeTabID should not be nil")
             return
         }
         manager.closeTab(id: tabID)
 
-        #expect(manager.autoSaveWorkItem == nil)
+        #expect(manager.hasScheduledAutoSave == false)
     }
 
-    @Test("isAutoSaving is set during auto-save")
-    func isAutoSavingFlagDuringAutoSave() async throws {
+    @Test("isAutoSaving resets after auto-save completes")
+    func isAutoSavingResetsAfterSave() async throws {
         let manager = TabManager()
+        manager.setAutoSaveDelay(0.05)
         let url = tempFileURL(content: "original")
 
         manager.openTab(url: url)
@@ -1075,12 +1083,10 @@ struct TabManagerTests {
 
         #expect(manager.isAutoSaving == false)
 
-        manager.scheduleAutoSave(delay: 0.05)
-        try await Task.sleep(for: .milliseconds(100))
+        manager.scheduleAutoSave()
+        try await Task.sleep(for: .milliseconds(200))
 
-        // After save completes, flag resets
-        // (may need brief extra time for the 0.5s indicator delay)
-        try await Task.sleep(for: .milliseconds(600))
+        // After save completes, flag resets immediately
         #expect(manager.isAutoSaving == false)
         #expect(manager.activeTab?.isDirty == false)
     }

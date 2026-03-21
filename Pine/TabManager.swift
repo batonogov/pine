@@ -165,8 +165,8 @@ final class TabManager {
         guard tabs[index].kind == .text else { return }
         tabs[index].content = newContent
 
-        if UserDefaults.standard.bool(forKey: "autoSaveEnabled") {
-            scheduleAutoSave(delay: autoSaveDelay)
+        if UserDefaults.standard.bool(forKey: Self.autoSaveKey) {
+            scheduleAutoSave()
         }
     }
 
@@ -387,18 +387,29 @@ final class TabManager {
 
     // MARK: - Auto-save
 
+    /// UserDefaults key for the auto-save toggle.
+    static let autoSaveKey = "autoSaveEnabled"
+
     /// Whether auto-save is currently in progress (for UI indicator).
     private(set) var isAutoSaving = false
 
-    /// Auto-save delay in seconds. Configurable for testing.
-    var autoSaveDelay: TimeInterval = 1.0
+    /// Auto-save delay in seconds. Use `setAutoSaveDelay(_:)` in tests.
+    private(set) var autoSaveDelay: TimeInterval = 1.0
 
     /// Debounce work item for auto-save.
-    private(set) var autoSaveWorkItem: DispatchWorkItem?
+    private var autoSaveWorkItem: DispatchWorkItem?
+
+    /// Sets the auto-save delay. Intended for tests only.
+    func setAutoSaveDelay(_ delay: TimeInterval) {
+        autoSaveDelay = delay
+    }
 
     /// Schedules a debounced auto-save for the active tab.
-    /// The save fires after `delay` seconds of inactivity.
-    func scheduleAutoSave(delay: TimeInterval? = nil) {
+    /// The save fires after `autoSaveDelay` seconds of inactivity.
+    ///
+    /// Note: `checkExternalChanges()` may detect the file we just wrote
+    /// and silently reload it. This is harmless — the content matches.
+    func scheduleAutoSave() {
         autoSaveWorkItem?.cancel()
 
         guard let index = activeTabIndex else { return }
@@ -407,8 +418,6 @@ final class TabManager {
 
         // Skip read-only files
         guard FileManager.default.isWritableFile(atPath: url.path) else { return }
-
-        let effectiveDelay = delay ?? autoSaveDelay
 
         let workItem = DispatchWorkItem { [weak self] in
             guard let self else { return }
@@ -421,20 +430,22 @@ final class TabManager {
             } catch {
                 // Silent failure — auto-save should not show alerts
             }
-
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
-                self?.isAutoSaving = false
-            }
+            self.isAutoSaving = false
         }
 
         autoSaveWorkItem = workItem
-        DispatchQueue.main.asyncAfter(deadline: .now() + effectiveDelay, execute: workItem)
+        DispatchQueue.main.asyncAfter(deadline: .now() + autoSaveDelay, execute: workItem)
     }
 
     /// Cancels any pending auto-save.
     func cancelAutoSave() {
         autoSaveWorkItem?.cancel()
         autoSaveWorkItem = nil
+    }
+
+    /// Whether a pending auto-save is scheduled (for testing).
+    var hasScheduledAutoSave: Bool {
+        autoSaveWorkItem != nil
     }
 
     // MARK: - Markdown preview

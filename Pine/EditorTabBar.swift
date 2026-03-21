@@ -63,14 +63,17 @@ struct EditorTabBar: View {
 
             Spacer()
 
-            if isAutoSaving {
-                Text(Strings.autoSaving)
-                    .font(.system(size: 10))
-                    .foregroundStyle(.tertiary)
-                    .transition(.opacity)
-                    .accessibilityIdentifier(AccessibilityID.autoSaveIndicator)
-                    .padding(.trailing, 4)
+            Group {
+                if isAutoSaving {
+                    Text(Strings.autoSaving)
+                        .font(.system(size: 10))
+                        .foregroundStyle(.tertiary)
+                        .transition(.opacity)
+                        .accessibilityIdentifier(AccessibilityID.autoSaveIndicator)
+                        .padding(.trailing, 4)
+                }
             }
+            .animation(.easeInOut(duration: 0.2), value: isAutoSaving)
 
             if isMarkdownFile {
                 Button {
