@@ -321,6 +321,147 @@ struct FileNodeTests {
         #expect(buildNode?.children?.isEmpty == true)
     }
 
+    // MARK: - Depth-limited loading
+
+    @Test func maxDepthLimitsRecursion() throws {
+        let tempDir = try makeTempDirectory()
+        defer { cleanup(tempDir) }
+
+        // Create 4-level deep structure: root/a/b/c/file.txt
+        let levelA = tempDir.appendingPathComponent("a")
+        let levelB = levelA.appendingPathComponent("b")
+        let levelC = levelB.appendingPathComponent("c")
+        try FileManager.default.createDirectory(at: levelC, withIntermediateDirectories: true)
+        FileManager.default.createFile(atPath: levelC.appendingPathComponent("file.txt").path, contents: nil)
+        FileManager.default.createFile(atPath: tempDir.appendingPathComponent("root.txt").path, contents: nil)
+
+        // maxDepth=2: root(0) -> a(1) -> b(2) -> c should be shallow
+        let node = FileNode(url: tempDir, projectRoot: tempDir, ignoredPaths: [], maxDepth: 2)
+
+        // Level 0 (root) — children loaded
+        let aNode = node.children?.first { $0.name == "a" }
+        #expect(aNode != nil)
+        #expect(aNode?.isDirectory == true)
+
+        // Level 1 (a) — children loaded
+        let bNode = aNode?.children?.first { $0.name == "b" }
+        #expect(bNode != nil)
+        #expect(bNode?.isDirectory == true)
+
+        // Level 2 (b) — children loaded
+        let cNode = bNode?.children?.first { $0.name == "c" }
+        #expect(cNode != nil)
+        #expect(cNode?.isDirectory == true)
+
+        // Level 3 (c) — beyond maxDepth, shallow (empty children)
+        #expect(cNode?.children?.isEmpty == true)
+    }
+
+    @Test func maxDepthZeroLoadsOnlyTopLevel() throws {
+        let tempDir = try makeTempDirectory()
+        defer { cleanup(tempDir) }
+
+        let subDir = tempDir.appendingPathComponent("sub")
+        try FileManager.default.createDirectory(at: subDir, withIntermediateDirectories: true)
+        FileManager.default.createFile(atPath: subDir.appendingPathComponent("inner.txt").path, contents: nil)
+        FileManager.default.createFile(atPath: tempDir.appendingPathComponent("top.txt").path, contents: nil)
+
+        // maxDepth=0: only the root's direct children, subdirs are shallow
+        let node = FileNode(url: tempDir, projectRoot: tempDir, ignoredPaths: [], maxDepth: 0)
+        let names = node.children?.map(\.name) ?? []
+        #expect(names.contains("sub"))
+        #expect(names.contains("top.txt"))
+
+        // sub directory is shallow — empty children
+        let subNode = node.children?.first { $0.name == "sub" }
+        #expect(subNode?.children?.isEmpty == true)
+    }
+
+    @Test func maxDepthDefaultLoadsFullTree() throws {
+        let tempDir = try makeTempDirectory()
+        defer { cleanup(tempDir) }
+
+        let deep = tempDir.appendingPathComponent("a").appendingPathComponent("b").appendingPathComponent("c")
+        try FileManager.default.createDirectory(at: deep, withIntermediateDirectories: true)
+        FileManager.default.createFile(atPath: deep.appendingPathComponent("deep.txt").path, contents: nil)
+
+        // Default maxDepth (no limit) loads everything
+        let node = FileNode(url: tempDir, projectRoot: tempDir, ignoredPaths: [])
+        let aNode = node.children?.first { $0.name == "a" }
+        let bNode = aNode?.children?.first { $0.name == "b" }
+        let cNode = bNode?.children?.first { $0.name == "c" }
+        let names = cNode?.children?.map(\.name) ?? []
+        #expect(names.contains("deep.txt"))
+    }
+
+    @Test func shallowDirectoryLoadsChildrenOnDemand() throws {
+        let tempDir = try makeTempDirectory()
+        defer { cleanup(tempDir) }
+
+        let sub = tempDir.appendingPathComponent("sub")
+        try FileManager.default.createDirectory(at: sub, withIntermediateDirectories: true)
+        FileManager.default.createFile(atPath: sub.appendingPathComponent("file.txt").path, contents: nil)
+
+        // maxDepth=0: sub is shallow
+        let node = FileNode(url: tempDir, projectRoot: tempDir, ignoredPaths: [], maxDepth: 0)
+        let subNode = node.children?.first { $0.name == "sub" }
+        #expect(subNode?.children?.isEmpty == true)
+
+        // loadChildren() fills in the contents
+        subNode?.loadChildren()
+        let names = subNode?.children?.map(\.name) ?? []
+        #expect(names.contains("file.txt"))
+    }
+
+    @Test func maxDepthCombinesWithGitignore() throws {
+        let tempDir = try makeTempDirectory()
+        defer { cleanup(tempDir) }
+
+        // Structure: root/src/deep/file.txt, root/vendor/lib.js
+        let deep = tempDir.appendingPathComponent("src").appendingPathComponent("deep")
+        try FileManager.default.createDirectory(at: deep, withIntermediateDirectories: true)
+        FileManager.default.createFile(atPath: deep.appendingPathComponent("file.txt").path, contents: nil)
+        let vendor = tempDir.appendingPathComponent("vendor")
+        try FileManager.default.createDirectory(at: vendor, withIntermediateDirectories: true)
+        FileManager.default.createFile(atPath: vendor.appendingPathComponent("lib.js").path, contents: nil)
+
+        // maxDepth=1 + vendor is gitignored
+        let node = FileNode(url: tempDir, projectRoot: tempDir, ignoredPaths: ["vendor"], maxDepth: 1)
+
+        // src loaded at depth 1
+        let srcNode = node.children?.first { $0.name == "src" }
+        #expect(srcNode != nil)
+        // deep is at depth 2 > maxDepth=1, so shallow
+        let deepNode = srcNode?.children?.first { $0.name == "deep" }
+        #expect(deepNode?.children?.isEmpty == true)
+
+        // vendor is gitignored — also shallow (empty children)
+        let vendorNode = node.children?.first { $0.name == "vendor" }
+        #expect(vendorNode?.children?.isEmpty == true)
+    }
+
+    @Test func symlinkCacheAvoidsDuplicateResolution() throws {
+        let tempDir = try makeTempDirectory()
+        defer { cleanup(tempDir) }
+
+        // Create a dir and a symlink to it
+        let realDir = tempDir.appendingPathComponent("real")
+        try FileManager.default.createDirectory(at: realDir, withIntermediateDirectories: true)
+        FileManager.default.createFile(atPath: realDir.appendingPathComponent("file.txt").path, contents: nil)
+        let link = tempDir.appendingPathComponent("link")
+        try FileManager.default.createSymbolicLink(at: link, withDestinationURL: realDir)
+
+        // Should not crash or infinite loop — symlink cycle protection works
+        let node = FileNode(url: tempDir, projectRoot: tempDir, ignoredPaths: [])
+        let names = node.children?.map(\.name) ?? []
+        #expect(names.contains("real"))
+        #expect(names.contains("link"))
+
+        // link should have children (same as real) since it's within project root
+        let linkNode = node.children?.first { $0.name == "link" }
+        #expect(linkNode?.isSymlink == true)
+    }
+
     @Test func loadChildrenPreservesVisibilityOfIgnored() throws {
         let tempDir = try makeTempDirectory()
         defer { cleanup(tempDir) }

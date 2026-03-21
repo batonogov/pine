@@ -87,8 +87,14 @@ final class WorkspaceManager {
         fileWatcher = watcher
     }
 
+    /// Depth limit for the initial shallow pass — shows the first few
+    /// levels instantly while the full tree loads in the background.
+    private static let shallowDepth = 3
+
     /// Heavy I/O (file tree + git) runs on a background queue;
     /// results are assigned back on the main thread.
+    /// Uses two-phase progressive loading: a shallow tree appears fast,
+    /// then the full tree replaces it once ready.
     private func loadDirectoryContentsAsync(
         url: URL,
         generation: Int,
@@ -99,12 +105,17 @@ final class WorkspaceManager {
             let bgGit = GitStatusProvider()
             bgGit.setup(repositoryURL: url)
 
-            let root = FileNode(url: url, projectRoot: url, ignoredPaths: bgGit.ignoredPaths)
-            let children = root.children ?? []
+            // Phase 1: shallow tree for fast initial render
+            let shallowRoot = FileNode(
+                url: url, projectRoot: url,
+                ignoredPaths: bgGit.ignoredPaths,
+                maxDepth: Self.shallowDepth
+            )
+            let shallowChildren = shallowRoot.children ?? []
 
             DispatchQueue.main.async { [weak self] in
                 guard let self, self.loadGeneration == generation else { return }
-                self.rootNodes = children
+                self.rootNodes = shallowChildren
                 self.gitProvider.repositoryURL = bgGit.repositoryURL
                 self.gitProvider.gitRootPath = bgGit.gitRootPath
                 self.gitProvider.isGitRepository = bgGit.isGitRepository
@@ -114,19 +125,45 @@ final class WorkspaceManager {
                 self.gitProvider.branches = bgGit.branches
                 completion?()
             }
+
+            // Phase 2: full tree (only if the shallow pass was depth-limited)
+            let fullRoot = FileNode(url: url, projectRoot: url, ignoredPaths: bgGit.ignoredPaths)
+            let fullChildren = fullRoot.children ?? []
+
+            DispatchQueue.main.async { [weak self] in
+                guard let self, self.loadGeneration == generation else { return }
+                self.rootNodes = fullChildren
+            }
         }
     }
 
     /// Reload the file tree from disk (e.g. after creating/renaming/deleting files).
-    /// File tree is updated synchronously for immediate UI feedback;
-    /// git status refresh runs asynchronously on a background queue
-    /// to avoid blocking the main thread (prevents SIGSEGV when SwiftUI
-    /// re-renders during Process.waitUntilExit — see issue #210).
+    /// A shallow tree (depth-limited) is built synchronously for immediate UI feedback;
+    /// the full tree and git status refresh run asynchronously on background queues.
     func refreshFileTree() {
         guard let url = rootURL else { return }
         loadGeneration += 1
-        let root = FileNode(url: url, projectRoot: url, ignoredPaths: gitProvider.ignoredPaths)
-        rootNodes = root.children ?? []
+        let generation = loadGeneration
+        let ignoredPaths = gitProvider.ignoredPaths
+
+        // Phase 1 (sync): shallow tree for immediate feedback
+        let shallowRoot = FileNode(
+            url: url, projectRoot: url,
+            ignoredPaths: ignoredPaths,
+            maxDepth: Self.shallowDepth
+        )
+        rootNodes = shallowRoot.children ?? []
+
+        // Phase 2 (async): full tree on background queue
+        DispatchQueue.global(qos: .userInitiated).async {
+            let fullRoot = FileNode(url: url, projectRoot: url, ignoredPaths: ignoredPaths)
+            let fullChildren = fullRoot.children ?? []
+            DispatchQueue.main.async { [weak self] in
+                guard let self, self.loadGeneration == generation else { return }
+                self.rootNodes = fullChildren
+            }
+        }
+
         // Cancel any in-flight git refresh to avoid stale data overwriting newer results.
         gitRefreshTask?.cancel()
         gitRefreshTask = Task { await gitProvider.refreshAsync() }

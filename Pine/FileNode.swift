@@ -47,6 +47,12 @@ final class FileNode: Identifiable, Hashable {
         self.init(url: url, context: context)
     }
 
+    /// Initializer with depth-limited loading for progressive/async tree construction.
+    convenience init(url: URL, projectRoot: URL, ignoredPaths: Set<String>, maxDepth: Int) {
+        let context = LoadContext(projectRoot: projectRoot, ignoredPaths: ignoredPaths, maxDepth: maxDepth)
+        self.init(url: url, context: context)
+    }
+
     /// Internal designated initializer.
     private init(url: URL, context: LoadContext?) {
         self.id = url
@@ -64,7 +70,7 @@ final class FileNode: Identifiable, Hashable {
 
         if isDir.boolValue {
             if let context {
-                let realPath = url.resolvingSymlinksInPath().path
+                let realPath = context.resolveSymlinks(url)
                 let isCycle = isSymlink && context.visitedRealPaths.contains(realPath)
                 let isOutsideRoot = isSymlink && !Self.pathIsWithinRoot(realPath, rootRealPath: context.rootRealPath)
 
@@ -81,8 +87,17 @@ final class FileNode: Identifiable, Hashable {
                     return
                 }
 
+                // Depth-limited: directories beyond maxDepth are shallow
+                // (empty children), loaded on-demand via loadChildren().
+                if context.currentDepth > context.maxDepth {
+                    self.children = []
+                    return
+                }
+
                 context.visitedRealPaths.insert(realPath)
+                context.currentDepth += 1
                 self.children = Self.loadContents(of: url, context: context)
+                context.currentDepth -= 1
             } else {
                 self.children = Self.loadContents(of: url, context: nil)
             }
@@ -101,7 +116,7 @@ final class FileNode: Identifiable, Hashable {
         guard !context.ignoredPaths.isEmpty else { return false }
         let rootPath = context.rootRealPath
         let prefix = rootPath.hasSuffix("/") ? rootPath : rootPath + "/"
-        let fullPath = url.resolvingSymlinksInPath().path
+        let fullPath = context.resolveSymlinks(url)
         guard fullPath.hasPrefix(prefix) else { return false }
         let relativePath = String(fullPath.dropFirst(prefix.count))
         return context.ignoredPaths.contains(relativePath)
@@ -171,12 +186,28 @@ final class FileNode: Identifiable, Hashable {
 private class LoadContext {
     let rootRealPath: String
     let ignoredPaths: Set<String>
+    let maxDepth: Int
+    var currentDepth: Int = 0
     var visitedRealPaths: Set<String>
 
-    init(projectRoot: URL, ignoredPaths: Set<String> = []) {
+    /// Cache for resolved symlink paths to avoid redundant I/O.
+    private var symlinkCache: [URL: String] = [:]
+
+    init(projectRoot: URL, ignoredPaths: Set<String> = [], maxDepth: Int = .max) {
         let realPath = projectRoot.resolvingSymlinksInPath().path
         self.rootRealPath = realPath
         self.ignoredPaths = ignoredPaths
+        self.maxDepth = maxDepth
         self.visitedRealPaths = []
+    }
+
+    /// Returns the resolved symlink path for the URL, caching the result.
+    func resolveSymlinks(_ url: URL) -> String {
+        if let cached = symlinkCache[url] {
+            return cached
+        }
+        let resolved = url.resolvingSymlinksInPath().path
+        symlinkCache[url] = resolved
+        return resolved
     }
 }

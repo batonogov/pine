@@ -310,6 +310,36 @@ struct WorkspaceManagerTests {
         #expect(names.contains("other.txt"))
     }
 
+    @Test("refreshFileTree uses shallow load followed by async deep load")
+    func refreshFileTreeProgressiveLoad() throws {
+        let dir = try makeTempDirectory()
+        defer { cleanup(dir) }
+
+        // Create a deeply nested structure: root/a/b/c/d/e/file.txt
+        let deep = dir
+            .appendingPathComponent("a")
+            .appendingPathComponent("b")
+            .appendingPathComponent("c")
+            .appendingPathComponent("d")
+            .appendingPathComponent("e")
+        try FileManager.default.createDirectory(at: deep, withIntermediateDirectories: true)
+        try "deep".write(to: deep.appendingPathComponent("file.txt"), atomically: true, encoding: .utf8)
+        try "top".write(to: dir.appendingPathComponent("top.txt"), atomically: true, encoding: .utf8)
+
+        let manager = WorkspaceManager()
+        manager.loadDirectory(url: dir)
+        manager.refreshFileTree()
+
+        // Top-level files should be present
+        let names = manager.rootNodes.map(\.url.lastPathComponent)
+        #expect(names.contains("top.txt"))
+        #expect(names.contains("a"))
+
+        // Shallow levels should be loaded
+        let aNode = manager.rootNodes.first { $0.name == "a" }
+        #expect(aNode?.children?.first?.name == "b")
+    }
+
     @Test("loadDirectory twice quickly uses latest directory")
     func loadDirectoryRaceProtection() throws {
         let dir1 = try makeTempDirectory()
