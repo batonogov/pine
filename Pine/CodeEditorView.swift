@@ -295,8 +295,36 @@ final class GutterTextView: NSTextView {
 final class EditorContainerView: NSView {
     var minimapWidth: CGFloat = 0
 
+    private weak var managedScrollView: NSScrollView?
+    private var findBarObservation: NSKeyValueObservation?
+    private var contentViewFrameObserver: Any?
+
+    /// Registers the scroll view so the container can observe find bar visibility changes
+    /// and clip the LineNumberView frame accordingly.
+    func setScrollView(_ scrollView: NSScrollView) {
+        managedScrollView = scrollView
+        findBarObservation = scrollView.observe(\.isFindBarVisible, options: [.new]) { [weak self] _, _ in
+            DispatchQueue.main.async { self?.needsLayout = true }
+        }
+        scrollView.contentView.postsFrameChangedNotifications = true
+        contentViewFrameObserver = NotificationCenter.default.addObserver(
+            forName: NSView.frameDidChangeNotification,
+            object: scrollView.contentView,
+            queue: .main
+        ) { [weak self] _ in
+            self?.needsLayout = true
+        }
+    }
+
+    deinit {
+        if let obs = contentViewFrameObserver {
+            NotificationCenter.default.removeObserver(obs)
+        }
+    }
+
     override func layout() {
         super.layout()
+        let lineNumberArea = lineNumberViewArea()
         for sub in subviews {
             if let minimap = sub as? MinimapView {
                 if minimap.isHidden {
@@ -316,14 +344,25 @@ final class EditorContainerView: NSView {
                     height: bounds.height
                 )
             } else {
-                // LineNumberView — keep x=0, full height, its own width
+                // LineNumberView — match the scroll view's content area so it does not
+                // paint over the native NSTextFinder find bar when Cmd+F is open.
                 sub.frame = NSRect(
-                    x: 0, y: 0,
+                    x: 0, y: lineNumberArea.minY,
                     width: sub.frame.width,
-                    height: bounds.height
+                    height: lineNumberArea.height
                 )
             }
         }
+    }
+
+    /// Returns the rect (in container coordinates) that the LineNumberView should occupy.
+    /// When the find bar is visible this matches scrollView.contentView.frame so the
+    /// gutter is clipped to the text area only.
+    private func lineNumberViewArea() -> CGRect {
+        guard let sv = managedScrollView, sv.isFindBarVisible else {
+            return CGRect(x: 0, y: 0, width: bounds.width, height: bounds.height)
+        }
+        return sv.contentView.frame
     }
 }
 
@@ -446,6 +485,7 @@ struct CodeEditorView: NSViewRepresentable {
         scrollView.documentView = textView
 
         container.addSubview(scrollView)
+        container.setScrollView(scrollView)
 
         // ── NSLayoutManager delegate for code folding ──
         layoutManager.delegate = context.coordinator
