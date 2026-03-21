@@ -29,6 +29,25 @@ struct EditorTab: Identifiable, Hashable {
     var cursorPosition: Int = 0
     var scrollOffset: CGFloat = 0
 
+    /// Cached cursor line/column — updated by TabManager.updateEditorState().
+    var cursorLine: Int = 1
+    var cursorColumn: Int = 1
+
+    /// Cached file size in bytes — set on open and after save.
+    var fileSizeBytes: Int?
+
+    /// Cached indentation style — recomputed by `recomputeContentCaches()`.
+    private(set) var cachedIndentation: IndentationStyle = .spaces(4)
+    /// Cached line ending style — recomputed by `recomputeContentCaches()`.
+    private(set) var cachedLineEnding: LineEnding = .lf
+
+    /// Recomputes indentation and line ending caches from current content.
+    /// Called by TabManager when content changes — keeps reads mutation-free.
+    mutating func recomputeContentCaches() {
+        cachedIndentation = IndentationStyle.detect(in: content)
+        cachedLineEnding = LineEnding.detect(in: content)
+    }
+
     /// Last known modification date of the file on disk.
     /// Used to detect external changes by comparing with the current stat.
     var lastModDate: Date?

@@ -105,6 +105,8 @@ final class TabManager {
         tab.lastModDate = modDate(for: url)
         tab.syntaxHighlightingDisabled = syntaxHighlightingDisabled
         tab.encoding = encoding
+        tab.fileSizeBytes = fileSize(url: url)
+        tab.recomputeContentCaches()
         tabs.append(tab)
         activeTabID = tab.id
     }
@@ -164,11 +166,13 @@ final class TabManager {
     }
 
     /// Updates the content of the active tab (text tabs only).
+    /// Also eagerly recomputes indentation/line-ending caches so reads are mutation-free.
     /// When auto-save is enabled, schedules a debounced save.
     func updateContent(_ newContent: String) {
         guard let index = activeTabIndex else { return }
         guard tabs[index].kind == .text else { return }
         tabs[index].content = newContent
+        tabs[index].recomputeContentCaches()
 
         if isAutoSaveEnabled {
             scheduleAutoSave()
@@ -180,6 +184,9 @@ final class TabManager {
         guard let index = activeTabIndex else { return }
         tabs[index].cursorPosition = cursorPosition
         tabs[index].scrollOffset = scrollOffset
+        let loc = CursorLocation(position: cursorPosition, in: tabs[index].content)
+        tabs[index].cursorLine = loc.line
+        tabs[index].cursorColumn = loc.column
     }
 
     /// Updates the fold state for the active tab.
@@ -206,6 +213,7 @@ final class TabManager {
         try tab.content.write(to: tab.url, atomically: true, encoding: tab.encoding)
         tabs[index].savedContent = tab.content
         tabs[index].lastModDate = modDate(for: tab.url)
+        tabs[index].fileSizeBytes = fileSize(url: tab.url)
         return true
     }
 

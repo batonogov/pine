@@ -1333,8 +1333,32 @@ struct StatusBarView: View {
 
             Spacer()
 
-            // File encoding indicator with menu to change encoding
             if let activeTab = tabManager.activeTab, activeTab.kind == .text {
+                // Line / Column indicator (cached in EditorTab by TabManager)
+                Text(verbatim: "Ln \(activeTab.cursorLine), Col \(activeTab.cursorColumn)")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+                    .accessibilityIdentifier(AccessibilityID.cursorPosition)
+
+                statusDivider
+
+                // Indentation style indicator (cached, recomputed on content change)
+                Text(verbatim: activeTab.cachedIndentation.displayName)
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+                    .accessibilityIdentifier(AccessibilityID.indentationIndicator)
+
+                statusDivider
+
+                // Line ending indicator (cached, recomputed on content change)
+                Text(verbatim: activeTab.cachedLineEnding.displayName)
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+                    .accessibilityIdentifier(AccessibilityID.lineEndingIndicator)
+
+                statusDivider
+
+                // File encoding indicator with menu to change encoding
                 Menu {
                     ForEach(String.Encoding.availableEncodings, id: \.rawValue) { encoding in
                         Button {
@@ -1357,6 +1381,16 @@ struct StatusBarView: View {
                 .fixedSize()
                 .disabled(activeTab.isDirty)
                 .accessibilityIdentifier(AccessibilityID.encodingMenu)
+
+                // File size indicator (cached in EditorTab)
+                if let size = activeTab.fileSizeBytes {
+                    statusDivider
+
+                    Text(verbatim: FileSizeFormatter.format(size))
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                        .accessibilityIdentifier(AccessibilityID.fileSizeIndicator)
+                }
             }
 
             // Кнопка показа/скрытия терминала
@@ -1383,6 +1417,12 @@ struct StatusBarView: View {
         .padding(.trailing, 14)
         .frame(height: 22)
         .background(.bar)
+    }
+
+    private var statusDivider: some View {
+        Text(verbatim: "·")
+            .font(.system(size: 11))
+            .foregroundStyle(.quaternary)
     }
 
     private var gitStatusCounts: (modified: Int, added: Int, untracked: Int) {

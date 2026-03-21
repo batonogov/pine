@@ -197,6 +197,10 @@ final class LineNumberView: NSView {
     }
 
     private func recountTotalLines() {
+        if let cache = lineStartsCache {
+            cachedTotalLines = cache.lineCount
+            return
+        }
         guard let source = textView?.string as NSString? else {
             cachedTotalLines = 1
             return

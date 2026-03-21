@@ -530,6 +530,19 @@ struct CodeEditorView: NSViewRepresentable {
             object: nil
         )
 
+        // Observe Find & Replace notifications (Cmd+F, Cmd+Option+F, Cmd+G, Cmd+Shift+G, Cmd+E)
+        for (selector, name) in [
+            (#selector(Coordinator.handleFindInFile), Notification.Name.findInFile),
+            (#selector(Coordinator.handleFindAndReplace), Notification.Name.findAndReplace),
+            (#selector(Coordinator.handleFindNext), Notification.Name.findNext),
+            (#selector(Coordinator.handleFindPrevious), Notification.Name.findPrevious),
+            (#selector(Coordinator.handleUseSelectionForFind), Notification.Name.useSelectionForFind),
+        ] {
+            NotificationCenter.default.addObserver(
+                context.coordinator, selector: selector, name: name, object: nil
+            )
+        }
+
         // Observe fold code notifications (Cmd+Option+arrows)
         NotificationCenter.default.addObserver(
             context.coordinator,
@@ -809,8 +822,19 @@ struct CodeEditorView: NSViewRepresentable {
             // Report state change
             reportStateChange()
 
-            // Update line starts cache immediately (fast O(n) scan, needed for layout)
-            lineStartsCache = LineStartsCache(text: textView.string)
+            // Update line starts cache incrementally if possible, otherwise full rebuild
+            if var cache = lineStartsCache,
+               let storage = textView.textStorage,
+               storage.editedRange.location != NSNotFound {
+                cache.update(
+                    editedRange: storage.editedRange,
+                    changeInLength: storage.changeInLength,
+                    in: textView.string as NSString
+                )
+                lineStartsCache = cache
+            } else {
+                lineStartsCache = LineStartsCache(text: textView.string)
+            }
 
             // Recalculate foldable ranges (debounced — expensive operation)
             scheduleFoldRecalculation()
@@ -1065,6 +1089,25 @@ struct CodeEditorView: NSViewRepresentable {
                   gutterView.window?.isKeyWindow == true else { return }
             gutterView.toggleComment()
         }
+
+        // MARK: - Find & Replace (issue #275)
+
+        /// Sends a `performTextFinderAction` to the text view with the given action tag.
+        /// Internal access for testability.
+        func performFindAction(_ action: NSTextFinder.Action) {
+            guard let sv = scrollView,
+                  let textView = sv.documentView as? GutterTextView,
+                  textView.window?.isKeyWindow == true else { return }
+            let menuItem = NSMenuItem()
+            menuItem.tag = action.rawValue
+            textView.performTextFinderAction(menuItem)
+        }
+
+        @objc func handleFindInFile() { performFindAction(.showFindInterface) }
+        @objc func handleFindAndReplace() { performFindAction(.showReplaceInterface) }
+        @objc func handleFindNext() { performFindAction(.nextMatch) }
+        @objc func handleFindPrevious() { performFindAction(.previousMatch) }
+        @objc func handleUseSelectionForFind() { performFindAction(.setSearchString) }
 
         // MARK: - Code folding
 

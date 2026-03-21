@@ -2836,6 +2836,42 @@
         }
       }
     },
+    "menu.find" : {
+      "comment" : "Menu item for Find in file (⌘F).",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Find…"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Найти…"
+          }
+        }
+      }
+    },
+    "menu.findAndReplace" : {
+      "comment" : "Menu item for Find and Replace (⌘⌥F).",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Find and Replace…"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Найти и заменить…"
+          }
+        }
+      }
+    },
     "menu.findInProject" : {
       "comment" : "Menu item for Find in Project (⌘⇧F).",
       "extractionState" : "manual",
@@ -2850,6 +2886,60 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Найти в проекте"
+          }
+        }
+      }
+    },
+    "menu.findNext" : {
+      "comment" : "Menu item for Find Next (⌘G).",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Find Next"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Найти далее"
+          }
+        }
+      }
+    },
+    "menu.findPrevious" : {
+      "comment" : "Menu item for Find Previous (⌘⇧G).",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Find Previous"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Найти ранее"
+          }
+        }
+      }
+    },
+    "menu.useSelectionForFind" : {
+      "comment" : "Menu item for Use Selection for Find (⌘E).",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Use Selection for Find"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Искать выделенное"
           }
         }
       }
