@@ -736,6 +736,275 @@ final class GitStatusProvider {
         return Int(afterPlus[..<endIndex])
     }
 
+    // MARK: - Diff Panel: Hunk-level Diffs
+
+    /// Parses a unified diff (with context) into `[GitDiffHunk]` suitable for the diff panel.
+    ///
+    /// Unlike `parseDiff(_:)` (which only records line numbers for gutter markers), this
+    /// method captures the full content of every line so hunks can be displayed and applied
+    /// individually via `git apply`.
+    nonisolated static func parseDiffHunks(_ diffOutput: String, filePath: String) -> [GitDiffHunk] {
+        guard !diffOutput.isEmpty else { return [] }
+
+        var hunks: [GitDiffHunk] = []
+        let lines = diffOutput.components(separatedBy: "\n")
+
+        var i = 0
+        while i < lines.count {
+            let line = lines[i]
+            guard line.hasPrefix("@@") else { i += 1; continue }
+
+            let header = line
+            guard let (oldStart, oldCount, newStart, newCount) = parseHunkBounds(header) else {
+                i += 1
+                continue
+            }
+
+            i += 1
+
+            var diffLines: [GitDiffLine] = []
+            var oldLine = oldStart
+            var newLine = newStart
+
+            while i < lines.count && !lines[i].hasPrefix("@@") && !lines[i].hasPrefix("diff ") {
+                let hl = lines[i]
+                if hl.hasPrefix("-") {
+                    diffLines.append(GitDiffLine(
+                        kind: .deleted,
+                        content: String(hl.dropFirst()),
+                        oldLineNumber: oldLine,
+                        newLineNumber: nil
+                    ))
+                    oldLine += 1
+                } else if hl.hasPrefix("+") {
+                    diffLines.append(GitDiffLine(
+                        kind: .added,
+                        content: String(hl.dropFirst()),
+                        oldLineNumber: nil,
+                        newLineNumber: newLine
+                    ))
+                    newLine += 1
+                } else if hl.hasPrefix("\\") {
+                    // "\ No newline at end of file" — skip
+                } else if hl.isEmpty && i == lines.count - 1 {
+                    // Trailing newline added by git — skip
+                } else {
+                    // Context line (starts with space or is bare)
+                    let content = hl.hasPrefix(" ") ? String(hl.dropFirst()) : hl
+                    diffLines.append(GitDiffLine(
+                        kind: .context,
+                        content: content,
+                        oldLineNumber: oldLine,
+                        newLineNumber: newLine
+                    ))
+                    oldLine += 1
+                    newLine += 1
+                }
+                i += 1
+            }
+
+            hunks.append(GitDiffHunk(
+                header: header,
+                oldStart: oldStart,
+                oldCount: oldCount,
+                newStart: newStart,
+                newCount: newCount,
+                lines: diffLines,
+                filePath: filePath
+            ))
+        }
+
+        return hunks
+    }
+
+    /// Parses `@@ -old[,count] +new[,count] @@` into (oldStart, oldCount, newStart, newCount).
+    nonisolated static func parseHunkBounds(_ header: String) -> (Int, Int, Int, Int)? {
+        // Pattern: @@ -<old>[,<count>] +<new>[,<count>] @@
+        guard header.hasPrefix("@@") else { return nil }
+        guard let minusIndex = header.firstIndex(of: "-"),
+              let plusIndex = header.firstIndex(of: "+"),
+              plusIndex > minusIndex else { return nil }
+
+        func parseRange(from start: String.Index, in str: String) -> (Int, Int)? {
+            let sub = str[str.index(after: start)...]
+            guard let end = sub.firstIndex(where: { $0 == " " }) else { return nil }
+            let part = String(sub[..<end])
+            if let comma = part.firstIndex(of: ",") {
+                let n = Int(part[..<comma])
+                let c = Int(part[part.index(after: comma)...])
+                if let n, let c { return (n, c) }
+            }
+            if let n = Int(part) { return (n, 1) }
+            return nil
+        }
+
+        guard let (oldStart, oldCount) = parseRange(from: minusIndex, in: header),
+              let (newStart, newCount) = parseRange(from: plusIndex, in: header) else { return nil }
+        return (oldStart, oldCount, newStart, newCount)
+    }
+
+    // MARK: - Diff Panel: File-level Diffs
+
+    /// Returns all changed files split into staged and unstaged groups.
+    /// Staged: files with index changes (`git diff --cached`).
+    /// Unstaged: files with working-tree changes (`git diff`) + untracked files.
+    func allChangedFileDiffs() async -> (staged: [GitFileDiff], unstaged: [GitFileDiff]) {
+        guard isGitRepository, let repoURL = repositoryURL else { return ([], []) }
+
+        return await withCheckedContinuation { continuation in
+            DispatchQueue.global(qos: .userInitiated).async {
+                let headExists = Self.runGit(["rev-parse", "HEAD"], at: repoURL).exitCode == 0
+
+                var staged: [GitFileDiff] = []
+                var unstaged: [GitFileDiff] = []
+
+                // Staged changes (index vs HEAD, or vs empty tree for new repos)
+                let stagedArgs: [String] = headExists
+                    ? ["diff", "--cached", "--unified=3", "--diff-filter=ACDMRT"]
+                    : ["diff", "--cached", "--unified=3"]
+                let stagedResult = Self.runGit(stagedArgs, at: repoURL)
+                if stagedResult.exitCode == 0, !stagedResult.output.isEmpty {
+                    staged = Self.parseFileDiffs(stagedResult.output, isStaged: true)
+                }
+
+                // Unstaged changes (working tree vs index)
+                let unstagedResult = Self.runGit(
+                    ["diff", "--unified=3", "--diff-filter=ACDMRT"],
+                    at: repoURL
+                )
+                if unstagedResult.exitCode == 0, !unstagedResult.output.isEmpty {
+                    unstaged = Self.parseFileDiffs(unstagedResult.output, isStaged: false)
+                }
+
+                continuation.resume(returning: (staged, unstaged))
+            }
+        }
+    }
+
+    /// Parses a multi-file `git diff` output into a `[GitFileDiff]` array.
+    nonisolated static func parseFileDiffs(_ output: String, isStaged: Bool) -> [GitFileDiff] {
+        var result: [GitFileDiff] = []
+
+        // Split output on "diff --git" boundaries
+        let diffPattern = "diff --git "
+        var sections: [(filePath: String, content: String)] = []
+
+        var remaining = output[output.startIndex...]
+        while let diffRange = remaining.range(of: diffPattern) {
+            let sectionStart = diffRange.lowerBound
+            let rest = remaining[diffRange.upperBound...]
+            // File path follows: "a/<path> b/<path>"
+            let pathLine = String(rest.prefix(while: { $0 != "\n" }))
+            let filePath = extractFilePath(from: pathLine)
+
+            // Find end of this section (start of next "diff --git")
+            let afterHeader = remaining[diffRange.upperBound...]
+            if let nextDiff = afterHeader.range(of: "\n" + diffPattern) {
+                let sectionContent = String(remaining[sectionStart..<nextDiff.upperBound])
+                sections.append((filePath, sectionContent))
+                remaining = remaining[nextDiff.upperBound...]
+            } else {
+                let sectionContent = String(remaining[sectionStart...])
+                sections.append((filePath, sectionContent))
+                break
+            }
+        }
+
+        for (filePath, content) in sections {
+            let hunks = parseDiffHunks(content, filePath: filePath)
+            // Determine status from diff header
+            let status: GitFileStatus
+            if content.contains("\nnew file mode") {
+                status = .added
+            } else if content.contains("\ndeleted file mode") {
+                status = .deleted
+            } else {
+                status = isStaged ? .staged : .modified
+            }
+            result.append(GitFileDiff(
+                filePath: filePath,
+                isStaged: isStaged,
+                status: status,
+                hunks: hunks
+            ))
+        }
+
+        return result
+    }
+
+    /// Extracts the repo-relative file path from a `diff --git` path description.
+    /// Input example: `"a/Sources/Foo.swift b/Sources/Foo.swift"`
+    nonisolated static func extractFilePath(from pathLine: String) -> String {
+        // Format: "a/<path> b/<path>" — take the "b/" portion (destination)
+        let parts = pathLine.components(separatedBy: " b/")
+        if parts.count >= 2 {
+            return unquoteGitPath(parts[parts.count - 1])
+        }
+        // Fallback: strip "a/" prefix
+        if pathLine.hasPrefix("a/") {
+            return String(pathLine.dropFirst(2).components(separatedBy: " b/").first ?? "")
+        }
+        return pathLine
+    }
+
+    // MARK: - Diff Panel: Stage / Unstage / Discard
+
+    /// Stages a single hunk by piping a minimal patch to `git apply --cached`.
+    @discardableResult
+    func stageHunk(_ hunk: GitDiffHunk) -> (success: Bool, error: String) {
+        applyPatch(hunk.buildPatch(), args: ["apply", "--cached"])
+    }
+
+    /// Unstages a single hunk by reversing the staged patch via `git apply --cached --reverse`.
+    @discardableResult
+    func unstageHunk(_ hunk: GitDiffHunk) -> (success: Bool, error: String) {
+        applyPatch(hunk.buildPatch(), args: ["apply", "--cached", "--reverse"])
+    }
+
+    /// Discards a single hunk's working-tree changes via `git apply --reverse`.
+    @discardableResult
+    func discardHunk(_ hunk: GitDiffHunk) -> (success: Bool, error: String) {
+        applyPatch(hunk.buildPatch(), args: ["apply", "--reverse"])
+    }
+
+    /// Pipes `patch` to `git <args>` via stdin and returns success/error.
+    private func applyPatch(_ patch: String, args: [String]) -> (success: Bool, error: String) {
+        guard let repoURL = repositoryURL else { return (false, "No repository") }
+
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
+        process.arguments = args
+        process.currentDirectoryURL = repoURL
+
+        let inPipe = Pipe()
+        let outPipe = Pipe()
+        let errPipe = Pipe()
+        process.standardInput = inPipe
+        process.standardOutput = outPipe
+        process.standardError = errPipe
+
+        do {
+            try process.run()
+            if let data = patch.data(using: .utf8) {
+                inPipe.fileHandleForWriting.write(data)
+            }
+            inPipe.fileHandleForWriting.closeFile()
+
+            let errData = errPipe.fileHandleForReading.readDataToEndOfFile()
+            process.waitUntilExit()
+
+            if process.terminationStatus == 0 {
+                refresh()
+                return (true, "")
+            }
+            let errMsg = String(bytes: errData, encoding: .utf8)?
+                .trimmingCharacters(in: .whitespacesAndNewlines) ?? "Unknown error"
+            return (false, errMsg)
+        } catch {
+            return (false, error.localizedDescription)
+        }
+    }
+
     // MARK: - Git Command Runner
 
     /// Default timeout for git commands (30 seconds).

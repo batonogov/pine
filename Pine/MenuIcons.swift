@@ -37,6 +37,10 @@ enum MenuIcons {
     static let revealFileInFinder = "doc.viewfinder"
     static let revealProjectInFinder = "arrow.right.circle"
 
+    // MARK: - Git menu
+    static let showChanges = "arrow.left.arrow.right.square"
+    static let switchBranch = "arrow.triangle.branch"
+
     // MARK: - Terminal menu
     static let newTerminalTab = "plus"
 

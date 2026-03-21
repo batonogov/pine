@@ -121,8 +121,35 @@ enum Strings {
     static let menuGit: LocalizedStringKey = "menu.git"
     static let menuOpenFolder: LocalizedStringKey = "menu.openFolder"
     static let menuSwitchBranch: LocalizedStringKey = "menu.switchBranch"
+    static let menuShowChanges: LocalizedStringKey = "menu.showChanges"
     static let menuRevealFileInFinder: LocalizedStringKey = "menu.revealFileInFinder"
     static let menuRevealProjectInFinder: LocalizedStringKey = "menu.revealProjectInFinder"
+
+    // MARK: - Diff Panel
+
+    static let diffPanelTitle: LocalizedStringKey = "diff.panelTitle"
+    static let diffPanelRefresh: LocalizedStringKey = "diff.refresh"
+    static let diffStagedSection: LocalizedStringKey = "diff.staged"
+    static let diffUnstagedSection: LocalizedStringKey = "diff.unstaged"
+    static let diffNoChanges: LocalizedStringKey = "diff.noChanges"
+    static let diffNoChangesMessage: LocalizedStringKey = "diff.noChanges.message"
+    static let diffSelectFile: LocalizedStringKey = "diff.selectFile"
+    static let diffSelectFileMessage: LocalizedStringKey = "diff.selectFile.message"
+    static let diffStage: LocalizedStringKey = "diff.stage"
+    static let diffUnstage: LocalizedStringKey = "diff.unstage"
+    static let diffDiscard: LocalizedStringKey = "diff.discard"
+
+    static var diffDiscardTitle: String {
+        String(localized: "diff.discard.title")
+    }
+
+    static var diffDiscardMessage: String {
+        String(localized: "diff.discard.message")
+    }
+
+    static var diffDiscardConfirm: String {
+        String(localized: "diff.discard.confirm")
+    }
 
     // MARK: - Branch Switcher
 
@@ -189,6 +216,10 @@ enum Strings {
 
     static var dialogOK: String {
         String(localized: "dialog.ok")
+    }
+
+    static var dialogDone: String {
+        String(localized: "dialog.done")
     }
 
     // MARK: - Save As Panel (AppKit)
