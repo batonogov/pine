@@ -106,12 +106,12 @@ final class WorkspaceManager {
             bgGit.setup(repositoryURL: url)
 
             // Phase 1: shallow tree for fast initial render
-            let shallowRoot = FileNode(
+            let shallowResult = FileNode.loadTree(
                 url: url, projectRoot: url,
                 ignoredPaths: bgGit.ignoredPaths,
                 maxDepth: Self.shallowDepth
             )
-            let shallowChildren = shallowRoot.children ?? []
+            let shallowChildren = shallowResult.root.children ?? []
 
             DispatchQueue.main.async { [weak self] in
                 guard let self, self.loadGeneration == generation else { return }
@@ -126,10 +126,14 @@ final class WorkspaceManager {
                 completion?()
             }
 
-            // Phase 2: full tree (only if the shallow pass was depth-limited)
+            // Phase 2: full tree only if Phase 1 hit the depth limit.
+            // For shallow projects this avoids redundant tree construction.
+            guard shallowResult.wasDepthLimited else { return }
+
             let fullRoot = FileNode(url: url, projectRoot: url, ignoredPaths: bgGit.ignoredPaths)
             let fullChildren = fullRoot.children ?? []
 
+            // Safe ordering: main queue is FIFO, so Phase 2 always runs after Phase 1.
             DispatchQueue.main.async { [weak self] in
                 guard let self, self.loadGeneration == generation else { return }
                 self.rootNodes = fullChildren
@@ -147,20 +151,22 @@ final class WorkspaceManager {
         let ignoredPaths = gitProvider.ignoredPaths
 
         // Phase 1 (sync): shallow tree for immediate feedback
-        let shallowRoot = FileNode(
+        let shallowResult = FileNode.loadTree(
             url: url, projectRoot: url,
             ignoredPaths: ignoredPaths,
             maxDepth: Self.shallowDepth
         )
-        rootNodes = shallowRoot.children ?? []
+        rootNodes = shallowResult.root.children ?? []
 
-        // Phase 2 (async): full tree on background queue
-        DispatchQueue.global(qos: .userInitiated).async {
-            let fullRoot = FileNode(url: url, projectRoot: url, ignoredPaths: ignoredPaths)
-            let fullChildren = fullRoot.children ?? []
-            DispatchQueue.main.async { [weak self] in
-                guard let self, self.loadGeneration == generation else { return }
-                self.rootNodes = fullChildren
+        // Phase 2 (async): full tree only if Phase 1 hit the depth limit
+        if shallowResult.wasDepthLimited {
+            DispatchQueue.global(qos: .userInitiated).async {
+                let fullRoot = FileNode(url: url, projectRoot: url, ignoredPaths: ignoredPaths)
+                let fullChildren = fullRoot.children ?? []
+                DispatchQueue.main.async { [weak self] in
+                    guard let self, self.loadGeneration == generation else { return }
+                    self.rootNodes = fullChildren
+                }
             }
         }
 
