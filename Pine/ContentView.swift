@@ -27,6 +27,8 @@ struct ContentView: View {
     @State private var didRestoreSession = false
     @State private var isSearchPresented = false
     @State private var goToLineOffset: GoToRequest?
+    @State private var recoveryEntries: [(UUID, RecoveryEntry)] = []
+    @State private var showRecoveryDialog = false
     @AppStorage("minimapVisible") private var isMinimapVisible = true
     @AppStorage(BlameConstants.storageKey) private var isBlameVisible = true
 
@@ -99,9 +101,17 @@ struct ContentView: View {
         }
         .task {
             restoreSessionIfNeeded()
+            checkForRecovery()
             syncSidebarSelection()
             applySearchQueryFromEnvironment()
             refreshBlame()
+        }
+        .sheet(isPresented: $showRecoveryDialog) {
+            RecoveryDialogView(
+                entries: recoveryEntries,
+                onRecover: { recoverTabs() },
+                onDiscard: { discardRecovery() }
+            )
         }
         .onChange(of: selectedNode) { _, newNode in
             guard let node = newNode, !node.isDirectory else { return }
@@ -257,6 +267,38 @@ struct ContentView: View {
            activeIndex < terminal.terminalTabs.count {
             terminal.activeTerminalID = terminal.terminalTabs[activeIndex].id
         }
+    }
+
+    // MARK: - Crash recovery
+
+    private func checkForRecovery() {
+        let entries = projectManager.recoveryManager.pendingRecoveryEntries()
+        guard !entries.isEmpty else { return }
+        recoveryEntries = entries
+        showRecoveryDialog = true
+    }
+
+    private func recoverTabs() {
+        for (_, entry) in recoveryEntries {
+            let url = URL(fileURLWithPath: entry.originalPath)
+            tabManager.openTab(url: url)
+
+            // Replace content with recovered version and mark dirty
+            if let index = tabManager.tabs.firstIndex(where: { $0.url == url }) {
+                tabManager.tabs[index].content = entry.content
+                tabManager.tabs[index].encoding = entry.encoding
+                tabManager.tabs[index].recomputeContentCaches()
+            }
+        }
+        projectManager.recoveryManager.deleteAllRecoveryFiles()
+        showRecoveryDialog = false
+        recoveryEntries = []
+    }
+
+    private func discardRecovery() {
+        projectManager.recoveryManager.deleteAllRecoveryFiles()
+        showRecoveryDialog = false
+        recoveryEntries = []
     }
 
     /// Reads `PINE_SEARCH_QUERY` from the environment (used by UI tests) and

@@ -264,6 +264,13 @@ enum Strings {
         String(localized: "terminal.numberedName \(number)")
     }
 
+    // MARK: - Crash Recovery Dialog
+
+    static var recoveryTitle: LocalizedStringKey { "recovery.title" }
+    static var recoveryMessage: LocalizedStringKey { "recovery.message" }
+    static var recoveryRecoverAll: LocalizedStringKey { "recovery.recoverAll" }
+    static var recoveryDiscard: LocalizedStringKey { "recovery.discard" }
+
     // MARK: - Terminal Process Warnings
 
     static var terminalActiveProcessWarningTitle: String {

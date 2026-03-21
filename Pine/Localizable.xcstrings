@@ -4322,6 +4322,102 @@
     "Pine" : {
 
     },
+    "recovery.discard" : {
+      "comment" : "Button to discard recovered files after a crash.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Discard"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "破棄"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Отклонить"
+          }
+        }
+      }
+    },
+    "recovery.message" : {
+      "comment" : "Message shown in recovery dialog after a crash.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pine found unsaved changes from a previous session. Would you like to recover them?"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pineは前回のセッションから未保存の変更を検出しました。復元しますか？"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pine обнаружил несохранённые изменения из предыдущей сессии. Хотите их восстановить?"
+          }
+        }
+      }
+    },
+    "recovery.recoverAll" : {
+      "comment" : "Button to recover all unsaved files after a crash.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Recover All"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "すべて復元"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Восстановить все"
+          }
+        }
+      }
+    },
+    "recovery.title" : {
+      "comment" : "Title of the crash recovery dialog.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Recovered Files"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "復元されたファイル"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Восстановленные файлы"
+          }
+        }
+      }
+    },
     "saveAsPanel.title" : {
       "comment" : "Title for the Save As file panel.",
       "extractionState" : "manual",

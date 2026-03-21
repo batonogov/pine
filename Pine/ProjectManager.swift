@@ -15,6 +15,19 @@ final class ProjectManager {
     let terminal = TerminalManager()
     let tabManager = TabManager()
     let searchProvider = ProjectSearchProvider()
+    let recoveryManager = RecoveryManager()
+
+    init() {
+        tabManager.recoveryManager = recoveryManager
+        recoveryManager.tabsProvider = { [weak self] in
+            self?.tabManager.tabs ?? []
+        }
+        recoveryManager.startPeriodicSnapshots()
+    }
+
+    deinit {
+        recoveryManager.stopPeriodicSnapshots()
+    }
 
     /// Persists current session (project + open file tabs) to UserDefaults.
     /// Reads from tabManager.tabs for the authoritative tab list.
