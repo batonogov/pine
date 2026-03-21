@@ -15,6 +15,8 @@ enum MenuIcons {
 
     // MARK: - Edit menu
     static let toggleComment = "slash.circle"
+    static let find = "magnifyingglass"
+    static let findAndReplace = "arrow.left.arrow.right"
     static let findInProject = "magnifyingglass"
     static let nextChange = "chevron.down"
     static let previousChange = "chevron.up"
