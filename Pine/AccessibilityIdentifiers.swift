@@ -51,4 +51,8 @@ enum AccessibilityID {
     static let statusBar = "statusBar"
     static let terminalToggleButton = "terminalToggleButton"
     static let encodingMenu = "encodingMenu"
+    static let cursorPosition = "cursorPosition"
+    static let indentationIndicator = "indentationIndicator"
+    static let lineEndingIndicator = "lineEndingIndicator"
+    static let fileSizeIndicator = "fileSizeIndicator"
 }
