@@ -132,7 +132,7 @@ struct PineApp: App {
                 }
                 .keyboardShortcut("t", modifiers: .command)
             }
-            // Edit menu: Toggle Comment, Find in Project
+            // Edit menu: Toggle Comment, Find & Replace, Find in Project
             CommandGroup(after: .pasteboard) {
                 Button {
                     NotificationCenter.default.post(name: .toggleComment, object: nil)
@@ -182,6 +182,8 @@ struct PineApp: App {
                 }
                 .keyboardShortcut("e", modifiers: .command)
                 .disabled(focusedProject?.tabManager.activeTab == nil)
+
+                Divider()
 
                 Button {
                     NotificationCenter.default.post(name: .showProjectSearch, object: nil)
