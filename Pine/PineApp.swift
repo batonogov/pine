@@ -132,7 +132,7 @@ struct PineApp: App {
                 }
                 .keyboardShortcut("t", modifiers: .command)
             }
-            // Edit menu: Toggle Comment, Find in Project
+            // Edit menu: Toggle Comment, Find & Replace, Find in Project
             CommandGroup(after: .pasteboard) {
                 Button {
                     NotificationCenter.default.post(name: .toggleComment, object: nil)
@@ -140,6 +140,48 @@ struct PineApp: App {
                     Label(Strings.menuToggleComment, systemImage: MenuIcons.toggleComment)
                 }
                 .keyboardShortcut("/", modifiers: .command)
+
+                Divider()
+
+                Button {
+                    NotificationCenter.default.post(name: .findInFile, object: nil)
+                } label: {
+                    Label(Strings.menuFind, systemImage: MenuIcons.find)
+                }
+                .keyboardShortcut("f", modifiers: .command)
+                .disabled(focusedProject?.tabManager.activeTab == nil)
+
+                Button {
+                    NotificationCenter.default.post(name: .findAndReplace, object: nil)
+                } label: {
+                    Label(Strings.menuFindAndReplace, systemImage: MenuIcons.findAndReplace)
+                }
+                .keyboardShortcut("f", modifiers: [.command, .option])
+                .disabled(focusedProject?.tabManager.activeTab == nil)
+
+                Button {
+                    NotificationCenter.default.post(name: .findNext, object: nil)
+                } label: {
+                    Label(Strings.menuFindNext, systemImage: MenuIcons.nextChange)
+                }
+                .keyboardShortcut("g", modifiers: .command)
+                .disabled(focusedProject?.tabManager.activeTab == nil)
+
+                Button {
+                    NotificationCenter.default.post(name: .findPrevious, object: nil)
+                } label: {
+                    Label(Strings.menuFindPrevious, systemImage: MenuIcons.previousChange)
+                }
+                .keyboardShortcut("g", modifiers: [.command, .shift])
+                .disabled(focusedProject?.tabManager.activeTab == nil)
+
+                Button {
+                    NotificationCenter.default.post(name: .useSelectionForFind, object: nil)
+                } label: {
+                    Label(Strings.menuUseSelectionForFind, systemImage: MenuIcons.find)
+                }
+                .keyboardShortcut("e", modifiers: .command)
+                .disabled(focusedProject?.tabManager.activeTab == nil)
 
                 Divider()
 
@@ -947,4 +989,10 @@ extension Notification.Name {
     static let navigateChange = Notification.Name("navigateChange")
     /// userInfo: ["action": "fold" | "unfold" | "foldAll" | "unfoldAll"]
     static let foldCode = Notification.Name("foldCode")
+    // Find & Replace (issue #275)
+    static let findInFile = Notification.Name("findInFile")
+    static let findAndReplace = Notification.Name("findAndReplace")
+    static let findNext = Notification.Name("findNext")
+    static let findPrevious = Notification.Name("findPrevious")
+    static let useSelectionForFind = Notification.Name("useSelectionForFind")
 }
