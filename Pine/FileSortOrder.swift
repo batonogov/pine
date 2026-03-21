@@ -6,7 +6,7 @@
 import Foundation
 
 /// The attribute by which sidebar file tree entries are sorted.
-enum FileSortOrder: String, CaseIterable {
+enum FileSortOrder: String, CaseIterable, Sendable {
     case name
     case dateModified
     case size
@@ -17,7 +17,7 @@ enum FileSortOrder: String, CaseIterable {
 }
 
 /// The direction in which sidebar file tree entries are sorted.
-enum FileSortDirection: String {
+enum FileSortDirection: String, Sendable {
     case ascending
     case descending
 
@@ -43,7 +43,11 @@ extension Array where Element == FileNode {
             case .dateModified:
                 let lDate = lhs.modificationDate ?? .distantPast
                 let rDate = rhs.modificationDate ?? .distantPast
-                ascending = lDate < rDate
+                if lDate == rDate {
+                    ascending = lhs.name.localizedCaseInsensitiveCompare(rhs.name) == .orderedAscending
+                } else {
+                    ascending = lDate < rDate
+                }
             case .size:
                 let lSize = lhs.fileSize ?? 0
                 let rSize = rhs.fileSize ?? 0
@@ -65,7 +69,9 @@ extension Array where Element == FileNode {
         }
     }
 
-    /// Recursively sorts this array and all nested children in-place.
+    /// Sorts this array and recursively re-sorts all nested children.
+    /// Returns a new top-level array; nested `children` are mutated in-place
+    /// (safe because FileNode is a reference type owned by the tree).
     func recursiveSorted(by order: FileSortOrder, direction: FileSortDirection) -> [FileNode] {
         let result = sorted(by: order, direction: direction)
         for node in result where node.isDirectory {
