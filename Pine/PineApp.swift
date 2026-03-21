@@ -30,8 +30,16 @@ struct PineApp: App {
             }
             // Убираем стандартный "New Window" (Cmd+N) — табы создаются кликом по файлу
             CommandGroup(replacing: .newItem) { }
-            // Cmd+Shift+O — открыть папку
+            // Cmd+Shift+O — открыть папку; Cmd+P — Quick Open
             CommandGroup(after: .newItem) {
+                Button {
+                    NotificationCenter.default.post(name: .showQuickOpen, object: nil)
+                } label: {
+                    Label(Strings.menuQuickOpen, systemImage: MenuIcons.quickOpen)
+                }
+                .keyboardShortcut("p", modifiers: .command)
+                .disabled(focusedProject?.workspace.rootURL == nil)
+
                 Button {
                     NotificationCenter.default.post(name: .openFolder, object: nil)
                 } label: {
@@ -1002,4 +1010,5 @@ extension Notification.Name {
     static let findNext = Notification.Name("findNext")
     static let findPrevious = Notification.Name("findPrevious")
     static let useSelectionForFind = Notification.Name("useSelectionForFind")
+    static let showQuickOpen = Notification.Name("showQuickOpen")
 }

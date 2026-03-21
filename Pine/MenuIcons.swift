@@ -6,6 +6,9 @@
 //
 
 enum MenuIcons {
+    // MARK: - Navigation
+    static let quickOpen = "doc.text.magnifyingglass"
+
     // MARK: - File menu
     static let openFolder = "folder"
     static let save = "square.and.arrow.down"

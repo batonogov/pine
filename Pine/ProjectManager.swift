@@ -15,6 +15,7 @@ final class ProjectManager {
     let terminal = TerminalManager()
     let tabManager = TabManager()
     let searchProvider = ProjectSearchProvider()
+    let quickOpenProvider = QuickOpenProvider()
 
     /// Persists current session (project + open file tabs) to UserDefaults.
     /// Reads from tabManager.tabs for the authoritative tab list.

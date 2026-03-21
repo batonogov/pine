@@ -45,6 +45,11 @@ enum AccessibilityID {
     static let branchSearchField = "branchSearchField"
     static func branchItem(_ name: String) -> String { "branchItem_\(name)" }
 
+    // MARK: - Quick Open
+    static let quickOpenField = "quickOpenField"
+    static let quickOpenResultsList = "quickOpenResultsList"
+    static func quickOpenResult(_ name: String) -> String { "quickOpenResult_\(name)" }
+
     // MARK: - Project Search
     static let projectSearchResultsList = "projectSearchResultsList"
 

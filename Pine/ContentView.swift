@@ -26,6 +26,7 @@ struct ContentView: View {
     @State private var blameTask: Task<Void, Never>?
     @State private var didRestoreSession = false
     @State private var isSearchPresented = false
+    @State private var isQuickOpenPresented = false
     @State private var goToLineOffset: GoToRequest?
     @AppStorage("minimapVisible") private var isMinimapVisible = true
     @AppStorage(BlameConstants.storageKey) private var isBlameVisible = true
@@ -86,6 +87,16 @@ struct ContentView: View {
             projectManager: projectManager,
             isSearchPresented: $isSearchPresented
         ))
+        .sheet(isPresented: $isQuickOpenPresented) {
+            if let rootURL = workspace.rootURL {
+                QuickOpenView(
+                    rootURL: rootURL,
+                    tabManager: tabManager,
+                    quickOpenProvider: projectManager.quickOpenProvider,
+                    isPresented: $isQuickOpenPresented
+                )
+            }
+        }
         .frame(minWidth: 800, minHeight: 500)
         .navigationTitle(workspace.projectName)
         .navigationSubtitle(branchSubtitle)
@@ -111,6 +122,7 @@ struct ContentView: View {
             lineDiffs = []
             projectManager.saveSession()
             applySearchQueryFromEnvironment()
+            projectManager.quickOpenProvider.invalidateIndex()
         }
         .onChange(of: tabManager.activeTabID) { _, _ in
             syncSidebarSelection()
@@ -179,6 +191,10 @@ struct ContentView: View {
         .onReceive(NotificationCenter.default.publisher(for: .showProjectSearch)) { _ in
             columnVisibility = .all
             isSearchPresented = true
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .showQuickOpen)) { _ in
+            guard controlActiveState == .key, workspace.rootURL != nil else { return }
+            isQuickOpenPresented = true
         }
         .onReceive(NotificationCenter.default.publisher(for: .navigateChange)) { notification in
             guard controlActiveState == .key,
