@@ -176,7 +176,8 @@ final class GutterTextView: NSTextView {
             let iconY = lineRect.origin.y + (lineRect.height - icon.size.height) / 2
             icon.draw(
                 in: NSRect(x: drawX, y: iconY, width: icon.size.width, height: icon.size.height),
-                from: .zero, operation: .sourceOver, fraction: 1
+                from: .zero, operation: .sourceOver, fraction: 1,
+                respectFlipped: true, hints: nil
             )
             drawX += icon.size.width + 4
         }
