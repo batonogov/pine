@@ -1,5 +1,29 @@
 # Changelog
 
+## [1.8.0](https://github.com/batonogov/pine/compare/v1.7.0...v1.8.0) (2026-03-21)
+
+
+### Features
+
+* crash recovery for unsaved editor content ([#363](https://github.com/batonogov/pine/issues/363)) ([b6837a1](https://github.com/batonogov/pine/commit/b6837a19d4b2d638f0b056cd5510bb66f82922ae))
+* **i18n:** add Japanese localization ([#360](https://github.com/batonogov/pine/issues/360)) ([6a31926](https://github.com/batonogov/pine/commit/6a319269013464400886c66b180df5bc92ff78e8))
+
+
+### Bug Fixes
+
+* **ci:** grant write permissions to Claude CI workflows ([#356](https://github.com/batonogov/pine/issues/356)) ([760f020](https://github.com/batonogov/pine/commit/760f020b55a2eae1ab6b89ce7776495295980fb2))
+* correct upside-down branch icon in git blame annotations ([#359](https://github.com/batonogov/pine/issues/359)) ([c04c40f](https://github.com/batonogov/pine/commit/c04c40f05bbc40c0ac7b8129b5c1212bdbc6db03))
+* **i18n:** fix translation bugs in zh-Hans, de, and ru ([#352](https://github.com/batonogov/pine/issues/352)) ([b2b9652](https://github.com/batonogov/pine/commit/b2b96522cac396a21587543cd54e038fd47dffb8))
+* **i18n:** remove orphaned xcstrings keys that break Xcode 26 build ([#355](https://github.com/batonogov/pine/issues/355)) ([8b69059](https://github.com/batonogov/pine/commit/8b6905967979a18c849f0fdf2b7efcea71727438))
+* prevent line number gutter from overlapping native find bar ([#354](https://github.com/batonogov/pine/issues/354)) ([878bd62](https://github.com/batonogov/pine/commit/878bd627c5cd9256dfc5ce2d890983fab3199acb))
+* prevent Xcode from modifying Localizable.xcstrings on build ([#350](https://github.com/batonogov/pine/issues/350)) ([c6a7b38](https://github.com/batonogov/pine/commit/c6a7b382cddc944b00f02d6070bbca7140215fa1))
+
+
+### Documentation
+
+* add MIT license ([#366](https://github.com/batonogov/pine/issues/366)) ([3362374](https://github.com/batonogov/pine/commit/3362374dfc4b3768a9c4b0e026816ec9323a987c))
+* update CLAUDE.md to reflect current architecture and features ([#353](https://github.com/batonogov/pine/issues/353)) ([42df37a](https://github.com/batonogov/pine/commit/42df37a0ae077ed5e9c4e7b66df11482d95c0a53))
+
 ## [1.7.0](https://github.com/batonogov/pine/compare/v1.6.1...v1.7.0) (2026-03-21)
 
 
