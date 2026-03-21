@@ -3120,7 +3120,7 @@
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "展開"
+            "value" : "展開する"
           }
         },
         "ru" : {
@@ -3168,7 +3168,7 @@
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "すべて展開"
+            "value" : "すべて展開する"
           }
         },
         "ru" : {
