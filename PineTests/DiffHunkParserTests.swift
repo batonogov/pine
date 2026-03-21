@@ -11,38 +11,34 @@ struct DiffHunkParserTests {
 
     // MARK: - parseHunkHeader
 
-    @Test func parsesStandardHunkHeader() {
-        let result = GitStatusProvider.parseHunkHeader("@@ -10,5 +10,7 @@ func foo()")
-        #expect(result != nil)
-        let (oldStart, oldCount, newStart, newCount) = result!
+    @Test func parsesStandardHunkHeader() throws {
+        let result = try #require(GitStatusProvider.parseHunkHeader("@@ -10,5 +10,7 @@ func foo()"))
+        let (oldStart, oldCount, newStart, newCount) = result
         #expect(oldStart == 10)
         #expect(oldCount == 5)
         #expect(newStart == 10)
         #expect(newCount == 7)
     }
 
-    @Test func parsesHunkHeaderWithoutCount() {
-        let result = GitStatusProvider.parseHunkHeader("@@ -1 +1 @@")
-        #expect(result != nil)
-        let (oldStart, oldCount, newStart, newCount) = result!
+    @Test func parsesHunkHeaderWithoutCount() throws {
+        let result = try #require(GitStatusProvider.parseHunkHeader("@@ -1 +1 @@"))
+        let (oldStart, oldCount, newStart, newCount) = result
         #expect(oldStart == 1)
         #expect(oldCount == 1)
         #expect(newStart == 1)
         #expect(newCount == 1)
     }
 
-    @Test func parsesHunkHeaderMixedCounts() {
-        let result = GitStatusProvider.parseHunkHeader("@@ -5,3 +5 @@")
-        #expect(result != nil)
-        let (_, oldCount, _, newCount) = result!
+    @Test func parsesHunkHeaderMixedCounts() throws {
+        let result = try #require(GitStatusProvider.parseHunkHeader("@@ -5,3 +5 @@"))
+        let (_, oldCount, _, newCount) = result
         #expect(oldCount == 3)
         #expect(newCount == 1)
     }
 
-    @Test func parsesHunkHeaderZeroCount() {
-        let result = GitStatusProvider.parseHunkHeader("@@ -0,0 +1,3 @@")
-        #expect(result != nil)
-        let (oldStart, oldCount, newStart, newCount) = result!
+    @Test func parsesHunkHeaderZeroCount() throws {
+        let result = try #require(GitStatusProvider.parseHunkHeader("@@ -0,0 +1,3 @@"))
+        let (oldStart, oldCount, newStart, newCount) = result
         #expect(oldStart == 0)
         #expect(oldCount == 0)
         #expect(newStart == 1)
@@ -77,7 +73,7 @@ struct DiffHunkParserTests {
         #expect(result.isEmpty)
     }
 
-    @Test func parsesSingleFileWithOneHunk() {
+    @Test func parsesSingleFileWithOneHunk() throws {
         let diff = """
         diff --git a/file.swift b/file.swift
         index abc1234..def5678 100644
@@ -93,7 +89,8 @@ struct DiffHunkParserTests {
         #expect(result.count == 1)
         #expect(result["file.swift"]?.count == 1)
 
-        let hunk = result["file.swift"]![0]
+        let hunks = try #require(result["file.swift"])
+        let hunk = hunks[0]
         #expect(hunk.oldStart == 1)
         #expect(hunk.oldCount == 3)
         #expect(hunk.newStart == 1)
@@ -106,7 +103,7 @@ struct DiffHunkParserTests {
         #expect(hunk.lines[3].kind == .context)
     }
 
-    @Test func parsesMultipleHunksInOneFile() {
+    @Test func parsesMultipleHunksInOneFile() throws {
         let diff = """
         diff --git a/file.swift b/file.swift
         index abc1234..def5678 100644
@@ -125,13 +122,12 @@ struct DiffHunkParserTests {
         let result = GitStatusProvider.parseFullDiff(diff)
         #expect(result["file.swift"]?.count == 2)
 
-        let hunk1 = result["file.swift"]![0]
-        #expect(hunk1.newStart == 1)
-        #expect(hunk1.lines.filter { $0.kind == .added }.count == 1)
+        let hunks = try #require(result["file.swift"])
+        #expect(hunks[0].newStart == 1)
+        #expect(hunks[0].lines.filter { $0.kind == .added }.count == 1)
 
-        let hunk2 = result["file.swift"]![1]
-        #expect(hunk2.oldStart == 10)
-        #expect(hunk2.lines.filter { $0.kind == .removed }.count == 1)
+        #expect(hunks[1].oldStart == 10)
+        #expect(hunks[1].lines.filter { $0.kind == .removed }.count == 1)
     }
 
     @Test func parsesMultipleFiles() {
@@ -159,7 +155,7 @@ struct DiffHunkParserTests {
         #expect(result["bar.swift"]?.count == 1)
     }
 
-    @Test func parsesAddedAndRemovedLines() {
+    @Test func parsesAddedAndRemovedLines() throws {
         let diff = """
         diff --git a/test.txt b/test.txt
         index abc..def 100644
@@ -172,7 +168,8 @@ struct DiffHunkParserTests {
          keep
         """
         let result = GitStatusProvider.parseFullDiff(diff)
-        let hunk = result["test.txt"]![0]
+        let hunks = try #require(result["test.txt"])
+        let hunk = hunks[0]
         #expect(hunk.lines.count == 4)
         #expect(hunk.lines[0].kind == .context)
         #expect(hunk.lines[1].kind == .removed)
@@ -182,7 +179,7 @@ struct DiffHunkParserTests {
         #expect(hunk.lines[3].kind == .context)
     }
 
-    @Test func handlesNoNewlineAtEndOfFile() {
+    @Test func handlesNoNewlineAtEndOfFile() throws {
         let diff = """
         diff --git a/test.txt b/test.txt
         index abc..def 100644
@@ -196,7 +193,8 @@ struct DiffHunkParserTests {
         \\ No newline at end of file
         """
         let result = GitStatusProvider.parseFullDiff(diff)
-        let hunk = result["test.txt"]![0]
+        let hunks = try #require(result["test.txt"])
+        let hunk = hunks[0]
         let contentLines = hunk.lines.filter { $0.kind != .context || !$0.content.isEmpty }
         #expect(contentLines.count >= 3)
     }
@@ -229,12 +227,9 @@ struct DiffHunkParserTests {
     // MARK: - splitStatuses
 
     @Test func splitsStagedAndUnstagedStatuses() {
-        // This tests the parsing logic by examining what splitStatuses returns
-        // for known porcelain output
         let output = "M  staged.swift\n M unstaged.swift\nMM both.swift\n?? new.swift\nA  added.swift\n"
         let statuses = GitStatusProvider.parseStatusOutput(output)
 
-        // Verify the combined status view
         #expect(statuses["staged.swift"] == .staged)
         #expect(statuses["unstaged.swift"] == .modified)
         #expect(statuses["both.swift"] == .mixed)
