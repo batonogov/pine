@@ -677,6 +677,140 @@ struct GitStatusProviderTests {
         // The key invariant: no crash.
     }
 
+    // MARK: - setupAsync
+
+    @Test("setupAsync detects git repository without blocking")
+    func setupAsyncDetectsGitRepo() async throws {
+        let dir = try makeGitRepo()
+        defer { cleanup(dir) }
+
+        let provider = GitStatusProvider()
+        await provider.setupAsync(repositoryURL: dir)
+
+        #expect(provider.isGitRepository == true)
+        #expect(provider.gitRootPath != nil)
+        #expect(!provider.currentBranch.isEmpty)
+        #expect(!provider.branches.isEmpty)
+    }
+
+    @Test("setupAsync detects non-git directory")
+    func setupAsyncNonGit() async throws {
+        let rawDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("pine-nogit-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: rawDir, withIntermediateDirectories: true)
+        let dir = try resolveURL(rawDir)
+        defer { cleanup(dir) }
+
+        let provider = GitStatusProvider()
+        await provider.setupAsync(repositoryURL: dir)
+
+        #expect(provider.isGitRepository == false)
+        #expect(provider.currentBranch == "")
+        #expect(provider.fileStatuses.isEmpty)
+    }
+
+    // MARK: - checkoutBranchAsync
+
+    @Test("checkoutBranchAsync switches to existing branch")
+    func checkoutBranchAsyncSuccess() async throws {
+        let dir = try makeGitRepo()
+        defer { cleanup(dir) }
+
+        try runShell("git branch test-branch", at: dir)
+
+        let provider = GitStatusProvider()
+        provider.setup(repositoryURL: dir)
+
+        let result = await provider.checkoutBranchAsync("test-branch")
+        #expect(result.success == true)
+        #expect(result.error.isEmpty)
+        #expect(provider.currentBranch == "test-branch")
+    }
+
+    @Test("checkoutBranchAsync fails for non-existent branch")
+    func checkoutBranchAsyncFailure() async throws {
+        let dir = try makeGitRepo()
+        defer { cleanup(dir) }
+
+        let provider = GitStatusProvider()
+        provider.setup(repositoryURL: dir)
+
+        let result = await provider.checkoutBranchAsync("nonexistent-branch")
+        #expect(result.success == false)
+        #expect(!result.error.isEmpty)
+    }
+
+    @Test("checkoutBranchAsync fails without repository")
+    func checkoutBranchAsyncNoRepo() async {
+        let provider = GitStatusProvider()
+        let result = await provider.checkoutBranchAsync("main")
+        #expect(result.success == false)
+    }
+
+    // MARK: - diffForFileAsync
+
+    @Test("diffForFileAsync returns diffs for modified file")
+    func diffForFileAsyncModified() async throws {
+        let dir = try makeGitRepo()
+        defer { cleanup(dir) }
+
+        try "line1\nline2\nline3\n".write(
+            to: dir.appendingPathComponent("README.md"),
+            atomically: true,
+            encoding: .utf8
+        )
+
+        let provider = GitStatusProvider()
+        provider.setup(repositoryURL: dir)
+
+        let diffs = await provider.diffForFileAsync(at: dir.appendingPathComponent("README.md"))
+        #expect(!diffs.isEmpty)
+    }
+
+    @Test("diffForFileAsync returns empty for clean file")
+    func diffForFileAsyncClean() async throws {
+        let dir = try makeGitRepo()
+        defer { cleanup(dir) }
+
+        let provider = GitStatusProvider()
+        provider.setup(repositoryURL: dir)
+
+        let diffs = await provider.diffForFileAsync(at: dir.appendingPathComponent("README.md"))
+        #expect(diffs.isEmpty)
+    }
+
+    @Test("diffForFileAsync returns empty for non-git directory")
+    func diffForFileAsyncNonGit() async throws {
+        let rawDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("pine-nogit-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: rawDir, withIntermediateDirectories: true)
+        let dir = try resolveURL(rawDir)
+        defer { cleanup(dir) }
+
+        let provider = GitStatusProvider()
+        provider.setup(repositoryURL: dir)
+
+        let diffs = await provider.diffForFileAsync(at: dir.appendingPathComponent("file.txt"))
+        #expect(diffs.isEmpty)
+    }
+
+    // MARK: - runGit timeout
+
+    @Test("runGit terminates process after timeout")
+    func runGitTimeout() {
+        // Use git hash-object --stdin which blocks waiting for input
+        let start = Date()
+        let result = GitStatusProvider.runGit(
+            ["hash-object", "--stdin"],
+            at: URL(fileURLWithPath: "/tmp"),
+            timeout: 1.0
+        )
+        let elapsed = Date().timeIntervalSince(start)
+        // Process should be terminated by timeout, not hang for 30s+
+        #expect(elapsed < 5.0)
+        #expect(result.exitCode != 0)
+    }
+
     // MARK: - hasUncommittedChanges
 
     @Test("hasUncommittedChanges is false for clean repo")

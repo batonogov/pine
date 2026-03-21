@@ -44,7 +44,8 @@ struct CodeEditorCoordinatorTests {
             text: .constant(original),
             contentVersion: 0,
             language: "yaml",
-            fileName: "test.yaml"
+            fileName: "test.yaml",
+            foldState: .constant(FoldState())
         )
         let coordinator = CodeEditorView.Coordinator(parent: editorView)
         coordinator.scrollView = scrollView
@@ -66,7 +67,8 @@ struct CodeEditorCoordinatorTests {
             text: .constant(edited),
             contentVersion: 1,
             language: "yaml",
-            fileName: "test.yaml"
+            fileName: "test.yaml",
+            foldState: .constant(FoldState())
         )
         coordinator.parent = updatedEditorView
         coordinator.didChangeFromTextView = true
@@ -93,7 +95,8 @@ struct CodeEditorCoordinatorTests {
             text: .constant(original),
             contentVersion: 0,
             language: "txt",
-            fileName: "test.txt"
+            fileName: "test.txt",
+            foldState: .constant(FoldState())
         )
         let coordinator = CodeEditorView.Coordinator(parent: editorView)
         coordinator.scrollView = scrollView
@@ -109,7 +112,8 @@ struct CodeEditorCoordinatorTests {
             text: .constant(updated),
             contentVersion: 1,
             language: "txt",
-            fileName: "test.txt"
+            fileName: "test.txt",
+            foldState: .constant(FoldState())
         )
         coordinator.parent = updatedEditorView
         // didChangeFromTextView is NOT set — this is an external change
@@ -130,7 +134,8 @@ struct CodeEditorCoordinatorTests {
             text: .constant(text),
             contentVersion: 0,
             language: "swift",
-            fileName: "test.swift"
+            fileName: "test.swift",
+            foldState: .constant(FoldState())
         )
         let coordinator = CodeEditorView.Coordinator(parent: editorView)
         coordinator.scrollView = scrollView
@@ -146,7 +151,8 @@ struct CodeEditorCoordinatorTests {
             text: .constant(text),
             contentVersion: 1,
             language: "go",
-            fileName: "test.go"
+            fileName: "test.go",
+            foldState: .constant(FoldState())
         )
         coordinator.parent = updatedEditorView
         coordinator.didChangeFromTextView = true

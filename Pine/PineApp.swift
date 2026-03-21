@@ -90,6 +90,14 @@ struct PineApp: App {
                 }
                 .keyboardShortcut("m", modifiers: [.command, .shift])
 
+                Button {
+                    let key = BlameConstants.storageKey
+                    UserDefaults.standard.set(!UserDefaults.standard.bool(forKey: key), forKey: key)
+                } label: {
+                    Label(Strings.menuToggleBlame, systemImage: MenuIcons.toggleBlame)
+                }
+                .keyboardShortcut("b", modifiers: [.command, .control])
+
                 Divider()
 
                 Button {
@@ -164,6 +172,52 @@ struct PineApp: App {
                     Label(Strings.menuPreviousChange, systemImage: MenuIcons.previousChange)
                 }
                 .keyboardShortcut(.upArrow, modifiers: [.control, .option])
+                .disabled(focusedProject?.tabManager.activeTab == nil)
+
+                Divider()
+
+                Button {
+                    NotificationCenter.default.post(
+                        name: .foldCode, object: nil,
+                        userInfo: ["action": "fold"]
+                    )
+                } label: {
+                    Label(Strings.menuFoldCode, systemImage: MenuIcons.foldCode)
+                }
+                .keyboardShortcut(.leftArrow, modifiers: [.command, .option])
+                .disabled(focusedProject?.tabManager.activeTab == nil)
+
+                Button {
+                    NotificationCenter.default.post(
+                        name: .foldCode, object: nil,
+                        userInfo: ["action": "unfold"]
+                    )
+                } label: {
+                    Label(Strings.menuUnfoldCode, systemImage: MenuIcons.unfoldCode)
+                }
+                .keyboardShortcut(.rightArrow, modifiers: [.command, .option])
+                .disabled(focusedProject?.tabManager.activeTab == nil)
+
+                Button {
+                    NotificationCenter.default.post(
+                        name: .foldCode, object: nil,
+                        userInfo: ["action": "foldAll"]
+                    )
+                } label: {
+                    Label(Strings.menuFoldAll, systemImage: MenuIcons.foldAll)
+                }
+                .keyboardShortcut(.leftArrow, modifiers: [.command, .option, .shift])
+                .disabled(focusedProject?.tabManager.activeTab == nil)
+
+                Button {
+                    NotificationCenter.default.post(
+                        name: .foldCode, object: nil,
+                        userInfo: ["action": "unfoldAll"]
+                    )
+                } label: {
+                    Label(Strings.menuUnfoldAll, systemImage: MenuIcons.unfoldAll)
+                }
+                .keyboardShortcut(.rightArrow, modifiers: [.command, .option, .shift])
                 .disabled(focusedProject?.tabManager.activeTab == nil)
             }
             // File menu: Save, Save All, Save As, Duplicate
@@ -691,6 +745,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate {
         // Must be set before applicationDidFinishLaunching — the system runs
         // window restoration between willFinishLaunching and didFinishLaunching.
         UserDefaults.standard.set(false, forKey: "NSQuitAlwaysKeepsWindows")
+        // Default blame to ON for first launch
+        if UserDefaults.standard.object(forKey: BlameConstants.storageKey) == nil {
+            UserDefaults.standard.set(true, forKey: BlameConstants.storageKey)
+        }
 
         // UI testing support: clear persisted state for a clean launch
         if CommandLine.arguments.contains("--reset-state") {
@@ -887,4 +945,6 @@ extension Notification.Name {
     static let showProjectSearch = Notification.Name("showProjectSearch")
     /// userInfo: ["direction": "next" | "previous"]
     static let navigateChange = Notification.Name("navigateChange")
+    /// userInfo: ["action": "fold" | "unfold" | "foldAll" | "unfoldAll"]
+    static let foldCode = Notification.Name("foldCode")
 }

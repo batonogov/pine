@@ -45,6 +45,48 @@ final class GutterTextView: NSTextView {
         }
     }
 
+    /// Blame lookup: line number → GitBlameLine (O(1) access).
+    private var blameLookup: [Int: GitBlameLine] = [:]
+    /// Previous blame data count — avoids rebuilding the dictionary on every updateNSView.
+    private var blameLineCount: Int = -1
+    var isBlameVisible: Bool = false
+
+    /// Sets blame data and rebuilds O(1) lookup dictionary.
+    func setBlameLines(_ lines: [GitBlameLine]) {
+        guard lines.count != blameLineCount || lines.first != blameLookup[lines.first?.finalLine ?? 0] else {
+            return
+        }
+        blameLineCount = lines.count
+        blameLookup = Dictionary(lines.map { ($0.finalLine, $0) }, uniquingKeysWith: { _, last in last })
+        if isBlameVisible { display() }
+    }
+
+    private static let blameFont: NSFont = {
+        let descriptor = NSFont.systemFont(ofSize: 12, weight: .regular)
+            .fontDescriptor.withSymbolicTraits(.italic)
+        return NSFont(descriptor: descriptor, size: 12) ?? NSFont.systemFont(ofSize: 12)
+    }()
+    private static let blameColor = NSColor(name: nil) { appearance in
+        if appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua {
+            return NSColor.white.withAlphaComponent(0.3)
+        } else {
+            return NSColor.black.withAlphaComponent(0.3)
+        }
+    }
+
+    private static let blameIcon: NSImage? = {
+        let config = NSImage.SymbolConfiguration(pointSize: 11, weight: .light)
+        return NSImage(systemSymbolName: "arrow.triangle.branch", accessibilityDescription: nil)?
+            .withSymbolConfiguration(config)?
+            .tinted(with: blameColor)
+    }()
+
+    private static let relativeDateFormatter: RelativeDateTimeFormatter = {
+        let f = RelativeDateTimeFormatter()
+        f.unitsStyle = .full
+        return f
+    }()
+
     override func drawBackground(in rect: NSRect) {
         super.drawBackground(in: rect)
 
@@ -52,23 +94,100 @@ final class GutterTextView: NSTextView {
               textContainer != nil else { return }
 
         let cursorRange = selectedRange()
-        // Подсвечиваем только когда нет выделения (просто курсор)
         guard cursorRange.length == 0 else { return }
 
         let glyphIndex = layoutManager.glyphIndexForCharacter(at: cursorRange.location)
         var lineRect = layoutManager.lineFragmentRect(forGlyphAt: glyphIndex, effectiveRange: nil)
 
-        // Растягиваем на всю ширину view
         lineRect.origin.x = 0
         lineRect.size.width = bounds.width
-        // Учитываем textContainerOrigin
         lineRect.origin.y += textContainerOrigin.y
 
         currentLineColor.setFill()
         lineRect.fill()
+
+        // ── Inline blame annotation ──
+        if isBlameVisible, !blameLookup.isEmpty {
+            drawInlineBlame(lineRect: lineRect, layoutManager: layoutManager)
+        }
+    }
+
+    /// Draws inline blame annotation after the line content on the cursor line.
+    /// Computes line number directly from selectedRange() to stay in sync with
+    /// the actual selection state during each draw call (no caching — drawBackground
+    /// can be called multiple times per display cycle with different selection states).
+    private func drawInlineBlame(lineRect: NSRect, layoutManager: NSLayoutManager) {
+        let source = string as NSString
+        guard source.length > 0, let container = textContainer else { return }
+
+        let cursorLocation = min(selectedRange().location, source.length)
+
+        // Compute 1-based line number from cursor position
+        var lineNumber = 1
+        for i in 0..<cursorLocation where source.character(at: i) == 0x0A {
+            lineNumber += 1
+        }
+
+        guard let blame = blameLookup[lineNumber] else { return }
+
+        // Find end of line content
+        let lineRange = source.lineRange(for: NSRange(location: cursorLocation, length: 0))
+        var lineEnd = NSMaxRange(lineRange)
+        if lineEnd > lineRange.location && lineEnd <= source.length
+            && source.character(at: lineEnd - 1) == 0x0A {
+            lineEnd -= 1
+        }
+
+        // Get x position after the last character
+        let glyphIndex = layoutManager.glyphIndexForCharacter(at: max(lineEnd, lineRange.location))
+        let lineEndX: CGFloat
+        if lineEnd > lineRange.location {
+            let charRect = layoutManager.boundingRect(
+                forGlyphRange: NSRange(location: glyphIndex, length: 0),
+                in: container
+            )
+            lineEndX = charRect.maxX + textContainerOrigin.x
+        } else {
+            let usedRect = layoutManager.lineFragmentUsedRect(forGlyphAt: glyphIndex, effectiveRange: nil)
+            lineEndX = usedRect.origin.x + textContainerOrigin.x
+        }
+
+        let text: String
+        if blame.isUncommitted {
+            text = "Uncommitted"
+        } else {
+            let relativeDate = Self.relativeDateFormatter.localizedString(
+                for: blame.authorTime, relativeTo: Date()
+            )
+            text = "\(blame.author), \(relativeDate)"
+        }
+
+        let attrs: [NSAttributedString.Key: Any] = [
+            .font: Self.blameFont,
+            .foregroundColor: Self.blameColor
+        ]
+
+        let minBlameX = textContainerOrigin.x + gutterInset + 250
+        var drawX = max(lineEndX + 24, minBlameX)
+        let drawY = lineRect.origin.y + (lineRect.height - Self.blameFont.pointSize) / 2
+
+        // Git branch icon (cached to avoid copy+tint on every draw)
+        if let icon = Self.blameIcon {
+            let iconY = lineRect.origin.y + (lineRect.height - icon.size.height) / 2
+            icon.draw(
+                in: NSRect(x: drawX, y: iconY, width: icon.size.width, height: icon.size.height),
+                from: .zero, operation: .sourceOver, fraction: 1
+            )
+            drawX += icon.size.width + 4
+        }
+
+        (text as NSString).draw(at: NSPoint(x: drawX, y: drawY), withAttributes: attrs)
     }
 
     override func setSelectedRanges(_ ranges: [NSValue], affinity: NSSelectionAffinity, stillSelecting: Bool) {
+        // Mark full bounds dirty BEFORE super so its drawing pass erases the
+        // old blame annotation in a single frame (no flicker).
+        if isBlameVisible { setNeedsDisplay(bounds) }
         super.setSelectedRanges(ranges, affinity: affinity, stillSelecting: stillSelecting)
         needsDisplay = true
     }
@@ -222,6 +341,12 @@ struct CodeEditorView: NSViewRepresentable {
     var language: String
     var fileName: String?
     var lineDiffs: [GitLineDiff] = []
+    /// Whether inline blame annotation is visible on the cursor line.
+    var isBlameVisible: Bool = false
+    /// Blame data for the current file.
+    var blameLines: [GitBlameLine] = []
+    /// Binding to the fold state for the active tab.
+    @Binding var foldState: FoldState
     /// Whether the minimap panel is visible.
     var isMinimapVisible: Bool = true
     /// Whether syntax highlighting is disabled for this tab (e.g. large files).
@@ -315,15 +440,25 @@ struct CodeEditorView: NSViewRepresentable {
 
         textView.fileExtension = language
         textView.exactFileName = fileName
+        textView.setBlameLines(blameLines)
+        textView.isBlameVisible = isBlameVisible
         textView.delegate = context.coordinator
         scrollView.documentView = textView
 
         container.addSubview(scrollView)
 
+        // ── NSLayoutManager delegate for code folding ──
+        layoutManager.delegate = context.coordinator
+
         // ── Номера строк — поверх scroll view, как отдельный сиблинг ──
         let lineNumberView = LineNumberView(textView: textView)
         lineNumberView.gutterWidth = gutterWidth
         lineNumberView.gutterFont = gutterFont
+        lineNumberView.foldState = foldState
+        let coordinator = context.coordinator
+        lineNumberView.onFoldToggle = { [weak coordinator] foldable in
+            coordinator?.handleFoldToggle(foldable)
+        }
         container.addSubview(lineNumberView)
 
         // ── Minimap — справа от scroll view ──
@@ -395,6 +530,17 @@ struct CodeEditorView: NSViewRepresentable {
             object: nil
         )
 
+        // Observe fold code notifications (Cmd+Option+arrows)
+        NotificationCenter.default.addObserver(
+            context.coordinator,
+            selector: #selector(Coordinator.handleFoldCode(_:)),
+            name: .foldCode,
+            object: nil
+        )
+
+        // Calculate initial foldable ranges
+        context.coordinator.recalculateFoldableRanges()
+
         return container
     }
 
@@ -411,11 +557,16 @@ struct CodeEditorView: NSViewRepresentable {
         editorContainer.minimapWidth = isMinimapVisible ? MinimapView.defaultWidth : 0
         editorContainer.needsLayout = true
 
-        // Keep GutterTextView's language info in sync for toggle comment
+        // Keep GutterTextView's language info and blame data in sync
         if let sv = context.coordinator.scrollView,
            let gutterView = sv.documentView as? GutterTextView {
             gutterView.fileExtension = language
             gutterView.exactFileName = fileName
+            gutterView.setBlameLines(blameLines)
+            if gutterView.isBlameVisible != isBlameVisible {
+                gutterView.isBlameVisible = isBlameVisible
+                gutterView.display()
+            }
         }
 
         context.coordinator.updateContentIfNeeded(
@@ -431,6 +582,7 @@ struct CodeEditorView: NSViewRepresentable {
         // Обновляем diff-данные LineNumberView и MinimapView
         if let lineNumberView = context.coordinator.lineNumberView {
             lineNumberView.lineDiffs = lineDiffs
+            lineNumberView.foldState = foldState
         }
         if let minimapView = context.coordinator.minimapView {
             minimapView.lineDiffs = lineDiffs
@@ -451,11 +603,20 @@ struct CodeEditorView: NSViewRepresentable {
         Coordinator(parent: self)
     }
 
-    class Coordinator: NSObject, NSTextViewDelegate {
+    class Coordinator: NSObject, NSTextViewDelegate, NSLayoutManagerDelegate {
         var parent: CodeEditorView
         var scrollView: NSScrollView?
         var lineNumberView: LineNumberView?
         var minimapView: MinimapView?
+
+        /// Cached foldable ranges for the current text.
+        var foldableRanges: [FoldableRange] = []
+
+        /// Cached line starts for O(log n) line number lookups.
+        var lineStartsCache: LineStartsCache?
+
+        /// Debounced fold recalculation work item.
+        private var foldWorkItem: DispatchWorkItem?
 
         /// Последние язык/имя файла — для обнаружения смены грамматики
         /// при одинаковом содержимом файлов
@@ -473,8 +634,13 @@ struct CodeEditorView: NSViewRepresentable {
         /// Last consumed navigation request ID — prevents re-processing.
         var lastGoToID: UUID?
 
+        /// Generation counter for cancelling stale async highlight requests.
+        let highlightGeneration = HighlightGeneration()
+
         /// Отложенная задача подсветки (дебаунсинг)
         private var highlightWorkItem: DispatchWorkItem?
+        /// Active async highlight task (cancelled when new highlight is scheduled)
+        private var highlightTask: Task<Void, Never>?
         /// Задержка дебаунсинга
         private let highlightDelay: TimeInterval = 0.05
 
@@ -499,6 +665,9 @@ struct CodeEditorView: NSViewRepresentable {
         func cancelPendingHighlight() {
             highlightWorkItem?.cancel()
             highlightWorkItem = nil
+            highlightTask?.cancel()
+            highlightTask = nil
+            highlightGeneration.increment()
         }
 
         /// Запускает viewport-based подсветку видимой области (deferred на следующий run loop).
@@ -562,12 +731,21 @@ struct CodeEditorView: NSViewRepresentable {
                 if storage.length > CodeEditorView.viewportHighlightThreshold {
                     scheduleViewportHighlighting(textView: textView)
                 } else {
-                    SyntaxHighlighter.shared.highlight(
-                        textStorage: storage,
-                        language: language,
-                        fileName: fileName,
-                        font: font
-                    )
+                    highlightGeneration.increment()
+                    let gen = highlightGeneration
+                    let lang = language
+                    let name = fileName
+                    let editorFont = font
+                    highlightTask?.cancel()
+                    highlightTask = Task { @MainActor in
+                        await SyntaxHighlighter.shared.highlightAsync(
+                            textStorage: storage,
+                            language: lang,
+                            fileName: name,
+                            font: editorFont,
+                            generation: gen
+                        )
+                    }
                 }
             }
 
@@ -595,12 +773,20 @@ struct CodeEditorView: NSViewRepresentable {
                 if storage.length > CodeEditorView.viewportHighlightThreshold {
                     scheduleViewportHighlighting(textView: textView)
                 } else {
-                    SyntaxHighlighter.shared.highlight(
-                        textStorage: storage,
-                        language: parent.language,
-                        fileName: parent.fileName,
-                        font: font
-                    )
+                    highlightGeneration.increment()
+                    let gen = highlightGeneration
+                    let lang = parent.language
+                    let name = parent.fileName
+                    highlightTask?.cancel()
+                    highlightTask = Task { @MainActor in
+                        await SyntaxHighlighter.shared.highlightAsync(
+                            textStorage: storage,
+                            language: lang,
+                            fileName: name,
+                            font: font,
+                            generation: gen
+                        )
+                    }
                 }
             }
 
@@ -622,6 +808,12 @@ struct CodeEditorView: NSViewRepresentable {
 
             // Report state change
             reportStateChange()
+
+            // Update line starts cache immediately (fast O(n) scan, needed for layout)
+            lineStartsCache = LineStartsCache(text: textView.string)
+
+            // Recalculate foldable ranges (debounced — expensive operation)
+            scheduleFoldRecalculation()
 
             // Захватываем editedRange из textStorage сейчас,
             // пока он валиден в координатах текущей версии текста
@@ -646,6 +838,7 @@ struct CodeEditorView: NSViewRepresentable {
             // При быстром вводе последовательные правки обычно смежны,
             // и 20-строчный контекст в highlightEdited покрывает их.
             highlightWorkItem?.cancel()
+            highlightTask?.cancel()
             let isLargeFile = (textView.string as NSString).length > CodeEditorView.viewportHighlightThreshold
             let workItem = DispatchWorkItem { [weak self] in
                 guard let self else { return }
@@ -653,25 +846,35 @@ struct CodeEditorView: NSViewRepresentable {
                       let tv = sv.documentView as? NSTextView,
                       let storage = tv.textStorage else { return }
 
+                self.highlightGeneration.increment()
+                let gen = self.highlightGeneration
+                let lang = self.parent.language
+                let name = self.parent.fileName
+                let font = self.parent.editorFont
+
                 if let range = editedRange, range.location + range.length <= storage.length {
-                    SyntaxHighlighter.shared.highlightEdited(
-                        textStorage: storage,
-                        editedRange: range,
-                        language: self.parent.language,
-                        fileName: self.parent.fileName,
-                        font: self.parent.editorFont
-                    )
+                    self.highlightTask = Task { @MainActor in
+                        await SyntaxHighlighter.shared.highlightEditedAsync(
+                            textStorage: storage,
+                            editedRange: range,
+                            language: lang,
+                            fileName: name,
+                            font: font,
+                            generation: gen
+                        )
+                    }
                 } else if isLargeFile {
-                    // Большой файл — viewport-based подсветка вместо полной
                     self.scheduleViewportHighlighting(textView: tv)
                 } else {
-                    // Диапазон не определён или невалиден — полная подсветка
-                    SyntaxHighlighter.shared.highlight(
-                        textStorage: storage,
-                        language: self.parent.language,
-                        fileName: self.parent.fileName,
-                        font: self.parent.editorFont
-                    )
+                    self.highlightTask = Task { @MainActor in
+                        await SyntaxHighlighter.shared.highlightAsync(
+                            textStorage: storage,
+                            language: lang,
+                            fileName: name,
+                            font: font,
+                            generation: gen
+                        )
+                    }
                 }
             }
             highlightWorkItem = workItem
@@ -821,25 +1024,35 @@ struct CodeEditorView: NSViewRepresentable {
 
             // Debounce 16ms (1 frame)
             scrollHighlightWorkItem?.cancel()
+            highlightTask?.cancel()
+            highlightGeneration.increment()
+            let gen = highlightGeneration
+            let lang = self.parent.language
+            let name = self.parent.fileName
+            let font = self.parent.editorFont
             let workItem = DispatchWorkItem { [weak self] in
                 guard let self,
                       let storage = textView.textStorage else { return }
 
-                SyntaxHighlighter.shared.highlightVisibleRange(
-                    textStorage: storage,
-                    visibleCharRange: charRange,
-                    language: self.parent.language,
-                    fileName: self.parent.fileName,
-                    font: self.parent.editorFont
-                )
+                self.highlightTask = Task { @MainActor [weak self] in
+                    await SyntaxHighlighter.shared.highlightVisibleRangeAsync(
+                        textStorage: storage,
+                        visibleCharRange: charRange,
+                        language: lang,
+                        fileName: name,
+                        font: font,
+                        generation: gen
+                    )
 
-                // Union new highlighted range with existing
-                if let existing = self.highlightedCharRange {
-                    let newStart = min(existing.location, charRange.location)
-                    let newEnd = max(NSMaxRange(existing), NSMaxRange(charRange))
-                    self.highlightedCharRange = NSRange(location: newStart, length: newEnd - newStart)
-                } else {
-                    self.highlightedCharRange = charRange
+                    guard let self else { return }
+                    // Union new highlighted range with existing
+                    if let existing = self.highlightedCharRange {
+                        let newStart = min(existing.location, charRange.location)
+                        let newEnd = max(NSMaxRange(existing), NSMaxRange(charRange))
+                        self.highlightedCharRange = NSRange(location: newStart, length: newEnd - newStart)
+                    } else {
+                        self.highlightedCharRange = charRange
+                    }
                 }
             }
             scrollHighlightWorkItem = workItem
@@ -851,6 +1064,202 @@ struct CodeEditorView: NSViewRepresentable {
                   let gutterView = sv.documentView as? GutterTextView,
                   gutterView.window?.isKeyWindow == true else { return }
             gutterView.toggleComment()
+        }
+
+        // MARK: - Code folding
+
+        /// Recalculates foldable ranges from the current text.
+        func recalculateFoldableRanges() {
+            guard let sv = scrollView,
+                  let textView = sv.documentView as? NSTextView else { return }
+            let text = textView.string
+            // Update cache if not yet initialized (e.g. called from updateNSView on first load)
+            if lineStartsCache == nil {
+                lineStartsCache = LineStartsCache(text: text)
+            }
+            let skipRanges = SyntaxHighlighter.shared.commentAndStringRanges(
+                in: text,
+                language: parent.language,
+                fileName: parent.fileName
+            )
+            foldableRanges = FoldRangeCalculator.calculate(text: text, skipRanges: skipRanges)
+            lineNumberView?.foldableRanges = foldableRanges
+            lineNumberView?.lineStartsCache = lineStartsCache
+        }
+
+        /// Schedules a debounced fold recalculation.
+        private func scheduleFoldRecalculation() {
+            foldWorkItem?.cancel()
+            let workItem = DispatchWorkItem { [weak self] in
+                self?.recalculateFoldableRanges()
+            }
+            foldWorkItem = workItem
+            DispatchQueue.main.asyncAfter(deadline: .now() + highlightDelay, execute: workItem)
+        }
+
+        /// Handles fold toggle from gutter click.
+        func handleFoldToggle(_ foldable: FoldableRange) {
+            parent.foldState.toggle(foldable)
+            applyFoldState()
+        }
+
+        /// Handles fold code notifications from menu/keyboard shortcuts.
+        @objc func handleFoldCode(_ notification: Notification) {
+            guard let sv = scrollView,
+                  let textView = sv.documentView as? GutterTextView,
+                  textView.window?.isKeyWindow == true,
+                  let action = notification.userInfo?["action"] as? String else { return }
+
+            switch action {
+            case "fold":
+                foldAtCursor()
+            case "unfold":
+                unfoldAtCursor()
+            case "foldAll":
+                parent.foldState.foldAll(foldableRanges)
+                applyFoldState()
+            case "unfoldAll":
+                parent.foldState.unfoldAll()
+                applyFoldState()
+            default:
+                break
+            }
+        }
+
+        /// Folds the innermost foldable range containing the cursor.
+        private func foldAtCursor() {
+            guard let sv = scrollView,
+                  let textView = sv.documentView as? NSTextView,
+                  let cache = lineStartsCache else { return }
+            let cursorLocation = textView.selectedRange().location
+
+            // Find cursor's line number using cached binary search
+            let cursorLine = cache.lineNumber(at: cursorLocation)
+
+            // Find innermost unfoldable range at cursor line
+            let candidates = foldableRanges.filter {
+                cursorLine >= $0.startLine && cursorLine <= $0.endLine
+                    && !parent.foldState.isFolded($0)
+            }
+            // Pick the innermost (smallest span)
+            if let best = candidates.min(by: { ($0.endLine - $0.startLine) < ($1.endLine - $1.startLine) }) {
+                parent.foldState.fold(best)
+                applyFoldState()
+            }
+        }
+
+        /// Unfolds the fold at the cursor position.
+        private func unfoldAtCursor() {
+            guard let sv = scrollView,
+                  let textView = sv.documentView as? NSTextView,
+                  let cache = lineStartsCache else { return }
+            let cursorLocation = textView.selectedRange().location
+
+            // Find cursor's line number using cached binary search
+            let cursorLine = cache.lineNumber(at: cursorLocation)
+
+            // Find folded range whose startLine matches cursor line
+            if let folded = parent.foldState.foldedRanges.first(where: { $0.startLine == cursorLine }) {
+                parent.foldState.unfold(folded)
+                applyFoldState()
+            }
+        }
+
+        /// Applies the current fold state to the layout manager and redraws.
+        private func applyFoldState() {
+            guard let sv = scrollView,
+                  let textView = sv.documentView as? NSTextView,
+                  let layoutManager = textView.layoutManager else { return }
+
+            let fullRange = NSRange(location: 0, length: (textView.string as NSString).length)
+            lineNumberView?.foldState = parent.foldState
+            // Invalidate glyphs so shouldGenerateGlyphs re-evaluates hidden lines,
+            // then invalidate layout so shouldSetLineFragmentRect collapses heights.
+            layoutManager.invalidateGlyphs(forCharacterRange: fullRange, changeInLength: 0, actualCharacterRange: nil)
+            layoutManager.invalidateLayout(forCharacterRange: fullRange, actualCharacterRange: nil)
+            textView.needsDisplay = true
+            lineNumberView?.needsDisplay = true
+            minimapView?.needsDisplay = true
+        }
+
+        // MARK: - NSLayoutManagerDelegate (code folding)
+
+        // swiftlint:disable:next function_parameter_count
+        func layoutManager(
+            _ layoutManager: NSLayoutManager,
+            shouldGenerateGlyphs glyphs: UnsafePointer<CGGlyph>,
+            properties props: UnsafePointer<NSLayoutManager.GlyphProperty>,
+            characterIndexes charIndexes: UnsafePointer<Int>,
+            font aFont: NSFont,
+            forGlyphRange glyphRange: NSRange
+        ) -> Int {
+            guard !parent.foldState.foldedRanges.isEmpty,
+                  let cache = lineStartsCache else { return 0 }
+
+            let count = glyphRange.length
+            let modifiedProps = UnsafeMutablePointer<NSLayoutManager.GlyphProperty>.allocate(capacity: count)
+            defer { modifiedProps.deallocate() }
+
+            // Single pass: cache hidden state per charIndex to avoid redundant lookups
+            // (adjacent glyphs often share the same charIndex or line).
+            var hasHidden = false
+            var prevCharIndex = -1
+            var prevHidden = false
+
+            for i in 0..<count {
+                let charIndex = charIndexes[i]
+                let isHidden: Bool
+                if charIndex == prevCharIndex {
+                    isHidden = prevHidden
+                } else {
+                    let line = cache.lineNumber(at: charIndex)
+                    isHidden = parent.foldState.isLineHidden(line)
+                    prevCharIndex = charIndex
+                    prevHidden = isHidden
+                }
+                if isHidden {
+                    modifiedProps[i] = .null
+                    hasHidden = true
+                } else {
+                    modifiedProps[i] = props[i]
+                }
+            }
+
+            guard hasHidden else { return 0 }
+
+            layoutManager.setGlyphs(
+                glyphs, properties: modifiedProps,
+                characterIndexes: charIndexes, font: aFont,
+                forGlyphRange: glyphRange
+            )
+            return count
+        }
+
+        // swiftlint:disable:next function_parameter_count
+        func layoutManager(
+            _ layoutManager: NSLayoutManager,
+            shouldSetLineFragmentRect lineFragmentRect: UnsafeMutablePointer<NSRect>,
+            lineFragmentUsedRect: UnsafeMutablePointer<NSRect>,
+            baselineOffset: UnsafeMutablePointer<CGFloat>,
+            in textContainer: NSTextContainer,
+            forGlyphRange glyphRange: NSRange
+        ) -> Bool {
+            guard !parent.foldState.foldedRanges.isEmpty else { return false }
+            let charRange = layoutManager.characterRange(forGlyphRange: glyphRange, actualGlyphRange: nil)
+
+            // Use cached line starts for O(log n) lookup
+            guard let cache = lineStartsCache else { return false }
+            let line = cache.lineNumber(at: charRange.location)
+
+            // If this line is hidden (inside a folded region), collapse it to zero height
+            if parent.foldState.isLineHidden(line) {
+                lineFragmentRect.pointee.size.height = 0
+                lineFragmentUsedRect.pointee.size.height = 0
+                baselineOffset.pointee = 0
+                return true
+            }
+
+            return false
         }
 
         private func reportStateChange() {
@@ -954,5 +1363,19 @@ struct CodeEditorView: NSViewRepresentable {
             fileName: fileName,
             font: editorFont
         )
+    }
+}
+
+// MARK: - NSImage tinting
+
+private extension NSImage {
+    func tinted(with color: NSColor) -> NSImage {
+        let image = copy() as! NSImage // swiftlint:disable:this force_cast
+        image.lockFocus()
+        color.set()
+        NSRect(origin: .zero, size: size).fill(using: .sourceAtop)
+        image.unlockFocus()
+        image.isTemplate = false
+        return image
     }
 }

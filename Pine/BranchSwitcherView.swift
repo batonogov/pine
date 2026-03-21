@@ -82,12 +82,14 @@ struct BranchSwitcherView: View {
             guard alert.runModal() == .alertFirstButtonReturn else { return }
         }
 
-        let result = gitProvider.checkoutBranch(branch)
-        if result.success {
-            errorMessage = ""
-            isPresented = false
-        } else {
-            errorMessage = result.error
+        Task {
+            let result = await gitProvider.checkoutBranchAsync(branch)
+            if result.success {
+                errorMessage = ""
+                isPresented = false
+            } else {
+                errorMessage = result.error
+            }
         }
     }
 }

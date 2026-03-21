@@ -22,10 +22,13 @@ struct ContentView: View {
     @State private var selectedNode: FileNode?
     @State private var columnVisibility: NavigationSplitViewVisibility = .all
     @State private var lineDiffs: [GitLineDiff] = []
+    @State private var blameLines: [GitBlameLine] = []
+    @State private var blameTask: Task<Void, Never>?
     @State private var didRestoreSession = false
     @State private var isSearchPresented = false
     @State private var goToLineOffset: GoToRequest?
     @AppStorage("minimapVisible") private var isMinimapVisible = true
+    @AppStorage(BlameConstants.storageKey) private var isBlameVisible = true
 
     private var activeTab: EditorTab? { tabManager.activeTab }
 
@@ -98,6 +101,7 @@ struct ContentView: View {
             restoreSessionIfNeeded()
             syncSidebarSelection()
             applySearchQueryFromEnvironment()
+            refreshBlame()
         }
         .onChange(of: selectedNode) { _, newNode in
             guard let node = newNode, !node.isDirectory else { return }
@@ -111,8 +115,13 @@ struct ContentView: View {
         .onChange(of: tabManager.activeTabID) { _, _ in
             syncSidebarSelection()
             refreshLineDiffs()
+            refreshBlame()
             projectManager.saveSession()
         }
+        .modifier(BlameObserver(
+            isBlameVisible: isBlameVisible,
+            onRefresh: { refreshBlame() }
+        ))
         .onChange(of: workspace.rootNodes) { _, _ in
             restoreSessionIfNeeded()
             syncSidebarSelection()
@@ -133,6 +142,7 @@ struct ContentView: View {
         }
         .onChange(of: workspace.gitProvider.currentBranch) { _, _ in
             refreshLineDiffs()
+            refreshBlame()
         }
         .onChange(of: workspace.gitProvider.fileStatuses) { _, _ in
             refreshLineDiffs()
@@ -140,6 +150,7 @@ struct ContentView: View {
         .onReceive(NotificationCenter.default.publisher(for: .refreshLineDiffs)) { _ in
             guard controlActiveState == .key else { return }
             refreshLineDiffs()
+            refreshBlame()
         }
         .onReceive(NotificationCenter.default.publisher(for: .closeTab)) { _ in
             guard controlActiveState == .key,
@@ -314,6 +325,45 @@ struct ContentView: View {
         }
     }
 
+    /// Refreshes cached blame data for the active tab.
+    /// Cancels any in-flight blame task to avoid stale results.
+    private func refreshBlame() {
+        blameTask?.cancel()
+        guard isBlameVisible else {
+            blameLines = []
+            return
+        }
+        guard let tab = tabManager.activeTab else {
+            blameLines = []
+            return
+        }
+        let fileURL = tab.url
+        let provider = workspace.gitProvider
+        guard provider.isGitRepository, let repoURL = provider.repositoryURL else {
+            blameLines = []
+            return
+        }
+        let filePath = fileURL.path
+        blameTask = Task.detached {
+            let result = GitStatusProvider.runGit(
+                ["blame", "--porcelain", "--", filePath], at: repoURL
+            )
+            guard !Task.isCancelled else { return }
+            let lines: [GitBlameLine]
+            if result.exitCode == 0, !result.output.isEmpty {
+                lines = GitStatusProvider.parseBlame(result.output)
+            } else {
+                lines = []
+            }
+            guard !Task.isCancelled else { return }
+            await MainActor.run {
+                if tabManager.activeTab?.url == fileURL {
+                    blameLines = lines
+                }
+            }
+        }
+    }
+
     /// Refreshes cached line diffs for the active tab.
     /// Runs git diff on a background thread to avoid blocking the UI.
     private func refreshLineDiffs() {
@@ -323,31 +373,14 @@ struct ContentView: View {
         }
         let fileURL = tab.url
         let provider = workspace.gitProvider
-        guard provider.isGitRepository, let repoURL = provider.repositoryURL else {
+        guard provider.isGitRepository else {
             lineDiffs = []
             return
         }
-        let filePath = fileURL.path
-        Task.detached {
-            // Run git commands off the main thread
-            let headCheck = GitStatusProvider.runGit(["rev-parse", "HEAD"], at: repoURL)
-            guard headCheck.exitCode == 0 else {
-                await MainActor.run { lineDiffs = [] }
-                return
-            }
-            let result = GitStatusProvider.runGit(
-                ["diff", "HEAD", "--unified=0", "--", filePath], at: repoURL
-            )
-            let diffs: [GitLineDiff]
-            if result.exitCode == 0, !result.output.isEmpty {
-                diffs = GitStatusProvider.parseDiff(result.output)
-            } else {
-                diffs = []
-            }
-            await MainActor.run {
-                if tabManager.activeTab?.url == fileURL {
-                    lineDiffs = diffs
-                }
+        Task {
+            let diffs = await provider.diffForFileAsync(at: fileURL)
+            if tabManager.activeTab?.url == fileURL {
+                lineDiffs = diffs
             }
         }
     }
@@ -515,6 +548,12 @@ struct ContentView: View {
             language: tab.language,
             fileName: tab.fileName,
             lineDiffs: lineDiffs,
+            isBlameVisible: isBlameVisible,
+            blameLines: blameLines,
+            foldState: Binding(
+                get: { tab.foldState },
+                set: { tabManager.updateFoldState($0) }
+            ),
             isMinimapVisible: isMinimapVisible,
             syntaxHighlightingDisabled: tab.syntaxHighlightingDisabled,
             initialCursorPosition: goToLineOffset?.offset ?? tab.cursorPosition,
@@ -637,6 +676,18 @@ private struct SidebarSearchableContent: View {
 
 /// Saves terminal state to session when visibility, tab count, or active tab changes.
 /// Extracted into a ViewModifier to reduce body complexity for the type-checker.
+/// Refreshes blame when visibility changes.
+/// Extracted into a ViewModifier to reduce body complexity for the type-checker.
+private struct BlameObserver: ViewModifier {
+    let isBlameVisible: Bool
+    let onRefresh: () -> Void
+
+    func body(content: Content) -> some View {
+        content
+            .onChange(of: isBlameVisible) { _, _ in onRefresh() }
+    }
+}
+
 private struct TerminalSessionObserver: ViewModifier {
     let terminal: TerminalManager
     let onSave: () -> Void
