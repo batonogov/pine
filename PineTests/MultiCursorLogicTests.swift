@@ -491,6 +491,114 @@ struct MultiCursorLogicTests {
         #expect(result.replacements[1].string == "X")
     }
 
+    // MARK: - Cursor movement
+
+    @Test func moveLeftMultipleCursors() {
+        let text = "abcdef"
+        let cursors = [
+            MultiCursorLogic.Cursor(location: 2),
+            MultiCursorLogic.Cursor(location: 5)
+        ]
+        let result = MultiCursorLogic.moveLeft(in: text, cursors: cursors)
+        #expect(result.count == 2)
+        #expect(result[0].location == 1)
+        #expect(result[1].location == 4)
+    }
+
+    @Test func moveLeftAtStartStays() {
+        let text = "abc"
+        let cursors = [MultiCursorLogic.Cursor(location: 0)]
+        let result = MultiCursorLogic.moveLeft(in: text, cursors: cursors)
+        #expect(result[0].location == 0)
+    }
+
+    @Test func moveLeftCollapsesSelection() {
+        let text = "hello world"
+        let cursors = [
+            MultiCursorLogic.Cursor(location: 5, selection: NSRange(location: 0, length: 5))
+        ]
+        let result = MultiCursorLogic.moveLeft(in: text, cursors: cursors)
+        #expect(result[0].location == 0)
+        #expect(!result[0].hasSelection)
+    }
+
+    @Test func moveRightMultipleCursors() {
+        let text = "abcdef"
+        let cursors = [
+            MultiCursorLogic.Cursor(location: 1),
+            MultiCursorLogic.Cursor(location: 4)
+        ]
+        let result = MultiCursorLogic.moveRight(in: text, cursors: cursors)
+        #expect(result[0].location == 2)
+        #expect(result[1].location == 5)
+    }
+
+    @Test func moveRightAtEndStays() {
+        let text = "abc"
+        let cursors = [MultiCursorLogic.Cursor(location: 3)]
+        let result = MultiCursorLogic.moveRight(in: text, cursors: cursors)
+        #expect(result[0].location == 3)
+    }
+
+    @Test func moveUpMultipleCursors() {
+        let text = "abc\ndef\nghi"
+        // Cursors on line 2 col 1 and line 3 col 2
+        let cursors = [
+            MultiCursorLogic.Cursor(location: 5), // "e" in "def"
+            MultiCursorLogic.Cursor(location: 10)  // "h" + 2 = "i" in "ghi"
+        ]
+        let result = MultiCursorLogic.moveUp(in: text, cursors: cursors)
+        #expect(result[0].location == 1) // line 1 col 1
+        #expect(result[1].location == 6) // line 2 col 2
+    }
+
+    @Test func moveUpFromFirstLineGoesToStart() {
+        let text = "abc\ndef"
+        let cursors = [MultiCursorLogic.Cursor(location: 2)]
+        let result = MultiCursorLogic.moveUp(in: text, cursors: cursors)
+        #expect(result[0].location == 0)
+    }
+
+    @Test func moveDownMultipleCursors() {
+        let text = "abc\ndef\nghi"
+        let cursors = [
+            MultiCursorLogic.Cursor(location: 1), // line 1 col 1
+            MultiCursorLogic.Cursor(location: 5)   // line 2 col 1
+        ]
+        let result = MultiCursorLogic.moveDown(in: text, cursors: cursors)
+        #expect(result[0].location == 5) // line 2 col 1
+        #expect(result[1].location == 9) // line 3 col 1
+    }
+
+    @Test func moveDownFromLastLineGoesToEnd() {
+        let text = "abc\ndef"
+        let cursors = [MultiCursorLogic.Cursor(location: 5)]
+        let result = MultiCursorLogic.moveDown(in: text, cursors: cursors)
+        #expect(result[0].location == 7) // end of text
+    }
+
+    @Test func moveDownClampsToShorterLine() {
+        let text = "abcdef\nab"
+        // Cursor at col 5 on line 1, line 2 is shorter
+        let cursors = [MultiCursorLogic.Cursor(location: 5)]
+        let result = MultiCursorLogic.moveDown(in: text, cursors: cursors)
+        #expect(result[0].location == 9) // end of "ab" (offset 7 + 2)
+    }
+
+    @Test func moveRightSkipsEmoji() {
+        let text = "a🎉b"
+        let cursors = [MultiCursorLogic.Cursor(location: 1)] // before 🎉
+        let result = MultiCursorLogic.moveRight(in: text, cursors: cursors)
+        #expect(result[0].location == 3) // after 🎉 (2 UTF-16 units)
+    }
+
+    @Test func moveLeftSkipsEmoji() {
+        let text = "a🎉b"
+        let cursors = [MultiCursorLogic.Cursor(location: 3)] // after 🎉
+        let result = MultiCursorLogic.moveLeft(in: text, cursors: cursors)
+        #expect(result[0].location == 1) // before 🎉
+    }
+
     @Test func deleteReplacementsInOriginalCoordinates() {
         let text = "abcdef"
         let cursors = [

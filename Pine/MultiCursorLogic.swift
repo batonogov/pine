@@ -299,6 +299,79 @@ enum MultiCursorLogic {
         return mergeCursors(result)
     }
 
+    // MARK: - Cursor movement
+
+    /// Moves each cursor one character to the left. Selections are collapsed to their start.
+    static func moveLeft(in text: String, cursors: [Cursor]) -> [Cursor] {
+        let source = text as NSString
+        let result = cursors.map { cursor -> Cursor in
+            if cursor.hasSelection {
+                return Cursor(location: cursor.range.location)
+            }
+            guard cursor.location > 0 else { return cursor }
+            let composed = source.rangeOfComposedCharacterSequence(at: cursor.location - 1)
+            return Cursor(location: composed.location)
+        }
+        return mergeCursors(result)
+    }
+
+    /// Moves each cursor one character to the right. Selections are collapsed to their end.
+    static func moveRight(in text: String, cursors: [Cursor]) -> [Cursor] {
+        let source = text as NSString
+        let result = cursors.map { cursor -> Cursor in
+            if cursor.hasSelection {
+                return Cursor(location: NSMaxRange(cursor.range))
+            }
+            guard cursor.location < source.length else { return cursor }
+            let composed = source.rangeOfComposedCharacterSequence(at: cursor.location)
+            return Cursor(location: NSMaxRange(composed))
+        }
+        return mergeCursors(result)
+    }
+
+    /// Moves each cursor one line up. Selections are collapsed first.
+    static func moveUp(in text: String, cursors: [Cursor]) -> [Cursor] {
+        let source = text as NSString
+        let result = cursors.map { cursor -> Cursor in
+            let loc = cursor.hasSelection ? cursor.range.location : cursor.location
+            let lineRange = source.lineRange(for: NSRange(location: loc, length: 0))
+            guard lineRange.location > 0 else {
+                return Cursor(location: 0)
+            }
+            let column = loc - lineRange.location
+            let prevLineRange = source.lineRange(for: NSRange(location: lineRange.location - 1, length: 0))
+            let prevLineContentLength = prevLineRange.length > 0
+                && source.character(at: NSMaxRange(prevLineRange) - 1) == 0x0A
+                ? prevLineRange.length - 1 : prevLineRange.length
+            let newCol = min(column, prevLineContentLength)
+            return Cursor(location: prevLineRange.location + newCol)
+        }
+        return mergeCursors(result)
+    }
+
+    /// Moves each cursor one line down. Selections are collapsed first.
+    static func moveDown(in text: String, cursors: [Cursor]) -> [Cursor] {
+        let source = text as NSString
+        let result = cursors.map { cursor -> Cursor in
+            let loc = cursor.hasSelection ? NSMaxRange(cursor.range) : cursor.location
+            let lineRange = source.lineRange(for: NSRange(location: loc, length: 0))
+            let nextLineStart = NSMaxRange(lineRange)
+            guard nextLineStart < source.length else {
+                return Cursor(location: source.length)
+            }
+            let column = loc - lineRange.location
+            let nextLineRange = source.lineRange(for: NSRange(location: nextLineStart, length: 0))
+            let nextLineContentLength = nextLineRange.length > 0
+                && NSMaxRange(nextLineRange) <= source.length
+                && NSMaxRange(nextLineRange) > nextLineRange.location
+                && source.character(at: NSMaxRange(nextLineRange) - 1) == 0x0A
+                ? nextLineRange.length - 1 : nextLineRange.length
+            let newCol = min(column, nextLineContentLength)
+            return Cursor(location: nextLineRange.location + newCol)
+        }
+        return mergeCursors(result)
+    }
+
     // MARK: - Add cursor (Option+Click)
 
     /// Adds a cursor at `position`. If a cursor already exists at that position, removes it

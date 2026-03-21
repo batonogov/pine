@@ -44,8 +44,7 @@ final class GutterTextView: NSTextView {
     private(set) var multiCursors: [MultiCursorLogic.Cursor] = []
 
     /// Flag to distinguish multi-cursor edits from external text changes.
-    /// Internal access for Coordinator to check in textDidChange.
-    var isApplyingMultiCursorEdit = false
+    private(set) var isApplyingMultiCursorEdit = false
 
     /// Applies multi-cursor edit result using per-cursor targeted replacements (preserves attributes).
     /// Replacements are applied in reverse order so earlier offsets remain valid.
@@ -77,12 +76,11 @@ final class GutterTextView: NSTextView {
     /// Syncs NSTextView selections from multiCursors using setSelectedRanges (Apple API).
     private func syncSelectionsFromCursors() {
         guard !multiCursors.isEmpty else { return }
+        let textLength = (string as NSString).length
         let ranges = multiCursors.map { cursor -> NSValue in
-            let nsString = string as NSString
             let range = cursor.range
-            // Clamp to valid range
-            let loc = min(range.location, nsString.length)
-            let len = min(range.length, nsString.length - loc)
+            let loc = min(range.location, textLength)
+            let len = min(range.length, textLength - loc)
             return NSValue(range: NSRange(location: loc, length: len))
         }
         setSelectedRanges(ranges, affinity: .downstream, stillSelecting: false)
@@ -148,6 +146,32 @@ final class GutterTextView: NSTextView {
             return
         }
         super.cancelOperation(sender)
+    }
+
+    // MARK: - Multi-cursor arrow key movement
+
+    override func moveLeft(_ sender: Any?) {
+        guard isMultiCursorActive else { super.moveLeft(sender); return }
+        multiCursors = MultiCursorLogic.moveLeft(in: string, cursors: multiCursors)
+        syncSelectionsFromCursors()
+    }
+
+    override func moveRight(_ sender: Any?) {
+        guard isMultiCursorActive else { super.moveRight(sender); return }
+        multiCursors = MultiCursorLogic.moveRight(in: string, cursors: multiCursors)
+        syncSelectionsFromCursors()
+    }
+
+    override func moveUp(_ sender: Any?) {
+        guard isMultiCursorActive else { super.moveUp(sender); return }
+        multiCursors = MultiCursorLogic.moveUp(in: string, cursors: multiCursors)
+        syncSelectionsFromCursors()
+    }
+
+    override func moveDown(_ sender: Any?) {
+        guard isMultiCursorActive else { super.moveDown(sender); return }
+        multiCursors = MultiCursorLogic.moveDown(in: string, cursors: multiCursors)
+        syncSelectionsFromCursors()
     }
 
     // MARK: - Option+Click for multi-cursor
