@@ -809,8 +809,19 @@ struct CodeEditorView: NSViewRepresentable {
             // Report state change
             reportStateChange()
 
-            // Update line starts cache immediately (fast O(n) scan, needed for layout)
-            lineStartsCache = LineStartsCache(text: textView.string)
+            // Update line starts cache incrementally if possible, otherwise full rebuild
+            if var cache = lineStartsCache,
+               let storage = textView.textStorage,
+               storage.editedRange.location != NSNotFound {
+                cache.update(
+                    editedRange: storage.editedRange,
+                    changeInLength: storage.changeInLength,
+                    in: textView.string as NSString
+                )
+                lineStartsCache = cache
+            } else {
+                lineStartsCache = LineStartsCache(text: textView.string)
+            }
 
             // Recalculate foldable ranges (debounced — expensive operation)
             scheduleFoldRecalculation()
