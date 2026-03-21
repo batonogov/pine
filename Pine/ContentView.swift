@@ -267,6 +267,7 @@ struct ContentView: View {
         return nil
     }
 
+    /// Used by GitAndNotificationObserver — internal visibility required for cross-struct access.
     enum ChangeDirection { case next, previous }
 
     private func navigateToChange(direction: ChangeDirection) {
