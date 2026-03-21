@@ -295,8 +295,41 @@ final class GutterTextView: NSTextView {
 final class EditorContainerView: NSView {
     var minimapWidth: CGFloat = 0
 
+    // Weak reference to the scroll view so we can query the find bar state during layout.
+    private weak var managedScrollView: NSScrollView?
+    private var findBarObservation: NSKeyValueObservation?
+
+    /// Call once after the scroll view is created to enable find-bar-aware layout.
+    func observeFindBar(in scrollView: NSScrollView) {
+        managedScrollView = scrollView
+        // Re-layout whenever the find bar appears or disappears so the gutter
+        // frame is updated and no longer overlaps the find bar.
+        findBarObservation = scrollView.observe(\.isFindBarVisible, options: [.new]) { [weak self] _, _ in
+            self?.needsLayout = true
+        }
+    }
+
+    deinit {
+        findBarObservation?.invalidate()
+    }
+
+    /// Returns the height of the find bar (if visible) and whether it sits at
+    /// the bottom of the scroll view (AppKit default) or at the top.
+    private func findBarInset() -> (height: CGFloat, atBottom: Bool) {
+        guard let sv = managedScrollView,
+              sv.isFindBarVisible,
+              let fbView = sv.findBarView,
+              !fbView.isHidden else { return (0, true) }
+        // In non-flipped AppKit coordinates y=0 is the bottom edge.
+        // A find bar at the bottom has a low minY; at the top it has a high minY.
+        let atBottom = fbView.frame.minY < sv.bounds.height / 2
+        return (fbView.frame.height, atBottom)
+    }
+
     override func layout() {
         super.layout()
+        let (findBarH, findBarAtBottom) = findBarInset()
+
         for sub in subviews {
             if let minimap = sub as? MinimapView {
                 if minimap.isHidden {
@@ -316,11 +349,16 @@ final class EditorContainerView: NSView {
                     height: bounds.height
                 )
             } else {
-                // LineNumberView — keep x=0, full height, its own width
+                // LineNumberView — keep x=0 but clip so it doesn't overlap the find bar.
+                // When the find bar is at the bottom (y≈0 in non-flipped coordinates)
+                // shift the gutter up by the find bar height. When at the top, reduce height.
+                let gutterY: CGFloat = findBarAtBottom ? findBarH : 0
+                let gutterH: CGFloat = max(bounds.height - findBarH, 0)
                 sub.frame = NSRect(
-                    x: 0, y: 0,
+                    x: 0,
+                    y: gutterY,
                     width: sub.frame.width,
-                    height: bounds.height
+                    height: gutterH
                 )
             }
         }
@@ -465,6 +503,8 @@ struct CodeEditorView: NSViewRepresentable {
         let minimapView = MinimapView(textView: textView)
         minimapView.isHidden = !isMinimapVisible
         container.addSubview(minimapView)
+
+        container.observeFindBar(in: scrollView)
 
         context.coordinator.scrollView = scrollView
         context.coordinator.lineNumberView = lineNumberView
