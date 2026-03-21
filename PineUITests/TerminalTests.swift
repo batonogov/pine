@@ -75,7 +75,6 @@ final class TerminalTests: PineUITestCase {
         // Create new terminal tab via menu — should make terminal visible
         app.menuBars.menuBarItems["Terminal"].click()
         app.menuItems["New Tab"].click()
-        sleep(2)
 
         // Terminal should now be visible
         XCTAssertTrue(
@@ -98,7 +97,6 @@ final class TerminalTests: PineUITestCase {
 
         // Click to show terminal
         toggle.click()
-        sleep(2)
 
         // New terminal button also uses plain buttonStyle — search in all descendants
         let newTerminalButton = app.descendants(matching: .any)["newTerminalButton"].firstMatch
@@ -109,7 +107,11 @@ final class TerminalTests: PineUITestCase {
 
         // Click toggle again to hide
         toggle.click()
-        sleep(2)
+
+        // Wait for terminal to become hidden (button no longer hittable)
+        let hiddenPredicate = NSPredicate(format: "isHittable == false")
+        expectation(for: hiddenPredicate, evaluatedWith: newTerminalButton, handler: nil)
+        waitForExpectations(timeout: 10)
 
         // New terminal button should no longer be hittable
         XCTAssertFalse(newTerminalButton.isHittable, "Terminal should be hidden after second toggle click")

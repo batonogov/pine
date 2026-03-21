@@ -85,20 +85,20 @@ final class EditorWindowTests: PineUITestCase {
         // Open two files
         let mainFile = app.staticTexts["fileNode_main.swift"]
         if waitForExistence(mainFile, timeout: 5) { mainFile.click() }
-        sleep(1)
         let utilsFile = app.staticTexts["fileNode_utils.swift"]
         if waitForExistence(utilsFile, timeout: 5) { utilsFile.click() }
-        sleep(1)
 
         // Both tabs should exist
         let mainTab = editorTab("main.swift")
         let utilsTab = editorTab("utils.swift")
-        XCTAssertTrue(mainTab.exists, "main.swift tab should exist")
-        XCTAssertTrue(utilsTab.exists, "utils.swift tab should exist")
+        XCTAssertTrue(waitForExistence(mainTab, timeout: 5), "main.swift tab should exist")
+        XCTAssertTrue(waitForExistence(utilsTab, timeout: 5), "utils.swift tab should exist")
 
         // Click on main.swift tab to switch back
         mainTab.click()
-        sleep(1)
+        let selectedPredicate = NSPredicate(format: "isSelected == true")
+        expectation(for: selectedPredicate, evaluatedWith: mainTab, handler: nil)
+        waitForExpectations(timeout: 5)
 
         // main.swift tab should still exist (switching doesn't close tabs)
         XCTAssertTrue(mainTab.exists, "main.swift tab should still exist after clicking it")
@@ -168,8 +168,9 @@ final class EditorWindowTests: PineUITestCase {
         // File > Duplicate
         // File > Duplicate via menu
         app.activate()
-        sleep(1)
-        app.menuBars.menuBarItems["File"].click()
+        let fileMenuItemDuplicate = app.menuBars.menuBarItems["File"]
+        XCTAssertTrue(fileMenuItemDuplicate.waitForExistence(timeout: 5), "File menu should be accessible")
+        fileMenuItemDuplicate.click()
         app.menuItems["Duplicate"].click()
 
         // A new tab "main copy.swift" should appear
@@ -198,8 +199,9 @@ final class EditorWindowTests: PineUITestCase {
 
         // File menu should contain Save All
         app.activate()
-        sleep(1)
-        app.menuBars.menuBarItems["File"].click()
+        let fileMenuItemSave = app.menuBars.menuBarItems["File"]
+        XCTAssertTrue(fileMenuItemSave.waitForExistence(timeout: 5), "File menu should be accessible")
+        fileMenuItemSave.click()
         let saveAllItem = app.menuItems["Save All"]
         XCTAssertTrue(waitForExistence(saveAllItem, timeout: 3), "Save All menu item should exist")
 
