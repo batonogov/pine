@@ -3959,6 +3959,30 @@
         }
       }
     },
+    "menu.selectNextOccurrence" : {
+      "comment" : "Menu command: add cursor at next occurrence of selection (⌘D).",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Select Next Occurrence"
+          }
+        }
+      }
+    },
+    "menu.splitIntoLineCursors" : {
+      "comment" : "Menu command: split selection into one cursor per line (⌘⇧L).",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Add Cursor to Line Ends"
+          }
+        }
+      }
+    },
     "menu.toggleMinimap" : {
       "comment" : "Menu command: toggle code minimap panel.",
       "extractionState" : "manual",

@@ -242,6 +242,11 @@ final class GutterTextView: NSTextView {
     private static let indentClosers: Set<Character> = ["}", ")"]
 
     override func insertNewline(_ sender: Any?) {
+        guard !hasMultipleCursors else {
+            multiCursorInsertNewline()
+            return
+        }
+
         let source = string as NSString
         let cursorLocation = selectedRange().location
 
@@ -285,6 +290,404 @@ final class GutterTextView: NSTextView {
         }
 
         insertText("\n\(indent)", replacementRange: selectedRange())
+    }
+
+    // MARK: - Multiple cursors
+
+    /// True when more than one cursor or selection is active.
+    var hasMultipleCursors: Bool { selectedRanges.count > 1 }
+
+    /// Adds a cursor at the next occurrence of the primary selection (Cmd+D).
+    /// If nothing is selected, selects the word under the cursor first.
+    func selectNextOccurrence() {
+        let allRanges = selectedRanges.map { $0.rangeValue }
+        let primaryRange = selectedRange()
+        let nsText = string as NSString
+
+        if primaryRange.length == 0 {
+            // No selection: select the word under the cursor
+            let wordRange = nsText.doubleClick(at: primaryRange.location)
+            if wordRange.length > 0 {
+                setSelectedRange(wordRange)
+            }
+            return
+        }
+
+        let searchText = nsText.substring(with: primaryRange)
+        // Search from just after the end of the last (rightmost) selection
+        let searchStart = allRanges.map { NSMaxRange($0) }.max() ?? NSMaxRange(primaryRange)
+
+        guard let found = MultiCursorLogic.findNextOccurrence(
+            of: searchText, in: nsText, after: searchStart
+        ) else { return }
+
+        // Skip if the occurrence is already selected
+        if allRanges.contains(where: { $0.location == found.location && $0.length == found.length }) {
+            return
+        }
+
+        let newRanges = (allRanges + [found])
+            .sorted { $0.location < $1.location }
+            .map { NSValue(range: $0) }
+        setSelectedRanges(newRanges, affinity: .downstream, stillSelecting: false)
+        scrollRangeToVisible(found)
+    }
+
+    /// Splits the primary selection into one cursor per line, at the end of each line's content (Cmd+Shift+L).
+    func splitIntoLineCursors() {
+        let primary = selectedRange()
+        guard primary.length > 0 else { return }
+        let nsText = string as NSString
+        let ranges = MultiCursorLogic.splitSelectionIntoLineRanges(selection: primary, in: nsText)
+        guard ranges.count > 1 else { return }
+        setSelectedRanges(ranges.map { NSValue(range: $0) }, affinity: .downstream, stillSelecting: false)
+    }
+
+    /// Collapses all cursors to the primary cursor position, removing extra cursors (Esc behavior).
+    func collapseToSingleCursor() {
+        guard hasMultipleCursors else { return }
+        let primary = selectedRange()
+        setSelectedRange(NSRange(location: primary.location, length: 0))
+    }
+
+    // MARK: - Keyboard overrides for multi-cursor
+
+    override func keyDown(with event: NSEvent) {
+        // keyCode 53 = Escape — collapse multiple cursors
+        if event.keyCode == 53 && hasMultipleCursors {
+            collapseToSingleCursor()
+            return
+        }
+        super.keyDown(with: event)
+    }
+
+    // MARK: - Option+Click: add cursor at click position
+
+    override func mouseDown(with event: NSEvent) {
+        guard event.modifierFlags.contains(.option) else {
+            super.mouseDown(with: event)
+            return
+        }
+        guard let lm = layoutManager, let tc = textContainer else {
+            super.mouseDown(with: event)
+            return
+        }
+
+        let pointInView = convert(event.locationInWindow, from: nil)
+        let origin = textContainerOrigin
+        let containerPoint = NSPoint(x: pointInView.x - origin.x, y: pointInView.y - origin.y)
+
+        var fraction: CGFloat = 0
+        let glyphIndex = lm.glyphIndex(for: containerPoint, in: tc, fractionOfDistanceThroughGlyph: &fraction)
+        let charIndex = lm.characterIndexForGlyph(at: glyphIndex)
+        let textLen = (string as NSString).length
+        let clampedIndex = min(charIndex, textLen)
+
+        let existing = selectedRanges.map { $0.rangeValue }
+        // Don't add a duplicate cursor at the same position
+        guard !existing.contains(where: { $0.location == clampedIndex && $0.length == 0 }) else { return }
+
+        let clickRange = NSRange(location: clampedIndex, length: 0)
+        let newRanges = (existing + [clickRange])
+            .sorted { $0.location < $1.location }
+            .map { NSValue(range: $0) }
+        setSelectedRanges(newRanges, affinity: .downstream, stillSelecting: false)
+    }
+
+    // MARK: - Multi-cursor text insertion
+
+    override func insertText(_ string: Any, replacementRange: NSRange) {
+        // Fall back to standard behavior for single cursor or during IME composition
+        guard hasMultipleCursors && !hasMarkedText() else {
+            super.insertText(string, replacementRange: replacementRange)
+            return
+        }
+
+        let str: String
+        if let plain = string as? String {
+            str = plain
+        } else if let attrStr = string as? NSAttributedString {
+            str = attrStr.string
+        } else {
+            super.insertText(string, replacementRange: replacementRange)
+            return
+        }
+
+        guard let storage = textStorage else {
+            super.insertText(string, replacementRange: replacementRange)
+            return
+        }
+
+        let allRanges = selectedRanges.map { $0.rangeValue }
+        let sortedRanges = allRanges.sorted { $0.location > $1.location }
+        let insertLen = (str as NSString).length
+
+        // Build edit descriptors in end-to-start order for position computation
+        let edits = sortedRanges.map { (range: $0, replacementLength: insertLen, cursorOffset: insertLen) }
+
+        undoManager?.beginUndoGrouping()
+        storage.beginEditing()
+        for range in sortedRanges {
+            storage.replaceCharacters(in: range, with: str)
+        }
+        storage.endEditing()
+        didChangeText()
+        undoManager?.endUndoGrouping()
+
+        let newPositions = MultiCursorLogic.newCursorPositions(edits: edits)
+        let newRanges = newPositions.map { NSValue(range: NSRange(location: $0, length: 0)) }
+        setSelectedRanges(newRanges, affinity: .downstream, stillSelecting: false)
+    }
+
+    // MARK: - Multi-cursor deletion
+
+    override func deleteBackward(_ sender: Any?) {
+        guard hasMultipleCursors else {
+            super.deleteBackward(sender)
+            return
+        }
+        guard let storage = textStorage else {
+            super.deleteBackward(sender)
+            return
+        }
+
+        let allRanges = selectedRanges.map { $0.rangeValue }
+        let sortedRanges = allRanges.sorted { $0.location > $1.location }
+
+        undoManager?.beginUndoGrouping()
+        storage.beginEditing()
+
+        var edits: [(range: NSRange, replacementLength: Int, cursorOffset: Int)] = []
+        for range in sortedRanges {
+            if range.length > 0 {
+                edits.append((range: range, replacementLength: 0, cursorOffset: 0))
+                storage.replaceCharacters(in: range, with: "")
+            } else if range.location > 0 {
+                let deleteRange = NSRange(location: range.location - 1, length: 1)
+                edits.append((range: deleteRange, replacementLength: 0, cursorOffset: 0))
+                storage.replaceCharacters(in: deleteRange, with: "")
+            } else {
+                // At start of document: no-op, cursor stays at 0
+                edits.append((range: NSRange(location: 0, length: 0), replacementLength: 0, cursorOffset: 0))
+            }
+        }
+
+        storage.endEditing()
+        didChangeText()
+        undoManager?.endUndoGrouping()
+
+        let newPositions = MultiCursorLogic.newCursorPositions(edits: edits)
+        // Deduplicate: adjacent cursors may produce the same position after deletion
+        let unique = Array(Set(newPositions)).sorted()
+        let newRanges = unique.map { NSValue(range: NSRange(location: max(0, $0), length: 0)) }
+        setSelectedRanges(newRanges.isEmpty ? [NSValue(range: NSRange(location: 0, length: 0))] : newRanges,
+                          affinity: .upstream, stillSelecting: false)
+    }
+
+    override func deleteForward(_ sender: Any?) {
+        guard hasMultipleCursors else {
+            super.deleteForward(sender)
+            return
+        }
+        guard let storage = textStorage else {
+            super.deleteForward(sender)
+            return
+        }
+
+        let allRanges = selectedRanges.map { $0.rangeValue }
+        let sortedRanges = allRanges.sorted { $0.location > $1.location }
+        let textLen = (string as NSString).length
+
+        undoManager?.beginUndoGrouping()
+        storage.beginEditing()
+
+        var edits: [(range: NSRange, replacementLength: Int, cursorOffset: Int)] = []
+        for range in sortedRanges {
+            if range.length > 0 {
+                edits.append((range: range, replacementLength: 0, cursorOffset: 0))
+                storage.replaceCharacters(in: range, with: "")
+            } else if range.location < textLen {
+                let deleteRange = NSRange(location: range.location, length: 1)
+                edits.append((range: deleteRange, replacementLength: 0, cursorOffset: 0))
+                storage.replaceCharacters(in: deleteRange, with: "")
+            } else {
+                // At end of document: no-op
+                edits.append((range: range, replacementLength: 0, cursorOffset: 0))
+            }
+        }
+
+        storage.endEditing()
+        didChangeText()
+        undoManager?.endUndoGrouping()
+
+        let newPositions = MultiCursorLogic.newCursorPositions(edits: edits)
+        let unique = Array(Set(newPositions)).sorted()
+        let newRanges = unique.map { NSValue(range: NSRange(location: max(0, $0), length: 0)) }
+        setSelectedRanges(newRanges.isEmpty ? [NSValue(range: NSRange(location: 0, length: 0))] : newRanges,
+                          affinity: .downstream, stillSelecting: false)
+    }
+
+    // MARK: - Multi-cursor movement
+
+    override func moveLeft(_ sender: Any?) {
+        guard hasMultipleCursors else {
+            super.moveLeft(sender)
+            return
+        }
+        let allRanges = selectedRanges.map { $0.rangeValue }
+        let moved = allRanges.map { range -> NSRange in
+            if range.length > 0 {
+                return NSRange(location: range.location, length: 0)
+            } else if range.location > 0 {
+                return NSRange(location: range.location - 1, length: 0)
+            }
+            return range
+        }
+        let merged = MultiCursorLogic.mergeOverlapping(moved)
+        setSelectedRanges(merged.map { NSValue(range: $0) }, affinity: .upstream, stillSelecting: false)
+    }
+
+    override func moveRight(_ sender: Any?) {
+        guard hasMultipleCursors else {
+            super.moveRight(sender)
+            return
+        }
+        let allRanges = selectedRanges.map { $0.rangeValue }
+        let textLen = (string as NSString).length
+        let moved = allRanges.map { range -> NSRange in
+            if range.length > 0 {
+                return NSRange(location: NSMaxRange(range), length: 0)
+            } else if range.location < textLen {
+                return NSRange(location: range.location + 1, length: 0)
+            }
+            return range
+        }
+        let merged = MultiCursorLogic.mergeOverlapping(moved)
+        setSelectedRanges(merged.map { NSValue(range: $0) }, affinity: .downstream, stillSelecting: false)
+    }
+
+    override func moveUp(_ sender: Any?) {
+        guard hasMultipleCursors, let lm = layoutManager, let tc = textContainer else {
+            super.moveUp(sender)
+            return
+        }
+        let allRanges = selectedRanges.map { $0.rangeValue }
+        let moved = allRanges.map { range -> NSRange in
+            let loc = range.location
+            if loc == 0 { return NSRange(location: 0, length: 0) }
+            let glyphIdx = lm.glyphIndexForCharacter(at: min(loc, max((string as NSString).length - 1, 0)))
+            let lineRect = lm.lineFragmentRect(forGlyphAt: glyphIdx, effectiveRange: nil)
+            let charLoc = lm.location(forGlyphAt: glyphIdx)
+            let xPos = lineRect.origin.x + charLoc.x
+            let targetY = lineRect.midY - lineRect.height
+            guard targetY >= 0 else { return NSRange(location: 0, length: 0) }
+            let targetPoint = NSPoint(x: xPos, y: targetY)
+            let newGlyph = lm.glyphIndex(for: targetPoint, in: tc, fractionOfDistanceThroughGlyph: nil)
+            let newChar = lm.characterIndexForGlyph(at: newGlyph)
+            return NSRange(location: newChar, length: 0)
+        }
+        let merged = MultiCursorLogic.mergeOverlapping(moved)
+        setSelectedRanges(merged.map { NSValue(range: $0) }, affinity: .upstream, stillSelecting: false)
+    }
+
+    override func moveDown(_ sender: Any?) {
+        guard hasMultipleCursors, let lm = layoutManager, let tc = textContainer else {
+            super.moveDown(sender)
+            return
+        }
+        let allRanges = selectedRanges.map { $0.rangeValue }
+        let textLen = (string as NSString).length
+        let moved = allRanges.map { range -> NSRange in
+            let loc = range.location
+            let safeLoc = min(loc, max(textLen - 1, 0))
+            let glyphIdx = lm.glyphIndexForCharacter(at: safeLoc)
+            let lineRect = lm.lineFragmentRect(forGlyphAt: glyphIdx, effectiveRange: nil)
+            let charLoc = lm.location(forGlyphAt: glyphIdx)
+            let xPos = lineRect.origin.x + charLoc.x
+            let targetPoint = NSPoint(x: xPos, y: lineRect.midY + lineRect.height)
+            let newGlyph = lm.glyphIndex(for: targetPoint, in: tc, fractionOfDistanceThroughGlyph: nil)
+            let newChar = lm.characterIndexForGlyph(at: newGlyph)
+            if newChar == loc { return NSRange(location: textLen, length: 0) }
+            return NSRange(location: newChar, length: 0)
+        }
+        let merged = MultiCursorLogic.mergeOverlapping(moved)
+        setSelectedRanges(merged.map { NSValue(range: $0) }, affinity: .downstream, stillSelecting: false)
+    }
+
+    // MARK: - Multi-cursor newline with per-cursor auto-indent
+
+    // swiftlint:disable:next function_body_length
+    private func multiCursorInsertNewline() {
+        guard let storage = textStorage else { return }
+
+        let source = string as NSString
+        let allRanges = selectedRanges.map { $0.rangeValue }
+        let sortedRanges = allRanges.sorted { $0.location > $1.location }
+
+        struct CursorInsert {
+            let range: NSRange
+            let text: String
+            let cursorOffset: Int
+        }
+
+        // Compute insert string for each cursor using the original text snapshot.
+        // Because we apply end-to-start, the text before each cursor is unchanged
+        // in the original snapshot at the time of computation.
+        var inserts: [CursorInsert] = []
+        for range in sortedRanges {
+            let cursorLocation = range.location
+            let lineRange = source.lineRange(for: NSRange(location: cursorLocation, length: 0))
+            let currentLine = source.substring(with: lineRange)
+            let leadingWhitespace = String(currentLine.prefix(while: { $0 == " " || $0 == "\t" }))
+
+            let textBeforeCursor = source.substring(with: NSRange(
+                location: lineRange.location,
+                length: cursorLocation - lineRange.location
+            ))
+            let lastNonSpace = textBeforeCursor.last(where: { !$0.isWhitespace })
+
+            let textAfterCursor = source.substring(with: NSRange(
+                location: cursorLocation,
+                length: NSMaxRange(lineRange) - cursorLocation
+            ))
+            let firstNonSpaceAfter = textAfterCursor.first(where: { !$0.isWhitespace && $0 != "\n" })
+
+            var indent = leadingWhitespace
+            if let last = lastNonSpace, Self.indentOpeners.contains(last) {
+                indent += "    "
+            }
+
+            let insertStr: String
+            let cursorOffset: Int
+            if let last = lastNonSpace, let first = firstNonSpaceAfter,
+               Self.indentOpeners.contains(last) && Self.indentClosers.contains(first) {
+                let closingIndent = leadingWhitespace
+                insertStr = "\n\(indent)\n\(closingIndent)"
+                cursorOffset = 1 + indent.count
+            } else {
+                insertStr = "\n\(indent)"
+                cursorOffset = (insertStr as NSString).length
+            }
+            inserts.append(CursorInsert(range: range, text: insertStr, cursorOffset: cursorOffset))
+        }
+
+        undoManager?.beginUndoGrouping()
+        storage.beginEditing()
+
+        var edits: [(range: NSRange, replacementLength: Int, cursorOffset: Int)] = []
+        for insert in inserts {
+            let repLen = (insert.text as NSString).length
+            edits.append((range: insert.range, replacementLength: repLen, cursorOffset: insert.cursorOffset))
+            storage.replaceCharacters(in: insert.range, with: insert.text)
+        }
+
+        storage.endEditing()
+        didChangeText()
+        undoManager?.endUndoGrouping()
+
+        let newPositions = MultiCursorLogic.newCursorPositions(edits: edits)
+        let newRanges = newPositions.map { NSValue(range: NSRange(location: $0, length: 0)) }
+        setSelectedRanges(newRanges, affinity: .downstream, stillSelecting: false)
     }
 }
 
@@ -589,6 +992,20 @@ struct CodeEditorView: NSViewRepresentable {
             context.coordinator,
             selector: #selector(Coordinator.handleFoldCode(_:)),
             name: .foldCode,
+            object: nil
+        )
+
+        // Observe multiple cursor notifications (Cmd+D, Cmd+Shift+L)
+        NotificationCenter.default.addObserver(
+            context.coordinator,
+            selector: #selector(Coordinator.handleSelectNextOccurrence),
+            name: .selectNextOccurrence,
+            object: nil
+        )
+        NotificationCenter.default.addObserver(
+            context.coordinator,
+            selector: #selector(Coordinator.handleSplitIntoLineCursors),
+            name: .splitIntoLineCursors,
             object: nil
         )
 
@@ -1352,6 +1769,22 @@ struct CodeEditorView: NSViewRepresentable {
             let cursor = textView.selectedRange().location
             let scroll = sv.contentView.bounds.origin.y
             parent.onStateChange?(cursor, scroll)
+        }
+
+        // MARK: - Multiple cursors
+
+        @objc func handleSelectNextOccurrence() {
+            guard let sv = scrollView,
+                  let gutterView = sv.documentView as? GutterTextView,
+                  gutterView.window?.isKeyWindow == true else { return }
+            gutterView.selectNextOccurrence()
+        }
+
+        @objc func handleSplitIntoLineCursors() {
+            guard let sv = scrollView,
+                  let gutterView = sv.documentView as? GutterTextView,
+                  gutterView.window?.isKeyWindow == true else { return }
+            gutterView.splitIntoLineCursors()
         }
     }
 
