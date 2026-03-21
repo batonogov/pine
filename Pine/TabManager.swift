@@ -140,11 +140,13 @@ final class TabManager {
     }
 
     /// Closes a tab by ID. Selects an adjacent tab if the closed tab was active.
-    /// Cancels any pending auto-save for the closed tab.
+    /// Cancels any pending auto-save and recovery snapshot for the closed tab.
     func closeTab(id: UUID) {
         guard let index = tabs.firstIndex(where: { $0.id == id }) else { return }
 
         cancelAutoSave()
+        cancelRecoverySnapshot(for: id)
+        RecoveryManager.shared.deleteRecovery(for: id)
 
         let wasActive = activeTabID == id
         tabs.remove(at: index)
@@ -168,6 +170,7 @@ final class TabManager {
     /// Updates the content of the active tab (text tabs only).
     /// Also eagerly recomputes indentation/line-ending caches so reads are mutation-free.
     /// When auto-save is enabled, schedules a debounced save.
+    /// Always schedules a debounced crash-recovery snapshot for dirty content.
     func updateContent(_ newContent: String) {
         guard let index = activeTabIndex else { return }
         guard tabs[index].kind == .text else { return }
@@ -177,6 +180,8 @@ final class TabManager {
         if isAutoSaveEnabled {
             scheduleAutoSave()
         }
+
+        scheduleRecoverySnapshot()
     }
 
     /// Updates the saved editor state (cursor, scroll) for the active tab.
@@ -206,6 +211,7 @@ final class TabManager {
 
     /// Writes tab content to disk without UI. Returns true on success.
     /// On failure, throws — callers decide how to present the error.
+    /// Deletes the recovery file on success since the content is now safely on disk.
     @discardableResult
     func trySaveTab(at index: Int) throws -> Bool {
         let tab = tabs[index]
@@ -214,6 +220,7 @@ final class TabManager {
         tabs[index].savedContent = tab.content
         tabs[index].lastModDate = modDate(for: tab.url)
         tabs[index].fileSizeBytes = fileSize(url: tab.url)
+        RecoveryManager.shared.deleteRecovery(for: tab.id)
         return true
     }
 
@@ -459,6 +466,76 @@ final class TabManager {
     /// Whether a pending auto-save is scheduled (for testing).
     var hasScheduledAutoSave: Bool {
         autoSaveWorkItem != nil
+    }
+
+    // MARK: - Crash recovery snapshots
+
+    /// Debounce delay before writing a recovery snapshot. Use `setRecoveryDelay(_:)` in tests.
+    private(set) var recoveryDelay: TimeInterval = 5.0
+
+    /// Per-tab debounce work items for recovery snapshots.
+    private var recoveryWorkItems: [UUID: DispatchWorkItem] = [:]
+
+    /// Sets the recovery snapshot debounce delay. Intended for tests only.
+    func setRecoveryDelay(_ delay: TimeInterval) {
+        recoveryDelay = delay
+    }
+
+    /// Schedules a debounced crash-recovery snapshot for the active tab.
+    /// Resets the debounce timer on every call, so the snapshot fires
+    /// `recoveryDelay` seconds after the last edit.
+    func scheduleRecoverySnapshot() {
+        guard let index = activeTabIndex else { return }
+        let tab = tabs[index]
+        guard tab.kind == .text, tab.isDirty else { return }
+
+        let tabID = tab.id
+        recoveryWorkItems[tabID]?.cancel()
+
+        let workItem = DispatchWorkItem { [weak self] in
+            guard let self,
+                  let idx = self.tabs.firstIndex(where: { $0.id == tabID }),
+                  self.tabs[idx].isDirty
+            else { return }
+            let current = self.tabs[idx]
+            RecoveryManager.shared.snapshot(
+                tabID: tabID,
+                url: current.url,
+                content: current.content,
+                encoding: current.encoding
+            )
+            self.recoveryWorkItems.removeValue(forKey: tabID)
+        }
+
+        recoveryWorkItems[tabID] = workItem
+        DispatchQueue.main.asyncAfter(deadline: .now() + recoveryDelay, execute: workItem)
+    }
+
+    /// Cancels the pending recovery snapshot for a specific tab.
+    func cancelRecoverySnapshot(for tabID: UUID) {
+        recoveryWorkItems[tabID]?.cancel()
+        recoveryWorkItems.removeValue(forKey: tabID)
+    }
+
+    /// Cancels all pending recovery snapshots.
+    func cancelAllRecoverySnapshots() {
+        recoveryWorkItems.values.forEach { $0.cancel() }
+        recoveryWorkItems.removeAll()
+    }
+
+    /// Whether a recovery snapshot is pending for the given tab (for testing).
+    func hasScheduledRecoverySnapshot(for tabID: UUID) -> Bool {
+        recoveryWorkItems[tabID] != nil
+    }
+
+    /// Restores a tab's content from crash-recovery data.
+    /// Replaces the tab's content and marks it dirty without triggering
+    /// auto-save or a new recovery snapshot.
+    func restoreTabContent(url: URL, content: String) {
+        guard let index = tabs.firstIndex(where: { $0.url == url }) else { return }
+        tabs[index].content = content
+        tabs[index].recomputeContentCaches()
+        // savedContent is intentionally left unchanged — this keeps the tab dirty
     }
 
     // MARK: - Markdown preview

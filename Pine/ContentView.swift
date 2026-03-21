@@ -27,6 +27,8 @@ struct ContentView: View {
     @State private var didRestoreSession = false
     @State private var isSearchPresented = false
     @State private var goToLineOffset: GoToRequest?
+    /// Recovery files available for this project's open tabs (shown in recovery sheet).
+    @State private var pendingRecoveries: [RecoveryFileData] = []
     @AppStorage("minimapVisible") private var isMinimapVisible = true
     @AppStorage(BlameConstants.storageKey) private var isBlameVisible = true
 
@@ -86,6 +88,24 @@ struct ContentView: View {
             projectManager: projectManager,
             isSearchPresented: $isSearchPresented
         ))
+        .sheet(isPresented: Binding(
+            get: { !pendingRecoveries.isEmpty },
+            set: { if !$0 { pendingRecoveries = [] } }
+        )) {
+            RecoveryDialogView(
+                recoveries: pendingRecoveries,
+                onRecover: { recoveries in
+                    applyRecoveries(recoveries)
+                    pendingRecoveries = []
+                },
+                onDiscard: {
+                    for recovery in pendingRecoveries {
+                        RecoveryManager.shared.deleteRecovery(for: recovery.tabID)
+                    }
+                    pendingRecoveries = []
+                }
+            )
+        }
         .frame(minWidth: 800, minHeight: 500)
         .navigationTitle(workspace.projectName)
         .navigationSubtitle(branchSubtitle)
@@ -99,6 +119,7 @@ struct ContentView: View {
         }
         .task {
             restoreSessionIfNeeded()
+            checkForRecoveries()
             syncSidebarSelection()
             applySearchQueryFromEnvironment()
             refreshBlame()
@@ -256,6 +277,39 @@ struct ContentView: View {
         if let activeIndex = session.activeTerminalIndex,
            activeIndex < terminal.terminalTabs.count {
             terminal.activeTerminalID = terminal.terminalTabs[activeIndex].id
+        }
+    }
+
+    /// Checks whether any currently-open tab has crash-recovery data available.
+    /// Populates `pendingRecoveries` to trigger the recovery sheet when matches are found.
+    ///
+    /// Only tabs that are currently clean (not already dirty) and whose recovery content
+    /// differs from what's on disk are offered for recovery — there is nothing to gain
+    /// from recovering content that matches the saved file.
+    private func checkForRecoveries() {
+        let recoveryByURL = RecoveryManager.shared.recoveryByURL()
+        guard !recoveryByURL.isEmpty else { return }
+
+        var matches: [RecoveryFileData] = []
+        for tab in tabManager.tabs where tab.kind == .text && !tab.isDirty {
+            guard let recovery = recoveryByURL[tab.url.path],
+                  recovery.content != tab.content
+            else { continue }
+            matches.append(recovery)
+        }
+
+        if !matches.isEmpty {
+            pendingRecoveries = matches
+        }
+    }
+
+    /// Applies recovery data to the matching open tabs and deletes the recovery files.
+    private func applyRecoveries(_ recoveries: [RecoveryFileData]) {
+        for recovery in recoveries {
+            guard let urlPath = recovery.originalURLPath else { continue }
+            let url = URL(fileURLWithPath: urlPath)
+            tabManager.restoreTabContent(url: url, content: recovery.content)
+            RecoveryManager.shared.deleteRecovery(for: recovery.tabID)
         }
     }
 

@@ -4562,6 +4562,54 @@
         }
       }
     },
+    "recovery.discard" : {
+      "comment" : "Button label to discard all recovered files and delete recovery data.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Discard"
+          }
+        }
+      }
+    },
+    "recovery.message" : {
+      "comment" : "Informational message in the crash recovery dialog explaining what happened.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pine quit unexpectedly. The following files have unsaved changes that can be recovered."
+          }
+        }
+      }
+    },
+    "recovery.recoverAll" : {
+      "comment" : "Button label to recover all files listed in the recovery dialog.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Recover All"
+          }
+        }
+      }
+    },
+    "recovery.title" : {
+      "comment" : "Title of the crash recovery dialog.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Recover Unsaved Changes"
+          }
+        }
+      }
+    },
     "search.placeholder" : {
       "comment" : "Placeholder text in the project search field.",
       "extractionState" : "manual",

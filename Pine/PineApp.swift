@@ -799,10 +799,14 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate {
             UserDefaults.standard.set(true, forKey: BlameConstants.storageKey)
         }
 
+        // Remove recovery files older than 7 days on every launch.
+        RecoveryManager.shared.cleanupStaleRecoveries()
+
         // UI testing support: clear persisted state for a clean launch
         if CommandLine.arguments.contains("--reset-state") {
             SessionState.removeAll()
             FontSizeSettings.shared.reset()
+            RecoveryManager.shared.deleteAllRecoveries()
         }
 
         // UI testing support: read project path from environment variable.
@@ -924,6 +928,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate {
         for (_, pm) in registry.openProjects {
             pm.saveSession()
         }
+        // Cancel pending recovery snapshots and delete all recovery files —
+        // a clean quit means there is no unsaved content to recover.
+        for (_, pm) in registry.openProjects {
+            pm.tabManager.cancelAllRecoverySnapshots()
+        }
+        RecoveryManager.shared.deleteAllRecoveries()
         registry.destroyAllProjects()
     }
 

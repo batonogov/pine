@@ -289,4 +289,17 @@ enum Strings {
     static var terminalTabCloseWarningClose: String {
         String(localized: "terminal.tabCloseWarning.close")
     }
+
+    // MARK: - Crash Recovery
+
+    static let recoveryTitle: LocalizedStringKey = "recovery.title"
+    static let recoveryMessage: LocalizedStringKey = "recovery.message"
+
+    static var recoveryRecoverAll: String {
+        String(localized: "recovery.recoverAll")
+    }
+
+    static var recoveryDiscard: String {
+        String(localized: "recovery.discard")
+    }
 }

@@ -48,6 +48,11 @@ enum AccessibilityID {
     // MARK: - Project Search
     static let projectSearchResultsList = "projectSearchResultsList"
 
+    // MARK: - Crash Recovery Dialog
+    static let recoveryDialog = "recoveryDialog"
+    static let recoveryRecoverButton = "recoveryRecoverButton"
+    static let recoveryDiscardButton = "recoveryDiscardButton"
+
     // MARK: - Status bar
     static let statusBar = "statusBar"
     static let terminalToggleButton = "terminalToggleButton"
