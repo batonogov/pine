@@ -563,6 +563,7 @@ struct ContentView: View {
                 tabManager.updateEditorState(cursorPosition: cursor, scrollOffset: scroll)
             },
             goToOffset: goToLineOffset,
+            isSecretMaskingEnabled: SecretMaskingSettings.shared.isEnabled,
             fontSize: FontSizeSettings.shared.fontSize
         )
         .accessibilityIdentifier(AccessibilityID.codeEditor)

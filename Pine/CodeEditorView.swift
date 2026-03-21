@@ -399,9 +399,15 @@ struct CodeEditorView: NSViewRepresentable {
     var onStateChange: ((Int, CGFloat) -> Void)?
     /// When non-nil, the editor scrolls to this offset. The `id` ensures each request is unique.
     var goToOffset: GoToRequest?
+    /// Whether to highlight detected secrets (API keys, tokens, passwords) in the editor.
+    var isSecretMaskingEnabled: Bool = SecretMaskingSettings.shared.isEnabled
 
     /// Пользовательский ключ атрибута для подсветки парных скобок.
     static let bracketHighlightKey = NSAttributedString.Key("PineBracketHighlight")
+
+    /// Custom attribute key used to tag secret-highlight ranges in NSLayoutManager
+    /// temporary attributes (does not affect saved text content).
+    static let secretHighlightKey = NSAttributedString.Key("PineSecretHighlight")
 
     /// Порог (в символах) для переключения на viewport-based подсветку.
     static let viewportHighlightThreshold = 100_000
@@ -595,6 +601,9 @@ struct CodeEditorView: NSViewRepresentable {
         // Calculate initial foldable ranges
         context.coordinator.recalculateFoldableRanges()
 
+        // Schedule initial secret masking scan
+        context.coordinator.scheduleSecretMasking(textView: textView)
+
         return container
     }
 
@@ -651,6 +660,19 @@ struct CodeEditorView: NSViewRepresentable {
             textView.setSelectedRange(NSRange(location: safeOffset, length: 0))
             textView.scrollRangeToVisible(NSRange(location: safeOffset, length: 0))
         }
+
+        // Re-apply (or clear) secret masking when the setting is toggled
+        let maskingChanged = isSecretMaskingEnabled != context.coordinator.lastSecretMaskingEnabled
+        if maskingChanged,
+           let sv = context.coordinator.scrollView,
+           let textView = sv.documentView as? GutterTextView {
+            context.coordinator.lastSecretMaskingEnabled = isSecretMaskingEnabled
+            if isSecretMaskingEnabled {
+                context.coordinator.scheduleSecretMasking(textView: textView)
+            } else {
+                context.coordinator.clearSecretMasking(textView: textView)
+            }
+        }
     }
 
     func makeCoordinator() -> Coordinator {
@@ -687,6 +709,9 @@ struct CodeEditorView: NSViewRepresentable {
 
         /// Last consumed navigation request ID — prevents re-processing.
         var lastGoToID: UUID?
+
+        /// Tracks the last known secret masking state to detect setting changes in updateNSView.
+        var lastSecretMaskingEnabled: Bool = SecretMaskingSettings.shared.isEnabled
 
         /// Generation counter for cancelling stale async highlight requests.
         let highlightGeneration = HighlightGeneration()
@@ -880,6 +905,9 @@ struct CodeEditorView: NSViewRepresentable {
             // Recalculate foldable ranges (debounced — expensive operation)
             scheduleFoldRecalculation()
 
+            // Re-run secret masking for changed text
+            scheduleSecretMasking(textView: textView)
+
             // Захватываем editedRange из textStorage сейчас,
             // пока он валиден в координатах текущей версии текста
             var editedRange: NSRange?
@@ -1055,6 +1083,83 @@ struct CodeEditorView: NSViewRepresentable {
             }
 
             return [openerRange, closerRange]
+        }
+
+        // MARK: - Secret masking
+
+        /// Background color applied to detected secret ranges.
+        private let secretHighlightColor = NSColor(name: nil) { appearance in
+            if appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua {
+                return NSColor.systemOrange.withAlphaComponent(0.25)
+            } else {
+                return NSColor.systemOrange.withAlphaComponent(0.20)
+            }
+        }
+
+        /// Debounced secret-masking work item — cancelled on each text change.
+        private var secretMaskingWorkItem: DispatchWorkItem?
+        /// Delay for secret masking debounce (slightly longer than syntax highlight debounce).
+        private let secretMaskingDelay: TimeInterval = 0.15
+        /// Ranges currently highlighted by secret masking — used for targeted cleanup.
+        private var secretHighlightRanges: [NSRange] = []
+
+        /// Schedules a debounced secret-masking scan for `textView`.
+        func scheduleSecretMasking(textView: NSTextView) {
+            secretMaskingWorkItem?.cancel()
+            let workItem = DispatchWorkItem { [weak self, weak textView] in
+                guard let self, let textView else { return }
+                self.applySecretMasking(textView: textView)
+            }
+            secretMaskingWorkItem = workItem
+            DispatchQueue.main.asyncAfter(deadline: .now() + secretMaskingDelay, execute: workItem)
+        }
+
+        /// Applies background highlight to detected secret ranges using NSLayoutManager
+        /// temporary attributes (transparent to text storage — file content unchanged).
+        /// Clears only previously applied secret ranges before re-applying, so other
+        /// temporary attributes (e.g. bracket highlight, text finder) are not disturbed.
+        func applySecretMasking(textView: NSTextView) {
+            guard let layoutManager = textView.layoutManager else { return }
+
+            // Remove only previously tracked secret ranges — targeted, not full-range wipe.
+            let currentLength = (textView.string as NSString).length
+            for range in secretHighlightRanges where NSMaxRange(range) <= currentLength {
+                layoutManager.removeTemporaryAttribute(.backgroundColor, forCharacterRange: range)
+                layoutManager.removeTemporaryAttribute(
+                    CodeEditorView.secretHighlightKey, forCharacterRange: range
+                )
+            }
+            secretHighlightRanges = []
+
+            guard parent.isSecretMaskingEnabled else { return }
+
+            let text = textView.string
+            let length = (text as NSString).length
+            let matches = SecretDetector.shared.detect(in: text)
+
+            for match in matches {
+                guard NSMaxRange(match.range) <= length else { continue }
+                layoutManager.addTemporaryAttribute(
+                    .backgroundColor, value: secretHighlightColor, forCharacterRange: match.range
+                )
+                layoutManager.addTemporaryAttribute(
+                    CodeEditorView.secretHighlightKey, value: true, forCharacterRange: match.range
+                )
+                secretHighlightRanges.append(match.range)
+            }
+        }
+
+        /// Removes all secret-masking temporary attributes from the layout manager.
+        func clearSecretMasking(textView: NSTextView) {
+            guard let layoutManager = textView.layoutManager else { return }
+            let currentLength = (textView.string as NSString).length
+            for range in secretHighlightRanges where NSMaxRange(range) <= currentLength {
+                layoutManager.removeTemporaryAttribute(.backgroundColor, forCharacterRange: range)
+                layoutManager.removeTemporaryAttribute(
+                    CodeEditorView.secretHighlightKey, forCharacterRange: range
+                )
+            }
+            secretHighlightRanges = []
         }
 
         @objc func scrollViewDidScroll(_ notification: Notification) {
