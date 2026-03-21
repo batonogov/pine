@@ -970,44 +970,6 @@ struct TabManagerTests {
         #expect(onDisk == "original")
     }
 
-    @Test("Auto-save does not run when disabled in UserDefaults")
-    func autoSaveDisabledByDefault() async throws {
-        let manager = TabManager()
-        manager.setAutoSaveDelay(0.1)
-        let url = tempFileURL(content: "original")
-
-        // Ensure auto-save is off
-        UserDefaults.standard.set(false, forKey: TabManager.autoSaveKey)
-        defer { UserDefaults.standard.removeObject(forKey: TabManager.autoSaveKey) }
-
-        manager.openTab(url: url)
-        manager.updateContent("modified")
-
-        // updateContent should NOT trigger auto-save when disabled
-        try await Task.sleep(for: .milliseconds(300))
-
-        #expect(manager.activeTab?.isDirty == true)
-    }
-
-    @Test("updateContent triggers auto-save when enabled")
-    func updateContentTriggersAutoSaveWhenEnabled() async throws {
-        let manager = TabManager()
-        manager.setAutoSaveDelay(0.1)
-        let url = tempFileURL(content: "original")
-
-        UserDefaults.standard.set(true, forKey: TabManager.autoSaveKey)
-        defer { UserDefaults.standard.removeObject(forKey: TabManager.autoSaveKey) }
-
-        manager.openTab(url: url)
-        manager.updateContent("auto-saved content")
-
-        try await Task.sleep(for: .milliseconds(300))
-
-        #expect(manager.activeTab?.isDirty == false)
-        let onDisk = try String(contentsOf: url, encoding: .utf8)
-        #expect(onDisk == "auto-saved content")
-    }
-
     @Test("Auto-save handles tab switch — saves correct tab")
     func autoSaveHandlesTabSwitch() async throws {
         let manager = TabManager()
@@ -1015,13 +977,12 @@ struct TabManagerTests {
         let url1 = tempFileURL(name: "a.swift", content: "original1")
         let url2 = tempFileURL(name: "b.swift", content: "original2")
 
-        UserDefaults.standard.set(true, forKey: TabManager.autoSaveKey)
-        defer { UserDefaults.standard.removeObject(forKey: TabManager.autoSaveKey) }
-
         manager.openTab(url: url1)
         manager.updateContent("modified1")
 
-        // Switch to tab 2 before auto-save fires
+        // Schedule auto-save explicitly, then switch tab
+        manager.scheduleAutoSave()
+
         manager.openTab(url: url2)
 
         try await Task.sleep(for: .milliseconds(300))

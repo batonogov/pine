@@ -158,14 +158,19 @@ final class TabManager {
         }
     }
 
+    /// Whether auto-save is enabled. Bound to UserDefaults by the view layer.
+    var isAutoSaveEnabled: Bool {
+        UserDefaults.standard.bool(forKey: Self.autoSaveKey)
+    }
+
     /// Updates the content of the active tab (text tabs only).
-    /// When auto-save is enabled in UserDefaults, schedules a debounced save.
+    /// When auto-save is enabled, schedules a debounced save.
     func updateContent(_ newContent: String) {
         guard let index = activeTabIndex else { return }
         guard tabs[index].kind == .text else { return }
         tabs[index].content = newContent
 
-        if UserDefaults.standard.bool(forKey: Self.autoSaveKey) {
+        if isAutoSaveEnabled {
             scheduleAutoSave()
         }
     }
