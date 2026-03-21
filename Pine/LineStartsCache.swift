@@ -61,15 +61,10 @@ struct LineStartsCache {
         // Находим первую строку, затронутую изменением (binary search).
         let firstAffectedIdx = lineIndex(containing: editLocation)
 
-        // Находим последнюю строку, затронутую изменением.
-        // При вставке: конец editedRange в новом тексте.
-        // При удалении: editLocation + abs(changeInLength) в старых координатах.
-        let oldEndOfEdit: Int
-        if changeInLength >= 0 {
-            oldEndOfEdit = editLocation
-        } else {
-            oldEndOfEdit = editLocation - changeInLength // editLocation + abs(changeInLength)
-        }
+        // Конец затронутой области в старых координатах.
+        // editedRange.length — длина в новом тексте, вычитаем changeInLength чтобы получить длину в старом.
+        let oldEditLength = editedRange.length - changeInLength
+        let oldEndOfEdit = editLocation + oldEditLength
 
         // Удаляем все строки, начинающиеся внутри затронутой области (в старых координатах).
         var lastRemovedIdx = firstAffectedIdx

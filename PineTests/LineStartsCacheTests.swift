@@ -173,6 +173,36 @@ struct LineStartsCacheTests {
         #expect(cache.lineNumber(at: 4) == fresh.lineNumber(at: 4))
     }
 
+    @Test func updateReplaceNewlineContainingText() {
+        // "ab\ncd\nef" → replace "\ncd\n" (pos 2, len 4) with "XY" → "abXYef"
+        // Old text has \n inside replaced region — those line starts must be removed
+        var cache = LineStartsCache(text: "ab\ncd\nef")
+        #expect(cache.lineCount == 3)
+
+        // editedRange in new text: (2, 2), changeInLength = -2
+        cache.update(editedRange: NSRange(location: 2, length: 2), changeInLength: -2, in: "abXYef" as NSString)
+        let fresh = LineStartsCache(text: "abXYef")
+        #expect(cache.lineCount == fresh.lineCount)
+        for i in 0..<("abXYef" as NSString).length {
+            #expect(cache.lineNumber(at: i) == fresh.lineNumber(at: i), "Mismatch at index \(i)")
+        }
+    }
+
+    @Test func updateReplaceNewlinesWithNewlines() {
+        // "a\nb\nc" → replace "\nb\n" (pos 1, len 3) with "X\nY\nZ\n" → "aX\nY\nZ\nc"
+        // Both old and new text contain newlines
+        var cache = LineStartsCache(text: "a\nb\nc")
+        #expect(cache.lineCount == 3)
+
+        // editedRange in new text: (1, 7), changeInLength = 4
+        cache.update(editedRange: NSRange(location: 1, length: 7), changeInLength: 4, in: "aX\nY\nZ\nc" as NSString)
+        let fresh = LineStartsCache(text: "aX\nY\nZ\nc")
+        #expect(cache.lineCount == fresh.lineCount)
+        for i in 0..<("aX\nY\nZ\nc" as NSString).length {
+            #expect(cache.lineNumber(at: i) == fresh.lineNumber(at: i), "Mismatch at index \(i)")
+        }
+    }
+
     @Test func updateZeroLengthEditedRangeWithPositiveChange() {
         // Simulates NSTextStorage reporting editedRange.length == 0 with positive changeInLength
         // "abc" → insert "X" at position 1 → "aXbc", but editedRange = (1, 0)
