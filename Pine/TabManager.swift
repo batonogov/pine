@@ -18,6 +18,8 @@ final class TabManager {
     var activeTabID: UUID?
     /// Line number to scroll to after opening a tab (1-based). Consumed by the editor view.
     var pendingGoToLine: Int?
+    /// Recovery manager for crash recovery snapshots.
+    var recoveryManager: RecoveryManager?
 
     var activeTab: EditorTab? {
         guard let id = activeTabID else { return nil }
@@ -145,6 +147,7 @@ final class TabManager {
         guard let index = tabs.firstIndex(where: { $0.id == id }) else { return }
 
         cancelAutoSave()
+        recoveryManager?.deleteRecoveryFile(for: id)
 
         let wasActive = activeTabID == id
         tabs.remove(at: index)
@@ -177,6 +180,8 @@ final class TabManager {
         if isAutoSaveEnabled {
             scheduleAutoSave()
         }
+
+        recoveryManager?.scheduleSnapshot()
     }
 
     /// Updates the saved editor state (cursor, scroll) for the active tab.
@@ -214,6 +219,7 @@ final class TabManager {
         tabs[index].savedContent = tab.content
         tabs[index].lastModDate = modDate(for: tab.url)
         tabs[index].fileSizeBytes = fileSize(url: tab.url)
+        recoveryManager?.deleteRecoveryFile(for: tab.id)
         return true
     }
 

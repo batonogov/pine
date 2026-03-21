@@ -61,7 +61,7 @@ final class ProjectRegistry {
             return nil
         }
         let pm = ProjectManager()
-        pm.workspace.loadDirectory(url: canonical)
+        pm.loadDirectory(url: canonical)
         openProjects[canonical] = pm
         addToRecent(canonical)
         return pm

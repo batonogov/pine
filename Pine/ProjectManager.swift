@@ -15,6 +15,24 @@ final class ProjectManager {
     let terminal = TerminalManager()
     let tabManager = TabManager()
     let searchProvider = ProjectSearchProvider()
+    private(set) var recoveryManager: RecoveryManager?
+
+    deinit {
+        recoveryManager?.stopPeriodicSnapshots()
+    }
+
+    /// Sets up crash recovery for the given project directory.
+    /// Called once when the project URL becomes known (from `loadDirectory`).
+    func setupRecovery(projectURL: URL) {
+        guard recoveryManager == nil else { return }
+        let manager = RecoveryManager(projectURL: projectURL)
+        manager.tabsProvider = { [weak self] in
+            self?.tabManager.tabs ?? []
+        }
+        tabManager.recoveryManager = manager
+        manager.startPeriodicSnapshots()
+        recoveryManager = manager
+    }
 
     /// Persists current session (project + open file tabs) to UserDefaults.
     /// Reads from tabManager.tabs for the authoritative tab list.
@@ -78,7 +96,10 @@ final class ProjectManager {
     var gitProvider: GitStatusProvider { workspace.gitProvider }
 
     func openFolder() { workspace.openFolder() }
-    func loadDirectory(url: URL) { workspace.loadDirectory(url: url) }
+    func loadDirectory(url: URL) {
+        workspace.loadDirectory(url: url)
+        setupRecovery(projectURL: url)
+    }
 
     // MARK: - Convenience accessors (terminal)
 
