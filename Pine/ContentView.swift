@@ -26,6 +26,7 @@ struct ContentView: View {
     @State private var blameTask: Task<Void, Never>?
     @State private var didRestoreSession = false
     @State private var isSearchPresented = false
+    @State private var terminalSearchTask: Task<Void, Never>?
     @State private var goToLineOffset: GoToRequest?
     @AppStorage("minimapVisible") private var isMinimapVisible = true
     @AppStorage(BlameConstants.storageKey) private var isBlameVisible = true
@@ -617,6 +618,7 @@ struct ContentView: View {
             if terminal.isSearchVisible {
                 TerminalSearchBar(
                     query: Bindable(terminal).terminalSearchQuery,
+                    caseSensitive: Bindable(terminal).isSearchCaseSensitive,
                     matchCount: terminal.activeTerminalTab?.searchMatches.count ?? 0,
                     currentMatch: terminal.activeTerminalTab?.currentMatchIndex ?? -1,
                     onNext: {
@@ -638,12 +640,35 @@ struct ContentView: View {
         .background(Color(nsColor: .textBackgroundColor))
         .onAppear { terminal.startTerminals(workingDirectory: workspace.rootURL) }
         .onChange(of: terminal.terminalSearchQuery) { _, newQuery in
-            terminal.activeTerminalTab?.search(for: newQuery)
+            terminalSearchTask?.cancel()
+            terminalSearchTask = Task {
+                try? await Task.sleep(for: .milliseconds(150))
+                guard !Task.isCancelled else { return }
+                await terminal.activeTerminalTab?.search(
+                    for: newQuery,
+                    caseSensitive: terminal.isSearchCaseSensitive
+                )
+            }
+        }
+        .onChange(of: terminal.isSearchCaseSensitive) { _, _ in
+            guard terminal.isSearchVisible, !terminal.terminalSearchQuery.isEmpty else { return }
+            terminalSearchTask?.cancel()
+            terminalSearchTask = Task {
+                await terminal.activeTerminalTab?.search(
+                    for: terminal.terminalSearchQuery,
+                    caseSensitive: terminal.isSearchCaseSensitive
+                )
+            }
         }
         .onChange(of: terminal.activeTerminalID) { _, _ in
             // Re-run search on tab switch if search bar is open
-            if terminal.isSearchVisible, !terminal.terminalSearchQuery.isEmpty {
-                terminal.activeTerminalTab?.search(for: terminal.terminalSearchQuery)
+            guard terminal.isSearchVisible, !terminal.terminalSearchQuery.isEmpty else { return }
+            terminalSearchTask?.cancel()
+            terminalSearchTask = Task {
+                await terminal.activeTerminalTab?.search(
+                    for: terminal.terminalSearchQuery,
+                    caseSensitive: terminal.isSearchCaseSensitive
+                )
             }
         }
     }

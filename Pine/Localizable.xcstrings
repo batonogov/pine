@@ -5570,6 +5570,18 @@
         }
       }
     },
+    "terminal.search.caseSensitiveTooltip" : {
+      "comment" : "Tooltip for the case sensitivity toggle button in the terminal search bar.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Match Case"
+          }
+        }
+      }
+    },
     "terminal.search.closeTooltip" : {
       "comment" : "Tooltip for the close button in the terminal search bar.",
       "extractionState" : "manual",

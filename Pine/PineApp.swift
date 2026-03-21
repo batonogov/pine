@@ -6,7 +6,6 @@
 //
 
 import Sparkle
-import SwiftTerm
 import SwiftUI
 
 @main
@@ -849,7 +848,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate {
         NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
             guard event.modifierFlags.intersection(.deviceIndependentFlagsMask) == .command,
                   event.charactersIgnoringModifiers == "f",
-                  NSApp.keyWindow?.firstResponder is LocalProcessTerminalView else {
+                  let responder = NSApp.keyWindow?.firstResponder as? NSView,
+                  responder.className.contains("TerminalView") else {
                 return event
             }
             NotificationCenter.default.post(name: .findInTerminal, object: nil)

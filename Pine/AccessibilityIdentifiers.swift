@@ -42,6 +42,7 @@ enum AccessibilityID {
     static let terminalSearchPrevious = "terminalSearchPrevious"
     static let terminalSearchNext = "terminalSearchNext"
     static let terminalSearchClose = "terminalSearchClose"
+    static let terminalSearchCaseSensitive = "terminalSearchCaseSensitive"
 
     // MARK: - Markdown Preview
     static let markdownPreviewToggle = "markdownPreviewToggle"

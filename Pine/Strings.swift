@@ -271,6 +271,10 @@ enum Strings {
         String(localized: "terminal.search.closeTooltip")
     }
 
+    static var terminalSearchCaseSensitiveTooltip: String {
+        String(localized: "terminal.search.caseSensitiveTooltip")
+    }
+
     static var terminalSearchNoMatches: String {
         String(localized: "terminal.search.noMatches")
     }

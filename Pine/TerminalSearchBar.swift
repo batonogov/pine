@@ -12,6 +12,7 @@ import SwiftUI
 /// and a close button. Dismissed by pressing Esc or clicking the close button.
 struct TerminalSearchBar: View {
     @Binding var query: String
+    @Binding var caseSensitive: Bool
     var matchCount: Int
     var currentMatch: Int
     var onNext: () -> Void
@@ -41,6 +42,17 @@ struct TerminalSearchBar: View {
             if !query.isEmpty {
                 matchLabel
             }
+
+            Button {
+                caseSensitive.toggle()
+            } label: {
+                Text("Aa")
+                    .font(.system(size: 11, weight: caseSensitive ? .bold : .regular, design: .default))
+                    .foregroundStyle(caseSensitive ? .primary : .secondary)
+            }
+            .buttonStyle(.borderless)
+            .help(Strings.terminalSearchCaseSensitiveTooltip)
+            .accessibilityIdentifier(AccessibilityID.terminalSearchCaseSensitive)
 
             Divider().frame(height: 16)
 

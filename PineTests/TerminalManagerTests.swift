@@ -6,6 +6,7 @@
 //
 
 import Foundation
+import SwiftTerm
 import Testing
 
 @testable import Pine
@@ -171,53 +172,134 @@ struct TerminalManagerTests {
 
     // MARK: - Search state tests
 
-    @Test("initial search state is hidden with empty query")
+    @Test("initial search state is hidden with empty query and case-insensitive")
     func initialSearchState() {
         let manager = TerminalManager()
         #expect(manager.isSearchVisible == false)
         #expect(manager.terminalSearchQuery == "")
+        #expect(manager.isSearchCaseSensitive == false)
     }
 
-    @Test("isSearchVisible can be toggled")
-    func searchVisibilityToggle() {
+    @Test("isSearchCaseSensitive toggles independently")
+    func caseSensitiveToggle() {
         let manager = TerminalManager()
-        manager.isSearchVisible = true
-        #expect(manager.isSearchVisible == true)
-        manager.isSearchVisible = false
-        #expect(manager.isSearchVisible == false)
-    }
-
-    @Test("terminalSearchQuery can be updated")
-    func searchQueryUpdate() {
-        let manager = TerminalManager()
-        manager.terminalSearchQuery = "hello"
-        #expect(manager.terminalSearchQuery == "hello")
-        manager.terminalSearchQuery = ""
-        #expect(manager.terminalSearchQuery == "")
-    }
-
-    @Test("search on unstarted tab returns no matches")
-    func searchOnUnstartedTabReturnsNoMatches() {
-        let tab = TerminalTab(name: "Test")
-        tab.search(for: "anything")
-        // Empty terminal buffer produces no matches
-        #expect(tab.searchMatches.isEmpty)
-        #expect(tab.currentMatchIndex == -1)
+        #expect(manager.isSearchCaseSensitive == false)
+        manager.isSearchCaseSensitive = true
+        #expect(manager.isSearchCaseSensitive == true)
     }
 
     @Test("search with empty query clears matches")
-    func searchWithEmptyQueryClearsMatches() {
+    @MainActor
+    func searchWithEmptyQueryClearsMatches() async {
         let tab = TerminalTab(name: "Test")
-        tab.search(for: "something")
-        tab.search(for: "")
+        tab.searchMatches = [TerminalSearchMatch(row: 0, col: 0, length: 3)]
+        tab.currentMatchIndex = 0
+
+        await tab.search(for: "")
+
         #expect(tab.searchMatches.isEmpty)
         #expect(tab.currentMatchIndex == -1)
+    }
+
+    @Test("search on empty buffer returns no matches")
+    @MainActor
+    func searchOnEmptyBuffer() async {
+        let tab = TerminalTab(name: "Test")
+        await tab.search(for: "anything")
+        #expect(tab.searchMatches.isEmpty)
+        #expect(tab.currentMatchIndex == -1)
+    }
+
+    @Test("search finds matches in terminal buffer")
+    @MainActor
+    func searchFindsMatches() async {
+        let tab = TerminalTab(name: "Test")
+        let terminal = tab.terminalView.getTerminal()
+        terminal.feed(text: "hello world\r\nhello pine\r\ngoodbye\r\n")
+
+        await tab.search(for: "hello")
+
+        #expect(tab.searchMatches.count == 2)
+        #expect(tab.currentMatchIndex == 0)
+        #expect(tab.searchMatches[0].row == 0)
+        #expect(tab.searchMatches[0].col == 0)
+        #expect(tab.searchMatches[0].length == 5)
+        #expect(tab.searchMatches[1].row == 1)
+    }
+
+    @Test("search finds multiple matches on same line")
+    @MainActor
+    func searchMultipleMatchesSameLine() async {
+        let tab = TerminalTab(name: "Test")
+        let terminal = tab.terminalView.getTerminal()
+        terminal.feed(text: "abc abc abc\r\n")
+
+        await tab.search(for: "abc")
+
+        #expect(tab.searchMatches.count == 3)
+        #expect(tab.searchMatches[0].col == 0)
+        #expect(tab.searchMatches[1].col == 4)
+        #expect(tab.searchMatches[2].col == 8)
+    }
+
+    @Test("search is case-insensitive by default")
+    @MainActor
+    func searchCaseInsensitive() async {
+        let tab = TerminalTab(name: "Test")
+        let terminal = tab.terminalView.getTerminal()
+        terminal.feed(text: "Hello HELLO hello\r\n")
+
+        await tab.search(for: "hello")
+
+        #expect(tab.searchMatches.count == 3)
+    }
+
+    @Test("search respects case sensitivity flag")
+    @MainActor
+    func searchCaseSensitive() async {
+        let tab = TerminalTab(name: "Test")
+        let terminal = tab.terminalView.getTerminal()
+        terminal.feed(text: "Hello HELLO hello\r\n")
+
+        await tab.search(for: "hello", caseSensitive: true)
+
+        #expect(tab.searchMatches.count == 1)
+        #expect(tab.searchMatches[0].col == 12)
+    }
+
+    @Test("nextMatch wraps around to first match")
+    @MainActor
+    func nextMatchWraps() async {
+        let tab = TerminalTab(name: "Test")
+        let terminal = tab.terminalView.getTerminal()
+        terminal.feed(text: "aaa\r\naaa\r\n")
+
+        await tab.search(for: "aaa")
+
+        #expect(tab.currentMatchIndex == 0)
+        tab.nextMatch()
+        #expect(tab.currentMatchIndex == 1)
+        tab.nextMatch()
+        #expect(tab.currentMatchIndex == 0) // wraps
+    }
+
+    @Test("previousMatch wraps around to last match")
+    @MainActor
+    func previousMatchWraps() async {
+        let tab = TerminalTab(name: "Test")
+        let terminal = tab.terminalView.getTerminal()
+        terminal.feed(text: "aaa\r\naaa\r\n")
+
+        await tab.search(for: "aaa")
+
+        #expect(tab.currentMatchIndex == 0)
+        tab.previousMatch()
+        #expect(tab.currentMatchIndex == 1) // wraps to last
     }
 
     @Test("nextMatch and previousMatch do nothing when no matches")
     func navigationWithNoMatches() {
         let tab = TerminalTab(name: "Test")
-        // No matches — navigation should not crash
         tab.nextMatch()
         tab.previousMatch()
         #expect(tab.currentMatchIndex == -1)
@@ -229,6 +311,34 @@ struct TerminalManagerTests {
         tab.searchMatches = [TerminalSearchMatch(row: 0, col: 0, length: 3)]
         tab.currentMatchIndex = 0
         tab.clearSearch()
+        #expect(tab.searchMatches.isEmpty)
+        #expect(tab.currentMatchIndex == -1)
+    }
+
+    @Test("new search replaces previous results")
+    @MainActor
+    func newSearchReplacesOld() async {
+        let tab = TerminalTab(name: "Test")
+        let terminal = tab.terminalView.getTerminal()
+        terminal.feed(text: "foo bar baz\r\n")
+
+        await tab.search(for: "foo")
+        #expect(tab.searchMatches.count == 1)
+
+        await tab.search(for: "bar")
+        #expect(tab.searchMatches.count == 1)
+        #expect(tab.searchMatches[0].col == 4)
+    }
+
+    @Test("search for nonexistent text returns empty")
+    @MainActor
+    func searchNoResults() async {
+        let tab = TerminalTab(name: "Test")
+        let terminal = tab.terminalView.getTerminal()
+        terminal.feed(text: "hello world\r\n")
+
+        await tab.search(for: "xyz")
+
         #expect(tab.searchMatches.isEmpty)
         #expect(tab.currentMatchIndex == -1)
     }

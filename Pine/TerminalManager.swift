@@ -21,6 +21,8 @@ final class TerminalManager {
     var isSearchVisible = false
     /// The current search query typed in the terminal search bar.
     var terminalSearchQuery = ""
+    /// Whether terminal search is case-sensitive.
+    var isSearchCaseSensitive = false
 
     var activeTerminalTab: TerminalTab? {
         guard let id = activeTerminalID else { return nil }

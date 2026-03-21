@@ -95,6 +95,8 @@ final class TerminalTab: Identifiable, Hashable {
     var searchMatches: [TerminalSearchMatch] = []
     /// Index into `searchMatches` for the currently highlighted match, or -1 if none.
     var currentMatchIndex: Int = -1
+    /// Total number of lines from the last search (used for scroll positioning).
+    private var searchTotalRows: Int = 0
 
     private let delegate: TerminalTabDelegate
     private let shellSettings: ShellSettings
@@ -190,40 +192,51 @@ final class TerminalTab: Identifiable, Hashable {
     // MARK: - Search
 
     /// Searches the terminal scrollback buffer for `query` and stores matches.
-    /// Scrolls to the first match if any are found.
+    /// The heavy work runs off the main actor; only the final state update
+    /// and scroll happen on main.
     ///
-    /// - Note: Uses SwiftTerm's `Terminal.buffer` for text extraction.
-    ///   `terminal.buffer.lines` is a `CircularList<BufferLine>` and
-    ///   `BufferLine.translateToString(trimRight:)` extracts the line as a String.
-    func search(for query: String, caseSensitive: Bool = false) {
+    /// Uses SwiftTerm's public `getBufferAsData()` to extract the full buffer
+    /// content without accessing internal `buffer.lines`.
+    @MainActor
+    func search(for query: String, caseSensitive: Bool = false) async {
         guard !query.isEmpty else {
             searchMatches = []
             currentMatchIndex = -1
+            searchTotalRows = 0
             return
         }
 
+        // Extract full buffer text via public API on main thread
         let terminal = terminalView.getTerminal()
-        let buffer = terminal.buffer
-        let totalRows = buffer.lines.count
-        let searchText = caseSensitive ? query : query.lowercased()
+        let bufferData = terminal.getBufferAsData()
 
-        var matches: [TerminalSearchMatch] = []
-
-        for row in 0..<totalRows {
-            let lineText: String = {
-                let raw = buffer.lines[row].translateToString(trimRight: true)
-                return caseSensitive ? raw : raw.lowercased()
-            }()
-
-            var searchStart = lineText.startIndex
-            while let range = lineText.range(of: searchText, range: searchStart..<lineText.endIndex) {
-                let col = lineText.distance(from: lineText.startIndex, to: range.lowerBound)
-                matches.append(TerminalSearchMatch(row: row, col: col, length: query.count))
-                searchStart = range.upperBound
+        // Search off main thread
+        let searchQuery = query
+        let isCaseSensitive = caseSensitive
+        let (matches, totalRows) = await Task.detached(priority: .userInitiated) {
+            guard let bufferText = String(data: bufferData, encoding: .utf8) else {
+                return ([TerminalSearchMatch](), 0)
             }
-        }
+            let lines = bufferText.split(separator: "\n", omittingEmptySubsequences: false)
+            let needle = isCaseSensitive ? searchQuery : searchQuery.lowercased()
+            var result: [TerminalSearchMatch] = []
+            for (row, line) in lines.enumerated() {
+                let haystack = isCaseSensitive ? String(line) : String(line).lowercased()
+                var searchStart = haystack.startIndex
+                while let range = haystack.range(of: needle, range: searchStart..<haystack.endIndex) {
+                    let col = haystack.distance(from: haystack.startIndex, to: range.lowerBound)
+                    let length = haystack.distance(from: range.lowerBound, to: range.upperBound)
+                    result.append(TerminalSearchMatch(row: row, col: col, length: length))
+                    searchStart = range.upperBound
+                }
+            }
+            return (result, lines.count)
+        }.value
+
+        guard !Task.isCancelled else { return }
 
         searchMatches = matches
+        searchTotalRows = totalRows
         if matches.isEmpty {
             currentMatchIndex = -1
         } else {
@@ -250,23 +263,25 @@ final class TerminalTab: Identifiable, Hashable {
     func clearSearch() {
         searchMatches = []
         currentMatchIndex = -1
+        searchTotalRows = 0
     }
 
     /// Scrolls the terminal view to show the row of the current match.
     ///
-    /// - Note: Uses SwiftTerm's `Buffer.yDisp` to control the scroll offset.
-    ///   `yDisp` is the index of the first visible line in the scrollback buffer.
-    ///   Setting it and triggering a redraw scrolls the terminal to the target row.
+    /// Uses SwiftTerm's public `scroll(toPosition:)` which accepts a normalized
+    /// value (0.0 = top, 1.0 = bottom) and properly updates scrollbar, display,
+    /// and accessibility state.
     private func scrollToCurrentMatch() {
         guard currentMatchIndex >= 0, currentMatchIndex < searchMatches.count else { return }
-        let targetRow = searchMatches[currentMatchIndex].row
+        let matchRow = searchMatches[currentMatchIndex].row
         let terminal = terminalView.getTerminal()
-        let buffer = terminal.buffer
+        let maxScroll = searchTotalRows - terminal.rows
+        guard maxScroll > 0 else { return }
+        // Center the match in the viewport
         let halfRows = max(1, terminal.rows / 2)
-        // Place the match in the middle of the viewport
-        let targetDisp = max(0, min(targetRow - halfRows, buffer.lines.count - terminal.rows))
-        buffer.yDisp = targetDisp
-        terminalView.setNeedsDisplay(terminalView.bounds)
+        let targetRow = max(0, min(matchRow - halfRows, maxScroll))
+        let position = Double(targetRow) / Double(maxScroll)
+        terminalView.scroll(toPosition: position)
     }
 
     static func == (lhs: TerminalTab, rhs: TerminalTab) -> Bool { lhs.id == rhs.id }
