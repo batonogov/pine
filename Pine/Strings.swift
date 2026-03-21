@@ -247,6 +247,8 @@ enum Strings {
     static let menuFindInProject: LocalizedStringKey = "menu.findInProject"
     static let menuNextChange: LocalizedStringKey = "menu.nextChange"
     static let menuPreviousChange: LocalizedStringKey = "menu.previousChange"
+    static let menuSelectNextOccurrence: LocalizedStringKey = "menu.selectNextOccurrence"
+    static let menuSplitSelectionIntoLines: LocalizedStringKey = "menu.splitSelectionIntoLines"
     static let menuFoldCode: LocalizedStringKey = "menu.foldCode"
     static let menuUnfoldCode: LocalizedStringKey = "menu.unfoldCode"
     static let menuFoldAll: LocalizedStringKey = "menu.foldAll"
