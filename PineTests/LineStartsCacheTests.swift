@@ -173,6 +173,17 @@ struct LineStartsCacheTests {
         #expect(cache.lineNumber(at: 4) == fresh.lineNumber(at: 4))
     }
 
+    @Test func updateZeroLengthEditedRangeWithPositiveChange() {
+        // Simulates NSTextStorage reporting editedRange.length == 0 with positive changeInLength
+        // "abc" → insert "X" at position 1 → "aXbc", but editedRange = (1, 0)
+        var cache = LineStartsCache(text: "abc")
+        #expect(cache.lineCount == 1)
+
+        cache.update(editedRange: NSRange(location: 1, length: 0), changeInLength: 1, in: "aXbc" as NSString)
+        let fresh = LineStartsCache(text: "aXbc")
+        #expect(cache.lineCount == fresh.lineCount)
+    }
+
     // MARK: - Performance characteristic — binary search
 
     @Test func largeTextPerformance() {

@@ -29,9 +29,8 @@ struct LineStartsCache {
         lineStarts = starts
     }
 
-    /// Возвращает 1-based номер строки для данного UTF-16 символьного смещения.
-    /// Использует binary search — O(log n).
-    func lineNumber(at charIndex: Int) -> Int {
+    /// Возвращает 0-based индекс строки, содержащей данное UTF-16 смещение.
+    private func lineIndex(containing charIndex: Int) -> Int {
         var low = 0
         var high = lineStarts.count - 1
         while low < high {
@@ -42,7 +41,13 @@ struct LineStartsCache {
                 high = mid - 1
             }
         }
-        return low + 1 // 1-based
+        return low
+    }
+
+    /// Возвращает 1-based номер строки для данного UTF-16 символьного смещения.
+    /// Использует binary search — O(log n).
+    func lineNumber(at charIndex: Int) -> Int {
+        lineIndex(containing: charIndex) + 1
     }
 
     /// Инкрементально обновляет кэш после редактирования текста.
@@ -54,18 +59,7 @@ struct LineStartsCache {
         let editLocation = editedRange.location
 
         // Находим первую строку, затронутую изменением (binary search).
-        // Это строка, чей start <= editLocation.
-        var low = 0
-        var high = lineStarts.count - 1
-        while low < high {
-            let mid = (low + high + 1) / 2
-            if lineStarts[mid] <= editLocation {
-                low = mid
-            } else {
-                high = mid - 1
-            }
-        }
-        let firstAffectedIdx = low
+        let firstAffectedIdx = lineIndex(containing: editLocation)
 
         // Находим последнюю строку, затронутую изменением.
         // При вставке: конец editedRange в новом тексте.
