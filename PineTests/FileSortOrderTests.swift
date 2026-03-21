@@ -201,6 +201,24 @@ struct FileSortOrderTests {
         #expect(sorted.map(\.name) == ["newer.txt", "older.txt"])
     }
 
+    @Test func sortByDateModifiedSameDateFallsBackToName() throws {
+        let tempDir = try makeTempDirectory()
+        defer { cleanup(tempDir) }
+
+        let date = Date(timeIntervalSinceNow: -100)
+        let fileA = tempDir.appendingPathComponent("a.txt")
+        let fileZ = tempDir.appendingPathComponent("z.txt")
+
+        FileManager.default.createFile(atPath: fileA.path, contents: nil)
+        FileManager.default.createFile(atPath: fileZ.path, contents: nil)
+        try FileManager.default.setAttributes([.modificationDate: date], ofItemAtPath: fileA.path)
+        try FileManager.default.setAttributes([.modificationDate: date], ofItemAtPath: fileZ.path)
+
+        let sorted = loadChildren(at: tempDir).sorted(by: .dateModified, direction: .ascending)
+        // Same date → alphabetical by name
+        #expect(sorted.map(\.name) == ["a.txt", "z.txt"])
+    }
+
     // MARK: - Recursive sort
 
     @Test func recursiveSortSortsNestedChildren() throws {
