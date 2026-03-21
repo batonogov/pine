@@ -85,6 +85,13 @@ class PineUITestCase: XCTestCase {
         element.waitForExistence(timeout: timeout)
     }
 
+    /// Clicks a menu bar item, waiting for it to become available.
+    func clickMenuBarItem(_ title: String, timeout: TimeInterval = 5) {
+        let item = app.menuBars.menuBarItems[title]
+        XCTAssertTrue(item.waitForExistence(timeout: timeout), "\(title) menu should be accessible")
+        item.click()
+    }
+
     /// Cleans up a temporary project directory.
     func cleanupProject(_ url: URL) {
         try? FileManager.default.removeItem(at: url)

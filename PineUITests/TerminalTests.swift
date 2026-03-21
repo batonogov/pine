@@ -110,10 +110,7 @@ final class TerminalTests: PineUITestCase {
 
         // Wait for terminal to become hidden (button no longer hittable)
         let hiddenPredicate = NSPredicate(format: "isHittable == false")
-        expectation(for: hiddenPredicate, evaluatedWith: newTerminalButton, handler: nil)
+        expectation(for: hiddenPredicate, evaluatedWith: newTerminalButton)
         waitForExpectations(timeout: 10)
-
-        // New terminal button should no longer be hittable
-        XCTAssertFalse(newTerminalButton.isHittable, "Terminal should be hidden after second toggle click")
     }
 }

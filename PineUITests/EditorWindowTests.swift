@@ -97,7 +97,7 @@ final class EditorWindowTests: PineUITestCase {
         // Click on main.swift tab to switch back
         mainTab.click()
         let selectedPredicate = NSPredicate(format: "isSelected == true")
-        expectation(for: selectedPredicate, evaluatedWith: mainTab, handler: nil)
+        expectation(for: selectedPredicate, evaluatedWith: mainTab)
         waitForExpectations(timeout: 5)
 
         // main.swift tab should still exist (switching doesn't close tabs)
@@ -165,12 +165,9 @@ final class EditorWindowTests: PineUITestCase {
         let mainTab = editorTab("main.swift")
         XCTAssertTrue(waitForExistence(mainTab, timeout: 5))
 
-        // File > Duplicate
         // File > Duplicate via menu
         app.activate()
-        let fileMenuItemDuplicate = app.menuBars.menuBarItems["File"]
-        XCTAssertTrue(fileMenuItemDuplicate.waitForExistence(timeout: 5), "File menu should be accessible")
-        fileMenuItemDuplicate.click()
+        clickMenuBarItem("File")
         app.menuItems["Duplicate"].click()
 
         // A new tab "main copy.swift" should appear
@@ -199,9 +196,7 @@ final class EditorWindowTests: PineUITestCase {
 
         // File menu should contain Save All
         app.activate()
-        let fileMenuItemSave = app.menuBars.menuBarItems["File"]
-        XCTAssertTrue(fileMenuItemSave.waitForExistence(timeout: 5), "File menu should be accessible")
-        fileMenuItemSave.click()
+        clickMenuBarItem("File")
         let saveAllItem = app.menuItems["Save All"]
         XCTAssertTrue(waitForExistence(saveAllItem, timeout: 3), "Save All menu item should exist")
 
@@ -228,9 +223,6 @@ final class EditorWindowTests: PineUITestCase {
 
         let mainTab = editorTab("main.swift")
         XCTAssertTrue(waitForExistence(mainTab, timeout: 5))
-
-        // Give SwiftUI time to trigger onChange → saveSession
-        sleep(1)
 
         // Close the project window → Welcome appears
         let closeButton = app.windows.firstMatch.buttons["_XCUI:CloseWindow"].firstMatch
@@ -261,7 +253,7 @@ final class EditorWindowTests: PineUITestCase {
         XCTAssertTrue(waitForExistence(mainRow, timeout: 15), "main.swift row should exist in sidebar")
 
         let selectedPredicate = NSPredicate(format: "isSelected == true")
-        expectation(for: selectedPredicate, evaluatedWith: mainRow, handler: nil)
+        expectation(for: selectedPredicate, evaluatedWith: mainRow)
         waitForExpectations(timeout: 10)
     }
 
