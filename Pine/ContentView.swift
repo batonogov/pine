@@ -611,29 +611,8 @@ struct ContentView: View {
     @ViewBuilder
     private var terminalArea: some View {
         VStack(spacing: 0) {
-            // Tab bar, стилизованный под нативные macOS window tabs
             TerminalNativeTabBar(terminal: terminal, workingDirectory: workspace.rootURL)
-
-            if terminal.isSearchVisible {
-                TerminalSearchBar(
-                    query: Bindable(terminal).terminalSearchQuery,
-                    caseSensitive: Bindable(terminal).isSearchCaseSensitive,
-                    matchCount: terminal.activeTerminalTab?.searchMatches.count ?? 0,
-                    currentMatch: terminal.activeTerminalTab?.currentMatchIndex ?? -1,
-                    onNext: {
-                        terminal.activeTerminalTab?.nextMatch()
-                    },
-                    onPrevious: {
-                        terminal.activeTerminalTab?.previousMatch()
-                    },
-                    onDismiss: {
-                        terminal.isSearchVisible = false
-                        terminal.terminalSearchQuery = ""
-                        terminal.activeTerminalTab?.clearSearch()
-                    }
-                )
-            }
-
+            TerminalSearchBarContainer(terminal: terminal)
             TerminalContentView(terminal: terminal)
         }
         .background(Color(nsColor: .textBackgroundColor))
@@ -724,6 +703,35 @@ private struct TerminalSessionObserver: ViewModifier {
             .onChange(of: terminal.isTerminalMaximized) { _, _ in onSave() }
             .onChange(of: terminal.terminalTabs.count) { _, _ in onSave() }
             .onChange(of: terminal.activeTerminalID) { _, _ in onSave() }
+    }
+}
+
+// MARK: - Terminal search bar container
+
+/// Isolated view to keep TerminalSearchBar's closures out of ContentView's type-checking scope.
+private struct TerminalSearchBarContainer: View {
+    var terminal: TerminalManager
+
+    var body: some View {
+        if terminal.isSearchVisible {
+            TerminalSearchBar(
+                query: Bindable(terminal).terminalSearchQuery,
+                caseSensitive: Bindable(terminal).isSearchCaseSensitive,
+                matchCount: terminal.activeTerminalTab?.searchMatches.count ?? 0,
+                currentMatch: terminal.activeTerminalTab?.currentMatchIndex ?? -1,
+                onNext: {
+                    terminal.activeTerminalTab?.nextMatch()
+                },
+                onPrevious: {
+                    terminal.activeTerminalTab?.previousMatch()
+                },
+                onDismiss: {
+                    terminal.isSearchVisible = false
+                    terminal.terminalSearchQuery = ""
+                    terminal.activeTerminalTab?.clearSearch()
+                }
+            )
+        }
     }
 }
 
