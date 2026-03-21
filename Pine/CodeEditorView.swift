@@ -76,9 +76,15 @@ final class GutterTextView: NSTextView {
 
     private static let blameIcon: NSImage? = {
         let config = NSImage.SymbolConfiguration(pointSize: 11, weight: .light)
-        return NSImage(systemSymbolName: "arrow.triangle.branch", accessibilityDescription: nil)?
+        guard let symbol = NSImage(systemSymbolName: "arrow.triangle.branch", accessibilityDescription: nil)?
             .withSymbolConfiguration(config)?
-            .tinted(with: blameColor)
+            .tinted(with: blameColor) else { return nil }
+        let flipped = NSImage(size: symbol.size, flipped: true) { rect in
+            symbol.draw(in: rect)
+            return true
+        }
+        flipped.isTemplate = symbol.isTemplate
+        return flipped
     }()
 
     private static let relativeDateFormatter: RelativeDateTimeFormatter = {
