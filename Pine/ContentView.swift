@@ -29,6 +29,7 @@ struct ContentView: View {
     @State private var goToLineOffset: GoToRequest?
     @State private var recoveryEntries: [(UUID, RecoveryEntry)] = []
     @State private var showRecoveryDialog = false
+    @State private var showGoToLine = false
     @AppStorage("minimapVisible") private var isMinimapVisible = true
     @AppStorage(BlameConstants.storageKey) private var isBlameVisible = true
 
@@ -113,6 +114,18 @@ struct ContentView: View {
                 onDiscard: { discardRecovery() }
             )
         }
+        .sheet(isPresented: $showGoToLine) {
+            GoToLineView(
+                totalLines: totalLineCount,
+                isPresented: $showGoToLine,
+                onGoTo: { line, column in
+                    guard let tab = tabManager.activeTab else { return }
+                    goToLineOffset = GoToRequest(
+                        offset: Self.cursorOffset(forLine: line, column: column, in: tab.content)
+                    )
+                }
+            )
+        }
         .onChange(of: selectedNode) { _, newNode in
             guard let node = newNode, !node.isDirectory else { return }
             handleFileSelection(node)
@@ -147,6 +160,7 @@ struct ContentView: View {
             lineDiffs: $lineDiffs,
             columnVisibility: $columnVisibility,
             isSearchPresented: $isSearchPresented,
+            showGoToLine: $showGoToLine,
             onRefreshLineDiffs: { refreshLineDiffs() },
             onRefreshBlame: { refreshBlame() },
             onCloseTab: { closeTabWithConfirmation($0) },
@@ -575,6 +589,18 @@ struct ContentView: View {
         .onAppear { goToLineOffset = nil }
     }
 
+    private var totalLineCount: Int {
+        guard let content = activeTab?.content else { return 1 }
+        let ns = content as NSString
+        var count = 1
+        var pos = 0
+        while pos < ns.length {
+            pos = NSMaxRange(ns.lineRange(for: NSRange(location: pos, length: 0)))
+            count += 1
+        }
+        return max(1, count - 1)
+    }
+
     /// Converts a 1-based line number to a UTF-16 cursor offset within content.
     static func cursorOffset(forLine line: Int, in content: String) -> Int {
         let nsContent = content as NSString
@@ -586,6 +612,19 @@ struct ContentView: View {
             currentLine += 1
         }
         return min(offset, nsContent.length)
+    }
+
+    /// Converts a 1-based line and optional column to a UTF-16 cursor offset.
+    static func cursorOffset(forLine line: Int, column: Int?, in content: String) -> Int {
+        let lineOffset = cursorOffset(forLine: line, in: content)
+        guard let column, column > 1 else { return lineOffset }
+        let nsContent = content as NSString
+        let lineRange = nsContent.lineRange(for: NSRange(location: lineOffset, length: 0))
+        // lineRange.length includes the newline; limit column to actual content length
+        let lineText = nsContent.substring(with: lineRange)
+        let lineContentLength = lineText.hasSuffix("\n") ? lineRange.length - 1 : lineRange.length
+        let colOffset = min(column - 1, lineContentLength)
+        return min(lineOffset + colOffset, nsContent.length)
     }
 
     /// Converts a UTF-16 cursor offset to a 1-based line number.
@@ -720,6 +759,7 @@ private struct GitAndNotificationObserver: ViewModifier {
     @Binding var lineDiffs: [GitLineDiff]
     @Binding var columnVisibility: NavigationSplitViewVisibility
     @Binding var isSearchPresented: Bool
+    @Binding var showGoToLine: Bool
     var onRefreshLineDiffs: () -> Void
     var onRefreshBlame: () -> Void
     var onCloseTab: (EditorTab) -> Void
@@ -776,6 +816,11 @@ private struct GitAndNotificationObserver: ViewModifier {
             .onReceive(NotificationCenter.default.publisher(for: .showProjectSearch)) { _ in
                 columnVisibility = .all
                 isSearchPresented = true
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .goToLine)) { _ in
+                guard controlActiveState == .key,
+                      tabManager.activeTab != nil else { return }
+                showGoToLine = true
             }
             .onReceive(NotificationCenter.default.publisher(for: .navigateChange)) { notification in
                 guard controlActiveState == .key,
