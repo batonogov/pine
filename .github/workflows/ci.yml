@@ -189,12 +189,13 @@ jobs:
             test-classes: >-
               -only-testing:PineUITests/WelcomeWindowTests
               -only-testing:PineUITests/SidebarSearchTests
-          # Shard 2 — Editor Core (21 tests)
+          # Shard 2 — Editor Core (27 tests)
           - shard-name: "Editor Core"
             test-classes: >-
               -only-testing:PineUITests/EditorWindowTests
               -only-testing:PineUITests/FontSizeTests
               -only-testing:PineUITests/DiffNavigationUITests
+              -only-testing:PineUITests/MultiCursorTests
           # Shard 3 — File Operations (20 tests)
           - shard-name: "File Operations"
             test-classes: >-
