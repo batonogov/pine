@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.9.1](https://github.com/batonogov/pine/compare/v1.9.0...v1.9.1) (2026-03-22)
+
+
+### Bug Fixes
+
+* allow gitignored folders to be expanded in sidebar ([#393](https://github.com/batonogov/pine/issues/393)) ([f2c0d94](https://github.com/batonogov/pine/commit/f2c0d94ec0fe1d7a4a9a63f5f8dd085574f5b5aa))
+
 ## [1.9.0](https://github.com/batonogov/pine/compare/v1.8.0...v1.9.0) (2026-03-22)
 
 
