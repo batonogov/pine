@@ -121,7 +121,7 @@ final class GutterTextView: NSTextView {
         // Skip the first cursor — NSTextView already draws it
         for cursor in multiCursors.dropFirst() where !cursor.hasSelection {
             let glyphIndex = layoutManager.glyphIndexForCharacter(at: min(cursor.location, (string as NSString).length))
-            var lineRect = layoutManager.lineFragmentRect(forGlyphAt: glyphIndex, effectiveRange: nil)
+            let lineRect = layoutManager.lineFragmentRect(forGlyphAt: glyphIndex, effectiveRange: nil)
             let loc = layoutManager.location(forGlyphAt: glyphIndex)
 
             let caretRect = NSRect(
