@@ -152,9 +152,9 @@ struct FileNodeTests {
         #expect(node1 == node2)
     }
 
-    // MARK: - Gitignored directories: visible and expandable
+    // MARK: - Gitignored directories: visible and expandable (shallow-loaded)
 
-    @Test func gitignoredDirectoryVisibleWithChildren() throws {
+    @Test func gitignoredDirectoryVisibleWithShallowChildren() throws {
         let tempDir = try makeTempDirectory()
         defer { cleanup(tempDir) }
 
@@ -167,13 +167,13 @@ struct FileNodeTests {
             atPath: tempDir.appendingPathComponent("index.js").path, contents: nil
         )
 
-        // Gitignored directories are visible and their children are loaded eagerly
+        // Gitignored directories are visible and their immediate children are loaded
         let node = FileNode(url: tempDir, projectRoot: tempDir, ignoredPaths: ["node_modules"])
         let names = node.children?.map(\.name) ?? []
         #expect(names.contains("node_modules"))
         #expect(names.contains("index.js"))
 
-        // Children are loaded — folder is expandable in the sidebar
+        // Immediate children are loaded — folder is expandable in the sidebar
         let nmNode = node.children?.first { $0.name == "node_modules" }
         #expect(nmNode?.isDirectory == true)
         let nmNames = nmNode?.children?.map(\.name) ?? []
@@ -198,6 +198,35 @@ struct FileNodeTests {
         #expect(nmNode?.optionalChildren?.first?.name == "package.json")
     }
 
+    @Test func gitignoredDirectoryShallowDoesNotRecurse() throws {
+        let tempDir = try makeTempDirectory()
+        defer { cleanup(tempDir) }
+
+        // node_modules/express/lib/router.js — deep nested structure
+        let express = tempDir.appendingPathComponent("node_modules")
+            .appendingPathComponent("express")
+        let lib = express.appendingPathComponent("lib")
+        try FileManager.default.createDirectory(at: lib, withIntermediateDirectories: true)
+        FileManager.default.createFile(
+            atPath: lib.appendingPathComponent("router.js").path, contents: nil
+        )
+
+        let node = FileNode(url: tempDir, projectRoot: tempDir, ignoredPaths: ["node_modules"])
+        let nmNode = node.children?.first { $0.name == "node_modules" }
+
+        // Immediate child (express) is visible
+        let expressNode = nmNode?.children?.first { $0.name == "express" }
+        #expect(expressNode?.isDirectory == true)
+
+        // But express's children are NOT loaded (shallow limit)
+        #expect(expressNode?.children?.isEmpty == true)
+
+        // loadChildren() on the subdirectory fills in contents on-demand
+        expressNode?.loadChildren()
+        let expressNames = expressNode?.children?.map(\.name) ?? []
+        #expect(expressNames.contains("lib"))
+    }
+
     @Test func gitignoredDotDirectoriesExpandable() throws {
         let tempDir = try makeTempDirectory()
         defer { cleanup(tempDir) }
@@ -218,7 +247,7 @@ struct FileNodeTests {
         #expect(names.contains(".cache"))
         #expect(names.contains(".github"))
 
-        // .claude is ignored but children are loaded eagerly
+        // .claude is ignored — immediate children loaded (shallow)
         let claudeNode = node.children?.first { $0.name == ".claude" }
         let claudeNames = claudeNode?.children?.map(\.name) ?? []
         #expect(claudeNames.contains("settings.json"))
@@ -242,7 +271,7 @@ struct FileNodeTests {
         #expect(names.contains(".env"))
     }
 
-    @Test func nestedGitignoredDirectoryExpandable() throws {
+    @Test func nestedGitignoredDirectoryShallowLoaded() throws {
         let tempDir = try makeTempDirectory()
         defer { cleanup(tempDir) }
 
@@ -264,7 +293,7 @@ struct FileNodeTests {
         #expect(srcNames.contains("main.js"))
         #expect(srcNames.contains("vendor"))
 
-        // vendor is visible and children are loaded eagerly
+        // vendor is visible and immediate children are loaded (shallow)
         let vendorNode = srcNode?.children?.first { $0.name == "vendor" }
         let vendorNames = vendorNode?.children?.map(\.name) ?? []
         #expect(vendorNames.contains("lib.js"))
@@ -287,14 +316,20 @@ struct FileNodeTests {
         #expect(srcNames.contains("main.swift"))
     }
 
-    @Test func multipleIgnoredDirectoriesAllLazy() throws {
+    @Test func multipleIgnoredDirectoriesAllShallowLoaded() throws {
         let tempDir = try makeTempDirectory()
         defer { cleanup(tempDir) }
 
         let nodeModules = tempDir.appendingPathComponent("node_modules")
         try FileManager.default.createDirectory(at: nodeModules, withIntermediateDirectories: true)
+        FileManager.default.createFile(
+            atPath: nodeModules.appendingPathComponent("express").path, contents: nil
+        )
         let build = tempDir.appendingPathComponent(".build")
         try FileManager.default.createDirectory(at: build, withIntermediateDirectories: true)
+        FileManager.default.createFile(
+            atPath: build.appendingPathComponent("debug.log").path, contents: nil
+        )
         let src = tempDir.appendingPathComponent("src")
         try FileManager.default.createDirectory(at: src, withIntermediateDirectories: true)
 
@@ -305,11 +340,11 @@ struct FileNodeTests {
         #expect(names.contains(".build"))
         #expect(names.contains("src"))
 
-        // Ignored ones are lazy (empty children)
+        // Ignored ones have immediate children loaded (shallow)
         let nmNode = node.children?.first { $0.name == "node_modules" }
         let buildNode = node.children?.first { $0.name == ".build" }
-        #expect(nmNode?.children?.isEmpty == true)
-        #expect(buildNode?.children?.isEmpty == true)
+        #expect(nmNode?.children?.map(\.name).contains("express") == true)
+        #expect(buildNode?.children?.map(\.name).contains("debug.log") == true)
     }
 
     // MARK: - Depth-limited loading
@@ -455,7 +490,7 @@ struct FileNodeTests {
         let deepNode = srcNode?.children?.first { $0.name == "deep" }
         #expect(deepNode?.children?.isEmpty == true)
 
-        // vendor is gitignored but still loaded like a normal directory at depth 1
+        // vendor is gitignored — shallow-loaded (immediate children only)
         let vendorNode = node.children?.first { $0.name == "vendor" }
         let vendorNames = vendorNode?.children?.map(\.name) ?? []
         #expect(vendorNames.contains("lib.js"))

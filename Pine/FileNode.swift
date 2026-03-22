@@ -18,7 +18,7 @@ final class FileNode: Identifiable, Hashable {
     /// Project root used for symlink boundary checks during loadChildren().
     private let projectRoot: URL?
 
-    /// Ignored paths forwarded to loadChildren() for lazy-loading gitignored directories.
+    /// Ignored paths forwarded to loadChildren() and used for shallow-loading gitignored directories.
     private let ignoredPaths: Set<String>?
 
     var children: [FileNode]?
@@ -41,7 +41,7 @@ final class FileNode: Identifiable, Hashable {
         self.init(url: url, context: context)
     }
 
-    /// Initializer with project root boundary, cycle protection, and gitignored lazy-loading.
+    /// Initializer with project root boundary, cycle protection, and gitignored shallow-loading.
     convenience init(url: URL, projectRoot: URL, ignoredPaths: Set<String>) {
         let context = LoadContext(projectRoot: projectRoot, ignoredPaths: ignoredPaths)
         self.init(url: url, context: context)
@@ -79,6 +79,20 @@ final class FileNode: Identifiable, Hashable {
                     return
                 }
 
+                // Gitignored directories are visible and expandable,
+                // but loaded shallow (immediate children only) for performance.
+                // Subdirectories inside can be expanded on-demand via loadChildren().
+                if Self.isIgnoredDirectory(url, context: context) {
+                    context.visitedRealPaths.insert(realPath)
+                    let shallowContext = LoadContext(
+                        projectRoot: URL(fileURLWithPath: context.rootRealPath),
+                        ignoredPaths: context.ignoredPaths,
+                        maxDepth: 0
+                    )
+                    self.children = Self.loadContents(of: url, context: shallowContext, depth: 1)
+                    return
+                }
+
                 // Depth-limited: directories beyond maxDepth are shallow
                 // (empty children), loaded on-demand via loadChildren().
                 if depth > context.maxDepth {
@@ -101,6 +115,17 @@ final class FileNode: Identifiable, Hashable {
 
     /// Names always hidden from the file tree.
     private static let hiddenNames: Set<String> = [".git", ".DS_Store"]
+
+    /// Returns true if the directory at `url` is gitignored based on its relative path from the project root.
+    private static func isIgnoredDirectory(_ url: URL, context: LoadContext) -> Bool {
+        guard !context.ignoredPaths.isEmpty else { return false }
+        let rootPath = context.rootRealPath
+        let prefix = rootPath.hasSuffix("/") ? rootPath : rootPath + "/"
+        let fullPath = context.resolveSymlinks(url)
+        guard fullPath.hasPrefix(prefix) else { return false }
+        let relativePath = String(fullPath.dropFirst(prefix.count))
+        return context.ignoredPaths.contains(relativePath)
+    }
 
     private static func loadContents(of url: URL, context: LoadContext?, depth: Int = 0) -> [FileNode] {
         do {
