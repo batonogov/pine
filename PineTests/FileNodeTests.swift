@@ -152,9 +152,9 @@ struct FileNodeTests {
         #expect(node1 == node2)
     }
 
-    // MARK: - Gitignored directories: visible but lazy-loaded
+    // MARK: - Gitignored directories: visible and expandable
 
-    @Test func gitignoredDirectoryVisibleWithEmptyChildren() throws {
+    @Test func gitignoredDirectoryVisibleWithChildren() throws {
         let tempDir = try makeTempDirectory()
         defer { cleanup(tempDir) }
 
@@ -167,19 +167,20 @@ struct FileNodeTests {
             atPath: tempDir.appendingPathComponent("index.js").path, contents: nil
         )
 
-        // Gitignored directories are visible but their contents are not loaded eagerly
+        // Gitignored directories are visible and their children are loaded eagerly
         let node = FileNode(url: tempDir, projectRoot: tempDir, ignoredPaths: ["node_modules"])
         let names = node.children?.map(\.name) ?? []
         #expect(names.contains("node_modules"))
         #expect(names.contains("index.js"))
 
-        // Children are empty (lazy) — not recursed into during tree construction
+        // Children are loaded — folder is expandable in the sidebar
         let nmNode = node.children?.first { $0.name == "node_modules" }
         #expect(nmNode?.isDirectory == true)
-        #expect(nmNode?.children?.isEmpty == true)
+        let nmNames = nmNode?.children?.map(\.name) ?? []
+        #expect(nmNames.contains("package.json"))
     }
 
-    @Test func gitignoredDirectoryLoadsChildrenOnDemand() throws {
+    @Test func gitignoredDirectoryExpandableInSidebar() throws {
         let tempDir = try makeTempDirectory()
         defer { cleanup(tempDir) }
 
@@ -191,15 +192,13 @@ struct FileNodeTests {
 
         let node = FileNode(url: tempDir, projectRoot: tempDir, ignoredPaths: ["node_modules"])
         let nmNode = node.children?.first { $0.name == "node_modules" }
-        #expect(nmNode?.children?.isEmpty == true)
 
-        // After explicit loadChildren(), contents appear
-        nmNode?.loadChildren()
-        let nmNames = nmNode?.children?.map(\.name) ?? []
-        #expect(nmNames.contains("package.json"))
+        // optionalChildren returns non-nil so SwiftUI List shows disclosure triangle
+        #expect(nmNode?.optionalChildren != nil)
+        #expect(nmNode?.optionalChildren?.first?.name == "package.json")
     }
 
-    @Test func gitignoredDotDirectoriesVisible() throws {
+    @Test func gitignoredDotDirectoriesExpandable() throws {
         let tempDir = try makeTempDirectory()
         defer { cleanup(tempDir) }
 
@@ -219,18 +218,14 @@ struct FileNodeTests {
         #expect(names.contains(".cache"))
         #expect(names.contains(".github"))
 
-        // .claude is ignored — lazy-loaded (empty children)
+        // .claude is ignored but children are loaded eagerly
         let claudeNode = node.children?.first { $0.name == ".claude" }
-        #expect(claudeNode?.children?.isEmpty == true)
-
-        // .github is NOT ignored — children loaded eagerly
-        let githubNode = node.children?.first { $0.name == ".github" }
-        #expect(githubNode?.children?.isEmpty == true) // empty dir, but was loaded
-
-        // After loadChildren, .claude contents appear
-        claudeNode?.loadChildren()
         let claudeNames = claudeNode?.children?.map(\.name) ?? []
         #expect(claudeNames.contains("settings.json"))
+
+        // .github is NOT ignored — children loaded eagerly too
+        let githubNode = node.children?.first { $0.name == ".github" }
+        #expect(githubNode?.children?.isEmpty == true) // empty dir, but was loaded
     }
 
     @Test func gitignoredFilesStillVisible() throws {
@@ -247,7 +242,7 @@ struct FileNodeTests {
         #expect(names.contains(".env"))
     }
 
-    @Test func nestedGitignoredDirectoryLazyLoaded() throws {
+    @Test func nestedGitignoredDirectoryExpandable() throws {
         let tempDir = try makeTempDirectory()
         defer { cleanup(tempDir) }
 
@@ -269,12 +264,8 @@ struct FileNodeTests {
         #expect(srcNames.contains("main.js"))
         #expect(srcNames.contains("vendor"))
 
-        // vendor is visible but lazy — empty children
+        // vendor is visible and children are loaded eagerly
         let vendorNode = srcNode?.children?.first { $0.name == "vendor" }
-        #expect(vendorNode?.children?.isEmpty == true)
-
-        // On-demand load reveals contents
-        vendorNode?.loadChildren()
         let vendorNames = vendorNode?.children?.map(\.name) ?? []
         #expect(vendorNames.contains("lib.js"))
     }
@@ -464,9 +455,10 @@ struct FileNodeTests {
         let deepNode = srcNode?.children?.first { $0.name == "deep" }
         #expect(deepNode?.children?.isEmpty == true)
 
-        // vendor is gitignored — also shallow (empty children)
+        // vendor is gitignored but still loaded like a normal directory at depth 1
         let vendorNode = node.children?.first { $0.name == "vendor" }
-        #expect(vendorNode?.children?.isEmpty == true)
+        let vendorNames = vendorNode?.children?.map(\.name) ?? []
+        #expect(vendorNames.contains("lib.js"))
     }
 
     @Test func symlinkCacheAvoidsDuplicateResolution() throws {

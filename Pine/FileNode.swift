@@ -79,14 +79,6 @@ final class FileNode: Identifiable, Hashable {
                     return
                 }
 
-                // Gitignored directories are visible but lazy-loaded:
-                // show them in the tree with empty children (collapsed),
-                // their contents load on-demand via loadChildren().
-                if Self.isIgnoredDirectory(url, context: context) {
-                    self.children = []
-                    return
-                }
-
                 // Depth-limited: directories beyond maxDepth are shallow
                 // (empty children), loaded on-demand via loadChildren().
                 if depth > context.maxDepth {
@@ -109,17 +101,6 @@ final class FileNode: Identifiable, Hashable {
 
     /// Names always hidden from the file tree.
     private static let hiddenNames: Set<String> = [".git", ".DS_Store"]
-
-    /// Returns true if the directory at `url` is gitignored based on its relative path from the project root.
-    private static func isIgnoredDirectory(_ url: URL, context: LoadContext) -> Bool {
-        guard !context.ignoredPaths.isEmpty else { return false }
-        let rootPath = context.rootRealPath
-        let prefix = rootPath.hasSuffix("/") ? rootPath : rootPath + "/"
-        let fullPath = context.resolveSymlinks(url)
-        guard fullPath.hasPrefix(prefix) else { return false }
-        let relativePath = String(fullPath.dropFirst(prefix.count))
-        return context.ignoredPaths.contains(relativePath)
-    }
 
     private static func loadContents(of url: URL, context: LoadContext?, depth: Int = 0) -> [FileNode] {
         do {
