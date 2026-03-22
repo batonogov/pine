@@ -39,27 +39,31 @@ struct ContentView: View {
         activeTab?.fileName ?? workspace.projectName
     }
 
+    private var sidebarContent: some View {
+        SidebarSearchableContent(
+            selectedNode: $selectedNode,
+            workspace: workspace,
+            isDiffPanelVisible: isDiffPanelVisible
+        )
+        .accessibilityIdentifier(AccessibilityID.sidebar)
+        .navigationSplitViewColumnWidth(min: 200, ideal: 240, max: 400)
+        .toolbar {
+            ToolbarItem {
+                Button {
+                    if let url = registry.openProjectViaPanel() {
+                        openWindow(value: url)
+                    }
+                } label: {
+                    Image(systemName: "folder.badge.plus")
+                }
+                .help(Strings.openFolderTooltip)
+            }
+        }
+    }
+
     var body: some View {
         NavigationSplitView(columnVisibility: $columnVisibility) {
-            SidebarSearchableContent(
-                selectedNode: $selectedNode,
-                workspace: workspace,
-                isDiffPanelVisible: isDiffPanelVisible
-            )
-            .accessibilityIdentifier(AccessibilityID.sidebar)
-            .navigationSplitViewColumnWidth(min: 200, ideal: 240, max: 400)
-            .toolbar {
-                ToolbarItem {
-                    Button {
-                        if let url = registry.openProjectViaPanel() {
-                            openWindow(value: url)
-                        }
-                    } label: {
-                        Image(systemName: "folder.badge.plus")
-                    }
-                    .help(Strings.openFolderTooltip)
-                }
-            }
+            sidebarContent
         } detail: {
             VStack(spacing: 0) {
                 if terminal.isTerminalVisible {
