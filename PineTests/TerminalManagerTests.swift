@@ -532,7 +532,9 @@ struct TerminalManagerTests {
     func searchManyRows() async {
         let tab = TerminalTab(name: "Test")
         let terminal = tab.terminalView.getTerminal()
-        // Generate 100 lines with "match" on every 10th line
+        // Generate 100 lines with "match" on every 10th line.
+        // Note: SwiftTerm default scroll-back is large enough for 100 lines;
+        // if scroll-back shrinks, older lines may be evicted and this count will drop.
         for i in 0..<100 {
             if i % 10 == 0 {
                 terminal.feed(text: "match line \(i)\r\n")

@@ -167,20 +167,24 @@ struct LineNumberBaselineTests {
                 "Identical font instances must yield zero offset")
     }
 
-    /// Gutter width recalculates correctly for large line counts (4+ digits).
-    @Test func gutterWidthScalesWithDigitCount() {
-        let view = makeView()
+    /// Gutter width formula: digits * charWidth + 20, minimum 2 digits.
+    /// Mirrors the calculation in LineNumberView.draw() (LineNumberGutter.swift:389-401).
+    @Test func gutterWidthFormula_matchesExpected() {
         let font = NSFont.monospacedSystemFont(ofSize: 13, weight: .regular)
-        view.gutterFont = font
-
         let charWidth = "0".size(withAttributes: [.font: font]).width
 
-        // 2-digit minimum
-        let width2 = CGFloat(2) * charWidth + 20
-        // 4-digit file (1000+ lines)
-        let width4 = CGFloat(4) * charWidth + 20
+        // 2-digit minimum (files with < 100 lines)
+        let width2 = CGFloat(max(String(10).count, 2)) * charWidth + 20
+        // 4-digit file (e.g. 1000 lines)
+        let width4 = CGFloat(max(String(1000).count, 2)) * charWidth + 20
+        // 5-digit file (e.g. 10000 lines)
+        let width5 = CGFloat(max(String(10000).count, 2)) * charWidth + 20
 
         #expect(width4 > width2, "4-digit gutter must be wider than 2-digit")
+        #expect(width5 > width4, "5-digit gutter must be wider than 4-digit")
+        // Verify the formula: digits * charWidth + 20
+        #expect(width4 == 4 * charWidth + 20)
+        #expect(width5 == 5 * charWidth + 20)
     }
 
     /// baselineOffset with very large font size difference (e.g. 32pt editor, 8pt gutter).

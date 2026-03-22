@@ -47,6 +47,9 @@ struct EditorBottomInsetTests {
     }
 
     // MARK: - Regression: last line clipping (issue #258)
+    // textContainerInset.height is set once in GutterTextView.init and must not
+    // be overridden by content changes. These tests guard against future code that
+    // might inadvertently adjust the inset based on text content.
 
     /// Empty file should still have bottom inset.
     @Test func gutterTextView_emptyFile_hasBottomInset() {
