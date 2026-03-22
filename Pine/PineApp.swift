@@ -845,9 +845,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate {
 
         // Intercept Cmd+F when a terminal view is the first responder.
         // When the terminal is focused, Cmd+F opens terminal search instead of editor find.
+        // Uses keyCode (3 = F key) instead of charactersIgnoringModifiers because the latter
+        // returns locale-specific characters (e.g. "ф" on Russian keyboard layout).
         NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
             guard event.modifierFlags.intersection(.deviceIndependentFlagsMask) == .command,
-                  event.charactersIgnoringModifiers == "f",
+                  event.keyCode == 3,
                   let responder = NSApp.keyWindow?.firstResponder as? NSView,
                   responder.className.contains("TerminalView") else {
                 return event
