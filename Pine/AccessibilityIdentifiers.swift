@@ -56,6 +56,18 @@ enum AccessibilityID {
     // MARK: - Project Search
     static let projectSearchResultsList = "projectSearchResultsList"
 
+    // MARK: - Diff Panel
+    static let diffPanel = "diffPanel"
+    static let diffPanelStagedSection = "diffPanelStagedSection"
+    static let diffPanelUnstagedSection = "diffPanelUnstagedSection"
+    static func diffPanelFile(_ name: String) -> String { "diffPanelFile_\(name)" }
+    static func diffPanelHunk(_ index: Int) -> String { "diffPanelHunk_\(index)" }
+    static let diffPanelStageHunkButton = "diffPanelStageHunkButton"
+    static let diffPanelUnstageHunkButton = "diffPanelUnstageHunkButton"
+    static let diffPanelDiscardHunkButton = "diffPanelDiscardHunkButton"
+    static let diffDetailView = "diffDetailView"
+    static let diffDetailPlaceholder = "diffDetailPlaceholder"
+
     // MARK: - Status bar
     static let statusBar = "statusBar"
     static let terminalToggleButton = "terminalToggleButton"

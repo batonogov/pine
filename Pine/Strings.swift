@@ -254,6 +254,41 @@ enum Strings {
     static let sidebarFiles: LocalizedStringKey = "sidebar.files"
     static let sidebarSearch: LocalizedStringKey = "sidebar.search"
 
+    // MARK: - Diff Panel
+
+    static let menuToggleDiffPanel: LocalizedStringKey = "menu.toggleDiffPanel"
+    static let diffPanelStagedChanges: LocalizedStringKey = "diffPanel.stagedChanges"
+    static let diffPanelUnstagedChanges: LocalizedStringKey = "diffPanel.unstagedChanges"
+    static let diffPanelNoChanges: LocalizedStringKey = "diffPanel.noChanges"
+    static let diffPanelStageHunk: LocalizedStringKey = "diffPanel.stageHunk"
+    static let diffPanelUnstageHunk: LocalizedStringKey = "diffPanel.unstageHunk"
+    static let diffPanelDiscardHunk: LocalizedStringKey = "diffPanel.discardHunk"
+    static let diffPanelStageAll: LocalizedStringKey = "diffPanel.stageAll"
+    static let diffPanelUnstageAll: LocalizedStringKey = "diffPanel.unstageAll"
+    static let diffPanelStageFile: LocalizedStringKey = "diffPanel.stageFile"
+    static let diffPanelUnstageFile: LocalizedStringKey = "diffPanel.unstageFile"
+
+    static var diffPanelDiscardConfirmTitle: String {
+        String(localized: "diffPanel.discardConfirm.title")
+    }
+
+    static var diffPanelDiscardConfirmMessage: String {
+        String(localized: "diffPanel.discardConfirm.message")
+    }
+
+    static var diffPanelDiscardButton: String {
+        String(localized: "diffPanel.discardConfirm.discard")
+    }
+
+    static var diffPanelCancelButton: String {
+        String(localized: "diffPanel.discardConfirm.cancel")
+    }
+
+    static let diffDetailSelectFile: LocalizedStringKey = "diffDetail.selectFile"
+    static let diffDetailSelectFileDescription: LocalizedStringKey = "diffDetail.selectFileDescription"
+    static let diffDetailUntrackedFile: LocalizedStringKey = "diffDetail.untrackedFile"
+    static let diffDetailNoHunks: LocalizedStringKey = "diffDetail.noHunks"
+
     // MARK: - Terminal Search
 
     static let terminalSearchPlaceholder: LocalizedStringKey = "terminal.search.placeholder"

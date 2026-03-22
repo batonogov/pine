@@ -1811,6 +1811,139 @@
         }
       }
     },
+    "diffDetail.noHunks" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "No displayable changes" } },
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Нет отображаемых изменений" } }
+      }
+    },
+    "diffDetail.selectFile" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Select a File" } },
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Выберите файл" } }
+      }
+    },
+    "diffDetail.selectFileDescription" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Select a file from the sidebar to view its changes" } },
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Выберите файл в боковой панели для просмотра изменений" } }
+      }
+    },
+    "diffDetail.untrackedFile" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Untracked file — stage to see diff" } },
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Неотслеживаемый файл — добавьте для просмотра diff" } }
+      }
+    },
+    "diffPanel.discardConfirm.cancel" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Cancel" } },
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Отмена" } }
+      }
+    },
+    "diffPanel.discardConfirm.discard" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Discard" } },
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Отменить изменения" } }
+      }
+    },
+    "diffPanel.discardConfirm.message" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "This change will be permanently lost." } },
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Это изменение будет безвозвратно потеряно." } }
+      }
+    },
+    "diffPanel.discardConfirm.title" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Discard this change?" } },
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Отменить это изменение?" } }
+      }
+    },
+    "diffPanel.discardHunk" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Discard Hunk" } },
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Отменить фрагмент" } }
+      }
+    },
+    "diffPanel.noChanges" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "No Changes" } },
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Нет изменений" } }
+      }
+    },
+    "diffPanel.stageAll" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Stage All" } },
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Добавить всё" } }
+      }
+    },
+    "diffPanel.stageFile" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Stage File" } },
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Добавить файл" } }
+      }
+    },
+    "diffPanel.stageHunk" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Stage Hunk" } },
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Добавить фрагмент" } }
+      }
+    },
+    "diffPanel.stagedChanges" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Staged Changes" } },
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Подготовленные изменения" } }
+      }
+    },
+    "diffPanel.unstageAll" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Unstage All" } },
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Убрать всё" } }
+      }
+    },
+    "diffPanel.unstageFile" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Unstage File" } },
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Убрать файл" } }
+      }
+    },
+    "diffPanel.unstageHunk" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Unstage Hunk" } },
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Убрать фрагмент" } }
+      }
+    },
+    "diffPanel.unstagedChanges" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Unstaged Changes" } },
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Неподготовленные изменения" } }
+      }
+    },
+    "menu.toggleDiffPanel" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Toggle Changes" } },
+        "ru" : { "stringUnit" : { "state" : "translated", "value" : "Переключить панель изменений" } }
+      }
+    },
     "editor.noFileSelected" : {
       "comment" : "Placeholder title shown in the editor area when no file is open.",
       "extractionState" : "manual",

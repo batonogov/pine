@@ -29,6 +29,7 @@ struct ContentView: View {
     @State private var goToLineOffset: GoToRequest?
     @State private var recoveryEntries: [(UUID, RecoveryEntry)] = []
     @State private var showRecoveryDialog = false
+    @State private var isDiffPanelVisible = false
     @AppStorage("minimapVisible") private var isMinimapVisible = true
     @AppStorage(BlameConstants.storageKey) private var isBlameVisible = true
 
@@ -42,7 +43,8 @@ struct ContentView: View {
         NavigationSplitView(columnVisibility: $columnVisibility) {
             SidebarSearchableContent(
                 selectedNode: $selectedNode,
-                workspace: workspace
+                workspace: workspace,
+                isDiffPanelVisible: isDiffPanelVisible
             )
             .accessibilityIdentifier(AccessibilityID.sidebar)
             .navigationSplitViewColumnWidth(min: 200, ideal: 240, max: 400)
@@ -147,6 +149,7 @@ struct ContentView: View {
             lineDiffs: $lineDiffs,
             columnVisibility: $columnVisibility,
             isSearchPresented: $isSearchPresented,
+            isDiffPanelVisible: $isDiffPanelVisible,
             onRefreshLineDiffs: { refreshLineDiffs() },
             onRefreshBlame: { refreshBlame() },
             onCloseTab: { closeTabWithConfirmation($0) },
@@ -493,9 +496,21 @@ struct ContentView: View {
     // MARK: - Область редактора
 
     @ViewBuilder
+    private var diffDetailContent: some View {
+        if let entry = projectManager.diffPanel.selectedEntry {
+            DiffDetailView(
+                entry: entry,
+                gitProvider: projectManager.gitProvider,
+                diffPanel: projectManager.diffPanel
+            )
+        } else {
+            DiffPlaceholderView()
+        }
+    }
+
     private var editorArea: some View {
         VStack(spacing: 0) {
-            if !tabManager.tabs.isEmpty {
+            if !isDiffPanelVisible && !tabManager.tabs.isEmpty {
                 EditorTabBar(
                     tabManager: tabManager,
                     onCloseTab: { tab in closeTabWithConfirmation(tab) },
@@ -507,7 +522,9 @@ struct ContentView: View {
                 )
             }
 
-            if let tab = activeTab {
+            if isDiffPanelVisible {
+                diffDetailContent
+            } else if let tab = activeTab {
                 Group {
                     if tab.kind == .preview {
                         QuickLookPreviewView(url: tab.url)
@@ -668,10 +685,13 @@ private struct ProjectSearchModifier: ViewModifier {
 private struct SidebarSearchableContent: View {
     @Binding var selectedNode: FileNode?
     var workspace: WorkspaceManager
+    var isDiffPanelVisible: Bool
     @Environment(ProjectManager.self) var projectManager
 
     var body: some View {
-        if !projectManager.searchProvider.query.isEmpty {
+        if isDiffPanelVisible {
+            DiffPanelView()
+        } else if !projectManager.searchProvider.query.isEmpty {
             SearchResultsView()
         } else {
             SidebarView(workspace: workspace, selectedFile: $selectedNode)
@@ -720,6 +740,7 @@ private struct GitAndNotificationObserver: ViewModifier {
     @Binding var lineDiffs: [GitLineDiff]
     @Binding var columnVisibility: NavigationSplitViewVisibility
     @Binding var isSearchPresented: Bool
+    @Binding var isDiffPanelVisible: Bool
     var onRefreshLineDiffs: () -> Void
     var onRefreshBlame: () -> Void
     var onCloseTab: (EditorTab) -> Void
@@ -743,6 +764,11 @@ private struct GitAndNotificationObserver: ViewModifier {
             }
             .onChange(of: workspace.gitProvider.fileStatuses) { _, _ in
                 onRefreshLineDiffs()
+                if isDiffPanelVisible {
+                    Task {
+                        await projectManager.diffPanel.refresh(gitProvider: projectManager.gitProvider)
+                    }
+                }
             }
             .onReceive(NotificationCenter.default.publisher(for: .refreshLineDiffs)) { _ in
                 guard controlActiveState == .key else { return }
@@ -775,7 +801,22 @@ private struct GitAndNotificationObserver: ViewModifier {
             }
             .onReceive(NotificationCenter.default.publisher(for: .showProjectSearch)) { _ in
                 columnVisibility = .all
+                isDiffPanelVisible = false
                 isSearchPresented = true
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .showDiffPanel)) { _ in
+                guard controlActiveState == .key else { return }
+                isDiffPanelVisible.toggle()
+                if isDiffPanelVisible {
+                    isSearchPresented = false
+                    projectManager.searchProvider.query = ""
+                    columnVisibility = .all
+                    Task {
+                        await projectManager.diffPanel.refresh(gitProvider: projectManager.gitProvider)
+                    }
+                } else {
+                    projectManager.diffPanel.selectedFilePath = nil
+                }
             }
             .onReceive(NotificationCenter.default.publisher(for: .navigateChange)) { notification in
                 guard controlActiveState == .key,

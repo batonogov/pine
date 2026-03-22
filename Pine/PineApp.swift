@@ -99,6 +99,13 @@ struct PineApp: App {
                 }
                 .keyboardShortcut("b", modifiers: [.command, .control])
 
+                Button {
+                    NotificationCenter.default.post(name: .showDiffPanel, object: nil)
+                } label: {
+                    Label(Strings.menuToggleDiffPanel, systemImage: MenuIcons.diffPanel)
+                }
+                .keyboardShortcut("c", modifiers: [.command, .shift])
+
                 Divider()
 
                 Button {
@@ -1036,4 +1043,5 @@ extension Notification.Name {
     static let useSelectionForFind = Notification.Name("useSelectionForFind")
     // Find in Terminal (issue #308)
     static let findInTerminal = Notification.Name("findInTerminal")
+    static let showDiffPanel = Notification.Name("showDiffPanel")
 }
