@@ -46,9 +46,9 @@ final class GutterTextView: NSTextView {
     }
 
     /// Blame lookup: line number → GitBlameLine (O(1) access).
-    private var blameLookup: [Int: GitBlameLine] = [:]
+    private(set) var blameLookup: [Int: GitBlameLine] = [:]
     /// Previous blame data count — avoids rebuilding the dictionary on every updateNSView.
-    private var blameLineCount: Int = -1
+    private(set) var blameLineCount: Int = -1
     var isBlameVisible: Bool = false
 
     /// Sets blame data and rebuilds O(1) lookup dictionary.
