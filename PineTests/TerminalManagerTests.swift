@@ -350,4 +350,148 @@ struct TerminalManagerTests {
         #expect(match.col == 10)
         #expect(match.length == 3)
     }
+
+    // MARK: - Edge cases
+
+    @Test("single character search")
+    @MainActor
+    func singleCharSearch() async {
+        let tab = TerminalTab(name: "Test")
+        let terminal = tab.terminalView.getTerminal()
+        terminal.feed(text: "abcabc\r\n")
+
+        await tab.search(for: "a")
+
+        #expect(tab.searchMatches.count == 2)
+        #expect(tab.searchMatches[0].col == 0)
+        #expect(tab.searchMatches[0].length == 1)
+        #expect(tab.searchMatches[1].col == 3)
+    }
+
+    @Test("navigation with single match stays at index 0")
+    @MainActor
+    func singleMatchNavigation() async {
+        let tab = TerminalTab(name: "Test")
+        let terminal = tab.terminalView.getTerminal()
+        terminal.feed(text: "unique\r\n")
+
+        await tab.search(for: "unique")
+
+        #expect(tab.currentMatchIndex == 0)
+        tab.nextMatch()
+        #expect(tab.currentMatchIndex == 0)
+        tab.previousMatch()
+        #expect(tab.currentMatchIndex == 0)
+    }
+
+    @Test("non-overlapping search: 'aa' in 'aaaa' finds 2 matches not 3")
+    @MainActor
+    func nonOverlappingMatches() async {
+        let tab = TerminalTab(name: "Test")
+        let terminal = tab.terminalView.getTerminal()
+        terminal.feed(text: "aaaa\r\n")
+
+        await tab.search(for: "aa")
+
+        #expect(tab.searchMatches.count == 2)
+        #expect(tab.searchMatches[0].col == 0)
+        #expect(tab.searchMatches[1].col == 2)
+    }
+
+    @Test("search with unicode characters")
+    @MainActor
+    func unicodeSearch() async {
+        let tab = TerminalTab(name: "Test")
+        let terminal = tab.terminalView.getTerminal()
+        terminal.feed(text: "привет мир привет\r\n")
+
+        await tab.search(for: "привет")
+
+        #expect(tab.searchMatches.count == 2)
+    }
+
+    @Test("search with special ASCII characters")
+    @MainActor
+    func specialAsciiSearch() async {
+        let tab = TerminalTab(name: "Test")
+        let terminal = tab.terminalView.getTerminal()
+        terminal.feed(text: "path/to/file:123 path/to/file:456\r\n")
+
+        await tab.search(for: "path/to/file:")
+
+        #expect(tab.searchMatches.count == 2)
+    }
+
+    @Test("search across empty lines in buffer")
+    @MainActor
+    func searchWithEmptyLines() async {
+        let tab = TerminalTab(name: "Test")
+        let terminal = tab.terminalView.getTerminal()
+        terminal.feed(text: "match\r\n\r\n\r\nmatch\r\n")
+
+        await tab.search(for: "match")
+
+        #expect(tab.searchMatches.count == 2)
+        // Rows should not be adjacent due to empty lines
+        #expect(tab.searchMatches[0].row != tab.searchMatches[1].row)
+    }
+
+    @Test("search after clearSearch then new search works")
+    @MainActor
+    func searchAfterClear() async {
+        let tab = TerminalTab(name: "Test")
+        let terminal = tab.terminalView.getTerminal()
+        terminal.feed(text: "foo bar\r\n")
+
+        await tab.search(for: "foo")
+        #expect(tab.searchMatches.count == 1)
+
+        tab.clearSearch()
+        #expect(tab.searchMatches.isEmpty)
+
+        await tab.search(for: "bar")
+        #expect(tab.searchMatches.count == 1)
+        #expect(tab.searchMatches[0].col == 4)
+    }
+
+    @Test("case sensitive search finds exact match only")
+    @MainActor
+    func caseSensitiveExact() async {
+        let tab = TerminalTab(name: "Test")
+        let terminal = tab.terminalView.getTerminal()
+        terminal.feed(text: "Error error ERROR\r\n")
+
+        await tab.search(for: "Error", caseSensitive: true)
+
+        #expect(tab.searchMatches.count == 1)
+        #expect(tab.searchMatches[0].col == 0)
+    }
+
+    @Test("switching case sensitivity changes results")
+    @MainActor
+    func toggleCaseSensitivity() async {
+        let tab = TerminalTab(name: "Test")
+        let terminal = tab.terminalView.getTerminal()
+        terminal.feed(text: "Foo foo FOO\r\n")
+
+        await tab.search(for: "foo", caseSensitive: false)
+        #expect(tab.searchMatches.count == 3)
+
+        await tab.search(for: "foo", caseSensitive: true)
+        #expect(tab.searchMatches.count == 1)
+    }
+
+    @Test("special regex characters are treated as literals")
+    @MainActor
+    func specialCharactersAsLiterals() async {
+        let tab = TerminalTab(name: "Test")
+        let terminal = tab.terminalView.getTerminal()
+        terminal.feed(text: "file.txt [test] (foo)\r\n")
+
+        await tab.search(for: "[test]")
+        #expect(tab.searchMatches.count == 1)
+
+        await tab.search(for: ".")
+        #expect(tab.searchMatches.count >= 1)
+    }
 }
