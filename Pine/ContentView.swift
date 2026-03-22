@@ -168,52 +168,32 @@ struct ContentView: View {
                 }
             }
         }
-        .onReceive(NotificationCenter.default.publisher(for: .refreshLineDiffs)) { _ in
-            guard controlActiveState == .key else { return }
-            refreshLineDiffs()
-            refreshBlame()
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .closeTab)) { _ in
-            guard controlActiveState == .key,
-                  let tab = tabManager.activeTab else { return }
-            closeTabWithConfirmation(tab)
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .openFolder)) { _ in
-            guard controlActiveState == .key else { return }
-            openNewProject()
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .fileRenamed)) { notification in
-            guard let oldURL = notification.userInfo?["oldURL"] as? URL,
-                  let newURL = notification.userInfo?["newURL"] as? URL else { return }
-            tabManager.handleFileRenamed(oldURL: oldURL, newURL: newURL)
-            projectManager.saveSession()
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .fileDeleted)) { notification in
-            guard let deletedURL = notification.userInfo?["url"] as? URL else { return }
-            handleFileDeletion(deletedURL)
-        }
-        .onChange(of: workspace.externalChangeToken) { _, _ in
-            guard controlActiveState == .key else { return }
-            let conflicts = tabManager.checkExternalChanges()
-            handleExternalConflicts(conflicts)
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .showProjectSearch)) { _ in
-            columnVisibility = .all
-            isDiffPanelVisible = false
-            isSearchPresented = true
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .showDiffPanel)) { _ in
-            guard controlActiveState == .key else { return }
-            isDiffPanelVisible.toggle()
-            if isDiffPanelVisible {
-                isSearchPresented = false
-                projectManager.searchProvider.query = ""
-                columnVisibility = .all
-                Task {
-                    await projectManager.diffPanel.refresh(gitProvider: projectManager.gitProvider)
-                }
-            }
-        }
+        .modifier(NotificationObservers(
+            controlActiveState: controlActiveState,
+            onRefreshLineDiffs: { refreshLineDiffs(); refreshBlame() },
+            onCloseTab: {
+                guard let tab = tabManager.activeTab else { return }
+                closeTabWithConfirmation(tab)
+            },
+            onOpenFolder: { openNewProject() },
+            onFileRenamed: { oldURL, newURL in
+                tabManager.handleFileRenamed(oldURL: oldURL, newURL: newURL)
+                projectManager.saveSession()
+            },
+            onFileDeleted: { handleFileDeletion($0) },
+            onExternalChange: {
+                let conflicts = tabManager.checkExternalChanges()
+                handleExternalConflicts(conflicts)
+            },
+            externalChangeToken: workspace.externalChangeToken
+        ))
+        .modifier(DiffPanelObserver(
+            isDiffPanelVisible: $isDiffPanelVisible,
+            isSearchPresented: $isSearchPresented,
+            columnVisibility: $columnVisibility,
+            projectManager: projectManager,
+            controlActiveState: controlActiveState
+        ))
         .onReceive(NotificationCenter.default.publisher(for: .navigateChange)) { notification in
             guard controlActiveState == .key,
                   let direction = notification.userInfo?["direction"] as? String else { return }
@@ -758,6 +738,77 @@ private struct BlameObserver: ViewModifier {
     func body(content: Content) -> some View {
         content
             .onChange(of: isBlameVisible) { _, _ in onRefresh() }
+    }
+}
+
+/// Extracts notification observers into a ViewModifier to reduce body complexity for the type-checker.
+private struct NotificationObservers: ViewModifier {
+    let controlActiveState: ControlActiveState
+    let onRefreshLineDiffs: () -> Void
+    let onCloseTab: () -> Void
+    let onOpenFolder: () -> Void
+    let onFileRenamed: (URL, URL) -> Void
+    let onFileDeleted: (URL) -> Void
+    let onExternalChange: () -> Void
+    let externalChangeToken: Int
+
+    func body(content: Content) -> some View {
+        content
+            .onReceive(NotificationCenter.default.publisher(for: .refreshLineDiffs)) { _ in
+                guard controlActiveState == .key else { return }
+                onRefreshLineDiffs()
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .closeTab)) { _ in
+                guard controlActiveState == .key else { return }
+                onCloseTab()
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .openFolder)) { _ in
+                guard controlActiveState == .key else { return }
+                onOpenFolder()
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .fileRenamed)) { notification in
+                guard let oldURL = notification.userInfo?["oldURL"] as? URL,
+                      let newURL = notification.userInfo?["newURL"] as? URL else { return }
+                onFileRenamed(oldURL, newURL)
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .fileDeleted)) { notification in
+                guard let deletedURL = notification.userInfo?["url"] as? URL else { return }
+                onFileDeleted(deletedURL)
+            }
+            .onChange(of: externalChangeToken) { _, _ in
+                guard controlActiveState == .key else { return }
+                onExternalChange()
+            }
+    }
+}
+
+/// Handles diff panel and project search toggle notifications.
+private struct DiffPanelObserver: ViewModifier {
+    @Binding var isDiffPanelVisible: Bool
+    @Binding var isSearchPresented: Bool
+    @Binding var columnVisibility: NavigationSplitViewVisibility
+    let projectManager: ProjectManager
+    let controlActiveState: ControlActiveState
+
+    func body(content: Content) -> some View {
+        content
+            .onReceive(NotificationCenter.default.publisher(for: .showProjectSearch)) { _ in
+                columnVisibility = .all
+                isDiffPanelVisible = false
+                isSearchPresented = true
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .showDiffPanel)) { _ in
+                guard controlActiveState == .key else { return }
+                isDiffPanelVisible.toggle()
+                if isDiffPanelVisible {
+                    isSearchPresented = false
+                    projectManager.searchProvider.query = ""
+                    columnVisibility = .all
+                    Task {
+                        await projectManager.diffPanel.refresh(gitProvider: projectManager.gitProvider)
+                    }
+                }
+            }
     }
 }
 
