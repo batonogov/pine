@@ -1,5 +1,25 @@
 # Changelog
 
+## [1.9.0](https://github.com/batonogov/pine/compare/v1.8.0...v1.9.0) (2026-03-22)
+
+
+### Features
+
+* add creator story section to landing page with i18n ([#371](https://github.com/batonogov/pine/issues/371)) ([b0fd2bc](https://github.com/batonogov/pine/commit/b0fd2bcc7bbf68829b4bf4488cae8e62c0f37c9e)), closes [#344](https://github.com/batonogov/pine/issues/344)
+* find in terminal (Cmd+F) ([#372](https://github.com/batonogov/pine/issues/372)) ([62a8a69](https://github.com/batonogov/pine/commit/62a8a69a937921683d42f867cca02ca02cfce501))
+* **i18n:** add missing translations for 14 strings across 7 languages ([#367](https://github.com/batonogov/pine/issues/367)) ([4b99ba6](https://github.com/batonogov/pine/commit/4b99ba66f7b681736b246b5d830c0a85461d419d)), closes [#327](https://github.com/batonogov/pine/issues/327)
+
+
+### Bug Fixes
+
+* editor find bar overlaps line numbers ([#387](https://github.com/batonogov/pine/issues/387)) ([cf6d395](https://github.com/batonogov/pine/commit/cf6d395d4cf5ff39f6c519a1d92b87ba8f41036e))
+* **tests:** add isSelected accessibility trait to active editor tab ([#378](https://github.com/batonogov/pine/issues/378)) ([f9134e6](https://github.com/batonogov/pine/commit/f9134e6753f05168ef57ad4fc40b3674b8bbe1fd))
+
+
+### Code Refactoring
+
+* **tests:** replace sleep() with expectation-based waiting in UI tests ([#370](https://github.com/batonogov/pine/issues/370)) ([d2476ba](https://github.com/batonogov/pine/commit/d2476baca14caa3103317efe72d2eb282d21f578))
+
 ## [1.8.0](https://github.com/batonogov/pine/compare/v1.7.0...v1.8.0) (2026-03-21)
 
 
