@@ -71,6 +71,7 @@ final class GutterTextView: NSTextView {
     /// Resets multi-cursor state. Called when text changes externally (not from multi-cursor edit).
     func invalidateMultiCursors() {
         multiCursors = []
+        updateCaretBlink()
     }
 
     /// Syncs NSTextView selections from multiCursors using setSelectedRanges (Apple API).
@@ -84,6 +85,54 @@ final class GutterTextView: NSTextView {
             return NSValue(range: NSRange(location: loc, length: len))
         }
         setSelectedRanges(ranges, affinity: .downstream, stillSelecting: false)
+        updateCaretBlink()
+    }
+
+    // MARK: - Multi-cursor caret drawing
+
+    /// Timer that drives the blink animation for extra cursors.
+    private var caretBlinkTimer: Timer?
+    private var caretVisible = true
+
+    /// Starts or stops the caret blink timer depending on multi-cursor state.
+    private func updateCaretBlink() {
+        if isMultiCursorActive {
+            guard caretBlinkTimer == nil else { return }
+            caretVisible = true
+            caretBlinkTimer = Timer.scheduledTimer(withTimeInterval: 0.6, repeats: true) { [weak self] _ in
+                guard let self else { return }
+                self.caretVisible.toggle()
+                self.needsDisplay = true
+            }
+        } else {
+            caretBlinkTimer?.invalidate()
+            caretBlinkTimer = nil
+        }
+    }
+
+    override func drawInsertionPoint(in rect: NSRect, color: NSColor, turnedOn flag: Bool) {
+        super.drawInsertionPoint(in: rect, color: color, turnedOn: flag)
+
+        // Draw additional carets for multi-cursor mode
+        guard isMultiCursorActive, caretVisible,
+              let layoutManager, let textContainer else { return }
+
+        let origin = textContainerOrigin
+        // Skip the first cursor — NSTextView already draws it
+        for cursor in multiCursors.dropFirst() where !cursor.hasSelection {
+            let glyphIndex = layoutManager.glyphIndexForCharacter(at: min(cursor.location, (string as NSString).length))
+            var lineRect = layoutManager.lineFragmentRect(forGlyphAt: glyphIndex, effectiveRange: nil)
+            let loc = layoutManager.location(forGlyphAt: glyphIndex)
+
+            let caretRect = NSRect(
+                x: lineRect.origin.x + loc.x + origin.x,
+                y: lineRect.origin.y + origin.y,
+                width: max(rect.width, 1.5),
+                height: lineRect.height
+            )
+            color.setFill()
+            caretRect.fill()
+        }
     }
 
     /// Activates multi-cursor mode from the current single selection.
@@ -107,6 +156,7 @@ final class GutterTextView: NSTextView {
         let first = multiCursors[0]
         multiCursors = []
         setSelectedRange(NSRange(location: first.location, length: 0))
+        updateCaretBlink()
     }
 
     // MARK: - Multi-cursor text input overrides
@@ -203,6 +253,23 @@ final class GutterTextView: NSTextView {
             multiCursors = []
         }
         super.mouseDown(with: event)
+    }
+
+    // MARK: - Key equivalents for multi-cursor shortcuts
+    // SwiftUI menu shortcuts may not reach NSTextView when it's first responder.
+    // Intercept Cmd+D and Cmd+Shift+L directly for reliable handling.
+
+    override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+        if flags == .command, event.charactersIgnoringModifiers == "d" {
+            selectNextOccurrence()
+            return true
+        }
+        if flags == [.command, .shift], event.charactersIgnoringModifiers == "l" {
+            splitSelectionIntoLines()
+            return true
+        }
+        return super.performKeyEquivalent(with: event)
     }
 
     // MARK: - Cmd+D: select next occurrence
