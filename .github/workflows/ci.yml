@@ -167,19 +167,39 @@ jobs:
           # Get JSON coverage report
           xcrun xccov view --report --json "$XCRESULT" > coverage.json
 
-          # Extract overall coverage for Pine target only (exclude test targets)
+          # Extract coverage for Pine target, excluding pure SwiftUI view files
+          # (views are covered by UI tests separately)
           COVERAGE=$(python3 -c "
           import json, sys
+          EXCLUDED_VIEWS = {
+              'ContentView.swift',
+              'EditorTabBar.swift',
+              'WelcomeView.swift',
+              'SearchResultsView.swift',
+              'BranchSwitcherView.swift',
+              'RecoveryDialogView.swift',
+              'TerminalSearchBar.swift',
+              'BranchSubtitleClickHandler.swift',
+              'MarkdownPreviewView.swift',
+              'QuickLookPreviewView.swift',
+              'RepresentedFileTracker.swift',
+              'AccessibilityIdentifiers.swift',
+          }
           with open('coverage.json') as f:
               data = json.load(f)
           for target in data.get('targets', []):
               if target['name'] == 'Pine.app':
-                  pct = target['lineCoverage'] * 100
+                  covered = 0
+                  total = 0
+                  for f in target.get('files', []):
+                      if f['name'] in EXCLUDED_VIEWS:
+                          continue
+                      covered += f.get('coveredLines', 0)
+                      total += f.get('executableLines', 0)
+                  pct = (covered / total * 100) if total > 0 else 0
                   print(f'{pct:.1f}')
                   sys.exit(0)
-          # Fallback to overall
-          pct = data.get('lineCoverage', 0) * 100
-          print(f'{pct:.1f}')
+          print('0.0')
           ")
 
           echo "coverage=$COVERAGE" >> "$GITHUB_OUTPUT"
@@ -188,19 +208,38 @@ jobs:
           # Generate per-file breakdown for top/bottom files
           python3 -c "
           import json
+          EXCLUDED_VIEWS = {
+              'ContentView.swift',
+              'EditorTabBar.swift',
+              'WelcomeView.swift',
+              'SearchResultsView.swift',
+              'BranchSwitcherView.swift',
+              'RecoveryDialogView.swift',
+              'TerminalSearchBar.swift',
+              'BranchSubtitleClickHandler.swift',
+              'MarkdownPreviewView.swift',
+              'QuickLookPreviewView.swift',
+              'RepresentedFileTracker.swift',
+              'AccessibilityIdentifiers.swift',
+          }
           with open('coverage.json') as f:
               data = json.load(f)
           for target in data.get('targets', []):
               if target['name'] != 'Pine.app':
                   continue
               files = []
+              excluded = []
               for f in target.get('files', []):
                   name = f['name']
                   pct = f['lineCoverage'] * 100
-                  files.append((name, pct, f.get('coveredLines', 0), f.get('executableLines', 0)))
+                  entry = (name, pct, f.get('coveredLines', 0), f.get('executableLines', 0))
+                  if name in EXCLUDED_VIEWS:
+                      excluded.append(entry)
+                  else:
+                      files.append(entry)
               files.sort(key=lambda x: x[1])
 
-              print('### Lowest Coverage Files')
+              print('### Lowest Coverage Files (logic only)')
               print('| File | Coverage | Lines |')
               print('|------|----------|-------|')
               for name, pct, covered, total in files[:10]:
@@ -214,6 +253,11 @@ jobs:
               for name, pct, covered, total in files[-10:]:
                   if total > 0:
                       print(f'| {name} | {pct:.1f}% | {covered}/{total} |')
+
+              if excluded:
+                  excluded_lines = sum(t for _, _, _, t in excluded)
+                  print()
+                  print(f'_Excluded from threshold: {len(excluded)} pure SwiftUI view files ({excluded_lines} lines) — covered by UI tests._')
           " >> "$GITHUB_STEP_SUMMARY"
 
       - name: Check Coverage Threshold
