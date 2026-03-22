@@ -206,6 +206,10 @@ final class TerminalTab: Identifiable, Hashable {
             return
         }
 
+        // Store for SwiftTerm findNext/findPrevious highlight calls
+        lastSearchQuery = query
+        lastSearchOptions = SearchOptions(caseSensitive: caseSensitive)
+
         // Extract full buffer text via public API on main thread
         let terminal = terminalView.getTerminal()
         let bufferData = terminal.getBufferAsData()
@@ -239,49 +243,47 @@ final class TerminalTab: Identifiable, Hashable {
         searchTotalRows = totalRows
         if matches.isEmpty {
             currentMatchIndex = -1
+            terminalView.clearSearch()
         } else {
             currentMatchIndex = 0
-            scrollToCurrentMatch()
+            highlightCurrentMatch()
         }
     }
 
-    /// Advances to the next match and scrolls to it.
+    /// Advances to the next match, highlights it via SwiftTerm selection, and scrolls to it.
     func nextMatch() {
         guard !searchMatches.isEmpty else { return }
         currentMatchIndex = (currentMatchIndex + 1) % searchMatches.count
-        scrollToCurrentMatch()
+        highlightCurrentMatch()
     }
 
-    /// Goes back to the previous match and scrolls to it.
+    /// Goes back to the previous match, highlights it, and scrolls to it.
     func previousMatch() {
         guard !searchMatches.isEmpty else { return }
         currentMatchIndex = (currentMatchIndex - 1 + searchMatches.count) % searchMatches.count
-        scrollToCurrentMatch()
+        terminalView.findPrevious(lastSearchQuery, options: lastSearchOptions)
     }
 
-    /// Clears search results and resets state.
+    /// Clears search results, resets state, and removes selection highlight.
     func clearSearch() {
         searchMatches = []
         currentMatchIndex = -1
         searchTotalRows = 0
+        lastSearchQuery = ""
+        terminalView.clearSearch()
     }
 
-    /// Scrolls the terminal view to show the row of the current match.
-    ///
-    /// Uses SwiftTerm's public `scroll(toPosition:)` which accepts a normalized
-    /// value (0.0 = top, 1.0 = bottom) and properly updates scrollbar, display,
-    /// and accessibility state.
-    private func scrollToCurrentMatch() {
+    /// Last query/options used for findNext/findPrevious calls.
+    private var lastSearchQuery = ""
+    private var lastSearchOptions = SearchOptions()
+
+    /// Highlights the current match using SwiftTerm's built-in find (which sets selection)
+    /// and scrolls to it.
+    private func highlightCurrentMatch() {
         guard currentMatchIndex >= 0, currentMatchIndex < searchMatches.count else { return }
-        let matchRow = searchMatches[currentMatchIndex].row
-        let terminal = terminalView.getTerminal()
-        let maxScroll = searchTotalRows - terminal.rows
-        guard maxScroll > 0 else { return }
-        // Center the match in the viewport
-        let halfRows = max(1, terminal.rows / 2)
-        let targetRow = max(0, min(matchRow - halfRows, maxScroll))
-        let position = Double(targetRow) / Double(maxScroll)
-        terminalView.scroll(toPosition: position)
+        // SwiftTerm's findNext/findPrevious iterates through matches and highlights via selection.
+        // We call the appropriate one to move SwiftTerm's internal cursor to our target match.
+        terminalView.findNext(lastSearchQuery, options: lastSearchOptions)
     }
 
     static func == (lhs: TerminalTab, rhs: TerminalTab) -> Bool { lhs.id == rhs.id }
