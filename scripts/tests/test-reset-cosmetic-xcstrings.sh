@@ -8,6 +8,8 @@ PASS=0
 FAIL=0
 TEST_DIR=""
 
+trap cleanup EXIT
+
 setup_repo() {
     TEST_DIR=$(mktemp -d)
     cd "$TEST_DIR"

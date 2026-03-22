@@ -32,17 +32,18 @@ if ! command -v python3 >/dev/null 2>&1; then
 fi
 
 # Compare semantic JSON: sort keys, ignore whitespace
-HEAD_JSON=$(git show "HEAD:$XCSTRINGS" 2>/dev/null | python3 -c "
+NORMALIZE_PY='
 import sys, json
-data = json.load(sys.stdin)
-json.dump(data, sys.stdout, sort_keys=True)
-" 2>/dev/null || echo "")
+try:
+    data = json.load(sys.stdin)
+    json.dump(data, sys.stdout, sort_keys=True)
+except Exception:
+    pass
+'
 
-WORKING_JSON=$(python3 -c "
-import sys, json
-data = json.load(sys.stdin)
-json.dump(data, sys.stdout, sort_keys=True)
-" < "$XCSTRINGS" 2>/dev/null || echo "")
+HEAD_JSON=$(git show "HEAD:$XCSTRINGS" 2>/dev/null | python3 -c "$NORMALIZE_PY" 2>/dev/null || echo "")
+
+WORKING_JSON=$(python3 -c "$NORMALIZE_PY" < "$XCSTRINGS" 2>/dev/null || echo "")
 
 if [ -z "$HEAD_JSON" ] || [ -z "$WORKING_JSON" ]; then
     # Can't parse — leave as is
