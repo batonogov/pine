@@ -57,28 +57,32 @@ struct FindReplaceTests {
         )
     }
 
-    // MARK: - EditorContainerView is flipped
+    // MARK: - EditorContainerView & EditorScrollView layout
 
     @Test func editorContainerView_isFlipped() {
         let container = EditorContainerView()
         #expect(container.isFlipped, "EditorContainerView must be flipped to match NSScrollView coordinate system")
     }
 
-    @Test func editorContainerView_lineNumberView_fullHeight_whenFindBarHidden() {
+    @Test func editorScrollView_findBarOffset_defaultsToZero() {
+        let scrollView = EditorScrollView()
+        #expect(scrollView.findBarOffset == 0)
+    }
+
+    @Test func editorContainerView_lineNumberView_fullHeight_whenNoFindBar() {
         let container = EditorContainerView()
         container.frame = NSRect(x: 0, y: 0, width: 600, height: 400)
 
-        let scrollView = NSScrollView(frame: NSRect(x: 0, y: 0, width: 600, height: 400))
+        let scrollView = EditorScrollView(frame: NSRect(x: 0, y: 0, width: 600, height: 400))
         let textView = NSTextView(frame: NSRect(x: 0, y: 0, width: 600, height: 400))
         scrollView.documentView = textView
         container.addSubview(scrollView)
-        container.setScrollView(scrollView)
 
         let lineNumberView = LineNumberView(textView: textView)
         lineNumberView.frame = NSRect(x: 0, y: 0, width: 40, height: 400)
         container.addSubview(lineNumberView)
 
-        // Without find bar, line number view should fill the full height
+        // Without find bar, line number view should fill full height from y=0
         container.layout()
         #expect(lineNumberView.frame.origin.y == 0)
         #expect(lineNumberView.frame.height == 400)
