@@ -18,7 +18,7 @@ final class FileNode: Identifiable, Hashable {
     /// Project root used for symlink boundary checks during loadChildren().
     private let projectRoot: URL?
 
-    /// Ignored paths forwarded to loadChildren() for lazy-loading gitignored directories.
+    /// Ignored paths forwarded to loadChildren() and used for shallow-loading gitignored directories.
     private let ignoredPaths: Set<String>?
 
     var children: [FileNode]?
@@ -41,7 +41,7 @@ final class FileNode: Identifiable, Hashable {
         self.init(url: url, context: context)
     }
 
-    /// Initializer with project root boundary, cycle protection, and gitignored lazy-loading.
+    /// Initializer with project root boundary, cycle protection, and gitignored shallow-loading.
     convenience init(url: URL, projectRoot: URL, ignoredPaths: Set<String>) {
         let context = LoadContext(projectRoot: projectRoot, ignoredPaths: ignoredPaths)
         self.init(url: url, context: context)
@@ -79,11 +79,17 @@ final class FileNode: Identifiable, Hashable {
                     return
                 }
 
-                // Gitignored directories are visible but lazy-loaded:
-                // show them in the tree with empty children (collapsed),
-                // their contents load on-demand via loadChildren().
+                // Gitignored directories are visible and expandable,
+                // but loaded shallow (immediate children only) for performance.
+                // Subdirectories inside can be expanded on-demand via loadChildren().
                 if Self.isIgnoredDirectory(url, context: context) {
-                    self.children = []
+                    context.visitedRealPaths.insert(realPath)
+                    let shallowContext = LoadContext(
+                        projectRoot: URL(fileURLWithPath: context.rootRealPath),
+                        ignoredPaths: context.ignoredPaths,
+                        maxDepth: 0
+                    )
+                    self.children = Self.loadContents(of: url, context: shallowContext, depth: 1)
                     return
                 }
 

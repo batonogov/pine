@@ -3,7 +3,7 @@
 //  PineUITests
 //
 //  UI tests verifying that gitignored directories appear dimmed in the sidebar
-//  (visible but lazy-loaded) while gitignored files also remain visible.
+//  (visible and expandable via shallow-loading) while gitignored files also remain visible.
 //
 
 import XCTest
@@ -114,6 +114,80 @@ final class GitignoreFilterTests: PineUITestCase {
             waitForExistence(envFile, timeout: 5),
             ".env should remain visible in sidebar (gitignored files are kept)"
         )
+    }
+
+    func testGitignoredDirectoryCanBeExpanded() throws {
+        launchWithProject(projectURL)
+
+        let sidebar = app.outlines["sidebar"]
+        XCTAssertTrue(waitForExistence(sidebar, timeout: 10), "Sidebar should appear")
+
+        // node_modules should be visible
+        let nodeModules = app.staticTexts["fileNode_node_modules"]
+        XCTAssertTrue(
+            waitForExistence(nodeModules, timeout: 5),
+            "node_modules should appear in sidebar"
+        )
+
+        // Gitignored folders with children should have a disclosure triangle.
+        // Try multiple expansion strategies — SwiftUI List on macOS 26 is finicky.
+        expandFolder(nodeModules, in: sidebar)
+
+        // Child directory "express" should appear after expanding
+        let express = app.staticTexts["fileNode_express"]
+        XCTAssertTrue(
+            waitForExistence(express, timeout: 5),
+            "express should appear inside expanded node_modules (gitignored dirs are expandable)"
+        )
+    }
+
+    func testGitignoredDotDirectoryCanBeExpanded() throws {
+        launchWithProject(projectURL)
+
+        let sidebar = app.outlines["sidebar"]
+        XCTAssertTrue(waitForExistence(sidebar, timeout: 10), "Sidebar should appear")
+
+        // .claude should be visible
+        let claudeDir = app.staticTexts["fileNode_.claude"]
+        XCTAssertTrue(
+            waitForExistence(claudeDir, timeout: 5),
+            ".claude should appear in sidebar"
+        )
+
+        expandFolder(claudeDir, in: sidebar)
+
+        // Child file "settings.json" should appear after expanding
+        let settingsFile = app.staticTexts["fileNode_settings.json"]
+        XCTAssertTrue(
+            waitForExistence(settingsFile, timeout: 5),
+            "settings.json should appear inside expanded .claude (gitignored dirs are expandable)"
+        )
+    }
+
+    /// Tries to expand a folder row in the sidebar outline.
+    /// Uses multiple strategies because SwiftUI List disclosure behavior
+    /// is unreliable with XCUITest synthetic events on macOS 26.
+    private func expandFolder(_ row: XCUIElement, in sidebar: XCUIElement) {
+        // Strategy 1: double-click the row text
+        row.doubleClick()
+        sleep(1)
+
+        // Strategy 2: click the disclosure triangle near the row
+        // The outline's disclosureTriangles are indexed by position.
+        // Find the one closest to our row by iterating.
+        let triangles = sidebar.disclosureTriangles
+        for index in 0..<triangles.count {
+            let triangle = triangles.element(boundBy: index)
+            guard triangle.exists else { continue }
+            // Check if this triangle is vertically aligned with our row
+            let rowFrame = row.frame
+            let triFrame = triangle.frame
+            if abs(triFrame.midY - rowFrame.midY) < 10 {
+                triangle.click()
+                sleep(1)
+                return
+            }
+        }
     }
 
     func testNonIgnoredDirectoryRemainsInSidebar() throws {
