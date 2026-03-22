@@ -429,7 +429,7 @@ jobs:
         run: |
           # Merge all JSON reports into one list
           MERGED=$(python3 -c "
-          import json, glob, os
+          import json, glob
           all_flaky = []
           for f in sorted(glob.glob('flaky-reports/flaky-shard-*.json')):
               with open(f) as fh:
@@ -481,7 +481,7 @@ jobs:
           script: |
             const count = process.env.FLAKY_COUNT;
             let tests = '';
-            try { tests = JSON.parse(process.env.FLAKY_TESTS || '""'); } catch { tests = process.env.FLAKY_TESTS || ''; }
+            try { tests = JSON.parse(process.env.FLAKY_TESTS || '""'); } catch (e) { tests = process.env.FLAKY_TESTS || ''; }
 
             const body = [
               `## Flaky UI Tests: ${count}`,
