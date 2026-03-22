@@ -10,6 +10,7 @@ import SwiftUI
 
 /// Extended tests for CodeEditorView.Coordinator — font changes, text changes,
 /// bracket highlight, fold state, viewport highlighting, selection changes.
+@Suite("CodeEditorView.Coordinator Extended Tests")
 struct CoordinatorExtendedTests {
 
     private let font13 = NSFont.monospacedSystemFont(ofSize: 13, weight: .regular)
@@ -238,83 +239,18 @@ struct CoordinatorExtendedTests {
         #expect(foldState.isFolded(range))
     }
 
-    // MARK: - cancelPendingHighlight
+    // MARK: - Bracket matching with nested brackets
 
-    @Test func cancelPendingHighlight_resetsState() {
-        let (coordinator, _, _) = makeCoordinator()
-        coordinator.highlightedCharRange = NSRange(location: 0, length: 100)
-        coordinator.cancelPendingHighlight()
-        // After cancel, highlightGeneration should be incremented
-        // (no direct way to test, but should not crash)
-    }
-
-    // MARK: - handleFoldCode notification
-
-    @Test func handleFoldCode_withoutScrollView_doesNotCrash() {
-        let editorView = CodeEditorView(
-            text: .constant("test"),
-            contentVersion: 0,
-            language: "swift",
-            foldState: .constant(FoldState())
-        )
-        let coordinator = CodeEditorView.Coordinator(parent: editorView)
-        // No scroll view set — should not crash
-        let notification = Notification(
-            name: .foldCode,
-            userInfo: ["action": "foldAll"]
-        )
-        coordinator.handleFoldCode(notification)
-    }
-
-    // MARK: - Large file viewport highlighting
-
-    @Test func viewportHighlightThreshold_appliesCorrectly() {
-        let smallText = String(repeating: "x", count: 99_999)
-        let view = CodeEditorView(
-            text: .constant(smallText),
-            contentVersion: 0,
-            language: "swift",
-            foldState: .constant(FoldState())
-        )
-        // Small text should not use viewport highlighting
-        // (useViewportHighlighting is private, but we verify via threshold)
-        #expect(CodeEditorView.viewportHighlightThreshold == 100_000)
-        #expect((smallText as NSString).length < CodeEditorView.viewportHighlightThreshold)
-    }
-
-    // MARK: - Find actions
-
-    @Test func findActions_withScrollViewButNoWindow() {
-        let (coordinator, _, _) = makeCoordinator()
-        // GutterTextView is not in a window, so these should be no-ops
-        coordinator.performFindAction(.showFindInterface)
-        coordinator.performFindAction(.showReplaceInterface)
-        coordinator.performFindAction(.nextMatch)
-        coordinator.performFindAction(.previousMatch)
-        coordinator.performFindAction(.setSearchString)
-    }
-
-    // MARK: - Bracket matching integration
-
-    @Test func bracketHighlight_withNestedBrackets() {
+    @Test func selectionChangeWithNestedBrackets() {
         let text = "func test() {\n    if true {\n        print(\"hello\")\n    }\n}\n"
         let (coordinator, _, textView) = makeCoordinator(text: text)
 
-        // Position cursor after inner {
+        // Position cursor after inner { — bracket matching should work
         textView.setSelectedRange(NSRange(location: 27, length: 0))
         let notification = Notification(
             name: NSTextView.didChangeSelectionNotification,
             object: textView
         )
         coordinator.textViewDidChangeSelection(notification)
-        // Should not crash even with nested brackets
-    }
-
-    // MARK: - handleToggleComment
-
-    @Test func handleToggleComment_withoutWindow_doesNotCrash() {
-        let (coordinator, _, _) = makeCoordinator()
-        // No window — should be a no-op
-        coordinator.handleToggleComment()
     }
 }

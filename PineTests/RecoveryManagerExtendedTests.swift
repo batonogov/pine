@@ -8,6 +8,7 @@ import Foundation
 @testable import Pine
 
 /// Extended tests for RecoveryManager — hasPendingRecovery, timer, scheduling, cleanup.
+@Suite("RecoveryManager Extended Tests")
 struct RecoveryManagerExtendedTests {
 
     private func makeTempDir() throws -> URL {
@@ -73,67 +74,24 @@ struct RecoveryManagerExtendedTests {
         #expect(manager.hasPendingRecovery == false)
     }
 
-    // MARK: - Timer
+    // MARK: - Timer and scheduling edge cases
 
-    @Test func startPeriodicSnapshots_createsTimer() throws {
-        let dir = try makeTempDir()
-        defer { cleanup(dir) }
-        let manager = RecoveryManager(recoveryDirectory: dir)
-
-        manager.startPeriodicSnapshots()
-        // Should not crash; timer is running
-        manager.stopPeriodicSnapshots()
-    }
-
-    @Test func stopPeriodicSnapshots_idempotent() throws {
-        let dir = try makeTempDir()
-        defer { cleanup(dir) }
-        let manager = RecoveryManager(recoveryDirectory: dir)
-
-        manager.stopPeriodicSnapshots()
-        manager.stopPeriodicSnapshots() // Should not crash
-    }
-
-    @Test func startPeriodicSnapshots_stopsExistingTimer() throws {
-        let dir = try makeTempDir()
-        defer { cleanup(dir) }
-        let manager = RecoveryManager(recoveryDirectory: dir)
-
-        manager.startPeriodicSnapshots()
-        manager.startPeriodicSnapshots() // Should stop old timer, start new
-        manager.stopPeriodicSnapshots()
-    }
-
-    // MARK: - scheduleSnapshot / cancelScheduledSnapshot
-
-    @Test func cancelScheduledSnapshot_doesNotCrashWithoutPending() throws {
-        let dir = try makeTempDir()
-        defer { cleanup(dir) }
-        let manager = RecoveryManager(recoveryDirectory: dir)
-
-        manager.cancelScheduledSnapshot() // Nothing pending — should not crash
-    }
-
-    @Test func scheduleSnapshot_canBeCancelled() throws {
+    @Test func timerAndSchedulingEdgeCases() throws {
         let dir = try makeTempDir()
         defer { cleanup(dir) }
         let manager = RecoveryManager(recoveryDirectory: dir)
         manager.tabsProvider = { [self.makeDirtyTab()] }
 
-        manager.scheduleSnapshot()
-        manager.cancelScheduledSnapshot()
-        // After cancel, no snapshot should be created (within debounce window)
-    }
+        // Start/stop/restart periodic snapshots
+        manager.startPeriodicSnapshots()
+        manager.startPeriodicSnapshots() // restart — stops old timer
+        manager.stopPeriodicSnapshots()
+        manager.stopPeriodicSnapshots() // idempotent stop
 
-    @Test func scheduleSnapshot_replacePrevious() throws {
-        let dir = try makeTempDir()
-        defer { cleanup(dir) }
-        let manager = RecoveryManager(recoveryDirectory: dir)
-        manager.tabsProvider = { [self.makeDirtyTab()] }
-
-        // Schedule twice — second should replace first
+        // Schedule/cancel debounced snapshots
+        manager.cancelScheduledSnapshot() // no-op when nothing pending
         manager.scheduleSnapshot()
-        manager.scheduleSnapshot()
+        manager.scheduleSnapshot() // replaces previous
         manager.cancelScheduledSnapshot()
     }
 

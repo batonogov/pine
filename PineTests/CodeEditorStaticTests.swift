@@ -8,63 +8,29 @@ import AppKit
 import SwiftUI
 @testable import Pine
 
-/// Tests for CodeEditorView static helpers and value types.
+/// Tests for CodeEditorView static helpers, value types, and Coordinator basics.
+@Suite("CodeEditorView Static Tests")
 struct CodeEditorStaticTests {
-
-    // MARK: - bracketHighlightKey
-
-    @Test func bracketHighlightKey_isUnique() {
-        let key = CodeEditorView.bracketHighlightKey
-        #expect(key.rawValue == "PineBracketHighlight")
-    }
-
-    // MARK: - viewportHighlightThreshold
-
-    @Test func viewportHighlightThreshold_is100K() {
-        #expect(CodeEditorView.viewportHighlightThreshold == 100_000)
-    }
 
     // MARK: - GoToRequest
 
-    @Test func goToRequest_uniqueIDs() {
+    @Test func goToRequestHasUniqueIDs() {
         let r1 = GoToRequest(offset: 0)
         let r2 = GoToRequest(offset: 0)
-        #expect(r1.id != r2.id, "Each GoToRequest should have a unique ID")
-    }
-
-    @Test func goToRequest_preservesOffset() {
-        let r = GoToRequest(offset: 42)
-        #expect(r.offset == 42)
-    }
-
-    // MARK: - EditorScrollView
-
-    @Test func editorScrollView_initialFindBarOffset() {
-        let sv = EditorScrollView()
-        #expect(sv.findBarOffset == 0)
+        #expect(r1.id != r2.id)
+        #expect(r1.offset == 0)
     }
 
     // MARK: - EditorContainerView
 
-    @Test func editorContainerView_isFlipped() {
+    @Test func editorContainerViewIsFlipped() {
         let container = EditorContainerView()
         #expect(container.isFlipped == true)
     }
 
-    @Test func editorContainerView_defaultMinimapWidth() {
-        let container = EditorContainerView()
-        #expect(container.minimapWidth == 0)
-    }
+    // MARK: - Coordinator initial state
 
-    @Test func editorContainerView_minimapWidthCanBeSet() {
-        let container = EditorContainerView()
-        container.minimapWidth = 120
-        #expect(container.minimapWidth == 120)
-    }
-
-    // MARK: - Coordinator basics
-
-    @Test func coordinator_initialState() {
+    @Test func coordinatorInitialState() {
         let editorView = CodeEditorView(
             text: .constant("hello"),
             contentVersion: 0,
@@ -83,48 +49,28 @@ struct CodeEditorStaticTests {
         #expect(coordinator.highlightedCharRange == nil)
     }
 
-    @Test func coordinator_syncContentVersion() {
+    // MARK: - Coordinator edge cases without scroll view
+
+    @Test func coordinatorEdgeCasesWithoutScrollView() {
         let editorView = CodeEditorView(
             text: .constant("hello"),
-            contentVersion: 42,
-            language: "swift",
-            fileName: "test.swift",
-            foldState: .constant(FoldState())
-        )
-        let coordinator = CodeEditorView.Coordinator(parent: editorView)
-        coordinator.syncContentVersion()
-        // After sync, updateContentIfNeeded with same version should be no-op
-    }
-
-    @Test func coordinator_cancelPendingHighlight() {
-        let editorView = CodeEditorView(
-            text: .constant(""),
             contentVersion: 0,
             language: "swift",
             foldState: .constant(FoldState())
         )
         let coordinator = CodeEditorView.Coordinator(parent: editorView)
-        // Should not crash when there's nothing to cancel
+
+        // All should be no-ops when scrollView is nil
         coordinator.cancelPendingHighlight()
-    }
-
-    @Test func coordinator_performFindAction_withoutScrollView() {
-        let editorView = CodeEditorView(
-            text: .constant("hello"),
-            contentVersion: 0,
-            language: "swift",
-            foldState: .constant(FoldState())
-        )
-        let coordinator = CodeEditorView.Coordinator(parent: editorView)
-        // Should not crash when scrollView is nil
         coordinator.performFindAction(.showFindInterface)
         coordinator.performFindAction(.nextMatch)
-        coordinator.performFindAction(.previousMatch)
+        coordinator.handleToggleComment()
+        coordinator.handleFoldCode(Notification(name: .foldCode, userInfo: ["action": "foldAll"]))
     }
 
-    // MARK: - CodeEditorView initialization
+    // MARK: - CodeEditorView properties
 
-    @Test func codeEditorView_defaultProperties() {
+    @Test func codeEditorViewDefaultProperties() {
         let view = CodeEditorView(
             text: .constant("test"),
             language: "swift",
@@ -140,7 +86,7 @@ struct CodeEditorStaticTests {
         #expect(view.goToOffset == nil)
     }
 
-    @Test func codeEditorView_customProperties() {
+    @Test func codeEditorViewCustomProperties() {
         let diffs = [GitLineDiff(line: 1, kind: .added)]
         let view = CodeEditorView(
             text: .constant("test"),

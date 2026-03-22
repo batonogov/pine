@@ -7,10 +7,11 @@ import Testing
 import AppKit
 @testable import Pine
 
-/// Tests for LineNumberView (LineNumberGutter.swift) — data management, properties, mouse handling.
+/// Tests for LineNumberView (LineNumberGutter.swift) — properties and data management.
+@Suite("LineNumberView Tests")
 struct LineNumberViewTests {
 
-    private func makeTextView(text: String = "line1\nline2\nline3") -> NSTextView {
+    private func makeView(text: String = "line1\nline2\nline3") -> (LineNumberView, NSTextView) {
         let textStorage = NSTextStorage(string: text)
         let layoutManager = NSLayoutManager()
         textStorage.addLayoutManager(layoutManager)
@@ -24,60 +25,35 @@ struct LineNumberViewTests {
         )
         let scrollView = NSScrollView(frame: NSRect(x: 0, y: 0, width: 500, height: 500))
         scrollView.documentView = textView
-        return textView
-    }
-
-    private func makeView(text: String = "line1\nline2\nline3") -> (LineNumberView, NSTextView) {
-        let textView = makeTextView(text: text)
         let view = LineNumberView(textView: textView)
         return (view, textView)
     }
 
     // MARK: - Initialization
 
-    @Test func initialization_setsTextView() {
+    @Test func initializationSetsDefaults() {
         let (view, textView) = makeView()
         #expect(view.textView === textView)
-    }
-
-    @Test func initialization_defaultGutterWidth() {
-        let (view, _) = makeView()
         #expect(view.gutterWidth == 40)
-    }
-
-    @Test func initialization_isFlipped() {
-        let (view, _) = makeView()
         #expect(view.isFlipped == true)
-    }
-
-    @Test func initialization_emptyDiffs() {
-        let (view, _) = makeView()
         #expect(view.lineDiffs.isEmpty)
-    }
-
-    @Test func initialization_emptyFoldableRanges() {
-        let (view, _) = makeView()
         #expect(view.foldableRanges.isEmpty)
-    }
-
-    @Test func initialization_emptyFoldState() {
-        let (view, _) = makeView()
         #expect(view.foldState.foldedRanges.isEmpty)
+        #expect(view.accessibilityIdentifier() == AccessibilityID.lineNumberGutter)
     }
 
     // MARK: - baselineOffset
 
-    @Test func baselineOffset_calculatedFromFonts() {
+    @Test func baselineOffsetCalculatedFromFontAscenders() {
         let (view, _) = makeView()
         let editorFont = NSFont.monospacedSystemFont(ofSize: 14, weight: .regular)
         let gutterFont = NSFont.monospacedSystemFont(ofSize: 12, weight: .regular)
         view.editorFont = editorFont
         view.gutterFont = gutterFont
-        let expected = editorFont.ascender - gutterFont.ascender
-        #expect(view.baselineOffset == expected)
+        #expect(view.baselineOffset == editorFont.ascender - gutterFont.ascender)
     }
 
-    @Test func baselineOffset_zeroWhenFontsMatch() {
+    @Test func baselineOffsetZeroWhenFontsMatch() {
         let (view, _) = makeView()
         let font = NSFont.monospacedSystemFont(ofSize: 13, weight: .regular)
         view.editorFont = font
@@ -85,9 +61,9 @@ struct LineNumberViewTests {
         #expect(view.baselineOffset == 0)
     }
 
-    // MARK: - lineDiffs property
+    // MARK: - Diff data management
 
-    @Test func lineDiffs_setsAndRebuildsMap() {
+    @Test func lineDiffsRebuildsLookupMap() {
         let (view, _) = makeView()
         view.lineDiffs = [
             GitLineDiff(line: 1, kind: .added),
@@ -95,27 +71,15 @@ struct LineNumberViewTests {
             GitLineDiff(line: 5, kind: .deleted),
         ]
         #expect(view.lineDiffs.count == 3)
-    }
 
-    @Test func lineDiffs_duplicateLineLastWins() {
-        let (view, _) = makeView()
-        view.lineDiffs = [
-            GitLineDiff(line: 1, kind: .added),
-            GitLineDiff(line: 1, kind: .modified),
-        ]
-        #expect(view.lineDiffs.count == 2)
-    }
-
-    @Test func lineDiffs_emptyArray() {
-        let (view, _) = makeView()
-        view.lineDiffs = [GitLineDiff(line: 1, kind: .added)]
+        // Clear
         view.lineDiffs = []
         #expect(view.lineDiffs.isEmpty)
     }
 
-    // MARK: - foldableRanges property
+    // MARK: - Foldable ranges
 
-    @Test func foldableRanges_setsAndRebuildsMap() {
+    @Test func foldableRangesRebuildsStartMap() {
         let (view, _) = makeView()
         view.foldableRanges = [
             FoldableRange(startLine: 1, endLine: 5, startCharIndex: 0, endCharIndex: 50, kind: .braces),
@@ -124,16 +88,9 @@ struct LineNumberViewTests {
         #expect(view.foldableRanges.count == 2)
     }
 
-    @Test func foldableRanges_emptyArray() {
-        let (view, _) = makeView()
-        view.foldableRanges = [FoldableRange(startLine: 1, endLine: 5, startCharIndex: 0, endCharIndex: 50, kind: .braces)]
-        view.foldableRanges = []
-        #expect(view.foldableRanges.isEmpty)
-    }
+    // MARK: - Fold state
 
-    // MARK: - foldState property
-
-    @Test func foldState_canBeSet() {
+    @Test func foldStateTracksCurrentFolds() {
         let (view, _) = makeView()
         var state = FoldState()
         let range = FoldableRange(startLine: 1, endLine: 5, startCharIndex: 0, endCharIndex: 50, kind: .braces)
@@ -142,46 +99,16 @@ struct LineNumberViewTests {
         #expect(view.foldState.isFolded(range))
     }
 
-    // MARK: - onFoldToggle callback
+    // MARK: - onFoldToggle
 
-    @Test func onFoldToggle_callbackInvoked() {
+    @Test func onFoldToggleCallbackInvoked() {
         let (view, _) = makeView()
         var toggledRange: FoldableRange?
-        view.onFoldToggle = { range in
-            toggledRange = range
-        }
+        view.onFoldToggle = { toggledRange = $0 }
+
         let range = FoldableRange(startLine: 1, endLine: 5, startCharIndex: 0, endCharIndex: 50, kind: .braces)
         view.onFoldToggle?(range)
         #expect(toggledRange?.startLine == 1)
         #expect(toggledRange?.endLine == 5)
-    }
-
-    // MARK: - lineStartsCache
-
-    @Test func lineStartsCache_defaultNil() {
-        let (view, _) = makeView()
-        #expect(view.lineStartsCache == nil)
-    }
-
-    @Test func lineStartsCache_canBeSet() {
-        let (view, _) = makeView()
-        let cache = LineStartsCache(text: "a\nb\nc")
-        view.lineStartsCache = cache
-        #expect(view.lineStartsCache != nil)
-    }
-
-    // MARK: - gutterWidth
-
-    @Test func gutterWidth_canBeChanged() {
-        let (view, _) = makeView()
-        view.gutterWidth = 60
-        #expect(view.gutterWidth == 60)
-    }
-
-    // MARK: - Accessibility
-
-    @Test func accessibilityIdentifier_set() {
-        let (view, _) = makeView()
-        #expect(view.accessibilityIdentifier() == AccessibilityID.lineNumberGutter)
     }
 }

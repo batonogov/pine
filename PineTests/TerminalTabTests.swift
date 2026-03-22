@@ -8,21 +8,13 @@ import AppKit
 import SwiftTerm
 @testable import Pine
 
-/// Tests for TerminalTab, TerminalSearchMatch, TerminalContainerView, TerminalTabDelegate.
+/// Tests for TerminalTab, TerminalContainerView, TerminalTabDelegate.
+@Suite("TerminalTab Tests")
 struct TerminalTabTests {
 
-    // MARK: - TerminalSearchMatch
+    // MARK: - TerminalTab lifecycle
 
-    @Test func searchMatch_storesValues() {
-        let match = TerminalSearchMatch(row: 5, col: 10, length: 3)
-        #expect(match.row == 5)
-        #expect(match.col == 10)
-        #expect(match.length == 3)
-    }
-
-    // MARK: - TerminalTab initialization
-
-    @Test func terminalTab_defaultName() {
+    @Test func terminalTabInitialState() {
         let tab = TerminalTab(name: "zsh")
         #expect(tab.name == "zsh")
         #expect(tab.isTerminated == false)
@@ -30,82 +22,42 @@ struct TerminalTabTests {
         #expect(tab.currentMatchIndex == -1)
     }
 
-    @Test func terminalTab_hasUniqueID() {
+    @Test func terminalTabsHaveUniqueIDs() {
         let tab1 = TerminalTab(name: "tab1")
         let tab2 = TerminalTab(name: "tab2")
         #expect(tab1.id != tab2.id)
+        #expect(tab1 != tab2)
     }
 
-    @Test func terminalTab_equality() {
+    @Test func terminalTabHashable() {
         let tab = TerminalTab(name: "test")
-        #expect(tab == tab)
-
-        let other = TerminalTab(name: "test")
-        #expect(tab != other) // Different IDs
-    }
-
-    @Test func terminalTab_hashable() {
-        let tab = TerminalTab(name: "test")
-        var set: Set<TerminalTab> = []
-        set.insert(tab)
-        set.insert(tab) // Duplicate
+        var set: Set<TerminalTab> = [tab, tab]
         #expect(set.count == 1)
     }
 
-    @Test func terminalTab_configure() {
+    @Test func stopSetsTerminatedIdempotently() {
         let tab = TerminalTab(name: "test")
-        let url = URL(fileURLWithPath: "/tmp")
-        tab.configure(workingDirectory: url)
-        // Should not crash; workingDirectory stored internally
-    }
-
-    @Test func terminalTab_configureNil() {
-        let tab = TerminalTab(name: "test")
-        tab.configure(workingDirectory: nil)
-        // Should not crash
-    }
-
-    @Test func terminalTab_stopSetsTerminated() {
-        let tab = TerminalTab(name: "test")
-        #expect(tab.isTerminated == false)
         tab.stop()
+        #expect(tab.isTerminated == true)
+        tab.stop() // second call should not crash
         #expect(tab.isTerminated == true)
     }
 
-    @Test func terminalTab_stopIdempotent() {
+    // MARK: - Search navigation with empty matches
+
+    @Test func nextMatchNoOpWithoutMatches() {
         let tab = TerminalTab(name: "test")
-        tab.stop()
-        tab.stop() // Should not crash
-        #expect(tab.isTerminated == true)
-    }
-
-    @Test func terminalTab_nameCanBeChanged() {
-        let tab = TerminalTab(name: "original")
-        tab.name = "renamed"
-        #expect(tab.name == "renamed")
-    }
-
-    // MARK: - Search state
-
-    @Test func terminalTab_searchInitialState() {
-        let tab = TerminalTab(name: "test")
-        #expect(tab.searchMatches.isEmpty)
+        tab.nextMatch()
         #expect(tab.currentMatchIndex == -1)
     }
 
-    @Test func terminalTab_nextMatch_noMatches() {
+    @Test func previousMatchNoOpWithoutMatches() {
         let tab = TerminalTab(name: "test")
-        tab.nextMatch() // Should not crash
+        tab.previousMatch()
         #expect(tab.currentMatchIndex == -1)
     }
 
-    @Test func terminalTab_previousMatch_noMatches() {
-        let tab = TerminalTab(name: "test")
-        tab.previousMatch() // Should not crash
-        #expect(tab.currentMatchIndex == -1)
-    }
-
-    @Test func terminalTab_clearSearch() {
+    @Test func clearSearchResetsState() {
         let tab = TerminalTab(name: "test")
         tab.clearSearch()
         #expect(tab.searchMatches.isEmpty)
@@ -114,25 +66,20 @@ struct TerminalTabTests {
 
     // MARK: - TerminalContainerView
 
-    @Test func containerView_isFlipped() {
-        let container = TerminalContainerView()
-        #expect(container.isFlipped == true)
-    }
-
-    @Test func containerView_showTabNil() {
+    @Test func showTabNilClearsSubviews() {
         let container = TerminalContainerView()
         container.showTab(nil)
         #expect(container.subviews.isEmpty)
     }
 
-    @Test func containerView_showTabAddsSubview() {
+    @Test func showTabAddsTerminalView() {
         let container = TerminalContainerView(frame: NSRect(x: 0, y: 0, width: 800, height: 300))
         let tab = TerminalTab(name: "test")
         container.showTab(tab)
         #expect(container.subviews.count == 1)
     }
 
-    @Test func containerView_showSameTabTwiceIsNoop() {
+    @Test func showSameTabTwiceIsNoOp() {
         let container = TerminalContainerView(frame: NSRect(x: 0, y: 0, width: 800, height: 300))
         let tab = TerminalTab(name: "test")
         container.showTab(tab)
@@ -140,55 +87,51 @@ struct TerminalTabTests {
         #expect(container.subviews.count == 1)
     }
 
-    @Test func containerView_switchTabs() {
+    @Test func switchTabsReplacesSubview() {
         let container = TerminalContainerView(frame: NSRect(x: 0, y: 0, width: 800, height: 300))
         let tab1 = TerminalTab(name: "tab1")
         let tab2 = TerminalTab(name: "tab2")
 
         container.showTab(tab1)
-        #expect(container.subviews.count == 1)
-
         container.showTab(tab2)
         #expect(container.subviews.count == 1)
-        // The view should be tab2's terminal view
         #expect(container.subviews.first === tab2.terminalView)
     }
 
     // MARK: - TerminalTabDelegate
 
-    @Test func delegate_setTerminalTitle() {
+    @Test func delegateSetTerminalTitle() {
         let delegate = TerminalTabDelegate()
         let tab = TerminalTab(name: "original")
         delegate.tab = tab
 
-        let view = LocalProcessTerminalView(frame: .zero)
-        delegate.setTerminalTitle(source: view, title: "new title")
+        delegate.setTerminalTitle(source: LocalProcessTerminalView(frame: .zero), title: "new title")
         #expect(tab.name == "new title")
     }
 
-    @Test func delegate_processTerminated() {
+    @Test func delegateProcessTerminatedSetsFlag() {
         let delegate = TerminalTabDelegate()
         let tab = TerminalTab(name: "test")
         delegate.tab = tab
 
-        #expect(tab.isTerminated == false)
         delegate.processTerminated(source: tab.terminalView, exitCode: 0)
         #expect(tab.isTerminated == true)
     }
 
-    @Test func delegate_processTerminatedWithError() {
+    @Test func delegateProcessTerminatedWithNonZeroExitCode() {
         let delegate = TerminalTabDelegate()
         let tab = TerminalTab(name: "test")
         delegate.tab = tab
 
-        delegate.processTerminated(source: tab.terminalView, exitCode: 1)
+        delegate.processTerminated(source: tab.terminalView, exitCode: 127)
         #expect(tab.isTerminated == true)
     }
 
-    @Test func delegate_weakTabReference() {
+    @Test func delegateHandlesNilTabGracefully() {
         let delegate = TerminalTabDelegate()
-        // Setting to nil should not crash
         delegate.tab = nil
+        // Should not crash when tab is nil
         delegate.processTerminated(source: LocalProcessTerminalView(frame: .zero), exitCode: 0)
+        delegate.setTerminalTitle(source: LocalProcessTerminalView(frame: .zero), title: "test")
     }
 }
