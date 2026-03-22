@@ -145,6 +145,7 @@ struct AutoIndentTests {
         let view = makeGutterTextView(text: "    hello world")
         insertNewline(in: view, at: 9) // after "    hello"
 
+        // 5 spaces before "world": 4 from indent + 1 original space before "world"
         #expect(view.string == "    hello\n     world")
     }
 

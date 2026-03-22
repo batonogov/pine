@@ -99,20 +99,19 @@ struct BlameLookupTests {
 
     // MARK: - Cache guard (skip rebuild when data unchanged)
 
-    @Test func setBlameLines_sameData_skipsRebuild() {
+    @Test func setBlameLines_sameData_doesNotTriggerDisplay() {
         let view = makeGutterTextView()
+        view.isBlameVisible = true
         let lines = [makeBlameLine(line: 1), makeBlameLine(line: 2)]
 
         view.setBlameLines(lines)
-        let firstLookup = view.blameLookup
-
-        // Call again with same data — should not rebuild
-        view.setBlameLines(lines)
-        let secondLookup = view.blameLookup
-
-        // Same keys and values means cache guard worked
-        #expect(firstLookup.keys.sorted() == secondLookup.keys.sorted())
         #expect(view.blameLineCount == 2)
+
+        // Mark needsDisplay false, then call again with same data.
+        // If cache guard works, display() is NOT called, so needsDisplay stays false.
+        view.needsDisplay = false
+        view.setBlameLines(lines)
+        #expect(!view.needsDisplay, "Cache guard should skip display() for identical data")
     }
 
     @Test func setBlameLines_differentCount_rebuilds() {
