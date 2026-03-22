@@ -64,8 +64,7 @@ struct FindReplaceTests {
         #expect(container.isFlipped, "EditorContainerView must be flipped to match NSScrollView coordinate system")
     }
 
-    @Test func editorContainerView_lineNumberView_clippedBelowFindBar() {
-        // Setup: container with a scrollView that has a visible find bar
+    @Test func editorContainerView_lineNumberView_fullHeight_whenFindBarHidden() {
         let container = EditorContainerView()
         container.frame = NSRect(x: 0, y: 0, width: 600, height: 400)
 
