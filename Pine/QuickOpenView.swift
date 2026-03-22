@@ -19,7 +19,16 @@ struct QuickOpenView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            searchField
+            QuickOpenSearchField(
+                text: $searchText,
+                onArrowUp: { moveSelection(by: -1) },
+                onArrowDown: { moveSelection(by: 1) },
+                onReturn: { openSelected() },
+                onEscape: { isPresented = false }
+            )
+            .accessibilityIdentifier(AccessibilityID.quickOpenSearchField)
+            .padding(10)
+
             Divider()
             resultsList
         }
@@ -31,36 +40,10 @@ struct QuickOpenView: View {
             )
             updateResults()
         }
+        .onChange(of: searchText) { _, _ in
+            scheduleSearch()
+        }
         .accessibilityIdentifier(AccessibilityID.quickOpenOverlay)
-    }
-
-    // MARK: - Search Field
-
-    private var searchField: some View {
-        TextField(Strings.quickOpenPlaceholder, text: $searchText)
-            .textFieldStyle(.roundedBorder)
-            .font(.system(size: 14))
-            .padding(10)
-            .accessibilityIdentifier(AccessibilityID.quickOpenSearchField)
-            .onChange(of: searchText) { _, _ in
-                scheduleSearch()
-            }
-            .onKeyPress(.upArrow) {
-                moveSelection(by: -1)
-                return .handled
-            }
-            .onKeyPress(.downArrow) {
-                moveSelection(by: 1)
-                return .handled
-            }
-            .onKeyPress(.return) {
-                openSelected()
-                return .handled
-            }
-            .onKeyPress(.escape) {
-                isPresented = false
-                return .handled
-            }
     }
 
     // MARK: - Results List
@@ -171,5 +154,97 @@ struct QuickOpenView: View {
         provider.recordOpened(url: url)
         projectManager.tabManager.openTab(url: url)
         isPresented = false
+    }
+}
+
+// MARK: - AppKit Search Field with key interception
+
+/// NSTextField wrapper that intercepts arrow keys, Return, and Escape
+/// before the text field processes them — SwiftUI's `.onKeyPress` on
+/// TextField does not reliably capture these keys on macOS.
+struct QuickOpenSearchField: NSViewRepresentable {
+    @Binding var text: String
+    var onArrowUp: () -> Void
+    var onArrowDown: () -> Void
+    var onReturn: () -> Void
+    var onEscape: () -> Void
+
+    func makeNSView(context: Context) -> NSTextField {
+        let field = KeyInterceptingTextField()
+        field.delegate = context.coordinator
+        field.font = .systemFont(ofSize: 14)
+        field.placeholderString = String(localized: "quickOpen.placeholder")
+        field.bezelStyle = .roundedBezel
+        field.focusRingType = .exterior
+        field.onArrowUp = onArrowUp
+        field.onArrowDown = onArrowDown
+        field.onReturn = onReturn
+        field.onEscape = onEscape
+        // Become first responder on next run loop to ensure the field is in window
+        DispatchQueue.main.async {
+            field.window?.makeFirstResponder(field)
+        }
+        return field
+    }
+
+    func updateNSView(_ nsView: NSTextField, context: Context) {
+        if nsView.stringValue != text {
+            nsView.stringValue = text
+        }
+        if let field = nsView as? KeyInterceptingTextField {
+            field.onArrowUp = onArrowUp
+            field.onArrowDown = onArrowDown
+            field.onReturn = onReturn
+            field.onEscape = onEscape
+        }
+    }
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(text: $text)
+    }
+
+    final class Coordinator: NSObject, NSTextFieldDelegate {
+        @Binding var text: String
+
+        init(text: Binding<String>) {
+            _text = text
+        }
+
+        func controlTextDidChange(_ obj: Notification) {
+            guard let field = obj.object as? NSTextField else { return }
+            text = field.stringValue
+        }
+    }
+}
+
+/// NSTextField subclass that overrides key event handling to intercept
+/// arrow keys, Return, and Escape before the standard field editor processes them.
+private final class KeyInterceptingTextField: NSTextField {
+    var onArrowUp: (() -> Void)?
+    var onArrowDown: (() -> Void)?
+    var onReturn: (() -> Void)?
+    var onEscape: (() -> Void)?
+
+    override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        guard event.type == .keyDown else {
+            return super.performKeyEquivalent(with: event)
+        }
+
+        switch Int(event.keyCode) {
+        case 126: // Up arrow
+            onArrowUp?()
+            return true
+        case 125: // Down arrow
+            onArrowDown?()
+            return true
+        case 36: // Return
+            onReturn?()
+            return true
+        case 53: // Escape
+            onEscape?()
+            return true
+        default:
+            return super.performKeyEquivalent(with: event)
+        }
     }
 }
