@@ -99,9 +99,12 @@ struct FileSystemWatcherTests {
         let dir2 = try makeTempDirectory()
         defer { cleanup(dir1); cleanup(dir2) }
 
-        var callbackCount = 0
+        // Track callbacks separately: stop watching dir1 before creating
+        // any events in dir2, so only the dir1 event could fire — but
+        // it should be discarded because watch(dir2) bumps the generation.
+        var callbackFired = false
         let watcher = FileSystemWatcher(debounceInterval: 0.3) {
-            callbackCount += 1
+            callbackFired = true
         }
 
         // Watch dir1, create event
@@ -112,24 +115,18 @@ struct FileSystemWatcherTests {
             encoding: .utf8
         )
 
-        // Immediately switch to dir2 — old events should be discarded
+        // Switch to dir2 immediately — dir1 events should be stale
         watcher.watch(directory: dir2)
 
-        // Create event in new directory
-        try "new".write(
-            to: dir2.appendingPathComponent("new.txt"),
-            atomically: true,
-            encoding: .utf8
-        )
-
-        // Wait for debounce
+        // Do NOT create events in dir2 — we want to verify that
+        // the dir1 callback was discarded, not that dir2 fires.
         try await Task.sleep(for: .milliseconds(800))
 
         watcher.stop()
 
-        // Should only see callback(s) from dir2, not from dir1
-        // (watch() calls stopOnQueue first, incrementing generation)
-        #expect(callbackCount >= 1)
+        // The dir1 event debounce should have been cancelled or
+        // discarded by the generation check when watch(dir2) ran.
+        #expect(callbackFired == false)
     }
 
     // MARK: - Retained self lifecycle
