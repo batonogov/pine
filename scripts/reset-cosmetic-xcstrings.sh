@@ -40,9 +40,9 @@ json.dump(data, sys.stdout, sort_keys=True)
 
 WORKING_JSON=$(python3 -c "
 import sys, json
-data = json.load(open('$XCSTRINGS'))
+data = json.load(sys.stdin)
 json.dump(data, sys.stdout, sort_keys=True)
-" 2>/dev/null || echo "")
+" < "$XCSTRINGS" 2>/dev/null || echo "")
 
 if [ -z "$HEAD_JSON" ] || [ -z "$WORKING_JSON" ]; then
     # Can't parse — leave as is

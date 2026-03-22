@@ -6,11 +6,11 @@ SCRIPT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 SCRIPT="$SCRIPT_DIR/reset-cosmetic-xcstrings.sh"
 PASS=0
 FAIL=0
-TMPDIR=""
+TEST_DIR=""
 
 setup_repo() {
-    TMPDIR=$(mktemp -d)
-    cd "$TMPDIR"
+    TEST_DIR=$(mktemp -d)
+    cd "$TEST_DIR"
     git init -q
     git config user.email "test@test.com"
     git config user.name "Test"
@@ -19,8 +19,8 @@ setup_repo() {
 
 cleanup() {
     cd /tmp
-    [ -n "$TMPDIR" ] && rm -rf "$TMPDIR"
-    TMPDIR=""
+    [ -n "$TEST_DIR" ] && rm -rf "$TEST_DIR"
+    TEST_DIR=""
 }
 
 pass() {
@@ -205,8 +205,8 @@ cleanup
 
 # --- Test 6: not a git repo — silent exit ---
 echo "Test 6: not a git repo — silent exit"
-TMPDIR=$(mktemp -d)
-cd "$TMPDIR"
+TEST_DIR=$(mktemp -d)
+cd "$TEST_DIR"
 mkdir -p Pine
 echo '{}' > Pine/Localizable.xcstrings
 bash "$SCRIPT"
