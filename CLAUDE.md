@@ -14,9 +14,11 @@ Pine is a minimal native macOS code editor built with SwiftUI + AppKit. Targets 
 - Type-check a single file (no sudo needed): `/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc -typecheck -target arm64-apple-macos26.0 -sdk /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk <file.swift>`
 - **Dependency:** SwiftTerm added via Xcode SPM (File > Add Package Dependencies > `https://github.com/migueldeicaza/SwiftTerm.git`)
 - No other third-party dependencies
+- **Xcode project format:** Uses `PBXFileSystemSynchronizedRootGroup` (objectVersion 77) — new `.swift` files placed in `Pine/`, `PineTests/`, or `PineUITests/` are automatically picked up by Xcode. No manual `project.pbxproj` edits needed
 - **Git hooks:** Run once after cloning: `git config core.hooksPath .githooks && git config merge.ours.driver true`. Enables pre-commit hook that auto-unstages cosmetic-only changes to `Localizable.xcstrings` (Xcode build artifacts) and `ours` merge driver for xcstrings conflicts
 - **SwiftLint:** `brew install swiftlint` — runs as a build phase; config in `.swiftlint.yml`. Run `swiftlint` before every commit and fix all warnings/errors. If `swiftlint` crashes with `sourcekitdInProc` error, prefix with `DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer`
 - **Unit Tests:** `DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer xcodebuild test -project Pine.xcodeproj -scheme Pine -destination 'platform=macOS' -only-testing:PineTests`
+- Run a single test class: `DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer xcodebuild test -project Pine.xcodeproj -scheme Pine -destination 'platform=macOS' -only-testing:PineTests/GoToLineTests`
 - Unit test target: `PineTests` (Swift Testing framework) — covers git parsing, grammar models, file tree, syntax highlighting, find & replace, code folding, minimap, status bar, project search, and more (46+ test files)
 - **UI Tests:** `DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer xcodebuild test -project Pine.xcodeproj -scheme Pine -destination 'platform=macOS' -only-testing:PineUITests`
 - UI test target: `PineUITests` (XCTest/XCUITest) — end-to-end tests for Welcome window, editor tabs, terminal, multi-window, minimap, git blame, branch switcher, and more (17+ test files)
@@ -51,6 +53,8 @@ Pine is a minimal native macOS code editor built with SwiftUI + AppKit. Targets 
 **Minimap:** `MinimapView` renders a scaled-down (12%) document overview on the right edge of the editor showing syntax colors and git diff markers. Click or drag to scroll the editor proportionally. A viewport indicator rectangle shows the visible region. Toggle visibility via menu.
 
 **Code folding:** `FoldRangeCalculator` identifies foldable ranges by scanning matched bracket pairs (`{}`, `[]`, `()`). `FoldState` tracks which ranges are folded for the active tab using a sorted set for O(1) hidden-line lookups. Fold/unfold/toggle operations are available via menu and gutter clicks.
+
+**Adding menu commands:** Menu items are defined in `PineApp.swift` inside `CommandGroup`. They post notifications via `NotificationCenter.default.post(name:)`. Notification names are defined as static properties in `extension Notification.Name` (bottom of `PineApp.swift`). `ContentView` listens via `.onReceive()` inside `GitAndNotificationObserver` ViewModifier. Strings go in `Strings.swift`, icons in `MenuIcons.swift`, localization in `Localizable.xcstrings` (targeted text insertion, not json.dump).
 
 **Find & Replace:** Uses NSTextView's native find bar (`usesFindBar = true`) triggered via NotificationCenter. Notifications: `findInFile` (Cmd+F), `findAndReplace` (Cmd+Option+F), `findNext` (Cmd+G), `findPrevious` (Cmd+Shift+G), `useSelectionForFind` (Cmd+E). The find bar is presented by `GutterTextView`'s coordinator in response to menu commands.
 
@@ -87,6 +91,8 @@ Pine is a minimal native macOS code editor built with SwiftUI + AppKit. Targets 
 - `FoldState.swift` — Tracks folded code regions for the active tab; O(1) hidden-line lookups via sorted set
 - `FoldRangeCalculator.swift` — Identifies foldable ranges from matched bracket pairs `{}`, `[]`, `()` using binary search for line number resolution
 - `GitBlameInfo.swift` — Data structures for git blame output (GitBlameLine: hash, author, timestamp, summary; BlameConstants for storage key)
+- `GoToLineParser.swift` — Parses "line" and "line:column" input for Go to Line navigation (Cmd+L)
+- `GoToLineView.swift` — Compact sheet dialog for Go to Line with validation and auto-focus
 - `BracketMatcher.swift` — Finds matching bracket pairs while skipping comment and string ranges
 - `CommentToggler.swift` — Toggles line and block comments for the active selection
 - `ProjectSearchProvider.swift` — Async full-project text search with debounce, .gitignore support, binary file detection, and 1 MB per-file limit
@@ -121,7 +127,7 @@ Pine is a minimal native macOS code editor built with SwiftUI + AppKit. Targets 
 - Uses `@Observable` macro (Swift 5.9+), not ObservableObject/Published
 - Models are either structs (EditorTab) or @Observable classes (FileNode, TerminalTab) depending on identity semantics
 - Grammar files are JSON in `Pine/Grammars/` — add new languages by adding a new JSON file following the existing format
-- Keyboard shortcuts: Save (Cmd+S), Save All (Cmd+Option+S), Save As (Cmd+Shift+S), Duplicate (Cmd+Shift+D), Open Folder (Cmd+Shift+O), Close Tab (Cmd+W), Toggle Terminal (Cmd+`), New Terminal Tab (Cmd+T), Switch Branch (Cmd+Shift+B), Next Change (Ctrl+Opt+↓), Previous Change (Ctrl+Opt+↑), Find (Cmd+F), Find & Replace (Cmd+Option+F), Find Next (Cmd+G), Find Previous (Cmd+Shift+G), Use Selection for Find (Cmd+E). Menu commands flow through `@FocusedValue(\.projectManager)` to `TabManager`. Cmd+W is intercepted via `NSEvent.addLocalMonitorForEvents` in AppDelegate (not a SwiftUI menu command) to close the active tab; the window close button goes through `CloseDelegate.windowShouldClose` to close the entire window
+- Keyboard shortcuts: Save (Cmd+S), Save All (Cmd+Option+S), Save As (Cmd+Shift+S), Duplicate (Cmd+Shift+D), Open Folder (Cmd+Shift+O), Close Tab (Cmd+W), Toggle Terminal (Cmd+`), New Terminal Tab (Cmd+T), Switch Branch (Cmd+Shift+B), Go to Line (Cmd+L), Next Change (Ctrl+Opt+↓), Previous Change (Ctrl+Opt+↑), Find (Cmd+F), Find & Replace (Cmd+Option+F), Find Next (Cmd+G), Find Previous (Cmd+Shift+G), Use Selection for Find (Cmd+E). Menu commands flow through `@FocusedValue(\.projectManager)` to `TabManager`. Cmd+W is intercepted via `NSEvent.addLocalMonitorForEvents` in AppDelegate (not a SwiftUI menu command) to close the active tab; the window close button goes through `CloseDelegate.windowShouldClose` to close the entire window
 - UI uses semantic system colors (migrated from hardcoded dark theme values)
 - macOS 26 SDK renamed `NSColor(sRGBRed:)` → `NSColor(srgbRed:)` (lowercase)
 - Editor features: auto-indent on newline, current line highlight, git diff gutter markers, minimap, code folding, git blame, find & replace, status bar (line/col, indentation, encoding, line endings, file size), auto-save, async syntax highlighting, bracket matching, comment toggling, markdown preview
