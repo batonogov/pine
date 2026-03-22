@@ -287,9 +287,11 @@ final class TabManager {
     func saveActiveTabAs(to newURL: URL) throws -> Bool {
         guard let index = activeTabIndex else { return false }
         let tab = tabs[index]
-        try tab.content.write(to: newURL, atomically: true, encoding: tab.encoding)
+        let trimmed = tab.content.trailingWhitespaceStripped()
+        try trimmed.write(to: newURL, atomically: true, encoding: tab.encoding)
+        tabs[index].content = trimmed
         tabs[index].url = newURL
-        tabs[index].savedContent = tab.content
+        tabs[index].savedContent = trimmed
         tabs[index].lastModDate = modDate(for: newURL)
         return true
     }
@@ -310,12 +312,13 @@ final class TabManager {
 
         guard let duplicateURL = finderCopyURL(for: originalURL) else { return false }
 
-        try tab.content.write(to: duplicateURL, atomically: true, encoding: tab.encoding)
+        let trimmed = tab.content.trailingWhitespaceStripped()
+        try trimmed.write(to: duplicateURL, atomically: true, encoding: tab.encoding)
 
         var newTab = EditorTab(
             url: duplicateURL,
-            content: tab.content,
-            savedContent: tab.content
+            content: trimmed,
+            savedContent: trimmed
         )
         newTab.lastModDate = modDate(for: duplicateURL)
         newTab.encoding = tab.encoding

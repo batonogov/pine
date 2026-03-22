@@ -1164,6 +1164,100 @@ struct TabManagerTests {
         #expect(manager.activeTab?.isDirty == true)
     }
 
+    @Test("Save As strips trailing whitespace")
+    func saveAsStripsTrailingWhitespace() throws {
+        let manager = TabManager()
+        let url = tempFileURL(content: "hello")
+        let dir = url.deletingLastPathComponent()
+        let newURL = dir.appendingPathComponent("saved_as.swift")
+
+        manager.openTab(url: url)
+        manager.updateContent("code   \nmore\t\n")
+
+        try manager.saveActiveTabAs(to: newURL)
+
+        let onDisk = try String(contentsOf: newURL, encoding: .utf8)
+        #expect(onDisk == "code\nmore\n")
+        #expect(manager.activeTab?.content == "code\nmore\n")
+        #expect(manager.activeTab?.url == newURL)
+        #expect(manager.activeTab?.isDirty == false)
+    }
+
+    @Test("Duplicate tab strips trailing whitespace")
+    func duplicateStripsTrailingWhitespace() throws {
+        let manager = TabManager()
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let url = dir.appendingPathComponent("file.swift")
+        try "hello".write(to: url, atomically: true, encoding: .utf8)
+
+        manager.openTab(url: url)
+        manager.updateContent("code   \nmore\t\n")
+        // Save original first so duplicate reads current content
+        manager.saveActiveTab()
+
+        // Re-add trailing whitespace
+        manager.updateContent("dup   \ntest\t\n")
+
+        let duplicated = manager.duplicateActiveTab()
+        #expect(duplicated == true)
+
+        // The duplicate tab (now active) should have trimmed content
+        guard let dupURL = manager.activeTab?.url else {
+            Issue.record("activeTab should not be nil after duplicate")
+            return
+        }
+        let onDisk = try String(contentsOf: dupURL, encoding: .utf8)
+        #expect(onDisk == "dup\ntest\n")
+        #expect(manager.activeTab?.content == "dup\ntest\n")
+    }
+
+    @Test("Strip trailing whitespace with mixed LF and CRLF")
+    func stripMixedLineEndings() {
+        let manager = TabManager()
+        let url = tempFileURL(content: "hello")
+
+        manager.openTab(url: url)
+        manager.updateContent("line1   \nline2\t\r\nline3  \n")
+
+        let success = manager.saveActiveTab()
+        #expect(success == true)
+
+        let onDisk = try? String(contentsOf: url, encoding: .utf8)
+        #expect(onDisk == "line1\nline2\r\nline3\n")
+    }
+
+    @Test("Save file with no trailing newline strips whitespace")
+    func saveNoTrailingNewline() {
+        let manager = TabManager()
+        let url = tempFileURL(content: "hello")
+
+        manager.openTab(url: url)
+        manager.updateContent("hello   ")
+
+        let success = manager.saveActiveTab()
+        #expect(success == true)
+
+        let onDisk = try? String(contentsOf: url, encoding: .utf8)
+        #expect(onDisk == "hello")
+    }
+
+    @Test("Save whitespace-only file produces empty lines")
+    func saveWhitespaceOnlyFile() {
+        let manager = TabManager()
+        let url = tempFileURL(content: "hello")
+
+        manager.openTab(url: url)
+        manager.updateContent("   \n\t\t\n")
+
+        let success = manager.saveActiveTab()
+        #expect(success == true)
+
+        let onDisk = try? String(contentsOf: url, encoding: .utf8)
+        #expect(onDisk == "\n\n")
+    }
+
     @Test("Auto-save strips trailing whitespace")
     func autoSaveStripsTrailingWhitespace() async throws {
         let manager = TabManager()

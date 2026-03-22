@@ -69,6 +69,22 @@ struct TrailingWhitespaceTests {
         #expect(input.trailingWhitespaceStripped() == "\n\n\n")
     }
 
+    @Test("Handles mixed LF and CRLF in same string")
+    func handlesMixedLineEndings() {
+        let input = "hello   \nworld\t\r\nfoo  \n"
+        #expect(input.trailingWhitespaceStripped() == "hello\nworld\r\nfoo\n")
+    }
+
+    @Test("String with no trailing newline")
+    func noTrailingNewline() {
+        #expect("hello   \nworld  ".trailingWhitespaceStripped() == "hello\nworld")
+    }
+
+    @Test("String of only newlines unchanged")
+    func onlyNewlines() {
+        #expect("\n\n\n".trailingWhitespaceStripped() == "\n\n\n")
+    }
+
     @Test("Preserves internal whitespace")
     func preservesInternalWhitespace() {
         let input = "foo  bar  \nbaz\tqux\t\n"
