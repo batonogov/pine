@@ -160,8 +160,9 @@ struct QuickOpenView: View {
 // MARK: - AppKit Search Field with key interception
 
 /// NSTextField wrapper that intercepts arrow keys, Return, and Escape
-/// before the text field processes them — SwiftUI's `.onKeyPress` on
-/// TextField does not reliably capture these keys on macOS.
+/// via the delegate's `control(_:textView:doCommandBy:)` method.
+/// This preserves the normal text cursor and field editor behavior
+/// while redirecting navigation keys to the Quick Open list.
 struct QuickOpenSearchField: NSViewRepresentable {
     @Binding var text: String
     var onArrowUp: () -> Void
@@ -170,16 +171,13 @@ struct QuickOpenSearchField: NSViewRepresentable {
     var onEscape: () -> Void
 
     func makeNSView(context: Context) -> NSTextField {
-        let field = KeyInterceptingTextField()
+        let field = NSTextField()
         field.delegate = context.coordinator
         field.font = .systemFont(ofSize: 14)
         field.placeholderString = String(localized: "quickOpen.placeholder")
         field.bezelStyle = .roundedBezel
         field.focusRingType = .exterior
-        field.onArrowUp = onArrowUp
-        field.onArrowDown = onArrowDown
-        field.onReturn = onReturn
-        field.onEscape = onEscape
+        field.cell?.sendsActionOnEndEditing = false
         // Become first responder on next run loop to ensure the field is in window
         DispatchQueue.main.async {
             field.window?.makeFirstResponder(field)
@@ -191,60 +189,70 @@ struct QuickOpenSearchField: NSViewRepresentable {
         if nsView.stringValue != text {
             nsView.stringValue = text
         }
-        if let field = nsView as? KeyInterceptingTextField {
-            field.onArrowUp = onArrowUp
-            field.onArrowDown = onArrowDown
-            field.onReturn = onReturn
-            field.onEscape = onEscape
-        }
+        // Keep callbacks up to date
+        context.coordinator.onArrowUp = onArrowUp
+        context.coordinator.onArrowDown = onArrowDown
+        context.coordinator.onReturn = onReturn
+        context.coordinator.onEscape = onEscape
     }
 
     func makeCoordinator() -> Coordinator {
-        Coordinator(text: $text)
+        Coordinator(
+            text: $text,
+            onArrowUp: onArrowUp,
+            onArrowDown: onArrowDown,
+            onReturn: onReturn,
+            onEscape: onEscape
+        )
     }
 
     final class Coordinator: NSObject, NSTextFieldDelegate {
         @Binding var text: String
+        var onArrowUp: () -> Void
+        var onArrowDown: () -> Void
+        var onReturn: () -> Void
+        var onEscape: () -> Void
 
-        init(text: Binding<String>) {
+        init(
+            text: Binding<String>,
+            onArrowUp: @escaping () -> Void,
+            onArrowDown: @escaping () -> Void,
+            onReturn: @escaping () -> Void,
+            onEscape: @escaping () -> Void
+        ) {
             _text = text
+            self.onArrowUp = onArrowUp
+            self.onArrowDown = onArrowDown
+            self.onReturn = onReturn
+            self.onEscape = onEscape
         }
 
         func controlTextDidChange(_ obj: Notification) {
             guard let field = obj.object as? NSTextField else { return }
             text = field.stringValue
         }
-    }
-}
 
-/// NSTextField subclass that overrides key event handling to intercept
-/// arrow keys, Return, and Escape before the standard field editor processes them.
-private final class KeyInterceptingTextField: NSTextField {
-    var onArrowUp: (() -> Void)?
-    var onArrowDown: (() -> Void)?
-    var onReturn: (() -> Void)?
-    var onEscape: (() -> Void)?
-
-    override func performKeyEquivalent(with event: NSEvent) -> Bool {
-        guard event.type == .keyDown else {
-            return super.performKeyEquivalent(with: event)
-        }
-
-        switch Int(event.keyCode) {
-        case 126: // Up arrow
-            onArrowUp?()
-            return true
-        case 125: // Down arrow
-            onArrowDown?()
-            return true
-        case 36: // Return
-            onReturn?()
-            return true
-        case 53: // Escape
-            onEscape?()
-            return true
-        default:
-            return super.performKeyEquivalent(with: event)
+        func control(
+            _ control: NSControl,
+            textView: NSTextView,
+            doCommandBy commandSelector: Selector
+        ) -> Bool {
+            switch commandSelector {
+            case #selector(NSResponder.moveUp(_:)):
+                onArrowUp()
+                return true
+            case #selector(NSResponder.moveDown(_:)):
+                onArrowDown()
+                return true
+            case #selector(NSResponder.insertNewline(_:)):
+                onReturn()
+                return true
+            case #selector(NSResponder.cancelOperation(_:)):
+                onEscape()
+                return true
+            default:
+                return false
+            }
         }
     }
 }
