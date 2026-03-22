@@ -503,7 +503,6 @@ struct CodeEditorView: NSViewRepresentable {
 
         // ── Номера строк — поверх scroll view, как отдельный сиблинг ──
         let lineNumberView = LineNumberView(textView: textView)
-        lineNumberView.setAccessibilityIdentifier(AccessibilityID.lineNumberGutter)
         lineNumberView.gutterWidth = gutterWidth
         lineNumberView.gutterFont = gutterFont
         lineNumberView.editorFont = editorFont

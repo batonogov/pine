@@ -25,37 +25,17 @@ final class LineNumberGutterUITests: PineUITestCase {
         try super.tearDownWithError()
     }
 
-    // MARK: - Tests
+    // MARK: - Helpers
 
-    /// Line number gutter should appear when a file is opened in the editor.
-    func testGutterAppearsWhenFileOpened() throws {
-        launchWithProject(projectURL)
-
-        let sidebar = app.outlines["sidebar"]
-        XCTAssertTrue(waitForExistence(sidebar, timeout: 10), "Sidebar should appear")
-
-        let fileRow = app.staticTexts["fileNode_main.swift"]
-        guard waitForExistence(fileRow, timeout: 5) else {
-            XCTFail("main.swift should appear in the sidebar")
-            return
-        }
-        fileRow.click()
-
-        let editor = app.textViews["codeEditor"].firstMatch
-        XCTAssertTrue(waitForExistence(editor, timeout: 5), "Code editor should appear")
-
-        let gutter = app.descendants(matching: .any)["lineNumberGutter"].firstMatch
-        XCTAssertTrue(waitForExistence(gutter, timeout: 5), "Line number gutter should appear")
-    }
-
-    /// Line number gutter should be positioned to the left of the code editor.
-    func testGutterIsLeftOfEditor() throws {
+    /// Opens main.swift and returns the editor and gutter elements.
+    private func openFileAndGetElements() throws -> (editor: XCUIElement, gutter: XCUIElement) {
         launchWithProject(projectURL)
 
         let fileRow = app.staticTexts["fileNode_main.swift"]
         guard waitForExistence(fileRow, timeout: 10) else {
             XCTFail("main.swift should appear in the sidebar")
-            return
+            return (app.textViews["codeEditor"].firstMatch,
+                    app.descendants(matching: .any)["lineNumberGutter"].firstMatch)
         }
         fileRow.click()
 
@@ -65,7 +45,20 @@ final class LineNumberGutterUITests: PineUITestCase {
         let gutter = app.descendants(matching: .any)["lineNumberGutter"].firstMatch
         XCTAssertTrue(waitForExistence(gutter, timeout: 5), "Line number gutter should appear")
 
-        // Gutter's left edge should be at or before editor's left edge
+        return (editor, gutter)
+    }
+
+    // MARK: - Tests
+
+    /// Line number gutter should appear when a file is opened in the editor.
+    func testGutterAppearsWhenFileOpened() throws {
+        _ = try openFileAndGetElements()
+    }
+
+    /// Line number gutter should be positioned to the left of the code editor.
+    func testGutterIsLeftOfEditor() throws {
+        let (editor, gutter) = try openFileAndGetElements()
+
         XCTAssertLessThanOrEqual(
             gutter.frame.minX, editor.frame.minX,
             "Gutter should be positioned at or to the left of the editor"
@@ -74,22 +67,8 @@ final class LineNumberGutterUITests: PineUITestCase {
 
     /// Line number gutter should have the same vertical position as the code editor.
     func testGutterVerticallyAlignedWithEditor() throws {
-        launchWithProject(projectURL)
+        let (editor, gutter) = try openFileAndGetElements()
 
-        let fileRow = app.staticTexts["fileNode_main.swift"]
-        guard waitForExistence(fileRow, timeout: 10) else {
-            XCTFail("main.swift should appear in the sidebar")
-            return
-        }
-        fileRow.click()
-
-        let editor = app.textViews["codeEditor"].firstMatch
-        XCTAssertTrue(waitForExistence(editor, timeout: 5), "Code editor should appear")
-
-        let gutter = app.descendants(matching: .any)["lineNumberGutter"].firstMatch
-        XCTAssertTrue(waitForExistence(gutter, timeout: 5), "Line number gutter should appear")
-
-        // Gutter and editor should share the same top Y position (within tolerance)
         XCTAssertEqual(
             gutter.frame.minY, editor.frame.minY,
             accuracy: 2,

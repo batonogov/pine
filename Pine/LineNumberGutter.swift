@@ -81,6 +81,7 @@ final class LineNumberView: NSView {
         self.textView = textView
         super.init(frame: .zero)
         setAccessibilityElement(true)
+        setAccessibilityIdentifier(AccessibilityID.lineNumberGutter)
 
         // Скролл — подписываемся без object, чтобы не зависеть от конкретного clipView
         NotificationCenter.default.addObserver(
