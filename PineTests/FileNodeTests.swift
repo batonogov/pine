@@ -299,6 +299,21 @@ struct FileNodeTests {
         #expect(vendorNames.contains("lib.js"))
     }
 
+    @Test func emptyGitignoredDirectoryHasNoDisclosure() throws {
+        let tempDir = try makeTempDirectory()
+        defer { cleanup(tempDir) }
+
+        let emptyIgnored = tempDir.appendingPathComponent(".cache")
+        try FileManager.default.createDirectory(at: emptyIgnored, withIntermediateDirectories: true)
+
+        let node = FileNode(url: tempDir, projectRoot: tempDir, ignoredPaths: [".cache"])
+        let cacheNode = node.children?.first { $0.name == ".cache" }
+        #expect(cacheNode?.isDirectory == true)
+        // Empty gitignored dir — children loaded but empty, no disclosure triangle
+        #expect(cacheNode?.children?.isEmpty == true)
+        #expect(cacheNode?.optionalChildren == nil)
+    }
+
     @Test func emptyIgnoredPathsDoesNotAffectLoading() throws {
         let tempDir = try makeTempDirectory()
         defer { cleanup(tempDir) }
