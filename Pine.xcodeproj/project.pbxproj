@@ -7,14 +7,10 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		3E3351B41A2D88029852BABE /* FoldRangeCalculatorPerformanceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 151A121A4C586C4DA4D7F031 /* FoldRangeCalculatorPerformanceTests.swift */; };
-		8274CEE5D6290164B75F9B31 /* ProjectSearchPerformanceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 08E110CD7461A2DE6F65E8BC /* ProjectSearchPerformanceTests.swift */; };
 		9FA7317B2F61803400E91711 /* SwiftTerm in Frameworks */ = {isa = PBXBuildFile; productRef = 9FA7317A2F61803400E91711 /* SwiftTerm */; };
 		CF0000030000000000000003 /* Markdown in Frameworks */ = {isa = PBXBuildFile; productRef = CF0000030000000000000002 /* Markdown */; };
 		CF0000040000000000000003 /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = CF0000040000000000000002 /* Sparkle */; };
 		CF0000050000000000000003 /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = CF0000050000000000000002 /* Sparkle */; };
-		DF85B2177691A8BAC271AF19 /* SyntaxHighlighterPerformanceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 503D24A3B58CB9046CCB71A1 /* SyntaxHighlighterPerformanceTests.swift */; };
-		E455779DF6077C6294CCA380 /* GitStatusParserPerformanceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2459BC63423821558EF2B76 /* GitStatusParserPerformanceTests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -42,35 +38,30 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
-		08E110CD7461A2DE6F65E8BC /* ProjectSearchPerformanceTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ProjectSearchPerformanceTests.swift; sourceTree = "<group>"; };
-		151A121A4C586C4DA4D7F031 /* FoldRangeCalculatorPerformanceTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = FoldRangeCalculatorPerformanceTests.swift; sourceTree = "<group>"; };
 		339161ED16D0B2E98319410B /* PinePerformanceTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = PinePerformanceTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
-		503D24A3B58CB9046CCB71A1 /* SyntaxHighlighterPerformanceTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = SyntaxHighlighterPerformanceTests.swift; sourceTree = "<group>"; };
 		9FA1A7282F5EFA8100BDDA8C /* Pine.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Pine.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		CF0000010000000000000005 /* PineTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = PineTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		CF0000020000000000000005 /* PineUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = PineUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
-		D2459BC63423821558EF2B76 /* GitStatusParserPerformanceTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = GitStatusParserPerformanceTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
+		29D03576855FB7AAFC9C3E02 /* PinePerformanceTests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = PinePerformanceTests;
+			sourceTree = "<group>";
+		};
 		9FA1A72A2F5EFA8100BDDA8C /* Pine */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
-			exceptions = (
-			);
 			path = Pine;
 			sourceTree = "<group>";
 		};
 		CF0000010000000000000006 /* PineTests */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
-			exceptions = (
-			);
 			path = PineTests;
 			sourceTree = "<group>";
 		};
 		CF0000020000000000000006 /* PineUITests */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
-			exceptions = (
-			);
 			path = PineUITests;
 			sourceTree = "<group>";
 		};
@@ -112,18 +103,6 @@
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
-		29D03576855FB7AAFC9C3E02 /* PinePerformanceTests */ = {
-			isa = PBXGroup;
-			children = (
-				151A121A4C586C4DA4D7F031 /* FoldRangeCalculatorPerformanceTests.swift */,
-				D2459BC63423821558EF2B76 /* GitStatusParserPerformanceTests.swift */,
-				08E110CD7461A2DE6F65E8BC /* ProjectSearchPerformanceTests.swift */,
-				503D24A3B58CB9046CCB71A1 /* SyntaxHighlighterPerformanceTests.swift */,
-			);
-			name = PinePerformanceTests;
-			path = PinePerformanceTests;
-			sourceTree = "<group>";
-		};
 		9FA1A71F2F5EFA8100BDDA8C = {
 			isa = PBXGroup;
 			children = (
@@ -232,6 +211,9 @@
 			);
 			dependencies = (
 				81016B9894C276341B16A3B4 /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				29D03576855FB7AAFC9C3E02 /* PinePerformanceTests */,
 			);
 			name = PinePerformanceTests;
 			productName = PinePerformanceTests;
@@ -354,10 +336,6 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				3E3351B41A2D88029852BABE /* FoldRangeCalculatorPerformanceTests.swift in Sources */,
-				E455779DF6077C6294CCA380 /* GitStatusParserPerformanceTests.swift in Sources */,
-				8274CEE5D6290164B75F9B31 /* ProjectSearchPerformanceTests.swift in Sources */,
-				DF85B2177691A8BAC271AF19 /* SyntaxHighlighterPerformanceTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
