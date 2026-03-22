@@ -17,7 +17,7 @@ struct GoToLineView: View {
 
     var body: some View {
         VStack(spacing: 8) {
-            TextField(Strings.goToLinePlaceholder, text: $inputText)
+            TextField("42 or 42:10", text: $inputText)
                 .textFieldStyle(.roundedBorder)
                 .focused($isFieldFocused)
                 .accessibilityIdentifier(AccessibilityID.goToLineField)
