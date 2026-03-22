@@ -7,7 +7,7 @@ import Testing
 import AppKit
 @testable import Pine
 
-/// Tests that line number baseline aligns with editor text baseline.
+/// Tests that line number baseline aligns with editor text baseline (issue #250).
 struct LineNumberBaselineTests {
 
     private func makeView() -> LineNumberView {
@@ -126,5 +126,91 @@ struct LineNumberBaselineTests {
         let expected2 = editor2.ascender - gutter2.ascender
         #expect(offset2 == expected2)
         #expect(offset1 != offset2, "Offset should change when fonts change")
+    }
+
+    // MARK: - Regression: cursor positioning offset (issue #250)
+
+    /// Non-monospaced system font — baselineOffset should still be non-negative.
+    @Test func baselineOffsetWithSystemFont() {
+        let view = makeView()
+        let editorFont = NSFont.systemFont(ofSize: 14)
+        let gutterFont = NSFont.systemFont(ofSize: 12)
+        view.editorFont = editorFont
+        view.gutterFont = gutterFont
+
+        let expected = editorFont.ascender - gutterFont.ascender
+        #expect(view.baselineOffset == expected)
+        #expect(view.baselineOffset >= 0,
+                "Non-monospaced fonts must still produce non-negative offset")
+    }
+
+    /// Bold weight should not break baseline alignment.
+    @Test func baselineOffsetWithBoldFont() {
+        let view = makeView()
+        let editorFont = NSFont.monospacedSystemFont(ofSize: 13, weight: .bold)
+        let gutterFont = NSFont.monospacedSystemFont(ofSize: 11, weight: .regular)
+        view.editorFont = editorFont
+        view.gutterFont = gutterFont
+
+        #expect(view.baselineOffset >= 0,
+                "Bold editor font must not produce negative offset")
+    }
+
+    /// Same font assigned to both editor and gutter — offset must be exactly 0.
+    @Test func baselineOffsetIdenticalFontInstances() {
+        let view = makeView()
+        let font = NSFont.monospacedSystemFont(ofSize: 16, weight: .regular)
+        view.editorFont = font
+        view.gutterFont = font
+
+        #expect(view.baselineOffset == 0,
+                "Identical font instances must yield zero offset")
+    }
+
+    /// Gutter width formula: digits * charWidth + 20, minimum 2 digits.
+    /// Mirrors the calculation in LineNumberView.draw() (LineNumberGutter.swift:389-401).
+    @Test func gutterWidthFormula_matchesExpected() {
+        let font = NSFont.monospacedSystemFont(ofSize: 13, weight: .regular)
+        let charWidth = "0".size(withAttributes: [.font: font]).width
+
+        // 2-digit minimum (files with < 100 lines)
+        let width2 = CGFloat(max(String(10).count, 2)) * charWidth + 20
+        // 4-digit file (e.g. 1000 lines)
+        let width4 = CGFloat(max(String(1000).count, 2)) * charWidth + 20
+        // 5-digit file (e.g. 10000 lines)
+        let width5 = CGFloat(max(String(10000).count, 2)) * charWidth + 20
+
+        #expect(width4 > width2, "4-digit gutter must be wider than 2-digit")
+        #expect(width5 > width4, "5-digit gutter must be wider than 4-digit")
+        // Verify the formula: digits * charWidth + 20
+        #expect(width4 == 4 * charWidth + 20)
+        #expect(width5 == 5 * charWidth + 20)
+    }
+
+    /// baselineOffset with very large font size difference (e.g. 32pt editor, 8pt gutter).
+    @Test func baselineOffsetLargeSizeDifference() {
+        let view = makeView()
+        let editorFont = NSFont.monospacedSystemFont(ofSize: 32, weight: .regular)
+        let gutterFont = NSFont.monospacedSystemFont(ofSize: 8, weight: .regular)
+        view.editorFont = editorFont
+        view.gutterFont = gutterFont
+
+        let expected = editorFont.ascender - gutterFont.ascender
+        #expect(view.baselineOffset == expected)
+        #expect(view.baselineOffset > 0,
+                "Large size difference must produce positive offset")
+    }
+
+    /// Fractional font sizes should produce valid offsets.
+    @Test func baselineOffsetFractionalFontSize() {
+        let view = makeView()
+        let editorFont = NSFont.monospacedSystemFont(ofSize: 13.5, weight: .regular)
+        let gutterFont = NSFont.monospacedSystemFont(ofSize: 11.5, weight: .regular)
+        view.editorFont = editorFont
+        view.gutterFont = gutterFont
+
+        #expect(view.baselineOffset >= 0)
+        #expect(view.baselineOffset.isFinite, "Offset must be finite for fractional sizes")
+        #expect(!view.baselineOffset.isNaN, "Offset must not be NaN")
     }
 }

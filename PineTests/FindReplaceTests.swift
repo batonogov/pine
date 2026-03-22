@@ -8,7 +8,10 @@ import AppKit
 import SwiftUI
 @testable import Pine
 
-/// Tests for Find & Replace functionality (issue #275).
+/// Fake view whose class name contains "Find" so EditorScrollView.findBarHeight() detects it.
+private class FakeFindBarView: NSView {}
+
+/// Tests for Find & Replace functionality (issue #275) and find bar overlap regression (issue #387).
 struct FindReplaceTests {
 
     private func makeGutterTextView(text: String = "hello world") -> GutterTextView {
@@ -114,5 +117,128 @@ struct FindReplaceTests {
         coordinator.performFindAction(.nextMatch)
         coordinator.performFindAction(.previousMatch)
         coordinator.performFindAction(.setSearchString)
+    }
+
+    // MARK: - Regression: find bar overlaps line numbers (issue #387)
+
+    @Test func editorContainerView_lineNumberView_shiftsDown_whenFindBarOpen() {
+        // Regression #387: when find bar is open, LineNumberView must shift down
+        let container = EditorContainerView()
+        container.frame = NSRect(x: 0, y: 0, width: 600, height: 400)
+
+        let scrollView = EditorScrollView(frame: NSRect(x: 0, y: 0, width: 600, height: 400))
+        let textView = NSTextView(frame: NSRect(x: 0, y: 0, width: 600, height: 400))
+        scrollView.documentView = textView
+        container.addSubview(scrollView)
+
+        let lineNumberView = LineNumberView(textView: textView)
+        lineNumberView.frame = NSRect(x: 0, y: 0, width: 40, height: 400)
+        container.addSubview(lineNumberView)
+
+        // Simulate a find bar by adding a subview whose class name contains "Find"
+        // EditorScrollView.findBarHeight() scans subviews for such a view
+        let fakeFindBar = FakeFindBarView(frame: NSRect(x: 0, y: 0, width: 600, height: 30))
+        scrollView.addSubview(fakeFindBar)
+        scrollView.tile()
+
+        container.layout()
+        #expect(scrollView.findBarOffset == 30,
+                "findBarOffset must reflect the fake find bar height")
+        #expect(lineNumberView.frame.origin.y == 30,
+                "LineNumberView must shift down by findBarOffset")
+        #expect(lineNumberView.frame.height == 370,
+                "LineNumberView height must shrink to container height minus findBarOffset")
+    }
+
+    @Test func editorContainerView_withMinimap_scrollViewShrinks() {
+        // Regression #387: minimap must not break line number positioning
+        let container = EditorContainerView()
+        container.frame = NSRect(x: 0, y: 0, width: 800, height: 600)
+        container.minimapWidth = 100
+
+        let scrollView = EditorScrollView(frame: .zero)
+        let textView = NSTextView(frame: .zero)
+        scrollView.documentView = textView
+        container.addSubview(scrollView)
+
+        let lineNumberView = LineNumberView(textView: textView)
+        lineNumberView.frame = NSRect(x: 0, y: 0, width: 40, height: 600)
+        container.addSubview(lineNumberView)
+
+        container.layout()
+
+        // ScrollView should shrink to make room for minimap
+        #expect(scrollView.frame.width == 700,
+                "ScrollView width must be container width minus minimapWidth")
+        // LineNumberView should still start at y=0
+        #expect(lineNumberView.frame.origin.y == 0)
+        #expect(lineNumberView.frame.height == 600)
+    }
+
+    @Test func editorContainerView_multipleLineNumberViews_allOffset() {
+        // Edge case: verify layout handles multiple non-scroll, non-minimap subviews
+        let container = EditorContainerView()
+        container.frame = NSRect(x: 0, y: 0, width: 600, height: 400)
+
+        let scrollView = EditorScrollView(frame: .zero)
+        scrollView.documentView = NSTextView(frame: .zero)
+        container.addSubview(scrollView)
+
+        let view1 = NSView(frame: NSRect(x: 0, y: 0, width: 40, height: 400))
+        let view2 = NSView(frame: NSRect(x: 0, y: 0, width: 60, height: 400))
+        container.addSubview(view1)
+        container.addSubview(view2)
+
+        container.layout()
+
+        // Both non-scroll subviews should be at y=0 (no find bar)
+        #expect(view1.frame.origin.y == 0)
+        #expect(view2.frame.origin.y == 0)
+    }
+
+    @Test func editorContainerView_zeroSize_doesNotCrash() {
+        let container = EditorContainerView()
+        container.frame = .zero
+
+        let scrollView = EditorScrollView(frame: .zero)
+        scrollView.documentView = NSTextView(frame: .zero)
+        container.addSubview(scrollView)
+
+        let lineNumberView = LineNumberView(textView: NSTextView())
+        container.addSubview(lineNumberView)
+
+        // Should not crash with zero-size container
+        container.layout()
+        #expect(lineNumberView.frame.height == 0)
+    }
+
+    @Test func editorScrollView_findBarHeight_withoutFindBar_isZero() {
+        // Regression #387: no find bar subview → findBarOffset stays 0
+        let scrollView = EditorScrollView(frame: NSRect(x: 0, y: 0, width: 500, height: 500))
+        scrollView.documentView = NSTextView(frame: .zero)
+        scrollView.tile()
+        #expect(scrollView.findBarOffset == 0)
+    }
+
+    @Test func editorContainerView_hiddenMinimap_stillReservesWidth() {
+        // minimapWidth is subtracted from scroll view regardless of minimap visibility;
+        // isHidden only skips repositioning the minimap itself
+        let container = EditorContainerView()
+        container.frame = NSRect(x: 0, y: 0, width: 800, height: 600)
+        container.minimapWidth = 100
+
+        let scrollView = EditorScrollView(frame: .zero)
+        let textView = NSTextView(frame: .zero)
+        scrollView.documentView = textView
+        container.addSubview(scrollView)
+
+        let minimap = MinimapView(textView: textView)
+        minimap.isHidden = true
+        container.addSubview(minimap)
+
+        container.layout()
+
+        #expect(scrollView.frame.width == 700,
+                "ScrollView width still reduced by minimapWidth even when minimap is hidden")
     }
 }
