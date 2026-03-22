@@ -152,7 +152,7 @@ jobs:
         id: flaky
         run: |
           python3 .github/scripts/detect_flaky_tests.py \
-            TestResults.xcresult --github-summary || true
+            TestResults.xcresult --github-summary
 
       - name: Extract Coverage Report
         if: success() || failure()
@@ -231,15 +231,22 @@ jobs:
       - name: Comment Coverage on PR
         if: (success() || failure()) && github.event_name == 'pull_request' && steps.coverage.outputs.coverage != ''
         uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7
+        env:
+          COVERAGE_VALUE: ${{ steps.coverage.outputs.coverage }}
+          COVERAGE_MIN: ${{ env.COVERAGE_THRESHOLD }}
+          FLAKY_COUNT: ${{ steps.flaky.outputs.flaky-count }}
+          FLAKY_TESTS: ${{ steps.flaky.outputs.flaky-tests }}
         with:
           script: |
-            const coverage = '${{ steps.coverage.outputs.coverage }}';
-            const threshold = parseFloat('${{ env.COVERAGE_THRESHOLD }}');
+            const coverage = process.env.COVERAGE_VALUE;
+            const threshold = parseFloat(process.env.COVERAGE_MIN);
             const passing = parseFloat(coverage) >= threshold;
             const icon = passing ? '✅' : '⚠️';
 
-            const flakyCount = parseInt('${{ steps.flaky.outputs.flaky-count }}' || '0', 10);
-            const flakyTests = '${{ steps.flaky.outputs.flaky-tests }}';
+            const flakyCount = parseInt(process.env.FLAKY_COUNT || '0', 10);
+            // FLAKY_TESTS is JSON-encoded by the detection script
+            let flakyTests = '';
+            try { flakyTests = JSON.parse(process.env.FLAKY_TESTS || '""'); } catch { flakyTests = process.env.FLAKY_TESTS || ''; }
 
             const lines = [
               `## ${icon} Code Coverage: ${coverage}%`,
@@ -392,4 +399,119 @@ jobs:
         if: success() || failure()
         run: |
           python3 .github/scripts/detect_flaky_tests.py \
-            UITestResults.xcresult --github-summary || true
+            UITestResults.xcresult --github-summary --output-file flaky-report.json
+
+      - name: Upload Flaky Report
+        if: success() || failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: flaky-ui-${{ strategy.job-index }}
+          path: flaky-report.json
+          retention-days: 1
+
+  # Aggregate flaky UI test reports from all shards into a single PR comment
+  flaky-summary:
+    name: Flaky Test Summary
+    runs-on: ubuntu-latest
+    needs: [ui-tests]
+    if: always() && needs.ui-tests.result != 'cancelled'
+    steps:
+      - name: Download Flaky Reports
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          pattern: flaky-ui-*
+          merge-multiple: true
+          path: flaky-reports
+
+      - name: Aggregate Flaky Tests
+        id: aggregate
+        run: |
+          # Merge all JSON reports into one list
+          MERGED=$(python3 -c "
+          import json, glob, os
+          all_flaky = []
+          for f in sorted(glob.glob('flaky-reports/flaky-report.json')) + \
+                   sorted(glob.glob('flaky-reports/*/flaky-report.json')):
+              with open(f) as fh:
+                  data = json.load(fh)
+                  all_flaky.extend(data)
+          print(json.dumps(all_flaky))
+          ")
+
+          COUNT=$(echo "$MERGED" | python3 -c "import json,sys; print(len(json.load(sys.stdin)))")
+          echo "flaky-count=$COUNT" >> "$GITHUB_OUTPUT"
+
+          if [ "$COUNT" -gt 0 ]; then
+            # Build markdown table
+            TABLE=$(echo "$MERGED" | python3 -c "
+          import json, sys
+          tests = json.load(sys.stdin)
+          lines = []
+          for t in sorted(tests, key=lambda x: (x['suite'], x['name'])):
+              lines.append(f\"| {t['suite']} | {t['name']} | {t['failed_runs']}/{t['total_runs']} |\")
+          print('\n'.join(lines))
+          ")
+
+            {
+              echo "## Flaky UI Tests: $COUNT"
+              echo ""
+              echo "| Test Suite | Test Name | Failed Runs |"
+              echo "|------------|-----------|-------------|"
+              echo "$TABLE"
+              echo ""
+              echo "_These tests failed initially but passed on retry._"
+            } >> "$GITHUB_STEP_SUMMARY"
+
+            # Store for PR comment (JSON-encoded for safety)
+            NAMES=$(echo "$MERGED" | python3 -c "
+          import json, sys
+          tests = json.load(sys.stdin)
+          print(json.dumps(', '.join(f\"{t['suite']}/{t['name']}\" for t in tests)))
+          ")
+            echo "flaky-tests=$NAMES" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Comment Flaky UI Tests on PR
+        if: github.event_name == 'pull_request' && steps.aggregate.outputs.flaky-count > 0
+        uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7
+        env:
+          FLAKY_COUNT: ${{ steps.aggregate.outputs.flaky-count }}
+          FLAKY_TESTS: ${{ steps.aggregate.outputs.flaky-tests }}
+        with:
+          script: |
+            const count = process.env.FLAKY_COUNT;
+            let tests = '';
+            try { tests = JSON.parse(process.env.FLAKY_TESTS || '""'); } catch { tests = process.env.FLAKY_TESTS || ''; }
+
+            const body = [
+              `## Flaky UI Tests: ${count}`,
+              '',
+              tests,
+              '',
+              '_These tests failed initially but passed on retry. See job summary for details._',
+            ].join('\n');
+
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            });
+            const botComment = comments.find(c =>
+              c.user.type === 'Bot' && c.body.includes('Flaky UI Tests:')
+            );
+
+            if (botComment) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: botComment.id,
+                body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body,
+              });
+            }

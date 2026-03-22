@@ -5,11 +5,10 @@ A flaky test is one that failed on the first attempt but passed on retry.
 Uses `xcrun xcresulttool get test-results tests` to extract test results.
 
 Usage:
-    python3 detect_flaky_tests.py <path-to.xcresult> [--json] [--github-summary]
+    python3 detect_flaky_tests.py <path-to.xcresult> [--json] [--github-summary] [--output-file FILE]
 
 Exit codes:
-    0 — no flaky tests found
-    1 — flaky tests detected (outputs list)
+    0 — success (flaky tests may or may not be found; count is in GITHUB_OUTPUT)
     2 — error (missing xcresult, tool failure, etc.)
 """
 
@@ -101,15 +100,40 @@ def format_markdown(flaky_tests: list[FlakyTest]) -> str:
     return "\n".join(lines)
 
 
+def flaky_to_dicts(flaky_tests: list[FlakyTest]) -> list[dict]:
+    """Convert FlakyTest list to JSON-serializable dicts."""
+    return [
+        {
+            "suite": t.suite,
+            "name": t.name,
+            "failed_runs": t.failed_runs,
+            "total_runs": t.total_runs,
+        }
+        for t in flaky_tests
+    ]
+
+
+def _parse_output_file(args: list[str]) -> str:
+    """Extract --output-file value from args."""
+    for i, arg in enumerate(args):
+        if arg == "--output-file" and i + 1 < len(args):
+            return args[i + 1]
+    return ""
+
+
 def main():
     if len(sys.argv) < 2:
-        print(f"Usage: {sys.argv[0]} <xcresult-path> [--json] [--github-summary]",
-              file=sys.stderr)
+        print(
+            f"Usage: {sys.argv[0]} <xcresult-path> "
+            "[--json] [--github-summary] [--output-file FILE]",
+            file=sys.stderr,
+        )
         sys.exit(2)
 
     xcresult_path = sys.argv[1]
     output_json = "--json" in sys.argv
     github_summary = "--github-summary" in sys.argv
+    output_file = _parse_output_file(sys.argv)
 
     if not os.path.isdir(xcresult_path):
         print(f"Error: xcresult not found: {xcresult_path}", file=sys.stderr)
@@ -117,6 +141,11 @@ def main():
 
     data = get_test_results(xcresult_path)
     flaky_tests = find_flaky_tests(data)
+
+    # Always write output file (empty array when no flaky tests)
+    if output_file:
+        with open(output_file, "w") as f:
+            json.dump(flaky_to_dicts(flaky_tests), f, indent=2)
 
     if not flaky_tests:
         print("No flaky tests detected.")
@@ -126,16 +155,7 @@ def main():
     print(f"Found {count} flaky test(s):")
 
     if output_json:
-        result = [
-            {
-                "suite": t.suite,
-                "name": t.name,
-                "failed_runs": t.failed_runs,
-                "total_runs": t.total_runs,
-            }
-            for t in flaky_tests
-        ]
-        print(json.dumps(result, indent=2))
+        print(json.dumps(flaky_to_dicts(flaky_tests), indent=2))
     else:
         for test in flaky_tests:
             print(f"  - {test.suite}/{test.name} "
@@ -149,14 +169,13 @@ def main():
 
         output_path = os.environ.get("GITHUB_OUTPUT", "")
         if output_path:
+            names = ", ".join(
+                f"{t.suite}/{t.name}" for t in flaky_tests
+            )
             with open(output_path, "a") as f:
                 f.write(f"flaky-count={count}\n")
-                names = ", ".join(
-                    f"{t.suite}/{t.name}" for t in flaky_tests
-                )
-                f.write(f"flaky-tests={names}\n")
-
-    sys.exit(1)
+                # JSON-encode to safely handle special characters
+                f.write(f"flaky-tests={json.dumps(names)}\n")
 
 
 if __name__ == "__main__":

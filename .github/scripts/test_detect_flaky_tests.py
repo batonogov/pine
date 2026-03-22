@@ -1,8 +1,17 @@
 """Unit tests for detect_flaky_tests.py."""
 
+import json
+import os
+import tempfile
 import unittest
 
-from detect_flaky_tests import FlakyTest, find_flaky_tests, format_markdown
+from detect_flaky_tests import (
+    FlakyTest,
+    find_flaky_tests,
+    flaky_to_dicts,
+    format_markdown,
+    _parse_output_file,
+)
 
 
 class TestFindFlakyTests(unittest.TestCase):
@@ -230,6 +239,48 @@ class TestFormatMarkdown(unittest.TestCase):
         idx_a = md.index("testA")
         idx_z = md.index("testZ")
         self.assertLess(idx_a, idx_z)
+
+
+class TestFlakyToDicts(unittest.TestCase):
+    """Tests for the flaky_to_dicts function."""
+
+    def test_empty(self):
+        """Empty list should return empty list."""
+        self.assertEqual(flaky_to_dicts([]), [])
+
+    def test_conversion(self):
+        """FlakyTest should convert to dict correctly."""
+        flaky = [FlakyTest(suite="S", name="t", failed_runs=1, total_runs=2)]
+        result = flaky_to_dicts(flaky)
+        self.assertEqual(result, [
+            {"suite": "S", "name": "t", "failed_runs": 1, "total_runs": 2}
+        ])
+
+    def test_json_serializable(self):
+        """Output should be JSON-serializable."""
+        flaky = [FlakyTest(suite="A", name="b", failed_runs=2, total_runs=3)]
+        data = flaky_to_dicts(flaky)
+        serialized = json.dumps(data)
+        self.assertEqual(json.loads(serialized), data)
+
+
+class TestParseOutputFile(unittest.TestCase):
+    """Tests for the _parse_output_file function."""
+
+    def test_no_flag(self):
+        """No --output-file should return empty string."""
+        self.assertEqual(_parse_output_file(["script", "path"]), "")
+
+    def test_with_flag(self):
+        """--output-file should return the next argument."""
+        self.assertEqual(
+            _parse_output_file(["script", "--output-file", "out.json"]),
+            "out.json",
+        )
+
+    def test_flag_at_end(self):
+        """--output-file at end without value should return empty string."""
+        self.assertEqual(_parse_output_file(["script", "--output-file"]), "")
 
 
 if __name__ == "__main__":
