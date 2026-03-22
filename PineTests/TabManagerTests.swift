@@ -1147,6 +1147,43 @@ struct TabManagerTests {
         #expect(disk2 == "world\n")
     }
 
+    @Test("Failed save preserves original content with trailing whitespace")
+    func failedSavePreservesContent() {
+        let manager = TabManager()
+        let badURL = URL(fileURLWithPath: "/nonexistent_dir_\(UUID().uuidString)/file.txt")
+
+        let tab = EditorTab(url: badURL, content: "hello   \nworld\t\n", savedContent: "")
+        manager.tabs.append(tab)
+        manager.activeTabID = tab.id
+
+        #expect(throws: (any Error).self) {
+            try manager.trySaveTab(at: 0)
+        }
+        // Content must NOT be trimmed after failed write
+        #expect(manager.activeTab?.content == "hello   \nworld\t\n")
+        #expect(manager.activeTab?.isDirty == true)
+    }
+
+    @Test("Auto-save strips trailing whitespace")
+    func autoSaveStripsTrailingWhitespace() async throws {
+        let manager = TabManager()
+        manager.setAutoSaveDelay(0.1)
+        let url = tempFileURL(content: "original")
+
+        manager.openTab(url: url)
+        manager.updateContent("hello   \nworld\t\n")
+        #expect(manager.activeTab?.isDirty == true)
+
+        manager.scheduleAutoSave()
+
+        try await Task.sleep(for: .milliseconds(300))
+
+        #expect(manager.activeTab?.isDirty == false)
+        let onDisk = try String(contentsOf: url, encoding: .utf8)
+        #expect(onDisk == "hello\nworld\n")
+        #expect(manager.activeTab?.content == "hello\nworld\n")
+    }
+
     @Test("isAutoSaving resets after auto-save completes")
     func isAutoSavingResetsAfterSave() async throws {
         let manager = TabManager()

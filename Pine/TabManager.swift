@@ -216,8 +216,8 @@ final class TabManager {
         let tab = tabs[index]
         guard tab.kind == .text else { return false }
         let trimmed = tab.content.trailingWhitespaceStripped()
-        tabs[index].content = trimmed
         try trimmed.write(to: tab.url, atomically: true, encoding: tab.encoding)
+        tabs[index].content = trimmed
         tabs[index].savedContent = trimmed
         tabs[index].lastModDate = modDate(for: tab.url)
         tabs[index].fileSizeBytes = fileSize(url: tab.url)
