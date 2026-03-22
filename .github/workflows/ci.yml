@@ -114,6 +114,8 @@ jobs:
     name: Unit Tests
     runs-on: macos-26
     needs: build
+    env:
+      COVERAGE_THRESHOLD: 70
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
 
@@ -145,7 +147,7 @@ jobs:
             CODE_SIGNING_ALLOWED=NO
 
       - name: Extract Coverage Report
-        if: always()
+        if: success() || failure()
         id: coverage
         run: |
           XCRESULT="TestResults.xcresult"
@@ -187,7 +189,6 @@ jobs:
               for f in target.get('files', []):
                   name = f['name']
                   pct = f['lineCoverage'] * 100
-                  lines = f.get('coveredLines', 0) + f.get('executableLines', 0) - f.get('coveredLines', 0)
                   files.append((name, pct, f.get('coveredLines', 0), f.get('executableLines', 0)))
               files.sort(key=lambda x: x[1])
 
@@ -208,24 +209,24 @@ jobs:
           " >> "$GITHUB_STEP_SUMMARY"
 
       - name: Check Coverage Threshold
-        if: always() && steps.coverage.outputs.coverage != ''
+        if: (success() || failure()) && steps.coverage.outputs.coverage != ''
         run: |
           COVERAGE="${{ steps.coverage.outputs.coverage }}"
-          THRESHOLD=70
+          THRESHOLD="${{ env.COVERAGE_THRESHOLD }}"
           echo "Coverage: ${COVERAGE}%, threshold: ${THRESHOLD}%"
-          if python3 -c "exit(0 if float('$COVERAGE') >= $THRESHOLD else 1)"; then
-            echo "✅ Coverage is above threshold"
+          if python3 -c "exit(0 if float('$COVERAGE') >= float('$THRESHOLD') else 1)"; then
+            echo "Coverage is above threshold"
           else
             echo "::warning::Coverage ${COVERAGE}% is below ${THRESHOLD}% threshold"
           fi
 
       - name: Comment Coverage on PR
-        if: always() && github.event_name == 'pull_request' && steps.coverage.outputs.coverage != ''
+        if: (success() || failure()) && github.event_name == 'pull_request' && steps.coverage.outputs.coverage != ''
         uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7
         with:
           script: |
             const coverage = '${{ steps.coverage.outputs.coverage }}';
-            const threshold = 70;
+            const threshold = parseFloat('${{ env.COVERAGE_THRESHOLD }}');
             const passing = parseFloat(coverage) >= threshold;
             const icon = passing ? '✅' : '⚠️';
 
