@@ -1,8 +1,6 @@
 """Unit tests for detect_flaky_tests.py."""
 
 import json
-import os
-import tempfile
 import unittest
 
 from detect_flaky_tests import (
