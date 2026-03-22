@@ -182,6 +182,7 @@ jobs:
               'BranchSubtitleClickHandler.swift',
               'MarkdownPreviewView.swift',
               'QuickLookPreviewView.swift',
+              'QuickOpenView.swift',
               'RepresentedFileTracker.swift',
               'AccessibilityIdentifiers.swift',
           }
@@ -219,6 +220,7 @@ jobs:
               'BranchSubtitleClickHandler.swift',
               'MarkdownPreviewView.swift',
               'QuickLookPreviewView.swift',
+              'QuickOpenView.swift',
               'RepresentedFileTracker.swift',
               'AccessibilityIdentifiers.swift',
           }
@@ -379,11 +381,12 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # Shard 1 — Window & Welcome (21 tests)
+          # Shard 1 — Window & Welcome (26 tests)
           - shard-name: "Window & Welcome"
             test-classes: >-
               -only-testing:PineUITests/WelcomeWindowTests
               -only-testing:PineUITests/SidebarSearchTests
+              -only-testing:PineUITests/QuickOpenUITests
           # Shard 2 — Editor Core (21 tests)
           - shard-name: "Editor Core"
             test-classes: >-
