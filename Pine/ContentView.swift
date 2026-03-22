@@ -29,6 +29,7 @@ struct ContentView: View {
     @State private var goToLineOffset: GoToRequest?
     @State private var recoveryEntries: [(UUID, RecoveryEntry)] = []
     @State private var showRecoveryDialog = false
+    @State private var isQuickOpenPresented = false
     @AppStorage("minimapVisible") private var isMinimapVisible = true
     @AppStorage(BlameConstants.storageKey) private var isBlameVisible = true
 
@@ -113,12 +114,20 @@ struct ContentView: View {
                 onDiscard: { discardRecovery() }
             )
         }
+        .sheet(isPresented: $isQuickOpenPresented) {
+            QuickOpenView(isPresented: $isQuickOpenPresented)
+                .environment(projectManager)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .showQuickOpen)) { _ in
+            isQuickOpenPresented = true
+        }
         .onChange(of: selectedNode) { _, newNode in
             guard let node = newNode, !node.isDirectory else { return }
             handleFileSelection(node)
         }
         .onChange(of: workspace.rootURL) { _, _ in
             lineDiffs = []
+            projectManager.quickOpenProvider.invalidateIndex()
             projectManager.saveSession()
             applySearchQueryFromEnvironment()
         }
