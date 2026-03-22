@@ -54,7 +54,7 @@ struct QuickOpenView: View {
                 return .handled
             }
             .onKeyPress(.return) {
-                openSelected(inNewTab: false)
+                openSelected()
                 return .handled
             }
             .onKeyPress(.escape) {
@@ -146,7 +146,7 @@ struct QuickOpenView: View {
             return
         }
         searchTask = Task {
-            try? await Task.sleep(for: .milliseconds(50))
+            try? await Task.sleep(for: .milliseconds(150))
             guard !Task.isCancelled else { return }
             updateResults()
         }
@@ -154,7 +154,7 @@ struct QuickOpenView: View {
 
     private func updateResults() {
         results = provider.search(query: searchText)
-        selectedIndex = results.isEmpty ? 0 : 0
+        selectedIndex = 0
     }
 
     private func moveSelection(by delta: Int) {
@@ -162,10 +162,9 @@ struct QuickOpenView: View {
         selectedIndex = max(0, min(results.count - 1, selectedIndex + delta))
     }
 
-    private func openSelected(inNewTab: Bool) {
+    private func openSelected() {
         guard selectedIndex < results.count else { return }
-        let url = results[selectedIndex].url
-        openFile(url)
+        openFile(results[selectedIndex].url)
     }
 
     private func openFile(_ url: URL) {

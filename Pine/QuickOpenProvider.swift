@@ -14,10 +14,11 @@ final class QuickOpenProvider {
     /// A single search result with scoring information.
     struct Result: Identifiable {
         let id: URL
-        let url: URL
         let fileName: String
         let relativePath: String
         let score: Int
+
+        var url: URL { id }
     }
 
     /// Recent files storage key prefix.
@@ -25,6 +26,9 @@ final class QuickOpenProvider {
 
     /// Cached flat list of all file URLs in the project.
     private(set) var fileIndex: [URL] = []
+
+    /// Cached resolved paths for symlink-safe comparison (built once at index time).
+    private var resolvedPaths: [URL: String] = [:]
 
     /// The root URL the index was built from.
     private var indexedRoot: URL?
@@ -41,11 +45,20 @@ final class QuickOpenProvider {
             collectFiles(from: root, into: &files)
         }
         fileIndex = files
+
+        // Pre-resolve symlinks once for all indexed files
+        var paths: [URL: String] = [:]
+        paths.reserveCapacity(files.count)
+        for url in files {
+            paths[url] = url.resolvingSymlinksInPath().path
+        }
+        resolvedPaths = paths
     }
 
     /// Invalidates the cached index (e.g., when project root changes).
     func invalidateIndex() {
         fileIndex = []
+        resolvedPaths = [:]
         indexedRoot = nil
     }
 
@@ -72,22 +85,31 @@ final class QuickOpenProvider {
         let rootPath = rootPathPrefix()
         let queryLower = query.lowercased()
 
+        // Load recent files once per search, build a lookup by resolved path
+        let recentList = loadRecentFiles()
+        let recentLookup = buildRecentLookup(recentList)
+
         var results: [Result] = []
         for url in fileIndex {
             let fileName = url.lastPathComponent
             let relativePath = Self.relativePath(for: url, rootPrefix: rootPath)
 
-            guard let score = fuzzyScore(query: queryLower, fileName: fileName, path: relativePath) else {
+            guard let score = fuzzyScore(
+                queryLower: queryLower,
+                fileNameLower: fileName.lowercased(),
+                pathLower: relativePath.lowercased(),
+                pathLength: relativePath.count
+            ) else {
                 continue
             }
 
-            let boostedScore = score + recentBoost(for: url)
+            let resolved = resolvedPaths[url] ?? url.path
+            let boost = recentLookup[resolved] ?? 0
             results.append(Result(
                 id: url,
-                url: url,
                 fileName: fileName,
                 relativePath: relativePath,
-                score: boostedScore
+                score: score + boost
             ))
         }
 
@@ -97,59 +119,52 @@ final class QuickOpenProvider {
 
     /// Checks if `query` is a subsequence of `target` (case-insensitive).
     static func isSubsequence(_ query: String, of target: String) -> Bool {
-        var queryIndex = query.startIndex
-        let queryLower = query.lowercased()
-        let targetLower = target.lowercased()
-        var targetIndex = targetLower.startIndex
-
-        while queryIndex < queryLower.endIndex, targetIndex < targetLower.endIndex {
-            if queryLower[queryIndex] == targetLower[targetIndex] {
-                queryIndex = queryLower.index(after: queryIndex)
-            }
-            targetIndex = targetLower.index(after: targetIndex)
-        }
-        return queryIndex == queryLower.endIndex
+        isSubsequenceLowercased(query.lowercased(), of: target.lowercased())
     }
 
-    /// Computes a fuzzy match score. Returns nil if no match.
-    /// Higher scores = better match.
-    func fuzzyScore(query: String, fileName: String, path: String) -> Int? {
-        let queryLower = query.lowercased()
-        let fileNameLower = fileName.lowercased()
-        let pathLower = path.lowercased()
+    /// Subsequence check on pre-lowercased strings (avoids redundant lowercasing).
+    private static func isSubsequenceLowercased(_ query: String, of target: String) -> Bool {
+        var queryIndex = query.startIndex
+        var targetIndex = target.startIndex
 
-        // Try matching against filename first, then full path
-        let matchesFileName = Self.isSubsequence(queryLower, of: fileNameLower)
-        let matchesPath = matchesFileName || Self.isSubsequence(queryLower, of: pathLower)
+        while queryIndex < query.endIndex, targetIndex < target.endIndex {
+            if query[queryIndex] == target[targetIndex] {
+                queryIndex = query.index(after: queryIndex)
+            }
+            targetIndex = target.index(after: targetIndex)
+        }
+        return queryIndex == query.endIndex
+    }
+
+    /// Computes a fuzzy match score from pre-lowercased inputs. Returns nil if no match.
+    /// Higher scores = better match.
+    func fuzzyScore(
+        queryLower: String, fileNameLower: String,
+        pathLower: String, pathLength: Int
+    ) -> Int? {
+        let matchesFileName = Self.isSubsequenceLowercased(queryLower, of: fileNameLower)
+        let matchesPath = matchesFileName || Self.isSubsequenceLowercased(queryLower, of: pathLower)
 
         guard matchesPath else { return nil }
 
         var score = 0
 
         if matchesFileName {
-            // Exact match bonus
             if fileNameLower == queryLower {
                 score += 200
-            }
-            // Prefix bonus
-            else if fileNameLower.hasPrefix(queryLower) {
+            } else if fileNameLower.hasPrefix(queryLower) {
                 score += 150
-            }
-            // Substring bonus
-            else if fileNameLower.contains(queryLower) {
+            } else if fileNameLower.contains(queryLower) {
                 score += 100
-            }
-            // Subsequence in filename
-            else {
+            } else {
                 score += 50
             }
         } else {
-            // Only matched path, not filename
             score += 10
         }
 
         // Shorter paths rank higher on ties
-        score -= path.count
+        score -= pathLength
 
         return score
     }
@@ -168,18 +183,22 @@ final class QuickOpenProvider {
         saveRecentFiles(recent)
     }
 
-    private func recentBoost(for url: URL) -> Int {
-        let recent = loadRecentFiles()
-        let resolvedPath = url.resolvingSymlinksInPath().path
-        guard let index = recent.firstIndex(of: resolvedPath) else { return 0 }
-        // More recently opened = higher boost
-        return max(0, 200 - index * 10)
+    /// Builds a lookup dictionary from recent file list: resolved path -> boost score.
+    private func buildRecentLookup(_ recentList: [String]) -> [String: Int] {
+        var lookup: [String: Int] = [:]
+        for (index, path) in recentList.enumerated() {
+            let boost = max(0, 200 - index * 10)
+            if boost > 0 {
+                lookup[path] = boost
+            }
+        }
+        return lookup
     }
 
     private func recentFilesResults() -> [Result] {
         let recent = loadRecentFiles()
         let rootPath = rootPathPrefix()
-        let indexedSet = Set(fileIndex.map { $0.resolvingSymlinksInPath().path })
+        let indexedSet = Set(resolvedPaths.values)
 
         return recent
             .filter { indexedSet.contains($0) }
@@ -187,7 +206,6 @@ final class QuickOpenProvider {
                 let url = URL(fileURLWithPath: path)
                 return Result(
                     id: url,
-                    url: url,
                     fileName: url.lastPathComponent,
                     relativePath: Self.relativePath(for: url, rootPrefix: rootPath),
                     score: 0

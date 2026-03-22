@@ -14,7 +14,7 @@ enum MenuIcons {
     static let duplicate = "plus.square.on.square"
     static let autoSave = "arrow.triangle.2.circlepath"
 
-    static let quickOpen = "magnifyingglass"
+    static let quickOpen = "doc.text.magnifyingglass"
 
     // MARK: - Edit menu
     static let toggleComment = "slash.circle"

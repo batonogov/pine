@@ -37,6 +37,19 @@ struct QuickOpenProviderTests {
         return provider
     }
 
+    /// Helper that wraps the new fuzzyScore signature with pre-lowercased inputs.
+    private func score(
+        _ provider: QuickOpenProvider,
+        query: String, fileName: String, path: String
+    ) -> Int? {
+        provider.fuzzyScore(
+            queryLower: query.lowercased(),
+            fileNameLower: fileName.lowercased(),
+            pathLower: path.lowercased(),
+            pathLength: path.count
+        )
+    }
+
     // MARK: - isSubsequence
 
     @Test("isSubsequence: exact match")
@@ -79,7 +92,7 @@ struct QuickOpenProviderTests {
     @Test("fuzzyScore: exact filename match scores highest")
     func fuzzyScoreExactMatch() {
         let provider = QuickOpenProvider()
-        let score = provider.fuzzyScore(query: "main.swift", fileName: "main.swift", path: "main.swift")
+        let score = score(provider, query: "main.swift", fileName: "main.swift", path: "main.swift")
         #expect(score != nil)
         if let score { #expect(score >= 150) }
     }
@@ -87,7 +100,7 @@ struct QuickOpenProviderTests {
     @Test("fuzzyScore: prefix match scores well")
     func fuzzyScorePrefix() {
         let provider = QuickOpenProvider()
-        let score = provider.fuzzyScore(query: "main", fileName: "main.swift", path: "src/main.swift")
+        let score = score(provider, query: "main", fileName: "main.swift", path: "src/main.swift")
         #expect(score != nil)
         if let score { #expect(score >= 100) }
     }
@@ -95,7 +108,7 @@ struct QuickOpenProviderTests {
     @Test("fuzzyScore: substring match")
     func fuzzyScoreSubstring() {
         let provider = QuickOpenProvider()
-        let score = provider.fuzzyScore(query: "ain.sw", fileName: "main.swift", path: "main.swift")
+        let score = score(provider, query: "ain.sw", fileName: "main.swift", path: "main.swift")
         #expect(score != nil)
         if let score { #expect(score >= 50) }
     }
@@ -103,7 +116,7 @@ struct QuickOpenProviderTests {
     @Test("fuzzyScore: path-only match scores lowest")
     func fuzzyScorePathOnly() {
         let provider = QuickOpenProvider()
-        let score = provider.fuzzyScore(query: "src", fileName: "main.swift", path: "src/main.swift")
+        let score = score(provider, query: "src", fileName: "main.swift", path: "src/main.swift")
         #expect(score != nil)
         if let score { #expect(score < 50) }
     }
@@ -111,15 +124,15 @@ struct QuickOpenProviderTests {
     @Test("fuzzyScore: no match returns nil")
     func fuzzyScoreNoMatch() {
         let provider = QuickOpenProvider()
-        let score = provider.fuzzyScore(query: "xyz", fileName: "main.swift", path: "main.swift")
+        let score = score(provider, query: "xyz", fileName: "main.swift", path: "main.swift")
         #expect(score == nil)
     }
 
     @Test("fuzzyScore: filename match ranks higher than path match")
     func fuzzyScoreFilenameBeatsPath() {
         let provider = QuickOpenProvider()
-        guard let fileScore = provider.fuzzyScore(query: "app", fileName: "app.swift", path: "src/app.swift"),
-              let pathScore = provider.fuzzyScore(query: "src", fileName: "main.swift", path: "src/main.swift")
+        guard let fileScore = score(provider, query: "app", fileName: "app.swift", path: "src/app.swift"),
+              let pathScore = score(provider, query: "src", fileName: "main.swift", path: "src/main.swift")
         else {
             Issue.record("Expected non-nil scores")
             return
@@ -130,8 +143,8 @@ struct QuickOpenProviderTests {
     @Test("fuzzyScore: shorter path ranks higher on tie")
     func fuzzyScoreShorterPathWins() {
         let provider = QuickOpenProvider()
-        guard let shortScore = provider.fuzzyScore(query: "f", fileName: "file.swift", path: "file.swift"),
-              let longScore = provider.fuzzyScore(query: "f", fileName: "file.swift", path: "a/b/c/file.swift")
+        guard let shortScore = score(provider, query: "f", fileName: "file.swift", path: "file.swift"),
+              let longScore = score(provider, query: "f", fileName: "file.swift", path: "a/b/c/file.swift")
         else {
             Issue.record("Expected non-nil scores")
             return
