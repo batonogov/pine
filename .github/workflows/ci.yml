@@ -195,6 +195,7 @@ jobs:
               -only-testing:PineUITests/EditorWindowTests
               -only-testing:PineUITests/FontSizeTests
               -only-testing:PineUITests/DiffNavigationUITests
+              -only-testing:PineUITests/LineNumberGutterUITests
           # Shard 3 — File Operations (20 tests)
           - shard-name: "File Operations"
             test-classes: >-

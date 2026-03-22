@@ -505,6 +505,7 @@ struct CodeEditorView: NSViewRepresentable {
         let lineNumberView = LineNumberView(textView: textView)
         lineNumberView.gutterWidth = gutterWidth
         lineNumberView.gutterFont = gutterFont
+        lineNumberView.editorFont = editorFont
         lineNumberView.foldState = foldState
         let coordinator = context.coordinator
         lineNumberView.onFoldToggle = { [weak coordinator] foldable in
@@ -856,6 +857,7 @@ struct CodeEditorView: NSViewRepresentable {
 
             // Update gutter font
             lineNumberView?.gutterFont = gutterFont
+            lineNumberView?.editorFont = font
             lineNumberView?.needsDisplay = true
         }
 
