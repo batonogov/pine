@@ -340,6 +340,144 @@ struct WorkspaceManagerTests {
         #expect(aNode?.children?.first?.name == "b")
     }
 
+    @Test("refreshFileTree suppresses watcher echo events within suppression window")
+    @MainActor
+    func refreshFileTreeSuppressesEcho() async throws {
+        let dir = try makeTempDirectory()
+        defer { cleanup(dir) }
+
+        try "file".write(
+            to: dir.appendingPathComponent("test.txt"),
+            atomically: true,
+            encoding: .utf8
+        )
+
+        let manager = WorkspaceManager()
+        manager.loadDirectory(url: dir)
+        manager.refreshFileTree()
+
+        // After refreshFileTree, echo watcher events within the
+        // suppression window (~1 second) should be suppressed.
+        let tokenAfterRefresh = manager.externalChangeToken
+
+        // Modify a file — this triggers a watcher event
+        try "modified".write(
+            to: dir.appendingPathComponent("test.txt"),
+            atomically: true,
+            encoding: .utf8
+        )
+
+        // Wait longer than the watcher debounce (0.5s) but within
+        // the suppression window (1s) — the callback should be suppressed.
+        try await Task.sleep(for: .milliseconds(700))
+
+        #expect(manager.externalChangeToken == tokenAfterRefresh)
+    }
+
+    @Test("loadDirectory stops file watcher from previous project")
+    @MainActor
+    func loadDirectoryStopsOldWatcher() async throws {
+        let dir1 = try makeTempDirectory()
+        let dir2 = try makeTempDirectory()
+        defer { cleanup(dir1); cleanup(dir2) }
+
+        try "a".write(
+            to: dir1.appendingPathComponent("a.txt"),
+            atomically: true,
+            encoding: .utf8
+        )
+        try "b".write(
+            to: dir2.appendingPathComponent("b.txt"),
+            atomically: true,
+            encoding: .utf8
+        )
+
+        let manager = WorkspaceManager()
+        manager.loadDirectory(url: dir1)
+        manager.refreshFileTree()
+
+        // Switch to dir2 — should stop dir1's watcher
+        manager.loadDirectory(url: dir2)
+        manager.refreshFileTree()
+
+        let tokenAfterSwitch = manager.externalChangeToken
+
+        // Creating files in dir1 should NOT trigger externalChangeToken changes
+        // (watcher was stopped when we switched to dir2)
+        try "new".write(
+            to: dir1.appendingPathComponent("new.txt"),
+            atomically: true,
+            encoding: .utf8
+        )
+
+        // Wait for any potential watcher event to fire
+        try await Task.sleep(for: .milliseconds(800))
+
+        // Token should not have changed from dir1 watcher events
+        #expect(manager.externalChangeToken == tokenAfterSwitch)
+        #expect(manager.rootURL == dir2)
+    }
+
+    @Test("Multiple rapid loadDirectory calls settle on the last directory")
+    func multipleRapidLoadDirectory() throws {
+        let dirs = try (0..<5).map { _ in try makeTempDirectory() }
+        defer { dirs.forEach { cleanup($0) } }
+
+        for (i, dir) in dirs.enumerated() {
+            try "file\(i)".write(
+                to: dir.appendingPathComponent("file\(i).txt"),
+                atomically: true,
+                encoding: .utf8
+            )
+        }
+
+        let manager = WorkspaceManager()
+        for dir in dirs {
+            manager.loadDirectory(url: dir)
+        }
+
+        // Should settle on the last directory
+        #expect(manager.rootURL == dirs.last)
+        manager.refreshFileTree()
+        let names = manager.rootNodes.map(\.url.lastPathComponent)
+        #expect(names.contains("file4.txt"))
+        #expect(!names.contains("file0.txt"))
+    }
+
+    @Test("loadGeneration prevents stale async results from overwriting newer state")
+    func loadGenerationPreventsStaleResults() throws {
+        let dir1 = try makeTempDirectory()
+        let dir2 = try makeTempDirectory()
+        defer { cleanup(dir1); cleanup(dir2) }
+
+        // Create files to distinguish directories
+        try "from1".write(
+            to: dir1.appendingPathComponent("from_dir1.txt"),
+            atomically: true,
+            encoding: .utf8
+        )
+        try "from2".write(
+            to: dir2.appendingPathComponent("from_dir2.txt"),
+            atomically: true,
+            encoding: .utf8
+        )
+
+        let manager = WorkspaceManager()
+        // Load dir1 — triggers async load
+        manager.loadDirectory(url: dir1)
+        // Immediately load dir2 — should invalidate dir1's async load
+        manager.loadDirectory(url: dir2)
+
+        // Synchronous state should reflect dir2
+        #expect(manager.rootURL == dir2)
+
+        // Use sync refresh to verify
+        manager.refreshFileTree()
+        let names = manager.rootNodes.map(\.url.lastPathComponent)
+        #expect(names.contains("from_dir2.txt"))
+        #expect(!names.contains("from_dir1.txt"))
+    }
+
     @Test("loadDirectory twice quickly uses latest directory")
     func loadDirectoryRaceProtection() throws {
         let dir1 = try makeTempDirectory()
