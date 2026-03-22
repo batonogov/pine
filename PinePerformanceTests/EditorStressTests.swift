@@ -300,7 +300,7 @@ final class EditorStressTests: XCTestCase {
 
         measure {
             highlighter.highlight(textStorage: textStorage, language: "stresstest", font: font)
-            _ = FoldRangeCalculator.calculate(in: code, skipRanges: skipRanges)
+            _ = FoldRangeCalculator.calculate(text: code, skipRanges: skipRanges)
         }
     }
 
