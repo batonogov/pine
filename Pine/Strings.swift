@@ -254,6 +254,35 @@ enum Strings {
     static let sidebarFiles: LocalizedStringKey = "sidebar.files"
     static let sidebarSearch: LocalizedStringKey = "sidebar.search"
 
+    // MARK: - Terminal Search
+
+    static let terminalSearchPlaceholder: LocalizedStringKey = "terminal.search.placeholder"
+    static let menuFindInTerminal: LocalizedStringKey = "menu.findInTerminal"
+
+    static var terminalSearchPreviousTooltip: String {
+        String(localized: "terminal.search.previousTooltip")
+    }
+
+    static var terminalSearchNextTooltip: String {
+        String(localized: "terminal.search.nextTooltip")
+    }
+
+    static var terminalSearchCloseTooltip: String {
+        String(localized: "terminal.search.closeTooltip")
+    }
+
+    static var terminalSearchCaseSensitiveTooltip: String {
+        String(localized: "terminal.search.caseSensitiveTooltip")
+    }
+
+    static var terminalSearchNoMatches: String {
+        String(localized: "terminal.search.noMatches")
+    }
+
+    static func terminalSearchMatchCount(current: Int, total: Int) -> String {
+        String(localized: "terminal.search.matchCount \(current) \(total)")
+    }
+
     // MARK: - Terminal Tab Names (runtime)
 
     static var terminalDefaultName: String {
