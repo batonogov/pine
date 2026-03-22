@@ -494,4 +494,158 @@ struct TerminalManagerTests {
         await tab.search(for: ".")
         #expect(tab.searchMatches.count >= 1)
     }
+
+    // MARK: - Regression: find in terminal (issue #308)
+
+    @Test("search with ANSI escape sequences in buffer")
+    @MainActor
+    func searchWithAnsiEscapes() async {
+        // Regression #308: ANSI color codes should not interfere with text search
+        let tab = TerminalTab(name: "Test")
+        let terminal = tab.terminalView.getTerminal()
+        // Simulate colored output: ESC[31m = red, ESC[0m = reset
+        terminal.feed(text: "\u{1B}[31merror\u{1B}[0m: something failed\r\n")
+
+        await tab.search(for: "error")
+        // SwiftTerm processes escape sequences, so buffer text should contain "error"
+        // without the raw escape codes
+        #expect(tab.searchMatches.count >= 1, "ANSI escapes must not prevent finding text")
+    }
+
+    @Test("search with bold/underline ANSI sequences")
+    @MainActor
+    func searchWithFormattingAnsi() async {
+        let tab = TerminalTab(name: "Test")
+        let terminal = tab.terminalView.getTerminal()
+        // ESC[1m = bold, ESC[4m = underline
+        terminal.feed(text: "\u{1B}[1mbold text\u{1B}[0m and \u{1B}[4munderlined\u{1B}[0m\r\n")
+
+        await tab.search(for: "bold text")
+        #expect(tab.searchMatches.count >= 1)
+
+        await tab.search(for: "underlined")
+        #expect(tab.searchMatches.count >= 1)
+    }
+
+    @Test("search spanning multiple terminal rows")
+    @MainActor
+    func searchManyRows() async {
+        let tab = TerminalTab(name: "Test")
+        let terminal = tab.terminalView.getTerminal()
+        // Generate 100 lines with "match" on every 10th line
+        for i in 0..<100 {
+            if i % 10 == 0 {
+                terminal.feed(text: "match line \(i)\r\n")
+            } else {
+                terminal.feed(text: "other line \(i)\r\n")
+            }
+        }
+
+        await tab.search(for: "match")
+        #expect(tab.searchMatches.count == 10,
+                "Should find exactly 10 matches across 100 lines")
+    }
+
+    @Test("search query longer than any line returns no matches")
+    @MainActor
+    func searchQueryLongerThanLine() async {
+        let tab = TerminalTab(name: "Test")
+        let terminal = tab.terminalView.getTerminal()
+        terminal.feed(text: "short\r\n")
+
+        let longQuery = String(repeating: "x", count: 200)
+        await tab.search(for: longQuery)
+
+        #expect(tab.searchMatches.isEmpty)
+        #expect(tab.currentMatchIndex == -1)
+    }
+
+    @Test("search with whitespace-only query")
+    @MainActor
+    func searchWhitespaceOnly() async {
+        let tab = TerminalTab(name: "Test")
+        let terminal = tab.terminalView.getTerminal()
+        terminal.feed(text: "hello world\r\n")
+
+        await tab.search(for: " ")
+        #expect(tab.searchMatches.count >= 1, "Space character is a valid search query")
+    }
+
+    @Test("search with tab character")
+    @MainActor
+    func searchTabCharacter() async {
+        let tab = TerminalTab(name: "Test")
+        let terminal = tab.terminalView.getTerminal()
+        terminal.feed(text: "col1\tcol2\tcol3\r\n")
+
+        await tab.search(for: "col2")
+        #expect(tab.searchMatches.count == 1)
+    }
+
+    @Test("rapid sequential searches replace previous results")
+    @MainActor
+    func rapidSequentialSearches() async {
+        let tab = TerminalTab(name: "Test")
+        let terminal = tab.terminalView.getTerminal()
+        terminal.feed(text: "alpha beta gamma\r\n")
+
+        await tab.search(for: "alpha")
+        #expect(tab.searchMatches.count == 1)
+
+        await tab.search(for: "beta")
+        #expect(tab.searchMatches.count == 1)
+        #expect(tab.searchMatches[0].col == 6, "Should find 'beta' at col 6")
+
+        await tab.search(for: "gamma")
+        #expect(tab.searchMatches.count == 1)
+        #expect(tab.searchMatches[0].col == 11)
+    }
+
+    @Test("navigation through many matches visits all of them")
+    @MainActor
+    func navigationThroughAllMatches() async {
+        let tab = TerminalTab(name: "Test")
+        let terminal = tab.terminalView.getTerminal()
+        terminal.feed(text: "a a a a a\r\n")
+
+        await tab.search(for: "a")
+        let count = tab.searchMatches.count
+        #expect(count == 5)
+
+        // Walk forward through all matches + wrap
+        for i in 1..<count {
+            tab.nextMatch()
+            #expect(tab.currentMatchIndex == i)
+        }
+        tab.nextMatch()
+        #expect(tab.currentMatchIndex == 0, "Should wrap to first match")
+    }
+
+    @Test("clearSearch then navigation does nothing")
+    func clearThenNavigate() {
+        let tab = TerminalTab(name: "Test")
+        tab.searchMatches = [
+            TerminalSearchMatch(row: 0, col: 0, length: 3),
+            TerminalSearchMatch(row: 1, col: 0, length: 3),
+        ]
+        tab.currentMatchIndex = 0
+
+        tab.clearSearch()
+        tab.nextMatch()
+        #expect(tab.currentMatchIndex == -1)
+        tab.previousMatch()
+        #expect(tab.currentMatchIndex == -1)
+    }
+
+    @Test("search match position is correct with leading spaces")
+    @MainActor
+    func searchWithLeadingSpaces() async {
+        let tab = TerminalTab(name: "Test")
+        let terminal = tab.terminalView.getTerminal()
+        terminal.feed(text: "    indented\r\n")
+
+        await tab.search(for: "indented")
+        #expect(tab.searchMatches.count == 1)
+        #expect(tab.searchMatches[0].col == 4, "Match should account for leading spaces")
+    }
 }
