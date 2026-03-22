@@ -340,8 +340,9 @@ struct WorkspaceManagerTests {
         #expect(aNode?.children?.first?.name == "b")
     }
 
-    @Test("refreshFileTree suppresses immediate watcher echo events")
-    func refreshFileTreeSuppressesEcho() throws {
+    @Test("refreshFileTree suppresses watcher echo events within suppression window")
+    @MainActor
+    func refreshFileTreeSuppressesEcho() async throws {
         let dir = try makeTempDirectory()
         defer { cleanup(dir) }
 
@@ -355,20 +356,21 @@ struct WorkspaceManagerTests {
         manager.loadDirectory(url: dir)
         manager.refreshFileTree()
 
-        // After refreshFileTree, the externalChangeToken should not bump
-        // from echo watcher events within the suppression window.
+        // After refreshFileTree, echo watcher events within the
+        // suppression window (~1 second) should be suppressed.
         let tokenAfterRefresh = manager.externalChangeToken
 
-        // Modify a file — this would trigger a watcher event,
-        // but suppressWatcherUntil should suppress it for ~1 second.
+        // Modify a file — this triggers a watcher event
         try "modified".write(
             to: dir.appendingPathComponent("test.txt"),
             atomically: true,
             encoding: .utf8
         )
 
-        // The watcher callback is debounced and suppressed, so the
-        // token should remain stable immediately after the write.
+        // Wait longer than the watcher debounce (0.5s) but within
+        // the suppression window (1s) — the callback should be suppressed.
+        try await Task.sleep(for: .milliseconds(700))
+
         #expect(manager.externalChangeToken == tokenAfterRefresh)
     }
 
@@ -393,8 +395,6 @@ struct WorkspaceManagerTests {
         let manager = WorkspaceManager()
         manager.loadDirectory(url: dir1)
         manager.refreshFileTree()
-
-        let tokenBeforeSwitch = manager.externalChangeToken
 
         // Switch to dir2 — should stop dir1's watcher
         manager.loadDirectory(url: dir2)

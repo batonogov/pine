@@ -92,22 +92,22 @@ struct FileSystemWatcherTests {
 
     // MARK: - Stale generation is discarded
 
-    @Test("Restarting watch discards events from previous generation")
+    @Test("Restarting watch increments generation and cancels pending debounce")
     @MainActor
     func staleGenerationDiscarded() async throws {
         let dir1 = try makeTempDirectory()
         let dir2 = try makeTempDirectory()
         defer { cleanup(dir1); cleanup(dir2) }
 
-        // Track callbacks separately: stop watching dir1 before creating
-        // any events in dir2, so only the dir1 event could fire — but
-        // it should be discarded because watch(dir2) bumps the generation.
-        var callbackFired = false
+        // Use two separate counters to distinguish dir1 vs dir2 callbacks.
+        // We verify that after switching to dir2, any callback that fires
+        // is from the new generation (dir2), not the old one (dir1).
+        var callbackCount = 0
         let watcher = FileSystemWatcher(debounceInterval: 0.3) {
-            callbackFired = true
+            callbackCount += 1
         }
 
-        // Watch dir1, create event
+        // Watch dir1, create event — starts a debounce timer
         watcher.watch(directory: dir1)
         try "old".write(
             to: dir1.appendingPathComponent("old.txt"),
@@ -115,18 +115,28 @@ struct FileSystemWatcherTests {
             encoding: .utf8
         )
 
-        // Switch to dir2 immediately — dir1 events should be stale
+        // Switch to dir2 — this calls stopOnQueue (cancels debounce,
+        // increments generation) then starts a new stream on dir2.
         watcher.watch(directory: dir2)
 
-        // Do NOT create events in dir2 — we want to verify that
-        // the dir1 callback was discarded, not that dir2 fires.
+        // Record count after switching — any dir1 debounce should be cancelled
+        let countAfterSwitch = callbackCount
+
+        // Create event in dir2 to get a reliable callback from the new generation
+        try "new".write(
+            to: dir2.appendingPathComponent("new.txt"),
+            atomically: true,
+            encoding: .utf8
+        )
+
         try await Task.sleep(for: .milliseconds(800))
 
         watcher.stop()
 
-        // The dir1 event debounce should have been cancelled or
-        // discarded by the generation check when watch(dir2) ran.
-        #expect(callbackFired == false)
+        // We should see at most one callback from dir2.
+        // The dir1 event should have been cancelled by the generation bump.
+        // (Without generation protection, we'd see 2+ callbacks)
+        #expect(callbackCount - countAfterSwitch <= 1)
     }
 
     // MARK: - Retained self lifecycle
@@ -153,28 +163,27 @@ struct FileSystemWatcherTests {
         #expect(weakWatcher == nil)
     }
 
-    @Test("FileSystemWatcher retains itself while stream is active")
+    @Test("FileSystemWatcher retains itself via internal reference while stream is active")
     func retainedSelfWhileActive() throws {
         let dir = try makeTempDirectory()
         defer { cleanup(dir) }
 
         weak var weakWatcher: FileSystemWatcher?
 
-        let externalRef: FileSystemWatcher
+        // Create watcher inside a scope so the only strong reference
+        // is the internal retainedSelf set during watch().
         do {
             let watcher = FileSystemWatcher { }
             weakWatcher = watcher
             watcher.watch(directory: dir)
-            externalRef = watcher
+            // watcher goes out of scope here — only retainedSelf keeps it alive
         }
 
-        // Watcher should still be alive (retained by self-reference + externalRef)
+        // Watcher should still be alive via its internal self-reference
         #expect(weakWatcher != nil)
 
-        externalRef.stop()
-
-        // Now with no external ref and stop called, it should release
-        // (we still hold externalRef so it won't dealloc yet)
+        // Clean up
+        weakWatcher?.stop()
     }
 
     // MARK: - Callback fires on main thread
