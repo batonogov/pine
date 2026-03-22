@@ -71,7 +71,7 @@ final class GutterTextView: NSTextView {
     /// Resets multi-cursor state. Called when text changes externally (not from multi-cursor edit).
     func invalidateMultiCursors() {
         multiCursors = []
-        updateCaretBlink()
+        stopCaretBlink()
     }
 
     /// Syncs NSTextView selections from multiCursors using setSelectedRanges (Apple API).
@@ -85,54 +85,67 @@ final class GutterTextView: NSTextView {
             return NSValue(range: NSRange(location: loc, length: len))
         }
         setSelectedRanges(ranges, affinity: .downstream, stillSelecting: false)
-        updateCaretBlink()
+        if isMultiCursorActive { startCaretBlink() } else { stopCaretBlink() }
     }
 
     // MARK: - Multi-cursor caret drawing
 
-    /// Timer that drives the blink animation for extra cursors.
     private var caretBlinkTimer: Timer?
-    private var caretVisible = true
+    private var extraCaretsVisible = true
 
-    /// Starts or stops the caret blink timer depending on multi-cursor state.
-    private func updateCaretBlink() {
-        if isMultiCursorActive {
-            guard caretBlinkTimer == nil else { return }
-            caretVisible = true
-            caretBlinkTimer = Timer.scheduledTimer(withTimeInterval: 0.6, repeats: true) { [weak self] _ in
-                guard let self else { return }
-                self.caretVisible.toggle()
-                self.needsDisplay = true
+    private func startCaretBlink() {
+        guard caretBlinkTimer == nil else { return }
+        extraCaretsVisible = true
+        caretBlinkTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
+            guard let self, self.isMultiCursorActive else { return }
+            self.extraCaretsVisible.toggle()
+            // Invalidate only the extra caret rects (not the whole view)
+            for cursor in self.multiCursors.dropFirst() where !cursor.hasSelection {
+                if let rect = self.extraCaretRect(for: cursor) {
+                    self.setNeedsDisplay(rect)
+                }
             }
-        } else {
-            caretBlinkTimer?.invalidate()
-            caretBlinkTimer = nil
         }
     }
 
-    override func drawInsertionPoint(in rect: NSRect, color: NSColor, turnedOn flag: Bool) {
-        super.drawInsertionPoint(in: rect, color: color, turnedOn: flag)
+    private func stopCaretBlink() {
+        caretBlinkTimer?.invalidate()
+        caretBlinkTimer = nil
+        // Clear any remaining extra carets
+        if !multiCursors.isEmpty {
+            needsDisplay = true
+        }
+    }
 
-        // Draw additional carets for multi-cursor mode
-        guard isMultiCursorActive, caretVisible,
+    override func draw(_ dirtyRect: NSRect) {
+        super.draw(dirtyRect)
+
+        guard isMultiCursorActive, extraCaretsVisible,
               let layoutManager, let textContainer else { return }
 
         let origin = textContainerOrigin
-        // Skip the first cursor — NSTextView already draws it
-        for cursor in multiCursors.dropFirst() where !cursor.hasSelection {
-            let glyphIndex = layoutManager.glyphIndexForCharacter(at: min(cursor.location, (string as NSString).length))
-            let lineRect = layoutManager.lineFragmentRect(forGlyphAt: glyphIndex, effectiveRange: nil)
-            let loc = layoutManager.location(forGlyphAt: glyphIndex)
+        (insertionPointColor ?? .textColor).setFill()
 
-            let caretRect = NSRect(
-                x: lineRect.origin.x + loc.x + origin.x,
-                y: lineRect.origin.y + origin.y,
-                width: max(rect.width, 1.5),
-                height: lineRect.height
-            )
-            color.setFill()
+        for cursor in multiCursors.dropFirst() where !cursor.hasSelection {
+            guard let caretRect = extraCaretRect(for: cursor),
+                  dirtyRect.intersects(caretRect) else { continue }
             caretRect.fill()
         }
+    }
+
+    private func extraCaretRect(for cursor: MultiCursorLogic.Cursor) -> NSRect? {
+        guard let layoutManager else { return nil }
+        let origin = textContainerOrigin
+        let charIndex = min(cursor.location, (string as NSString).length)
+        let glyphIndex = layoutManager.glyphIndexForCharacter(at: charIndex)
+        let lineRect = layoutManager.lineFragmentRect(forGlyphAt: glyphIndex, effectiveRange: nil)
+        let loc = layoutManager.location(forGlyphAt: glyphIndex)
+        return NSRect(
+            x: lineRect.origin.x + loc.x + origin.x,
+            y: lineRect.origin.y + origin.y,
+            width: 2,
+            height: lineRect.height
+        )
     }
 
     /// Activates multi-cursor mode from the current single selection.
@@ -156,7 +169,7 @@ final class GutterTextView: NSTextView {
         let first = multiCursors[0]
         multiCursors = []
         setSelectedRange(NSRange(location: first.location, length: 0))
-        updateCaretBlink()
+        stopCaretBlink()
     }
 
     // MARK: - Multi-cursor text input overrides
