@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.9.2](https://github.com/batonogov/pine/compare/v1.9.1...v1.9.2) (2026-03-22)
+
+
+### Bug Fixes
+
+* align line number baseline with editor text baseline ([#395](https://github.com/batonogov/pine/issues/395)) ([99e7d58](https://github.com/batonogov/pine/commit/99e7d58da204a34f525627a810730bfe551c56d9))
+
 ## [1.9.1](https://github.com/batonogov/pine/compare/v1.9.0...v1.9.1) (2026-03-22)
 
 
