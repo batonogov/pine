@@ -13,6 +13,12 @@ final class LineNumberView: NSView {
     weak var textView: NSTextView?
 
     var gutterFont = NSFont.monospacedSystemFont(ofSize: 11, weight: .regular)
+    var editorFont = NSFont.monospacedSystemFont(ofSize: 13, weight: .regular)
+
+    /// Vertical offset to align gutter number baseline with editor text baseline.
+    var baselineOffset: CGFloat {
+        editorFont.ascender - gutterFont.ascender
+    }
     private let gutterTextColor = NSColor.secondaryLabelColor
     private let gutterBgColor = NSColor.controlBackgroundColor
     private let separatorColor = NSColor.separatorColor
@@ -245,7 +251,7 @@ final class LineNumberView: NSView {
             let numStr = "1" as NSString
             let size = numStr.size(withAttributes: attrs)
             let x = gutterWidth - size.width - 8
-            numStr.draw(at: NSPoint(x: x, y: originY), withAttributes: attrs)
+            numStr.draw(at: NSPoint(x: x, y: originY + baselineOffset), withAttributes: attrs)
             return
         }
 
@@ -313,7 +319,7 @@ final class LineNumberView: NSView {
                 let numStr = "\(lineNumber)" as NSString
                 let size = numStr.size(withAttributes: attrs)
                 let x = self.gutterWidth - size.width - 8
-                numStr.draw(at: NSPoint(x: x, y: y), withAttributes: attrs)
+                numStr.draw(at: NSPoint(x: x, y: y + self.baselineOffset), withAttributes: attrs)
 
                 // ── Fold disclosure triangle ──
                 if showFoldIndicators || self.foldState.foldedRanges.contains(where: { $0.startLine == lineNumber }) {
@@ -374,7 +380,7 @@ final class LineNumberView: NSView {
                 let numStr = "\(lineNumber)" as NSString
                 let size = numStr.size(withAttributes: attrs)
                 let x = gutterWidth - size.width - 8
-                numStr.draw(at: NSPoint(x: x, y: y), withAttributes: attrs)
+                numStr.draw(at: NSPoint(x: x, y: y + baselineOffset), withAttributes: attrs)
             }
         }
 
