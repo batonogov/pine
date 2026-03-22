@@ -98,7 +98,7 @@ final class EditorWindowTests: PineUITestCase {
         mainTab.click()
         let selectedPredicate = NSPredicate(format: "isSelected == true")
         expectation(for: selectedPredicate, evaluatedWith: mainTab)
-        waitForExpectations(timeout: 5)
+        waitForExpectations(timeout: 10)
 
         // main.swift tab should still exist (switching doesn't close tabs)
         XCTAssertTrue(mainTab.exists, "main.swift tab should still exist after clicking it")

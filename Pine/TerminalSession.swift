@@ -69,6 +69,15 @@ class TerminalContainerView: NSView {
     override var isFlipped: Bool { true }
 }
 
+// MARK: - Terminal search
+
+/// A match found in the terminal scrollback buffer.
+struct TerminalSearchMatch {
+    let row: Int
+    let col: Int
+    let length: Int
+}
+
 // MARK: - Модель вкладки терминала
 
 /// Одна вкладка терминала. Содержит SwiftTerm LocalProcessTerminalView.
@@ -79,6 +88,15 @@ final class TerminalTab: Identifiable, Hashable {
     var name: String
     let terminalView: LocalProcessTerminalView
     fileprivate(set) var isTerminated = false
+
+    // MARK: - Search state
+
+    /// All matches found by the most recent search.
+    var searchMatches: [TerminalSearchMatch] = []
+    /// Index into `searchMatches` for the currently highlighted match, or -1 if none.
+    var currentMatchIndex: Int = -1
+    /// Total number of lines from the last search (used for scroll positioning).
+    private var searchTotalRows: Int = 0
 
     private let delegate: TerminalTabDelegate
     private let shellSettings: ShellSettings
@@ -169,6 +187,103 @@ final class TerminalTab: Identifiable, Hashable {
         let foregroundPgid = tcgetpgrp(fd)
         let shellPid = terminalView.process.shellPid
         return foregroundPgid > 0 && foregroundPgid != shellPid
+    }
+
+    // MARK: - Search
+
+    /// Searches the terminal scrollback buffer for `query` and stores matches.
+    /// The heavy work runs off the main actor; only the final state update
+    /// and scroll happen on main.
+    ///
+    /// Uses SwiftTerm's public `getBufferAsData()` to extract the full buffer
+    /// content without accessing internal `buffer.lines`.
+    @MainActor
+    func search(for query: String, caseSensitive: Bool = false) async {
+        guard !query.isEmpty else {
+            searchMatches = []
+            currentMatchIndex = -1
+            searchTotalRows = 0
+            return
+        }
+
+        // Store for SwiftTerm findNext/findPrevious highlight calls
+        lastSearchQuery = query
+        lastSearchOptions = SearchOptions(caseSensitive: caseSensitive)
+
+        // Extract full buffer text via public API on main thread
+        let terminal = terminalView.getTerminal()
+        let bufferData = terminal.getBufferAsData()
+
+        // Search off main thread
+        let searchQuery = query
+        let isCaseSensitive = caseSensitive
+        let (matches, totalRows) = await Task.detached(priority: .userInitiated) {
+            guard let bufferText = String(data: bufferData, encoding: .utf8) else {
+                return ([TerminalSearchMatch](), 0)
+            }
+            let lines = bufferText.split(separator: "\n", omittingEmptySubsequences: false)
+            let needle = isCaseSensitive ? searchQuery : searchQuery.lowercased()
+            var result: [TerminalSearchMatch] = []
+            for (row, line) in lines.enumerated() {
+                let haystack = isCaseSensitive ? String(line) : String(line).lowercased()
+                var searchStart = haystack.startIndex
+                while let range = haystack.range(of: needle, range: searchStart..<haystack.endIndex) {
+                    let col = haystack.distance(from: haystack.startIndex, to: range.lowerBound)
+                    let length = haystack.distance(from: range.lowerBound, to: range.upperBound)
+                    result.append(TerminalSearchMatch(row: row, col: col, length: length))
+                    searchStart = range.upperBound
+                }
+            }
+            return (result, lines.count)
+        }.value
+
+        guard !Task.isCancelled else { return }
+
+        searchMatches = matches
+        searchTotalRows = totalRows
+        if matches.isEmpty {
+            currentMatchIndex = -1
+            terminalView.clearSearch()
+        } else {
+            currentMatchIndex = 0
+            highlightCurrentMatch()
+        }
+    }
+
+    /// Advances to the next match, highlights it via SwiftTerm selection, and scrolls to it.
+    func nextMatch() {
+        guard !searchMatches.isEmpty else { return }
+        currentMatchIndex = (currentMatchIndex + 1) % searchMatches.count
+        highlightCurrentMatch()
+    }
+
+    /// Goes back to the previous match, highlights it, and scrolls to it.
+    func previousMatch() {
+        guard !searchMatches.isEmpty else { return }
+        currentMatchIndex = (currentMatchIndex - 1 + searchMatches.count) % searchMatches.count
+        terminalView.findPrevious(lastSearchQuery, options: lastSearchOptions)
+    }
+
+    /// Clears search results, resets state, and removes selection highlight.
+    func clearSearch() {
+        searchMatches = []
+        currentMatchIndex = -1
+        searchTotalRows = 0
+        lastSearchQuery = ""
+        terminalView.clearSearch()
+    }
+
+    /// Last query/options used for findNext/findPrevious calls.
+    private var lastSearchQuery = ""
+    private var lastSearchOptions = SearchOptions()
+
+    /// Highlights the current match using SwiftTerm's built-in find (which sets selection)
+    /// and scrolls to it.
+    private func highlightCurrentMatch() {
+        guard currentMatchIndex >= 0, currentMatchIndex < searchMatches.count else { return }
+        // SwiftTerm's findNext/findPrevious iterates through matches and highlights via selection.
+        // We call the appropriate one to move SwiftTerm's internal cursor to our target match.
+        terminalView.findNext(lastSearchQuery, options: lastSearchOptions)
     }
 
     static func == (lhs: TerminalTab, rhs: TerminalTab) -> Bool { lhs.id == rhs.id }

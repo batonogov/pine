@@ -120,7 +120,7 @@ struct PineApp: App {
                 }
                 .disabled(focusedProject?.workspace.rootURL == nil)
             }
-            // Terminal menu: New Tab (Cmd+T)
+            // Terminal menu: New Tab (Cmd+T), Find in Terminal (Cmd+F when terminal focused)
             CommandMenu(Strings.menuTerminal) {
                 Button {
                     guard let pm = focusedProject else { return }
@@ -132,6 +132,15 @@ struct PineApp: App {
                     Label(Strings.menuNewTerminalTab, systemImage: MenuIcons.newTerminalTab)
                 }
                 .keyboardShortcut("t", modifiers: .command)
+
+                Divider()
+
+                Button {
+                    NotificationCenter.default.post(name: .findInTerminal, object: nil)
+                } label: {
+                    Label(Strings.menuFindInTerminal, systemImage: MenuIcons.find)
+                }
+                .disabled(focusedProject?.terminal.isTerminalVisible != true)
             }
             // Edit menu: Toggle Comment, Find & Replace, Find in Project
             CommandGroup(after: .pasteboard) {
@@ -856,6 +865,21 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate {
             return nil // consume event
         }
 
+        // Intercept Cmd+F when a terminal view is the first responder.
+        // When the terminal is focused, Cmd+F opens terminal search instead of editor find.
+        // Uses keyCode (3 = F key) instead of charactersIgnoringModifiers because the latter
+        // returns locale-specific characters (e.g. "ф" on Russian keyboard layout).
+        NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+            guard event.modifierFlags.intersection(.deviceIndependentFlagsMask) == .command,
+                  event.keyCode == 3,
+                  let responder = NSApp.keyWindow?.firstResponder as? NSView,
+                  responder.className.contains("TerminalView") else {
+                return event
+            }
+            NotificationCenter.default.post(name: .findInTerminal, object: nil)
+            return nil // consume event
+        }
+
         // Ensure Welcome is visible if SwiftUI didn't present it automatically
         // (e.g. when window restoration state interferes with defaultLaunchBehavior)
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
@@ -1031,4 +1055,6 @@ extension Notification.Name {
     static let useSelectionForFind = Notification.Name("useSelectionForFind")
     static let selectNextOccurrence = Notification.Name("selectNextOccurrence")
     static let splitSelectionIntoLines = Notification.Name("splitSelectionIntoLines")
+    // Find in Terminal (issue #308)
+    static let findInTerminal = Notification.Name("findInTerminal")
 }

@@ -143,58 +143,18 @@ struct ContentView: View {
             terminal: terminal,
             onSave: { projectManager.saveSession() }
         ))
-        .onChange(of: workspace.gitProvider.isGitRepository) { _, isRepo in
-            if isRepo {
-                refreshLineDiffs()
-            } else {
-                lineDiffs = []
-            }
-        }
-        .onChange(of: workspace.gitProvider.currentBranch) { _, _ in
-            refreshLineDiffs()
-            refreshBlame()
-        }
-        .onChange(of: workspace.gitProvider.fileStatuses) { _, _ in
-            refreshLineDiffs()
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .refreshLineDiffs)) { _ in
-            guard controlActiveState == .key else { return }
-            refreshLineDiffs()
-            refreshBlame()
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .closeTab)) { _ in
-            guard controlActiveState == .key,
-                  let tab = tabManager.activeTab else { return }
-            closeTabWithConfirmation(tab)
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .openFolder)) { _ in
-            guard controlActiveState == .key else { return }
-            openNewProject()
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .fileRenamed)) { notification in
-            guard let oldURL = notification.userInfo?["oldURL"] as? URL,
-                  let newURL = notification.userInfo?["newURL"] as? URL else { return }
-            tabManager.handleFileRenamed(oldURL: oldURL, newURL: newURL)
-            projectManager.saveSession()
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .fileDeleted)) { notification in
-            guard let deletedURL = notification.userInfo?["url"] as? URL else { return }
-            handleFileDeletion(deletedURL)
-        }
-        .onChange(of: workspace.externalChangeToken) { _, _ in
-            guard controlActiveState == .key else { return }
-            let conflicts = tabManager.checkExternalChanges()
-            handleExternalConflicts(conflicts)
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .showProjectSearch)) { _ in
-            columnVisibility = .all
-            isSearchPresented = true
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .navigateChange)) { notification in
-            guard controlActiveState == .key,
-                  let direction = notification.userInfo?["direction"] as? String else { return }
-            navigateToChange(direction: direction == "next" ? .next : .previous)
-        }
+        .modifier(GitAndNotificationObserver(
+            lineDiffs: $lineDiffs,
+            columnVisibility: $columnVisibility,
+            isSearchPresented: $isSearchPresented,
+            onRefreshLineDiffs: { refreshLineDiffs() },
+            onRefreshBlame: { refreshBlame() },
+            onCloseTab: { closeTabWithConfirmation($0) },
+            onOpenNewProject: { openNewProject() },
+            onHandleFileDeletion: { handleFileDeletion($0) },
+            onHandleExternalConflicts: { handleExternalConflicts($0) },
+            onNavigateToChange: { navigateToChange(direction: $0) }
+        ))
         .onChange(of: tabManager.pendingGoToLine) { _, newLine in
             guard let line = newLine, let tab = tabManager.activeTab else { return }
             tabManager.pendingGoToLine = nil
@@ -352,7 +312,8 @@ struct ContentView: View {
         return nil
     }
 
-    private enum ChangeDirection { case next, previous }
+    /// Used by GitAndNotificationObserver — internal visibility required for cross-struct access.
+    enum ChangeDirection { case next, previous }
 
     private func navigateToChange(direction: ChangeDirection) {
         guard let tab = tabManager.activeTab, !lineDiffs.isEmpty else { return }
@@ -652,13 +613,13 @@ struct ContentView: View {
     @ViewBuilder
     private var terminalArea: some View {
         VStack(spacing: 0) {
-            // Tab bar, стилизованный под нативные macOS window tabs
             TerminalNativeTabBar(terminal: terminal, workingDirectory: workspace.rootURL)
-
+            TerminalSearchBarContainer(terminal: terminal)
             TerminalContentView(terminal: terminal)
         }
         .background(Color(nsColor: .textBackgroundColor))
         .onAppear { terminal.startTerminals(workingDirectory: workspace.rootURL) }
+        .modifier(TerminalSearchObserver(terminal: terminal))
     }
 }
 
@@ -744,6 +705,161 @@ private struct TerminalSessionObserver: ViewModifier {
             .onChange(of: terminal.isTerminalMaximized) { _, _ in onSave() }
             .onChange(of: terminal.terminalTabs.count) { _, _ in onSave() }
             .onChange(of: terminal.activeTerminalID) { _, _ in onSave() }
+    }
+}
+
+// MARK: - Git and notification observer
+
+/// Extracted to reduce body complexity for the type-checker.
+/// Handles git status changes, file notifications, and menu command notifications.
+private struct GitAndNotificationObserver: ViewModifier {
+    @Environment(WorkspaceManager.self) private var workspace
+    @Environment(TabManager.self) private var tabManager
+    @Environment(ProjectManager.self) private var projectManager
+    @Environment(\.controlActiveState) private var controlActiveState
+    @Binding var lineDiffs: [GitLineDiff]
+    @Binding var columnVisibility: NavigationSplitViewVisibility
+    @Binding var isSearchPresented: Bool
+    var onRefreshLineDiffs: () -> Void
+    var onRefreshBlame: () -> Void
+    var onCloseTab: (EditorTab) -> Void
+    var onOpenNewProject: () -> Void
+    var onHandleFileDeletion: (URL) -> Void
+    var onHandleExternalConflicts: ([TabManager.ExternalConflict]) -> Void
+    var onNavigateToChange: (ContentView.ChangeDirection) -> Void
+
+    func body(content: Content) -> some View {
+        content
+            .onChange(of: workspace.gitProvider.isGitRepository) { _, isRepo in
+                if isRepo {
+                    onRefreshLineDiffs()
+                } else {
+                    lineDiffs = []
+                }
+            }
+            .onChange(of: workspace.gitProvider.currentBranch) { _, _ in
+                onRefreshLineDiffs()
+                onRefreshBlame()
+            }
+            .onChange(of: workspace.gitProvider.fileStatuses) { _, _ in
+                onRefreshLineDiffs()
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .refreshLineDiffs)) { _ in
+                guard controlActiveState == .key else { return }
+                onRefreshLineDiffs()
+                onRefreshBlame()
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .closeTab)) { _ in
+                guard controlActiveState == .key,
+                      let tab = tabManager.activeTab else { return }
+                onCloseTab(tab)
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .openFolder)) { _ in
+                guard controlActiveState == .key else { return }
+                onOpenNewProject()
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .fileRenamed)) { notification in
+                guard let oldURL = notification.userInfo?["oldURL"] as? URL,
+                      let newURL = notification.userInfo?["newURL"] as? URL else { return }
+                tabManager.handleFileRenamed(oldURL: oldURL, newURL: newURL)
+                projectManager.saveSession()
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .fileDeleted)) { notification in
+                guard let deletedURL = notification.userInfo?["url"] as? URL else { return }
+                onHandleFileDeletion(deletedURL)
+            }
+            .onChange(of: workspace.externalChangeToken) { _, _ in
+                guard controlActiveState == .key else { return }
+                let conflicts = tabManager.checkExternalChanges()
+                onHandleExternalConflicts(conflicts)
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .showProjectSearch)) { _ in
+                columnVisibility = .all
+                isSearchPresented = true
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .navigateChange)) { notification in
+                guard controlActiveState == .key,
+                      let direction = notification.userInfo?["direction"] as? String else { return }
+                onNavigateToChange(direction == "next" ? .next : .previous)
+            }
+    }
+}
+
+// MARK: - Terminal search bar container
+
+/// Isolated view to keep TerminalSearchBar's closures out of ContentView's type-checking scope.
+private struct TerminalSearchBarContainer: View {
+    var terminal: TerminalManager
+
+    var body: some View {
+        if terminal.isSearchVisible {
+            TerminalSearchBar(
+                query: Bindable(terminal).terminalSearchQuery,
+                caseSensitive: Bindable(terminal).isSearchCaseSensitive,
+                matchCount: terminal.activeTerminalTab?.searchMatches.count ?? 0,
+                currentMatch: terminal.activeTerminalTab?.currentMatchIndex ?? -1,
+                onNext: {
+                    terminal.activeTerminalTab?.nextMatch()
+                },
+                onPrevious: {
+                    terminal.activeTerminalTab?.previousMatch()
+                },
+                onDismiss: {
+                    terminal.isSearchVisible = false
+                    terminal.terminalSearchQuery = ""
+                    terminal.activeTerminalTab?.clearSearch()
+                }
+            )
+        }
+    }
+}
+
+// MARK: - Terminal search observer
+
+/// Extracted modifier to reduce body complexity for the type-checker.
+/// Handles debounced search, case-sensitivity changes, and tab switching.
+private struct TerminalSearchObserver: ViewModifier {
+    var terminal: TerminalManager
+    @Environment(\.controlActiveState) private var controlActiveState
+    @State private var searchTask: Task<Void, Never>?
+
+    func body(content: Content) -> some View {
+        content
+            .onReceive(NotificationCenter.default.publisher(for: .findInTerminal)) { _ in
+                guard controlActiveState == .key, terminal.isTerminalVisible else { return }
+                terminal.isSearchVisible = true
+            }
+            .onChange(of: terminal.terminalSearchQuery) { _, newQuery in
+                searchTask?.cancel()
+                searchTask = Task {
+                    try? await Task.sleep(for: .milliseconds(150))
+                    guard !Task.isCancelled else { return }
+                    await terminal.activeTerminalTab?.search(
+                        for: newQuery,
+                        caseSensitive: terminal.isSearchCaseSensitive
+                    )
+                }
+            }
+            .onChange(of: terminal.isSearchCaseSensitive) { _, _ in
+                guard terminal.isSearchVisible, !terminal.terminalSearchQuery.isEmpty else { return }
+                searchTask?.cancel()
+                searchTask = Task {
+                    await terminal.activeTerminalTab?.search(
+                        for: terminal.terminalSearchQuery,
+                        caseSensitive: terminal.isSearchCaseSensitive
+                    )
+                }
+            }
+            .onChange(of: terminal.activeTerminalID) { _, _ in
+                guard terminal.isSearchVisible, !terminal.terminalSearchQuery.isEmpty else { return }
+                searchTask?.cancel()
+                searchTask = Task {
+                    await terminal.activeTerminalTab?.search(
+                        for: terminal.terminalSearchQuery,
+                        caseSensitive: terminal.isSearchCaseSensitive
+                    )
+                }
+            }
     }
 }
 
