@@ -1033,6 +1033,120 @@ struct TabManagerTests {
         #expect(manager.hasScheduledAutoSave == false)
     }
 
+    // MARK: - Strip trailing whitespace on save
+
+    @Test("Save strips trailing whitespace from all lines")
+    func saveStripsTrailingWhitespace() {
+        let manager = TabManager()
+        let url = tempFileURL(content: "hello")
+
+        manager.openTab(url: url)
+        manager.updateContent("hello   \nworld\t\t\nfoo  bar  \n")
+
+        let success = manager.saveActiveTab()
+        #expect(success == true)
+
+        let onDisk = try? String(contentsOf: url, encoding: .utf8)
+        #expect(onDisk == "hello\nworld\nfoo  bar\n")
+        #expect(manager.activeTab?.content == "hello\nworld\nfoo  bar\n")
+        #expect(manager.activeTab?.isDirty == false)
+    }
+
+    @Test("Save preserves content with no trailing whitespace")
+    func savePreservesCleanContent() {
+        let manager = TabManager()
+        let url = tempFileURL(content: "clean")
+
+        manager.openTab(url: url)
+        manager.updateContent("no trailing\nwhitespace here\n")
+
+        let success = manager.saveActiveTab()
+        #expect(success == true)
+
+        let onDisk = try? String(contentsOf: url, encoding: .utf8)
+        #expect(onDisk == "no trailing\nwhitespace here\n")
+    }
+
+    @Test("Save strips trailing whitespace but preserves empty lines")
+    func savePreservesEmptyLines() {
+        let manager = TabManager()
+        let url = tempFileURL(content: "hello")
+
+        manager.openTab(url: url)
+        manager.updateContent("line1  \n\nline3\t\n\n")
+
+        let success = manager.saveActiveTab()
+        #expect(success == true)
+
+        let onDisk = try? String(contentsOf: url, encoding: .utf8)
+        #expect(onDisk == "line1\n\nline3\n\n")
+    }
+
+    @Test("Save strips trailing whitespace with CRLF line endings")
+    func saveStripsCRLF() {
+        let manager = TabManager()
+        let url = tempFileURL(content: "hello")
+
+        manager.openTab(url: url)
+        manager.updateContent("hello   \r\nworld\t\r\n")
+
+        let success = manager.saveActiveTab()
+        #expect(success == true)
+
+        let onDisk = try? String(contentsOf: url, encoding: .utf8)
+        #expect(onDisk == "hello\r\nworld\r\n")
+    }
+
+    @Test("Save strips trailing whitespace — tabs and mixed spaces")
+    func saveStripsMixedWhitespace() {
+        let manager = TabManager()
+        let url = tempFileURL(content: "hello")
+
+        manager.openTab(url: url)
+        manager.updateContent("code \t \n\t  data  \t\n")
+
+        let success = manager.saveActiveTab()
+        #expect(success == true)
+
+        let onDisk = try? String(contentsOf: url, encoding: .utf8)
+        #expect(onDisk == "code\n\t  data\n")
+    }
+
+    @Test("trySaveTab also strips trailing whitespace")
+    func trySaveTabStripsWhitespace() throws {
+        let manager = TabManager()
+        let url = tempFileURL(content: "hello")
+
+        manager.openTab(url: url)
+        manager.updateContent("test   \n")
+
+        try manager.trySaveTab(at: 0)
+
+        let onDisk = try String(contentsOf: url, encoding: .utf8)
+        #expect(onDisk == "test\n")
+        #expect(manager.activeTab?.content == "test\n")
+    }
+
+    @Test("saveAllTabs strips trailing whitespace from all dirty tabs")
+    func saveAllTabsStripsWhitespace() {
+        let manager = TabManager()
+        let url1 = tempFileURL(name: "a.swift", content: "original1")
+        let url2 = tempFileURL(name: "b.swift", content: "original2")
+
+        manager.openTab(url: url1)
+        manager.updateContent("hello   \n")
+        manager.openTab(url: url2)
+        manager.updateContent("world\t\t\n")
+
+        let success = manager.saveAllTabs()
+        #expect(success == true)
+
+        let disk1 = try? String(contentsOf: url1, encoding: .utf8)
+        let disk2 = try? String(contentsOf: url2, encoding: .utf8)
+        #expect(disk1 == "hello\n")
+        #expect(disk2 == "world\n")
+    }
+
     @Test("isAutoSaving resets after auto-save completes")
     func isAutoSavingResetsAfterSave() async throws {
         let manager = TabManager()
