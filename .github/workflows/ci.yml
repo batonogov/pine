@@ -54,12 +54,20 @@ jobs:
 
   lint:
     name: SwiftLint
-    runs-on: macos-26
+    runs-on: ubuntu-latest
+    env:
+      SWIFTLINT_VERSION: "0.58.2"
+      SWIFTLINT_SHA256: "f1e4cb061609bea53ac442a0db0a07422822c34080d4a9ac9780f53e98602b77"
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
 
       - name: Install SwiftLint
-        run: brew install swiftlint
+        run: |
+          curl -fSL "https://github.com/realm/SwiftLint/releases/download/${SWIFTLINT_VERSION}/swiftlint_linux.zip" -o swiftlint.zip
+          echo "${SWIFTLINT_SHA256}  swiftlint.zip" | sha256sum -c -
+          unzip -o swiftlint.zip
+          chmod +x swiftlint
+          sudo mv swiftlint /usr/local/bin/
 
       - name: Run SwiftLint
         run: swiftlint --strict
@@ -67,7 +75,7 @@ jobs:
   build:
     name: Build for Testing
     runs-on: macos-26
-    needs: lint
+    needs: changes
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
 
@@ -77,6 +85,14 @@ jobs:
           echo "Using Xcode at: $XCODE_PATH"
           sudo xcode-select -s "$XCODE_PATH/Contents/Developer"
           xcodebuild -version
+
+      - name: Cache SPM Dependencies
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: DerivedData/SourcePackages
+          key: spm-${{ runner.os }}-${{ hashFiles('Pine.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved') }}
+          restore-keys: |
+            spm-${{ runner.os }}-
 
       - name: Build App
         run: |
@@ -342,7 +358,7 @@ jobs:
   verify-ui-shards:
     name: Verify UI Test Shards
     runs-on: ubuntu-latest
-    needs: [lint, changes]
+    needs: changes
     if: ${{ needs.changes.outputs.ui == 'true' }}
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
@@ -369,7 +385,7 @@ jobs:
           fi
           echo "All $(echo "$ACTUAL" | wc -l | tr -d ' ') UI test classes are sharded."
 
-  # UI test shards — 4 parallel jobs, ~21 tests each.
+  # UI test shards — 6 parallel jobs, ~14-15 tests each.
   # To rebalance: count tests per class, redistribute so shards stay within ±3 tests.
   # List classes with: grep -r "func test" PineUITests/ | sed 's/:.*//' | sort | uniq -c | sort -rn
   ui-tests:
@@ -381,36 +397,42 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # Shard 1 — Window & Welcome (26 tests)
-          - shard-name: "Window & Welcome"
+          # Shard 1 — Welcome & Quick Open (19 tests)
+          - shard-name: "Welcome & Quick Open"
             test-classes: >-
               -only-testing:PineUITests/WelcomeWindowTests
-              -only-testing:PineUITests/SidebarSearchTests
               -only-testing:PineUITests/QuickOpenUITests
-          # Shard 2 — Editor Core (21 tests)
-          - shard-name: "Editor Core"
+          # Shard 2 — Editor & Gutter (15 tests)
+          - shard-name: "Editor & Gutter"
             test-classes: >-
               -only-testing:PineUITests/EditorWindowTests
-              -only-testing:PineUITests/FontSizeTests
-              -only-testing:PineUITests/DiffNavigationUITests
               -only-testing:PineUITests/LineNumberGutterUITests
-          # Shard 3 — File Operations (20 tests)
-          - shard-name: "File Operations"
+          # Shard 3 — Files & Branch (15 tests)
+          - shard-name: "Files & Branch"
             test-classes: >-
               -only-testing:PineUITests/DeleteTests
+              -only-testing:PineUITests/BranchSwitcherTests
+              -only-testing:PineUITests/DiffNavigationUITests
+          # Shard 4 — Search & Duplicate (15 tests)
+          - shard-name: "Search & Duplicate"
+            test-classes: >-
+              -only-testing:PineUITests/SidebarSearchTests
               -only-testing:PineUITests/DuplicateTests
-              -only-testing:PineUITests/MultiWindowTests
               -only-testing:PineUITests/MinimapTests
-          # Shard 4 — Git, Terminal & Misc (21 tests)
-          - shard-name: "Git, Terminal & Misc"
+              -only-testing:PineUITests/BlameViewTests
+          # Shard 5 — Security & Terminal (15 tests)
+          - shard-name: "Security & Terminal"
             test-classes: >-
               -only-testing:PineUITests/SymlinkSecurityUITests
-              -only-testing:PineUITests/BranchSwitcherTests
-              -only-testing:PineUITests/GitignoreFilterTests
+              -only-testing:PineUITests/MultiWindowTests
               -only-testing:PineUITests/TerminalTests
-              -only-testing:PineUITests/CheckForUpdatesTests
-              -only-testing:PineUITests/BlameViewTests
               -only-testing:PineUITests/ToggleCommentTests
+          # Shard 6 — Git & Font (14 tests)
+          - shard-name: "Git & Font"
+            test-classes: >-
+              -only-testing:PineUITests/GitignoreFilterTests
+              -only-testing:PineUITests/FontSizeTests
+              -only-testing:PineUITests/CheckForUpdatesTests
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
 
