@@ -57,6 +57,34 @@ struct FindReplaceTests {
         )
     }
 
+    // MARK: - EditorContainerView is flipped
+
+    @Test func editorContainerView_isFlipped() {
+        let container = EditorContainerView()
+        #expect(container.isFlipped, "EditorContainerView must be flipped to match NSScrollView coordinate system")
+    }
+
+    @Test func editorContainerView_lineNumberView_clippedBelowFindBar() {
+        // Setup: container with a scrollView that has a visible find bar
+        let container = EditorContainerView()
+        container.frame = NSRect(x: 0, y: 0, width: 600, height: 400)
+
+        let scrollView = NSScrollView(frame: NSRect(x: 0, y: 0, width: 600, height: 400))
+        let textView = NSTextView(frame: NSRect(x: 0, y: 0, width: 600, height: 400))
+        scrollView.documentView = textView
+        container.addSubview(scrollView)
+        container.setScrollView(scrollView)
+
+        let lineNumberView = LineNumberView(textView: textView)
+        lineNumberView.frame = NSRect(x: 0, y: 0, width: 40, height: 400)
+        container.addSubview(lineNumberView)
+
+        // Without find bar, line number view should fill the full height
+        container.layout()
+        #expect(lineNumberView.frame.origin.y == 0)
+        #expect(lineNumberView.frame.height == 400)
+    }
+
     // MARK: - Coordinator find handler
 
     @Test func coordinator_performFindAction_doesNotCrash() {

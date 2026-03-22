@@ -294,6 +294,7 @@ final class GutterTextView: NSTextView {
 /// Replaces autoresizingMask with explicit layout so the minimap width is
 /// always accounted for.
 final class EditorContainerView: NSView {
+    override var isFlipped: Bool { true }
     var minimapWidth: CGFloat = 0
 
     private weak var managedScrollView: NSScrollView?
