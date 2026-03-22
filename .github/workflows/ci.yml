@@ -63,7 +63,7 @@ jobs:
 
       - name: Install SwiftLint
         run: |
-          curl -sL "https://github.com/realm/SwiftLint/releases/download/${SWIFTLINT_VERSION}/swiftlint_linux.zip" -o swiftlint.zip
+          curl -fSL "https://github.com/realm/SwiftLint/releases/download/${SWIFTLINT_VERSION}/swiftlint_linux.zip" -o swiftlint.zip
           echo "${SWIFTLINT_SHA256}  swiftlint.zip" | sha256sum -c -
           unzip -o swiftlint.zip
           chmod +x swiftlint
