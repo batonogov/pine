@@ -49,6 +49,7 @@ jobs:
               - 'PineUITests/**'
               - 'Pine.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/**'
               - '.github/workflows/ci.yml'
+              - 'version.txt'
 
   lint:
     name: SwiftLint
