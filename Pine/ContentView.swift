@@ -591,7 +591,14 @@ struct ContentView: View {
 
     private var totalLineCount: Int {
         guard let content = activeTab?.content else { return 1 }
-        return max(1, (content as NSString).components(separatedBy: .newlines).count)
+        let ns = content as NSString
+        var count = 1
+        var pos = 0
+        while pos < ns.length {
+            pos = NSMaxRange(ns.lineRange(for: NSRange(location: pos, length: 0)))
+            count += 1
+        }
+        return max(1, count - 1)
     }
 
     /// Converts a 1-based line number to a UTF-16 cursor offset within content.

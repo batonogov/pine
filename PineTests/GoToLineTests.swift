@@ -105,6 +105,40 @@ struct GoToLineTests {
         )
     }
 
+    // MARK: - totalLineCount consistency
+
+    @Test func totalLineCount_matchesCursorOffsetLineEnumeration() {
+        // Ensure the line counting algorithm matches cursorOffset's line enumeration
+        let content = "first\nsecond\nthird"
+        let ns = content as NSString
+        var count = 1
+        var pos = 0
+        while pos < ns.length {
+            pos = NSMaxRange(ns.lineRange(for: NSRange(location: pos, length: 0)))
+            count += 1
+        }
+        let totalLines = max(1, count - 1)
+        #expect(totalLines == 3)
+
+        // Line 3 should be navigable
+        let offset = ContentView.cursorOffset(forLine: 3, in: content)
+        #expect(offset == 13)
+    }
+
+    @Test func totalLineCount_trailingNewline() {
+        let content = "first\nsecond\n"
+        let ns = content as NSString
+        var count = 1
+        var pos = 0
+        while pos < ns.length {
+            pos = NSMaxRange(ns.lineRange(for: NSRange(location: pos, length: 0)))
+            count += 1
+        }
+        let totalLines = max(1, count - 1)
+        // "first\nsecond\n" has 2 lines of content, trailing newline doesn't add a navigable line
+        #expect(totalLines == 2)
+    }
+
     // MARK: - cursorOffset with column
 
     @Test func cursorOffset_lineOnly() {

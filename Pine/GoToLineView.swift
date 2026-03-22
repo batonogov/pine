@@ -17,7 +17,7 @@ struct GoToLineView: View {
 
     var body: some View {
         VStack(spacing: 8) {
-            TextField("Line[:Column]", text: $inputText)
+            TextField(Strings.goToLinePlaceholder, text: $inputText)
                 .textFieldStyle(.roundedBorder)
                 .focused($isFieldFocused)
                 .accessibilityIdentifier(AccessibilityID.goToLineField)
@@ -26,6 +26,7 @@ struct GoToLineView: View {
                         .stroke(isInvalid ? Color.red : Color.clear, lineWidth: 1)
                 )
                 .onSubmit { submit() }
+                .onChange(of: inputText) { _, _ in isInvalid = false }
 
             Text("1–\(totalLines)")
                 .font(.caption)
