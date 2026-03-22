@@ -288,44 +288,66 @@ final class GutterTextView: NSTextView {
     }
 }
 
+// MARK: - Editor scroll view with find bar height tracking
+
+/// NSScrollView subclass that detects the find bar height after tile() layout.
+/// On macOS 26 with Liquid Glass the find bar overlays content without resizing
+/// contentView, so we compute the offset by scanning subviews for NSTextFinder's bar.
+final class EditorScrollView: NSScrollView {
+    /// Height of the find bar (0 when hidden). Updated after every tile().
+    private(set) var findBarOffset: CGFloat = 0
+
+    override func tile() {
+        super.tile()
+        let newOffset = findBarHeight()
+        if abs(newOffset - findBarOffset) > 0.5 {
+            findBarOffset = newOffset
+            superview?.needsLayout = true
+        }
+        // On macOS 26 the find bar overlays content without resizing contentView.
+        // Manually shrink and offset contentView to push text below the find bar.
+        if findBarOffset > 0 {
+            var cvFrame = contentView.frame
+            if cvFrame.origin.y < findBarOffset {
+                let savedBounds = contentView.bounds
+                cvFrame.origin.y = findBarOffset
+                cvFrame.size.height = bounds.height - findBarOffset
+                contentView.frame = cvFrame
+                contentView.bounds.origin = savedBounds.origin
+            }
+        }
+    }
+
+    /// Scans scrollView subviews for the find bar and returns its height.
+    private func findBarHeight() -> CGFloat {
+        // The find bar is an NSView added by NSTextFinder as a direct subview
+        // of the scroll view, distinct from contentView and scrollers.
+        for sub in subviews {
+            if sub === contentView { continue }
+            if sub === verticalScroller { continue }
+            if sub === horizontalScroller { continue }
+            let className = String(describing: type(of: sub))
+            if className.contains("Find") || className.contains("find") {
+                return sub.frame.height
+            }
+        }
+        return 0
+    }
+}
+
 // MARK: - Editor container that manages scroll view + minimap layout
 
 /// Custom container view that lays out the scroll view and minimap side by side.
 /// Replaces autoresizingMask with explicit layout so the minimap width is
 /// always accounted for.
 final class EditorContainerView: NSView {
+    // Match NSScrollView's flipped coordinate system for correct find bar clipping
+    override var isFlipped: Bool { true }
     var minimapWidth: CGFloat = 0
-
-    private weak var managedScrollView: NSScrollView?
-    private var findBarObservation: NSKeyValueObservation?
-    private var contentViewFrameObserver: Any?
-
-    /// Registers the scroll view so the container can observe find bar visibility changes
-    /// and clip the LineNumberView frame accordingly.
-    func setScrollView(_ scrollView: NSScrollView) {
-        managedScrollView = scrollView
-        findBarObservation = scrollView.observe(\.isFindBarVisible, options: [.new]) { [weak self] _, _ in
-            DispatchQueue.main.async { self?.needsLayout = true }
-        }
-        scrollView.contentView.postsFrameChangedNotifications = true
-        contentViewFrameObserver = NotificationCenter.default.addObserver(
-            forName: NSView.frameDidChangeNotification,
-            object: scrollView.contentView,
-            queue: .main
-        ) { [weak self] _ in
-            self?.needsLayout = true
-        }
-    }
-
-    deinit {
-        if let obs = contentViewFrameObserver {
-            NotificationCenter.default.removeObserver(obs)
-        }
-    }
 
     override func layout() {
         super.layout()
-        let lineNumberArea = lineNumberViewArea()
+        let findBarOffset = (subviews.compactMap { $0 as? EditorScrollView }.first)?.findBarOffset ?? 0
         for sub in subviews {
             if let minimap = sub as? MinimapView {
                 if minimap.isHidden {
@@ -345,25 +367,14 @@ final class EditorContainerView: NSView {
                     height: bounds.height
                 )
             } else {
-                // LineNumberView — match the scroll view's content area so it does not
-                // paint over the native NSTextFinder find bar when Cmd+F is open.
+                // LineNumberView — offset below the find bar when Cmd+F is open.
                 sub.frame = NSRect(
-                    x: 0, y: lineNumberArea.minY,
+                    x: 0, y: findBarOffset,
                     width: sub.frame.width,
-                    height: lineNumberArea.height
+                    height: bounds.height - findBarOffset
                 )
             }
         }
-    }
-
-    /// Returns the rect (in container coordinates) that the LineNumberView should occupy.
-    /// When the find bar is visible this matches scrollView.contentView.frame so the
-    /// gutter is clipped to the text area only.
-    private func lineNumberViewArea() -> CGRect {
-        guard let sv = managedScrollView, sv.isFindBarVisible else {
-            return CGRect(x: 0, y: 0, width: bounds.width, height: bounds.height)
-        }
-        return sv.contentView.frame
     }
 }
 
@@ -430,7 +441,7 @@ struct CodeEditorView: NSViewRepresentable {
         container.minimapWidth = isMinimapVisible ? MinimapView.defaultWidth : 0
 
         // ── ScrollView ──
-        let scrollView = NSScrollView()
+        let scrollView = EditorScrollView()
         scrollView.hasVerticalScroller = true
         scrollView.hasHorizontalScroller = false
         scrollView.autohidesScrollers = true
@@ -486,7 +497,6 @@ struct CodeEditorView: NSViewRepresentable {
         scrollView.documentView = textView
 
         container.addSubview(scrollView)
-        container.setScrollView(scrollView)
 
         // ── NSLayoutManager delegate for code folding ──
         layoutManager.delegate = context.coordinator
