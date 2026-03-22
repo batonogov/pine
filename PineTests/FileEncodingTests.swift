@@ -322,6 +322,99 @@ struct FileEncodingTests {
         #expect(!content.isEmpty || encoding != .utf8)
     }
 
+    // MARK: - Shift JIS detection
+
+    @Test("Detect Shift JIS encoded data")
+    func detectShiftJIS() {
+        // "こんにちは" in Shift JIS
+        let text = "こんにちは"
+        guard let data = text.data(using: .shiftJIS) else {
+            Issue.record("Failed to encode test string as Shift JIS")
+            return
+        }
+
+        let (content, encoding) = String.Encoding.detect(from: data)
+
+        #expect(content == text)
+        #expect(encoding == .shiftJIS)
+    }
+
+    @Test("Open Shift JIS file detects encoding correctly")
+    func openShiftJISFile() {
+        let manager = TabManager()
+        let text = "日本語テスト"
+        let url = tempFileURL(content: text, encoding: .shiftJIS)
+
+        manager.openTab(url: url)
+
+        #expect(manager.activeTab?.content == text)
+        #expect(manager.activeTab?.encoding == .shiftJIS)
+    }
+
+    // MARK: - ISO-2022-JP detection
+
+    @Test("Detect ISO-2022-JP encoded data produces valid content")
+    func detectISO2022JP() {
+        // ISO-2022-JP uses escape sequences (ESC $ B ... ESC ( B) for mode switching.
+        // NSString.stringEncoding(for:) does not always detect ISO-2022-JP correctly
+        // because the escape bytes can be valid in other encodings. The important thing
+        // is that detect() does not crash and produces some content.
+        let text = "日本語"
+        guard let data = text.data(using: .iso2022JP) else {
+            Issue.record("Failed to encode test string as ISO-2022-JP")
+            return
+        }
+
+        let (content, encoding) = String.Encoding.detect(from: data)
+
+        // Should not crash and should produce non-empty content
+        #expect(!content.isEmpty)
+        // The encoding may or may not be detected as ISO-2022-JP depending on NSString heuristics
+        _ = encoding
+    }
+
+    // MARK: - Lossy conversion fallback
+
+    @Test("Invalid UTF-8 bytes fall through to NSString detection")
+    func invalidUTF8FallsThrough() {
+        // Bytes that are invalid UTF-8 but valid Latin-1
+        // 0xE9 = 'é' in Latin-1, but incomplete UTF-8 sequence
+        let data = Data([0x48, 0x65, 0x6C, 0x6C, 0x6F, 0x20, 0xE9])
+
+        let (content, encoding) = String.Encoding.detect(from: data)
+
+        // Should not detect as UTF-8 (invalid), should fall through to NSString
+        #expect(encoding != .utf8)
+        #expect(!content.isEmpty)
+        // The 'é' character should be preserved via Latin-1 or CP1252
+        #expect(content.contains("Hello"))
+    }
+
+    @Test("Lossy fallback produces content for ambiguous data")
+    func lossyFallbackProducesContent() {
+        // Mix of bytes that are valid in multiple encodings but not UTF-8
+        // This should exercise the lossy conversion path if strict detection fails
+        let data = Data([0xC0, 0xC1, 0xC2, 0xC3, 0xC4, 0xC5])
+
+        let (content, encoding) = String.Encoding.detect(from: data)
+
+        // Should not crash and should produce some content
+        _ = encoding // Encoding depends on NSString heuristics
+        #expect(!content.isEmpty)
+    }
+
+    @Test("Single invalid byte returns fallback encoding")
+    func singleInvalidByte() {
+        let data = Data([0xFF])
+
+        let (content, encoding) = String.Encoding.detect(from: data)
+
+        // 0xFF is not valid UTF-8, should fall through
+        #expect(encoding != .utf8)
+        // Should still produce content (even if it's a replacement character)
+        #expect(!content.isEmpty)
+    }
+
     // MARK: - reopenActiveTab edge cases
 
     @Test("Reopen returns false when no active tab")
