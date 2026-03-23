@@ -1296,4 +1296,71 @@ struct TabManagerTests {
         #expect(manager.isAutoSaving == false)
         #expect(manager.activeTab?.isDirty == false)
     }
+
+    // MARK: - External change detection (issue #438)
+
+    @Test("checkExternalChanges silently reloads clean tab when file changes on disk")
+    func checkExternalChangesReloadsCleanTab() throws {
+        let manager = TabManager()
+        let url = tempFileURL(content: "original content")
+
+        manager.openTab(url: url)
+        #expect(manager.activeTab?.content == "original content")
+
+        let versionBefore = manager.activeTab?.contentVersion ?? 0
+
+        // Simulate external change: write new content and advance modification date
+        try "updated by external tool".write(to: url, atomically: true, encoding: .utf8)
+        // Ensure mod date is newer by touching with a future date
+        let futureDate = Date().addingTimeInterval(2)
+        try FileManager.default.setAttributes(
+            [.modificationDate: futureDate], ofItemAtPath: url.path
+        )
+
+        let conflicts = manager.checkExternalChanges()
+
+        #expect(conflicts.isEmpty)
+        #expect(manager.activeTab?.content == "updated by external tool")
+        #expect(manager.activeTab?.savedContent == "updated by external tool")
+        // contentVersion must increment so CodeEditorView picks up the change
+        #expect(manager.activeTab?.contentVersion ?? 0 > versionBefore)
+    }
+
+    @Test("checkExternalChanges returns conflict for dirty tab")
+    func checkExternalChangesConflictForDirtyTab() throws {
+        let manager = TabManager()
+        let url = tempFileURL(content: "original")
+
+        manager.openTab(url: url)
+        manager.updateContent("user edits")
+
+        // Simulate external change
+        try "external edit".write(to: url, atomically: true, encoding: .utf8)
+        let futureDate = Date().addingTimeInterval(2)
+        try FileManager.default.setAttributes(
+            [.modificationDate: futureDate], ofItemAtPath: url.path
+        )
+
+        let conflicts = manager.checkExternalChanges()
+
+        #expect(conflicts.count == 1)
+        #expect(conflicts.first?.kind == .modified)
+        // Content should NOT be overwritten — user has unsaved changes
+        #expect(manager.activeTab?.content == "user edits")
+    }
+
+    @Test("reloadTab updates content and increments contentVersion")
+    func reloadTabUpdatesContentVersion() throws {
+        let manager = TabManager()
+        let url = tempFileURL(content: "v1")
+
+        manager.openTab(url: url)
+        let versionBefore = manager.activeTab?.contentVersion ?? 0
+
+        try "v2".write(to: url, atomically: true, encoding: .utf8)
+        manager.reloadTab(url: url)
+
+        #expect(manager.activeTab?.content == "v2")
+        #expect(manager.activeTab?.contentVersion ?? 0 > versionBefore)
+    }
 }
