@@ -11,6 +11,9 @@ import AppKit
 /// Добавляется как subview NSScrollView и остаётся на месте при скролле.
 final class LineNumberView: NSView {
     weak var textView: NSTextView?
+    /// The clip view this gutter observes for scroll notifications.
+    /// Stored explicitly to avoid relying on enclosingScrollView at notification time.
+    private weak var observedClipView: NSClipView?
 
     var gutterFont = NSFont.monospacedSystemFont(ofSize: 11, weight: .regular)
     var editorFont = NSFont.monospacedSystemFont(ofSize: 13, weight: .regular)
@@ -64,6 +67,9 @@ final class LineNumberView: NSView {
         foldStartMap = Dictionary(foldableRanges.map { ($0.startLine, $0) }, uniquingKeysWith: { _, last in last })
     }
 
+    /// Counter for bounds-change notifications received — internal for testability.
+    var boundsChangeCount = 0
+
     /// Cached total line count — updated on text change, not on every draw.
     private var cachedTotalLines = 1
 
@@ -82,17 +88,19 @@ final class LineNumberView: NSView {
 
     override var isFlipped: Bool { true }
 
-    init(textView: NSTextView) {
+    init(textView: NSTextView, clipView: NSClipView? = nil) {
         self.textView = textView
+        let resolvedClipView = clipView ?? textView.enclosingScrollView?.contentView
+        self.observedClipView = resolvedClipView
         super.init(frame: .zero)
         setAccessibilityElement(true)
         setAccessibilityIdentifier(AccessibilityID.lineNumberGutter)
 
-        // Скролл — подписываемся без object, чтобы не зависеть от конкретного clipView
+        // Скролл — подписываемся на конкретный clipView (#465)
         NotificationCenter.default.addObserver(
             self, selector: #selector(handleBoundsChange(_:)),
             name: NSView.boundsDidChangeNotification,
-            object: nil
+            object: resolvedClipView
         )
         // Изменение текста/фрейма
         NotificationCenter.default.addObserver(
@@ -105,6 +113,12 @@ final class LineNumberView: NSView {
             name: NSView.frameDidChangeNotification,
             object: textView
         )
+
+        #if DEBUG
+        if resolvedClipView == nil {
+            print("⚠️ LineNumberView: clipView is nil at init — scroll observer will not fire. Pass clipView explicitly.")
+        }
+        #endif
     }
 
     override func viewDidMoveToWindow() {
@@ -198,9 +212,7 @@ final class LineNumberView: NSView {
     }
 
     @objc private func handleBoundsChange(_ notification: Notification) {
-        // Реагируем только на скролл нашего scroll view
-        guard let clipView = notification.object as? NSClipView,
-              clipView == textView?.enclosingScrollView?.contentView else { return }
+        boundsChangeCount += 1
         needsDisplay = true
     }
 
