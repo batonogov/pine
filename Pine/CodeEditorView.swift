@@ -526,22 +526,27 @@ struct CodeEditorView: NSViewRepresentable {
 
         textView.string = text
         if useViewportHighlighting {
-            // Layout not yet complete — highlight first screenful synchronously
-            // to avoid a flash of unstyled text, then refine after layout.
+            // Layout not yet complete — highlight first screenful asynchronously
+            // to avoid blocking the main thread on tab open.
             let initialRange = Self.estimateInitialRange(
                 text: text, scrollOffset: initialScrollOffset,
                 cursorPosition: initialCursorPosition, fontSize: fontSize
             )
-            SyntaxHighlighter.shared.highlightVisibleRange(
-                textStorage: textStorage,
-                visibleCharRange: initialRange,
-                language: language,
-                fileName: fileName,
-                font: editorFont
-            )
-            context.coordinator.highlightedCharRange = initialRange
+            let lang = language
+            let file = fileName
+            let font = editorFont
+            context.coordinator.setHighlightTask(Task { @MainActor [weak coordinator = context.coordinator] in
+                await SyntaxHighlighter.shared.highlightVisibleRangeAsync(
+                    textStorage: textStorage,
+                    visibleCharRange: initialRange,
+                    language: lang,
+                    fileName: file,
+                    font: font
+                )
+                coordinator?.highlightedCharRange = initialRange
+            })
         } else {
-            applyHighlighting(to: textView)
+            applyHighlightingAsync(to: textView, coordinator: context.coordinator)
         }
 
         // Restore cursor and scroll from saved per-tab state.
@@ -706,8 +711,14 @@ struct CodeEditorView: NSViewRepresentable {
         private var highlightWorkItem: DispatchWorkItem?
         /// Active async highlight task (cancelled when new highlight is scheduled)
         private var highlightTask: Task<Void, Never>?
+
+        /// Replaces the current highlight task, cancelling any in-flight one.
+        func setHighlightTask(_ task: Task<Void, Never>) {
+            highlightTask?.cancel()
+            highlightTask = task
+        }
         /// Задержка дебаунсинга
-        private let highlightDelay: TimeInterval = 0.05
+        private let highlightDelay: TimeInterval = 0.1
 
         /// True while `updateContentIfNeeded` is replacing text programmatically.
         /// Prevents `textDidChange` from scheduling a competing debounced highlight
@@ -719,8 +730,10 @@ struct CodeEditorView: NSViewRepresentable {
         var highlightedCharRange: NSRange?
         /// Дебаунс для подсветки при скролле.
         private var scrollHighlightWorkItem: DispatchWorkItem?
-        /// Задержка дебаунсинга скролла (~1 кадр при 60fps)
-        private let scrollHighlightDelay: TimeInterval = 0.016
+        /// Задержка дебаунсинга скролла (~3 кадра при 120fps ProMotion)
+        private let scrollHighlightDelay: TimeInterval = 0.050
+        /// Задержка дебаунсинга пересчёта фолдинга (тяжелее подсветки)
+        private let foldRecalcDelay: TimeInterval = 0.15
 
         init(parent: CodeEditorView) {
             self.parent = parent
@@ -824,10 +837,32 @@ struct CodeEditorView: NSViewRepresentable {
             lastLanguage = language
             lastFileName = fileName
 
-            // Note: cursor/scroll restoration on tab switch is handled by makeNSView
-            // (since .id(tab.id) recreates the view). This path only fires for
-            // in-place content changes from updateNSView, where we should not
-            // reset the cursor.
+            // Restore cursor position and scroll offset on tab switch.
+            // When text changed externally (not from user typing), restore
+            // the saved per-tab cursor/scroll state and recalculate foldable ranges.
+            if textChanged && !fromTextView {
+                // Rebuild line starts cache for the new content
+                lineStartsCache = LineStartsCache(text: text)
+
+                let cursorPos = parent.initialCursorPosition
+                let scrollOffset = parent.initialScrollOffset
+                let safePosition = min(cursorPos, (textView.string as NSString).length)
+                if safePosition > 0 {
+                    textView.setSelectedRange(NSRange(location: safePosition, length: 0))
+                }
+                DispatchQueue.main.async { [weak self] in
+                    guard let sv = self?.scrollView else { return }
+                    if scrollOffset > 0 {
+                        sv.contentView.scroll(to: NSPoint(x: 0, y: scrollOffset))
+                        sv.reflectScrolledClipView(sv.contentView)
+                    } else if safePosition > 0 {
+                        textView.scrollRangeToVisible(NSRange(location: safePosition, length: 0))
+                    }
+                    self?.minimapView?.needsDisplay = true
+                    // Recalculate foldable ranges after layout is complete
+                    self?.recalculateFoldableRanges()
+                }
+            }
         }
 
         /// Updates font on both editor and gutter when font size changes.
@@ -1210,7 +1245,7 @@ struct CodeEditorView: NSViewRepresentable {
                 self?.recalculateFoldableRanges()
             }
             foldWorkItem = workItem
-            DispatchQueue.main.asyncAfter(deadline: .now() + highlightDelay, execute: workItem)
+            DispatchQueue.main.asyncAfter(deadline: .now() + foldRecalcDelay, execute: workItem)
         }
 
         /// Handles fold toggle from gutter click.
@@ -1479,6 +1514,22 @@ struct CodeEditorView: NSViewRepresentable {
             fileName: fileName,
             font: editorFont
         )
+    }
+
+    private func applyHighlightingAsync(to textView: NSTextView, coordinator: Coordinator) {
+        guard !syntaxHighlightingDisabled else { return }
+        guard let storage = textView.textStorage else { return }
+        let lang = language
+        let file = fileName
+        let font = editorFont
+        coordinator.setHighlightTask(Task { @MainActor in
+            await SyntaxHighlighter.shared.highlightAsync(
+                textStorage: storage,
+                language: lang,
+                fileName: file,
+                font: font
+            )
+        })
     }
 }
 

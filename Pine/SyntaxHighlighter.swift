@@ -333,6 +333,10 @@ final class SyntaxHighlighter: @unchecked Sendable {
 
     /// Количество строк контекста для viewport-based подсветки (больше, чем для edit).
     private let viewportContextLines = 100
+    /// Extra context lines for multiline rules (block comments, multiline strings).
+    /// 500 lines in each direction is enough to catch most multiline constructs
+    /// without scanning the entire file.
+    private let multilineContextLines = 500
 
     /// Подсветка только видимой области + буфер.
     /// Используется для больших файлов вместо полного `highlight()`.
@@ -360,10 +364,9 @@ final class SyntaxHighlighter: @unchecked Sendable {
             visibleCharRange, in: source, totalLength: totalLength, lines: viewportContextLines
         )
 
-        // NB: applyRules uses fullRange for multiline rules (comment/string blocks),
-        // so they scan the entire text even in viewport mode. This is intentional —
-        // a block comment starting above the viewport must color the visible portion.
-        // Typically only 2-3 simple multiline regexes per grammar, so the cost is low.
+        // Multiline rules (block comments, multiline strings) use an expanded range
+        // (±500 lines) instead of the full text, so they catch constructs starting
+        // above the viewport without scanning the entire file.
         let result = applyRules(
             rules, to: textStorage, repaintRange: expanded, searchRange: expanded, font: font
         )
@@ -590,6 +593,8 @@ final class SyntaxHighlighter: @unchecked Sendable {
     // MARK: - Async highlighting (background computation)
 
     /// Background queue for regex computation.
+    /// Serial because NSRegularExpression.matches() is not thread-safe
+    /// (mutates internal ICU matcher state).
     private let highlightQueue = DispatchQueue(
         label: "com.pine.syntax-highlight",
         qos: .userInitiated
@@ -626,7 +631,17 @@ final class SyntaxHighlighter: @unchecked Sendable {
         repaintRange: NSRange,
         searchRange: NSRange
     ) -> HighlightMatchResult {
-        let fullRange = NSRange(location: 0, length: (text as NSString).length)
+        let source = text as NSString
+        let totalLength = source.length
+        let fullRange = NSRange(location: 0, length: totalLength)
+
+        // Expanded range for multiline rules: ±500 lines around searchRange,
+        // clamped to the full text. Catches block comments/strings that start
+        // above the viewport without scanning the entire file.
+        let multilineRange = expandToContext(
+            searchRange, in: source, totalLength: totalLength, lines: multilineContextLines
+        )
+
         var matches: [HighlightMatch] = []
         var highlightedRanges: [(range: NSRange, priority: Int)] = []
 
@@ -634,7 +649,7 @@ final class SyntaxHighlighter: @unchecked Sendable {
             let priority = scopePriority[rule.scope] ?? 0
             guard theme.color(for: rule.scope) != nil else { continue }
 
-            let scanRange = rule.isMultiline ? fullRange : searchRange
+            let scanRange = rule.isMultiline ? multilineRange : searchRange
 
             rule.regex.enumerateMatches(in: text, range: scanRange) { match, _, _ in
                 guard let matchRange = match?.range else { return }

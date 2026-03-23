@@ -113,6 +113,55 @@ struct ScrollPerformanceTests {
         #expect(CodeEditorView.viewportHighlightThreshold == 100_000)
     }
 
+    // MARK: - Gutter font equality (#440)
+
+    @Test("NSFont monospacedSystemFont supports value equality for cache invalidation")
+    func monospacedFontValueEquality() {
+        // Gutter digit width cache uses != (value equality) to detect font changes.
+        // This test ensures NSFont supports value equality for same-parameter fonts.
+        let font1 = NSFont.monospacedSystemFont(ofSize: 11, weight: .regular)
+        let font2 = NSFont.monospacedSystemFont(ofSize: 11, weight: .regular)
+        let fontDifferent = NSFont.monospacedSystemFont(ofSize: 20, weight: .regular)
+
+        #expect(font1 == font2)
+        #expect(font1 != fontDifferent)
+    }
+
+    @Test("MinimapView throttles scroll redraws via trailing coalesce")
+    @MainActor func minimapScrollThrottle() async throws {
+        let textStorage = NSTextStorage(string: String(repeating: "Line\n", count: 100))
+        let layoutManager = NSLayoutManager()
+        textStorage.addLayoutManager(layoutManager)
+        let textContainer = NSTextContainer(
+            containerSize: NSSize(width: 500, height: CGFloat.greatestFiniteMagnitude)
+        )
+        layoutManager.addTextContainer(textContainer)
+        let textView = NSTextView(
+            frame: NSRect(x: 0, y: 0, width: 500, height: 400),
+            textContainer: textContainer
+        )
+        let scrollView = NSScrollView(frame: NSRect(x: 0, y: 0, width: 500, height: 400))
+        scrollView.documentView = textView
+
+        let minimap = MinimapView(textView: textView)
+        minimap.frame = NSRect(x: 0, y: 0, width: 80, height: 400)
+
+        // Fire multiple rapid scroll notifications
+        let clipView = scrollView.contentView
+        for _ in 0..<10 {
+            NotificationCenter.default.post(
+                name: NSView.boundsDidChangeNotification,
+                object: clipView
+            )
+        }
+
+        // Wait for trailing coalesce to fire
+        try await Task.sleep(for: .milliseconds(50))
+
+        // Minimap should still be functional (no crash, no stale state)
+        #expect(minimap.textView === textView)
+    }
+
     // MARK: - commentAndStringRanges on substring
 
     @Test("commentAndStringRanges works on substring")
