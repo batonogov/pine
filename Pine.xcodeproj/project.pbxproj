@@ -11,6 +11,7 @@
 		CF0000030000000000000003 /* Markdown in Frameworks */ = {isa = PBXBuildFile; productRef = CF0000030000000000000002 /* Markdown */; };
 		CF0000040000000000000003 /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = CF0000040000000000000002 /* Sparkle */; };
 		CF0000050000000000000003 /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = CF0000050000000000000002 /* Sparkle */; };
+		CF0000060000000000000003 /* SwiftTerm in Frameworks */ = {isa = PBXBuildFile; productRef = CF0000060000000000000002 /* SwiftTerm */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -25,8 +26,8 @@
 			isa = PBXContainerItemProxy;
 			containerPortal = 9FA1A7202F5EFA8100BDDA8C /* Project object */;
 			proxyType = 1;
-			remoteGlobalIDString = CF0000010000000000000001;
-			remoteInfo = PineTests;
+			remoteGlobalIDString = 9FA1A7272F5EFA8100BDDA8C;
+			remoteInfo = Pine;
 		};
 		CF0000020000000000000010 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
@@ -90,6 +91,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				CF0000050000000000000003 /* Sparkle in Frameworks */,
+				CF0000060000000000000003 /* SwiftTerm in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -174,6 +176,7 @@
 			name = PineTests;
 			packageProductDependencies = (
 				CF0000050000000000000002 /* Sparkle */,
+				CF0000060000000000000002 /* SwiftTerm */,
 			);
 			productName = PineTests;
 			productReference = CF0000010000000000000005 /* PineTests.xctest */;
@@ -391,7 +394,7 @@
 		};
 		CF000001000000000000000B /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
-			target = CF0000010000000000000001 /* PineTests */;
+			target = 9FA1A7272F5EFA8100BDDA8C /* Pine */;
 			targetProxy = CF000001000000000000000A /* PBXContainerItemProxy */;
 		};
 		CF000002000000000000000B /* PBXTargetDependency */ = {
@@ -807,6 +810,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = CF0000040000000000000001 /* XCRemoteSwiftPackageReference "Sparkle" */;
 			productName = Sparkle;
+		};
+		CF0000060000000000000002 /* SwiftTerm */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 9FA731792F61803400E91711 /* XCRemoteSwiftPackageReference "SwiftTerm" */;
+			productName = SwiftTerm;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};
