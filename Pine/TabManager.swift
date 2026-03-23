@@ -14,6 +14,12 @@ final class TabManager {
     /// File size threshold (in bytes) above which a warning is shown before opening.
     static let largeFileThreshold = 1_048_576 // 1 MB
 
+    /// File size threshold (in bytes) above which only a partial load is performed.
+    static let hugeFileThreshold = 10_485_760 // 10 MB
+
+    /// Number of bytes to load from the beginning of a huge file.
+    static let hugeFilePartialLoadSize = 1_048_576 // 1 MB
+
     var tabs: [EditorTab] = []
     var activeTabID: UUID?
     /// Line number to scroll to after opening a tab (1-based). Consumed by the editor view.
@@ -45,6 +51,12 @@ final class TabManager {
             tab.lastModDate = modDate(for: url)
             tabs.append(tab)
             activeTabID = tab.id
+            return
+        }
+
+        // Huge file: partial load without prompt
+        if let size = fileSize(url: url), size >= Self.hugeFileThreshold {
+            openHugeFilePartial(url: url, totalSize: size)
             return
         }
 
@@ -88,6 +100,12 @@ final class TabManager {
             return
         }
 
+        // Huge file: partial load even during session restore
+        if let size = fileSize(url: url), size >= Self.hugeFileThreshold {
+            openHugeFilePartial(url: url, totalSize: size)
+            return
+        }
+
         openTabInternal(url: url, syntaxHighlightingDisabled: syntaxHighlightingDisabled)
     }
 
@@ -109,6 +127,32 @@ final class TabManager {
         tab.encoding = encoding
         tab.fileSizeBytes = fileSize(url: url)
         tab.recomputeContentCaches()
+        tabs.append(tab)
+        activeTabID = tab.id
+    }
+
+    /// Opens a huge file by loading only the first `hugeFilePartialLoadSize` bytes.
+    /// Marks the tab as truncated and disables syntax highlighting.
+    private func openHugeFilePartial(url: URL, totalSize: Int) {
+        let content: String
+        do {
+            let handle = try FileHandle(forReadingFrom: url)
+            let partialData = handle.readData(ofLength: Self.hugeFilePartialLoadSize)
+            handle.closeFile()
+            let (decoded, _) = String.Encoding.detect(from: partialData)
+            let sizeString = ByteCountFormatter.string(
+                fromByteCount: Int64(totalSize), countStyle: .file
+            )
+            content = decoded + Strings.fileTruncatedNotice(sizeString)
+        } catch {
+            content = "// Error: \(error.localizedDescription)"
+        }
+
+        var tab = EditorTab(url: url, content: content, savedContent: content)
+        tab.lastModDate = modDate(for: url)
+        tab.syntaxHighlightingDisabled = true
+        tab.isTruncated = true
+        tab.fileSizeBytes = totalSize
         tabs.append(tab)
         activeTabID = tab.id
     }
@@ -215,6 +259,12 @@ final class TabManager {
     func trySaveTab(at index: Int) throws -> Bool {
         let tab = tabs[index]
         guard tab.kind == .text else { return false }
+        // Prevent saving truncated files — writing partial content would corrupt the file.
+        if tab.isTruncated {
+            throw CocoaError(.fileWriteUnknown, userInfo: [
+                NSLocalizedDescriptionKey: "Cannot save: file was partially loaded (truncated). Saving would corrupt the original file."
+            ])
+        }
         let trimmed = tab.content.trailingWhitespaceStripped()
         try trimmed.write(to: tab.url, atomically: true, encoding: tab.encoding)
         tabs[index].content = trimmed

@@ -138,7 +138,15 @@ final class MinimapView: NSView {
         }
     }
 
+    /// Throttle interval for scroll-triggered redraws (~3 frames at 120fps ProMotion).
+    private static let scrollThrottleInterval: TimeInterval = 0.025
+    /// Timestamp of last scroll-triggered redraw.
+    private var lastScrollRedrawTime: CFTimeInterval = 0
+    /// Pending throttled redraw work item.
+    private var scrollRedrawWorkItem: DispatchWorkItem?
+
     deinit {
+        scrollRedrawWorkItem?.cancel()
         NotificationCenter.default.removeObserver(self)
     }
 
@@ -151,7 +159,29 @@ final class MinimapView: NSView {
     @objc private func scrollDidChange(_ notification: Notification) {
         guard let clipView = notification.object as? NSClipView,
               clipView == textView?.enclosingScrollView?.contentView else { return }
-        needsDisplay = true
+
+        let now = CACurrentMediaTime()
+        if now - lastScrollRedrawTime >= Self.scrollThrottleInterval {
+            lastScrollRedrawTime = now
+            scrollRedrawWorkItem?.cancel()
+            scrollRedrawWorkItem = nil
+            needsDisplay = true
+        } else {
+            // Coalesce: schedule a trailing redraw to catch the final scroll position.
+            if scrollRedrawWorkItem == nil {
+                let workItem = DispatchWorkItem { [weak self] in
+                    guard let self else { return }
+                    self.lastScrollRedrawTime = CACurrentMediaTime()
+                    self.scrollRedrawWorkItem = nil
+                    self.needsDisplay = true
+                }
+                scrollRedrawWorkItem = workItem
+                DispatchQueue.main.asyncAfter(
+                    deadline: .now() + Self.scrollThrottleInterval,
+                    execute: workItem
+                )
+            }
+        }
     }
 
     // MARK: - Coordinate mapping

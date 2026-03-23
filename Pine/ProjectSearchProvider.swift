@@ -10,7 +10,7 @@ import UniformTypeIdentifiers
 
 // MARK: - Models
 
-struct SearchMatch: Identifiable, Hashable {
+struct SearchMatch: Identifiable, Hashable, Sendable {
     let lineNumber: Int
     let lineContent: String
     let matchRangeStart: Int
@@ -19,7 +19,7 @@ struct SearchMatch: Identifiable, Hashable {
     var id: Int { lineNumber &* 100_003 &+ matchRangeStart }
 }
 
-struct SearchFileGroup: Identifiable {
+struct SearchFileGroup: Identifiable, Sendable {
     var id: URL { url }
     let url: URL
     let relativePath: String
@@ -40,6 +40,8 @@ final class ProjectSearchProvider {
     static let maxFileSize = 1_048_576
     /// Maximum total matches before stopping.
     static let maxResults = 1_000
+    /// Maximum matches per file in parallel search to avoid unbounded memory use.
+    private static let maxResultsPerFile = 100
     /// Debounce interval for search.
     static let debounceInterval: Duration = .milliseconds(300)
 
@@ -102,26 +104,65 @@ final class ProjectSearchProvider {
         var groups: [SearchFileGroup] = []
         var totalMatches = 0
 
-        for (fileURL, relativePath) in files {
-            guard !Task.isCancelled else { break }
-            guard totalMatches < maxResults else { break }
+        await withTaskGroup(of: SearchFileGroup?.self) { group in
+            let maxConcurrency = max(ProcessInfo.processInfo.activeProcessorCount, 1)
+            var submitted = 0
 
-            let matches = searchFile(
-                at: fileURL,
-                query: query,
-                isCaseSensitive: isCaseSensitive,
-                remainingCapacity: maxResults - totalMatches
-            )
+            // Seed initial batch up to maxConcurrency
+            var fileIterator = files.makeIterator()
+            while submitted < maxConcurrency, let (fileURL, relativePath) = fileIterator.next() {
+                guard !Task.isCancelled else { break }
+                group.addTask {
+                    guard !Task.isCancelled else { return nil }
+                    let matches = Self.searchFile(
+                        at: fileURL,
+                        query: query,
+                        isCaseSensitive: isCaseSensitive,
+                        remainingCapacity: Self.maxResultsPerFile
+                    )
+                    guard !matches.isEmpty else { return nil }
+                    return SearchFileGroup(
+                        url: fileURL,
+                        relativePath: relativePath,
+                        matches: matches
+                    )
+                }
+                submitted += 1
+            }
 
-            if !matches.isEmpty {
-                groups.append(SearchFileGroup(
-                    url: fileURL,
-                    relativePath: relativePath,
-                    matches: matches
-                ))
-                totalMatches += matches.count
+            // Process results and feed new tasks one-for-one to maintain concurrency limit
+            for await result in group {
+                guard !Task.isCancelled else { break }
+
+                if let fileGroup = result {
+                    groups.append(fileGroup)
+                    totalMatches += fileGroup.matches.count
+                    if totalMatches >= maxResults { break }
+                }
+
+                // Submit next file
+                if let (fileURL, relativePath) = fileIterator.next() {
+                    group.addTask {
+                        guard !Task.isCancelled else { return nil }
+                        let matches = Self.searchFile(
+                            at: fileURL,
+                            query: query,
+                            isCaseSensitive: isCaseSensitive,
+                            remainingCapacity: Self.maxResultsPerFile
+                        )
+                        guard !matches.isEmpty else { return nil }
+                        return SearchFileGroup(
+                            url: fileURL,
+                            relativePath: relativePath,
+                            matches: matches
+                        )
+                    }
+                }
             }
         }
+
+        // Sort by relative path so results are deterministic regardless of completion order
+        groups.sort { $0.relativePath.localizedStandardCompare($1.relativePath) == .orderedAscending }
 
         return groups
     }
