@@ -1160,16 +1160,22 @@ final class SidebarEditState {
         return name
     }
 
+    /// Maximum number of copy-name candidates to try before giving up.
+    static let maxCopyAttempts = 10_000
+
     /// Generates a Finder-style copy URL: "name copy", "name copy 2", etc.
-    static func finderCopyURL(for url: URL) -> URL? {
+    /// - Parameter fileExists: Closure that checks whether a path exists. Defaults to `FileManager.default`.
+    static func finderCopyURL(
+        for url: URL,
+        fileExists: (String) -> Bool = { FileManager.default.fileExists(atPath: $0) }
+    ) -> URL? {
         let directory = url.deletingLastPathComponent()
         let ext = url.pathExtension
         let baseName = ext.isEmpty
             ? url.lastPathComponent
             : String(url.lastPathComponent.dropLast(ext.count + 1))
 
-        let fm = FileManager.default
-        for counter in 0... {
+        for counter in 0..<maxCopyAttempts {
             let copyName: String
             if counter == 0 {
                 copyName = ext.isEmpty
@@ -1181,7 +1187,7 @@ final class SidebarEditState {
                     : "\(baseName) copy \(counter + 1).\(ext)"
             }
             let candidate = directory.appendingPathComponent(copyName)
-            if !fm.fileExists(atPath: candidate.path) {
+            if !fileExists(candidate.path) {
                 return candidate
             }
         }

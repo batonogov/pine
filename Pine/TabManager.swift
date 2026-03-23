@@ -394,16 +394,22 @@ final class TabManager {
         }
     }
 
+    /// Maximum number of copy-name candidates to try before giving up.
+    static let maxCopyAttempts = 10_000
+
     /// Generates a Finder-style copy URL: "file copy.ext", "file copy 2.ext", etc.
-    private func finderCopyURL(for url: URL) -> URL? {
+    /// - Parameter fileExists: Closure that checks whether a path exists. Defaults to `FileManager.default`.
+    func finderCopyURL(
+        for url: URL,
+        fileExists: (String) -> Bool = { FileManager.default.fileExists(atPath: $0) }
+    ) -> URL? {
         let directory = url.deletingLastPathComponent()
         let ext = url.pathExtension
         let baseName = ext.isEmpty
             ? url.lastPathComponent
             : String(url.lastPathComponent.dropLast(ext.count + 1))
 
-        let fm = FileManager.default
-        for counter in 0... {
+        for counter in 0..<Self.maxCopyAttempts {
             let copyName: String
             if counter == 0 {
                 copyName = ext.isEmpty
@@ -415,7 +421,7 @@ final class TabManager {
                     : "\(baseName) copy \(counter + 1).\(ext)"
             }
             let candidate = directory.appendingPathComponent(copyName)
-            if !fm.fileExists(atPath: candidate.path) {
+            if !fileExists(candidate.path) {
                 return candidate
             }
         }
