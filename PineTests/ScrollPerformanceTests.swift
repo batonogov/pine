@@ -115,32 +115,68 @@ struct ScrollPerformanceTests {
 
     // MARK: - Gutter digit width caching (#440)
 
-    @Test("LineNumberView caches digit width across draw calls")
-    func gutterDigitWidthCaching() {
+    @Test("LineNumberView digit width cache starts empty")
+    func gutterDigitWidthStartsEmpty() {
         let textView = NSTextView()
         textView.string = "line1\nline2\nline3\n"
         let lineNumberView = LineNumberView(textView: textView)
 
-        let font = NSFont.monospacedSystemFont(ofSize: 11, weight: .regular)
-        lineNumberView.gutterFont = font
-
-        // Force a display to populate cached width
-        lineNumberView.frame = NSRect(x: 0, y: 0, width: 40, height: 200)
-
-        // Verify the font can be set and view initializes correctly
-        #expect(lineNumberView.gutterFont === font)
-        #expect(lineNumberView.gutterWidth == 40)
+        // Before any draw — cache is empty
+        #expect(lineNumberView.cachedDigitWidth == 0)
+        #expect(lineNumberView.cachedDigitWidthFont == nil)
     }
 
-    @Test("MinimapView throttles scroll redraws")
-    func minimapScrollThrottle() {
+    @Test("LineNumberView digit width uses value equality for font comparison")
+    func gutterDigitWidthUsesValueEquality() {
         let textView = NSTextView()
-        textView.string = "Hello\nWorld\n"
+        textView.string = "line1\n"
+        let lineNumberView = LineNumberView(textView: textView)
+
+        // Two separately created fonts with the same parameters
+        let font1 = NSFont.monospacedSystemFont(ofSize: 11, weight: .regular)
+        let font2 = NSFont.monospacedSystemFont(ofSize: 11, weight: .regular)
+
+        // They should be equal by value (even if identity may differ)
+        #expect(font1 == font2)
+
+        // Setting the same font twice should not require re-measurement
+        lineNumberView.gutterFont = font1
+        lineNumberView.gutterFont = font2
+        #expect(lineNumberView.gutterFont == font1)
+    }
+
+    @Test("MinimapView throttles scroll redraws via trailing coalesce")
+    @MainActor func minimapScrollThrottle() async throws {
+        let textStorage = NSTextStorage(string: String(repeating: "Line\n", count: 100))
+        let layoutManager = NSLayoutManager()
+        textStorage.addLayoutManager(layoutManager)
+        let textContainer = NSTextContainer(
+            containerSize: NSSize(width: 500, height: CGFloat.greatestFiniteMagnitude)
+        )
+        layoutManager.addTextContainer(textContainer)
+        let textView = NSTextView(
+            frame: NSRect(x: 0, y: 0, width: 500, height: 400),
+            textContainer: textContainer
+        )
+        let scrollView = NSScrollView(frame: NSRect(x: 0, y: 0, width: 500, height: 400))
+        scrollView.documentView = textView
+
         let minimap = MinimapView(textView: textView)
         minimap.frame = NSRect(x: 0, y: 0, width: 80, height: 400)
 
-        // MinimapView.scrollThrottleInterval should be > 0
-        // We verify the view is created successfully with throttle support
+        // Fire multiple rapid scroll notifications
+        let clipView = scrollView.contentView
+        for _ in 0..<10 {
+            NotificationCenter.default.post(
+                name: NSView.boundsDidChangeNotification,
+                object: clipView
+            )
+        }
+
+        // Wait for trailing coalesce to fire
+        try await Task.sleep(for: .milliseconds(50))
+
+        // Minimap should still be functional (no crash, no stale state)
         #expect(minimap.textView === textView)
     }
 

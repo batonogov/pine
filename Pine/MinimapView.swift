@@ -138,7 +138,15 @@ final class MinimapView: NSView {
         }
     }
 
+    /// Throttle interval for scroll-triggered redraws (~3 frames at 120fps ProMotion).
+    private static let scrollThrottleInterval: TimeInterval = 0.025
+    /// Timestamp of last scroll-triggered redraw.
+    private var lastScrollRedrawTime: CFTimeInterval = 0
+    /// Pending throttled redraw work item.
+    private var scrollRedrawWorkItem: DispatchWorkItem?
+
     deinit {
+        scrollRedrawWorkItem?.cancel()
         NotificationCenter.default.removeObserver(self)
     }
 
@@ -147,13 +155,6 @@ final class MinimapView: NSView {
     @objc private func contentDidChange() {
         needsDisplay = true
     }
-
-    /// Throttle interval for scroll-triggered redraws (~3 frames at 120fps ProMotion).
-    private static let scrollThrottleInterval: TimeInterval = 0.025
-    /// Timestamp of last scroll-triggered redraw.
-    private var lastScrollRedrawTime: CFTimeInterval = 0
-    /// Pending throttled redraw work item.
-    private var scrollRedrawWorkItem: DispatchWorkItem?
 
     @objc private func scrollDidChange(_ notification: Notification) {
         guard let clipView = notification.object as? NSClipView,
