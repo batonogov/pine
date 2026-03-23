@@ -43,7 +43,7 @@ struct EditorTabBar: View {
     /// Computes tab widths: active tab stays at full width, inactive tabs share the rest.
     static func inactiveTabWidth(availableWidth: CGFloat, tabCount: Int) -> CGFloat {
         guard tabCount > 1 else { return maxTabWidth }
-        let totalPadding: CGFloat = 8 // 4pt padding on each side of HStack
+        let totalPadding: CGFloat = 12 // 4pt leading + 8pt trailing
         let totalSpacing = CGFloat(max(tabCount - 1, 0)) * 2 // 2pt spacing between tabs
         let usable = availableWidth - totalPadding - totalSpacing - maxTabWidth // reserve space for active tab
         let inactiveCount = CGFloat(tabCount - 1)

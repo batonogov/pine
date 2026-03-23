@@ -54,12 +54,12 @@ struct EditorTabBarTests {
 
     @Test("Active tab space is reserved from available width")
     func activeTabSpaceReserved() {
-        // 3 tabs in 600px: usable = 600 - 8(padding) - 4(spacing) - 180(active) = 408, perTab = 204 → clamped to 180
+        // 3 tabs in 600px: usable = 600 - 12(padding) - 4(spacing) - 180(active) = 404, perTab = 202 → clamped to 180
         let width = EditorTabBar.inactiveTabWidth(availableWidth: 600, tabCount: 3)
         #expect(width == EditorTabBar.maxTabWidth)
 
-        // 6 tabs in 600px: usable = 600 - 8 - 10 - 180 = 402, perTab = 80.4
-        let width6 = EditorTabBar.inactiveTabWidth(availableWidth: 600, tabCount: 6)
+        // 6 tabs in 700px: usable = 700 - 12 - 10 - 180 = 498, perTab = 99.6
+        let width6 = EditorTabBar.inactiveTabWidth(availableWidth: 700, tabCount: 6)
         #expect(width6 > EditorTabBar.minTabWidth)
         #expect(width6 < EditorTabBar.maxTabWidth)
     }
