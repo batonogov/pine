@@ -593,10 +593,11 @@ final class SyntaxHighlighter: @unchecked Sendable {
     // MARK: - Async highlighting (background computation)
 
     /// Background queue for regex computation.
+    /// Serial because NSRegularExpression.matches() is not thread-safe
+    /// (mutates internal ICU matcher state).
     private let highlightQueue = DispatchQueue(
         label: "com.pine.syntax-highlight",
-        qos: .userInitiated,
-        attributes: .concurrent
+        qos: .userInitiated
     )
 
     /// Pure computation: finds regex matches without touching NSTextStorage.
