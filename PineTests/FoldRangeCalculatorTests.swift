@@ -137,6 +137,49 @@ struct FoldRangeCalculatorTests {
         #expect(inner?.endLine == 5)
     }
 
+    // MARK: - Binary search skip ranges edge cases (#298)
+
+    @Test func emptySkipRangesDoesNotCrash() {
+        let text = "func foo() {\n    bar()\n}"
+        let ranges = FoldRangeCalculator.calculate(text: text, skipRanges: [])
+        #expect(ranges.count == 1)
+    }
+
+    @Test func singleElementSkipRange() {
+        // Single skip range covering the opening brace
+        let text = "func foo() {\n    bar()\n}"
+        let bracePos = (text as NSString).range(of: "{").location
+        let ranges = FoldRangeCalculator.calculate(
+            text: text,
+            skipRanges: [NSRange(location: bracePos, length: 1)]
+        )
+        // Opening brace is skipped — no fold range
+        #expect(ranges.isEmpty)
+    }
+
+    @Test func positionAtSkipRangeBoundary() {
+        // Skip range [5, 10) — test positions 4 (before), 5 (start), 9 (inside), 10 (after)
+        let text = "abcd{\n  x\n}efgh"
+        // Skip range covers positions 5-9 (the newline + content inside braces)
+        // but NOT the braces themselves — fold should still work
+        let ranges = FoldRangeCalculator.calculate(
+            text: text,
+            skipRanges: [NSRange(location: 5, length: 4)]
+        )
+        #expect(ranges.count == 1)
+    }
+
+    @Test func mismatchedBracketsWithStackLastOptimization() {
+        // ( { ) } — ')' doesn't match '{' on stack top, so ')' is skipped.
+        // Then '}' matches '{' on stack top — valid fold from line 2 to line 4.
+        let text = "(\n{\n)\n}"
+        let ranges = FoldRangeCalculator.calculate(text: text)
+        #expect(ranges.count == 1)
+        #expect(ranges[0].startLine == 2)
+        #expect(ranges[0].endLine == 4)
+        #expect(ranges[0].kind == .braces)
+    }
+
     @Test func characterOffsetsAreCorrect() {
         let text = "{\n  x\n}"
         // { is at offset 0, } is at offset 6

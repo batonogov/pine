@@ -1332,18 +1332,6 @@ struct TabManagerTests {
         #expect(manager.activeTab?.isDirty == false)
     }
 
-    @Test("Save is blocked for truncated tab")
-    func saveTruncatedTabBlocked() throws {
-        let manager = TabManager()
-        let url = try tempHugeFileURL(size: TabManager.hugeFileThreshold + 1000)
-
-        manager.openTab(url: url)
-
-        // Attempt to save — should return false without writing
-        let result = manager.saveActiveTab()
-        #expect(result == false)
-    }
-
     @Test("trySaveTab throws for truncated tab")
     func trySaveTruncatedTabThrows() throws {
         let manager = TabManager()
@@ -1353,6 +1341,21 @@ struct TabManagerTests {
 
         #expect(throws: (any Error).self) {
             try manager.trySaveTab(at: 0)
+        }
+    }
+
+    @Test("trySaveTab error message mentions truncation")
+    func trySaveTruncatedTabErrorMessage() throws {
+        let manager = TabManager()
+        let url = try tempHugeFileURL(size: TabManager.hugeFileThreshold + 1000)
+
+        manager.openTab(url: url)
+
+        do {
+            _ = try manager.trySaveTab(at: 0)
+            #expect(Bool(false), "Should have thrown")
+        } catch {
+            #expect(error.localizedDescription.contains("truncated"))
         }
     }
 
@@ -1398,6 +1401,28 @@ struct TabManagerTests {
 
         #expect(manager.tabs.count == 1)
         #expect(manager.activeTabID == firstID)
+    }
+
+    @Test("File exactly at huge threshold triggers partial load")
+    func fileExactlyAtHugeThreshold() throws {
+        let manager = TabManager()
+        let url = try tempHugeFileURL(size: TabManager.hugeFileThreshold)
+
+        manager.openTab(url: url)
+
+        #expect(manager.activeTab?.isTruncated == true)
+    }
+
+    @Test("Truncated tab content does not exceed partial load size significantly")
+    func truncatedContentSizeBounded() throws {
+        let manager = TabManager()
+        let url = try tempHugeFileURL(size: TabManager.hugeFileThreshold * 5)
+
+        manager.openTab(url: url)
+
+        let contentBytes = (manager.activeTab?.content ?? "").utf8.count
+        // Content should be ~1MB partial + small truncation notice, never near full size
+        #expect(contentBytes < TabManager.hugeFilePartialLoadSize + 1000)
     }
 
     @Test("isAutoSaving resets after auto-save completes")

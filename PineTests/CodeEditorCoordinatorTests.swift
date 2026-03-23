@@ -252,4 +252,97 @@ struct CodeEditorCoordinatorTests {
         #expect(cursorPos <= (shortText as NSString).length,
                 "Cursor must be clamped to text length, got \(cursorPos)")
     }
+
+    @Test func updateContentIfNeeded_switchBackPreservesCursor() {
+        let fileA = "line1\nline2\nline3\nline4"
+        let fileB = "func hello() {\n    return\n}"
+
+        let (scrollView, textView) = makeTextStack(text: fileA)
+
+        // Start with file A, cursor at position 10
+        let editorA = CodeEditorView(
+            text: .constant(fileA),
+            contentVersion: 0,
+            language: "txt",
+            fileName: "a.txt",
+            foldState: .constant(FoldState()),
+            initialCursorPosition: 10
+        )
+        let coordinator = CodeEditorView.Coordinator(parent: editorA)
+        coordinator.scrollView = scrollView
+        coordinator.syncContentVersion()
+
+        coordinator.updateContentIfNeeded(
+            text: fileA, language: "txt", fileName: "a.txt", font: font
+        )
+
+        // Switch to file B
+        let editorB = CodeEditorView(
+            text: .constant(fileB),
+            contentVersion: 1,
+            language: "swift",
+            fileName: "b.swift",
+            foldState: .constant(FoldState()),
+            initialCursorPosition: 5
+        )
+        coordinator.parent = editorB
+        coordinator.updateContentIfNeeded(
+            text: fileB, language: "swift", fileName: "b.swift", font: font
+        )
+        #expect(textView.string == fileB)
+        #expect(textView.selectedRange().location == 5)
+
+        // Switch back to file A — cursor should restore to position 10
+        let editorA2 = CodeEditorView(
+            text: .constant(fileA),
+            contentVersion: 2,
+            language: "txt",
+            fileName: "a.txt",
+            foldState: .constant(FoldState()),
+            initialCursorPosition: 10
+        )
+        coordinator.parent = editorA2
+        coordinator.updateContentIfNeeded(
+            text: fileA, language: "txt", fileName: "a.txt", font: font
+        )
+        #expect(textView.string == fileA)
+        #expect(textView.selectedRange().location == 10)
+    }
+
+    @Test func updateContentIfNeeded_emptyFileHandledCorrectly() {
+        let (scrollView, textView) = makeTextStack(text: "some content")
+
+        let editorView = CodeEditorView(
+            text: .constant("some content"),
+            contentVersion: 0,
+            language: "txt",
+            fileName: "a.txt",
+            foldState: .constant(FoldState()),
+            initialCursorPosition: 0
+        )
+        let coordinator = CodeEditorView.Coordinator(parent: editorView)
+        coordinator.scrollView = scrollView
+        coordinator.syncContentVersion()
+
+        coordinator.updateContentIfNeeded(
+            text: "some content", language: "txt", fileName: "a.txt", font: font
+        )
+
+        // Switch to empty file
+        let editorB = CodeEditorView(
+            text: .constant(""),
+            contentVersion: 1,
+            language: "txt",
+            fileName: "empty.txt",
+            foldState: .constant(FoldState()),
+            initialCursorPosition: 0
+        )
+        coordinator.parent = editorB
+        coordinator.updateContentIfNeeded(
+            text: "", language: "txt", fileName: "empty.txt", font: font
+        )
+
+        #expect(textView.string == "")
+        #expect(textView.selectedRange().location == 0)
+    }
 }
