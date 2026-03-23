@@ -137,8 +137,8 @@ final class TabManager {
         let content: String
         do {
             let handle = try FileHandle(forReadingFrom: url)
+            defer { handle.closeFile() }
             let partialData = handle.readData(ofLength: Self.hugeFilePartialLoadSize)
-            handle.closeFile()
             let (decoded, _) = String.Encoding.detect(from: partialData)
             let sizeString = ByteCountFormatter.string(
                 fromByteCount: Int64(totalSize), countStyle: .file

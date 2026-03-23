@@ -1535,9 +1535,9 @@ struct CodeEditorView: NSViewRepresentable {
 
 // MARK: - NSImage tinting
 
-private extension NSImage {
+extension NSImage {
     func tinted(with color: NSColor) -> NSImage {
-        let image = copy() as! NSImage // swiftlint:disable:this force_cast
+        guard let image = copy() as? NSImage else { return self }
         image.lockFocus()
         color.set()
         NSRect(origin: .zero, size: size).fill(using: .sourceAtop)
