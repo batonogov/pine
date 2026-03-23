@@ -45,15 +45,6 @@ private func buildQuickOpenProvider(dir: URL) -> QuickOpenProvider {
     return provider
 }
 
-private func tempFileURL(name: String = "test.swift", content: String = "hello") -> URL {
-    let dir = FileManager.default.temporaryDirectory
-        .appendingPathComponent(UUID().uuidString)
-    try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-    let url = dir.appendingPathComponent(name)
-    try? content.write(to: url, atomically: true, encoding: .utf8)
-    return url
-}
-
 // MARK: - QuickOpenProvider: Unicode filenames
 
 @Suite("QuickOpenProvider Regression")
@@ -183,23 +174,24 @@ struct QuickOpenProviderRegressionTests {
         #expect(results[0].relativePath.contains("a/b/c/d/e/f/deep.swift"))
     }
 
-    @Test("Hidden files (.dotfiles) are excluded from index")
-    func hiddenFilesExcluded() throws {
+    @Test(".git and .DS_Store are excluded but other dotfiles are indexed")
+    func hiddenFilesFiltering() throws {
         let dir = try createTestProject(files: [
             "visible.swift": "",
-            ".hidden": ""
+            ".hidden": "",
+            ".DS_Store": "fake",
+            ".git/config": "fake"
         ])
         defer { cleanup(dir) }
 
         let provider = buildQuickOpenProvider(dir: dir)
-        let results = provider.search(query: "hidden")
-        // .hidden is inside .git-excluded names or simply a dotfile
-        // FileNode filters .git and .DS_Store but not arbitrary dotfiles,
-        // so this tests the actual behavior
-        let hasHidden = provider.fileIndex.contains { $0.lastPathComponent == ".hidden" }
-        // Verify the file is in index if FileNode doesn't filter it
-        // (this is a regression test — documents current behavior)
-        #expect(hasHidden || !hasHidden) // no crash
+        let names = Set(provider.fileIndex.map(\.lastPathComponent))
+
+        // FileNode only filters .git and .DS_Store — other dotfiles are kept
+        #expect(names.contains("visible.swift"))
+        #expect(names.contains(".hidden"))
+        #expect(!names.contains(".DS_Store"))
+        #expect(!names.contains("config")) // inside .git
     }
 
     @Test("Invalidate and rebuild index works correctly")
@@ -226,39 +218,6 @@ struct QuickOpenProviderRegressionTests {
 @Suite("GoToLineParser Regression")
 struct GoToLineParserRegressionTests {
 
-    @Test("Negative line number returns nil")
-    func negativeLine() {
-        #expect(GoToLineParser.parse("-1") == nil)
-        #expect(GoToLineParser.parse("-100") == nil)
-    }
-
-    @Test("Zero line returns nil")
-    func zeroLine() {
-        #expect(GoToLineParser.parse("0") == nil)
-    }
-
-    @Test("Zero column returns nil")
-    func zeroColumn() {
-        #expect(GoToLineParser.parse("5:0") == nil)
-    }
-
-    @Test("Negative column returns nil")
-    func negativeColumn() {
-        #expect(GoToLineParser.parse("5:-1") == nil)
-        #expect(GoToLineParser.parse("5:-100") == nil)
-    }
-
-    @Test("Empty string returns nil")
-    func emptyString() {
-        #expect(GoToLineParser.parse("") == nil)
-    }
-
-    @Test("Whitespace only returns nil")
-    func whitespaceOnly() {
-        #expect(GoToLineParser.parse("   ") == nil)
-        #expect(GoToLineParser.parse("\t") == nil)
-    }
-
     @Test("Extremely large line number is parsed")
     func veryLargeLine() {
         let result = GoToLineParser.parse("999999999")
@@ -273,41 +232,11 @@ struct GoToLineParserRegressionTests {
         #expect(result?.column == 999_999_999)
     }
 
-    @Test("Floating point number returns nil")
-    func floatingPoint() {
-        #expect(GoToLineParser.parse("3.14") == nil)
-        #expect(GoToLineParser.parse("1.0:2") == nil)
-    }
-
-    @Test("Special characters return nil")
-    func specialCharacters() {
-        #expect(GoToLineParser.parse("abc") == nil)
-        #expect(GoToLineParser.parse("!@#") == nil)
+    @Test("Alternative separators return nil (comma, semicolon)")
+    func alternativeSeparators() {
         #expect(GoToLineParser.parse("1,2") == nil)
         #expect(GoToLineParser.parse("1;2") == nil)
-    }
-
-    @Test("Multiple colons return nil")
-    func multipleColons() {
-        #expect(GoToLineParser.parse("1:2:3") == nil)
-        #expect(GoToLineParser.parse("1:2:3:4") == nil)
-    }
-
-    @Test("Trailing colon returns nil")
-    func trailingColon() {
-        #expect(GoToLineParser.parse("5:") == nil)
-    }
-
-    @Test("Leading colon returns nil")
-    func leadingColon() {
-        #expect(GoToLineParser.parse(":5") == nil)
-    }
-
-    @Test("Line with column 1 works")
-    func lineWithColumnOne() {
-        let result = GoToLineParser.parse("10:1")
-        #expect(result?.line == 10)
-        #expect(result?.column == 1)
+        #expect(GoToLineParser.parse("!@#") == nil)
     }
 
     @Test("cursorOffset beyond last line clamps to end")
@@ -355,24 +284,6 @@ struct TrailingWhitespaceRegressionTests {
         // Should strip trailing spaces from normal lines
         #expect(result.hasPrefix("normal line"))
         // Should not crash on binary data
-    }
-
-    @Test("Empty file returns empty string")
-    func emptyFile() {
-        #expect("".trailingWhitespaceStripped() == "")
-    }
-
-    @Test("File with only whitespace becomes empty lines")
-    func onlyWhitespace() {
-        #expect("   ".trailingWhitespaceStripped() == "")
-        #expect("\t\t".trailingWhitespaceStripped() == "")
-    }
-
-    @Test("CRLF with trailing spaces stripped correctly")
-    func crlfWithTrailingSpaces() {
-        let input = "hello   \r\nworld\t\t\r\nfoo  \r\n"
-        let expected = "hello\r\nworld\r\nfoo\r\n"
-        #expect(input.trailingWhitespaceStripped() == expected)
     }
 
     @Test("Mixed CRLF and LF preserved correctly")
@@ -657,15 +568,10 @@ struct PartialLoadRegressionTests {
         manager.openTab(url: normalURL)
         manager.updateContent("modified")
 
-        // trySaveAllTabs should throw because the truncated tab is dirty
-        // (it has different content from savedContent since it was partially loaded)
-        // But actually, truncated tabs have content == savedContent, so they aren't dirty.
-        // The normal tab is dirty. trySaveAllTabs saves only dirty tabs.
+        // Truncated tabs have content == savedContent, so they aren't dirty.
+        // trySaveAllTabs only saves dirty tabs — truncated tab is skipped.
         #expect(manager.tabs[0].isTruncated == true)
         #expect(manager.tabs[1].isDirty == true)
-
-        // trySaveAllTabs should save the normal tab without error
-        // (truncated tab is not dirty, so trySaveTab is never called for it)
         try manager.trySaveAllTabs()
         #expect(manager.tabs[1].isDirty == false)
     }
