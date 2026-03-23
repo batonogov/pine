@@ -714,8 +714,8 @@ struct CodeEditorView: NSViewRepresentable {
         var highlightedCharRange: NSRange?
         /// Дебаунс для подсветки при скролле.
         private var scrollHighlightWorkItem: DispatchWorkItem?
-        /// Задержка дебаунсинга скролла (~1 кадр при 60fps)
-        private let scrollHighlightDelay: TimeInterval = 0.016
+        /// Задержка дебаунсинга скролла (~3 кадра при 120fps ProMotion)
+        private let scrollHighlightDelay: TimeInterval = 0.050
 
         init(parent: CodeEditorView) {
             self.parent = parent
