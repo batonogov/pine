@@ -709,6 +709,11 @@ struct CodeEditorView: NSViewRepresentable {
         /// Задержка дебаунсинга
         private let highlightDelay: TimeInterval = 0.05
 
+        /// True while `updateContentIfNeeded` is replacing text programmatically.
+        /// Prevents `textDidChange` from scheduling a competing debounced highlight
+        /// that would invalidate the full highlight started by `updateContentIfNeeded`.
+        private var isProgrammaticTextChange = false
+
         /// Диапазон символов, уже подсвеченных viewport-based подсветкой.
         /// Internal access — записывается из `applyViewportHighlighting` и `highlightOnScrollIfNeeded`.
         var highlightedCharRange: NSRange?
@@ -789,7 +794,9 @@ struct CodeEditorView: NSViewRepresentable {
             }
 
             if textChanged {
+                isProgrammaticTextChange = true
                 textView.string = text
+                isProgrammaticTextChange = false
             }
 
             if !parent.syntaxHighlightingDisabled, let storage = textView.textStorage {
@@ -863,6 +870,19 @@ struct CodeEditorView: NSViewRepresentable {
 
         func textDidChange(_ notification: Notification) {
             guard let textView = notification.object as? NSTextView else { return }
+
+            // When text was replaced programmatically by updateContentIfNeeded,
+            // skip highlight scheduling — updateContentIfNeeded handles its own
+            // full highlight. Only update caches that it doesn't handle.
+            if isProgrammaticTextChange {
+                previousBracketRanges = []
+                highlightedCharRange = nil
+                reportStateChange()
+                lineStartsCache = LineStartsCache(text: textView.string)
+                scheduleFoldRecalculation()
+                return
+            }
+
             // Mark that this change originated from the user typing,
             // so the upcoming updateNSView won't overwrite the text and reset the cursor.
             didChangeFromTextView = true

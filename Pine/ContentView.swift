@@ -822,6 +822,13 @@ private struct GitAndNotificationObserver: ViewModifier {
                 let conflicts = tabManager.checkExternalChanges()
                 onHandleExternalConflicts(conflicts)
             }
+            .onChange(of: controlActiveState) { _, newState in
+                // When the window becomes key, check for external changes that
+                // may have been missed while the window was inactive (issue #438).
+                guard newState == .key else { return }
+                let conflicts = tabManager.checkExternalChanges()
+                onHandleExternalConflicts(conflicts)
+            }
             .onReceive(NotificationCenter.default.publisher(for: .showProjectSearch)) { _ in
                 columnVisibility = .all
                 isSearchPresented = true
