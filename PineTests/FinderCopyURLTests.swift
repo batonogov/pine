@@ -8,103 +8,95 @@ import Testing
 
 @testable import Pine
 
-@Suite("Finder Copy URL Tests")
-struct FinderCopyURLTests {
+@Suite("FileNameGenerator Tests")
+struct FileNameGeneratorTests {
 
     private let baseURL = URL(fileURLWithPath: "/tmp/test/file.swift")
     private let noExtURL = URL(fileURLWithPath: "/tmp/test/Makefile")
+    private let parentURL = URL(fileURLWithPath: "/tmp/test/")
 
-    // MARK: - TabManager.finderCopyURL
+    // MARK: - finderCopyURL
 
-    @Test("TabManager: returns 'file copy.ext' when no copies exist")
-    func tabManagerFirstCopy() {
-        let manager = TabManager()
-        let result = manager.finderCopyURL(for: baseURL, fileExists: { _ in false })
+    @Test("Returns 'file copy.ext' when no copies exist")
+    func firstCopy() {
+        let result = FileNameGenerator.finderCopyURL(for: baseURL, fileExists: { _ in false })
 
         #expect(result?.lastPathComponent == "file copy.swift")
     }
 
-    @Test("TabManager: skips existing copies and increments counter")
-    func tabManagerSkipsExisting() {
-        let manager = TabManager()
+    @Test("Skips existing copies and increments counter")
+    func skipsExistingCopies() {
         let existing: Set<String> = [
             "/tmp/test/file copy.swift",
             "/tmp/test/file copy 2.swift"
         ]
-        let result = manager.finderCopyURL(for: baseURL) { existing.contains($0) }
+        let result = FileNameGenerator.finderCopyURL(for: baseURL) { existing.contains($0) }
 
         #expect(result?.lastPathComponent == "file copy 3.swift")
     }
 
-    @Test("TabManager: returns nil when all names are taken (graceful fallback)")
-    func tabManagerReturnsNilWhenExhausted() {
-        let manager = TabManager()
-        let result = manager.finderCopyURL(for: baseURL, fileExists: { _ in true })
+    @Test("Returns nil when all names are taken (graceful fallback)")
+    func returnsNilWhenExhausted() {
+        let result = FileNameGenerator.finderCopyURL(for: baseURL, fileExists: { _ in true })
 
         #expect(result == nil)
     }
 
-    @Test("TabManager: handles files without extension")
-    func tabManagerNoExtension() {
-        let manager = TabManager()
-        let result = manager.finderCopyURL(for: noExtURL, fileExists: { _ in false })
+    @Test("Handles files without extension")
+    func noExtension() {
+        let result = FileNameGenerator.finderCopyURL(for: noExtURL, fileExists: { _ in false })
 
         #expect(result?.lastPathComponent == "Makefile copy")
     }
 
-    @Test("TabManager: max attempts matches declared constant")
-    func tabManagerMaxAttempts() {
-        #expect(TabManager.maxCopyAttempts == 10_000)
-    }
-
-    @Test("TabManager: tries exactly maxCopyAttempts candidates before returning nil")
-    func tabManagerExactAttemptCount() {
-        let manager = TabManager()
+    @Test("Tries exactly maxAttempts candidates before returning nil")
+    func exactAttemptCount() {
         var callCount = 0
-        let result = manager.finderCopyURL(for: baseURL) { _ in
+        let result = FileNameGenerator.finderCopyURL(for: baseURL) { _ in
             callCount += 1
             return true
         }
 
         #expect(result == nil)
-        #expect(callCount == TabManager.maxCopyAttempts)
+        #expect(callCount == FileNameGenerator.maxAttempts)
     }
 
-    // MARK: - SidebarEditState.finderCopyURL
+    // MARK: - uniqueName
 
-    @Test("SidebarEditState: returns 'file copy.ext' when no copies exist")
-    func sidebarFirstCopy() {
-        let result = SidebarEditState.finderCopyURL(for: baseURL, fileExists: { _ in false })
+    @Test("Returns base name when it does not exist")
+    func uniqueNameBaseFree() {
+        let result = FileNameGenerator.uniqueName("untitled", in: parentURL, fileExists: { _ in false })
 
-        #expect(result?.lastPathComponent == "file copy.swift")
+        #expect(result == "untitled")
     }
 
-    @Test("SidebarEditState: returns nil when all names are taken (graceful fallback)")
-    func sidebarReturnsNilWhenExhausted() {
-        let result = SidebarEditState.finderCopyURL(for: baseURL, fileExists: { _ in true })
-
-        #expect(result == nil)
-    }
-
-    @Test("SidebarEditState: skips existing copies and increments counter")
-    func sidebarSkipsExisting() {
+    @Test("Appends counter when base name is taken")
+    func uniqueNameIncrementsCounter() {
         let existing: Set<String> = [
-            "/tmp/test/file copy.swift"
+            "/tmp/test/untitled",
+            "/tmp/test/untitled 2"
         ]
-        let result = SidebarEditState.finderCopyURL(for: baseURL) { existing.contains($0) }
+        let result = FileNameGenerator.uniqueName("untitled", in: parentURL) { existing.contains($0) }
 
-        #expect(result?.lastPathComponent == "file copy 2.swift")
+        #expect(result == "untitled 3")
     }
 
-    @Test("SidebarEditState: tries exactly maxCopyAttempts candidates before returning nil")
-    func sidebarExactAttemptCount() {
+    @Test("Returns fallback name when all names are taken")
+    func uniqueNameFallbackWhenExhausted() {
+        let result = FileNameGenerator.uniqueName("untitled", in: parentURL, fileExists: { _ in true })
+
+        #expect(result == "untitled \(FileNameGenerator.maxAttempts)")
+    }
+
+    @Test("uniqueName tries bounded number of candidates")
+    func uniqueNameBoundedAttempts() {
         var callCount = 0
-        let result = SidebarEditState.finderCopyURL(for: baseURL) { _ in
+        _ = FileNameGenerator.uniqueName("test", in: parentURL) { _ in
             callCount += 1
             return true
         }
 
-        #expect(result == nil)
-        #expect(callCount == SidebarEditState.maxCopyAttempts)
+        // 1 for baseName check + (maxAttempts - 1) for counter 2...maxAttempts
+        #expect(callCount == FileNameGenerator.maxAttempts)
     }
 }
