@@ -27,6 +27,11 @@ struct EditorTabBar: View {
 
     @State private var draggingTabID: UUID?
 
+    /// Minimum tab width before scrolling kicks in.
+    static let minTabWidth: CGFloat = 80
+    /// Maximum tab width when there is plenty of space.
+    static let maxTabWidth: CGFloat = 180
+
     private var previewIcon: String {
         switch previewMode {
         case .source: "doc.plaintext"
@@ -35,33 +40,96 @@ struct EditorTabBar: View {
         }
     }
 
+    /// Computes tab widths: active tab stays at full width, inactive tabs share the rest.
+    static func inactiveTabWidth(availableWidth: CGFloat, tabCount: Int) -> CGFloat {
+        guard tabCount > 1 else { return maxTabWidth }
+        let totalPadding: CGFloat = 12 // 4pt leading + 8pt trailing
+        let totalSpacing = CGFloat(max(tabCount - 1, 0)) * 2 // 2pt spacing between tabs
+        let usable = availableWidth - totalPadding - totalSpacing - maxTabWidth // reserve space for active tab
+        let inactiveCount = CGFloat(tabCount - 1)
+        let perTab = usable / inactiveCount
+        return min(max(perTab, minTabWidth), maxTabWidth)
+    }
+
     var body: some View {
-        HStack(spacing: 0) {
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 2) {
-                    ForEach(tabManager.tabs) { tab in
-                        EditorTabItem(
-                            tab: tab,
-                            isActive: tab.id == tabManager.activeTabID,
-                            onSelect: { tabManager.activeTabID = tab.id },
-                            onClose: { onCloseTab(tab) }
-                        )
-                        .onDrag {
-                            draggingTabID = tab.id
-                            return NSItemProvider(object: tab.id.uuidString as NSString)
+        HStack(alignment: .center, spacing: 0) {
+            GeometryReader { geometry in
+                ScrollViewReader { proxy in
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 2) {
+                            let inactiveWidth = Self.inactiveTabWidth(
+                                availableWidth: geometry.size.width,
+                                tabCount: tabManager.tabs.count
+                            )
+                            ForEach(tabManager.tabs) { tab in
+                                let isActive = tab.id == tabManager.activeTabID
+                                EditorTabItem(
+                                    tab: tab,
+                                    isActive: isActive,
+                                    onSelect: { tabManager.activeTabID = tab.id },
+                                    onClose: { onCloseTab(tab) }
+                                )
+                                .frame(maxWidth: isActive ? Self.maxTabWidth : inactiveWidth)
+                                .id(tab.id)
+                                .onDrag {
+                                    draggingTabID = tab.id
+                                    return NSItemProvider(object: tab.id.uuidString as NSString)
+                                }
+                                .onDrop(of: [.text], delegate: TabDropDelegate(
+                                    tabManager: tabManager,
+                                    targetTabID: tab.id,
+                                    draggingTabID: $draggingTabID,
+                                    onReorder: onReorder
+                                ))
+                            }
                         }
-                        .onDrop(of: [.text], delegate: TabDropDelegate(
-                            tabManager: tabManager,
-                            targetTabID: tab.id,
-                            draggingTabID: $draggingTabID,
-                            onReorder: onReorder
-                        ))
+                        .padding(.leading, 4)
+                        .padding(.trailing, 8)
+                    }
+                    .frame(maxHeight: .infinity, alignment: .center)
+                    .onAppear {
+                        if let activeID = tabManager.activeTabID {
+                            proxy.scrollTo(activeID, anchor: .center)
+                        }
+                    }
+                    .onChange(of: tabManager.activeTabID) {
+                        guard let activeID = tabManager.activeTabID else { return }
+                        withAnimation(.easeInOut(duration: 0.2)) {
+                            proxy.scrollTo(activeID, anchor: .center)
+                        }
                     }
                 }
-                .padding(.horizontal, 4)
             }
 
-            Spacer()
+            // Overflow menu — quick access to all open tabs
+            if tabManager.tabs.count > 1 {
+                Menu {
+                    ForEach(tabManager.tabs) { tab in
+                        Button {
+                            tabManager.activeTabID = tab.id
+                        } label: {
+                            Label {
+                                Text(tab.fileName)
+                                    + Text(tab.isDirty ? " ●" : "")
+                            } icon: {
+                                Image(systemName: FileIconMapper.iconForFile(tab.fileName))
+                            }
+                        }
+                        .disabled(tab.id == tabManager.activeTabID)
+                    }
+                } label: {
+                    Image(systemName: "chevron.down")
+                        .font(.system(size: 9, weight: .medium))
+                        .foregroundStyle(.secondary)
+                        .frame(width: 24, height: 24)
+                        .contentShape(Rectangle())
+                }
+                .menuStyle(.borderlessButton)
+                .menuIndicator(.hidden)
+                .fixedSize()
+                .frame(width: 24, height: 30)
+                .accessibilityIdentifier(AccessibilityID.editorTabOverflowMenu)
+            }
 
             Group {
                 if isAutoSaving {
@@ -165,6 +233,7 @@ struct EditorTabItem: View {
             Text(tab.fileName)
                 .font(.system(size: 11))
                 .lineLimit(1)
+                .truncationMode(.middle)
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 4)
