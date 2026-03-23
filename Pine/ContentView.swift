@@ -29,6 +29,7 @@ struct ContentView: View {
     @State private var goToLineOffset: GoToRequest?
     @State private var recoveryEntries: [(UUID, RecoveryEntry)] = []
     @State private var showRecoveryDialog = false
+    @State private var isQuickOpenPresented = false
     @State private var showGoToLine = false
     @AppStorage("minimapVisible") private var isMinimapVisible = true
     @AppStorage(BlameConstants.storageKey) private var isBlameVisible = true
@@ -114,6 +115,13 @@ struct ContentView: View {
                 onDiscard: { discardRecovery() }
             )
         }
+        .sheet(isPresented: $isQuickOpenPresented) {
+            QuickOpenView(isPresented: $isQuickOpenPresented)
+                .environment(projectManager)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .showQuickOpen)) { _ in
+            isQuickOpenPresented = true
+        }
         .sheet(isPresented: $showGoToLine) {
             GoToLineView(
                 totalLines: totalLineCount,
@@ -132,6 +140,7 @@ struct ContentView: View {
         }
         .onChange(of: workspace.rootURL) { _, _ in
             lineDiffs = []
+            projectManager.quickOpenProvider.invalidateIndex()
             projectManager.saveSession()
             applySearchQueryFromEnvironment()
         }
@@ -810,6 +819,13 @@ private struct GitAndNotificationObserver: ViewModifier {
             }
             .onChange(of: workspace.externalChangeToken) { _, _ in
                 guard controlActiveState == .key else { return }
+                let conflicts = tabManager.checkExternalChanges()
+                onHandleExternalConflicts(conflicts)
+            }
+            .onChange(of: controlActiveState) { _, newState in
+                // When the window becomes key, check for external changes that
+                // may have been missed while the window was inactive (issue #438).
+                guard newState == .key else { return }
                 let conflicts = tabManager.checkExternalChanges()
                 onHandleExternalConflicts(conflicts)
             }

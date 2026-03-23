@@ -1,5 +1,20 @@
 # Changelog
 
+## [1.10.0](https://github.com/batonogov/pine/compare/v1.9.2...v1.10.0) (2026-03-23)
+
+
+### Features
+
+* add Go to Line dialog (Cmd+L) ([#432](https://github.com/batonogov/pine/issues/432)) ([cd87484](https://github.com/batonogov/pine/commit/cd87484fe226d1f5ff3b15c607513f9058c47052))
+* Quick Open file search (Cmd+P) ([#433](https://github.com/batonogov/pine/issues/433)) ([2cd2bc9](https://github.com/batonogov/pine/commit/2cd2bc9fe153edb55eb184f8dfe80d7cbaa22c0f))
+* strip trailing whitespace on save ([#427](https://github.com/batonogov/pine/issues/427)) ([3c6b3c2](https://github.com/batonogov/pine/commit/3c6b3c235156389ac5451eb4e82277aff05cb9a8))
+
+
+### Bug Fixes
+
+* re-highlight syntax after external file changes ([#451](https://github.com/batonogov/pine/issues/451)) ([5ab6c0b](https://github.com/batonogov/pine/commit/5ab6c0bfbdd4d45c6a6ab8b00ed4259f7010555d))
+* reset cosmetic xcstrings changes after build ([#434](https://github.com/batonogov/pine/issues/434)) ([61c7bcb](https://github.com/batonogov/pine/commit/61c7bcbad9b2147a3a6050f37c8c2b9d244563b6))
+
 ## [1.9.2](https://github.com/batonogov/pine/compare/v1.9.1...v1.9.2) (2026-03-22)
 
 
