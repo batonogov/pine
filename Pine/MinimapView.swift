@@ -95,8 +95,10 @@ final class MinimapView: NSView {
         }
     }
 
-    /// Counter for scroll-change notifications received — internal for testability.
+    #if DEBUG
+    /// Counter for scroll-change notifications received — debug-only, for testability.
     var scrollChangeCount = 0
+    #endif
 
     /// Whether user is currently dragging in the minimap.
     private var isDragging = false
@@ -134,7 +136,7 @@ final class MinimapView: NSView {
 
         #if DEBUG
         if resolvedClipView == nil {
-            print("⚠️ MinimapView: clipView is nil at init — scroll observer will not fire. Pass clipView explicitly.")
+            print("MinimapView: clipView is nil at init — scroll observer will not fire. Pass clipView explicitly.")
         }
         #endif
     }
@@ -171,7 +173,11 @@ final class MinimapView: NSView {
     }
 
     @objc private func scrollDidChange(_ notification: Notification) {
+        // Safety: if clipView was nil at init, subscription is unscoped — filter here
+        guard observedClipView == nil || notification.object as AnyObject? === observedClipView else { return }
+        #if DEBUG
         scrollChangeCount += 1
+        #endif
         let now = CACurrentMediaTime()
         if now - lastScrollRedrawTime >= Self.scrollThrottleInterval {
             lastScrollRedrawTime = now

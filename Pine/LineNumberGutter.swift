@@ -67,8 +67,10 @@ final class LineNumberView: NSView {
         foldStartMap = Dictionary(foldableRanges.map { ($0.startLine, $0) }, uniquingKeysWith: { _, last in last })
     }
 
-    /// Counter for bounds-change notifications received — internal for testability.
+    #if DEBUG
+    /// Counter for bounds-change notifications received — debug-only, for testability.
     var boundsChangeCount = 0
+    #endif
 
     /// Cached total line count — updated on text change, not on every draw.
     private var cachedTotalLines = 1
@@ -116,7 +118,7 @@ final class LineNumberView: NSView {
 
         #if DEBUG
         if resolvedClipView == nil {
-            print("⚠️ LineNumberView: clipView is nil at init — scroll observer will not fire. Pass clipView explicitly.")
+            print("LineNumberView: clipView is nil at init — scroll observer will not fire. Pass clipView explicitly.")
         }
         #endif
     }
@@ -212,7 +214,11 @@ final class LineNumberView: NSView {
     }
 
     @objc private func handleBoundsChange(_ notification: Notification) {
+        // Safety: if clipView was nil at init, subscription is unscoped — filter here
+        guard observedClipView == nil || notification.object as AnyObject? === observedClipView else { return }
+        #if DEBUG
         boundsChangeCount += 1
+        #endif
         needsDisplay = true
     }
 
