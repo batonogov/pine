@@ -40,6 +40,8 @@ final class ProjectSearchProvider {
     static let maxFileSize = 1_048_576
     /// Maximum total matches before stopping.
     static let maxResults = 1_000
+    /// Maximum matches per file in parallel search to avoid unbounded memory use.
+    private static let maxResultsPerFile = 100
     /// Debounce interval for search.
     static let debounceInterval: Duration = .milliseconds(300)
 
@@ -115,7 +117,8 @@ final class ProjectSearchProvider {
                     let matches = Self.searchFile(
                         at: fileURL,
                         query: query,
-                        isCaseSensitive: isCaseSensitive
+                        isCaseSensitive: isCaseSensitive,
+                        remainingCapacity: Self.maxResultsPerFile
                     )
                     guard !matches.isEmpty else { return nil }
                     return SearchFileGroup(

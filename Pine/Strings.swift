@@ -227,7 +227,7 @@ enum Strings {
     }
 
     static func fileTruncatedNotice(_ totalSize: String) -> String {
-        "\n\n// ⚠️ File truncated at 1 MB (total: \(totalSize)). Editing is read-only."
+        "\n\n⚠️ File truncated at 1 MB (total: \(totalSize)). Editing is read-only."
     }
 
     // MARK: - Welcome Window

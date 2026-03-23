@@ -174,6 +174,7 @@ final class WorkspaceManager {
         // Each index is written by exactly one iteration — no synchronization needed.
         let results = UnsafeMutableBufferPointer<FileNode?>.allocate(capacity: filtered.count)
         results.initialize(repeating: nil)
+        defer { results.deallocate() }
 
         DispatchQueue.concurrentPerform(iterations: filtered.count) { index in
             let childURL = filtered[index]
@@ -183,7 +184,6 @@ final class WorkspaceManager {
         }
 
         let nodes = (0..<filtered.count).compactMap { results[$0] }
-        results.deallocate()
 
         return nodes.sorted { lhs, rhs in
             if lhs.isDirectory == rhs.isDirectory {

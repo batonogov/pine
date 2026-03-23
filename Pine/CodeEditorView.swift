@@ -535,8 +535,7 @@ struct CodeEditorView: NSViewRepresentable {
             let lang = language
             let file = fileName
             let font = editorFont
-            context.coordinator.highlightTask?.cancel()
-            context.coordinator.highlightTask = Task { @MainActor [weak coordinator = context.coordinator] in
+            context.coordinator.setHighlightTask(Task { @MainActor [weak coordinator = context.coordinator] in
                 await SyntaxHighlighter.shared.highlightVisibleRangeAsync(
                     textStorage: textStorage,
                     visibleCharRange: initialRange,
@@ -545,7 +544,7 @@ struct CodeEditorView: NSViewRepresentable {
                     font: font
                 )
                 coordinator?.highlightedCharRange = initialRange
-            }
+            })
         } else {
             applyHighlightingAsync(to: textView, coordinator: context.coordinator)
         }
@@ -711,7 +710,13 @@ struct CodeEditorView: NSViewRepresentable {
         /// Отложенная задача подсветки (дебаунсинг)
         private var highlightWorkItem: DispatchWorkItem?
         /// Active async highlight task (cancelled when new highlight is scheduled)
-        var highlightTask: Task<Void, Never>?
+        private var highlightTask: Task<Void, Never>?
+
+        /// Replaces the current highlight task, cancelling any in-flight one.
+        func setHighlightTask(_ task: Task<Void, Never>) {
+            highlightTask?.cancel()
+            highlightTask = task
+        }
         /// Задержка дебаунсинга
         private let highlightDelay: TimeInterval = 0.1
 
@@ -1497,15 +1502,14 @@ struct CodeEditorView: NSViewRepresentable {
         let lang = language
         let file = fileName
         let font = editorFont
-        coordinator.highlightTask?.cancel()
-        coordinator.highlightTask = Task { @MainActor in
+        coordinator.setHighlightTask(Task { @MainActor in
             await SyntaxHighlighter.shared.highlightAsync(
                 textStorage: storage,
                 language: lang,
                 fileName: file,
                 font: font
             )
-        }
+        })
     }
 }
 

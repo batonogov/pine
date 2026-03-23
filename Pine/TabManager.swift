@@ -260,7 +260,11 @@ final class TabManager {
         let tab = tabs[index]
         guard tab.kind == .text else { return false }
         // Prevent saving truncated files — writing partial content would corrupt the file.
-        guard !tab.isTruncated else { return false }
+        if tab.isTruncated {
+            throw CocoaError(.fileWriteUnknown, userInfo: [
+                NSLocalizedDescriptionKey: "Cannot save: file was partially loaded (truncated). Saving would corrupt the original file."
+            ])
+        }
         let trimmed = tab.content.trailingWhitespaceStripped()
         try trimmed.write(to: tab.url, atomically: true, encoding: tab.encoding)
         tabs[index].content = trimmed

@@ -1344,15 +1344,16 @@ struct TabManagerTests {
         #expect(result == false)
     }
 
-    @Test("trySaveTab returns false for truncated tab")
-    func trySaveTruncatedTabReturnsFalse() throws {
+    @Test("trySaveTab throws for truncated tab")
+    func trySaveTruncatedTabThrows() throws {
         let manager = TabManager()
         let url = try tempHugeFileURL(size: TabManager.hugeFileThreshold + 1000)
 
         manager.openTab(url: url)
 
-        let result = try manager.trySaveTab(at: 0)
-        #expect(result == false)
+        #expect(throws: (any Error).self) {
+            try manager.trySaveTab(at: 0)
+        }
     }
 
     @Test("File just below huge threshold opens normally with large file path")
