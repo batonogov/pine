@@ -38,6 +38,14 @@ struct PineApp: App {
                     Label(Strings.menuOpenFolder, systemImage: MenuIcons.openFolder)
                 }
                 .keyboardShortcut("o", modifiers: [.command, .shift])
+
+                Button {
+                    NotificationCenter.default.post(name: .showQuickOpen, object: nil)
+                } label: {
+                    Label(Strings.menuQuickOpen, systemImage: MenuIcons.quickOpen)
+                }
+                .keyboardShortcut("p", modifiers: .command)
+                .disabled(focusedProject?.workspace.rootURL == nil)
             }
             // View menu — add items to the existing system View menu
             CommandGroup(after: .toolbar) {
@@ -1046,6 +1054,7 @@ extension Notification.Name {
     static let useSelectionForFind = Notification.Name("useSelectionForFind")
     // Find in Terminal (issue #308)
     static let findInTerminal = Notification.Name("findInTerminal")
+    static let showQuickOpen = Notification.Name("showQuickOpen")
     // Go to Line (issue #418)
     static let goToLine = Notification.Name("goToLine")
 }
