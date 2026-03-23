@@ -73,15 +73,12 @@ enum FoldRangeCalculator {
             if let info = openBrackets[char] {
                 stack.append((charIndex: i, kind: info.kind))
             } else if let expectedOpen = closeBrackets[char] {
-                // Ищем matching opener в стеке
-                if let lastIdx = stack.lastIndex(where: {
-                    openBrackets[source.character(at: $0.charIndex)]?.close == char
-                        && source.character(at: $0.charIndex) == expectedOpen
-                }) {
-                    let opener = stack[lastIdx]
-                    stack.removeSubrange(lastIdx...)
+                // Скобки правильно вложены — matching opener всегда на вершине стека
+                if let last = stack.last,
+                   source.character(at: last.charIndex) == expectedOpen {
+                    stack.removeLast()
 
-                    let startLine = lineNumber(at: opener.charIndex, lineStarts: lineStarts)
+                    let startLine = lineNumber(at: last.charIndex, lineStarts: lineStarts)
                     let endLine = lineNumber(at: i, lineStarts: lineStarts)
 
                     // Только многострочные регионы
@@ -89,9 +86,9 @@ enum FoldRangeCalculator {
                         results.append(FoldableRange(
                             startLine: startLine,
                             endLine: endLine,
-                            startCharIndex: opener.charIndex,
+                            startCharIndex: last.charIndex,
                             endCharIndex: i,
-                            kind: opener.kind
+                            kind: last.kind
                         ))
                     }
                 }
@@ -119,6 +116,18 @@ enum FoldRangeCalculator {
     }
 
     private static func isInSkipRange(_ position: Int, skipRanges: [NSRange]) -> Bool {
-        skipRanges.contains { NSLocationInRange(position, $0) }
+        var lo = 0, hi = skipRanges.count - 1
+        while lo <= hi {
+            let mid = (lo + hi) / 2
+            let range = skipRanges[mid]
+            if position < range.location {
+                hi = mid - 1
+            } else if position >= NSMaxRange(range) {
+                lo = mid + 1
+            } else {
+                return true
+            }
+        }
+        return false
     }
 }

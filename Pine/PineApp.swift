@@ -818,6 +818,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate {
             UserDefaults.standard.set(true, forKey: BlameConstants.storageKey)
         }
 
+        // Preload syntax grammars at startup instead of lazily on first tab open
+        _ = SyntaxHighlighter.shared
+
         // UI testing support: clear persisted state for a clean launch
         if CommandLine.arguments.contains("--reset-state") {
             SessionState.removeAll()

@@ -546,7 +546,7 @@ struct ContentView: View {
                         codeEditorView(for: tab)
                     }
                 }
-                .id(tab.id)
+
             } else {
                 ContentUnavailableView {
                     Label(Strings.noFileSelected, systemImage: "doc.text")

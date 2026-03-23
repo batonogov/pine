@@ -61,6 +61,9 @@ struct EditorTab: Identifiable, Hashable {
     /// Whether syntax highlighting is disabled for this tab (e.g. large files).
     var syntaxHighlightingDisabled: Bool = false
 
+    /// Whether this tab's content was truncated on load (huge file partial load).
+    var isTruncated: Bool = false
+
     /// The detected file encoding. Used for saving the file in its original encoding.
     var encoding: String.Encoding = .utf8
 

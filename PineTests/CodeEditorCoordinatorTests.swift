@@ -165,4 +165,91 @@ struct CodeEditorCoordinatorTests {
         #expect(coordinator.didChangeFromTextView == false,
                 "didChangeFromTextView must be reset after updateContentIfNeeded")
     }
+
+    // MARK: - Issue #441: cursor restoration on tab switch (no .id(tab.id))
+
+    @Test func updateContentIfNeeded_restoresCursorPosition_onTabSwitch() {
+        let fileA = "line1\nline2\nline3\nline4"
+        let fileB = "func hello() {\n    return\n}"
+
+        let (scrollView, textView) = makeTextStack(text: fileA)
+
+        // Start with file A
+        let editorView = CodeEditorView(
+            text: .constant(fileA),
+            contentVersion: 0,
+            language: "txt",
+            fileName: "a.txt",
+            foldState: .constant(FoldState()),
+            initialCursorPosition: 0
+        )
+        let coordinator = CodeEditorView.Coordinator(parent: editorView)
+        coordinator.scrollView = scrollView
+        coordinator.syncContentVersion()
+
+        coordinator.updateContentIfNeeded(
+            text: fileA, language: "txt", fileName: "a.txt", font: font
+        )
+
+        // Switch to file B with cursor at position 15 (end of first line)
+        let editorViewB = CodeEditorView(
+            text: .constant(fileB),
+            contentVersion: 1,
+            language: "swift",
+            fileName: "b.swift",
+            foldState: .constant(FoldState()),
+            initialCursorPosition: 15
+        )
+        coordinator.parent = editorViewB
+
+        coordinator.updateContentIfNeeded(
+            text: fileB, language: "swift", fileName: "b.swift", font: font
+        )
+
+        #expect(textView.string == fileB, "Text must be updated to file B content")
+        #expect(textView.selectedRange().location == 15,
+                "Cursor must be restored to saved position 15, got \(textView.selectedRange().location)")
+    }
+
+    @Test func updateContentIfNeeded_clampsCursorPosition_whenBeyondTextLength() {
+        let shortText = "hi"
+
+        let (scrollView, textView) = makeTextStack(text: "original content")
+
+        let editorView = CodeEditorView(
+            text: .constant("original content"),
+            contentVersion: 0,
+            language: "txt",
+            fileName: "a.txt",
+            foldState: .constant(FoldState()),
+            initialCursorPosition: 0
+        )
+        let coordinator = CodeEditorView.Coordinator(parent: editorView)
+        coordinator.scrollView = scrollView
+        coordinator.syncContentVersion()
+
+        coordinator.updateContentIfNeeded(
+            text: "original content", language: "txt", fileName: "a.txt", font: font
+        )
+
+        // Switch to a short file but with a cursor position beyond its length
+        let editorViewB = CodeEditorView(
+            text: .constant(shortText),
+            contentVersion: 1,
+            language: "txt",
+            fileName: "b.txt",
+            foldState: .constant(FoldState()),
+            initialCursorPosition: 999
+        )
+        coordinator.parent = editorViewB
+
+        coordinator.updateContentIfNeeded(
+            text: shortText, language: "txt", fileName: "b.txt", font: font
+        )
+
+        #expect(textView.string == shortText, "Text must be updated")
+        let cursorPos = textView.selectedRange().location
+        #expect(cursorPos <= (shortText as NSString).length,
+                "Cursor must be clamped to text length, got \(cursorPos)")
+    }
 }

@@ -1278,6 +1278,127 @@ struct TabManagerTests {
         #expect(manager.activeTab?.content == "hello\nworld\n")
     }
 
+    // MARK: - Huge file partial load
+
+    /// Creates a temporary file of the given size filled with repeating text.
+    private func tempHugeFileURL(name: String = "huge.log", size: Int) throws -> URL {
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let url = dir.appendingPathComponent(name)
+        let line = String(repeating: "x", count: 99) + "\n" // 100 bytes per line
+        let lineData = Data(line.utf8)
+        FileManager.default.createFile(atPath: url.path, contents: nil)
+        guard let handle = FileHandle(forWritingAtPath: url.path) else {
+            throw CocoaError(.fileWriteUnknown)
+        }
+        var written = 0
+        while written < size {
+            handle.write(lineData)
+            written += lineData.count
+        }
+        handle.closeFile()
+        return url
+    }
+
+    @Test("Huge file is opened with partial load and truncation flag")
+    func hugeFilePartialLoad() throws {
+        let manager = TabManager()
+        let size = TabManager.hugeFileThreshold + 1000
+        let url = try tempHugeFileURL(size: size)
+
+        manager.openTab(url: url)
+
+        #expect(manager.tabs.count == 1)
+        let tab = manager.activeTab
+        #expect(tab != nil)
+        #expect(tab?.isTruncated == true)
+        #expect(tab?.syntaxHighlightingDisabled == true)
+        // File size may be slightly larger due to chunk rounding
+        #expect(tab?.fileSizeBytes ?? 0 >= size)
+        // Content should be around 1 MB + truncation notice, not the full file
+        let contentLength = tab?.content.count ?? 0
+        #expect(contentLength < 2_000_000) // well under the full file size
+        #expect(tab?.content.contains("truncated") == true)
+    }
+
+    @Test("Huge file tab is not dirty")
+    func hugeFileNotDirty() throws {
+        let manager = TabManager()
+        let url = try tempHugeFileURL(size: TabManager.hugeFileThreshold + 1000)
+
+        manager.openTab(url: url)
+
+        #expect(manager.activeTab?.isDirty == false)
+    }
+
+    @Test("Save is blocked for truncated tab")
+    func saveTruncatedTabBlocked() throws {
+        let manager = TabManager()
+        let url = try tempHugeFileURL(size: TabManager.hugeFileThreshold + 1000)
+
+        manager.openTab(url: url)
+
+        // Attempt to save — should return false without writing
+        let result = manager.saveActiveTab()
+        #expect(result == false)
+    }
+
+    @Test("trySaveTab returns false for truncated tab")
+    func trySaveTruncatedTabReturnsFalse() throws {
+        let manager = TabManager()
+        let url = try tempHugeFileURL(size: TabManager.hugeFileThreshold + 1000)
+
+        manager.openTab(url: url)
+
+        let result = try manager.trySaveTab(at: 0)
+        #expect(result == false)
+    }
+
+    @Test("File just below huge threshold opens normally with large file path")
+    func fileBelowHugeThresholdNotTruncated() {
+        let manager = TabManager()
+        // Create a file just below the huge threshold but above the large threshold
+        // We use openTab(url:syntaxHighlightingDisabled:) to skip the alert dialog
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let url = dir.appendingPathComponent("medium.log")
+        let content = String(repeating: "a", count: TabManager.hugeFileThreshold - 1)
+        try? content.write(to: url, atomically: true, encoding: .utf8)
+
+        manager.openTab(url: url, syntaxHighlightingDisabled: true)
+
+        #expect(manager.activeTab?.isTruncated == false)
+        #expect(manager.activeTab?.syntaxHighlightingDisabled == true)
+    }
+
+    @Test("Session restore of huge file does partial load")
+    func sessionRestoreHugeFilePartialLoad() throws {
+        let manager = TabManager()
+        let url = try tempHugeFileURL(size: TabManager.hugeFileThreshold + 1000)
+
+        // Simulate session restore path
+        manager.openTab(url: url, syntaxHighlightingDisabled: false)
+
+        #expect(manager.activeTab?.isTruncated == true)
+        #expect(manager.activeTab?.syntaxHighlightingDisabled == true)
+    }
+
+    @Test("Duplicate open of huge file activates existing tab")
+    func hugeFileDeduplicate() throws {
+        let manager = TabManager()
+        let url = try tempHugeFileURL(size: TabManager.hugeFileThreshold + 1000)
+
+        manager.openTab(url: url)
+        let firstID = manager.activeTabID
+
+        manager.openTab(url: url)
+
+        #expect(manager.tabs.count == 1)
+        #expect(manager.activeTabID == firstID)
+    }
+
     @Test("isAutoSaving resets after auto-save completes")
     func isAutoSavingResetsAfterSave() async throws {
         let manager = TabManager()
