@@ -102,8 +102,11 @@ struct QuickOpenProviderRegressionTests {
         try FileManager.default.createSymbolicLink(at: linkFile, withDestinationURL: realFile)
 
         let provider = buildQuickOpenProvider(dir: dir)
-        // Both real file and symlink should be indexed
-        #expect(provider.fileIndex.count >= 1)
+        // Both real file and symlink are separate entries in the tree
+        #expect(provider.fileIndex.count == 2)
+        let names = Set(provider.fileIndex.map(\.lastPathComponent))
+        #expect(names.contains("real.swift"))
+        #expect(names.contains("link.swift"))
     }
 
     @Test("Symlink outside project is not followed into external tree")
