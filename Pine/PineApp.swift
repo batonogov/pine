@@ -213,6 +213,16 @@ struct PineApp: App {
                 Divider()
 
                 Button {
+                    NotificationCenter.default.post(name: .goToLine, object: nil)
+                } label: {
+                    Label(Strings.menuGoToLine, systemImage: MenuIcons.goToLine)
+                }
+                .keyboardShortcut("l", modifiers: .command)
+                .disabled(focusedProject?.tabManager.activeTab == nil)
+
+                Divider()
+
+                Button {
                     NotificationCenter.default.post(
                         name: .navigateChange, object: nil,
                         userInfo: ["direction": "next"]
@@ -1045,4 +1055,6 @@ extension Notification.Name {
     // Find in Terminal (issue #308)
     static let findInTerminal = Notification.Name("findInTerminal")
     static let showQuickOpen = Notification.Name("showQuickOpen")
+    // Go to Line (issue #418)
+    static let goToLine = Notification.Name("goToLine")
 }

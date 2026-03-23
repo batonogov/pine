@@ -49,6 +49,10 @@ enum AccessibilityID {
     static let markdownPreviewToggle = "markdownPreviewToggle"
     static let markdownPreviewView = "markdownPreviewView"
 
+    // MARK: - Go to Line
+    static let goToLineSheet = "goToLineSheet"
+    static let goToLineField = "goToLineField"
+
     // MARK: - Branch switcher
     static let branchSwitcherButton = "branchSwitcherButton"
     static let branchSearchField = "branchSearchField"
