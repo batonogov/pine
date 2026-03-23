@@ -27,6 +27,7 @@ enum AccessibilityID {
     static let lineNumberGutter = "lineNumberGutter"
     static let minimap = "minimap"
     static let autoSaveIndicator = "autoSaveIndicator"
+    static let editorTabOverflowMenu = "editorTabOverflowMenu"
     static let quickLookPreview = "quickLookPreview"
 
     // MARK: - Terminal
