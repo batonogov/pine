@@ -594,6 +594,7 @@ struct ContentView: View {
             goToOffset: goToLineOffset,
             fontSize: FontSizeSettings.shared.fontSize
         )
+        .id(tab.id)
         .accessibilityIdentifier(AccessibilityID.codeEditor)
         .onAppear { goToLineOffset = nil }
     }
