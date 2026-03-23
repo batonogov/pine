@@ -37,13 +37,13 @@ final class ProjectSearchProvider {
     private(set) var totalMatchCount: Int = 0
 
     /// Maximum file size to search (1 MB).
-    static let maxFileSize = 1_048_576
+    nonisolated static let maxFileSize = 1_048_576
     /// Maximum total matches before stopping.
-    static let maxResults = 1_000
+    nonisolated static let maxResults = 1_000
     /// Maximum matches per file in parallel search to avoid unbounded memory use.
-    private static let maxResultsPerFile = 100
+    nonisolated private static let maxResultsPerFile = 100
     /// Debounce interval for search.
-    static let debounceInterval: Duration = .milliseconds(300)
+    nonisolated static let debounceInterval: Duration = .milliseconds(300)
 
     private var searchTask: Task<Void, Never>?
 
@@ -88,7 +88,7 @@ final class ProjectSearchProvider {
 
     // MARK: - Search logic
 
-    static func performSearch(
+    nonisolated static func performSearch(
         query: String,
         isCaseSensitive: Bool,
         rootURL: URL
@@ -168,7 +168,7 @@ final class ProjectSearchProvider {
     }
 
     /// Searches a single file for the query string.
-    static func searchFile(
+    nonisolated static func searchFile(
         at url: URL,
         query: String,
         isCaseSensitive: Bool,
@@ -213,7 +213,7 @@ final class ProjectSearchProvider {
 
     /// Collects all searchable text files under rootURL in a single pass.
     /// Returns tuples of (fileURL, relativePath) to avoid resolving symlinks per-file later.
-    static func collectSearchableFiles(
+    nonisolated static func collectSearchableFiles(
         rootURL: URL,
         ignoredDirs: Set<String>,
         resolvedRootPath: String
@@ -261,7 +261,7 @@ final class ProjectSearchProvider {
     }
 
     /// Returns true for known binary file types.
-    static func isBinaryFile(url: URL) -> Bool {
+    nonisolated static func isBinaryFile(url: URL) -> Bool {
         guard let type = UTType(filenameExtension: url.pathExtension) else { return false }
         return type.conforms(to: .image)
             || type.conforms(to: .audiovisualContent)
@@ -275,7 +275,7 @@ final class ProjectSearchProvider {
 
     /// Uses `git ls-files` to find ignored directories in a single git call
     /// (no need to enumerate the filesystem first).
-    static func gitIgnoredDirectories(rootURL: URL) async -> Set<String> {
+    nonisolated static func gitIgnoredDirectories(rootURL: URL) async -> Set<String> {
         await withCheckedContinuation { continuation in
             DispatchQueue.global(qos: .userInitiated).async {
                 let result = gitIgnoredDirectoriesSync(rootURL: rootURL)
@@ -285,7 +285,7 @@ final class ProjectSearchProvider {
     }
 
     /// Synchronous implementation — returns absolute paths of ignored directories.
-    static func gitIgnoredDirectoriesSync(rootURL: URL) -> Set<String> {
+    nonisolated static func gitIgnoredDirectoriesSync(rootURL: URL) -> Set<String> {
         let gitDir = rootURL.appendingPathComponent(".git")
         guard FileManager.default.fileExists(atPath: gitDir.path) else { return [] }
 
