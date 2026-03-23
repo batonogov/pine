@@ -147,7 +147,8 @@ final class ProjectSearchProvider {
                         let matches = Self.searchFile(
                             at: fileURL,
                             query: query,
-                            isCaseSensitive: isCaseSensitive
+                            isCaseSensitive: isCaseSensitive,
+                            remainingCapacity: Self.maxResultsPerFile
                         )
                         guard !matches.isEmpty else { return nil }
                         return SearchFileGroup(
