@@ -68,9 +68,9 @@ final class LineNumberView: NSView {
     private var cachedTotalLines = 1
 
     /// Cached digit width for gutter sizing — avoids measuring on every draw().
-    private(set) var cachedDigitWidth: CGFloat = 0
+    private var cachedDigitWidth: CGFloat = 0
     /// The font used when cachedDigitWidth was measured.
-    private(set) var cachedDigitWidthFont: NSFont?
+    private var cachedDigitWidthFont: NSFont?
 
     // Diff marker colors
     private let addedColor = NSColor.systemGreen

@@ -113,36 +113,18 @@ struct ScrollPerformanceTests {
         #expect(CodeEditorView.viewportHighlightThreshold == 100_000)
     }
 
-    // MARK: - Gutter digit width caching (#440)
+    // MARK: - Gutter font equality (#440)
 
-    @Test("LineNumberView digit width cache starts empty")
-    func gutterDigitWidthStartsEmpty() {
-        let textView = NSTextView()
-        textView.string = "line1\nline2\nline3\n"
-        let lineNumberView = LineNumberView(textView: textView)
-
-        // Before any draw — cache is empty
-        #expect(lineNumberView.cachedDigitWidth == 0)
-        #expect(lineNumberView.cachedDigitWidthFont == nil)
-    }
-
-    @Test("LineNumberView digit width uses value equality for font comparison")
-    func gutterDigitWidthUsesValueEquality() {
-        let textView = NSTextView()
-        textView.string = "line1\n"
-        let lineNumberView = LineNumberView(textView: textView)
-
-        // Two separately created fonts with the same parameters
+    @Test("NSFont monospacedSystemFont supports value equality for cache invalidation")
+    func monospacedFontValueEquality() {
+        // Gutter digit width cache uses != (value equality) to detect font changes.
+        // This test ensures NSFont supports value equality for same-parameter fonts.
         let font1 = NSFont.monospacedSystemFont(ofSize: 11, weight: .regular)
         let font2 = NSFont.monospacedSystemFont(ofSize: 11, weight: .regular)
+        let fontDifferent = NSFont.monospacedSystemFont(ofSize: 20, weight: .regular)
 
-        // They should be equal by value (even if identity may differ)
         #expect(font1 == font2)
-
-        // Setting the same font twice should not require re-measurement
-        lineNumberView.gutterFont = font1
-        lineNumberView.gutterFont = font2
-        #expect(lineNumberView.gutterFont == font1)
+        #expect(font1 != fontDifferent)
     }
 
     @Test("MinimapView throttles scroll redraws via trailing coalesce")
