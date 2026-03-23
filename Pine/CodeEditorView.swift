@@ -876,6 +876,7 @@ struct CodeEditorView: NSViewRepresentable {
             // full highlight. Only update caches that it doesn't handle.
             if isProgrammaticTextChange {
                 previousBracketRanges = []
+                highlightedCharRange = nil
                 reportStateChange()
                 lineStartsCache = LineStartsCache(text: textView.string)
                 scheduleFoldRecalculation()
