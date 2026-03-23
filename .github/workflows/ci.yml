@@ -371,8 +371,8 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # Shard 1 — Welcome & Quick Open (19 tests)
-          - shard-name: "Welcome & Quick Open"
+          # Shard 1 — Welcome (19 tests)
+          - shard-name: "Welcome"
             test-classes: >-
               -only-testing:PineUITests/WelcomeWindowTests
               -only-testing:PineUITests/QuickOpenUITests
