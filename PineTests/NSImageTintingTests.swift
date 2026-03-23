@@ -37,14 +37,11 @@ struct NSImageTintingTests {
         #expect(tinted !== original)
     }
 
-    @Test("tinted(with:) safe cast does not crash on valid NSImage")
-    func tintedSafeCastSucceeds() {
-        // This test verifies the guard-let (as?) path works for normal images.
-        // Before the fix, this used force cast (as!) which could crash.
+    @Test("tinted(with:) produces image with at least one representation")
+    func tintedHasRepresentations() {
         let original = NSImage(size: NSSize(width: 8, height: 8))
         let tinted = original.tinted(with: .systemPink)
 
-        #expect(tinted.size.width == 8)
-        #expect(tinted.size.height == 8)
+        #expect(!tinted.representations.isEmpty)
     }
 }
