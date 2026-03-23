@@ -739,7 +739,7 @@ final class GitStatusProvider {
     // MARK: - Git Command Runner
 
     /// Default timeout for git commands (30 seconds).
-    static let defaultGitTimeout: TimeInterval = 30.0
+    nonisolated static let defaultGitTimeout: TimeInterval = 30.0
 
     nonisolated static func runGit(
         _ arguments: [String],
