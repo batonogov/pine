@@ -136,6 +136,7 @@
 				9FA1A7242F5EFA8100BDDA8C /* Sources */,
 				9FA1A7252F5EFA8100BDDA8C /* Frameworks */,
 				9FA1A7262F5EFA8100BDDA8C /* Resources */,
+				CF000002000000000000000C /* Reset Cosmetic xcstrings */,
 			);
 			buildRules = (
 			);
@@ -328,6 +329,25 @@
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
 			shellScript = "if command -v swiftlint >/dev/null 2>&1; then\n  swiftlint\nelse\n  echo \"warning: SwiftLint not installed, install with: brew install swiftlint\"\nfi\n";
+		};
+		CF000002000000000000000C /* Reset Cosmetic xcstrings */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+			);
+			name = "Reset Cosmetic xcstrings";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "\"$SOURCE_ROOT/scripts/reset-cosmetic-xcstrings.sh\"\n";
 		};
 /* End PBXShellScriptBuildPhase section */
 
