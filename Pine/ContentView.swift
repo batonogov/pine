@@ -33,6 +33,8 @@ struct ContentView: View {
     @State private var showGoToLine = false
     @AppStorage("minimapVisible") private var isMinimapVisible = true
     @AppStorage(BlameConstants.storageKey) private var isBlameVisible = true
+    @AppStorage(FPSCounterConstants.storageKey) private var isFPSCounterVisible = false
+    @State private var fpsCounter = FPSCounter()
 
     private var activeTab: EditorTab? { tabManager.activeTab }
 
@@ -563,6 +565,20 @@ struct ContentView: View {
                     Text(Strings.selectFilePrompt)
                 }
                 .accessibilityIdentifier(AccessibilityID.editorPlaceholder)
+            }
+        }
+        .overlay(alignment: .topTrailing) {
+            if isFPSCounterVisible {
+                FPSOverlayView(fpsCounter: fpsCounter)
+                    .padding(.top, 8)
+                    .padding(.trailing, 8)
+            }
+        }
+        .onChange(of: isFPSCounterVisible) { _, visible in
+            if visible {
+                fpsCounter.start()
+            } else {
+                fpsCounter.stop()
             }
         }
     }

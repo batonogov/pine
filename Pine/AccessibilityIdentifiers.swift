@@ -68,6 +68,9 @@ enum AccessibilityID {
     static let quickOpenResultsList = "quickOpenResultsList"
     static func quickOpenItem(_ name: String) -> String { "quickOpenItem_\(name)" }
 
+    // MARK: - FPS Overlay
+    static let fpsOverlay = "fpsOverlay"
+
     // MARK: - Status bar
     static let statusBar = "statusBar"
     static let terminalToggleButton = "terminalToggleButton"

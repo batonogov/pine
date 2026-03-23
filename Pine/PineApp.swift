@@ -107,6 +107,15 @@ struct PineApp: App {
                 }
                 .keyboardShortcut("b", modifiers: [.command, .control])
 
+                #if DEBUG
+                Button {
+                    let key = FPSCounterConstants.storageKey
+                    UserDefaults.standard.set(!UserDefaults.standard.bool(forKey: key), forKey: key)
+                } label: {
+                    Label(Strings.menuToggleFPSCounter, systemImage: MenuIcons.toggleFPSCounter)
+                }
+                #endif
+
                 Divider()
 
                 Button {
