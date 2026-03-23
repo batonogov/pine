@@ -134,8 +134,9 @@ final class WorkspaceManager {
             // For shallow projects this avoids redundant tree construction.
             guard shallowResult.wasDepthLimited else { return }
 
-            let fullRoot = FileNode(url: url, projectRoot: url, ignoredPaths: bgGit.ignoredPaths)
-            let fullChildren = fullRoot.children ?? []
+            let fullChildren = Self.loadTopLevelInParallel(
+                url: url, ignoredPaths: bgGit.ignoredPaths
+            )
 
             // Safe ordering: main queue is FIFO, so Phase 2 always runs after Phase 1.
             // Completion (file watcher) starts after Phase 2 to avoid watcher events
@@ -145,6 +146,50 @@ final class WorkspaceManager {
                 self.rootNodes = fullChildren
                 completion?()
             }
+        }
+    }
+
+    /// Loads top-level directory entries in parallel using `concurrentPerform`.
+    ///
+    /// Each top-level subdirectory builds its full subtree on a separate GCD thread,
+    /// while files are collected as-is. Results are merged and sorted to match
+    /// the standard display order (directories first, then case-insensitive by name).
+    private static func loadTopLevelInParallel(
+        url: URL, ignoredPaths: Set<String>
+    ) -> [FileNode] {
+        let hiddenNames: Set<String> = [".git", ".DS_Store"]
+
+        guard let topContents = try? FileManager.default.contentsOfDirectory(
+            at: url,
+            includingPropertiesForKeys: [.isDirectoryKey, .isSymbolicLinkKey],
+            options: []
+        ) else {
+            return []
+        }
+
+        let filtered = topContents.filter { !hiddenNames.contains($0.lastPathComponent) }
+        guard !filtered.isEmpty else { return [] }
+
+        // Pre-allocate array for thread-safe indexed writes.
+        // Each index is written by exactly one iteration — no synchronization needed.
+        let results = UnsafeMutableBufferPointer<FileNode?>.allocate(capacity: filtered.count)
+        results.initialize(repeating: nil)
+
+        DispatchQueue.concurrentPerform(iterations: filtered.count) { index in
+            let childURL = filtered[index]
+            results[index] = FileNode(
+                url: childURL, projectRoot: url, ignoredPaths: ignoredPaths
+            )
+        }
+
+        let nodes = (0..<filtered.count).compactMap { results[$0] }
+        results.deallocate()
+
+        return nodes.sorted { lhs, rhs in
+            if lhs.isDirectory == rhs.isDirectory {
+                return lhs.name.localizedCaseInsensitiveCompare(rhs.name) == .orderedAscending
+            }
+            return lhs.isDirectory && !rhs.isDirectory
         }
     }
 
@@ -168,8 +213,9 @@ final class WorkspaceManager {
         // Phase 2 (async): full tree only if Phase 1 hit the depth limit
         if shallowResult.wasDepthLimited {
             DispatchQueue.global(qos: .userInitiated).async {
-                let fullRoot = FileNode(url: url, projectRoot: url, ignoredPaths: ignoredPaths)
-                let fullChildren = fullRoot.children ?? []
+                let fullChildren = Self.loadTopLevelInParallel(
+                    url: url, ignoredPaths: ignoredPaths
+                )
                 DispatchQueue.main.async { [weak self] in
                     guard let self, self.loadGeneration == generation else { return }
                     self.rootNodes = fullChildren

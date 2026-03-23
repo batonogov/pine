@@ -478,6 +478,69 @@ struct WorkspaceManagerTests {
         #expect(!names.contains("from_dir1.txt"))
     }
 
+    @Test("refreshFileTree loads multiple top-level directories in parallel")
+    @MainActor
+    func refreshFileTreeParallelDeepLoad() async throws {
+        let dir = try makeTempDirectory()
+        defer { cleanup(dir) }
+
+        // Create multiple top-level directories with deep nesting (beyond shallowDepth=3)
+        // to ensure Phase 2 parallel loading works correctly.
+        for name in ["alpha", "beta", "gamma", "delta"] {
+            let deep = dir
+                .appendingPathComponent(name)
+                .appendingPathComponent("level1")
+                .appendingPathComponent("level2")
+                .appendingPathComponent("level3")
+                .appendingPathComponent("level4")
+            try FileManager.default.createDirectory(at: deep, withIntermediateDirectories: true)
+            try "content".write(
+                to: deep.appendingPathComponent("leaf.txt"),
+                atomically: true,
+                encoding: .utf8
+            )
+        }
+
+        let manager = WorkspaceManager()
+        manager.loadDirectory(url: dir)
+        manager.refreshFileTree()
+
+        // Phase 1 (sync) loads shallow tree — all top-level dirs visible immediately
+        let topNames = manager.rootNodes.map(\.name)
+        #expect(topNames.contains("alpha"))
+        #expect(topNames.contains("beta"))
+        #expect(topNames.contains("gamma"))
+        #expect(topNames.contains("delta"))
+        #expect(topNames == topNames.sorted())
+
+        // Phase 2 (async) loads full tree in parallel — wait for it to complete
+        for _ in 0..<20 {
+            try await Task.sleep(for: .milliseconds(100))
+            let alphaNode = manager.rootNodes.first { $0.name == "alpha" }
+            let level4 = alphaNode?.children?.first { $0.name == "level1" }?
+                .children?.first { $0.name == "level2" }?
+                .children?.first { $0.name == "level3" }?
+                .children?.first { $0.name == "level4" }
+            if level4 != nil { break }
+        }
+
+        // Verify deep nesting is fully loaded after Phase 2
+        for topName in ["alpha", "beta", "gamma", "delta"] {
+            let topNode = manager.rootNodes.first { $0.name == topName }
+            #expect(topNode != nil)
+            let level1 = topNode?.children?.first { $0.name == "level1" }
+            #expect(level1 != nil)
+            let level2 = level1?.children?.first { $0.name == "level2" }
+            #expect(level2 != nil)
+            let level3 = level2?.children?.first { $0.name == "level3" }
+            #expect(level3 != nil)
+            let level4 = level3?.children?.first { $0.name == "level4" }
+            #expect(level4 != nil)
+            let leaf = level4?.children?.first { $0.name == "leaf.txt" }
+            #expect(leaf != nil)
+        }
+    }
+
     @Test("loadDirectory twice quickly uses latest directory")
     func loadDirectoryRaceProtection() throws {
         let dir1 = try makeTempDirectory()
