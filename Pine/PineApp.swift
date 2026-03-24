@@ -31,6 +31,20 @@ struct PineApp: App {
                 }
 
                 CheckForUpdatesView(viewModel: appDelegate.checkForUpdatesViewModel)
+
+                Divider()
+
+                Button {
+                    if CLIInstaller.isInstalled {
+                        CLIInstaller.uninstall()
+                    } else {
+                        CLIInstaller.install()
+                    }
+                } label: {
+                    Text(CLIInstaller.isInstalled
+                         ? "Uninstall Command Line Tool..."
+                         : "Install Command Line Tool...")
+                }
             }
             // Убираем стандартный "New Window" (Cmd+N) — табы создаются кликом по файлу
             CommandGroup(replacing: .newItem) { }

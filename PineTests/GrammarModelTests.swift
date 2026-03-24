@@ -564,7 +564,8 @@ struct GrammarModelTests {
             "Nix": "#", "Prisma": "//", "SSH Config": "#",
             "Swift": "//", "Go": "//", "Python": "#", "Rust": "//",
             "JavaScript": "//", "TypeScript": "//", "C": "//", "C++": "//",
-            "Shell": "#", "YAML": "#", "Dockerfile": "#"
+            "Shell": "#", "YAML": "#", "Dockerfile": "#",
+            "Helm": "#", "Jinja2": "#"
         ]
 
         for file in files {

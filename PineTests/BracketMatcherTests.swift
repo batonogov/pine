@@ -176,4 +176,75 @@ struct BracketMatcherTests {
         #expect(result?.opener == 0)
         #expect(result?.closer == 1)
     }
+
+    // MARK: - findHighlight consistency
+
+    @Test func findHighlightReturnsOrphanWhenAdjacentBracketHasNoMatch() {
+        // Text: ")()" — cursor at position 1
+        // bracketAdjacentToCursor picks ')' at position 0 (before cursor) — orphan
+        // findMatch must NOT fall through to '(' at position 1 which has a match
+        let text = ")()"
+        let result = BracketMatcher.findHighlight(in: text, cursorPosition: 1)
+        #expect(result == .unmatched(position: 0))
+    }
+
+    @Test func findHighlightReturnsMatchWhenAdjacentBracketHasMatch() {
+        let text = "()"
+        let result = BracketMatcher.findHighlight(in: text, cursorPosition: 1)
+        #expect(result == .matched(BracketMatch(opener: 0, closer: 1)))
+    }
+
+    @Test func findHighlightReturnsNilWhenNoBracketAdjacent() {
+        let text = "hello"
+        let result = BracketMatcher.findHighlight(in: text, cursorPosition: 2)
+        #expect(result == nil)
+    }
+
+    @Test func findHighlightOrphanOpenBracketBeforeMatchedClose() {
+        // Text: "(])" — cursor at position 2
+        // bracketAdjacentToCursor picks ']' at position 1 (before cursor) — orphan (no matching '[')
+        // '(' at position 0 is not adjacent, ')' at position 2 has match with '(' — but should not be used
+        let text = "(])"
+        let result = BracketMatcher.findHighlight(in: text, cursorPosition: 2)
+        #expect(result == .unmatched(position: 1))
+    }
+
+    // MARK: - findMatchForBracket
+
+    @Test func findMatchForBracketAtSpecificPosition() {
+        let text = "(hello)"
+        let result = BracketMatcher.findMatchForBracket(in: text, at: 0)
+        #expect(result?.opener == 0)
+        #expect(result?.closer == 6)
+
+        let result2 = BracketMatcher.findMatchForBracket(in: text, at: 6)
+        #expect(result2?.opener == 0)
+        #expect(result2?.closer == 6)
+    }
+
+    @Test func findMatchForBracketReturnsNilForOrphan() {
+        let text = "(hello"
+        let result = BracketMatcher.findMatchForBracket(in: text, at: 0)
+        #expect(result == nil)
+    }
+
+    @Test func findMatchForBracketReturnsNilForNonBracket() {
+        let text = "hello"
+        let result = BracketMatcher.findMatchForBracket(in: text, at: 2)
+        #expect(result == nil)
+    }
+
+    @Test func findMatchForBracketRespectsSkipRanges() {
+        let text = "(\"(\")"
+        let skipRanges = [NSRange(location: 1, length: 3)]
+        let result = BracketMatcher.findMatchForBracket(in: text, at: 0, skipRanges: skipRanges)
+        #expect(result?.opener == 0)
+        #expect(result?.closer == 4)
+    }
+
+    @Test func findMatchForBracketOutOfBoundsReturnsNil() {
+        let text = "()"
+        #expect(BracketMatcher.findMatchForBracket(in: text, at: -1) == nil)
+        #expect(BracketMatcher.findMatchForBracket(in: text, at: 5) == nil)
+    }
 }

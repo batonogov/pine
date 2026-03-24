@@ -32,6 +32,10 @@ enum AccessibilityID {
     static let editorTabOverflowMenu = "editorTabOverflowMenu"
     static let quickLookPreview = "quickLookPreview"
 
+    // MARK: - Breadcrumb
+    static let breadcrumbBar = "breadcrumbBar"
+    static func breadcrumbSegment(_ name: String) -> String { "breadcrumbSegment_\(name)" }
+
     // MARK: - Terminal
     static let terminalArea = "terminalArea"
     static let terminalTabBar = "terminalTabBar"
