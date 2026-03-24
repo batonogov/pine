@@ -119,7 +119,7 @@ final class LineNumberView: NSView {
 
         #if DEBUG
         if resolvedClipView == nil {
-            Logger.editor.fault("LineNumberView: clipView is nil at init — scroll observer will not fire. Pass clipView explicitly.")
+            Logger.editor.warning("LineNumberView: clipView is nil at init — scroll observer will not fire. Pass clipView explicitly.")
         }
         #endif
     }

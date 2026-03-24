@@ -149,7 +149,7 @@ final class FileNode: Identifiable, Hashable {
                     return lhs.isDirectory && !rhs.isDirectory
                 }
         } catch {
-            Logger.fileTree.error("Error loading directory \(url.path): \(error.localizedDescription)")
+            Logger.fileTree.error("Error loading directory \(url.path): \(error)")
             return []
         }
     }

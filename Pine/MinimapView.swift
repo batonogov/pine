@@ -137,7 +137,7 @@ final class MinimapView: NSView {
 
         #if DEBUG
         if resolvedClipView == nil {
-            Logger.editor.fault("MinimapView: clipView is nil at init — scroll observer will not fire. Pass clipView explicitly.")
+            Logger.editor.warning("MinimapView: clipView is nil at init — scroll observer will not fire. Pass clipView explicitly.")
         }
         #endif
     }
