@@ -263,7 +263,8 @@ final class ProjectSearchProvider {
     /// Extensions that UTType misclassifies as binary (e.g. .js → executable, .ts → MPEG-2 transport stream).
     nonisolated private static let textExtensionOverrides: Set<String> = [
         "js", "jsx", "mjs", "cjs",
-        "ts", "tsx", "mts", "cts"
+        "ts", "tsx", "mts", "cts",
+        "vue", "svelte", "astro"
     ]
 
     /// Returns true for known binary file types.

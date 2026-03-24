@@ -341,6 +341,13 @@ struct ProjectSearchProviderTests {
         #expect(!ProjectSearchProvider.isBinaryFile(url: URL(fileURLWithPath: "/tmp/test.mts")))
     }
 
+    @Test("isBinaryFile treats .vue, .svelte, .astro as text, not binary")
+    func isBinaryAllowsWebFrameworkExtensions() {
+        #expect(!ProjectSearchProvider.isBinaryFile(url: URL(fileURLWithPath: "/tmp/App.vue")))
+        #expect(!ProjectSearchProvider.isBinaryFile(url: URL(fileURLWithPath: "/tmp/Component.svelte")))
+        #expect(!ProjectSearchProvider.isBinaryFile(url: URL(fileURLWithPath: "/tmp/page.astro")))
+    }
+
     @Test("isBinaryFile correctly detects real binary files")
     func isBinaryDetectsRealBinaries() {
         #expect(ProjectSearchProvider.isBinaryFile(url: URL(fileURLWithPath: "/tmp/test.png")))
