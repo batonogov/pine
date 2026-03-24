@@ -322,17 +322,19 @@ final class SyntaxHighlighter: @unchecked Sendable {
     ]
 
     /// Применяет подсветку ко всему NSTextStorage и обновляет кэш многострочных матчей.
+    /// Returns the match result so callers can cache it for instant reapplication on tab switch.
+    @discardableResult
     func highlight(
         textStorage: NSTextStorage,
         language: String,
         fileName: String? = nil,
         font: NSFont
-    ) {
+    ) -> HighlightMatchResult? {
         guard let (_, rules) = resolveGrammar(language: language, fileName: fileName) else {
             resetAttributes(textStorage: textStorage,
                             range: NSRange(location: 0, length: textStorage.length),
                             font: font)
-            return
+            return nil
         }
 
         let fullRange = NSRange(location: 0, length: textStorage.length)
@@ -340,6 +342,7 @@ final class SyntaxHighlighter: @unchecked Sendable {
             rules, to: textStorage, repaintRange: fullRange, searchRange: fullRange, font: font
         )
         lock.withLock { multilineMatchCache[ObjectIdentifier(textStorage)] = result.multilineFingerprint }
+        return result
     }
 
     /// Количество строк контекста для viewport-based подсветки (больше, чем для edit).
@@ -567,14 +570,14 @@ final class SyntaxHighlighter: @unchecked Sendable {
         var start = expanded.location
         while start > 0 && linesAdded < contextCount {
             start -= 1
-            if source.character(at: start) == 0x0A { linesAdded += 1 }
+            if source.character(at: start) == ASCII.newline { linesAdded += 1 }
         }
         if start > 0 { start += 1 }
 
         linesAdded = 0
         var end = NSMaxRange(expanded)
         while end < totalLength && linesAdded < contextCount {
-            if source.character(at: end) == 0x0A { linesAdded += 1 }
+            if source.character(at: end) == ASCII.newline { linesAdded += 1 }
             end += 1
         }
 
@@ -627,13 +630,22 @@ final class SyntaxHighlighter: @unchecked Sendable {
 
     // MARK: - Async highlighting (background computation)
 
-    /// Background queue for regex computation.
-    /// Serial because NSRegularExpression.matches() is not thread-safe
-    /// (mutates internal ICU matcher state).
-    private let highlightQueue = DispatchQueue(
-        label: "com.pine.syntax-highlight",
-        qos: .userInitiated
-    )
+    /// Maximum number of concurrent highlight operations.
+    /// Limits CPU saturation during session restore with many open tabs.
+    /// Each tab's NSTextStorage is independent, so parallel highlighting is safe.
+    static let maxConcurrentHighlights = 4
+
+    /// Concurrent queue for regex computation across multiple tabs.
+    /// NSRegularExpression creates per-invocation matcher state, so concurrent
+    /// calls on independent text snapshots are safe. OperationQueue bounds
+    /// parallelism to avoid CPU saturation during session restore.
+    private let highlightQueue: OperationQueue = {
+        let queue = OperationQueue()
+        queue.name = "com.pine.syntax-highlight"
+        queue.qualityOfService = .userInitiated
+        queue.maxConcurrentOperationCount = SyntaxHighlighter.maxConcurrentHighlights
+        return queue
+    }()
 
     /// Pure computation: finds regex matches without touching NSTextStorage.
     /// Thread-safe — operates only on the provided String snapshot.
@@ -751,24 +763,26 @@ final class SyntaxHighlighter: @unchecked Sendable {
     }
 
     /// Async full highlight: computes on background queue, applies on main thread.
+    /// Returns the applied match result (for caching on tab switch), or nil if generation was stale.
+    @discardableResult
     func highlightAsync(
         textStorage: NSTextStorage,
         language: String,
         fileName: String? = nil,
         font: NSFont,
         generation: HighlightGeneration? = nil
-    ) async {
+    ) async -> HighlightMatchResult? {
         // Explicit copy — NSTextStorage.string returns a reference to the internal
         // NSMutableString which may mutate while background work is in progress.
         let text = String(textStorage.string)
         let textLength = (text as NSString).length
-        guard textLength > 0 else { return }
+        guard textLength > 0 else { return nil }
 
         let fullRange = NSRange(location: 0, length: textLength)
         let gen = generation?.current ?? 0
 
         let result: HighlightMatchResult? = await withCheckedContinuation { continuation in
-            highlightQueue.async {
+            highlightQueue.addOperation {
                 let r = self.computeMatches(
                     text: text,
                     language: language,
@@ -781,17 +795,19 @@ final class SyntaxHighlighter: @unchecked Sendable {
         }
 
         // Check generation — if bumped, discard stale results
-        if let generation, generation.current != gen { return }
+        if let generation, generation.current != gen { return nil }
 
         if let result {
             applyMatches(result, to: textStorage, font: font)
             updateMultilineCache(key: ObjectIdentifier(textStorage), fingerprint: result.multilineFingerprint)
+            return result
         } else {
             resetAttributes(
                 textStorage: textStorage,
                 range: fullRange,
                 font: font
             )
+            return nil
         }
     }
 
@@ -815,7 +831,7 @@ final class SyntaxHighlighter: @unchecked Sendable {
 
         // Compute on background
         let bgResult: (HighlightMatchResult?, Bool) = await withCheckedContinuation { continuation in
-            highlightQueue.async {
+            highlightQueue.addOperation {
                 let currentFingerprint = self.collectMultilineFingerprint(
                     rules: self.resolveGrammar(language: language, fileName: fileName)?.1 ?? [],
                     source: text,
@@ -877,7 +893,7 @@ final class SyntaxHighlighter: @unchecked Sendable {
         let gen = generation?.current ?? 0
 
         let result: HighlightMatchResult? = await withCheckedContinuation { continuation in
-            highlightQueue.async {
+            highlightQueue.addOperation {
                 let source = text as NSString
                 let expanded = self.expandToContext(
                     visibleCharRange, in: source,

@@ -30,20 +30,28 @@ final class QuickOpenProvider {
     /// Cached resolved paths for symlink-safe comparison (built once at index time).
     private var resolvedPaths: [URL: String] = [:]
 
-    /// The root URL the index was built from.
+    /// The root URL the index was built from (resolved for cache deduplication).
     private var indexedRoot: URL?
 
+    /// The original (unresolved) root path prefix for computing relative paths.
+    private var originalRootPrefix: String = ""
+
     // MARK: - Indexing
+
+    /// Maximum recursion depth when traversing the file tree for indexing.
+    static let maxIndexDepth = 100
 
     /// Rebuilds the flat file index from the FileNode tree.
     func buildIndex(from roots: [FileNode], rootURL: URL) {
         let resolved = rootURL.resolvingSymlinksInPath()
         if resolved == indexedRoot, !fileIndex.isEmpty { return }
         indexedRoot = resolved
+        let rootPath = rootURL.path
+        originalRootPrefix = rootPath.hasSuffix("/") ? rootPath : rootPath + "/"
         let rootRealPath = resolved.path
         var files: [URL] = []
         for root in roots {
-            collectFiles(from: root, into: &files, rootRealPath: rootRealPath)
+            collectFiles(from: root, into: &files, rootRealPath: rootRealPath, depth: 0)
         }
         fileIndex = files
 
@@ -56,14 +64,24 @@ final class QuickOpenProvider {
         resolvedPaths = paths
     }
 
+    /// Rebuilds the flat file index unconditionally, ignoring cache.
+    /// Called when the file tree changes (files added/removed/renamed).
+    func rebuildIndex(from roots: [FileNode], rootURL: URL) {
+        indexedRoot = nil
+        buildIndex(from: roots, rootURL: rootURL)
+    }
+
     /// Invalidates the cached index (e.g., when project root changes).
     func invalidateIndex() {
         fileIndex = []
         resolvedPaths = [:]
         indexedRoot = nil
+        originalRootPrefix = ""
     }
 
-    private func collectFiles(from node: FileNode, into files: inout [URL], rootRealPath: String) {
+    private func collectFiles(from node: FileNode, into files: inout [URL], rootRealPath: String, depth: Int) {
+        guard depth <= Self.maxIndexDepth else { return }
+
         if node.isSymlink {
             // Resolve symlink target and check boundary for both files and directories
             let resolvedPath = node.url.resolvingSymlinksInPath().path
@@ -73,7 +91,7 @@ final class QuickOpenProvider {
             if node.isDirectory {
                 guard let children = node.children else { return }
                 for child in children {
-                    collectFiles(from: child, into: &files, rootRealPath: rootRealPath)
+                    collectFiles(from: child, into: &files, rootRealPath: rootRealPath, depth: depth + 1)
                 }
             } else {
                 files.append(node.url)
@@ -81,7 +99,7 @@ final class QuickOpenProvider {
         } else if node.isDirectory {
             guard let children = node.children else { return }
             for child in children {
-                collectFiles(from: child, into: &files, rootRealPath: rootRealPath)
+                collectFiles(from: child, into: &files, rootRealPath: rootRealPath, depth: depth + 1)
             }
         } else {
             files.append(node.url)
@@ -107,7 +125,7 @@ final class QuickOpenProvider {
         var results: [Result] = []
         for url in fileIndex {
             let fileName = url.lastPathComponent
-            let relativePath = Self.relativePath(for: url, rootPrefix: rootPath)
+            let relativePath = Self.relativePath(for: url, rootPrefix: rootPath, originalRootPrefix: originalRootPrefix)
 
             guard let score = fuzzyScore(
                 queryLower: queryLower,
@@ -222,7 +240,7 @@ final class QuickOpenProvider {
                 return Result(
                     id: url,
                     fileName: url.lastPathComponent,
-                    relativePath: Self.relativePath(for: url, rootPrefix: rootPath),
+                    relativePath: Self.relativePath(for: url, rootPrefix: rootPath, originalRootPrefix: originalRootPrefix),
                     score: 0
                 )
             }
@@ -248,10 +266,16 @@ final class QuickOpenProvider {
         return path.hasSuffix("/") ? path : path + "/"
     }
 
-    static func relativePath(for url: URL, rootPrefix: String) -> String {
+    static func relativePath(for url: URL, rootPrefix: String, originalRootPrefix: String = "") -> String {
         let path = url.path
         if path.hasPrefix(rootPrefix) {
             return String(path.dropFirst(rootPrefix.count))
+        }
+        // Fallback: try original (unresolved) root prefix to handle
+        // cases where resolvingSymlinksInPath() differs from realpath()
+        // (e.g. /var vs /private/var on macOS).
+        if !originalRootPrefix.isEmpty, path.hasPrefix(originalRootPrefix) {
+            return String(path.dropFirst(originalRootPrefix.count))
         }
         return path
     }

@@ -25,7 +25,11 @@ struct PineApp: App {
         .defaultSize(width: 1280, height: 800)
         .defaultLaunchBehavior(.suppressed)
         .commands {
-            CommandGroup(after: .appInfo) {
+            CommandGroup(replacing: .appInfo) {
+                Button("About Pine") {
+                    AboutInfo.showAboutPanel()
+                }
+
                 CheckForUpdatesView(viewModel: appDelegate.checkForUpdatesViewModel)
             }
             // Убираем стандартный "New Window" (Cmd+N) — табы создаются кликом по файлу
@@ -365,6 +369,8 @@ struct PineApp: App {
             // Cmd+W is intercepted by AppDelegate's local event monitor
             // to close the active tab. The close button goes through
             // windowShouldClose which closes the entire window.
+            // Cmd+1..9 and Ctrl+Tab/Ctrl+Shift+Tab are also intercepted
+            // via local event monitors in applicationDidFinishLaunching.
         }
 
         Window(Strings.welcomeTitle, id: "welcome") {
@@ -882,6 +888,48 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate {
             return nil // consume event
         }
 
+        // Intercept Ctrl+Tab and Ctrl+Shift+Tab for tab cycling.
+        // Tab key generates keyCode 48. Must intercept via event monitor
+        // because SwiftUI's keyboardShortcut doesn't support the Tab key.
+        NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+            guard event.keyCode == 48, // Tab key
+                  let window = NSApp.keyWindow,
+                  let closeDelegate = window.delegate as? CloseDelegate else {
+                return event
+            }
+            let mods = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+            if mods == .control {
+                closeDelegate.projectManager.tabManager.selectNextTab()
+                return nil
+            } else if mods == [.control, .shift] {
+                closeDelegate.projectManager.tabManager.selectPreviousTab()
+                return nil
+            }
+            return event
+        }
+
+        // Intercept Cmd+1..9 for tab selection by index.
+        // Cmd+1..8 select tab at that position, Cmd+9 selects the last tab
+        // (matching Safari/Chrome behavior).
+        NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+            guard event.modifierFlags.intersection(.deviceIndependentFlagsMask) == .command,
+                  let chars = event.charactersIgnoringModifiers,
+                  let digit = chars.first, digit >= "1", digit <= "9",
+                  let window = NSApp.keyWindow,
+                  let closeDelegate = window.delegate as? CloseDelegate else {
+                return event
+            }
+            let tabManager = closeDelegate.projectManager.tabManager
+            guard !tabManager.tabs.isEmpty else { return event }
+
+            if digit == "9" {
+                tabManager.selectLastTab()
+            } else if let index = digit.wholeNumberValue {
+                tabManager.selectTab(at: index - 1)
+            }
+            return nil // consume event
+        }
+
         // Ensure Welcome is visible if SwiftUI didn't present it automatically
         // (e.g. when window restoration state interferes with defaultLaunchBehavior)
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
@@ -926,6 +974,46 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate {
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
         false
+    }
+
+    // MARK: - Open URLs (Dock icon drop, Finder "Open With")
+
+    /// Called when files/folders are dropped onto the Dock icon or opened via Finder.
+    func application(_ sender: NSApplication, open urls: [URL]) {
+        let classified = DropHandler.classifyURLs(urls)
+
+        // Open directories as projects
+        for dir in classified.directories {
+            let canonical = dir.resolvingSymlinksInPath()
+            guard registry.projectManager(for: canonical) != nil else { continue }
+            openProjectWindow?(canonical)
+            welcomeWindow?.orderOut(nil)
+        }
+
+        // Open files: if a project window is active, add as tabs; otherwise open parent as project
+        if !classified.files.isEmpty {
+            if let activeProject = activeProjectManager() {
+                DropHandler.openFilesAsTabs(classified.files, in: activeProject.tabManager)
+            } else if let firstFile = classified.files.first {
+                let projectDir = firstFile.deletingLastPathComponent().resolvingSymlinksInPath()
+                guard registry.projectManager(for: projectDir) != nil else { return }
+                openProjectWindow?(projectDir)
+                welcomeWindow?.orderOut(nil)
+                // Open files after project initializes
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
+                    guard let pm = self?.registry.openProjects[projectDir] else { return }
+                    DropHandler.openFilesAsTabs(classified.files, in: pm.tabManager)
+                }
+            }
+        }
+    }
+
+    /// Returns the ProjectManager for the currently active project window, if any.
+    private func activeProjectManager() -> ProjectManager? {
+        guard let window = NSApp.keyWindow,
+              let closeDelegate = window.delegate as? CloseDelegate else { return nil }
+        let canonical = closeDelegate.projectURL.resolvingSymlinksInPath()
+        return registry.openProjects[canonical]
     }
 
     // MARK: - Dock Menu

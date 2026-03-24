@@ -119,7 +119,7 @@ struct EditorTabBar: View {
                     }
                 } label: {
                     Image(systemName: "chevron.down")
-                        .font(.system(size: 9, weight: .medium))
+                        .font(.system(size: LayoutMetrics.iconSmallFontSize, weight: .medium))
                         .foregroundStyle(.secondary)
                         .frame(width: 24, height: 24)
                         .contentShape(Rectangle())
@@ -134,7 +134,7 @@ struct EditorTabBar: View {
             Group {
                 if isAutoSaving {
                     Text(Strings.autoSaving)
-                        .font(.system(size: 10))
+                        .font(.system(size: LayoutMetrics.captionFontSize))
                         .foregroundStyle(.tertiary)
                         .transition(.opacity)
                         .accessibilityIdentifier(AccessibilityID.autoSaveIndicator)
@@ -148,7 +148,7 @@ struct EditorTabBar: View {
                     onTogglePreview?()
                 } label: {
                     Image(systemName: previewIcon)
-                        .font(.system(size: 11, weight: .medium))
+                        .font(.system(size: LayoutMetrics.bodySmallFontSize, weight: .medium))
                         .foregroundStyle(.secondary)
                         .frame(width: 24, height: 24)
                 }
@@ -158,7 +158,7 @@ struct EditorTabBar: View {
                 .padding(.trailing, 4)
             }
         }
-        .frame(height: 30)
+        .frame(height: LayoutMetrics.tabBarHeight)
         .background(.bar)
         .accessibilityIdentifier(AccessibilityID.editorTabBar)
     }
@@ -227,11 +227,11 @@ struct EditorTabItem: View {
             .accessibilityIdentifier(AccessibilityID.editorTabCloseButton(tab.fileName))
 
             Image(systemName: FileIconMapper.iconForFile(tab.fileName))
-                .font(.system(size: 9))
+                .font(.system(size: LayoutMetrics.iconSmallFontSize))
                 .foregroundStyle(.secondary)
 
             Text(tab.fileName)
-                .font(.system(size: 11))
+                .font(.system(size: LayoutMetrics.bodySmallFontSize))
                 .lineLimit(1)
                 .truncationMode(.middle)
         }

@@ -5,7 +5,9 @@
 //  Created by Федор Батоногов on 09.03.2026.
 //
 
+import os
 import SwiftUI
+import UniformTypeIdentifiers
 
 // MARK: - Главный ContentView
 
@@ -29,6 +31,7 @@ struct ContentView: View {
     @State private var goToLineOffset: GoToRequest?
     @State private var recoveryEntries: [(UUID, RecoveryEntry)] = []
     @State private var showRecoveryDialog = false
+    @State private var isDragTargeted = false
     @State private var isQuickOpenPresented = false
     @State private var showGoToLine = false
     @AppStorage("minimapVisible") private var isMinimapVisible = true
@@ -82,7 +85,8 @@ struct ContentView: View {
                 StatusBarView(
                     gitProvider: workspace.gitProvider,
                     terminal: terminal,
-                    tabManager: tabManager
+                    tabManager: tabManager,
+                    progress: projectManager.progress
                 )
             }
         }
@@ -224,6 +228,16 @@ struct ContentView: View {
                 }
             }
 
+            // Restore per-tab editor state (cursor, scroll, folds)
+            if let editorStates = session.existingEditorStates {
+                for index in tabManager.tabs.indices {
+                    let path = tabManager.tabs[index].url.path
+                    if let state = editorStates[path] {
+                        state.apply(to: &tabManager.tabs[index])
+                    }
+                }
+            }
+
             if let activeURL = session.activeFileURL,
                let tab = tabManager.tab(for: activeURL) {
                 tabManager.activeTabID = tab.id
@@ -304,6 +318,33 @@ struct ContentView: View {
     private func openNewProject() {
         guard let url = registry.openProjectViaPanel() else { return }
         openWindow(value: url)
+    }
+
+    // MARK: - Drag & Drop
+
+    /// Handles file URLs dropped onto the editor area.
+    /// Files are opened as tabs; directories open as new project windows.
+    private func handleFileDrop(providers: [NSItemProvider]) {
+        for provider in providers {
+            Task {
+                guard let url = try? await provider.loadItem(
+                    forTypeIdentifier: UTType.fileURL.identifier
+                ) as? URL else { return }
+
+                let classified = DropHandler.classifyURLs([url])
+
+                await MainActor.run {
+                    // Open directories as new project windows
+                    for dir in classified.directories {
+                        let canonical = dir.resolvingSymlinksInPath()
+                        guard registry.projectManager(for: canonical) != nil else { continue }
+                        openWindow(value: canonical)
+                    }
+                    // Open files as tabs in current project
+                    DropHandler.openFilesAsTabs(classified.files, in: tabManager)
+                }
+            }
+        }
     }
 
     // MARK: - Управление файлами
@@ -565,6 +606,17 @@ struct ContentView: View {
                 .accessibilityIdentifier(AccessibilityID.editorPlaceholder)
             }
         }
+        .onDrop(of: [.fileURL], isTargeted: $isDragTargeted) { providers in
+            handleFileDrop(providers: providers)
+            return true
+        }
+        .overlay {
+            if isDragTargeted {
+                RoundedRectangle(cornerRadius: 8)
+                    .stroke(.blue, lineWidth: 2)
+                    .allowsHitTesting(false)
+            }
+        }
     }
 
     @ViewBuilder
@@ -591,6 +643,10 @@ struct ContentView: View {
             onStateChange: { cursor, scroll in
                 tabManager.updateEditorState(cursorPosition: cursor, scrollOffset: scroll)
             },
+            onHighlightCacheUpdate: { result in
+                tabManager.updateHighlightCache(result)
+            },
+            cachedHighlightResult: tab.cachedHighlightResult,
             goToOffset: goToLineOffset,
             fontSize: FontSizeSettings.shared.fontSize
         )
@@ -648,7 +704,7 @@ struct ContentView: View {
             let lineEnd = NSMaxRange(lineRange)
             if lineEnd > clamped { break }
             // Only advance to next line if a newline actually ends this line
-            if lineEnd == clamped && (clamped == 0 || nsContent.character(at: clamped - 1) != 0x0A) {
+            if lineEnd == clamped && (clamped == 0 || nsContent.character(at: clamped - 1) != ASCII.newline) {
                 break
             }
             line += 1
@@ -1097,7 +1153,16 @@ final class SidebarEditState {
     }
 
     /// Creates a file or folder with a unique "untitled" name, then starts inline rename.
-    func createNewItem(in parentURL: URL, isDirectory: Bool, workspace: WorkspaceManager) {
+    ///
+    /// When creating a new item, undo registration is deferred to `commitRename` so that
+    /// the entire create+rename sequence is undone as a single Cmd+Z action (#527).
+    /// The `undoManager` is stored and used later by `commitRename`.
+    func createNewItem(
+        in parentURL: URL,
+        isDirectory: Bool,
+        workspace: WorkspaceManager,
+        undoManager: UndoManager? = nil
+    ) {
         if let root = workspace.rootURL, !FileNode.isWithinProjectRoot(parentURL, projectRoot: root) {
             Self.showFileError(Strings.operationOutsideProject)
             return
@@ -1108,6 +1173,8 @@ final class SidebarEditState {
         let newURL = parentURL.appendingPathComponent(name)
 
         do {
+            // Do NOT register undo here — undo is deferred to commitRename so that
+            // create + rename are grouped as a single undo action (#527).
             if isDirectory {
                 try FileManager.default.createDirectory(at: newURL, withIntermediateDirectories: false)
             } else if !FileManager.default.createFile(atPath: newURL.path, contents: nil) {
@@ -1178,6 +1245,7 @@ struct SidebarView: View {
     @Binding var selectedFile: FileNode?
     @Environment(ProjectRegistry.self) var registry
     @Environment(\.openWindow) var openWindow
+    @Environment(\.undoManager) private var undoManager
     @State private var editState = SidebarEditState()
 
     var body: some View {
@@ -1204,13 +1272,23 @@ struct SidebarView: View {
                 .contextMenu {
                     if let rootURL = workspace.rootURL {
                         Button {
-                            editState.createNewItem(in: rootURL, isDirectory: false, workspace: workspace)
+                            editState.createNewItem(
+                                in: rootURL,
+                                isDirectory: false,
+                                workspace: workspace,
+                                undoManager: undoManager
+                            )
                         } label: {
                             Label(Strings.contextNewFile, systemImage: MenuIcons.newFile)
                         }
 
                         Button {
-                            editState.createNewItem(in: rootURL, isDirectory: true, workspace: workspace)
+                            editState.createNewItem(
+                                in: rootURL,
+                                isDirectory: true,
+                                workspace: workspace,
+                                undoManager: undoManager
+                            )
                         } label: {
                             Label(Strings.contextNewFolder, systemImage: MenuIcons.newFolder)
                         }
@@ -1266,10 +1344,12 @@ private struct DocumentEditedTracker: NSViewRepresentable {
 // MARK: - Строка файла/папки в дереве
 
 struct FileNodeRow: View {
+    private static let logger = Logger.editor
     var node: FileNode
     @Environment(WorkspaceManager.self) var workspace
     @Environment(TabManager.self) var tabManager
     @Environment(SidebarEditState.self) var editState
+    @Environment(\.undoManager) private var undoManager
     @FocusState private var isTextFieldFocused: Bool
 
     private var isEditing: Bool {
@@ -1389,7 +1469,12 @@ struct FileNodeRow: View {
     // MARK: - File operations
 
     private func createNewItem(isDirectory: Bool) {
-        editState.createNewItem(in: node.url, isDirectory: isDirectory, workspace: workspace)
+        editState.createNewItem(
+            in: node.url,
+            isDirectory: isDirectory,
+            workspace: workspace,
+            undoManager: undoManager
+        )
     }
 
     private func duplicateItem() {
@@ -1425,6 +1510,10 @@ struct FileNodeRow: View {
         // Name unchanged — accept as-is
         if newURL == oldURL {
             editState.clear()
+            // For newly created items, register a single undo that deletes the file (#527)
+            if wasNewlyCreated, let undoManager {
+                try? FileOperationUndoManager.registerCreateUndo(at: oldURL, undoManager: undoManager)
+            }
             if wasNewlyCreated && !node.isDirectory {
                 tabManager.openTab(url: oldURL)
             }
@@ -1432,7 +1521,18 @@ struct FileNodeRow: View {
         }
 
         do {
-            try FileManager.default.moveItem(at: oldURL, to: newURL)
+            if wasNewlyCreated {
+                // For newly created items: rename without undo registration, then register
+                // a single undo that deletes the final file — so Cmd+Z removes it entirely (#527).
+                try FileManager.default.moveItem(at: oldURL, to: newURL)
+                if let undoManager {
+                    try? FileOperationUndoManager.registerCreateUndo(at: newURL, undoManager: undoManager)
+                }
+            } else if let undoManager {
+                try FileOperationUndoManager.renameItem(from: oldURL, to: newURL, undoManager: undoManager)
+            } else {
+                try FileManager.default.moveItem(at: oldURL, to: newURL)
+            }
             editState.clear()
             workspace.refreshFileTree()
             NotificationCenter.default.post(
@@ -1457,7 +1557,11 @@ struct FileNodeRow: View {
 
         // Delete placeholder item if creation was cancelled
         if wasNewlyCreated, let url {
-            try? FileManager.default.removeItem(at: url)
+            do {
+                try FileManager.default.removeItem(at: url)
+            } catch {
+                Self.logger.error("Failed to delete placeholder item \(url.lastPathComponent): \(error)")
+            }
             workspace.refreshFileTree()
         }
     }
@@ -1471,7 +1575,11 @@ struct FileNodeRow: View {
         }
 
         do {
-            try FileManager.default.trashItem(at: deletedURL, resultingItemURL: nil)
+            if let undoManager {
+                try FileOperationUndoManager.deleteItem(at: deletedURL, undoManager: undoManager)
+            } else {
+                try FileManager.default.trashItem(at: deletedURL, resultingItemURL: nil)
+            }
             workspace.refreshFileTree()
             NotificationCenter.default.post(
                 name: .fileDeleted,
@@ -1490,9 +1598,22 @@ struct StatusBarView: View {
     var gitProvider: GitStatusProvider
     var terminal: TerminalManager
     var tabManager: TabManager
+    var progress: ProgressTracker?
 
     var body: some View {
-        HStack(spacing: 6) {
+        HStack(spacing: LayoutMetrics.statusBarItemSpacing) {
+            if let progress, progress.isLoading {
+                HStack(spacing: 4) {
+                    ProgressView()
+                        .controlSize(.mini)
+                    Text(verbatim: progress.message)
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+                .accessibilityIdentifier(AccessibilityID.progressIndicator)
+            }
+
             if gitProvider.isGitRepository {
                 // Git file change summary
                 if !gitProvider.fileStatuses.isEmpty {
@@ -1523,7 +1644,7 @@ struct StatusBarView: View {
                             .foregroundStyle(.teal)
                         }
                     }
-                    .font(.system(size: 10))
+                    .font(.system(size: LayoutMetrics.captionFontSize))
                 }
             }
 
@@ -1532,7 +1653,7 @@ struct StatusBarView: View {
             if let activeTab = tabManager.activeTab, activeTab.kind == .text {
                 // Line / Column indicator (cached in EditorTab by TabManager)
                 Text(verbatim: "Ln \(activeTab.cursorLine), Col \(activeTab.cursorColumn)")
-                    .font(.system(size: 11))
+                    .font(.system(size: LayoutMetrics.bodySmallFontSize))
                     .foregroundStyle(.secondary)
                     .accessibilityIdentifier(AccessibilityID.cursorPosition)
 
@@ -1540,7 +1661,7 @@ struct StatusBarView: View {
 
                 // Indentation style indicator (cached, recomputed on content change)
                 Text(verbatim: activeTab.cachedIndentation.displayName)
-                    .font(.system(size: 11))
+                    .font(.system(size: LayoutMetrics.bodySmallFontSize))
                     .foregroundStyle(.secondary)
                     .accessibilityIdentifier(AccessibilityID.indentationIndicator)
 
@@ -1548,7 +1669,7 @@ struct StatusBarView: View {
 
                 // Line ending indicator (cached, recomputed on content change)
                 Text(verbatim: activeTab.cachedLineEnding.displayName)
-                    .font(.system(size: 11))
+                    .font(.system(size: LayoutMetrics.bodySmallFontSize))
                     .foregroundStyle(.secondary)
                     .accessibilityIdentifier(AccessibilityID.lineEndingIndicator)
 
@@ -1570,7 +1691,7 @@ struct StatusBarView: View {
                     }
                 } label: {
                     Text(activeTab.encoding.displayName)
-                        .font(.system(size: 11))
+                        .font(.system(size: LayoutMetrics.bodySmallFontSize))
                         .foregroundStyle(.secondary)
                 }
                 .menuStyle(.borderlessButton)
@@ -1583,7 +1704,7 @@ struct StatusBarView: View {
                     statusDivider
 
                     Text(verbatim: FileSizeFormatter.format(size))
-                        .font(.system(size: 11))
+                        .font(.system(size: LayoutMetrics.bodySmallFontSize))
                         .foregroundStyle(.secondary)
                         .accessibilityIdentifier(AccessibilityID.fileSizeIndicator)
                 }
@@ -1596,11 +1717,11 @@ struct StatusBarView: View {
                 HStack(spacing: 3) {
                     Image(systemName: terminal.isTerminalVisible
                           ? "chevron.down" : "chevron.up")
-                        .font(.system(size: 9, weight: .semibold))
+                        .font(.system(size: LayoutMetrics.iconSmallFontSize, weight: .semibold))
                     Image(systemName: "terminal")
-                        .font(.system(size: 10))
+                        .font(.system(size: LayoutMetrics.captionFontSize))
                     Text(Strings.terminalLabel)
-                        .font(.system(size: 11))
+                        .font(.system(size: LayoutMetrics.bodySmallFontSize))
                 }
                 .foregroundStyle(terminal.isTerminalVisible ? .primary : .secondary)
             }
@@ -1609,15 +1730,16 @@ struct StatusBarView: View {
             .accessibilityIdentifier(AccessibilityID.terminalToggleButton)
             .accessibilityAddTraits(.isButton)
         }
-        .padding(.leading, 8)
-        .padding(.trailing, 14)
-        .frame(height: 22)
+        .padding(.horizontal, LayoutMetrics.statusBarHorizontalPadding)
+        .frame(height: LayoutMetrics.statusBarHeight)
         .background(.bar)
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier(AccessibilityID.statusBar)
     }
 
     private var statusDivider: some View {
         Text(verbatim: "·")
-            .font(.system(size: 11))
+            .font(.system(size: LayoutMetrics.bodySmallFontSize))
             .foregroundStyle(.quaternary)
     }
 

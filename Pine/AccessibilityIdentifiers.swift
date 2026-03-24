@@ -10,6 +10,8 @@ enum AccessibilityID {
     static let welcomeWindow = "welcomeWindow"
     static let welcomeOpenFolderButton = "welcomeOpenFolderButton"
     static let welcomeRecentProjectsList = "welcomeRecentProjectsList"
+    static let welcomeSearchField = "welcomeSearchField"
+    static let welcomeSearchToggle = "welcomeSearchToggle"
     static func welcomeRecentProject(_ name: String) -> String { "welcomeRecentProject_\(name)" }
 
     // MARK: - Main editor window
@@ -61,6 +63,8 @@ enum AccessibilityID {
 
     // MARK: - Project Search
     static let projectSearchResultsList = "projectSearchResultsList"
+    static let searchEmptyState = "searchEmptyState"
+    static let searchInitialState = "searchInitialState"
 
     // MARK: - Quick Open
     static let quickOpenOverlay = "quickOpenOverlay"
@@ -76,4 +80,5 @@ enum AccessibilityID {
     static let indentationIndicator = "indentationIndicator"
     static let lineEndingIndicator = "lineEndingIndicator"
     static let fileSizeIndicator = "fileSizeIndicator"
+    static let progressIndicator = "progressIndicator"
 }

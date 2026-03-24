@@ -23,7 +23,7 @@ struct LineStartsCache {
     init(source: NSString) {
         let length = source.length
         var starts: [Int] = [0]
-        for i in 0..<length where source.character(at: i) == 0x0A {
+        for i in 0..<length where source.character(at: i) == ASCII.newline {
             starts.append(i + 1)
         }
         lineStarts = starts
@@ -87,7 +87,7 @@ struct LineStartsCache {
         // Сканируем editedRange в новом тексте и вставляем новые строки.
         let scanEnd = min(editedRange.location + editedRange.length, source.length)
         var newStarts: [Int] = []
-        for i in editedRange.location..<scanEnd where source.character(at: i) == 0x0A {
+        for i in editedRange.location..<scanEnd where source.character(at: i) == ASCII.newline {
             newStarts.append(i + 1)
         }
 

@@ -25,14 +25,18 @@ struct SearchResultsView: View {
                 .frame(maxWidth: .infinity)
                 .transition(PineAnimation.fadeTransition)
             } else if search.results.isEmpty && !search.query.isEmpty {
-                VStack {
-                    Spacer()
-                    Text(Strings.searchNoResults)
-                        .foregroundStyle(.secondary)
-                        .font(.system(size: 12))
-                    Spacer()
+                ContentUnavailableView {
+                    Label(Strings.searchNoResults, systemImage: "magnifyingglass")
                 }
-                .frame(maxWidth: .infinity)
+                .accessibilityIdentifier(AccessibilityID.searchEmptyState)
+                .transition(PineAnimation.fadeTransition)
+            } else if search.query.isEmpty {
+                ContentUnavailableView {
+                    Label(Strings.searchInitialPrompt, systemImage: "text.magnifyingglass")
+                } description: {
+                    Text(Strings.searchInitialDescription)
+                }
+                .accessibilityIdentifier(AccessibilityID.searchInitialState)
                 .transition(PineAnimation.fadeTransition)
             } else {
                 searchResultsList
@@ -59,23 +63,23 @@ struct SearchResultsView: View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 4) {
                 Image(systemName: FileIconMapper.iconForFile(group.url.lastPathComponent))
-                    .font(.system(size: 11))
+                    .font(.system(size: LayoutMetrics.bodySmallFontSize))
                     .foregroundStyle(.secondary)
                 Text(group.relativePath)
-                    .font(.system(size: 11, weight: .medium))
+                    .font(.system(size: LayoutMetrics.bodySmallFontSize, weight: .medium))
                     .lineLimit(1)
                     .truncationMode(.middle)
 
                 Spacer()
 
                 Text("\(group.matches.count)")
-                    .font(.system(size: 10))
+                    .font(.system(size: LayoutMetrics.captionFontSize))
                     .foregroundStyle(.secondary)
                     .padding(.horizontal, 4)
                     .background(.quaternary, in: Capsule())
             }
-            .padding(.horizontal, 8)
-            .padding(.vertical, 4)
+            .padding(.horizontal, LayoutMetrics.searchResultHorizontalPadding)
+            .padding(.vertical, LayoutMetrics.searchResultHeaderVerticalPadding)
             .background(.bar)
 
             ForEach(group.matches) { match in
@@ -108,17 +112,17 @@ private struct MatchRowView: View {
         } label: {
             HStack(spacing: 6) {
                 Text("\(match.lineNumber)")
-                    .font(.system(size: 10, design: .monospaced))
+                    .font(.system(size: LayoutMetrics.captionFontSize, design: .monospaced))
                     .foregroundStyle(.tertiary)
                     .frame(width: 30, alignment: .trailing)
 
                 highlightedText
-                    .font(.system(size: 11, design: .monospaced))
+                    .font(.system(size: LayoutMetrics.bodySmallFontSize, design: .monospaced))
                     .lineLimit(1)
                     .truncationMode(.tail)
             }
-            .padding(.horizontal, 8)
-            .padding(.vertical, 2)
+            .padding(.horizontal, LayoutMetrics.searchResultHorizontalPadding)
+            .padding(.vertical, LayoutMetrics.searchResultRowVerticalPadding)
             .frame(maxWidth: .infinity, alignment: .leading)
             .contentShape(Rectangle())
             .background(isHovered ? Color.primary.opacity(0.06) : Color.clear)

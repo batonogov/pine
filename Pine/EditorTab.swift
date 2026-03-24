@@ -64,6 +64,11 @@ struct EditorTab: Identifiable, Hashable {
     /// Whether this tab's content was truncated on load (huge file partial load).
     var isTruncated: Bool = false
 
+    /// Cached syntax highlight matches — applied synchronously on tab switch
+    /// to eliminate the flash of unhighlighted text.
+    /// Not included in Hashable/Equatable (which use id only).
+    var cachedHighlightResult: HighlightMatchResult?
+
     /// The detected file encoding. Used for saving the file in its original encoding.
     var encoding: String.Encoding = .utf8
 

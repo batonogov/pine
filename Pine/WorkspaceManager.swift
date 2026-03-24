@@ -5,6 +5,7 @@
 //  Created by Claude on 11.03.2026.
 //
 
+import os
 import SwiftUI
 
 /// Manages the project file tree, root directory, and git integration.
@@ -13,10 +14,13 @@ import SwiftUI
 /// main thread (enforced by SwiftUI's @Observable).
 @Observable
 final class WorkspaceManager {
+    private static let logger = Logger.fileTree
     var rootNodes: [FileNode] = []
     var projectName: String = "Pine"
     var rootURL: URL?
     let gitProvider = GitStatusProvider()
+    /// Shared progress tracker — set by ProjectManager after init.
+    weak var progressTracker: ProgressTracker?
     private var fileWatcher: FileSystemWatcher?
 
     /// Incremented on every file-watcher event so ContentView can trigger
@@ -28,6 +32,23 @@ final class WorkspaceManager {
     /// a slow background task never overwrites a newer result.
     private var loadGeneration: Int = 0
 
+    /// Called on main thread whenever `rootNodes` changes so dependents
+    /// (e.g. QuickOpenProvider) can rebuild their caches.
+    /// Debounced with 200ms delay so rapid sequential updates
+    /// (shallow → full phase) trigger only one rebuild.
+    private(set) var onRootNodesChanged: (([FileNode]) -> Void)?
+
+    /// Pending debounced notification work item.
+    private var rootNodesChangedWorkItem: DispatchWorkItem?
+
+    /// Debounce interval for `onRootNodesChanged` notifications.
+    private static let rootNodesChangedDebounce: TimeInterval = 0.2
+
+    /// Sets the callback invoked when `rootNodes` changes.
+    func setOnRootNodesChanged(_ handler: (([FileNode]) -> Void)?) {
+        onRootNodesChanged = handler
+    }
+
     /// Tracks the in-flight async git refresh so it can be cancelled
     /// when a new refresh starts (prevents stale data from overwriting newer results).
     private var gitRefreshTask: Task<Void, Never>?
@@ -35,6 +56,20 @@ final class WorkspaceManager {
     /// After a synchronous refreshFileTree(), watcher events within this
     /// window are suppressed because they echo the action we just handled.
     private var suppressWatcherUntil: Date?
+
+    /// Schedules a debounced `onRootNodesChanged` notification.
+    /// Cancels any pending notification so rapid updates coalesce into one.
+    private func notifyRootNodesChanged(_ nodes: [FileNode]) {
+        rootNodesChangedWorkItem?.cancel()
+        let workItem = DispatchWorkItem { [weak self] in
+            self?.onRootNodesChanged?(nodes)
+        }
+        rootNodesChangedWorkItem = workItem
+        DispatchQueue.main.asyncAfter(
+            deadline: .now() + Self.rootNodesChangedDebounce,
+            execute: workItem
+        )
+    }
 
     deinit {
         fileWatcher?.stop()
@@ -100,6 +135,7 @@ final class WorkspaceManager {
         generation: Int,
         completion: (() -> Void)? = nil
     ) {
+        let progressID = progressTracker?.beginOperation(Strings.progressLoadingProject)
         DispatchQueue.global(qos: .userInitiated).async {
             // Run git setup first so we know which paths are ignored
             let bgGit = GitStatusProvider()
@@ -114,8 +150,12 @@ final class WorkspaceManager {
             let shallowChildren = shallowResult.root.children ?? []
 
             DispatchQueue.main.async { [weak self] in
-                guard let self, self.loadGeneration == generation else { return }
+                guard let self, self.loadGeneration == generation else {
+                    if let progressID { self?.progressTracker?.endOperation(progressID) }
+                    return
+                }
                 self.rootNodes = shallowChildren
+                self.notifyRootNodesChanged(shallowChildren)
                 self.gitProvider.repositoryURL = bgGit.repositoryURL
                 self.gitProvider.gitRootPath = bgGit.gitRootPath
                 self.gitProvider.isGitRepository = bgGit.isGitRepository
@@ -126,6 +166,7 @@ final class WorkspaceManager {
 
                 // For shallow projects, start watcher now — no Phase 2 needed.
                 if !shallowResult.wasDepthLimited {
+                    if let progressID { self.progressTracker?.endOperation(progressID) }
                     completion?()
                 }
             }
@@ -142,8 +183,13 @@ final class WorkspaceManager {
             // Completion (file watcher) starts after Phase 2 to avoid watcher events
             // racing with and invalidating the in-flight full tree load.
             DispatchQueue.main.async { [weak self] in
-                guard let self, self.loadGeneration == generation else { return }
+                guard let self, self.loadGeneration == generation else {
+                    if let progressID { self?.progressTracker?.endOperation(progressID) }
+                    return
+                }
                 self.rootNodes = fullChildren
+                self.notifyRootNodesChanged(fullChildren)
+                if let progressID { self.progressTracker?.endOperation(progressID) }
                 completion?()
             }
         }
@@ -159,11 +205,15 @@ final class WorkspaceManager {
     ) -> [FileNode] {
         let hiddenNames: Set<String> = [".git", ".DS_Store"]
 
-        guard let topContents = try? FileManager.default.contentsOfDirectory(
-            at: url,
-            includingPropertiesForKeys: [.isDirectoryKey, .isSymbolicLinkKey],
-            options: []
-        ) else {
+        let topContents: [URL]
+        do {
+            topContents = try FileManager.default.contentsOfDirectory(
+                at: url,
+                includingPropertiesForKeys: [.isDirectoryKey, .isSymbolicLinkKey],
+                options: []
+            )
+        } catch {
+            logger.error("Failed to list directory \(url.lastPathComponent): \(error)")
             return []
         }
 
@@ -209,6 +259,7 @@ final class WorkspaceManager {
             maxDepth: Self.shallowDepth
         )
         rootNodes = shallowResult.root.children ?? []
+        notifyRootNodesChanged(rootNodes)
 
         // Phase 2 (async): full tree only if Phase 1 hit the depth limit
         if shallowResult.wasDepthLimited {
@@ -219,6 +270,7 @@ final class WorkspaceManager {
                 DispatchQueue.main.async { [weak self] in
                     guard let self, self.loadGeneration == generation else { return }
                     self.rootNodes = fullChildren
+                    self.notifyRootNodesChanged(fullChildren)
                 }
             }
         }
