@@ -22,13 +22,13 @@ struct CursorLocation: Equatable {
         var i = 0
         while i < clampedPosition {
             let char = nsContent.character(at: i)
-            if char == 0x0A { // \n
+            if char == ASCII.newline {
                 currentLine += 1
                 lineStart = i + 1
-            } else if char == 0x0D { // \r
+            } else if char == ASCII.carriageReturn {
                 currentLine += 1
                 // Skip \n in \r\n pair
-                if i + 1 < nsContent.length && nsContent.character(at: i + 1) == 0x0A {
+                if i + 1 < nsContent.length && nsContent.character(at: i + 1) == ASCII.newline {
                     i += 1
                 }
                 lineStart = i + 1
@@ -62,10 +62,11 @@ enum LineEnding: Equatable {
         var i = 0
         while i < nsContent.length {
             let char = nsContent.character(at: i)
-            if char == 0x0D && i + 1 < nsContent.length && nsContent.character(at: i + 1) == 0x0A {
+            if char == ASCII.carriageReturn && i + 1 < nsContent.length
+                && nsContent.character(at: i + 1) == ASCII.newline {
                 crlfCount += 1
                 i += 2
-            } else if char == 0x0A {
+            } else if char == ASCII.newline {
                 lfCount += 1
                 i += 1
             } else {
@@ -129,12 +130,12 @@ enum IndentationStyle: Equatable {
 /// Formats file sizes for display.
 enum FileSizeFormatter {
     static func format(_ bytes: Int) -> String {
-        if bytes < 1_024 {
+        if bytes < FileSizeConstants.oneKB {
             return "\(bytes) B"
-        } else if bytes < 1_048_576 {
-            return String(format: "%.1f KB", Double(bytes) / 1_024.0)
+        } else if bytes < FileSizeConstants.oneMB {
+            return String(format: "%.1f KB", Double(bytes) / Double(FileSizeConstants.oneKB))
         } else {
-            return String(format: "%.1f MB", Double(bytes) / 1_048_576.0)
+            return String(format: "%.1f MB", Double(bytes) / Double(FileSizeConstants.oneMB))
         }
     }
 }

@@ -13,14 +13,18 @@ import UniformTypeIdentifiers
 @Observable
 final class TabManager {
     private static let logger = Logger.editor
+
+    /// Maximum number of simultaneously open tabs. Prevents unbounded memory growth.
+    static let maxTabs = 1_000
+
     /// File size threshold (in bytes) above which a warning is shown before opening.
-    static let largeFileThreshold = 1_048_576 // 1 MB
+    static let largeFileThreshold = FileSizeConstants.oneMB
 
     /// File size threshold (in bytes) above which only a partial load is performed.
-    static let hugeFileThreshold = 10_485_760 // 10 MB
+    static let hugeFileThreshold = FileSizeConstants.tenMB
 
     /// Number of bytes to load from the beginning of a huge file.
-    static let hugeFilePartialLoadSize = 1_048_576 // 1 MB
+    static let hugeFilePartialLoadSize = FileSizeConstants.oneMB
 
     var tabs: [EditorTab] = []
     var activeTabID: UUID?
@@ -64,7 +68,7 @@ final class TabManager {
 
         // Large file warning
         if let size = fileSize(url: url), size >= Self.largeFileThreshold {
-            let sizeMB = Double(size) / 1_048_576.0
+            let sizeMB = Double(size) / Double(FileSizeConstants.oneMB)
             let result = showLargeFileAlert(fileName: url.lastPathComponent, sizeMB: sizeMB)
             switch result {
             case .cancel:
@@ -259,6 +263,7 @@ final class TabManager {
     /// On failure, throws — callers decide how to present the error.
     @discardableResult
     func trySaveTab(at index: Int) throws -> Bool {
+        assert(tabs.indices.contains(index), "trySaveTab called with out-of-bounds index \(index), tabs.count = \(tabs.count)")
         let tab = tabs[index]
         guard tab.kind == .text else { return false }
         // Prevent saving truncated files — writing partial content would corrupt the file.
@@ -280,6 +285,7 @@ final class TabManager {
     /// Saves a specific tab by index. Returns true on success, shows alert on failure.
     @discardableResult
     func saveTab(at index: Int) -> Bool {
+        assert(tabs.indices.contains(index), "saveTab called with out-of-bounds index \(index), tabs.count = \(tabs.count)")
         do {
             return try trySaveTab(at: index)
         } catch {

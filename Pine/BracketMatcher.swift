@@ -17,6 +17,10 @@ struct BracketMatch: Equatable {
 /// Поддерживает `()`, `{}`, `[]`.
 enum BracketMatcher {
 
+    /// Maximum number of characters to scan in each direction when searching
+    /// for a matching bracket. Prevents hangs on very large files.
+    static let maxScanIterations = 100_000
+
     private static let openBrackets: [unichar: unichar] = [
         0x28: 0x29, // ( → )
         0x7B: 0x7D, // { → }
@@ -103,8 +107,12 @@ enum BracketMatcher {
         var depth = 1
         var index = start
         let length = source.length
+        var iterations = 0
 
         while index < length {
+            iterations += 1
+            if iterations > maxScanIterations { return nil }
+
             if isInSkipRange(index, skipRanges: skipRanges) {
                 index += 1
                 continue
@@ -130,8 +138,12 @@ enum BracketMatcher {
     ) -> Int? {
         var depth = 1
         var index = start
+        var iterations = 0
 
         while index >= 0 {
+            iterations += 1
+            if iterations > maxScanIterations { return nil }
+
             if isInSkipRange(index, skipRanges: skipRanges) {
                 index -= 1
                 continue
