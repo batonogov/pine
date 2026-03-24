@@ -18,6 +18,13 @@ final class ProjectManager {
     let quickOpenProvider = QuickOpenProvider()
     private(set) var recoveryManager: RecoveryManager?
 
+    init() {
+        workspace.onRootNodesChanged = { [weak self] nodes in
+            guard let self, let rootURL = self.workspace.rootURL else { return }
+            self.quickOpenProvider.rebuildIndex(from: nodes, rootURL: rootURL)
+        }
+    }
+
     deinit {
         recoveryManager?.stopPeriodicSnapshots()
     }

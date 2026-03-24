@@ -28,6 +28,10 @@ final class WorkspaceManager {
     /// a slow background task never overwrites a newer result.
     private var loadGeneration: Int = 0
 
+    /// Called on main thread whenever `rootNodes` changes so dependents
+    /// (e.g. QuickOpenProvider) can rebuild their caches.
+    var onRootNodesChanged: (([FileNode]) -> Void)?
+
     /// Tracks the in-flight async git refresh so it can be cancelled
     /// when a new refresh starts (prevents stale data from overwriting newer results).
     private var gitRefreshTask: Task<Void, Never>?
@@ -116,6 +120,7 @@ final class WorkspaceManager {
             DispatchQueue.main.async { [weak self] in
                 guard let self, self.loadGeneration == generation else { return }
                 self.rootNodes = shallowChildren
+                self.onRootNodesChanged?(shallowChildren)
                 self.gitProvider.repositoryURL = bgGit.repositoryURL
                 self.gitProvider.gitRootPath = bgGit.gitRootPath
                 self.gitProvider.isGitRepository = bgGit.isGitRepository
@@ -144,6 +149,7 @@ final class WorkspaceManager {
             DispatchQueue.main.async { [weak self] in
                 guard let self, self.loadGeneration == generation else { return }
                 self.rootNodes = fullChildren
+                self.onRootNodesChanged?(fullChildren)
                 completion?()
             }
         }
@@ -209,6 +215,7 @@ final class WorkspaceManager {
             maxDepth: Self.shallowDepth
         )
         rootNodes = shallowResult.root.children ?? []
+        onRootNodesChanged?(rootNodes)
 
         // Phase 2 (async): full tree only if Phase 1 hit the depth limit
         if shallowResult.wasDepthLimited {
@@ -219,6 +226,7 @@ final class WorkspaceManager {
                 DispatchQueue.main.async { [weak self] in
                     guard let self, self.loadGeneration == generation else { return }
                     self.rootNodes = fullChildren
+                    self.onRootNodesChanged?(fullChildren)
                 }
             }
         }

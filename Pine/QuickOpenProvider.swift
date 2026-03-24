@@ -55,6 +55,13 @@ final class QuickOpenProvider {
         resolvedPaths = paths
     }
 
+    /// Rebuilds the flat file index unconditionally, ignoring cache.
+    /// Called when the file tree changes (files added/removed/renamed).
+    func rebuildIndex(from roots: [FileNode], rootURL: URL) {
+        indexedRoot = nil
+        buildIndex(from: roots, rootURL: rootURL)
+    }
+
     /// Invalidates the cached index (e.g., when project root changes).
     func invalidateIndex() {
         fileIndex = []
