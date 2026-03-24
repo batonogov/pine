@@ -119,6 +119,12 @@ final class ProjectRegistry {
 
     // MARK: - Recent Projects
 
+    /// Removes a single project from the recent projects list.
+    func removeFromRecent(_ url: URL) {
+        recentProjects.removeAll { $0 == url }
+        saveRecentProjects()
+    }
+
     private func addToRecent(_ url: URL) {
         recentProjects.removeAll { $0 == url }
         recentProjects.insert(url, at: 0)

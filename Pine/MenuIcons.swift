@@ -15,6 +15,7 @@ enum MenuIcons {
     static let autoSave = "arrow.triangle.2.circlepath"
 
     static let quickOpen = "doc.text.magnifyingglass"
+    static let installCLI = "terminal"
 
     // MARK: - Edit menu
     static let toggleComment = "slash.circle"

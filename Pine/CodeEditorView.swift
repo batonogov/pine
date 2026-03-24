@@ -418,9 +418,6 @@ struct CodeEditorView: NSViewRepresentable {
     /// When non-nil, the editor scrolls to this offset. The `id` ensures each request is unique.
     var goToOffset: GoToRequest?
 
-    /// Пользовательский ключ атрибута для подсветки парных скобок.
-    static let bracketHighlightKey = NSAttributedString.Key("PineBracketHighlight")
-
     /// Порог (в символах) для переключения на viewport-based подсветку.
     static let viewportHighlightThreshold = 100_000
 
@@ -1078,7 +1075,7 @@ struct CodeEditorView: NSViewRepresentable {
         /// Предыдущие позиции подсвеченных скобок (для очистки).
         private var previousBracketRanges: [NSRange] = []
 
-        /// Цвет подсветки парных скобок.
+        /// Цвет подсветки парных скобок (matched).
         private let bracketHighlightColor = NSColor(name: nil) { appearance in
             if appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua {
                 return NSColor.white.withAlphaComponent(0.15)
@@ -1087,20 +1084,20 @@ struct CodeEditorView: NSViewRepresentable {
             }
         }
 
+        /// Цвет подсветки orphan-скобки (unmatched).
+        private let unmatchedBracketColor = NSColor.systemRed.withAlphaComponent(0.20)
+
         private func updateBracketHighlight() {
             guard let sv = scrollView,
                   let textView = sv.documentView as? NSTextView,
-                  let storage = textView.textStorage else { return }
+                  let layoutManager = textView.layoutManager else { return }
 
-            let undoManager = textView.undoManager
-            undoManager?.disableUndoRegistration()
-            defer { undoManager?.enableUndoRegistration() }
-            storage.beginEditing()
-
-            // Снимаем предыдущую подсветку
-            for range in previousBracketRanges where range.location + range.length <= storage.length {
-                storage.removeAttribute(CodeEditorView.bracketHighlightKey, range: range)
-                storage.removeAttribute(.backgroundColor, range: range)
+            // Снимаем предыдущую подсветку (temporary attributes на layout manager)
+            let fullLength = textView.textStorage?.length ?? 0
+            for range in previousBracketRanges where range.location + range.length <= fullLength {
+                layoutManager.removeTemporaryAttribute(
+                    .backgroundColor, forCharacterRange: range
+                )
             }
             previousBracketRanges = []
 
@@ -1127,33 +1124,32 @@ struct CodeEditorView: NSViewRepresentable {
                 let searchRange = NSRange(location: alignedStart, length: alignedEnd - alignedStart)
                 let isFullRange = alignedStart == 0 && alignedEnd == nsFullText.length
 
-                if let result = bracketMatchInRange(
+                if let result = bracketHighlightInRange(
                     nsFullText, searchRange: searchRange,
-                    cursorLocation: cursorRange.location, storage: storage
+                    cursorLocation: cursorRange.location, layoutManager: layoutManager
                 ) {
                     previousBracketRanges = result
                 } else if !isFullRange {
                     // Fallback: full-file scan when the match is beyond the window
                     let fullRange = NSRange(location: 0, length: nsFullText.length)
-                    if let result = bracketMatchInRange(
+                    if let result = bracketHighlightInRange(
                         nsFullText, searchRange: fullRange,
-                        cursorLocation: cursorRange.location, storage: storage
+                        cursorLocation: cursorRange.location, layoutManager: layoutManager
                     ) {
                         previousBracketRanges = result
                     }
                 }
             }
-
-            storage.endEditing()
         }
 
-        /// Searches for a bracket match within the given range and applies highlight attributes.
-        /// Returns the highlighted ranges on success, nil if no match found.
-        private func bracketMatchInRange(
+        /// Searches for a bracket at cursor within the given range and applies
+        /// temporary highlight attributes on the layout manager.
+        /// Returns the highlighted ranges on success, nil if no bracket near cursor.
+        private func bracketHighlightInRange(
             _ source: NSString,
             searchRange: NSRange,
             cursorLocation: Int,
-            storage: NSTextStorage
+            layoutManager: NSLayoutManager
         ) -> [NSRange]? {
             let substring = source.substring(with: searchRange)
             let localCursor = cursorLocation - searchRange.location
@@ -1164,21 +1160,33 @@ struct CodeEditorView: NSViewRepresentable {
                 fileName: parent.fileName
             )
 
-            guard let match = BracketMatcher.findMatch(
+            guard let highlight = BracketMatcher.findHighlight(
                 in: substring,
                 cursorPosition: localCursor,
                 skipRanges: skipRanges
             ) else { return nil }
 
-            let openerRange = NSRange(location: match.opener + searchRange.location, length: 1)
-            let closerRange = NSRange(location: match.closer + searchRange.location, length: 1)
+            switch highlight {
+            case .matched(let match):
+                let openerRange = NSRange(location: match.opener + searchRange.location, length: 1)
+                let closerRange = NSRange(location: match.closer + searchRange.location, length: 1)
 
-            for range in [openerRange, closerRange] {
-                storage.addAttribute(.backgroundColor, value: bracketHighlightColor, range: range)
-                storage.addAttribute(CodeEditorView.bracketHighlightKey, value: true, range: range)
+                for range in [openerRange, closerRange] {
+                    layoutManager.addTemporaryAttribute(
+                        .backgroundColor, value: bracketHighlightColor,
+                        forCharacterRange: range
+                    )
+                }
+                return [openerRange, closerRange]
+
+            case .unmatched(let position):
+                let range = NSRange(location: position + searchRange.location, length: 1)
+                layoutManager.addTemporaryAttribute(
+                    .backgroundColor, value: unmatchedBracketColor,
+                    forCharacterRange: range
+                )
+                return [range]
             }
-
-            return [openerRange, closerRange]
         }
 
         @objc func scrollViewDidScroll(_ notification: Notification) {
