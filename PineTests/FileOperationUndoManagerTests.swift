@@ -216,6 +216,73 @@ struct FileOperationUndoManagerTests {
         }
     }
 
+    // MARK: - Grouped create+rename undo (#527)
+
+    @Test func registerCreateUndoDeletesFileOnUndo() throws {
+        let dir = try makeTempDir()
+        defer { cleanup(dir) }
+
+        // Simulate create + rename flow: file already exists at final URL
+        let finalURL = dir.appendingPathComponent("myFile.swift")
+        try "code".write(to: finalURL, atomically: true, encoding: .utf8)
+
+        let undoManager = UndoManager()
+
+        try FileOperationUndoManager.registerCreateUndo(at: finalURL, undoManager: undoManager)
+
+        // File still exists before undo
+        #expect(FileManager.default.fileExists(atPath: finalURL.path))
+
+        // Single undo should delete the file
+        undoManager.undo()
+
+        #expect(!FileManager.default.fileExists(atPath: finalURL.path))
+    }
+
+    @Test func registerCreateUndoSingleUndoRemovesRenamedFile() throws {
+        let dir = try makeTempDir()
+        defer { cleanup(dir) }
+
+        // Simulate the full create+rename flow:
+        // 1. Create "untitled"
+        let untitledURL = dir.appendingPathComponent("untitled")
+        FileManager.default.createFile(atPath: untitledURL.path, contents: nil)
+
+        // 2. Rename to "hello.swift"
+        let finalURL = dir.appendingPathComponent("hello.swift")
+        try FileManager.default.moveItem(at: untitledURL, to: finalURL)
+
+        // 3. Register single undo for the final URL
+        let undoManager = UndoManager()
+        try FileOperationUndoManager.registerCreateUndo(at: finalURL, undoManager: undoManager)
+
+        // One Cmd+Z should delete the file entirely
+        #expect(undoManager.canUndo)
+        undoManager.undo()
+
+        #expect(!FileManager.default.fileExists(atPath: finalURL.path))
+        #expect(!FileManager.default.fileExists(atPath: untitledURL.path))
+    }
+
+    @Test func registerCreateUndoRedoRestoresFile() throws {
+        let dir = try makeTempDir()
+        defer { cleanup(dir) }
+
+        let fileURL = dir.appendingPathComponent("recreate.txt")
+        try "content".write(to: fileURL, atomically: true, encoding: .utf8)
+
+        let undoManager = UndoManager()
+        try FileOperationUndoManager.registerCreateUndo(at: fileURL, undoManager: undoManager)
+
+        // Undo (delete)
+        undoManager.undo()
+        #expect(!FileManager.default.fileExists(atPath: fileURL.path))
+
+        // Redo (restore from trash)
+        undoManager.redo()
+        #expect(FileManager.default.fileExists(atPath: fileURL.path))
+    }
+
     @Test func renameNonexistentFileThrows() {
         let undoManager = UndoManager()
         let fakeURL = FileManager.default.temporaryDirectory.appendingPathComponent("nonexistent-\(UUID().uuidString)")

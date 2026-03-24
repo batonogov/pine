@@ -1107,6 +1107,10 @@ final class SidebarEditState {
     }
 
     /// Creates a file or folder with a unique "untitled" name, then starts inline rename.
+    ///
+    /// When creating a new item, undo registration is deferred to `commitRename` so that
+    /// the entire create+rename sequence is undone as a single Cmd+Z action (#527).
+    /// The `undoManager` is stored and used later by `commitRename`.
     func createNewItem(
         in parentURL: URL,
         isDirectory: Bool,
@@ -1123,9 +1127,9 @@ final class SidebarEditState {
         let newURL = parentURL.appendingPathComponent(name)
 
         do {
-            if let undoManager {
-                try FileOperationUndoManager.createItem(at: newURL, isDirectory: isDirectory, undoManager: undoManager)
-            } else if isDirectory {
+            // Do NOT register undo here — undo is deferred to commitRename so that
+            // create + rename are grouped as a single undo action (#527).
+            if isDirectory {
                 try FileManager.default.createDirectory(at: newURL, withIntermediateDirectories: false)
             } else if !FileManager.default.createFile(atPath: newURL.path, contents: nil) {
                 Self.showFileError(Strings.fileCreateError(name))
@@ -1460,6 +1464,10 @@ struct FileNodeRow: View {
         // Name unchanged — accept as-is
         if newURL == oldURL {
             editState.clear()
+            // For newly created items, register a single undo that deletes the file (#527)
+            if wasNewlyCreated, let undoManager {
+                try? FileOperationUndoManager.registerCreateUndo(at: oldURL, undoManager: undoManager)
+            }
             if wasNewlyCreated && !node.isDirectory {
                 tabManager.openTab(url: oldURL)
             }
@@ -1467,7 +1475,14 @@ struct FileNodeRow: View {
         }
 
         do {
-            if let undoManager {
+            if wasNewlyCreated {
+                // For newly created items: rename without undo registration, then register
+                // a single undo that deletes the final file — so Cmd+Z removes it entirely (#527).
+                try FileManager.default.moveItem(at: oldURL, to: newURL)
+                if let undoManager {
+                    try? FileOperationUndoManager.registerCreateUndo(at: newURL, undoManager: undoManager)
+                }
+            } else if let undoManager {
                 try FileOperationUndoManager.renameItem(from: oldURL, to: newURL, undoManager: undoManager)
             } else {
                 try FileManager.default.moveItem(at: oldURL, to: newURL)

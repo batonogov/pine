@@ -54,6 +54,24 @@ enum FileOperationUndoManager {
         undoManager.setActionName(Strings.undoRename)
     }
 
+    // MARK: - Register Create Undo (without creating)
+
+    /// Registers an undo action that trashes the item at `url`, without creating it.
+    ///
+    /// Used when create + rename are performed as separate steps but should undo as one action (#527).
+    /// The caller has already created (and optionally renamed) the item; this method only registers
+    /// the undo so that a single Cmd+Z deletes the final file.
+    static func registerCreateUndo(at url: URL, undoManager: UndoManager) throws {
+        undoManager.registerUndo(withTarget: undoManager) { (undoMgr: UndoManager) in
+            do {
+                try FileOperationUndoManager.deleteItem(at: url, undoManager: undoMgr)
+            } catch {
+                Logger.fileTree.error("Undo create failed: \(error)")
+            }
+        }
+        undoManager.setActionName(Strings.undoCreate)
+    }
+
     // MARK: - Create
 
     /// Creates a file or directory and registers an undo action that trashes it.
