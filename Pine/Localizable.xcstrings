@@ -8150,7 +8150,6 @@
         }
       }
     },
-<<<<<<< HEAD
     "welcome.removeFromRecent" : {
       "comment" : "Context menu item to remove a project from the recent projects list.",
       "extractionState" : "manual",
@@ -8195,22 +8194,11 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Remover dos projetos recentes"
-=======
-    "welcome.searchPlaceholder" : {
-      "comment" : "Placeholder for the search field in the recent projects list.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Filter projects…"
->>>>>>> origin/main
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-<<<<<<< HEAD
             "value" : "Удалить из недавних"
           }
         },
@@ -8236,61 +8224,35 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Reveal in Finder"
-=======
-            "value" : "Фильтр проектов…"
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Projekte filtern…"
->>>>>>> origin/main
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-<<<<<<< HEAD
             "value" : "Mostrar en Finder"
-=======
-            "value" : "Filtrar proyectos…"
->>>>>>> origin/main
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-<<<<<<< HEAD
             "value" : "Afficher dans le Finder"
-=======
-            "value" : "Filtrer les projets…"
->>>>>>> origin/main
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-<<<<<<< HEAD
             "value" : "Finderで表示"
-=======
-            "value" : "プロジェクトを検索…"
->>>>>>> origin/main
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-<<<<<<< HEAD
             "value" : "Finder에서 보기"
-=======
-            "value" : "프로젝트 검색…"
->>>>>>> origin/main
           }
         },
         "pt-BR" : {
           "stringUnit" : {
             "state" : "translated",
-<<<<<<< HEAD
             "value" : "Revelar no Finder"
           }
         },
@@ -8298,19 +8260,72 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Показать в Finder"
-=======
-            "value" : "Filtrar projetos…"
->>>>>>> origin/main
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-<<<<<<< HEAD
             "value" : "在访达中显示"
-=======
+          }
+        }
+      }
+    },
+    "welcome.searchPlaceholder" : {
+      "comment" : "Placeholder for the search field in the recent projects list.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Filter projects…"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Фильтр проектов…"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Projekte filtern…"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Filtrar proyectos…"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Filtrer les projets…"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "プロジェクトを検索…"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "프로젝트 검색…"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Filtrar projetos…"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
             "value" : "筛选项目…"
->>>>>>> origin/main
           }
         }
       }
