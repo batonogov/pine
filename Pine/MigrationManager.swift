@@ -34,12 +34,16 @@ struct MigrationManager {
     private static let existingInstallIndicators = [
         "lastSessionState",         // Legacy session key
         "recentProjectPaths",       // Recent projects
-        BlameConstants.storageKey   // Git blame preference
+        "blameVisible"              // Git blame preference
+    ]
+
+    /// Additional key prefixes to check for existing data.
+    private static let existingInstallPrefixedKeys = [
+        "sessionState:"             // Per-project session keys
     ]
 
     private let defaults: UserDefaults
     private var migrations: [(from: Int, to: Int, migrate: (UserDefaults) -> Void)] = []
-    private let logger = Logger(subsystem: "com.batonogov.Pine", category: "Migration")
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
@@ -61,13 +65,13 @@ struct MigrationManager {
         let storedVersion = defaults.integer(forKey: Self.schemaVersionKey)
 
         if storedVersion == Self.latestVersion {
-            logger.info("Schema already at version \(Self.latestVersion), no migrations needed")
+            Logger.migration.info("Schema already at version \(Self.latestVersion), no migrations needed")
             return
         }
 
         if !hasVersionKey && !hasExistingData() {
             // Fresh install — no data to migrate, just stamp latest version
-            logger.info("Fresh install detected, setting schema version to \(Self.latestVersion)")
+            Logger.migration.info("Fresh install detected, setting schema version to \(Self.latestVersion)")
             defaults.set(Self.latestVersion, forKey: Self.schemaVersionKey)
             return
         }
@@ -77,30 +81,27 @@ struct MigrationManager {
         let sortedMigrations = migrations.sorted { $0.from < $1.from }
 
         for migration in sortedMigrations where migration.from >= currentVersion {
-            logger.info("Running migration v\(migration.from) → v\(migration.to)")
+            Logger.migration.info("Running migration v\(migration.from) → v\(migration.to)")
             migration.migrate(defaults)
             currentVersion = migration.to
         }
 
         defaults.set(Self.latestVersion, forKey: Self.schemaVersionKey)
-        logger.info("Migration complete, schema now at version \(Self.latestVersion)")
+        Logger.migration.info("Migration complete, schema now at version \(Self.latestVersion)")
     }
 
     // MARK: - Private
-
-    private func storedSchemaVersion() -> Int {
-        defaults.integer(forKey: Self.schemaVersionKey)
-    }
 
     /// Returns true if UserDefaults contains keys indicating an existing Pine installation.
     private func hasExistingData() -> Bool {
         for key in Self.existingInstallIndicators where defaults.object(forKey: key) != nil {
             return true
         }
-        // Check for per-project session keys
-        let allKeys = defaults.dictionaryRepresentation().keys
-        for key in allKeys where key.hasPrefix("sessionState:") {
-            return true
+        // Check for prefixed keys (e.g. per-project session keys)
+        for prefix in Self.existingInstallPrefixedKeys {
+            if defaults.object(forKey: prefix) != nil {
+                return true
+            }
         }
         return false
     }
@@ -122,18 +123,9 @@ struct MigrationManager {
                 }
                 if paths.count != before {
                     defs.set(paths, forKey: "recentProjectPaths")
-                    Logger(subsystem: "com.batonogov.Pine", category: "Migration")
+                    Logger.migration
                         .info("Cleaned \(before - paths.count) stale recent project(s)")
                 }
-            }
-
-            // Migrate legacy single-project session to per-project format
-            if let legacyData = defs.data(forKey: "lastSessionState") {
-                // Keep the legacy key for now — SessionState.load already handles fallback.
-                // Just log that we found it.
-                Logger(subsystem: "com.batonogov.Pine", category: "Migration")
-                    .info("Found legacy session key, will be migrated on next project open")
-                _ = legacyData // Suppress unused warning
             }
         }
 
