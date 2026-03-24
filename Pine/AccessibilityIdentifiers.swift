@@ -76,4 +76,5 @@ enum AccessibilityID {
     static let indentationIndicator = "indentationIndicator"
     static let lineEndingIndicator = "lineEndingIndicator"
     static let fileSizeIndicator = "fileSizeIndicator"
+    static let progressIndicator = "progressIndicator"
 }
