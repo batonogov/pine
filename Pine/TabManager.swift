@@ -12,13 +12,13 @@ import UniformTypeIdentifiers
 @Observable
 final class TabManager {
     /// File size threshold (in bytes) above which a warning is shown before opening.
-    static let largeFileThreshold = 1_048_576 // 1 MB
+    static let largeFileThreshold = FileSizeConstants.oneMB
 
     /// File size threshold (in bytes) above which only a partial load is performed.
-    static let hugeFileThreshold = 10_485_760 // 10 MB
+    static let hugeFileThreshold = FileSizeConstants.tenMB
 
     /// Number of bytes to load from the beginning of a huge file.
-    static let hugeFilePartialLoadSize = 1_048_576 // 1 MB
+    static let hugeFilePartialLoadSize = FileSizeConstants.oneMB
 
     var tabs: [EditorTab] = []
     var activeTabID: UUID?
@@ -62,7 +62,7 @@ final class TabManager {
 
         // Large file warning
         if let size = fileSize(url: url), size >= Self.largeFileThreshold {
-            let sizeMB = Double(size) / 1_048_576.0
+            let sizeMB = Double(size) / Double(FileSizeConstants.oneMB)
             let result = showLargeFileAlert(fileName: url.lastPathComponent, sizeMB: sizeMB)
             switch result {
             case .cancel:

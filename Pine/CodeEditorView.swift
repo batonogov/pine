@@ -124,7 +124,7 @@ final class GutterTextView: NSTextView {
 
         // Compute 1-based line number from cursor position
         var lineNumber = 1
-        for i in 0..<cursorLocation where source.character(at: i) == 0x0A {
+        for i in 0..<cursorLocation where source.character(at: i) == ASCII.newline {
             lineNumber += 1
         }
 
@@ -134,7 +134,7 @@ final class GutterTextView: NSTextView {
         let lineRange = source.lineRange(for: NSRange(location: cursorLocation, length: 0))
         var lineEnd = NSMaxRange(lineRange)
         if lineEnd > lineRange.location && lineEnd <= source.length
-            && source.character(at: lineEnd - 1) == 0x0A {
+            && source.character(at: lineEnd - 1) == ASCII.newline {
             lineEnd -= 1
         }
 
@@ -1057,7 +1057,7 @@ struct CodeEditorView: NSViewRepresentable {
                 // file with regex on every cursor move. Window boundaries are aligned to
                 // line starts/ends via NSString.lineRange to avoid slicing through
                 // comment/string delimiters (e.g. cutting "/*" in half).
-                let bracketSearchRadius = 5000
+                let bracketSearchRadius = EditorConstants.bracketSearchRadius
                 let rawStart = max(0, cursorRange.location - bracketSearchRadius)
                 let rawEnd = min(nsFullText.length, cursorRange.location + bracketSearchRadius)
                 let alignedStart = nsFullText.lineRange(
@@ -1457,7 +1457,7 @@ struct CodeEditorView: NSViewRepresentable {
         var linesFound = 0
         var end = startChar
         while end < totalLength && linesFound < estimatedScreenLines {
-            if source.character(at: end) == 0x0A { linesFound += 1 }
+            if source.character(at: end) == ASCII.newline { linesFound += 1 }
             end += 1
         }
 
@@ -1468,14 +1468,14 @@ struct CodeEditorView: NSViewRepresentable {
         var currentLine = 0
         for i in 0..<totalLength {
             if currentLine >= line { return i }
-            if source.character(at: i) == 0x0A { currentLine += 1 }
+            if source.character(at: i) == ASCII.newline { currentLine += 1 }
         }
         return totalLength
     }
 
     private static func lineNumber(at charOffset: Int, in source: NSString) -> Int {
         var line = 0
-        for i in 0..<min(charOffset, source.length) where source.character(at: i) == 0x0A {
+        for i in 0..<min(charOffset, source.length) where source.character(at: i) == ASCII.newline {
             line += 1
         }
         return line

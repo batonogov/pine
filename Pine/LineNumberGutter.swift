@@ -207,7 +207,7 @@ final class LineNumberView: NSView {
         // Fallback: linear scan if cache not available
         let source = textView.string as NSString
         var line = 1
-        for i in 0..<min(charIndex, source.length) where source.character(at: i) == 0x0A {
+        for i in 0..<min(charIndex, source.length) where source.character(at: i) == ASCII.newline {
             line += 1
         }
         return line
@@ -237,7 +237,7 @@ final class LineNumberView: NSView {
             return
         }
         var count = 1
-        for i in 0..<source.length where source.character(at: i) == 0x0A {
+        for i in 0..<source.length where source.character(at: i) == ASCII.newline {
             count += 1
         }
         cachedTotalLines = count
@@ -297,7 +297,7 @@ final class LineNumberView: NSView {
             lineNumber = 1
             if firstVisibleCharIndex > 0 {
                 var count = 0
-                for i in 0..<firstVisibleCharIndex where source.character(at: i) == 0x0A {
+                for i in 0..<firstVisibleCharIndex where source.character(at: i) == ASCII.newline {
                     count += 1
                 }
                 lineNumber = count + 1

@@ -532,14 +532,14 @@ final class SyntaxHighlighter: @unchecked Sendable {
         var start = expanded.location
         while start > 0 && linesAdded < contextCount {
             start -= 1
-            if source.character(at: start) == 0x0A { linesAdded += 1 }
+            if source.character(at: start) == ASCII.newline { linesAdded += 1 }
         }
         if start > 0 { start += 1 }
 
         linesAdded = 0
         var end = NSMaxRange(expanded)
         while end < totalLength && linesAdded < contextCount {
-            if source.character(at: end) == 0x0A { linesAdded += 1 }
+            if source.character(at: end) == ASCII.newline { linesAdded += 1 }
             end += 1
         }
 
