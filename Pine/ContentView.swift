@@ -36,6 +36,7 @@ struct ContentView: View {
     @State private var showGoToLine = false
     @AppStorage("minimapVisible") private var isMinimapVisible = true
     @AppStorage(BlameConstants.storageKey) private var isBlameVisible = true
+    @AppStorage("wordWrapEnabled") private var isWordWrapEnabled = true
 
     private var activeTab: EditorTab? { tabManager.activeTab }
 
@@ -638,6 +639,7 @@ struct ContentView: View {
                 set: { tabManager.updateFoldState($0) }
             ),
             isMinimapVisible: isMinimapVisible,
+            isWordWrapEnabled: isWordWrapEnabled,
             syntaxHighlightingDisabled: tab.syntaxHighlightingDisabled,
             initialCursorPosition: goToLineOffset?.offset ?? tab.cursorPosition,
             initialScrollOffset: goToLineOffset != nil ? 0 : tab.scrollOffset,
