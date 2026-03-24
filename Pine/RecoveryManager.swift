@@ -5,6 +5,7 @@
 
 import CommonCrypto
 import Foundation
+import os
 
 /// Manages crash recovery snapshots of unsaved editor content.
 ///
@@ -12,6 +13,8 @@ import Foundation
 /// be restored after a crash, force quit, or power loss.
 /// Each project gets its own subdirectory to avoid mixing recovery files.
 final class RecoveryManager {
+
+    private static let logger = Logger(subsystem: "com.pine.editor", category: "RecoveryManager")
 
     /// Root recovery directory under Application Support.
     static var rootDirectory: URL {
@@ -66,9 +69,17 @@ final class RecoveryManager {
                 content: tab.content,
                 encoding: tab.encoding
             )
-            guard let data = try? encoder.encode(entry) else { continue }
-            let fileURL = recoveryFileURL(for: tab.id)
-            try? data.write(to: fileURL, options: .atomic)
+            do {
+                let data = try encoder.encode(entry)
+                let fileURL = recoveryFileURL(for: tab.id)
+                do {
+                    try data.write(to: fileURL, options: .atomic)
+                } catch {
+                    Self.logger.error("Failed to write recovery file for tab \(tab.url.lastPathComponent): \(error)")
+                }
+            } catch {
+                Self.logger.error("Failed to encode recovery entry for \(tab.url.lastPathComponent): \(error)")
+            }
         }
     }
 
@@ -77,30 +88,53 @@ final class RecoveryManager {
     /// Removes the recovery file for a specific tab (e.g., after save or clean close).
     func deleteRecoveryFile(for tabID: UUID) {
         let fileURL = recoveryFileURL(for: tabID)
-        try? FileManager.default.removeItem(at: fileURL)
+        do {
+            try FileManager.default.removeItem(at: fileURL)
+        } catch let error as NSError where error.domain == NSCocoaErrorDomain
+            && error.code == NSFileNoSuchFileError {
+            // File already deleted — not an error
+        } catch {
+            Self.logger.error("Failed to delete recovery file \(tabID.uuidString): \(error)")
+        }
     }
 
     /// Removes all recovery files for this project (e.g., on clean quit).
     func deleteAllRecoveryFiles() {
-        guard let files = try? FileManager.default.contentsOfDirectory(
-            at: recoveryDirectory,
-            includingPropertiesForKeys: nil
-        ) else { return }
+        let files: [URL]
+        do {
+            files = try FileManager.default.contentsOfDirectory(
+                at: recoveryDirectory,
+                includingPropertiesForKeys: nil
+            )
+        } catch {
+            Self.logger.warning("Cannot list recovery directory: \(error)")
+            return
+        }
 
         for file in files where file.pathExtension == "json" {
-            try? FileManager.default.removeItem(at: file)
+            do {
+                try FileManager.default.removeItem(at: file)
+            } catch {
+                Self.logger.error("Failed to delete recovery file \(file.lastPathComponent): \(error)")
+            }
         }
     }
 
     // MARK: - Read
 
     /// Returns all pending recovery entries as (tabID, entry) pairs.
-    /// Corrupted or non-JSON files are silently skipped.
+    /// Corrupted or non-JSON files are logged and skipped.
     func pendingRecoveryEntries() -> [(UUID, RecoveryEntry)] {
-        guard let files = try? FileManager.default.contentsOfDirectory(
-            at: recoveryDirectory,
-            includingPropertiesForKeys: nil
-        ) else { return [] }
+        let files: [URL]
+        do {
+            files = try FileManager.default.contentsOfDirectory(
+                at: recoveryDirectory,
+                includingPropertiesForKeys: nil
+            )
+        } catch {
+            Self.logger.warning("Cannot list recovery directory: \(error)")
+            return []
+        }
 
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
@@ -108,11 +142,14 @@ final class RecoveryManager {
         var results: [(UUID, RecoveryEntry)] = []
         for file in files where file.pathExtension == "json" {
             let name = file.deletingPathExtension().lastPathComponent
-            guard let uuid = UUID(uuidString: name),
-                  let data = try? Data(contentsOf: file),
-                  let entry = try? decoder.decode(RecoveryEntry.self, from: data)
-            else { continue }
-            results.append((uuid, entry))
+            guard let uuid = UUID(uuidString: name) else { continue }
+            do {
+                let data = try Data(contentsOf: file)
+                let entry = try decoder.decode(RecoveryEntry.self, from: data)
+                results.append((uuid, entry))
+            } catch {
+                Self.logger.error("Failed to read recovery entry \(name): \(error)")
+            }
         }
         return results
     }
@@ -120,10 +157,15 @@ final class RecoveryManager {
     /// Whether there are any pending recovery files.
     /// More efficient than `pendingRecoveryEntries()` — returns as soon as one valid file is found.
     var hasPendingRecovery: Bool {
-        guard let files = try? FileManager.default.contentsOfDirectory(
-            at: recoveryDirectory,
-            includingPropertiesForKeys: nil
-        ) else { return false }
+        let files: [URL]
+        do {
+            files = try FileManager.default.contentsOfDirectory(
+                at: recoveryDirectory,
+                includingPropertiesForKeys: nil
+            )
+        } catch {
+            return false
+        }
         return files.contains { $0.pathExtension == "json" }
     }
 
@@ -133,19 +175,33 @@ final class RecoveryManager {
     /// across *all* project subdirectories.
     static func cleanupAllStaleEntries(olderThan days: Int) {
         let fm = FileManager.default
-        guard let subdirs = try? fm.contentsOfDirectory(
-            at: rootDirectory,
-            includingPropertiesForKeys: [.isDirectoryKey]
-        ) else { return }
+        let subdirs: [URL]
+        do {
+            subdirs = try fm.contentsOfDirectory(
+                at: rootDirectory,
+                includingPropertiesForKeys: [.isDirectoryKey]
+            )
+        } catch {
+            logger.warning("Cannot list recovery root directory: \(error)")
+            return
+        }
 
         for subdir in subdirs {
             let manager = RecoveryManager(recoveryDirectory: subdir)
             manager.cleanupStaleEntries(olderThan: days)
 
             // Remove empty subdirectories
-            if let remaining = try? fm.contentsOfDirectory(atPath: subdir.path),
-               remaining.isEmpty {
-                try? fm.removeItem(at: subdir)
+            do {
+                let remaining = try fm.contentsOfDirectory(atPath: subdir.path)
+                if remaining.isEmpty {
+                    do {
+                        try fm.removeItem(at: subdir)
+                    } catch {
+                        logger.error("Failed to remove empty recovery subdir: \(error)")
+                    }
+                }
+            } catch {
+                logger.warning("Cannot list recovery subdir \(subdir.lastPathComponent): \(error)")
             }
         }
     }
@@ -156,17 +212,31 @@ final class RecoveryManager {
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
 
-        guard let files = try? FileManager.default.contentsOfDirectory(
-            at: recoveryDirectory,
-            includingPropertiesForKeys: nil
-        ) else { return }
+        let files: [URL]
+        do {
+            files = try FileManager.default.contentsOfDirectory(
+                at: recoveryDirectory,
+                includingPropertiesForKeys: nil
+            )
+        } catch {
+            Self.logger.warning("Cannot list recovery directory for cleanup: \(error)")
+            return
+        }
 
         for file in files where file.pathExtension == "json" {
-            guard let data = try? Data(contentsOf: file),
-                  let entry = try? decoder.decode(RecoveryEntry.self, from: data),
-                  entry.timestamp < cutoff
-            else { continue }
-            try? FileManager.default.removeItem(at: file)
+            do {
+                let data = try Data(contentsOf: file)
+                let entry = try decoder.decode(RecoveryEntry.self, from: data)
+                if entry.timestamp < cutoff {
+                    do {
+                        try FileManager.default.removeItem(at: file)
+                    } catch {
+                        Self.logger.error("Failed to remove stale recovery file \(file.lastPathComponent): \(error)")
+                    }
+                }
+            } catch {
+                Self.logger.error("Failed to read recovery file for cleanup \(file.lastPathComponent): \(error)")
+            }
         }
     }
 
@@ -215,10 +285,14 @@ final class RecoveryManager {
 
     private func ensureDirectoryExists() {
         if !FileManager.default.fileExists(atPath: recoveryDirectory.path) {
-            try? FileManager.default.createDirectory(
-                at: recoveryDirectory,
-                withIntermediateDirectories: true
-            )
+            do {
+                try FileManager.default.createDirectory(
+                    at: recoveryDirectory,
+                    withIntermediateDirectories: true
+                )
+            } catch {
+                Self.logger.error("Failed to create recovery directory: \(error)")
+            }
         }
     }
 

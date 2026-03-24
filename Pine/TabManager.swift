@@ -5,12 +5,14 @@
 //  Created by Claude on 12.03.2026.
 //
 
+import os
 import SwiftUI
 import UniformTypeIdentifiers
 
 /// Manages the set of open editor tabs and the active selection.
 @Observable
 final class TabManager {
+    private static let logger = Logger(subsystem: "com.pine.editor", category: "TabManager")
     /// File size threshold (in bytes) above which a warning is shown before opening.
     static let largeFileThreshold = 1_048_576 // 1 MB
 
@@ -548,10 +550,13 @@ final class TabManager {
                 tabs[index].lastModDate = diskMod
             } else {
                 // Safe to reload silently
-                if let content = try? String(contentsOf: tab.url, encoding: tab.encoding) {
+                do {
+                    let content = try String(contentsOf: tab.url, encoding: tab.encoding)
                     tabs[index].content = content
                     tabs[index].savedContent = content
                     tabs[index].lastModDate = diskMod
+                } catch {
+                    Self.logger.error("Failed to reload tab \(tab.url.lastPathComponent): \(error)")
                 }
             }
         }
@@ -566,10 +571,13 @@ final class TabManager {
     /// Reloads a tab's content from disk (used after user chooses "reload" in conflict dialog).
     func reloadTab(url: URL) {
         guard let index = tabs.firstIndex(where: { $0.url == url }) else { return }
-        if let content = try? String(contentsOf: url, encoding: tabs[index].encoding) {
+        do {
+            let content = try String(contentsOf: url, encoding: tabs[index].encoding)
             tabs[index].content = content
             tabs[index].savedContent = content
             tabs[index].lastModDate = modDate(for: url)
+        } catch {
+            Self.logger.error("Failed to reload tab from disk \(url.lastPathComponent): \(error)")
         }
     }
 
@@ -581,9 +589,14 @@ final class TabManager {
         guard let index = activeTabIndex else { return false }
         let tab = tabs[index]
         guard !tab.isDirty else { return false }
-        guard let data = try? Data(contentsOf: tab.url),
-              let content = String(data: data, encoding: encoding)
-        else { return false }
+        let data: Data
+        do {
+            data = try Data(contentsOf: tab.url)
+        } catch {
+            Self.logger.error("Failed to read file for encoding change \(tab.url.lastPathComponent): \(error)")
+            return false
+        }
+        guard let content = String(data: data, encoding: encoding) else { return false }
         tabs[index].content = content
         tabs[index].savedContent = content
         tabs[index].encoding = encoding

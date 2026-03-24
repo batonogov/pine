@@ -1455,7 +1455,11 @@ struct FileNodeRow: View {
 
         // Delete placeholder item if creation was cancelled
         if wasNewlyCreated, let url {
-            try? FileManager.default.removeItem(at: url)
+            do {
+                try FileManager.default.removeItem(at: url)
+            } catch {
+                print("Failed to delete placeholder item \(url.lastPathComponent): \(error)")
+            }
             workspace.refreshFileTree()
         }
     }

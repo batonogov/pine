@@ -5,6 +5,7 @@
 //  Created by Claude on 11.03.2026.
 //
 
+import os
 import SwiftUI
 
 /// Manages the project file tree, root directory, and git integration.
@@ -13,6 +14,7 @@ import SwiftUI
 /// main thread (enforced by SwiftUI's @Observable).
 @Observable
 final class WorkspaceManager {
+    private static let logger = Logger(subsystem: "com.pine.editor", category: "WorkspaceManager")
     var rootNodes: [FileNode] = []
     var projectName: String = "Pine"
     var rootURL: URL?
@@ -159,11 +161,15 @@ final class WorkspaceManager {
     ) -> [FileNode] {
         let hiddenNames: Set<String> = [".git", ".DS_Store"]
 
-        guard let topContents = try? FileManager.default.contentsOfDirectory(
-            at: url,
-            includingPropertiesForKeys: [.isDirectoryKey, .isSymbolicLinkKey],
-            options: []
-        ) else {
+        let topContents: [URL]
+        do {
+            topContents = try FileManager.default.contentsOfDirectory(
+                at: url,
+                includingPropertiesForKeys: [.isDirectoryKey, .isSymbolicLinkKey],
+                options: []
+            )
+        } catch {
+            logger.error("Failed to list directory \(url.lastPathComponent): \(error)")
             return []
         }
 
