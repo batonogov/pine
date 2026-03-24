@@ -175,6 +175,7 @@ struct StatusBarView: View {
         .background(.bar)
         .accessibilityElement(children: .contain)
         .accessibilityLabel(AccessibilityLabels.statusBar)
+        .accessibilityAddTraits(.isSummaryElement)
         .accessibilityIdentifier(AccessibilityID.statusBar)
     }
 
