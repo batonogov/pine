@@ -94,11 +94,9 @@ final class FileSystemWatcher {
     }
 
     /// Called from the FSEvents callback on self.queue.
-    /// FSEvents already coalesces events using the latency parameter passed
-    /// to `FSEventStreamCreate`, so we dispatch the callback to main immediately
-    /// without adding an extra application-level debounce (which previously
-    /// doubled the latency and caused issue #439 — new files not appearing
-    /// in the sidebar until manual interaction).
+    /// Applies a short debounce (`debounceInterval`) on main thread to coalesce
+    /// rapid FSEvents bursts (e.g. npm install, git checkout) into a single
+    /// callback. Previous work items are cancelled so only the last one fires.
     fileprivate func handleEvents() {
         debounceWorkItem?.cancel()
         let cb = callback
@@ -111,7 +109,7 @@ final class FileSystemWatcher {
             cb()
         }
         debounceWorkItem = work
-        DispatchQueue.main.async(execute: work)
+        DispatchQueue.main.asyncAfter(deadline: .now() + debounceInterval, execute: work)
     }
 }
 
