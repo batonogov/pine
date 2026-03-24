@@ -37,6 +37,8 @@ enum MinimapSettings {
 /// the currently visible region. Supports click-to-scroll and drag-to-scroll.
 final class MinimapView: NSView {
     weak var textView: NSTextView?
+    /// The clip view this minimap observes for scroll notifications.
+    private weak var observedClipView: NSClipView?
 
     /// Git diff data — when set, colored markers appear on the right edge.
     var lineDiffs: [GitLineDiff] = [] {
@@ -93,13 +95,20 @@ final class MinimapView: NSView {
         }
     }
 
+    #if DEBUG
+    /// Counter for scroll-change notifications received — debug-only, for testability.
+    var scrollChangeCount = 0
+    #endif
+
     /// Whether user is currently dragging in the minimap.
     private var isDragging = false
 
     override var isFlipped: Bool { true }
 
-    init(textView: NSTextView) {
+    init(textView: NSTextView, clipView: NSClipView? = nil) {
         self.textView = textView
+        let resolvedClipView = clipView ?? textView.enclosingScrollView?.contentView
+        self.observedClipView = resolvedClipView
         super.init(frame: .zero)
         wantsLayer = true
         setAccessibilityIdentifier(AccessibilityID.minimap)
@@ -118,11 +127,18 @@ final class MinimapView: NSView {
             name: NSView.frameDidChangeNotification,
             object: textView
         )
+        // Скролл — подписываемся на конкретный clipView (#465)
         NotificationCenter.default.addObserver(
             self, selector: #selector(scrollDidChange(_:)),
             name: NSView.boundsDidChangeNotification,
-            object: nil
+            object: resolvedClipView
         )
+
+        #if DEBUG
+        if resolvedClipView == nil {
+            print("MinimapView: clipView is nil at init — scroll observer will not fire. Pass clipView explicitly.")
+        }
+        #endif
     }
 
     @available(*, unavailable)
@@ -157,9 +173,11 @@ final class MinimapView: NSView {
     }
 
     @objc private func scrollDidChange(_ notification: Notification) {
-        guard let clipView = notification.object as? NSClipView,
-              clipView == textView?.enclosingScrollView?.contentView else { return }
-
+        // Safety: if clipView was nil at init, subscription is unscoped — filter here
+        guard observedClipView == nil || notification.object as AnyObject? === observedClipView else { return }
+        #if DEBUG
+        scrollChangeCount += 1
+        #endif
         let now = CACurrentMediaTime()
         if now - lastScrollRedrawTime >= Self.scrollThrottleInterval {
             lastScrollRedrawTime = now

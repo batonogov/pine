@@ -502,7 +502,7 @@ struct CodeEditorView: NSViewRepresentable {
         layoutManager.delegate = context.coordinator
 
         // ── Номера строк — поверх scroll view, как отдельный сиблинг ──
-        let lineNumberView = LineNumberView(textView: textView)
+        let lineNumberView = LineNumberView(textView: textView, clipView: scrollView.contentView)
         lineNumberView.gutterWidth = gutterWidth
         lineNumberView.gutterFont = gutterFont
         lineNumberView.editorFont = editorFont
@@ -514,7 +514,7 @@ struct CodeEditorView: NSViewRepresentable {
         container.addSubview(lineNumberView)
 
         // ── Minimap — справа от scroll view ──
-        let minimapView = MinimapView(textView: textView)
+        let minimapView = MinimapView(textView: textView, clipView: scrollView.contentView)
         minimapView.isHidden = !isMinimapVisible
         container.addSubview(minimapView)
 
