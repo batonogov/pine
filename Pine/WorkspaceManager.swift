@@ -117,7 +117,10 @@ final class WorkspaceManager {
             let shallowChildren = shallowResult.root.children ?? []
 
             DispatchQueue.main.async { [weak self] in
-                guard let self, self.loadGeneration == generation else { return }
+                guard let self, self.loadGeneration == generation else {
+                    if let progressID { self?.progressTracker?.endOperation(progressID) }
+                    return
+                }
                 self.rootNodes = shallowChildren
                 self.gitProvider.repositoryURL = bgGit.repositoryURL
                 self.gitProvider.gitRootPath = bgGit.gitRootPath
@@ -146,7 +149,10 @@ final class WorkspaceManager {
             // Completion (file watcher) starts after Phase 2 to avoid watcher events
             // racing with and invalidating the in-flight full tree load.
             DispatchQueue.main.async { [weak self] in
-                guard let self, self.loadGeneration == generation else { return }
+                guard let self, self.loadGeneration == generation else {
+                    if let progressID { self?.progressTracker?.endOperation(progressID) }
+                    return
+                }
                 self.rootNodes = fullChildren
                 if let progressID { self.progressTracker?.endOperation(progressID) }
                 completion?()

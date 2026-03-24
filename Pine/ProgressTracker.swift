@@ -8,10 +8,11 @@
 
 import Foundation
 
-/// Thread-safe progress tracker for long-running operations.
+/// Progress tracker for long-running operations.
 /// Supports multiple concurrent operations — `isLoading` is true
 /// while at least one operation is active.  The most recently
 /// started operation's message is shown.
+@MainActor
 @Observable
 final class ProgressTracker {
     /// Whether any operation is currently in progress.
