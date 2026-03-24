@@ -1095,7 +1095,12 @@ final class SidebarEditState {
     }
 
     /// Creates a file or folder with a unique "untitled" name, then starts inline rename.
-    func createNewItem(in parentURL: URL, isDirectory: Bool, workspace: WorkspaceManager) {
+    func createNewItem(
+        in parentURL: URL,
+        isDirectory: Bool,
+        workspace: WorkspaceManager,
+        undoManager: UndoManager? = nil
+    ) {
         if let root = workspace.rootURL, !FileNode.isWithinProjectRoot(parentURL, projectRoot: root) {
             Self.showFileError(Strings.operationOutsideProject)
             return
@@ -1106,7 +1111,10 @@ final class SidebarEditState {
         let newURL = parentURL.appendingPathComponent(name)
 
         do {
-            if isDirectory {
+            if let undoManager {
+                let fileOps = FileOperationUndoManager()
+                try fileOps.createItem(at: newURL, isDirectory: isDirectory, undoManager: undoManager)
+            } else if isDirectory {
                 try FileManager.default.createDirectory(at: newURL, withIntermediateDirectories: false)
             } else if !FileManager.default.createFile(atPath: newURL.path, contents: nil) {
                 Self.showFileError(Strings.fileCreateError(name))
@@ -1176,6 +1184,7 @@ struct SidebarView: View {
     @Binding var selectedFile: FileNode?
     @Environment(ProjectRegistry.self) var registry
     @Environment(\.openWindow) var openWindow
+    @Environment(\.undoManager) private var undoManager
     @State private var editState = SidebarEditState()
 
     var body: some View {
@@ -1202,13 +1211,23 @@ struct SidebarView: View {
                 .contextMenu {
                     if let rootURL = workspace.rootURL {
                         Button {
-                            editState.createNewItem(in: rootURL, isDirectory: false, workspace: workspace)
+                            editState.createNewItem(
+                                in: rootURL,
+                                isDirectory: false,
+                                workspace: workspace,
+                                undoManager: undoManager
+                            )
                         } label: {
                             Label(Strings.contextNewFile, systemImage: MenuIcons.newFile)
                         }
 
                         Button {
-                            editState.createNewItem(in: rootURL, isDirectory: true, workspace: workspace)
+                            editState.createNewItem(
+                                in: rootURL,
+                                isDirectory: true,
+                                workspace: workspace,
+                                undoManager: undoManager
+                            )
                         } label: {
                             Label(Strings.contextNewFolder, systemImage: MenuIcons.newFolder)
                         }
@@ -1268,7 +1287,10 @@ struct FileNodeRow: View {
     @Environment(WorkspaceManager.self) var workspace
     @Environment(TabManager.self) var tabManager
     @Environment(SidebarEditState.self) var editState
+    @Environment(\.undoManager) private var undoManager
     @FocusState private var isTextFieldFocused: Bool
+
+    private let fileOps = FileOperationUndoManager()
 
     private var isEditing: Bool {
         guard let renamingURL = editState.renamingURL else { return false }
@@ -1387,7 +1409,12 @@ struct FileNodeRow: View {
     // MARK: - File operations
 
     private func createNewItem(isDirectory: Bool) {
-        editState.createNewItem(in: node.url, isDirectory: isDirectory, workspace: workspace)
+        editState.createNewItem(
+            in: node.url,
+            isDirectory: isDirectory,
+            workspace: workspace,
+            undoManager: undoManager
+        )
     }
 
     private func duplicateItem() {
@@ -1430,7 +1457,11 @@ struct FileNodeRow: View {
         }
 
         do {
-            try FileManager.default.moveItem(at: oldURL, to: newURL)
+            if let undoManager {
+                try fileOps.renameItem(from: oldURL, to: newURL, undoManager: undoManager)
+            } else {
+                try FileManager.default.moveItem(at: oldURL, to: newURL)
+            }
             editState.clear()
             workspace.refreshFileTree()
             NotificationCenter.default.post(
@@ -1469,7 +1500,11 @@ struct FileNodeRow: View {
         }
 
         do {
-            try FileManager.default.trashItem(at: deletedURL, resultingItemURL: nil)
+            if let undoManager {
+                try fileOps.deleteItem(at: deletedURL, undoManager: undoManager)
+            } else {
+                try FileManager.default.trashItem(at: deletedURL, resultingItemURL: nil)
+            }
             workspace.refreshFileTree()
             NotificationCenter.default.post(
                 name: .fileDeleted,
