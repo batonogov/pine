@@ -887,7 +887,9 @@ private struct GitAndNotificationObserver: ViewModifier {
                 onHandleExternalConflicts(conflicts)
             }
             .onReceive(NotificationCenter.default.publisher(for: .showProjectSearch)) { _ in
-                columnVisibility = .all
+                withAnimation(PineAnimation.quick) {
+                    columnVisibility = .all
+                }
                 isSearchPresented = true
             }
             .onReceive(NotificationCenter.default.publisher(for: .goToLine)) { _ in
@@ -1037,7 +1039,7 @@ struct TerminalNativeTabBar: View {
 
             // Развернуть / свернуть терминал на весь экран
             Button {
-                withAnimation { terminal.isTerminalMaximized.toggle() }
+                withAnimation(PineAnimation.quick) { terminal.isTerminalMaximized.toggle() }
             } label: {
                 Image(systemName: terminal.isTerminalMaximized
                       ? "arrow.down.right.and.arrow.up.left"
@@ -1052,7 +1054,7 @@ struct TerminalNativeTabBar: View {
 
             // Кнопка скрытия терминала
             Button {
-                withAnimation {
+                withAnimation(PineAnimation.quick) {
                     terminal.isTerminalVisible = false
                     terminal.isTerminalMaximized = false
                 }
@@ -1710,7 +1712,7 @@ struct StatusBarView: View {
 
             // Кнопка показа/скрытия терминала
             Button {
-                withAnimation { terminal.isTerminalVisible.toggle() }
+                withAnimation(PineAnimation.quick) { terminal.isTerminalVisible.toggle() }
             } label: {
                 HStack(spacing: 3) {
                     Image(systemName: terminal.isTerminalVisible

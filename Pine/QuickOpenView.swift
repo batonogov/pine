@@ -52,6 +52,7 @@ struct QuickOpenView: View {
         Group {
             if results.isEmpty {
                 emptyState
+                    .transition(PineAnimation.fadeTransition)
             } else {
                 ScrollViewReader { proxy in
                     ScrollView {
@@ -72,6 +73,7 @@ struct QuickOpenView: View {
                 }
             }
         }
+        .animation(PineAnimation.content, value: results.isEmpty)
         .accessibilityIdentifier(AccessibilityID.quickOpenResultsList)
     }
 
