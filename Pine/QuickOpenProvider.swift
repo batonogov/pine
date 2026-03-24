@@ -30,8 +30,11 @@ final class QuickOpenProvider {
     /// Cached resolved paths for symlink-safe comparison (built once at index time).
     private var resolvedPaths: [URL: String] = [:]
 
-    /// The root URL the index was built from.
+    /// The root URL the index was built from (resolved for cache deduplication).
     private var indexedRoot: URL?
+
+    /// The original (unresolved) root path prefix for computing relative paths.
+    private var originalRootPrefix: String = ""
 
     // MARK: - Indexing
 
@@ -43,6 +46,8 @@ final class QuickOpenProvider {
         let resolved = rootURL.resolvingSymlinksInPath()
         if resolved == indexedRoot, !fileIndex.isEmpty { return }
         indexedRoot = resolved
+        let rootPath = rootURL.path
+        originalRootPrefix = rootPath.hasSuffix("/") ? rootPath : rootPath + "/"
         let rootRealPath = resolved.path
         var files: [URL] = []
         for root in roots {
@@ -64,6 +69,7 @@ final class QuickOpenProvider {
         fileIndex = []
         resolvedPaths = [:]
         indexedRoot = nil
+        originalRootPrefix = ""
     }
 
     private func collectFiles(from node: FileNode, into files: inout [URL], rootRealPath: String, depth: Int) {
@@ -112,7 +118,7 @@ final class QuickOpenProvider {
         var results: [Result] = []
         for url in fileIndex {
             let fileName = url.lastPathComponent
-            let relativePath = Self.relativePath(for: url, rootPrefix: rootPath)
+            let relativePath = Self.relativePath(for: url, rootPrefix: rootPath, originalRootPrefix: originalRootPrefix)
 
             guard let score = fuzzyScore(
                 queryLower: queryLower,
@@ -227,7 +233,7 @@ final class QuickOpenProvider {
                 return Result(
                     id: url,
                     fileName: url.lastPathComponent,
-                    relativePath: Self.relativePath(for: url, rootPrefix: rootPath),
+                    relativePath: Self.relativePath(for: url, rootPrefix: rootPath, originalRootPrefix: originalRootPrefix),
                     score: 0
                 )
             }
@@ -253,10 +259,16 @@ final class QuickOpenProvider {
         return path.hasSuffix("/") ? path : path + "/"
     }
 
-    static func relativePath(for url: URL, rootPrefix: String) -> String {
+    static func relativePath(for url: URL, rootPrefix: String, originalRootPrefix: String = "") -> String {
         let path = url.path
         if path.hasPrefix(rootPrefix) {
             return String(path.dropFirst(rootPrefix.count))
+        }
+        // Fallback: try original (unresolved) root prefix to handle
+        // cases where resolvingSymlinksInPath() differs from realpath()
+        // (e.g. /var vs /private/var on macOS).
+        if !originalRootPrefix.isEmpty, path.hasPrefix(originalRootPrefix) {
+            return String(path.dropFirst(originalRootPrefix.count))
         }
         return path
     }

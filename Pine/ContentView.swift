@@ -82,7 +82,8 @@ struct ContentView: View {
                 StatusBarView(
                     gitProvider: workspace.gitProvider,
                     terminal: terminal,
-                    tabManager: tabManager
+                    tabManager: tabManager,
+                    progress: projectManager.progress
                 )
             }
         }
@@ -1488,9 +1489,22 @@ struct StatusBarView: View {
     var gitProvider: GitStatusProvider
     var terminal: TerminalManager
     var tabManager: TabManager
+    var progress: ProgressTracker?
 
     var body: some View {
         HStack(spacing: 6) {
+            if let progress, progress.isLoading {
+                HStack(spacing: 4) {
+                    ProgressView()
+                        .controlSize(.mini)
+                    Text(verbatim: progress.message)
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+                .accessibilityIdentifier(AccessibilityID.progressIndicator)
+            }
+
             if gitProvider.isGitRepository {
                 // Git file change summary
                 if !gitProvider.fileStatuses.isEmpty {
