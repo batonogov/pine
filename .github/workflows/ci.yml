@@ -360,7 +360,7 @@ jobs:
           fi
           echo "All $(echo "$ACTUAL" | wc -l | tr -d ' ') UI test classes are sharded."
 
-  # UI test shards — 6 parallel jobs, ~14-15 tests each.
+  # UI test shards — 7 parallel jobs, ~14-18 tests each.
   # To rebalance: count tests per class, redistribute so shards stay within ±3 tests.
   # List classes with: grep -r "func test" PineUITests/ | sed 's/:.*//' | sort | uniq -c | sort -rn
   ui-tests:
@@ -371,11 +371,10 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # Shard 1 — Welcome (19 tests)
+          # Shard 1 — Welcome (14 tests)
           - shard-name: "Welcome"
             test-classes: >-
               -only-testing:PineUITests/WelcomeWindowTests
-              -only-testing:PineUITests/QuickOpenUITests
           # Shard 2 — Editor & Gutter (15 tests)
           - shard-name: "Editor & Gutter"
             test-classes: >-
@@ -407,6 +406,11 @@ jobs:
               -only-testing:PineUITests/GitignoreFilterTests
               -only-testing:PineUITests/FontSizeTests
               -only-testing:PineUITests/CheckForUpdatesTests
+          # Shard 7 — Navigation (18 tests)
+          - shard-name: "Navigation"
+            test-classes: >-
+              -only-testing:PineUITests/GoToLineTabOverflowExternalChangesUITests
+              -only-testing:PineUITests/QuickOpenUITests
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
 
