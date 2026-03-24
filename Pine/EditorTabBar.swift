@@ -70,6 +70,7 @@ struct EditorTabBar: View {
                                     onClose: { onCloseTab(tab) }
                                 )
                                 .frame(maxWidth: isActive ? Self.maxTabWidth : inactiveWidth)
+                                .transaction { $0.animation = nil }
                                 .id(tab.id)
                                 .onDrag {
                                     draggingTabID = tab.id
@@ -94,7 +95,7 @@ struct EditorTabBar: View {
                     }
                     .onChange(of: tabManager.activeTabID) {
                         guard let activeID = tabManager.activeTabID else { return }
-                        withAnimation(.easeInOut(duration: 0.2)) {
+                        withAnimation(PineAnimation.quick) {
                             proxy.scrollTo(activeID, anchor: .center)
                         }
                     }
@@ -141,7 +142,7 @@ struct EditorTabBar: View {
                         .padding(.trailing, 4)
                 }
             }
-            .animation(.easeInOut(duration: 0.2), value: isAutoSaving)
+            .animation(PineAnimation.quick, value: isAutoSaving)
 
             if isMarkdownFile {
                 Button {
@@ -181,7 +182,7 @@ struct TabDropDelegate: DropDelegate {
         guard let dragging = draggingTabID, dragging != targetTabID else { return }
         guard let fromIndex = tabManager.tabs.firstIndex(where: { $0.id == dragging }),
               let toIndex = tabManager.tabs.firstIndex(where: { $0.id == targetTabID }) else { return }
-        withAnimation(.easeInOut(duration: 0.2)) {
+        withAnimation(PineAnimation.quick) {
             tabManager.tabs.move(fromOffsets: IndexSet(integer: fromIndex), toOffset: toIndex > fromIndex ? toIndex + 1 : toIndex)
         }
     }
@@ -244,6 +245,8 @@ struct EditorTabItem: View {
             in: Capsule()
         )
         .contentShape(Capsule())
+        .animation(PineAnimation.quick, value: isActive)
+        .animation(PineAnimation.quick, value: isHovering)
         .onTapGesture(perform: onSelect)
         .onHover { isHovering = $0 }
         .accessibilityRepresentation {

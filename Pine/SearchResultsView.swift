@@ -14,29 +14,37 @@ struct SearchResultsView: View {
     var body: some View {
         let search = projectManager.searchProvider
 
-        if search.isSearching {
-            VStack {
-                Spacer()
-                ProgressView()
-                    .controlSize(.small)
-                Spacer()
+        Group {
+            if search.isSearching {
+                VStack {
+                    Spacer()
+                    ProgressView()
+                        .controlSize(.small)
+                    Spacer()
+                }
+                .frame(maxWidth: .infinity)
+                .transition(PineAnimation.fadeTransition)
+            } else if search.results.isEmpty && !search.query.isEmpty {
+                ContentUnavailableView {
+                    Label(Strings.searchNoResults, systemImage: "magnifyingglass")
+                }
+                .accessibilityIdentifier(AccessibilityID.searchEmptyState)
+                .transition(PineAnimation.fadeTransition)
+            } else if search.query.isEmpty {
+                ContentUnavailableView {
+                    Label(Strings.searchInitialPrompt, systemImage: "text.magnifyingglass")
+                } description: {
+                    Text(Strings.searchInitialDescription)
+                }
+                .accessibilityIdentifier(AccessibilityID.searchInitialState)
+                .transition(PineAnimation.fadeTransition)
+            } else {
+                searchResultsList
+                    .transition(PineAnimation.fadeTransition)
             }
-            .frame(maxWidth: .infinity)
-        } else if search.results.isEmpty && !search.query.isEmpty {
-            ContentUnavailableView {
-                Label(Strings.searchNoResults, systemImage: "magnifyingglass")
-            }
-            .accessibilityIdentifier(AccessibilityID.searchEmptyState)
-        } else if search.query.isEmpty {
-            ContentUnavailableView {
-                Label(Strings.searchInitialPrompt, systemImage: "text.magnifyingglass")
-            } description: {
-                Text(Strings.searchInitialDescription)
-            }
-            .accessibilityIdentifier(AccessibilityID.searchInitialState)
-        } else {
-            searchResultsList
         }
+        .animation(PineAnimation.content, value: search.isSearching)
+        .animation(PineAnimation.content, value: search.results.isEmpty)
     }
 
     private var searchResultsList: some View {
@@ -120,6 +128,7 @@ private struct MatchRowView: View {
             .background(isHovered ? Color.primary.opacity(0.06) : Color.clear)
         }
         .buttonStyle(.plain)
+        .animation(PineAnimation.quick, value: isHovered)
         .onHover { isHovered = $0 }
     }
 
