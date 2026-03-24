@@ -26,6 +26,13 @@ struct WelcomeView: View {
     /// AppDelegate reference for checking pending project URL (UI testing).
     var appDelegate: AppDelegate?
 
+    @State private var searchText = ""
+
+    /// Recent projects filtered by the search query.
+    private var filteredProjects: [URL] {
+        RecentProjectsFilter.filter(registry.recentProjects, query: searchText)
+    }
+
     var body: some View {
         HStack(spacing: 0) {
             // Left: logo and actions
@@ -71,26 +78,39 @@ struct WelcomeView: View {
                     }
                     .frame(maxHeight: .infinity)
                 } else {
-                    ScrollView {
-                        LazyVStack(spacing: 0) {
-                            ForEach(
-                                Array(registry.recentProjects.enumerated()),
-                                id: \.element
-                            ) { index, url in
-                                if index > 0 {
-                                    Divider()
-                                        .padding(.leading)
+                    TextField(Strings.welcomeSearchPlaceholder, text: $searchText)
+                        .textFieldStyle(.roundedBorder)
+                        .padding(.horizontal)
+                        .padding(.bottom, 8)
+                        .accessibilityIdentifier(AccessibilityID.welcomeSearchField)
+
+                    if filteredProjects.isEmpty {
+                        ContentUnavailableView {
+                            Label(Strings.welcomeNoSearchResults, systemImage: "magnifyingglass")
+                        }
+                        .frame(maxHeight: .infinity)
+                    } else {
+                        ScrollView {
+                            LazyVStack(spacing: 0) {
+                                ForEach(
+                                    Array(filteredProjects.enumerated()),
+                                    id: \.element
+                                ) { index, url in
+                                    if index > 0 {
+                                        Divider()
+                                            .padding(.leading)
+                                    }
+                                    RecentProjectRow(url: url) {
+                                        openProject(at: url)
+                                    }
+                                    .accessibilityIdentifier(
+                                        AccessibilityID.welcomeRecentProject(url.lastPathComponent)
+                                    )
                                 }
-                                RecentProjectRow(url: url) {
-                                    openProject(at: url)
-                                }
-                                .accessibilityIdentifier(
-                                    AccessibilityID.welcomeRecentProject(url.lastPathComponent)
-                                )
                             }
                         }
+                        .accessibilityIdentifier(AccessibilityID.welcomeRecentProjectsList)
                     }
-                    .accessibilityIdentifier(AccessibilityID.welcomeRecentProjectsList)
                 }
             }
             .frame(minWidth: 280)

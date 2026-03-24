@@ -10,6 +10,7 @@ enum AccessibilityID {
     static let welcomeWindow = "welcomeWindow"
     static let welcomeOpenFolderButton = "welcomeOpenFolderButton"
     static let welcomeRecentProjectsList = "welcomeRecentProjectsList"
+    static let welcomeSearchField = "welcomeSearchField"
     static func welcomeRecentProject(_ name: String) -> String { "welcomeRecentProject_\(name)" }
 
     // MARK: - Main editor window

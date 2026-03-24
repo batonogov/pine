@@ -7682,6 +7682,24 @@
         }
       }
     },
+    "welcome.noSearchResults" : {
+      "comment" : "Placeholder when search filter matches no recent projects.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No Matching Projects"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Нет подходящих проектов"
+          }
+        }
+      }
+    },
     "welcome.recentProjects" : {
       "comment" : "Header for recent projects list in the welcome window.",
       "extractionState" : "manual",
@@ -7738,6 +7756,24 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "最近的项目"
+          }
+        }
+      }
+    },
+    "welcome.searchPlaceholder" : {
+      "comment" : "Placeholder for the search field in the recent projects list.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Filter projects…"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Фильтр проектов…"
           }
         }
       }
