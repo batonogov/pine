@@ -66,6 +66,10 @@ enum AccessibilityLabels {
         String(localized: "a11y.openFolderButton")
     }
 
+    static var openFolderHint: String {
+        String(localized: "a11y.openFolderHint")
+    }
+
     static var recentProjects: String {
         String(localized: "a11y.recentProjects")
     }

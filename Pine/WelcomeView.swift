@@ -97,7 +97,7 @@ struct WelcomeView: View {
                 .controlSize(.large)
                 .accessibilityIdentifier(AccessibilityID.welcomeOpenFolderButton)
                 .accessibilityLabel(AccessibilityLabels.openFolderButton)
-                .accessibilityHint("Opens a folder picker to select a project")
+                .accessibilityHint(AccessibilityLabels.openFolderHint)
 
                 Spacer()
             }

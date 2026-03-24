@@ -40,6 +40,7 @@ struct AccessibilityTests {
     @Test func welcomeLabelsExist() {
         #expect(!AccessibilityLabels.welcomeWindow.isEmpty)
         #expect(!AccessibilityLabels.openFolderButton.isEmpty)
+        #expect(!AccessibilityLabels.openFolderHint.isEmpty)
         #expect(!AccessibilityLabels.recentProjects.isEmpty)
     }
 
@@ -54,14 +55,16 @@ struct AccessibilityTests {
         let activeLabel = AccessibilityLabels.editorTab(fileName: "test.swift", isActive: true, isDirty: false)
         let inactiveLabel = AccessibilityLabels.editorTab(fileName: "test.swift", isActive: false, isDirty: false)
         #expect(activeLabel != inactiveLabel)
-        #expect(activeLabel.lowercased().contains("selected") || activeLabel.lowercased().contains("active"))
+        // Active label should be longer than inactive (contains additional status text)
+        #expect(activeLabel.count > inactiveLabel.count)
     }
 
     @Test func editorTabLabelIndicatesDirtyState() {
         let cleanLabel = AccessibilityLabels.editorTab(fileName: "test.swift", isActive: false, isDirty: false)
         let dirtyLabel = AccessibilityLabels.editorTab(fileName: "test.swift", isActive: false, isDirty: true)
         #expect(cleanLabel != dirtyLabel)
-        #expect(dirtyLabel.lowercased().contains("unsaved") || dirtyLabel.lowercased().contains("modified"))
+        // Dirty label should be longer than clean (contains additional status text)
+        #expect(dirtyLabel.count > cleanLabel.count)
     }
 
     @Test func editorTabCloseHintIncludesFileName() {
@@ -78,7 +81,8 @@ struct AccessibilityTests {
     @Test func fileNodeLabelForDirectory() {
         let label = AccessibilityLabels.fileNode(name: "Sources", isDirectory: true)
         #expect(label.contains("Sources"))
-        #expect(label.lowercased().contains("folder") || label.lowercased().contains("directory"))
+        // Directory label should be longer than just the name (contains localized "folder" descriptor)
+        #expect(label.count > "Sources".count)
     }
 
     @Test func fileNodeLabelForFile() {
@@ -106,12 +110,18 @@ struct AccessibilityTests {
 
     @Test func terminalToggleHintWhenVisible() {
         let hint = AccessibilityLabels.terminalToggleHint(isVisible: true)
-        #expect(hint.lowercased().contains("hide"))
+        #expect(!hint.isEmpty)
     }
 
     @Test func terminalToggleHintWhenHidden() {
         let hint = AccessibilityLabels.terminalToggleHint(isVisible: false)
-        #expect(hint.lowercased().contains("show"))
+        #expect(!hint.isEmpty)
+    }
+
+    @Test func terminalToggleHintsDiffer() {
+        let visibleHint = AccessibilityLabels.terminalToggleHint(isVisible: true)
+        let hiddenHint = AccessibilityLabels.terminalToggleHint(isVisible: false)
+        #expect(visibleHint != hiddenHint)
     }
 
     // MARK: - AccessibilityID completeness

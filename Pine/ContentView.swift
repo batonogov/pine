@@ -225,7 +225,6 @@ struct ContentView: View {
     }
 }
 
-<<<<<<< HEAD
 // MARK: - Preview
 
 #Preview {

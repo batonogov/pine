@@ -88,6 +88,9 @@ struct EditorAreaView: View {
                 .accessibilityLabel(AccessibilityLabels.noFileOpen)
             }
         }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel(AccessibilityLabels.editorArea)
+        .accessibilityIdentifier(AccessibilityID.editorArea)
         .onDrop(of: [.fileURL], isTargeted: $isDragTargeted) { providers in
             handleFileDrop(providers: providers)
             return true
@@ -135,6 +138,7 @@ struct EditorAreaView: View {
         )
         .id(tab.id)
         .accessibilityIdentifier(AccessibilityID.codeEditor)
+        .accessibilityLabel(AccessibilityLabels.codeEditor)
         .onAppear { goToLineOffset = nil }
     }
 

@@ -1048,6 +1048,66 @@
         }
       }
     },
+    "a11y.openFolderHint" : {
+      "comment" : "VoiceOver hint for the Open Folder button.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Öffnet eine Ordnerauswahl zur Projektauswahl"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Opens a folder picker to select a project"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Abre un selector de carpetas para elegir un proyecto"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ouvre un sélecteur de dossier pour choisir un projet"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "フォルダ選択画面を開いてプロジェクトを選択します"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "프로젝트를 선택할 폴더 선택기를 엽니다"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Abre um seletor de pastas para escolher um projeto"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Открывает выбор папки для выбора проекта"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "打开文件夹选择器以选择项目"
+          }
+        }
+      }
+    },
     "a11y.recentProjects" : {
       "localizations" : {
         "de" : {
