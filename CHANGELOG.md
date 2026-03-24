@@ -1,5 +1,23 @@
 # Changelog
 
+## [1.10.1](https://github.com/batonogov/pine/compare/v1.10.0...v1.10.1) (2026-03-24)
+
+
+### Bug Fixes
+
+* editor tab bar overflows without scroll or collapse when many tabs open ([#453](https://github.com/batonogov/pine/issues/453)) ([f846d58](https://github.com/batonogov/pine/commit/f846d58c6883ce59ef5ee5ff859b6fdf5205083b))
+* prevent infinite loops in Finder-style copy URL generation ([#484](https://github.com/batonogov/pine/issues/484)) ([ab253a5](https://github.com/batonogov/pine/commit/ab253a5fb62f7a2b92dfac663ec27e2a072d5a68))
+* repair PineTests target dependencies for clean builds ([#480](https://github.com/batonogov/pine/issues/480)) ([737dbaf](https://github.com/batonogov/pine/commit/737dbafe6c77f88c8a4b1bc99cfa78a35343d73f))
+* replace force cast with safe cast and add defer for FileHandle ([#461](https://github.com/batonogov/pine/issues/461)) ([#485](https://github.com/batonogov/pine/issues/485)) ([80d9cd3](https://github.com/batonogov/pine/commit/80d9cd3e42fc7f58ca0e67ed0713971f8695ce6e))
+* resolve Swift 6 concurrency warnings in GitStatusProvider and ProjectSearchProvider ([#481](https://github.com/batonogov/pine/issues/481)) ([fe9f678](https://github.com/batonogov/pine/commit/fe9f678ceb304acbd65fbedf711e4273bb419694))
+* scope NotificationCenter observers to specific scroll views ([#487](https://github.com/batonogov/pine/issues/487)) ([a8245cb](https://github.com/batonogov/pine/commit/a8245cb2f16e3a21dbc78bf02a8e526cbfeb7460))
+* show correct file content when switching editor tabs ([#455](https://github.com/batonogov/pine/issues/455)) ([#456](https://github.com/batonogov/pine/issues/456)) ([64cbd3c](https://github.com/batonogov/pine/commit/64cbd3cad91e65b77543dc2009629a63e36cf796))
+
+
+### Performance Improvements
+
+* optimize scrolling for 120Hz ProMotion displays ([#447](https://github.com/batonogov/pine/issues/447)) ([0ea7706](https://github.com/batonogov/pine/commit/0ea770632aaf8fcd132c001870639f8578c26914))
+
 ## [1.10.0](https://github.com/batonogov/pine/compare/v1.9.2...v1.10.0) (2026-03-23)
 
 

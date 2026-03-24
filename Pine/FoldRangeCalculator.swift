@@ -29,6 +29,10 @@ enum FoldKind: Equatable {
 /// Вычисляет складываемые регионы по парным скобкам.
 enum FoldRangeCalculator {
 
+    /// Maximum nesting depth for bracket matching stack.
+    /// Prevents unbounded memory growth on pathological input.
+    static let maxStackDepth = 500
+
     private static let openBrackets: [unichar: (close: unichar, kind: FoldKind)] = [
         0x7B: (0x7D, .braces),       // { → }
         0x5B: (0x5D, .brackets),     // [ → ]
@@ -71,7 +75,10 @@ enum FoldRangeCalculator {
             let char = source.character(at: i)
 
             if let info = openBrackets[char] {
-                stack.append((charIndex: i, kind: info.kind))
+                // Skip push if stack is at maximum depth to prevent unbounded growth
+                if stack.count < maxStackDepth {
+                    stack.append((charIndex: i, kind: info.kind))
+                }
             } else if let expectedOpen = closeBrackets[char] {
                 // Скобки правильно вложены — matching opener всегда на вершине стека
                 if let last = stack.last,
