@@ -117,6 +117,8 @@ final class GitStatusProvider {
 
     var repositoryURL: URL?
     var gitRootPath: String?
+    /// Shared progress tracker — set by ProjectManager after init.
+    weak var progressTracker: ProgressTracker?
 
     /// True when the working tree has any uncommitted changes (modified, staged, untracked, etc.).
     var hasUncommittedChanges: Bool { !fileStatuses.isEmpty }
@@ -255,6 +257,7 @@ final class GitStatusProvider {
     /// the background work completes, stale results are discarded.
     func refreshAsync() async {
         guard isGitRepository, let url = repositoryURL else { return }
+        let progressID = progressTracker?.beginOperation(Strings.progressGitStatus)
 
         let (branch, statuses, ignored, branchList) = await withCheckedContinuation { continuation in
             DispatchQueue.global(qos: .userInitiated).async {
@@ -265,13 +268,17 @@ final class GitStatusProvider {
 
         // If the Task was cancelled (e.g. a newer refresh started),
         // discard stale results to avoid overwriting newer data.
-        guard !Task.isCancelled else { return }
+        guard !Task.isCancelled else {
+            if let progressID { await MainActor.run { self.progressTracker?.endOperation(progressID) } }
+            return
+        }
 
         await MainActor.run {
             self.currentBranch = branch
             self.fileStatuses = statuses
             self.ignoredPaths = ignored
             self.branches = branchList
+            if let progressID { self.progressTracker?.endOperation(progressID) }
         }
     }
 
@@ -386,6 +393,7 @@ final class GitStatusProvider {
     /// then refreshes status asynchronously. Safe to call from the main thread.
     func checkoutBranchAsync(_ branch: String) async -> (success: Bool, error: String) {
         guard let url = repositoryURL else { return (false, "No repository") }
+        let progressID = progressTracker?.beginOperation(Strings.progressGitCheckout)
 
         let result = await withCheckedContinuation { continuation in
             DispatchQueue.global(qos: .userInitiated).async {
@@ -395,9 +403,11 @@ final class GitStatusProvider {
         }
 
         guard result.exitCode == 0 else {
+            if let progressID { await MainActor.run { self.progressTracker?.endOperation(progressID) } }
             return (false, result.errorOutput.trimmingCharacters(in: .whitespacesAndNewlines))
         }
 
+        if let progressID { await MainActor.run { self.progressTracker?.endOperation(progressID) } }
         await refreshAsync()
         return (true, "")
     }
