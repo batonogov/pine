@@ -112,7 +112,6 @@ struct PineApp: App {
                 .keyboardShortcut("b", modifiers: [.command, .control])
 
                 Button {
-                    WordWrapSettings.toggle()
                     NotificationCenter.default.post(name: .toggleWordWrap, object: nil)
                 } label: {
                     Label(Strings.menuToggleWordWrap, systemImage: MenuIcons.toggleWordWrap)

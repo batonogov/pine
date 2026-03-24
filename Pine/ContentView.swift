@@ -895,6 +895,10 @@ private struct GitAndNotificationObserver: ViewModifier {
                 }
                 isSearchPresented = true
             }
+            .onReceive(NotificationCenter.default.publisher(for: .toggleWordWrap)) { _ in
+                guard controlActiveState == .key else { return }
+                isWordWrapEnabled.toggle()
+            }
             .onReceive(NotificationCenter.default.publisher(for: .goToLine)) { _ in
                 guard controlActiveState == .key,
                       tabManager.activeTab != nil else { return }
