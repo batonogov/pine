@@ -749,6 +749,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate {
     /// Central project registry — created early so it's available for AppKit fallback.
     var registry = ProjectRegistry()
 
+    /// Crash reporting settings (opt-in, off by default).
+    let crashReportSettings = CrashReportSettings()
+
     // MARK: - SPUUpdaterDelegate
 
     nonisolated func feedURLString(for updater: SPUUpdater) -> String? {
@@ -857,6 +860,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate {
             UserDefaults.standard.set(true, forKey: BlameConstants.storageKey)
         }
 
+        // Install crash handlers (only if user opted in)
+        CrashReportHandler.install(settings: crashReportSettings)
+
         // Preload syntax grammars at startup instead of lazily on first tab open
         _ = SyntaxHighlighter.shared
 
@@ -879,6 +885,23 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate {
 
         // Clean up stale recovery files older than 7 days across all projects
         RecoveryManager.cleanupAllStaleEntries(olderThan: 7)
+
+        // Crash reporting: check for pending reports from a previous crash,
+        // or show the opt-in dialog on first launch.
+        if let pendingReports = CrashReportHandler.checkForPendingReports() {
+            // Defer dialog to avoid blocking app startup
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+                CrashReportDialogs.showPendingReportDialog(reports: pendingReports)
+            }
+        } else if !crashReportSettings.hasBeenAsked {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { [weak self] in
+                guard let self else { return }
+                if CrashReportDialogs.showOptInDialog(settings: self.crashReportSettings) {
+                    // User opted in — install handlers for this session
+                    CrashReportHandler.install(settings: self.crashReportSettings)
+                }
+            }
+        }
 
         // Intercept Cmd+W before the system "Close" menu item.
         // For project windows: close active tab (or close window if no tabs).
