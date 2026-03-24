@@ -156,6 +156,25 @@ struct WelcomeView: View {
                                     RecentProjectRow(url: url) {
                                         openProject(at: url)
                                     }
+                                    .contextMenu {
+                                        Button {
+                                            NSWorkspace.shared.activateFileViewerSelecting([url])
+                                        } label: {
+                                            Label(
+                                                Strings.welcomeRevealInFinder,
+                                                systemImage: "folder"
+                                            )
+                                        }
+                                        Divider()
+                                        Button {
+                                            registry.removeFromRecent(url)
+                                        } label: {
+                                            Label(
+                                                Strings.welcomeRemoveFromRecent,
+                                                systemImage: "minus.circle"
+                                            )
+                                        }
+                                    }
                                     .accessibilityIdentifier(
                                         AccessibilityID.welcomeRecentProject(url.lastPathComponent)
                                     )
