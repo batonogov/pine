@@ -7,6 +7,7 @@
 
 import os
 import SwiftUI
+import UniformTypeIdentifiers
 
 // MARK: - Главный ContentView
 
@@ -30,6 +31,7 @@ struct ContentView: View {
     @State private var goToLineOffset: GoToRequest?
     @State private var recoveryEntries: [(UUID, RecoveryEntry)] = []
     @State private var showRecoveryDialog = false
+    @State private var isDragTargeted = false
     @State private var isQuickOpenPresented = false
     @State private var showGoToLine = false
     @AppStorage("minimapVisible") private var isMinimapVisible = true
@@ -318,6 +320,33 @@ struct ContentView: View {
         openWindow(value: url)
     }
 
+    // MARK: - Drag & Drop
+
+    /// Handles file URLs dropped onto the editor area.
+    /// Files are opened as tabs; directories open as new project windows.
+    private func handleFileDrop(providers: [NSItemProvider]) {
+        for provider in providers {
+            Task {
+                guard let url = try? await provider.loadItem(
+                    forTypeIdentifier: UTType.fileURL.identifier
+                ) as? URL else { return }
+
+                let classified = DropHandler.classifyURLs([url])
+
+                await MainActor.run {
+                    // Open directories as new project windows
+                    for dir in classified.directories {
+                        let canonical = dir.resolvingSymlinksInPath()
+                        guard registry.projectManager(for: canonical) != nil else { continue }
+                        openWindow(value: canonical)
+                    }
+                    // Open files as tabs in current project
+                    DropHandler.openFilesAsTabs(classified.files, in: tabManager)
+                }
+            }
+        }
+    }
+
     // MARK: - Управление файлами
 
     private func handleFileSelection(_ node: FileNode) {
@@ -577,6 +606,17 @@ struct ContentView: View {
                 .accessibilityIdentifier(AccessibilityID.editorPlaceholder)
             }
         }
+        .onDrop(of: [.fileURL], isTargeted: $isDragTargeted) { providers in
+            handleFileDrop(providers: providers)
+            return true
+        }
+        .overlay {
+            if isDragTargeted {
+                RoundedRectangle(cornerRadius: 8)
+                    .stroke(.blue, lineWidth: 2)
+                    .allowsHitTesting(false)
+            }
+        }
     }
 
     @ViewBuilder
@@ -603,6 +643,10 @@ struct ContentView: View {
             onStateChange: { cursor, scroll in
                 tabManager.updateEditorState(cursorPosition: cursor, scrollOffset: scroll)
             },
+            onHighlightCacheUpdate: { result in
+                tabManager.updateHighlightCache(result)
+            },
+            cachedHighlightResult: tab.cachedHighlightResult,
             goToOffset: goToLineOffset,
             fontSize: FontSizeSettings.shared.fontSize
         )
@@ -1109,6 +1153,10 @@ final class SidebarEditState {
     }
 
     /// Creates a file or folder with a unique "untitled" name, then starts inline rename.
+    ///
+    /// When creating a new item, undo registration is deferred to `commitRename` so that
+    /// the entire create+rename sequence is undone as a single Cmd+Z action (#527).
+    /// The `undoManager` is stored and used later by `commitRename`.
     func createNewItem(
         in parentURL: URL,
         isDirectory: Bool,
@@ -1125,10 +1173,9 @@ final class SidebarEditState {
         let newURL = parentURL.appendingPathComponent(name)
 
         do {
-            if let undoManager {
-                let fileOps = FileOperationUndoManager()
-                try fileOps.createItem(at: newURL, isDirectory: isDirectory, undoManager: undoManager)
-            } else if isDirectory {
+            // Do NOT register undo here — undo is deferred to commitRename so that
+            // create + rename are grouped as a single undo action (#527).
+            if isDirectory {
                 try FileManager.default.createDirectory(at: newURL, withIntermediateDirectories: false)
             } else if !FileManager.default.createFile(atPath: newURL.path, contents: nil) {
                 Self.showFileError(Strings.fileCreateError(name))
@@ -1320,8 +1367,6 @@ struct FileNodeRow: View {
     @Environment(\.undoManager) private var undoManager
     @FocusState private var isTextFieldFocused: Bool
 
-    private let fileOps = FileOperationUndoManager()
-
     private var isEditing: Bool {
         guard let renamingURL = editState.renamingURL else { return false }
         // Compare by path to ignore trailing-slash differences between
@@ -1480,6 +1525,10 @@ struct FileNodeRow: View {
         // Name unchanged — accept as-is
         if newURL == oldURL {
             editState.clear()
+            // For newly created items, register a single undo that deletes the file (#527)
+            if wasNewlyCreated, let undoManager {
+                try? FileOperationUndoManager.registerCreateUndo(at: oldURL, undoManager: undoManager)
+            }
             if wasNewlyCreated && !node.isDirectory {
                 tabManager.openTab(url: oldURL)
             }
@@ -1487,8 +1536,15 @@ struct FileNodeRow: View {
         }
 
         do {
-            if let undoManager {
-                try fileOps.renameItem(from: oldURL, to: newURL, undoManager: undoManager)
+            if wasNewlyCreated {
+                // For newly created items: rename without undo registration, then register
+                // a single undo that deletes the final file — so Cmd+Z removes it entirely (#527).
+                try FileManager.default.moveItem(at: oldURL, to: newURL)
+                if let undoManager {
+                    try? FileOperationUndoManager.registerCreateUndo(at: newURL, undoManager: undoManager)
+                }
+            } else if let undoManager {
+                try FileOperationUndoManager.renameItem(from: oldURL, to: newURL, undoManager: undoManager)
             } else {
                 try FileManager.default.moveItem(at: oldURL, to: newURL)
             }
@@ -1535,7 +1591,7 @@ struct FileNodeRow: View {
 
         do {
             if let undoManager {
-                try fileOps.deleteItem(at: deletedURL, undoManager: undoManager)
+                try FileOperationUndoManager.deleteItem(at: deletedURL, undoManager: undoManager)
             } else {
                 try FileManager.default.trashItem(at: deletedURL, resultingItemURL: nil)
             }

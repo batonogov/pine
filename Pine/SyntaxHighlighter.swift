@@ -322,17 +322,19 @@ final class SyntaxHighlighter: @unchecked Sendable {
     ]
 
     /// Применяет подсветку ко всему NSTextStorage и обновляет кэш многострочных матчей.
+    /// Returns the match result so callers can cache it for instant reapplication on tab switch.
+    @discardableResult
     func highlight(
         textStorage: NSTextStorage,
         language: String,
         fileName: String? = nil,
         font: NSFont
-    ) {
+    ) -> HighlightMatchResult? {
         guard let (_, rules) = resolveGrammar(language: language, fileName: fileName) else {
             resetAttributes(textStorage: textStorage,
                             range: NSRange(location: 0, length: textStorage.length),
                             font: font)
-            return
+            return nil
         }
 
         let fullRange = NSRange(location: 0, length: textStorage.length)
@@ -340,6 +342,7 @@ final class SyntaxHighlighter: @unchecked Sendable {
             rules, to: textStorage, repaintRange: fullRange, searchRange: fullRange, font: font
         )
         lock.withLock { multilineMatchCache[ObjectIdentifier(textStorage)] = result.multilineFingerprint }
+        return result
     }
 
     /// Количество строк контекста для viewport-based подсветки (больше, чем для edit).
@@ -760,18 +763,20 @@ final class SyntaxHighlighter: @unchecked Sendable {
     }
 
     /// Async full highlight: computes on background queue, applies on main thread.
+    /// Returns the applied match result (for caching on tab switch), or nil if generation was stale.
+    @discardableResult
     func highlightAsync(
         textStorage: NSTextStorage,
         language: String,
         fileName: String? = nil,
         font: NSFont,
         generation: HighlightGeneration? = nil
-    ) async {
+    ) async -> HighlightMatchResult? {
         // Explicit copy — NSTextStorage.string returns a reference to the internal
         // NSMutableString which may mutate while background work is in progress.
         let text = String(textStorage.string)
         let textLength = (text as NSString).length
-        guard textLength > 0 else { return }
+        guard textLength > 0 else { return nil }
 
         let fullRange = NSRange(location: 0, length: textLength)
         let gen = generation?.current ?? 0
@@ -790,17 +795,19 @@ final class SyntaxHighlighter: @unchecked Sendable {
         }
 
         // Check generation — if bumped, discard stale results
-        if let generation, generation.current != gen { return }
+        if let generation, generation.current != gen { return nil }
 
         if let result {
             applyMatches(result, to: textStorage, font: font)
             updateMultilineCache(key: ObjectIdentifier(textStorage), fingerprint: result.multilineFingerprint)
+            return result
         } else {
             resetAttributes(
                 textStorage: textStorage,
                 range: fullRange,
                 font: font
             )
+            return nil
         }
     }
 
