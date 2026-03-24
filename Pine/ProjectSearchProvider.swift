@@ -260,9 +260,17 @@ final class ProjectSearchProvider {
         return files
     }
 
+    /// Extensions that UTType misclassifies as binary (e.g. .js → executable, .ts → MPEG-2 transport stream).
+    nonisolated private static let textExtensionOverrides: Set<String> = [
+        "js", "jsx", "mjs", "cjs",
+        "ts", "tsx", "mts", "cts"
+    ]
+
     /// Returns true for known binary file types.
     nonisolated static func isBinaryFile(url: URL) -> Bool {
-        guard let type = UTType(filenameExtension: url.pathExtension) else { return false }
+        let ext = url.pathExtension.lowercased()
+        if textExtensionOverrides.contains(ext) { return false }
+        guard let type = UTType(filenameExtension: ext) else { return false }
         return type.conforms(to: .image)
             || type.conforms(to: .audiovisualContent)
             || type.conforms(to: .pdf)
