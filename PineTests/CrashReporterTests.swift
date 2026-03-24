@@ -222,6 +222,71 @@ struct CrashReporterTests {
         #expect(pending.count == 3)
     }
 
+    // MARK: - Settings computed properties (no didSet recursion)
+
+    @Test func settingsReadWriteDoesNotRecurse() throws {
+        let defaults = try makeDefaults()
+        defer { cleanupDefaults(defaults) }
+
+        let settings = CrashReportSettings(defaults: defaults)
+        // Rapidly toggle — would stack overflow with @Observable + didSet
+        for _ in 0..<100 {
+            settings.isEnabled = true
+            settings.isEnabled = false
+        }
+        #expect(settings.isEnabled == false)
+    }
+
+    @Test func settingsReflectsExternalDefaultsChange() throws {
+        let defaults = try makeDefaults()
+        defer { cleanupDefaults(defaults) }
+
+        let settings = CrashReportSettings(defaults: defaults)
+        #expect(settings.isEnabled == false)
+
+        // Simulate external change (e.g. from another process)
+        defaults.set(true, forKey: CrashReportSettings.enabledKey)
+        #expect(settings.isEnabled == true)
+    }
+
+    // MARK: - CrashReportHandler.updateEnabled
+
+    @Test func updateEnabledDoesNotThrow() throws {
+        // Just verify it doesn't crash — the global flag is internal
+        CrashReportHandler.updateEnabled(true)
+        CrashReportHandler.updateEnabled(false)
+    }
+
+    // MARK: - CrashReportStore error handling
+
+    @Test func loadPendingHandlesCorruptFiles() throws {
+        let dir = try makeTempDir()
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        // Write a corrupt JSON file
+        let corruptFile = dir.appending(path: "crash-corrupt.json")
+        try Data("not valid json".utf8).write(to: corruptFile)
+
+        // Write a valid report
+        let store = CrashReportStore(directory: dir)
+        let report = CrashReport(
+            exceptionType: "Valid",
+            exceptionReason: "test",
+            stackTrace: [],
+            appVersion: "1.0",
+            buildNumber: "1",
+            osVersion: "macOS 26.0",
+            openFileCount: 0,
+            timestamp: Date()
+        )
+        try store.save(report)
+
+        // Should load the valid one and skip the corrupt one (with logged error)
+        let pending = try store.loadPending()
+        #expect(pending.count == 1)
+        #expect(pending[0].exceptionType == "Valid")
+    }
+
     // MARK: - CrashReport formatted output
 
     @Test func formattedReportContainsAllInfo() {

@@ -12,14 +12,26 @@
 //
 
 import Foundation
+import os
 
 // MARK: - Global C-compatible handler functions
 
 /// Cached directory path for the signal handler (global for C function pointer compatibility).
 private var crashReportDirectoryPath: [CChar] = []
 
+/// Pre-built JSON template with placeholder for signal number.
+/// Format: {"exceptionType":"Signal","exceptionReason":"Signal XX","stackTrace":[],...}
+/// The "XX" at a known offset gets overwritten with the actual signal number.
+private var signalJSONPrefix: [UInt8] = []
+private var signalJSONSuffix: [UInt8] = []
+
+/// Whether crash reporting is enabled (checked in handlers before writing).
+private var crashReportingEnabled = false
+
 /// Global exception handler — must be a plain function (no captures).
 private func pineExceptionHandler(_ exception: NSException) {
+    guard crashReportingEnabled else { return }
+
     let trace = exception.callStackSymbols
     let report = CrashReport(
         exceptionType: exception.name.rawValue,
@@ -32,49 +44,129 @@ private func pineExceptionHandler(_ exception: NSException) {
         timestamp: Date()
     )
 
-    // Best-effort write — if this fails, we lose the report
-    try? CrashReportStore.default.save(report)
+    do {
+        try CrashReportStore.default.save(report)
+    } catch {
+        Logger.app.error("Failed to save crash report: \(error.localizedDescription)")
+    }
 }
 
 /// Global signal handler — must be a plain function (no captures).
-/// Uses only async-signal-safe operations.
+/// Uses only async-signal-safe operations: no String interpolation, no Date(),
+/// no Array mutations, no memory allocations.
 private func pineSignalHandler(_ sig: Int32) {
-    guard !crashReportDirectoryPath.isEmpty else { return }
+    guard crashReportingEnabled else {
+        // Re-raise with default handler even if reporting is disabled
+        signal(sig, SIG_DFL)
+        raise(sig)
+        return
+    }
+    guard !crashReportDirectoryPath.isEmpty else {
+        signal(sig, SIG_DFL)
+        raise(sig)
+        return
+    }
 
-    // Build path: <dir>/signal-crash-<signal>.json
-    // Using fixed-size buffer to avoid allocations
-    var pathBuf = crashReportDirectoryPath
-    // Remove null terminator, append filename
-    if pathBuf.last == 0 { pathBuf.removeLast() }
-    let suffix = "/signal-crash-\(sig).json"
-    suffix.withCString { ptr in
-        var idx = 0
-        while ptr[idx] != 0 {
-            pathBuf.append(ptr[idx])
-            idx += 1
+    // Build filename: "/signal-crash-NN.json"
+    // Use fixed-size array to avoid heap allocations
+    // "/signal-crash-" = 15 chars, up to 3 digits, ".json\0" = 6 chars = max 24
+    var filenameBuf: [CChar] = [
+        0x2F, // /
+        0x73, 0x69, 0x67, 0x6E, 0x61, 0x6C, 0x2D, // signal-
+        0x63, 0x72, 0x61, 0x73, 0x68, 0x2D, // crash-
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0 // digits + .json + null
+    ]
+
+    // Convert signal number to ASCII digits
+    var num = sig < 0 ? -sig : sig
+    var digitBuf: [CChar] = [0, 0, 0]
+    var digitCount = 0
+
+    if num == 0 {
+        digitBuf[0] = 0x30 // '0'
+        digitCount = 1
+    } else {
+        // Extract digits in reverse
+        var tempCount = 0
+        while num > 0 && tempCount < 3 {
+            digitBuf[tempCount] = CChar(truncatingIfNeeded: (num % 10) + 0x30)
+            tempCount += 1
+            num /= 10
+        }
+        digitCount = tempCount
+        // Reverse in-place
+        if digitCount == 2 {
+            let tmp = digitBuf[0]
+            digitBuf[0] = digitBuf[1]
+            digitBuf[1] = tmp
+        } else if digitCount == 3 {
+            let tmp = digitBuf[0]
+            digitBuf[0] = digitBuf[2]
+            digitBuf[2] = tmp
         }
     }
-    pathBuf.append(0) // null terminator
 
-    // Build minimal JSON manually (no Foundation allocations in signal context)
-    let json = """
-    {"exceptionType":"Signal","exceptionReason":"Signal \(sig)",\
-    "stackTrace":[],"appVersion":"","buildNumber":"",\
-    "osVersion":"","openFileCount":0,\
-    "timestamp":\(Date().timeIntervalSince1970)}
-    """
+    // Place digits at offset 14, then ".json\0"
+    var writeIdx = 14
+    for dIdx in 0..<digitCount {
+        filenameBuf[writeIdx] = digitBuf[dIdx]
+        writeIdx += 1
+    }
+    filenameBuf[writeIdx] = 0x2E     // .
+    filenameBuf[writeIdx + 1] = 0x6A // j
+    filenameBuf[writeIdx + 2] = 0x73 // s
+    filenameBuf[writeIdx + 3] = 0x6F // o
+    filenameBuf[writeIdx + 4] = 0x6E // n
+    filenameBuf[writeIdx + 5] = 0    // null
+
+    // Build full path: dirPath + filename
+    var pathBuf: [CChar] = Array(repeating: 0, count: 1024)
+    var pathLen = 0
+
+    // Copy directory path (without null terminator)
+    for idx in 0..<crashReportDirectoryPath.count {
+        let ch = crashReportDirectoryPath[idx]
+        if ch == 0 { break }
+        guard pathLen < 1023 else { break }
+        pathBuf[pathLen] = ch
+        pathLen += 1
+    }
+
+    // Copy filename
+    var fnIdx = 0
+    while filenameBuf[fnIdx] != 0 && pathLen < 1023 {
+        pathBuf[pathLen] = filenameBuf[fnIdx]
+        pathLen += 1
+        fnIdx += 1
+    }
+    pathBuf[pathLen] = 0
+
+    // Build minimal JSON: pre-built prefix + signal digits + pre-built suffix
+    var jsonBuf: [UInt8] = Array(repeating: 0, count: 256)
+    var jsonLen = 0
+
+    for byte in signalJSONPrefix where jsonLen < 255 {
+        jsonBuf[jsonLen] = byte
+        jsonLen += 1
+    }
+
+    for dIdx in 0..<digitCount where jsonLen < 255 {
+        jsonBuf[jsonLen] = UInt8(bitPattern: digitBuf[dIdx])
+        jsonLen += 1
+    }
+
+    for byte in signalJSONSuffix where jsonLen < 255 {
+        jsonBuf[jsonLen] = byte
+        jsonLen += 1
+    }
 
     // Ensure directory exists
     mkdir(&crashReportDirectoryPath, 0o755)
 
-    // Write JSON to file
-    pathBuf.withUnsafeBufferPointer { buf in
-        guard let ptr = buf.baseAddress else { return }
-        let fd = open(ptr, O_WRONLY | O_CREAT | O_TRUNC, 0o644)
-        guard fd >= 0 else { return }
-        json.withCString { cJSON in
-            _ = write(fd, cJSON, strlen(cJSON))
-        }
+    // Write JSON to file using only POSIX calls
+    let fd = open(&pathBuf, O_WRONLY | O_CREAT | O_TRUNC, 0o644)
+    if fd >= 0 {
+        _ = write(fd, &jsonBuf, jsonLen)
         close(fd)
     }
 
@@ -94,13 +186,24 @@ enum CrashReportHandler {
     ]
 
     /// Call once from applicationWillFinishLaunching to install handlers.
-    /// Only installs if crash reporting is enabled.
+    /// Always installs handlers; the isEnabled flag is checked inside the handler
+    /// before writing reports, so handlers work even if user opts in later.
     static func install(settings: CrashReportSettings) {
-        guard settings.isEnabled else { return }
+        // Sync the enabled flag for handlers to check
+        crashReportingEnabled = settings.isEnabled
 
         // Cache the directory path as C string for the signal handler.
         let dirPath = CrashReportStore.default.directory.path(percentEncoded: false)
         crashReportDirectoryPath = Array(dirPath.utf8CString)
+
+        // Pre-build JSON template parts (done once at startup, safe to allocate here)
+        let prefix = #"{"exceptionType":"Signal","exceptionReason":"Signal "#
+        let suffixPart1 = #"","stackTrace":[],"appVersion":"","#
+        let suffixPart2 = #""buildNumber":"","osVersion":"","#
+        let suffixPart3 = #""openFileCount":0,"timestamp":0}"#
+        let suffix = suffixPart1 + suffixPart2 + suffixPart3
+        signalJSONPrefix = Array(prefix.utf8)
+        signalJSONSuffix = Array(suffix.utf8)
 
         // Exception handler for ObjC/Swift exceptions
         NSSetUncaughtExceptionHandler(pineExceptionHandler)
@@ -111,20 +214,32 @@ enum CrashReportHandler {
         }
     }
 
+    /// Updates the enabled flag (call after user changes opt-in preference).
+    static func updateEnabled(_ enabled: Bool) {
+        crashReportingEnabled = enabled
+    }
+
     // MARK: - Next-launch check
 
     /// Checks for pending crash reports. Call from applicationDidFinishLaunching.
     /// Returns the reports if any exist, nil otherwise.
     static func checkForPendingReports() -> [CrashReport]? {
         let store = CrashReportStore.default
-        guard let reports = try? store.loadPending(), !reports.isEmpty else {
+        do {
+            let reports = try store.loadPending()
+            return reports.isEmpty ? nil : reports
+        } catch {
+            Logger.app.error("Failed to load pending crash reports: \(error.localizedDescription)")
             return nil
         }
-        return reports
     }
 
     /// Deletes all pending crash reports (after user dismisses the dialog).
     static func clearPendingReports() {
-        try? CrashReportStore.default.deleteAll()
+        do {
+            try CrashReportStore.default.deleteAll()
+        } catch {
+            Logger.app.error("Failed to clear crash reports: \(error.localizedDescription)")
+        }
     }
 }

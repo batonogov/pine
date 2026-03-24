@@ -17,23 +17,19 @@ final class CrashReportSettings {
     private let defaults: UserDefaults
 
     /// Whether anonymous crash reporting is enabled. Off by default.
+    /// Uses computed property to avoid @Observable + didSet infinite recursion.
     var isEnabled: Bool {
-        didSet {
-            defaults.set(isEnabled, forKey: Self.enabledKey)
-        }
+        get { defaults.bool(forKey: Self.enabledKey) }
+        set { defaults.set(newValue, forKey: Self.enabledKey) }
     }
 
     /// Whether the user has been shown the opt-in dialog.
     var hasBeenAsked: Bool {
-        didSet {
-            defaults.set(hasBeenAsked, forKey: Self.askedKey)
-        }
+        get { defaults.bool(forKey: Self.askedKey) }
+        set { defaults.set(newValue, forKey: Self.askedKey) }
     }
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
-        // UserDefaults.bool(forKey:) returns false when key doesn't exist — perfect for opt-in
-        self.isEnabled = defaults.bool(forKey: Self.enabledKey)
-        self.hasBeenAsked = defaults.bool(forKey: Self.askedKey)
     }
 }

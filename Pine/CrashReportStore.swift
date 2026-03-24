@@ -8,6 +8,7 @@
 //
 
 import Foundation
+import os
 
 struct CrashReportStore {
 
@@ -50,8 +51,13 @@ struct CrashReportStore {
         return contents
             .filter { $0.pathExtension == "json" }
             .compactMap { url in
-                guard let data = try? Data(contentsOf: url) else { return nil }
-                return try? decoder.decode(CrashReport.self, from: data)
+                do {
+                    let data = try Data(contentsOf: url)
+                    return try decoder.decode(CrashReport.self, from: data)
+                } catch {
+                    Logger.app.error("Failed to load crash report \(url.lastPathComponent): \(error.localizedDescription)")
+                    return nil
+                }
             }
     }
 
