@@ -39,8 +39,11 @@ struct PerTabEditorState: Codable, Equatable {
     // MARK: - Apply to EditorTab
 
     /// Applies the persisted state to an EditorTab (cursor, scroll, folds).
+    /// Cursor position is clamped to the content length to avoid out-of-bounds
+    /// crashes when the file has been shortened externally.
     func apply(to tab: inout EditorTab) {
-        tab.cursorPosition = cursorPosition
+        let maxPosition = tab.content.utf16.count
+        tab.cursorPosition = min(cursorPosition, maxPosition)
         tab.scrollOffset = scrollOffset
         if let ranges = foldedRanges {
             tab.foldState = Self.restoreFoldState(from: ranges)
@@ -99,7 +102,6 @@ struct PerTabEditorState: Codable, Equatable {
         case "parentheses": return .parentheses
         default:
             logger.warning("Unknown fold kind '\(string)', defaulting to .braces")
-            assertionFailure("Unknown fold kind: \(string)")
             return .braces
         }
     }

@@ -355,12 +355,31 @@ struct TabEditorStateTests {
         #expect(!tab.foldState.isLineHidden(4))
     }
 
+    @Test("PerTabEditorState clamps cursor position to content length")
+    func applyClampsOutOfBoundsCursor() {
+        var tab = EditorTab(
+            url: URL(fileURLWithPath: "/tmp/test.swift"),
+            content: "short",
+            savedContent: "short"
+        )
+
+        let state = PerTabEditorState(
+            cursorPosition: 999,
+            scrollOffset: 0,
+            foldedRanges: nil
+        )
+
+        state.apply(to: &tab)
+
+        #expect(tab.cursorPosition == tab.content.utf16.count)
+    }
+
     @Test("PerTabEditorState apply without fold ranges preserves existing fold state")
     func applyWithoutFolds() {
         var tab = EditorTab(
             url: URL(fileURLWithPath: "/tmp/test.swift"),
-            content: "content",
-            savedContent: "content"
+            content: "long enough content for cursor",
+            savedContent: "long enough content for cursor"
         )
         tab.foldState.fold(FoldableRange(
             startLine: 1, endLine: 5,
@@ -391,7 +410,11 @@ struct TabEditorStateTests {
         try FileManager.default.createDirectory(at: projectURL, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: projectURL) }
 
-        let insidePath = projectURL.appendingPathComponent("src/main.swift").path
+        let srcDir = projectURL.appendingPathComponent("src")
+        try FileManager.default.createDirectory(at: srcDir, withIntermediateDirectories: true)
+        let insideURL = srcDir.appendingPathComponent("main.swift")
+        FileManager.default.createFile(atPath: insideURL.path, contents: nil)
+        let insidePath = insideURL.path
         let outsidePath = "/other/project/file.swift"
 
         let state = SessionState(
