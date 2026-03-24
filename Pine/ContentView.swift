@@ -1087,6 +1087,8 @@ final class SidebarEditState {
     var renamingURL: URL?
     var editingText: String = ""
     var isNewlyCreated: Bool = false
+    /// URL of the newly created node to scroll to in the sidebar.
+    var scrollToNodeID: URL?
 
     func startRename(for node: FileNode) {
         renamingURL = node.url
@@ -1134,6 +1136,7 @@ final class SidebarEditState {
             }
             workspace.refreshFileTree()
             startNewItem(url: newURL)
+            scrollToNodeID = newURL
         } catch {
             Self.showFileError(error.localizedDescription)
         }
@@ -1161,6 +1164,7 @@ final class SidebarEditState {
             renamingURL = copyURL
             editingText = copyURL.lastPathComponent
             isNewlyCreated = false
+            scrollToNodeID = copyURL
             if !isDirectory {
                 tabManager.openTab(url: copyURL)
             }
@@ -1216,49 +1220,62 @@ struct SidebarView: View {
                 }
                 .navigationTitle(Strings.filesTitle)
             } else {
-                List(workspace.rootNodes, children: \.optionalChildren, selection: $selectedFile) { node in
-                    FileNodeRow(node: node)
-                }
-                .environment(editState)
-                .contextMenu {
-                    if let rootURL = workspace.rootURL {
-                        Button {
-                            editState.createNewItem(
-                                in: rootURL,
-                                isDirectory: false,
-                                workspace: workspace,
-                                undoManager: undoManager
-                            )
-                        } label: {
-                            Label(Strings.contextNewFile, systemImage: MenuIcons.newFile)
-                        }
+                ScrollViewReader { scrollProxy in
+                    List(workspace.rootNodes, children: \.optionalChildren, selection: $selectedFile) { node in
+                        FileNodeRow(node: node)
+                            .id(node.id)
+                    }
+                    .environment(editState)
+                    .contextMenu {
+                        if let rootURL = workspace.rootURL {
+                            Button {
+                                editState.createNewItem(
+                                    in: rootURL,
+                                    isDirectory: false,
+                                    workspace: workspace,
+                                    undoManager: undoManager
+                                )
+                            } label: {
+                                Label(Strings.contextNewFile, systemImage: MenuIcons.newFile)
+                            }
 
-                        Button {
-                            editState.createNewItem(
-                                in: rootURL,
-                                isDirectory: true,
-                                workspace: workspace,
-                                undoManager: undoManager
-                            )
-                        } label: {
-                            Label(Strings.contextNewFolder, systemImage: MenuIcons.newFolder)
-                        }
+                            Button {
+                                editState.createNewItem(
+                                    in: rootURL,
+                                    isDirectory: true,
+                                    workspace: workspace,
+                                    undoManager: undoManager
+                                )
+                            } label: {
+                                Label(Strings.contextNewFolder, systemImage: MenuIcons.newFolder)
+                            }
 
-                        Divider()
+                            Divider()
 
-                        Button {
-                            NSWorkspace.shared.activateFileViewerSelecting([rootURL])
-                        } label: {
-                            Label(Strings.contextRevealInFinder, systemImage: MenuIcons.revealInFinder)
+                            Button {
+                                NSWorkspace.shared.activateFileViewerSelecting([rootURL])
+                            } label: {
+                                Label(Strings.contextRevealInFinder, systemImage: MenuIcons.revealInFinder)
+                            }
                         }
                     }
-                }
-                .navigationTitle(workspace.projectName)
-                .onChange(of: editState.renamingURL) { _, newURL in
-                    if newURL != nil {
-                        // Defer to avoid modifying state during view update
+                    .navigationTitle(workspace.projectName)
+                    .onChange(of: editState.renamingURL) { _, newURL in
+                        if newURL != nil {
+                            // Defer to avoid modifying state during view update
+                            DispatchQueue.main.async {
+                                selectedFile = nil
+                            }
+                        }
+                    }
+                    .onChange(of: editState.scrollToNodeID) { _, targetID in
+                        guard let targetID else { return }
+                        // Defer scroll to next run loop so the file tree has time to update.
                         DispatchQueue.main.async {
-                            selectedFile = nil
+                            withAnimation {
+                                scrollProxy.scrollTo(targetID, anchor: .center)
+                            }
+                            editState.scrollToNodeID = nil
                         }
                     }
                 }
