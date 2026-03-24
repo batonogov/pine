@@ -821,6 +821,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate {
         // Must be set before applicationDidFinishLaunching — the system runs
         // window restoration between willFinishLaunching and didFinishLaunching.
         UserDefaults.standard.set(false, forKey: "NSQuitAlwaysKeepsWindows")
+
+        // Run data migrations before any other UserDefaults access
+        MigrationManager.withDefaultMigrations().runMigrations()
+
         // Default blame to ON for first launch
         if UserDefaults.standard.object(forKey: BlameConstants.storageKey) == nil {
             UserDefaults.standard.set(true, forKey: BlameConstants.storageKey)
