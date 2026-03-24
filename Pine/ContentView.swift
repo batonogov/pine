@@ -224,6 +224,16 @@ struct ContentView: View {
                 }
             }
 
+            // Restore per-tab editor state (cursor, scroll, folds)
+            if let editorStates = session.existingEditorStates {
+                for index in tabManager.tabs.indices {
+                    let path = tabManager.tabs[index].url.path
+                    if let state = editorStates[path] {
+                        state.apply(to: &tabManager.tabs[index])
+                    }
+                }
+            }
+
             if let activeURL = session.activeFileURL,
                let tab = tabManager.tab(for: activeURL) {
                 tabManager.activeTabID = tab.id
