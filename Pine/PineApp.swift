@@ -25,7 +25,11 @@ struct PineApp: App {
         .defaultSize(width: 1280, height: 800)
         .defaultLaunchBehavior(.suppressed)
         .commands {
-            CommandGroup(after: .appInfo) {
+            CommandGroup(replacing: .appInfo) {
+                Button("About Pine") {
+                    AboutInfo.showAboutPanel()
+                }
+
                 CheckForUpdatesView(viewModel: appDelegate.checkForUpdatesViewModel)
             }
             // Убираем стандартный "New Window" (Cmd+N) — табы создаются кликом по файлу
