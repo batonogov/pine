@@ -568,6 +568,10 @@ struct CodeEditorView: NSViewRepresentable {
             }
             // Redraw minimap after layout is complete
             minimapView.needsDisplay = true
+
+            // Make the editor first responder so keyboard input works immediately
+            // after opening a file or switching tabs.
+            textView.window?.makeFirstResponder(textView)
         }
 
         // Observe scroll changes to persist scroll offset.

@@ -300,6 +300,42 @@ final class TabManager {
         tabs.move(fromOffsets: source, toOffset: destination)
     }
 
+    // MARK: - Keyboard tab navigation
+
+    /// Selects the tab at the given 0-based index. No-op if out of bounds.
+    func selectTab(at index: Int) {
+        guard index >= 0, index < tabs.count else { return }
+        activeTabID = tabs[index].id
+    }
+
+    /// Selects the last tab. Used by Cmd+9 (like Safari/Chrome).
+    func selectLastTab() {
+        guard let last = tabs.last else { return }
+        activeTabID = last.id
+    }
+
+    /// Selects the next tab, wrapping around to the first. Used by Ctrl+Tab.
+    func selectNextTab() {
+        guard !tabs.isEmpty else { return }
+        guard let currentIndex = activeTabIndex else {
+            activeTabID = tabs[0].id
+            return
+        }
+        let nextIndex = (currentIndex + 1) % tabs.count
+        activeTabID = tabs[nextIndex].id
+    }
+
+    /// Selects the previous tab, wrapping around to the last. Used by Ctrl+Shift+Tab.
+    func selectPreviousTab() {
+        guard !tabs.isEmpty else { return }
+        guard let currentIndex = activeTabIndex else {
+            activeTabID = tabs[tabs.count - 1].id
+            return
+        }
+        let prevIndex = (currentIndex - 1 + tabs.count) % tabs.count
+        activeTabID = tabs[prevIndex].id
+    }
+
     /// Whether any open tab has unsaved changes.
     var hasUnsavedChanges: Bool {
         tabs.contains { $0.isDirty }
