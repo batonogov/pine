@@ -64,16 +64,24 @@ final class QuickOpenProvider {
     }
 
     private func collectFiles(from node: FileNode, into files: inout [URL], rootRealPath: String) {
-        if node.isDirectory {
+        if node.isSymlink {
+            // Resolve symlink target and check boundary for both files and directories
+            let resolvedPath = node.url.resolvingSymlinksInPath().path
+            let isInsideProject = resolvedPath == rootRealPath || resolvedPath.hasPrefix(rootRealPath + "/")
+            guard isInsideProject else { return }
+
+            if node.isDirectory {
+                guard let children = node.children else { return }
+                for child in children {
+                    collectFiles(from: child, into: &files, rootRealPath: rootRealPath)
+                }
+            } else {
+                files.append(node.url)
+            }
+        } else if node.isDirectory {
             guard let children = node.children else { return }
             for child in children {
                 collectFiles(from: child, into: &files, rootRealPath: rootRealPath)
-            }
-        } else if node.isSymlink {
-            // Skip symlinks pointing outside the project root
-            let resolvedPath = node.url.resolvingSymlinksInPath().path
-            if resolvedPath == rootRealPath || resolvedPath.hasPrefix(rootRealPath + "/") {
-                files.append(node.url)
             }
         } else {
             files.append(node.url)
