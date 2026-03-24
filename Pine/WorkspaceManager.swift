@@ -32,6 +32,23 @@ final class WorkspaceManager {
     /// a slow background task never overwrites a newer result.
     private var loadGeneration: Int = 0
 
+    /// Called on main thread whenever `rootNodes` changes so dependents
+    /// (e.g. QuickOpenProvider) can rebuild their caches.
+    /// Debounced with 200ms delay so rapid sequential updates
+    /// (shallow → full phase) trigger only one rebuild.
+    private(set) var onRootNodesChanged: (([FileNode]) -> Void)?
+
+    /// Pending debounced notification work item.
+    private var rootNodesChangedWorkItem: DispatchWorkItem?
+
+    /// Debounce interval for `onRootNodesChanged` notifications.
+    private static let rootNodesChangedDebounce: TimeInterval = 0.2
+
+    /// Sets the callback invoked when `rootNodes` changes.
+    func setOnRootNodesChanged(_ handler: (([FileNode]) -> Void)?) {
+        onRootNodesChanged = handler
+    }
+
     /// Tracks the in-flight async git refresh so it can be cancelled
     /// when a new refresh starts (prevents stale data from overwriting newer results).
     private var gitRefreshTask: Task<Void, Never>?
@@ -39,6 +56,20 @@ final class WorkspaceManager {
     /// After a synchronous refreshFileTree(), watcher events within this
     /// window are suppressed because they echo the action we just handled.
     private var suppressWatcherUntil: Date?
+
+    /// Schedules a debounced `onRootNodesChanged` notification.
+    /// Cancels any pending notification so rapid updates coalesce into one.
+    private func notifyRootNodesChanged(_ nodes: [FileNode]) {
+        rootNodesChangedWorkItem?.cancel()
+        let workItem = DispatchWorkItem { [weak self] in
+            self?.onRootNodesChanged?(nodes)
+        }
+        rootNodesChangedWorkItem = workItem
+        DispatchQueue.main.asyncAfter(
+            deadline: .now() + Self.rootNodesChangedDebounce,
+            execute: workItem
+        )
+    }
 
     deinit {
         fileWatcher?.stop()
@@ -124,6 +155,7 @@ final class WorkspaceManager {
                     return
                 }
                 self.rootNodes = shallowChildren
+                self.notifyRootNodesChanged(shallowChildren)
                 self.gitProvider.repositoryURL = bgGit.repositoryURL
                 self.gitProvider.gitRootPath = bgGit.gitRootPath
                 self.gitProvider.isGitRepository = bgGit.isGitRepository
@@ -156,6 +188,7 @@ final class WorkspaceManager {
                     return
                 }
                 self.rootNodes = fullChildren
+                self.notifyRootNodesChanged(fullChildren)
                 if let progressID { self.progressTracker?.endOperation(progressID) }
                 completion?()
             }
@@ -226,6 +259,7 @@ final class WorkspaceManager {
             maxDepth: Self.shallowDepth
         )
         rootNodes = shallowResult.root.children ?? []
+        notifyRootNodesChanged(rootNodes)
 
         // Phase 2 (async): full tree only if Phase 1 hit the depth limit
         if shallowResult.wasDepthLimited {
@@ -236,6 +270,7 @@ final class WorkspaceManager {
                 DispatchQueue.main.async { [weak self] in
                     guard let self, self.loadGeneration == generation else { return }
                     self.rootNodes = fullChildren
+                    self.notifyRootNodesChanged(fullChildren)
                 }
             }
         }

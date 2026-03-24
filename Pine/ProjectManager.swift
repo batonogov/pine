@@ -20,6 +20,10 @@ final class ProjectManager {
     private(set) var recoveryManager: RecoveryManager?
 
     init() {
+        workspace.setOnRootNodesChanged { [weak self] nodes in
+            guard let self, let rootURL = self.workspace.rootURL else { return }
+            self.quickOpenProvider.rebuildIndex(from: nodes, rootURL: rootURL)
+        }
         workspace.progressTracker = progress
         workspace.gitProvider.progressTracker = progress
     }
