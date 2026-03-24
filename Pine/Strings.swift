@@ -243,6 +243,8 @@ enum Strings {
     static let welcomeSubtitle: LocalizedStringKey = "welcome.subtitle"
     static let welcomeRecentProjects: LocalizedStringKey = "welcome.recentProjects"
     static let welcomeNoRecent: LocalizedStringKey = "welcome.noRecent"
+    static let welcomeRemoveFromRecent: LocalizedStringKey = "welcome.removeFromRecent"
+    static let welcomeRevealInFinder: LocalizedStringKey = "welcome.revealInFinder"
 
     // MARK: - Project Search
 
