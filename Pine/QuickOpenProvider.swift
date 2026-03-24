@@ -35,6 +35,9 @@ final class QuickOpenProvider {
 
     // MARK: - Indexing
 
+    /// Maximum recursion depth when traversing the file tree for indexing.
+    static let maxIndexDepth = 100
+
     /// Rebuilds the flat file index from the FileNode tree.
     func buildIndex(from roots: [FileNode], rootURL: URL) {
         let resolved = rootURL.resolvingSymlinksInPath()
@@ -43,7 +46,7 @@ final class QuickOpenProvider {
         let rootRealPath = resolved.path
         var files: [URL] = []
         for root in roots {
-            collectFiles(from: root, into: &files, rootRealPath: rootRealPath)
+            collectFiles(from: root, into: &files, rootRealPath: rootRealPath, depth: 0)
         }
         fileIndex = files
 
@@ -63,7 +66,9 @@ final class QuickOpenProvider {
         indexedRoot = nil
     }
 
-    private func collectFiles(from node: FileNode, into files: inout [URL], rootRealPath: String) {
+    private func collectFiles(from node: FileNode, into files: inout [URL], rootRealPath: String, depth: Int) {
+        guard depth <= Self.maxIndexDepth else { return }
+
         if node.isSymlink {
             // Resolve symlink target and check boundary for both files and directories
             let resolvedPath = node.url.resolvingSymlinksInPath().path
@@ -73,7 +78,7 @@ final class QuickOpenProvider {
             if node.isDirectory {
                 guard let children = node.children else { return }
                 for child in children {
-                    collectFiles(from: child, into: &files, rootRealPath: rootRealPath)
+                    collectFiles(from: child, into: &files, rootRealPath: rootRealPath, depth: depth + 1)
                 }
             } else {
                 files.append(node.url)
@@ -81,7 +86,7 @@ final class QuickOpenProvider {
         } else if node.isDirectory {
             guard let children = node.children else { return }
             for child in children {
-                collectFiles(from: child, into: &files, rootRealPath: rootRealPath)
+                collectFiles(from: child, into: &files, rootRealPath: rootRealPath, depth: depth + 1)
             }
         } else {
             files.append(node.url)
