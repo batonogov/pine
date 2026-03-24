@@ -6,11 +6,13 @@
 //
 
 import Foundation
+import os
 
 /// Persists and restores per-project editor tab state (open files + active tab).
 /// Sessions are preserved across window close and app quit so that reopening
 /// a project from Welcome or Open Recent restores its last workspace state.
 struct SessionState: Codable {
+    private static let logger = Logger.app
     var projectPath: String
     var openFilePaths: [String]
     var activeFilePath: String?
@@ -80,16 +82,26 @@ struct SessionState: Codable {
             isTerminalVisible: isTerminalVisible,
             isTerminalMaximized: isTerminalMaximized
         )
-        guard let data = try? JSONEncoder().encode(state) else { return }
-        defaults.set(data, forKey: key(for: projectURL))
+        do {
+            let data = try JSONEncoder().encode(state)
+            defaults.set(data, forKey: key(for: projectURL))
+        } catch {
+            logger.error("Failed to encode session state for \(projectURL.lastPathComponent): \(error)")
+        }
     }
 
     // MARK: - Load
 
     /// Returns the saved tab session for a specific project, if the folder still exists.
     static func load(for projectURL: URL, defaults: UserDefaults = .standard) -> SessionState? {
-        guard let data = defaults.data(forKey: key(for: projectURL)),
-              let state = try? JSONDecoder().decode(SessionState.self, from: data) else {
+        guard let data = defaults.data(forKey: key(for: projectURL)) else {
+            return loadLegacy(for: projectURL, defaults: defaults)
+        }
+        let state: SessionState
+        do {
+            state = try JSONDecoder().decode(SessionState.self, from: data)
+        } catch {
+            logger.error("Failed to decode session state for \(projectURL.lastPathComponent): \(error)")
             // Try legacy key as fallback for migration
             return loadLegacy(for: projectURL, defaults: defaults)
         }
@@ -99,8 +111,14 @@ struct SessionState: Codable {
 
     /// Loads from legacy single-project key if it matches the given project.
     private static func loadLegacy(for projectURL: URL, defaults: UserDefaults) -> SessionState? {
-        guard let data = defaults.data(forKey: legacyKey),
-              let state = try? JSONDecoder().decode(SessionState.self, from: data) else {
+        guard let data = defaults.data(forKey: legacyKey) else {
+            return nil
+        }
+        let state: SessionState
+        do {
+            state = try JSONDecoder().decode(SessionState.self, from: data)
+        } catch {
+            logger.error("Failed to decode legacy session state: \(error)")
             return nil
         }
         let canonical = projectURL.resolvingSymlinksInPath().path
