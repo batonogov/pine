@@ -68,11 +68,11 @@ struct LoggerTests {
     // MARK: - CaseIterable
 
     @Test func expectedCategoryCount() {
-        #expect(LogCategory.allCases.count == 7)
+        #expect(LogCategory.allCases.count == 8)
     }
 
     @Test func allCasesContainsAllCategories() {
-        let expected: Set<LogCategory> = [.syntax, .git, .fileTree, .search, .terminal, .editor, .app]
+        let expected: Set<LogCategory> = [.syntax, .git, .fileTree, .search, .terminal, .editor, .app, .migration]
         #expect(Set(LogCategory.allCases) == expected)
     }
 
@@ -86,6 +86,7 @@ struct LoggerTests {
         Logger.terminal.debug("test")
         Logger.editor.debug("test")
         Logger.app.debug("test")
+        Logger.migration.debug("test")
     }
 
     // MARK: - Logger creation from category

@@ -2,11 +2,9 @@
 //  MigrationManager.swift
 //  Pine
 //
-//  Created by Claude on 24.03.2026.
-//
 
 import Foundation
-import os.log
+import os
 
 /// Manages sequential data migrations for UserDefaults schema changes.
 ///
@@ -97,8 +95,10 @@ struct MigrationManager {
         for key in Self.existingInstallIndicators where defaults.object(forKey: key) != nil {
             return true
         }
-        // Check for prefixed keys (e.g. per-project session keys)
-        for prefix in Self.existingInstallPrefixedKeys where defaults.object(forKey: prefix) != nil {
+        // Check for prefixed keys (e.g. per-project session keys like "sessionState:/path/...")
+        let allKeys = defaults.dictionaryRepresentation().keys
+        for prefix in Self.existingInstallPrefixedKeys
+            where allKeys.contains(where: { $0.hasPrefix(prefix) }) {
             return true
         }
         return false
@@ -125,6 +125,14 @@ struct MigrationManager {
                         .info("Cleaned \(before - paths.count) stale recent project(s)")
                 }
             }
+        }
+
+        // Validate that latestVersion matches the last registered migration
+        if let lastMigration = manager.migrations.max(by: { $0.to < $1.to }) {
+            assert(
+                latestVersion == lastMigration.to,
+                "latestVersion (\(latestVersion)) must equal the last migration's target (\(lastMigration.to))"
+            )
         }
 
         return manager

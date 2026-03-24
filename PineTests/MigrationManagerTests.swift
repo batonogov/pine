@@ -10,17 +10,19 @@ import Foundation
 struct MigrationManagerTests {
 
     /// Creates a fresh in-memory UserDefaults suite for test isolation.
-    private func makeDefaults() -> UserDefaults {
+    /// Returns both the defaults instance and the suite name for cleanup.
+    private func makeDefaults() -> (defaults: UserDefaults, suiteName: String) {
         let suiteName = "com.pine.test.\(UUID().uuidString)"
         // swiftlint:disable:next force_unwrapping
         let defaults = UserDefaults(suiteName: suiteName)!
-        return defaults
+        return (defaults, suiteName)
     }
 
     // MARK: - Fresh install starts at latest version
 
     @Test func freshInstall_setsLatestVersion() {
-        let defaults = makeDefaults()
+        let (defaults, suiteName) = makeDefaults()
+        defer { UserDefaults.standard.removePersistentDomain(forName: suiteName) }
 
         let manager = MigrationManager(defaults: defaults)
         manager.runMigrations()
@@ -29,7 +31,9 @@ struct MigrationManagerTests {
     }
 
     @Test func freshInstall_doesNotRunMigrations() {
-        let defaults = makeDefaults()
+        let (defaults, suiteName) = makeDefaults()
+        defer { UserDefaults.standard.removePersistentDomain(forName: suiteName) }
+
         var migrationRan = false
 
         var manager = MigrationManager(defaults: defaults)
@@ -44,7 +48,9 @@ struct MigrationManagerTests {
     // MARK: - Migration v0 → v1
 
     @Test func migration_v0_to_v1_runs() {
-        let defaults = makeDefaults()
+        let (defaults, suiteName) = makeDefaults()
+        defer { UserDefaults.standard.removePersistentDomain(forName: suiteName) }
+
         // Simulate a pre-migration installation (version 0 = no key set, but has data)
         defaults.set("some-old-data", forKey: "legacyKey")
         defaults.set(0, forKey: MigrationManager.schemaVersionKey)
@@ -66,7 +72,9 @@ struct MigrationManagerTests {
     // MARK: - Sequential migration chain
 
     @Test func migration_chain_runs_in_order() {
-        let defaults = makeDefaults()
+        let (defaults, suiteName) = makeDefaults()
+        defer { UserDefaults.standard.removePersistentDomain(forName: suiteName) }
+
         defaults.set(0, forKey: MigrationManager.schemaVersionKey)
 
         var order: [Int] = []
@@ -82,7 +90,9 @@ struct MigrationManagerTests {
     }
 
     @Test func migration_skips_already_applied() {
-        let defaults = makeDefaults()
+        let (defaults, suiteName) = makeDefaults()
+        defer { UserDefaults.standard.removePersistentDomain(forName: suiteName) }
+
         defaults.set(2, forKey: MigrationManager.schemaVersionKey)
 
         var ranVersions: [Int] = []
@@ -99,7 +109,9 @@ struct MigrationManagerTests {
     // MARK: - Idempotency
 
     @Test func migration_idempotent_secondRunNoOp() {
-        let defaults = makeDefaults()
+        let (defaults, suiteName) = makeDefaults()
+        defer { UserDefaults.standard.removePersistentDomain(forName: suiteName) }
+
         defaults.set(0, forKey: MigrationManager.schemaVersionKey)
 
         var runCount = 0
@@ -118,9 +130,11 @@ struct MigrationManagerTests {
     // MARK: - Backward compatibility
 
     @Test func existingData_withoutVersionKey_treatedAsVersion0() {
-        let defaults = makeDefaults()
+        let (defaults, suiteName) = makeDefaults()
+        defer { UserDefaults.standard.removePersistentDomain(forName: suiteName) }
+
         // Simulate existing install that never had schema versioning
-        // (no schemaVersionKey set — defaults.integer returns 0)
+        // Uses a prefixed key like real per-project sessions ("sessionState:/some/path")
         defaults.set("existing-session", forKey: "sessionState:/some/path")
 
         var migratedFromZero = false
@@ -133,8 +147,26 @@ struct MigrationManagerTests {
         #expect(defaults.integer(forKey: MigrationManager.schemaVersionKey) == MigrationManager.latestVersion)
     }
 
+    @Test func existingData_exactIndicatorKey_treatedAsVersion0() {
+        let (defaults, suiteName) = makeDefaults()
+        defer { UserDefaults.standard.removePersistentDomain(forName: suiteName) }
+
+        // Simulate existing install detected via exact key match
+        defaults.set(true, forKey: "blameVisible")
+
+        var migratedFromZero = false
+
+        var manager = MigrationManager(defaults: defaults)
+        manager.registerMigration(from: 0, to: 1) { _ in migratedFromZero = true }
+        manager.runMigrations()
+
+        #expect(migratedFromZero)
+    }
+
     @Test func noExistingData_noVersionKey_freshInstall() {
-        let defaults = makeDefaults()
+        let (defaults, suiteName) = makeDefaults()
+        defer { UserDefaults.standard.removePersistentDomain(forName: suiteName) }
+
         // Completely fresh — no data at all, no version key
 
         var migrationRan = false
@@ -151,7 +183,9 @@ struct MigrationManagerTests {
     // MARK: - Already at latest version
 
     @Test func alreadyAtLatestVersion_noMigrationsRun() {
-        let defaults = makeDefaults()
+        let (defaults, suiteName) = makeDefaults()
+        defer { UserDefaults.standard.removePersistentDomain(forName: suiteName) }
+
         defaults.set(MigrationManager.latestVersion, forKey: MigrationManager.schemaVersionKey)
 
         var migrationRan = false
@@ -166,7 +200,9 @@ struct MigrationManagerTests {
     // MARK: - Migration mutates UserDefaults
 
     @Test func migration_transformsData() {
-        let defaults = makeDefaults()
+        let (defaults, suiteName) = makeDefaults()
+        defer { UserDefaults.standard.removePersistentDomain(forName: suiteName) }
+
         defaults.set(0, forKey: MigrationManager.schemaVersionKey)
         defaults.set(["path1", "path2"], forKey: "recentProjectPaths")
 
@@ -182,5 +218,25 @@ struct MigrationManagerTests {
 
         let remaining = defaults.stringArray(forKey: "recentProjectPaths")
         #expect(remaining == ["path2"])
+    }
+
+    // MARK: - withDefaultMigrations
+
+    @Test func withDefaultMigrations_cleansStaleRecentProjects() {
+        let (defaults, suiteName) = makeDefaults()
+        defer { UserDefaults.standard.removePersistentDomain(forName: suiteName) }
+
+        // Simulate v0 install with stale recent projects (non-existent paths)
+        defaults.set(0, forKey: MigrationManager.schemaVersionKey)
+        let staleDir = "/tmp/pine-test-nonexistent-\(UUID().uuidString)"
+        let validDir = NSTemporaryDirectory()
+        defaults.set([staleDir, validDir], forKey: "recentProjectPaths")
+
+        let manager = MigrationManager.withDefaultMigrations(defaults: defaults)
+        manager.runMigrations()
+
+        let remaining = defaults.stringArray(forKey: "recentProjectPaths")
+        #expect(remaining == [validDir])
+        #expect(defaults.integer(forKey: MigrationManager.schemaVersionKey) == MigrationManager.latestVersion)
     }
 }
