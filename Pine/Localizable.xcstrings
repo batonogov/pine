@@ -62,6 +62,66 @@
         }
       }
     },
+    "about.tagline" : {
+      "comment" : "Tagline shown in the About window credits.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ein Code-Editor, der auf Ihren Mac gehört."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A code editor that belongs on your Mac."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Un editor de código hecho para tu Mac."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Un éditeur de code fait pour votre Mac."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "あなたのMacにふさわしいコードエディタ。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "당신의 Mac에 어울리는 코드 편집기."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Um editor de código feito para o seu Mac."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Редактор кода, созданный для вашего Mac."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "属于你 Mac 的代码编辑器。"
+          }
+        }
+      }
+    },
     "branch.filterPlaceholder" : {
       "comment" : "Placeholder text in the branch search field.",
       "extractionState" : "manual",

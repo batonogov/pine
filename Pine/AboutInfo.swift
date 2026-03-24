@@ -59,7 +59,7 @@ enum AboutInfo {
         ]
 
         credits.append(NSAttributedString(
-            string: "A code editor that belongs on your Mac.\n",
+            string: String(localized: "about.tagline") + "\n",
             attributes: bodyAttrs
         ))
 
