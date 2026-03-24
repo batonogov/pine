@@ -1490,7 +1490,7 @@ struct StatusBarView: View {
     var tabManager: TabManager
 
     var body: some View {
-        HStack(spacing: 6) {
+        HStack(spacing: LayoutMetrics.statusBarItemSpacing) {
             if gitProvider.isGitRepository {
                 // Git file change summary
                 if !gitProvider.fileStatuses.isEmpty {
@@ -1521,7 +1521,7 @@ struct StatusBarView: View {
                             .foregroundStyle(.teal)
                         }
                     }
-                    .font(.system(size: 10))
+                    .font(.system(size: LayoutMetrics.captionFontSize))
                 }
             }
 
@@ -1530,7 +1530,7 @@ struct StatusBarView: View {
             if let activeTab = tabManager.activeTab, activeTab.kind == .text {
                 // Line / Column indicator (cached in EditorTab by TabManager)
                 Text(verbatim: "Ln \(activeTab.cursorLine), Col \(activeTab.cursorColumn)")
-                    .font(.system(size: 11))
+                    .font(.system(size: LayoutMetrics.bodySmallFontSize))
                     .foregroundStyle(.secondary)
                     .accessibilityIdentifier(AccessibilityID.cursorPosition)
 
@@ -1538,7 +1538,7 @@ struct StatusBarView: View {
 
                 // Indentation style indicator (cached, recomputed on content change)
                 Text(verbatim: activeTab.cachedIndentation.displayName)
-                    .font(.system(size: 11))
+                    .font(.system(size: LayoutMetrics.bodySmallFontSize))
                     .foregroundStyle(.secondary)
                     .accessibilityIdentifier(AccessibilityID.indentationIndicator)
 
@@ -1546,7 +1546,7 @@ struct StatusBarView: View {
 
                 // Line ending indicator (cached, recomputed on content change)
                 Text(verbatim: activeTab.cachedLineEnding.displayName)
-                    .font(.system(size: 11))
+                    .font(.system(size: LayoutMetrics.bodySmallFontSize))
                     .foregroundStyle(.secondary)
                     .accessibilityIdentifier(AccessibilityID.lineEndingIndicator)
 
@@ -1568,7 +1568,7 @@ struct StatusBarView: View {
                     }
                 } label: {
                     Text(activeTab.encoding.displayName)
-                        .font(.system(size: 11))
+                        .font(.system(size: LayoutMetrics.bodySmallFontSize))
                         .foregroundStyle(.secondary)
                 }
                 .menuStyle(.borderlessButton)
@@ -1581,7 +1581,7 @@ struct StatusBarView: View {
                     statusDivider
 
                     Text(verbatim: FileSizeFormatter.format(size))
-                        .font(.system(size: 11))
+                        .font(.system(size: LayoutMetrics.bodySmallFontSize))
                         .foregroundStyle(.secondary)
                         .accessibilityIdentifier(AccessibilityID.fileSizeIndicator)
                 }
@@ -1594,11 +1594,11 @@ struct StatusBarView: View {
                 HStack(spacing: 3) {
                     Image(systemName: terminal.isTerminalVisible
                           ? "chevron.down" : "chevron.up")
-                        .font(.system(size: 9, weight: .semibold))
+                        .font(.system(size: LayoutMetrics.iconSmallFontSize, weight: .semibold))
                     Image(systemName: "terminal")
-                        .font(.system(size: 10))
+                        .font(.system(size: LayoutMetrics.captionFontSize))
                     Text(Strings.terminalLabel)
-                        .font(.system(size: 11))
+                        .font(.system(size: LayoutMetrics.bodySmallFontSize))
                 }
                 .foregroundStyle(terminal.isTerminalVisible ? .primary : .secondary)
             }
@@ -1607,15 +1607,15 @@ struct StatusBarView: View {
             .accessibilityIdentifier(AccessibilityID.terminalToggleButton)
             .accessibilityAddTraits(.isButton)
         }
-        .padding(.leading, 8)
-        .padding(.trailing, 14)
-        .frame(height: 22)
+        .padding(.horizontal, LayoutMetrics.statusBarHorizontalPadding)
+        .frame(height: LayoutMetrics.statusBarHeight)
         .background(.bar)
+        .accessibilityIdentifier(AccessibilityID.statusBar)
     }
 
     private var statusDivider: some View {
         Text(verbatim: "·")
-            .font(.system(size: 11))
+            .font(.system(size: LayoutMetrics.bodySmallFontSize))
             .foregroundStyle(.quaternary)
     }
 
