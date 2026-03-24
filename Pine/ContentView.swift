@@ -571,6 +571,14 @@ struct ContentView: View {
                 )
             }
 
+            if let tab = activeTab, let rootURL = workspace.rootURL {
+                BreadcrumbPathBar(
+                    fileURL: tab.url,
+                    projectRoot: rootURL,
+                    onOpenFile: { url in tabManager.openTab(url: url) }
+                )
+            }
+
             if let tab = activeTab {
                 Group {
                     if tab.kind == .preview {
