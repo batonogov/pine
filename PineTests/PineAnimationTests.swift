@@ -22,11 +22,6 @@ struct PineAnimationTests {
         #expect(type(of: animation) == Animation.self)
     }
 
-    @Test("Quick duration is 0.2 seconds")
-    func quickDurationValue() {
-        #expect(PineAnimation.quickDuration == 0.2)
-    }
-
     @Test("Overlay animation is defined")
     func overlayAnimationExists() {
         let animation = PineAnimation.overlay
@@ -45,17 +40,4 @@ struct PineAnimationTests {
         #expect(type(of: transition) == AnyTransition.self)
     }
 
-    @Test("Slide up transition is defined")
-    func slideUpTransitionExists() {
-        let transition = PineAnimation.slideUpTransition
-        #expect(type(of: transition) == AnyTransition.self)
-    }
-
-    // MARK: - Consistency checks
-
-    @Test("Quick duration matches quick animation semantics")
-    func quickDurationIsPositive() {
-        #expect(PineAnimation.quickDuration > 0)
-        #expect(PineAnimation.quickDuration <= 0.3, "Quick animations should be under 300ms")
-    }
 }

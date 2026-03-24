@@ -40,6 +40,7 @@ struct SearchResultsView: View {
             }
         }
         .animation(PineAnimation.content, value: search.isSearching)
+        .animation(PineAnimation.content, value: search.results.isEmpty)
     }
 
     private var searchResultsList: some View {

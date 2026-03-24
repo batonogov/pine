@@ -16,9 +16,6 @@ enum PineAnimation {
     /// Fast easeInOut for immediate UI responses (tab switch, sidebar toggle, indicators).
     static let quick: Animation = .easeInOut(duration: 0.2)
 
-    /// Duration value for `quick` animation (for use in non-Animation contexts).
-    static let quickDuration: Double = 0.2
-
     // MARK: - Overlay Transitions (sheets, popovers, overlays)
 
     /// Spring animation for overlays (Quick Open, Go to Line, branch switcher).
@@ -33,7 +30,4 @@ enum PineAnimation {
 
     /// Opacity fade for appearing/disappearing content.
     static let fadeTransition: AnyTransition = .opacity
-
-    /// Combined move + opacity for content sliding in.
-    static let slideUpTransition: AnyTransition = .move(edge: .bottom).combined(with: .opacity)
 }
