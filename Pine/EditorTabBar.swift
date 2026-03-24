@@ -26,6 +26,7 @@ struct EditorTabBar: View {
     var isAutoSaving: Bool = false
 
     @State private var draggingTabID: UUID?
+    @State private var hoverTargetTabID: UUID?
 
     /// Minimum tab width before scrolling kicks in.
     static let minTabWidth: CGFloat = 80
@@ -63,6 +64,7 @@ struct EditorTabBar: View {
                             )
                             ForEach(tabManager.tabs) { tab in
                                 let isActive = tab.id == tabManager.activeTabID
+                                let isDragged = tab.id == draggingTabID
                                 EditorTabItem(
                                     tab: tab,
                                     isActive: isActive,
@@ -70,6 +72,8 @@ struct EditorTabBar: View {
                                     onClose: { onCloseTab(tab) }
                                 )
                                 .frame(maxWidth: isActive ? Self.maxTabWidth : inactiveWidth)
+                                .opacity(isDragged ? 0.4 : 1.0)
+                                .scaleEffect(isDragged ? 0.95 : 1.0)
                                 .transaction { $0.animation = nil }
                                 .id(tab.id)
                                 .onDrag {
@@ -80,6 +84,7 @@ struct EditorTabBar: View {
                                     tabManager: tabManager,
                                     targetTabID: tab.id,
                                     draggingTabID: $draggingTabID,
+                                    hoverTargetTabID: $hoverTargetTabID,
                                     onReorder: onReorder
                                 ))
                             }
@@ -166,25 +171,36 @@ struct EditorTabBar: View {
 }
 
 /// Handles drag-to-reorder for editor tabs.
+/// Provides visual feedback via `hoverTargetTabID` and smooth spring animations.
 struct TabDropDelegate: DropDelegate {
     let tabManager: TabManager
     let targetTabID: UUID
     @Binding var draggingTabID: UUID?
+    @Binding var hoverTargetTabID: UUID?
     var onReorder: (() -> Void)?
 
+    /// Spring animation matching Safari's tab reordering feel.
+    private static let reorderAnimation: Animation = .spring(response: 0.3, dampingFraction: 0.8)
+
     func performDrop(info: DropInfo) -> Bool {
-        draggingTabID = nil
+        withAnimation(Self.reorderAnimation) {
+            hoverTargetTabID = nil
+            draggingTabID = nil
+        }
         onReorder?()
         return true
     }
 
     func dropEntered(info: DropInfo) {
         guard let dragging = draggingTabID, dragging != targetTabID else { return }
-        guard let fromIndex = tabManager.tabs.firstIndex(where: { $0.id == dragging }),
-              let toIndex = tabManager.tabs.firstIndex(where: { $0.id == targetTabID }) else { return }
-        withAnimation(PineAnimation.quick) {
-            tabManager.tabs.move(fromOffsets: IndexSet(integer: fromIndex), toOffset: toIndex > fromIndex ? toIndex + 1 : toIndex)
+        hoverTargetTabID = targetTabID
+        withAnimation(Self.reorderAnimation) {
+            tabManager.reorderTab(draggedID: dragging, targetID: targetTabID)
         }
+    }
+
+    func dropExited(info: DropInfo) {
+        hoverTargetTabID = nil
     }
 
     func dropUpdated(info: DropInfo) -> DropProposal? {
