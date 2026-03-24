@@ -5,6 +5,7 @@
 //  Created by Федор Батоногов on 09.03.2026.
 //
 
+import os
 import SwiftUI
 
 // MARK: - Главный ContentView
@@ -1264,6 +1265,7 @@ private struct DocumentEditedTracker: NSViewRepresentable {
 // MARK: - Строка файла/папки в дереве
 
 struct FileNodeRow: View {
+    private static let logger = Logger(category: .contentView)
     var node: FileNode
     @Environment(WorkspaceManager.self) var workspace
     @Environment(TabManager.self) var tabManager
@@ -1458,7 +1460,7 @@ struct FileNodeRow: View {
             do {
                 try FileManager.default.removeItem(at: url)
             } catch {
-                print("Failed to delete placeholder item \(url.lastPathComponent): \(error)")
+                Self.logger.error("Failed to delete placeholder item \(url.lastPathComponent): \(error)")
             }
             workspace.refreshFileTree()
         }

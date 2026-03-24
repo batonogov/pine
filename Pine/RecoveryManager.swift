@@ -14,7 +14,7 @@ import os
 /// Each project gets its own subdirectory to avoid mixing recovery files.
 final class RecoveryManager {
 
-    private static let logger = Logger(subsystem: "com.pine.editor", category: "RecoveryManager")
+    private static let logger = Logger(category: .recoveryManager)
 
     /// Root recovery directory under Application Support.
     static var rootDirectory: URL {

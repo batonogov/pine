@@ -12,7 +12,7 @@ import os
 /// Sessions are preserved across window close and app quit so that reopening
 /// a project from Welcome or Open Recent restores its last workspace state.
 struct SessionState: Codable {
-    private static let logger = Logger(subsystem: "com.pine.editor", category: "SessionState")
+    private static let logger = Logger(category: .sessionState)
     var projectPath: String
     var openFilePaths: [String]
     var activeFilePath: String?

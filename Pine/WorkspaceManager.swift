@@ -14,7 +14,7 @@ import SwiftUI
 /// main thread (enforced by SwiftUI's @Observable).
 @Observable
 final class WorkspaceManager {
-    private static let logger = Logger(subsystem: "com.pine.editor", category: "WorkspaceManager")
+    private static let logger = Logger(category: .workspace)
     var rootNodes: [FileNode] = []
     var projectName: String = "Pine"
     var rootURL: URL?
