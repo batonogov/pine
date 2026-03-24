@@ -365,6 +365,8 @@ struct PineApp: App {
             // Cmd+W is intercepted by AppDelegate's local event monitor
             // to close the active tab. The close button goes through
             // windowShouldClose which closes the entire window.
+            // Cmd+1..9 and Ctrl+Tab/Ctrl+Shift+Tab are also intercepted
+            // via local event monitors in applicationDidFinishLaunching.
         }
 
         Window(Strings.welcomeTitle, id: "welcome") {
@@ -879,6 +881,48 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate {
                 return event
             }
             NotificationCenter.default.post(name: .findInTerminal, object: nil)
+            return nil // consume event
+        }
+
+        // Intercept Ctrl+Tab and Ctrl+Shift+Tab for tab cycling.
+        // Tab key generates keyCode 48. Must intercept via event monitor
+        // because SwiftUI's keyboardShortcut doesn't support the Tab key.
+        NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+            guard event.keyCode == 48, // Tab key
+                  let window = NSApp.keyWindow,
+                  let closeDelegate = window.delegate as? CloseDelegate else {
+                return event
+            }
+            let mods = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+            if mods == .control {
+                closeDelegate.projectManager.tabManager.selectNextTab()
+                return nil
+            } else if mods == [.control, .shift] {
+                closeDelegate.projectManager.tabManager.selectPreviousTab()
+                return nil
+            }
+            return event
+        }
+
+        // Intercept Cmd+1..9 for tab selection by index.
+        // Cmd+1..8 select tab at that position, Cmd+9 selects the last tab
+        // (matching Safari/Chrome behavior).
+        NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+            guard event.modifierFlags.intersection(.deviceIndependentFlagsMask) == .command,
+                  let chars = event.charactersIgnoringModifiers,
+                  let digit = chars.first, digit >= "1", digit <= "9",
+                  let window = NSApp.keyWindow,
+                  let closeDelegate = window.delegate as? CloseDelegate else {
+                return event
+            }
+            let tabManager = closeDelegate.projectManager.tabManager
+            guard !tabManager.tabs.isEmpty else { return event }
+
+            if digit == "9" {
+                tabManager.selectLastTab()
+            } else if let index = digit.wholeNumberValue {
+                tabManager.selectTab(at: index - 1)
+            }
             return nil // consume event
         }
 
