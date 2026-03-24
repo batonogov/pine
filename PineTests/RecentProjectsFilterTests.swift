@@ -104,4 +104,19 @@ struct RecentProjectsFilterTests {
         #expect(result[0].lastPathComponent == "pine-editor")
         #expect(result[1].lastPathComponent == "pine-cli")
     }
+
+    // MARK: - Newline trimming
+
+    @Test func newlineOnlyQueryReturnsAll() {
+        let urls = makeURLs(["alpha", "beta"])
+        let result = RecentProjectsFilter.filter(urls, query: "\n\t  ")
+        #expect(result == urls)
+    }
+
+    @Test func queryWithLeadingNewlineTrimsCorrectly() {
+        let urls = makeURLs(["pine-editor", "vscode"])
+        let result = RecentProjectsFilter.filter(urls, query: "\npine\n")
+        #expect(result.count == 1)
+        #expect(result[0].lastPathComponent == "pine-editor")
+    }
 }

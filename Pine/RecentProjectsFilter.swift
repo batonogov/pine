@@ -10,7 +10,7 @@ import Foundation
 enum RecentProjectsFilter {
     /// Returns URLs that match the query. Empty/whitespace query returns all URLs.
     static func filter(_ urls: [URL], query: String) -> [URL] {
-        let trimmed = query.trimmingCharacters(in: .whitespaces)
+        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return urls }
         let lowered = trimmed.lowercased()
         return urls.filter { url in

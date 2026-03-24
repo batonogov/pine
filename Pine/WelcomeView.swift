@@ -14,7 +14,7 @@ struct WelcomeSearchField: NSViewRepresentable {
 
     func makeNSView(context: Context) -> NSSearchField {
         let searchField = NSSearchField()
-        searchField.placeholderString = String(localized: "welcome.searchPlaceholder")
+        searchField.placeholderString = Strings.welcomeSearchPlaceholderString
         searchField.delegate = context.coordinator
         searchField.setAccessibilityIdentifier(AccessibilityID.welcomeSearchField)
         return searchField
@@ -64,6 +64,7 @@ struct WelcomeView: View {
     var appDelegate: AppDelegate?
 
     @State private var searchText = ""
+    @State private var isSearchVisible = false
 
     /// Recent projects filtered by the search query.
     private var filteredProjects: [URL] {
@@ -103,11 +104,23 @@ struct WelcomeView: View {
 
             // Right: recent projects
             VStack(alignment: .leading, spacing: 0) {
-                Text(Strings.welcomeRecentProjects)
-                    .font(.headline)
-                    .padding(.horizontal)
-                    .padding(.top, 10)
-                    .padding(.bottom, 4)
+                HStack {
+                    Text(Strings.welcomeRecentProjects)
+                        .font(.headline)
+                    Spacer()
+                    if registry.recentProjects.count > 8 {
+                        Button {
+                            isSearchVisible.toggle()
+                        } label: {
+                            Image(systemName: "magnifyingglass")
+                        }
+                        .buttonStyle(.borderless)
+                        .accessibilityIdentifier(AccessibilityID.welcomeSearchToggle)
+                    }
+                }
+                .padding(.horizontal)
+                .padding(.top, 10)
+                .padding(.bottom, 4)
 
                 if registry.recentProjects.isEmpty {
                     ContentUnavailableView {
@@ -115,7 +128,7 @@ struct WelcomeView: View {
                     }
                     .frame(maxHeight: .infinity)
                 } else {
-                    if registry.recentProjects.count > 8 {
+                    if isSearchVisible {
                         WelcomeSearchField(text: $searchText)
                             .frame(height: 22)
                             .padding(.horizontal)
@@ -154,6 +167,11 @@ struct WelcomeView: View {
             .frame(minWidth: 280)
         }
         .frame(width: 600, height: 400)
+        .onChange(of: isSearchVisible) { _, visible in
+            if !visible {
+                searchText = ""
+            }
+        }
         .onReceive(NotificationCenter.default.publisher(for: .openFolder)) { _ in
             guard controlActiveState == .key else { return }
             openFolder()
