@@ -37,21 +37,6 @@ enum DropHandler {
         return ClassifiedURLs(files: files, directories: directories)
     }
 
-    /// Extracts file URLs from string representations.
-    /// Accepts both `file://` URL strings and bare file paths.
-    static func extractFileURLs(from strings: [String]) -> [URL] {
-        strings.compactMap { string in
-            if let url = URL(string: string), url.isFileURL {
-                return url
-            }
-            // Try as a bare file path
-            let path = string.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard path.hasPrefix("/") else { return nil }
-            let url = URL(fileURLWithPath: path)
-            return FileManager.default.fileExists(atPath: url.path) ? url : nil
-        }
-    }
-
     /// Returns true if the drop should open a new project window (i.e., contains directories).
     static func shouldOpenAsProject(_ classified: ClassifiedURLs) -> Bool {
         !classified.directories.isEmpty

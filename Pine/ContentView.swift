@@ -31,6 +31,7 @@ struct ContentView: View {
     @State private var goToLineOffset: GoToRequest?
     @State private var recoveryEntries: [(UUID, RecoveryEntry)] = []
     @State private var showRecoveryDialog = false
+    @State private var isDragTargeted = false
     @State private var isQuickOpenPresented = false
     @State private var showGoToLine = false
     @AppStorage("minimapVisible") private var isMinimapVisible = true
@@ -325,14 +326,14 @@ struct ContentView: View {
     /// Files are opened as tabs; directories open as new project windows.
     private func handleFileDrop(providers: [NSItemProvider]) {
         for provider in providers {
-            provider.loadItem(forTypeIdentifier: "public.file-url", options: nil) { data, _ in
-                guard let data = data as? Data,
-                      let urlString = String(data: data, encoding: .utf8),
-                      let url = URL(string: urlString) else { return }
+            Task {
+                guard let url = try? await provider.loadItem(
+                    forTypeIdentifier: UTType.fileURL.identifier
+                ) as? URL else { return }
 
                 let classified = DropHandler.classifyURLs([url])
 
-                DispatchQueue.main.async {
+                await MainActor.run {
                     // Open directories as new project windows
                     for dir in classified.directories {
                         let canonical = dir.resolvingSymlinksInPath()
@@ -605,9 +606,16 @@ struct ContentView: View {
                 .accessibilityIdentifier(AccessibilityID.editorPlaceholder)
             }
         }
-        .onDrop(of: [.fileURL], isTargeted: nil) { providers in
+        .onDrop(of: [.fileURL], isTargeted: $isDragTargeted) { providers in
             handleFileDrop(providers: providers)
             return true
+        }
+        .overlay {
+            if isDragTargeted {
+                RoundedRectangle(cornerRadius: 8)
+                    .stroke(.blue, lineWidth: 2)
+                    .allowsHitTesting(false)
+            }
         }
     }
 

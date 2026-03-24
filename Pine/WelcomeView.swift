@@ -66,6 +66,7 @@ struct WelcomeView: View {
 
     @State private var searchText = ""
     @State private var isSearchVisible = false
+    @State private var isDragTargeted = false
 
     /// Recent projects filtered by the search query.
     private var filteredProjects: [URL] {
@@ -177,9 +178,16 @@ struct WelcomeView: View {
             guard controlActiveState == .key else { return }
             openFolder()
         }
-        .onDrop(of: [.fileURL], isTargeted: nil) { providers in
+        .onDrop(of: [.fileURL], isTargeted: $isDragTargeted) { providers in
             handleDrop(providers: providers)
             return true
+        }
+        .overlay {
+            if isDragTargeted {
+                RoundedRectangle(cornerRadius: 8)
+                    .stroke(.blue, lineWidth: 2)
+                    .allowsHitTesting(false)
+            }
         }
         .task {
             // Open pending project from PINE_OPEN_PROJECT env var.
@@ -195,14 +203,14 @@ struct WelcomeView: View {
     /// Directories are opened as projects; files determine the project from their parent directory.
     private func handleDrop(providers: [NSItemProvider]) {
         for provider in providers {
-            provider.loadItem(forTypeIdentifier: "public.file-url", options: nil) { data, _ in
-                guard let data = data as? Data,
-                      let urlString = String(data: data, encoding: .utf8),
-                      let url = URL(string: urlString) else { return }
+            Task {
+                guard let url = try? await provider.loadItem(
+                    forTypeIdentifier: UTType.fileURL.identifier
+                ) as? URL else { return }
 
                 let classified = DropHandler.classifyURLs([url])
 
-                DispatchQueue.main.async {
+                await MainActor.run {
                     if let dir = classified.directories.first {
                         // Open directory as project
                         openProject(at: dir)

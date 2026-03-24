@@ -78,35 +78,6 @@ struct DropHandlerTests {
         #expect(result.directories.isEmpty)
     }
 
-    // MARK: - extractFileURLs
-
-    @Test("extractFileURLs parses file URL strings")
-    func extractFileURLsFromStrings() {
-        let file = tempFile(name: "demo.swift")
-        let urlString = file.absoluteString
-
-        let result = DropHandler.extractFileURLs(from: [urlString])
-
-        #expect(result.count == 1)
-        #expect(result.first == file)
-    }
-
-    @Test("extractFileURLs skips invalid strings")
-    func extractFileURLsSkipsInvalid() {
-        let result = DropHandler.extractFileURLs(from: ["not-a-url", "https://example.com"])
-
-        #expect(result.isEmpty)
-    }
-
-    @Test("extractFileURLs handles file paths directly")
-    func extractFileURLsFromPaths() {
-        let file = tempFile(name: "path.txt")
-        // Pass the file path (not URL) — should still work
-        let result = DropHandler.extractFileURLs(from: [file.path])
-
-        #expect(result.count == 1)
-    }
-
     // MARK: - shouldOpenAsProject
 
     @Test("Single directory should open as project")
