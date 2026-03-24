@@ -317,19 +317,44 @@ struct ProjectSearchProviderTests {
         #expect(!ProjectSearchProvider.isBinaryFile(url: url))
     }
 
-    // Known issue: UTType misclassifies .js as executable and .ts as MPEG-2 transport stream
-    @Test("isBinaryFile misclassifies .js as executable (known issue)")
-    func isBinaryMisclassifiesJS() {
+    @Test("isBinaryFile treats .js as text, not binary")
+    func isBinaryAllowsJS() {
         let url = URL(fileURLWithPath: "/tmp/test.js")
-        // This documents a known bug — .js should NOT be binary
-        #expect(ProjectSearchProvider.isBinaryFile(url: url))
+        #expect(!ProjectSearchProvider.isBinaryFile(url: url))
     }
 
-    @Test("isBinaryFile misclassifies .ts as audiovisual (known issue)")
-    func isBinaryMisclassifiesTS() {
+    @Test("isBinaryFile treats .ts as text, not binary")
+    func isBinaryAllowsTS() {
         let url = URL(fileURLWithPath: "/tmp/test.ts")
-        // This documents a known bug — .ts should NOT be binary
-        #expect(ProjectSearchProvider.isBinaryFile(url: url))
+        #expect(!ProjectSearchProvider.isBinaryFile(url: url))
+    }
+
+    @Test("isBinaryFile treats .jsx and .tsx as text, not binary")
+    func isBinaryAllowsJSXAndTSX() {
+        #expect(!ProjectSearchProvider.isBinaryFile(url: URL(fileURLWithPath: "/tmp/test.jsx")))
+        #expect(!ProjectSearchProvider.isBinaryFile(url: URL(fileURLWithPath: "/tmp/test.tsx")))
+    }
+
+    @Test("isBinaryFile treats .mjs and .mts as text, not binary")
+    func isBinaryAllowsMJSAndMTS() {
+        #expect(!ProjectSearchProvider.isBinaryFile(url: URL(fileURLWithPath: "/tmp/test.mjs")))
+        #expect(!ProjectSearchProvider.isBinaryFile(url: URL(fileURLWithPath: "/tmp/test.mts")))
+    }
+
+    @Test("isBinaryFile treats .vue, .svelte, .astro as text, not binary")
+    func isBinaryAllowsWebFrameworkExtensions() {
+        #expect(!ProjectSearchProvider.isBinaryFile(url: URL(fileURLWithPath: "/tmp/App.vue")))
+        #expect(!ProjectSearchProvider.isBinaryFile(url: URL(fileURLWithPath: "/tmp/Component.svelte")))
+        #expect(!ProjectSearchProvider.isBinaryFile(url: URL(fileURLWithPath: "/tmp/page.astro")))
+    }
+
+    @Test("isBinaryFile correctly detects real binary files")
+    func isBinaryDetectsRealBinaries() {
+        #expect(ProjectSearchProvider.isBinaryFile(url: URL(fileURLWithPath: "/tmp/test.png")))
+        #expect(ProjectSearchProvider.isBinaryFile(url: URL(fileURLWithPath: "/tmp/test.jpg")))
+        #expect(ProjectSearchProvider.isBinaryFile(url: URL(fileURLWithPath: "/tmp/test.mp4")))
+        #expect(ProjectSearchProvider.isBinaryFile(url: URL(fileURLWithPath: "/tmp/test.pdf")))
+        #expect(ProjectSearchProvider.isBinaryFile(url: URL(fileURLWithPath: "/tmp/test.zip")))
     }
 
     // MARK: - SearchMatch identity tests
@@ -559,8 +584,8 @@ struct ProjectSearchProviderTests {
         ("index.html", "<div>MARKER</div>"),
         ("config.ini", "key = MARKER"),
         ("Main.java", "System.out.println(MARKER);"),
-        // Note: .js is skipped — UTType treats it as .executable (com.netscape.javascript-source)
-        // Note: .ts is skipped — UTType treats it as MPEG-2 transport stream
+        ("index.js", "const x = MARKER;"),
+        ("app.ts", "const x: string = MARKER;"),
         ("data.json", "{\"key\": \"MARKER\"}"),
         ("Main.kt", "fun main() { println(MARKER) }"),
         ("app.log", "INFO: MARKER happened"),
@@ -578,7 +603,6 @@ struct ProjectSearchProviderTests {
         ("config.sshconfig", "Host MARKER"),
         ("main.swift", "print(MARKER)"),
         ("config.toml", "key = \"MARKER\""),
-        // .ts excluded — see note above about UTType misclassification
         ("data.xml", "<root>MARKER</root>"),
         ("config.yaml", "key: MARKER")
     ])
@@ -603,7 +627,8 @@ struct ProjectSearchProviderTests {
             "main.dart": "code", "patch.diff": "code", "Dockerfile": "code",
             "main.go": "code", "schema.graphql": "code", "build.groovy": "code",
             "main.tf": "code", "index.html": "code", "config.ini": "code",
-            "Main.java": "code", "data.json": "code",
+            "Main.java": "code", "index.js": "code", "app.ts": "code",
+            "data.json": "code",
             "Main.kt": "code", "app.log": "code", "Makefile": "code",
             "README.md": "code", "nginx.conf": "code", "default.nix": "code",
             "schema.prisma": "code", "message.proto": "code", "main.py": "code",
@@ -650,6 +675,50 @@ struct ProjectSearchProviderTests {
         #expect(groups.count == 9, "Should find matches in all 9 files")
         let totalMatches = groups.flatMap(\.matches).count
         #expect(totalMatches == 9)
+    }
+
+    @Test("performSearch finds matches in .js and .ts files")
+    func performSearchFindsJSAndTS() async throws {
+        let dir = try createTestProject(files: [
+            "app.js": "const greeting = 'NEEDLE';",
+            "utils.ts": "export const value: string = 'NEEDLE';",
+            "main.swift": "let x = \"NEEDLE\""
+        ])
+        defer { cleanup(dir) }
+
+        let groups = await ProjectSearchProvider.performSearch(
+            query: "NEEDLE",
+            isCaseSensitive: true,
+            rootURL: dir
+        )
+
+        let filenames = Set(groups.map(\.url.lastPathComponent))
+        #expect(filenames.contains("app.js"), "Should find matches in .js files")
+        #expect(filenames.contains("utils.ts"), "Should find matches in .ts files")
+        #expect(filenames.contains("main.swift"), "Should find matches in .swift files")
+        #expect(groups.count == 3)
+    }
+
+    @Test("collectSearchableFiles includes .js and .ts files")
+    func collectIncludesJSAndTS() throws {
+        let dir = try createTestProject(files: [
+            "index.js": "code",
+            "app.ts": "code",
+            "component.jsx": "code",
+            "component.tsx": "code"
+        ])
+        defer { cleanup(dir) }
+
+        let rootPath = resolvedRootPath(for: dir)
+        let files = ProjectSearchProvider.collectSearchableFiles(
+            rootURL: dir, ignoredDirs: [], resolvedRootPath: rootPath
+        )
+        let names = Set(files.map(\.0.lastPathComponent))
+
+        #expect(names.contains("index.js"))
+        #expect(names.contains("app.ts"))
+        #expect(names.contains("component.jsx"))
+        #expect(names.contains("component.tsx"))
     }
 
     @Test("SearchFileGroup with empty matches")

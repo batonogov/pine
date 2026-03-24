@@ -94,22 +94,22 @@ final class FileSystemWatcher {
     }
 
     /// Called from the FSEvents callback on self.queue.
-    /// Debounces on the serial queue, then dispatches the callback to main.
+    /// Applies a short debounce (`debounceInterval`) on main thread to coalesce
+    /// rapid FSEvents bursts (e.g. npm install, git checkout) into a single
+    /// callback. Previous work items are cancelled so only the last one fires.
     fileprivate func handleEvents() {
         debounceWorkItem?.cancel()
         let cb = callback
         let generation = activeGeneration
         let work = DispatchWorkItem { [weak self] in
             guard let self else { return }
-            DispatchQueue.main.async {
-                // If stop() was called between enqueue and delivery,
-                // the generation will have changed — skip the callback.
-                guard self.isActive(generation: generation) else { return }
-                cb()
-            }
+            // If stop() was called between enqueue and delivery,
+            // the generation will have changed — skip the callback.
+            guard self.isActive(generation: generation) else { return }
+            cb()
         }
         debounceWorkItem = work
-        queue.asyncAfter(deadline: .now() + debounceInterval, execute: work)
+        DispatchQueue.main.asyncAfter(deadline: .now() + debounceInterval, execute: work)
     }
 }
 
