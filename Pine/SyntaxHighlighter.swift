@@ -112,6 +112,10 @@ final class SyntaxHighlighter: @unchecked Sendable {
     /// Singleton — один экземпляр на всё приложение (грамматики загружаются один раз).
     static let shared = SyntaxHighlighter()
 
+    /// Lock for synchronizing access to mutable dictionaries.
+    /// Only protects dictionary read/write — never held during heavy computation (regex matching).
+    private let lock = NSLock()
+
     /// Все загруженные грамматики, индексированные по расширению файла.
     /// ["swift": Grammar(...), "py": Grammar(...), "pyw": Grammar(...), ...]
     private var grammarsByExtension: [String: Grammar] = [:]
@@ -153,6 +157,8 @@ final class SyntaxHighlighter: @unchecked Sendable {
 
     /// Регистрирует грамматику напрямую (для тестов через @testable import).
     func registerGrammar(_ grammar: Grammar) {
+        lock.lock()
+        defer { lock.unlock() }
         for ext in grammar.extensions {
             grammarsByExtension[ext.lowercased()] = grammar
         }
@@ -166,7 +172,7 @@ final class SyntaxHighlighter: @unchecked Sendable {
                 grammarsByFilePattern.append((pattern: pattern, grammar: grammar))
             }
         }
-        compileRules(for: grammar)
+        compileRulesUnlocked(for: grammar)
     }
 
     // MARK: - Загрузка грамматик
@@ -207,7 +213,7 @@ final class SyntaxHighlighter: @unchecked Sendable {
                 }
 
                 // Компилируем regex один раз при загрузке
-                compileRules(for: grammar)
+                compileRulesUnlocked(for: grammar)
 
             } catch {
                 // Пропускаем файлы, которые не являются грамматиками (например Assets JSON)
@@ -219,7 +225,8 @@ final class SyntaxHighlighter: @unchecked Sendable {
     }
 
     /// Компилирует regex-паттерны грамматики в NSRegularExpression.
-    private func compileRules(for grammar: Grammar) {
+    /// Must be called while `lock` is held (or during init before the singleton is published).
+    private func compileRulesUnlocked(for grammar: Grammar) {
         var rules: [CompiledRule] = []
 
         for rule in grammar.rules {
@@ -262,12 +269,16 @@ final class SyntaxHighlighter: @unchecked Sendable {
 
     /// Returns the line comment prefix for a file extension (e.g. "swift" → "//").
     func lineComment(forExtension ext: String) -> String? {
-        grammarsByExtension[ext.lowercased()]?.lineComment
+        lock.lock()
+        defer { lock.unlock() }
+        return grammarsByExtension[ext.lowercased()]?.lineComment
     }
 
     /// Returns the line comment prefix for an exact file name (e.g. "Dockerfile" → "#").
     func lineComment(forFileName name: String) -> String? {
-        grammarsByFileName[name]?.lineComment ?? matchFilePattern(name)?.lineComment
+        lock.lock()
+        defer { lock.unlock() }
+        return grammarsByFileName[name]?.lineComment ?? matchFilePatternUnlocked(name)?.lineComment
     }
 
     // MARK: - Comment info lookup
@@ -281,13 +292,13 @@ final class SyntaxHighlighter: @unchecked Sendable {
     /// Returns the preferred comment style for a file, resolving by exact name first, then extension.
     /// Line comments take priority over block comments.
     func commentStyle(forExtension ext: String?, fileName: String?) -> CommentStyle? {
-        let grammar: Grammar?
-        if let name = fileName, let g = grammarsByFileName[name] {
-            grammar = g
-        } else if let ext, let g = grammarsByExtension[ext.lowercased()] {
-            grammar = g
-        } else {
-            grammar = nil
+        let grammar: Grammar? = lock.withLock {
+            if let name = fileName, let g = grammarsByFileName[name] {
+                return g
+            } else if let ext, let g = grammarsByExtension[ext.lowercased()] {
+                return g
+            }
+            return nil
         }
         guard let grammar else { return nil }
 
@@ -328,7 +339,9 @@ final class SyntaxHighlighter: @unchecked Sendable {
         let result = applyRules(
             rules, to: textStorage, repaintRange: fullRange, searchRange: fullRange, font: font
         )
+        lock.lock()
         multilineMatchCache[ObjectIdentifier(textStorage)] = result.multilineFingerprint
+        lock.unlock()
     }
 
     /// Количество строк контекста для viewport-based подсветки (больше, чем для edit).
@@ -373,9 +386,11 @@ final class SyntaxHighlighter: @unchecked Sendable {
 
         // Build multiline match cache (needed for subsequent highlightEdited calls)
         let key = ObjectIdentifier(textStorage)
+        lock.lock()
         if multilineMatchCache[key] == nil {
             multilineMatchCache[key] = result.multilineFingerprint
         }
+        lock.unlock()
     }
 
     /// Инкрементальная подсветка: подсвечивает только изменённый регион.
@@ -413,14 +428,16 @@ final class SyntaxHighlighter: @unchecked Sendable {
         )
 
         let key = ObjectIdentifier(textStorage)
-        let cachedFingerprint = multilineMatchCache[key]
+        let cachedFingerprint: [Int]? = lock.withLock { multilineMatchCache[key] }
 
         // Если структура многострочных токенов изменилась — полная перекраска
         if cachedFingerprint != currentFingerprint {
             let result = applyRules(
                 rules, to: textStorage, repaintRange: fullRange, searchRange: fullRange, font: font
             )
+            lock.lock()
             multilineMatchCache[key] = result.multilineFingerprint
+            lock.unlock()
             return
         }
 
@@ -431,7 +448,32 @@ final class SyntaxHighlighter: @unchecked Sendable {
 
     /// Удаляет кэш для textStorage (вызывать при смене файла).
     func invalidateCache(for textStorage: NSTextStorage) {
+        lock.lock()
         multilineMatchCache.removeValue(forKey: ObjectIdentifier(textStorage))
+        lock.unlock()
+    }
+
+    /// Thread-safe read of multilineMatchCache. Callable from async context.
+    private func cachedMultilineFingerprint(for key: ObjectIdentifier) -> [Int]? {
+        lock.lock()
+        defer { lock.unlock() }
+        return multilineMatchCache[key]
+    }
+
+    /// Thread-safe update of multilineMatchCache. Callable from async context.
+    private func updateMultilineCache(key: ObjectIdentifier, fingerprint: [Int]) {
+        lock.lock()
+        multilineMatchCache[key] = fingerprint
+        lock.unlock()
+    }
+
+    /// Thread-safe conditional set of multilineMatchCache (only if nil).
+    private func setMultilineCacheIfNil(key: ObjectIdentifier, fingerprint: [Int]) {
+        lock.lock()
+        if multilineMatchCache[key] == nil {
+            multilineMatchCache[key] = fingerprint
+        }
+        lock.unlock()
     }
 
     /// Возвращает диапазоны комментариев и строк для данного текста.
@@ -462,6 +504,8 @@ final class SyntaxHighlighter: @unchecked Sendable {
     // MARK: - Private helpers
 
     private func resolveGrammar(language: String, fileName: String?) -> (Grammar, [CompiledRule])? {
+        lock.lock()
+        defer { lock.unlock() }
         let grammar: Grammar?
         if let name = fileName, let g = grammarsByFileName[name] {
             // Приоритет 1: точное совпадение имени файла
@@ -469,7 +513,7 @@ final class SyntaxHighlighter: @unchecked Sendable {
         } else if let g = grammarsByExtension[language.lowercased()] {
             // Приоритет 2: совпадение по расширению
             grammar = g
-        } else if let name = fileName, let g = matchFilePattern(name) {
+        } else if let name = fileName, let g = matchFilePatternUnlocked(name) {
             // Приоритет 3: glob-паттерн имени файла
             grammar = g
         } else {
@@ -480,7 +524,8 @@ final class SyntaxHighlighter: @unchecked Sendable {
     }
 
     /// Проверяет имя файла по glob-паттернам. `*` матчит любые символы.
-    private func matchFilePattern(_ fileName: String) -> Grammar? {
+    /// Must be called while `lock` is held.
+    private func matchFilePatternUnlocked(_ fileName: String) -> Grammar? {
         for entry in grammarsByFilePattern where globMatch(pattern: entry.pattern, string: fileName) {
             return entry.grammar
         }
@@ -750,7 +795,7 @@ final class SyntaxHighlighter: @unchecked Sendable {
 
         if let result {
             applyMatches(result, to: textStorage, font: font)
-            multilineMatchCache[ObjectIdentifier(textStorage)] = result.multilineFingerprint
+            updateMultilineCache(key: ObjectIdentifier(textStorage), fingerprint: result.multilineFingerprint)
         } else {
             resetAttributes(
                 textStorage: textStorage,
@@ -775,7 +820,7 @@ final class SyntaxHighlighter: @unchecked Sendable {
 
         let fullRange = NSRange(location: 0, length: textLength)
         let key = ObjectIdentifier(textStorage)
-        let cachedFingerprint = multilineMatchCache[key]
+        let cachedFingerprint = cachedMultilineFingerprint(for: key)
         let gen = generation?.current ?? 0
 
         // Compute on background
@@ -819,7 +864,7 @@ final class SyntaxHighlighter: @unchecked Sendable {
         let (result, _) = bgResult
         if let result {
             applyMatches(result, to: textStorage, font: font)
-            multilineMatchCache[key] = result.multilineFingerprint
+            updateMultilineCache(key: key, fingerprint: result.multilineFingerprint)
         } else {
             resetAttributes(textStorage: textStorage, range: fullRange, font: font)
         }
@@ -864,9 +909,7 @@ final class SyntaxHighlighter: @unchecked Sendable {
 
         if let result {
             applyMatches(result, to: textStorage, font: font)
-            if multilineMatchCache[key] == nil {
-                multilineMatchCache[key] = result.multilineFingerprint
-            }
+            setMultilineCacheIfNil(key: key, fingerprint: result.multilineFingerprint)
         } else {
             resetAttributes(
                 textStorage: textStorage,
