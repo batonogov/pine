@@ -596,6 +596,7 @@ struct ContentView: View {
                         codeEditorView(for: tab)
                     }
                 }
+                .contentTransition(.identity)
 
             } else {
                 ContentUnavailableView {
@@ -1264,10 +1265,21 @@ struct SidebarView: View {
                     }
                 }
                 .navigationTitle(Strings.filesTitle)
+            } else if workspace.rootNodes.isEmpty && workspace.isLoading {
+                List {
+                    HStack {
+                        Spacer()
+                        ProgressView()
+                        Spacer()
+                    }
+                    .listRowSeparator(.hidden)
+                }
+                .navigationTitle(workspace.projectName)
             } else {
                 List(workspace.rootNodes, children: \.optionalChildren, selection: $selectedFile) { node in
                     FileNodeRow(node: node)
                 }
+                .contentTransition(.identity)
                 .environment(editState)
                 .contextMenu {
                     if let rootURL = workspace.rootURL {

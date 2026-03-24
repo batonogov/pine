@@ -70,6 +70,7 @@ struct EditorTabBar: View {
                                     onClose: { onCloseTab(tab) }
                                 )
                                 .frame(maxWidth: isActive ? Self.maxTabWidth : inactiveWidth)
+                                .transaction { $0.animation = nil }
                                 .id(tab.id)
                                 .onDrag {
                                     draggingTabID = tab.id

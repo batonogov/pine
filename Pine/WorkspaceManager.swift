@@ -18,6 +18,9 @@ final class WorkspaceManager {
     var rootNodes: [FileNode] = []
     var projectName: String = "Pine"
     var rootURL: URL?
+    /// True while the initial directory load is in progress (shallow or full phase).
+    /// Views use this to show stable placeholder content instead of flashing empty state.
+    var isLoading = false
     let gitProvider = GitStatusProvider()
     /// Shared progress tracker — set by ProjectManager after init.
     weak var progressTracker: ProgressTracker?
@@ -95,12 +98,14 @@ final class WorkspaceManager {
 
         rootURL = url
         projectName = url.lastPathComponent
+        isLoading = true
         loadGeneration += 1
         let generation = loadGeneration
 
-        // Clear stale state immediately so the UI doesn't show
-        // the previous project's sidebar/git while the async load runs.
-        rootNodes = []
+        // Clear stale git state immediately so the UI doesn't show
+        // the previous project's branch/status while the async load runs.
+        // rootNodes are intentionally preserved to avoid sidebar flash —
+        // the shallow phase replaces them within milliseconds.
         gitProvider.isGitRepository = false
         gitProvider.currentBranch = ""
         gitProvider.fileStatuses = [:]
@@ -164,8 +169,9 @@ final class WorkspaceManager {
                 self.gitProvider.ignoredPaths = bgGit.ignoredPaths
                 self.gitProvider.branches = bgGit.branches
 
-                // For shallow projects, start watcher now — no Phase 2 needed.
+                // For shallow projects, loading is done — no Phase 2 needed.
                 if !shallowResult.wasDepthLimited {
+                    self.isLoading = false
                     if let progressID { self.progressTracker?.endOperation(progressID) }
                     completion?()
                 }
@@ -189,6 +195,7 @@ final class WorkspaceManager {
                 }
                 self.rootNodes = fullChildren
                 self.notifyRootNodesChanged(fullChildren)
+                self.isLoading = false
                 if let progressID { self.progressTracker?.endOperation(progressID) }
                 completion?()
             }
