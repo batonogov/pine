@@ -1,0 +1,75 @@
+{
+    "name": "Helm",
+    "extensions": ["tpl"],
+    "filePatterns": ["*/templates/*.yaml", "*/templates/*.yml", "_helpers.tpl"],
+    "lineComment": "#",
+    "blockComment": {"open": "{{/*", "close": "*/}}"},
+    "rules": [
+        {
+            "pattern": "\\{\\{-?\\s*/\\*[\\s\\S]*?\\*/\\s*-?\\}\\}",
+            "scope": "comment"
+        },
+        {
+            "pattern": "#.*$",
+            "scope": "comment",
+            "options": ["anchorsMatchLines"]
+        },
+        {
+            "pattern": "\"(?:[^\"\\\\]|\\\\.)*\"",
+            "scope": "string"
+        },
+        {
+            "pattern": "'[^']*'",
+            "scope": "string"
+        },
+        {
+            "pattern": "`[^`]*`",
+            "scope": "string"
+        },
+        {
+            "pattern": "\\{\\{-?|\\-?\\}\\}",
+            "scope": "keyword"
+        },
+        {
+            "pattern": "\\b(if|else|end|range|with|define|template|block|include|required|default|fail|and|or|not|eq|ne|lt|le|gt|ge|nil)\\b",
+            "scope": "keyword"
+        },
+        {
+            "pattern": "\\.(Values|Chart|Release|Files|Capabilities|Template|Subcharts)\\b",
+            "scope": "type"
+        },
+        {
+            "pattern": "\\.(Name|Version|AppVersion|Description|Home|Sources|Keywords|Maintainers|Icon|APIVersion|Type)\\b",
+            "scope": "attribute"
+        },
+        {
+            "pattern": "\\.(Namespace|IsInstall|IsUpgrade|Revision|Service)\\b",
+            "scope": "attribute"
+        },
+        {
+            "pattern": "\\b(toYaml|toJson|fromYaml|fromJson|toToml|fromToml|toPrettyJson|nindent|indent|trim|trimAll|trimPrefix|trimSuffix|lower|upper|title|camelcase|snakecase|kebabcase|swapcase|quote|squote|cat|repeat|substr|trunc|abbrev|contains|hasPrefix|hasSuffix|replace|regexMatch|regexFind|regexFindAll|regexReplaceAll|list|dict|set|unset|hasKey|pluck|merge|mergeOverwrite|keys|values|pick|omit|get|dig|first|last|rest|initial|append|prepend|concat|uniq|without|has|compact|slice|until|untilStep|seq|add|sub|mul|div|mod|max|min|ceil|floor|round|len|empty|coalesce|ternary|now|date|dateModify|dateInZone|duration|toDate|b64enc|b64dec|sha256sum|sha1sum|adler32sum|randAlphaNum|randAlpha|randNumeric|randAscii|lookup|typeOf|typeIs|kindOf|kindIs|deepEqual|semver|semverCompare|printf|println)\\s*[\\b|\\s]",
+            "scope": "function"
+        },
+        {
+            "pattern": "\\$[a-zA-Z_][a-zA-Z0-9_]*",
+            "scope": "attribute"
+        },
+        {
+            "pattern": "\\|",
+            "scope": "keyword"
+        },
+        {
+            "pattern": "\\b\\d+(\\.\\d+)?([eE][+-]?\\d+)?\\b",
+            "scope": "number"
+        },
+        {
+            "pattern": "^\\s*[\\w.-]+(?=\\s*:)",
+            "scope": "attribute",
+            "options": ["anchorsMatchLines"]
+        },
+        {
+            "pattern": "\\b(true|false|yes|no|null|~)\\b",
+            "scope": "keyword"
+        }
+    ]
+}

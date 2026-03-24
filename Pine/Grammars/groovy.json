@@ -47,6 +47,14 @@
             "scope": "keyword"
         },
         {
+            "pattern": "\\b(pipeline|agent|stages|stage|steps|post|environment|options|parameters|triggers|tools|input|when|parallel|script|node|dir|checkout|sh|bat|powershell|echo|error|unstable|timeout|retry|sleep|stash|unstash|archiveArtifacts|junit|publishHTML|cleanWs|withCredentials|withEnv|sshagent|lock|milestone|properties|buildDiscarder|disableConcurrentBuilds|skipDefaultCheckout|timestamps|ansiColor)\\b",
+            "scope": "keyword"
+        },
+        {
+            "pattern": "\\b(always|success|failure|unstable|aborted|changed|fixed|regression|cleanup)\\b",
+            "scope": "keyword"
+        },
+        {
             "pattern": "\\b(String|Integer|Long|Double|Float|Boolean|List|Map|Set|Closure|GString|Object|BigDecimal|BigInteger)\\b",
             "scope": "type"
         },
