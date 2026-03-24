@@ -438,6 +438,103 @@ struct QuickOpenProviderTests {
         #expect(results.count == 1)
     }
 
+    // MARK: - Index Staleness (Issue #477)
+
+    @Test("rebuildIndex includes newly added files")
+    func rebuildIndexIncludesNewFile() throws {
+        let dir = try createTestProject(files: [
+            "main.swift": ""
+        ])
+        defer { cleanup(dir) }
+
+        let provider = buildProvider(dir: dir)
+        #expect(provider.fileIndex.count == 1)
+
+        // Add a new file on disk and rebuild the FileNode tree
+        let newFile = dir.appendingPathComponent("new.swift")
+        try "".write(to: newFile, atomically: true, encoding: .utf8)
+
+        let updatedRoot = FileNode(url: dir, projectRoot: dir)
+        provider.rebuildIndex(from: [updatedRoot], rootURL: dir)
+
+        #expect(provider.fileIndex.count == 2)
+        let fileNames = provider.fileIndex.map(\.lastPathComponent)
+        #expect(fileNames.contains("new.swift"))
+    }
+
+    @Test("rebuildIndex excludes deleted files")
+    func rebuildIndexExcludesDeletedFile() throws {
+        let dir = try createTestProject(files: [
+            "keep.swift": "",
+            "remove.swift": ""
+        ])
+        defer { cleanup(dir) }
+
+        let provider = buildProvider(dir: dir)
+        #expect(provider.fileIndex.count == 2)
+
+        // Delete a file and rebuild
+        try FileManager.default.removeItem(
+            at: dir.appendingPathComponent("remove.swift")
+        )
+        let updatedRoot = FileNode(url: dir, projectRoot: dir)
+        provider.rebuildIndex(from: [updatedRoot], rootURL: dir)
+
+        #expect(provider.fileIndex.count == 1)
+        let fileNames = provider.fileIndex.map(\.lastPathComponent)
+        #expect(!fileNames.contains("remove.swift"))
+        #expect(fileNames.contains("keep.swift"))
+    }
+
+    @Test("rebuildIndex updates after rename")
+    func rebuildIndexUpdatesAfterRename() throws {
+        let dir = try createTestProject(files: [
+            "old.swift": ""
+        ])
+        defer { cleanup(dir) }
+
+        let provider = buildProvider(dir: dir)
+        let oldNames = provider.fileIndex.map(\.lastPathComponent)
+        #expect(oldNames.contains("old.swift"))
+
+        // Rename the file
+        try FileManager.default.moveItem(
+            at: dir.appendingPathComponent("old.swift"),
+            to: dir.appendingPathComponent("renamed.swift")
+        )
+        let updatedRoot = FileNode(url: dir, projectRoot: dir)
+        provider.rebuildIndex(from: [updatedRoot], rootURL: dir)
+
+        let newNames = provider.fileIndex.map(\.lastPathComponent)
+        #expect(!newNames.contains("old.swift"))
+        #expect(newNames.contains("renamed.swift"))
+    }
+
+    @Test("buildIndex skips rebuild for same root but rebuildIndex forces it")
+    func buildIndexCachesButRebuildForces() throws {
+        let dir = try createTestProject(files: ["a.swift": ""])
+        defer { cleanup(dir) }
+
+        let provider = buildProvider(dir: dir)
+        #expect(provider.fileIndex.count == 1)
+
+        // Add a file
+        try "".write(
+            to: dir.appendingPathComponent("b.swift"),
+            atomically: true, encoding: .utf8
+        )
+
+        // buildIndex should use cache (same root) — stale!
+        let root2 = FileNode(url: dir, projectRoot: dir)
+        provider.buildIndex(from: [root2], rootURL: dir)
+        #expect(provider.fileIndex.count == 1) // still cached
+
+        // rebuildIndex should force refresh
+        let root3 = FileNode(url: dir, projectRoot: dir)
+        provider.rebuildIndex(from: [root3], rootURL: dir)
+        #expect(provider.fileIndex.count == 2) // updated
+    }
+
     // MARK: - Symlink Boundary
 
     @Test("symlink targeting file outside project root is excluded from index")
