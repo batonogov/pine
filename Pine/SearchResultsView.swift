@@ -14,26 +14,32 @@ struct SearchResultsView: View {
     var body: some View {
         let search = projectManager.searchProvider
 
-        if search.isSearching {
-            VStack {
-                Spacer()
-                ProgressView()
-                    .controlSize(.small)
-                Spacer()
+        Group {
+            if search.isSearching {
+                VStack {
+                    Spacer()
+                    ProgressView()
+                        .controlSize(.small)
+                    Spacer()
+                }
+                .frame(maxWidth: .infinity)
+                .transition(PineAnimation.fadeTransition)
+            } else if search.results.isEmpty && !search.query.isEmpty {
+                VStack {
+                    Spacer()
+                    Text(Strings.searchNoResults)
+                        .foregroundStyle(.secondary)
+                        .font(.system(size: 12))
+                    Spacer()
+                }
+                .frame(maxWidth: .infinity)
+                .transition(PineAnimation.fadeTransition)
+            } else {
+                searchResultsList
+                    .transition(PineAnimation.fadeTransition)
             }
-            .frame(maxWidth: .infinity)
-        } else if search.results.isEmpty && !search.query.isEmpty {
-            VStack {
-                Spacer()
-                Text(Strings.searchNoResults)
-                    .foregroundStyle(.secondary)
-                    .font(.system(size: 12))
-                Spacer()
-            }
-            .frame(maxWidth: .infinity)
-        } else {
-            searchResultsList
         }
+        .animation(PineAnimation.content, value: search.isSearching)
     }
 
     private var searchResultsList: some View {
@@ -117,6 +123,7 @@ private struct MatchRowView: View {
             .background(isHovered ? Color.primary.opacity(0.06) : Color.clear)
         }
         .buttonStyle(.plain)
+        .animation(PineAnimation.quick, value: isHovered)
         .onHover { isHovered = $0 }
     }
 

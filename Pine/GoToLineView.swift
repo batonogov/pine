@@ -26,6 +26,7 @@ struct GoToLineView: View {
                         .stroke(isInvalid ? Color.red : Color.clear, lineWidth: 1)
                 )
                 .onSubmit { submit() }
+                .animation(PineAnimation.quick, value: isInvalid)
                 .onChange(of: inputText) { _, _ in isInvalid = false }
 
             Text("1–\(totalLines)")

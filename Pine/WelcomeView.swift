@@ -181,6 +181,7 @@ private struct RecentProjectRow: View {
         }
         .buttonStyle(.plain)
         .background(isHovered ? Color.primary.opacity(0.06) : .clear)
+        .animation(PineAnimation.quick, value: isHovered)
         .onHover { isHovered = $0 }
     }
 }

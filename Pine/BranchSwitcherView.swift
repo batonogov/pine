@@ -61,9 +61,11 @@ struct BranchSwitcherView: View {
                     .font(.system(size: 11))
                     .foregroundStyle(.red)
                     .padding(8)
+                    .transition(PineAnimation.fadeTransition)
             }
         }
         .frame(width: 280)
+        .animation(PineAnimation.quick, value: errorMessage.isEmpty)
     }
 
     private func switchToBranch(_ branch: String) {
