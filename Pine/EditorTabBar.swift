@@ -148,7 +148,7 @@ struct EditorTabBar: View {
                     onTogglePreview?()
                 } label: {
                     Image(systemName: previewIcon)
-                        .font(.system(size: LayoutMetrics.iconMediumFontSize, weight: .medium))
+                        .font(.system(size: LayoutMetrics.bodySmallFontSize, weight: .medium))
                         .foregroundStyle(.secondary)
                         .frame(width: 24, height: 24)
                 }

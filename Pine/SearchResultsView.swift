@@ -15,10 +15,13 @@ struct SearchResultsView: View {
         let search = projectManager.searchProvider
 
         if search.isSearching {
-            ContentUnavailableView {
+            VStack {
+                Spacer()
                 ProgressView()
                     .controlSize(.small)
+                Spacer()
             }
+            .frame(maxWidth: .infinity)
         } else if search.results.isEmpty && !search.query.isEmpty {
             ContentUnavailableView {
                 Label(Strings.searchNoResults, systemImage: "magnifyingglass")
@@ -52,7 +55,7 @@ struct SearchResultsView: View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 4) {
                 Image(systemName: FileIconMapper.iconForFile(group.url.lastPathComponent))
-                    .font(.system(size: LayoutMetrics.iconMediumFontSize))
+                    .font(.system(size: LayoutMetrics.bodySmallFontSize))
                     .foregroundStyle(.secondary)
                 Text(group.relativePath)
                     .font(.system(size: LayoutMetrics.bodySmallFontSize, weight: .medium))

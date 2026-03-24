@@ -8,7 +8,11 @@
 
 import Foundation
 
-/// Shared layout metrics for Pine UI components.
+/// Shared **UI layout** metrics for Pine visual components — spacing, font sizes, and dimensions.
+///
+/// This enum is for presentational constants only (padding, heights, font sizes).
+/// For logical/domain constants (ASCII codes, file size thresholds, search limits)
+/// see ``Constants``.
 ///
 /// Usage: `LayoutMetrics.statusBarHeight`, `LayoutMetrics.bodySmallFontSize`, etc.
 /// Centralizing these values ensures visual consistency and makes
@@ -25,9 +29,6 @@ enum LayoutMetrics {
 
     /// Body-small / status bar items. 11pt.
     static let bodySmallFontSize: CGFloat = 11
-
-    /// Medium icon size (file icons in tabs, preview toggle). 11pt.
-    static let iconMediumFontSize: CGFloat = 11
 
     // MARK: - Status bar
 

@@ -30,11 +30,6 @@ struct LayoutMetricsTests {
         #expect(LayoutMetrics.iconSmallFontSize == 9)
     }
 
-    @Test("Icon medium font size is 11")
-    func iconMediumFontSize() {
-        #expect(LayoutMetrics.iconMediumFontSize == 11)
-    }
-
     // MARK: - Spacing
 
     @Test("Status bar horizontal padding is consistent")
@@ -79,7 +74,6 @@ struct LayoutMetricsTests {
         #expect(LayoutMetrics.captionFontSize > 0)
         #expect(LayoutMetrics.bodySmallFontSize > 0)
         #expect(LayoutMetrics.iconSmallFontSize > 0)
-        #expect(LayoutMetrics.iconMediumFontSize > 0)
         #expect(LayoutMetrics.statusBarHorizontalPadding > 0)
         #expect(LayoutMetrics.statusBarHeight > 0)
         #expect(LayoutMetrics.statusBarItemSpacing > 0)
