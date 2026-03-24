@@ -17,6 +17,7 @@ enum LogCategory: String, CaseIterable {
     case terminal
     case editor
     case app
+    case migration
 
     /// Subsystem для всех логгеров Pine.
     static let subsystem = Bundle.main.bundleIdentifier ?? "io.github.batonogov.pine"
@@ -44,4 +45,7 @@ extension Logger {
 
     /// Приложение: запуск, окна, жизненный цикл.
     static let app = Logger(subsystem: LogCategory.subsystem, category: LogCategory.app.rawValue)
+
+    /// Миграции данных.
+    static let migration = Logger(subsystem: LogCategory.subsystem, category: LogCategory.migration.rawValue)
 }
