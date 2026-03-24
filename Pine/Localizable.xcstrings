@@ -7821,55 +7821,55 @@
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Ein minimaler nativer macOS-Code-Editor"
+            "value" : "Ein Code-Editor, der auf Ihren Mac gehört."
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "A minimal native macOS code editor"
+            "value" : "A code editor that belongs on your Mac."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Un editor de código nativo y minimalista para macOS"
+            "value" : "Un editor de código hecho para tu Mac."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Un éditeur de code natif et minimaliste pour macOS"
+            "value" : "Un éditeur de code fait pour votre Mac."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "ミニマルなネイティブ macOS コードエディタ"
+            "value" : "あなたのMacにふさわしいコードエディタ。"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "미니멀 네이티브 macOS 코드 편집기"
+            "value" : "당신의 Mac에 어울리는 코드 편집기."
           }
         },
         "pt-BR" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Um editor de código nativo e minimalista para macOS"
+            "value" : "Um editor de código feito para o seu Mac."
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Минималистичный нативный редактор кода для macOS"
+            "value" : "Редактор кода, созданный для вашего Mac."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "极简原生 macOS 代码编辑器"
+            "value" : "属于你 Mac 的代码编辑器。"
           }
         }
       }
