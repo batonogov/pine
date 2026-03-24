@@ -627,13 +627,22 @@ final class SyntaxHighlighter: @unchecked Sendable {
 
     // MARK: - Async highlighting (background computation)
 
-    /// Background queue for regex computation.
-    /// Serial because NSRegularExpression.matches() is not thread-safe
-    /// (mutates internal ICU matcher state).
-    private let highlightQueue = DispatchQueue(
-        label: "com.pine.syntax-highlight",
-        qos: .userInitiated
-    )
+    /// Maximum number of concurrent highlight operations.
+    /// Limits CPU saturation during session restore with many open tabs.
+    /// Each tab's NSTextStorage is independent, so parallel highlighting is safe.
+    static let maxConcurrentHighlights = 4
+
+    /// Concurrent queue for regex computation across multiple tabs.
+    /// NSRegularExpression creates per-invocation matcher state, so concurrent
+    /// calls on independent text snapshots are safe. OperationQueue bounds
+    /// parallelism to avoid CPU saturation during session restore.
+    private let highlightQueue: OperationQueue = {
+        let queue = OperationQueue()
+        queue.name = "com.pine.syntax-highlight"
+        queue.qualityOfService = .userInitiated
+        queue.maxConcurrentOperationCount = SyntaxHighlighter.maxConcurrentHighlights
+        return queue
+    }()
 
     /// Pure computation: finds regex matches without touching NSTextStorage.
     /// Thread-safe — operates only on the provided String snapshot.
@@ -768,7 +777,7 @@ final class SyntaxHighlighter: @unchecked Sendable {
         let gen = generation?.current ?? 0
 
         let result: HighlightMatchResult? = await withCheckedContinuation { continuation in
-            highlightQueue.async {
+            highlightQueue.addOperation {
                 let r = self.computeMatches(
                     text: text,
                     language: language,
@@ -815,7 +824,7 @@ final class SyntaxHighlighter: @unchecked Sendable {
 
         // Compute on background
         let bgResult: (HighlightMatchResult?, Bool) = await withCheckedContinuation { continuation in
-            highlightQueue.async {
+            highlightQueue.addOperation {
                 let currentFingerprint = self.collectMultilineFingerprint(
                     rules: self.resolveGrammar(language: language, fileName: fileName)?.1 ?? [],
                     source: text,
@@ -877,7 +886,7 @@ final class SyntaxHighlighter: @unchecked Sendable {
         let gen = generation?.current ?? 0
 
         let result: HighlightMatchResult? = await withCheckedContinuation { continuation in
-            highlightQueue.async {
+            highlightQueue.addOperation {
                 let source = text as NSString
                 let expanded = self.expandToContext(
                     visibleCharRange, in: source,
