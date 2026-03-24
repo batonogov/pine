@@ -94,9 +94,9 @@ struct PerTabEditorState: Codable, Equatable {
 
     private static func foldKind(from string: String) -> FoldKind {
         switch string {
-        case "braces": .braces
-        case "brackets": .brackets
-        case "parentheses": .parentheses
+        case "braces": return .braces
+        case "brackets": return .brackets
+        case "parentheses": return .parentheses
         default:
             logger.warning("Unknown fold kind '\(string)', defaulting to .braces")
             assertionFailure("Unknown fold kind: \(string)")
