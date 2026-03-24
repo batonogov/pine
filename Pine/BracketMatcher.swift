@@ -218,11 +218,34 @@ enum BracketMatcher {
             return nil
         }
 
-        if let match = findMatch(in: text, cursorPosition: cursorPosition, skipRanges: skipRanges) {
+        // Ищем match именно для найденной скобки, а не перебираем обе позиции заново.
+        // Без этого возможна рассогласовка: bracketAdjacentToCursor выбирает orphan на одной
+        // позиции, а findMatch находит match для скобки на другой позиции.
+        if let match = findMatchForBracket(
+            in: text, at: bracketPos, skipRanges: skipRanges
+        ) {
             return .matched(match)
         }
 
         return .unmatched(position: bracketPos)
+    }
+
+    /// Ищет парную скобку для конкретной позиции (без перебора соседних позиций).
+    static func findMatchForBracket(
+        in text: String,
+        at position: Int,
+        skipRanges: [NSRange] = []
+    ) -> BracketMatch? {
+        let source = text as NSString
+        let length = source.length
+        guard position >= 0, position < length else { return nil }
+        guard !isInSkipRange(position, skipRanges: skipRanges) else { return nil }
+
+        let character = source.character(at: position)
+        return tryMatch(
+            source: source, position: position,
+            character: character, skipRanges: skipRanges
+        )
     }
 
     private static func isInSkipRange(_ position: Int, skipRanges: [NSRange]) -> Bool {
