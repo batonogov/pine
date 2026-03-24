@@ -40,9 +40,10 @@ final class QuickOpenProvider {
         let resolved = rootURL.resolvingSymlinksInPath()
         if resolved == indexedRoot, !fileIndex.isEmpty { return }
         indexedRoot = resolved
+        let rootRealPath = resolved.path
         var files: [URL] = []
         for root in roots {
-            collectFiles(from: root, into: &files)
+            collectFiles(from: root, into: &files, rootRealPath: rootRealPath)
         }
         fileIndex = files
 
@@ -62,11 +63,17 @@ final class QuickOpenProvider {
         indexedRoot = nil
     }
 
-    private func collectFiles(from node: FileNode, into files: inout [URL]) {
+    private func collectFiles(from node: FileNode, into files: inout [URL], rootRealPath: String) {
         if node.isDirectory {
             guard let children = node.children else { return }
             for child in children {
-                collectFiles(from: child, into: &files)
+                collectFiles(from: child, into: &files, rootRealPath: rootRealPath)
+            }
+        } else if node.isSymlink {
+            // Skip symlinks pointing outside the project root
+            let resolvedPath = node.url.resolvingSymlinksInPath().path
+            if resolvedPath == rootRealPath || resolvedPath.hasPrefix(rootRealPath + "/") {
+                files.append(node.url)
             }
         } else {
             files.append(node.url)
