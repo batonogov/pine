@@ -255,11 +255,18 @@ enum Strings {
     static let welcomeSubtitle: LocalizedStringKey = "welcome.subtitle"
     static let welcomeRecentProjects: LocalizedStringKey = "welcome.recentProjects"
     static let welcomeNoRecent: LocalizedStringKey = "welcome.noRecent"
+    static let welcomeSearchPlaceholder: LocalizedStringKey = "welcome.searchPlaceholder"
+    static var welcomeSearchPlaceholderString: String {
+        String(localized: "welcome.searchPlaceholder")
+    }
+    static let welcomeNoSearchResults: LocalizedStringKey = "welcome.noSearchResults"
 
     // MARK: - Project Search
 
     static let searchPlaceholder: LocalizedStringKey = "search.placeholder"
     static let searchNoResults: LocalizedStringKey = "search.noResults"
+    static let searchInitialPrompt: LocalizedStringKey = "search.initialPrompt"
+    static let searchInitialDescription: LocalizedStringKey = "search.initialDescription"
     static let searchCaseSensitive: LocalizedStringKey = "search.caseSensitive"
     static let searchClose: LocalizedStringKey = "search.close"
     static let menuFind: LocalizedStringKey = "menu.find"

@@ -62,6 +62,66 @@
         }
       }
     },
+    "about.tagline" : {
+      "comment" : "Tagline shown in the About window credits.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ein Code-Editor, der auf Ihren Mac gehört."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A code editor that belongs on your Mac."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Un editor de código hecho para tu Mac."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Un éditeur de code fait pour votre Mac."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "あなたのMacにふさわしいコードエディタ。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "당신의 Mac에 어울리는 코드 편집기."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Um editor de código feito para o seu Mac."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Редактор кода, созданный для вашего Mac."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "属于你 Mac 的代码编辑器。"
+          }
+        }
+      }
+    },
     "branch.filterPlaceholder" : {
       "comment" : "Placeholder text in the branch search field.",
       "extractionState" : "manual",
@@ -5774,6 +5834,42 @@
         }
       }
     },
+    "search.initialDescription" : {
+      "comment" : "Description text shown on the initial search screen before any query is entered.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Type to search across all project files"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Введите текст для поиска по всем файлам проекта"
+          }
+        }
+      }
+    },
+    "search.initialPrompt" : {
+      "comment" : "Title shown on the initial search screen before any query is entered.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Search in Project"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Поиск по проекту"
+          }
+        }
+      }
+    },
     "search.noResults" : {
       "comment" : "Shown when project search finds no results.",
       "extractionState" : "manual",
@@ -7934,6 +8030,66 @@
         }
       }
     },
+    "welcome.noSearchResults" : {
+      "comment" : "Placeholder when search filter matches no recent projects.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No Matching Projects"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Нет подходящих проектов"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Keine passenden Projekte"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No hay proyectos coincidentes"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aucun projet correspondant"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "一致するプロジェクトはありません"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "일치하는 프로젝트 없음"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nenhum projeto correspondente"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "没有匹配的项目"
+          }
+        }
+      }
+    },
     "welcome.recentProjects" : {
       "comment" : "Header for recent projects list in the welcome window.",
       "extractionState" : "manual",
@@ -7994,6 +8150,66 @@
         }
       }
     },
+    "welcome.searchPlaceholder" : {
+      "comment" : "Placeholder for the search field in the recent projects list.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Filter projects…"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Фильтр проектов…"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Projekte filtern…"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Filtrar proyectos…"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Filtrer les projets…"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "プロジェクトを検索…"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "프로젝트 검색…"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Filtrar projetos…"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "筛选项目…"
+          }
+        }
+      }
+    },
     "welcome.subtitle" : {
       "comment" : "Subtitle on the welcome window.",
       "extractionState" : "manual",
@@ -8001,55 +8217,55 @@
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Ein minimaler nativer macOS-Code-Editor"
+            "value" : "Ein Code-Editor, der auf Ihren Mac gehört."
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "A minimal native macOS code editor"
+            "value" : "A code editor that belongs on your Mac."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Un editor de código nativo y minimalista para macOS"
+            "value" : "Un editor de código hecho para tu Mac."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Un éditeur de code natif et minimaliste pour macOS"
+            "value" : "Un éditeur de code fait pour votre Mac."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "ミニマルなネイティブ macOS コードエディタ"
+            "value" : "あなたのMacにふさわしいコードエディタ。"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "미니멀 네이티브 macOS 코드 편집기"
+            "value" : "당신의 Mac에 어울리는 코드 편집기."
           }
         },
         "pt-BR" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Um editor de código nativo e minimalista para macOS"
+            "value" : "Um editor de código feito para o seu Mac."
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Минималистичный нативный редактор кода для macOS"
+            "value" : "Редактор кода, созданный для вашего Mac."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "极简原生 macOS 代码编辑器"
+            "value" : "属于你 Mac 的代码编辑器。"
           }
         }
       }

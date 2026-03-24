@@ -22,6 +22,9 @@ struct SessionState: Codable {
     /// File paths where syntax highlighting was disabled (e.g. large files opened without highlighting).
     /// Optional for backwards compatibility with sessions saved before this field existed.
     var highlightingDisabledPaths: [String]?
+    /// Per-file editor state (cursor position, scroll offset, fold state).
+    /// Key is the file path. Optional for backwards compatibility.
+    var editorStates: [String: PerTabEditorState]?
 
     // MARK: - Terminal state (optional for backwards compatibility)
 
@@ -65,6 +68,7 @@ struct SessionState: Codable {
         activeFileURL: URL? = nil,
         previewModes: [String: String]? = nil,
         highlightingDisabledPaths: [String]? = nil,
+        editorStates: [String: PerTabEditorState]? = nil,
         terminalTabCount: Int? = nil,
         activeTerminalIndex: Int? = nil,
         isTerminalVisible: Bool? = nil,
@@ -77,6 +81,7 @@ struct SessionState: Codable {
             activeFilePath: activeFileURL?.path,
             previewModes: previewModes,
             highlightingDisabledPaths: highlightingDisabledPaths,
+            editorStates: editorStates,
             terminalTabCount: terminalTabCount,
             activeTerminalIndex: activeTerminalIndex,
             isTerminalVisible: isTerminalVisible,
@@ -163,6 +168,16 @@ struct SessionState: Codable {
         guard let modes = previewModes else { return nil }
         let prefix = rootPrefix
         let filtered = modes.filter {
+            $0.key.hasPrefix(prefix) && FileManager.default.fileExists(atPath: $0.key)
+        }
+        return filtered.isEmpty ? nil : filtered
+    }
+
+    /// Per-file editor states filtered to entries within the project root.
+    var existingEditorStates: [String: PerTabEditorState]? {
+        guard let states = editorStates else { return nil }
+        let prefix = rootPrefix
+        let filtered = states.filter {
             $0.key.hasPrefix(prefix) && FileManager.default.fileExists(atPath: $0.key)
         }
         return filtered.isEmpty ? nil : filtered

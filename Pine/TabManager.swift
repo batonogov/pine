@@ -225,6 +225,7 @@ final class TabManager {
         guard let index = activeTabIndex else { return }
         guard tabs[index].kind == .text else { return }
         tabs[index].content = newContent
+        tabs[index].cachedHighlightResult = nil  // Invalidate stale highlight cache
         tabs[index].recomputeContentCaches()
 
         if isAutoSaveEnabled {
@@ -248,6 +249,13 @@ final class TabManager {
     func updateFoldState(_ state: FoldState) {
         guard let index = activeTabIndex else { return }
         tabs[index].foldState = state
+    }
+
+    /// Updates the cached syntax highlight result for the active tab.
+    /// Used to apply highlights synchronously on tab switch, eliminating flash.
+    func updateHighlightCache(_ result: HighlightMatchResult) {
+        guard let index = activeTabIndex else { return }
+        tabs[index].cachedHighlightResult = result
     }
 
     /// Saves the active tab to disk. Returns true on success.
