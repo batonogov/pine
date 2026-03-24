@@ -151,41 +151,7 @@ struct WelcomeView: View {
                                     Array(filteredProjects.enumerated()),
                                     id: \.element
                                 ) { index, url in
-                                    if index > 0 {
-                                        Divider()
-                                            .padding(.leading)
-                                    }
-                                    RecentProjectRow(url: url) {
-                                        openProject(at: url)
-                                    }
-                                    .contextMenu {
-                                        Button {
-                                            NSWorkspace.shared.activateFileViewerSelecting([url])
-                                        } label: {
-                                            Label(
-                                                Strings.welcomeRevealInFinder,
-                                                systemImage: "folder"
-                                            )
-                                        }
-                                        Divider()
-                                        Button {
-                                            registry.removeFromRecent(url)
-                                        } label: {
-                                            Label(
-                                                Strings.welcomeRemoveFromRecent,
-                                                systemImage: "minus.circle"
-                                            )
-                                        }
-                                    }
-                                    .accessibilityIdentifier(
-                                        AccessibilityID.welcomeRecentProject(url.lastPathComponent)
-                                    )
-                                    .accessibilityLabel(
-                                        AccessibilityLabels.recentProject(
-                                            name: url.lastPathComponent,
-                                            path: url.abbreviatedPath
-                                        )
-                                    )
+                                    recentProjectItem(index: index, url: url)
                                 }
                             }
                         }
@@ -226,6 +192,46 @@ struct WelcomeView: View {
             try? await Task.sleep(for: .seconds(0.5))
             openProject(at: url)
         }
+    }
+
+    @ViewBuilder
+    private func recentProjectItem(index: Int, url: URL) -> some View {
+        if index > 0 {
+            Divider()
+                .padding(.leading)
+        }
+        let projectName = url.lastPathComponent
+        RecentProjectRow(url: url) {
+            openProject(at: url)
+        }
+        .contextMenu {
+            Button {
+                NSWorkspace.shared.activateFileViewerSelecting([url])
+            } label: {
+                Label(
+                    Strings.welcomeRevealInFinder,
+                    systemImage: "folder"
+                )
+            }
+            Divider()
+            Button {
+                registry.removeFromRecent(url)
+            } label: {
+                Label(
+                    Strings.welcomeRemoveFromRecent,
+                    systemImage: "minus.circle"
+                )
+            }
+        }
+        .accessibilityIdentifier(
+            AccessibilityID.welcomeRecentProject(projectName)
+        )
+        .accessibilityLabel(
+            AccessibilityLabels.recentProject(
+                name: projectName,
+                path: url.abbreviatedPath
+            )
+        )
     }
 
     /// Handles file URLs dropped onto the Welcome window.
