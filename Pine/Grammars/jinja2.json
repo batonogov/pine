@@ -1,0 +1,62 @@
+{
+    "name": "Jinja2",
+    "extensions": ["j2", "jinja2", "jinja"],
+    "filePatterns": ["*.j2", "*.jinja2"],
+    "lineComment": "#",
+    "rules": [
+        {
+            "pattern": "\\{#[\\s\\S]*?#\\}",
+            "scope": "comment"
+        },
+        {
+            "pattern": "#.*$",
+            "scope": "comment",
+            "options": ["anchorsMatchLines"]
+        },
+        {
+            "pattern": "\"(?:[^\"\\\\]|\\\\.)*\"",
+            "scope": "string"
+        },
+        {
+            "pattern": "'(?:[^'\\\\]|\\\\.)*'",
+            "scope": "string"
+        },
+        {
+            "pattern": "\\{%-?|\\-?%\\}|\\{\\{-?|\\-?\\}\\}",
+            "scope": "keyword"
+        },
+        {
+            "pattern": "\\b(block|endblock|extends|macro|endmacro|call|endcall|filter|endfilter|set|endset|include|import|from|as|with|endwith|autoescape|endautoescape|raw|endraw|if|elif|else|endif|for|endfor|in|recursive|not|and|or|is|true|false|none|True|False|None|loop|super|self|varargs|kwargs|caller|ignore|missing|scoped|namespace)\\b",
+            "scope": "keyword"
+        },
+        {
+            "pattern": "\\b(abs|attr|batch|capitalize|center|d|default|dictsort|e|escape|filesizeformat|first|float|forceescape|format|groupby|indent|int|join|last|length|list|lower|map|max|min|pprint|random|reject|rejectattr|replace|reverse|round|safe|select|selectattr|slice|sort|string|striptags|sum|title|tojson|trim|truncate|unique|upper|urlencode|urlize|wordcount|wordwrap|xmlattr)\\s*",
+            "scope": "function"
+        },
+        {
+            "pattern": "\\b(ansible_[a-zA-Z_]+|inventory_hostname|group_names|groups|hostvars|play_hosts|ansible_play_hosts|ansible_play_batch|role_path|playbook_dir)\\b",
+            "scope": "type"
+        },
+        {
+            "pattern": "\\b(when|register|become|become_user|notify|handlers|tasks|vars|roles|gather_facts|hosts|name|tags|changed_when|failed_when|ignore_errors|delegate_to|connection|environment|any_errors_fatal|max_fail_percentage|serial|strategy|collections|module_defaults)\\b",
+            "scope": "attribute"
+        },
+        {
+            "pattern": "\\b\\d+(\\.\\d+)?([eE][+-]?\\d+)?\\b",
+            "scope": "number"
+        },
+        {
+            "pattern": "\\|",
+            "scope": "keyword"
+        },
+        {
+            "pattern": "~",
+            "scope": "keyword"
+        },
+        {
+            "pattern": "^\\s*[\\w.-]+(?=\\s*:)",
+            "scope": "attribute",
+            "options": ["anchorsMatchLines"]
+        }
+    ]
+}

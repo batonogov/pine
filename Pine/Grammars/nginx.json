@@ -1,7 +1,8 @@
 {
     "name": "Nginx",
     "extensions": ["nginx"],
-    "fileNames": ["nginx.conf"],
+    "fileNames": ["nginx.conf", "mime.types", "fastcgi_params", "uwsgi_params", "scgi_params"],
+    "filePatterns": ["nginx*.conf", "*.nginx", "sites-available/*", "sites-enabled/*", "conf.d/*.conf"],
     "lineComment": "#",
     "rules": [
         {
@@ -22,7 +23,7 @@
             "scope": "string"
         },
         {
-            "pattern": "\\b(server|location|upstream|http|events|stream|mail|map|geo|types|if|set|return|rewrite|proxy_pass|proxy_set_header|fastcgi_pass|include|listen|server_name|root|index|error_page|access_log|error_log|try_files|ssl_certificate|ssl_certificate_key|worker_processes|worker_connections|sendfile|keepalive_timeout|gzip|add_header|deny|allow|limit_req|limit_conn)\\b",
+            "pattern": "\\b(server|location|upstream|http|events|stream|mail|map|geo|types|if|set|return|rewrite|proxy_pass|proxy_set_header|fastcgi_pass|include|listen|server_name|root|index|error_page|access_log|error_log|try_files|ssl_certificate|ssl_certificate_key|worker_processes|worker_connections|sendfile|keepalive_timeout|gzip|add_header|deny|allow|limit_req|limit_conn|proxy_redirect|proxy_connect_timeout|proxy_read_timeout|proxy_send_timeout|proxy_buffering|proxy_buffer_size|proxy_buffers|proxy_cache|proxy_cache_valid|proxy_cache_bypass|proxy_no_cache|proxy_cache_path|proxy_cache_key|proxy_cache_use_stale|proxy_http_version|proxy_ssl_server_name|uwsgi_pass|scgi_pass|grpc_pass|stub_status|ssl|ssl_protocols|ssl_ciphers|ssl_session_cache|ssl_session_timeout|ssl_prefer_server_ciphers|ssl_stapling|ssl_stapling_verify|ssl_trusted_certificate|resolver|resolver_timeout|client_max_body_size|client_body_timeout|client_header_timeout|send_timeout|tcp_nopush|tcp_nodelay|gzip_types|gzip_vary|gzip_min_length|gzip_proxied|gzip_comp_level|log_format|open_file_cache|expires|autoindex|charset|default_type|alias|internal|limit_req_zone|limit_conn_zone|auth_basic|auth_basic_user_file|satisfy|real_ip_header|set_real_ip_from|proxy_ignore_headers|sub_filter|sub_filter_once|sub_filter_types)\\b",
             "scope": "keyword"
         },
         {

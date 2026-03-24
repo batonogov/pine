@@ -36,6 +36,22 @@
             "scope": "keyword"
         },
         {
+            "pattern": "\\b(listener|storage|seal|telemetry|service_registration|entropy|sentinel|api_addr|cluster_addr|ui|disable_mlock|log_level|log_format|pid_file|default_lease_ttl|max_lease_ttl|plugin_directory|disable_clustering|disable_sealwrap|max_request_duration)\\b",
+            "scope": "keyword"
+        },
+        {
+            "pattern": "\\b(service|services|check|checks|node|session|key_prefix|connect|sidecar_service|sidecar_task|proxy|upstreams|expose|paths|kind|partition|namespace|datacenter|domain|primary_datacenter|encrypt|retry_join|recursors|acl|autopilot|ports|addresses|performance|dns_config|log_file|enable_script_checks|enable_local_script_checks)\\b",
+            "scope": "keyword"
+        },
+        {
+            "pattern": "\\b(job|group|task|artifact|constraint|affinity|spread|volume|volume_mount|dispatch_payload|vault|template|env|resources|network|service|scaling|periodic|parameterized|update|migrate|reschedule|restart|meta|region|datacenters|type|priority|all_at_once|consul)\\b",
+            "scope": "keyword"
+        },
+        {
+            "pattern": "\\b(build|source|provisioner|post-processor|packer|variables|local|locals|data)\\b",
+            "scope": "keyword"
+        },
+        {
             "pattern": "\\b(string|number|bool|list|map|set|object|tuple|any)\\b",
             "scope": "type"
         },
