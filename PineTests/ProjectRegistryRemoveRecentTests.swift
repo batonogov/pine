@@ -15,7 +15,8 @@ struct ProjectRegistryRemoveRecentTests {
         let url = FileManager.default.temporaryDirectory
             .appendingPathComponent("Pine\(name)-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
-        return url
+        // Return canonical URL so tests match what ProjectRegistry stores internally
+        return url.resolvingSymlinksInPath()
     }
 
     private func cleanup(_ url: URL) {
@@ -88,15 +89,15 @@ struct ProjectRegistryRemoveRecentTests {
         #expect(!registry2.recentProjects.contains(dir))
     }
 
-    @Test("Remove resolves symlinks before matching")
-    func removeResolvesSymlinks() throws {
+    @Test("Remove matches by exact URL equality")
+    func removeMatchesByExactURL() throws {
         let dir = try makeTempDir()
         defer { cleanup(dir) }
 
         let registry = ProjectRegistry()
         _ = registry.projectManager(for: dir)
 
-        // Remove using non-canonical URL (same path, different URL object)
+        // Remove using an equivalent URL object (same canonical path)
         let sameDir = URL(fileURLWithPath: dir.path)
         registry.removeFromRecent(sameDir)
         #expect(!registry.recentProjects.contains(dir))

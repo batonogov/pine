@@ -86,19 +86,20 @@ struct WelcomeView: View {
                                 }
                                 .contextMenu {
                                     Button {
-                                        registry.removeFromRecent(url)
-                                    } label: {
-                                        Label(
-                                            Strings.welcomeRemoveFromRecent,
-                                            systemImage: "minus.circle"
-                                        )
-                                    }
-                                    Button {
                                         NSWorkspace.shared.activateFileViewerSelecting([url])
                                     } label: {
                                         Label(
                                             Strings.welcomeRevealInFinder,
                                             systemImage: "folder"
+                                        )
+                                    }
+                                    Divider()
+                                    Button {
+                                        registry.removeFromRecent(url)
+                                    } label: {
+                                        Label(
+                                            Strings.welcomeRemoveFromRecent,
+                                            systemImage: "minus.circle"
                                         )
                                     }
                                 }
