@@ -1151,41 +1151,12 @@ final class SidebarEditState {
 
     /// Returns a unique name by appending a counter if the name already exists.
     static func uniqueName(_ baseName: String, in parentURL: URL) -> String {
-        var name = baseName
-        var counter = 2
-        while FileManager.default.fileExists(atPath: parentURL.appendingPathComponent(name).path) {
-            name = "\(baseName) \(counter)"
-            counter += 1
-        }
-        return name
+        FileNameGenerator.uniqueName(baseName, in: parentURL)
     }
 
     /// Generates a Finder-style copy URL: "name copy", "name copy 2", etc.
     static func finderCopyURL(for url: URL) -> URL? {
-        let directory = url.deletingLastPathComponent()
-        let ext = url.pathExtension
-        let baseName = ext.isEmpty
-            ? url.lastPathComponent
-            : String(url.lastPathComponent.dropLast(ext.count + 1))
-
-        let fm = FileManager.default
-        for counter in 0... {
-            let copyName: String
-            if counter == 0 {
-                copyName = ext.isEmpty
-                    ? "\(baseName) copy"
-                    : "\(baseName) copy.\(ext)"
-            } else {
-                copyName = ext.isEmpty
-                    ? "\(baseName) copy \(counter + 1)"
-                    : "\(baseName) copy \(counter + 1).\(ext)"
-            }
-            let candidate = directory.appendingPathComponent(copyName)
-            if !fm.fileExists(atPath: candidate.path) {
-                return candidate
-            }
-        }
-        return nil
+        FileNameGenerator.finderCopyURL(for: url)
     }
 
     /// Shows an AppKit error alert for file operations.
