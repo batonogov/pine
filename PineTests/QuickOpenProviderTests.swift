@@ -437,4 +437,63 @@ struct QuickOpenProviderTests {
         let results = provider.search(query: "my file")
         #expect(results.count == 1)
     }
+
+    // MARK: - Symlink Boundary
+
+    @Test("symlink targeting file outside project root is excluded from index")
+    func symlinkOutsideProjectRootExcluded() throws {
+        let project = try createTestProject(files: ["real.swift": "// real"])
+        defer { cleanup(project) }
+
+        // Create a file outside the project
+        let outside = FileManager.default.temporaryDirectory
+            .appendingPathComponent("PineOutside-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: outside, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: outside) }
+
+        let outsideFile = outside.appendingPathComponent("secret.swift")
+        try "// secret".write(to: outsideFile, atomically: true, encoding: .utf8)
+
+        // Create symlink inside project pointing outside
+        let symlinkURL = project.appendingPathComponent("linked.swift")
+        try FileManager.default.createSymbolicLink(at: symlinkURL, withDestinationURL: outsideFile)
+
+        let provider = buildProvider(dir: project)
+        let fileNames = provider.fileIndex.map(\.lastPathComponent)
+        #expect(fileNames.contains("real.swift"))
+        #expect(!fileNames.contains("linked.swift"))
+    }
+
+    @Test("symlink targeting file inside project root is included in index")
+    func symlinkInsideProjectRootIncluded() throws {
+        let project = try createTestProject(files: [
+            "src/original.swift": "// original"
+        ])
+        defer { cleanup(project) }
+
+        // Create symlink inside project pointing to another file inside project
+        let symlinkURL = project.appendingPathComponent("alias.swift")
+        let targetURL = project.appendingPathComponent("src/original.swift")
+        try FileManager.default.createSymbolicLink(at: symlinkURL, withDestinationURL: targetURL)
+
+        let provider = buildProvider(dir: project)
+        let fileNames = provider.fileIndex.map(\.lastPathComponent)
+        #expect(fileNames.contains("original.swift"))
+        #expect(fileNames.contains("alias.swift"))
+    }
+
+    @Test("regular files without symlinks are indexed normally")
+    func regularFilesIndexedNormally() throws {
+        let project = try createTestProject(files: [
+            "main.swift": "// main",
+            "lib/utils.swift": "// utils",
+            "docs/readme.txt": "// readme"
+        ])
+        defer { cleanup(project) }
+
+        let provider = buildProvider(dir: project)
+        #expect(provider.fileIndex.count == 3)
+        let fileNames = Set(provider.fileIndex.map(\.lastPathComponent))
+        #expect(fileNames == ["main.swift", "utils.swift", "readme.txt"])
+    }
 }
