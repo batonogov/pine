@@ -648,7 +648,7 @@ struct ContentView: View {
             let lineEnd = NSMaxRange(lineRange)
             if lineEnd > clamped { break }
             // Only advance to next line if a newline actually ends this line
-            if lineEnd == clamped && (clamped == 0 || nsContent.character(at: clamped - 1) != 0x0A) {
+            if lineEnd == clamped && (clamped == 0 || nsContent.character(at: clamped - 1) != ASCII.newline) {
                 break
             }
             line += 1
