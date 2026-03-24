@@ -16,7 +16,13 @@ final class ProjectManager {
     let tabManager = TabManager()
     let searchProvider = ProjectSearchProvider()
     let quickOpenProvider = QuickOpenProvider()
+    let progress = ProgressTracker()
     private(set) var recoveryManager: RecoveryManager?
+
+    init() {
+        workspace.progressTracker = progress
+        workspace.gitProvider.progressTracker = progress
+    }
 
     deinit {
         recoveryManager?.stopPeriodicSnapshots()

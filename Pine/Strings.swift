@@ -343,4 +343,22 @@ enum Strings {
     static var terminalTabCloseWarningClose: String {
         String(localized: "terminal.tabCloseWarning.close")
     }
+
+    // MARK: - Progress Indicators
+
+    static var progressLoadingProject: String {
+        String(localized: "progress.loadingProject")
+    }
+
+    static var progressGitStatus: String {
+        String(localized: "progress.gitStatus")
+    }
+
+    static var progressGitCheckout: String {
+        String(localized: "progress.gitCheckout")
+    }
+
+    static var progressLoadingFile: String {
+        String(localized: "progress.loadingFile")
+    }
 }

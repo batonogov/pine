@@ -4983,6 +4983,78 @@
         }
       }
     },
+    "progress.gitCheckout" : {
+      "comment" : "Status bar message during git branch checkout.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Switching branch…"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Переключение ветки…"
+          }
+        }
+      }
+    },
+    "progress.gitStatus" : {
+      "comment" : "Status bar message during git status refresh.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Refreshing git status…"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Обновление git статуса…"
+          }
+        }
+      }
+    },
+    "progress.loadingFile" : {
+      "comment" : "Status bar message while opening a large file.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Loading file…"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Загрузка файла…"
+          }
+        }
+      }
+    },
+    "progress.loadingProject" : {
+      "comment" : "Status bar message while loading the project file tree.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Loading project…"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Загрузка проекта…"
+          }
+        }
+      }
+    },
     "Pine" : {
       "extractionState" : "manual",
       "localizations" : {

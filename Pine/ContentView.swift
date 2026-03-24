@@ -82,7 +82,8 @@ struct ContentView: View {
                 StatusBarView(
                     gitProvider: workspace.gitProvider,
                     terminal: terminal,
-                    tabManager: tabManager
+                    tabManager: tabManager,
+                    progress: projectManager.progress
                 )
             }
         }
@@ -648,7 +649,7 @@ struct ContentView: View {
             let lineEnd = NSMaxRange(lineRange)
             if lineEnd > clamped { break }
             // Only advance to next line if a newline actually ends this line
-            if lineEnd == clamped && (clamped == 0 || nsContent.character(at: clamped - 1) != 0x0A) {
+            if lineEnd == clamped && (clamped == 0 || nsContent.character(at: clamped - 1) != ASCII.newline) {
                 break
             }
             line += 1
@@ -1488,9 +1489,22 @@ struct StatusBarView: View {
     var gitProvider: GitStatusProvider
     var terminal: TerminalManager
     var tabManager: TabManager
+    var progress: ProgressTracker?
 
     var body: some View {
         HStack(spacing: LayoutMetrics.statusBarItemSpacing) {
+            if let progress, progress.isLoading {
+                HStack(spacing: 4) {
+                    ProgressView()
+                        .controlSize(.mini)
+                    Text(verbatim: progress.message)
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+                .accessibilityIdentifier(AccessibilityID.progressIndicator)
+            }
+
             if gitProvider.isGitRepository {
                 // Git file change summary
                 if !gitProvider.fileStatuses.isEmpty {

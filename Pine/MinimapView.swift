@@ -57,7 +57,7 @@ final class MinimapView: NSView {
     static let scaleFactor: CGFloat = 0.12
 
     /// Width of one character in minimap coordinates.
-    private let charWidth: CGFloat = 0.8
+    private let charWidth: CGFloat = MinimapConstants.charWidth
 
     /// Total document height including top origin offset and bottom inset.
     private func documentHeight(
@@ -254,7 +254,7 @@ final class MinimapView: NSView {
         let (offset, _) = minimapOffset()
         let scale = Self.scaleFactor
         let originY = textView.textContainerOrigin.y
-        let lineHeight: CGFloat = 2
+        let lineHeight: CGFloat = MinimapConstants.lineHeight
 
         // Calculate the document Y range that maps to the visible minimap area.
         // Only enumerate line fragments within this range to avoid iterating the entire document.
@@ -266,7 +266,7 @@ final class MinimapView: NSView {
 
         // Diff marker state — tracked incrementally across fragments
         let hasDiffMarkers = !diffMap.isEmpty
-        let markerWidth: CGFloat = 4
+        let markerWidth: CGFloat = MinimapConstants.diffMarkerWidth
         let markerX = bounds.width - markerWidth
         var diffLineNumber = 1
         var diffLastCharPos = 0
@@ -278,7 +278,7 @@ final class MinimapView: NSView {
             // Advance diff line counter for newlines between last position and this fragment
             if hasDiffMarkers {
                 let scanEnd = min(charRange.location, source.length)
-                for i in diffLastCharPos..<scanEnd where source.character(at: i) == 0x0A {
+                for i in diffLastCharPos..<scanEnd where source.character(at: i) == ASCII.newline {
                     diffLineNumber += 1
                 }
                 diffLastCharPos = scanEnd
@@ -306,7 +306,7 @@ final class MinimapView: NSView {
 
             // Leading whitespace → x offset
             let leadingSpaces = lineText.prefix(while: { $0 == " " || $0 == "\t" }).count
-            let xStart: CGFloat = CGFloat(leadingSpaces) * self.charWidth + 4
+            let xStart: CGFloat = CGFloat(leadingSpaces) * self.charWidth + MinimapConstants.leadingPadding
 
             // Walk through syntax-colored segments
             var pos = charRange.location
@@ -337,7 +337,7 @@ final class MinimapView: NSView {
                     )
 
                     if segRect.maxX > 0 && segRect.minX < self.bounds.width {
-                        color.withAlphaComponent(0.55).setFill()
+                        color.withAlphaComponent(MinimapConstants.syntaxSegmentAlpha).setFill()
                         segRect.fill()
                     }
                 }
