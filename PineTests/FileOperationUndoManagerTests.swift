@@ -32,9 +32,8 @@ struct FileOperationUndoManagerTests {
         try "content".write(to: fileURL, atomically: true, encoding: .utf8)
 
         let undoManager = UndoManager()
-        let ops = FileOperationUndoManager()
 
-        try ops.deleteItem(at: fileURL, undoManager: undoManager)
+        try FileOperationUndoManager.deleteItem(at: fileURL, undoManager: undoManager)
 
         #expect(!FileManager.default.fileExists(atPath: fileURL.path))
 
@@ -55,9 +54,8 @@ struct FileOperationUndoManagerTests {
         try "inner".write(to: fileInside, atomically: true, encoding: .utf8)
 
         let undoManager = UndoManager()
-        let ops = FileOperationUndoManager()
 
-        try ops.deleteItem(at: subdir, undoManager: undoManager)
+        try FileOperationUndoManager.deleteItem(at: subdir, undoManager: undoManager)
 
         #expect(!FileManager.default.fileExists(atPath: subdir.path))
 
@@ -79,9 +77,8 @@ struct FileOperationUndoManagerTests {
         let newURL = dir.appendingPathComponent("new.txt")
 
         let undoManager = UndoManager()
-        let ops = FileOperationUndoManager()
 
-        try ops.renameItem(from: oldURL, to: newURL, undoManager: undoManager)
+        try FileOperationUndoManager.renameItem(from: oldURL, to: newURL, undoManager: undoManager)
 
         #expect(!FileManager.default.fileExists(atPath: oldURL.path))
         #expect(FileManager.default.fileExists(atPath: newURL.path))
@@ -104,9 +101,8 @@ struct FileOperationUndoManagerTests {
         let newURL = dir.appendingPathComponent("folderB")
 
         let undoManager = UndoManager()
-        let ops = FileOperationUndoManager()
 
-        try ops.renameItem(from: oldURL, to: newURL, undoManager: undoManager)
+        try FileOperationUndoManager.renameItem(from: oldURL, to: newURL, undoManager: undoManager)
 
         #expect(!FileManager.default.fileExists(atPath: oldURL.path))
         #expect(FileManager.default.fileExists(atPath: newURL.path))
@@ -126,9 +122,8 @@ struct FileOperationUndoManagerTests {
         let fileURL = dir.appendingPathComponent("created.txt")
 
         let undoManager = UndoManager()
-        let ops = FileOperationUndoManager()
 
-        try ops.createItem(at: fileURL, isDirectory: false, undoManager: undoManager)
+        try FileOperationUndoManager.createItem(at: fileURL, isDirectory: false, undoManager: undoManager)
 
         #expect(FileManager.default.fileExists(atPath: fileURL.path))
 
@@ -144,9 +139,8 @@ struct FileOperationUndoManagerTests {
         let folderURL = dir.appendingPathComponent("newFolder")
 
         let undoManager = UndoManager()
-        let ops = FileOperationUndoManager()
 
-        try ops.createItem(at: folderURL, isDirectory: true, undoManager: undoManager)
+        try FileOperationUndoManager.createItem(at: folderURL, isDirectory: true, undoManager: undoManager)
 
         var isDir: ObjCBool = false
         #expect(FileManager.default.fileExists(atPath: folderURL.path, isDirectory: &isDir))
@@ -167,9 +161,8 @@ struct FileOperationUndoManagerTests {
         try "redo".write(to: fileURL, atomically: true, encoding: .utf8)
 
         let undoManager = UndoManager()
-        let ops = FileOperationUndoManager()
 
-        try ops.deleteItem(at: fileURL, undoManager: undoManager)
+        try FileOperationUndoManager.deleteItem(at: fileURL, undoManager: undoManager)
         undoManager.undo()
         #expect(FileManager.default.fileExists(atPath: fileURL.path))
 
@@ -186,9 +179,8 @@ struct FileOperationUndoManagerTests {
         let newURL = dir.appendingPathComponent("b.txt")
 
         let undoManager = UndoManager()
-        let ops = FileOperationUndoManager()
 
-        try ops.renameItem(from: oldURL, to: newURL, undoManager: undoManager)
+        try FileOperationUndoManager.renameItem(from: oldURL, to: newURL, undoManager: undoManager)
         undoManager.undo()
         #expect(FileManager.default.fileExists(atPath: oldURL.path))
 
@@ -204,9 +196,8 @@ struct FileOperationUndoManagerTests {
         let fileURL = dir.appendingPathComponent("redocreate.txt")
 
         let undoManager = UndoManager()
-        let ops = FileOperationUndoManager()
 
-        try ops.createItem(at: fileURL, isDirectory: false, undoManager: undoManager)
+        try FileOperationUndoManager.createItem(at: fileURL, isDirectory: false, undoManager: undoManager)
         undoManager.undo()
         #expect(!FileManager.default.fileExists(atPath: fileURL.path))
 
@@ -217,23 +208,21 @@ struct FileOperationUndoManagerTests {
     // MARK: - Error cases
 
     @Test func deleteNonexistentFileThrows() {
-        let ops = FileOperationUndoManager()
         let undoManager = UndoManager()
         let fakeURL = FileManager.default.temporaryDirectory.appendingPathComponent("nonexistent-\(UUID().uuidString)")
 
         #expect(throws: (any Error).self) {
-            try ops.deleteItem(at: fakeURL, undoManager: undoManager)
+            try FileOperationUndoManager.deleteItem(at: fakeURL, undoManager: undoManager)
         }
     }
 
     @Test func renameNonexistentFileThrows() {
-        let ops = FileOperationUndoManager()
         let undoManager = UndoManager()
         let fakeURL = FileManager.default.temporaryDirectory.appendingPathComponent("nonexistent-\(UUID().uuidString)")
         let destURL = FileManager.default.temporaryDirectory.appendingPathComponent("dest-\(UUID().uuidString)")
 
         #expect(throws: (any Error).self) {
-            try ops.renameItem(from: fakeURL, to: destURL, undoManager: undoManager)
+            try FileOperationUndoManager.renameItem(from: fakeURL, to: destURL, undoManager: undoManager)
         }
     }
 }

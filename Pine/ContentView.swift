@@ -1124,8 +1124,7 @@ final class SidebarEditState {
 
         do {
             if let undoManager {
-                let fileOps = FileOperationUndoManager()
-                try fileOps.createItem(at: newURL, isDirectory: isDirectory, undoManager: undoManager)
+                try FileOperationUndoManager.createItem(at: newURL, isDirectory: isDirectory, undoManager: undoManager)
             } else if isDirectory {
                 try FileManager.default.createDirectory(at: newURL, withIntermediateDirectories: false)
             } else if !FileManager.default.createFile(atPath: newURL.path, contents: nil) {
@@ -1303,8 +1302,6 @@ struct FileNodeRow: View {
     @Environment(\.undoManager) private var undoManager
     @FocusState private var isTextFieldFocused: Bool
 
-    private let fileOps = FileOperationUndoManager()
-
     private var isEditing: Bool {
         guard let renamingURL = editState.renamingURL else { return false }
         // Compare by path to ignore trailing-slash differences between
@@ -1471,7 +1468,7 @@ struct FileNodeRow: View {
 
         do {
             if let undoManager {
-                try fileOps.renameItem(from: oldURL, to: newURL, undoManager: undoManager)
+                try FileOperationUndoManager.renameItem(from: oldURL, to: newURL, undoManager: undoManager)
             } else {
                 try FileManager.default.moveItem(at: oldURL, to: newURL)
             }
@@ -1518,7 +1515,7 @@ struct FileNodeRow: View {
 
         do {
             if let undoManager {
-                try fileOps.deleteItem(at: deletedURL, undoManager: undoManager)
+                try FileOperationUndoManager.deleteItem(at: deletedURL, undoManager: undoManager)
             } else {
                 try FileManager.default.trashItem(at: deletedURL, resultingItemURL: nil)
             }
