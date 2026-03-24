@@ -122,7 +122,7 @@ final class ProjectRegistry {
     /// Removes a single project from the recent projects list.
     func removeFromRecent(_ url: URL) {
         let canonical = url.resolvingSymlinksInPath()
-        recentProjects.removeAll { $0 == canonical }
+        recentProjects.removeAll { $0 == canonical || $0 == url || $0.resolvingSymlinksInPath() == canonical }
         saveRecentProjects()
     }
 
