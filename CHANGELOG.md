@@ -1,5 +1,49 @@
 # Changelog
 
+## [1.11.0](https://github.com/batonogov/pine/compare/v1.10.1...v1.11.0) (2026-03-24)
+
+
+### Features
+
+* About Pine window with version, build, and credits ([#414](https://github.com/batonogov/pine/issues/414)) ([#515](https://github.com/batonogov/pine/issues/515)) ([bf74939](https://github.com/batonogov/pine/commit/bf749391d274eb3f4e5fb668a8ef592b67d6c8c7))
+* add defensive coding — depth limits, iteration guards, assertions ([#501](https://github.com/batonogov/pine/issues/501)) ([4725c10](https://github.com/batonogov/pine/commit/4725c10d8c8772528378f24cf6b8bed65fb9a8e6)), closes [#474](https://github.com/batonogov/pine/issues/474)
+* add keyboard tab navigation (Cmd+1..9, Ctrl+Tab) and first responder flow ([#518](https://github.com/batonogov/pine/issues/518)) ([a3d062f](https://github.com/batonogov/pine/commit/a3d062ff2431ffb990f320569b16d4d1b105cfaa))
+* data migration system for UserDefaults schema changes ([#471](https://github.com/batonogov/pine/issues/471)) ([#505](https://github.com/batonogov/pine/issues/505)) ([f90b7ce](https://github.com/batonogov/pine/commit/f90b7cec8b4a8077607902dc5f60bc4687fce964))
+* drag & drop files and folders to open in Pine ([#420](https://github.com/batonogov/pine/issues/420)) ([#523](https://github.com/batonogov/pine/issues/523)) ([441ee4f](https://github.com/batonogov/pine/commit/441ee4f44b0f04b14082b9e0fed2009f8f864dd2))
+* progress indicators for long operations ([#470](https://github.com/batonogov/pine/issues/470)) ([#500](https://github.com/batonogov/pine/issues/500)) ([9355a8e](https://github.com/batonogov/pine/commit/9355a8e09487f04a2cfda9129c19f38a273afb33))
+* remove project from recent list via context menu ([#301](https://github.com/batonogov/pine/issues/301)) ([#514](https://github.com/batonogov/pine/issues/514)) ([494601d](https://github.com/batonogov/pine/commit/494601d9b9d680b37750ef48d4beaad3ff646285))
+* restore scroll position, cursor, and fold state per tab ([#468](https://github.com/batonogov/pine/issues/468)) ([#495](https://github.com/batonogov/pine/issues/495)) ([2ca4ee5](https://github.com/batonogov/pine/commit/2ca4ee51b15f5c5ef17d93923540956f05dd4715))
+* search in recent projects list on Welcome screen ([#300](https://github.com/batonogov/pine/issues/300)) ([#513](https://github.com/batonogov/pine/issues/513)) ([93266e3](https://github.com/batonogov/pine/commit/93266e31f4b52dd6b8942d14cf390e247647ee55))
+* undo support for file operations ([#469](https://github.com/batonogov/pine/issues/469)) ([#502](https://github.com/batonogov/pine/issues/502)) ([e9bb73a](https://github.com/batonogov/pine/commit/e9bb73adbfab13025e4a771f269db53283af3c69))
+* unified logging with os_log / Logger ([#466](https://github.com/batonogov/pine/issues/466)) ([#492](https://github.com/batonogov/pine/issues/492)) ([5a9ff1d](https://github.com/batonogov/pine/commit/5a9ff1df2d5bc4e96805627822b1884f27fbd258))
+* update Welcome screen tagline to "A code editor that belongs on your Mac." ([#520](https://github.com/batonogov/pine/issues/520)) ([9a043cf](https://github.com/batonogov/pine/commit/9a043cfd187422dce4874dbd816b4fb5a0baccaf)), closes [#519](https://github.com/batonogov/pine/issues/519)
+
+
+### Bug Fixes
+
+* add NSLock synchronization to SyntaxHighlighter ([#462](https://github.com/batonogov/pine/issues/462)) ([#489](https://github.com/batonogov/pine/issues/489)) ([b4aac12](https://github.com/batonogov/pine/commit/b4aac12a7ff8fee8bac960dc2834afe2d1038bac))
+* auto-scroll sidebar to newly created file ([#528](https://github.com/batonogov/pine/issues/528)) ([#530](https://github.com/batonogov/pine/issues/530)) ([9b488d4](https://github.com/batonogov/pine/commit/9b488d433466a0a38ca5e807d26624b14523af97))
+* eliminate layout jitter during project load, sidebar refresh, and tab switching ([#509](https://github.com/batonogov/pine/issues/509)) ([#517](https://github.com/batonogov/pine/issues/517)) ([3cea969](https://github.com/batonogov/pine/commit/3cea9697f8b2d95dde631fb3a87fa35aa2c283f4))
+* eliminate syntax highlight flash on tab switch ([#529](https://github.com/batonogov/pine/issues/529)) ([#531](https://github.com/batonogov/pine/issues/531)) ([91d6062](https://github.com/batonogov/pine/commit/91d60623e93173c80bb16866d523b770640213b4))
+* new files not appearing in sidebar until manual interaction ([#439](https://github.com/batonogov/pine/issues/439)) ([#493](https://github.com/batonogov/pine/issues/493)) ([b2e572d](https://github.com/batonogov/pine/commit/b2e572d2f3e208f2c1fa38e50ad055f2122e04cd))
+* prevent .js and .ts files from being treated as binary ([#479](https://github.com/batonogov/pine/issues/479)) ([#490](https://github.com/batonogov/pine/issues/490)) ([10c8c2e](https://github.com/batonogov/pine/commit/10c8c2e9d3bd74817a814eb1bea872c33be5180a))
+* prevent QuickOpenProvider from indexing files outside project root via symlinks ([#486](https://github.com/batonogov/pine/issues/486)) ([#491](https://github.com/batonogov/pine/issues/491)) ([fa68b74](https://github.com/batonogov/pine/commit/fa68b749c1b3495ffab830bedf4861510bbc3746))
+* Quick Open index goes stale after file tree changes ([#477](https://github.com/batonogov/pine/issues/477)) ([#494](https://github.com/batonogov/pine/issues/494)) ([c7db89a](https://github.com/batonogov/pine/commit/c7db89ae03d52b06725f78848b441ecde15d40a7))
+* replace class LoadContext with struct to prevent use-after-free ([#405](https://github.com/batonogov/pine/issues/405)) ([#504](https://github.com/batonogov/pine/issues/504)) ([c555705](https://github.com/batonogov/pine/commit/c5557056bd4614bfb2438512cbaf40386ebf8c44))
+* replace silent try? with proper error logging ([#463](https://github.com/batonogov/pine/issues/463)) ([#496](https://github.com/batonogov/pine/issues/496)) ([ee07336](https://github.com/batonogov/pine/commit/ee0733697bd61ddb8655b73e1282e1d39c87784a))
+* use static methods in FileOperationUndoManager to prevent use-after-free ([#525](https://github.com/batonogov/pine/issues/525)) ([#526](https://github.com/batonogov/pine/issues/526)) ([f84048c](https://github.com/batonogov/pine/commit/f84048c8edd8ff61ce582123e3401da5c8e92829))
+
+
+### Performance Improvements
+
+* replace serial syntax highlighting queue with concurrent OperationQueue ([#400](https://github.com/batonogov/pine/issues/400)) ([#521](https://github.com/batonogov/pine/issues/521)) ([0db386e](https://github.com/batonogov/pine/commit/0db386ec88ba771216729763903ba77acd0d4a30))
+
+
+### Code Refactoring
+
+* extract magic numbers into named constants ([#499](https://github.com/batonogov/pine/issues/499)) ([a02e1e7](https://github.com/batonogov/pine/commit/a02e1e763f519d24691a2a83669f931520f4a574)), closes [#464](https://github.com/batonogov/pine/issues/464)
+* standardize animations and transitions across UI flows ([#506](https://github.com/batonogov/pine/issues/506)) ([#510](https://github.com/batonogov/pine/issues/510)) ([6a55877](https://github.com/batonogov/pine/commit/6a55877b9a4c54441328a22739d7ba4556ea93b6))
+
 ## [1.10.1](https://github.com/batonogov/pine/compare/v1.10.0...v1.10.1) (2026-03-24)
 
 
