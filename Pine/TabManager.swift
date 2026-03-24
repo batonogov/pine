@@ -11,6 +11,9 @@ import UniformTypeIdentifiers
 /// Manages the set of open editor tabs and the active selection.
 @Observable
 final class TabManager {
+    /// Maximum number of simultaneously open tabs. Prevents unbounded memory growth.
+    static let maxTabs = 1_000
+
     /// File size threshold (in bytes) above which a warning is shown before opening.
     static let largeFileThreshold = 1_048_576 // 1 MB
 
@@ -257,6 +260,7 @@ final class TabManager {
     /// On failure, throws — callers decide how to present the error.
     @discardableResult
     func trySaveTab(at index: Int) throws -> Bool {
+        assert(tabs.indices.contains(index), "trySaveTab called with out-of-bounds index \(index), tabs.count = \(tabs.count)")
         let tab = tabs[index]
         guard tab.kind == .text else { return false }
         // Prevent saving truncated files — writing partial content would corrupt the file.
@@ -278,6 +282,7 @@ final class TabManager {
     /// Saves a specific tab by index. Returns true on success, shows alert on failure.
     @discardableResult
     func saveTab(at index: Int) -> Bool {
+        assert(tabs.indices.contains(index), "saveTab called with out-of-bounds index \(index), tabs.count = \(tabs.count)")
         do {
             return try trySaveTab(at: index)
         } catch {
