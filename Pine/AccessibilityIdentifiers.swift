@@ -61,6 +61,8 @@ enum AccessibilityID {
 
     // MARK: - Project Search
     static let projectSearchResultsList = "projectSearchResultsList"
+    static let searchEmptyState = "searchEmptyState"
+    static let searchInitialState = "searchInitialState"
 
     // MARK: - Quick Open
     static let quickOpenOverlay = "quickOpenOverlay"

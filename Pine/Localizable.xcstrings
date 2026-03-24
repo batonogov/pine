@@ -5774,6 +5774,42 @@
         }
       }
     },
+    "search.initialDescription" : {
+      "comment" : "Description text shown on the initial search screen before any query is entered.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Type to search across all project files"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Введите текст для поиска по всем файлам проекта"
+          }
+        }
+      }
+    },
+    "search.initialPrompt" : {
+      "comment" : "Title shown on the initial search screen before any query is entered.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Search in Project"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Поиск по проекту"
+          }
+        }
+      }
+    },
     "search.noResults" : {
       "comment" : "Shown when project search finds no results.",
       "extractionState" : "manual",
