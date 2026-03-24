@@ -375,6 +375,10 @@ struct PineApp: App {
         .defaultSize(width: 600, height: 400)
         .windowResizability(.contentSize)
         .defaultLaunchBehavior(.presented)
+
+        Settings {
+            SettingsView()
+        }
     }
 }
 
