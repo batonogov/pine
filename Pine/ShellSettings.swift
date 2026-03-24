@@ -80,4 +80,44 @@ final class ShellSettings {
         shellPath = Self.defaultShellPath
         shellArgs = Self.commonShells.first { $0.path == shellPath }?.defaultArgs ?? Self.defaultShellArgs
     }
+
+    /// Applies a shell option, updating both path and args.
+    func applyShellOption(_ option: ShellOption) {
+        shellPath = option.path
+        shellArgs = option.defaultArgs
+    }
+
+    /// Returns shells from `commonShells` that are actually installed (executable on disk),
+    /// plus any shells from `/etc/shells` that are executable but not in `commonShells`.
+    func availableShells() -> [ShellOption] {
+        var result: [ShellOption] = []
+        var seenPaths = Set<String>()
+
+        // First, add common shells that exist on this machine
+        for shell in Self.commonShells where fileManager.isExecutableFile(atPath: shell.path) {
+            result.append(shell)
+            seenPaths.insert(shell.path)
+        }
+
+        // Then, add any extra shells from /etc/shells
+        if let content = try? String(contentsOfFile: "/etc/shells", encoding: .utf8) {
+            for path in Self.parseEtcShells(content) where !seenPaths.contains(path) {
+                if fileManager.isExecutableFile(atPath: path) {
+                    let name = URL(fileURLWithPath: path).lastPathComponent
+                    result.append(ShellOption(name: name, path: path, defaultArgs: ["--login"]))
+                    seenPaths.insert(path)
+                }
+            }
+        }
+
+        return result
+    }
+
+    /// Parses `/etc/shells` content: filters comments and empty lines, returns shell paths.
+    static func parseEtcShells(_ content: String) -> [String] {
+        content
+            .components(separatedBy: .newlines)
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty && !$0.hasPrefix("#") }
+    }
 }

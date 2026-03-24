@@ -109,6 +109,14 @@ enum Strings {
     static let showTerminalShortcut: LocalizedStringKey = "terminal.showShortcut"
     static let toggleTerminal: LocalizedStringKey = "terminal.toggle"
 
+    static var shellSelectionDefault: String {
+        String(localized: "terminal.shell.default")
+    }
+
+    static var shellSelectionTitle: String {
+        String(localized: "terminal.shell.title")
+    }
+
     // MARK: - Menu Commands
 
     static let menuIncreaseFontSize: LocalizedStringKey = "menu.increaseFontSize"

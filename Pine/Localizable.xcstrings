@@ -6854,6 +6854,42 @@
         }
       }
     },
+    "terminal.shell.default" : {
+      "comment" : "Label for the default shell option in terminal shell picker.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Default Shell"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Оболочка по умолчанию"
+          }
+        }
+      }
+    },
+    "terminal.shell.title" : {
+      "comment" : "Title for the shell selection section in terminal context menu.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "New Terminal With"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Новый терминал с"
+          }
+        }
+      }
+    },
     "terminal.numberedName %lld" : {
       "comment" : "Name for additional terminal tabs; %lld is the sequential tab number.",
       "extractionState" : "manual",

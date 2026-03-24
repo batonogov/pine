@@ -38,9 +38,17 @@ final class TerminalManager {
         }
     }
 
-    func addTerminalTab(workingDirectory: URL?) {
+    func addTerminalTab(workingDirectory: URL?, shellOption: ShellSettings.ShellOption? = nil) {
         let number = terminalTabs.count + 1
-        let tab = TerminalTab(name: Strings.terminalNumberedName(number))
+        let settings: ShellSettings
+        if let option = shellOption {
+            // Create a temporary ShellSettings for this specific tab
+            settings = ShellSettings()
+            settings.applyShellOption(option)
+        } else {
+            settings = .shared
+        }
+        let tab = TerminalTab(name: Strings.terminalNumberedName(number), shellSettings: settings)
         tab.configure(workingDirectory: workingDirectory)
         terminalTabs.append(tab)
         activeTerminalID = tab.id

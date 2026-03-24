@@ -195,4 +195,121 @@ struct ShellSettingsTests {
         let expectedShell = ProcessInfo.processInfo.environment["SHELL"] ?? "/bin/zsh"
         #expect(settings.shellPath == expectedShell)
     }
+
+    // MARK: - Available shells detection
+
+    @Test func availableShellsContainsZshAndBash() throws {
+        let defaults = try makeDefaults()
+        defer { cleanupDefaults(defaults) }
+
+        let settings = ShellSettings(defaults: defaults)
+        let available = settings.availableShells()
+
+        // /bin/zsh and /bin/bash exist on every macOS
+        #expect(available.contains { $0.path == "/bin/zsh" })
+        #expect(available.contains { $0.path == "/bin/bash" })
+    }
+
+    @Test func availableShellsOnlyContainsExecutableShells() throws {
+        let defaults = try makeDefaults()
+        defer { cleanupDefaults(defaults) }
+
+        let settings = ShellSettings(defaults: defaults)
+        let available = settings.availableShells()
+        let fm = FileManager.default
+
+        for shell in available {
+            #expect(fm.isExecutableFile(atPath: shell.path),
+                    "Shell \(shell.path) should be executable")
+        }
+    }
+
+    @Test func availableShellsHaveUniqueIDs() throws {
+        let defaults = try makeDefaults()
+        defer { cleanupDefaults(defaults) }
+
+        let settings = ShellSettings(defaults: defaults)
+        let available = settings.availableShells()
+        let ids = available.map(\.id)
+        let uniqueIDs = Set(ids)
+        #expect(ids.count == uniqueIDs.count)
+    }
+
+    @Test func availableShellsHaveNonEmptyNames() throws {
+        let defaults = try makeDefaults()
+        defer { cleanupDefaults(defaults) }
+
+        let settings = ShellSettings(defaults: defaults)
+        let available = settings.availableShells()
+
+        for shell in available {
+            #expect(!shell.name.isEmpty)
+            #expect(!shell.path.isEmpty)
+        }
+    }
+
+    // MARK: - Apply shell option
+
+    @Test func applyShellOptionSetsPathAndArgs() throws {
+        let defaults = try makeDefaults()
+        defer { cleanupDefaults(defaults) }
+
+        let settings = ShellSettings(defaults: defaults)
+        let option = ShellSettings.ShellOption(
+            name: "fish", path: "/usr/local/bin/fish", defaultArgs: ["-l"]
+        )
+        settings.applyShellOption(option)
+
+        #expect(settings.shellPath == "/usr/local/bin/fish")
+        #expect(settings.shellArgs == ["-l"])
+    }
+
+    @Test func applyShellOptionPersistsToDefaults() throws {
+        let defaults = try makeDefaults()
+        defer { cleanupDefaults(defaults) }
+
+        let settings = ShellSettings(defaults: defaults)
+        let option = ShellSettings.ShellOption(
+            name: "bash", path: "/bin/bash", defaultArgs: ["--login"]
+        )
+        settings.applyShellOption(option)
+
+        #expect(defaults.string(forKey: "terminalShellPath") == "/bin/bash")
+        #expect(defaults.stringArray(forKey: "terminalShellArgs") == ["--login"])
+    }
+
+    // MARK: - Parse /etc/shells
+
+    @Test func parseEtcShellsFiltersCommentsAndEmpty() {
+        let content = """
+        # List of acceptable shells
+        /bin/bash
+        /bin/zsh
+
+        # This is a comment
+        /usr/local/bin/fish
+        """
+        let paths = ShellSettings.parseEtcShells(content)
+        #expect(paths == ["/bin/bash", "/bin/zsh", "/usr/local/bin/fish"])
+    }
+
+    @Test func parseEtcShellsHandlesEmptyString() {
+        let paths = ShellSettings.parseEtcShells("")
+        #expect(paths.isEmpty)
+    }
+
+    @Test func parseEtcShellsHandlesOnlyComments() {
+        let content = """
+        # comment 1
+        # comment 2
+        """
+        let paths = ShellSettings.parseEtcShells(content)
+        #expect(paths.isEmpty)
+    }
+
+    @Test func parseEtcShellsTrimsWhitespace() {
+        let content = "  /bin/bash  \n\t/bin/zsh\t\n"
+        let paths = ShellSettings.parseEtcShells(content)
+        #expect(paths == ["/bin/bash", "/bin/zsh"])
+    }
 }

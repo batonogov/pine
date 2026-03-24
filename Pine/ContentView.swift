@@ -964,7 +964,7 @@ struct TerminalNativeTabBar: View {
                 .padding(.horizontal, 4)
             }
 
-            // Кнопка "+" — новый терминал
+            // Кнопка "+" — новый терминал (click = default shell, right-click = pick shell)
             Button {
                 terminal.addTerminalTab(workingDirectory: workingDirectory)
             } label: {
@@ -977,6 +977,16 @@ struct TerminalNativeTabBar: View {
             .help(Strings.newTerminal)
             .accessibilityIdentifier(AccessibilityID.newTerminalButton)
             .accessibilityAddTraits(.isButton)
+            .contextMenu {
+                ForEach(ShellSettings.shared.availableShells()) { shell in
+                    Button(shell.name) {
+                        terminal.addTerminalTab(
+                            workingDirectory: workingDirectory,
+                            shellOption: shell
+                        )
+                    }
+                }
+            }
 
             Spacer()
 
