@@ -7,6 +7,7 @@
 
 import os
 import SwiftUI
+import UniformTypeIdentifiers
 
 // MARK: - Главный ContentView
 
@@ -318,6 +319,33 @@ struct ContentView: View {
         openWindow(value: url)
     }
 
+    // MARK: - Drag & Drop
+
+    /// Handles file URLs dropped onto the editor area.
+    /// Files are opened as tabs; directories open as new project windows.
+    private func handleFileDrop(providers: [NSItemProvider]) {
+        for provider in providers {
+            provider.loadItem(forTypeIdentifier: "public.file-url", options: nil) { data, _ in
+                guard let data = data as? Data,
+                      let urlString = String(data: data, encoding: .utf8),
+                      let url = URL(string: urlString) else { return }
+
+                let classified = DropHandler.classifyURLs([url])
+
+                DispatchQueue.main.async {
+                    // Open directories as new project windows
+                    for dir in classified.directories {
+                        let canonical = dir.resolvingSymlinksInPath()
+                        guard registry.projectManager(for: canonical) != nil else { continue }
+                        openWindow(value: canonical)
+                    }
+                    // Open files as tabs in current project
+                    DropHandler.openFilesAsTabs(classified.files, in: tabManager)
+                }
+            }
+        }
+    }
+
     // MARK: - Управление файлами
 
     private func handleFileSelection(_ node: FileNode) {
@@ -576,6 +604,10 @@ struct ContentView: View {
                 }
                 .accessibilityIdentifier(AccessibilityID.editorPlaceholder)
             }
+        }
+        .onDrop(of: [.fileURL], isTargeted: nil) { providers in
+            handleFileDrop(providers: providers)
+            return true
         }
     }
 

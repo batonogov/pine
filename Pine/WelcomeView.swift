@@ -7,6 +7,7 @@
 
 import AppKit
 import SwiftUI
+import UniformTypeIdentifiers
 
 /// NSViewRepresentable wrapper for native NSSearchField (with magnifying glass and clear button).
 struct WelcomeSearchField: NSViewRepresentable {
@@ -176,6 +177,10 @@ struct WelcomeView: View {
             guard controlActiveState == .key else { return }
             openFolder()
         }
+        .onDrop(of: [.fileURL], isTargeted: nil) { providers in
+            handleDrop(providers: providers)
+            return true
+        }
         .task {
             // Open pending project from PINE_OPEN_PROJECT env var.
             guard let url = appDelegate?.pendingProjectURL else { return }
@@ -183,6 +188,36 @@ struct WelcomeView: View {
             // Wait for initial SwiftUI layout to complete.
             try? await Task.sleep(for: .seconds(0.5))
             openProject(at: url)
+        }
+    }
+
+    /// Handles file URLs dropped onto the Welcome window.
+    /// Directories are opened as projects; files determine the project from their parent directory.
+    private func handleDrop(providers: [NSItemProvider]) {
+        for provider in providers {
+            provider.loadItem(forTypeIdentifier: "public.file-url", options: nil) { data, _ in
+                guard let data = data as? Data,
+                      let urlString = String(data: data, encoding: .utf8),
+                      let url = URL(string: urlString) else { return }
+
+                let classified = DropHandler.classifyURLs([url])
+
+                DispatchQueue.main.async {
+                    if let dir = classified.directories.first {
+                        // Open directory as project
+                        openProject(at: dir)
+                    } else if let file = classified.files.first {
+                        // Open file's parent directory as project, then open the file as a tab
+                        let projectDir = file.deletingLastPathComponent()
+                        openProject(at: projectDir)
+                        // Give the project window time to initialize, then open the file
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                            let canonical = projectDir.resolvingSymlinksInPath()
+                            registry.openProjects[canonical]?.tabManager.openTab(url: file)
+                        }
+                    }
+                }
+            }
         }
     }
 
