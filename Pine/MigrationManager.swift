@@ -98,10 +98,8 @@ struct MigrationManager {
             return true
         }
         // Check for prefixed keys (e.g. per-project session keys)
-        for prefix in Self.existingInstallPrefixedKeys {
-            if defaults.object(forKey: prefix) != nil {
-                return true
-            }
+        for prefix in Self.existingInstallPrefixedKeys where defaults.object(forKey: prefix) != nil {
+            return true
         }
         return false
     }
