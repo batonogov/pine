@@ -31,7 +31,7 @@ struct SearchFileGroup: Identifiable, Sendable {
 
 @Observable
 final class ProjectSearchProvider {
-    private static let logger = Logger(category: .projectSearch)
+    private static let logger = Logger.search
     var query: String = ""
     var isCaseSensitive: Bool = false
     private(set) var isSearching: Bool = false

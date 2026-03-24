@@ -12,7 +12,7 @@ import UniformTypeIdentifiers
 /// Manages the set of open editor tabs and the active selection.
 @Observable
 final class TabManager {
-    private static let logger = Logger(category: .tabManager)
+    private static let logger = Logger.editor
     /// File size threshold (in bytes) above which a warning is shown before opening.
     static let largeFileThreshold = 1_048_576 // 1 MB
 

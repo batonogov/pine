@@ -14,7 +14,7 @@ import os
 /// Each project gets its own subdirectory to avoid mixing recovery files.
 final class RecoveryManager {
 
-    private static let logger = Logger(category: .recoveryManager)
+    private static let logger = Logger.app
 
     /// Root recovery directory under Application Support.
     static var rootDirectory: URL {

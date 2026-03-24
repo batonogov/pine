@@ -1265,7 +1265,7 @@ private struct DocumentEditedTracker: NSViewRepresentable {
 // MARK: - Строка файла/папки в дереве
 
 struct FileNodeRow: View {
-    private static let logger = Logger(category: .contentView)
+    private static let logger = Logger.editor
     var node: FileNode
     @Environment(WorkspaceManager.self) var workspace
     @Environment(TabManager.self) var tabManager
