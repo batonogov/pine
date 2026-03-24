@@ -6,6 +6,7 @@
 //
 
 import Foundation
+import os
 
 /// Один узел дерева файлов — файл или папка.
 final class FileNode: Identifiable, Hashable {
@@ -148,7 +149,7 @@ final class FileNode: Identifiable, Hashable {
                     return lhs.isDirectory && !rhs.isDirectory
                 }
         } catch {
-            print("Error loading directory \(url.path): \(error)")
+            Logger.fileTree.error("Error loading directory \(url.path): \(error)")
             return []
         }
     }

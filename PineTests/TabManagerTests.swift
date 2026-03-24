@@ -1510,4 +1510,31 @@ struct TabManagerTests {
         #expect(manager.activeTab?.content == "v2")
         #expect(manager.activeTab?.contentVersion ?? 0 > versionBefore)
     }
+
+    // MARK: - Huge file FileHandle safety (#461)
+
+    @Test("Opening huge file closes FileHandle via defer and produces truncated tab")
+    func openHugeFileClosesHandleSafely() throws {
+        let manager = TabManager()
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let url = dir.appendingPathComponent("huge.log")
+
+        // Create a file at the huge threshold (10 MB)
+        let data = Data(count: TabManager.hugeFileThreshold)
+        try data.write(to: url)
+
+        manager.openTab(url: url)
+
+        let tab = manager.activeTab
+        #expect(tab != nil)
+        #expect(tab?.isTruncated == true)
+        #expect(tab?.syntaxHighlightingDisabled == true)
+        // File descriptor should be closed (defer ensures this).
+        // Verify we can still open the file — no leaked exclusive lock.
+        let handle = try FileHandle(forReadingFrom: url)
+        handle.closeFile()
+    }
 }

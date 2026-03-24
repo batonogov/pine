@@ -137,8 +137,8 @@ final class TabManager {
         let content: String
         do {
             let handle = try FileHandle(forReadingFrom: url)
+            defer { handle.closeFile() }
             let partialData = handle.readData(ofLength: Self.hugeFilePartialLoadSize)
-            handle.closeFile()
             let (decoded, _) = String.Encoding.detect(from: partialData)
             let sizeString = ByteCountFormatter.string(
                 fromByteCount: Int64(totalSize), countStyle: .file
@@ -396,30 +396,7 @@ final class TabManager {
 
     /// Generates a Finder-style copy URL: "file copy.ext", "file copy 2.ext", etc.
     private func finderCopyURL(for url: URL) -> URL? {
-        let directory = url.deletingLastPathComponent()
-        let ext = url.pathExtension
-        let baseName = ext.isEmpty
-            ? url.lastPathComponent
-            : String(url.lastPathComponent.dropLast(ext.count + 1))
-
-        let fm = FileManager.default
-        for counter in 0... {
-            let copyName: String
-            if counter == 0 {
-                copyName = ext.isEmpty
-                    ? "\(baseName) copy"
-                    : "\(baseName) copy.\(ext)"
-            } else {
-                copyName = ext.isEmpty
-                    ? "\(baseName) copy \(counter + 1)"
-                    : "\(baseName) copy \(counter + 1).\(ext)"
-            }
-            let candidate = directory.appendingPathComponent(copyName)
-            if !fm.fileExists(atPath: candidate.path) {
-                return candidate
-            }
-        }
-        return nil
+        FileNameGenerator.finderCopyURL(for: url)
     }
 
     /// Returns the tab for a given URL, if open.

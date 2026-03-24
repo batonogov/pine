@@ -502,7 +502,7 @@ struct CodeEditorView: NSViewRepresentable {
         layoutManager.delegate = context.coordinator
 
         // ── Номера строк — поверх scroll view, как отдельный сиблинг ──
-        let lineNumberView = LineNumberView(textView: textView)
+        let lineNumberView = LineNumberView(textView: textView, clipView: scrollView.contentView)
         lineNumberView.gutterWidth = gutterWidth
         lineNumberView.gutterFont = gutterFont
         lineNumberView.editorFont = editorFont
@@ -514,7 +514,7 @@ struct CodeEditorView: NSViewRepresentable {
         container.addSubview(lineNumberView)
 
         // ── Minimap — справа от scroll view ──
-        let minimapView = MinimapView(textView: textView)
+        let minimapView = MinimapView(textView: textView, clipView: scrollView.contentView)
         minimapView.isHidden = !isMinimapVisible
         container.addSubview(minimapView)
 
@@ -1535,9 +1535,9 @@ struct CodeEditorView: NSViewRepresentable {
 
 // MARK: - NSImage tinting
 
-private extension NSImage {
+extension NSImage {
     func tinted(with color: NSColor) -> NSImage {
-        let image = copy() as! NSImage // swiftlint:disable:this force_cast
+        guard let image = copy() as? NSImage else { return self }
         image.lockFocus()
         color.set()
         NSRect(origin: .zero, size: size).fill(using: .sourceAtop)
