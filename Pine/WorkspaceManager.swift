@@ -17,6 +17,8 @@ final class WorkspaceManager {
     var projectName: String = "Pine"
     var rootURL: URL?
     let gitProvider = GitStatusProvider()
+    /// Shared progress tracker — set by ProjectManager after init.
+    weak var progressTracker: ProgressTracker?
     private var fileWatcher: FileSystemWatcher?
 
     /// Incremented on every file-watcher event so ContentView can trigger
@@ -100,6 +102,7 @@ final class WorkspaceManager {
         generation: Int,
         completion: (() -> Void)? = nil
     ) {
+        let progressID = progressTracker?.beginOperation(Strings.progressLoadingProject)
         DispatchQueue.global(qos: .userInitiated).async {
             // Run git setup first so we know which paths are ignored
             let bgGit = GitStatusProvider()
@@ -126,6 +129,7 @@ final class WorkspaceManager {
 
                 // For shallow projects, start watcher now — no Phase 2 needed.
                 if !shallowResult.wasDepthLimited {
+                    if let progressID { self.progressTracker?.endOperation(progressID) }
                     completion?()
                 }
             }
@@ -144,6 +148,7 @@ final class WorkspaceManager {
             DispatchQueue.main.async { [weak self] in
                 guard let self, self.loadGeneration == generation else { return }
                 self.rootNodes = fullChildren
+                if let progressID { self.progressTracker?.endOperation(progressID) }
                 completion?()
             }
         }
