@@ -14,7 +14,7 @@ struct WelcomeSearchField: NSViewRepresentable {
 
     func makeNSView(context: Context) -> NSSearchField {
         let searchField = NSSearchField()
-        searchField.placeholderString = Strings.welcomeSearchPlaceholder
+        searchField.placeholderString = String(localized: "welcome.searchPlaceholder")
         searchField.delegate = context.coordinator
         searchField.setAccessibilityIdentifier(AccessibilityID.welcomeSearchField)
         return searchField
