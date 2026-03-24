@@ -8,6 +8,9 @@
 
 import SwiftUI
 
+// TODO: #532 — При рефакторинге ContentView вынести BreadcrumbPathBar в отдельный файл
+// (сейчас вставляется напрямую в ContentView).
+
 /// Breadcrumb path bar displayed between the tab bar and the editor.
 struct BreadcrumbPathBar: View {
     let fileURL: URL
