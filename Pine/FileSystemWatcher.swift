@@ -94,22 +94,24 @@ final class FileSystemWatcher {
     }
 
     /// Called from the FSEvents callback on self.queue.
-    /// Debounces on the serial queue, then dispatches the callback to main.
+    /// FSEvents already coalesces events using the latency parameter passed
+    /// to `FSEventStreamCreate`, so we dispatch the callback to main immediately
+    /// without adding an extra application-level debounce (which previously
+    /// doubled the latency and caused issue #439 — new files not appearing
+    /// in the sidebar until manual interaction).
     fileprivate func handleEvents() {
         debounceWorkItem?.cancel()
         let cb = callback
         let generation = activeGeneration
         let work = DispatchWorkItem { [weak self] in
             guard let self else { return }
-            DispatchQueue.main.async {
-                // If stop() was called between enqueue and delivery,
-                // the generation will have changed — skip the callback.
-                guard self.isActive(generation: generation) else { return }
-                cb()
-            }
+            // If stop() was called between enqueue and delivery,
+            // the generation will have changed — skip the callback.
+            guard self.isActive(generation: generation) else { return }
+            cb()
         }
         debounceWorkItem = work
-        queue.asyncAfter(deadline: .now() + debounceInterval, execute: work)
+        DispatchQueue.main.async(execute: work)
     }
 }
 
