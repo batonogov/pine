@@ -408,6 +408,11 @@ struct CodeEditorView: NSViewRepresentable {
     var initialScrollOffset: CGFloat = 0
     /// Called when cursor position or scroll offset changes, so the caller can persist them.
     var onStateChange: ((Int, CGFloat) -> Void)?
+    /// Called when a new syntax highlight result is computed, so the caller can cache it in the tab.
+    var onHighlightCacheUpdate: ((HighlightMatchResult) -> Void)?
+    /// Cached highlight result from the previous session of this tab.
+    /// Applied synchronously on tab switch to eliminate the flash of unhighlighted text.
+    var cachedHighlightResult: HighlightMatchResult?
     /// When non-nil, the editor scrolls to this offset. The `id` ensures each request is unique.
     var goToOffset: GoToRequest?
 
@@ -545,8 +550,21 @@ struct CodeEditorView: NSViewRepresentable {
                 )
                 coordinator?.highlightedCharRange = initialRange
             })
+        } else if let cached = cachedHighlightResult {
+            // Apply cached highlights synchronously to avoid flash on tab switch.
+            SyntaxHighlighter.shared.applyMatches(cached, to: textStorage, font: editorFont)
         } else {
-            applyHighlightingAsync(to: textView, coordinator: context.coordinator)
+            // No cache — apply synchronous highlight for instant display on tab switch.
+            if !syntaxHighlightingDisabled {
+                if let result = SyntaxHighlighter.shared.highlight(
+                    textStorage: textStorage,
+                    language: language,
+                    fileName: fileName,
+                    font: editorFont
+                ) {
+                    onHighlightCacheUpdate?(result)
+                }
+            }
         }
 
         // Restore cursor and scroll from saved per-tab state.
@@ -568,6 +586,10 @@ struct CodeEditorView: NSViewRepresentable {
             }
             // Redraw minimap after layout is complete
             minimapView.needsDisplay = true
+
+            // Make the editor first responder so keyboard input works immediately
+            // after opening a file or switching tabs.
+            textView.window?.makeFirstResponder(textView)
         }
 
         // Observe scroll changes to persist scroll offset.
@@ -815,21 +837,18 @@ struct CodeEditorView: NSViewRepresentable {
             if !parent.syntaxHighlightingDisabled, let storage = textView.textStorage {
                 if storage.length > CodeEditorView.viewportHighlightThreshold {
                     scheduleViewportHighlighting(textView: textView)
+                } else if let cached = parent.cachedHighlightResult {
+                    // Apply cached highlights synchronously to avoid flash on tab switch.
+                    SyntaxHighlighter.shared.applyMatches(cached, to: storage, font: font)
                 } else {
-                    highlightGeneration.increment()
-                    let gen = highlightGeneration
-                    let lang = language
-                    let name = fileName
-                    let editorFont = font
-                    highlightTask?.cancel()
-                    highlightTask = Task { @MainActor in
-                        await SyntaxHighlighter.shared.highlightAsync(
-                            textStorage: storage,
-                            language: lang,
-                            fileName: name,
-                            font: editorFont,
-                            generation: gen
-                        )
+                    // No cache — apply synchronous highlight for instant display.
+                    if let result = SyntaxHighlighter.shared.highlight(
+                        textStorage: storage,
+                        language: language,
+                        fileName: fileName,
+                        font: font
+                    ) {
+                        parent.onHighlightCacheUpdate?(result)
                     }
                 }
             }
@@ -885,14 +904,17 @@ struct CodeEditorView: NSViewRepresentable {
                     let lang = parent.language
                     let name = parent.fileName
                     highlightTask?.cancel()
-                    highlightTask = Task { @MainActor in
-                        await SyntaxHighlighter.shared.highlightAsync(
+                    highlightTask = Task { @MainActor [weak self] in
+                        let result = await SyntaxHighlighter.shared.highlightAsync(
                             textStorage: storage,
                             language: lang,
                             fileName: name,
                             font: font,
                             generation: gen
                         )
+                        if let result {
+                            self?.parent.onHighlightCacheUpdate?(result)
+                        }
                     }
                 }
             }
@@ -998,14 +1020,17 @@ struct CodeEditorView: NSViewRepresentable {
                 } else if isLargeFile {
                     self.scheduleViewportHighlighting(textView: tv)
                 } else {
-                    self.highlightTask = Task { @MainActor in
-                        await SyntaxHighlighter.shared.highlightAsync(
+                    self.highlightTask = Task { @MainActor [weak self] in
+                        let result = await SyntaxHighlighter.shared.highlightAsync(
                             textStorage: storage,
                             language: lang,
                             fileName: name,
                             font: font,
                             generation: gen
                         )
+                        if let result {
+                            self?.parent.onHighlightCacheUpdate?(result)
+                        }
                     }
                 }
             }
@@ -1516,21 +1541,6 @@ struct CodeEditorView: NSViewRepresentable {
         )
     }
 
-    private func applyHighlightingAsync(to textView: NSTextView, coordinator: Coordinator) {
-        guard !syntaxHighlightingDisabled else { return }
-        guard let storage = textView.textStorage else { return }
-        let lang = language
-        let file = fileName
-        let font = editorFont
-        coordinator.setHighlightTask(Task { @MainActor in
-            await SyntaxHighlighter.shared.highlightAsync(
-                textStorage: storage,
-                language: lang,
-                fileName: file,
-                font: font
-            )
-        })
-    }
 }
 
 // MARK: - NSImage tinting

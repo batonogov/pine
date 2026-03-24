@@ -20,6 +20,10 @@ final class ProjectManager {
     private(set) var recoveryManager: RecoveryManager?
 
     init() {
+        workspace.setOnRootNodesChanged { [weak self] nodes in
+            guard let self, let rootURL = self.workspace.rootURL else { return }
+            self.quickOpenProvider.rebuildIndex(from: nodes, rootURL: rootURL)
+        }
         workspace.progressTracker = progress
         workspace.gitProvider.progressTracker = progress
     }
@@ -76,6 +80,18 @@ final class ProjectManager {
             ? nil
             : disabledTabs.map(\.url.path)
 
+        // Per-tab editor state (cursor, scroll, folds)
+        var editorStates: [String: PerTabEditorState]?
+        let tabsWithState = tabManager.tabs.filter { tab in
+            tab.url.path.hasPrefix(rootPath) && tab.kind == .text
+        }
+        if !tabsWithState.isEmpty {
+            editorStates = [:]
+            for tab in tabsWithState {
+                editorStates?[tab.url.path] = PerTabEditorState.capture(from: tab)
+            }
+        }
+
         // Terminal state
         let terminalTabCount = terminal.terminalTabs.count
         let activeTerminalIndex: Int? = terminal.activeTerminalID.flatMap { id in
@@ -88,6 +104,7 @@ final class ProjectManager {
             activeFileURL: activeFileURL,
             previewModes: previewModes,
             highlightingDisabledPaths: highlightingDisabledPaths,
+            editorStates: editorStates,
             terminalTabCount: terminalTabCount,
             activeTerminalIndex: activeTerminalIndex,
             isTerminalVisible: terminal.isTerminalVisible,

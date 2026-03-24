@@ -5,12 +5,15 @@
 //  Created by Claude on 12.03.2026.
 //
 
+import os
 import SwiftUI
 import UniformTypeIdentifiers
 
 /// Manages the set of open editor tabs and the active selection.
 @Observable
 final class TabManager {
+    private static let logger = Logger.editor
+
     /// Maximum number of simultaneously open tabs. Prevents unbounded memory growth.
     static let maxTabs = 1_000
 
@@ -222,6 +225,7 @@ final class TabManager {
         guard let index = activeTabIndex else { return }
         guard tabs[index].kind == .text else { return }
         tabs[index].content = newContent
+        tabs[index].cachedHighlightResult = nil  // Invalidate stale highlight cache
         tabs[index].recomputeContentCaches()
 
         if isAutoSaveEnabled {
@@ -245,6 +249,13 @@ final class TabManager {
     func updateFoldState(_ state: FoldState) {
         guard let index = activeTabIndex else { return }
         tabs[index].foldState = state
+    }
+
+    /// Updates the cached syntax highlight result for the active tab.
+    /// Used to apply highlights synchronously on tab switch, eliminating flash.
+    func updateHighlightCache(_ result: HighlightMatchResult) {
+        guard let index = activeTabIndex else { return }
+        tabs[index].cachedHighlightResult = result
     }
 
     /// Saves the active tab to disk. Returns true on success.
@@ -298,6 +309,42 @@ final class TabManager {
     /// Moves a tab from one position to another (for drag-to-reorder).
     func moveTab(fromOffsets source: IndexSet, toOffset destination: Int) {
         tabs.move(fromOffsets: source, toOffset: destination)
+    }
+
+    // MARK: - Keyboard tab navigation
+
+    /// Selects the tab at the given 0-based index. No-op if out of bounds.
+    func selectTab(at index: Int) {
+        guard index >= 0, index < tabs.count else { return }
+        activeTabID = tabs[index].id
+    }
+
+    /// Selects the last tab. Used by Cmd+9 (like Safari/Chrome).
+    func selectLastTab() {
+        guard let last = tabs.last else { return }
+        activeTabID = last.id
+    }
+
+    /// Selects the next tab, wrapping around to the first. Used by Ctrl+Tab.
+    func selectNextTab() {
+        guard !tabs.isEmpty else { return }
+        guard let currentIndex = activeTabIndex else {
+            activeTabID = tabs[0].id
+            return
+        }
+        let nextIndex = (currentIndex + 1) % tabs.count
+        activeTabID = tabs[nextIndex].id
+    }
+
+    /// Selects the previous tab, wrapping around to the last. Used by Ctrl+Shift+Tab.
+    func selectPreviousTab() {
+        guard !tabs.isEmpty else { return }
+        guard let currentIndex = activeTabIndex else {
+            activeTabID = tabs[tabs.count - 1].id
+            return
+        }
+        let prevIndex = (currentIndex - 1 + tabs.count) % tabs.count
+        activeTabID = tabs[prevIndex].id
     }
 
     /// Whether any open tab has unsaved changes.
@@ -553,10 +600,13 @@ final class TabManager {
                 tabs[index].lastModDate = diskMod
             } else {
                 // Safe to reload silently
-                if let content = try? String(contentsOf: tab.url, encoding: tab.encoding) {
+                do {
+                    let content = try String(contentsOf: tab.url, encoding: tab.encoding)
                     tabs[index].content = content
                     tabs[index].savedContent = content
                     tabs[index].lastModDate = diskMod
+                } catch {
+                    Self.logger.error("Failed to reload tab \(tab.url.lastPathComponent): \(error)")
                 }
             }
         }
@@ -571,10 +621,13 @@ final class TabManager {
     /// Reloads a tab's content from disk (used after user chooses "reload" in conflict dialog).
     func reloadTab(url: URL) {
         guard let index = tabs.firstIndex(where: { $0.url == url }) else { return }
-        if let content = try? String(contentsOf: url, encoding: tabs[index].encoding) {
+        do {
+            let content = try String(contentsOf: url, encoding: tabs[index].encoding)
             tabs[index].content = content
             tabs[index].savedContent = content
             tabs[index].lastModDate = modDate(for: url)
+        } catch {
+            Self.logger.error("Failed to reload tab from disk \(url.lastPathComponent): \(error)")
         }
     }
 
@@ -586,9 +639,14 @@ final class TabManager {
         guard let index = activeTabIndex else { return false }
         let tab = tabs[index]
         guard !tab.isDirty else { return false }
-        guard let data = try? Data(contentsOf: tab.url),
-              let content = String(data: data, encoding: encoding)
-        else { return false }
+        let data: Data
+        do {
+            data = try Data(contentsOf: tab.url)
+        } catch {
+            Self.logger.error("Failed to read file for encoding change \(tab.url.lastPathComponent): \(error)")
+            return false
+        }
+        guard let content = String(data: data, encoding: encoding) else { return false }
         tabs[index].content = content
         tabs[index].savedContent = content
         tabs[index].encoding = encoding
