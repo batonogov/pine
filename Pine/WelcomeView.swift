@@ -115,7 +115,7 @@ struct WelcomeView: View {
                     }
                     .frame(maxHeight: .infinity)
                 } else {
-                    if registry.recentProjects.count > 5 {
+                    if registry.recentProjects.count > 8 {
                         WelcomeSearchField(text: $searchText)
                             .frame(height: 22)
                             .padding(.horizontal)
