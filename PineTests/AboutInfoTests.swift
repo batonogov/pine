@@ -79,13 +79,13 @@ struct AboutInfoTests {
         #expect(credits.string.contains("SwiftUI"))
     }
 
-    @Test func aboutPanelOptions_creditsContainsSwiftTerm() {
+    @Test func aboutPanelOptions_creditsContainsDescription() {
         let options = AboutInfo.aboutPanelOptions
         guard let credits = options[.credits] as? NSAttributedString else {
             Issue.record("Credits should be NSAttributedString")
             return
         }
-        #expect(credits.string.contains("SwiftTerm"))
+        #expect(credits.string.contains("Minimal native macOS code editor"))
     }
 
     @Test func aboutPanelOptions_creditsContainsGitHub() {
@@ -97,12 +97,15 @@ struct AboutInfoTests {
         #expect(credits.string.contains("github.com"))
     }
 
-    @Test func aboutPanelOptions_creditsContainsSparkle() {
+    @Test func aboutPanelOptions_creditsDoesNotContainDependencies() {
         let options = AboutInfo.aboutPanelOptions
         guard let credits = options[.credits] as? NSAttributedString else {
             Issue.record("Credits should be NSAttributedString")
             return
         }
-        #expect(credits.string.contains("Sparkle"))
+        #expect(!credits.string.contains("SwiftTerm"))
+        #expect(!credits.string.contains("Sparkle"))
+        #expect(!credits.string.contains("swift-markdown"))
+        #expect(!credits.string.contains("Acknowledgments"))
     }
 }

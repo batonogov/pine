@@ -43,12 +43,11 @@ enum AboutInfo {
         ]
     }
 
-    /// Builds the credits attributed string with acknowledgments and links.
+    /// Builds the credits attributed string.
     private static var creditsAttributedString: NSAttributedString {
         let credits = NSMutableAttributedString()
 
         let bodyFont = NSFont.systemFont(ofSize: 11)
-        let linkFont = NSFont.systemFont(ofSize: 11)
         let paragraphStyle = NSMutableParagraphStyle()
         paragraphStyle.alignment = .center
         paragraphStyle.paragraphSpacing = 6
@@ -60,36 +59,14 @@ enum AboutInfo {
         ]
 
         credits.append(NSAttributedString(
-            string: "Built with SwiftUI + AppKit\n",
+            string: "Minimal native macOS code editor\n",
             attributes: bodyAttrs
         ))
 
         credits.append(NSAttributedString(
-            string: "\n",
-            attributes: [.font: NSFont.systemFont(ofSize: 4)]
+            string: "Built with SwiftUI + AppKit\n",
+            attributes: bodyAttrs
         ))
-
-        // Acknowledgments
-        let ackHeader: [NSAttributedString.Key: Any] = [
-            .font: NSFont.boldSystemFont(ofSize: 11),
-            .foregroundColor: NSColor.labelColor,
-            .paragraphStyle: paragraphStyle
-        ]
-        credits.append(NSAttributedString(string: "Acknowledgments\n", attributes: ackHeader))
-
-        let dependencies = [
-            ("SwiftTerm", "https://github.com/migueldeicaza/SwiftTerm"),
-            ("Sparkle", "https://github.com/sparkle-project/Sparkle"),
-            ("swift-markdown", "https://github.com/swiftlang/swift-markdown")
-        ]
-
-        for (name, urlString) in dependencies {
-            var linkAttrs = bodyAttrs
-            linkAttrs[.link] = URL(string: urlString)
-            linkAttrs[.font] = linkFont
-            credits.append(NSAttributedString(string: name, attributes: linkAttrs))
-            credits.append(NSAttributedString(string: "\n", attributes: bodyAttrs))
-        }
 
         credits.append(NSAttributedString(
             string: "\n",
