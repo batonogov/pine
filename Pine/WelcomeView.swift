@@ -5,7 +5,44 @@
 //  Created by Claude on 13.03.2026.
 //
 
+import AppKit
 import SwiftUI
+
+/// NSViewRepresentable wrapper for native NSSearchField (with magnifying glass and clear button).
+struct WelcomeSearchField: NSViewRepresentable {
+    @Binding var text: String
+
+    func makeNSView(context: Context) -> NSSearchField {
+        let searchField = NSSearchField()
+        searchField.placeholderString = Strings.welcomeSearchPlaceholder
+        searchField.delegate = context.coordinator
+        searchField.setAccessibilityIdentifier(AccessibilityID.welcomeSearchField)
+        return searchField
+    }
+
+    func updateNSView(_ nsView: NSSearchField, context: Context) {
+        if nsView.stringValue != text {
+            nsView.stringValue = text
+        }
+    }
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(text: $text)
+    }
+
+    final class Coordinator: NSObject, NSSearchFieldDelegate {
+        var text: Binding<String>
+
+        init(text: Binding<String>) {
+            self.text = text
+        }
+
+        func controlTextDidChange(_ obj: Notification) {
+            guard let field = obj.object as? NSSearchField else { return }
+            text.wrappedValue = field.stringValue
+        }
+    }
+}
 
 extension URL {
     /// Returns the path with the home directory replaced by `~`.
@@ -36,7 +73,7 @@ struct WelcomeView: View {
     var body: some View {
         HStack(spacing: 0) {
             // Left: logo and actions
-            VStack(spacing: 20) {
+            VStack(spacing: 14) {
                 Spacer()
 
                 Image(nsImage: NSApp.applicationIconImage)
@@ -69,8 +106,8 @@ struct WelcomeView: View {
                 Text(Strings.welcomeRecentProjects)
                     .font(.headline)
                     .padding(.horizontal)
-                    .padding(.top, 16)
-                    .padding(.bottom, 8)
+                    .padding(.top, 10)
+                    .padding(.bottom, 4)
 
                 if registry.recentProjects.isEmpty {
                     ContentUnavailableView {
@@ -78,11 +115,12 @@ struct WelcomeView: View {
                     }
                     .frame(maxHeight: .infinity)
                 } else {
-                    TextField(Strings.welcomeSearchPlaceholder, text: $searchText)
-                        .textFieldStyle(.roundedBorder)
-                        .padding(.horizontal)
-                        .padding(.bottom, 8)
-                        .accessibilityIdentifier(AccessibilityID.welcomeSearchField)
+                    if registry.recentProjects.count > 5 {
+                        WelcomeSearchField(text: $searchText)
+                            .frame(height: 22)
+                            .padding(.horizontal)
+                            .padding(.bottom, 4)
+                    }
 
                     if filteredProjects.isEmpty {
                         ContentUnavailableView {
