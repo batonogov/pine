@@ -72,7 +72,7 @@ final class FileNode: Identifiable, Hashable {
         if isDir.boolValue {
             if let context {
                 let realPath = context.resolveSymlinks(url)
-                let isCycle = isSymlink && context.visitedRealPaths.contains(realPath)
+                let isCycle = isSymlink && context.hasVisited(realPath)
                 let isOutsideRoot = isSymlink && !Self.pathIsWithinRoot(realPath, rootRealPath: context.rootRealPath)
 
                 if isCycle || isOutsideRoot {
@@ -84,7 +84,7 @@ final class FileNode: Identifiable, Hashable {
                 // but loaded shallow (immediate children only) for performance.
                 // Subdirectories inside can be expanded on-demand via loadChildren().
                 if Self.isIgnoredDirectory(url, context: context) {
-                    context.visitedRealPaths.insert(realPath)
+                    context.markVisited(realPath)
                     let shallowContext = LoadContext(
                         projectRoot: URL(fileURLWithPath: context.rootRealPath),
                         ignoredPaths: context.ignoredPaths,
@@ -102,7 +102,7 @@ final class FileNode: Identifiable, Hashable {
                     return
                 }
 
-                context.visitedRealPaths.insert(realPath)
+                context.markVisited(realPath)
                 self.children = Self.loadContents(of: url, context: context, depth: depth + 1)
             } else {
                 self.children = Self.loadContents(of: url, context: nil, depth: 0)
@@ -204,35 +204,60 @@ final class FileNode: Identifiable, Hashable {
 
 // MARK: - Load Context
 
-/// Tracks state during recursive file tree loading for cycle and boundary protection.
-private class LoadContext {
+/// Shared mutable state for recursive tree loading.
+/// Separated into a dedicated class so that `LoadContext` itself can be a value type,
+/// eliminating the use-after-free crash caused by ARC deallocation ordering issues
+/// with the previous class-based `LoadContext` (see #405).
+private final class LoadState {
+    var visitedRealPaths: Set<String> = []
+    var reachedDepthLimit = false
+    var symlinkCache: [URL: String] = [:]
+}
+
+/// Tracks configuration and shared state during recursive file tree loading
+/// for cycle detection, boundary protection, and depth limiting.
+///
+/// Value type by design: the struct is cheap to copy (only immutable config +
+/// a single reference to shared `LoadState`), and being a struct avoids the
+/// ARC deallocation crash that occurred with the previous class-based approach.
+private struct LoadContext {
     let rootRealPath: String
     let ignoredPaths: Set<String>
     let maxDepth: Int
-    var visitedRealPaths: Set<String>
+    let state: LoadState
+
+    /// Whether a given real path has already been visited (cycle detection).
+    func hasVisited(_ realPath: String) -> Bool {
+        state.visitedRealPaths.contains(realPath)
+    }
+
+    /// Records a real path as visited.
+    func markVisited(_ realPath: String) {
+        state.visitedRealPaths.insert(realPath)
+    }
 
     /// Set to true when at least one directory was skipped due to maxDepth.
     /// Used by WorkspaceManager to decide whether Phase 2 (full load) is needed.
-    var reachedDepthLimit = false
-
-    /// Cache for resolved symlink paths to avoid redundant I/O.
-    private var symlinkCache: [URL: String] = [:]
+    var reachedDepthLimit: Bool {
+        get { state.reachedDepthLimit }
+        nonmutating set { state.reachedDepthLimit = newValue }
+    }
 
     init(projectRoot: URL, ignoredPaths: Set<String> = [], maxDepth: Int = .max) {
         let realPath = projectRoot.resolvingSymlinksInPath().path
         self.rootRealPath = realPath
         self.ignoredPaths = ignoredPaths
         self.maxDepth = maxDepth
-        self.visitedRealPaths = []
+        self.state = LoadState()
     }
 
     /// Returns the resolved symlink path for the URL, caching the result.
     func resolveSymlinks(_ url: URL) -> String {
-        if let cached = symlinkCache[url] {
+        if let cached = state.symlinkCache[url] {
             return cached
         }
         let resolved = url.resolvingSymlinksInPath().path
-        symlinkCache[url] = resolved
+        state.symlinkCache[url] = resolved
         return resolved
     }
 }
