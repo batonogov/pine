@@ -166,6 +166,7 @@ struct SidebarView: View {
                         FileNodeRow(node: node)
                             .id(node.id)
                     }
+                    .accessibilityLabel(AccessibilityLabels.fileTree)
                     .contentTransition(.identity)
                     .environment(editState)
                     .contextMenu {

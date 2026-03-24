@@ -60,6 +60,14 @@ struct StatusBarView: View {
                         }
                     }
                     .font(.system(size: LayoutMetrics.captionFontSize))
+                    .accessibilityElement(children: .combine)
+                    .accessibilityLabel(
+                        AccessibilityLabels.gitStatusDescription(
+                            modified: counts.modified,
+                            added: counts.added,
+                            untracked: counts.untracked
+                        )
+                    )
                 }
             }
 
@@ -71,6 +79,13 @@ struct StatusBarView: View {
                     .font(.system(size: LayoutMetrics.bodySmallFontSize))
                     .foregroundStyle(.secondary)
                     .accessibilityIdentifier(AccessibilityID.cursorPosition)
+                    .accessibilityLabel(AccessibilityLabels.cursorPosition)
+                    .accessibilityValue(
+                        AccessibilityLabels.cursorPositionValue(
+                            line: activeTab.cursorLine,
+                            column: activeTab.cursorColumn
+                        )
+                    )
 
                 statusDivider
 
@@ -79,6 +94,8 @@ struct StatusBarView: View {
                     .font(.system(size: LayoutMetrics.bodySmallFontSize))
                     .foregroundStyle(.secondary)
                     .accessibilityIdentifier(AccessibilityID.indentationIndicator)
+                    .accessibilityLabel(AccessibilityLabels.indentation)
+                    .accessibilityValue(activeTab.cachedIndentation.displayName)
 
                 statusDivider
 
@@ -87,6 +104,8 @@ struct StatusBarView: View {
                     .font(.system(size: LayoutMetrics.bodySmallFontSize))
                     .foregroundStyle(.secondary)
                     .accessibilityIdentifier(AccessibilityID.lineEndingIndicator)
+                    .accessibilityLabel(AccessibilityLabels.lineEnding)
+                    .accessibilityValue(activeTab.cachedLineEnding.displayName)
 
                 statusDivider
 
@@ -113,6 +132,8 @@ struct StatusBarView: View {
                 .fixedSize()
                 .disabled(activeTab.isDirty)
                 .accessibilityIdentifier(AccessibilityID.encodingMenu)
+                .accessibilityLabel(AccessibilityLabels.encoding)
+                .accessibilityValue(activeTab.encoding.displayName)
 
                 // File size indicator (cached in EditorTab)
                 if let size = activeTab.fileSizeBytes {
@@ -122,6 +143,8 @@ struct StatusBarView: View {
                         .font(.system(size: LayoutMetrics.bodySmallFontSize))
                         .foregroundStyle(.secondary)
                         .accessibilityIdentifier(AccessibilityID.fileSizeIndicator)
+                        .accessibilityLabel(AccessibilityLabels.fileSize)
+                        .accessibilityValue(FileSizeFormatter.format(size))
                 }
             }
 
@@ -144,11 +167,14 @@ struct StatusBarView: View {
             .help(terminal.isTerminalVisible ? Strings.hideTerminalShortcut : Strings.showTerminalShortcut)
             .accessibilityIdentifier(AccessibilityID.terminalToggleButton)
             .accessibilityAddTraits(.isButton)
+            .accessibilityLabel(AccessibilityLabels.terminalToggle)
+            .accessibilityHint(AccessibilityLabels.terminalToggleHint(isVisible: terminal.isTerminalVisible))
         }
         .padding(.horizontal, LayoutMetrics.statusBarHorizontalPadding)
         .frame(height: LayoutMetrics.statusBarHeight)
         .background(.bar)
         .accessibilityElement(children: .contain)
+        .accessibilityLabel(AccessibilityLabels.statusBar)
         .accessibilityIdentifier(AccessibilityID.statusBar)
     }
 
@@ -156,6 +182,7 @@ struct StatusBarView: View {
         Text(verbatim: "·")
             .font(.system(size: LayoutMetrics.bodySmallFontSize))
             .foregroundStyle(.quaternary)
+            .accessibilityHidden(true)
     }
 
     private var gitStatusCounts: (modified: Int, added: Int, untracked: Int) {

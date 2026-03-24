@@ -96,6 +96,8 @@ struct WelcomeView: View {
                 .buttonStyle(.borderedProminent)
                 .controlSize(.large)
                 .accessibilityIdentifier(AccessibilityID.welcomeOpenFolderButton)
+                .accessibilityLabel(AccessibilityLabels.openFolderButton)
+                .accessibilityHint("Opens a folder picker to select a project")
 
                 Spacer()
             }
@@ -178,16 +180,24 @@ struct WelcomeView: View {
                                     .accessibilityIdentifier(
                                         AccessibilityID.welcomeRecentProject(url.lastPathComponent)
                                     )
+                                    .accessibilityLabel(
+                                        AccessibilityLabels.recentProject(
+                                            name: url.lastPathComponent,
+                                            path: url.abbreviatedPath
+                                        )
+                                    )
                                 }
                             }
                         }
                         .accessibilityIdentifier(AccessibilityID.welcomeRecentProjectsList)
+                        .accessibilityLabel(AccessibilityLabels.recentProjects)
                     }
                 }
             }
             .frame(minWidth: 280)
         }
         .frame(width: 600, height: 400)
+        .accessibilityLabel(AccessibilityLabels.welcomeWindow)
         .onChange(of: isSearchVisible) { _, visible in
             if !visible {
                 searchText = ""

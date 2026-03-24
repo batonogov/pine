@@ -85,6 +85,7 @@ struct EditorAreaView: View {
                     Text(Strings.selectFilePrompt)
                 }
                 .accessibilityIdentifier(AccessibilityID.editorPlaceholder)
+                .accessibilityLabel(AccessibilityLabels.noFileOpen)
             }
         }
         .onDrop(of: [.fileURL], isTargeted: $isDragTargeted) { providers in

@@ -183,6 +183,8 @@ struct EditorTabBar: View {
         .frame(height: LayoutMetrics.tabBarHeight)
         .background(.bar)
         .accessibilityIdentifier(AccessibilityID.editorTabBar)
+        .accessibilityLabel(AccessibilityLabels.editorTabBar)
+        .accessibilityElement(children: .contain)
     }
 }
 
@@ -341,5 +343,22 @@ struct EditorTabItem: View {
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 4)
+        .accessibilityRepresentation {
+            HStack {
+                Button(tab.fileName, action: onSelect)
+                    .accessibilityIdentifier(AccessibilityID.editorTab(tab.fileName))
+                    .accessibilityLabel(
+                        AccessibilityLabels.editorTab(
+                            fileName: tab.fileName,
+                            isActive: isActive,
+                            isDirty: tab.isDirty
+                        )
+                    )
+                    .accessibilityAddTraits(isActive ? .isSelected : [])
+                Button("Close", action: onClose)
+                    .accessibilityIdentifier(AccessibilityID.editorTabCloseButton(tab.fileName))
+                    .accessibilityHint(AccessibilityLabels.closeTabHint(fileName: tab.fileName))
+            }
+        }
     }
 }

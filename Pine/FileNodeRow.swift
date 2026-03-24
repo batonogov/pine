@@ -56,6 +56,7 @@ struct FileNodeRow: View {
         }
         .tag(node)
         .accessibilityIdentifier(AccessibilityID.fileNode(node.name))
+        .accessibilityLabel(AccessibilityLabels.fileNode(name: node.name, isDirectory: node.isDirectory))
         .contextMenu { fileNodeContextMenu }
     }
 
