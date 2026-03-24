@@ -4,6 +4,7 @@
 //
 
 import Foundation
+import os
 
 /// Manages file system operations (delete, rename, create) with undo/redo support.
 ///
@@ -28,7 +29,7 @@ final class FileOperationUndoManager {
                     try? target.deleteItem(at: url, undoManager: undoManager)
                 }
             } catch {
-                Self.logError("Undo delete failed: \(error.localizedDescription)")
+                Logger.fileTree.error("Undo delete failed: \(error)")
             }
         }
         undoManager.setActionName(Strings.undoDelete)
@@ -44,7 +45,7 @@ final class FileOperationUndoManager {
             do {
                 try target.renameItem(from: newURL, to: oldURL, undoManager: undoManager)
             } catch {
-                Self.logError("Undo rename failed: \(error.localizedDescription)")
+                Logger.fileTree.error("Undo rename failed: \(error)")
             }
         }
         undoManager.setActionName(Strings.undoRename)
@@ -66,17 +67,10 @@ final class FileOperationUndoManager {
             do {
                 try target.deleteItem(at: url, undoManager: undoManager)
             } catch {
-                Self.logError("Undo create failed: \(error.localizedDescription)")
+                Logger.fileTree.error("Undo create failed: \(error)")
             }
         }
         undoManager.setActionName(Strings.undoCreate)
     }
 
-    // MARK: - Private
-
-    private static func logError(_ message: String) {
-        #if DEBUG
-        print("[FileOperationUndoManager] \(message)")
-        #endif
-    }
 }
