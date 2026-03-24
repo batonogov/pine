@@ -16,6 +16,7 @@ final class ProjectManager {
     let tabManager = TabManager()
     let searchProvider = ProjectSearchProvider()
     let quickOpenProvider = QuickOpenProvider()
+    let progress = ProgressTracker()
     private(set) var recoveryManager: RecoveryManager?
 
     init() {
@@ -23,6 +24,8 @@ final class ProjectManager {
             guard let self, let rootURL = self.workspace.rootURL else { return }
             self.quickOpenProvider.rebuildIndex(from: nodes, rootURL: rootURL)
         }
+        workspace.progressTracker = progress
+        workspace.gitProvider.progressTracker = progress
     }
 
     deinit {

@@ -61,7 +61,7 @@ enum FoldRangeCalculator {
 
         // Предварительно вычисляем номера строк и позиции начала строк
         var lineStarts: [Int] = [0]
-        for i in 0..<length where source.character(at: i) == 0x0A {
+        for i in 0..<length where source.character(at: i) == ASCII.newline {
             lineStarts.append(i + 1)
         }
 

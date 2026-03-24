@@ -37,7 +37,7 @@ final class ProjectSearchProvider {
     private(set) var totalMatchCount: Int = 0
 
     /// Maximum file size to search (1 MB).
-    nonisolated static let maxFileSize = 1_048_576
+    nonisolated static let maxFileSize = FileSizeConstants.oneMB
     /// Maximum total matches before stopping.
     nonisolated static let maxResults = 1_000
     /// Maximum matches per file in parallel search to avoid unbounded memory use.
@@ -196,7 +196,7 @@ final class ProjectSearchProvider {
 
                 matches.append(SearchMatch(
                     lineNumber: index + 1,
-                    lineContent: String(trimmedLine.prefix(200)),
+                    lineContent: String(trimmedLine.prefix(SearchConstants.lineContentPrefixLimit)),
                     matchRangeStart: utf16Start,
                     matchRangeLength: utf16Length
                 ))
