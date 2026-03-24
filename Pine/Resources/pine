@@ -38,10 +38,26 @@ EXAMPLES:
 EOF
 }
 
+find_pine_app() {
+    # Check well-known locations first, then fall back to Spotlight
+    for candidate in "/Applications/Pine.app" "$HOME/Applications/Pine.app"; do
+        if [[ -f "$candidate/Contents/Info.plist" ]]; then
+            echo "$candidate"
+            return
+        fi
+    done
+    # Fallback: Spotlight search (may be slow or unavailable)
+    local spotlight_result
+    spotlight_result=$(mdfind "kMDItemCFBundleIdentifier == 'io.github.batonogov.pine'" 2>/dev/null | head -1)
+    if [[ -n "$spotlight_result" && -f "$spotlight_result/Contents/Info.plist" ]]; then
+        echo "$spotlight_result"
+    fi
+}
+
 show_version() {
     local app_path
-    app_path=$(mdfind "kMDItemCFBundleIdentifier == 'com.batonogov.Pine'" 2>/dev/null | head -1)
-    if [[ -n "$app_path" && -f "$app_path/Contents/Info.plist" ]]; then
+    app_path=$(find_pine_app)
+    if [[ -n "$app_path" ]]; then
         local version
         version=$(/usr/libexec/PlistBuddy -c "Print CFBundleShortVersionString" "$app_path/Contents/Info.plist" 2>/dev/null || echo "unknown")
         echo "Pine $version"

@@ -31,8 +31,8 @@ enum CLIInstaller {
 
     // MARK: - Install / Uninstall
 
-    /// Installs the CLI tool by creating a symlink with admin privileges.
-    /// Shows an authorization prompt via AppleScript.
+    /// Installs the CLI tool by creating a symlink.
+    /// Tries without elevated privileges first; falls back to AppleScript admin prompt if needed.
     static func install() {
         guard let scriptPath = bundledScriptPath else {
             showAlert(
@@ -44,7 +44,28 @@ enum CLIInstaller {
 
         let installDir = (defaultInstallPath as NSString).deletingLastPathComponent
 
-        // AppleScript for privileged symlink creation
+        // Try without sudo first — /usr/local/bin is often writable
+        if FileManager.default.isWritableFile(atPath: installDir) {
+            do {
+                // Remove existing symlink/file if present
+                if FileManager.default.fileExists(atPath: defaultInstallPath) {
+                    try FileManager.default.removeItem(atPath: defaultInstallPath)
+                }
+                try FileManager.default.createSymbolicLink(
+                    atPath: defaultInstallPath,
+                    withDestinationPath: scriptPath
+                )
+                showAlert(
+                    title: "Command Line Tool Installed",
+                    message: "The 'pine' command is now available.\n\nUsage: pine . or pine file.swift"
+                )
+                return
+            } catch {
+                // Fall through to AppleScript approach
+            }
+        }
+
+        // Fallback: AppleScript for privileged symlink creation
         let script = """
             do shell script \
             "mkdir -p '\(installDir)' && ln -sf '\(scriptPath)' '\(defaultInstallPath)'" \
@@ -71,8 +92,24 @@ enum CLIInstaller {
         }
     }
 
-    /// Uninstalls the CLI tool by removing the symlink with admin privileges.
+    /// Uninstalls the CLI tool by removing the symlink.
+    /// Tries without elevated privileges first; falls back to AppleScript admin prompt if needed.
     static func uninstall() {
+        // Try without sudo first
+        if FileManager.default.isDeletableFile(atPath: defaultInstallPath) {
+            do {
+                try FileManager.default.removeItem(atPath: defaultInstallPath)
+                showAlert(
+                    title: "Command Line Tool Removed",
+                    message: "The 'pine' command has been removed from /usr/local/bin."
+                )
+                return
+            } catch {
+                // Fall through to AppleScript approach
+            }
+        }
+
+        // Fallback: AppleScript for privileged removal
         let script = """
             do shell script "rm -f '\(defaultInstallPath)'" with administrator privileges
             """
