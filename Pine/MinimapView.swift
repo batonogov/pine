@@ -6,6 +6,7 @@
 //
 
 import AppKit
+import os
 
 // MARK: - Minimap Settings
 
@@ -136,7 +137,7 @@ final class MinimapView: NSView {
 
         #if DEBUG
         if resolvedClipView == nil {
-            print("MinimapView: clipView is nil at init — scroll observer will not fire. Pass clipView explicitly.")
+            Logger.editor.warning("MinimapView: clipView is nil at init — scroll observer will not fire. Pass clipView explicitly.")
         }
         #endif
     }
