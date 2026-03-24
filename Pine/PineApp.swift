@@ -976,6 +976,46 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate {
         false
     }
 
+    // MARK: - Open URLs (Dock icon drop, Finder "Open With")
+
+    /// Called when files/folders are dropped onto the Dock icon or opened via Finder.
+    func application(_ sender: NSApplication, open urls: [URL]) {
+        let classified = DropHandler.classifyURLs(urls)
+
+        // Open directories as projects
+        for dir in classified.directories {
+            let canonical = dir.resolvingSymlinksInPath()
+            guard registry.projectManager(for: canonical) != nil else { continue }
+            openProjectWindow?(canonical)
+            welcomeWindow?.orderOut(nil)
+        }
+
+        // Open files: if a project window is active, add as tabs; otherwise open parent as project
+        if !classified.files.isEmpty {
+            if let activeProject = activeProjectManager() {
+                DropHandler.openFilesAsTabs(classified.files, in: activeProject.tabManager)
+            } else if let firstFile = classified.files.first {
+                let projectDir = firstFile.deletingLastPathComponent().resolvingSymlinksInPath()
+                guard registry.projectManager(for: projectDir) != nil else { return }
+                openProjectWindow?(projectDir)
+                welcomeWindow?.orderOut(nil)
+                // Open files after project initializes
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
+                    guard let pm = self?.registry.openProjects[projectDir] else { return }
+                    DropHandler.openFilesAsTabs(classified.files, in: pm.tabManager)
+                }
+            }
+        }
+    }
+
+    /// Returns the ProjectManager for the currently active project window, if any.
+    private func activeProjectManager() -> ProjectManager? {
+        guard let window = NSApp.keyWindow,
+              let closeDelegate = window.delegate as? CloseDelegate else { return nil }
+        let canonical = closeDelegate.projectURL.resolvingSymlinksInPath()
+        return registry.openProjects[canonical]
+    }
+
     // MARK: - Dock Menu
 
     func applicationDockMenu(_ sender: NSApplication) -> NSMenu? {

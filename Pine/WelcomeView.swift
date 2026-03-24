@@ -7,6 +7,7 @@
 
 import AppKit
 import SwiftUI
+import UniformTypeIdentifiers
 
 /// NSViewRepresentable wrapper for native NSSearchField (with magnifying glass and clear button).
 struct WelcomeSearchField: NSViewRepresentable {
@@ -65,6 +66,7 @@ struct WelcomeView: View {
 
     @State private var searchText = ""
     @State private var isSearchVisible = false
+    @State private var isDragTargeted = false
 
     /// Recent projects filtered by the search query.
     private var filteredProjects: [URL] {
@@ -176,6 +178,17 @@ struct WelcomeView: View {
             guard controlActiveState == .key else { return }
             openFolder()
         }
+        .onDrop(of: [.fileURL], isTargeted: $isDragTargeted) { providers in
+            handleDrop(providers: providers)
+            return true
+        }
+        .overlay {
+            if isDragTargeted {
+                RoundedRectangle(cornerRadius: 8)
+                    .stroke(.blue, lineWidth: 2)
+                    .allowsHitTesting(false)
+            }
+        }
         .task {
             // Open pending project from PINE_OPEN_PROJECT env var.
             guard let url = appDelegate?.pendingProjectURL else { return }
@@ -183,6 +196,36 @@ struct WelcomeView: View {
             // Wait for initial SwiftUI layout to complete.
             try? await Task.sleep(for: .seconds(0.5))
             openProject(at: url)
+        }
+    }
+
+    /// Handles file URLs dropped onto the Welcome window.
+    /// Directories are opened as projects; files determine the project from their parent directory.
+    private func handleDrop(providers: [NSItemProvider]) {
+        for provider in providers {
+            Task {
+                guard let url = try? await provider.loadItem(
+                    forTypeIdentifier: UTType.fileURL.identifier
+                ) as? URL else { return }
+
+                let classified = DropHandler.classifyURLs([url])
+
+                await MainActor.run {
+                    if let dir = classified.directories.first {
+                        // Open directory as project
+                        openProject(at: dir)
+                    } else if let file = classified.files.first {
+                        // Open file's parent directory as project, then open the file as a tab
+                        let projectDir = file.deletingLastPathComponent()
+                        openProject(at: projectDir)
+                        // Give the project window time to initialize, then open the file
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                            let canonical = projectDir.resolvingSymlinksInPath()
+                            registry.openProjects[canonical]?.tabManager.openTab(url: file)
+                        }
+                    }
+                }
+            }
         }
     }
 

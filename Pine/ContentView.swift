@@ -7,6 +7,7 @@
 
 import os
 import SwiftUI
+import UniformTypeIdentifiers
 
 // MARK: - Главный ContentView
 
@@ -30,6 +31,7 @@ struct ContentView: View {
     @State private var goToLineOffset: GoToRequest?
     @State private var recoveryEntries: [(UUID, RecoveryEntry)] = []
     @State private var showRecoveryDialog = false
+    @State private var isDragTargeted = false
     @State private var isQuickOpenPresented = false
     @State private var showGoToLine = false
     @AppStorage("minimapVisible") private var isMinimapVisible = true
@@ -318,6 +320,33 @@ struct ContentView: View {
         openWindow(value: url)
     }
 
+    // MARK: - Drag & Drop
+
+    /// Handles file URLs dropped onto the editor area.
+    /// Files are opened as tabs; directories open as new project windows.
+    private func handleFileDrop(providers: [NSItemProvider]) {
+        for provider in providers {
+            Task {
+                guard let url = try? await provider.loadItem(
+                    forTypeIdentifier: UTType.fileURL.identifier
+                ) as? URL else { return }
+
+                let classified = DropHandler.classifyURLs([url])
+
+                await MainActor.run {
+                    // Open directories as new project windows
+                    for dir in classified.directories {
+                        let canonical = dir.resolvingSymlinksInPath()
+                        guard registry.projectManager(for: canonical) != nil else { continue }
+                        openWindow(value: canonical)
+                    }
+                    // Open files as tabs in current project
+                    DropHandler.openFilesAsTabs(classified.files, in: tabManager)
+                }
+            }
+        }
+    }
+
     // MARK: - Управление файлами
 
     private func handleFileSelection(_ node: FileNode) {
@@ -575,6 +604,17 @@ struct ContentView: View {
                     Text(Strings.selectFilePrompt)
                 }
                 .accessibilityIdentifier(AccessibilityID.editorPlaceholder)
+            }
+        }
+        .onDrop(of: [.fileURL], isTargeted: $isDragTargeted) { providers in
+            handleFileDrop(providers: providers)
+            return true
+        }
+        .overlay {
+            if isDragTargeted {
+                RoundedRectangle(cornerRadius: 8)
+                    .stroke(.blue, lineWidth: 2)
+                    .allowsHitTesting(false)
             }
         }
     }
