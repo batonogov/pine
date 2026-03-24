@@ -6,6 +6,7 @@
 //
 
 import Foundation
+import os.log
 
 /// Codable representation of per-tab editor state (cursor, scroll, folds).
 /// Stored in SessionState keyed by file path.
@@ -89,12 +90,17 @@ struct PerTabEditorState: Codable, Equatable {
         }
     }
 
+    private static let logger = Logger(subsystem: "com.pine.editor", category: "PerTabEditorState")
+
     private static func foldKind(from string: String) -> FoldKind {
         switch string {
         case "braces": .braces
         case "brackets": .brackets
         case "parentheses": .parentheses
-        default: .braces
+        default:
+            logger.warning("Unknown fold kind '\(string)', defaulting to .braces")
+            assertionFailure("Unknown fold kind: \(string)")
+            return .braces
         }
     }
 }

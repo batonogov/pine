@@ -159,7 +159,9 @@ struct SessionState: Codable {
     var existingEditorStates: [String: PerTabEditorState]? {
         guard let states = editorStates else { return nil }
         let prefix = rootPrefix
-        let filtered = states.filter { $0.key.hasPrefix(prefix) }
+        let filtered = states.filter {
+            $0.key.hasPrefix(prefix) && FileManager.default.fileExists(atPath: $0.key)
+        }
         return filtered.isEmpty ? nil : filtered
     }
 
