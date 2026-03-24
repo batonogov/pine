@@ -603,6 +603,10 @@ struct ContentView: View {
             onStateChange: { cursor, scroll in
                 tabManager.updateEditorState(cursorPosition: cursor, scrollOffset: scroll)
             },
+            onHighlightCacheUpdate: { result in
+                tabManager.updateHighlightCache(result)
+            },
+            cachedHighlightResult: tab.cachedHighlightResult,
             goToOffset: goToLineOffset,
             fontSize: FontSizeSettings.shared.fontSize
         )

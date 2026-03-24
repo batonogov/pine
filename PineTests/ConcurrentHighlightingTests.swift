@@ -102,12 +102,12 @@ struct ConcurrentHighlightingTests {
         let pythonStorage = NSTextStorage(string: pythonText)
 
         // Highlight both concurrently
-        async let swiftHighlight: Void = hl.highlightAsync(
+        async let swiftHighlight: HighlightMatchResult? = hl.highlightAsync(
             textStorage: swiftStorage,
             language: "conctestswift",
             font: font
         )
-        async let pythonHighlight: Void = hl.highlightAsync(
+        async let pythonHighlight: HighlightMatchResult? = hl.highlightAsync(
             textStorage: pythonStorage,
             language: "conctestpy",
             font: font
@@ -179,7 +179,7 @@ struct ConcurrentHighlightingTests {
         genA.increment() // 2
 
         // Tab A highlight should be discarded (stale), tab B should apply
-        async let highlightA: Void = hl.highlightAsync(
+        async let highlightA: HighlightMatchResult? = hl.highlightAsync(
             textStorage: storageA,
             language: "conctestswift",
             font: font,
@@ -189,7 +189,7 @@ struct ConcurrentHighlightingTests {
         genA.increment() // 3
 
         // Tab B uses its own generation — no bump, should apply
-        async let highlightB: Void = hl.highlightAsync(
+        async let highlightB: HighlightMatchResult? = hl.highlightAsync(
             textStorage: storageB,
             language: "conctestswift",
             font: font,
