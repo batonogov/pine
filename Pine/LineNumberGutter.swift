@@ -6,6 +6,7 @@
 //
 
 import AppKit
+import os
 
 /// Отдельный NSView, который рисует номера строк.
 /// Добавляется как subview NSScrollView и остаётся на месте при скролле.
@@ -118,7 +119,7 @@ final class LineNumberView: NSView {
 
         #if DEBUG
         if resolvedClipView == nil {
-            print("LineNumberView: clipView is nil at init — scroll observer will not fire. Pass clipView explicitly.")
+            Logger.editor.fault("LineNumberView: clipView is nil at init — scroll observer will not fire. Pass clipView explicitly.")
         }
         #endif
     }

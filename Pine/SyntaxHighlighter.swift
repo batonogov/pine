@@ -6,6 +6,7 @@
 //
 
 import AppKit
+import os
 
 // MARK: - Модели грамматики
 
@@ -176,7 +177,7 @@ final class SyntaxHighlighter: @unchecked Sendable {
         // Bundle.main — бандл текущего приложения.
         // .urls(forResourcesWithExtension:subdirectory:) — ищет файлы по расширению в подпапке.
         guard let urls = Bundle.main.urls(forResourcesWithExtension: "json", subdirectory: nil) else {
-            print("SyntaxHighlighter: No grammar files found in bundle")
+            Logger.syntax.error("No grammar files found in bundle")
             return
         }
 
@@ -215,7 +216,7 @@ final class SyntaxHighlighter: @unchecked Sendable {
             }
         }
 
-        print("SyntaxHighlighter: Loaded \(Set(grammarsByExtension.values.map(\.name)).count) grammars")
+        Logger.syntax.info("Loaded \(Set(self.grammarsByExtension.values.map(\.name)).count) grammars")
     }
 
     /// Компилирует regex-паттерны грамматики в NSRegularExpression.
@@ -251,7 +252,7 @@ final class SyntaxHighlighter: @unchecked Sendable {
             if let regex = try? NSRegularExpression(pattern: rule.pattern, options: opts) {
                 rules.append(CompiledRule(regex: regex, scope: rule.scope, isMultiline: isMultiline))
             } else {
-                print("SyntaxHighlighter: Invalid regex in \(grammar.name): \(rule.pattern)")
+                Logger.syntax.error("Invalid regex in \(grammar.name): \(rule.pattern)")
             }
         }
 
