@@ -1,0 +1,129 @@
+#!/bin/bash
+#
+# pine — Open files and folders in Pine editor from the terminal.
+#
+# Usage:
+#   pine .              Open current directory
+#   pine ~/projects     Open a directory
+#   pine file.swift     Open a file
+#   pine file.swift:42  Open file at line 42
+#   pine -h, --help     Show help
+#   pine -v, --version  Show version
+#
+
+set -euo pipefail
+
+PINE_APP_NAME="Pine"
+
+show_help() {
+    cat <<'EOF'
+USAGE: pine [file|directory] [options]
+
+Open files and folders in Pine from the terminal.
+
+ARGUMENTS:
+  <path>              File or directory to open (default: current directory)
+  <path>:<line>       Open file at specific line number
+  <path>:<line>:<col> Open file at specific line and column
+
+OPTIONS:
+  -h, --help          Show this help message
+  -v, --version       Show Pine version
+
+EXAMPLES:
+  pine .              Open current directory
+  pine ~/projects     Open a directory
+  pine file.swift     Open a file
+  pine file.swift:42  Open file at line 42
+EOF
+}
+
+show_version() {
+    local app_path
+    app_path=$(mdfind "kMDItemCFBundleIdentifier == 'com.batonogov.Pine'" 2>/dev/null | head -1)
+    if [[ -n "$app_path" && -f "$app_path/Contents/Info.plist" ]]; then
+        local version
+        version=$(/usr/libexec/PlistBuddy -c "Print CFBundleShortVersionString" "$app_path/Contents/Info.plist" 2>/dev/null || echo "unknown")
+        echo "Pine $version"
+    else
+        echo "Pine (version unknown — app not found)"
+    fi
+}
+
+# Extract line number from path:line or path:line:col
+extract_line() {
+    local arg="$1"
+    LINE_NUM=""
+    FILE_PATH="$arg"
+
+    # Try path:line:col
+    if [[ "$arg" =~ ^(.+):([0-9]+):([0-9]+)$ ]]; then
+        local candidate_path="${BASH_REMATCH[1]}"
+        local candidate_line="${BASH_REMATCH[2]}"
+        if [[ "$candidate_line" -ge 1 ]]; then
+            FILE_PATH="$candidate_path"
+            LINE_NUM="$candidate_line"
+            return
+        fi
+    fi
+
+    # Try path:line
+    if [[ "$arg" =~ ^(.+):([0-9]+)$ ]]; then
+        local candidate_path="${BASH_REMATCH[1]}"
+        local candidate_line="${BASH_REMATCH[2]}"
+        if [[ "$candidate_line" -ge 1 ]]; then
+            FILE_PATH="$candidate_path"
+            LINE_NUM="$candidate_line"
+            return
+        fi
+    fi
+}
+
+main() {
+    # No arguments -> show help
+    if [[ $# -eq 0 ]]; then
+        show_help
+        exit 0
+    fi
+
+    case "$1" in
+        -h|--help)
+            show_help
+            exit 0
+            ;;
+        -v|--version)
+            show_version
+            exit 0
+            ;;
+    esac
+
+    local arg="$1"
+
+    # Expand tilde
+    if [[ "$arg" == "~"* ]]; then
+        arg="${arg/#\~/$HOME}"
+    fi
+
+    # Extract optional line number
+    extract_line "$arg"
+    local resolved_path="$FILE_PATH"
+
+    # Resolve relative paths
+    if [[ "$resolved_path" != /* ]]; then
+        resolved_path="$PWD/$resolved_path"
+    fi
+
+    # Resolve symlinks and normalize
+    if [[ -e "$resolved_path" ]]; then
+        resolved_path=$(cd "$(dirname "$resolved_path")" && echo "$PWD/$(basename "$resolved_path")")
+    fi
+
+    # Open with Pine
+    if [[ -n "$LINE_NUM" ]]; then
+        open -a "$PINE_APP_NAME" "$resolved_path" --args --line "$LINE_NUM" "$resolved_path"
+    else
+        open -a "$PINE_APP_NAME" "$resolved_path"
+    fi
+}
+
+main "$@"
