@@ -70,22 +70,13 @@ struct AboutInfoTests {
         #expect(options[.credits] != nil)
     }
 
-    @Test func aboutPanelOptions_creditsContainsSwiftUI() {
-        let options = AboutInfo.aboutPanelOptions
-        guard let credits = options[.credits] as? NSAttributedString else {
-            Issue.record("Credits should be NSAttributedString")
-            return
-        }
-        #expect(credits.string.contains("SwiftUI"))
-    }
-
     @Test func aboutPanelOptions_creditsContainsDescription() {
         let options = AboutInfo.aboutPanelOptions
         guard let credits = options[.credits] as? NSAttributedString else {
             Issue.record("Credits should be NSAttributedString")
             return
         }
-        #expect(credits.string.contains("Minimal native macOS code editor"))
+        #expect(credits.string.contains("belongs on your Mac"))
     }
 
     @Test func aboutPanelOptions_creditsContainsGitHub() {

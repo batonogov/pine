@@ -59,12 +59,7 @@ enum AboutInfo {
         ]
 
         credits.append(NSAttributedString(
-            string: "Minimal native macOS code editor\n",
-            attributes: bodyAttrs
-        ))
-
-        credits.append(NSAttributedString(
-            string: "Built with SwiftUI + AppKit\n",
+            string: "A code editor that belongs on your Mac.\n",
             attributes: bodyAttrs
         ))
 
