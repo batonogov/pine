@@ -5,7 +5,44 @@
 //  Created by Claude on 13.03.2026.
 //
 
+import AppKit
 import SwiftUI
+
+/// NSViewRepresentable wrapper for native NSSearchField (with magnifying glass and clear button).
+struct WelcomeSearchField: NSViewRepresentable {
+    @Binding var text: String
+
+    func makeNSView(context: Context) -> NSSearchField {
+        let searchField = NSSearchField()
+        searchField.placeholderString = Strings.welcomeSearchPlaceholderString
+        searchField.delegate = context.coordinator
+        searchField.setAccessibilityIdentifier(AccessibilityID.welcomeSearchField)
+        return searchField
+    }
+
+    func updateNSView(_ nsView: NSSearchField, context: Context) {
+        if nsView.stringValue != text {
+            nsView.stringValue = text
+        }
+    }
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(text: $text)
+    }
+
+    final class Coordinator: NSObject, NSSearchFieldDelegate {
+        var text: Binding<String>
+
+        init(text: Binding<String>) {
+            self.text = text
+        }
+
+        func controlTextDidChange(_ obj: Notification) {
+            guard let field = obj.object as? NSSearchField else { return }
+            text.wrappedValue = field.stringValue
+        }
+    }
+}
 
 extension URL {
     /// Returns the path with the home directory replaced by `~`.
@@ -26,10 +63,18 @@ struct WelcomeView: View {
     /// AppDelegate reference for checking pending project URL (UI testing).
     var appDelegate: AppDelegate?
 
+    @State private var searchText = ""
+    @State private var isSearchVisible = false
+
+    /// Recent projects filtered by the search query.
+    private var filteredProjects: [URL] {
+        RecentProjectsFilter.filter(registry.recentProjects, query: searchText)
+    }
+
     var body: some View {
         HStack(spacing: 0) {
             // Left: logo and actions
-            VStack(spacing: 20) {
+            VStack(spacing: 14) {
                 Spacer()
 
                 Image(nsImage: NSApp.applicationIconImage)
@@ -59,11 +104,23 @@ struct WelcomeView: View {
 
             // Right: recent projects
             VStack(alignment: .leading, spacing: 0) {
-                Text(Strings.welcomeRecentProjects)
-                    .font(.headline)
-                    .padding(.horizontal)
-                    .padding(.top, 16)
-                    .padding(.bottom, 8)
+                HStack {
+                    Text(Strings.welcomeRecentProjects)
+                        .font(.headline)
+                    Spacer()
+                    if registry.recentProjects.count > 8 {
+                        Button {
+                            isSearchVisible.toggle()
+                        } label: {
+                            Image(systemName: "magnifyingglass")
+                        }
+                        .buttonStyle(.borderless)
+                        .accessibilityIdentifier(AccessibilityID.welcomeSearchToggle)
+                    }
+                }
+                .padding(.horizontal)
+                .padding(.top, 10)
+                .padding(.bottom, 4)
 
                 if registry.recentProjects.isEmpty {
                     ContentUnavailableView {
@@ -71,31 +128,50 @@ struct WelcomeView: View {
                     }
                     .frame(maxHeight: .infinity)
                 } else {
-                    ScrollView {
-                        LazyVStack(spacing: 0) {
-                            ForEach(
-                                Array(registry.recentProjects.enumerated()),
-                                id: \.element
-                            ) { index, url in
-                                if index > 0 {
-                                    Divider()
-                                        .padding(.leading)
+                    if isSearchVisible {
+                        WelcomeSearchField(text: $searchText)
+                            .frame(height: 22)
+                            .padding(.horizontal)
+                            .padding(.bottom, 4)
+                    }
+
+                    if filteredProjects.isEmpty {
+                        ContentUnavailableView {
+                            Label(Strings.welcomeNoSearchResults, systemImage: "magnifyingglass")
+                        }
+                        .frame(maxHeight: .infinity)
+                    } else {
+                        ScrollView {
+                            LazyVStack(spacing: 0) {
+                                ForEach(
+                                    Array(filteredProjects.enumerated()),
+                                    id: \.element
+                                ) { index, url in
+                                    if index > 0 {
+                                        Divider()
+                                            .padding(.leading)
+                                    }
+                                    RecentProjectRow(url: url) {
+                                        openProject(at: url)
+                                    }
+                                    .accessibilityIdentifier(
+                                        AccessibilityID.welcomeRecentProject(url.lastPathComponent)
+                                    )
                                 }
-                                RecentProjectRow(url: url) {
-                                    openProject(at: url)
-                                }
-                                .accessibilityIdentifier(
-                                    AccessibilityID.welcomeRecentProject(url.lastPathComponent)
-                                )
                             }
                         }
+                        .accessibilityIdentifier(AccessibilityID.welcomeRecentProjectsList)
                     }
-                    .accessibilityIdentifier(AccessibilityID.welcomeRecentProjectsList)
                 }
             }
             .frame(minWidth: 280)
         }
         .frame(width: 600, height: 400)
+        .onChange(of: isSearchVisible) { _, visible in
+            if !visible {
+                searchText = ""
+            }
+        }
         .onReceive(NotificationCenter.default.publisher(for: .openFolder)) { _ in
             guard controlActiveState == .key else { return }
             openFolder()
