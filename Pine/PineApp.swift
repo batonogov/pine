@@ -64,6 +64,14 @@ struct PineApp: App {
                 }
                 .keyboardShortcut("p", modifiers: .command)
                 .disabled(focusedProject?.workspace.rootURL == nil)
+
+                Button {
+                    NotificationCenter.default.post(name: .showSymbolNavigator, object: nil)
+                } label: {
+                    Label(Strings.menuSymbolNavigator, systemImage: MenuIcons.symbolNavigator)
+                }
+                .keyboardShortcut("r", modifiers: .command)
+                .disabled(focusedProject?.tabManager.activeTab == nil)
             }
             // View menu — add items to the existing system View menu
             CommandGroup(after: .toolbar) {
@@ -1182,4 +1190,7 @@ extension Notification.Name {
     static let goToLine = Notification.Name("goToLine")
     // Word Wrap toggle (issue #416)
     static let toggleWordWrap = Notification.Name("toggleWordWrap")
+    // Symbol Navigation (issue #306)
+    static let showSymbolNavigator = Notification.Name("showSymbolNavigator")
+    static let symbolNavigate = Notification.Name("symbolNavigate")
 }

@@ -143,6 +143,13 @@ enum Strings {
     static let quickOpenNoResults: LocalizedStringKey = "quickOpen.noResults"
     static let quickOpenRecentEmpty: LocalizedStringKey = "quickOpen.recentEmpty"
 
+    // MARK: - Symbol Navigator
+
+    static let menuSymbolNavigator: LocalizedStringKey = "menu.symbolNavigator"
+    static let symbolNavigatorEmpty: LocalizedStringKey = "symbolNavigator.empty"
+    static let symbolNavigatorNoResults: LocalizedStringKey = "symbolNavigator.noResults"
+    static let symbolNavigatorPlaceholder: LocalizedStringKey = "symbolNavigator.placeholder"
+
     // MARK: - Branch Switcher
 
     static let branchFilterPlaceholder: LocalizedStringKey = "branch.filterPlaceholder"

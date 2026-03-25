@@ -167,6 +167,7 @@ struct QuickOpenView: View {
 /// while redirecting navigation keys to the Quick Open list.
 struct QuickOpenSearchField: NSViewRepresentable {
     @Binding var text: String
+    var placeholder: String = String(localized: "quickOpen.placeholder")
     var onArrowUp: () -> Void
     var onArrowDown: () -> Void
     var onReturn: () -> Void
@@ -176,7 +177,7 @@ struct QuickOpenSearchField: NSViewRepresentable {
         let field = NSTextField()
         field.delegate = context.coordinator
         field.font = .systemFont(ofSize: 14)
-        field.placeholderString = String(localized: "quickOpen.placeholder")
+        field.placeholderString = placeholder
         field.bezelStyle = .roundedBezel
         field.focusRingType = .exterior
         field.cell?.sendsActionOnEndEditing = false

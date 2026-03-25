@@ -23,6 +23,7 @@ enum MenuIcons {
     static let findAndReplace = "arrow.left.arrow.right"
     static let findInProject = "magnifyingglass"
     static let goToLine = "number"
+    static let symbolNavigator = "list.bullet.indent"
     static let nextChange = "chevron.down"
     static let previousChange = "chevron.up"
     static let foldCode = "chevron.down.square"
