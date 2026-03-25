@@ -650,4 +650,60 @@ struct TerminalManagerTests {
         #expect(tab.searchMatches.count == 1)
         #expect(tab.searchMatches[0].col == 4, "Match should account for leading spaces")
     }
+
+    // MARK: - Focus tests (issue #558)
+
+    @Test("pendingFocusTabID is nil initially")
+    func pendingFocusInitiallyNil() {
+        let manager = TerminalManager()
+        #expect(manager.pendingFocusTabID == nil)
+    }
+
+    @Test("addTerminalTab sets pendingFocusTabID to new tab")
+    func addTerminalTabSetsPendingFocus() throws {
+        let manager = TerminalManager()
+        manager.addTerminalTab(workingDirectory: nil)
+        let newTab = try #require(manager.terminalTabs.last)
+        #expect(manager.pendingFocusTabID == newTab.id)
+    }
+
+    @Test("pendingFocusTabID matches activeTerminalID after addTerminalTab")
+    func pendingFocusMatchesActiveAfterAdd() {
+        let manager = TerminalManager()
+        manager.addTerminalTab(workingDirectory: nil)
+        #expect(manager.pendingFocusTabID == manager.activeTerminalID)
+    }
+
+    @Test("pendingFocusTabID can be cleared externally")
+    func pendingFocusCanBeCleared() {
+        let manager = TerminalManager()
+        manager.addTerminalTab(workingDirectory: nil)
+        #expect(manager.pendingFocusTabID != nil)
+        manager.pendingFocusTabID = nil
+        #expect(manager.pendingFocusTabID == nil)
+    }
+
+    @Test("multiple addTerminalTab calls update pendingFocusTabID to latest")
+    func multiplePendingFocusUpdates() throws {
+        let manager = TerminalManager()
+        manager.addTerminalTab(workingDirectory: nil)
+        let firstNewID = manager.pendingFocusTabID
+
+        manager.addTerminalTab(workingDirectory: nil)
+        let secondNewTab = try #require(manager.terminalTabs.last)
+        #expect(manager.pendingFocusTabID == secondNewTab.id)
+        #expect(manager.pendingFocusTabID != firstNewID)
+    }
+
+    @Test("closeTerminalTab does not set pendingFocusTabID")
+    func closeDoesNotSetPendingFocus() throws {
+        let manager = TerminalManager()
+        manager.startTerminals(workingDirectory: nil)
+        manager.addTerminalTab(workingDirectory: nil)
+        manager.pendingFocusTabID = nil
+
+        let tabToClose = try #require(manager.terminalTabs.last)
+        manager.closeTerminalTab(tabToClose)
+        #expect(manager.pendingFocusTabID == nil)
+    }
 }

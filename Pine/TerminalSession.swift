@@ -135,17 +135,36 @@ class TerminalContainerView: NSView {
             scrollInterceptor.terminalView = nil
             return
         }
-        // Если terminal view уже у нас и таб тот же — ничего не делаем
-        guard tab.id != currentTabID || tab.terminalView.superview !== self else { return }
-        subviews.forEach { $0.removeFromSuperview() }
-        currentTabID = tab.id
-        tab.terminalView.frame = bounds
-        addSubview(tab.terminalView)
+        let tabChanged = tab.id != currentTabID || tab.terminalView.superview !== self
+        if tabChanged {
+            subviews.forEach { $0.removeFromSuperview() }
+            currentTabID = tab.id
+            tab.terminalView.frame = bounds
+            addSubview(tab.terminalView)
 
-        // Place scroll interceptor on top of the terminal view
-        scrollInterceptor.frame = bounds
-        scrollInterceptor.terminalView = tab.terminalView
-        addSubview(scrollInterceptor)
+            // Place scroll interceptor on top of the terminal view
+            scrollInterceptor.frame = bounds
+            scrollInterceptor.terminalView = tab.terminalView
+            addSubview(scrollInterceptor)
+        }
+
+        // Focus the terminal view when requested by TerminalManager
+        if let pending = terminal?.pendingFocusTabID, pending == tab.id {
+            terminal?.pendingFocusTabID = nil
+            focusTerminalView(tab.terminalView)
+        }
+    }
+
+    /// Requests first responder on the terminal view.
+    /// If the view is not yet in a window, defers the call via async dispatch.
+    private func focusTerminalView(_ terminalView: LocalProcessTerminalView) {
+        if let win = window {
+            win.makeFirstResponder(terminalView)
+        } else {
+            DispatchQueue.main.async { [weak self] in
+                self?.window?.makeFirstResponder(terminalView)
+            }
+        }
     }
 
     override func layout() {
