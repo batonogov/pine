@@ -46,7 +46,6 @@ struct ContentView: View {
                 selectedNode: $selectedNode
             )
             .accessibilityIdentifier(AccessibilityID.sidebar)
-            .accessibilityLabel(AccessibilityLabels.sidebar)
             .navigationSplitViewColumnWidth(min: 200, ideal: 240, max: 400)
             .toolbar {
                 ToolbarItem {
@@ -219,6 +218,7 @@ struct ContentView: View {
             TerminalContentView(terminal: terminal)
         }
         .background(Color(nsColor: .textBackgroundColor))
+        .accessibilityElement(children: .contain)
         .accessibilityLabel(AccessibilityLabels.terminalArea)
         .onAppear { terminal.startTerminals(workingDirectory: workspace.rootURL) }
         .modifier(TerminalSearchObserver(terminal: terminal))

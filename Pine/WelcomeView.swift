@@ -163,7 +163,6 @@ struct WelcomeView: View {
             .frame(minWidth: 280)
         }
         .frame(width: 600, height: 400)
-        .accessibilityLabel(AccessibilityLabels.welcomeWindow)
         .onChange(of: isSearchVisible) { _, visible in
             if !visible {
                 searchText = ""

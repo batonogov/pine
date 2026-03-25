@@ -182,9 +182,9 @@ struct EditorTabBar: View {
         }
         .frame(height: LayoutMetrics.tabBarHeight)
         .background(.bar)
-        .accessibilityIdentifier(AccessibilityID.editorTabBar)
         .accessibilityElement(children: .contain)
         .accessibilityLabel(AccessibilityLabels.editorTabBar)
+        .accessibilityIdentifier(AccessibilityID.editorTabBar)
     }
 }
 

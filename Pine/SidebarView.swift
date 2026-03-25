@@ -225,6 +225,7 @@ struct SidebarView: View {
         }
         .listStyle(.sidebar)
         .frame(minWidth: 200, idealWidth: 250)
+        .accessibilityElement(children: .contain)
         .accessibilityLabel(AccessibilityLabels.fileTree)
     }
 
