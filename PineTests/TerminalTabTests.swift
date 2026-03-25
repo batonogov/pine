@@ -102,6 +102,123 @@ struct TerminalTabTests {
         #expect(!container.subviews.contains(tab1.terminalView))
     }
 
+    // MARK: - TerminalContainerView scroll monitor lifecycle
+
+    @Test func showTabNilClearsScrollInterceptorTerminalView() {
+        let container = TerminalContainerView(frame: NSRect(x: 0, y: 0, width: 800, height: 300))
+        let tab = TerminalTab(name: "test")
+        container.showTab(tab)
+        // Now clear
+        container.showTab(nil)
+        #expect(container.subviews.isEmpty)
+    }
+
+    @Test func showTabSetsInterceptorFrameToContainerBounds() {
+        let container = TerminalContainerView(frame: NSRect(x: 0, y: 0, width: 800, height: 300))
+        let tab = TerminalTab(name: "test")
+        container.showTab(tab)
+
+        let interceptor = container.subviews.compactMap { $0 as? TerminalScrollInterceptor }.first
+        #expect(interceptor != nil)
+        #expect(interceptor?.frame == container.bounds)
+    }
+
+    @Test func showTabSetsTerminalViewFrameToContainerBounds() {
+        let container = TerminalContainerView(frame: NSRect(x: 0, y: 0, width: 800, height: 300))
+        let tab = TerminalTab(name: "test")
+        container.showTab(tab)
+        #expect(tab.terminalView.frame == container.bounds)
+    }
+
+    @Test func containerViewSubviewOrderIsTerminalThenInterceptor() {
+        let container = TerminalContainerView(frame: NSRect(x: 0, y: 0, width: 800, height: 300))
+        let tab = TerminalTab(name: "test")
+        container.showTab(tab)
+
+        #expect(container.subviews.count == 2)
+        #expect(container.subviews[0] === tab.terminalView)
+        #expect(container.subviews[1] is TerminalScrollInterceptor)
+    }
+
+    @Test func removeFromSuperviewCleansUpContainer() {
+        let parent = NSView(frame: NSRect(x: 0, y: 0, width: 800, height: 300))
+        let container = TerminalContainerView(frame: NSRect(x: 0, y: 0, width: 800, height: 300))
+        parent.addSubview(container)
+
+        let tab = TerminalTab(name: "test")
+        container.showTab(tab)
+        #expect(container.subviews.count == 2)
+
+        container.removeFromSuperview()
+        #expect(container.superview == nil)
+    }
+
+    @Test func switchingTabsUpdatesInterceptorTerminalView() {
+        let container = TerminalContainerView(frame: NSRect(x: 0, y: 0, width: 800, height: 300))
+        let tab1 = TerminalTab(name: "tab1")
+        let tab2 = TerminalTab(name: "tab2")
+
+        container.showTab(tab1)
+        let interceptorAfterTab1 = container.subviews.compactMap { $0 as? TerminalScrollInterceptor }.first
+        #expect(interceptorAfterTab1?.terminalView === tab1.terminalView)
+
+        container.showTab(tab2)
+        let interceptorAfterTab2 = container.subviews.compactMap { $0 as? TerminalScrollInterceptor }.first
+        #expect(interceptorAfterTab2?.terminalView === tab2.terminalView)
+    }
+
+    @Test func containerIsFlipped() {
+        let container = TerminalContainerView()
+        #expect(container.isFlipped == true)
+    }
+
+    // MARK: - TerminalScrollInterceptor mouse forwarding
+
+    @Test func interceptorTerminalViewIsNilByDefault() {
+        let interceptor = TerminalScrollInterceptor()
+        #expect(interceptor.terminalView == nil)
+    }
+
+    @Test func interceptorDoesNotAcceptFirstResponder() {
+        let interceptor = TerminalScrollInterceptor()
+        #expect(interceptor.acceptsFirstResponder == false)
+    }
+
+    @Test func interceptorIsFlipped() {
+        let interceptor = TerminalScrollInterceptor()
+        #expect(interceptor.isFlipped == true)
+    }
+
+    @Test func interceptorHitTestInsideBoundsReturnsSelf() {
+        let interceptor = TerminalScrollInterceptor()
+        interceptor.frame = NSRect(x: 0, y: 0, width: 800, height: 300)
+        let result = interceptor.hitTest(NSPoint(x: 400, y: 150))
+        #expect(result === interceptor)
+    }
+
+    @Test func interceptorHitTestOutsideBoundsReturnsNil() {
+        let interceptor = TerminalScrollInterceptor()
+        interceptor.frame = NSRect(x: 0, y: 0, width: 800, height: 300)
+        let result = interceptor.hitTest(NSPoint(x: 900, y: 400))
+        #expect(result == nil)
+    }
+
+    @Test func interceptorHitTestAtBoundaryEdge() {
+        let interceptor = TerminalScrollInterceptor()
+        interceptor.frame = NSRect(x: 0, y: 0, width: 800, height: 300)
+        // Point at (0,0) should be inside
+        let result = interceptor.hitTest(NSPoint(x: 0, y: 0))
+        #expect(result === interceptor)
+    }
+
+    @Test func interceptorHitTestAtExactBoundary() {
+        let interceptor = TerminalScrollInterceptor()
+        interceptor.frame = NSRect(x: 0, y: 0, width: 800, height: 300)
+        // Point at (800,300) is outside bounds (bounds is 0..<800, 0..<300)
+        let result = interceptor.hitTest(NSPoint(x: 800, y: 300))
+        #expect(result == nil)
+    }
+
     // MARK: - TerminalTabDelegate
 
     @Test func delegateSetTerminalTitle() {

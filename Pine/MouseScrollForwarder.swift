@@ -85,6 +85,17 @@ enum MouseScrollForwarder {
         return GridPosition(col: col, row: row)
     }
 
+    /// Determines the arrow key escape sequence for alternate screen scroll.
+    ///
+    /// When a TUI app is on the alternate screen but has mouse reporting off,
+    /// scroll events are converted to arrow key sequences (like Ghostty/iTerm2).
+    ///
+    /// - Parameter deltaY: Positive = scroll up, negative = scroll down.
+    /// - Returns: `ESC O A` for scroll up, `ESC O B` for scroll down.
+    static func arrowKeyForScroll(deltaY: CGFloat) -> String {
+        deltaY > 0 ? "\u{1b}OA" : "\u{1b}OB"
+    }
+
     /// Computes scroll velocity (number of events to send) based on scroll delta magnitude.
     ///
     /// - Parameter delta: Absolute scroll delta value.
