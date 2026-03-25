@@ -5,6 +5,7 @@
 //  Created by Claude on 14.03.2026.
 //
 
+import AppKit
 import Foundation
 import SwiftTerm
 import Testing
@@ -705,5 +706,111 @@ struct TerminalManagerTests {
         let tabToClose = try #require(manager.terminalTabs.last)
         manager.closeTerminalTab(tabToClose)
         #expect(manager.pendingFocusTabID == nil)
+    }
+
+    @Test("addTerminalTab sets pendingFocusTabID but startTerminals does not")
+    func focusOnlyOnExplicitTabCreation() {
+        let manager = TerminalManager()
+        // startTerminals (app launch path) — no focus steal
+        manager.startTerminals(workingDirectory: nil)
+        #expect(manager.pendingFocusTabID == nil)
+        #expect(manager.activeTerminalID != nil)
+
+        // Explicit new tab — focus is requested
+        manager.addTerminalTab(workingDirectory: nil)
+        #expect(manager.pendingFocusTabID == manager.activeTerminalID)
+        #expect(manager.pendingFocusTabID == manager.terminalTabs.last?.id)
+    }
+
+    @Test("first tab has no auto-focus by default")
+    func firstTabNoAutoFocus() {
+        let manager = TerminalManager()
+        // New manager has a default tab but no pending focus
+        #expect(manager.terminalTabs.count == 1)
+        #expect(manager.pendingFocusTabID == nil)
+        // Even after startTerminals, still no pending focus
+        manager.startTerminals(workingDirectory: nil)
+        #expect(manager.pendingFocusTabID == nil)
+    }
+}
+
+// MARK: - TerminalScrollInterceptor Tests
+
+@Suite("TerminalScrollInterceptor Tests")
+struct TerminalScrollInterceptorTests {
+
+    @Test("acceptsFirstResponder returns false")
+    func acceptsFirstResponderIsFalse() {
+        let interceptor = TerminalScrollInterceptor()
+        #expect(interceptor.acceptsFirstResponder == false)
+    }
+
+    @Test("hitTest returns self for point inside bounds")
+    func hitTestInsideBounds() {
+        let interceptor = TerminalScrollInterceptor()
+        interceptor.frame = NSRect(x: 0, y: 0, width: 400, height: 300)
+        let result = interceptor.hitTest(NSPoint(x: 200, y: 150))
+        #expect(result === interceptor)
+    }
+
+    @Test("hitTest returns self for point at origin")
+    func hitTestAtOrigin() {
+        let interceptor = TerminalScrollInterceptor()
+        interceptor.frame = NSRect(x: 0, y: 0, width: 400, height: 300)
+        let result = interceptor.hitTest(NSPoint(x: 0, y: 0))
+        #expect(result === interceptor)
+    }
+
+    @Test("hitTest returns self for point at bounds edge")
+    func hitTestAtEdge() {
+        let interceptor = TerminalScrollInterceptor()
+        interceptor.frame = NSRect(x: 0, y: 0, width: 400, height: 300)
+        // Point just inside the right-bottom edge
+        let result = interceptor.hitTest(NSPoint(x: 399, y: 299))
+        #expect(result === interceptor)
+    }
+
+    @Test("hitTest returns nil for point outside bounds")
+    func hitTestOutsideBounds() {
+        let interceptor = TerminalScrollInterceptor()
+        interceptor.frame = NSRect(x: 0, y: 0, width: 400, height: 300)
+        let result = interceptor.hitTest(NSPoint(x: 500, y: 400))
+        #expect(result == nil)
+    }
+
+    @Test("hitTest returns nil for negative coordinates")
+    func hitTestNegativeCoordinates() {
+        let interceptor = TerminalScrollInterceptor()
+        interceptor.frame = NSRect(x: 0, y: 0, width: 400, height: 300)
+        let result = interceptor.hitTest(NSPoint(x: -10, y: -10))
+        #expect(result == nil)
+    }
+
+    @Test("hitTest returns nil for point beyond right edge")
+    func hitTestBeyondRightEdge() {
+        let interceptor = TerminalScrollInterceptor()
+        interceptor.frame = NSRect(x: 0, y: 0, width: 400, height: 300)
+        let result = interceptor.hitTest(NSPoint(x: 400, y: 150))
+        #expect(result == nil)
+    }
+
+    @Test("hitTest returns nil for point beyond bottom edge")
+    func hitTestBeyondBottomEdge() {
+        let interceptor = TerminalScrollInterceptor()
+        interceptor.frame = NSRect(x: 0, y: 0, width: 400, height: 300)
+        let result = interceptor.hitTest(NSPoint(x: 200, y: 300))
+        #expect(result == nil)
+    }
+
+    @Test("isFlipped returns true")
+    func isFlippedIsTrue() {
+        let interceptor = TerminalScrollInterceptor()
+        #expect(interceptor.isFlipped == true)
+    }
+
+    @Test("terminalView is nil by default")
+    func terminalViewDefaultNil() {
+        let interceptor = TerminalScrollInterceptor()
+        #expect(interceptor.terminalView == nil)
     }
 }
