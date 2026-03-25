@@ -8,23 +8,17 @@
 import SwiftUI
 import SwiftTerm
 
-// MARK: - Scroll interceptor overlay for TUI mouse reporting
+// MARK: - Click interceptor overlay for terminal focus management
 
 /// Transparent overlay NSView placed on top of `LocalProcessTerminalView`.
 ///
-/// SwiftTerm's `scrollWheel(with:)` is `public override` (not `open`), so it
-/// cannot be overridden from outside the module. This overlay sits above the
-/// terminal in the view hierarchy and wins the AppKit hit-test for scroll events.
+/// This overlay forwards mouse clicks to the terminal view and ensures
+/// the terminal becomes first responder when clicked. It sits above the
+/// terminal in the view hierarchy and wins the AppKit hit-test.
 ///
-/// When a TUI app has enabled mouse reporting (`mouseMode != .off`), scroll
-/// events are encoded as VT100 mouse button 4/5 events via `MouseScrollForwarder`.
-/// When mouse reporting is off, the event is forwarded to the terminal view
-/// beneath so SwiftTerm performs its normal scrollback navigation.
-///
-/// All non-scroll events (mouse clicks, keyboard, drags) pass through to the
-/// terminal view because `hitTest(_:)` returns `nil` for non-scroll interactions.
-/// Scroll events always hit this view because `hitTest` returns `self` — AppKit
-/// then dispatches `scrollWheel(with:)` here instead of to the terminal.
+/// Scroll events are handled separately via `NSEvent.addLocalMonitorForEvents`
+/// on `TerminalContainerView` because AppKit on macOS 26 does not dispatch
+/// `scrollWheel` to overlay views — events go directly to SwiftTerm's view.
 class TerminalScrollInterceptor: NSView {
 
     /// The terminal view underneath this overlay.
@@ -32,18 +26,12 @@ class TerminalScrollInterceptor: NSView {
 
     override var isFlipped: Bool { true }
 
-    // Accept scroll events by being the hit-test target.
-    // We override hitTest to return self only when the view is visible;
-    // all other mouse interaction (clicks, drags) goes through to the terminal
-    // because we do not override any other mouse methods — they call super
-    // which routes to the next responder.
     override func hitTest(_ point: NSPoint) -> NSView? {
-        // Only intercept if the point is within our bounds
         guard bounds.contains(point) else { return nil }
         return self
     }
 
-    // Let mouse clicks, drags, and keyboard events pass through to the terminal.
+    // Forward mouse clicks, drags, and keyboard events to the terminal.
     override func mouseDown(with event: NSEvent) {
         if let tv = terminalView {
             window?.makeFirstResponder(tv)
@@ -67,44 +55,6 @@ class TerminalScrollInterceptor: NSView {
     override func flagsChanged(with event: NSEvent) { terminalView?.flagsChanged(with: event) }
 
     override var acceptsFirstResponder: Bool { false }
-
-    override func scrollWheel(with event: NSEvent) {
-        guard event.deltaY != 0, let terminalView else {
-            super.scrollWheel(with: event)
-            return
-        }
-
-        let term = terminalView.getTerminal()
-
-        // When mouse reporting is off, forward to SwiftTerm for scrollback
-        guard term.mouseMode != .off else {
-            terminalView.scrollWheel(with: event)
-            return
-        }
-
-        let modifiers = event.modifierFlags
-        let buttonFlags = MouseScrollForwarder.encodeScrollButton(
-            deltaY: event.deltaY,
-            shift: modifiers.contains(.shift),
-            option: modifiers.contains(.option),
-            control: modifiers.contains(.control)
-        )
-
-        let locationInTerminal = terminalView.convert(event.locationInWindow, from: nil)
-        let pos = MouseScrollForwarder.gridPosition(
-            point: locationInTerminal,
-            viewBounds: terminalView.bounds,
-            cols: term.cols,
-            rows: term.rows,
-            isFlipped: terminalView.isFlipped
-        )
-
-        // Send multiple events for scroll velocity (matching SwiftTerm's velocity logic)
-        let velocity = MouseScrollForwarder.scrollVelocity(delta: event.deltaY)
-        for _ in 0..<velocity {
-            term.sendEvent(buttonFlags: buttonFlags, x: pos.col, y: pos.row)
-        }
-    }
 }
 
 // MARK: - NSViewRepresentable обёртка для SwiftTerm
@@ -137,6 +87,8 @@ class TerminalContainerView: NSView {
     var terminal: TerminalManager?
     private var currentTabID: UUID?
     private let scrollInterceptor = TerminalScrollInterceptor()
+    private var scrollMonitor: Any?
+    private var accumulatedScrollDelta: CGFloat = 0
 
     func showTab(_ tab: TerminalTab?) {
         guard let tab else {
@@ -152,17 +104,111 @@ class TerminalContainerView: NSView {
             tab.terminalView.frame = bounds
             addSubview(tab.terminalView)
 
-            // Place scroll interceptor on top of the terminal view
+            // Place click interceptor on top of the terminal view
             scrollInterceptor.frame = bounds
             scrollInterceptor.terminalView = tab.terminalView
             addSubview(scrollInterceptor)
         }
+
+        installScrollMonitor()
 
         // Focus the terminal view when requested by TerminalManager
         if let pending = terminal?.pendingFocusTabID, pending == tab.id {
             terminal?.pendingFocusTabID = nil
             focusTerminalView(tab.terminalView)
         }
+    }
+
+    // MARK: - Scroll event monitor for TUI mouse reporting
+
+    /// Installs a global-to-app scroll event monitor that intercepts scroll wheel
+    /// events over the terminal view when a TUI app has enabled mouse reporting.
+    ///
+    /// This replaces the previous overlay-based `scrollWheel` approach which does
+    /// not work on macOS 26 — AppKit dispatches scroll events directly to SwiftTerm's
+    /// view, bypassing overlay hitTest entirely.
+    private func installScrollMonitor() {
+        guard scrollMonitor == nil else { return }
+        scrollMonitor = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { [weak self] event in
+            guard let self, let terminal = self.terminal else { return event }
+            guard let tab = terminal.activeTerminalTab else { return event }
+            let terminalView = tab.terminalView
+
+            // Only intercept if event is in our window and over the terminal
+            guard event.window === self.window else { return event }
+            let locationInSelf = self.convert(event.locationInWindow, from: nil)
+            guard self.bounds.contains(locationInSelf) else { return event }
+
+            // Use scrollingDeltaY for trackpad (precise), deltaY for mouse wheel
+            let scrollDelta = event.hasPreciseScrollingDeltas ? event.scrollingDeltaY : event.deltaY
+            guard scrollDelta != 0 else { return event }
+
+            let term = terminalView.getTerminal()
+
+            if term.mouseMode != .off {
+                // TUI mouse reporting active — encode as VT100 mouse button events
+                let modifiers = event.modifierFlags
+                let buttonFlags = MouseScrollForwarder.encodeScrollButton(
+                    deltaY: scrollDelta,
+                    shift: modifiers.contains(.shift),
+                    option: modifiers.contains(.option),
+                    control: modifiers.contains(.control)
+                )
+
+                let locationInTerminal = terminalView.convert(event.locationInWindow, from: nil)
+                let pos = MouseScrollForwarder.gridPosition(
+                    point: locationInTerminal,
+                    viewBounds: terminalView.bounds,
+                    cols: term.cols,
+                    rows: term.rows,
+                    isFlipped: terminalView.isFlipped
+                )
+
+                let velocity = MouseScrollForwarder.scrollVelocity(delta: scrollDelta)
+                for _ in 0..<velocity {
+                    term.sendEvent(buttonFlags: buttonFlags, x: pos.col, y: pos.row)
+                }
+                return nil
+            }
+
+            if term.isCurrentBufferAlternate {
+                // Alternate screen (k9s, htop, vim, etc.) without mouse reporting —
+                // convert scroll to arrow keys like Ghostty/WezTerm/iTerm2.
+                // Accumulate trackpad deltas and emit 1 arrow key per threshold.
+                let arrowKey: String = scrollDelta > 0 ? "\u{1b}OA" : "\u{1b}OB"
+                if event.hasPreciseScrollingDeltas {
+                    self.accumulatedScrollDelta += scrollDelta
+                    // Reset accumulator on gesture start
+                    if event.phase == .began {
+                        self.accumulatedScrollDelta = scrollDelta
+                    }
+                    let threshold: CGFloat = 25
+                    if abs(self.accumulatedScrollDelta) >= threshold {
+                        term.sendResponse(text: arrowKey)
+                        self.accumulatedScrollDelta = 0
+                    }
+                } else {
+                    // Mouse wheel: 1 arrow key per tick
+                    term.sendResponse(text: arrowKey)
+                }
+                return nil
+            }
+
+            // Normal mode — let SwiftTerm handle scrollback
+            return event
+        }
+    }
+
+    private func removeScrollMonitor() {
+        if let monitor = scrollMonitor {
+            NSEvent.removeMonitor(monitor)
+            scrollMonitor = nil
+        }
+    }
+
+    override func removeFromSuperview() {
+        removeScrollMonitor()
+        super.removeFromSuperview()
     }
 
     /// Requests first responder on the terminal view.
