@@ -7,6 +7,7 @@ import Testing
 import Foundation
 @testable import Pine
 
+@Suite("PaneNode Tests")
 struct PaneNodeTests {
 
     // MARK: - Basic construction
@@ -500,5 +501,66 @@ struct PaneNodeTests {
         let id = PaneID()
         let leaf = PaneNode.leaf(id, .editor)
         #expect(leaf.updatingRatio(for: id, ratio: 0.5) == nil)
+    }
+
+    // MARK: - Additional edge cases
+
+    @Test func splitting_doesNotPreventDuplicatePaneID() {
+        // Splitting with a PaneID that already exists in the tree is allowed
+        // (the caller is responsible for providing unique IDs)
+        let id = PaneID()
+        let leaf = PaneNode.leaf(id, .editor)
+        let result = leaf.splitting(id, axis: .horizontal, newPaneID: id, newContent: .terminal)
+        #expect(result != nil)
+        // Tree has two leaves with the same ID — leafCount should still be 2
+        #expect(result?.leafCount == 2)
+    }
+
+    @Test func removing_firstChild_promotesSecond() {
+        let remove = PaneID()
+        let keep = PaneID()
+        let tree = PaneNode.split(
+            .horizontal,
+            first: .leaf(remove, .editor),
+            second: .leaf(keep, .terminal),
+            ratio: 0.5
+        )
+        let result = tree.removing(remove)
+        if case .leaf(let id, let content) = result {
+            #expect(id == keep)
+            #expect(content == .terminal)
+        } else {
+            Issue.record("Expected leaf node after removing first child")
+        }
+    }
+
+    @Test func updatingRatio_withNegativeValue_clampsToMinimum() {
+        let id = PaneID()
+        let tree = PaneNode.split(
+            .horizontal,
+            first: .leaf(id, .editor),
+            second: .leaf(PaneID(), .terminal),
+            ratio: 0.5
+        )
+        let result = tree.updatingRatio(for: id, ratio: -0.5)
+        if case .split(_, _, _, let ratio) = result {
+            #expect(ratio == 0.1)
+        } else {
+            Issue.record("Expected split node")
+        }
+    }
+
+    @Test func codable_decodingInvalidJSON_throws() {
+        let invalidJSON = Data(#"{"type":"unknown"}"#.utf8)
+        #expect(throws: (any Error).self) {
+            try JSONDecoder().decode(PaneNode.self, from: invalidJSON)
+        }
+    }
+
+    @Test func codable_decodingEmptyJSON_throws() {
+        let emptyJSON = Data("{}".utf8)
+        #expect(throws: (any Error).self) {
+            try JSONDecoder().decode(PaneNode.self, from: emptyJSON)
+        }
     }
 }

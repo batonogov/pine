@@ -156,7 +156,4 @@ final class ProjectManager {
     func startTerminals() { terminal.startTerminals(workingDirectory: workspace.rootURL) }
     func addTerminalTab() { terminal.addTerminalTab(workingDirectory: workspace.rootURL) }
     func closeTerminalTab(_ tab: TerminalTab) { terminal.closeTerminalTab(tab) }
-
-    /// Placeholder for terminal context update (e.g., context file writer integration).
-    func updateTerminalContext() {}
 }

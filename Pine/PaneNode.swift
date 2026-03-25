@@ -147,8 +147,12 @@ indirect enum PaneNode: Equatable {
         }
     }
 
-    /// Updates the split ratio for the split that directly contains the given PaneID as a child.
+    /// Updates the split ratio for the split that directly contains the given PaneID as a **leaf** child.
     /// Clamps ratio to 0.1...0.9. Returns nil if `targetID` is not found.
+    ///
+    /// - Note: This only matches splits where `targetID` is an immediate leaf child.
+    ///   If both children of a split are themselves splits, that split's ratio cannot be
+    ///   updated via any leaf ID. A future API may accept a path or sibling pair instead.
     func updatingRatio(for targetID: PaneID, ratio: CGFloat) -> PaneNode? {
         let clamped = min(max(ratio, 0.1), 0.9)
         switch self {
