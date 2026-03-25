@@ -27,18 +27,31 @@ struct CrashReport: Codable, Sendable {
     /// macOS version string.
     let osVersion: String
 
-    /// Number of open editor tabs at time of crash — helps gauge severity.
-    let openFileCount: Int
-
     /// When the crash occurred.
     let timestamp: Date
+
+    /// Source of the report: MetricKit diagnostic, signal handler, or exception handler.
+    let source: Source
+
+    enum Source: String, Codable, Sendable {
+        case metricKit
+        case signal
+        case exception
+    }
+
+    // MARK: - Formatting
+
+    private static let isoFormatter: ISO8601DateFormatter = {
+        let formatter = ISO8601DateFormatter()
+        return formatter
+    }()
 
     /// Human-readable text representation for display in the "send report?" dialog.
     var formattedText: String {
         var lines: [String] = []
         lines.append("Pine \(appVersion) (\(buildNumber)) on \(osVersion)")
-        lines.append("Open files: \(openFileCount)")
-        lines.append("Time: \(ISO8601DateFormatter().string(from: timestamp))")
+        lines.append("Source: \(source.rawValue)")
+        lines.append("Time: \(Self.isoFormatter.string(from: timestamp))")
         lines.append("")
         lines.append("Exception: \(exceptionType)")
         lines.append("Reason: \(exceptionReason)")

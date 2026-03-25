@@ -13,6 +13,7 @@ struct PineApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
     @FocusedValue(\.projectManager) private var focusedProject: ProjectManager?
     @AppStorage(TabManager.autoSaveKey) private var autoSaveEnabled = false
+    @AppStorage(CrashReportSettings.Keys.enabled) private var crashReportingEnabled = false
 
     private var registry: ProjectRegistry { appDelegate.registry }
 
@@ -385,6 +386,18 @@ struct PineApp: App {
 
                 Toggle(isOn: $autoSaveEnabled) {
                     Label(Strings.menuAutoSave, systemImage: MenuIcons.autoSave)
+                }
+
+                Toggle(isOn: $crashReportingEnabled) {
+                    Label(Strings.menuCrashReporting, systemImage: MenuIcons.crashReporting)
+                }
+                .onChange(of: crashReportingEnabled) { _, newValue in
+                    appDelegate.crashReportSettings.isEnabled = newValue
+                    if newValue {
+                        CrashReportHandler.install(settings: appDelegate.crashReportSettings)
+                    } else {
+                        CrashReportHandler.uninstall()
+                    }
                 }
             }
             // Cmd+W is intercepted by AppDelegate's local event monitor
@@ -860,9 +873,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate {
             UserDefaults.standard.set(true, forKey: BlameConstants.storageKey)
         }
 
-        // Install crash handlers (only if user opted in)
-        CrashReportHandler.install(settings: crashReportSettings)
-
         // Preload syntax grammars at startup instead of lazily on first tab open
         _ = SyntaxHighlighter.shared
 
@@ -885,6 +895,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate {
 
         // Clean up stale recovery files older than 7 days across all projects
         RecoveryManager.cleanupAllStaleEntries(olderThan: 7)
+
+        // Install crash handlers if user previously opted in
+        CrashReportHandler.install(settings: crashReportSettings)
 
         // Crash reporting: check for pending reports from a previous crash,
         // or show the opt-in dialog on first launch.

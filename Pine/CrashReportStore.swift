@@ -9,28 +9,40 @@
 
 import Foundation
 
-struct CrashReportStore {
+struct CrashReportStore: Sendable {
 
     let directory: URL
 
     /// Default store location in Application Support.
-    static var `default`: CrashReportStore {
-        let appSupport = FileManager.default.urls(
+    static let `default`: CrashReportStore = {
+        guard let appSupport = FileManager.default.urls(
             for: .applicationSupportDirectory, in: .userDomainMask
-        ).first ?? FileManager.default.temporaryDirectory
+        ).first else {
+            return CrashReportStore(directory: FileManager.default.temporaryDirectory
+                .appending(path: "Pine", directoryHint: .isDirectory)
+                .appending(path: "CrashReports", directoryHint: .isDirectory))
+        }
         let dir = appSupport
             .appending(path: "Pine", directoryHint: .isDirectory)
             .appending(path: "CrashReports", directoryHint: .isDirectory)
         return CrashReportStore(directory: dir)
+    }()
+
+    /// Ensures the storage directory exists. Called before any write operation.
+    func ensureDirectoryExists() throws {
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
     }
 
     /// Saves a crash report to disk. Creates the directory if needed.
     func save(_ report: CrashReport) throws {
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        try ensureDirectoryExists()
+
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .secondsSince1970
 
         let filename = "crash-\(UUID().uuidString).json"
         let fileURL = directory.appending(path: filename)
-        let data = try JSONEncoder().encode(report)
+        let data = try encoder.encode(report)
         try data.write(to: fileURL, options: .atomic)
     }
 
@@ -47,6 +59,8 @@ struct CrashReportStore {
         )
 
         let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .secondsSince1970
+
         return contents
             .filter { $0.pathExtension == "json" }
             .compactMap { url in

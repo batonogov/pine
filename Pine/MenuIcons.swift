@@ -45,6 +45,9 @@ enum MenuIcons {
     // MARK: - Terminal menu
     static let newTerminalTab = "plus"
 
+    // MARK: - Crash Reporting
+    static let crashReporting = "ladybug"
+
     // MARK: - Context menu
     static let newFile = "doc.badge.plus"
     static let newFolder = "folder.badge.plus"

@@ -1443,6 +1443,168 @@
         }
       }
     },
+    "crashReport.optIn.enable" : {
+      "comment" : "Button to enable crash reporting in opt-in dialog.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Enable"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Включить"
+          }
+        }
+      }
+    },
+    "crashReport.optIn.message" : {
+      "comment" : "Informative text for the crash reporting opt-in dialog.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pine can send anonymous crash reports to help fix bugs. No personal data, file contents, or file paths are collected."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pine может отправлять анонимные отчёты об ошибках для улучшения стабильности. Личные данные, содержимое файлов и пути не собираются."
+          }
+        }
+      }
+    },
+    "crashReport.optIn.noThanks" : {
+      "comment" : "Button to decline crash reporting in opt-in dialog.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No Thanks"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Нет, спасибо"
+          }
+        }
+      }
+    },
+    "crashReport.optIn.title" : {
+      "comment" : "Title for the crash reporting opt-in dialog shown on first launch.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Help Improve Pine?"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Помочь улучшить Pine?"
+          }
+        }
+      }
+    },
+    "crashReport.pending.copyAndOpen" : {
+      "comment" : "Button to copy crash report to clipboard and open GitHub issues.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Copy & Open Issue"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Скопировать и создать issue"
+          }
+        }
+      }
+    },
+    "crashReport.pending.dismiss" : {
+      "comment" : "Button to dismiss the pending crash report dialog.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dismiss"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Закрыть"
+          }
+        }
+      }
+    },
+    "crashReport.pending.message" : {
+      "comment" : "Informative text for the pending crash report dialog.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pine crashed during the last session. Would you like to send the crash report to help fix the issue?"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pine аварийно завершился во время прошлой сессии. Хотите отправить отчёт об ошибке?"
+          }
+        }
+      }
+    },
+    "crashReport.pending.title" : {
+      "comment" : "Title for the dialog shown when pending crash reports are found.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Crash Report Available"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Доступен отчёт об ошибке"
+          }
+        }
+      }
+    },
+    "menu.crashReporting" : {
+      "comment" : "Menu item to toggle crash reporting on/off.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Crash Reporting"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Отчёты об ошибках"
+          }
+        }
+      }
+    },
     "dialog.ok" : {
       "comment" : "OK button in dialogs.",
       "extractionState" : "manual",

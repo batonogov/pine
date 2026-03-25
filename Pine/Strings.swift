@@ -386,4 +386,40 @@ enum Strings {
     static var progressLoadingFile: String {
         String(localized: "progress.loadingFile")
     }
+
+    // MARK: - Crash Reporting
+
+    static var crashReportOptInTitle: String {
+        String(localized: "crashReport.optIn.title")
+    }
+
+    static var crashReportOptInMessage: String {
+        String(localized: "crashReport.optIn.message")
+    }
+
+    static var crashReportOptInEnable: String {
+        String(localized: "crashReport.optIn.enable")
+    }
+
+    static var crashReportOptInNoThanks: String {
+        String(localized: "crashReport.optIn.noThanks")
+    }
+
+    static var crashReportPendingTitle: String {
+        String(localized: "crashReport.pending.title")
+    }
+
+    static var crashReportPendingMessage: String {
+        String(localized: "crashReport.pending.message")
+    }
+
+    static var crashReportPendingCopyAndOpen: String {
+        String(localized: "crashReport.pending.copyAndOpen")
+    }
+
+    static var crashReportPendingDismiss: String {
+        String(localized: "crashReport.pending.dismiss")
+    }
+
+    static let menuCrashReporting: LocalizedStringKey = "menu.crashReporting"
 }

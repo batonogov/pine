@@ -6,20 +6,30 @@
 //  1. First-launch opt-in dialog ("Help improve Pine?")
 //  2. Pending crash report dialog ("Pine crashed last time. Send report?")
 //
+//  Note: These dialogs use NSAlert.runModal() which blocks the calling thread.
+//  They are invoked from DispatchQueue.main.asyncAfter in AppDelegate to avoid
+//  blocking app startup.
+//
 
 import AppKit
 
 enum CrashReportDialogs {
 
+    /// GitHub issues URL for crash reports.
+    private static let issueURL = URL(
+        string: "https://github.com/batonogov/pine/issues/new?labels=bug&title=Crash+Report&body=Paste+crash+report+here"
+    )
+
     /// Shows the first-launch opt-in dialog. Returns true if user opted in.
+    @MainActor
     @discardableResult
     static func showOptInDialog(settings: CrashReportSettings) -> Bool {
         let alert = NSAlert()
-        alert.messageText = String(localized: "crashReport.optIn.title")
-        alert.informativeText = String(localized: "crashReport.optIn.message")
+        alert.messageText = Strings.crashReportOptInTitle
+        alert.informativeText = Strings.crashReportOptInMessage
         alert.alertStyle = .informational
-        alert.addButton(withTitle: String(localized: "crashReport.optIn.enable"))
-        alert.addButton(withTitle: String(localized: "crashReport.optIn.noThanks"))
+        alert.addButton(withTitle: Strings.crashReportOptInEnable)
+        alert.addButton(withTitle: Strings.crashReportOptInNoThanks)
 
         settings.hasBeenAsked = true
 
@@ -31,15 +41,16 @@ enum CrashReportDialogs {
 
     /// Shows a dialog with pending crash report(s). User can send or dismiss.
     /// "Send" copies the report to clipboard (for pasting into a GitHub issue).
+    @MainActor
     static func showPendingReportDialog(reports: [CrashReport]) {
         guard let report = reports.first else { return }
 
         let alert = NSAlert()
-        alert.messageText = String(localized: "crashReport.pending.title")
-        alert.informativeText = String(localized: "crashReport.pending.message")
+        alert.messageText = Strings.crashReportPendingTitle
+        alert.informativeText = Strings.crashReportPendingMessage
         alert.alertStyle = .warning
-        alert.addButton(withTitle: String(localized: "crashReport.pending.copyAndOpen"))
-        alert.addButton(withTitle: String(localized: "crashReport.pending.dismiss"))
+        alert.addButton(withTitle: Strings.crashReportPendingCopyAndOpen)
+        alert.addButton(withTitle: Strings.crashReportPendingDismiss)
 
         // Add accessory view with crash details
         let scrollView = NSScrollView(frame: NSRect(x: 0, y: 0, width: 450, height: 200))
@@ -64,9 +75,9 @@ enum CrashReportDialogs {
             NSPasteboard.general.setString(combined, forType: .string)
 
             // Open GitHub issues page
-            // swiftlint:disable:next force_unwrapping
-            let url = URL(string: "https://github.com/batonogov/pine/issues/new?labels=bug&title=Crash+Report&body=Paste+crash+report+here")!
-            NSWorkspace.shared.open(url)
+            if let url = issueURL {
+                NSWorkspace.shared.open(url)
+            }
         }
 
         // Always clear after showing
