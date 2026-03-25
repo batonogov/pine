@@ -241,4 +241,84 @@ struct ShellSettingsTests {
             ?? "/bin/zsh"
         #expect(settings.shellPath == expectedShell)
     }
+
+    // MARK: - Integration: shell detection via getpwuid (#551)
+
+    @Test func systemShellPathIsListedInEtcShells() throws {
+        // /etc/shells lists all valid login shells on macOS.
+        // The shell returned by getpwuid should be present there.
+        guard let shellPath = ShellSettings.systemShellPath() else { return }
+        let etcShells = try String(contentsOfFile: "/etc/shells", encoding: .utf8)
+        let validShells = etcShells
+            .components(separatedBy: .newlines)
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty && !$0.hasPrefix("#") }
+        #expect(validShells.contains(shellPath),
+                "Shell \(shellPath) from getpwuid should be listed in /etc/shells")
+    }
+
+    @Test func systemShellPathIsNotADirectory() {
+        guard let shellPath = ShellSettings.systemShellPath() else { return }
+        var isDir: ObjCBool = false
+        let exists = FileManager.default.fileExists(atPath: shellPath, isDirectory: &isDir)
+        #expect(exists)
+        #expect(!isDir.boolValue, "Shell path should be a file, not a directory")
+    }
+
+    @Test func systemShellPathHasReasonableLength() {
+        // A sanity check: shell paths should be absolute and reasonable length
+        guard let shellPath = ShellSettings.systemShellPath() else { return }
+        #expect(shellPath.count >= 4, "Shell path too short: \(shellPath)") // e.g. /bin/sh
+        #expect(shellPath.count < 256, "Shell path unreasonably long: \(shellPath)")
+    }
+
+    @Test func resolvedShellPathAlwaysReturnsExecutable() throws {
+        let defaults = try makeDefaults()
+        defer { cleanupDefaults(defaults) }
+
+        // Test with various invalid paths — resolved should always be executable
+        let invalidPaths = ["/nonexistent", "/dev/null", "/tmp", ""]
+        for invalidPath in invalidPaths {
+            let settings = ShellSettings(defaults: defaults)
+            settings.shellPath = invalidPath
+            let resolved = settings.resolvedShellPath
+            #expect(FileManager.default.isExecutableFile(atPath: resolved),
+                    "resolvedShellPath should be executable, got: \(resolved) for input: \(invalidPath)")
+        }
+    }
+
+    @Test func resolvedShellPathNeverReturnsEmpty() throws {
+        let defaults = try makeDefaults()
+        defer { cleanupDefaults(defaults) }
+
+        let settings = ShellSettings(defaults: defaults)
+        settings.shellPath = ""
+        #expect(!settings.resolvedShellPath.isEmpty)
+    }
+
+    @Test func commonShellsLoginFlagsAreCorrectPerShell() {
+        // Verify each shell type uses the correct login flag convention
+        for shell in ShellSettings.commonShells {
+            if shell.name.contains("fish") {
+                #expect(shell.defaultArgs.contains("-l"),
+                        "fish should use -l flag, not --login")
+            } else {
+                #expect(shell.defaultArgs.contains("--login"),
+                        "\(shell.name) should use --login flag")
+            }
+        }
+    }
+
+    @Test func shellOptionHashableAndEquatable() {
+        let opt1 = ShellSettings.ShellOption(name: "zsh", path: "/bin/zsh", defaultArgs: ["--login"])
+        let opt2 = ShellSettings.ShellOption(name: "zsh", path: "/bin/zsh", defaultArgs: ["--login"])
+        let opt3 = ShellSettings.ShellOption(name: "bash", path: "/bin/bash", defaultArgs: ["--login"])
+        #expect(opt1 == opt2)
+        #expect(opt1 != opt3)
+
+        var set = Set<ShellSettings.ShellOption>()
+        set.insert(opt1)
+        set.insert(opt2)
+        #expect(set.count == 1)
+    }
 }

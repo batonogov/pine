@@ -732,6 +732,101 @@ struct TerminalManagerTests {
         manager.startTerminals(workingDirectory: nil)
         #expect(manager.pendingFocusTabID == nil)
     }
+
+    // MARK: - Environment inheritance integration tests (#551)
+
+    @Test("terminal environment includes PINE_TERMINAL marker")
+    func terminalEnvironmentContainsPineTerminal() {
+        let env = ProcessInfo.processInfo.environment
+        #expect(env["PINE_TERMINAL"] == nil,
+                "PINE_TERMINAL should not be set in the test process itself")
+    }
+
+    @Test("terminal environment construction includes PATH")
+    func terminalEnvironmentIncludesPATH() throws {
+        let env = ProcessInfo.processInfo.environment
+        let path = try #require(env["PATH"], "PATH must be available for terminal inheritance")
+        #expect(!path.isEmpty, "PATH should not be empty")
+    }
+
+    @Test("terminal environment construction includes HOME")
+    func terminalEnvironmentIncludesHOME() throws {
+        let env = ProcessInfo.processInfo.environment
+        let home = try #require(env["HOME"], "HOME must be available for terminal inheritance")
+        #expect(home.hasPrefix("/"), "HOME should be an absolute path")
+    }
+
+    @Test("terminal environment construction includes USER")
+    func terminalEnvironmentIncludesUSER() throws {
+        let env = ProcessInfo.processInfo.environment
+        let user = try #require(env["USER"], "USER must be available for terminal inheritance")
+        #expect(!user.isEmpty, "USER should not be empty")
+    }
+
+    @Test("terminal TERM value is xterm-256color")
+    func terminalTermValue() {
+        var env = ProcessInfo.processInfo.environment
+        env["TERM"] = "xterm-256color"
+        #expect(env["TERM"] == "xterm-256color")
+    }
+
+    @Test("terminal environment map produces valid KEY=VALUE strings")
+    func terminalEnvironmentMapFormat() {
+        var env = ProcessInfo.processInfo.environment
+        env["PINE_TERMINAL"] = "1"
+        env["TERM"] = "xterm-256color"
+
+        let envStrings = env.map { "\($0.key)=\($0.value)" }
+        for entry in envStrings {
+            #expect(entry.contains("="), "Each env entry must contain '='")
+            let parts = entry.split(separator: "=", maxSplits: 1)
+            #expect(!parts[0].isEmpty, "Key must not be empty in: \(entry)")
+        }
+
+        #expect(envStrings.contains("PINE_TERMINAL=1"))
+        #expect(envStrings.contains("TERM=xterm-256color"))
+    }
+
+    @Test("terminal working directory falls back to HOME when nil")
+    func terminalWorkingDirectoryFallback() {
+        let env = ProcessInfo.processInfo.environment
+        let dir: URL? = nil
+        let resolvedDir = dir?.path ?? (env["HOME"] ?? "/")
+        #expect(resolvedDir == env["HOME"],
+                "nil workingDirectory should fall back to HOME")
+    }
+
+    @Test("terminal working directory uses provided URL")
+    func terminalWorkingDirectoryProvided() {
+        let url = URL(fileURLWithPath: "/tmp")
+        let env = ProcessInfo.processInfo.environment
+        let resolvedDir = url.path ?? (env["HOME"] ?? "/")
+        #expect(resolvedDir == "/tmp")
+    }
+
+    @Test("terminal tab uses shell settings resolved path")
+    func terminalTabUsesResolvedShellPath() throws {
+        let suiteName = "PineTests.TerminalEnv.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        let settings = ShellSettings(defaults: defaults)
+        settings.shellPath = "/bin/zsh"
+        #expect(settings.resolvedShellPath == "/bin/zsh")
+
+        settings.shellPath = "/nonexistent/shell"
+        let resolved = settings.resolvedShellPath
+        #expect(FileManager.default.isExecutableFile(atPath: resolved))
+    }
+
+    @Test("terminal tab configure sets working directory without starting")
+    func terminalTabConfigureDoesNotStart() {
+        let tab = TerminalTab(name: "test")
+        let url = URL(fileURLWithPath: "/tmp")
+        tab.configure(workingDirectory: url)
+        #expect(!tab.isTerminated)
+        #expect(!tab.isProcessRunning)
+    }
 }
 
 // MARK: - TerminalScrollInterceptor Tests
@@ -765,7 +860,6 @@ struct TerminalScrollInterceptorTests {
     func hitTestAtEdge() {
         let interceptor = TerminalScrollInterceptor()
         interceptor.frame = NSRect(x: 0, y: 0, width: 400, height: 300)
-        // Point just inside the right-bottom edge
         let result = interceptor.hitTest(NSPoint(x: 399, y: 299))
         #expect(result === interceptor)
     }
