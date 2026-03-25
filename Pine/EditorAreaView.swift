@@ -121,6 +121,7 @@ struct EditorAreaView: View {
             isMinimapVisible: isMinimapVisible,
             isWordWrapEnabled: isWordWrapEnabled,
             isIndentGuidesVisible: isIndentGuidesVisible,
+            cachedIndentation: tab.cachedIndentation,
             syntaxHighlightingDisabled: tab.syntaxHighlightingDisabled,
             initialCursorPosition: goToLineOffset?.offset ?? tab.cursorPosition,
             initialScrollOffset: goToLineOffset != nil ? 0 : tab.scrollOffset,

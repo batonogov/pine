@@ -148,6 +148,7 @@ struct PineApp: App {
                 } label: {
                     Label(Strings.menuToggleIndentGuides, systemImage: MenuIcons.toggleIndentGuides)
                 }
+                .keyboardShortcut("i", modifiers: [.command, .control])
 
                 Divider()
 

@@ -4936,49 +4936,49 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Show Indent Guides"
+            "value" : "Toggle Indent Guides"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Mostrar guías de sangría"
+            "value" : "Alternar guías de sangría"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Afficher les guides d'indentation"
+            "value" : "Basculer les guides d'indentation"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "インデントガイドを表示"
+            "value" : "インデントガイドの切替"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "들여쓰기 가이드 표시"
+            "value" : "들여쓰기 가이드 전환"
           }
         },
         "pt-BR" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Mostrar guias de recuo"
+            "value" : "Alternar guias de recuo"
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Показать направляющие отступов"
+            "value" : "Направляющие отступов"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "显示缩进参考线"
+            "value" : "切换缩进参考线"
           }
         }
       }

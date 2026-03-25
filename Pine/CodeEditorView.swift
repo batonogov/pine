@@ -90,38 +90,56 @@ final class GutterTextView: NSTextView {
     /// Whether indent guides are visible (driven by @AppStorage in the view layer).
     var isIndentGuidesVisible: Bool = true
 
+    /// Cached indentation style from EditorTab — avoids re-detecting on every draw frame.
+    var cachedIndentStyle: IndentationStyle = .spaces(4)
+
+    /// Cached fold state reference for checking hidden lines during indent guide drawing.
+    var currentFoldState: FoldState = FoldState()
+
+    /// Cached character width for the current font — updated when font changes.
+    var cachedCharWidth: CGFloat = 0
+
+    /// Updates the cached character width from the current font.
+    func updateCachedCharWidth() {
+        let f = font ?? NSFont.monospacedSystemFont(ofSize: 13, weight: .regular)
+        cachedCharWidth = " ".size(withAttributes: [.font: f]).width
+    }
+
     override func drawBackground(in rect: NSRect) {
         super.drawBackground(in: rect)
 
         guard let layoutManager = layoutManager,
               textContainer != nil else { return }
 
-        // ── Indent guides (drawn behind everything, for all visible lines) ──
+        // ── Current line highlight (drawn first so guides render on top) ──
+        let cursorRange = selectedRange()
+        if cursorRange.length == 0 {
+            let glyphIndex = layoutManager.glyphIndexForCharacter(at: cursorRange.location)
+            var lineRect = layoutManager.lineFragmentRect(forGlyphAt: glyphIndex, effectiveRange: nil)
+
+            lineRect.origin.x = 0
+            lineRect.size.width = bounds.width
+            lineRect.origin.y += textContainerOrigin.y
+
+            currentLineColor.setFill()
+            lineRect.fill()
+
+            // ── Inline blame annotation ──
+            if isBlameVisible, !blameLookup.isEmpty {
+                drawInlineBlame(lineRect: lineRect, layoutManager: layoutManager)
+            }
+        }
+
+        // ── Indent guides (drawn AFTER current line highlight so they're visible) ──
         if isIndentGuidesVisible {
             drawIndentGuides(layoutManager: layoutManager)
         }
-
-        // ── Current line highlight ──
-        let cursorRange = selectedRange()
-        guard cursorRange.length == 0 else { return }
-
-        let glyphIndex = layoutManager.glyphIndexForCharacter(at: cursorRange.location)
-        var lineRect = layoutManager.lineFragmentRect(forGlyphAt: glyphIndex, effectiveRange: nil)
-
-        lineRect.origin.x = 0
-        lineRect.size.width = bounds.width
-        lineRect.origin.y += textContainerOrigin.y
-
-        currentLineColor.setFill()
-        lineRect.fill()
-
-        // ── Inline blame annotation ──
-        if isBlameVisible, !blameLookup.isEmpty {
-            drawInlineBlame(lineRect: lineRect, layoutManager: layoutManager)
-        }
     }
 
-    /// Draws vertical indent guide lines for all visible lines.
+    /// Draws vertical indent guide lines for all visible lines using batched CGContext fills.
+    /// Uses cached indentation style (from EditorTab) instead of re-detecting on every frame.
+    /// Respects fold state by skipping hidden lines (height == 0).
+    /// Continues guides through blank lines using surrounding line context.
     private func drawIndentGuides(layoutManager: NSLayoutManager) {
         guard let textContainer = textContainer,
               let scrollView = enclosingScrollView else { return }
@@ -135,44 +153,66 @@ final class GutterTextView: NSTextView {
         )
         guard visibleGlyphRange.location != NSNotFound else { return }
 
-        // Detect indentation style from content
-        let style = IndentationStyle.detect(in: string)
+        // Use cached indentation style — no re-detection per frame (К2)
+        let style = cachedIndentStyle
         let indentUnit = IndentGuideRenderer.indentUnitWidth(from: style)
         let tabWidth = IndentGuideRenderer.effectiveTabWidth(from: style)
 
-        // Measure character width from the editor font
-        let editorFont = font ?? NSFont.monospacedSystemFont(ofSize: 13, weight: .regular)
-        let charWidth = " ".size(withAttributes: [.font: editorFont]).width
+        // Use cached char width (С4)
+        let charWidth = cachedCharWidth > 0
+            ? cachedCharWidth
+            : " ".size(withAttributes: [.font: font ?? NSFont.monospacedSystemFont(ofSize: 13, weight: .regular)]).width
 
         let originY = textContainerOrigin.y
         let textOriginX = textContainerOrigin.x + textContainer.lineFragmentPadding
+        let foldState = currentFoldState
+
+        // Pre-split visible text into lines for blank-line continuation (С2)
+        let allLines = source.components(separatedBy: .newlines)
+
+        // Collect all guide segments, then draw in one batch (К1)
+        var segments: [IndentGuideRenderer.GuideSegment] = []
 
         layoutManager.enumerateLineFragments(
             forGlyphRange: visibleGlyphRange
         ) { lineRect, _, _, glyphRange, _ in
+            // Skip folded lines with zero height (К3)
+            guard lineRect.height > 0 else { return }
+
             let charIndex = layoutManager.characterIndexForGlyph(at: glyphRange.location)
             let lineRange = source.lineRange(for: NSRange(location: charIndex, length: 0))
+
+            // Determine the line number for fold state check
+            let lineNumber = source.substring(to: charIndex).components(separatedBy: .newlines).count - 1
+            if foldState.isLineHidden(lineNumber) { return }
+
             let lineText = source.substring(with: lineRange)
+            let trimmed = lineText.trimmingCharacters(in: .whitespacesAndNewlines)
 
-            // For empty lines (just newline), skip — no guides
-            let trimmed = lineText.trimmingCharacters(in: .newlines)
-            guard !trimmed.isEmpty else { return }
+            let levels: Int
+            if trimmed.isEmpty {
+                // Blank line continuation (С2): use context from surrounding lines
+                levels = IndentGuideRenderer.effectiveLevels(
+                    forLineAt: lineNumber,
+                    lines: allLines,
+                    tabWidth: tabWidth,
+                    indentUnitWidth: indentUnit
+                )
+            } else {
+                let columns = IndentGuideRenderer.indentLevel(of: lineText, tabWidth: tabWidth)
+                levels = IndentGuideRenderer.guideLevels(columns: columns, indentUnitWidth: indentUnit)
+            }
 
-            let columns = IndentGuideRenderer.indentLevel(of: trimmed, tabWidth: tabWidth)
-            let levels = IndentGuideRenderer.guideLevels(
-                columns: columns, indentUnitWidth: indentUnit
-            )
+            guard levels > 0 else { return }
 
             let y = lineRect.origin.y + originY
-            IndentGuideRenderer.drawGuides(.init(
-                levels: levels,
-                indentUnitWidth: indentUnit,
-                charWidth: charWidth,
-                textOriginX: textOriginX,
-                lineY: y,
-                lineHeight: lineRect.height
-            ))
+            for level in 1...levels {
+                let x = textOriginX + CGFloat(level * indentUnit) * charWidth
+                segments.append(.init(x: x, y: y, height: lineRect.height))
+            }
         }
+
+        IndentGuideRenderer.drawBatched(segments)
     }
 
     /// Draws inline blame annotation after the line content on the cursor line.
@@ -467,6 +507,8 @@ struct CodeEditorView: NSViewRepresentable {
     var isWordWrapEnabled: Bool = true
     /// Whether indent guides are visible.
     var isIndentGuidesVisible: Bool = true
+    /// Cached indentation style from the active tab.
+    var cachedIndentation: IndentationStyle = .spaces(4)
     /// Whether syntax highlighting is disabled for this tab (e.g. large files).
     var syntaxHighlightingDisabled: Bool = false
     /// Cursor position to restore when the view is created (tab switch).
@@ -563,6 +605,9 @@ struct CodeEditorView: NSViewRepresentable {
         textView.setBlameLines(blameLines)
         textView.isBlameVisible = isBlameVisible
         textView.isIndentGuidesVisible = isIndentGuidesVisible
+        textView.cachedIndentStyle = cachedIndentation
+        textView.currentFoldState = foldState
+        textView.updateCachedCharWidth()
         // Delegate set AFTER text/highlight setup to prevent textDidChange from firing
         // during makeNSView and causing a spurious updateContent → cachedHighlightResult = nil
         // → contentVersion bump → updateNSView re-sets text → stripping highlight attributes.
@@ -765,6 +810,8 @@ struct CodeEditorView: NSViewRepresentable {
                 gutterView.isIndentGuidesVisible = isIndentGuidesVisible
                 gutterView.needsDisplay = true
             }
+            gutterView.cachedIndentStyle = cachedIndentation
+            gutterView.currentFoldState = foldState
         }
 
         context.coordinator.updateContentIfNeeded(
@@ -1036,10 +1083,11 @@ struct CodeEditorView: NSViewRepresentable {
                 }
             }
 
-            // Update gutter font
+            // Update gutter font and cached char width
             lineNumberView?.gutterFont = gutterFont
             lineNumberView?.editorFont = font
             lineNumberView?.needsDisplay = true
+            (textView as? GutterTextView)?.updateCachedCharWidth()
         }
 
         func textDidChange(_ notification: Notification) {

@@ -2,7 +2,7 @@
 //  IndentGuideRenderer.swift
 //  Pine
 //
-//  Created by Claude on 25.03.2026.
+//  Created by Fedor Batonogov on 25.03.2026.
 //
 
 import AppKit
@@ -11,11 +11,17 @@ import AppKit
 ///
 /// Indent guides are thin vertical lines at each indentation level, helping
 /// visualize code structure. The renderer works with visible lines only for
-/// performance and detects the indent unit (tabs or spaces) from the text.
+/// performance and uses batched CGContext drawing to minimize allocations.
 enum IndentGuideRenderer {
 
-    /// The color used for indent guide lines.
-    static let guideColor = NSColor.separatorColor.withAlphaComponent(0.3)
+    /// Dynamic guide color that adapts to Light/Dark mode.
+    static let guideColor = NSColor(name: nil) { appearance in
+        if appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua {
+            return NSColor.white.withAlphaComponent(0.12)
+        } else {
+            return NSColor.black.withAlphaComponent(0.10)
+        }
+    }
 
     /// The width of each indent guide line in points.
     static let guideLineWidth: CGFloat = 1
@@ -45,45 +51,76 @@ enum IndentGuideRenderer {
         return columns / indentUnitWidth
     }
 
-    /// Computes x-positions for indent guide lines given the indent unit width and character width.
-    /// Returns positions for levels 1, 2, 3, ... up to `maxLevel`.
-    static func guideXPositions(
-        maxLevel: Int,
-        indentUnitWidth: Int,
-        charWidth: CGFloat,
-        textOriginX: CGFloat
-    ) -> [CGFloat] {
-        guard maxLevel > 0, indentUnitWidth > 0 else { return [] }
-        return (1...maxLevel).map { level in
-            textOriginX + CGFloat(level * indentUnitWidth) * charWidth
+    /// Resolves the effective indent level for a line, handling blank lines
+    /// by looking at surrounding non-blank lines (continuation through blanks).
+    ///
+    /// For blank lines, the effective level is `min(previous non-blank, next non-blank)`.
+    /// This prevents indent guides from being interrupted by empty lines.
+    static func effectiveLevels(
+        forLineAt index: Int,
+        lines: [String],
+        tabWidth: Int,
+        indentUnitWidth: Int
+    ) -> Int {
+        guard indentUnitWidth > 0, index >= 0, index < lines.count else { return 0 }
+
+        let line = lines[index]
+        let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        if !trimmed.isEmpty {
+            let columns = indentLevel(of: line, tabWidth: tabWidth)
+            return guideLevels(columns: columns, indentUnitWidth: indentUnitWidth)
         }
+
+        // Blank line: look at surrounding non-blank lines
+        var prevLevels = 0
+        for i in stride(from: index - 1, through: 0, by: -1) {
+            let prev = lines[i].trimmingCharacters(in: .whitespacesAndNewlines)
+            if !prev.isEmpty {
+                let cols = indentLevel(of: lines[i], tabWidth: tabWidth)
+                prevLevels = guideLevels(columns: cols, indentUnitWidth: indentUnitWidth)
+                break
+            }
+        }
+
+        var nextLevels = 0
+        for i in (index + 1)..<lines.count {
+            let next = lines[i].trimmingCharacters(in: .whitespacesAndNewlines)
+            if !next.isEmpty {
+                let cols = indentLevel(of: lines[i], tabWidth: tabWidth)
+                nextLevels = guideLevels(columns: cols, indentUnitWidth: indentUnitWidth)
+                break
+            }
+        }
+
+        return min(prevLevels, nextLevels)
     }
 
-    // MARK: - Drawing
+    // MARK: - Batched drawing
 
-    /// Parameters for drawing indent guides on a single line.
-    struct DrawContext {
-        let levels: Int
-        let indentUnitWidth: Int
-        let charWidth: CGFloat
-        let textOriginX: CGFloat
-        let lineY: CGFloat
-        let lineHeight: CGFloat
+    /// A single guide segment to be drawn.
+    struct GuideSegment {
+        let x: CGFloat
+        let y: CGFloat
+        let height: CGFloat
     }
 
-    /// Draws indent guide lines for a single visible line.
-    static func drawGuides(_ context: DrawContext) {
-        guard context.levels > 0, context.indentUnitWidth > 0 else { return }
+    /// Draws all indent guide segments in a single batched CGContext fill.
+    /// Much faster than individual NSBezierPath stroke() calls.
+    static func drawBatched(_ segments: [GuideSegment]) {
+        guard !segments.isEmpty,
+              let context = NSGraphicsContext.current?.cgContext else { return }
 
-        guideColor.setStroke()
+        guideColor.setFill()
 
-        for level in 1...context.levels {
-            let x = context.textOriginX + CGFloat(level * context.indentUnitWidth) * context.charWidth
-            let path = NSBezierPath()
-            path.move(to: NSPoint(x: x, y: context.lineY))
-            path.line(to: NSPoint(x: x, y: context.lineY + context.lineHeight))
-            path.lineWidth = guideLineWidth
-            path.stroke()
+        for segment in segments {
+            let rect = CGRect(
+                x: segment.x - guideLineWidth / 2,
+                y: segment.y,
+                width: guideLineWidth,
+                height: segment.height
+            )
+            context.fill(rect)
         }
     }
 
@@ -97,11 +134,11 @@ enum IndentGuideRenderer {
 
     /// Detects the effective tab width used for rendering.
     /// For spaces, this equals the indent unit width.
-    /// For tabs, this is the standard tab width (typically 4).
-    static func effectiveTabWidth(from style: IndentationStyle) -> Int {
+    /// For tabs, this uses the provided rendering tab width.
+    static func effectiveTabWidth(from style: IndentationStyle, renderTabWidth: Int = 4) -> Int {
         switch style {
         case .spaces(let count): count
-        case .tabs: 4
+        case .tabs: renderTabWidth
         }
     }
 }

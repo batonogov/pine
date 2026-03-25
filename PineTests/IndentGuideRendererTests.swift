@@ -2,7 +2,7 @@
 //  IndentGuideRendererTests.swift
 //  PineTests
 //
-//  Created by Claude on 25.03.2026.
+//  Created by Fedor Batonogov on 25.03.2026.
 //
 
 import Foundation
@@ -104,57 +104,6 @@ struct IndentGuideRendererTests {
         #expect(IndentGuideRenderer.guideLevels(columns: 8, indentUnitWidth: 0) == 0)
     }
 
-    // MARK: - Guide x-positions
-
-    @Test("Guide x-positions for 0 levels")
-    func xPositionsZeroLevels() {
-        let positions = IndentGuideRenderer.guideXPositions(
-            maxLevel: 0, indentUnitWidth: 4, charWidth: 8.0, textOriginX: 44.0
-        )
-        #expect(positions.isEmpty)
-    }
-
-    @Test("Guide x-positions for 1 level")
-    func xPositionsOneLevel() {
-        let positions = IndentGuideRenderer.guideXPositions(
-            maxLevel: 1, indentUnitWidth: 4, charWidth: 8.0, textOriginX: 44.0
-        )
-        #expect(positions.count == 1)
-        // 44 + 1*4*8 = 44 + 32 = 76
-        #expect(positions[0] == 76.0)
-    }
-
-    @Test("Guide x-positions for 3 levels")
-    func xPositionsThreeLevels() {
-        let positions = IndentGuideRenderer.guideXPositions(
-            maxLevel: 3, indentUnitWidth: 4, charWidth: 8.0, textOriginX: 44.0
-        )
-        #expect(positions.count == 3)
-        #expect(positions[0] == 76.0)   // 44 + 1*4*8
-        #expect(positions[1] == 108.0)  // 44 + 2*4*8
-        #expect(positions[2] == 140.0)  // 44 + 3*4*8
-    }
-
-    @Test("Guide x-positions with 2-space indent")
-    func xPositionsTwoSpaceIndent() {
-        let positions = IndentGuideRenderer.guideXPositions(
-            maxLevel: 2, indentUnitWidth: 2, charWidth: 7.5, textOriginX: 40.0
-        )
-        #expect(positions.count == 2)
-        // 40 + 1*2*7.5 = 55
-        #expect(positions[0] == 55.0)
-        // 40 + 2*2*7.5 = 70
-        #expect(positions[1] == 70.0)
-    }
-
-    @Test("Guide x-positions with zero indent unit width returns empty")
-    func xPositionsZeroIndentUnit() {
-        let positions = IndentGuideRenderer.guideXPositions(
-            maxLevel: 3, indentUnitWidth: 0, charWidth: 8.0, textOriginX: 44.0
-        )
-        #expect(positions.isEmpty)
-    }
-
     // MARK: - Indent unit width from style
 
     @Test("Indent unit width for spaces style")
@@ -176,9 +125,103 @@ struct IndentGuideRendererTests {
         #expect(IndentGuideRenderer.effectiveTabWidth(from: .spaces(2)) == 2)
     }
 
-    @Test("Effective tab width for tabs is 4")
-    func effectiveTabWidthTabs() {
+    @Test("Effective tab width for tabs defaults to 4")
+    func effectiveTabWidthTabsDefault() {
         #expect(IndentGuideRenderer.effectiveTabWidth(from: .tabs) == 4)
+    }
+
+    @Test("Effective tab width for tabs with custom render width")
+    func effectiveTabWidthTabsCustom() {
+        #expect(IndentGuideRenderer.effectiveTabWidth(from: .tabs, renderTabWidth: 8) == 8)
+        #expect(IndentGuideRenderer.effectiveTabWidth(from: .tabs, renderTabWidth: 2) == 2)
+    }
+
+    // MARK: - Blank line continuation (effectiveLevels)
+
+    @Test("Effective levels for non-blank line returns actual levels")
+    func effectiveLevelsNonBlank() {
+        let lines = ["func foo() {", "    let x = 1", "}"]
+        let levels = IndentGuideRenderer.effectiveLevels(
+            forLineAt: 1, lines: lines, tabWidth: 4, indentUnitWidth: 4
+        )
+        #expect(levels == 1) // 4 columns / 4 unit = 1 level
+    }
+
+    @Test("Effective levels for blank line between indented lines")
+    func effectiveLevelsBlankBetween() {
+        let lines = ["    line1", "", "    line3"]
+        let levels = IndentGuideRenderer.effectiveLevels(
+            forLineAt: 1, lines: lines, tabWidth: 4, indentUnitWidth: 4
+        )
+        #expect(levels == 1) // min(1, 1) = 1
+    }
+
+    @Test("Effective levels for blank line with different surrounding indents")
+    func effectiveLevelsBlankDifferent() {
+        let lines = ["        deep", "", "    shallow"]
+        let levels = IndentGuideRenderer.effectiveLevels(
+            forLineAt: 1, lines: lines, tabWidth: 4, indentUnitWidth: 4
+        )
+        #expect(levels == 1) // min(2, 1) = 1
+    }
+
+    @Test("Effective levels for blank line at start of file")
+    func effectiveLevelsBlankAtStart() {
+        let lines = ["", "    code"]
+        let levels = IndentGuideRenderer.effectiveLevels(
+            forLineAt: 0, lines: lines, tabWidth: 4, indentUnitWidth: 4
+        )
+        #expect(levels == 0) // min(0, 1) = 0, no previous line
+    }
+
+    @Test("Effective levels for blank line at end of file")
+    func effectiveLevelsBlankAtEnd() {
+        let lines = ["    code", ""]
+        let levels = IndentGuideRenderer.effectiveLevels(
+            forLineAt: 1, lines: lines, tabWidth: 4, indentUnitWidth: 4
+        )
+        #expect(levels == 0) // min(1, 0) = 0, no next non-blank line
+    }
+
+    @Test("Effective levels for multiple consecutive blank lines")
+    func effectiveLevelsMultipleBlanks() {
+        let lines = ["        deep", "", "", "", "        deep"]
+        // All blank lines should get min(2, 2) = 2
+        for i in 1...3 {
+            let levels = IndentGuideRenderer.effectiveLevels(
+                forLineAt: i, lines: lines, tabWidth: 4, indentUnitWidth: 4
+            )
+            #expect(levels == 2)
+        }
+    }
+
+    @Test("Effective levels for blank line between unindented lines")
+    func effectiveLevelsBlankNoIndent() {
+        let lines = ["top", "", "bottom"]
+        let levels = IndentGuideRenderer.effectiveLevels(
+            forLineAt: 1, lines: lines, tabWidth: 4, indentUnitWidth: 4
+        )
+        #expect(levels == 0)
+    }
+
+    @Test("Effective levels with zero indent unit width returns 0")
+    func effectiveLevelsZeroUnit() {
+        let lines = ["    code"]
+        let levels = IndentGuideRenderer.effectiveLevels(
+            forLineAt: 0, lines: lines, tabWidth: 4, indentUnitWidth: 0
+        )
+        #expect(levels == 0)
+    }
+
+    @Test("Effective levels with out-of-bounds index returns 0")
+    func effectiveLevelsOutOfBounds() {
+        let lines = ["code"]
+        #expect(IndentGuideRenderer.effectiveLevels(
+            forLineAt: -1, lines: lines, tabWidth: 4, indentUnitWidth: 4
+        ) == 0)
+        #expect(IndentGuideRenderer.effectiveLevels(
+            forLineAt: 5, lines: lines, tabWidth: 4, indentUnitWidth: 4
+        ) == 0)
     }
 
     // MARK: - Edge cases
@@ -206,5 +249,22 @@ struct IndentGuideRendererTests {
     @Test("Indent level stops at first non-whitespace")
     func indentLevelStopsAtContent() {
         #expect(IndentGuideRenderer.indentLevel(of: "  hello  world", tabWidth: 4) == 2)
+    }
+
+    @Test("Effective levels for whitespace-only line treated as blank")
+    func effectiveLevelsWhitespaceOnly() {
+        let lines = ["    code", "   ", "    code"]
+        let levels = IndentGuideRenderer.effectiveLevels(
+            forLineAt: 1, lines: lines, tabWidth: 4, indentUnitWidth: 4
+        )
+        #expect(levels == 1) // whitespace-only treated as blank, min(1,1) = 1
+    }
+
+    @Test("Guide segment struct stores correct values")
+    func guideSegmentValues() {
+        let segment = IndentGuideRenderer.GuideSegment(x: 10.0, y: 20.0, height: 15.0)
+        #expect(segment.x == 10.0)
+        #expect(segment.y == 20.0)
+        #expect(segment.height == 15.0)
     }
 }
