@@ -2,7 +2,7 @@
 //  TabManager.swift
 //  Pine
 //
-//  Created by Claude on 12.03.2026.
+//  Created by Pine Team on 12.03.2026.
 //
 
 import os
