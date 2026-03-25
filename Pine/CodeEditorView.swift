@@ -229,6 +229,16 @@ final class GutterTextView: NSTextView {
         return filtered
     }
 
+    override func cancelOperation(_ sender: Any?) {
+        // Trigger word completion popup on Escape when there's a partial word
+        let range = rangeForUserCompletion
+        if range.length > 0 {
+            complete(nil)
+        } else {
+            super.cancelOperation(sender)
+        }
+    }
+
     func toggleComment() {
         guard let style = SyntaxHighlighter.shared.commentStyle(
             forExtension: fileExtension,
