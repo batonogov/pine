@@ -155,6 +155,7 @@ enum Strings {
     static let menuToggleComment: LocalizedStringKey = "menu.toggleComment"
     static let menuToggleMinimap: LocalizedStringKey = "menu.toggleMinimap"
     static let menuToggleBlame: LocalizedStringKey = "menu.toggleBlame"
+    static let menuToggleWordWrap: LocalizedStringKey = "menu.toggleWordWrap"
 
     static var branchUncommittedChangesTitle: String {
         String(localized: "branch.uncommittedChanges.title")

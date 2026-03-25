@@ -125,6 +125,13 @@ struct PineApp: App {
                 }
                 .keyboardShortcut("b", modifiers: [.command, .control])
 
+                Button {
+                    NotificationCenter.default.post(name: .toggleWordWrap, object: nil)
+                } label: {
+                    Label(Strings.menuToggleWordWrap, systemImage: MenuIcons.toggleWordWrap)
+                }
+                .keyboardShortcut("z", modifiers: .option)
+
                 Divider()
 
                 Button {
@@ -1170,4 +1177,6 @@ extension Notification.Name {
     static let showQuickOpen = Notification.Name("showQuickOpen")
     // Go to Line (issue #418)
     static let goToLine = Notification.Name("goToLine")
+    // Word Wrap toggle (issue #416)
+    static let toggleWordWrap = Notification.Name("toggleWordWrap")
 }

@@ -400,6 +400,8 @@ struct CodeEditorView: NSViewRepresentable {
     @Binding var foldState: FoldState
     /// Whether the minimap panel is visible.
     var isMinimapVisible: Bool = true
+    /// Whether word wrap is enabled (wrap at window edge vs. horizontal scroll).
+    var isWordWrapEnabled: Bool = true
     /// Whether syntax highlighting is disabled for this tab (e.g. large files).
     var syntaxHighlightingDisabled: Bool = false
     /// Cursor position to restore when the view is created (tab switch).
@@ -445,7 +447,7 @@ struct CodeEditorView: NSViewRepresentable {
         // ── ScrollView ──
         let scrollView = EditorScrollView()
         scrollView.hasVerticalScroller = true
-        scrollView.hasHorizontalScroller = false
+        scrollView.hasHorizontalScroller = !isWordWrapEnabled
         scrollView.autohidesScrollers = true
         scrollView.drawsBackground = true
         scrollView.backgroundColor = .textBackgroundColor
@@ -462,7 +464,7 @@ struct CodeEditorView: NSViewRepresentable {
             width: scrollView.contentSize.width,
             height: CGFloat.greatestFiniteMagnitude
         ))
-        textContainer.widthTracksTextView = true
+        textContainer.widthTracksTextView = isWordWrapEnabled
         textContainer.lineFragmentPadding = 5
         layoutManager.addTextContainer(textContainer)
 
@@ -486,8 +488,8 @@ struct CodeEditorView: NSViewRepresentable {
         textView.insertionPointColor = .textColor
 
         textView.isVerticallyResizable = true
-        textView.isHorizontallyResizable = false
-        textView.autoresizingMask = [.width]
+        textView.isHorizontallyResizable = !isWordWrapEnabled
+        textView.autoresizingMask = isWordWrapEnabled ? [.width] : []
         textView.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude,
                                    height: CGFloat.greatestFiniteMagnitude)
 
@@ -645,6 +647,36 @@ struct CodeEditorView: NSViewRepresentable {
         }
         editorContainer.minimapWidth = isMinimapVisible ? MinimapView.defaultWidth : 0
         editorContainer.needsLayout = true
+
+        // Word wrap toggle — update text container and scroll view
+        if let sv = context.coordinator.scrollView,
+           let gutterView = sv.documentView as? GutterTextView,
+           let tc = gutterView.textContainer {
+            let wrapChanged = tc.widthTracksTextView != isWordWrapEnabled
+            if wrapChanged {
+                tc.widthTracksTextView = isWordWrapEnabled
+                gutterView.isHorizontallyResizable = !isWordWrapEnabled
+                gutterView.autoresizingMask = isWordWrapEnabled ? [.width] : []
+                sv.hasHorizontalScroller = !isWordWrapEnabled
+
+                if isWordWrapEnabled {
+                    // Reset width to scroll view content width so wrapping kicks in
+                    let contentWidth = sv.contentSize.width
+                    tc.containerSize = NSSize(width: contentWidth, height: CGFloat.greatestFiniteMagnitude)
+                    gutterView.frame.size.width = contentWidth
+                } else {
+                    tc.containerSize = NSSize(
+                        width: CGFloat.greatestFiniteMagnitude,
+                        height: CGFloat.greatestFiniteMagnitude
+                    )
+                }
+
+                gutterView.needsLayout = true
+                gutterView.needsDisplay = true
+                // Recalculate line numbers after wrap change
+                context.coordinator.lineNumberView?.needsDisplay = true
+            }
+        }
 
         // Keep GutterTextView's language info and blame data in sync
         if let sv = context.coordinator.scrollView,
