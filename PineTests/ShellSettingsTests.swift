@@ -321,4 +321,44 @@ struct ShellSettingsTests {
         set.insert(opt2)
         #expect(set.count == 1)
     }
+
+    // MARK: - Negative / edge case tests
+
+    @Test func shellPathWithSpaces_fallsBack() throws {
+        let defaults = try makeDefaults()
+        defer { cleanupDefaults(defaults) }
+        let settings = ShellSettings(defaults: defaults)
+        settings.shellPath = "/path with spaces/my shell"
+        let resolved = settings.resolvedShellPath
+        #expect(FileManager.default.isExecutableFile(atPath: resolved))
+        #expect(resolved != "/path with spaces/my shell")
+    }
+
+    @Test func shellPathWithUnicode_fallsBack() throws {
+        let defaults = try makeDefaults()
+        defer { cleanupDefaults(defaults) }
+        let settings = ShellSettings(defaults: defaults)
+        settings.shellPath = "/bin/zsh™"
+        let resolved = settings.resolvedShellPath
+        #expect(FileManager.default.isExecutableFile(atPath: resolved))
+    }
+
+    @Test func veryLongShellPath_fallsBack() throws {
+        let defaults = try makeDefaults()
+        defer { cleanupDefaults(defaults) }
+        let settings = ShellSettings(defaults: defaults)
+        settings.shellPath = "/" + String(repeating: "a", count: 500) + "/shell"
+        let resolved = settings.resolvedShellPath
+        #expect(FileManager.default.isExecutableFile(atPath: resolved))
+    }
+
+    @Test func shellPathPointingToDirectory_fallsBack() throws {
+        let defaults = try makeDefaults()
+        defer { cleanupDefaults(defaults) }
+        let settings = ShellSettings(defaults: defaults)
+        settings.shellPath = "/usr/bin"  // directory, not executable
+        let resolved = settings.resolvedShellPath
+        #expect(resolved != "/usr/bin")
+        #expect(FileManager.default.isExecutableFile(atPath: resolved))
+    }
 }
