@@ -61,7 +61,7 @@ struct TerminalScrollForwardingTests {
         #expect(flags == 72)
     }
 
-    @Test func encodesControlModifier() {
+    @Test func encodesControlModifierScrollDown() {
         let flags = MouseScrollForwarder.encodeScrollButton(
             deltaY: -1.0,
             shift: false,
@@ -70,6 +70,17 @@ struct TerminalScrollForwardingTests {
         )
         // 65 (scroll down) | 16 (control) = 81
         #expect(flags == 81)
+    }
+
+    @Test func encodesControlModifierScrollUp() {
+        let flags = MouseScrollForwarder.encodeScrollButton(
+            deltaY: 1.0,
+            shift: false,
+            option: false,
+            control: true
+        )
+        // 64 (scroll up) | 16 (control) = 80
+        #expect(flags == 80)
     }
 
     @Test func encodesAllModifiersCombined() {
@@ -131,38 +142,9 @@ struct TerminalScrollForwardingTests {
         #expect(pos.row == 0)
     }
 
-    @Test func nonFlippedCoordinateSystem() {
-        // In non-flipped coordinate system, y=0 is bottom
-        let pos = MouseScrollForwarder.gridPosition(
-            point: CGPoint(x: 0, y: 299),
-            viewBounds: NSRect(x: 0, y: 0, width: 800, height: 300),
-            cols: 80,
-            rows: 24,
-            isFlipped: false
-        )
-        // y=299 in non-flipped means top of view = row 0
-        #expect(pos.row == 0)
-    }
+    // NOTE: Non-flipped coordinate tests are in the "Grid position edge cases (#551)" section below.
 
-    @Test func scrollVelocityForSmallDelta() {
-        let velocity = MouseScrollForwarder.scrollVelocity(delta: 1.0)
-        #expect(velocity == 1)
-    }
-
-    @Test func scrollVelocityForMediumDelta() {
-        let velocity = MouseScrollForwarder.scrollVelocity(delta: 3.0)
-        #expect(velocity == 3)
-    }
-
-    @Test func scrollVelocityForLargeDelta() {
-        let velocity = MouseScrollForwarder.scrollVelocity(delta: 7.0)
-        #expect(velocity >= 3)
-    }
-
-    @Test func scrollVelocityForZeroDelta() {
-        let velocity = MouseScrollForwarder.scrollVelocity(delta: 0.0)
-        #expect(velocity == 1)
-    }
+    // NOTE: Velocity threshold tests are in the "Scroll velocity threshold tests (#551)" section below.
 
     // MARK: - TerminalContainerView scroll forwarding integration
 
@@ -516,5 +498,15 @@ struct TerminalScrollForwardingTests {
         )
         #expect(pos.col == 0)
         #expect(pos.row == 23) // bottom of screen = last row
+    }
+
+    @Test func gridPositionNonFlippedTopRight() {
+        // In non-flipped, y=max is top, so point at (0, 239) should be row 0
+        let pos = MouseScrollForwarder.gridPosition(
+            point: CGPoint(x: 0, y: 239),
+            viewBounds: NSRect(x: 0, y: 0, width: 800, height: 240),
+            cols: 80, rows: 24, isFlipped: false
+        )
+        #expect(pos.row == 0) // top of screen = first row
     }
 }

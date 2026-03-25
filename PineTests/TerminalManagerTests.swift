@@ -733,50 +733,52 @@ struct TerminalManagerTests {
         #expect(manager.pendingFocusTabID == nil)
     }
 
-    // MARK: - Environment inheritance integration tests (#551)
+    // MARK: - Environment construction tests (#551)
 
-    @Test("terminal environment includes PINE_TERMINAL marker")
-    func terminalEnvironmentContainsPineTerminal() {
-        let env = ProcessInfo.processInfo.environment
-        #expect(env["PINE_TERMINAL"] == nil,
-                "PINE_TERMINAL should not be set in the test process itself")
+    @Test("buildEnvironment includes PINE_TERMINAL marker")
+    func buildEnvironmentContainsPineTerminal() {
+        let tab = TerminalTab(name: "test")
+        let env = tab.buildEnvironment()
+        #expect(env["PINE_TERMINAL"] == "1")
     }
 
-    @Test("terminal environment construction includes PATH")
-    func terminalEnvironmentIncludesPATH() throws {
-        let env = ProcessInfo.processInfo.environment
-        let path = try #require(env["PATH"], "PATH must be available for terminal inheritance")
-        #expect(!path.isEmpty, "PATH should not be empty")
-    }
-
-    @Test("terminal environment construction includes HOME")
-    func terminalEnvironmentIncludesHOME() throws {
-        let env = ProcessInfo.processInfo.environment
-        let home = try #require(env["HOME"], "HOME must be available for terminal inheritance")
-        #expect(home.hasPrefix("/"), "HOME should be an absolute path")
-    }
-
-    @Test("terminal environment construction includes USER")
-    func terminalEnvironmentIncludesUSER() throws {
-        let env = ProcessInfo.processInfo.environment
-        let user = try #require(env["USER"], "USER must be available for terminal inheritance")
-        #expect(!user.isEmpty, "USER should not be empty")
-    }
-
-    @Test("terminal TERM value is xterm-256color")
-    func terminalTermValue() {
-        var env = ProcessInfo.processInfo.environment
-        env["TERM"] = "xterm-256color"
+    @Test("buildEnvironment sets TERM to xterm-256color")
+    func buildEnvironmentSetsTermValue() {
+        let tab = TerminalTab(name: "test")
+        let env = tab.buildEnvironment()
         #expect(env["TERM"] == "xterm-256color")
     }
 
-    @Test("terminal environment map produces valid KEY=VALUE strings")
-    func terminalEnvironmentMapFormat() {
-        var env = ProcessInfo.processInfo.environment
-        env["PINE_TERMINAL"] = "1"
-        env["TERM"] = "xterm-256color"
+    @Test("buildEnvironment inherits PATH from parent process")
+    func buildEnvironmentInheritsPATH() throws {
+        let tab = TerminalTab(name: "test")
+        let env = tab.buildEnvironment()
+        let path = try #require(env["PATH"], "PATH must be inherited for shell to function")
+        #expect(!path.isEmpty)
+    }
 
+    @Test("buildEnvironment inherits HOME from parent process")
+    func buildEnvironmentInheritsHOME() throws {
+        let tab = TerminalTab(name: "test")
+        let env = tab.buildEnvironment()
+        let home = try #require(env["HOME"], "HOME must be inherited")
+        #expect(home.hasPrefix("/"))
+    }
+
+    @Test("buildEnvironment inherits USER from parent process")
+    func buildEnvironmentInheritsUSER() throws {
+        let tab = TerminalTab(name: "test")
+        let env = tab.buildEnvironment()
+        let user = try #require(env["USER"], "USER must be inherited")
+        #expect(!user.isEmpty)
+    }
+
+    @Test("buildEnvironment produces valid KEY=VALUE strings")
+    func buildEnvironmentMapFormat() {
+        let tab = TerminalTab(name: "test")
+        let env = tab.buildEnvironment()
         let envStrings = env.map { "\($0.key)=\($0.value)" }
+
         for entry in envStrings {
             #expect(entry.contains("="), "Each env entry must contain '='")
             let parts = entry.split(separator: "=", maxSplits: 1)
@@ -787,21 +789,21 @@ struct TerminalManagerTests {
         #expect(envStrings.contains("TERM=xterm-256color"))
     }
 
-    @Test("terminal working directory falls back to HOME when nil")
-    func terminalWorkingDirectoryFallback() {
-        let env = ProcessInfo.processInfo.environment
-        let dir: URL? = nil
-        let resolvedDir = dir?.path ?? (env["HOME"] ?? "/")
-        #expect(resolvedDir == env["HOME"],
+    @Test("resolveWorkingDirectory falls back to HOME when nil")
+    func resolveWorkingDirectoryFallback() {
+        let tab = TerminalTab(name: "test")
+        // No configure() called, so workingDirectory is nil
+        let dir = tab.resolveWorkingDirectory()
+        let expectedHome = ProcessInfo.processInfo.environment["HOME"] ?? "/"
+        #expect(dir == expectedHome,
                 "nil workingDirectory should fall back to HOME")
     }
 
-    @Test("terminal working directory uses provided URL")
-    func terminalWorkingDirectoryProvided() {
-        let url = URL(fileURLWithPath: "/tmp")
-        let env = ProcessInfo.processInfo.environment
-        let resolvedDir = url.path ?? (env["HOME"] ?? "/")
-        #expect(resolvedDir == "/tmp")
+    @Test("resolveWorkingDirectory uses configured URL")
+    func resolveWorkingDirectoryProvided() {
+        let tab = TerminalTab(name: "test")
+        tab.configure(workingDirectory: URL(fileURLWithPath: "/tmp"))
+        #expect(tab.resolveWorkingDirectory() == "/tmp")
     }
 
     @Test("terminal tab uses shell settings resolved path")
@@ -826,6 +828,8 @@ struct TerminalManagerTests {
         tab.configure(workingDirectory: url)
         #expect(!tab.isTerminated)
         #expect(!tab.isProcessRunning)
+        // Working directory should be set via resolveWorkingDirectory
+        #expect(tab.resolveWorkingDirectory() == "/tmp")
     }
 }
 
