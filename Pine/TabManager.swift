@@ -27,11 +27,18 @@ final class TabManager {
     static let hugeFilePartialLoadSize = FileSizeConstants.oneMB
 
     var tabs: [EditorTab] = []
-    var activeTabID: UUID?
+    var activeTabID: UUID? {
+        didSet {
+            if activeTabID != oldValue { onEditorContextChanged?() }
+        }
+    }
     /// Line number to scroll to after opening a tab (1-based). Consumed by the editor view.
     var pendingGoToLine: Int?
     /// Recovery manager for crash recovery snapshots.
     var recoveryManager: RecoveryManager?
+
+    /// Called when active tab or cursor position changes. Set by ProjectManager.
+    var onEditorContextChanged: (() -> Void)?
 
     var activeTab: EditorTab? {
         guard let id = activeTabID else { return nil }
@@ -249,6 +256,7 @@ final class TabManager {
         let loc = CursorLocation(position: cursorPosition, in: tabs[index].content)
         tabs[index].cursorLine = loc.line
         tabs[index].cursorColumn = loc.column
+        onEditorContextChanged?()
     }
 
     /// Updates the fold state for the active tab.

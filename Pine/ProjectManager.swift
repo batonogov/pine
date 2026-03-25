@@ -17,6 +17,7 @@ final class ProjectManager {
     let searchProvider = ProjectSearchProvider()
     let quickOpenProvider = QuickOpenProvider()
     let progress = ProgressTracker()
+    let contextFileWriter = ContextFileWriter()
     private(set) var recoveryManager: RecoveryManager?
 
     init() {
@@ -26,6 +27,9 @@ final class ProjectManager {
         }
         workspace.progressTracker = progress
         workspace.gitProvider.progressTracker = progress
+        tabManager.onEditorContextChanged = { [weak self] in
+            self?.updateEditorContext()
+        }
     }
 
     deinit {
@@ -132,6 +136,7 @@ final class ProjectManager {
     func loadDirectory(url: URL) {
         workspace.loadDirectory(url: url)
         setupRecovery(projectURL: url)
+        contextFileWriter.setProjectRoot(url)
     }
 
     // MARK: - Convenience accessors (terminal)
@@ -156,4 +161,30 @@ final class ProjectManager {
     func startTerminals() { terminal.startTerminals(workingDirectory: workspace.rootURL) }
     func addTerminalTab() { terminal.addTerminalTab(workingDirectory: workspace.rootURL) }
     func closeTerminalTab(_ tab: TerminalTab) { terminal.closeTerminalTab(tab) }
+
+    // MARK: - Editor context for terminal
+
+    /// Pushes the current editor context (active file, cursor position) to the
+    /// context file writer. Called when the active tab or cursor position changes.
+    func updateEditorContext() {
+        guard let rootURL = workspace.rootURL else { return }
+        let tab = tabManager.activeTab
+        let relativePath: String? = if let url = tab?.url {
+            url.path.hasPrefix(rootURL.path + "/")
+                ? String(url.path.dropFirst(rootURL.path.count + 1))
+                : url.lastPathComponent
+        } else {
+            nil
+        }
+        contextFileWriter.update(
+            currentFile: relativePath,
+            cursorLine: tab?.cursorLine,
+            cursorColumn: tab?.cursorColumn
+        )
+    }
+
+    /// Cleans up the context file. Called when the project window closes.
+    func cleanupEditorContext() {
+        contextFileWriter.cleanup()
+    }
 }

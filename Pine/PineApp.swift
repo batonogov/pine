@@ -784,6 +784,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate {
         // when the user reopens this project from Welcome or Open Recent.
         let canonical = projectURL.resolvingSymlinksInPath()
         registry.openProjects[canonical]?.saveSession()
+        registry.openProjects[canonical]?.cleanupEditorContext()
         registry.closeProjectWindow(projectURL)
         // Show Welcome if no windows are open (check non-background projects)
         let hasOpenWindows = registry.openProjects.keys.contains { url in
@@ -1091,6 +1092,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate {
         // Save sessions before terminating processes.
         for (_, pm) in registry.openProjects {
             pm.saveSession()
+            pm.cleanupEditorContext()
             // Clean up recovery files if all tabs are saved
             if !pm.tabManager.hasUnsavedChanges {
                 pm.recoveryManager?.deleteAllRecoveryFiles()

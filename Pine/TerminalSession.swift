@@ -280,6 +280,11 @@ final class TerminalTab: Identifiable, Hashable {
         var env = ProcessInfo.processInfo.environment
         env["PINE_TERMINAL"] = "1"
         env["TERM"] = "xterm-256color"
+        if let wd = workingDirectory {
+            env["PINE_PROJECT_ROOT"] = wd.path
+            env["PINE_CONTEXT_FILE"] = wd
+                .appendingPathComponent(ContextFileWriter.fileName).path
+        }
 
         let envStrings = env.map { "\($0.key)=\($0.value)" }
         let dir = workingDirectory?.path ?? (env["HOME"] ?? "/")
