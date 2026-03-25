@@ -497,7 +497,9 @@ struct CodeEditorView: NSViewRepresentable {
         textView.exactFileName = fileName
         textView.setBlameLines(blameLines)
         textView.isBlameVisible = isBlameVisible
-        textView.delegate = context.coordinator
+        // Delegate set AFTER text/highlight setup to prevent textDidChange from firing
+        // during makeNSView and causing a spurious updateContent → cachedHighlightResult = nil
+        // → contentVersion bump → updateNSView re-sets text → stripping highlight attributes.
         scrollView.documentView = textView
 
         container.addSubview(scrollView)
@@ -565,6 +567,11 @@ struct CodeEditorView: NSViewRepresentable {
                 }
             }
         }
+
+        // Set delegate now — after text and highlighting are configured,
+        // so textDidChange won't fire during initial setup and cause a
+        // re-highlight cycle that strips syntax colors (issue #556).
+        textView.delegate = context.coordinator
 
         // Restore cursor and scroll from saved per-tab state.
         // initialCursorPosition is stored as NSRange.location (UTF-16 offset),
@@ -788,6 +795,11 @@ struct CodeEditorView: NSViewRepresentable {
 
         init(parent: CodeEditorView) {
             self.parent = parent
+            // Initialize language/fileName to match the initial view,
+            // preventing a false languageChanged detection on the first
+            // updateNSView call (issue #556).
+            self.lastLanguage = parent.language
+            self.lastFileName = parent.fileName
         }
 
         deinit {
@@ -857,7 +869,12 @@ struct CodeEditorView: NSViewRepresentable {
                 SyntaxHighlighter.shared.invalidateCache(for: storage)
             }
 
-            if textChanged {
+            // Only replace NSTextView text when content actually differs.
+            // contentVersion can be bumped even for identical text (e.g., by
+            // updateContent with the same string), and textView.string = text
+            // strips all attributes (isRichText = false), destroying syntax
+            // highlighting (issue #556).
+            if textChanged && textView.string != text {
                 isProgrammaticTextChange = true
                 textView.string = text
                 isProgrammaticTextChange = false
@@ -866,8 +883,9 @@ struct CodeEditorView: NSViewRepresentable {
             if !parent.syntaxHighlightingDisabled, let storage = textView.textStorage {
                 if storage.length > CodeEditorView.viewportHighlightThreshold {
                     scheduleViewportHighlighting(textView: textView)
-                } else if let cached = parent.cachedHighlightResult {
+                } else if let cached = parent.cachedHighlightResult, !languageChanged {
                     // Apply cached highlights synchronously to avoid flash on tab switch.
+                    // Skip cache when language changed — the cached result has old grammar matches.
                     SyntaxHighlighter.shared.applyMatches(cached, to: storage, font: font)
                 } else {
                     // No cache — apply synchronous highlight for instant display.
