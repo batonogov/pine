@@ -21,5 +21,8 @@ DerivedData/
 # Profiling
 *.profraw
 
+# Pine editor context (written at runtime)
+.pine-context.json
+
 # Claude Code
 .claude/
