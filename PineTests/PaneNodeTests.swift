@@ -505,6 +505,36 @@ struct PaneNodeTests {
         }
     }
 
+    @Test func updatingRatioOfSplit_deeplyNestedLeaf_updatesCorrectLevel() {
+        // 3-level tree: root splits into (left-split, right-leaf)
+        // left-split splits into (inner-split, leafB)
+        // inner-split splits into (leafA, leafC)
+        // Target: leafA at depth 3 — should update inner-split's parent ratio
+        let leafA = PaneID()
+        let leafB = PaneID()
+        let leafC = PaneID()
+        let leafR = PaneID()
+        let innerSplit = PaneNode.split(.horizontal, first: .leaf(leafA, .editor), second: .leaf(leafC, .editor), ratio: 0.5)
+        let leftSplit = PaneNode.split(.vertical, first: innerSplit, second: .leaf(leafB, .terminal), ratio: 0.4)
+        let root = PaneNode.split(.horizontal, first: leftSplit, second: .leaf(leafR, .editor), ratio: 0.6)
+
+        let result = root.updatingRatioOfSplit(containing: leafA, ratio: 0.8)
+        // Should update leftSplit's ratio (where innerSplit containing leafA is a direct child)
+        // NOT root's ratio
+        if case .split(_, let first, _, let rootRatio) = result {
+            // Root ratio should be unchanged
+            #expect(abs(rootRatio - 0.6) < 1e-6)
+            // Left split should have updated ratio
+            if case .split(_, _, _, let leftRatio) = first {
+                #expect(abs(leftRatio - 0.8) < 1e-6)
+            } else {
+                Issue.record("Expected left split node")
+            }
+        } else {
+            Issue.record("Expected result")
+        }
+    }
+
     // MARK: - Replacing (С3)
 
     @Test func replacing_leafWithNewLeaf() {

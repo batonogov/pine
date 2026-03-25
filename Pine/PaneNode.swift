@@ -268,7 +268,7 @@ indirect enum PaneNode: Sendable {
                 if let newFirst = first.updatingRatioOfSplit(containing: targetID, ratio: ratio) {
                     return .split(ax, first: newFirst, second: second, ratio: currentRatio)
                 }
-                return .split(ax, first: first, second: second, ratio: clamped)
+                return nil
             }
             if inSecond, case .split = second, second.contains(targetID) {
                 if second.hasDirectLeafChild(targetID) {
@@ -277,7 +277,7 @@ indirect enum PaneNode: Sendable {
                 if let newSecond = second.updatingRatioOfSplit(containing: targetID, ratio: ratio) {
                     return .split(ax, first: first, second: newSecond, ratio: currentRatio)
                 }
-                return .split(ax, first: first, second: second, ratio: clamped)
+                return nil
             }
             return nil
         }
