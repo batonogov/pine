@@ -275,13 +275,25 @@ struct EditorTabItem: View {
             }
         }
         .accessibilityRepresentation {
+            // К1: single body-level representation — covers both pinned and unpinned tabs.
+            // К2: pinned tabs get fileName + "pinned" label instead of silent icon-only button.
+            // К3: "Close" button uses localized string.
             HStack {
                 Button(tab.fileName, action: onSelect)
                     .accessibilityIdentifier(AccessibilityID.editorTab(tab.fileName))
+                    .accessibilityLabel(
+                        AccessibilityLabels.editorTab(
+                            fileName: tab.fileName,
+                            isActive: isActive,
+                            isDirty: tab.isDirty,
+                            isPinned: tab.isPinned
+                        )
+                    )
                     .accessibilityAddTraits(isActive ? .isSelected : [])
                 if !tab.isPinned {
-                    Button("Close", action: onClose)
+                    Button(AccessibilityLabels.closeButton, action: onClose)
                         .accessibilityIdentifier(AccessibilityID.editorTabCloseButton(tab.fileName))
+                        .accessibilityHint(AccessibilityLabels.closeTabHint(fileName: tab.fileName))
                 }
             }
         }
@@ -343,22 +355,5 @@ struct EditorTabItem: View {
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 4)
-        .accessibilityRepresentation {
-            HStack {
-                Button(tab.fileName, action: onSelect)
-                    .accessibilityIdentifier(AccessibilityID.editorTab(tab.fileName))
-                    .accessibilityLabel(
-                        AccessibilityLabels.editorTab(
-                            fileName: tab.fileName,
-                            isActive: isActive,
-                            isDirty: tab.isDirty
-                        )
-                    )
-                    .accessibilityAddTraits(isActive ? .isSelected : [])
-                Button("Close", action: onClose)
-                    .accessibilityIdentifier(AccessibilityID.editorTabCloseButton(tab.fileName))
-                    .accessibilityHint(AccessibilityLabels.closeTabHint(fileName: tab.fileName))
-            }
-        }
     }
 }

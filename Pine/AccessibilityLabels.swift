@@ -18,87 +18,44 @@
 
 import Foundation
 
+// TODO: [М2] Accessibility labels not yet covered: MinimapView, QuickOpenView,
+// GoToLineView, BranchSwitcherView, MarkdownPreviewView. Add in follow-up.
+
 enum AccessibilityLabels {
 
-    // MARK: - Static labels
+    // MARK: - Static labels (С2: static let для однократной инициализации)
 
-    static var sidebar: String {
-        String(localized: "a11y.sidebar")
-    }
-
-    static var fileTree: String {
-        String(localized: "a11y.fileTree")
-    }
-
-    static var editorTabBar: String {
-        String(localized: "a11y.editorTabBar")
-    }
-
-    static var editorArea: String {
-        String(localized: "a11y.editorArea")
-    }
-
-    static var codeEditor: String {
-        String(localized: "a11y.codeEditor")
-    }
-
-    static var noFileOpen: String {
-        String(localized: "a11y.noFileOpen")
-    }
-
-    static var statusBar: String {
-        String(localized: "a11y.statusBar")
-    }
-
-    static var terminalToggle: String {
-        String(localized: "a11y.terminalToggle")
-    }
-
-    static var terminalArea: String {
-        String(localized: "a11y.terminalArea")
-    }
-
-    static var welcomeWindow: String {
-        String(localized: "a11y.welcomeWindow")
-    }
-
-    static var openFolderButton: String {
-        String(localized: "a11y.openFolderButton")
-    }
-
-    static var openFolderHint: String {
-        String(localized: "a11y.openFolderHint")
-    }
-
-    static var recentProjects: String {
-        String(localized: "a11y.recentProjects")
-    }
-
-    static var cursorPosition: String {
-        String(localized: "a11y.cursorPosition")
-    }
-
-    static var indentation: String {
-        String(localized: "a11y.indentation")
-    }
-
-    static var lineEnding: String {
-        String(localized: "a11y.lineEnding")
-    }
-
-    static var fileSize: String {
-        String(localized: "a11y.fileSize")
-    }
-
-    static var encoding: String {
-        String(localized: "a11y.encoding")
-    }
+    static let sidebar = String(localized: "a11y.sidebar")
+    static let fileTree = String(localized: "a11y.fileTree")
+    static let editorTabBar = String(localized: "a11y.editorTabBar")
+    static let editorArea = String(localized: "a11y.editorArea")
+    static let codeEditor = String(localized: "a11y.codeEditor")
+    static let noFileOpen = String(localized: "a11y.noFileOpen")
+    static let statusBar = String(localized: "a11y.statusBar")
+    static let terminalToggle = String(localized: "a11y.terminalToggle")
+    static let terminalArea = String(localized: "a11y.terminalArea")
+    static let welcomeWindow = String(localized: "a11y.welcomeWindow")
+    static let openFolderButton = String(localized: "a11y.openFolderButton")
+    static let openFolderHint = String(localized: "a11y.openFolderHint")
+    static let recentProjects = String(localized: "a11y.recentProjects")
+    static let cursorPosition = String(localized: "a11y.cursorPosition")
+    static let indentation = String(localized: "a11y.indentation")
+    static let lineEnding = String(localized: "a11y.lineEnding")
+    static let fileSize = String(localized: "a11y.fileSize")
+    static let encoding = String(localized: "a11y.encoding")
+    /// Localized "Close" for tab close buttons (К3: не hardcoded).
+    static let closeButton = String(localized: "a11y.tab.close")
+    /// Localized "pinned" trait for pinned tabs (К2).
+    static let tabPinned = String(localized: "a11y.tab.pinned")
 
     // MARK: - Dynamic labels
 
-    /// Label for an editor tab.
-    static func editorTab(fileName: String, isActive: Bool, isDirty: Bool) -> String {
+    /// Label for an editor tab (supports pinned state).
+    static func editorTab(fileName: String, isActive: Bool, isDirty: Bool, isPinned: Bool = false) -> String {
         var parts = [fileName]
+        if isPinned {
+            parts.append(String(localized: "a11y.tab.pinned"))
+        }
         if isActive {
             parts.append(String(localized: "a11y.tab.selected"))
         }
@@ -123,6 +80,9 @@ enum AccessibilityLabels {
         isDirectory ? String(localized: "a11y.fileNode.folder \(name)") : name
     }
 
+    // TODO: [М1] git status counts use simple %lld interpolation without plural forms (.stringsdict).
+    // Follow-up: add proper pluralization for added/modified/untracked counts.
+
     /// Label describing git status counts.
     static func gitStatusDescription(modified: Int, added: Int, untracked: Int) -> String {
         var parts: [String] = []
@@ -141,9 +101,9 @@ enum AccessibilityLabels {
         return parts.joined(separator: ", ")
     }
 
-    /// Label for a recent project row.
+    /// Label for a recent project row (С1: локализован через xcstrings).
     static func recentProject(name: String, path: String) -> String {
-        "\(name), \(path)"
+        String(localized: "a11y.recentProject \(name) \(path)")
     }
 
     /// Hint for terminal toggle button.

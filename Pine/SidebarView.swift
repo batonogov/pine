@@ -166,7 +166,6 @@ struct SidebarView: View {
                         FileNodeRow(node: node)
                             .id(node.id)
                     }
-                    .accessibilityLabel(AccessibilityLabels.fileTree)
                     .contentTransition(.identity)
                     .environment(editState)
                     .contextMenu {
@@ -226,6 +225,7 @@ struct SidebarView: View {
         }
         .listStyle(.sidebar)
         .frame(minWidth: 200, idealWidth: 250)
+        .accessibilityLabel(AccessibilityLabels.fileTree)
     }
 
     /// Opens a new project via folder picker in a new window.
