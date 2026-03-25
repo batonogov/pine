@@ -9,6 +9,11 @@ import Foundation
 
 struct WordCompletionProviderTests {
 
+    init() {
+        // Clear cache before each test for isolation
+        WordCompletionProvider.clearCache()
+    }
+
     // MARK: - collectWords
 
     @Test func emptyTabsReturnsEmpty() {
@@ -143,8 +148,8 @@ struct WordCompletionProviderTests {
     @Test func largeTextPerformance() {
         // Build a large text with many words
         var lines: [String] = []
-        for i in 0..<10_000 {
-            lines.append("func method_\(i)(param_\(i): Int) -> String")
+        for lineNum in 0..<10_000 {
+            lines.append("func method_\(lineNum)(param_\(lineNum): Int) -> String")
         }
         let tab = EditorTab(
             url: URL(fileURLWithPath: "/large.swift"),
@@ -157,6 +162,147 @@ struct WordCompletionProviderTests {
         #expect(words.contains("Int"))
         #expect(words.contains("String"))
         #expect(words.count > 100)
+    }
+
+    // MARK: - Unicode support
+
+    @Test func cyrillicWords() {
+        let tab = EditorTab(
+            url: URL(fileURLWithPath: "/test.swift"),
+            content: "let переменная = значение\nfunc вычислить() {}",
+            savedContent: ""
+        )
+        let words = WordCompletionProvider.collectWords(from: [tab], excluding: "")
+        #expect(words.contains("переменная"))
+        #expect(words.contains("значение"))
+        #expect(words.contains("вычислить"))
+    }
+
+    @Test func cjkWords() {
+        let tab = EditorTab(
+            url: URL(fileURLWithPath: "/test.swift"),
+            content: "let 変数名 = 値設定\nfunc 計算する() {}",
+            savedContent: ""
+        )
+        let words = WordCompletionProvider.collectWords(from: [tab], excluding: "")
+        #expect(words.contains("変数名"))
+        #expect(words.contains("値設定"))
+        #expect(words.contains("計算する"))
+    }
+
+    @Test func germanUmlauts() {
+        let tab = EditorTab(
+            url: URL(fileURLWithPath: "/test.swift"),
+            content: "let größe = überprüfung\nvar Ärger = Öffnung",
+            savedContent: ""
+        )
+        let words = WordCompletionProvider.collectWords(from: [tab], excluding: "")
+        #expect(words.contains("größe"))
+        #expect(words.contains("überprüfung"))
+        #expect(words.contains("Ärger"))
+        #expect(words.contains("Öffnung"))
+    }
+
+    @Test func mixedUnicodeAndAsciiIdentifiers() {
+        let tab = EditorTab(
+            url: URL(fileURLWithPath: "/test.swift"),
+            content: "let café_count = наш_проект123",
+            savedContent: ""
+        )
+        let words = WordCompletionProvider.collectWords(from: [tab], excluding: "")
+        #expect(words.contains("café_count"))
+        #expect(words.contains("наш_проект123"))
+    }
+
+    // MARK: - Edge cases
+
+    @Test func emptyFileReturnsEmpty() {
+        let tab = EditorTab(
+            url: URL(fileURLWithPath: "/empty.swift"),
+            content: "",
+            savedContent: ""
+        )
+        let words = WordCompletionProvider.collectWords(from: [tab], excluding: "")
+        #expect(words.isEmpty)
+    }
+
+    @Test func whitespaceOnlyFileReturnsEmpty() {
+        let tab = EditorTab(
+            url: URL(fileURLWithPath: "/whitespace.swift"),
+            content: "   \n\t\t\n   \n",
+            savedContent: ""
+        )
+        let words = WordCompletionProvider.collectWords(from: [tab], excluding: "")
+        #expect(words.isEmpty)
+    }
+
+    @Test func differentCasesOfSameWordPreserved() {
+        let tab = EditorTab(
+            url: URL(fileURLWithPath: "/test.swift"),
+            content: "myVar MyVar MYVAR myvar",
+            savedContent: ""
+        )
+        let words = WordCompletionProvider.collectWords(from: [tab], excluding: "")
+        // All case variants should be separate entries
+        #expect(words.contains("myVar"))
+        #expect(words.contains("MyVar"))
+        #expect(words.contains("MYVAR"))
+        #expect(words.contains("myvar"))
+        #expect(words.count == 4)
+    }
+
+    @Test func veryLongWord() {
+        let longWord = String(repeating: "a", count: 5000)
+        let tab = EditorTab(
+            url: URL(fileURLWithPath: "/test.swift"),
+            content: longWord,
+            savedContent: ""
+        )
+        let words = WordCompletionProvider.collectWords(from: [tab], excluding: "")
+        #expect(words.count == 1)
+        #expect(words.first == longWord)
+    }
+
+    @Test func singleWordRepeatedManyTimes() {
+        let content = Array(repeating: "repeated", count: 1000).joined(separator: " ")
+        let tab = EditorTab(
+            url: URL(fileURLWithPath: "/test.swift"),
+            content: content,
+            savedContent: ""
+        )
+        let words = WordCompletionProvider.collectWords(from: [tab], excluding: "")
+        // Should deduplicate — only one entry
+        #expect(words.count == 1)
+        #expect(words.first == "repeated")
+    }
+
+    // MARK: - Caching
+
+    @Test func cacheReturnsConsistentResults() {
+        let tab = EditorTab(
+            url: URL(fileURLWithPath: "/test.swift"),
+            content: "hello world test",
+            savedContent: ""
+        )
+        let words1 = WordCompletionProvider.collectWords(from: [tab], excluding: "")
+        let words2 = WordCompletionProvider.collectWords(from: [tab], excluding: "")
+        #expect(words1 == words2)
+    }
+
+    @Test func cacheInvalidatesOnContentChange() {
+        var tab = EditorTab(
+            url: URL(fileURLWithPath: "/test.swift"),
+            content: "hello world",
+            savedContent: ""
+        )
+        let words1 = WordCompletionProvider.collectWords(from: [tab], excluding: "")
+        #expect(words1.contains("hello"))
+        #expect(!words1.contains("newword"))
+
+        // Mutate content — contentVersion increments
+        tab.content = "hello newword"
+        let words2 = WordCompletionProvider.collectWords(from: [tab], excluding: "")
+        #expect(words2.contains("newword"))
     }
 
     // MARK: - completions (prefix matching)
@@ -177,7 +323,7 @@ struct WordCompletionProviderTests {
         #expect(!results.contains("world"))
     }
 
-    @Test func emptyPrefixReturnsAll() {
+    @Test func emptyPrefixReturnsAllUpToLimit() {
         let words = ["alpha", "beta", "gamma"]
         let results = WordCompletionProvider.completions(for: "", in: words)
         #expect(results.count == 3)
@@ -193,5 +339,23 @@ struct WordCompletionProviderTests {
         let words = ["zebra", "apple", "mango"]
         let results = WordCompletionProvider.completions(for: "", in: words)
         #expect(results == ["zebra", "apple", "mango"])
+    }
+
+    // MARK: - Completion limit
+
+    @Test func completionsLimitedToMax() {
+        // Create more words than maxCompletions, all matching prefix "word"
+        var words: [String] = []
+        for num in 0..<200 {
+            words.append("word\(num)")
+        }
+        let results = WordCompletionProvider.completions(for: "word", in: words)
+        #expect(results.count == WordCompletionProvider.maxCompletions)
+    }
+
+    @Test func completionsUnderLimitReturnsAll() {
+        let words = ["word1", "word2", "word3"]
+        let results = WordCompletionProvider.completions(for: "word", in: words)
+        #expect(results.count == 3)
     }
 }
