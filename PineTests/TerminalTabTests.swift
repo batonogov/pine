@@ -76,7 +76,9 @@ struct TerminalTabTests {
         let container = TerminalContainerView(frame: NSRect(x: 0, y: 0, width: 800, height: 300))
         let tab = TerminalTab(name: "test")
         container.showTab(tab)
-        #expect(container.subviews.count == 1)
+        #expect(container.subviews.contains(tab.terminalView))
+        #expect(container.subviews.contains { $0 is TerminalScrollInterceptor })
+        #expect(container.subviews.count == 2)
     }
 
     @Test func showSameTabTwiceIsNoOp() {
@@ -84,7 +86,8 @@ struct TerminalTabTests {
         let tab = TerminalTab(name: "test")
         container.showTab(tab)
         container.showTab(tab)
-        #expect(container.subviews.count == 1)
+        #expect(container.subviews.count == 2)
+        #expect(container.subviews.contains(tab.terminalView))
     }
 
     @Test func switchTabsReplacesSubview() {
@@ -94,8 +97,9 @@ struct TerminalTabTests {
 
         container.showTab(tab1)
         container.showTab(tab2)
-        #expect(container.subviews.count == 1)
-        #expect(container.subviews.first === tab2.terminalView)
+        #expect(container.subviews.count == 2)
+        #expect(container.subviews.contains(tab2.terminalView))
+        #expect(!container.subviews.contains(tab1.terminalView))
     }
 
     // MARK: - TerminalTabDelegate
