@@ -414,12 +414,13 @@ jobs:
               -only-testing:PineUITests/MultiWindowTests
               -only-testing:PineUITests/TerminalTests
               -only-testing:PineUITests/ToggleCommentTests
-          # Shard 6 — Git & Font (14 tests)
-          - shard-name: "Git & Font"
+          # Shard 6 — Git, Font & Accessibility (20 tests)
+          - shard-name: "Git, Font & Accessibility"
             test-classes: >-
               -only-testing:PineUITests/GitignoreFilterTests
               -only-testing:PineUITests/FontSizeTests
               -only-testing:PineUITests/CheckForUpdatesTests
+              -only-testing:PineUITests/AccessibilityUITests
           # Shard 7 — Navigation (18 tests)
           - shard-name: "Navigation"
             test-classes: >-
