@@ -183,6 +183,9 @@ struct ContentView: View {
             onHandleExternalConflicts: { handleExternalConflicts($0) },
             onNavigateToChange: { navigateToChange(direction: $0) }
         ))
+        .onReceive(NotificationCenter.default.publisher(for: .toggleWordWrap)) { _ in
+            isWordWrapEnabled.toggle()
+        }
         .onChange(of: tabManager.pendingGoToLine) { _, newLine in
             guard let line = newLine, let tab = tabManager.activeTab else { return }
             tabManager.pendingGoToLine = nil
@@ -902,10 +905,6 @@ private struct GitAndNotificationObserver: ViewModifier {
                     columnVisibility = .all
                 }
                 isSearchPresented = true
-            }
-            .onReceive(NotificationCenter.default.publisher(for: .toggleWordWrap)) { _ in
-                guard controlActiveState == .key else { return }
-                isWordWrapEnabled.toggle()
             }
             .onReceive(NotificationCenter.default.publisher(for: .goToLine)) { _ in
                 guard controlActiveState == .key,
