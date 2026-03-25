@@ -199,6 +199,136 @@ struct TerminalScrollForwardingTests {
         #expect(result === interceptor)
     }
 
+    // MARK: - Arrow key encoding for alternate screen scroll
+
+    @Test func arrowKeyForScrollUpReturnsEscOA() {
+        let key = MouseScrollForwarder.arrowKeyForScroll(deltaY: 1.0)
+        #expect(key == "\u{1b}OA")
+    }
+
+    @Test func arrowKeyForScrollDownReturnsEscOB() {
+        let key = MouseScrollForwarder.arrowKeyForScroll(deltaY: -1.0)
+        #expect(key == "\u{1b}OB")
+    }
+
+    @Test func arrowKeyForLargePositiveDeltaReturnsUp() {
+        let key = MouseScrollForwarder.arrowKeyForScroll(deltaY: 50.0)
+        #expect(key == "\u{1b}OA")
+    }
+
+    @Test func arrowKeyForLargeNegativeDeltaReturnsDown() {
+        let key = MouseScrollForwarder.arrowKeyForScroll(deltaY: -50.0)
+        #expect(key == "\u{1b}OB")
+    }
+
+    @Test func arrowKeyForSmallPositiveFractionReturnsUp() {
+        let key = MouseScrollForwarder.arrowKeyForScroll(deltaY: 0.1)
+        #expect(key == "\u{1b}OA")
+    }
+
+    @Test func arrowKeyForSmallNegativeFractionReturnsDown() {
+        let key = MouseScrollForwarder.arrowKeyForScroll(deltaY: -0.1)
+        #expect(key == "\u{1b}OB")
+    }
+
+    // MARK: - Scroll velocity edge cases
+
+    @Test func scrollVelocityForNegativeDelta() {
+        let velocity = MouseScrollForwarder.scrollVelocity(delta: -3.0)
+        #expect(velocity == 3)
+    }
+
+    @Test func scrollVelocityForNegativeLargeDelta() {
+        let velocity = MouseScrollForwarder.scrollVelocity(delta: -10.0)
+        #expect(velocity == 3)
+    }
+
+    @Test func scrollVelocityAtBoundaryOne() {
+        let velocity = MouseScrollForwarder.scrollVelocity(delta: 1.0)
+        #expect(velocity == 1)
+    }
+
+    @Test func scrollVelocityJustAboveOne() {
+        let velocity = MouseScrollForwarder.scrollVelocity(delta: 1.5)
+        #expect(velocity >= 1)
+        #expect(velocity <= 3)
+    }
+
+    @Test func scrollVelocityAtBoundaryFive() {
+        let velocity = MouseScrollForwarder.scrollVelocity(delta: 5.0)
+        // 5 > 1, so min(5, 3) = 3
+        #expect(velocity == 3)
+    }
+
+    @Test func scrollVelocityJustAboveFive() {
+        let velocity = MouseScrollForwarder.scrollVelocity(delta: 5.1)
+        #expect(velocity == 3)
+    }
+
+    // MARK: - Grid position edge cases
+
+    @Test func gridPositionWithZeroBoundsReturnsOrigin() {
+        let pos = MouseScrollForwarder.gridPosition(
+            point: CGPoint(x: 100, y: 100),
+            viewBounds: NSRect(x: 0, y: 0, width: 0, height: 0),
+            cols: 80,
+            rows: 24,
+            isFlipped: true
+        )
+        #expect(pos.col == 0)
+        #expect(pos.row == 0)
+    }
+
+    @Test func gridPositionWithZeroColsReturnsOrigin() {
+        let pos = MouseScrollForwarder.gridPosition(
+            point: CGPoint(x: 100, y: 100),
+            viewBounds: NSRect(x: 0, y: 0, width: 800, height: 300),
+            cols: 0,
+            rows: 24,
+            isFlipped: true
+        )
+        #expect(pos.col == 0)
+        #expect(pos.row == 0)
+    }
+
+    @Test func gridPositionMiddleOfView() {
+        let pos = MouseScrollForwarder.gridPosition(
+            point: CGPoint(x: 400, y: 150),
+            viewBounds: NSRect(x: 0, y: 0, width: 800, height: 300),
+            cols: 80,
+            rows: 24,
+            isFlipped: true
+        )
+        #expect(pos.col == 40)
+        #expect(pos.row == 12)
+    }
+
+    // MARK: - Modifier combinations for scroll encoding
+
+    @Test func encodesShiftAndControlCombined() {
+        let flags = MouseScrollForwarder.encodeScrollButton(
+            deltaY: -1.0,
+            shift: true,
+            option: false,
+            control: true
+        )
+        // 65 (scroll down) | 4 (shift) | 16 (control) = 85
+        #expect(flags == 85)
+    }
+
+    @Test func encodesOptionAndControlCombined() {
+        let flags = MouseScrollForwarder.encodeScrollButton(
+            deltaY: 1.0,
+            shift: false,
+            option: true,
+            control: true
+        )
+        // 64 (scroll up) | 8 (option) | 16 (control) = 88
+        #expect(flags == 88)
+    }
+
+    // MARK: - TerminalContainerView scroll forwarding integration
+
     @Test func containerAddsScrollInterceptorOnShowTab() {
         let container = TerminalContainerView()
         container.frame = NSRect(x: 0, y: 0, width: 800, height: 300)
