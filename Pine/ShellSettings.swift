@@ -29,8 +29,21 @@ final class ShellSettings {
     private static let shellPathKey = "terminalShellPath"
     private static let shellArgsKey = "terminalShellArgs"
 
+    /// Reads the user's login shell from the POSIX account database.
+    /// Works reliably inside Xcode sandbox and App Sandbox where `$SHELL` may be absent or wrong.
+    static func systemShellPath() -> String? {
+        guard let pw = getpwuid(getuid()) else { return nil }
+        guard let shell = pw.pointee.pw_shell else { return nil }
+        let path = String(cString: shell)
+        return path.isEmpty ? nil : path
+    }
+
+    /// Fallback chain: `getpwuid` → `$SHELL` → `/bin/zsh`.
     private static var defaultShellPath: String {
-        ProcessInfo.processInfo.environment["SHELL"] ?? "/bin/zsh"
+        if let posixShell = systemShellPath() {
+            return posixShell
+        }
+        return ProcessInfo.processInfo.environment["SHELL"] ?? "/bin/zsh"
     }
 
     private static let defaultShellArgs = ["--login"]
@@ -50,7 +63,7 @@ final class ShellSettings {
         }
     }
 
-    /// Validated shell path — falls back to `$SHELL`, then `/bin/zsh` if configured path is not executable.
+    /// Validated shell path — falls back to system shell (via `getpwuid`), then `$SHELL`, then `/bin/zsh`.
     var resolvedShellPath: String {
         if fileManager.isExecutableFile(atPath: shellPath) { return shellPath }
         let fallback = Self.defaultShellPath

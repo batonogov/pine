@@ -23,12 +23,15 @@ struct ShellSettingsTests {
 
     // MARK: - Default values
 
-    @Test func defaultShellUsesEnvironmentVariable() throws {
+    @Test func defaultShellUsesPosixAccountDatabase() throws {
         let defaults = try makeDefaults()
         defer { cleanupDefaults(defaults) }
 
         let settings = ShellSettings(defaults: defaults)
-        let expectedShell = ProcessInfo.processInfo.environment["SHELL"] ?? "/bin/zsh"
+        // systemShellPath uses getpwuid — the reliable source even inside sandbox
+        let expectedShell = ShellSettings.systemShellPath()
+            ?? ProcessInfo.processInfo.environment["SHELL"]
+            ?? "/bin/zsh"
         #expect(settings.shellPath == expectedShell)
     }
 
@@ -111,7 +114,9 @@ struct ShellSettingsTests {
 
         settings.reset()
 
-        let expectedShell = ProcessInfo.processInfo.environment["SHELL"] ?? "/bin/zsh"
+        let expectedShell = ShellSettings.systemShellPath()
+            ?? ProcessInfo.processInfo.environment["SHELL"]
+            ?? "/bin/zsh"
         #expect(settings.shellPath == expectedShell)
         #expect(settings.shellArgs == ["--login"])
     }
@@ -135,7 +140,9 @@ struct ShellSettingsTests {
         let settings = ShellSettings(defaults: defaults)
         settings.shellPath = "/nonexistent/path/to/shell"
 
-        let expectedShell = ProcessInfo.processInfo.environment["SHELL"] ?? "/bin/zsh"
+        let expectedShell = ShellSettings.systemShellPath()
+            ?? ProcessInfo.processInfo.environment["SHELL"]
+            ?? "/bin/zsh"
         #expect(settings.resolvedShellPath == expectedShell)
     }
 
@@ -183,6 +190,43 @@ struct ShellSettingsTests {
         #expect(ids.count == uniqueIDs.count)
     }
 
+    // MARK: - POSIX system shell detection
+
+    @Test func systemShellPathReturnsNonNilOnMacOS() {
+        // getpwuid(getuid()) should always succeed on macOS
+        let path = ShellSettings.systemShellPath()
+        #expect(path != nil)
+    }
+
+    @Test func systemShellPathReturnsAbsolutePath() {
+        guard let path = ShellSettings.systemShellPath() else { return }
+        #expect(path.hasPrefix("/"))
+    }
+
+    @Test func systemShellPathReturnsExecutableBinary() {
+        guard let path = ShellSettings.systemShellPath() else { return }
+        #expect(FileManager.default.isExecutableFile(atPath: path))
+    }
+
+    @Test func systemShellPathMatchesCommonShell() {
+        guard let path = ShellSettings.systemShellPath() else { return }
+        let knownShells = ["/bin/zsh", "/bin/bash", "/bin/sh",
+                           "/usr/local/bin/fish", "/opt/homebrew/bin/fish",
+                           "/usr/local/bin/nu", "/opt/homebrew/bin/nu"]
+        #expect(knownShells.contains(path), "Unexpected shell: \(path)")
+    }
+
+    @Test func defaultShellPrefersGetpwuidOverEnvironment() throws {
+        let defaults = try makeDefaults()
+        defer { cleanupDefaults(defaults) }
+
+        // If getpwuid returns a valid shell, that should be the default
+        // regardless of what $SHELL says
+        guard let posixShell = ShellSettings.systemShellPath() else { return }
+        let settings = ShellSettings(defaults: defaults)
+        #expect(settings.shellPath == posixShell)
+    }
+
     // MARK: - Empty path fallback
 
     @Test func emptyStringPathFallsBackToDefault() throws {
@@ -192,7 +236,9 @@ struct ShellSettingsTests {
         defaults.set("", forKey: "terminalShellPath")
 
         let settings = ShellSettings(defaults: defaults)
-        let expectedShell = ProcessInfo.processInfo.environment["SHELL"] ?? "/bin/zsh"
+        let expectedShell = ShellSettings.systemShellPath()
+            ?? ProcessInfo.processInfo.environment["SHELL"]
+            ?? "/bin/zsh"
         #expect(settings.shellPath == expectedShell)
     }
 }
