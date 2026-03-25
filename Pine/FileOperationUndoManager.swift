@@ -54,22 +54,33 @@ enum FileOperationUndoManager {
         undoManager.setActionName(Strings.undoRename)
     }
 
-    // MARK: - Register Create Undo (without creating)
+    // MARK: - Finalize New Item (grouped create + rename undo, #527)
 
-    /// Registers an undo action that trashes the item at `url`, without creating it.
+    /// Optionally renames a newly created item and registers a **grouped** undo action
+    /// so that a single Cmd+Z removes the item entirely.
     ///
-    /// Used when create + rename are performed as separate steps but should undo as one action (#527).
-    /// The caller has already created (and optionally renamed) the item; this method only registers
-    /// the undo so that a single Cmd+Z deletes the final file.
-    static func registerCreateUndo(at url: URL, undoManager: UndoManager) throws {
+    /// When `originalURL == finalURL` (user accepted the default name), no rename is performed.
+    /// Uses `beginUndoGrouping()` / `endUndoGrouping()` to guarantee the operation
+    /// is atomic from the undo stack perspective.
+    static func finalizeNewItem(
+        from originalURL: URL,
+        to finalURL: URL,
+        undoManager: UndoManager
+    ) throws {
+        if finalURL != originalURL {
+            try FileManager.default.moveItem(at: originalURL, to: finalURL)
+        }
+
+        undoManager.beginUndoGrouping()
         undoManager.registerUndo(withTarget: undoManager) { (undoMgr: UndoManager) in
             do {
-                try FileOperationUndoManager.deleteItem(at: url, undoManager: undoMgr)
+                try FileOperationUndoManager.deleteItem(at: finalURL, undoManager: undoMgr)
             } catch {
                 Logger.fileTree.error("Undo create failed: \(error)")
             }
         }
         undoManager.setActionName(Strings.undoCreate)
+        undoManager.endUndoGrouping()
     }
 
     // MARK: - Create

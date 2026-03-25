@@ -1552,9 +1552,11 @@ struct FileNodeRow: View {
         // Name unchanged — accept as-is
         if newURL == oldURL {
             editState.clear()
-            // For newly created items, register a single undo that deletes the file (#527)
+            // For newly created items, register a grouped undo that deletes the file (#527)
             if wasNewlyCreated, let undoManager {
-                try? FileOperationUndoManager.registerCreateUndo(at: oldURL, undoManager: undoManager)
+                try? FileOperationUndoManager.finalizeNewItem(
+                    from: oldURL, to: oldURL, undoManager: undoManager
+                )
             }
             if wasNewlyCreated && !node.isDirectory {
                 tabManager.openTab(url: oldURL)
@@ -1564,12 +1566,11 @@ struct FileNodeRow: View {
 
         do {
             if wasNewlyCreated {
-                // For newly created items: rename without undo registration, then register
-                // a single undo that deletes the final file — so Cmd+Z removes it entirely (#527).
-                try FileManager.default.moveItem(at: oldURL, to: newURL)
-                if let undoManager {
-                    try? FileOperationUndoManager.registerCreateUndo(at: newURL, undoManager: undoManager)
-                }
+                // For newly created items: rename + register a grouped undo so that
+                // a single Cmd+Z removes the file entirely (#527).
+                try FileOperationUndoManager.finalizeNewItem(
+                    from: oldURL, to: newURL, undoManager: undoManager ?? UndoManager()
+                )
             } else if let undoManager {
                 try FileOperationUndoManager.renameItem(from: oldURL, to: newURL, undoManager: undoManager)
             } else {
