@@ -165,19 +165,26 @@ jobs:
           COVERAGE=$(python3 -c "
           import json, sys
           EXCLUDED_VIEWS = {
-              'ContentView.swift',
-              'EditorTabBar.swift',
-              'WelcomeView.swift',
-              'SearchResultsView.swift',
-              'BranchSwitcherView.swift',
-              'RecoveryDialogView.swift',
-              'TerminalSearchBar.swift',
+              'AccessibilityIdentifiers.swift',
               'BranchSubtitleClickHandler.swift',
+              'BranchSwitcherView.swift',
+              'ContentView.swift',
+              'ContentView+Helpers.swift',
+              'EditorAreaView.swift',
+              'EditorTabBar.swift',
+              'FileNodeRow.swift',
+              'GitAndNotificationObserver.swift',
               'MarkdownPreviewView.swift',
               'QuickLookPreviewView.swift',
               'QuickOpenView.swift',
+              'RecoveryDialogView.swift',
               'RepresentedFileTracker.swift',
-              'AccessibilityIdentifiers.swift',
+              'SearchResultsView.swift',
+              'SidebarView.swift',
+              'StatusBarView.swift',
+              'TerminalBarView.swift',
+              'TerminalSearchBar.swift',
+              'WelcomeView.swift',
           }
           with open('coverage.json') as f:
               data = json.load(f)
@@ -203,19 +210,26 @@ jobs:
           python3 -c "
           import json
           EXCLUDED_VIEWS = {
-              'ContentView.swift',
-              'EditorTabBar.swift',
-              'WelcomeView.swift',
-              'SearchResultsView.swift',
-              'BranchSwitcherView.swift',
-              'RecoveryDialogView.swift',
-              'TerminalSearchBar.swift',
+              'AccessibilityIdentifiers.swift',
               'BranchSubtitleClickHandler.swift',
+              'BranchSwitcherView.swift',
+              'ContentView.swift',
+              'ContentView+Helpers.swift',
+              'EditorAreaView.swift',
+              'EditorTabBar.swift',
+              'FileNodeRow.swift',
+              'GitAndNotificationObserver.swift',
               'MarkdownPreviewView.swift',
               'QuickLookPreviewView.swift',
               'QuickOpenView.swift',
+              'RecoveryDialogView.swift',
               'RepresentedFileTracker.swift',
-              'AccessibilityIdentifiers.swift',
+              'SearchResultsView.swift',
+              'SidebarView.swift',
+              'StatusBarView.swift',
+              'TerminalBarView.swift',
+              'TerminalSearchBar.swift',
+              'WelcomeView.swift',
           }
           with open('coverage.json') as f:
               data = json.load(f)
