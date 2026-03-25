@@ -7,6 +7,8 @@ import Testing
 import Foundation
 @testable import Pine
 
+// swiftlint:disable type_body_length file_length
+
 @Suite("PaneNode Tests")
 struct PaneNodeTests {
 
@@ -127,6 +129,23 @@ struct PaneNodeTests {
         #expect(tree.content(for: PaneID()) == nil)
     }
 
+    @Test func allIDs_returnsSetOfAllLeafIDs() {
+        let id1 = PaneID()
+        let id2 = PaneID()
+        let id3 = PaneID()
+        let tree = PaneNode.split(
+            .horizontal,
+            first: .leaf(id1, .editor),
+            second: .split(.vertical, first: .leaf(id2, .terminal), second: .leaf(id3, .editor), ratio: 0.5),
+            ratio: 0.5
+        )
+        let ids = tree.allIDs
+        #expect(ids.count == 3)
+        #expect(ids.contains(id1))
+        #expect(ids.contains(id2))
+        #expect(ids.contains(id3))
+    }
+
     // MARK: - Splitting
 
     @Test func splitting_leafCreatesNewSplit() {
@@ -188,6 +207,64 @@ struct PaneNodeTests {
         } else {
             Issue.record("Expected split node")
         }
+    }
+
+    // MARK: - Splitting — duplicate ID rejection (К3)
+
+    @Test func splitting_duplicateID_returnsNil() {
+        let id = PaneID()
+        let leaf = PaneNode.leaf(id, .editor)
+        let result = leaf.splitting(id, axis: .horizontal, newPaneID: id, newContent: .terminal)
+        #expect(result == nil)
+    }
+
+    @Test func splitting_duplicateIDInDeepTree_returnsNil() {
+        let existingID = PaneID()
+        let targetID = PaneID()
+        let tree = PaneNode.split(
+            .horizontal,
+            first: .leaf(existingID, .editor),
+            second: .leaf(targetID, .terminal),
+            ratio: 0.5
+        )
+        // Try to split targetID using existingID as newPaneID — should fail
+        let result = tree.splitting(targetID, axis: .vertical, newPaneID: existingID, newContent: .editor)
+        #expect(result == nil)
+    }
+
+    // MARK: - Splitting — maxDepth enforcement (С2)
+
+    @Test func splitting_atMaxDepth_returnsNil() {
+        // Build a tree at exactly paneMaxDepth
+        var node = PaneNode.leaf(PaneID(), .editor)
+        for _ in 1..<paneMaxDepth {
+            node = .split(.horizontal, first: node, second: .leaf(PaneID(), .editor), ratio: 0.5)
+        }
+        #expect(node.depth == paneMaxDepth)
+
+        // Trying to split further should fail
+        guard let deepLeaf = node.leafIDs.last else {
+            Issue.record("Expected at least one leaf")
+            return
+        }
+        let result = node.splitting(deepLeaf, axis: .vertical, newPaneID: PaneID(), newContent: .terminal)
+        #expect(result == nil)
+    }
+
+    @Test func splitting_belowMaxDepth_succeeds() {
+        var node = PaneNode.leaf(PaneID(), .editor)
+        for _ in 1..<(paneMaxDepth - 1) {
+            node = .split(.horizontal, first: node, second: .leaf(PaneID(), .editor), ratio: 0.5)
+        }
+        #expect(node.depth == paneMaxDepth - 1)
+
+        // Split the shallowest leaf (depth 1 from its parent) — result depth = current + 1
+        guard let shallowLeaf = node.leafIDs.last else {
+            Issue.record("Expected at least one leaf")
+            return
+        }
+        let result = node.splitting(shallowLeaf, axis: .vertical, newPaneID: PaneID(), newContent: .terminal)
+        #expect(result != nil)
     }
 
     // MARK: - Removing
@@ -334,6 +411,205 @@ struct PaneNodeTests {
         }
     }
 
+    // MARK: - updatingRatio with split-split children (К1)
+
+    @Test func updatingRatio_splitWithTwoSplitChildren_updatesInnerRatio() {
+        let idA = PaneID()
+        let idB = PaneID()
+        let idC = PaneID()
+        let idD = PaneID()
+        let tree = PaneNode.split(
+            .horizontal,
+            first: .split(.vertical, first: .leaf(idA, .editor), second: .leaf(idB, .editor), ratio: 0.5),
+            second: .split(.vertical, first: .leaf(idC, .terminal), second: .leaf(idD, .terminal), ratio: 0.5),
+            ratio: 0.5
+        )
+
+        // updatingRatio(for: idA) should update the inner-left split's ratio
+        let result = tree.updatingRatio(for: idA, ratio: 0.7)
+        #expect(result != nil)
+
+        // Root ratio should be unchanged
+        if case .split(_, let first, _, let rootRatio) = result {
+            #expect(abs(rootRatio - 0.5) < 1e-6)
+            // Inner split ratio should be updated
+            if case .split(_, _, _, let innerRatio) = first {
+                #expect(abs(innerRatio - 0.7) < 1e-6)
+            } else {
+                Issue.record("Expected inner split")
+            }
+        } else {
+            Issue.record("Expected split node")
+        }
+    }
+
+    // MARK: - updatingRatioOfSplit (К1 — resize between split subtrees)
+
+    @Test func updatingRatioOfSplit_betweenTwoSplitChildren() {
+        let idA = PaneID()
+        let idB = PaneID()
+        let idC = PaneID()
+        let idD = PaneID()
+        let tree = PaneNode.split(
+            .horizontal,
+            first: .split(.vertical, first: .leaf(idA, .editor), second: .leaf(idB, .editor), ratio: 0.5),
+            second: .split(.vertical, first: .leaf(idC, .terminal), second: .leaf(idD, .terminal), ratio: 0.5),
+            ratio: 0.5
+        )
+
+        // Using any leaf from either subtree should update root's ratio
+        let result = tree.updatingRatioOfSplit(containing: idA, ratio: 0.7)
+        #expect(result != nil)
+        if case .split(_, _, _, let rootRatio) = result {
+            #expect(abs(rootRatio - 0.7) < 1e-6)
+        } else {
+            Issue.record("Expected split node")
+        }
+    }
+
+    @Test func updatingRatioOfSplit_directLeafChild_returnsNil() {
+        let id = PaneID()
+        let tree = PaneNode.split(
+            .horizontal,
+            first: .leaf(id, .editor),
+            second: .leaf(PaneID(), .terminal),
+            ratio: 0.5
+        )
+        // Direct leaf children should return nil — use updatingRatio instead
+        #expect(tree.updatingRatioOfSplit(containing: id, ratio: 0.7) == nil)
+    }
+
+    @Test func updatingRatioOfSplit_unknownID_returnsNil() {
+        let tree = PaneNode.split(
+            .horizontal,
+            first: .split(.vertical, first: .leaf(PaneID(), .editor), second: .leaf(PaneID(), .editor), ratio: 0.5),
+            second: .leaf(PaneID(), .terminal),
+            ratio: 0.5
+        )
+        #expect(tree.updatingRatioOfSplit(containing: PaneID(), ratio: 0.7) == nil)
+    }
+
+    @Test func updatingRatioOfSplit_clampsRatio() {
+        let id = PaneID()
+        let tree = PaneNode.split(
+            .horizontal,
+            first: .split(.vertical, first: .leaf(id, .editor), second: .leaf(PaneID(), .editor), ratio: 0.5),
+            second: .leaf(PaneID(), .terminal),
+            ratio: 0.5
+        )
+        let result = tree.updatingRatioOfSplit(containing: id, ratio: 0.0)
+        if case .split(_, _, _, let ratio) = result {
+            #expect(abs(ratio - 0.1) < 1e-6)
+        } else {
+            Issue.record("Expected split node")
+        }
+    }
+
+    // MARK: - Replacing (С3)
+
+    @Test func replacing_leafWithNewLeaf() {
+        let id = PaneID()
+        let newID = PaneID()
+        let tree = PaneNode.split(
+            .horizontal,
+            first: .leaf(id, .editor),
+            second: .leaf(PaneID(), .terminal),
+            ratio: 0.5
+        )
+        let result = tree.replacing(id, with: .leaf(newID, .terminal))
+        #expect(result != nil)
+        #expect(result?.contains(newID) == true)
+        #expect(result?.contains(id) == false)
+        #expect(result?.content(for: newID) == .terminal)
+    }
+
+    @Test func replacing_leafWithSplit() {
+        let id = PaneID()
+        let newA = PaneID()
+        let newB = PaneID()
+        let leaf = PaneNode.leaf(id, .editor)
+        let replacement = PaneNode.split(.vertical, first: .leaf(newA, .editor), second: .leaf(newB, .terminal), ratio: 0.5)
+        let result = leaf.replacing(id, with: replacement)
+        #expect(result != nil)
+        #expect(result?.leafCount == 2)
+        #expect(result?.contains(newA) == true)
+        #expect(result?.contains(newB) == true)
+    }
+
+    @Test func replacing_unknownID_returnsNil() {
+        let tree = PaneNode.leaf(PaneID(), .editor)
+        #expect(tree.replacing(PaneID(), with: .leaf(PaneID(), .terminal)) == nil)
+    }
+
+    @Test func replacing_deepInTree() {
+        let targetID = PaneID()
+        let newID = PaneID()
+        let tree = PaneNode.split(
+            .horizontal,
+            first: .split(.vertical, first: .leaf(targetID, .editor), second: .leaf(PaneID(), .editor), ratio: 0.5),
+            second: .leaf(PaneID(), .terminal),
+            ratio: 0.5
+        )
+        let result = tree.replacing(targetID, with: .leaf(newID, .terminal))
+        #expect(result != nil)
+        #expect(result?.contains(newID) == true)
+        #expect(result?.contains(targetID) == false)
+    }
+
+    // MARK: - Swapping (С3)
+
+    @Test func swapping_twoLeaves() {
+        let idA = PaneID()
+        let idB = PaneID()
+        let tree = PaneNode.split(
+            .horizontal,
+            first: .leaf(idA, .editor),
+            second: .leaf(idB, .terminal),
+            ratio: 0.5
+        )
+        let result = tree.swapping(idA, with: idB)
+        #expect(result != nil)
+        // Content should be swapped, IDs stay in place
+        #expect(result?.content(for: idA) == .terminal)
+        #expect(result?.content(for: idB) == .editor)
+    }
+
+    @Test func swapping_unknownID_returnsNil() {
+        let id = PaneID()
+        let tree = PaneNode.leaf(id, .editor)
+        #expect(tree.swapping(id, with: PaneID()) == nil)
+    }
+
+    @Test func swapping_sameContent_noChange() {
+        let idA = PaneID()
+        let idB = PaneID()
+        let tree = PaneNode.split(
+            .horizontal,
+            first: .leaf(idA, .editor),
+            second: .leaf(idB, .editor),
+            ratio: 0.5
+        )
+        let result = tree.swapping(idA, with: idB)
+        #expect(result != nil)
+        #expect(result?.content(for: idA) == .editor)
+        #expect(result?.content(for: idB) == .editor)
+    }
+
+    @Test func swapping_deepInTree() {
+        let idA = PaneID()
+        let idB = PaneID()
+        let tree = PaneNode.split(
+            .horizontal,
+            first: .split(.vertical, first: .leaf(idA, .editor), second: .leaf(PaneID(), .editor), ratio: 0.5),
+            second: .split(.vertical, first: .leaf(idB, .terminal), second: .leaf(PaneID(), .terminal), ratio: 0.5),
+            ratio: 0.5
+        )
+        let result = tree.swapping(idA, with: idB)
+        #expect(result != nil)
+        #expect(result?.content(for: idA) == .terminal)
+        #expect(result?.content(for: idB) == .editor)
+    }
+
     // MARK: - Codable
 
     @Test func codable_singleLeaf() throws {
@@ -390,9 +666,64 @@ struct PaneNodeTests {
         let data = try JSONEncoder().encode(original)
         let decoded = try JSONDecoder().decode(PaneNode.self, from: data)
         #expect(original == decoded)
-        // Verify specific IDs survived round-trip
         #expect(decoded.contains(id1))
         #expect(decoded.contains(id2))
+    }
+
+    // MARK: - Floating point ratio equality (С1)
+
+    @Test func equatable_nearlyEqualRatios_areEqual() {
+        let uuid1 = UUID()
+        let uuid2 = UUID()
+        let nodeA = PaneNode.split(
+            .horizontal,
+            first: .leaf(PaneID(id: uuid1), .editor),
+            second: .leaf(PaneID(id: uuid2), .terminal),
+            ratio: 0.5
+        )
+        let nodeB = PaneNode.split(
+            .horizontal,
+            first: .leaf(PaneID(id: uuid1), .editor),
+            second: .leaf(PaneID(id: uuid2), .terminal),
+            ratio: 0.5 + 1e-10  // within epsilon
+        )
+        #expect(nodeA == nodeB)
+    }
+
+    @Test func equatable_significantlyDifferentRatios_areNotEqual() {
+        let uuid1 = UUID()
+        let uuid2 = UUID()
+        let nodeA = PaneNode.split(
+            .horizontal,
+            first: .leaf(PaneID(id: uuid1), .editor),
+            second: .leaf(PaneID(id: uuid2), .terminal),
+            ratio: 0.5
+        )
+        let nodeB = PaneNode.split(
+            .horizontal,
+            first: .leaf(PaneID(id: uuid1), .editor),
+            second: .leaf(PaneID(id: uuid2), .terminal),
+            ratio: 0.500_002  // beyond epsilon
+        )
+        #expect(nodeA != nodeB)
+    }
+
+    @Test func equatable_0_999999_vs_1_0_areNotEqual() {
+        let uuid1 = UUID()
+        let uuid2 = UUID()
+        let nodeA = PaneNode.split(
+            .horizontal,
+            first: .leaf(PaneID(id: uuid1), .editor),
+            second: .leaf(PaneID(id: uuid2), .terminal),
+            ratio: 0.999_999
+        )
+        let nodeB = PaneNode.split(
+            .horizontal,
+            first: .leaf(PaneID(id: uuid1), .editor),
+            second: .leaf(PaneID(id: uuid2), .terminal),
+            ratio: 1.0
+        )
+        #expect(nodeA != nodeB)
     }
 
     // MARK: - Edge cases
@@ -424,6 +755,23 @@ struct PaneNodeTests {
         }
         #expect(node.depth == 10)
         #expect(node.leafCount == 10)
+    }
+
+    @Test func veryDeepTree_100Levels_performance() {
+        // Build a deep tree (bypassing maxDepth via direct construction)
+        var node = PaneNode.leaf(PaneID(), .editor)
+        for _ in 0..<99 {
+            node = .split(.horizontal, first: node, second: .leaf(PaneID(), .editor), ratio: 0.5)
+        }
+        #expect(node.depth == 100)
+        #expect(node.leafCount == 100)
+
+        // Queries should still work
+        let ids = node.leafIDs
+        #expect(ids.count == 100)
+        if let lastID = ids.last {
+            #expect(node.contains(lastID))
+        }
     }
 
     @Test func allEditorLeaves() {
@@ -503,18 +851,7 @@ struct PaneNodeTests {
         #expect(leaf.updatingRatio(for: id, ratio: 0.5) == nil)
     }
 
-    // MARK: - Additional edge cases
-
-    @Test func splitting_doesNotPreventDuplicatePaneID() {
-        // Splitting with a PaneID that already exists in the tree is allowed
-        // (the caller is responsible for providing unique IDs)
-        let id = PaneID()
-        let leaf = PaneNode.leaf(id, .editor)
-        let result = leaf.splitting(id, axis: .horizontal, newPaneID: id, newContent: .terminal)
-        #expect(result != nil)
-        // Tree has two leaves with the same ID — leafCount should still be 2
-        #expect(result?.leafCount == 2)
-    }
+    // MARK: - Removing with sibling promotion
 
     @Test func removing_firstChild_promotesSecond() {
         let remove = PaneID()
@@ -568,38 +905,58 @@ struct PaneNodeTests {
 
     @Test func equatable_identicalLeaves_areEqual() {
         let uuid = UUID()
-        let a = PaneNode.leaf(PaneID(id: uuid), .editor)
-        let b = PaneNode.leaf(PaneID(id: uuid), .editor)
-        #expect(a == b)
+        let nodeA = PaneNode.leaf(PaneID(id: uuid), .editor)
+        let nodeB = PaneNode.leaf(PaneID(id: uuid), .editor)
+        #expect(nodeA == nodeB)
     }
 
     @Test func equatable_differentContent_areNotEqual() {
         let uuid = UUID()
-        let a = PaneNode.leaf(PaneID(id: uuid), .editor)
-        let b = PaneNode.leaf(PaneID(id: uuid), .terminal)
-        #expect(a != b)
+        let nodeA = PaneNode.leaf(PaneID(id: uuid), .editor)
+        let nodeB = PaneNode.leaf(PaneID(id: uuid), .terminal)
+        #expect(nodeA != nodeB)
     }
 
     @Test func equatable_differentIDs_areNotEqual() {
-        let a = PaneNode.leaf(PaneID(), .editor)
-        let b = PaneNode.leaf(PaneID(), .editor)
-        #expect(a != b)
+        let nodeA = PaneNode.leaf(PaneID(), .editor)
+        let nodeB = PaneNode.leaf(PaneID(), .editor)
+        #expect(nodeA != nodeB)
     }
 
     @Test func equatable_identicalSplits_areEqual() {
         let uuid1 = UUID()
         let uuid2 = UUID()
-        let a = PaneNode.split(.horizontal, first: .leaf(PaneID(id: uuid1), .editor), second: .leaf(PaneID(id: uuid2), .terminal), ratio: 0.5)
-        let b = PaneNode.split(.horizontal, first: .leaf(PaneID(id: uuid1), .editor), second: .leaf(PaneID(id: uuid2), .terminal), ratio: 0.5)
-        #expect(a == b)
+        let nodeA = PaneNode.split(
+            .horizontal,
+            first: .leaf(PaneID(id: uuid1), .editor),
+            second: .leaf(PaneID(id: uuid2), .terminal),
+            ratio: 0.5
+        )
+        let nodeB = PaneNode.split(
+            .horizontal,
+            first: .leaf(PaneID(id: uuid1), .editor),
+            second: .leaf(PaneID(id: uuid2), .terminal),
+            ratio: 0.5
+        )
+        #expect(nodeA == nodeB)
     }
 
     @Test func equatable_differentRatios_areNotEqual() {
         let uuid1 = UUID()
         let uuid2 = UUID()
-        let a = PaneNode.split(.horizontal, first: .leaf(PaneID(id: uuid1), .editor), second: .leaf(PaneID(id: uuid2), .terminal), ratio: 0.3)
-        let b = PaneNode.split(.horizontal, first: .leaf(PaneID(id: uuid1), .editor), second: .leaf(PaneID(id: uuid2), .terminal), ratio: 0.7)
-        #expect(a != b)
+        let nodeA = PaneNode.split(
+            .horizontal,
+            first: .leaf(PaneID(id: uuid1), .editor),
+            second: .leaf(PaneID(id: uuid2), .terminal),
+            ratio: 0.3
+        )
+        let nodeB = PaneNode.split(
+            .horizontal,
+            first: .leaf(PaneID(id: uuid1), .editor),
+            second: .leaf(PaneID(id: uuid2), .terminal),
+            ratio: 0.7
+        )
+        #expect(nodeA != nodeB)
     }
 
     // MARK: - Splitting axis preservation
@@ -646,15 +1003,13 @@ struct PaneNodeTests {
         )
 
         let result = tree.removing(removeID)
-        // Should promote the inner split subtree
         #expect(result == innerSplit)
         #expect(result?.leafCount == 2)
         #expect(result?.contains(innerID1) == true)
         #expect(result?.contains(innerID2) == true)
-        // Verify axis and ratio of promoted subtree are preserved
         if case .split(let axis, _, _, let ratio) = result {
             #expect(axis == .vertical)
-            #expect(ratio == 0.4)
+            #expect(abs(ratio - 0.4) < 1e-6)
         } else {
             Issue.record("Expected split node after promotion")
         }
@@ -681,7 +1036,7 @@ struct PaneNodeTests {
         #expect(result == innerSplit)
     }
 
-    // MARK: - Splitting ratio edge cases
+    // MARK: - Splitting ratio edge cases (К2)
 
     @Test func splitting_ratioZero_clampsToMinimum() {
         let id = PaneID()
@@ -726,4 +1081,62 @@ struct PaneNodeTests {
             Issue.record("Expected split node")
         }
     }
+
+    // MARK: - Splitting ratio clamping in recursive calls (К2)
+
+    @Test func splitting_deepInTree_ratioIsClamped() {
+        let targetID = PaneID()
+        let tree = PaneNode.split(
+            .horizontal,
+            first: .leaf(targetID, .editor),
+            second: .leaf(PaneID(), .terminal),
+            ratio: 0.5
+        )
+        // Split with extreme ratio deep in tree
+        let result = tree.splitting(targetID, axis: .vertical, newPaneID: PaneID(), newContent: .editor, ratio: -1.0)
+        #expect(result != nil)
+        // Find the inner split and verify its ratio is clamped
+        if case .split(_, let first, _, _) = result {
+            if case .split(_, _, _, let innerRatio) = first {
+                #expect(innerRatio == 0.1)
+            } else {
+                Issue.record("Expected inner split")
+            }
+        } else {
+            Issue.record("Expected outer split")
+        }
+    }
+
+    // MARK: - Replacing and swapping negative scenarios
+
+    @Test func replacing_onSingleLeaf_unknownID_returnsNil() {
+        let leaf = PaneNode.leaf(PaneID(), .editor)
+        #expect(leaf.replacing(PaneID(), with: .leaf(PaneID(), .terminal)) == nil)
+    }
+
+    @Test func swapping_bothUnknown_returnsNil() {
+        let tree = PaneNode.leaf(PaneID(), .editor)
+        #expect(tree.swapping(PaneID(), with: PaneID()) == nil)
+    }
+
+    @Test func swapping_oneKnownOneUnknown_returnsNil() {
+        let id = PaneID()
+        let tree = PaneNode.leaf(id, .editor)
+        #expect(tree.swapping(id, with: PaneID()) == nil)
+    }
+
+    @Test func swapping_sameID_returnsIdentical() {
+        let id = PaneID()
+        let tree = PaneNode.split(
+            .horizontal,
+            first: .leaf(id, .editor),
+            second: .leaf(PaneID(), .terminal),
+            ratio: 0.5
+        )
+        let result = tree.swapping(id, with: id)
+        #expect(result != nil)
+        #expect(result?.content(for: id) == .editor)
+    }
 }
+
+// swiftlint:enable type_body_length file_length

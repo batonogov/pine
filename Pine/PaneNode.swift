@@ -19,6 +19,14 @@ struct PaneID: Hashable, Codable, Identifiable, Sendable {
 }
 
 /// The type of content a leaf pane displays.
+///
+/// In Phase 2, each `PaneContent` case will be associated with a `TabManager` instance
+/// that manages the tabs within that pane. The planned integration:
+/// - `.editor` panes will own a `TabManager` for editor tabs (files)
+/// - `.terminal` panes will own a `TabManager` for terminal sessions
+///
+/// A `PaneState` wrapper (to be introduced in Phase 2) will pair `PaneContent`
+/// with its `TabManager`, keyed by `PaneID` in a flat dictionary for O(1) lookup.
 enum PaneContent: String, Hashable, Codable, Sendable {
     case editor
     case terminal
@@ -30,10 +38,18 @@ enum SplitAxis: String, Codable, Sendable {
     case vertical   // stacked (top / bottom)
 }
 
+/// Maximum nesting depth for pane splits.
+/// Prevents runaway recursion and keeps the UI manageable.
+let paneMaxDepth = 8
+
+/// Epsilon for floating-point ratio comparison.
+/// Ratios within this tolerance are considered equal.
+private let ratioEpsilon: CGFloat = 1e-6
+
 /// A node in the pane layout tree.
 /// Leaf nodes contain content (editor or terminal).
 /// Split nodes divide space between two children.
-indirect enum PaneNode: Equatable, Sendable {
+indirect enum PaneNode: Sendable {
     case leaf(PaneID, PaneContent)
     case split(SplitAxis, first: PaneNode, second: PaneNode, ratio: CGFloat)
 
@@ -94,10 +110,21 @@ indirect enum PaneNode: Equatable, Sendable {
         }
     }
 
+    /// Returns all PaneIDs (leaf) present in the tree as a Set for O(1) lookup.
+    var allIDs: Set<PaneID> {
+        switch self {
+        case .leaf(let id, _):
+            return [id]
+        case .split(_, let first, let second, _):
+            return first.allIDs.union(second.allIDs)
+        }
+    }
+
     // MARK: - Mutations (return new trees)
 
     /// Replaces a leaf with a split, putting the original leaf and a new leaf side by side.
-    /// Returns nil if `targetID` is not found in the tree.
+    /// Returns nil if `targetID` is not found, if `newPaneID` already exists in the tree,
+    /// or if the resulting tree would exceed `paneMaxDepth`.
     func splitting(
         _ targetID: PaneID,
         axis: SplitAxis,
@@ -106,18 +133,40 @@ indirect enum PaneNode: Equatable, Sendable {
         ratio: CGFloat = 0.5
     ) -> PaneNode? {
         let clamped = min(max(ratio, 0.1), 0.9)
+
+        // Validate: newPaneID must not already exist in the tree
+        guard !contains(newPaneID) else { return nil }
+
+        // Validate: resulting depth must not exceed maxDepth
+        guard depth < paneMaxDepth else { return nil }
+
+        return splittingInternal(targetID, axis: axis, newPaneID: newPaneID, newContent: newContent, ratio: clamped)
+    }
+
+    /// Internal recursive splitting without re-validating constraints.
+    private func splittingInternal(
+        _ targetID: PaneID,
+        axis: SplitAxis,
+        newPaneID: PaneID,
+        newContent: PaneContent,
+        ratio: CGFloat
+    ) -> PaneNode? {
         switch self {
         case .leaf(let id, let content):
             guard id == targetID else { return nil }
             let newLeaf = PaneNode.leaf(newPaneID, newContent)
-            return .split(axis, first: .leaf(id, content), second: newLeaf, ratio: clamped)
+            return .split(axis, first: .leaf(id, content), second: newLeaf, ratio: ratio)
 
-        case .split(let ax, let first, let second, let r):
-            if let newFirst = first.splitting(targetID, axis: axis, newPaneID: newPaneID, newContent: newContent, ratio: ratio) {
-                return .split(ax, first: newFirst, second: second, ratio: r)
+        case .split(let ax, let first, let second, let currentRatio):
+            if let newFirst = first.splittingInternal(
+                targetID, axis: axis, newPaneID: newPaneID, newContent: newContent, ratio: ratio
+            ) {
+                return .split(ax, first: newFirst, second: second, ratio: currentRatio)
             }
-            if let newSecond = second.splitting(targetID, axis: axis, newPaneID: newPaneID, newContent: newContent, ratio: ratio) {
-                return .split(ax, first: first, second: newSecond, ratio: r)
+            if let newSecond = second.splittingInternal(
+                targetID, axis: axis, newPaneID: newPaneID, newContent: newContent, ratio: ratio
+            ) {
+                return .split(ax, first: first, second: newSecond, ratio: currentRatio)
             }
             return nil
         }
@@ -132,7 +181,7 @@ indirect enum PaneNode: Equatable, Sendable {
             guard id == targetID else { return nil }
             return nil
 
-        case .split(let ax, let first, let second, let r):
+        case .split(let ax, let first, let second, let currentRatio):
             // Check if target is a direct child
             if case .leaf(let id, _) = first, id == targetID {
                 return second
@@ -142,53 +191,154 @@ indirect enum PaneNode: Equatable, Sendable {
             }
             // Recurse into children
             if let newFirst = first.removing(targetID) {
-                return .split(ax, first: newFirst, second: second, ratio: r)
+                return .split(ax, first: newFirst, second: second, ratio: currentRatio)
             }
             if let newSecond = second.removing(targetID) {
-                return .split(ax, first: first, second: newSecond, ratio: r)
+                return .split(ax, first: first, second: newSecond, ratio: currentRatio)
             }
             return nil
         }
     }
 
-    /// Updates the split ratio for the split that directly contains the given PaneID as a **leaf** child.
-    /// Clamps ratio to 0.1...0.9. Returns nil if `targetID` is not found.
+    /// Updates the split ratio of the **immediate parent split** of the given leaf.
     ///
-    /// - Note: This only matches splits where `targetID` is an immediate leaf child.
-    ///   If both children of a split are themselves splits, that split's ratio cannot be
-    ///   updated via any leaf ID. A future API may accept a path or sibling pair instead.
+    /// Finds the split node whose direct child is the leaf with `targetID`,
+    /// and replaces its ratio. Works for any tree shape — the leaf's parent
+    /// is always a split, even when both siblings are splits themselves.
+    ///
+    /// Clamps ratio to 0.1...0.9. Returns nil if `targetID` is not found.
     func updatingRatio(for targetID: PaneID, ratio: CGFloat) -> PaneNode? {
         let clamped = min(max(ratio, 0.1), 0.9)
         switch self {
         case .leaf:
             return nil
 
-        case .split(let ax, let first, let second, let r):
-            // Check if target is a direct child of this split
-            let firstContains: Bool
+        case .split(let ax, let first, let second, let currentRatio):
+            // If target is a direct leaf child, this is the parent — update ratio
             if case .leaf(let id, _) = first, id == targetID {
-                firstContains = true
-            } else {
-                firstContains = false
-            }
-            let secondContains: Bool
-            if case .leaf(let id, _) = second, id == targetID {
-                secondContains = true
-            } else {
-                secondContains = false
-            }
-
-            if firstContains || secondContains {
                 return .split(ax, first: first, second: second, ratio: clamped)
             }
-            // Recurse
+            if case .leaf(let id, _) = second, id == targetID {
+                return .split(ax, first: first, second: second, ratio: clamped)
+            }
+
+            // Recurse into children
             if let newFirst = first.updatingRatio(for: targetID, ratio: ratio) {
-                return .split(ax, first: newFirst, second: second, ratio: r)
+                return .split(ax, first: newFirst, second: second, ratio: currentRatio)
             }
             if let newSecond = second.updatingRatio(for: targetID, ratio: ratio) {
-                return .split(ax, first: first, second: newSecond, ratio: r)
+                return .split(ax, first: first, second: newSecond, ratio: currentRatio)
             }
             return nil
+        }
+    }
+
+    /// Updates the ratio of the split node whose **direct child subtree** contains
+    /// the given leaf `targetID`. Unlike `updatingRatio(for:ratio:)` which targets
+    /// the leaf's immediate parent, this targets the **ancestor split one level up**
+    /// — the split whose child is a subtree containing the leaf.
+    ///
+    /// Use this to resize the divider between two split subtrees (Phase 2 drag-resize).
+    /// Clamps ratio to 0.1...0.9. Returns nil if `targetID` is not found
+    /// or the leaf is a direct child of this split (use `updatingRatio(for:ratio:)` instead).
+    func updatingRatioOfSplit(containing targetID: PaneID, ratio: CGFloat) -> PaneNode? {
+        let clamped = min(max(ratio, 0.1), 0.9)
+        switch self {
+        case .leaf:
+            return nil
+
+        case .split(let ax, let first, let second, let currentRatio):
+            let inFirst = first.contains(targetID)
+            let inSecond = second.contains(targetID)
+
+            guard inFirst || inSecond else { return nil }
+
+            // Skip direct leaf children — use updatingRatio(for:ratio:) for those
+            if case .leaf(let id, _) = first, id == targetID { return nil }
+            if case .leaf(let id, _) = second, id == targetID { return nil }
+
+            // Target is inside a subtree child — check if it's a direct child of that subtree
+            if inFirst, case .split = first, first.contains(targetID) {
+                // Is it directly inside first? Or deeper?
+                if first.hasDirectLeafChild(targetID) {
+                    // The leaf is a direct child of our first child → update this split's ratio
+                    return .split(ax, first: first, second: second, ratio: clamped)
+                }
+                // Deeper — recurse
+                if let newFirst = first.updatingRatioOfSplit(containing: targetID, ratio: ratio) {
+                    return .split(ax, first: newFirst, second: second, ratio: currentRatio)
+                }
+                return .split(ax, first: first, second: second, ratio: clamped)
+            }
+            if inSecond, case .split = second, second.contains(targetID) {
+                if second.hasDirectLeafChild(targetID) {
+                    return .split(ax, first: first, second: second, ratio: clamped)
+                }
+                if let newSecond = second.updatingRatioOfSplit(containing: targetID, ratio: ratio) {
+                    return .split(ax, first: first, second: newSecond, ratio: currentRatio)
+                }
+                return .split(ax, first: first, second: second, ratio: clamped)
+            }
+            return nil
+        }
+    }
+
+    /// Returns true if the given ID is a direct leaf child of this split.
+    private func hasDirectLeafChild(_ id: PaneID) -> Bool {
+        guard case .split(_, let first, let second, _) = self else { return false }
+        if case .leaf(let fid, _) = first, fid == id { return true }
+        if case .leaf(let sid, _) = second, sid == id { return true }
+        return false
+    }
+
+    /// Replaces the subtree rooted at the pane with `targetID` with a new node.
+    /// Returns nil if `targetID` is not found.
+    func replacing(_ targetID: PaneID, with newNode: PaneNode) -> PaneNode? {
+        switch self {
+        case .leaf(let id, _):
+            return id == targetID ? newNode : nil
+        case .split(let ax, let first, let second, let currentRatio):
+            if let newFirst = first.replacing(targetID, with: newNode) {
+                return .split(ax, first: newFirst, second: second, ratio: currentRatio)
+            }
+            if let newSecond = second.replacing(targetID, with: newNode) {
+                return .split(ax, first: first, second: newSecond, ratio: currentRatio)
+            }
+            return nil
+        }
+    }
+
+    /// Swaps the positions of two panes identified by their IDs.
+    /// Returns nil if either ID is not found.
+    func swapping(_ idA: PaneID, with idB: PaneID) -> PaneNode? {
+        guard let contentA = content(for: idA),
+              let contentB = content(for: idB) else {
+            return nil
+        }
+        // Replace A with B's content, then B with A's content
+        guard let step1 = replacing(idA, with: .leaf(idA, contentB)) else { return nil }
+        guard let step2 = step1.replacing(idB, with: .leaf(idB, contentA)) else { return nil }
+        return step2
+    }
+}
+
+// MARK: - Equatable (epsilon-based ratio comparison)
+
+extension PaneNode: Equatable {
+    static func == (lhs: PaneNode, rhs: PaneNode) -> Bool {
+        switch (lhs, rhs) {
+        case let (.leaf(idL, contentL), .leaf(idR, contentR)):
+            return idL == idR && contentL == contentR
+        case let (
+            .split(axL, firstL, secondL, ratioL),
+            .split(axR, firstR, secondR, ratioR)
+        ):
+            return axL == axR
+                && firstL == firstR
+                && secondL == secondR
+                && abs(ratioL - ratioR) < ratioEpsilon
+        default:
+            return false
         }
     }
 }
