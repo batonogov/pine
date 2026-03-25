@@ -541,6 +541,7 @@ struct CrashReporterTests {
         _ = result
     }
 
+    @MainActor
     @Test func clearPendingReportsDoesNotThrow() {
         // Should not crash even if directory doesn't exist
         CrashReportHandler.clearPendingReports()
@@ -600,6 +601,149 @@ struct CrashReporterTests {
             #expect(report.timestamp != Date(timeIntervalSince1970: 1_700_000_000))
         }
         // Either way, this demonstrates why .secondsSince1970 is needed
+    }
+
+    // MARK: - parseCallStackJSON
+
+    @Test func parseCallStackJSONWithValidFrames() throws {
+        let json: [String: Any] = [
+            "callStacks": [
+                [
+                    "callStackRootFrames": [
+                        [
+                            "address": UInt64(0x1000_0400),
+                            "binaryName": "Pine",
+                            "offsetIntoBinaryTextSegment": UInt64(1024)
+                        ],
+                        [
+                            "address": UInt64(0x1000_0800),
+                            "binaryName": "AppKit",
+                            "offsetIntoBinaryTextSegment": UInt64(2048)
+                        ]
+                    ]
+                ]
+            ]
+        ]
+        let data = try JSONSerialization.data(withJSONObject: json)
+        let result = CrashDiagnosticSubscriber.parseCallStackJSON(data)
+
+        #expect(result.count == 2)
+        #expect(result[0] == "Pine 0x10000400 +1024")
+        #expect(result[1] == "AppKit 0x10000800 +2048")
+    }
+
+    @Test func parseCallStackJSONWithEmptyFrames() throws {
+        let json: [String: Any] = [
+            "callStacks": [
+                ["callStackRootFrames": [] as [[String: Any]]]
+            ]
+        ]
+        let data = try JSONSerialization.data(withJSONObject: json)
+        let result = CrashDiagnosticSubscriber.parseCallStackJSON(data)
+
+        #expect(result.isEmpty)
+    }
+
+    @Test func parseCallStackJSONWithEmptyCallStacks() throws {
+        let json: [String: Any] = [
+            "callStacks": [] as [[String: Any]]
+        ]
+        let data = try JSONSerialization.data(withJSONObject: json)
+        let result = CrashDiagnosticSubscriber.parseCallStackJSON(data)
+
+        #expect(result.isEmpty)
+    }
+
+    @Test func parseCallStackJSONWithMissingFields() throws {
+        // Frames with missing optional fields should use defaults
+        let json: [String: Any] = [
+            "callStacks": [
+                [
+                    "callStackRootFrames": [
+                        [:] as [String: Any] // all fields missing
+                    ]
+                ]
+            ]
+        ]
+        let data = try JSONSerialization.data(withJSONObject: json)
+        let result = CrashDiagnosticSubscriber.parseCallStackJSON(data)
+
+        #expect(result.count == 1)
+        #expect(result[0] == "? 0x0 +0")
+    }
+
+    @Test func parseCallStackJSONWithInvalidData() {
+        let data = Data("not json at all {{{".utf8)
+        let result = CrashDiagnosticSubscriber.parseCallStackJSON(data)
+
+        #expect(result.isEmpty)
+    }
+
+    @Test func parseCallStackJSONWithEmptyData() {
+        let data = Data()
+        let result = CrashDiagnosticSubscriber.parseCallStackJSON(data)
+
+        #expect(result.isEmpty)
+    }
+
+    @Test func parseCallStackJSONWithMissingCallStacksKey() throws {
+        let json: [String: Any] = ["otherKey": "value"]
+        let data = try JSONSerialization.data(withJSONObject: json)
+        let result = CrashDiagnosticSubscriber.parseCallStackJSON(data)
+
+        #expect(result.isEmpty)
+    }
+
+    @Test func parseCallStackJSONLimitsTo20Frames() throws {
+        var frames: [[String: Any]] = []
+        for idx in 0..<30 {
+            frames.append([
+                "address": UInt64(idx),
+                "binaryName": "Frame\(idx)",
+                "offsetIntoBinaryTextSegment": UInt64(0)
+            ])
+        }
+        let json: [String: Any] = [
+            "callStacks": [
+                ["callStackRootFrames": frames]
+            ]
+        ]
+        let data = try JSONSerialization.data(withJSONObject: json)
+        let result = CrashDiagnosticSubscriber.parseCallStackJSON(data)
+
+        #expect(result.count == 20)
+        #expect(result[0].hasPrefix("Frame0"))
+        #expect(result[19].hasPrefix("Frame19"))
+    }
+
+    @Test func parseCallStackJSONWithMultipleThreadsUsesFirst() throws {
+        let json: [String: Any] = [
+            "callStacks": [
+                [
+                    "callStackRootFrames": [
+                        ["address": UInt64(1), "binaryName": "First", "offsetIntoBinaryTextSegment": UInt64(0)]
+                    ]
+                ],
+                [
+                    "callStackRootFrames": [
+                        ["address": UInt64(2), "binaryName": "Second", "offsetIntoBinaryTextSegment": UInt64(0)]
+                    ]
+                ]
+            ]
+        ]
+        let data = try JSONSerialization.data(withJSONObject: json)
+        let result = CrashDiagnosticSubscriber.parseCallStackJSON(data)
+
+        #expect(result.count == 1)
+        #expect(result[0].hasPrefix("First"))
+    }
+
+    @Test func parseCallStackJSONWithWrongTopLevelType() throws {
+        // Array instead of dictionary at top level
+        let data = try JSONSerialization.data(withJSONObject: [1, 2, 3])
+        let result = CrashDiagnosticSubscriber.parseCallStackJSON(data)
+
+        #expect(result.isEmpty)
     }
 
     // MARK: - CrashReport: optional/empty fields

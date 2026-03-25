@@ -22,8 +22,6 @@ import MetricKit
 /// Pre-computed full path buffer: <dir>/signal-crash.json (filled once before handler install).
 /// Must be global for C function pointer compatibility.
 private var signalCrashFilePath: UnsafeMutablePointer<CChar>?
-private var signalCrashFilePathLength: Int = 0
-
 /// Pre-computed directory path for mkdir in signal handler.
 private var signalCrashDirPath: UnsafeMutablePointer<CChar>?
 
@@ -70,27 +68,38 @@ private func pineSignalHandler(_ sig: Int32) {
         _ = write(fd, ptr, buf.count)
     }
 
-    // Write signal number as ASCII digits
+    // Write signal number as ASCII digits (stack-allocated buffer, no heap)
     var sigNum = sig
     if sigNum < 0 {
         let minus: UInt8 = 0x2D // '-'
         _ = withUnsafePointer(to: minus) { write(fd, $0, 1) }
         sigNum = -sigNum
     }
-    var digits: [UInt8] = []
-    if sigNum == 0 {
-        digits.append(0x30) // '0'
-    } else {
-        var tmp = sigNum
-        while tmp > 0 {
-            digits.append(UInt8(0x30 + tmp % 10))
-            tmp /= 10
+    withUnsafeTemporaryAllocation(of: UInt8.self, capacity: 20) { digitsBuf in
+        var count = 0
+        if sigNum == 0 {
+            digitsBuf[0] = 0x30 // '0'
+            count = 1
+        } else {
+            var tmp = sigNum
+            while tmp > 0 {
+                digitsBuf[count] = UInt8(0x30 + tmp % 10)
+                count += 1
+                tmp /= 10
+            }
+            // Reverse in place
+            var lo = 0
+            var hi = count - 1
+            while lo < hi {
+                let swap = digitsBuf[lo]
+                digitsBuf[lo] = digitsBuf[hi]
+                digitsBuf[hi] = swap
+                lo += 1
+                hi -= 1
+            }
         }
-        digits.reverse()
-    }
-    digits.withUnsafeBufferPointer { buf in
-        guard let ptr = buf.baseAddress else { return }
-        _ = write(fd, ptr, buf.count)
+        // swiftlint:disable:next force_unwrapping
+        _ = write(fd, digitsBuf.baseAddress!, count)
     }
 
     // Write middle
@@ -105,27 +114,38 @@ private func pineSignalHandler(_ sig: Int32) {
         _ = write(fd, ptr, buf.count)
     }
 
-    // Write timestamp as ASCII digits
+    // Write timestamp as ASCII digits (stack-allocated buffer, no heap)
     var ts = Int64(timestamp)
     if ts < 0 {
         let minus: UInt8 = 0x2D
         _ = withUnsafePointer(to: minus) { write(fd, $0, 1) }
         ts = -ts
     }
-    var tsDigits: [UInt8] = []
-    if ts == 0 {
-        tsDigits.append(0x30)
-    } else {
-        var tmp = ts
-        while tmp > 0 {
-            tsDigits.append(UInt8(0x30 + tmp % 10))
-            tmp /= 10
+    withUnsafeTemporaryAllocation(of: UInt8.self, capacity: 20) { tsBuf in
+        var count = 0
+        if ts == 0 {
+            tsBuf[0] = 0x30
+            count = 1
+        } else {
+            var tmp = ts
+            while tmp > 0 {
+                tsBuf[count] = UInt8(0x30 + tmp % 10)
+                count += 1
+                tmp /= 10
+            }
+            // Reverse in place
+            var lo = 0
+            var hi = count - 1
+            while lo < hi {
+                let swap = tsBuf[lo]
+                tsBuf[lo] = tsBuf[hi]
+                tsBuf[hi] = swap
+                lo += 1
+                hi -= 1
+            }
         }
-        tsDigits.reverse()
-    }
-    tsDigits.withUnsafeBufferPointer { buf in
-        guard let ptr = buf.baseAddress else { return }
-        _ = write(fd, ptr, buf.count)
+        // swiftlint:disable:next force_unwrapping
+        _ = write(fd, tsBuf.baseAddress!, count)
     }
 
     // Write end
@@ -144,7 +164,7 @@ private func pineSignalHandler(_ sig: Int32) {
 // MARK: - MetricKit Subscriber
 
 /// Receives crash diagnostics from MetricKit on next app launch after a crash.
-final class CrashDiagnosticSubscriber: NSObject, MXMetricManagerSubscriber {
+final class CrashDiagnosticSubscriber: NSObject, MXMetricManagerSubscriber, @unchecked Sendable {
 
     private let store: CrashReportStore
 
@@ -174,9 +194,18 @@ final class CrashDiagnosticSubscriber: NSObject, MXMetricManagerSubscriber {
     }
 
     /// Extracts frame descriptions from the MXCallStackTree JSON representation.
+    /// Uses `parseCallStackJSON(_:)` internally after getting JSON data from the tree.
     private func parseCallStack(_ callStackTree: MXCallStackTree) -> [String] {
-        guard let data = try? callStackTree.jsonRepresentation(),
-              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+        guard let data = try? callStackTree.jsonRepresentation() else {
+            return []
+        }
+        return Self.parseCallStackJSON(data)
+    }
+
+    /// Parses call stack frames from raw JSON data (the format returned by MXCallStackTree).
+    /// Extracted as a static method for testability.
+    static func parseCallStackJSON(_ data: Data) -> [String] {
+        guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let threads = json["callStacks"] as? [[String: Any]],
               let firstThread = threads.first,
               let frames = firstThread["callStackRootFrames"] as? [[String: Any]]
@@ -193,9 +222,33 @@ final class CrashDiagnosticSubscriber: NSObject, MXMetricManagerSubscriber {
     }
 }
 
+// MARK: - ObjC Exception Handler
+
+/// Pre-computed store reference for exception handler (set before installing).
+private var exceptionCrashStore: CrashReportStore?
+
+/// ObjC uncaught exception handler — catches NSException in real time
+/// (MetricKit only reports on next launch).
+private func pineExceptionHandler(_ exception: NSException) {
+    guard let store = exceptionCrashStore else { return }
+
+    let report = CrashReport(
+        exceptionType: exception.name.rawValue,
+        exceptionReason: exception.reason ?? "Unknown",
+        stackTrace: exception.callStackSymbols.prefix(20).map { String($0) },
+        appVersion: Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "",
+        buildNumber: Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "",
+        osVersion: ProcessInfo.processInfo.operatingSystemVersionString,
+        timestamp: Date(),
+        source: .exception
+    )
+    try? store.save(report)
+}
+
 // MARK: - CrashReportHandler
 
 /// Installs crash handlers and manages the crash-to-report pipeline.
+@MainActor
 enum CrashReportHandler {
 
     /// Tracked signals for crash detection.
@@ -225,6 +278,10 @@ enum CrashReportHandler {
         MXMetricManager.shared.add(subscriber)
         metricKitSubscriber = subscriber
 
+        // Install NSException handler (catches ObjC exceptions in real time)
+        exceptionCrashStore = store
+        NSSetUncaughtExceptionHandler(pineExceptionHandler)
+
         // Pre-compute C string paths for async-signal-safe handler
         let dirPath = store.directory.path(percentEncoded: false)
         let filePath = dirPath + "/signal-crash.json"
@@ -240,7 +297,6 @@ enum CrashReportHandler {
             _ = strcpy(pathBuf, ptr)
         }
         signalCrashFilePath = pathBuf
-        signalCrashFilePathLength = filePath.utf8.count
 
         // Install POSIX signal handlers (fallback for hard crashes)
         for sig in crashSignals {
@@ -258,6 +314,10 @@ enum CrashReportHandler {
             MXMetricManager.shared.remove(subscriber)
             metricKitSubscriber = nil
         }
+
+        // Remove ObjC exception handler
+        NSSetUncaughtExceptionHandler(nil)
+        exceptionCrashStore = nil
 
         // Restore default signal handlers
         for sig in crashSignals {
