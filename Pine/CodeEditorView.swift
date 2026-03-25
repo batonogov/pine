@@ -99,10 +99,20 @@ final class GutterTextView: NSTextView {
     /// Cached character width for the current font — updated when font changes.
     var cachedCharWidth: CGFloat = 0
 
-    /// Updates the cached character width from the current font.
+    /// Cached tab stop width as rendered by NSTextView — updated when font changes.
+    /// Used for correct indent guide positioning in tab-indented files (Go, Makefile).
+    var cachedTabStopWidth: CGFloat = 0
+
+    /// Updates the cached character width and tab stop width from the current font.
     func updateCachedCharWidth() {
         let f = font ?? NSFont.monospacedSystemFont(ofSize: 13, weight: .regular)
         cachedCharWidth = " ".size(withAttributes: [.font: f]).width
+
+        // Get the real tab stop width from the text view's paragraph style.
+        // NSTextView uses defaultParagraphStyle.defaultTabInterval for tab rendering.
+        let tabInterval = defaultParagraphStyle?.defaultTabInterval
+            ?? NSParagraphStyle.default.defaultTabInterval
+        cachedTabStopWidth = tabInterval > 0 ? tabInterval : cachedCharWidth * 4
     }
 
     override func drawBackground(in rect: NSRect) {
@@ -207,7 +217,13 @@ final class GutterTextView: NSTextView {
 
             let y = lineRect.origin.y + originY
             for level in 1...levels {
-                let x = textOriginX + CGFloat(level * indentUnit) * charWidth
+                let xOffset = IndentGuideRenderer.guideXOffset(
+                    level: level,
+                    style: style,
+                    charWidth: charWidth,
+                    tabStopWidth: self.cachedTabStopWidth
+                )
+                let x = textOriginX + xOffset
                 segments.append(.init(x: x, y: y, height: lineRect.height))
             }
         }

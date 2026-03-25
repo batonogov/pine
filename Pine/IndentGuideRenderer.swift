@@ -141,4 +141,28 @@ enum IndentGuideRenderer {
         case .tabs: renderTabWidth
         }
     }
+
+    // MARK: - Guide X position
+
+    /// Computes the X offset (from text origin) for an indent guide at the given level.
+    ///
+    /// For **spaces**: `level * indentUnit * charWidth` — each level spans `indentUnit` space characters.
+    /// For **tabs**: `level * tabStopWidth` — each level spans one real tab stop as rendered by NSTextView.
+    ///
+    /// Using the real tab stop width fixes the bug where tab-indented files (Go, Makefile)
+    /// had all guides bunched up on the left because `charWidth` (width of a space) was used
+    /// instead of the actual tab stop interval.
+    static func guideXOffset(
+        level: Int,
+        style: IndentationStyle,
+        charWidth: CGFloat,
+        tabStopWidth: CGFloat
+    ) -> CGFloat {
+        switch style {
+        case .spaces(let count):
+            return CGFloat(level * count) * charWidth
+        case .tabs:
+            return CGFloat(level) * tabStopWidth
+        }
+    }
 }

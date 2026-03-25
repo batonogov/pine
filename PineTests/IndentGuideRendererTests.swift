@@ -267,4 +267,119 @@ struct IndentGuideRendererTests {
         #expect(segment.y == 20.0)
         #expect(segment.height == 15.0)
     }
+
+    // MARK: - Guide X position (guideXOffset)
+
+    @Test("guideXOffset for spaces uses charWidth * level * indentUnit")
+    func guideXOffsetSpaces() {
+        let charWidth: CGFloat = 7.8
+        // .spaces(4): level 1 -> 1 * 4 * 7.8 = 31.2
+        let x1 = IndentGuideRenderer.guideXOffset(
+            level: 1, style: .spaces(4), charWidth: charWidth, tabStopWidth: 28
+        )
+        #expect(x1 == 31.2)
+
+        // .spaces(4): level 2 -> 2 * 4 * 7.8 = 62.4
+        let x2 = IndentGuideRenderer.guideXOffset(
+            level: 2, style: .spaces(4), charWidth: charWidth, tabStopWidth: 28
+        )
+        #expect(x2 == 62.4)
+    }
+
+    @Test("guideXOffset for spaces with indent unit 2")
+    func guideXOffsetSpacesUnit2() {
+        let charWidth: CGFloat = 8.0
+        // .spaces(2): level 1 -> 1 * 2 * 8.0 = 16.0
+        let offset = IndentGuideRenderer.guideXOffset(
+            level: 1, style: .spaces(2), charWidth: charWidth, tabStopWidth: 28
+        )
+        #expect(offset == 16.0)
+    }
+
+    @Test("guideXOffset for tabs uses tabStopWidth, not charWidth")
+    func guideXOffsetTabs() {
+        let charWidth: CGFloat = 7.8
+        let tabStopWidth: CGFloat = 28.0
+
+        // .tabs: level 1 -> 1 * 28.0 = 28.0 (not 1 * 1 * 7.8)
+        let x1 = IndentGuideRenderer.guideXOffset(
+            level: 1, style: .tabs, charWidth: charWidth, tabStopWidth: tabStopWidth
+        )
+        #expect(x1 == 28.0)
+
+        // .tabs: level 2 -> 2 * 28.0 = 56.0
+        let x2 = IndentGuideRenderer.guideXOffset(
+            level: 2, style: .tabs, charWidth: charWidth, tabStopWidth: tabStopWidth
+        )
+        #expect(x2 == 56.0)
+
+        // .tabs: level 3 -> 3 * 28.0 = 84.0
+        let x3 = IndentGuideRenderer.guideXOffset(
+            level: 3, style: .tabs, charWidth: charWidth, tabStopWidth: tabStopWidth
+        )
+        #expect(x3 == 84.0)
+    }
+
+    @Test("guideXOffset for tabs with custom tab stop width")
+    func guideXOffsetTabsCustomWidth() {
+        let offset = IndentGuideRenderer.guideXOffset(
+            level: 2, style: .tabs, charWidth: 7.8, tabStopWidth: 32.0
+        )
+        #expect(offset == 64.0)
+    }
+
+    @Test("guideXOffset tabs vs spaces produce different results for typical settings")
+    func guideXOffsetTabsVsSpaces() {
+        let charWidth: CGFloat = 7.8
+        let tabStopWidth: CGFloat = 28.0
+
+        let tabX = IndentGuideRenderer.guideXOffset(
+            level: 1, style: .tabs, charWidth: charWidth, tabStopWidth: tabStopWidth
+        )
+        let spaceX = IndentGuideRenderer.guideXOffset(
+            level: 1, style: .spaces(4), charWidth: charWidth, tabStopWidth: tabStopWidth
+        )
+        // Tab guide at 28pt, space guide at 31.2pt
+        #expect(tabX != spaceX)
+        #expect(tabX == 28.0)
+        #expect(spaceX == 31.2)
+    }
+
+    @Test("guideXOffset for Go-style tab indentation matches real tab stops")
+    func guideXOffsetGoStyle() {
+        // Go uses real tabs. NSTextView default tab interval = 28pt.
+        // Old buggy code would compute: level * 1 * 7.8 = 7.8pt (wrong)
+        // Fixed code computes: level * 28.0 = 28.0pt (correct)
+        let charWidth: CGFloat = 7.8
+        let tabStopWidth: CGFloat = 28.0
+
+        let guides = (1...3).map { level in
+            IndentGuideRenderer.guideXOffset(
+                level: level, style: .tabs, charWidth: charWidth, tabStopWidth: tabStopWidth
+            )
+        }
+        #expect(guides == [28.0, 56.0, 84.0])
+    }
+
+    @Test("guideXOffset evenly spaced for both styles")
+    func guideXOffsetEvenlySpaced() {
+        let charWidth: CGFloat = 8.0
+        let tabStopWidth: CGFloat = 32.0
+
+        // Tab file: guides at 32, 64, 96
+        let tabGuides = (1...3).map {
+            IndentGuideRenderer.guideXOffset(
+                level: $0, style: .tabs, charWidth: charWidth, tabStopWidth: tabStopWidth
+            )
+        }
+        #expect(tabGuides == [32.0, 64.0, 96.0])
+
+        // Space file (4-space indent, 8pt char): guides also at 32, 64, 96
+        let spaceGuides = (1...3).map {
+            IndentGuideRenderer.guideXOffset(
+                level: $0, style: .spaces(4), charWidth: charWidth, tabStopWidth: tabStopWidth
+            )
+        }
+        #expect(spaceGuides == [32.0, 64.0, 96.0])
+    }
 }
