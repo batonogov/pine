@@ -358,4 +358,171 @@ struct WordCompletionProviderTests {
         let results = WordCompletionProvider.completions(for: "word", in: words)
         #expect(results.count == 3)
     }
+
+    // MARK: - Project isolation (С3)
+
+    @Test func differentProjectIDsIsolateCache() {
+        let tab = EditorTab(
+            url: URL(fileURLWithPath: "/shared.swift"),
+            content: "func sharedWord() {}",
+            savedContent: ""
+        )
+        // Collect for project A
+        let wordsA = WordCompletionProvider.collectWords(
+            from: [tab], excluding: "", projectID: "/projectA"
+        )
+        #expect(wordsA.contains("sharedWord"))
+
+        // Collect for project B with a different tab
+        let tabB = EditorTab(
+            url: URL(fileURLWithPath: "/other.swift"),
+            content: "var uniqueWord = true",
+            savedContent: ""
+        )
+        let wordsB = WordCompletionProvider.collectWords(
+            from: [tabB], excluding: "", projectID: "/projectB"
+        )
+        #expect(wordsB.contains("uniqueWord"))
+        #expect(!wordsB.contains("sharedWord"))
+    }
+
+    // MARK: - maxScanSize (С2)
+
+    @Test func largeFileScansOnlyMaxScanSize() {
+        // Create content larger than maxScanSize
+        // Each word "word_XXXX " is ~11 chars, so 500_000 / 11 ≈ 45_000 words fit in scan window
+        let wordBeforeCutoff = "beforeCutoff"
+        let wordAfterCutoff = "afterCutoff_unique_marker"
+        // Build: fill up to maxScanSize with repeated short words, then add unique word after
+        let filler = String(repeating: "fillerword ", count: WordCompletionProvider.maxScanSize / 11)
+        let content = filler + " " + wordAfterCutoff + " " + wordBeforeCutoff
+        let tab = EditorTab(
+            url: URL(fileURLWithPath: "/huge.swift"),
+            content: content,
+            savedContent: ""
+        )
+        let words = WordCompletionProvider.collectWords(from: [tab], excluding: "")
+        // The filler word should be found
+        #expect(words.contains("fillerword"))
+        // Words beyond maxScanSize should be excluded
+        // (afterCutoff_unique_marker is placed after the scan window)
+        #expect(!words.contains(wordAfterCutoff))
+    }
+
+    // MARK: - Thread safety (С4)
+
+    @Test func concurrentCollectWordsDoesNotCrash() async {
+        // Create several tabs
+        let tabs = (0..<10).map { idx in
+            EditorTab(
+                url: URL(fileURLWithPath: "/file\(idx).swift"),
+                content: "func method\(idx)() { let value\(idx) = \(idx) }",
+                savedContent: ""
+            )
+        }
+
+        // Run collectWords concurrently from multiple threads
+        await withTaskGroup(of: [String].self) { group in
+            for iteration in 0..<20 {
+                group.addTask {
+                    WordCompletionProvider.collectWords(
+                        from: tabs,
+                        excluding: "method\(iteration % 10)",
+                        projectID: "/testProject"
+                    )
+                }
+            }
+            for await result in group {
+                // Just verify it returned without crashing and has some words
+                #expect(!result.isEmpty)
+            }
+        }
+    }
+
+    @Test func concurrentCacheAccessDoesNotCrash() async {
+        // Stress test: concurrent reads and writes to the cache
+        let tab = EditorTab(
+            url: URL(fileURLWithPath: "/stress.swift"),
+            content: "alpha beta gamma delta epsilon",
+            savedContent: ""
+        )
+
+        await withTaskGroup(of: Void.self) { group in
+            // Concurrent collectors
+            for _ in 0..<10 {
+                group.addTask {
+                    _ = WordCompletionProvider.collectWords(
+                        from: [tab], excluding: "", projectID: "/stress"
+                    )
+                }
+            }
+            // Concurrent cache clears
+            for _ in 0..<5 {
+                group.addTask {
+                    WordCompletionProvider.clearCache()
+                }
+            }
+            // More concurrent collectors
+            for _ in 0..<10 {
+                group.addTask {
+                    _ = WordCompletionProvider.collectWords(
+                        from: [tab], excluding: "", projectID: "/stress"
+                    )
+                }
+            }
+        }
+        // If we got here without a crash, the test passes
+    }
+
+    // MARK: - completionsFromCache (async path)
+
+    @Test func completionsFromCacheReturnsCachedResults() {
+        let tab = EditorTab(
+            url: URL(fileURLWithPath: "/test.swift"),
+            content: "func hello world test",
+            savedContent: ""
+        )
+        // Prime the cache via collectWords
+        _ = WordCompletionProvider.collectWords(from: [tab], excluding: "", projectID: "/test")
+
+        // Now use completionsFromCache — should return from cache immediately
+        let snapshot = WordCompletionProvider.TabSnapshot(
+            id: tab.id,
+            content: tab.content,
+            contentVersion: tab.contentVersion,
+            kind: tab.kind
+        )
+        let results = WordCompletionProvider.completionsFromCache(
+            tabSnapshots: [snapshot],
+            excluding: "",
+            projectID: "/test"
+        )
+        #expect(results.contains("hello"))
+        #expect(results.contains("world"))
+        #expect(results.contains("func"))
+        #expect(results.contains("test"))
+    }
+
+    @Test func completionsFromCacheReturnsEmptyOnFirstCallForNewProject() {
+        let tab = EditorTab(
+            url: URL(fileURLWithPath: "/new.swift"),
+            content: "func brand_new_word() {}",
+            savedContent: ""
+        )
+        let snapshot = WordCompletionProvider.TabSnapshot(
+            id: tab.id,
+            content: tab.content,
+            contentVersion: tab.contentVersion,
+            kind: tab.kind
+        )
+        // First call with no cache — returns empty (or last known) and schedules background scan
+        let results = WordCompletionProvider.completionsFromCache(
+            tabSnapshots: [snapshot],
+            excluding: "",
+            projectID: "/brand_new_project"
+        )
+        // May be empty on first call since cache is cold
+        // This is expected behavior — next call will have results
+        #expect(results.isEmpty || results.contains("brand_new_word"))
+    }
 }

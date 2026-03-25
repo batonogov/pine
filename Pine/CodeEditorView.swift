@@ -200,10 +200,19 @@ final class GutterTextView: NSTextView {
     /// File name for looking up the line comment prefix (e.g. "Dockerfile").
     var exactFileName: String?
 
-    /// Weak reference to TabManager for word-based auto-completion across open tabs.
-    weak var completionTabManager: TabManager?
+    /// Reference to TabManager for word-based auto-completion across open tabs.
+    /// Note: not `weak` because GutterTextView (class) holds the strong ref;
+    /// `CodeEditorView` (struct) just passes it through during updateNSView.
+    var completionTabManager: TabManager?
+
+    /// Project directory path used to isolate word completion cache per project.
+    var completionProjectID: String = ""
 
     // MARK: - Word completion
+
+    /// Tracks whether the completion popup is currently shown.
+    /// Used by `cancelOperation` to avoid the open→close→reopen loop.
+    private var isCompletionActive = false
 
     override func completions(
         forPartialWordRange charRange: NSRange,
@@ -215,9 +224,22 @@ final class GutterTextView: NSTextView {
         }
 
         let partial = (string as NSString).substring(with: charRange)
-        let allWords = WordCompletionProvider.collectWords(
-            from: tabManager.tabs,
-            excluding: partial
+
+        // Build lightweight snapshots of tabs to pass to the provider.
+        // The provider reads from cache (fast) and schedules background rescan if stale.
+        let snapshots = tabManager.tabs
+            .filter { $0.kind == .text }
+            .map { WordCompletionProvider.TabSnapshot(
+                id: $0.id,
+                content: $0.content,
+                contentVersion: $0.contentVersion,
+                kind: $0.kind
+            )}
+
+        let allWords = WordCompletionProvider.completionsFromCache(
+            tabSnapshots: snapshots,
+            excluding: partial,
+            projectID: completionProjectID
         )
         let filtered = WordCompletionProvider.completions(for: partial, in: allWords)
 
@@ -225,17 +247,25 @@ final class GutterTextView: NSTextView {
             return super.completions(forPartialWordRange: charRange, indexOfSelectedItem: index)
         }
 
+        // -1 means no item is pre-selected in the completion popup
         index.pointee = -1
+        isCompletionActive = true
         return filtered
     }
 
     override func cancelOperation(_ sender: Any?) {
-        // Trigger word completion popup on Escape when there's a partial word
-        let range = rangeForUserCompletion
-        if range.length > 0 {
-            complete(nil)
-        } else {
+        if isCompletionActive {
+            // Completion popup is showing — let NSTextView close it
+            isCompletionActive = false
             super.cancelOperation(sender)
+        } else {
+            // No completion popup — trigger one if there's a partial word
+            let range = rangeForUserCompletion
+            if range.length > 0 {
+                complete(nil)
+            } else {
+                super.cancelOperation(sender)
+            }
         }
     }
 
@@ -457,7 +487,11 @@ struct CodeEditorView: NSViewRepresentable {
     /// When non-nil, the editor scrolls to this offset. The `id` ensures each request is unique.
     var goToOffset: GoToRequest?
     /// TabManager reference for word-based auto-completion across open tabs.
-    weak var tabManager: TabManager?
+    /// Not `weak` — structs are value types, so `weak` has no effect here.
+    /// The reference is passed through to GutterTextView (class) during updateNSView.
+    var tabManager: TabManager?
+    /// Project directory path — isolates word completion cache per project.
+    var completionProjectID: String = ""
 
     /// Порог (в символах) для переключения на viewport-based подсветку.
     static let viewportHighlightThreshold = 100_000
@@ -537,6 +571,7 @@ struct CodeEditorView: NSViewRepresentable {
         textView.fileExtension = language
         textView.exactFileName = fileName
         textView.completionTabManager = tabManager
+        textView.completionProjectID = completionProjectID
         textView.setBlameLines(blameLines)
         textView.isBlameVisible = isBlameVisible
         // Delegate set AFTER text/highlight setup to prevent textDidChange from firing
@@ -733,6 +768,7 @@ struct CodeEditorView: NSViewRepresentable {
             gutterView.fileExtension = language
             gutterView.exactFileName = fileName
             gutterView.completionTabManager = tabManager
+            gutterView.completionProjectID = completionProjectID
             gutterView.setBlameLines(blameLines)
             if gutterView.isBlameVisible != isBlameVisible {
                 gutterView.isBlameVisible = isBlameVisible

@@ -131,6 +131,7 @@ struct EditorAreaView: View {
             cachedHighlightResult: tab.cachedHighlightResult,
             goToOffset: goToLineOffset,
             tabManager: tabManager,
+            completionProjectID: projectManager.rootURL?.path ?? "",
             fontSize: FontSizeSettings.shared.fontSize
         )
         .id(tab.id)
