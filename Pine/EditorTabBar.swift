@@ -41,13 +41,19 @@ struct EditorTabBar: View {
         }
     }
 
+    /// Width for pinned tabs — compact, icon-focused.
+    static let pinnedTabWidth: CGFloat = 40
+
     /// Computes tab widths: active tab stays at full width, inactive tabs share the rest.
-    static func inactiveTabWidth(availableWidth: CGFloat, tabCount: Int) -> CGFloat {
-        guard tabCount > 1 else { return maxTabWidth }
+    /// Pinned tabs always use `pinnedTabWidth` and are excluded from the dynamic calculation.
+    static func inactiveTabWidth(availableWidth: CGFloat, tabCount: Int, pinnedCount: Int = 0) -> CGFloat {
+        let unpinnedCount = tabCount - pinnedCount
+        guard unpinnedCount > 1 else { return maxTabWidth }
         let totalPadding: CGFloat = 12 // 4pt leading + 8pt trailing
         let totalSpacing = CGFloat(max(tabCount - 1, 0)) * 2 // 2pt spacing between tabs
-        let usable = availableWidth - totalPadding - totalSpacing - maxTabWidth // reserve space for active tab
-        let inactiveCount = CGFloat(tabCount - 1)
+        let pinnedSpace = CGFloat(pinnedCount) * pinnedTabWidth
+        let usable = availableWidth - totalPadding - totalSpacing - pinnedSpace - maxTabWidth
+        let inactiveCount = CGFloat(unpinnedCount - 1)
         let perTab = usable / inactiveCount
         return min(max(perTab, minTabWidth), maxTabWidth)
     }
@@ -58,9 +64,11 @@ struct EditorTabBar: View {
                 ScrollViewReader { proxy in
                     ScrollView(.horizontal, showsIndicators: false) {
                         HStack(spacing: 2) {
+                            let pinnedCount = tabManager.pinnedTabCount
                             let inactiveWidth = Self.inactiveTabWidth(
                                 availableWidth: geometry.size.width,
-                                tabCount: tabManager.tabs.count
+                                tabCount: tabManager.tabs.count,
+                                pinnedCount: pinnedCount
                             )
                             ForEach(tabManager.tabs) { tab in
                                 let isActive = tab.id == tabManager.activeTabID
@@ -69,9 +77,14 @@ struct EditorTabBar: View {
                                     tab: tab,
                                     isActive: isActive,
                                     onSelect: { tabManager.activeTabID = tab.id },
-                                    onClose: { onCloseTab(tab) }
+                                    onClose: { onCloseTab(tab) },
+                                    onTogglePin: { tabManager.togglePin(id: tab.id) }
                                 )
-                                .frame(maxWidth: isActive ? Self.maxTabWidth : inactiveWidth)
+                                .frame(
+                                    maxWidth: tab.isPinned
+                                        ? Self.pinnedTabWidth
+                                        : isActive ? Self.maxTabWidth : inactiveWidth
+                                )
                                 .opacity(isDragged ? 0.4 : 1.0)
                                 .scaleEffect(isDragged ? 0.95 : 1.0)
                                 .transaction { $0.animation = nil }
@@ -88,6 +101,7 @@ struct EditorTabBar: View {
                                     onReorder: onReorder
                                 ))
                             }
+
                         }
                         .padding(.leading, 4)
                         .padding(.trailing, 8)
@@ -116,9 +130,11 @@ struct EditorTabBar: View {
                         } label: {
                             Label {
                                 Text(tab.fileName)
-                                    + Text(tab.isDirty ? " ●" : "")
+                                    + Text(tab.isDirty ? " \u{25CF}" : "")
                             } icon: {
-                                Image(systemName: FileIconMapper.iconForFile(tab.fileName))
+                                Image(systemName: tab.isPinned
+                                      ? "pin.fill"
+                                      : FileIconMapper.iconForFile(tab.fileName))
                             }
                         }
                         .disabled(tab.id == tabManager.activeTabID)
@@ -214,10 +230,81 @@ struct EditorTabItem: View {
     let isActive: Bool
     let onSelect: () -> Void
     let onClose: () -> Void
+    var onTogglePin: (() -> Void)?
 
     @State private var isHovering = false
 
     var body: some View {
+        Group {
+            if tab.isPinned {
+                pinnedBody
+            } else {
+                unpinnedBody
+            }
+        }
+        .background(
+            isActive
+                ? Color.primary.opacity(0.12)
+                : isHovering ? Color.primary.opacity(0.05) : .clear,
+            in: Capsule()
+        )
+        .contentShape(Capsule())
+        .animation(PineAnimation.quick, value: isActive)
+        .animation(PineAnimation.quick, value: isHovering)
+        .onTapGesture(perform: onSelect)
+        .onHover { isHovering = $0 }
+        .contextMenu {
+            Button {
+                onTogglePin?()
+            } label: {
+                Label(
+                    tab.isPinned ? Strings.tabUnpin : Strings.tabPin,
+                    systemImage: tab.isPinned ? "pin.slash" : "pin"
+                )
+            }
+            .accessibilityIdentifier(AccessibilityID.editorTabPinToggle(tab.fileName))
+
+            if !tab.isPinned {
+                Button(role: .destructive) {
+                    onClose()
+                } label: {
+                    Label(Strings.menuCloseTab, systemImage: "xmark")
+                }
+            }
+        }
+        .accessibilityRepresentation {
+            HStack {
+                Button(tab.fileName, action: onSelect)
+                    .accessibilityIdentifier(AccessibilityID.editorTab(tab.fileName))
+                    .accessibilityAddTraits(isActive ? .isSelected : [])
+                if !tab.isPinned {
+                    Button("Close", action: onClose)
+                        .accessibilityIdentifier(AccessibilityID.editorTabCloseButton(tab.fileName))
+                }
+            }
+        }
+    }
+
+    /// Pinned tab: compact, icon-only with a subtle pin indicator.
+    private var pinnedBody: some View {
+        ZStack(alignment: .topTrailing) {
+            Image(systemName: FileIconMapper.iconForFile(tab.fileName))
+                .font(.system(size: LayoutMetrics.iconSmallFontSize))
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 4)
+
+            if tab.isDirty {
+                Circle()
+                    .fill(Color.primary.opacity(0.5))
+                    .frame(width: 5, height: 5)
+                    .offset(x: -4, y: 4)
+            }
+        }
+    }
+
+    /// Standard unpinned tab with close button and file name.
+    private var unpinnedBody: some View {
         HStack(spacing: 4) {
             // Close button — visible on hover or when active
             Button(action: onClose) {
@@ -254,25 +341,5 @@ struct EditorTabItem: View {
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 4)
-        .background(
-            isActive
-                ? Color.primary.opacity(0.12)
-                : isHovering ? Color.primary.opacity(0.05) : .clear,
-            in: Capsule()
-        )
-        .contentShape(Capsule())
-        .animation(PineAnimation.quick, value: isActive)
-        .animation(PineAnimation.quick, value: isHovering)
-        .onTapGesture(perform: onSelect)
-        .onHover { isHovering = $0 }
-        .accessibilityRepresentation {
-            HStack {
-                Button(tab.fileName, action: onSelect)
-                    .accessibilityIdentifier(AccessibilityID.editorTab(tab.fileName))
-                    .accessibilityAddTraits(isActive ? .isSelected : [])
-                Button("Close", action: onClose)
-                    .accessibilityIdentifier(AccessibilityID.editorTabCloseButton(tab.fileName))
-            }
-        }
     }
 }

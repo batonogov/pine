@@ -25,6 +25,8 @@ struct SessionState: Codable {
     /// Per-file editor state (cursor position, scroll offset, fold state).
     /// Key is the file path. Optional for backwards compatibility.
     var editorStates: [String: PerTabEditorState]?
+    /// File paths of pinned tabs. Optional for backwards compatibility.
+    var pinnedPaths: [String]?
 
     // MARK: - Terminal state (optional for backwards compatibility)
 
@@ -69,6 +71,7 @@ struct SessionState: Codable {
         previewModes: [String: String]? = nil,
         highlightingDisabledPaths: [String]? = nil,
         editorStates: [String: PerTabEditorState]? = nil,
+        pinnedPaths: [String]? = nil,
         terminalTabCount: Int? = nil,
         activeTerminalIndex: Int? = nil,
         isTerminalVisible: Bool? = nil,
@@ -82,6 +85,7 @@ struct SessionState: Codable {
             previewModes: previewModes,
             highlightingDisabledPaths: highlightingDisabledPaths,
             editorStates: editorStates,
+            pinnedPaths: pinnedPaths,
             terminalTabCount: terminalTabCount,
             activeTerminalIndex: activeTerminalIndex,
             isTerminalVisible: isTerminalVisible,
@@ -181,6 +185,16 @@ struct SessionState: Codable {
             $0.key.hasPrefix(prefix) && FileManager.default.fileExists(atPath: $0.key)
         }
         return filtered.isEmpty ? nil : filtered
+    }
+
+    /// Pinned paths filtered to entries within the project root that still exist on disk.
+    var existingPinnedPaths: Set<String>? {
+        guard let paths = pinnedPaths else { return nil }
+        let prefix = rootPrefix
+        let filtered = paths.filter {
+            $0.hasPrefix(prefix) && FileManager.default.fileExists(atPath: $0)
+        }
+        return filtered.isEmpty ? nil : Set(filtered)
     }
 
     /// Highlighting-disabled paths filtered to entries within the project root that still exist on disk.

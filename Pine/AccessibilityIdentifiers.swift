@@ -24,6 +24,7 @@ enum AccessibilityID {
     static let editorTabBar = "editorTabBar"
     static func editorTab(_ name: String) -> String { "editorTab_\(name)" }
     static func editorTabCloseButton(_ name: String) -> String { "editorTabClose_\(name)" }
+    static func editorTabPinToggle(_ name: String) -> String { "editorTabPinToggle_\(name)" }
     static let editorPlaceholder = "editorPlaceholder"
     static let codeEditor = "codeEditor"
     static let lineNumberGutter = "lineNumberGutter"

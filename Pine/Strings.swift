@@ -177,6 +177,11 @@ enum Strings {
     static let menuDuplicate: LocalizedStringKey = "menu.duplicate"
     static let menuCloseTab: LocalizedStringKey = "menu.closeTab"
 
+    // MARK: - Tab Pinning
+
+    static let tabPin: LocalizedStringKey = "tab.pin"
+    static let tabUnpin: LocalizedStringKey = "tab.unpin"
+
     // MARK: - Unsaved Changes Dialog (AppKit)
 
     static var unsavedChangesTitle: String {
