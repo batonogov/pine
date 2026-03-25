@@ -44,11 +44,21 @@ class TerminalScrollInterceptor: NSView {
     }
 
     // Let mouse clicks, drags, and keyboard events pass through to the terminal.
-    override func mouseDown(with event: NSEvent) { terminalView?.mouseDown(with: event) }
+    override func mouseDown(with event: NSEvent) {
+        if let tv = terminalView {
+            window?.makeFirstResponder(tv)
+            tv.mouseDown(with: event)
+        }
+    }
     override func mouseUp(with event: NSEvent) { terminalView?.mouseUp(with: event) }
     override func mouseDragged(with event: NSEvent) { terminalView?.mouseDragged(with: event) }
     override func mouseMoved(with event: NSEvent) { terminalView?.mouseMoved(with: event) }
-    override func rightMouseDown(with event: NSEvent) { terminalView?.rightMouseDown(with: event) }
+    override func rightMouseDown(with event: NSEvent) {
+        if let tv = terminalView {
+            window?.makeFirstResponder(tv)
+            tv.rightMouseDown(with: event)
+        }
+    }
     override func rightMouseUp(with event: NSEvent) { terminalView?.rightMouseUp(with: event) }
     override func otherMouseDown(with event: NSEvent) { terminalView?.otherMouseDown(with: event) }
     override func otherMouseUp(with event: NSEvent) { terminalView?.otherMouseUp(with: event) }
