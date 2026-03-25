@@ -67,6 +67,54 @@ class TerminalContainerView: NSView {
     }
 
     override var isFlipped: Bool { true }
+
+    // MARK: - Scroll wheel forwarding to TUI apps
+
+    /// Intercepts scroll wheel events and forwards them as mouse button events
+    /// when a TUI app has enabled mouse reporting (e.g. k9s, htop, lazygit).
+    ///
+    /// SwiftTerm's `scrollWheel(with:)` always performs scrollback navigation
+    /// and does not check `mouseMode`. This override sends VT100 mouse button 4/5
+    /// events when mouse reporting is active, falling back to SwiftTerm's default
+    /// scrollback behavior otherwise.
+    override func scrollWheel(with event: NSEvent) {
+        guard event.deltaY != 0,
+              let tab = terminal?.activeTerminalTab else {
+            super.scrollWheel(with: event)
+            return
+        }
+
+        let term = tab.terminalView.getTerminal()
+
+        // When mouse reporting is off, let SwiftTerm handle scrollback
+        guard term.mouseMode != .off else {
+            super.scrollWheel(with: event)
+            return
+        }
+
+        let modifiers = event.modifierFlags
+        let buttonFlags = MouseScrollForwarder.encodeScrollButton(
+            deltaY: event.deltaY,
+            shift: modifiers.contains(.shift),
+            option: modifiers.contains(.option),
+            control: modifiers.contains(.control)
+        )
+
+        let locationInTerminal = tab.terminalView.convert(event.locationInWindow, from: nil)
+        let pos = MouseScrollForwarder.gridPosition(
+            point: locationInTerminal,
+            viewBounds: tab.terminalView.bounds,
+            cols: term.cols,
+            rows: term.rows,
+            isFlipped: tab.terminalView.isFlipped
+        )
+
+        // Send multiple events for scroll velocity (matching SwiftTerm's velocity logic)
+        let velocity = MouseScrollForwarder.scrollVelocity(delta: event.deltaY)
+        for _ in 0..<velocity {
+            term.sendEvent(buttonFlags: buttonFlags, x: pos.col, y: pos.row)
+        }
+    }
 }
 
 // MARK: - Terminal search
