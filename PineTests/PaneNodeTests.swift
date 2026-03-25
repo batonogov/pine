@@ -563,4 +563,167 @@ struct PaneNodeTests {
             try JSONDecoder().decode(PaneNode.self, from: emptyJSON)
         }
     }
+
+    // MARK: - Equatable
+
+    @Test func equatable_identicalLeaves_areEqual() {
+        let uuid = UUID()
+        let a = PaneNode.leaf(PaneID(id: uuid), .editor)
+        let b = PaneNode.leaf(PaneID(id: uuid), .editor)
+        #expect(a == b)
+    }
+
+    @Test func equatable_differentContent_areNotEqual() {
+        let uuid = UUID()
+        let a = PaneNode.leaf(PaneID(id: uuid), .editor)
+        let b = PaneNode.leaf(PaneID(id: uuid), .terminal)
+        #expect(a != b)
+    }
+
+    @Test func equatable_differentIDs_areNotEqual() {
+        let a = PaneNode.leaf(PaneID(), .editor)
+        let b = PaneNode.leaf(PaneID(), .editor)
+        #expect(a != b)
+    }
+
+    @Test func equatable_identicalSplits_areEqual() {
+        let uuid1 = UUID()
+        let uuid2 = UUID()
+        let a = PaneNode.split(.horizontal, first: .leaf(PaneID(id: uuid1), .editor), second: .leaf(PaneID(id: uuid2), .terminal), ratio: 0.5)
+        let b = PaneNode.split(.horizontal, first: .leaf(PaneID(id: uuid1), .editor), second: .leaf(PaneID(id: uuid2), .terminal), ratio: 0.5)
+        #expect(a == b)
+    }
+
+    @Test func equatable_differentRatios_areNotEqual() {
+        let uuid1 = UUID()
+        let uuid2 = UUID()
+        let a = PaneNode.split(.horizontal, first: .leaf(PaneID(id: uuid1), .editor), second: .leaf(PaneID(id: uuid2), .terminal), ratio: 0.3)
+        let b = PaneNode.split(.horizontal, first: .leaf(PaneID(id: uuid1), .editor), second: .leaf(PaneID(id: uuid2), .terminal), ratio: 0.7)
+        #expect(a != b)
+    }
+
+    // MARK: - Splitting axis preservation
+
+    @Test func splitting_preservesHorizontalAxis() {
+        let id = PaneID()
+        let leaf = PaneNode.leaf(id, .editor)
+        let result = leaf.splitting(id, axis: .horizontal, newPaneID: PaneID(), newContent: .terminal)
+        if case .split(let axis, _, _, _) = result {
+            #expect(axis == .horizontal)
+        } else {
+            Issue.record("Expected split node")
+        }
+    }
+
+    @Test func splitting_preservesVerticalAxis() {
+        let id = PaneID()
+        let leaf = PaneNode.leaf(id, .editor)
+        let result = leaf.splitting(id, axis: .vertical, newPaneID: PaneID(), newContent: .terminal)
+        if case .split(let axis, _, _, _) = result {
+            #expect(axis == .vertical)
+        } else {
+            Issue.record("Expected split node")
+        }
+    }
+
+    // MARK: - Removing leaf when sibling is split (subtree promotion)
+
+    @Test func removing_leaf_promotesSplitSibling() {
+        let removeID = PaneID()
+        let innerID1 = PaneID()
+        let innerID2 = PaneID()
+        let innerSplit = PaneNode.split(
+            .vertical,
+            first: .leaf(innerID1, .editor),
+            second: .leaf(innerID2, .terminal),
+            ratio: 0.4
+        )
+        let tree = PaneNode.split(
+            .horizontal,
+            first: .leaf(removeID, .editor),
+            second: innerSplit,
+            ratio: 0.5
+        )
+
+        let result = tree.removing(removeID)
+        // Should promote the inner split subtree
+        #expect(result == innerSplit)
+        #expect(result?.leafCount == 2)
+        #expect(result?.contains(innerID1) == true)
+        #expect(result?.contains(innerID2) == true)
+        // Verify axis and ratio of promoted subtree are preserved
+        if case .split(let axis, _, _, let ratio) = result {
+            #expect(axis == .vertical)
+            #expect(ratio == 0.4)
+        } else {
+            Issue.record("Expected split node after promotion")
+        }
+    }
+
+    @Test func removing_leaf_promotesFirstChildSplitSibling() {
+        let removeID = PaneID()
+        let innerID1 = PaneID()
+        let innerID2 = PaneID()
+        let innerSplit = PaneNode.split(
+            .horizontal,
+            first: .leaf(innerID1, .editor),
+            second: .leaf(innerID2, .editor),
+            ratio: 0.6
+        )
+        let tree = PaneNode.split(
+            .vertical,
+            first: innerSplit,
+            second: .leaf(removeID, .terminal),
+            ratio: 0.5
+        )
+
+        let result = tree.removing(removeID)
+        #expect(result == innerSplit)
+    }
+
+    // MARK: - Splitting ratio edge cases
+
+    @Test func splitting_ratioZero_clampsToMinimum() {
+        let id = PaneID()
+        let leaf = PaneNode.leaf(id, .editor)
+        let result = leaf.splitting(id, axis: .horizontal, newPaneID: PaneID(), newContent: .terminal, ratio: 0.0)
+        if case .split(_, _, _, let ratio) = result {
+            #expect(ratio == 0.1)
+        } else {
+            Issue.record("Expected split node")
+        }
+    }
+
+    @Test func splitting_ratioOne_clampsToMaximum() {
+        let id = PaneID()
+        let leaf = PaneNode.leaf(id, .editor)
+        let result = leaf.splitting(id, axis: .horizontal, newPaneID: PaneID(), newContent: .terminal, ratio: 1.0)
+        if case .split(_, _, _, let ratio) = result {
+            #expect(ratio == 0.9)
+        } else {
+            Issue.record("Expected split node")
+        }
+    }
+
+    @Test func splitting_negativeRatio_clampsToMinimum() {
+        let id = PaneID()
+        let leaf = PaneNode.leaf(id, .editor)
+        let result = leaf.splitting(id, axis: .horizontal, newPaneID: PaneID(), newContent: .terminal, ratio: -0.5)
+        if case .split(_, _, _, let ratio) = result {
+            #expect(ratio == 0.1)
+        } else {
+            Issue.record("Expected split node")
+        }
+    }
+
+    @Test func splitting_ratioGreaterThanOne_clampsToMaximum() {
+        let id = PaneID()
+        let leaf = PaneNode.leaf(id, .editor)
+        let result = leaf.splitting(id, axis: .horizontal, newPaneID: PaneID(), newContent: .terminal, ratio: 2.5)
+        if case .split(_, _, _, let ratio) = result {
+            #expect(ratio == 0.9)
+        } else {
+            Issue.record("Expected split node")
+        }
+    }
 }

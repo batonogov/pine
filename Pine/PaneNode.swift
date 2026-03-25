@@ -8,7 +8,10 @@
 import Foundation
 
 /// Unique identifier for a pane in the split layout.
-struct PaneID: Hashable, Codable, Identifiable {
+///
+/// - Important: Callers must ensure each `PaneID` is unique within a `PaneNode` tree.
+///   Duplicate IDs lead to undefined behavior in queries and mutations.
+struct PaneID: Hashable, Codable, Identifiable, Sendable {
     let id: UUID
 
     init() { self.id = UUID() }
@@ -16,13 +19,13 @@ struct PaneID: Hashable, Codable, Identifiable {
 }
 
 /// The type of content a leaf pane displays.
-enum PaneContent: String, Hashable, Codable {
+enum PaneContent: String, Hashable, Codable, Sendable {
     case editor
     case terminal
 }
 
 /// Split direction for a non-leaf pane.
-enum SplitAxis: String, Codable {
+enum SplitAxis: String, Codable, Sendable {
     case horizontal // side by side (left | right)
     case vertical   // stacked (top / bottom)
 }
@@ -30,7 +33,7 @@ enum SplitAxis: String, Codable {
 /// A node in the pane layout tree.
 /// Leaf nodes contain content (editor or terminal).
 /// Split nodes divide space between two children.
-indirect enum PaneNode: Equatable {
+indirect enum PaneNode: Equatable, Sendable {
     case leaf(PaneID, PaneContent)
     case split(SplitAxis, first: PaneNode, second: PaneNode, ratio: CGFloat)
 
@@ -102,11 +105,12 @@ indirect enum PaneNode: Equatable {
         newContent: PaneContent,
         ratio: CGFloat = 0.5
     ) -> PaneNode? {
+        let clamped = min(max(ratio, 0.1), 0.9)
         switch self {
         case .leaf(let id, let content):
             guard id == targetID else { return nil }
             let newLeaf = PaneNode.leaf(newPaneID, newContent)
-            return .split(axis, first: .leaf(id, content), second: newLeaf, ratio: ratio)
+            return .split(axis, first: .leaf(id, content), second: newLeaf, ratio: clamped)
 
         case .split(let ax, let first, let second, let r):
             if let newFirst = first.splitting(targetID, axis: axis, newPaneID: newPaneID, newContent: newContent, ratio: ratio) {
