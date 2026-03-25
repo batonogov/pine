@@ -15,6 +15,12 @@ final class TerminalManager {
     var terminalTabs: [TerminalTab] = [TerminalTab(name: Strings.terminalDefaultName)]
     var activeTerminalID: UUID?
 
+    // MARK: - Focus
+
+    /// When non-nil, the terminal view for this tab should become first responder.
+    /// Set on new tab creation and tab switch; consumed by TerminalContainerView.
+    var pendingFocusTabID: UUID?
+
     // MARK: - Search state (Cmd+F in terminal)
 
     /// Whether the terminal search bar is currently visible.
@@ -44,6 +50,7 @@ final class TerminalManager {
         tab.configure(workingDirectory: workingDirectory)
         terminalTabs.append(tab)
         activeTerminalID = tab.id
+        pendingFocusTabID = tab.id
     }
 
     func closeTerminalTab(_ tab: TerminalTab) {

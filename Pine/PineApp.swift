@@ -95,6 +95,9 @@ struct PineApp: App {
                 Button {
                     guard let pm = focusedProject else { return }
                     pm.terminal.isTerminalVisible.toggle()
+                    if pm.terminal.isTerminalVisible, let activeID = pm.terminal.activeTerminalID {
+                        pm.terminal.pendingFocusTabID = activeID
+                    }
                 } label: {
                     Label(Strings.toggleTerminal, systemImage: MenuIcons.toggleTerminal)
                 }
