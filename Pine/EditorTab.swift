@@ -64,6 +64,9 @@ struct EditorTab: Identifiable, Hashable {
     /// Whether this tab's content was truncated on load (huge file partial load).
     var isTruncated: Bool = false
 
+    /// Whether this tab is pinned (always visible at the left, protected from close).
+    var isPinned: Bool = false
+
     /// Cached syntax highlight matches — applied synchronously on tab switch
     /// to eliminate the flash of unhighlighted text.
     /// Not included in Hashable/Equatable (which use id only).

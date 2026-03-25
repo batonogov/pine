@@ -92,6 +92,14 @@ final class ProjectManager {
             }
         }
 
+        // Pinned tabs, scoped to project root
+        let pinnedTabs = tabManager.tabs.filter {
+            $0.isPinned && $0.url.path.hasPrefix(rootPath)
+        }
+        let pinnedPaths: [String]? = pinnedTabs.isEmpty
+            ? nil
+            : pinnedTabs.map(\.url.path)
+
         // Terminal state
         let terminalTabCount = terminal.terminalTabs.count
         let activeTerminalIndex: Int? = terminal.activeTerminalID.flatMap { id in
@@ -105,6 +113,7 @@ final class ProjectManager {
             previewModes: previewModes,
             highlightingDisabledPaths: highlightingDisabledPaths,
             editorStates: editorStates,
+            pinnedPaths: pinnedPaths,
             terminalTabCount: terminalTabCount,
             activeTerminalIndex: activeTerminalIndex,
             isTerminalVisible: terminal.isTerminalVisible,

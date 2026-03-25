@@ -191,10 +191,16 @@ final class TabManager {
         }
     }
 
-    /// Closes a tab by ID. Selects an adjacent tab if the closed tab was active.
+    /// Closes a tab by ID. Pinned tabs are skipped unless `force` is true.
+    /// Selects an adjacent tab if the closed tab was active.
     /// Cancels any pending auto-save for the closed tab.
-    func closeTab(id: UUID) {
+    func closeTab(id: UUID, force: Bool = false) {
         guard let index = tabs.firstIndex(where: { $0.id == id }) else { return }
+
+        // Pinned tabs resist close unless forced (e.g., explicit unpin + close)
+        if tabs[index].isPinned && !force {
+            return
+        }
 
         cancelAutoSave()
         recoveryManager?.deleteRecoveryFile(for: id)
@@ -312,15 +318,60 @@ final class TabManager {
     }
 
     /// Reorders a tab by moving the dragged tab to the target tab's position.
+    /// Pinned tabs can only reorder within the pinned group; unpinned within unpinned.
     /// Used by `TabDropDelegate` during drag-and-drop reordering.
     func reorderTab(draggedID: UUID, targetID: UUID) {
         guard draggedID != targetID else { return }
         guard let fromIndex = tabs.firstIndex(where: { $0.id == draggedID }),
               let toIndex = tabs.firstIndex(where: { $0.id == targetID }) else { return }
+        // Prevent dragging between pinned and unpinned groups
+        guard tabs[fromIndex].isPinned == tabs[toIndex].isPinned else { return }
         tabs.move(
             fromOffsets: IndexSet(integer: fromIndex),
             toOffset: toIndex > fromIndex ? toIndex + 1 : toIndex
         )
+    }
+
+    // MARK: - Pin tabs
+
+    /// Toggles the pinned state of a tab. Pinned tabs are moved to the left;
+    /// unpinned tabs are moved to the right of the pinned group.
+    func togglePin(id: UUID) {
+        guard let index = tabs.firstIndex(where: { $0.id == id }) else { return }
+        tabs[index].isPinned.toggle()
+
+        if tabs[index].isPinned {
+            // Move to the end of the pinned group
+            let pinnedCount = tabs.prefix(index).filter(\.isPinned).count
+            if index != pinnedCount {
+                let tab = tabs.remove(at: index)
+                tabs.insert(tab, at: pinnedCount)
+            }
+        } else {
+            // Move to the start of the unpinned group (right after last pinned tab)
+            let pinnedCount = tabs.filter(\.isPinned).count
+            if index != pinnedCount {
+                let tab = tabs.remove(at: index)
+                tabs.insert(tab, at: pinnedCount)
+            }
+        }
+    }
+
+    /// Number of currently pinned tabs.
+    var pinnedTabCount: Int {
+        tabs.filter(\.isPinned).count
+    }
+
+    /// Restores pinned state for tabs matching the given file paths.
+    /// Called during session restoration.
+    func restorePinnedState(pinnedPaths: Set<String>) {
+        for index in tabs.indices where pinnedPaths.contains(tabs[index].url.path) {
+            tabs[index].isPinned = true
+        }
+        // Re-sort: pinned tabs first, preserving relative order within each group
+        let pinned = tabs.filter(\.isPinned)
+        let unpinned = tabs.filter { !$0.isPinned }
+        tabs = pinned + unpinned
     }
 
     // MARK: - Keyboard tab navigation
