@@ -170,4 +170,51 @@ struct TerminalScrollForwardingTests {
         let container = TerminalContainerView()
         #expect(container.isFlipped == true)
     }
+
+    // MARK: - TerminalScrollInterceptor tests
+
+    @Test func scrollInterceptorIsFlipped() {
+        let interceptor = TerminalScrollInterceptor()
+        #expect(interceptor.isFlipped == true)
+    }
+
+    @Test func scrollInterceptorDoesNotAcceptFirstResponder() {
+        // The interceptor must not steal first responder from the terminal view,
+        // otherwise keyboard input would stop working.
+        let interceptor = TerminalScrollInterceptor()
+        #expect(interceptor.acceptsFirstResponder == false)
+    }
+
+    @Test func scrollInterceptorHitTestReturnsNilOutsideBounds() {
+        let interceptor = TerminalScrollInterceptor()
+        interceptor.frame = NSRect(x: 0, y: 0, width: 800, height: 300)
+        let result = interceptor.hitTest(NSPoint(x: 900, y: 400))
+        #expect(result == nil)
+    }
+
+    @Test func scrollInterceptorHitTestReturnsSelfInsideBounds() {
+        let interceptor = TerminalScrollInterceptor()
+        interceptor.frame = NSRect(x: 0, y: 0, width: 800, height: 300)
+        let result = interceptor.hitTest(NSPoint(x: 400, y: 150))
+        #expect(result === interceptor)
+    }
+
+    @Test func containerAddsScrollInterceptorOnShowTab() {
+        let container = TerminalContainerView()
+        container.frame = NSRect(x: 0, y: 0, width: 800, height: 300)
+        let tab = TerminalTab(name: "test")
+
+        // Need to set up terminal manager for showTab to work
+        let manager = TerminalManager()
+        container.terminal = manager
+
+        container.showTab(tab)
+
+        // The interceptor should be the topmost subview (added after the terminal view)
+        let hasInterceptor = container.subviews.contains { $0 is TerminalScrollInterceptor }
+        #expect(hasInterceptor == true)
+
+        // Interceptor should be on top (last subview)
+        #expect(container.subviews.last is TerminalScrollInterceptor)
+    }
 }

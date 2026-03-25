@@ -276,9 +276,10 @@ jobs:
           THRESHOLD="${{ env.COVERAGE_THRESHOLD }}"
           echo "Coverage: ${COVERAGE}%, threshold: ${THRESHOLD}%"
           if python3 -c "exit(0 if float('$COVERAGE') >= float('$THRESHOLD') else 1)"; then
-            echo "Coverage is above threshold"
+            echo "✅ Coverage is above threshold"
           else
-            echo "::warning::Coverage ${COVERAGE}% is below ${THRESHOLD}% threshold"
+            echo "::error::Coverage ${COVERAGE}% is below ${THRESHOLD}% threshold"
+            exit 1
           fi
 
       - name: Comment Coverage on PR

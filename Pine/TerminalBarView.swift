@@ -36,7 +36,10 @@ struct TerminalNativeTabBar: View {
                             tab: tab,
                             isActive: tab.id == terminal.activeTerminalID,
                             canClose: terminal.terminalTabs.count > 1,
-                            onSelect: { terminal.activeTerminalID = tab.id },
+                            onSelect: {
+                                terminal.activeTerminalID = tab.id
+                                terminal.pendingFocusTabID = tab.id
+                            },
                             onClose: { closeTerminalTabWithConfirmation(tab) }
                         )
                     }
