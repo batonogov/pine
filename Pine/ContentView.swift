@@ -19,6 +19,8 @@ struct ContentView: View {
 
     @Environment(\.controlActiveState) var controlActiveState
 
+    // MARK: - State (internal for cross-file extension access in ContentView+Helpers)
+
     @State var selectedNode: FileNode?
     @State var columnVisibility: NavigationSplitViewVisibility = .all
     @State var lineDiffs: [GitLineDiff] = []
@@ -41,8 +43,7 @@ struct ContentView: View {
     var body: some View {
         NavigationSplitView(columnVisibility: $columnVisibility) {
             SidebarSearchableContent(
-                selectedNode: $selectedNode,
-                workspace: workspace
+                selectedNode: $selectedNode
             )
             .accessibilityIdentifier(AccessibilityID.sidebar)
             .navigationSplitViewColumnWidth(min: 200, ideal: 240, max: 400)
@@ -197,10 +198,6 @@ struct ContentView: View {
     @ViewBuilder
     var editorArea: some View {
         EditorAreaView(
-            tabManager: tabManager,
-            workspace: workspace,
-            projectManager: projectManager,
-            registry: registry,
             lineDiffs: $lineDiffs,
             isDragTargeted: $isDragTargeted,
             goToLineOffset: $goToLineOffset,

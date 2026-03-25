@@ -127,9 +127,9 @@ final class SidebarEditState {
 // MARK: - Sidebar
 
 struct SidebarView: View {
-    var workspace: WorkspaceManager
     @Binding var selectedFile: FileNode?
-    @Environment(ProjectRegistry.self) var registry
+    @Environment(WorkspaceManager.self) private var workspace
+    @Environment(ProjectRegistry.self) private var registry
     @Environment(\.openWindow) var openWindow
     @Environment(\.undoManager) private var undoManager
     @State private var editState = SidebarEditState()
@@ -241,14 +241,13 @@ struct SidebarView: View {
 /// updates reliably when text is entered via XCUITest synthetic events into `NSSearchToolbarItem`.
 struct SidebarSearchableContent: View {
     @Binding var selectedNode: FileNode?
-    var workspace: WorkspaceManager
-    @Environment(ProjectManager.self) var projectManager
+    @Environment(ProjectManager.self) private var projectManager
 
     var body: some View {
         if !projectManager.searchProvider.query.isEmpty {
             SearchResultsView()
         } else {
-            SidebarView(workspace: workspace, selectedFile: $selectedNode)
+            SidebarView(selectedFile: $selectedNode)
         }
     }
 }

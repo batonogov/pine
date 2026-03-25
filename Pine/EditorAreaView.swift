@@ -11,10 +11,10 @@ import UniformTypeIdentifiers
 // MARK: - Editor area
 
 struct EditorAreaView: View {
-    var tabManager: TabManager
-    var workspace: WorkspaceManager
-    var projectManager: ProjectManager
-    var registry: ProjectRegistry
+    @Environment(TabManager.self) private var tabManager
+    @Environment(WorkspaceManager.self) private var workspace
+    @Environment(ProjectManager.self) private var projectManager
+    @Environment(ProjectRegistry.self) private var registry
     @Binding var lineDiffs: [GitLineDiff]
     @Binding var isDragTargeted: Bool
     @Binding var goToLineOffset: GoToRequest?
