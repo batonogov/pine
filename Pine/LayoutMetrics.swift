@@ -46,6 +46,11 @@ enum LayoutMetrics {
     /// Editor / terminal tab bar height.
     static let tabBarHeight: CGFloat = 30
 
+    // MARK: - Breadcrumb bar
+
+    /// Breadcrumb path bar height.
+    static let breadcrumbBarHeight: CGFloat = 24
+
     // MARK: - Search results
 
     /// Vertical padding for individual match rows.

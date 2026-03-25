@@ -31,6 +31,20 @@ struct PineApp: App {
                 }
 
                 CheckForUpdatesView(viewModel: appDelegate.checkForUpdatesViewModel)
+
+                Divider()
+
+                Button {
+                    if CLIInstaller.isInstalled {
+                        CLIInstaller.uninstall()
+                    } else {
+                        CLIInstaller.install()
+                    }
+                } label: {
+                    Text(CLIInstaller.isInstalled
+                         ? "Uninstall Command Line Tool..."
+                         : "Install Command Line Tool...")
+                }
             }
             // Убираем стандартный "New Window" (Cmd+N) — табы создаются кликом по файлу
             CommandGroup(replacing: .newItem) { }
@@ -1005,7 +1019,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate {
 
     // MARK: - Open URLs (Dock icon drop, Finder "Open With")
 
-    /// Called when files/folders are dropped onto the Dock icon or opened via Finder.
+    /// Called when files/folders are dropped onto the Dock icon or opened via Finder "Open With".
+    ///
+    /// Note: This method only receives file/folder URLs. CLI arguments like `--line`
+    /// are not available here — Finder and LaunchServices pass only URLs to the app.
+    /// Line number navigation works only when Pine is launched from the command line.
     func application(_ sender: NSApplication, open urls: [URL]) {
         let classified = DropHandler.classifyURLs(urls)
 

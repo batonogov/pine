@@ -311,6 +311,18 @@ final class TabManager {
         tabs.move(fromOffsets: source, toOffset: destination)
     }
 
+    /// Reorders a tab by moving the dragged tab to the target tab's position.
+    /// Used by `TabDropDelegate` during drag-and-drop reordering.
+    func reorderTab(draggedID: UUID, targetID: UUID) {
+        guard draggedID != targetID else { return }
+        guard let fromIndex = tabs.firstIndex(where: { $0.id == draggedID }),
+              let toIndex = tabs.firstIndex(where: { $0.id == targetID }) else { return }
+        tabs.move(
+            fromOffsets: IndexSet(integer: fromIndex),
+            toOffset: toIndex > fromIndex ? toIndex + 1 : toIndex
+        )
+    }
+
     // MARK: - Keyboard tab navigation
 
     /// Selects the tab at the given 0-based index. No-op if out of bounds.
