@@ -200,6 +200,35 @@ final class GutterTextView: NSTextView {
     /// File name for looking up the line comment prefix (e.g. "Dockerfile").
     var exactFileName: String?
 
+    /// Weak reference to TabManager for word-based auto-completion across open tabs.
+    weak var completionTabManager: TabManager?
+
+    // MARK: - Word completion
+
+    override func completions(
+        forPartialWordRange charRange: NSRange,
+        indexOfSelectedItem index: UnsafeMutablePointer<Int>
+    ) -> [String]? {
+        guard charRange.length > 0,
+              let tabManager = completionTabManager else {
+            return super.completions(forPartialWordRange: charRange, indexOfSelectedItem: index)
+        }
+
+        let partial = (string as NSString).substring(with: charRange)
+        let allWords = WordCompletionProvider.collectWords(
+            from: tabManager.tabs,
+            excluding: partial
+        )
+        let filtered = WordCompletionProvider.completions(for: partial, in: allWords)
+
+        guard !filtered.isEmpty else {
+            return super.completions(forPartialWordRange: charRange, indexOfSelectedItem: index)
+        }
+
+        index.pointee = -1
+        return filtered
+    }
+
     func toggleComment() {
         guard let style = SyntaxHighlighter.shared.commentStyle(
             forExtension: fileExtension,
@@ -417,6 +446,8 @@ struct CodeEditorView: NSViewRepresentable {
     var cachedHighlightResult: HighlightMatchResult?
     /// When non-nil, the editor scrolls to this offset. The `id` ensures each request is unique.
     var goToOffset: GoToRequest?
+    /// TabManager reference for word-based auto-completion across open tabs.
+    weak var tabManager: TabManager?
 
     /// Порог (в символах) для переключения на viewport-based подсветку.
     static let viewportHighlightThreshold = 100_000
@@ -495,6 +526,7 @@ struct CodeEditorView: NSViewRepresentable {
 
         textView.fileExtension = language
         textView.exactFileName = fileName
+        textView.completionTabManager = tabManager
         textView.setBlameLines(blameLines)
         textView.isBlameVisible = isBlameVisible
         // Delegate set AFTER text/highlight setup to prevent textDidChange from firing
@@ -690,6 +722,7 @@ struct CodeEditorView: NSViewRepresentable {
            let gutterView = sv.documentView as? GutterTextView {
             gutterView.fileExtension = language
             gutterView.exactFileName = fileName
+            gutterView.completionTabManager = tabManager
             gutterView.setBlameLines(blameLines)
             if gutterView.isBlameVisible != isBlameVisible {
                 gutterView.isBlameVisible = isBlameVisible
