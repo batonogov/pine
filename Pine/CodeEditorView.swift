@@ -87,12 +87,21 @@ final class GutterTextView: NSTextView {
         return f
     }()
 
+    /// Whether indent guides are visible (driven by @AppStorage in the view layer).
+    var isIndentGuidesVisible: Bool = true
+
     override func drawBackground(in rect: NSRect) {
         super.drawBackground(in: rect)
 
         guard let layoutManager = layoutManager,
               textContainer != nil else { return }
 
+        // ── Indent guides (drawn behind everything, for all visible lines) ──
+        if isIndentGuidesVisible {
+            drawIndentGuides(layoutManager: layoutManager)
+        }
+
+        // ── Current line highlight ──
         let cursorRange = selectedRange()
         guard cursorRange.length == 0 else { return }
 
@@ -109,6 +118,60 @@ final class GutterTextView: NSTextView {
         // ── Inline blame annotation ──
         if isBlameVisible, !blameLookup.isEmpty {
             drawInlineBlame(lineRect: lineRect, layoutManager: layoutManager)
+        }
+    }
+
+    /// Draws vertical indent guide lines for all visible lines.
+    private func drawIndentGuides(layoutManager: NSLayoutManager) {
+        guard let textContainer = textContainer,
+              let scrollView = enclosingScrollView else { return }
+
+        let source = string as NSString
+        guard source.length > 0 else { return }
+
+        let visibleRect = scrollView.contentView.bounds
+        let visibleGlyphRange = layoutManager.glyphRange(
+            forBoundingRect: visibleRect, in: textContainer
+        )
+        guard visibleGlyphRange.location != NSNotFound else { return }
+
+        // Detect indentation style from content
+        let style = IndentationStyle.detect(in: string)
+        let indentUnit = IndentGuideRenderer.indentUnitWidth(from: style)
+        let tabWidth = IndentGuideRenderer.effectiveTabWidth(from: style)
+
+        // Measure character width from the editor font
+        let editorFont = font ?? NSFont.monospacedSystemFont(ofSize: 13, weight: .regular)
+        let charWidth = " ".size(withAttributes: [.font: editorFont]).width
+
+        let originY = textContainerOrigin.y
+        let textOriginX = textContainerOrigin.x + textContainer.lineFragmentPadding
+
+        layoutManager.enumerateLineFragments(
+            forGlyphRange: visibleGlyphRange
+        ) { lineRect, _, _, glyphRange, _ in
+            let charIndex = layoutManager.characterIndexForGlyph(at: glyphRange.location)
+            let lineRange = source.lineRange(for: NSRange(location: charIndex, length: 0))
+            let lineText = source.substring(with: lineRange)
+
+            // For empty lines (just newline), skip — no guides
+            let trimmed = lineText.trimmingCharacters(in: .newlines)
+            guard !trimmed.isEmpty else { return }
+
+            let columns = IndentGuideRenderer.indentLevel(of: trimmed, tabWidth: tabWidth)
+            let levels = IndentGuideRenderer.guideLevels(
+                columns: columns, indentUnitWidth: indentUnit
+            )
+
+            let y = lineRect.origin.y + originY
+            IndentGuideRenderer.drawGuides(.init(
+                levels: levels,
+                indentUnitWidth: indentUnit,
+                charWidth: charWidth,
+                textOriginX: textOriginX,
+                lineY: y,
+                lineHeight: lineRect.height
+            ))
         }
     }
 
@@ -402,6 +465,8 @@ struct CodeEditorView: NSViewRepresentable {
     var isMinimapVisible: Bool = true
     /// Whether word wrap is enabled (wrap at window edge vs. horizontal scroll).
     var isWordWrapEnabled: Bool = true
+    /// Whether indent guides are visible.
+    var isIndentGuidesVisible: Bool = true
     /// Whether syntax highlighting is disabled for this tab (e.g. large files).
     var syntaxHighlightingDisabled: Bool = false
     /// Cursor position to restore when the view is created (tab switch).
@@ -497,6 +562,7 @@ struct CodeEditorView: NSViewRepresentable {
         textView.exactFileName = fileName
         textView.setBlameLines(blameLines)
         textView.isBlameVisible = isBlameVisible
+        textView.isIndentGuidesVisible = isIndentGuidesVisible
         // Delegate set AFTER text/highlight setup to prevent textDidChange from firing
         // during makeNSView and causing a spurious updateContent → cachedHighlightResult = nil
         // → contentVersion bump → updateNSView re-sets text → stripping highlight attributes.
@@ -694,6 +760,10 @@ struct CodeEditorView: NSViewRepresentable {
             if gutterView.isBlameVisible != isBlameVisible {
                 gutterView.isBlameVisible = isBlameVisible
                 gutterView.display()
+            }
+            if gutterView.isIndentGuidesVisible != isIndentGuidesVisible {
+                gutterView.isIndentGuidesVisible = isIndentGuidesVisible
+                gutterView.needsDisplay = true
             }
         }
 

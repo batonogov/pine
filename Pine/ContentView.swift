@@ -37,6 +37,7 @@ struct ContentView: View {
     @AppStorage("minimapVisible") var isMinimapVisible = true
     @AppStorage(BlameConstants.storageKey) var isBlameVisible = true
     @AppStorage("wordWrapEnabled") var isWordWrapEnabled = true
+    @AppStorage("indentGuidesVisible") var isIndentGuidesVisible = true
 
     var activeTab: EditorTab? { tabManager.activeTab }
 
@@ -181,6 +182,9 @@ struct ContentView: View {
         .onReceive(NotificationCenter.default.publisher(for: .toggleWordWrap)) { _ in
             isWordWrapEnabled.toggle()
         }
+        .onReceive(NotificationCenter.default.publisher(for: .toggleIndentGuides)) { _ in
+            isIndentGuidesVisible.toggle()
+        }
         .onChange(of: tabManager.pendingGoToLine) { _, newLine in
             guard let line = newLine, let tab = tabManager.activeTab else { return }
             tabManager.pendingGoToLine = nil
@@ -205,6 +209,7 @@ struct ContentView: View {
             blameLines: blameLines,
             isMinimapVisible: isMinimapVisible,
             isWordWrapEnabled: isWordWrapEnabled,
+            isIndentGuidesVisible: isIndentGuidesVisible,
             onCloseTab: { closeTabWithConfirmation($0) },
             onSaveSession: { projectManager.saveSession() }
         )

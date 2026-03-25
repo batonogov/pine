@@ -22,6 +22,7 @@ struct EditorAreaView: View {
     var blameLines: [GitBlameLine]
     var isMinimapVisible: Bool
     var isWordWrapEnabled: Bool
+    var isIndentGuidesVisible: Bool
     var onCloseTab: (EditorTab) -> Void
     var onSaveSession: () -> Void
 
@@ -119,6 +120,7 @@ struct EditorAreaView: View {
             ),
             isMinimapVisible: isMinimapVisible,
             isWordWrapEnabled: isWordWrapEnabled,
+            isIndentGuidesVisible: isIndentGuidesVisible,
             syntaxHighlightingDisabled: tab.syntaxHighlightingDisabled,
             initialCursorPosition: goToLineOffset?.offset ?? tab.cursorPosition,
             initialScrollOffset: goToLineOffset != nil ? 0 : tab.scrollOffset,

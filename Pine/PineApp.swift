@@ -135,6 +135,12 @@ struct PineApp: App {
                 }
                 .keyboardShortcut("z", modifiers: .option)
 
+                Button {
+                    NotificationCenter.default.post(name: .toggleIndentGuides, object: nil)
+                } label: {
+                    Label(Strings.menuToggleIndentGuides, systemImage: MenuIcons.toggleIndentGuides)
+                }
+
                 Divider()
 
                 Button {
@@ -1182,4 +1188,6 @@ extension Notification.Name {
     static let goToLine = Notification.Name("goToLine")
     // Word Wrap toggle (issue #416)
     static let toggleWordWrap = Notification.Name("toggleWordWrap")
+    // Indent Guides toggle (issue #165)
+    static let toggleIndentGuides = Notification.Name("toggleIndentGuides")
 }
