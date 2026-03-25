@@ -1,5 +1,32 @@
 # Changelog
 
+## [1.12.0](https://github.com/batonogov/pine/compare/v1.11.0...v1.12.0) (2026-03-25)
+
+
+### Features
+
+* add Helm and Jinja2 grammars, enrich Groovy/HCL/Nginx grammars ([#318](https://github.com/batonogov/pine/issues/318)) ([#540](https://github.com/batonogov/pine/issues/540)) ([bf17977](https://github.com/batonogov/pine/commit/bf179778c56b7acfc575c200914bd74601ffb66e))
+* add tab pinning support ([#334](https://github.com/batonogov/pine/issues/334)) ([#548](https://github.com/batonogov/pine/issues/548)) ([cb31cc2](https://github.com/batonogov/pine/commit/cb31cc242c9ae352f78744ca0dff90e79ae686ee))
+* breadcrumb path bar above editor ([#335](https://github.com/batonogov/pine/issues/335)) ([#536](https://github.com/batonogov/pine/issues/536)) ([cf4b180](https://github.com/batonogov/pine/commit/cf4b180026223efc7194fd16151390c20b770973))
+* CLI tool pine command to open files from terminal ([#419](https://github.com/batonogov/pine/issues/419)) ([#535](https://github.com/batonogov/pine/issues/535)) ([15529c6](https://github.com/batonogov/pine/commit/15529c68c72d7b4a81e523c6288941bc1b635119))
+* highlight matching brackets at cursor ([#338](https://github.com/batonogov/pine/issues/338)) ([#537](https://github.com/batonogov/pine/issues/537)) ([c48bd69](https://github.com/batonogov/pine/commit/c48bd6977c5495ba493177199849413a0a77289c))
+* improve drag & drop tab reorder with visual feedback and spring animations ([#538](https://github.com/batonogov/pine/issues/538)) ([e88005d](https://github.com/batonogov/pine/commit/e88005db3504960334cc26bc43b45ea5d97459bf)), closes [#279](https://github.com/batonogov/pine/issues/279)
+* register file type associations for Open With in Finder ([#421](https://github.com/batonogov/pine/issues/421)) ([#534](https://github.com/batonogov/pine/issues/534)) ([a86591d](https://github.com/batonogov/pine/commit/a86591db283a172e71cf4595f929b70d05ce06cc))
+* word wrap toggle (Option+Z) ([#416](https://github.com/batonogov/pine/issues/416)) ([#533](https://github.com/batonogov/pine/issues/533)) ([a818313](https://github.com/batonogov/pine/commit/a81831345a9e1418a444de6d676d058680b9f5dd))
+
+
+### Bug Fixes
+
+* add docs workflow to unblock docs-only PRs ([#552](https://github.com/batonogov/pine/issues/552)) ([#553](https://github.com/batonogov/pine/issues/553)) ([ccf4c82](https://github.com/batonogov/pine/commit/ccf4c8259859518cce320615da030f8d8a2f00d3))
+* forward mouse scroll events to TUI apps in terminal ([#524](https://github.com/batonogov/pine/issues/524)) ([#544](https://github.com/batonogov/pine/issues/544)) ([a2dc514](https://github.com/batonogov/pine/commit/a2dc514f4a7e5d36b149cee3fc60fc59644aadd1))
+* group create+rename into single undo step via beginUndoGrouping ([#527](https://github.com/batonogov/pine/issues/527)) ([#545](https://github.com/batonogov/pine/issues/545)) ([6246528](https://github.com/batonogov/pine/commit/62465280714905ecf2e787161a8ab1ac58693abf))
+* use getpwuid to detect user's default shell instead of $SHELL ([#550](https://github.com/batonogov/pine/issues/550)) ([54f1e61](https://github.com/batonogov/pine/commit/54f1e6154c4edcc6cb90a9797dca68f6c855be93))
+
+
+### Miscellaneous
+
+* update app icon ([#554](https://github.com/batonogov/pine/issues/554)) ([5979bdd](https://github.com/batonogov/pine/commit/5979bdd7f2f393b6d0fa45d313c4f8d54556a679))
+
 ## [1.11.0](https://github.com/batonogov/pine/compare/v1.10.1...v1.11.0) (2026-03-24)
 
 
