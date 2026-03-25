@@ -77,6 +77,12 @@ enum AccessibilityID {
     static let quickOpenResultsList = "quickOpenResultsList"
     static func quickOpenItem(_ name: String) -> String { "quickOpenItem_\(name)" }
 
+    // MARK: - Symbol Navigator
+    static let symbolNavigatorOverlay = "symbolNavigatorOverlay"
+    static let symbolSearchField = "symbolSearchField"
+    static let symbolResultsList = "symbolResultsList"
+    static func symbolItem(_ name: String) -> String { "symbolItem_\(name)" }
+
     // MARK: - Status bar
     static let statusBar = "statusBar"
     static let terminalToggleButton = "terminalToggleButton"

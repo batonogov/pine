@@ -33,6 +33,7 @@ struct ContentView: View {
     @State var showRecoveryDialog = false
     @State var isDragTargeted = false
     @State var isQuickOpenPresented = false
+    @State var isSymbolNavigatorPresented = false
     @State var showGoToLine = false
     @AppStorage("minimapVisible") var isMinimapVisible = true
     @AppStorage(BlameConstants.storageKey) var isBlameVisible = true
@@ -122,6 +123,18 @@ struct ContentView: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: .showQuickOpen)) { _ in
             isQuickOpenPresented = true
+        }
+        .sheet(isPresented: $isSymbolNavigatorPresented) {
+            SymbolNavigatorView(isPresented: $isSymbolNavigatorPresented)
+                .environment(projectManager)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .showSymbolNavigator)) { _ in
+            guard tabManager.activeTab != nil else { return }
+            isSymbolNavigatorPresented = true
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .symbolNavigate)) { notification in
+            guard let offset = notification.userInfo?["offset"] as? Int else { return }
+            goToLineOffset = GoToRequest(offset: offset)
         }
         .sheet(isPresented: $showGoToLine) {
             GoToLineView(
