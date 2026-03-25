@@ -225,64 +225,13 @@ struct TerminalScrollForwardingTests {
         #expect(velocity == 3)
     }
 
-    @Test func scrollVelocityAtBoundaryOne() {
-        let velocity = MouseScrollForwarder.scrollVelocity(delta: 1.0)
-        #expect(velocity == 1)
-    }
+    // NOTE: Scroll velocity boundary and grid position edge case tests
+    // are in the "#551" sections below — duplicates removed.
 
-    @Test func scrollVelocityJustAboveOne() {
-        let velocity = MouseScrollForwarder.scrollVelocity(delta: 1.5)
-        #expect(velocity >= 1)
-        #expect(velocity <= 3)
-    }
-
-    @Test func scrollVelocityAtBoundaryFive() {
-        let velocity = MouseScrollForwarder.scrollVelocity(delta: 5.0)
-        // 5 > 1, so min(5, 3) = 3
-        #expect(velocity == 3)
-    }
-
-    @Test func scrollVelocityJustAboveFive() {
-        let velocity = MouseScrollForwarder.scrollVelocity(delta: 5.1)
-        #expect(velocity == 3)
-    }
-
-    // MARK: - Grid position edge cases
-
-    @Test func gridPositionWithZeroBoundsReturnsOrigin() {
-        let pos = MouseScrollForwarder.gridPosition(
-            point: CGPoint(x: 100, y: 100),
-            viewBounds: NSRect(x: 0, y: 0, width: 0, height: 0),
-            cols: 80,
-            rows: 24,
-            isFlipped: true
-        )
-        #expect(pos.col == 0)
-        #expect(pos.row == 0)
-    }
-
-    @Test func gridPositionWithZeroColsReturnsOrigin() {
-        let pos = MouseScrollForwarder.gridPosition(
-            point: CGPoint(x: 100, y: 100),
-            viewBounds: NSRect(x: 0, y: 0, width: 800, height: 300),
-            cols: 0,
-            rows: 24,
-            isFlipped: true
-        )
-        #expect(pos.col == 0)
-        #expect(pos.row == 0)
-    }
-
-    @Test func gridPositionMiddleOfView() {
-        let pos = MouseScrollForwarder.gridPosition(
-            point: CGPoint(x: 400, y: 150),
-            viewBounds: NSRect(x: 0, y: 0, width: 800, height: 300),
-            cols: 80,
-            rows: 24,
-            isFlipped: true
-        )
-        #expect(pos.col == 40)
-        #expect(pos.row == 12)
+    @Test func arrowKeyForScrollZeroDelta() {
+        // Zero delta defaults to scroll down (ESC O B) since 0 > 0 is false
+        let key = MouseScrollForwarder.arrowKeyForScroll(deltaY: 0.0)
+        #expect(key == "\u{1b}OB")
     }
 
     // MARK: - Modifier combinations for scroll encoding
