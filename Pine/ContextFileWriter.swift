@@ -13,11 +13,13 @@ import Foundation
 ///
 /// The file is written atomically with a 500ms debounce to avoid excessive I/O
 /// during rapid cursor movement. The file is deleted when the project closes.
-@Observable
 final class ContextFileWriter {
 
     /// Name of the context file written to the project root.
     static let fileName = ".pine-context.json"
+
+    /// File permissions: owner read/write only (0600).
+    private static let filePermissions: mode_t = 0o600
 
     // MARK: - Internal state (visible for testing)
 
@@ -36,6 +38,13 @@ final class ContextFileWriter {
 
     /// The last context that was written to disk, to avoid redundant writes.
     private var lastWrittenContext: ContextPayload?
+
+    /// Shared encoder instance — no need to recreate on each write.
+    private let encoder: JSONEncoder = {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        return encoder
+    }()
 
     // MARK: - Public API
 
@@ -102,39 +111,18 @@ final class ContextFileWriter {
 
         let fileURL = projectRoot.appendingPathComponent(Self.fileName)
 
-        // Build JSON manually for a clean, minimal output
-        var json = "{"
-        if let file = payload.currentFile {
-            let escaped = file.replacingOccurrences(of: "\\", with: "\\\\")
-                .replacingOccurrences(of: "\"", with: "\\\"")
-            json += "\"currentFile\":\"\(escaped)\""
-        } else {
-            json += "\"currentFile\":null"
-        }
-        if let line = payload.cursorLine {
-            json += ",\"cursorLine\":\(line)"
-        } else {
-            json += ",\"cursorLine\":null"
-        }
-        if let col = payload.cursorColumn {
-            json += ",\"cursorColumn\":\(col)"
-        } else {
-            json += ",\"cursorColumn\":null"
-        }
-        json += "}\n"
+        guard let data = try? encoder.encode(payload) else { return }
 
-        guard let data = json.data(using: .utf8) else { return }
+        // Append trailing newline for POSIX-friendly output
+        var output = data
+        output.append(contentsOf: [0x0A]) // '\n'
 
-        // Atomic write via temporary file
-        let tempURL = fileURL.deletingLastPathComponent()
-            .appendingPathComponent(".\(Self.fileName).tmp")
         do {
-            try data.write(to: tempURL)
-            // Use replaceItemAt for atomic rename
-            _ = try FileManager.default.replaceItemAt(fileURL, withItemAt: tempURL)
+            try output.write(to: fileURL, options: .atomic)
+            // Set restrictive permissions (owner read/write only)
+            chmod(fileURL.path, Self.filePermissions)
         } catch {
-            // replaceItemAt may fail if the target doesn't exist yet
-            try? FileManager.default.moveItem(at: tempURL, to: fileURL)
+            return
         }
 
         lastWrittenContext = payload

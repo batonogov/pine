@@ -169,9 +169,14 @@ final class ProjectManager {
     func updateEditorContext() {
         guard let rootURL = workspace.rootURL else { return }
         let tab = tabManager.activeTab
+        // Normalize root path to always end without trailing slash
+        let rootPath = rootURL.path.hasSuffix("/")
+            ? String(rootURL.path.dropLast())
+            : rootURL.path
+        let prefix = rootPath + "/"
         let relativePath: String? = if let url = tab?.url {
-            url.path.hasPrefix(rootURL.path + "/")
-                ? String(url.path.dropFirst(rootURL.path.count + 1))
+            url.path.hasPrefix(prefix)
+                ? String(url.path.dropFirst(prefix.count))
                 : url.lastPathComponent
         } else {
             nil
