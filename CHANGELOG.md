@@ -1,5 +1,32 @@
 # Changelog
 
+## [1.13.0](https://github.com/batonogov/pine/compare/v1.12.0...v1.13.0) (2026-03-26)
+
+
+### Features
+
+* add pane tree data model for flexible split layout ([#569](https://github.com/batonogov/pine/issues/569)) ([7fcd478](https://github.com/batonogov/pine/commit/7fcd47867292bd4aa03001653d68df65fb9fd174))
+* add symbol navigation for quick jump to functions and classes ([#306](https://github.com/batonogov/pine/issues/306)) ([#573](https://github.com/batonogov/pine/issues/573)) ([26129d3](https://github.com/batonogov/pine/commit/26129d319e3bb612ab28d9bf58779fe071c28c2b))
+* convert scroll to arrow keys for TUI apps on alternate screen ([#567](https://github.com/batonogov/pine/issues/567)) ([4e562fb](https://github.com/batonogov/pine/commit/4e562fb4aa9f8e612b2ce62c068de3f390fd2ac3))
+* pass editor context to terminal via environment variables ([#571](https://github.com/batonogov/pine/issues/571)) ([7f2904b](https://github.com/batonogov/pine/commit/7f2904bd1a5c8c89edf9c25c49cdbe2d8dad773b))
+
+
+### Bug Fixes
+
+* add missing Symbol Navigator localizations for all 9 languages ([#582](https://github.com/batonogov/pine/issues/582)) ([#583](https://github.com/batonogov/pine/issues/583)) ([92dc833](https://github.com/batonogov/pine/commit/92dc8339a8f940e4307b8e7f34c639ff0ca049ed))
+* auto-focus terminal on new tab creation and tab switch ([#558](https://github.com/batonogov/pine/issues/558)) ([#560](https://github.com/batonogov/pine/issues/560)) ([129d121](https://github.com/batonogov/pine/commit/129d1218707340c1c02fcf8a0dc64ee6087dd663))
+* make terminal view first responder on mouse click in scroll interceptor ([#565](https://github.com/batonogov/pine/issues/565)) ([6fe111a](https://github.com/batonogov/pine/commit/6fe111a6ef5e1e0311d547ad670c266164ab48a5))
+* move context file from project root to Application Support ([#590](https://github.com/batonogov/pine/issues/590)) ([#592](https://github.com/batonogov/pine/issues/592)) ([089ac4b](https://github.com/batonogov/pine/commit/089ac4b3877e2776d3bcef3f58aa8644b2872226))
+* prevent minimap viewport jump when adding lines at end of file ([#586](https://github.com/batonogov/pine/issues/586)) ([#591](https://github.com/batonogov/pine/issues/591)) ([2c82454](https://github.com/batonogov/pine/commit/2c824544329945848977ac2987cc709b736a8753))
+* prevent syntax highlighting from disappearing after initial display ([#556](https://github.com/batonogov/pine/issues/556)) ([#562](https://github.com/batonogov/pine/issues/562)) ([f8cc976](https://github.com/batonogov/pine/commit/f8cc9767ef56d34a70dcf10955a04f93666b0e93))
+* rename DocumentSymbol/SymbolKind to resolve type ambiguity with swift-markdown ([#588](https://github.com/batonogov/pine/issues/588)) ([#589](https://github.com/batonogov/pine/issues/589)) ([21e1f67](https://github.com/batonogov/pine/commit/21e1f6743df8ab1813f4a42705ff90c9d62f81f5))
+* use scroll interceptor overlay to forward mouse events to TUI apps ([#561](https://github.com/batonogov/pine/issues/561)) ([e85d0ec](https://github.com/batonogov/pine/commit/e85d0ec6b9989e666918cb7776bc6d9b6f8f8e53))
+
+
+### Code Refactoring
+
+* split ContentView.swift into focused subviews ([#532](https://github.com/batonogov/pine/issues/532)) ([#555](https://github.com/batonogov/pine/issues/555)) ([5411de5](https://github.com/batonogov/pine/commit/5411de580cbfa02436ee2269ecbaa0aa1f687275))
+
 ## [1.12.0](https://github.com/batonogov/pine/compare/v1.11.0...v1.12.0) (2026-03-25)
 
 
