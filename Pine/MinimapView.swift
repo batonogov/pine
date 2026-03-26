@@ -60,11 +60,15 @@ final class MinimapView: NSView {
     private let charWidth: CGFloat = MinimapConstants.charWidth
 
     /// Total document height including top origin offset and bottom inset.
+    /// Ensures layout is up-to-date before measuring to prevent stale values
+    /// when text changes (e.g., pressing Enter at end of file) trigger a redraw
+    /// before the layout manager has recalculated.
     private func documentHeight(
         layoutManager: NSLayoutManager,
         textContainer: NSTextContainer,
         textView: NSTextView
     ) -> CGFloat {
+        layoutManager.ensureLayout(for: textContainer)
         let usedRect = layoutManager.usedRect(for: textContainer)
         return usedRect.height + textView.textContainerOrigin.y + textView.textContainerInset.height
     }
@@ -227,7 +231,9 @@ final class MinimapView: NSView {
         // minimap is scrolled to show the bottom of the document.
         let visibleRect = scrollView.contentView.bounds
         let maxEditorScroll = max(1, docHeight - visibleRect.height)
-        let currentScroll = visibleRect.origin.y
+        // Clamp scroll position to prevent jump when scroll offset exceeds
+        // document height during layout recalculation
+        let currentScroll = min(visibleRect.origin.y, max(0, maxEditorScroll))
         let scrollFraction = min(max(currentScroll / maxEditorScroll, 0), 1)
 
         let maxMinimapOffset = scaledDocHeight - panelHeight
@@ -374,7 +380,10 @@ final class MinimapView: NSView {
         let (offset, _) = minimapOffset()
         let visibleRect = scrollView.contentView.bounds
 
-        let y = visibleRect.origin.y * scale - offset
+        // Clamp scroll position to document height to prevent viewport jump
+        // when layout manager hasn't fully recalculated after text changes
+        let clampedScrollY = min(visibleRect.origin.y, max(0, docHeight - visibleRect.height))
+        let y = clampedScrollY * scale - offset
         let height = visibleRect.height * scale
 
         let clampedY = max(0, y)

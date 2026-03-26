@@ -137,6 +137,76 @@ struct MinimapViewTests {
         #expect(minimap.lineDiffs.isEmpty)
     }
 
+    // MARK: - Viewport clamping (issue #586)
+
+    @Test("Viewport rect is valid for empty document")
+    func viewportRectEmptyDocument() {
+        let textView = NSTextView(frame: NSRect(x: 0, y: 0, width: 500, height: 400))
+        textView.string = ""
+
+        let scrollView = NSScrollView(frame: NSRect(x: 0, y: 0, width: 500, height: 400))
+        scrollView.documentView = textView
+
+        let minimap = MinimapView(textView: textView)
+        minimap.frame = NSRect(x: 0, y: 0, width: 80, height: 400)
+
+        // Empty document — viewport should either be nil or have non-negative origin
+        let rect = minimap.computeViewportRect()
+        if let rect {
+            #expect(rect.origin.y >= 0)
+        }
+    }
+
+    @Test("Viewport rect stays clamped when scroll exceeds document height")
+    func viewportRectClampedOnOverscroll() {
+        let textStorage = NSTextStorage(string: String(repeating: "Line\n", count: 50))
+        let layoutManager = NSLayoutManager()
+        textStorage.addLayoutManager(layoutManager)
+        let textContainer = NSTextContainer(
+            containerSize: NSSize(width: 500, height: CGFloat.greatestFiniteMagnitude)
+        )
+        textContainer.widthTracksTextView = true
+        layoutManager.addTextContainer(textContainer)
+
+        let textView = NSTextView(
+            frame: NSRect(x: 0, y: 0, width: 500, height: 400),
+            textContainer: textContainer
+        )
+
+        let scrollView = NSScrollView(frame: NSRect(x: 0, y: 0, width: 500, height: 400))
+        scrollView.documentView = textView
+
+        let minimap = MinimapView(textView: textView)
+        minimap.frame = NSRect(x: 0, y: 0, width: 80, height: 400)
+
+        layoutManager.ensureLayout(for: textContainer)
+
+        // Simulate scroll beyond document bounds (as happens on Enter at EOF)
+        scrollView.contentView.scroll(to: NSPoint(x: 0, y: 99_999))
+        scrollView.reflectScrolledClipView(scrollView.contentView)
+
+        let rect = minimap.computeViewportRect()
+        if let rect {
+            #expect(rect.origin.y >= 0)
+            #expect(rect.origin.y + rect.height <= minimap.bounds.height + 1)
+        }
+    }
+
+    @Test("scrollToPosition does not crash with empty document")
+    func scrollToPositionEmptyDocument() {
+        let textView = NSTextView(frame: NSRect(x: 0, y: 0, width: 500, height: 400))
+        textView.string = ""
+
+        let scrollView = NSScrollView(frame: NSRect(x: 0, y: 0, width: 500, height: 400))
+        scrollView.documentView = textView
+
+        let minimap = MinimapView(textView: textView)
+        minimap.frame = NSRect(x: 0, y: 0, width: 80, height: 400)
+
+        // Should not crash
+        minimap.scrollToPosition(minimapY: 50)
+    }
+
     @Test("MinimapView does not crash drawing with diff markers")
     func drawWithDiffMarkers() {
         let textStorage = NSTextStorage(string: "Hello\nWorld\nFoo\n")
