@@ -12,8 +12,8 @@ struct SymbolNavigatorView: View {
     @Binding var isPresented: Bool
     @State private var searchText = ""
     @State private var selectedIndex = 0
-    @State private var allSymbols: [DocumentSymbol] = []
-    @State private var filteredSymbols: [DocumentSymbol] = []
+    @State private var allSymbols: [PineSymbol] = []
+    @State private var filteredSymbols: [PineSymbol] = []
 
     var body: some View {
         VStack(spacing: 0) {
@@ -89,7 +89,7 @@ struct SymbolNavigatorView: View {
         .frame(maxWidth: .infinity)
     }
 
-    private func symbolRow(_ symbol: DocumentSymbol, isSelected: Bool) -> some View {
+    private func symbolRow(_ symbol: PineSymbol, isSelected: Bool) -> some View {
         HStack(spacing: 8) {
             Image(systemName: symbol.kind.iconName)
                 .font(.system(size: 14))
@@ -146,7 +146,7 @@ struct SymbolNavigatorView: View {
         navigateToSymbol(filteredSymbols[selectedIndex])
     }
 
-    private func navigateToSymbol(_ symbol: DocumentSymbol) {
+    private func navigateToSymbol(_ symbol: PineSymbol) {
         guard let tab = projectManager.tabManager.activeTab else { return }
         let offset = ContentView.cursorOffset(forLine: symbol.line, in: tab.content)
         NotificationCenter.default.post(
@@ -159,7 +159,7 @@ struct SymbolNavigatorView: View {
 
     // MARK: - Helpers
 
-    private func colorForKind(_ kind: SymbolKind) -> Color {
+    private func colorForKind(_ kind: PineSymbolKind) -> Color {
         switch kind {
         case .class: .purple
         case .struct: .blue

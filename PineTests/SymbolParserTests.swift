@@ -264,8 +264,8 @@ struct SymbolParserTests {
     @Test("Fuzzy filter: exact match")
     func fuzzyExact() {
         let symbols = [
-            DocumentSymbol(name: "viewDidLoad", kind: .function, line: 1),
-            DocumentSymbol(name: "viewWillAppear", kind: .function, line: 5),
+            PineSymbol(name: "viewDidLoad", kind: .function, line: 1),
+            PineSymbol(name: "viewWillAppear", kind: .function, line: 5),
         ]
         let filtered = SymbolParser.filter(symbols, query: "viewDidLoad")
         #expect(filtered.count == 1)
@@ -275,9 +275,9 @@ struct SymbolParserTests {
     @Test("Fuzzy filter: subsequence match")
     func fuzzySubsequence() {
         let symbols = [
-            DocumentSymbol(name: "viewDidLoad", kind: .function, line: 1),
-            DocumentSymbol(name: "viewWillAppear", kind: .function, line: 5),
-            DocumentSymbol(name: "setupConstraints", kind: .function, line: 10),
+            PineSymbol(name: "viewDidLoad", kind: .function, line: 1),
+            PineSymbol(name: "viewWillAppear", kind: .function, line: 5),
+            PineSymbol(name: "setupConstraints", kind: .function, line: 10),
         ]
         let filtered = SymbolParser.filter(symbols, query: "vdl")
         #expect(filtered.count == 1)
@@ -287,8 +287,8 @@ struct SymbolParserTests {
     @Test("Fuzzy filter: empty query returns all")
     func fuzzyEmptyQuery() {
         let symbols = [
-            DocumentSymbol(name: "foo", kind: .function, line: 1),
-            DocumentSymbol(name: "bar", kind: .function, line: 2),
+            PineSymbol(name: "foo", kind: .function, line: 1),
+            PineSymbol(name: "bar", kind: .function, line: 2),
         ]
         let filtered = SymbolParser.filter(symbols, query: "")
         #expect(filtered.count == 2)
@@ -297,7 +297,7 @@ struct SymbolParserTests {
     @Test("Fuzzy filter: case insensitive")
     func fuzzyCaseInsensitive() {
         let symbols = [
-            DocumentSymbol(name: "MyClass", kind: .class, line: 1),
+            PineSymbol(name: "MyClass", kind: .class, line: 1),
         ]
         let filtered = SymbolParser.filter(symbols, query: "myclass")
         #expect(filtered.count == 1)
@@ -414,25 +414,25 @@ struct SymbolParserTests {
         #expect(symbols.contains { $0.name == "fmt" && $0.kind == .function })
     }
 
-    // MARK: - SymbolKind
+    // MARK: - PineSymbolKind
 
-    @Test("SymbolKind: sort order is stable")
+    @Test("PineSymbolKind: sort order is stable")
     func symbolKindSorting() {
-        let kinds: [SymbolKind] = [.function, .class, .enum, .struct, .protocol]
+        let kinds: [PineSymbolKind] = [.function, .class, .enum, .struct, .protocol]
         let sorted = kinds.sorted()
         #expect(sorted == [.class, .struct, .enum, .protocol, .function])
     }
 
-    @Test("SymbolKind: displayName is non-empty")
+    @Test("PineSymbolKind: displayName is non-empty")
     func symbolKindDisplayName() {
-        for kind in SymbolKind.allCases {
+        for kind in PineSymbolKind.allCases {
             #expect(!kind.displayName.isEmpty)
         }
     }
 
-    @Test("SymbolKind: iconName is non-empty")
+    @Test("PineSymbolKind: iconName is non-empty")
     func symbolKindIconName() {
-        for kind in SymbolKind.allCases {
+        for kind in PineSymbolKind.allCases {
             #expect(!kind.iconName.isEmpty)
         }
     }
