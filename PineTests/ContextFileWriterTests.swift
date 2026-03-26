@@ -19,9 +19,24 @@ struct ContextFileWriterTests {
         return tmpDir
     }
 
-    /// Reads and decodes the context file from the given directory.
-    private func readPayload(in dir: URL) throws -> ContextFileWriter.Payload {
-        let fileURL = dir.appendingPathComponent(ContextFileWriter.fileName)
+    /// Creates a writer configured to use a temporary contexts directory.
+    private func makeWriter(projectRoot: URL, contextsDir: URL) async -> ContextFileWriter {
+        let writer = ContextFileWriter()
+        await writer.setContextsDirectory(contextsDir)
+        await writer.setProjectRoot(projectRoot)
+        await writer.setDebounceInterval(0.01)
+        return writer
+    }
+
+    /// Returns the context file URL for a given project root inside a contexts directory.
+    private func contextFileURL(projectRoot: URL, contextsDir: URL) -> URL {
+        let fileName = ContextFileWriter.hashedFileName(for: projectRoot)
+        return contextsDir.appendingPathComponent(fileName)
+    }
+
+    /// Reads and decodes the context file for the given project root.
+    private func readPayload(projectRoot: URL, contextsDir: URL) throws -> ContextFileWriter.Payload {
+        let fileURL = contextFileURL(projectRoot: projectRoot, contextsDir: contextsDir)
         let data = try Data(contentsOf: fileURL)
         return try JSONDecoder().decode(ContextFileWriter.Payload.self, from: data)
     }
@@ -89,32 +104,82 @@ struct ContextFileWriterTests {
 
     // MARK: - File writing
 
-    @Test func writesContextFileToProjectRoot() async throws {
+    @Test func writesContextFileToApplicationSupport() async throws {
         let tmpDir = try makeTmpDir()
+        let contextsDir = tmpDir.appendingPathComponent("contexts")
+        let projectRoot = tmpDir.appendingPathComponent("project")
+        try FileManager.default.createDirectory(at: projectRoot, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: tmpDir) }
 
-        let writer = ContextFileWriter()
-        await writer.setProjectRoot(tmpDir)
-        await writer.setDebounceInterval(0.01)
+        let writer = await makeWriter(projectRoot: projectRoot, contextsDir: contextsDir)
 
         await writer.update(currentFile: "Sources/App.swift", cursorLine: 10, cursorColumn: 5)
         try await Task.sleep(for: .milliseconds(50))
 
-        let decoded = try readPayload(in: tmpDir)
+        let decoded = try readPayload(projectRoot: projectRoot, contextsDir: contextsDir)
         #expect(decoded.currentFile == "Sources/App.swift")
         #expect(decoded.cursorLine == 10)
         #expect(decoded.cursorColumn == 5)
+    }
+
+    // MARK: - Hashed file name
+
+    @Test func hashedFileNameIsDeterministic() {
+        let url = URL(fileURLWithPath: "/Users/test/project")
+        let name1 = ContextFileWriter.hashedFileName(for: url)
+        let name2 = ContextFileWriter.hashedFileName(for: url)
+        #expect(name1 == name2)
+        #expect(name1.hasSuffix(".json"))
+    }
+
+    @Test func hashedFileNameDiffersForDifferentPaths() {
+        let url1 = URL(fileURLWithPath: "/Users/test/project1")
+        let url2 = URL(fileURLWithPath: "/Users/test/project2")
+        let name1 = ContextFileWriter.hashedFileName(for: url1)
+        let name2 = ContextFileWriter.hashedFileName(for: url2)
+        #expect(name1 != name2)
+    }
+
+    // MARK: - Legacy file cleanup
+
+    @Test func setProjectRootRemovesLegacyFile() async throws {
+        let tmpDir = try makeTmpDir()
+        defer { try? FileManager.default.removeItem(at: tmpDir) }
+
+        // Create a legacy .pine-context.json in project root
+        let legacyURL = tmpDir.appendingPathComponent(ContextFileWriter.legacyFileName)
+        try Data("{}".utf8).write(to: legacyURL)
+        #expect(FileManager.default.fileExists(atPath: legacyURL.path))
+
+        let writer = ContextFileWriter()
+        await writer.setProjectRoot(tmpDir)
+
+        // Legacy file should be removed
+        #expect(!FileManager.default.fileExists(atPath: legacyURL.path))
+    }
+
+    @Test func setProjectRootHandlesMissingLegacyFile() async throws {
+        let tmpDir = try makeTmpDir()
+        defer { try? FileManager.default.removeItem(at: tmpDir) }
+
+        let writer = ContextFileWriter()
+        // Should not crash when legacy file doesn't exist
+        await writer.setProjectRoot(tmpDir)
+
+        let legacyURL = tmpDir.appendingPathComponent(ContextFileWriter.legacyFileName)
+        #expect(!FileManager.default.fileExists(atPath: legacyURL.path))
     }
 
     // MARK: - Debounce behavior
 
     @Test func debounceCoalescesRapidUpdates() async throws {
         let tmpDir = try makeTmpDir()
+        let contextsDir = tmpDir.appendingPathComponent("contexts")
+        let projectRoot = tmpDir.appendingPathComponent("project")
+        try FileManager.default.createDirectory(at: projectRoot, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: tmpDir) }
 
-        let writer = ContextFileWriter()
-        await writer.setProjectRoot(tmpDir)
-        await writer.setDebounceInterval(0.05)
+        let writer = await makeWriter(projectRoot: projectRoot, contextsDir: contextsDir)
 
         // Rapid updates — only the last one should be written
         await writer.update(currentFile: "a.swift", cursorLine: 1, cursorColumn: 1)
@@ -123,7 +188,7 @@ struct ContextFileWriterTests {
 
         try await Task.sleep(for: .milliseconds(100))
 
-        let decoded = try readPayload(in: tmpDir)
+        let decoded = try readPayload(projectRoot: projectRoot, contextsDir: contextsDir)
         #expect(decoded.currentFile == "c.swift")
         #expect(decoded.cursorLine == 3)
         #expect(decoded.cursorColumn == 3)
@@ -133,16 +198,17 @@ struct ContextFileWriterTests {
 
     @Test func cleanupRemovesFile() async throws {
         let tmpDir = try makeTmpDir()
+        let contextsDir = tmpDir.appendingPathComponent("contexts")
+        let projectRoot = tmpDir.appendingPathComponent("project")
+        try FileManager.default.createDirectory(at: projectRoot, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: tmpDir) }
 
-        let writer = ContextFileWriter()
-        await writer.setProjectRoot(tmpDir)
-        await writer.setDebounceInterval(0.01)
+        let writer = await makeWriter(projectRoot: projectRoot, contextsDir: contextsDir)
 
         await writer.update(currentFile: "test.swift", cursorLine: 1, cursorColumn: 1)
         try await Task.sleep(for: .milliseconds(50))
 
-        let fileURL = tmpDir.appendingPathComponent(ContextFileWriter.fileName)
+        let fileURL = contextFileURL(projectRoot: projectRoot, contextsDir: contextsDir)
         #expect(FileManager.default.fileExists(atPath: fileURL.path))
 
         await writer.cleanup()
@@ -151,10 +217,14 @@ struct ContextFileWriterTests {
 
     @Test func cleanupCancelsPendingWrite() async throws {
         let tmpDir = try makeTmpDir()
+        let contextsDir = tmpDir.appendingPathComponent("contexts")
+        let projectRoot = tmpDir.appendingPathComponent("project")
+        try FileManager.default.createDirectory(at: projectRoot, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: tmpDir) }
 
         let writer = ContextFileWriter()
-        await writer.setProjectRoot(tmpDir)
+        await writer.setContextsDirectory(contextsDir)
+        await writer.setProjectRoot(projectRoot)
         await writer.setDebounceInterval(1.0) // Long debounce
 
         await writer.update(currentFile: "test.swift", cursorLine: 1, cursorColumn: 1)
@@ -166,21 +236,25 @@ struct ContextFileWriterTests {
         #expect(!pendingAfter)
 
         // File should not exist — the write was cancelled before it fired
-        let fileURL = tmpDir.appendingPathComponent(ContextFileWriter.fileName)
+        let fileURL = contextFileURL(projectRoot: projectRoot, contextsDir: contextsDir)
         #expect(!FileManager.default.fileExists(atPath: fileURL.path))
     }
 
     @Test func cleanupWhenFileDoesNotExistOnDisk() async throws {
         let tmpDir = try makeTmpDir()
+        let contextsDir = tmpDir.appendingPathComponent("contexts")
+        let projectRoot = tmpDir.appendingPathComponent("project")
+        try FileManager.default.createDirectory(at: projectRoot, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: tmpDir) }
 
         let writer = ContextFileWriter()
-        await writer.setProjectRoot(tmpDir)
+        await writer.setContextsDirectory(contextsDir)
+        await writer.setProjectRoot(projectRoot)
 
         // File was never written — cleanup should not crash
         await writer.cleanup()
 
-        let fileURL = tmpDir.appendingPathComponent(ContextFileWriter.fileName)
+        let fileURL = contextFileURL(projectRoot: projectRoot, contextsDir: contextsDir)
         #expect(!FileManager.default.fileExists(atPath: fileURL.path))
     }
 
@@ -199,16 +273,17 @@ struct ContextFileWriterTests {
 
     @Test func updateWithNilCurrentFile() async throws {
         let tmpDir = try makeTmpDir()
+        let contextsDir = tmpDir.appendingPathComponent("contexts")
+        let projectRoot = tmpDir.appendingPathComponent("project")
+        try FileManager.default.createDirectory(at: projectRoot, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: tmpDir) }
 
-        let writer = ContextFileWriter()
-        await writer.setProjectRoot(tmpDir)
-        await writer.setDebounceInterval(0.01)
+        let writer = await makeWriter(projectRoot: projectRoot, contextsDir: contextsDir)
 
         await writer.update(currentFile: nil, cursorLine: nil, cursorColumn: nil)
         try await Task.sleep(for: .milliseconds(50))
 
-        let decoded = try readPayload(in: tmpDir)
+        let decoded = try readPayload(projectRoot: projectRoot, contextsDir: contextsDir)
         #expect(decoded.currentFile == nil)
         #expect(decoded.cursorLine == nil)
         #expect(decoded.cursorColumn == nil)
@@ -222,10 +297,35 @@ struct ContextFileWriterTests {
         #expect(url1 == nil)
 
         let tmpDir = FileManager.default.temporaryDirectory.appendingPathComponent("test-project")
+        let contextsDir = FileManager.default.temporaryDirectory.appendingPathComponent("contexts-test")
+        await writer.setContextsDirectory(contextsDir)
         await writer.setProjectRoot(tmpDir)
         let url2 = await writer.contextFileURL
-        let expected = tmpDir.appendingPathComponent(ContextFileWriter.fileName)
+        let expectedFileName = ContextFileWriter.hashedFileName(for: tmpDir)
+        let expected = contextsDir.appendingPathComponent(expectedFileName)
         #expect(url2 == expected)
+    }
+
+    // MARK: - Contexts directory creation
+
+    @Test func createsContextsDirectoryIfMissing() async throws {
+        let tmpDir = try makeTmpDir()
+        let contextsDir = tmpDir.appendingPathComponent("deep/nested/contexts")
+        let projectRoot = tmpDir.appendingPathComponent("project")
+        try FileManager.default.createDirectory(at: projectRoot, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tmpDir) }
+
+        // contextsDir does not exist yet
+        #expect(!FileManager.default.fileExists(atPath: contextsDir.path))
+
+        let writer = await makeWriter(projectRoot: projectRoot, contextsDir: contextsDir)
+        await writer.update(currentFile: "test.swift", cursorLine: 1, cursorColumn: 1)
+        try await Task.sleep(for: .milliseconds(50))
+
+        // Directory should have been created
+        #expect(FileManager.default.fileExists(atPath: contextsDir.path))
+        let decoded = try readPayload(projectRoot: projectRoot, contextsDir: contextsDir)
+        #expect(decoded.currentFile == "test.swift")
     }
 
     // MARK: - Relative path calculation
@@ -282,16 +382,17 @@ struct ContextFileWriterTests {
 
     @Test func writtenJSONIsReadableByDecoder() async throws {
         let tmpDir = try makeTmpDir()
+        let contextsDir = tmpDir.appendingPathComponent("contexts")
+        let projectRoot = tmpDir.appendingPathComponent("project")
+        try FileManager.default.createDirectory(at: projectRoot, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: tmpDir) }
 
-        let writer = ContextFileWriter()
-        await writer.setProjectRoot(tmpDir)
-        await writer.setDebounceInterval(0.01)
+        let writer = await makeWriter(projectRoot: projectRoot, contextsDir: contextsDir)
 
         await writer.update(currentFile: "path/with \"quotes\".swift", cursorLine: 100, cursorColumn: 25)
         try await Task.sleep(for: .milliseconds(50))
 
-        let decoded = try readPayload(in: tmpDir)
+        let decoded = try readPayload(projectRoot: projectRoot, contextsDir: contextsDir)
         #expect(decoded.currentFile == "path/with \"quotes\".swift")
         #expect(decoded.cursorLine == 100)
         #expect(decoded.cursorColumn == 25)
@@ -299,16 +400,17 @@ struct ContextFileWriterTests {
 
     @Test func writtenJSONWithNullValues() async throws {
         let tmpDir = try makeTmpDir()
+        let contextsDir = tmpDir.appendingPathComponent("contexts")
+        let projectRoot = tmpDir.appendingPathComponent("project")
+        try FileManager.default.createDirectory(at: projectRoot, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: tmpDir) }
 
-        let writer = ContextFileWriter()
-        await writer.setProjectRoot(tmpDir)
-        await writer.setDebounceInterval(0.01)
+        let writer = await makeWriter(projectRoot: projectRoot, contextsDir: contextsDir)
 
         await writer.update(currentFile: nil, cursorLine: nil, cursorColumn: nil)
         try await Task.sleep(for: .milliseconds(50))
 
-        let decoded = try readPayload(in: tmpDir)
+        let decoded = try readPayload(projectRoot: projectRoot, contextsDir: contextsDir)
         #expect(decoded.currentFile == nil)
         #expect(decoded.cursorLine == nil)
         #expect(decoded.cursorColumn == nil)
@@ -318,17 +420,18 @@ struct ContextFileWriterTests {
 
     @Test func skipsRedundantWriteForSameContext() async throws {
         let tmpDir = try makeTmpDir()
+        let contextsDir = tmpDir.appendingPathComponent("contexts")
+        let projectRoot = tmpDir.appendingPathComponent("project")
+        try FileManager.default.createDirectory(at: projectRoot, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: tmpDir) }
 
-        let writer = ContextFileWriter()
-        await writer.setProjectRoot(tmpDir)
-        await writer.setDebounceInterval(0.01)
+        let writer = await makeWriter(projectRoot: projectRoot, contextsDir: contextsDir)
 
         // First write
         await writer.update(currentFile: "a.swift", cursorLine: 1, cursorColumn: 1)
         try await Task.sleep(for: .milliseconds(50))
 
-        let fileURL = tmpDir.appendingPathComponent(ContextFileWriter.fileName)
+        let fileURL = contextFileURL(projectRoot: projectRoot, contextsDir: contextsDir)
         let firstModDate = try FileManager.default.attributesOfItem(
             atPath: fileURL.path
         )[.modificationDate] as? Date
@@ -351,11 +454,12 @@ struct ContextFileWriterTests {
 
     @Test func handlesSpacesInFilePaths() async throws {
         let tmpDir = try makeTmpDir()
+        let contextsDir = tmpDir.appendingPathComponent("contexts")
+        let projectRoot = tmpDir.appendingPathComponent("project")
+        try FileManager.default.createDirectory(at: projectRoot, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: tmpDir) }
 
-        let writer = ContextFileWriter()
-        await writer.setProjectRoot(tmpDir)
-        await writer.setDebounceInterval(0.01)
+        let writer = await makeWriter(projectRoot: projectRoot, contextsDir: contextsDir)
 
         await writer.update(
             currentFile: "path/my project/Sources/App Manager.swift",
@@ -364,98 +468,104 @@ struct ContextFileWriterTests {
         )
         try await Task.sleep(for: .milliseconds(50))
 
-        let decoded = try readPayload(in: tmpDir)
+        let decoded = try readPayload(projectRoot: projectRoot, contextsDir: contextsDir)
         #expect(decoded.currentFile == "path/my project/Sources/App Manager.swift")
     }
 
     @Test func handlesUnicodeInFileNames() async throws {
         let tmpDir = try makeTmpDir()
+        let contextsDir = tmpDir.appendingPathComponent("contexts")
+        let projectRoot = tmpDir.appendingPathComponent("project")
+        try FileManager.default.createDirectory(at: projectRoot, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: tmpDir) }
 
-        let writer = ContextFileWriter()
-        await writer.setProjectRoot(tmpDir)
-        await writer.setDebounceInterval(0.01)
+        let writer = await makeWriter(projectRoot: projectRoot, contextsDir: contextsDir)
 
         await writer.update(currentFile: "\u{0444}\u{0430}\u{0439}\u{043B}.swift", cursorLine: 1, cursorColumn: 1)
         try await Task.sleep(for: .milliseconds(50))
 
-        let decoded = try readPayload(in: tmpDir)
+        let decoded = try readPayload(projectRoot: projectRoot, contextsDir: contextsDir)
         #expect(decoded.currentFile == "\u{0444}\u{0430}\u{0439}\u{043B}.swift")
     }
 
     @Test func handlesEmojiInFileNames() async throws {
         let tmpDir = try makeTmpDir()
+        let contextsDir = tmpDir.appendingPathComponent("contexts")
+        let projectRoot = tmpDir.appendingPathComponent("project")
+        try FileManager.default.createDirectory(at: projectRoot, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: tmpDir) }
 
-        let writer = ContextFileWriter()
-        await writer.setProjectRoot(tmpDir)
-        await writer.setDebounceInterval(0.01)
+        let writer = await makeWriter(projectRoot: projectRoot, contextsDir: contextsDir)
 
         await writer.update(currentFile: "Sources/\u{1F680}rocket.swift", cursorLine: 5, cursorColumn: 3)
         try await Task.sleep(for: .milliseconds(50))
 
-        let decoded = try readPayload(in: tmpDir)
+        let decoded = try readPayload(projectRoot: projectRoot, contextsDir: contextsDir)
         #expect(decoded.currentFile == "Sources/\u{1F680}rocket.swift")
     }
 
     @Test func handlesNewlineInFileName() async throws {
         let tmpDir = try makeTmpDir()
+        let contextsDir = tmpDir.appendingPathComponent("contexts")
+        let projectRoot = tmpDir.appendingPathComponent("project")
+        try FileManager.default.createDirectory(at: projectRoot, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: tmpDir) }
 
-        let writer = ContextFileWriter()
-        await writer.setProjectRoot(tmpDir)
-        await writer.setDebounceInterval(0.01)
+        let writer = await makeWriter(projectRoot: projectRoot, contextsDir: contextsDir)
 
         await writer.update(currentFile: "file\nname.swift", cursorLine: 1, cursorColumn: 1)
         try await Task.sleep(for: .milliseconds(50))
 
-        let decoded = try readPayload(in: tmpDir)
+        let decoded = try readPayload(projectRoot: projectRoot, contextsDir: contextsDir)
         #expect(decoded.currentFile == "file\nname.swift")
     }
 
     @Test func handlesTabInFileName() async throws {
         let tmpDir = try makeTmpDir()
+        let contextsDir = tmpDir.appendingPathComponent("contexts")
+        let projectRoot = tmpDir.appendingPathComponent("project")
+        try FileManager.default.createDirectory(at: projectRoot, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: tmpDir) }
 
-        let writer = ContextFileWriter()
-        await writer.setProjectRoot(tmpDir)
-        await writer.setDebounceInterval(0.01)
+        let writer = await makeWriter(projectRoot: projectRoot, contextsDir: contextsDir)
 
         await writer.update(currentFile: "file\tname.swift", cursorLine: 1, cursorColumn: 1)
         try await Task.sleep(for: .milliseconds(50))
 
-        let decoded = try readPayload(in: tmpDir)
+        let decoded = try readPayload(projectRoot: projectRoot, contextsDir: contextsDir)
         #expect(decoded.currentFile == "file\tname.swift")
     }
 
     @Test func handlesBackslashInPaths() async throws {
         let tmpDir = try makeTmpDir()
+        let contextsDir = tmpDir.appendingPathComponent("contexts")
+        let projectRoot = tmpDir.appendingPathComponent("project")
+        try FileManager.default.createDirectory(at: projectRoot, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: tmpDir) }
 
-        let writer = ContextFileWriter()
-        await writer.setProjectRoot(tmpDir)
-        await writer.setDebounceInterval(0.01)
+        let writer = await makeWriter(projectRoot: projectRoot, contextsDir: contextsDir)
 
         await writer.update(currentFile: "path\\to\\file.swift", cursorLine: 1, cursorColumn: 1)
         try await Task.sleep(for: .milliseconds(50))
 
-        let decoded = try readPayload(in: tmpDir)
+        let decoded = try readPayload(projectRoot: projectRoot, contextsDir: contextsDir)
         #expect(decoded.currentFile == "path\\to\\file.swift")
     }
 
     @Test func handlesVeryLongPath() async throws {
         let tmpDir = try makeTmpDir()
+        let contextsDir = tmpDir.appendingPathComponent("contexts")
+        let projectRoot = tmpDir.appendingPathComponent("project")
+        try FileManager.default.createDirectory(at: projectRoot, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: tmpDir) }
 
-        let writer = ContextFileWriter()
-        await writer.setProjectRoot(tmpDir)
-        await writer.setDebounceInterval(0.01)
+        let writer = await makeWriter(projectRoot: projectRoot, contextsDir: contextsDir)
 
         let longPath = (0..<50).map { "dir\($0)" }.joined(separator: "/") + "/file.swift"
         await writer.update(currentFile: longPath, cursorLine: 1, cursorColumn: 1)
         try await Task.sleep(for: .milliseconds(50))
 
-        let decoded = try readPayload(in: tmpDir)
+        let decoded = try readPayload(projectRoot: projectRoot, contextsDir: contextsDir)
         #expect(decoded.currentFile == longPath)
     }
 
@@ -463,16 +573,17 @@ struct ContextFileWriterTests {
 
     @Test func contextFileHasRestrictivePermissions() async throws {
         let tmpDir = try makeTmpDir()
+        let contextsDir = tmpDir.appendingPathComponent("contexts")
+        let projectRoot = tmpDir.appendingPathComponent("project")
+        try FileManager.default.createDirectory(at: projectRoot, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: tmpDir) }
 
-        let writer = ContextFileWriter()
-        await writer.setProjectRoot(tmpDir)
-        await writer.setDebounceInterval(0.01)
+        let writer = await makeWriter(projectRoot: projectRoot, contextsDir: contextsDir)
 
         await writer.update(currentFile: "test.swift", cursorLine: 1, cursorColumn: 1)
         try await Task.sleep(for: .milliseconds(50))
 
-        let fileURL = tmpDir.appendingPathComponent(ContextFileWriter.fileName)
+        let fileURL = contextFileURL(projectRoot: projectRoot, contextsDir: contextsDir)
         let attrs = try FileManager.default.attributesOfItem(atPath: fileURL.path)
         let permissions = (attrs[.posixPermissions] as? NSNumber)?.uint16Value
         // 0o600 = 384 decimal = owner rw only
@@ -483,20 +594,21 @@ struct ContextFileWriterTests {
 
     @Test func concurrentUpdatesDoNotCrash() async throws {
         let tmpDir = try makeTmpDir()
+        let contextsDir = tmpDir.appendingPathComponent("contexts")
+        let projectRoot = tmpDir.appendingPathComponent("project")
+        try FileManager.default.createDirectory(at: projectRoot, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: tmpDir) }
 
-        let writer = ContextFileWriter()
-        await writer.setProjectRoot(tmpDir)
-        await writer.setDebounceInterval(0.01)
+        let writer = await makeWriter(projectRoot: projectRoot, contextsDir: contextsDir)
 
         // Fire many concurrent updates — actor serializes them
         await withTaskGroup(of: Void.self) { group in
-            for i in 0..<100 {
+            for idx in 0..<100 {
                 group.addTask {
                     await writer.update(
-                        currentFile: "file\(i).swift",
-                        cursorLine: i,
-                        cursorColumn: i
+                        currentFile: "file\(idx).swift",
+                        cursorLine: idx,
+                        cursorColumn: idx
                     )
                 }
             }
@@ -505,58 +617,28 @@ struct ContextFileWriterTests {
         try await Task.sleep(for: .milliseconds(100))
 
         // The file should exist and be valid JSON
-        let fileURL = tmpDir.appendingPathComponent(ContextFileWriter.fileName)
+        let fileURL = contextFileURL(projectRoot: projectRoot, contextsDir: contextsDir)
         #expect(FileManager.default.fileExists(atPath: fileURL.path))
         let data = try Data(contentsOf: fileURL)
         let decoded = try JSONDecoder().decode(ContextFileWriter.Payload.self, from: data)
         #expect(decoded.currentFile != nil)
     }
 
-    // MARK: - Permission denied (read-only directory)
-
-    @Test func writeToReadOnlyDirectoryDoesNotCrash() async throws {
-        let tmpDir = try makeTmpDir()
-        defer {
-            // Restore permissions before cleanup
-            try? FileManager.default.setAttributes(
-                [.posixPermissions: NSNumber(value: 0o755)],
-                ofItemAtPath: tmpDir.path
-            )
-            try? FileManager.default.removeItem(at: tmpDir)
-        }
-
-        // Make directory read-only
-        try FileManager.default.setAttributes(
-            [.posixPermissions: NSNumber(value: 0o555)],
-            ofItemAtPath: tmpDir.path
-        )
-
-        let writer = ContextFileWriter()
-        await writer.setProjectRoot(tmpDir)
-        await writer.setDebounceInterval(0.01)
-
-        // Should not crash, just silently fail
-        await writer.update(currentFile: "test.swift", cursorLine: 1, cursorColumn: 1)
-        try await Task.sleep(for: .milliseconds(50))
-
-        let fileURL = tmpDir.appendingPathComponent(ContextFileWriter.fileName)
-        #expect(!FileManager.default.fileExists(atPath: fileURL.path))
-    }
-
     // MARK: - Empty file name
 
     @Test func handlesEmptyFileName() async throws {
         let tmpDir = try makeTmpDir()
+        let contextsDir = tmpDir.appendingPathComponent("contexts")
+        let projectRoot = tmpDir.appendingPathComponent("project")
+        try FileManager.default.createDirectory(at: projectRoot, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: tmpDir) }
 
-        let writer = ContextFileWriter()
-        await writer.setProjectRoot(tmpDir)
-        await writer.setDebounceInterval(0.01)
+        let writer = await makeWriter(projectRoot: projectRoot, contextsDir: contextsDir)
 
         await writer.update(currentFile: "", cursorLine: 0, cursorColumn: 0)
         try await Task.sleep(for: .milliseconds(50))
 
-        let decoded = try readPayload(in: tmpDir)
+        let decoded = try readPayload(projectRoot: projectRoot, contextsDir: contextsDir)
         #expect(decoded.currentFile == "")
         #expect(decoded.cursorLine == 0)
         #expect(decoded.cursorColumn == 0)

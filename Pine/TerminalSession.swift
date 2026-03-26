@@ -329,8 +329,12 @@ final class TerminalTab: Identifiable, Hashable {
         env["TERM"] = "xterm-256color"
         if let wd = workingDirectory {
             env["PINE_PROJECT_ROOT"] = wd.path
-            env["PINE_CONTEXT_FILE"] = wd
-                .appendingPathComponent(ContextFileWriter.fileName).path
+            let hash = ContextFileWriter.hashedFileName(for: wd)
+            let contextsDir = FileManager.default
+                .urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+                .appendingPathComponent(ContextFileWriter.contextsDirName)
+            env["PINE_CONTEXT_FILE"] = contextsDir
+                .appendingPathComponent(hash).path
         }
         return env
     }
