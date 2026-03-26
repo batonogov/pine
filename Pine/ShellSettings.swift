@@ -65,10 +65,19 @@ final class ShellSettings {
 
     /// Validated shell path — falls back to system shell (via `getpwuid`), then `$SHELL`, then `/bin/zsh`.
     var resolvedShellPath: String {
-        if fileManager.isExecutableFile(atPath: shellPath) { return shellPath }
+        if isExecutableFile(shellPath) { return shellPath }
         let fallback = Self.defaultShellPath
-        if fileManager.isExecutableFile(atPath: fallback) { return fallback }
+        if isExecutableFile(fallback) { return fallback }
         return "/bin/zsh"
+    }
+
+    /// Returns `true` only if the path points to an executable **file** (not a directory).
+    private func isExecutableFile(_ path: String) -> Bool {
+        var isDir: ObjCBool = false
+        guard fileManager.fileExists(atPath: path, isDirectory: &isDir), !isDir.boolValue else {
+            return false
+        }
+        return fileManager.isExecutableFile(atPath: path)
     }
 
     init(defaults: UserDefaults = .standard, fileManager: FileManager = .default) {

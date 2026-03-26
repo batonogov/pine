@@ -318,11 +318,12 @@ final class TerminalTab: Identifiable, Hashable {
         self.workingDirectory = workingDirectory
     }
 
-    /// Запускает процесс если ещё не запущен и view добавлен в иерархию
-    func startIfNeeded() {
-        guard !processStarted else { return }
-        processStarted = true
-
+    /// Builds the environment dictionary for the terminal child process.
+    ///
+    /// Inherits the current process environment and adds:
+    /// - `PINE_TERMINAL=1` — marker so scripts can detect Pine's terminal
+    /// - `TERM=xterm-256color` — standard 256-color terminal type
+    func buildEnvironment() -> [String: String] {
         var env = ProcessInfo.processInfo.environment
         env["PINE_TERMINAL"] = "1"
         env["TERM"] = "xterm-256color"
@@ -331,9 +332,24 @@ final class TerminalTab: Identifiable, Hashable {
             env["PINE_CONTEXT_FILE"] = wd
                 .appendingPathComponent(ContextFileWriter.fileName).path
         }
+        return env
+    }
 
+    /// Resolves the working directory for the terminal process.
+    ///
+    /// Returns the configured `workingDirectory` path, or falls back to `$HOME`, then `/`.
+    func resolveWorkingDirectory() -> String {
+        workingDirectory?.path ?? (ProcessInfo.processInfo.environment["HOME"] ?? "/")
+    }
+
+    /// Запускает процесс если ещё не запущен и view добавлен в иерархию
+    func startIfNeeded() {
+        guard !processStarted else { return }
+        processStarted = true
+
+        let env = buildEnvironment()
         let envStrings = env.map { "\($0.key)=\($0.value)" }
-        let dir = workingDirectory?.path ?? (env["HOME"] ?? "/")
+        let dir = resolveWorkingDirectory()
 
         terminalView.startProcess(
             executable: shellSettings.resolvedShellPath,

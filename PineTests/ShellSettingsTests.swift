@@ -198,18 +198,18 @@ struct ShellSettingsTests {
         #expect(path != nil)
     }
 
-    @Test func systemShellPathReturnsAbsolutePath() {
-        guard let path = ShellSettings.systemShellPath() else { return }
+    @Test func systemShellPathReturnsAbsolutePath() throws {
+        let path = try #require(ShellSettings.systemShellPath(), "getpwuid should return a shell on macOS")
         #expect(path.hasPrefix("/"))
     }
 
-    @Test func systemShellPathReturnsExecutableBinary() {
-        guard let path = ShellSettings.systemShellPath() else { return }
+    @Test func systemShellPathReturnsExecutableBinary() throws {
+        let path = try #require(ShellSettings.systemShellPath(), "getpwuid should return a shell on macOS")
         #expect(FileManager.default.isExecutableFile(atPath: path))
     }
 
-    @Test func systemShellPathMatchesCommonShell() {
-        guard let path = ShellSettings.systemShellPath() else { return }
+    @Test func systemShellPathMatchesCommonShell() throws {
+        let path = try #require(ShellSettings.systemShellPath(), "getpwuid should return a shell on macOS")
         let knownShells = ["/bin/zsh", "/bin/bash", "/bin/sh",
                            "/usr/local/bin/fish", "/opt/homebrew/bin/fish",
                            "/usr/local/bin/nu", "/opt/homebrew/bin/nu"]
@@ -222,7 +222,7 @@ struct ShellSettingsTests {
 
         // If getpwuid returns a valid shell, that should be the default
         // regardless of what $SHELL says
-        guard let posixShell = ShellSettings.systemShellPath() else { return }
+        let posixShell = try #require(ShellSettings.systemShellPath(), "getpwuid should return a shell on macOS")
         let settings = ShellSettings(defaults: defaults)
         #expect(settings.shellPath == posixShell)
     }
@@ -240,5 +240,182 @@ struct ShellSettingsTests {
             ?? ProcessInfo.processInfo.environment["SHELL"]
             ?? "/bin/zsh"
         #expect(settings.shellPath == expectedShell)
+    }
+
+    // MARK: - Integration: shell detection via getpwuid (#551)
+
+    @Test func systemShellPathIsListedInEtcShells() throws {
+        // /etc/shells lists all valid login shells on macOS.
+        // The shell returned by getpwuid should be present there.
+        // Note: this test may be flaky on non-standard CI images where /etc/shells
+        // is not maintained or the user's shell is set outside of /etc/shells.
+        let shellPath = try #require(ShellSettings.systemShellPath(), "getpwuid should return a shell on macOS")
+        let etcShells = try String(contentsOfFile: "/etc/shells", encoding: .utf8)
+        let validShells = etcShells
+            .components(separatedBy: .newlines)
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty && !$0.hasPrefix("#") }
+        #expect(validShells.contains(shellPath),
+                "Shell \(shellPath) from getpwuid should be listed in /etc/shells")
+    }
+
+    @Test func systemShellPathIsNotADirectory() throws {
+        let shellPath = try #require(ShellSettings.systemShellPath(), "getpwuid should return a shell on macOS")
+        var isDir: ObjCBool = false
+        let exists = FileManager.default.fileExists(atPath: shellPath, isDirectory: &isDir)
+        #expect(exists)
+        #expect(!isDir.boolValue, "Shell path should be a file, not a directory")
+    }
+
+    @Test func systemShellPathHasReasonableLength() throws {
+        // A sanity check: shell paths should be absolute and reasonable length
+        let shellPath = try #require(ShellSettings.systemShellPath(), "getpwuid should return a shell on macOS")
+        #expect(shellPath.count >= 4, "Shell path too short: \(shellPath)") // e.g. /bin/sh
+        #expect(shellPath.count < 256, "Shell path unreasonably long: \(shellPath)")
+    }
+
+    @Test func resolvedShellPathAlwaysReturnsExecutable() throws {
+        let defaults = try makeDefaults()
+        defer { cleanupDefaults(defaults) }
+
+        // Test with various invalid paths — resolved should always be executable
+        let invalidPaths = ["/nonexistent", "/dev/null", "/tmp", ""]
+        for invalidPath in invalidPaths {
+            let settings = ShellSettings(defaults: defaults)
+            settings.shellPath = invalidPath
+            let resolved = settings.resolvedShellPath
+            #expect(FileManager.default.isExecutableFile(atPath: resolved),
+                    "resolvedShellPath should be executable, got: \(resolved) for input: \(invalidPath)")
+        }
+    }
+
+    @Test func resolvedShellPathNeverReturnsEmpty() throws {
+        let defaults = try makeDefaults()
+        defer { cleanupDefaults(defaults) }
+
+        let settings = ShellSettings(defaults: defaults)
+        settings.shellPath = ""
+        #expect(!settings.resolvedShellPath.isEmpty)
+    }
+
+    @Test func commonShellsLoginFlagsAreCorrectPerShell() {
+        // Verify each shell type uses the correct login flag convention
+        for shell in ShellSettings.commonShells {
+            if shell.name.contains("fish") {
+                #expect(shell.defaultArgs.contains("-l"),
+                        "fish should use -l flag, not --login")
+            } else {
+                #expect(shell.defaultArgs.contains("--login"),
+                        "\(shell.name) should use --login flag")
+            }
+        }
+    }
+
+    @Test func shellOptionHashableAndEquatable() {
+        let opt1 = ShellSettings.ShellOption(name: "zsh", path: "/bin/zsh", defaultArgs: ["--login"])
+        let opt2 = ShellSettings.ShellOption(name: "zsh", path: "/bin/zsh", defaultArgs: ["--login"])
+        let opt3 = ShellSettings.ShellOption(name: "bash", path: "/bin/bash", defaultArgs: ["--login"])
+        #expect(opt1 == opt2)
+        #expect(opt1 != opt3)
+
+        var set = Set<ShellSettings.ShellOption>()
+        set.insert(opt1)
+        set.insert(opt2)
+        #expect(set.count == 1)
+    }
+
+    // MARK: - Negative / edge case tests
+
+    @Test func shellPathWithSpaces_fallsBack() throws {
+        let defaults = try makeDefaults()
+        defer { cleanupDefaults(defaults) }
+        let settings = ShellSettings(defaults: defaults)
+        settings.shellPath = "/path with spaces/my shell"
+        let resolved = settings.resolvedShellPath
+        #expect(FileManager.default.isExecutableFile(atPath: resolved))
+        #expect(resolved != "/path with spaces/my shell")
+    }
+
+    @Test func shellPathWithUnicode_fallsBack() throws {
+        let defaults = try makeDefaults()
+        defer { cleanupDefaults(defaults) }
+        let settings = ShellSettings(defaults: defaults)
+        settings.shellPath = "/bin/zsh™"
+        let resolved = settings.resolvedShellPath
+        #expect(FileManager.default.isExecutableFile(atPath: resolved))
+    }
+
+    @Test func veryLongShellPath_fallsBack() throws {
+        let defaults = try makeDefaults()
+        defer { cleanupDefaults(defaults) }
+        let settings = ShellSettings(defaults: defaults)
+        settings.shellPath = "/" + String(repeating: "a", count: 500) + "/shell"
+        let resolved = settings.resolvedShellPath
+        #expect(FileManager.default.isExecutableFile(atPath: resolved))
+    }
+
+    @Test func shellPathPointingToDirectory_fallsBack() throws {
+        let defaults = try makeDefaults()
+        defer { cleanupDefaults(defaults) }
+        let settings = ShellSettings(defaults: defaults)
+        settings.shellPath = "/usr/bin"  // directory, not executable
+        let resolved = settings.resolvedShellPath
+        #expect(resolved != "/usr/bin")
+        #expect(FileManager.default.isExecutableFile(atPath: resolved))
+    }
+
+    // MARK: - isExecutableFile edge cases (symlinks, permissions)
+
+    @Test func shellPathSymlinkToExecutable_resolves() throws {
+        let defaults = try makeDefaults()
+        defer { cleanupDefaults(defaults) }
+
+        // /var on macOS is a symlink to /private/var — verify symlinks work
+        // /bin/sh is often a symlink to another shell
+        let settings = ShellSettings(defaults: defaults)
+        settings.shellPath = "/bin/sh"
+        #expect(settings.resolvedShellPath == "/bin/sh")
+    }
+
+    @Test func shellPathBrokenSymlink_fallsBack() throws {
+        let defaults = try makeDefaults()
+        defer { cleanupDefaults(defaults) }
+
+        let tmpDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("pine-test-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: tmpDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tmpDir) }
+
+        let brokenLink = tmpDir.appendingPathComponent("broken-shell")
+        try FileManager.default.createSymbolicLink(
+            at: brokenLink,
+            withDestinationURL: URL(fileURLWithPath: "/nonexistent/target")
+        )
+
+        let settings = ShellSettings(defaults: defaults)
+        settings.shellPath = brokenLink.path
+        let resolved = settings.resolvedShellPath
+        #expect(resolved != brokenLink.path, "Broken symlink should fall back")
+        #expect(FileManager.default.isExecutableFile(atPath: resolved))
+    }
+
+    @Test func shellPathFileWithoutExecuteBit_fallsBack() throws {
+        let defaults = try makeDefaults()
+        defer { cleanupDefaults(defaults) }
+
+        let tmpDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("pine-test-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: tmpDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tmpDir) }
+
+        let noExecFile = tmpDir.appendingPathComponent("not-a-shell")
+        try Data("#!/bin/sh\necho hi".utf8).write(to: noExecFile)
+        // File created without execute permission (default 0o644)
+
+        let settings = ShellSettings(defaults: defaults)
+        settings.shellPath = noExecFile.path
+        let resolved = settings.resolvedShellPath
+        #expect(resolved != noExecFile.path, "Non-executable file should fall back")
+        #expect(FileManager.default.isExecutableFile(atPath: resolved))
     }
 }
