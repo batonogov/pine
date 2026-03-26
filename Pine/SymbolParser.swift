@@ -8,20 +8,20 @@
 import Foundation
 
 /// A symbol extracted from source code.
-struct DocumentSymbol: Identifiable, Equatable {
+struct PineSymbol: Identifiable, Equatable {
     let id = UUID()
     let name: String
-    let kind: SymbolKind
+    let kind: PineSymbolKind
     /// 1-based line number where the symbol is defined.
     let line: Int
 
-    static func == (lhs: DocumentSymbol, rhs: DocumentSymbol) -> Bool {
+    static func == (lhs: PineSymbol, rhs: PineSymbol) -> Bool {
         lhs.name == rhs.name && lhs.kind == rhs.kind && lhs.line == rhs.line
     }
 }
 
 /// The kind of a document symbol.
-enum SymbolKind: String, CaseIterable, Comparable {
+enum PineSymbolKind: String, CaseIterable, Comparable {
     case `class`
     case `struct`
     case `enum`
@@ -55,7 +55,7 @@ enum SymbolKind: String, CaseIterable, Comparable {
     }
 
     /// Sort order for grouping symbols by kind.
-    static func < (lhs: SymbolKind, rhs: SymbolKind) -> Bool {
+    static func < (lhs: PineSymbolKind, rhs: PineSymbolKind) -> Bool {
         lhs.sortOrder < rhs.sortOrder
     }
 
@@ -83,12 +83,12 @@ enum SymbolParser {
     ///   - content: The source code text.
     ///   - fileExtension: The file extension (e.g. "swift", "py", "js").
     /// - Returns: An array of symbols sorted by line number.
-    static func parse(content: String, fileExtension: String) -> [DocumentSymbol] {
+    static func parse(content: String, fileExtension: String) -> [PineSymbol] {
         let rules = symbolRules(for: fileExtension.lowercased())
         guard !rules.isEmpty else { return [] }
 
         let excludedRanges = computeExcludedRanges(in: content, fileExtension: fileExtension)
-        var symbols: [DocumentSymbol] = []
+        var symbols: [PineSymbol] = []
 
         for rule in rules {
             let nsContent = content as NSString
@@ -110,7 +110,7 @@ enum SymbolParser {
                 let name = nsContent.substring(with: nameRange)
                 let line = lineNumber(at: nameRange.location, in: content)
 
-                symbols.append(DocumentSymbol(name: name, kind: rule.kind, line: line))
+                symbols.append(PineSymbol(name: name, kind: rule.kind, line: line))
             }
         }
 
@@ -119,7 +119,7 @@ enum SymbolParser {
     }
 
     /// Filters symbols using fuzzy subsequence matching (reuses QuickOpenProvider logic).
-    static func filter(_ symbols: [DocumentSymbol], query: String) -> [DocumentSymbol] {
+    static func filter(_ symbols: [PineSymbol], query: String) -> [PineSymbol] {
         guard !query.isEmpty else { return symbols }
         let queryLower = query.lowercased()
         return symbols.filter {
@@ -131,7 +131,7 @@ enum SymbolParser {
 
     private struct SymbolRule {
         let regex: NSRegularExpression
-        let kind: SymbolKind
+        let kind: PineSymbolKind
     }
 
     /// Returns compiled regex rules for the given file extension.
