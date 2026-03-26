@@ -3,23 +3,24 @@
 //  Pine
 //
 
+import CryptoKit
 import Foundation
 
-/// Writes a `.pine-context.json` file to the project root containing current
-/// editor context (active file, cursor position). Terminal sessions and external
-/// tools can read this file to know what the user is working on.
+/// Writes the editor context JSON to `~/Library/Application Support/Pine/contexts/`.
+///
+/// Each project gets a unique file name derived from a SHA-256 hash of the project
+/// root path. This avoids polluting the project directory with dot-files and
+/// prevents FSEvents churn from context file writes.
 ///
 /// The file is written atomically with a 500ms debounce to avoid excessive I/O
 /// during rapid cursor movement. The file is deleted when the project closes.
-///
-/// - Note: Writing the context file triggers an FSEvents notification in the
-///   project directory. `FileSystemWatcher` will pick this up and refresh the
-///   file tree. This is harmless — the file is hidden (dot-prefixed) and listed
-///   in `.gitignore`, so it does not affect the sidebar or git status.
 actor ContextFileWriter {
 
-    /// Name of the context file written to the project root.
-    static let fileName = ".pine-context.json"
+    /// Legacy file name that was previously written to the project root.
+    static let legacyFileName = ".pine-context.json"
+
+    /// The directory inside Application Support where context files are stored.
+    static let contextsDirName = "Pine/contexts"
 
     /// File permissions: owner read/write only (0600).
     private static let filePermissions: [FileAttributeKey: Any] = [
@@ -36,6 +37,9 @@ actor ContextFileWriter {
 
     /// Tracks whether a write is pending (for testing).
     private(set) var hasPendingWrite = false
+
+    /// Override for the contexts directory. Used by tests.
+    private var contextsDirOverride: URL?
 
     // MARK: - Private
 
@@ -54,8 +58,10 @@ actor ContextFileWriter {
     // MARK: - Public API
 
     /// Sets the project root directory. Must be called before `update(...)`.
+    /// Also removes the legacy `.pine-context.json` from the project root if present.
     func setProjectRoot(_ url: URL?) {
         projectRoot = url
+        removeLegacyFileIfNeeded()
     }
 
     /// Sets a custom debounce interval. Intended for tests only.
@@ -63,7 +69,12 @@ actor ContextFileWriter {
         debounceInterval = interval
     }
 
-    /// Schedules a debounced write of the editor context to `.pine-context.json`.
+    /// Overrides the contexts directory. Intended for tests only.
+    func setContextsDirectory(_ url: URL) {
+        contextsDirOverride = url
+    }
+
+    /// Schedules a debounced write of the editor context.
     /// Duplicate writes (same file/line/column) are skipped.
     func update(currentFile: String?, cursorLine: Int?, cursorColumn: Int?) {
         let payload = Payload(
@@ -87,7 +98,7 @@ actor ContextFileWriter {
         }
     }
 
-    /// Deletes the `.pine-context.json` file from the project root.
+    /// Deletes the context file from Application Support.
     /// Called when the project window closes.
     func cleanup() {
         debounceTask?.cancel()
@@ -95,25 +106,41 @@ actor ContextFileWriter {
         hasPendingWrite = false
         lastWrittenContext = nil
 
-        guard let projectRoot else { return }
-        let fileURL = projectRoot.appendingPathComponent(Self.fileName)
+        guard let fileURL = contextFileURL else { return }
         try? FileManager.default.removeItem(at: fileURL)
     }
 
     /// Returns the URL of the context file for the current project root, or nil.
     var contextFileURL: URL? {
-        projectRoot.map { $0.appendingPathComponent(Self.fileName) }
+        guard let projectRoot else { return nil }
+        let dir = contextsDirectory
+        let fileName = Self.hashedFileName(for: projectRoot)
+        return dir.appendingPathComponent(fileName)
+    }
+
+    // MARK: - Path computation
+
+    /// Computes a deterministic file name from a project root URL using SHA-256.
+    static func hashedFileName(for rootURL: URL) -> String {
+        let hash = SHA256.hash(data: Data(rootURL.path.utf8))
+        let hex = hash.prefix(16).map { String(format: "%02x", $0) }.joined()
+        return "\(hex).json"
+    }
+
+    /// The directory where context files are stored.
+    var contextsDirectory: URL {
+        if let override = contextsDirOverride { return override }
+        return FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent(Self.contextsDirName)
     }
 
     // MARK: - Private helpers
 
     private func writeContext(_ payload: Payload) {
-        guard let projectRoot else { return }
+        guard let fileURL = contextFileURL else { return }
 
         // Skip redundant writes
         if payload == lastWrittenContext { return }
-
-        let fileURL = projectRoot.appendingPathComponent(Self.fileName)
 
         guard let data = try? encoder.encode(payload) else { return }
 
@@ -122,6 +149,10 @@ actor ContextFileWriter {
         output.append(contentsOf: [0x0A]) // '\n'
 
         do {
+            // Ensure contexts directory exists
+            let dir = fileURL.deletingLastPathComponent()
+            try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+
             try output.write(to: fileURL, options: .atomic)
             // Set restrictive permissions atomically via FileManager
             try FileManager.default.setAttributes(
@@ -134,6 +165,13 @@ actor ContextFileWriter {
 
         lastWrittenContext = payload
         hasPendingWrite = false
+    }
+
+    /// Removes the legacy `.pine-context.json` from the project root if it exists.
+    private func removeLegacyFileIfNeeded() {
+        guard let projectRoot else { return }
+        let legacyURL = projectRoot.appendingPathComponent(Self.legacyFileName)
+        try? FileManager.default.removeItem(at: legacyURL)
     }
 
     // MARK: - Relative path computation
@@ -156,7 +194,7 @@ actor ContextFileWriter {
 // MARK: - Payload model
 
 extension ContextFileWriter {
-    /// The JSON structure written to `.pine-context.json`.
+    /// The JSON structure written to the context file.
     struct Payload: Codable, Equatable, Sendable {
         let currentFile: String?
         let cursorLine: Int?
