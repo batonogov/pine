@@ -1,5 +1,16 @@
 # Changelog
 
+## [1.13.1](https://github.com/batonogov/pine/compare/v1.13.0...v1.13.1) (2026-03-27)
+
+
+### Bug Fixes
+
+* align indent guides correctly for tab-indented files ([#587](https://github.com/batonogov/pine/issues/587)) ([#601](https://github.com/batonogov/pine/issues/601)) ([c0a194b](https://github.com/batonogov/pine/commit/c0a194bb4adea28da1e420786c3fb44dcc65f1c0))
+* correct match highlighting in project search results ([#575](https://github.com/batonogov/pine/issues/575)) ([#598](https://github.com/batonogov/pine/issues/598)) ([e4baa3e](https://github.com/batonogov/pine/commit/e4baa3ecb7513f268bd0849a06199fd702f008ea))
+* eliminate scroll position jump when switching editor tabs ([#595](https://github.com/batonogov/pine/issues/595)) ([#599](https://github.com/batonogov/pine/issues/599)) ([174f660](https://github.com/batonogov/pine/commit/174f660015fbabe6ca5cff72ddcf8f4a8aff82d2))
+* prevent editor tabs from overlapping with long file names ([#596](https://github.com/batonogov/pine/issues/596)) ([c8c43cb](https://github.com/batonogov/pine/commit/c8c43cb6e2673160dcc68a6bad4ad23145ece58b))
+* remove broken Unicode branch icon from toolbar subtitle ([#594](https://github.com/batonogov/pine/issues/594)) ([#597](https://github.com/batonogov/pine/issues/597)) ([3ef4e46](https://github.com/batonogov/pine/commit/3ef4e465bb9d0ddcba50b2ea7de4fd19ffd46adf))
+
 ## [1.13.0](https://github.com/batonogov/pine/compare/v1.12.0...v1.13.0) (2026-03-26)
 
 
