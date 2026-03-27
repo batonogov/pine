@@ -70,13 +70,15 @@ struct AboutInfoTests {
         #expect(options[.credits] != nil)
     }
 
-    @Test func aboutPanelOptions_creditsContainsDescription() {
+    @Test func aboutPanelOptions_creditsContainsTagline() {
         let options = AboutInfo.aboutPanelOptions
         guard let credits = options[.credits] as? NSAttributedString else {
             Issue.record("Credits should be NSAttributedString")
             return
         }
-        #expect(credits.string.contains("belongs on your Mac"))
+        let tagline = String(localized: "about.tagline")
+        #expect(!tagline.isEmpty, "Localized tagline key should resolve to a non-empty string")
+        #expect(credits.string.contains(tagline))
     }
 
     @Test func aboutPanelOptions_creditsContainsGitHub() {
@@ -86,6 +88,26 @@ struct AboutInfoTests {
             return
         }
         #expect(credits.string.contains("github.com"))
+    }
+
+    @Test func aboutPanelOptions_taglineIsNotRawKey() {
+        // Verify the localized string resolved to an actual translation, not the raw key itself.
+        let tagline = String(localized: "about.tagline")
+        #expect(tagline != "about.tagline", "Tagline should resolve to a translated string, not the raw key")
+    }
+
+    @Test func aboutPanelOptions_taglineExistsInMultipleLocales() {
+        // Verify that the tagline has distinct translations for different locales,
+        // confirming it's a properly localized resource.
+        let bundle = Bundle.main
+        guard let enPath = bundle.path(forResource: "en", ofType: "lproj"),
+              let enBundle = Bundle(path: enPath) else {
+            Issue.record("English localization bundle not found")
+            return
+        }
+        let enTagline = NSLocalizedString("about.tagline", bundle: enBundle, comment: "")
+        #expect(!enTagline.isEmpty)
+        #expect(enTagline != "about.tagline", "English tagline should not be the raw key")
     }
 
     @Test func aboutPanelOptions_creditsDoesNotContainDependencies() {
