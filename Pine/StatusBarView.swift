@@ -103,6 +103,7 @@ struct StatusBarView: View {
                 }
                 .menuStyle(.borderlessButton)
                 .fixedSize()
+                .id(activeTab.cachedLineEnding)
                 .accessibilityIdentifier(AccessibilityID.lineEndingIndicator)
 
                 statusDivider
