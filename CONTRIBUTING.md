@@ -148,18 +148,6 @@ Release Please uses these prefixes to auto-generate changelog and version bumps.
 
 ## Pull Request Process
 
-### Branch Naming
-
-Use descriptive branch names with a prefix and issue number:
-
-```
-feat/feature-name-123
-fix/bug-description-456
-docs/topic-789
-refactor/area-101
-test/what-is-tested-202
-```
-
 ### Requirements
 
 1. **Tests required** -- every new feature or bug fix must include unit tests (and UI tests where applicable). Cover public API, edge cases, error paths, and boundary conditions. Do not submit a PR without corresponding tests
