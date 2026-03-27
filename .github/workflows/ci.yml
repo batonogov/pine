@@ -102,8 +102,7 @@ jobs:
           echo "Found app at: $APP_PATH"
 
           # Launch the app with reset state, wait for it to start, then quit
-          open -a "$APP_PATH" --args --reset-state &
-          APP_PID=$!
+          open -a "$APP_PATH" --args --reset-state
 
           # Wait up to 10 seconds for the app to appear in process list
           for i in $(seq 1 20); do
@@ -121,7 +120,15 @@ jobs:
 
           # Gracefully quit
           osascript -e 'tell application "Pine" to quit' 2>/dev/null || true
-          sleep 2
+
+          # Wait up to 10 seconds for the app to exit
+          for i in $(seq 1 20); do
+            if ! pgrep -x "Pine" > /dev/null 2>&1; then
+              echo "Pine exited cleanly (attempt $i)"
+              break
+            fi
+            sleep 0.5
+          done
 
           # Force kill if still running
           pkill -x "Pine" 2>/dev/null || true

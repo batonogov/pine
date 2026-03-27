@@ -5,12 +5,9 @@
 ## Test plan
 
 - [ ] Unit tests added/updated
-- [ ] UI tests added/updated (required for AppKit/NSView lifecycle bug fixes)
+- [ ] UI tests added/updated (if applicable)
 
 ## Manual testing checklist
 
-- [ ] Syntax highlighting persists after file open
-- [ ] Terminal scroll works in TUI apps (vim, htop)
-- [ ] Terminal tab auto-focuses
-- [ ] Editor tabs open/close correctly
-- [ ] No regressions in existing features
+- [ ] Verified the change works as expected
+- [ ] No regressions in related features
