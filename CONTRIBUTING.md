@@ -1,72 +1,69 @@
 # Contributing to Pine
 
-Thank you for your interest in contributing to Pine! This guide will help you set up the development environment and understand the project workflow.
+Thank you for your interest in contributing to Pine! This guide will help you set up the development environment and follow project conventions.
 
 ## Prerequisites
 
-- **macOS 26** (Tahoe) or later
-- **Xcode 26+** (includes Swift 5.9+ with `@Observable` macro)
-- **SwiftLint** — install via Homebrew:
+| Tool | Version | Install |
+|------|---------|---------|
+| macOS | 26 (Tahoe)+ | -- |
+| Xcode | 26+ | Mac App Store or [developer.apple.com](https://developer.apple.com/xcode/) |
+| Homebrew | latest | [brew.sh](https://brew.sh) |
+| SwiftLint | latest | `brew install swiftlint` |
+| Git | latest | Included with Xcode Command Line Tools |
 
-  ```bash
-  brew install swiftlint
-  ```
-
-## Getting Started
-
-### 1. Clone the repository
+## Clone & Setup
 
 ```bash
 git clone https://github.com/batonogov/pine.git
 cd pine
-```
 
-### 2. Set up git hooks
-
-Run once after cloning to enable the pre-commit hook and merge driver:
-
-```bash
+# Configure git hooks (required -- runs once)
 git config core.hooksPath .githooks
 git config merge.ours.driver true
 ```
 
-The pre-commit hook auto-unstages cosmetic-only changes to `Localizable.xcstrings` (Xcode build artifacts). The `ours` merge driver avoids conflicts in xcstrings files.
+The pre-commit hook auto-unstages cosmetic-only changes to `Localizable.xcstrings` (Xcode build artifacts). The `ours` merge driver prevents xcstrings merge conflicts.
 
-### 3. Open in Xcode
+SPM dependencies (SwiftTerm, Sparkle, swift-markdown) are resolved automatically when you open `Pine.xcodeproj` in Xcode.
 
-Open `Pine.xcodeproj` in Xcode. SPM dependencies (SwiftTerm, Sparkle, swift-markdown) resolve automatically.
+## Build & Run
 
-### 4. Build and run
+**Xcode (recommended):** Open `Pine.xcodeproj` and press Cmd+R.
 
-Press **Cmd+R** in Xcode, or build from the command line:
+**CLI:**
 
 ```bash
+# Set Xcode developer directory (once)
+sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
+
+# Build
 xcodebuild -project Pine.xcodeproj -scheme Pine build
 ```
 
-> If `xcodebuild` can't find the SDK, run `sudo xcode-select -s /Applications/Xcode.app/Contents/Developer` first.
-
-New `.swift` files placed in `Pine/`, `PineTests/`, or `PineUITests/` are automatically picked up by Xcode (the project uses `PBXFileSystemSynchronizedRootGroup`). No manual `project.pbxproj` edits needed.
+New `.swift` files placed in `Pine/`, `PineTests/`, or `PineUITests/` are automatically picked up by Xcode (file system synchronized groups). No manual `project.pbxproj` edits needed.
 
 ## Running Tests
 
-### Unit tests
+### Unit Tests
+
+Uses [Swift Testing](https://developer.apple.com/xcode/swift-testing/) framework. 50+ test files covering git parsing, grammar models, file tree, syntax highlighting, find & replace, code folding, minimap, status bar, project search, and more.
 
 ```bash
+# Run all unit tests
 DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer \
   xcodebuild test -project Pine.xcodeproj -scheme Pine \
   -destination 'platform=macOS' -only-testing:PineTests
-```
 
-Run a single test class:
-
-```bash
+# Run a single test class
 DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer \
   xcodebuild test -project Pine.xcodeproj -scheme Pine \
   -destination 'platform=macOS' -only-testing:PineTests/GoToLineTests
 ```
 
-### UI tests
+### UI Tests
+
+Uses XCUITest. 18+ test files covering Welcome window, editor tabs, terminal, multi-window, minimap, git blame, branch switcher, and more.
 
 ```bash
 DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer \
@@ -74,18 +71,14 @@ DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer \
   -destination 'platform=macOS' -only-testing:PineUITests
 ```
 
-### Linting
+### Performance Tests
 
-Run SwiftLint before every commit and fix all warnings and errors:
-
-```bash
-swiftlint
-```
-
-If SwiftLint crashes with a `sourcekitdInProc` error, prefix the command:
+XCTest `measure {}` benchmarks for FoldRange, SyntaxHighlighter, ProjectSearch, GitStatus. Skipped in CI by default; run on demand:
 
 ```bash
-DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer swiftlint
+DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer \
+  xcodebuild test -project Pine.xcodeproj -scheme Pine \
+  -destination 'platform=macOS' -only-testing:PinePerformanceTests
 ```
 
 ## Project Architecture
@@ -95,27 +88,44 @@ Pine follows **MVVM** with SwiftUI views backed by AppKit via `NSViewRepresentab
 - **`ProjectManager`** (`@Observable`) is the central state object managing file tree, editor tabs, terminal tabs, and git status
 - **`CodeEditorView`** wraps NSScrollView + custom `GutterTextView` (NSTextView subclass) for the code editor
 - **`TerminalContentView`** wraps SwiftTerm's `LocalProcessTerminalView` for the integrated terminal
-- **`SyntaxHighlighter`** loads JSON grammar files from `Pine/Grammars/` for syntax highlighting
-- Menu commands are defined in `PineApp.swift` and dispatched via `NotificationCenter`
+- **`SyntaxHighlighter`** loads JSON grammar files from `Pine/Grammars/` and highlights asynchronously
+- Menu commands are defined in `PineApp.swift` and flow through NotificationCenter
 
-For more details, see the Architecture section in [CLAUDE.md](CLAUDE.md).
+For full architecture details, see [CLAUDE.md](CLAUDE.md).
 
-## Making Changes
+## Code Style
 
-### Branching
+### SwiftLint
 
-Create a feature branch from `main`:
+SwiftLint runs as an Xcode build phase. Configuration is in `.swiftlint.yml`.
+
+**Run before every commit:**
 
 ```bash
-git checkout -b feat/my-feature
+swiftlint
 ```
 
-### Commit conventions
+If SwiftLint crashes with a `sourcekitdInProc` error:
 
-All commits must follow [Conventional Commits](https://www.conventionalcommits.org/):
+```bash
+DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer swiftlint
+```
+
+### Naming & Patterns
+
+- Use `@Observable` macro (Swift 5.9+), **not** `ObservableObject`/`@Published`
+- Models: structs for value types (`EditorTab`), `@Observable` classes for identity types (`FileNode`, `TerminalTab`)
+- UI uses semantic system colors (not hardcoded color values)
+- Strings go in `Strings.swift`, menu icons in `MenuIcons.swift`
+- All UI updates on main thread; CPU-intensive work dispatched to background queues
+- Generation tokens prevent stale async results from overwriting newer ones
+
+## Commit Conventions
+
+All commits **must** follow [Conventional Commits](https://www.conventionalcommits.org/):
 
 | Prefix | Use case |
-|---|---|
+|--------|----------|
 | `feat:` | New feature |
 | `fix:` | Bug fix |
 | `docs:` | Documentation only |
@@ -124,7 +134,7 @@ All commits must follow [Conventional Commits](https://www.conventionalcommits.o
 | `test:` | Adding or updating tests |
 | `chore:` | Build, CI, tooling changes |
 
-Use `feat!:` or a `BREAKING CHANGE:` footer for breaking changes.
+For breaking changes, use `feat!:` or add a `BREAKING CHANGE:` footer.
 
 Examples:
 
@@ -134,42 +144,58 @@ fix: prevent crash when opening empty file
 docs: update CONTRIBUTING.md with test instructions
 ```
 
-### Test requirements
+Release Please uses these prefixes to auto-generate changelog and version bumps.
 
-Every new feature or bug fix **must** include tests:
+## Pull Request Process
 
-- **Unit tests** (`PineTests/`) using Swift Testing framework — cover public API, edge cases, error paths, and boundary conditions
-- **UI tests** (`PineUITests/`) using XCTest/XCUITest where applicable
+### Branch Naming
 
-Do not submit a PR without corresponding tests. Aim for comprehensive coverage, not just the happy path.
+Use descriptive branch names with a prefix and issue number:
 
-### Code style
+```
+feat/feature-name-123
+fix/bug-description-456
+docs/topic-789
+refactor/area-101
+test/what-is-tested-202
+```
 
-- Use `@Observable` macro, not `ObservableObject`/`@Published`
-- Use semantic system colors, not hardcoded color values
-- Strings go in `Strings.swift`, menu icons in `MenuIcons.swift`
-- Never reserialize `Localizable.xcstrings` with JSON serializers — make targeted text insertions to preserve Xcode formatting
+### Requirements
 
-### Adding a new language grammar
+1. **Tests required** -- every new feature or bug fix must include unit tests (and UI tests where applicable). Cover public API, edge cases, error paths, and boundary conditions. Do not submit a PR without corresponding tests
+2. **SwiftLint clean** -- no warnings or errors
+3. **CI must pass** -- lint, build, unit tests, all 6 UI test shards
+4. **Coverage threshold** -- 70% logic-only (SwiftUI view files excluded)
+5. **Branch up-to-date** with `main` before merge
 
-Add a JSON file to `Pine/Grammars/` following the format of existing grammars. It will be picked up automatically by `SyntaxHighlighter` at startup.
+### CI Pipeline
 
-## Submitting a Pull Request
+The CI pipeline runs automatically on every PR:
 
-1. Make sure all tests pass and `swiftlint` reports no issues
-2. Push your branch and open a PR against `main`
-3. Fill in the PR description: what changed, why, and how to test it
-4. CI will run lint, build, unit tests, and UI tests automatically
-5. All checks must pass before merge
+1. **Lint** -- SwiftLint
+2. **Build** -- Xcode build
+3. **Unit Tests** -- with code coverage
+4. **UI Tests** -- 6 parallel shards (must be balanced within +/-3 tests)
+5. **Flaky Test Summary** -- flaky tests auto-retry once and are reported separately
 
-### CI pipeline
+## Localization
 
-The CI runs: Lint -> Build -> Unit Tests (with coverage) -> UI Tests (6 parallel shards). Code coverage threshold is 70% (logic-only, SwiftUI view files excluded).
+Localized strings live in `Pine/Localizable.xcstrings`.
 
-## Finding Work
+**Important:** Never use `json.dump` or standard JSON serializers to write this file. Xcode uses non-standard formatting (`"key" : "value"` with a space before the colon). Reserializing the entire file creates thousands of lines of whitespace noise in diffs.
 
-Check the [issue tracker](https://github.com/batonogov/pine/issues) for open issues. Issues labeled [`good first issue`](https://github.com/batonogov/pine/labels/good%20first%20issue) are a great starting point for new contributors.
+Instead, insert new translations by reading the file as text and making targeted insertions preserving the existing format.
 
-## Questions?
+## Adding a New Language Grammar
 
-Open a [discussion](https://github.com/batonogov/pine/discussions) or comment on the relevant issue. We are happy to help!
+Grammar files are JSON in `Pine/Grammars/`. To add support for a new language:
+
+1. Create a new JSON file in `Pine/Grammars/` following the format of existing grammars
+2. Define regex rules with scopes (`comment`, `string`, `keyword`, etc.)
+3. The `SyntaxHighlighter` will pick it up automatically at startup
+
+## Getting Help
+
+- Browse [open issues](https://github.com/batonogov/pine/issues) -- look for the `good first issue` label
+- Read [CLAUDE.md](CLAUDE.md) for detailed architecture and key file descriptions
+- Open a new issue if you have questions or ideas
