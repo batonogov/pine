@@ -6,6 +6,7 @@
 //  Supports stage/unstage/discard operations on individual files.
 //
 
+import AppKit
 import SwiftUI
 
 // MARK: - Git Changes Sheet
@@ -32,7 +33,7 @@ struct GitChangesSheet: View {
                     Image(systemName: "arrow.clockwise")
                 }
                 .buttonStyle(.plain)
-                .help("Refresh")
+                .help(Strings.gitChangesRefresh)
 
                 Button {
                     isPresented = false
@@ -256,11 +257,7 @@ struct GitChangesFileRow: View {
         } else {
             HStack(spacing: 4) {
                 Button {
-                    Task {
-                        guard let url = projectManager.workspace.rootURL else { return }
-                        _ = await diffProvider.discardChanges(file.filePath, at: url)
-                        await refreshAll()
-                    }
+                    confirmDiscard(file: file)
                 } label: {
                     Image(systemName: "arrow.uturn.backward.circle")
                         .help(Strings.gitChangesDiscard)
@@ -278,6 +275,28 @@ struct GitChangesFileRow: View {
                         .help(Strings.gitChangesStage)
                 }
                 .buttonStyle(.plain)
+            }
+        }
+    }
+
+    private func confirmDiscard(file: FileDiff) {
+        let alert = NSAlert()
+        alert.messageText = Strings.gitChangesDiscardConfirmTitle
+        alert.informativeText = Strings.gitChangesDiscardConfirmMessage(
+            URL(fileURLWithPath: file.filePath).lastPathComponent
+        )
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: Strings.gitChangesDiscardConfirmButton)
+        alert.addButton(withTitle: Strings.dialogCancel)
+        // Make the Discard button destructive
+        alert.buttons.first?.hasDestructiveAction = true
+
+        let response = alert.runModal()
+        if response == .alertFirstButtonReturn {
+            Task {
+                guard let url = projectManager.workspace.rootURL else { return }
+                _ = await diffProvider.discardChanges(file.filePath, at: url)
+                await refreshAll()
             }
         }
     }

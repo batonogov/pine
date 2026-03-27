@@ -22,6 +22,10 @@ struct DiffLine: Equatable, Identifiable {
     let id = UUID()
     let kind: DiffLineKind
     let text: String
+
+    static func == (lhs: DiffLine, rhs: DiffLine) -> Bool {
+        lhs.kind == rhs.kind && lhs.text == rhs.text
+    }
 }
 
 /// A contiguous hunk of changes within a file diff.
@@ -58,6 +62,9 @@ final class GitDiffProvider {
     /// True when a refresh is in progress.
     var isRefreshing: Bool = false
 
+    /// Generation token to prevent stale async results from overwriting newer ones.
+    private var refreshGeneration: Int = 0
+
     /// All changed file paths (both staged and unstaged).
     var allChangedPaths: [String] {
         let staged = Set(stagedFiles.map(\.filePath))
@@ -77,24 +84,38 @@ final class GitDiffProvider {
             return
         }
 
+        refreshGeneration += 1
+        let currentGeneration = refreshGeneration
+
         await MainActor.run { self.isRefreshing = true }
 
-        let (staged, unstaged) = await withCheckedContinuation { continuation in
-            DispatchQueue.global(qos: .userInitiated).async {
-                let stagedResult = GitStatusProvider.runGit(["diff", "--cached"], at: repositoryURL)
-                let unstagedResult = GitStatusProvider.runGit(["diff"], at: repositoryURL)
+        let (staged, unstaged) = await runGitAsync {
+            let stagedResult = GitStatusProvider.runGit(["diff", "--cached"], at: repositoryURL)
+            let unstagedResult = GitStatusProvider.runGit(["diff"], at: repositoryURL)
 
-                let stagedDiffs = Self.parseUnifiedDiff(stagedResult.output, isStaged: true)
-                let unstagedDiffs = Self.parseUnifiedDiff(unstagedResult.output, isStaged: false)
+            let stagedDiffs = Self.parseUnifiedDiff(stagedResult.output, isStaged: true)
+            let unstagedDiffs = Self.parseUnifiedDiff(unstagedResult.output, isStaged: false)
 
-                continuation.resume(returning: (stagedDiffs, unstagedDiffs))
-            }
+            return (stagedDiffs, unstagedDiffs)
         }
 
         await MainActor.run {
+            // Only apply if this is still the latest refresh
+            guard self.refreshGeneration == currentGeneration else { return }
             self.stagedFiles = staged
             self.unstagedFiles = unstaged
             self.isRefreshing = false
+        }
+    }
+
+    // MARK: - Async Git Helper
+
+    /// Runs a closure on a background queue and returns the result via `withCheckedContinuation`.
+    private func runGitAsync<T>(_ work: @escaping @Sendable () -> T) async -> T {
+        await withCheckedContinuation { continuation in
+            DispatchQueue.global(qos: .userInitiated).async {
+                continuation.resume(returning: work())
+            }
         }
     }
 
@@ -102,57 +123,37 @@ final class GitDiffProvider {
 
     /// Stages a single file.
     func stageFile(_ path: String, at repositoryURL: URL) async -> Bool {
-        let result = await withCheckedContinuation { continuation in
-            DispatchQueue.global(qos: .userInitiated).async {
-                let gitResult = GitStatusProvider.runGit(["add", "--", path], at: repositoryURL)
-                continuation.resume(returning: gitResult.exitCode == 0)
-            }
+        await runGitAsync {
+            GitStatusProvider.runGit(["add", "--", path], at: repositoryURL).exitCode == 0
         }
-        return result
     }
 
     /// Unstages a single file (moves from staged back to working tree).
     func unstageFile(_ path: String, at repositoryURL: URL) async -> Bool {
-        let result = await withCheckedContinuation { continuation in
-            DispatchQueue.global(qos: .userInitiated).async {
-                let gitResult = GitStatusProvider.runGit(["reset", "HEAD", "--", path], at: repositoryURL)
-                continuation.resume(returning: gitResult.exitCode == 0)
-            }
+        await runGitAsync {
+            GitStatusProvider.runGit(["reset", "HEAD", "--", path], at: repositoryURL).exitCode == 0
         }
-        return result
     }
 
     /// Discards unstaged changes for a single file.
     func discardChanges(_ path: String, at repositoryURL: URL) async -> Bool {
-        let result = await withCheckedContinuation { continuation in
-            DispatchQueue.global(qos: .userInitiated).async {
-                let gitResult = GitStatusProvider.runGit(["checkout", "--", path], at: repositoryURL)
-                continuation.resume(returning: gitResult.exitCode == 0)
-            }
+        await runGitAsync {
+            GitStatusProvider.runGit(["checkout", "--", path], at: repositoryURL).exitCode == 0
         }
-        return result
     }
 
     /// Stages all changed files.
     func stageAll(at repositoryURL: URL) async -> Bool {
-        let result = await withCheckedContinuation { continuation in
-            DispatchQueue.global(qos: .userInitiated).async {
-                let gitResult = GitStatusProvider.runGit(["add", "-A"], at: repositoryURL)
-                continuation.resume(returning: gitResult.exitCode == 0)
-            }
+        await runGitAsync {
+            GitStatusProvider.runGit(["add", "-A"], at: repositoryURL).exitCode == 0
         }
-        return result
     }
 
     /// Unstages all staged files.
     func unstageAll(at repositoryURL: URL) async -> Bool {
-        let result = await withCheckedContinuation { continuation in
-            DispatchQueue.global(qos: .userInitiated).async {
-                let gitResult = GitStatusProvider.runGit(["reset", "HEAD"], at: repositoryURL)
-                continuation.resume(returning: gitResult.exitCode == 0)
-            }
+        await runGitAsync {
+            GitStatusProvider.runGit(["reset", "HEAD"], at: repositoryURL).exitCode == 0
         }
-        return result
     }
 
     // MARK: - Unified Diff Parser
@@ -172,13 +173,21 @@ final class GitDiffProvider {
                 continue
             }
 
-            let filePath = parseFilePath(from: lines[i])
+            let fallbackPath = parseFilePath(from: lines[i])
             i += 1
 
-            // Skip metadata lines (index, ---, +++)
+            // Scan metadata lines (index, ---, +++) and extract path from +++ b/
+            var filePath = fallbackPath
             while i < lines.count
                 && !lines[i].hasPrefix("diff --git ")
                 && !lines[i].hasPrefix("@@") {
+                if lines[i].hasPrefix("+++ b/") {
+                    filePath = String(lines[i].dropFirst("+++ b/".count))
+                } else if lines[i].hasPrefix("+++ /dev/null") {
+                    // Deleted file — use --- a/ path
+                } else if lines[i].hasPrefix("--- a/") && filePath == fallbackPath {
+                    filePath = String(lines[i].dropFirst("--- a/".count))
+                }
                 i += 1
             }
 

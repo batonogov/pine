@@ -327,6 +327,21 @@ enum Strings {
     static let gitChangesStageAll: LocalizedStringKey = "gitChanges.stageAll"
     static let gitChangesUnstageAll: LocalizedStringKey = "gitChanges.unstageAll"
     static let gitChangesDiscard: LocalizedStringKey = "gitChanges.discard"
+    static let gitChangesRefresh: LocalizedStringKey = "gitChanges.refresh"
+
+    // MARK: - Git Changes Discard Confirmation (AppKit)
+
+    static var gitChangesDiscardConfirmTitle: String {
+        String(localized: "gitChanges.discard.confirmTitle")
+    }
+
+    static func gitChangesDiscardConfirmMessage(_ fileName: String) -> String {
+        String(localized: "gitChanges.discard.confirmMessage \(fileName)")
+    }
+
+    static var gitChangesDiscardConfirmButton: String {
+        String(localized: "gitChanges.discard.confirmButton")
+    }
 
     // MARK: - Terminal Search
 

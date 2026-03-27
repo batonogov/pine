@@ -36,6 +36,38 @@ struct GitDiffProviderTests {
         #expect(result == "Pine/Views/Editor/CodeView.swift")
     }
 
+    // MARK: - parseUnifiedDiff — path with b/ in directory name
+
+    @Test func parsesPathWithBSlashInDirectory() {
+        let diff = """
+        diff --git a/a/b/file.swift b/a/b/file.swift
+        index abc..def 100644
+        --- a/a/b/file.swift
+        +++ b/a/b/file.swift
+        @@ -1,2 +1,2 @@
+        -old
+        +new
+        """
+        let result = GitDiffProvider.parseUnifiedDiff(diff, isStaged: false)
+        #expect(result.count == 1)
+        #expect(result[0].filePath == "a/b/file.swift")
+    }
+
+    @Test func parsesPathWithMultipleBSlashSegments() {
+        let diff = """
+        diff --git a/b/b/b/test.swift b/b/b/b/test.swift
+        index abc..def 100644
+        --- a/b/b/b/test.swift
+        +++ b/b/b/b/test.swift
+        @@ -1 +1 @@
+        -a
+        +b
+        """
+        let result = GitDiffProvider.parseUnifiedDiff(diff, isStaged: false)
+        #expect(result.count == 1)
+        #expect(result[0].filePath == "b/b/b/test.swift")
+    }
+
     // MARK: - parseUnifiedDiff — empty input
 
     @Test func emptyInputReturnsEmptyArray() {
@@ -256,12 +288,22 @@ struct GitDiffProviderTests {
         let line1 = DiffLine(kind: .added, text: "hello")
         let line2 = DiffLine(kind: .added, text: "hello")
         let line3 = DiffLine(kind: .removed, text: "hello")
-        // DiffLine uses UUID so different instances are not equal
-        #expect(line1 != line2)
+        let line4 = DiffLine(kind: .added, text: "world")
+        // Custom == compares kind + text, ignoring UUID id
+        #expect(line1 == line2)
         #expect(line1 != line3)
-        // But kind and text match
-        #expect(line1.kind == line2.kind)
-        #expect(line1.text == line2.text)
+        #expect(line1 != line4)
+        // Different instances have different IDs for Identifiable
+        #expect(line1.id != line2.id)
+    }
+
+    // MARK: - DiffLine Identifiable distinct IDs
+
+    @Test func diffLineHasDistinctIDs() {
+        let a = DiffLine(kind: .context, text: "same")
+        let b = DiffLine(kind: .context, text: "same")
+        #expect(a == b)
+        #expect(a.id != b.id)
     }
 
     // MARK: - DiffHunk equality

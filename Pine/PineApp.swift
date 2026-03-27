@@ -148,7 +148,7 @@ struct PineApp: App {
                 } label: {
                     Label(Strings.menuGitChanges, systemImage: MenuIcons.gitChanges)
                 }
-                .keyboardShortcut("g", modifiers: [.command, .shift])
+                .keyboardShortcut("g", modifiers: .control)
                 .disabled(focusedProject?.workspace.rootURL == nil)
 
                 Divider()
