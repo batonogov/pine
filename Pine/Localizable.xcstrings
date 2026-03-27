@@ -2938,6 +2938,39 @@
         }
       }
     },
+    "pane.terminal.title" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Terminal"
+          }
+        }
+      }
+    },
+    "pane.terminal.description" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Terminal panes will be available in a future update."
+          }
+        }
+      }
+    },
+    "pane.unavailable" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pane Unavailable"
+          }
+        }
+      }
+    },
     "tab.pin" : {
       "comment" : "Context menu: pin a tab so it stays on the left and resists closing.",
       "extractionState" : "manual",

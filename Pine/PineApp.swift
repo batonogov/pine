@@ -198,7 +198,7 @@ struct PineApp: App {
                     Button {
                         NotificationCenter.default.post(name: .focusNextPane, object: nil)
                     } label: {
-                        Label(Strings.menuFocusNextPane, systemImage: MenuIcons.splitRight)
+                        Label(Strings.menuFocusNextPane, systemImage: MenuIcons.focusNextPane)
                     }
                     .keyboardShortcut("]", modifiers: [.command, .option])
                     .disabled(focusedProject == nil)
@@ -206,7 +206,7 @@ struct PineApp: App {
                     Button {
                         NotificationCenter.default.post(name: .focusPreviousPane, object: nil)
                     } label: {
-                        Label(Strings.menuFocusPreviousPane, systemImage: MenuIcons.splitRight)
+                        Label(Strings.menuFocusPreviousPane, systemImage: MenuIcons.focusPreviousPane)
                     }
                     .keyboardShortcut("[", modifiers: [.command, .option])
                     .disabled(focusedProject == nil)

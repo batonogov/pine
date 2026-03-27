@@ -35,6 +35,8 @@ enum MenuIcons {
     static let splitRight = "rectangle.split.2x1"
     static let splitDown = "rectangle.split.1x2"
     static let closePane = "xmark.rectangle"
+    static let focusNextPane = "chevron.right"
+    static let focusPreviousPane = "chevron.left"
 
     // MARK: - View menu
     static let increaseFontSize = "plus.magnifyingglass"

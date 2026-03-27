@@ -63,7 +63,7 @@ struct PaneLeafView: View {
                 .environment(tabManager)
             } else {
                 ContentUnavailableView {
-                    Label("Pane Unavailable", systemImage: "rectangle.slash")
+                    Label(Strings.paneUnavailable, systemImage: "rectangle.slash")
                 }
             }
         }
@@ -283,9 +283,9 @@ struct PaneEditorContent: View {
 struct PaneTerminalPlaceholder: View {
     var body: some View {
         ContentUnavailableView {
-            Label("Terminal", systemImage: "terminal")
+            Label(Strings.paneTerminalTitle, systemImage: "terminal")
         } description: {
-            Text("Terminal panes will be available in a future update.")
+            Text(Strings.paneTerminalDescription)
         }
     }
 }
@@ -314,12 +314,17 @@ struct PaneSplitView: View {
             let divider = Self.dividerThickness
             let firstSize = max(0, totalSize * ratio - divider / 2)
             let secondSize = max(0, totalSize * (1 - ratio) - divider / 2)
+            let firstLeafID = first.firstLeafID ?? PaneID()
+            let secondLeafID = second.firstLeafID ?? PaneID()
 
             if axis == .horizontal {
                 HStack(spacing: 0) {
                     PaneTreeView(node: first)
                         .frame(width: firstSize)
-                    PaneDividerView(axis: axis, totalSize: totalSize, ratio: ratio)
+                    PaneDividerView(
+                        axis: axis, totalSize: totalSize, ratio: ratio,
+                        firstChildLeafID: firstLeafID, secondChildLeafID: secondLeafID
+                    )
                     PaneTreeView(node: second)
                         .frame(width: secondSize)
                 }
@@ -327,7 +332,10 @@ struct PaneSplitView: View {
                 VStack(spacing: 0) {
                     PaneTreeView(node: first)
                         .frame(height: firstSize)
-                    PaneDividerView(axis: axis, totalSize: totalSize, ratio: ratio)
+                    PaneDividerView(
+                        axis: axis, totalSize: totalSize, ratio: ratio,
+                        firstChildLeafID: firstLeafID, secondChildLeafID: secondLeafID
+                    )
                     PaneTreeView(node: second)
                         .frame(height: secondSize)
                 }
@@ -346,15 +354,18 @@ struct PaneDividerView: View {
     let axis: SplitAxis
     let totalSize: CGFloat
     let ratio: CGFloat
+    /// Unique identity for this split node, derived from child leaf IDs.
+    /// Used instead of float comparison to find the correct split in the tree.
+    let firstChildLeafID: PaneID
+    let secondChildLeafID: PaneID
 
     @Environment(PaneManager.self) private var paneManager
     @State private var isHovered = false
     @State private var isDragging = false
+    /// Captures the ratio at drag start so that incremental translation
+    /// is computed relative to the initial position, not the last frame.
+    @State private var dragStartRatio: CGFloat?
 
-    /// The divider that the user is currently dragging.
-    /// We find the split node in the tree that corresponds to this divider
-    /// by matching the ratio and axis -- but for simplicity, we update
-    /// the root node directly via the first child leaf.
     var body: some View {
         let isVerticalDivider = axis == .horizontal
 
@@ -379,13 +390,17 @@ struct PaneDividerView: View {
                 DragGesture(minimumDistance: 1)
                     .onChanged { value in
                         isDragging = true
+                        if dragStartRatio == nil {
+                            dragStartRatio = ratio
+                        }
                         let delta = isVerticalDivider ? value.translation.width : value.translation.height
-                        let newRatio = ratio + delta / totalSize
+                        let newRatio = (dragStartRatio ?? ratio) + delta / totalSize
                         let clamped = min(max(newRatio, 0.1), 0.9)
                         updateRatio(clamped)
                     }
                     .onEnded { _ in
                         isDragging = false
+                        dragStartRatio = nil
                     }
             )
             .onHover { hovering in
@@ -410,37 +425,45 @@ struct PaneDividerView: View {
         return Color.primary.opacity(isHovered ? 0.3 : 0.15)
     }
 
-    /// Finds the matching split node and updates its ratio.
+    /// Finds the split node by its child leaf IDs and updates its ratio.
     ///
-    /// Since `PaneSplitView` passes us `ratio`, we look for a split in the tree
-    /// whose ratio matches and update it. For phase 2, a more direct approach
-    /// (passing a path or split ID) would be cleaner.
+    /// Uses the first leaf ID of each child subtree as a unique key,
+    /// avoiding fragile float comparison that breaks with duplicate ratios.
     private func updateRatio(_ newRatio: CGFloat) {
-        // Walk the tree to find the split that matches our axis and current ratio,
-        // and replace it. For now, we use a direct tree replacement.
         if let updated = updateSplitRatio(
-            in: paneManager.rootNode, axis: axis, oldRatio: ratio, newRatio: newRatio
+            in: paneManager.rootNode,
+            firstChildLeafID: firstChildLeafID,
+            secondChildLeafID: secondChildLeafID,
+            newRatio: newRatio
         ) {
             paneManager.rootNode = updated
         }
     }
 
-    /// Recursively finds the first split with matching axis/ratio and updates it.
+    /// Recursively finds the split whose children contain the given leaf IDs and updates its ratio.
     private func updateSplitRatio(
-        in node: PaneNode, axis: SplitAxis, oldRatio: CGFloat, newRatio: CGFloat
+        in node: PaneNode,
+        firstChildLeafID: PaneID,
+        secondChildLeafID: PaneID,
+        newRatio: CGFloat
     ) -> PaneNode? {
         switch node {
         case .leaf:
             return nil
         case .split(let ax, let first, let second, let currentRatio):
-            if ax == axis && abs(currentRatio - oldRatio) < 1e-6 {
+            // Check if this split's children match by their first leaf IDs
+            if first.firstLeafID == firstChildLeafID && second.firstLeafID == secondChildLeafID {
                 return .split(ax, first: first, second: second, ratio: newRatio)
             }
-            if let newFirst = updateSplitRatio(in: first, axis: axis, oldRatio: oldRatio, newRatio: newRatio) {
+            if let newFirst = updateSplitRatio(
+                in: first, firstChildLeafID: firstChildLeafID,
+                secondChildLeafID: secondChildLeafID, newRatio: newRatio
+            ) {
                 return .split(ax, first: newFirst, second: second, ratio: currentRatio)
             }
             if let newSecond = updateSplitRatio(
-                in: second, axis: axis, oldRatio: oldRatio, newRatio: newRatio
+                in: second, firstChildLeafID: firstChildLeafID,
+                secondChildLeafID: secondChildLeafID, newRatio: newRatio
             ) {
                 return .split(ax, first: first, second: newSecond, ratio: currentRatio)
             }

@@ -191,6 +191,11 @@ enum Strings {
     static let menuFocusNextPane: LocalizedStringKey = "menu.focusNextPane"
     static let menuFocusPreviousPane: LocalizedStringKey = "menu.focusPreviousPane"
 
+    // MARK: - Pane placeholders
+    static let paneTerminalTitle: LocalizedStringKey = "pane.terminal.title"
+    static let paneTerminalDescription: LocalizedStringKey = "pane.terminal.description"
+    static let paneUnavailable: LocalizedStringKey = "pane.unavailable"
+
     // MARK: - Tab Pinning
 
     static let tabPin: LocalizedStringKey = "tab.pin"

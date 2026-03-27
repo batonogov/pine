@@ -17,12 +17,18 @@ final class ProjectManager {
     let searchProvider = ProjectSearchProvider()
 
     /// Backward-compatible accessor: returns the active pane's TabManager.
-    /// Falls back to creating a new TabManager if none exists (should never happen
-    /// since PaneManager always maintains at least one pane).
+    /// Falls back to the first available TabManager, or a lazily-created default.
+    /// Force unwrap is avoided to prevent crashes if pane state becomes inconsistent.
     var tabManager: TabManager {
-        // swiftlint:disable:next force_unwrapping
-        paneManager.activeTabManager!
+        paneManager.activeTabManager
+            ?? paneManager.tabManagers.values.first
+            ?? defaultTabManager
     }
+
+    /// Lazily created fallback TabManager — used only if the pane tree is empty
+    /// (which should never happen in practice, but avoids a force unwrap crash).
+    @ObservationIgnored
+    private lazy var defaultTabManager = TabManager()
     let quickOpenProvider = QuickOpenProvider()
     let progress = ProgressTracker()
     let contextFileWriter = ContextFileWriter()
