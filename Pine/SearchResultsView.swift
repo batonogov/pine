@@ -85,8 +85,6 @@ struct SearchResultsView: View {
             ForEach(group.matches) { match in
                 MatchRowView(
                     match: match,
-                    query: projectManager.searchProvider.query,
-                    isCaseSensitive: projectManager.searchProvider.isCaseSensitive,
                     fileURL: group.url,
                     tabManager: tabManager
                 )
@@ -99,8 +97,6 @@ struct SearchResultsView: View {
 
 private struct MatchRowView: View {
     let match: SearchMatch
-    let query: String
-    let isCaseSensitive: Bool
     let fileURL: URL
     let tabManager: TabManager
 
@@ -132,21 +128,29 @@ private struct MatchRowView: View {
         .onHover { isHovered = $0 }
     }
 
-    /// Builds a Text view with the match highlighted in bold.
+    /// Builds a Text view with the match highlighted in bold using stored range offsets.
     private var highlightedText: Text {
         let content = match.lineContent
-        let options: String.CompareOptions = isCaseSensitive ? [] : [.caseInsensitive]
 
-        guard let range = content.range(of: query, options: options) else {
+        // Convert UTF-16 offsets from SearchMatch back to String.Index
+        let utf16 = content.utf16
+        let startUTF16 = utf16.index(utf16.startIndex, offsetBy: match.matchRangeStart, limitedBy: utf16.endIndex)
+        let endUTF16 = startUTF16.flatMap {
+            utf16.index($0, offsetBy: match.matchRangeLength, limitedBy: utf16.endIndex)
+        }
+
+        guard let s16 = startUTF16, let e16 = endUTF16,
+              let start = s16.samePosition(in: content),
+              let end = e16.samePosition(in: content) else {
             return Text(content).foregroundColor(.primary)
         }
 
-        let before = Text(content[content.startIndex..<range.lowerBound])
+        let before = Text(content[content.startIndex..<start])
             .foregroundColor(.primary)
-        let matched = Text(content[range])
+        let matched = Text(content[start..<end])
             .foregroundColor(.accentColor)
             .bold()
-        let after = Text(content[range.upperBound..<content.endIndex])
+        let after = Text(content[end..<content.endIndex])
             .foregroundColor(.primary)
 
         return Text("\(before)\(matched)\(after)")
