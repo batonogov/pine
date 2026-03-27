@@ -96,9 +96,11 @@ final class EditorWindowTests: PineUITestCase {
 
         // Click on main.swift tab to switch back
         mainTab.click()
-        let selectedPredicate = NSPredicate(format: "isSelected == true")
-        expectation(for: selectedPredicate, evaluatedWith: mainTab)
-        waitForExpectations(timeout: 10)
+        let deadline = Date().addingTimeInterval(10)
+        while !mainTab.isSelected && Date() < deadline {
+            Thread.sleep(forTimeInterval: 0.1)
+        }
+        XCTAssertTrue(mainTab.isSelected, "main.swift tab should become selected")
 
         // main.swift tab should still exist (switching doesn't close tabs)
         XCTAssertTrue(mainTab.exists, "main.swift tab should still exist after clicking it")
@@ -252,9 +254,11 @@ final class EditorWindowTests: PineUITestCase {
         ).firstMatch
         XCTAssertTrue(waitForExistence(mainRow, timeout: 15), "main.swift row should exist in sidebar")
 
-        let selectedPredicate = NSPredicate(format: "isSelected == true")
-        expectation(for: selectedPredicate, evaluatedWith: mainRow)
-        waitForExpectations(timeout: 10)
+        let deadline2 = Date().addingTimeInterval(10)
+        while !mainRow.isSelected && Date() < deadline2 {
+            Thread.sleep(forTimeInterval: 0.1)
+        }
+        XCTAssertTrue(mainRow.isSelected, "main.swift row should be selected in sidebar")
     }
 
     // MARK: - P1: Unrecognized file extensions open as text, not preview

@@ -247,9 +247,11 @@ final class GoToLineTabOverflowExternalChangesUITests: PineUITestCase {
         let mainTab = editorTab("main.swift")
         mainTab.click()
 
-        let selectedPredicate = NSPredicate(format: "isSelected == true")
-        expectation(for: selectedPredicate, evaluatedWith: mainTab)
-        waitForExpectations(timeout: 10)
+        let deadline = Date().addingTimeInterval(10)
+        while !mainTab.isSelected && Date() < deadline {
+            Thread.sleep(forTimeInterval: 0.1)
+        }
+        XCTAssertTrue(mainTab.isSelected, "main.swift tab should become selected")
     }
 
     // MARK: - Tab Overflow: single tab has no overflow
