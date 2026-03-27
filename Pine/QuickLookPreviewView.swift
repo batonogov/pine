@@ -20,9 +20,15 @@ struct QuickLookPreviewView: NSViewRepresentable {
     }
 
     func updateNSView(_ nsView: QLPreviewView, context: Context) {
+        // Guard against updating a QLPreviewView that has been closed/deactivated
+        // or when the preview item would be nil — prevents crash on tab switching (#618)
+        guard nsView.window != nil else { return }
+
         let current = (nsView.previewItem as? PreviewItem)?.previewItemURL
         if current != url {
-            nsView.previewItem = PreviewItem(url: url)
+            let newItem = PreviewItem(url: url)
+            guard newItem.previewItemURL != nil else { return }
+            nsView.previewItem = newItem
         }
     }
 }
