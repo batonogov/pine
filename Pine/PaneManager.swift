@@ -95,7 +95,10 @@ final class PaneManager {
         tabManagers[paneID] = nil
 
         if activePaneID == paneID {
-            activePaneID = rootNode.firstLeafID ?? activePaneID
+            guard let nextFocus = rootNode.firstLeafID else {
+                preconditionFailure("PaneNode tree has no leaves after removing pane")
+            }
+            activePaneID = nextFocus
         }
     }
 
