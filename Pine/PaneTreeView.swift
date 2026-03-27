@@ -52,8 +52,15 @@ struct PaneLeafView: View {
     var body: some View {
         Group {
             if let tabManager = paneManager.tabManager(for: paneID) {
-                PaneContentPlaceholder(paneID: paneID, content: content)
-                    .environment(tabManager)
+                Group {
+                    switch content {
+                    case .editor:
+                        PaneEditorContent(paneID: paneID)
+                    case .terminal:
+                        PaneTerminalPlaceholder()
+                    }
+                }
+                .environment(tabManager)
             } else {
                 ContentUnavailableView {
                     Label("Pane Unavailable", systemImage: "rectangle.slash")
@@ -75,47 +82,209 @@ struct PaneLeafView: View {
     }
 }
 
-// MARK: - PaneContentPlaceholder
+// MARK: - PaneEditorContent
 
-/// Renders the appropriate content for a pane leaf based on its `PaneContent` type.
+/// Renders the real `EditorAreaView` for a leaf pane, owning all per-pane editor state.
 ///
-/// For `.editor` panes this is a placeholder that the parent view replaces
-/// with `EditorAreaView` by injecting the correct bindings. For `.terminal`
-/// panes it would render a terminal (Phase 3).
-///
-/// Currently renders a simple placeholder because `EditorAreaView` requires
-/// bindings that are owned by `ContentView`. The integration in `ContentView`
-/// wraps this with the real `EditorAreaView`.
-struct PaneContentPlaceholder: View {
+/// Each pane independently tracks its own line diffs, blame lines, drag target state,
+/// and go-to-line offset. Shared settings (minimap, blame visibility, word wrap) are
+/// read from `@AppStorage` so all panes stay in sync.
+struct PaneEditorContent: View {
     let paneID: PaneID
-    let content: PaneContent
 
     @Environment(TabManager.self) private var tabManager
+    @Environment(WorkspaceManager.self) private var workspace
+    @Environment(ProjectManager.self) private var projectManager
+
+    // Per-pane state — each pane owns its own instances
+    @State private var lineDiffs: [GitLineDiff] = []
+    @State private var blameLines: [GitBlameLine] = []
+    @State private var blameTask: Task<Void, Never>?
+    @State private var isDragTargeted = false
+    @State private var goToLineOffset: GoToRequest?
+
+    // Shared settings from AppStorage (identical across all panes)
+    @AppStorage("minimapVisible") private var isMinimapVisible = true
+    @AppStorage(BlameConstants.storageKey) private var isBlameVisible = true
+    @AppStorage("wordWrapEnabled") private var isWordWrapEnabled = true
 
     var body: some View {
-        switch content {
-        case .editor:
-            // ContentView replaces this with the real EditorAreaView
-            // by reading TabManager from the environment
-            VStack(spacing: 0) {
-                if tabManager.tabs.isEmpty {
-                    ContentUnavailableView {
-                        Label(Strings.noFileSelected, systemImage: "doc.text")
-                    } description: {
-                        Text(Strings.selectFilePrompt)
-                    }
-                    .accessibilityIdentifier(AccessibilityID.editorPlaceholder)
-                } else {
-                    Text("Editor Pane")
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        EditorAreaView(
+            lineDiffs: $lineDiffs,
+            isDragTargeted: $isDragTargeted,
+            goToLineOffset: $goToLineOffset,
+            isBlameVisible: isBlameVisible,
+            blameLines: blameLines,
+            isMinimapVisible: isMinimapVisible,
+            isWordWrapEnabled: isWordWrapEnabled,
+            onCloseTab: { closeTabWithConfirmation($0) },
+            onSaveSession: { projectManager.saveSession() }
+        )
+        .onChange(of: tabManager.activeTabID) { _, _ in
+            refreshLineDiffs()
+            refreshBlame()
+        }
+        .onChange(of: workspace.gitProvider.isGitRepository) { _, isRepo in
+            if isRepo {
+                refreshLineDiffs()
+            } else {
+                lineDiffs = []
+            }
+        }
+        .onChange(of: workspace.gitProvider.currentBranch) { _, _ in
+            refreshLineDiffs()
+            refreshBlame()
+        }
+        .onChange(of: workspace.gitProvider.fileStatuses) { _, _ in
+            refreshLineDiffs()
+        }
+        .onChange(of: isBlameVisible) { _, _ in
+            refreshBlame()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .refreshLineDiffs)) { _ in
+            refreshLineDiffs()
+            refreshBlame()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .navigateChange)) { notification in
+            guard let direction = notification.userInfo?["direction"] as? String else { return }
+            navigateToChange(direction: direction == "next" ? .next : .previous)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .symbolNavigate)) { notification in
+            guard let offset = notification.userInfo?["offset"] as? Int else { return }
+            goToLineOffset = GoToRequest(offset: offset)
+        }
+        .task {
+            refreshLineDiffs()
+            refreshBlame()
+        }
+        .onChange(of: tabManager.pendingGoToLine) { _, newLine in
+            guard let line = newLine, let tab = tabManager.activeTab else { return }
+            tabManager.pendingGoToLine = nil
+            goToLineOffset = GoToRequest(
+                offset: ContentView.cursorOffset(forLine: line, in: tab.content)
+            )
+        }
+    }
+
+    // MARK: - Git diff refresh
+
+    private func refreshLineDiffs() {
+        guard let tab = tabManager.activeTab else {
+            lineDiffs = []
+            return
+        }
+        let fileURL = tab.url
+        let provider = workspace.gitProvider
+        guard provider.isGitRepository else {
+            lineDiffs = []
+            return
+        }
+        Task {
+            let diffs = await provider.diffForFileAsync(at: fileURL)
+            if tabManager.activeTab?.url == fileURL {
+                lineDiffs = diffs
+            }
+        }
+    }
+
+    // MARK: - Git blame refresh
+
+    private func refreshBlame() {
+        blameTask?.cancel()
+        guard isBlameVisible else {
+            blameLines = []
+            return
+        }
+        guard let tab = tabManager.activeTab else {
+            blameLines = []
+            return
+        }
+        let fileURL = tab.url
+        let provider = workspace.gitProvider
+        guard provider.isGitRepository, let repoURL = provider.repositoryURL else {
+            blameLines = []
+            return
+        }
+        let filePath = fileURL.path
+        blameTask = Task.detached {
+            let result = GitStatusProvider.runGit(
+                ["blame", "--porcelain", "--", filePath], at: repoURL
+            )
+            guard !Task.isCancelled else { return }
+            let lines: [GitBlameLine]
+            if result.exitCode == 0, !result.output.isEmpty {
+                lines = GitStatusProvider.parseBlame(result.output)
+            } else {
+                lines = []
+            }
+            guard !Task.isCancelled else { return }
+            await MainActor.run {
+                if tabManager.activeTab?.url == fileURL {
+                    blameLines = lines
                 }
             }
-        case .terminal:
-            ContentUnavailableView {
-                Label("Terminal", systemImage: "terminal")
-            } description: {
-                Text("Terminal panes will be available in a future update.")
+        }
+    }
+
+    // MARK: - Tab close with confirmation
+
+    private func closeTabWithConfirmation(_ tab: EditorTab) {
+        if tab.isDirty {
+            let alert = NSAlert()
+            alert.messageText = Strings.unsavedChangesTitle
+            alert.informativeText = Strings.unsavedChangesMessage
+            alert.addButton(withTitle: Strings.dialogSave)
+            alert.addButton(withTitle: Strings.dialogDontSave)
+            alert.addButton(withTitle: Strings.dialogCancel)
+            alert.alertStyle = .warning
+
+            let response = alert.runModal()
+            switch response {
+            case .alertFirstButtonReturn:
+                guard let index = tabManager.tabs.firstIndex(where: { $0.id == tab.id }) else { return }
+                guard tabManager.saveTab(at: index) else { return }
+                Task { await workspace.gitProvider.refreshAsync() }
+                tabManager.closeTab(id: tab.id)
+            case .alertSecondButtonReturn:
+                tabManager.closeTab(id: tab.id)
+            default:
+                return
             }
+        } else {
+            tabManager.closeTab(id: tab.id)
+        }
+    }
+
+    // MARK: - Change navigation
+
+    private enum ChangeDirection { case next, previous }
+
+    private func navigateToChange(direction: ChangeDirection) {
+        guard let tab = tabManager.activeTab, !lineDiffs.isEmpty else { return }
+        let currentLine = ContentView.lineNumber(forOffset: tab.cursorPosition, in: tab.content)
+        let starts = GitLineDiff.changeRegionStarts(lineDiffs)
+        let targetLine: Int?
+        switch direction {
+        case .next:
+            targetLine = GitLineDiff.nextChangeLine(from: currentLine, regionStarts: starts, diffs: lineDiffs)
+        case .previous:
+            targetLine = GitLineDiff.previousChangeLine(from: currentLine, regionStarts: starts, diffs: lineDiffs)
+        }
+        if let line = targetLine {
+            goToLineOffset = GoToRequest(offset: ContentView.cursorOffset(forLine: line, in: tab.content))
+        }
+    }
+}
+
+// MARK: - PaneTerminalPlaceholder
+
+/// Placeholder for terminal panes (Phase 3).
+struct PaneTerminalPlaceholder: View {
+    var body: some View {
+        ContentUnavailableView {
+            Label("Terminal", systemImage: "terminal")
+        } description: {
+            Text("Terminal panes will be available in a future update.")
         }
     }
 }
