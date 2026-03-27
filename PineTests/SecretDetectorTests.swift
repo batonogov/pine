@@ -125,10 +125,18 @@ struct SecretDetectorTests {
     // MARK: - Twilio
 
     @Test func detectsTwilioAPIKey() {
-        // SK + 32 hex chars — use clearly fake value
-        let text = "SK" + String(repeating: "f", count: 16) + String(repeating: "0", count: 16)
+        // SK + 32 hex chars with twilio context
+        let key = "SK" + String(repeating: "f", count: 16) + String(repeating: "0", count: 16)
+        let text = "TWILIO_API_KEY = \(key)"
         let matches = detector.detect(in: text)
         #expect(matches.contains { $0.kind == .twilioAPIKey })
+    }
+
+    @Test func twilioWithoutContextDoesNotMatch() {
+        // Bare SK + 32 hex without twilio keyword — should not match
+        let text = "SK" + String(repeating: "f", count: 16) + String(repeating: "0", count: 16)
+        let matches = detector.detect(in: text)
+        #expect(matches.allSatisfy { $0.kind != .twilioAPIKey })
     }
 
     // MARK: - SendGrid
@@ -158,9 +166,16 @@ struct SecretDetectorTests {
     // MARK: - NuGet API Key
 
     @Test func detectsNuGetAPIKey() {
-        let text = "oy2" + String(repeating: "A", count: 43)
+        let key = "oy2" + String(repeating: "A", count: 43)
+        let text = "NUGET_API_KEY = \(key)"
         let matches = detector.detect(in: text)
         #expect(matches.contains { $0.kind == .nugetAPIKey })
+    }
+
+    @Test func nugetWithoutContextDoesNotMatch() {
+        let text = "oy2" + String(repeating: "A", count: 43)
+        let matches = detector.detect(in: text)
+        #expect(matches.allSatisfy { $0.kind != .nugetAPIKey })
     }
 
     // MARK: - Private Key
@@ -315,6 +330,15 @@ struct SecretDetectorTests {
         #expect(!detector.containsSecrets(in: ""))
     }
 
+    @Test func containsSecretsRespectsComments() {
+        // containsSecrets must skip commented-out secrets, same as detect()
+        let commented = "// password = \"SuperSecret123\""
+        #expect(!detector.containsSecrets(in: commented))
+
+        let blockCommented = "/* password = \"SuperSecret123\" */"
+        #expect(!detector.containsSecrets(in: blockCommented))
+    }
+
     // MARK: - Masking
 
     @Test func maskReplacesSecretWithBullets() {
@@ -341,6 +365,100 @@ struct SecretDetectorTests {
         let kinds = Set(matches.map(\.kind))
         #expect(kinds.contains(.githubToken))
         #expect(kinds.contains(.awsAccessKey))
+    }
+
+    // MARK: - Masking Multiple Secrets (Crash Regression)
+
+    @Test func maskMultipleSecretsOnSameLine() {
+        // Two secrets on the same line — must not crash from index invalidation
+        let text = "ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghij AKIAIOSFODNN7EXAMPLE"
+        let masked = detector.mask(in: text)
+        #expect(!masked.contains("ghp_"))
+        #expect(!masked.contains("AKIA"))
+        #expect(masked.contains("\u{2022}"))
+    }
+
+    @Test func maskThreeSecretsPreservesStructure() {
+        let text = """
+        ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghij
+        AKIAIOSFODNN7EXAMPLE
+        password = "SuperSecret123"
+        """
+        let masked = detector.mask(in: text)
+        #expect(!masked.contains("ghp_"))
+        #expect(!masked.contains("AKIA"))
+        #expect(!masked.contains("SuperSecret123"))
+        // Newlines must be preserved
+        #expect(masked.contains("\n"))
+    }
+
+    @Test func maskMultipleSecretsOnSameLinePreservesSurroundingText() {
+        let text = "key1=ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghij key2=AKIAIOSFODNN7EXAMPLE end"
+        let masked = detector.mask(in: text)
+        #expect(masked.hasPrefix("key1="))
+        #expect(masked.hasSuffix("end"))
+    }
+
+    // MARK: - Block Comment Skipping
+
+    @Test func skipsSecretsInBlockComments() {
+        let text = """
+        /* password = "SuperSecret123" */
+        let x = 42
+        """
+        let matches = detector.detect(in: text)
+        #expect(matches.allSatisfy { $0.kind != .genericPassword })
+    }
+
+    @Test func skipsSecretsInMultilineBlockComments() {
+        let text = """
+        /*
+         * AKIAIOSFODNN7EXAMPLE
+         * ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghij
+         */
+        """
+        let matches = detector.detect(in: text)
+        #expect(matches.isEmpty)
+    }
+
+    @Test func doesNotSkipSecretsAfterClosedBlockComment() {
+        let text = """
+        /* comment */ password = "SuperSecret123"
+        """
+        let matches = detector.detect(in: text)
+        #expect(matches.contains { $0.kind == .genericPassword })
+    }
+
+    // MARK: - .env Format (No Quotes)
+
+    @Test func detectsPasswordInEnvFormat() {
+        let text = "PASSWORD=SuperSecretPassword123"
+        let matches = detector.detect(in: text)
+        #expect(matches.contains { $0.kind == .genericPassword })
+    }
+
+    @Test func detectsTokenInEnvFormat() {
+        let text = "ACCESS_TOKEN=eyJhbGciOiJIUzI1NiJ9"
+        let matches = detector.detect(in: text)
+        #expect(matches.contains { $0.kind == .genericToken })
+    }
+
+    @Test func detectsSecretInEnvFormat() {
+        let text = "CLIENT_SECRET=abcdef1234567890"
+        let matches = detector.detect(in: text)
+        #expect(matches.contains { $0.kind == .genericSecret })
+    }
+
+    @Test func detectsApiKeyInEnvFormat() {
+        let text = "API_KEY=abcdef1234567890"
+        let matches = detector.detect(in: text)
+        #expect(matches.contains { $0.kind == .genericAPIKey })
+    }
+
+    @Test func envFormatIgnoresCommentedLines() {
+        let text = "# API_KEY=abcdef1234567890"
+        let matches = detector.detect(in: text)
+        #expect(matches.isEmpty)
     }
 
     // MARK: - SecretMatch Equatable

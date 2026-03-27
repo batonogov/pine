@@ -46,27 +46,27 @@ enum SecretKind: String, CaseIterable, Sendable {
 
     var label: String {
         switch self {
-        case .awsAccessKey: return "AWS Access Key"
-        case .awsSecretKey: return "AWS Secret Key"
-        case .githubToken: return "GitHub Token"
-        case .githubOAuthToken: return "GitHub OAuth Token"
-        case .githubAppToken: return "GitHub App Token"
-        case .githubPersonalAccessTokenFineGrained: return "GitHub Fine-Grained PAT"
-        case .genericPrivateKey: return "Private Key"
-        case .genericPassword: return "Password"
-        case .genericToken: return "Token"
-        case .genericSecret: return "Secret"
-        case .genericAPIKey: return "API Key"
-        case .slackToken: return "Slack Token"
-        case .slackWebhook: return "Slack Webhook"
-        case .stripeKey: return "Stripe Key"
-        case .googleAPIKey: return "Google API Key"
-        case .herokuAPIKey: return "Heroku API Key"
-        case .twilioAPIKey: return "Twilio API Key"
-        case .sendgridAPIKey: return "SendGrid API Key"
-        case .npmToken: return "npm Token"
-        case .pypiToken: return "PyPI Token"
-        case .nugetAPIKey: return "NuGet API Key"
+        case .awsAccessKey: return String(localized: "secret.kind.awsAccessKey")
+        case .awsSecretKey: return String(localized: "secret.kind.awsSecretKey")
+        case .githubToken: return String(localized: "secret.kind.githubToken")
+        case .githubOAuthToken: return String(localized: "secret.kind.githubOAuthToken")
+        case .githubAppToken: return String(localized: "secret.kind.githubAppToken")
+        case .githubPersonalAccessTokenFineGrained: return String(localized: "secret.kind.githubFineGrainedPAT")
+        case .genericPrivateKey: return String(localized: "secret.kind.privateKey")
+        case .genericPassword: return String(localized: "secret.kind.password")
+        case .genericToken: return String(localized: "secret.kind.token")
+        case .genericSecret: return String(localized: "secret.kind.secret")
+        case .genericAPIKey: return String(localized: "secret.kind.apiKey")
+        case .slackToken: return String(localized: "secret.kind.slackToken")
+        case .slackWebhook: return String(localized: "secret.kind.slackWebhook")
+        case .stripeKey: return String(localized: "secret.kind.stripeKey")
+        case .googleAPIKey: return String(localized: "secret.kind.googleAPIKey")
+        case .herokuAPIKey: return String(localized: "secret.kind.herokuAPIKey")
+        case .twilioAPIKey: return String(localized: "secret.kind.twilioAPIKey")
+        case .sendgridAPIKey: return String(localized: "secret.kind.sendgridAPIKey")
+        case .npmToken: return String(localized: "secret.kind.npmToken")
+        case .pypiToken: return String(localized: "secret.kind.pypiToken")
+        case .nugetAPIKey: return String(localized: "secret.kind.nugetAPIKey")
         }
     }
 }
@@ -149,8 +149,8 @@ final class SecretDetector: Sendable {
                 guard matchNSRange.location != NSNotFound,
                       let range = Range(matchNSRange, in: text) else { continue }
 
-                // Skip matches inside comments (simple heuristic: line starts with // or #)
-                if isInsideLineComment(text: text, range: range) { continue }
+                // Skip matches inside line comments (//, #) and block comments (/* */)
+                if isInsideComment(text: text, range: range) { continue }
 
                 matches.append(SecretMatch(kind: rule.kind, range: range))
             }
@@ -162,31 +162,30 @@ final class SecretDetector: Sendable {
     }
 
     /// Checks if the given file content contains any secrets.
+    /// Delegates to `detect()` to ensure comment filtering and all other logic is applied consistently.
     func containsSecrets(in text: String) -> Bool {
-        guard !text.isEmpty else { return false }
-        let nsRange = NSRange(text.startIndex..., in: text)
-
-        for rule in rules {
-            guard !disabledKinds.contains(rule.kind.rawValue) else { continue }
-            if rule.regex.firstMatch(in: text, options: [], range: nsRange) != nil {
-                return true
-            }
-        }
-        return false
+        !detect(in: text).isEmpty
     }
 
     /// Masks all detected secrets in text, replacing the secret value with `mask` characters.
+    /// Builds result by concatenating non-secret and masked segments to avoid index invalidation.
     func mask(in text: String, with maskChar: Character = "\u{2022}") -> String {
         let matches = detect(in: text)
         guard !matches.isEmpty else { return text }
 
-        var result = text
-        // Process in reverse order to preserve indices
-        for match in matches.reversed() {
-            let length = text.distance(from: match.range.lowerBound, to: match.range.upperBound)
-            let masked = String(repeating: maskChar, count: min(length, 12))
-            result.replaceSubrange(match.range, with: masked)
+        // Build result forward: copy non-secret text, insert mask for each match
+        var result = ""
+        var currentIndex = text.startIndex
+        for match in matches {
+            // Append text before this secret
+            result.append(contentsOf: text[currentIndex..<match.range.lowerBound])
+            // Append masked replacement
+            let charCount = text.distance(from: match.range.lowerBound, to: match.range.upperBound)
+            result.append(contentsOf: String(repeating: maskChar, count: min(charCount, 12)))
+            currentIndex = match.range.upperBound
         }
+        // Append remaining text after last match
+        result.append(contentsOf: text[currentIndex...])
         return result
     }
 
@@ -201,14 +200,17 @@ final class SecretDetector: Sendable {
 
     // MARK: - Private
 
-    /// Simple heuristic: check if the match is on a line that starts with // or #
+    /// Checks if the match is inside a line comment (//, #) or a block comment (/* */).
+    private func isInsideComment(text: String, range: Range<String.Index>) -> Bool {
+        isInsideLineComment(text: text, range: range)
+            || isInsideBlockComment(text: text, range: range)
+    }
+
+    /// Checks if the match is on a line that starts with // or #.
     private func isInsideLineComment(text: String, range: Range<String.Index>) -> Bool {
-        // Find the start of the line containing this match
         let beforeMatch = text[text.startIndex..<range.lowerBound]
         guard let lastNewline = beforeMatch.lastIndex(of: "\n") else {
-            // First line
-            let lineStart = text.startIndex
-            let linePrefix = text[lineStart..<range.lowerBound]
+            let linePrefix = text[text.startIndex..<range.lowerBound]
                 .trimmingCharacters(in: .whitespaces)
             return linePrefix.hasPrefix("//") || linePrefix.hasPrefix("#")
         }
@@ -216,6 +218,19 @@ final class SecretDetector: Sendable {
         let linePrefix = text[lineStart..<range.lowerBound]
             .trimmingCharacters(in: .whitespaces)
         return linePrefix.hasPrefix("//") || linePrefix.hasPrefix("#")
+    }
+
+    /// Checks if the match falls within a /* ... */ block comment.
+    private func isInsideBlockComment(text: String, range: Range<String.Index>) -> Bool {
+        let beforeMatch = text[text.startIndex..<range.lowerBound]
+        // Find the last /* before the match
+        guard let openRange = beforeMatch.range(of: "/*", options: .backwards) else {
+            return false
+        }
+        // Check if there's a closing */ between that /* and the match start
+        let betweenRange = openRange.upperBound..<range.lowerBound
+        guard betweenRange.lowerBound < betweenRange.upperBound else { return true }
+        return text[betweenRange].range(of: "*/") == nil
     }
 
     /// Removes overlapping matches, keeping the first (higher-priority) one.
@@ -274,8 +289,10 @@ final class SecretDetector: Sendable {
             #"(?i)(?:heroku_api_key|heroku_key)\s*[=:]\s*["']?([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})["']?"#,
             group: 1)
 
-        // Twilio API Key
-        add(.twilioAPIKey, #"(?<![A-Za-z0-9])SK[a-f0-9]{32}(?![A-Za-z0-9])"#)
+        // Twilio API Key: require mixed hex (not all same char) to reduce false positives
+        add(.twilioAPIKey,
+            #"(?i)(?:twilio|TWILIO)\S*\s*[=:]\s*["']?(SK[a-f0-9]{32})["']?"#,
+            group: 1)
 
         // SendGrid API Key
         add(.sendgridAPIKey, #"(?<![A-Za-z0-9_.])SG\.[A-Za-z0-9\-_]{22,}\.[A-Za-z0-9\-_]{22,}(?![A-Za-z0-9_])"#)
@@ -286,8 +303,10 @@ final class SecretDetector: Sendable {
         // PyPI token
         add(.pypiToken, #"(?<![A-Za-z0-9_])pypi-[A-Za-z0-9\-]{50,}(?![A-Za-z0-9_])"#)
 
-        // NuGet API Key
-        add(.nugetAPIKey, #"(?<![A-Za-z0-9])oy2[A-Za-z0-9]{43}(?![A-Za-z0-9])"#)
+        // NuGet API Key: require assignment context to reduce false positives
+        add(.nugetAPIKey,
+            #"(?i)(?:nuget|NUGET)\S*\s*[=:]\s*["']?(oy2[A-Za-z0-9]{43})["']?"#,
+            group: 1)
 
         // Private key blocks (PEM format)
         add(.genericPrivateKey, #"-----BEGIN (?:RSA |EC |DSA |OPENSSH )?PRIVATE KEY-----"#)
@@ -308,6 +327,23 @@ final class SecretDetector: Sendable {
 
         add(.genericAPIKey,
             #"(?i)(?:api_key|apikey)\s*[=:]\s*["']([^"'\s]{8,})["']"#,
+            group: 1)
+
+        // .env file format: KEY=value (no quotes)
+        add(.genericPassword,
+            #"(?i)(?:password|passwd|pwd)\s*=\s*([^\s"'#]{8,})"#,
+            group: 1)
+
+        add(.genericToken,
+            #"(?i)(?:(?:access|auth|bearer)_token|token)\s*=\s*([^\s"'#]{8,})"#,
+            group: 1)
+
+        add(.genericSecret,
+            #"(?i)(?:client_secret|secret_key|app_secret)\s*=\s*([^\s"'#]{8,})"#,
+            group: 1)
+
+        add(.genericAPIKey,
+            #"(?i)(?:api_key|apikey)\s*=\s*([^\s"'#]{8,})"#,
             group: 1)
 
         return rules
