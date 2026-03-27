@@ -15,6 +15,7 @@ struct EditorAreaView: View {
     @Environment(WorkspaceManager.self) private var workspace
     @Environment(ProjectManager.self) private var projectManager
     @Environment(ProjectRegistry.self) private var registry
+    @Environment(FeatureFlags.self) private var featureFlags
     @Binding var lineDiffs: [GitLineDiff]
     @Binding var isDragTargeted: Bool
     @Binding var goToLineOffset: GoToRequest?
@@ -117,9 +118,9 @@ struct EditorAreaView: View {
                 get: { tab.foldState },
                 set: { tabManager.updateFoldState($0) }
             ),
-            isMinimapVisible: isMinimapVisible,
+            isMinimapVisible: isMinimapVisible && featureFlags.isEnabled(.minimap),
             isWordWrapEnabled: isWordWrapEnabled,
-            syntaxHighlightingDisabled: tab.syntaxHighlightingDisabled,
+            syntaxHighlightingDisabled: tab.syntaxHighlightingDisabled || !featureFlags.isEnabled(.syntaxHighlighting),
             initialCursorPosition: goToLineOffset?.offset ?? tab.cursorPosition,
             initialScrollOffset: goToLineOffset != nil ? 0 : tab.scrollOffset,
             onStateChange: { cursor, scroll in

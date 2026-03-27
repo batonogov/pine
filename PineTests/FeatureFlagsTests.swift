@@ -8,6 +8,7 @@ import Foundation
 @testable import Pine
 
 @Suite("FeatureFlags Tests")
+@MainActor
 struct FeatureFlagsTests {
 
     private let suiteName = "PineTests.FeatureFlags.\(UUID().uuidString)"
@@ -222,5 +223,99 @@ struct FeatureFlagsTests {
 
         let flags = FeatureFlags(defaults: defaults)
         #expect(flags.isEnabled(.parallelSearch) == false)
+    }
+
+    // MARK: - Auto-save integration
+
+    @Test func autoSaveRespectsFeatureFlag() throws {
+        let defaults = try makeDefaults()
+        defer { cleanupDefaults(defaults) }
+
+        let flags = FeatureFlags(defaults: defaults)
+        let manager = TabManager()
+        manager.featureFlags = flags
+
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("FeatureFlagsTests.\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        let url = dir.appendingPathComponent("test.txt")
+        try "original".write(to: url, atomically: true, encoding: .utf8)
+
+        // Enable auto-save in UserDefaults
+        UserDefaults.standard.set(true, forKey: TabManager.autoSaveKey)
+        defer { UserDefaults.standard.removeObject(forKey: TabManager.autoSaveKey) }
+
+        manager.openTab(url: url)
+        manager.setAutoSaveDelay(0.05)
+
+        // Disable auto-save feature flag
+        flags.setEnabled(.autoSave, false)
+
+        // Update content — should NOT schedule auto-save
+        manager.updateContent("modified")
+        #expect(manager.hasScheduledAutoSave == false,
+                "Auto-save should not be scheduled when feature flag is disabled")
+    }
+
+    @Test func autoSaveWorksWhenFeatureFlagEnabled() throws {
+        let defaults = try makeDefaults()
+        defer { cleanupDefaults(defaults) }
+
+        let flags = FeatureFlags(defaults: defaults)
+        let manager = TabManager()
+        manager.featureFlags = flags
+
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("FeatureFlagsTests.\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        let url = dir.appendingPathComponent("test.txt")
+        try "original".write(to: url, atomically: true, encoding: .utf8)
+
+        // Enable auto-save in UserDefaults
+        UserDefaults.standard.set(true, forKey: TabManager.autoSaveKey)
+        defer { UserDefaults.standard.removeObject(forKey: TabManager.autoSaveKey) }
+
+        manager.openTab(url: url)
+        manager.setAutoSaveDelay(0.05)
+
+        // Enable auto-save feature flag (default)
+        flags.setEnabled(.autoSave, true)
+
+        // Update content — SHOULD schedule auto-save
+        manager.updateContent("modified")
+        #expect(manager.hasScheduledAutoSave == true,
+                "Auto-save should be scheduled when feature flag is enabled")
+        manager.cancelAutoSave()
+    }
+
+    // MARK: - Feature flag integration properties
+
+    @Test func minimapFeatureFlagDefaultEnabled() throws {
+        let defaults = try makeDefaults()
+        defer { cleanupDefaults(defaults) }
+
+        let flags = FeatureFlags(defaults: defaults)
+        #expect(flags.isEnabled(.minimap) == true)
+    }
+
+    @Test func syntaxHighlightingFeatureFlagDefaultEnabled() throws {
+        let defaults = try makeDefaults()
+        defer { cleanupDefaults(defaults) }
+
+        let flags = FeatureFlags(defaults: defaults)
+        #expect(flags.isEnabled(.syntaxHighlighting) == true)
+    }
+
+    @Test func disablingMinimapDoesNotAffectSyntaxHighlighting() throws {
+        let defaults = try makeDefaults()
+        defer { cleanupDefaults(defaults) }
+
+        let flags = FeatureFlags(defaults: defaults)
+        flags.setEnabled(.minimap, false)
+        #expect(flags.isEnabled(.syntaxHighlighting) == true)
     }
 }

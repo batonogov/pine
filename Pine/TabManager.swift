@@ -26,6 +26,9 @@ final class TabManager {
     /// Number of bytes to load from the beginning of a huge file.
     static let hugeFilePartialLoadSize = FileSizeConstants.oneMB
 
+    /// Feature flags instance for gating features like auto-save.
+    var featureFlags: FeatureFlags = FeatureFlags.shared
+
     var tabs: [EditorTab] = []
     var activeTabID: UUID? {
         didSet {
@@ -241,7 +244,7 @@ final class TabManager {
         tabs[index].cachedHighlightResult = nil  // Invalidate stale highlight cache
         tabs[index].recomputeContentCaches()
 
-        if isAutoSaveEnabled {
+        if isAutoSaveEnabled && featureFlags.isEnabled(.autoSave) {
             scheduleAutoSave()
         }
 

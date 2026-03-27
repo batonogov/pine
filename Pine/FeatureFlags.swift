@@ -49,7 +49,7 @@ enum Feature: String, CaseIterable, Identifiable {
 ///
 /// Also usable from the command line:
 /// `defaults write com.batonogov.pine featureParallelSearch -bool NO`
-@Observable
+@MainActor @Observable
 final class FeatureFlags {
     static let shared = FeatureFlags()
 

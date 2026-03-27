@@ -416,6 +416,7 @@ struct PineApp: App {
 
         Settings {
             FeatureFlagsView()
+                .environment(FeatureFlags.shared)
         }
     }
 }
@@ -500,6 +501,7 @@ private struct ProjectWindowView: View {
                     .environment(pm.terminal)
                     .environment(pm.tabManager)
                     .environment(registry)
+                    .environment(FeatureFlags.shared)
                     .focusedSceneValue(\.projectManager, pm)
                     .background {
                         WindowCloseInterceptor(

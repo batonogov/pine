@@ -8,7 +8,7 @@
 import SwiftUI
 
 struct FeatureFlagsView: View {
-    private let featureFlags = FeatureFlags.shared
+    @Environment(FeatureFlags.self) private var featureFlags
 
     var body: some View {
         Form {
