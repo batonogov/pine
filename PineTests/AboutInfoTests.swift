@@ -17,7 +17,8 @@ struct AboutInfoTests {
     }
 
     @Test func versionString_matchesBundleShortVersion() {
-        let expected = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String
+        let bundle = Bundle(for: AppDelegate.self)
+        let expected = bundle.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String
         #expect(AboutInfo.versionString == (expected ?? ""))
     }
 
@@ -29,7 +30,8 @@ struct AboutInfoTests {
     }
 
     @Test func buildString_matchesBundleVersion() {
-        let expected = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String
+        let bundle = Bundle(for: AppDelegate.self)
+        let expected = bundle.object(forInfoDictionaryKey: "CFBundleVersion") as? String
         #expect(AboutInfo.buildString == (expected ?? ""))
     }
 
@@ -41,8 +43,9 @@ struct AboutInfoTests {
     }
 
     @Test func appName_matchesBundleName() {
-        let expected = Bundle.main.object(forInfoDictionaryKey: "CFBundleName") as? String
-            ?? Bundle.main.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String
+        let bundle = Bundle(for: AppDelegate.self)
+        let expected = bundle.object(forInfoDictionaryKey: "CFBundleName") as? String
+            ?? bundle.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String
             ?? "Pine"
         #expect(AboutInfo.appName == expected)
     }
@@ -76,8 +79,15 @@ struct AboutInfoTests {
             Issue.record("Credits should be NSAttributedString")
             return
         }
-        let tagline = String(localized: "about.tagline")
-        #expect(!tagline.isEmpty, "Localized tagline key should resolve to a non-empty string")
+        let bundle = Bundle(for: AppDelegate.self)
+        guard let enPath = bundle.path(forResource: "en", ofType: "lproj"),
+              let enBundle = Bundle(path: enPath) else {
+            Issue.record("English localization bundle not found")
+            return
+        }
+        let tagline = NSLocalizedString("about.tagline", bundle: enBundle, comment: "")
+        #expect(!tagline.isEmpty, "Tagline should resolve to a non-empty string")
+        #expect(tagline != "about.tagline", "Tagline should not be the raw key")
         #expect(credits.string.contains(tagline))
     }
 
@@ -92,14 +102,19 @@ struct AboutInfoTests {
 
     @Test func aboutPanelOptions_taglineIsNotRawKey() {
         // Verify the localized string resolved to an actual translation, not the raw key itself.
-        let tagline = String(localized: "about.tagline")
+        let bundle = Bundle(for: AppDelegate.self)
+        guard let enPath = bundle.path(forResource: "en", ofType: "lproj"),
+              let enBundle = Bundle(path: enPath) else {
+            Issue.record("English localization bundle not found")
+            return
+        }
+        let tagline = NSLocalizedString("about.tagline", bundle: enBundle, comment: "")
         #expect(tagline != "about.tagline", "Tagline should resolve to a translated string, not the raw key")
     }
 
-    @Test func aboutPanelOptions_taglineExistsInMultipleLocales() {
-        // Verify that the tagline has distinct translations for different locales,
-        // confirming it's a properly localized resource.
-        let bundle = Bundle.main
+    @Test func aboutPanelOptions_taglineExistsInEnglishLocale() {
+        // Verify that the English localization bundle contains a real tagline translation.
+        let bundle = Bundle(for: AppDelegate.self)
         guard let enPath = bundle.path(forResource: "en", ofType: "lproj"),
               let enBundle = Bundle(path: enPath) else {
             Issue.record("English localization bundle not found")
