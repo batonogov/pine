@@ -77,6 +77,10 @@ xcodebuild -project Pine.xcodeproj -scheme Pine build
 
 SwiftTerm is resolved automatically via Swift Package Manager on first build.
 
+## Updating Screenshots
+
+Run `bash scripts/update-screenshots.sh` to capture fresh screenshots. The script runs UI tests, extracts screenshot attachments from the `.xcresult` bundle, and saves them to `assets/`.
+
 ## Built With
 
 - SwiftUI for app structure and native macOS UI
