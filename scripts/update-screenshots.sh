@@ -16,6 +16,8 @@ DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer \
   -destination 'platform=macOS' \
   -only-testing:PineUITests/ScreenshotTests \
   -resultBundlePath "$RESULT_PATH" \
+  CODE_SIGN_IDENTITY=- \
+  CODE_SIGNING_ALLOWED=NO \
   || true
 
 if [ ! -d "$RESULT_PATH" ]; then
