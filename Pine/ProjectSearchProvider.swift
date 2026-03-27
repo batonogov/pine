@@ -196,16 +196,24 @@ final class ProjectSearchProvider {
             guard matches.count < remainingCapacity else { break }
 
             var searchStart = line.startIndex
+            // Compute trimmed content and leading whitespace offset once per line
+            let trimmedLine = line.trimmingCharacters(in: .whitespaces)
+            let firstNonSpace = line.firstIndex(where: { !$0.isWhitespace }) ?? line.startIndex
+            let leadingWhitespaceCount = line.utf16.distance(from: line.startIndex, to: firstNonSpace)
+            let displayContent = String(trimmedLine.prefix(SearchConstants.lineContentPrefixLimit))
+
             while searchStart < line.endIndex,
                   let range = line.range(of: query, options: compareOptions, range: searchStart..<line.endIndex) {
-                let trimmedLine = line.trimmingCharacters(in: .whitespaces)
                 let utf16Start = line.utf16.distance(from: line.startIndex, to: range.lowerBound)
                 let utf16Length = line.utf16.distance(from: range.lowerBound, to: range.upperBound)
 
+                // Store offset relative to the trimmed display content, not the original line
+                let displayRangeStart = utf16Start - leadingWhitespaceCount
+
                 matches.append(SearchMatch(
                     lineNumber: index + 1,
-                    lineContent: String(trimmedLine.prefix(SearchConstants.lineContentPrefixLimit)),
-                    matchRangeStart: utf16Start,
+                    lineContent: displayContent,
+                    matchRangeStart: displayRangeStart,
                     matchRangeLength: utf16Length
                 ))
 
