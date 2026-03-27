@@ -355,9 +355,10 @@ jobs:
 
       - name: Check all UI test classes are sharded
         run: |
-          # Extract concrete test class names (exclude base class PineUITestCase)
+          # Extract concrete test class names (exclude base class PineUITestCase and on-demand ScreenshotTests)
           ACTUAL=$(grep -rh 'class.*:.*PineUITestCase' PineUITests/ \
             | sed -E 's/.*class ([A-Za-z0-9_]+).*/\1/' \
+            | grep -v ScreenshotTests \
             | sort)
 
           # Extract class names from this workflow's shard matrix
