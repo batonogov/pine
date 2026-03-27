@@ -99,6 +99,9 @@ nonisolated enum AccessibilityID {
     // MARK: - Toast notifications
     static let toastNotification = "toastNotification"
 
+    // MARK: - Git Changes Panel
+    static let gitChangesPanel = "gitChangesPanel"
+
     // MARK: - Status bar
     static let statusBar = "statusBar"
     static let terminalToggleButton = "terminalToggleButton"

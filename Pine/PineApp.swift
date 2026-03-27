@@ -143,6 +143,14 @@ struct PineApp: App {
                 }
                 .keyboardShortcut("z", modifiers: .option)
 
+                Button {
+                    NotificationCenter.default.post(name: .showGitChanges, object: nil)
+                } label: {
+                    Label(Strings.menuGitChanges, systemImage: MenuIcons.gitChanges)
+                }
+                .keyboardShortcut("g", modifiers: [.command, .shift])
+                .disabled(focusedProject?.workspace.rootURL == nil)
+
                 Divider()
 
                 Button {
@@ -1260,4 +1268,6 @@ extension Notification.Name {
     static let revealInSidebar = Notification.Name("revealInSidebar")
     /// userInfo: ["action": InlineDiffAction]
     static let inlineDiffAction = Notification.Name("inlineDiffAction")
+    // Git Changes panel (issue #303)
+    static let showGitChanges = Notification.Name("showGitChanges")
 }

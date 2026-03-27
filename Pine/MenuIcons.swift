@@ -54,6 +54,9 @@ nonisolated enum MenuIcons {
     // MARK: - Validation
     static let toggleValidation = "checkmark.shield"
 
+    // MARK: - Git
+    static let gitChanges = "arrow.triangle.branch"
+
     // MARK: - Context menu
     static let newFile = "doc.badge.plus"
     static let newFolder = "folder.badge.plus"

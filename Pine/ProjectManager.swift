@@ -18,6 +18,7 @@ final class ProjectManager {
     let searchProvider = ProjectSearchProvider()
     let quickOpenProvider = QuickOpenProvider()
     let progress = ProgressTracker()
+    let diffProvider = GitDiffProvider()
     let contextFileWriter = ContextFileWriter()
     let toastManager = ToastManager()
     // nonisolated(unsafe) allows deinit to call stopPeriodicSnapshots().

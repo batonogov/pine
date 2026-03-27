@@ -35,6 +35,7 @@ struct ContentView: View {
     @State var isDragTargeted = false
     @State var isQuickOpenPresented = false
     @State var isSymbolNavigatorPresented = false
+    @State var isGitChangesPresented = false
     @State var showGoToLine = false
     @AppStorage("minimapVisible") var isMinimapVisible = true
     @AppStorage(BlameConstants.storageKey) var isBlameVisible = true
@@ -197,6 +198,21 @@ struct ContentView: View {
             onNavigateToChange: { navigateToChange(direction: $0) },
             onInlineDiffAction: { handleInlineDiffAction($0) }
         ))
+        .onReceive(NotificationCenter.default.publisher(for: .showGitChanges)) { _ in
+            guard workspace.gitProvider.isGitRepository else { return }
+            isGitChangesPresented = true
+            Task {
+                guard let url = workspace.rootURL else { return }
+                await projectManager.diffProvider.refresh(at: url)
+            }
+        }
+        .sheet(isPresented: $isGitChangesPresented) {
+            GitChangesSheet(
+                diffProvider: projectManager.diffProvider,
+                isPresented: $isGitChangesPresented
+            )
+            .environment(projectManager)
+        }
         .onReceive(NotificationCenter.default.publisher(for: .toggleWordWrap)) { _ in
             isWordWrapEnabled.toggle()
         }

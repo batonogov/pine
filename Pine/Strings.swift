@@ -313,6 +313,20 @@ enum Strings {
     static let menuUnfoldAll: LocalizedStringKey = "menu.unfoldAll"
     static let sidebarFiles: LocalizedStringKey = "sidebar.files"
     static let sidebarSearch: LocalizedStringKey = "sidebar.search"
+    static let sidebarGitChanges: LocalizedStringKey = "sidebar.gitChanges"
+
+    // MARK: - Git Changes Panel
+
+    static let menuGitChanges: LocalizedStringKey = "menu.gitChanges"
+    static let gitChangesStagedTitle: LocalizedStringKey = "gitChanges.staged"
+    static let gitChangesUnstagedTitle: LocalizedStringKey = "gitChanges.unstaged"
+    static let gitChangesNoChanges: LocalizedStringKey = "gitChanges.noChanges"
+    static let gitChangesNoChangesDescription: LocalizedStringKey = "gitChanges.noChanges.description"
+    static let gitChangesStage: LocalizedStringKey = "gitChanges.stage"
+    static let gitChangesUnstage: LocalizedStringKey = "gitChanges.unstage"
+    static let gitChangesStageAll: LocalizedStringKey = "gitChanges.stageAll"
+    static let gitChangesUnstageAll: LocalizedStringKey = "gitChanges.unstageAll"
+    static let gitChangesDiscard: LocalizedStringKey = "gitChanges.discard"
 
     // MARK: - Terminal Search
 

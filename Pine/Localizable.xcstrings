@@ -3783,6 +3783,204 @@
         }
       }
     },
+    "menu.gitChanges" : {
+      "comment" : "Menu command: show git changes panel (⌘⇧G).",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Git Changes"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Изменения Git"
+          }
+        }
+      }
+    },
+    "gitChanges.staged" : {
+      "comment" : "Section header for staged changes in git changes panel.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Staged Changes"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Подготовленные изменения"
+          }
+        }
+      }
+    },
+    "gitChanges.unstaged" : {
+      "comment" : "Section header for unstaged changes in git changes panel.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Changes"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Изменения"
+          }
+        }
+      }
+    },
+    "gitChanges.noChanges" : {
+      "comment" : "Empty state title when no git changes.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No Changes"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Нет изменений"
+          }
+        }
+      }
+    },
+    "gitChanges.noChanges.description" : {
+      "comment" : "Empty state description when no git changes.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Your working tree is clean."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Рабочее дерево чистое."
+          }
+        }
+      }
+    },
+    "gitChanges.stage" : {
+      "comment" : "Tooltip: stage a file.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stage"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Подготовить"
+          }
+        }
+      }
+    },
+    "gitChanges.unstage" : {
+      "comment" : "Tooltip: unstage a file.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Unstage"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Убрать из подготовленных"
+          }
+        }
+      }
+    },
+    "gitChanges.stageAll" : {
+      "comment" : "Tooltip: stage all files.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stage All"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Подготовить все"
+          }
+        }
+      }
+    },
+    "gitChanges.unstageAll" : {
+      "comment" : "Tooltip: unstage all files.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Unstage All"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Убрать все из подготовленных"
+          }
+        }
+      }
+    },
+    "gitChanges.discard" : {
+      "comment" : "Tooltip: discard changes for a file.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Discard Changes"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Отменить изменения"
+          }
+        }
+      }
+    },
+    "sidebar.gitChanges" : {
+      "comment" : "Sidebar tab title for git changes panel.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Git Changes"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Изменения Git"
+          }
+        }
+      }
+    },
     "menu.findInTerminal" : {
       "comment" : "Menu item for Find in Terminal — opens the terminal search bar.",
       "extractionState" : "manual",
