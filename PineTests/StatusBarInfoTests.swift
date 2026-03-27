@@ -120,6 +120,92 @@ struct StatusBarInfoTests {
         #expect(LineEnding.crlf.displayName == "CRLF")
     }
 
+    // MARK: - Line ending conversion
+
+    @Test("Convert LF to CRLF")
+    func convertLFToCRLF() {
+        let result = LineEnding.crlf.convert("hello\nworld\n")
+        #expect(result == "hello\r\nworld\r\n")
+    }
+
+    @Test("Convert CRLF to LF")
+    func convertCRLFToLF() {
+        let result = LineEnding.lf.convert("hello\r\nworld\r\n")
+        #expect(result == "hello\nworld\n")
+    }
+
+    @Test("Convert already matching line endings is no-op")
+    func convertNoOp() {
+        let lfContent = "hello\nworld\n"
+        #expect(LineEnding.lf.convert(lfContent) == lfContent)
+
+        let crlfContent = "hello\r\nworld\r\n"
+        #expect(LineEnding.crlf.convert(crlfContent) == crlfContent)
+    }
+
+    @Test("Convert mixed line endings normalizes to target")
+    func convertMixed() {
+        let mixed = "line1\nline2\r\nline3\n"
+        let toLF = LineEnding.lf.convert(mixed)
+        #expect(toLF == "line1\nline2\nline3\n")
+
+        let toCRLF = LineEnding.crlf.convert(mixed)
+        #expect(toCRLF == "line1\r\nline2\r\nline3\r\n")
+    }
+
+    @Test("Convert empty string")
+    func convertEmpty() {
+        #expect(LineEnding.lf.convert("") == "")
+        #expect(LineEnding.crlf.convert("") == "")
+    }
+
+    @Test("Convert string with no line endings")
+    func convertNoLineEndings() {
+        #expect(LineEnding.lf.convert("hello") == "hello")
+        #expect(LineEnding.crlf.convert("hello") == "hello")
+    }
+
+    @Test("The opposite property returns the other line ending")
+    func lineEndingOpposite() {
+        #expect(LineEnding.lf.opposite == .crlf)
+        #expect(LineEnding.crlf.opposite == .lf)
+    }
+
+    // MARK: - TabManager line ending conversion
+
+    @Test("TabManager converts line endings and marks dirty")
+    func tabManagerConvertLineEndings() {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let url = dir.appendingPathComponent("test.swift")
+        try? "hello\nworld\n".write(to: url, atomically: true, encoding: .utf8)
+
+        let manager = TabManager()
+        manager.openTab(url: url)
+        #expect(manager.activeTab?.cachedLineEnding == .lf)
+
+        manager.convertActiveTabLineEndings(to: .crlf)
+        #expect(manager.activeTab?.content == "hello\r\nworld\r\n")
+        #expect(manager.activeTab?.cachedLineEnding == .crlf)
+        #expect(manager.activeTab?.isDirty == true)
+    }
+
+    @Test("TabManager convert line endings same format is no-op")
+    func tabManagerConvertSameLineEndings() {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let url = dir.appendingPathComponent("test.swift")
+        try? "hello\nworld\n".write(to: url, atomically: true, encoding: .utf8)
+
+        let manager = TabManager()
+        manager.openTab(url: url)
+        let originalContent = manager.activeTab?.content
+
+        manager.convertActiveTabLineEndings(to: .lf)
+        #expect(manager.activeTab?.content == originalContent)
+        #expect(manager.activeTab?.isDirty == false)
+    }
+
     // MARK: - Indentation detection
 
     @Test("Detect spaces indentation")
