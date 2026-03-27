@@ -4,68 +4,48 @@
 [![Release](https://img.shields.io/github/v/release/batonogov/pine)](https://github.com/batonogov/pine/releases/latest)
 [![License: MIT](https://img.shields.io/github/license/batonogov/pine)](https://github.com/batonogov/pine/blob/main/LICENSE)
 [![macOS](https://img.shields.io/badge/macOS-26%2B-blue)](https://github.com/batonogov/pine)
-[![Homebrew Cask](https://img.shields.io/badge/homebrew-pine--editor-orange)](https://github.com/batonogov/homebrew-tap)
 
-> A code editor that belongs on your Mac.
+> A minimal native code editor for macOS.
 
-![Pine Editor](assets/screenshot-editor.png)
+<!-- TODO: hero screenshot — full editor window with Liquid Glass, dark mode, real project open -->
+<!-- Screenshots will be added by Fedor -->
 
-Pine is a code editor for macOS purists. Native SwiftUI + AppKit, Liquid Glass on macOS 26, zero Electron. One window, one project — just a real Mac app.
-
-## Why Pine
-
-Most editors keep adding layers until opening a project feels like launching a platform. Pine goes the other direction:
-
-- **Fast.** Native binary, no browser engine, no startup lag.
-- **Minimal.** One dependency ([SwiftTerm](https://github.com/migueldeicaza/SwiftTerm)), no plugins, no configuration sprawl.
-- **Native.** SwiftUI + AppKit, system text handling, Liquid Glass UI on macOS 26.
-
-If VS Code feels heavy and Xcode feels like overkill for everyday editing, Pine is the middle ground.
+Pine is a code editor for developers who want a fast, native Mac app without the overhead of Electron. Built with SwiftUI and AppKit, designed for macOS 26 Liquid Glass. Opens instantly, stays out of your way.
 
 ## Features
 
-- **Editor** — Line numbers, current-line highlight, smart indent, find bar, undo, bracket matching, and grammar-based syntax highlighting
-- **Minimap** — Code overview panel with proportional scrolling and click-to-navigate
-- **Syntax highlighting** — Swift, TypeScript, JavaScript, Python, Go, Rust, C, C++, SQL, Shell, HTML, CSS, JSON, YAML, Markdown, Dockerfile
-- **Terminal** — Multiple tabs powered by [SwiftTerm](https://github.com/migueldeicaza/SwiftTerm) (full VT100/xterm with colors, oh-my-zsh, TUI apps)
-- **Git** — File status in the sidebar, diff markers in the gutter, branch switching via title bar click or search sheet
-- **Markdown preview** — Source, preview, and side-by-side split modes
-- **Quick Look** — Preview images and non-text files without leaving the editor
-- **File management** — New file/folder, rename, duplicate, delete, reveal in Finder from the sidebar context menu
-- **Large file warning** — Prompts before opening files over 1 MB with the option to skip syntax highlighting
-- **Auto-updates** — Built-in update mechanism via [Sparkle](https://sparkle-project.org)
-- **Session restore** — Reopens your tabs and project state between launches
-- **Localized** — English, German, Spanish, French, Japanese, Korean, Portuguese (BR), Russian, Simplified Chinese
+- **Native macOS** -- SwiftUI + AppKit, Liquid Glass UI, system text handling. No browser engine, no runtime
+- **Syntax highlighting** -- 37 languages including Swift, TypeScript, Python, Go, Rust, Java, Kotlin, Ruby, C/C++, and more
+- **Built-in terminal** -- Full VT100/xterm emulator via [SwiftTerm](https://github.com/migueldeicaza/SwiftTerm). Multiple tabs, colors, TUI apps, oh-my-zsh
+- **Git integration** -- File status in sidebar, diff markers in gutter, blame view, branch switching from title bar or search sheet
+- **Symbol navigation** -- Jump to functions and classes with Cmd+Shift+J
+- **Code folding** -- Fold/unfold blocks from the gutter or via menu
+- **Minimap** -- Scaled code overview with syntax colors and diff markers. Click to navigate
+- **Find & replace** -- In-file and project-wide search with .gitignore support
+- **Quick Open** -- Fuzzy file search with Cmd+P
+- **Markdown preview** -- Source, rendered, or side-by-side
+- **Auto-save & session restore** -- Picks up where you left off
+- **Auto-updates** -- Built-in via [Sparkle](https://sparkle-project.org)
+- **Localized** -- English, German, Spanish, French, Japanese, Korean, Portuguese (BR), Russian, Simplified Chinese
 
-## Keyboard Shortcuts
-
-| Shortcut | Action |
-| --- | --- |
-| `Cmd+Shift+O` | Open folder |
-| `Cmd+S` | Save |
-| `Cmd+Option+S` | Save All |
-| `Cmd+Shift+S` | Save As |
-| `Cmd+Shift+D` | Duplicate tab |
-| `Cmd+W` | Close tab |
-| ``Cmd+` `` | Toggle terminal |
-| `Cmd+T` | New terminal tab |
-| `Cmd+Shift+B` | Switch branch |
-| `Cmd+Shift+M` | Toggle minimap |
-| `Cmd+Shift+P` | Toggle Markdown preview |
-| `Cmd+/` | Toggle line comment |
-| `Cmd++` / `Cmd+-` | Zoom in / out |
-| `Cmd+0` | Reset font size |
+<!-- TODO: 3-4 screenshots showing key features -->
+<!-- - Editor with syntax highlighting + minimap -->
+<!-- - Git blame + diff markers + branch switcher -->
+<!-- - Terminal split view -->
+<!-- - Welcome screen -->
 
 ## Install
+
+**Homebrew** (recommended):
 
 ```bash
 brew tap batonogov/tap
 brew install --cask pine-editor
 ```
 
-Or download the latest `.dmg` from [Releases](https://github.com/batonogov/pine/releases).
+**Direct download:** grab the latest `.dmg` from [Releases](https://github.com/batonogov/pine/releases/latest).
 
-## Build From Source
+## Build from Source
 
 Requires macOS 26+ and Xcode 26+.
 
@@ -75,19 +55,40 @@ cd pine
 xcodebuild -project Pine.xcodeproj -scheme Pine build
 ```
 
-SwiftTerm is resolved automatically via Swift Package Manager on first build.
+Dependencies resolve automatically via Swift Package Manager on first build.
 
-## Updating Screenshots
+## Keyboard Shortcuts
 
-Run `bash scripts/update-screenshots.sh` to capture fresh screenshots. The script runs UI tests, extracts screenshot attachments from the `.xcresult` bundle, and saves them to `assets/`.
+| Shortcut | Action |
+| --- | --- |
+| `Cmd+P` | Quick Open |
+| `Cmd+Shift+O` | Open folder |
+| `Cmd+S` | Save |
+| `Cmd+Option+S` | Save All |
+| `Cmd+Shift+S` | Save As |
+| `Cmd+W` | Close tab |
+| `Cmd+F` | Find |
+| `Cmd+Option+F` | Find & Replace |
+| `Cmd+G` / `Cmd+Shift+G` | Find Next / Previous |
+| `Cmd+L` | Go to Line |
+| `Cmd+Shift+J` | Go to Symbol |
+| `Cmd+/` | Toggle comment |
+| `Cmd+Shift+B` | Switch branch |
+| `Cmd+Shift+M` | Toggle minimap |
+| `` Cmd+` `` | Toggle terminal |
+| `Cmd+T` | New terminal tab |
+| `Cmd++` / `Cmd+-` | Zoom in / out |
 
-## Built With
+## Architecture
 
-- SwiftUI for app structure and native macOS UI
-- AppKit text system for the editor core
-- JSON grammars for syntax highlighting
-- [SwiftTerm](https://github.com/migueldeicaza/SwiftTerm) for the terminal emulator
+MVVM with SwiftUI views backed by AppKit via `NSViewRepresentable`. The editor core uses the native NSTextStorage/NSLayoutManager/NSTextContainer stack. Syntax highlighting runs asynchronously on a background queue with generation tokens to prevent stale results. Git operations run in parallel via GCD. Project-wide search uses Swift concurrency with sliding-window parallelism.
+
+See [CLAUDE.md](CLAUDE.md) for the full technical reference.
+
+## Contributing
+
+Contributions are welcome. Please open an issue first to discuss what you'd like to change. See the [Issues](https://github.com/batonogov/pine/issues) page.
 
 ## License
 
-MIT
+[MIT](LICENSE)
