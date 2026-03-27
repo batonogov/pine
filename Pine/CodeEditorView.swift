@@ -590,20 +590,22 @@ struct CodeEditorView: NSViewRepresentable {
             textView.setSelectedRange(NSRange(location: safePosition, length: 0))
         }
 
-        // Scroll restoration needs layout to be complete, so defer it.
+        // Force layout so scroll restoration can happen synchronously,
+        // eliminating the visual jump from position 0 to the saved offset.
         let savedOffset = initialScrollOffset
-        DispatchQueue.main.async {
-            if savedOffset > 0 {
-                scrollView.contentView.scroll(to: NSPoint(x: 0, y: savedOffset))
-                scrollView.reflectScrolledClipView(scrollView.contentView)
-            } else if safePosition > 0 {
-                textView.scrollRangeToVisible(NSRange(location: safePosition, length: 0))
-            }
-            // Redraw minimap after layout is complete
-            minimapView.needsDisplay = true
+        layoutManager.ensureLayout(for: textContainer)
 
-            // Make the editor first responder so keyboard input works immediately
-            // after opening a file or switching tabs.
+        if savedOffset > 0 {
+            scrollView.contentView.scroll(to: NSPoint(x: 0, y: savedOffset))
+            scrollView.reflectScrolledClipView(scrollView.contentView)
+        } else if safePosition > 0 {
+            textView.scrollRangeToVisible(NSRange(location: safePosition, length: 0))
+        }
+
+        // Minimap redraw and first responder need the view to be in the window
+        // hierarchy, so defer only those non-visual operations.
+        DispatchQueue.main.async {
+            minimapView.needsDisplay = true
             textView.window?.makeFirstResponder(textView)
         }
 
@@ -926,18 +928,19 @@ struct CodeEditorView: NSViewRepresentable {
                 if safePosition > 0 {
                     textView.setSelectedRange(NSRange(location: safePosition, length: 0))
                 }
-                DispatchQueue.main.async { [weak self] in
-                    guard let sv = self?.scrollView else { return }
-                    if scrollOffset > 0 {
-                        sv.contentView.scroll(to: NSPoint(x: 0, y: scrollOffset))
-                        sv.reflectScrolledClipView(sv.contentView)
-                    } else if safePosition > 0 {
-                        textView.scrollRangeToVisible(NSRange(location: safePosition, length: 0))
-                    }
-                    self?.minimapView?.needsDisplay = true
-                    // Recalculate foldable ranges after layout is complete
-                    self?.recalculateFoldableRanges()
+                // Force layout synchronously so scroll restoration happens in
+                // the same frame, eliminating the visible jump (issue #595).
+                if let lm = textView.layoutManager, let tc = textView.textContainer {
+                    lm.ensureLayout(for: tc)
                 }
+                if scrollOffset > 0 {
+                    sv.contentView.scroll(to: NSPoint(x: 0, y: scrollOffset))
+                    sv.reflectScrolledClipView(sv.contentView)
+                } else if safePosition > 0 {
+                    textView.scrollRangeToVisible(NSRange(location: safePosition, length: 0))
+                }
+                minimapView?.needsDisplay = true
+                recalculateFoldableRanges()
             }
         }
 
