@@ -2,6 +2,7 @@
 
 [![CI](https://github.com/batonogov/pine/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/batonogov/pine/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/batonogov/pine)](https://github.com/batonogov/pine/releases/latest)
+[![Homebrew](https://img.shields.io/homebrew/cask/v/pine-editor)](https://formulae.brew.sh/cask/pine-editor)
 [![License: MIT](https://img.shields.io/github/license/batonogov/pine)](https://github.com/batonogov/pine/blob/main/LICENSE)
 [![macOS](https://img.shields.io/badge/macOS-26%2B-blue)](https://github.com/batonogov/pine)
 
@@ -14,19 +15,24 @@ Pine is a code editor for developers who want a fast, native Mac app without the
 
 ## Features
 
-- **Native macOS** -- SwiftUI + AppKit, Liquid Glass UI, system text handling. No browser engine, no runtime
-- **Syntax highlighting** -- 37 languages including Swift, TypeScript, Python, Go, Rust, Java, Kotlin, Ruby, C/C++, and more
-- **Built-in terminal** -- Full VT100/xterm emulator via [SwiftTerm](https://github.com/migueldeicaza/SwiftTerm). Multiple tabs, colors, TUI apps, oh-my-zsh
-- **Git integration** -- File status in sidebar, diff markers in gutter, blame view, branch switching from title bar or search sheet
-- **Symbol navigation** -- Jump to functions and classes with Cmd+Shift+J
-- **Code folding** -- Fold/unfold blocks from the gutter or via menu
-- **Minimap** -- Scaled code overview with syntax colors and diff markers. Click to navigate
-- **Find & replace** -- In-file and project-wide search with .gitignore support
-- **Quick Open** -- Fuzzy file search with Cmd+P
-- **Markdown preview** -- Source, rendered, or side-by-side
-- **Auto-save & session restore** -- Picks up where you left off
-- **Auto-updates** -- Built-in via [Sparkle](https://sparkle-project.org)
-- **Localized** -- English, German, Spanish, French, Japanese, Korean, Portuguese (BR), Russian, Simplified Chinese
+- **Native macOS** — SwiftUI + AppKit, Liquid Glass UI, system text handling. No browser engine, no runtime
+- **Syntax highlighting** — 37 languages including Swift, TypeScript, Python, Go, Rust, Java, Kotlin, Ruby, C/C++, and more
+- **Built-in terminal** — Full VT100/xterm emulator via [SwiftTerm](https://github.com/migueldeicaza/SwiftTerm). Multiple tabs, colors, TUI apps, oh-my-zsh
+- **Git integration** — File status in sidebar, diff markers in gutter, blame view, branch switching from title bar or search sheet
+- **Symbol navigation** — Jump to functions and classes with Cmd+R
+- **Code folding** — Fold/unfold blocks from the gutter or via menu
+- **Minimap** — Scaled code overview with syntax colors and diff markers. Click to navigate
+- **Find & replace** — In-file and project-wide search with .gitignore support
+- **Quick Open** — Fuzzy file search with Cmd+P
+- **Markdown preview** — Source, rendered, or side-by-side via [swift-markdown](https://github.com/swiftlang/swift-markdown)
+- **Status bar** — Cursor position, line endings, indentation style, file size
+- **Bracket matching** — Highlights matching pairs while skipping strings and comments
+- **File management** — Reveal in Finder, duplicate files with Finder-like naming
+- **Large file handling** — Progressive loading for 10 MB+ files, optional highlighting disable for 1 MB+
+- **Strip trailing whitespace** — Automatically cleans up on save
+- **Auto-save & session restore** — Picks up where you left off
+- **Auto-updates** — Built-in via [Sparkle](https://sparkle-project.org)
+- **Localized** — English, German, Spanish, French, Japanese, Korean, Portuguese (BR), Russian, Simplified Chinese
 
 <!-- TODO: 3-4 screenshots showing key features -->
 <!-- - Editor with syntax highlighting + minimap -->
@@ -52,6 +58,7 @@ Requires macOS 26+ and Xcode 26+.
 ```bash
 git clone https://github.com/batonogov/pine.git
 cd pine
+sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
 xcodebuild -project Pine.xcodeproj -scheme Pine build
 ```
 
@@ -66,18 +73,23 @@ Dependencies resolve automatically via Swift Package Manager on first build.
 | `Cmd+S` | Save |
 | `Cmd+Option+S` | Save All |
 | `Cmd+Shift+S` | Save As |
+| `Cmd+Shift+D` | Duplicate file |
 | `Cmd+W` | Close tab |
 | `Cmd+F` | Find |
 | `Cmd+Option+F` | Find & Replace |
 | `Cmd+G` / `Cmd+Shift+G` | Find Next / Previous |
+| `Cmd+E` | Use Selection for Find |
 | `Cmd+L` | Go to Line |
-| `Cmd+Shift+J` | Go to Symbol |
+| `Cmd+R` | Go to Symbol |
 | `Cmd+/` | Toggle comment |
 | `Cmd+Shift+B` | Switch branch |
 | `Cmd+Shift+M` | Toggle minimap |
+| `Cmd+Shift+P` | Markdown preview |
+| `Ctrl+Option+Down` / `Up` | Next / Previous change |
 | `` Cmd+` `` | Toggle terminal |
 | `Cmd+T` | New terminal tab |
 | `Cmd++` / `Cmd+-` | Zoom in / out |
+| `Cmd+0` | Reset font size |
 
 ## Architecture
 
