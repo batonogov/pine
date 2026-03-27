@@ -190,6 +190,30 @@ struct StatusBarInfoTests {
         #expect(manager.activeTab?.isDirty == true)
     }
 
+    @Test("TabManager cachedLineEnding updates after round-trip conversion")
+    func tabManagerCachedLineEndingRoundTrip() {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let url = dir.appendingPathComponent("test.swift")
+        try? "line1\nline2\n".write(to: url, atomically: true, encoding: .utf8)
+
+        let manager = TabManager()
+        manager.openTab(url: url)
+        #expect(manager.activeTab?.cachedLineEnding == .lf)
+
+        // LF → CRLF
+        manager.convertActiveTabLineEndings(to: .crlf)
+        #expect(manager.activeTab?.cachedLineEnding == .crlf)
+
+        // CRLF → LF
+        manager.convertActiveTabLineEndings(to: .lf)
+        #expect(manager.activeTab?.cachedLineEnding == .lf)
+
+        // LF → CRLF again
+        manager.convertActiveTabLineEndings(to: .crlf)
+        #expect(manager.activeTab?.cachedLineEnding == .crlf)
+    }
+
     @Test("TabManager convert line endings same format is no-op")
     func tabManagerConvertSameLineEndings() {
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
