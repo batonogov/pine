@@ -203,7 +203,16 @@ struct ContentView: View {
 
     /// Branch subtitle as a plain String to avoid generating a localization key.
     var branchSubtitle: String {
-        workspace.gitProvider.isGitRepository ? "⎇ \(workspace.gitProvider.currentBranch) ▾" : ""
+        Self.branchSubtitle(
+            isGitRepo: workspace.gitProvider.isGitRepository,
+            branchName: workspace.gitProvider.currentBranch
+        )
+    }
+
+    /// Builds the toolbar subtitle for the current git branch.
+    /// Kept as a static function for testability.
+    static func branchSubtitle(isGitRepo: Bool, branchName: String) -> String {
+        isGitRepo ? "\(branchName) ▾" : ""
     }
 
     // MARK: - Subview builders
