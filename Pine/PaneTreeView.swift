@@ -78,6 +78,7 @@ struct PaneLeafView: View {
         .onTapGesture {
             paneManager.focusPane(paneID)
         }
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier(AccessibilityID.pane(paneID))
     }
 }
