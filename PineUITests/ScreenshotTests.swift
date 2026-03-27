@@ -2,43 +2,22 @@
 //  ScreenshotTests.swift
 //  PineUITests
 //
-//  On-demand screenshot capture for assets/ directory.
-//  Skipped in CI — run locally: xcodebuild test ... -only-testing:PineUITests/ScreenshotTests
+//  On-demand screenshot capture using XCTAttachment (Apple Way).
+//  Run locally or in CI: xcodebuild test ... -only-testing:PineUITests/ScreenshotTests
+//  Screenshots are saved in the .xcresult bundle. Extract with:
+//    scripts/update-screenshots.sh
 //
 
 import XCTest
 
 final class ScreenshotTests: PineUITestCase {
 
-    /// Screenshots are on-demand only — skip in CI.
-    private func skipInCI() throws {
-        if ProcessInfo.processInfo.environment["CI"] != nil {
-            throw XCTSkip("Screenshot tests run on demand, not in CI")
-        }
-    }
-
-    /// Path to the assets/ directory at the repo root.
-    /// Uses PINE_REPO_ROOT env var (set by the caller) instead of #filePath,
-    /// which is unreliable in Xcode-managed build directories.
-    private var assetsDirectory: URL {
-        guard let root = ProcessInfo.processInfo.environment["PINE_REPO_ROOT"] else {
-            preconditionFailure("PINE_REPO_ROOT env var must be set to the repo root path")
-        }
-        return URL(fileURLWithPath: root).appendingPathComponent("assets", isDirectory: true)
-    }
-
-    /// Saves a screenshot to assets/ with the given filename and verifies the file was written.
-    private func saveScreenshot(_ screenshot: XCUIScreenshot, name: String) throws {
-        let fm = FileManager.default
-        if !fm.fileExists(atPath: assetsDirectory.path) {
-            try fm.createDirectory(at: assetsDirectory, withIntermediateDirectories: true)
-        }
-        let fileURL = assetsDirectory.appendingPathComponent(name)
-        try screenshot.pngRepresentation.write(to: fileURL)
-        XCTAssertTrue(
-            fm.fileExists(atPath: fileURL.path),
-            "Screenshot file should exist at \(fileURL.path)"
-        )
+    /// Attaches a screenshot to the test result with the given name.
+    private func attachScreenshot(_ screenshot: XCUIScreenshot, name: String) {
+        let attachment = XCTAttachment(screenshot: screenshot)
+        attachment.name = name
+        attachment.lifetime = .keepAlways
+        add(attachment)
     }
 
     private var projectURL: URL?
@@ -51,8 +30,6 @@ final class ScreenshotTests: PineUITestCase {
     // MARK: - Welcome Window
 
     func testCaptureWelcomeWindow() throws {
-        try skipInCI()
-
         launchClean()
 
         let welcomeWindow = app.windows["welcome"]
@@ -65,14 +42,12 @@ final class ScreenshotTests: PineUITestCase {
         Thread.sleep(forTimeInterval: 1.0)
 
         let screenshot = app.windows["welcome"].screenshot()
-        try saveScreenshot(screenshot, name: "screenshot-welcome.png")
+        attachScreenshot(screenshot, name: "screenshot-welcome")
     }
 
     // MARK: - Editor with File
 
     func testCaptureEditorWithFile() throws {
-        try skipInCI()
-
         let swiftCode = """
         import Foundation
 
@@ -113,14 +88,12 @@ final class ScreenshotTests: PineUITestCase {
         Thread.sleep(forTimeInterval: 2.0)
 
         let screenshot = app.windows.firstMatch.screenshot()
-        try saveScreenshot(screenshot, name: "screenshot-editor.png")
+        attachScreenshot(screenshot, name: "screenshot-editor")
     }
 
     // MARK: - Terminal
 
     func testCaptureTerminal() throws {
-        try skipInCI()
-
         projectURL = try createTempProject(files: [
             "main.swift": "print(\"Hello, Pine!\")\n"
         ])
@@ -149,14 +122,12 @@ final class ScreenshotTests: PineUITestCase {
         Thread.sleep(forTimeInterval: 2.0)
 
         let screenshot = app.windows.firstMatch.screenshot()
-        try saveScreenshot(screenshot, name: "screenshot-terminal.png")
+        attachScreenshot(screenshot, name: "screenshot-terminal")
     }
 
     // MARK: - Sidebar (file tree)
 
     func testCaptureSidebar() throws {
-        try skipInCI()
-
         projectURL = try createTempProject(
             files: [
                 "Sources/App.swift": "// App entry point\n",
@@ -193,12 +164,10 @@ final class ScreenshotTests: PineUITestCase {
         Thread.sleep(forTimeInterval: 1.0)
 
         let screenshot = app.windows.firstMatch.screenshot()
-        try saveScreenshot(screenshot, name: "screenshot-sidebar.png")
+        attachScreenshot(screenshot, name: "screenshot-sidebar")
     }
 
     /// Tries to expand a folder row in the sidebar outline.
-    /// Uses multiple strategies because SwiftUI List disclosure behavior
-    /// is unreliable with XCUITest synthetic events on macOS 26.
     private func expandFolder(_ row: XCUIElement, in sidebar: XCUIElement) {
         // Strategy 1: double-click the row text
         row.doubleClick()
@@ -222,8 +191,6 @@ final class ScreenshotTests: PineUITestCase {
     // MARK: - Minimap
 
     func testCaptureMinimap() throws {
-        try skipInCI()
-
         // Create a file with enough content to make the minimap useful
         let lines = (1...80).map { "let line\($0) = \($0) * \($0)" }.joined(separator: "\n")
         let swiftCode = """
@@ -259,14 +226,12 @@ final class ScreenshotTests: PineUITestCase {
         Thread.sleep(forTimeInterval: 2.0)
 
         let screenshot = app.windows.firstMatch.screenshot()
-        try saveScreenshot(screenshot, name: "screenshot-minimap.png")
+        attachScreenshot(screenshot, name: "screenshot-minimap")
     }
 
     // MARK: - Markdown Preview
 
     func testCaptureMarkdownPreview() throws {
-        try skipInCI()
-
         let markdown = """
         # Pine Editor
 
@@ -314,6 +279,6 @@ final class ScreenshotTests: PineUITestCase {
         Thread.sleep(forTimeInterval: 2.0)
 
         let screenshot = app.windows.firstMatch.screenshot()
-        try saveScreenshot(screenshot, name: "screenshot-markdown.png")
+        attachScreenshot(screenshot, name: "screenshot-markdown")
     }
 }
