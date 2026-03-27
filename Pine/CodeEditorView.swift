@@ -17,6 +17,9 @@ final class GutterTextView: NSTextView {
     /// Ширина гуттера — задаётся извне.
     var gutterInset: CGFloat = 44
 
+    /// Indentation style for indent guide rendering.
+    var indentStyle: IndentationStyle = .spaces(4)
+
     /// Bottom padding so the last line is not clipped (issue #258).
     static let defaultBottomInset: CGFloat = 5
 
@@ -92,6 +95,9 @@ final class GutterTextView: NSTextView {
 
         guard let layoutManager = layoutManager,
               textContainer != nil else { return }
+
+        // ── Indent guides (behind everything else) ──
+        IndentGuideRenderer.draw(in: self, dirtyRect: rect, indentStyle: indentStyle)
 
         let cursorRange = selectedRange()
         guard cursorRange.length == 0 else { return }
@@ -417,6 +423,8 @@ struct CodeEditorView: NSViewRepresentable {
     var cachedHighlightResult: HighlightMatchResult?
     /// When non-nil, the editor scrolls to this offset. The `id` ensures each request is unique.
     var goToOffset: GoToRequest?
+    /// Indentation style detected for the current file, used for indent guide rendering.
+    var indentStyle: IndentationStyle = .spaces(4)
 
     /// Порог (в символах) для переключения на viewport-based подсветку.
     static let viewportHighlightThreshold = 100_000
@@ -497,6 +505,7 @@ struct CodeEditorView: NSViewRepresentable {
         textView.exactFileName = fileName
         textView.setBlameLines(blameLines)
         textView.isBlameVisible = isBlameVisible
+        textView.indentStyle = indentStyle
         // Delegate set AFTER text/highlight setup to prevent textDidChange from firing
         // during makeNSView and causing a spurious updateContent → cachedHighlightResult = nil
         // → contentVersion bump → updateNSView re-sets text → stripping highlight attributes.
@@ -690,6 +699,7 @@ struct CodeEditorView: NSViewRepresentable {
            let gutterView = sv.documentView as? GutterTextView {
             gutterView.fileExtension = language
             gutterView.exactFileName = fileName
+            gutterView.indentStyle = indentStyle
             gutterView.setBlameLines(blameLines)
             if gutterView.isBlameVisible != isBlameVisible {
                 gutterView.isBlameVisible = isBlameVisible
