@@ -130,6 +130,7 @@ struct EditorAreaView: View {
             },
             cachedHighlightResult: tab.cachedHighlightResult,
             goToOffset: goToLineOffset,
+            indentStyle: tab.cachedIndentation,
             fontSize: FontSizeSettings.shared.fontSize
         )
         .id(tab.id)
