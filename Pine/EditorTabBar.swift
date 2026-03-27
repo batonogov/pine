@@ -78,10 +78,8 @@ struct EditorTabBar: View {
                                     isActive: isActive,
                                     onSelect: { tabManager.activeTabID = tab.id },
                                     onClose: { onCloseTab(tab) },
-                                    onTogglePin: { tabManager.togglePin(id: tab.id) }
-                                )
-                                .frame(
-                                    maxWidth: tab.isPinned
+                                    onTogglePin: { tabManager.togglePin(id: tab.id) },
+                                    constrainedWidth: tab.isPinned
                                         ? Self.pinnedTabWidth
                                         : isActive ? Self.maxTabWidth : inactiveWidth
                                 )
@@ -231,6 +229,7 @@ struct EditorTabItem: View {
     let onSelect: () -> Void
     let onClose: () -> Void
     var onTogglePin: (() -> Void)?
+    var constrainedWidth: CGFloat?
 
     @State private var isHovering = false
 
@@ -242,6 +241,7 @@ struct EditorTabItem: View {
                 unpinnedBody
             }
         }
+        .frame(maxWidth: constrainedWidth)
         .background(
             isActive
                 ? Color.primary.opacity(0.12)

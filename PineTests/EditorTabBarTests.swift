@@ -83,4 +83,61 @@ struct EditorTabBarTests {
         let width = EditorTabBar.inactiveTabWidth(availableWidth: 400, tabCount: 20)
         #expect(width == EditorTabBar.minTabWidth)
     }
+
+    // MARK: - Pinned tab width calculations
+
+    @Test("Pinned tabs reduce available space for unpinned tabs")
+    func pinnedTabsReduceSpace() {
+        let widthNoPinned = EditorTabBar.inactiveTabWidth(
+            availableWidth: 800, tabCount: 6, pinnedCount: 0
+        )
+        let widthWithPinned = EditorTabBar.inactiveTabWidth(
+            availableWidth: 800, tabCount: 6, pinnedCount: 2
+        )
+        // Pinned tabs take fixed space, so unpinned inactive tabs get more room
+        // (fewer unpinned tabs sharing the remaining space)
+        #expect(widthWithPinned >= widthNoPinned)
+    }
+
+    @Test("All tabs pinned except one returns maxTabWidth")
+    func allPinnedExceptOne() {
+        let width = EditorTabBar.inactiveTabWidth(
+            availableWidth: 800, tabCount: 5, pinnedCount: 4
+        )
+        #expect(width == EditorTabBar.maxTabWidth)
+    }
+
+    @Test("Pinned tab width constant is narrower than minTabWidth")
+    func pinnedTabWidthIsCompact() {
+        #expect(EditorTabBar.pinnedTabWidth < EditorTabBar.minTabWidth)
+    }
+
+    // MARK: - Tab width bounds
+
+    @Test("minTabWidth is less than maxTabWidth")
+    func minLessThanMax() {
+        #expect(EditorTabBar.minTabWidth < EditorTabBar.maxTabWidth)
+    }
+
+    @Test("Width monotonically decreases as tab count grows")
+    func monotonicDecrease() {
+        var previousWidth = CGFloat.infinity
+        for count in 2...20 {
+            let width = EditorTabBar.inactiveTabWidth(availableWidth: 1200, tabCount: count)
+            #expect(width <= previousWidth, "Width should not increase when adding more tabs")
+            previousWidth = width
+        }
+    }
+
+    @Test("Zero available width still returns minTabWidth")
+    func zeroAvailableWidth() {
+        let width = EditorTabBar.inactiveTabWidth(availableWidth: 0, tabCount: 5)
+        #expect(width == EditorTabBar.minTabWidth)
+    }
+
+    @Test("Negative available width still returns minTabWidth")
+    func negativeAvailableWidth() {
+        let width = EditorTabBar.inactiveTabWidth(availableWidth: -100, tabCount: 5)
+        #expect(width == EditorTabBar.minTabWidth)
+    }
 }
