@@ -83,6 +83,10 @@ enum AccessibilityID {
     static let symbolResultsList = "symbolResultsList"
     static func symbolItem(_ name: String) -> String { "symbolItem_\(name)" }
 
+    // MARK: - Feature Flags
+    static let featureFlagsResetButton = "featureFlagsResetButton"
+    static func featureFlagToggle(_ key: String) -> String { "featureFlag_\(key)" }
+
     // MARK: - Status bar
     static let statusBar = "statusBar"
     static let terminalToggleButton = "terminalToggleButton"

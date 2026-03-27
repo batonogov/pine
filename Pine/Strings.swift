@@ -376,6 +376,12 @@ enum Strings {
         String(localized: "terminal.tabCloseWarning.close")
     }
 
+    // MARK: - Feature Flags
+
+    static let featureFlagsHeader: LocalizedStringKey = "featureFlags.header"
+    static let featureFlagsFooter: LocalizedStringKey = "featureFlags.footer"
+    static let featureFlagsResetAll: LocalizedStringKey = "featureFlags.resetAll"
+
     // MARK: - Progress Indicators
 
     static var progressLoadingProject: String {
