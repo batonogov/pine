@@ -82,11 +82,28 @@ struct StatusBarView: View {
 
                 statusDivider
 
-                // Line ending indicator (cached, recomputed on content change)
-                Text(verbatim: activeTab.cachedLineEnding.displayName)
-                    .font(.system(size: LayoutMetrics.bodySmallFontSize))
-                    .foregroundStyle(.secondary)
-                    .accessibilityIdentifier(AccessibilityID.lineEndingIndicator)
+                // Line ending indicator with conversion menu
+                Menu {
+                    ForEach([LineEnding.lf, .crlf], id: \.self) { ending in
+                        Button {
+                            tabManager.convertActiveTabLineEndings(to: ending)
+                        } label: {
+                            HStack {
+                                Text(ending.displayName)
+                                if ending == activeTab.cachedLineEnding {
+                                    Image(systemName: "checkmark")
+                                }
+                            }
+                        }
+                    }
+                } label: {
+                    Text(verbatim: activeTab.cachedLineEnding.displayName)
+                        .font(.system(size: LayoutMetrics.bodySmallFontSize))
+                        .foregroundStyle(.secondary)
+                }
+                .menuStyle(.borderlessButton)
+                .fixedSize()
+                .accessibilityIdentifier(AccessibilityID.lineEndingIndicator)
 
                 statusDivider
 

@@ -53,6 +53,27 @@ enum LineEnding: Equatable {
         }
     }
 
+    /// The other line ending style.
+    var opposite: LineEnding {
+        switch self {
+        case .lf: .crlf
+        case .crlf: .lf
+        }
+    }
+
+    /// Converts content to use this line ending style.
+    /// First normalizes all line endings to LF, then converts to the target.
+    func convert(_ content: String) -> String {
+        // Normalize: CRLF → LF first, then convert LF → target
+        let normalized = content.replacingOccurrences(of: "\r\n", with: "\n")
+        switch self {
+        case .lf:
+            return normalized
+        case .crlf:
+            return normalized.replacingOccurrences(of: "\n", with: "\r\n")
+        }
+    }
+
     /// Detects the predominant line ending style in content.
     /// If the majority of line endings are CRLF, returns `.crlf`; otherwise `.lf`.
     static func detect(in content: String) -> LineEnding {

@@ -259,6 +259,23 @@ final class TabManager {
         onEditorContextChanged?()
     }
 
+    /// Converts the active tab's line endings to the specified style.
+    /// Marks the tab as dirty if content actually changed.
+    func convertActiveTabLineEndings(to target: LineEnding) {
+        guard let index = activeTabIndex else { return }
+        guard tabs[index].kind == .text else { return }
+        let converted = target.convert(tabs[index].content)
+        guard converted != tabs[index].content else { return }
+        tabs[index].content = converted
+        tabs[index].cachedHighlightResult = nil
+        tabs[index].recomputeContentCaches()
+
+        if isAutoSaveEnabled {
+            scheduleAutoSave()
+        }
+        recoveryManager?.scheduleSnapshot()
+    }
+
     /// Updates the fold state for the active tab.
     func updateFoldState(_ state: FoldState) {
         guard let index = activeTabIndex else { return }
