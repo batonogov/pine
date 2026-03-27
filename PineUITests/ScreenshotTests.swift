@@ -18,15 +18,16 @@ final class ScreenshotTests: PineUITestCase {
     }
 
     /// Path to the assets/ directory at the repo root.
+    /// Uses PINE_REPO_ROOT env var (set by the caller) instead of #filePath,
+    /// which is unreliable in Xcode-managed build directories.
     private var assetsDirectory: URL {
-        // __FILE__ is inside PineUITests/, repo root is one level up
-        let repoRoot = URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent() // PineUITests/
-            .deletingLastPathComponent() // repo root
-        return repoRoot.appendingPathComponent("assets", isDirectory: true)
+        guard let root = ProcessInfo.processInfo.environment["PINE_REPO_ROOT"] else {
+            preconditionFailure("PINE_REPO_ROOT env var must be set to the repo root path")
+        }
+        return URL(fileURLWithPath: root).appendingPathComponent("assets", isDirectory: true)
     }
 
-    /// Saves a screenshot to assets/ with the given filename.
+    /// Saves a screenshot to assets/ with the given filename and verifies the file was written.
     private func saveScreenshot(_ screenshot: XCUIScreenshot, name: String) throws {
         let fm = FileManager.default
         if !fm.fileExists(atPath: assetsDirectory.path) {
@@ -34,6 +35,10 @@ final class ScreenshotTests: PineUITestCase {
         }
         let fileURL = assetsDirectory.appendingPathComponent(name)
         try screenshot.pngRepresentation.write(to: fileURL)
+        XCTAssertTrue(
+            fm.fileExists(atPath: fileURL.path),
+            "Screenshot file should exist at \(fileURL.path)"
+        )
     }
 
     private var projectURL: URL?
@@ -176,8 +181,42 @@ final class ScreenshotTests: PineUITestCase {
         // Wait for file tree to fully load
         Thread.sleep(forTimeInterval: 2.0)
 
+        // Expand folders to show the tree structure
+        for folderName in ["Sources", "Models", "Views", "Tests"] {
+            let folderRow = app.staticTexts["fileNode_\(folderName)"]
+            if waitForExistence(folderRow, timeout: 3) {
+                expandFolder(folderRow, in: sidebar)
+            }
+        }
+
+        // Let the tree settle after expanding
+        Thread.sleep(forTimeInterval: 1.0)
+
         let screenshot = app.windows.firstMatch.screenshot()
         try saveScreenshot(screenshot, name: "screenshot-sidebar.png")
+    }
+
+    /// Tries to expand a folder row in the sidebar outline.
+    /// Uses multiple strategies because SwiftUI List disclosure behavior
+    /// is unreliable with XCUITest synthetic events on macOS 26.
+    private func expandFolder(_ row: XCUIElement, in sidebar: XCUIElement) {
+        // Strategy 1: double-click the row text
+        row.doubleClick()
+        sleep(1)
+
+        // Strategy 2: click the disclosure triangle near the row
+        let triangles = sidebar.disclosureTriangles
+        for index in 0..<triangles.count {
+            let triangle = triangles.element(boundBy: index)
+            guard triangle.exists else { continue }
+            let rowFrame = row.frame
+            let triFrame = triangle.frame
+            if abs(triFrame.midY - rowFrame.midY) < 10 {
+                triangle.click()
+                sleep(1)
+                return
+            }
+        }
     }
 
     // MARK: - Minimap
@@ -262,6 +301,14 @@ final class ScreenshotTests: PineUITestCase {
         let fileRow = app.staticTexts["fileNode_README.md"]
         XCTAssertTrue(waitForExistence(fileRow, timeout: 5), "README.md should appear")
         fileRow.click()
+
+        // Enable markdown preview mode explicitly via the toggle button in the tab bar
+        let previewToggle = app.descendants(matching: .any)["markdownPreviewToggle"].firstMatch
+        XCTAssertTrue(
+            waitForExistence(previewToggle, timeout: 5),
+            "Markdown preview toggle should appear for .md files"
+        )
+        previewToggle.click()
 
         // Wait for markdown preview to render
         Thread.sleep(forTimeInterval: 2.0)
