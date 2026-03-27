@@ -184,6 +184,13 @@ enum Strings {
     static let menuDuplicate: LocalizedStringKey = "menu.duplicate"
     static let menuCloseTab: LocalizedStringKey = "menu.closeTab"
 
+    // MARK: - Pane menu
+    static let menuSplitRight: LocalizedStringKey = "menu.splitRight"
+    static let menuSplitDown: LocalizedStringKey = "menu.splitDown"
+    static let menuClosePane: LocalizedStringKey = "menu.closePane"
+    static let menuFocusNextPane: LocalizedStringKey = "menu.focusNextPane"
+    static let menuFocusPreviousPane: LocalizedStringKey = "menu.focusPreviousPane"
+
     // MARK: - Tab Pinning
 
     static let tabPin: LocalizedStringKey = "tab.pin"

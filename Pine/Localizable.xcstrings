@@ -2883,6 +2883,61 @@
         }
       }
     },
+    "menu.splitRight" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Split Right"
+          }
+        }
+      }
+    },
+    "menu.splitDown" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Split Down"
+          }
+        }
+      }
+    },
+    "menu.closePane" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Close Pane"
+          }
+        }
+      }
+    },
+    "menu.focusNextPane" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Focus Next Pane"
+          }
+        }
+      }
+    },
+    "menu.focusPreviousPane" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Focus Previous Pane"
+          }
+        }
+      }
+    },
     "tab.pin" : {
       "comment" : "Context menu: pin a tab so it stays on the left and resists closing.",
       "extractionState" : "manual",

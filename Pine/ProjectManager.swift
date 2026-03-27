@@ -13,8 +13,16 @@ import SwiftUI
 final class ProjectManager {
     let workspace = WorkspaceManager()
     let terminal = TerminalManager()
-    let tabManager = TabManager()
+    let paneManager = PaneManager()
     let searchProvider = ProjectSearchProvider()
+
+    /// Backward-compatible accessor: returns the active pane's TabManager.
+    /// Falls back to creating a new TabManager if none exists (should never happen
+    /// since PaneManager always maintains at least one pane).
+    var tabManager: TabManager {
+        // swiftlint:disable:next force_unwrapping
+        paneManager.activeTabManager!
+    }
     let quickOpenProvider = QuickOpenProvider()
     let progress = ProgressTracker()
     let contextFileWriter = ContextFileWriter()
@@ -110,6 +118,19 @@ final class ProjectManager {
             terminal.terminalTabs.firstIndex { $0.id == id }
         }
 
+        // Pane tree state (multi-pane layout)
+        let paneTree = paneManager.rootNode
+        let activePaneUUID = paneManager.activePaneID.id.uuidString
+        var paneStates: [String: PaneTabState] = [:]
+        for paneID in paneManager.allPaneIDs {
+            if let tm = paneManager.tabManager(for: paneID) {
+                paneStates[paneID.id.uuidString] = ProjectManager.capturePaneTabState(
+                    from: tm,
+                    rootPath: rootPath
+                )
+            }
+        }
+
         SessionState.save(
             projectURL: rootURL,
             openFileURLs: openFileURLs,
@@ -121,7 +142,65 @@ final class ProjectManager {
             terminalTabCount: terminalTabCount,
             activeTerminalIndex: activeTerminalIndex,
             isTerminalVisible: terminal.isTerminalVisible,
-            isTerminalMaximized: terminal.isTerminalMaximized
+            isTerminalMaximized: terminal.isTerminalMaximized,
+            paneTree: paneTree,
+            activePaneUUID: activePaneUUID,
+            paneStates: paneStates
+        )
+    }
+
+    // MARK: - Pane state collection
+
+    /// Captures tab state from a TabManager into a PaneTabState for serialization.
+    /// Scoped to files within the given root path prefix.
+    ///
+    /// - Parameters:
+    ///   - tabManager: The TabManager whose tabs to capture.
+    ///   - rootPath: The project root path with trailing slash for prefix matching.
+    /// - Returns: A PaneTabState snapshot.
+    static func capturePaneTabState(from tabManager: TabManager, rootPath: String) -> PaneTabState {
+        let openPaths = tabManager.tabs
+            .map(\.url.path)
+            .filter { $0.hasPrefix(rootPath) }
+
+        let activePath: String? = if let url = tabManager.activeTab?.url,
+                                      url.path.hasPrefix(rootPath) { url.path } else { nil }
+
+        var editorStates: [String: PerTabEditorState]?
+        let textTabs = tabManager.tabs.filter { $0.url.path.hasPrefix(rootPath) && $0.kind == .text }
+        if !textTabs.isEmpty {
+            editorStates = [:]
+            for tab in textTabs {
+                editorStates?[tab.url.path] = PerTabEditorState.capture(from: tab)
+            }
+        }
+
+        let pinnedPaths = tabManager.tabs
+            .filter { $0.isPinned && $0.url.path.hasPrefix(rootPath) }
+            .map(\.url.path)
+
+        let disabledPaths = tabManager.tabs
+            .filter { $0.syntaxHighlightingDisabled && $0.url.path.hasPrefix(rootPath) }
+            .map(\.url.path)
+
+        var previewModes: [String: String]?
+        let mdTabs = tabManager.tabs.filter {
+            $0.isMarkdownFile && $0.previewMode != .source && $0.url.path.hasPrefix(rootPath)
+        }
+        if !mdTabs.isEmpty {
+            previewModes = [:]
+            for tab in mdTabs {
+                previewModes?[tab.url.path] = tab.previewMode.rawValue
+            }
+        }
+
+        return PaneTabState(
+            openFilePaths: openPaths,
+            activeFilePath: activePath,
+            editorStates: editorStates,
+            pinnedPaths: pinnedPaths.isEmpty ? nil : pinnedPaths,
+            highlightingDisabledPaths: disabledPaths.isEmpty ? nil : disabledPaths,
+            previewModes: previewModes
         )
     }
 

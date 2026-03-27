@@ -5,6 +5,8 @@
 //  Shared accessibility identifiers used by both app code and UI tests.
 //
 
+import Foundation
+
 enum AccessibilityID {
     // MARK: - Welcome window
     static let welcomeWindow = "welcomeWindow"
@@ -82,6 +84,12 @@ enum AccessibilityID {
     static let symbolSearchField = "symbolSearchField"
     static let symbolResultsList = "symbolResultsList"
     static func symbolItem(_ name: String) -> String { "symbolItem_\(name)" }
+
+    // MARK: - Panes
+    static func pane(_ id: PaneID) -> String { "pane_\(id.id.uuidString)" }
+    static let paneContainer = "paneContainer"
+    static let paneDivider = "paneDivider"
+    static let activePaneIndicator = "activePaneIndicator"
 
     // MARK: - Status bar
     static let statusBar = "statusBar"

@@ -164,6 +164,54 @@ struct PineApp: App {
                 }
                 .disabled(focusedProject?.workspace.rootURL == nil)
             }
+            // Pane menu: Split Right/Down, Close Pane, Focus Next/Previous
+            CommandGroup(after: .toolbar) {
+                Divider()
+
+                Section {
+                    Button {
+                        NotificationCenter.default.post(name: .splitPaneRight, object: nil)
+                    } label: {
+                        Label(Strings.menuSplitRight, systemImage: MenuIcons.splitRight)
+                    }
+                    .keyboardShortcut("\\", modifiers: .command)
+                    .disabled(focusedProject == nil)
+
+                    Button {
+                        NotificationCenter.default.post(name: .splitPaneDown, object: nil)
+                    } label: {
+                        Label(Strings.menuSplitDown, systemImage: MenuIcons.splitDown)
+                    }
+                    .keyboardShortcut("\\", modifiers: [.command, .option])
+                    .disabled(focusedProject == nil)
+
+                    Button {
+                        NotificationCenter.default.post(name: .closePane, object: nil)
+                    } label: {
+                        Label(Strings.menuClosePane, systemImage: MenuIcons.closePane)
+                    }
+                    .keyboardShortcut("w", modifiers: [.command, .shift])
+                    .disabled(focusedProject == nil)
+
+                    Divider()
+
+                    Button {
+                        NotificationCenter.default.post(name: .focusNextPane, object: nil)
+                    } label: {
+                        Label(Strings.menuFocusNextPane, systemImage: MenuIcons.splitRight)
+                    }
+                    .keyboardShortcut("]", modifiers: [.command, .option])
+                    .disabled(focusedProject == nil)
+
+                    Button {
+                        NotificationCenter.default.post(name: .focusPreviousPane, object: nil)
+                    } label: {
+                        Label(Strings.menuFocusPreviousPane, systemImage: MenuIcons.splitRight)
+                    }
+                    .keyboardShortcut("[", modifiers: [.command, .option])
+                    .disabled(focusedProject == nil)
+                }
+            }
             // Terminal menu: New Tab (Cmd+T), Find in Terminal (Cmd+F when terminal focused)
             CommandMenu(Strings.menuTerminal) {
                 Button {
@@ -495,6 +543,7 @@ private struct ProjectWindowView: View {
                     .environment(pm.workspace)
                     .environment(pm.terminal)
                     .environment(pm.tabManager)
+                    .environment(pm.paneManager)
                     .environment(registry)
                     .focusedSceneValue(\.projectManager, pm)
                     .background {
@@ -1195,4 +1244,10 @@ extension Notification.Name {
     // Symbol Navigation (issue #306)
     static let showSymbolNavigator = Notification.Name("showSymbolNavigator")
     static let symbolNavigate = Notification.Name("symbolNavigate")
+    // Split Panes (issue #543)
+    static let splitPaneRight = Notification.Name("splitPaneRight")
+    static let splitPaneDown = Notification.Name("splitPaneDown")
+    static let closePane = Notification.Name("closePane")
+    static let focusNextPane = Notification.Name("focusNextPane")
+    static let focusPreviousPane = Notification.Name("focusPreviousPane")
 }

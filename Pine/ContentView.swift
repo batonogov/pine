@@ -14,6 +14,7 @@ struct ContentView: View {
     @Environment(WorkspaceManager.self) var workspace
     @Environment(TerminalManager.self) var terminal
     @Environment(TabManager.self) var tabManager
+    @Environment(PaneManager.self) var paneManager
     @Environment(ProjectRegistry.self) var registry
     @Environment(\.openWindow) var openWindow
 
@@ -68,7 +69,7 @@ struct ContentView: View {
                             .frame(maxWidth: .infinity, maxHeight: .infinity)
                     } else {
                         VSplitView {
-                            editorArea
+                            PaneTreeView(node: paneManager.rootNode)
                                 .frame(maxWidth: .infinity, minHeight: 200, maxHeight: .infinity)
                             terminalArea
                                 .frame(maxWidth: .infinity, minHeight: 100, idealHeight: 150, maxHeight: .infinity)
@@ -76,7 +77,7 @@ struct ContentView: View {
                         .frame(maxHeight: .infinity)
                     }
                 } else {
-                    editorArea
+                    PaneTreeView(node: paneManager.rootNode)
                         .frame(maxHeight: .infinity)
                 }
                 StatusBarView(
@@ -191,6 +192,7 @@ struct ContentView: View {
             onHandleExternalConflicts: { handleExternalConflicts($0) },
             onNavigateToChange: { navigateToChange(direction: $0) }
         ))
+        .modifier(PaneNotificationObserver(paneManager: paneManager))
         .onReceive(NotificationCenter.default.publisher(for: .toggleWordWrap)) { _ in
             isWordWrapEnabled.toggle()
         }
@@ -245,6 +247,32 @@ struct ContentView: View {
     }
 }
 
+// MARK: - PaneNotificationObserver
+
+/// Observes pane-related NotificationCenter notifications and delegates to PaneManager.
+private struct PaneNotificationObserver: ViewModifier {
+    let paneManager: PaneManager
+
+    func body(content: Content) -> some View {
+        content
+            .onReceive(NotificationCenter.default.publisher(for: .splitPaneRight)) { _ in
+                paneManager.splitPane(paneManager.activePaneID, axis: .horizontal)
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .splitPaneDown)) { _ in
+                paneManager.splitPane(paneManager.activePaneID, axis: .vertical)
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .closePane)) { _ in
+                paneManager.closePane(paneManager.activePaneID)
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .focusNextPane)) { _ in
+                paneManager.focusNextPane()
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .focusPreviousPane)) { _ in
+                paneManager.focusPreviousPane()
+            }
+    }
+}
+
 // MARK: - Preview
 
 #Preview {
@@ -255,5 +283,6 @@ struct ContentView: View {
         .environment(projectManager.workspace)
         .environment(projectManager.terminal)
         .environment(projectManager.tabManager)
+        .environment(projectManager.paneManager)
         .environment(registry)
 }

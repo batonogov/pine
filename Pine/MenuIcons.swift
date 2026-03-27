@@ -31,6 +31,11 @@ enum MenuIcons {
     static let foldAll = "rectangle.compress.vertical"
     static let unfoldAll = "rectangle.expand.vertical"
 
+    // MARK: - Pane menu
+    static let splitRight = "rectangle.split.2x1"
+    static let splitDown = "rectangle.split.1x2"
+    static let closePane = "xmark.rectangle"
+
     // MARK: - View menu
     static let increaseFontSize = "plus.magnifyingglass"
     static let decreaseFontSize = "minus.magnifyingglass"

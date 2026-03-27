@@ -35,6 +35,15 @@ struct SessionState: Codable {
     var isTerminalVisible: Bool?
     var isTerminalMaximized: Bool?
 
+    // MARK: - Pane tree state (optional for backwards compatibility)
+
+    /// Serialized pane layout tree. `nil` means legacy single-pane session.
+    var paneTree: PaneNode?
+    /// UUID string of the active pane. `nil` for legacy sessions.
+    var activePaneUUID: String?
+    /// Per-pane tab state, keyed by PaneID UUID string. `nil` for legacy sessions.
+    var paneStates: [String: PaneTabState]?
+
     // MARK: - UserDefaults keys
 
     /// Legacy single-project key (kept for migration from older versions).
@@ -76,6 +85,9 @@ struct SessionState: Codable {
         activeTerminalIndex: Int? = nil,
         isTerminalVisible: Bool? = nil,
         isTerminalMaximized: Bool? = nil,
+        paneTree: PaneNode? = nil,
+        activePaneUUID: String? = nil,
+        paneStates: [String: PaneTabState]? = nil,
         defaults: UserDefaults = .standard
     ) {
         let state = SessionState(
@@ -89,7 +101,10 @@ struct SessionState: Codable {
             terminalTabCount: terminalTabCount,
             activeTerminalIndex: activeTerminalIndex,
             isTerminalVisible: isTerminalVisible,
-            isTerminalMaximized: isTerminalMaximized
+            isTerminalMaximized: isTerminalMaximized,
+            paneTree: paneTree,
+            activePaneUUID: activePaneUUID,
+            paneStates: paneStates
         )
         do {
             let data = try JSONEncoder().encode(state)
@@ -205,5 +220,77 @@ struct SessionState: Codable {
             $0.hasPrefix(prefix) && FileManager.default.fileExists(atPath: $0)
         }
         return filtered.isEmpty ? nil : filtered
+    }
+
+    // MARK: - Pane tree helpers
+
+    /// Whether this session contains a multi-pane layout.
+    var hasPaneTree: Bool { paneTree != nil }
+
+    /// Returns the active pane UUID if the pane tree contains it, otherwise falls back to the first leaf.
+    var resolvedActivePaneUUID: String? {
+        guard let tree = paneTree else { return nil }
+        if let uuid = activePaneUUID {
+            let paneID = PaneID(id: UUID(uuidString: uuid) ?? UUID())
+            if tree.contains(paneID) {
+                return uuid
+            }
+        }
+        // Fallback: first leaf
+        return tree.firstLeafID?.id.uuidString
+    }
+
+    /// Returns pane states with file paths filtered to existing files within the project root.
+    var existingPaneStates: [String: PaneTabState]? {
+        guard let states = paneStates else { return nil }
+        let prefix = rootPrefix
+        let filtered = states.mapValues { state in
+            state.filtered(withPrefix: prefix)
+        }
+        return filtered.isEmpty ? nil : filtered
+    }
+}
+
+// MARK: - PaneTabState
+
+/// Per-pane tab state for serialization. Each pane in the split layout
+/// has its own set of open files, active file, editor states, etc.
+struct PaneTabState: Codable, Equatable {
+    let openFilePaths: [String]
+    let activeFilePath: String?
+    let editorStates: [String: PerTabEditorState]?
+    let pinnedPaths: [String]?
+    let highlightingDisabledPaths: [String]?
+    let previewModes: [String: String]?
+
+    /// Returns a copy filtered to files within the given project root prefix that exist on disk.
+    func filtered(withPrefix prefix: String) -> PaneTabState {
+        let fm = FileManager.default
+        let filteredOpen = openFilePaths.filter {
+            $0.hasPrefix(prefix) && fm.fileExists(atPath: $0)
+        }
+        let filteredActive: String? = if let active = activeFilePath,
+                                          active.hasPrefix(prefix),
+                                          fm.fileExists(atPath: active) { active } else { nil }
+        let filteredEditor = editorStates?.filter {
+            $0.key.hasPrefix(prefix) && fm.fileExists(atPath: $0.key)
+        }
+        let filteredPinned = pinnedPaths?.filter {
+            $0.hasPrefix(prefix) && fm.fileExists(atPath: $0)
+        }
+        let filteredDisabled = highlightingDisabledPaths?.filter {
+            $0.hasPrefix(prefix) && fm.fileExists(atPath: $0)
+        }
+        let filteredModes = previewModes?.filter {
+            $0.key.hasPrefix(prefix) && fm.fileExists(atPath: $0.key)
+        }
+        return PaneTabState(
+            openFilePaths: filteredOpen,
+            activeFilePath: filteredActive,
+            editorStates: filteredEditor?.isEmpty == true ? nil : filteredEditor,
+            pinnedPaths: filteredPinned?.isEmpty == true ? nil : filteredPinned,
+            highlightingDisabledPaths: filteredDisabled?.isEmpty == true ? nil : filteredDisabled,
+            previewModes: filteredModes?.isEmpty == true ? nil : filteredModes
+        )
     }
 }
