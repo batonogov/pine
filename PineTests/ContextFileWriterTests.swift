@@ -186,12 +186,24 @@ struct ContextFileWriterTests {
         await writer.update(currentFile: "b.swift", cursorLine: 2, cursorColumn: 2)
         await writer.update(currentFile: "c.swift", cursorLine: 3, cursorColumn: 3)
 
-        try await Task.sleep(for: .milliseconds(100))
+        // Poll until the debounced write completes (CI runners can be slow)
+        let fileURL = contextFileURL(projectRoot: projectRoot, contextsDir: contextsDir)
+        var decoded: ContextFileWriter.Payload?
+        for _ in 0..<20 {
+            try await Task.sleep(for: .milliseconds(50))
+            if FileManager.default.fileExists(atPath: fileURL.path),
+               let data = try? Data(contentsOf: fileURL),
+               let payload = try? JSONDecoder().decode(ContextFileWriter.Payload.self, from: data) {
+                decoded = payload
+                // Wait for the final coalesced value to land
+                if payload.currentFile == "c.swift" { break }
+            }
+        }
 
-        let decoded = try readPayload(projectRoot: projectRoot, contextsDir: contextsDir)
-        #expect(decoded.currentFile == "c.swift")
-        #expect(decoded.cursorLine == 3)
-        #expect(decoded.cursorColumn == 3)
+        #expect(decoded != nil, "Context file was never written")
+        #expect(decoded?.currentFile == "c.swift")
+        #expect(decoded?.cursorLine == 3)
+        #expect(decoded?.cursorColumn == 3)
     }
 
     // MARK: - Cleanup
