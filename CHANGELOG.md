@@ -1,5 +1,23 @@
 # Changelog
 
+## [1.14.0](https://github.com/batonogov/pine/compare/v1.13.1...v1.14.0) (2026-03-28)
+
+
+### Features
+
+* add clickable line endings indicator with LF/CRLF conversion ([#277](https://github.com/batonogov/pine/issues/277)) ([#615](https://github.com/batonogov/pine/issues/615)) ([960b16a](https://github.com/batonogov/pine/commit/960b16a128550cf76ec08a83dccefcf155f27453))
+* auto-update screenshots in assets/ via UI tests ([#608](https://github.com/batonogov/pine/issues/608)) ([17d180f](https://github.com/batonogov/pine/commit/17d180f0c86291ee9397ba8f71488e48ebc0302c))
+* migrate PineUITests target to Swift 6 mode ([#614](https://github.com/batonogov/pine/issues/614)) ([2980094](https://github.com/batonogov/pine/commit/29800949f67f10c1d7ad9a941cb09669ef56283a)), closes [#578](https://github.com/batonogov/pine/issues/578)
+
+
+### Bug Fixes
+
+* disable code signing in screenshot script for CI runners ([#621](https://github.com/batonogov/pine/issues/621)) ([76f4f8d](https://github.com/batonogov/pine/commit/76f4f8d4a71fd25f6c9bce1353e6d2b09060d553))
+* guard against nil previewItem in QLPreviewView to prevent crash ([#618](https://github.com/batonogov/pine/issues/618)) ([#619](https://github.com/batonogov/pine/issues/619)) ([1d7ea4b](https://github.com/batonogov/pine/commit/1d7ea4b097338d853c73834aefed5ef731d9ed8f))
+* make About panel tests locale-independent ([#576](https://github.com/batonogov/pine/issues/576)) ([#604](https://github.com/batonogov/pine/issues/604)) ([94ba892](https://github.com/batonogov/pine/commit/94ba8925507095d56131ce99d5a4094a65030a08))
+* redesign screenshot tests with XCTAttachment and CI automation ([#289](https://github.com/batonogov/pine/issues/289)) ([#620](https://github.com/batonogov/pine/issues/620)) ([0a8100a](https://github.com/batonogov/pine/commit/0a8100a7b3f809d9e4c9ded9259df834e7421611))
+* stabilize flaky debounceCoalescesRapidUpdates test on CI ([#603](https://github.com/batonogov/pine/issues/603)) ([c226405](https://github.com/batonogov/pine/commit/c226405af22b587af950dc6ef983f2c4e525badf))
+
 ## [1.13.1](https://github.com/batonogov/pine/compare/v1.13.0...v1.13.1) (2026-03-27)
 
 
