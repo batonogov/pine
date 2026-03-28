@@ -1,11 +1,14 @@
 #!/bin/bash
-set -euo pipefail
+# Update screenshot assets from UI tests.
+# Continues extraction even if some tests fail (no set -e on test step).
+set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(dirname "$SCRIPT_DIR")"
 RESULT_PATH="$REPO_ROOT/build/screenshots.xcresult"
+ASSETS_DIR="$REPO_ROOT/assets"
 
-# Clean previous result bundle
+# Clean previous result bundle and old screenshots
 rm -rf "$RESULT_PATH"
 
 echo "Running screenshot tests..."
@@ -18,7 +21,7 @@ DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer \
   -resultBundlePath "$RESULT_PATH" \
   CODE_SIGN_IDENTITY=- \
   CODE_SIGNING_ALLOWED=NO \
-  || true
+  || echo "Warning: some tests failed, continuing with extraction of available screenshots..."
 
 if [ ! -d "$RESULT_PATH" ]; then
   echo "Error: xcresult bundle not found at $RESULT_PATH"
@@ -26,13 +29,50 @@ if [ ! -d "$RESULT_PATH" ]; then
 fi
 
 echo "Extracting screenshots..."
+mkdir -p "$ASSETS_DIR"
 
-# Get the test plan run summaries from xcresult
-GRAPH=$(xcrun xcresulttool get --path "$RESULT_PATH" --format json 2>/dev/null)
+# --- Strategy 1: New xcresulttool API (Xcode 16+ / macOS 26) ---
+# `xcrun xcresulttool get test-results attachments` exports all attachments directly.
+extract_with_new_api() {
+  local export_dir
+  export_dir=$(mktemp -d)
 
-# Extract all attachment IDs and names from the xcresult graph
-# Walk: actions -> actionResult -> testsRef -> summaries -> testableSummaries -> tests -> subtests -> ...
-TESTS_REF_ID=$(echo "$GRAPH" | python3 -c "
+  if ! xcrun xcresulttool get test-results attachments \
+       --path "$RESULT_PATH" \
+       --output-path "$export_dir" 2>/dev/null; then
+    rm -rf "$export_dir"
+    return 1
+  fi
+
+  # Copy screenshot-*.png files
+  local found_any=false
+  while IFS= read -r -d '' file; do
+    cp "$file" "$ASSETS_DIR/$(basename "$file")"
+    echo "  Extracted $(basename "$file")"
+    found_any=true
+  done < <(find "$export_dir" -name "screenshot-*.png" -print0 2>/dev/null)
+
+  # If no screenshot-* named files, try all PNGs
+  if [ "$found_any" = false ]; then
+    while IFS= read -r -d '' file; do
+      cp "$file" "$ASSETS_DIR/$(basename "$file")"
+      echo "  Extracted $(basename "$file")"
+      found_any=true
+    done < <(find "$export_dir" -name "*.png" -print0 2>/dev/null)
+  fi
+
+  rm -rf "$export_dir"
+  [ "$found_any" = true ] && return 0
+  return 1
+}
+
+# --- Strategy 2: Legacy xcresulttool JSON API (Xcode 15 and earlier) ---
+extract_with_legacy_api() {
+  local graph
+  graph=$(xcrun xcresulttool get --path "$RESULT_PATH" --format json 2>/dev/null) || return 1
+
+  local tests_ref_id
+  tests_ref_id=$(echo "$graph" | python3 -c "
 import json, sys
 data = json.load(sys.stdin)
 actions = data.get('actions', {}).get('_values', [])
@@ -43,18 +83,17 @@ for action in actions:
     if ref_id:
         print(ref_id)
         break
-")
+" 2>/dev/null) || return 1
 
-if [ -z "$TESTS_REF_ID" ]; then
-  echo "Error: could not find testsRef in xcresult"
-  exit 1
-fi
+  if [ -z "$tests_ref_id" ]; then
+    return 1
+  fi
 
-# Get the test plan run summaries
-TESTS_SUMMARY=$(xcrun xcresulttool get --path "$RESULT_PATH" --format json --id "$TESTS_REF_ID" 2>/dev/null)
+  local tests_summary
+  tests_summary=$(xcrun xcresulttool get --path "$RESULT_PATH" --format json --id "$tests_ref_id" 2>/dev/null) || return 1
 
-# Extract attachment references (id + name) from test summaries
-ATTACHMENTS=$(echo "$TESTS_SUMMARY" | python3 -c "
+  local attachments
+  attachments=$(echo "$tests_summary" | python3 -c "
 import json, sys
 
 def find_attachments(obj, results=None):
@@ -79,22 +118,63 @@ def find_attachments(obj, results=None):
 data = json.load(sys.stdin)
 for line in find_attachments(data):
     print(line)
-")
+" 2>/dev/null) || return 1
 
-if [ -z "$ATTACHMENTS" ]; then
-  echo "Error: no screenshot attachments found in test results"
-  exit 1
+  if [ -z "$attachments" ]; then
+    return 1
+  fi
+
+  local count=0
+  while IFS='|' read -r att_id att_name; do
+    local output_file="$ASSETS_DIR/${att_name}.png"
+    echo "  Extracting $att_name -> $output_file"
+    xcrun xcresulttool export --path "$RESULT_PATH" --id "$att_id" --output-path "$output_file" --type file 2>/dev/null
+    count=$((count + 1))
+  done <<< "$attachments"
+
+  [ "$count" -gt 0 ] && return 0
+  return 1
+}
+
+# --- Strategy 3: Direct filesystem search inside xcresult bundle ---
+# xcresult bundles are directories; attachments are stored as data files.
+extract_with_filesystem() {
+  local found_any=false
+
+  # Look for files with PNG magic bytes (89 50 4E 47) inside the bundle
+  while IFS= read -r -d '' file; do
+    if head -c 4 "$file" 2>/dev/null | xxd -p 2>/dev/null | grep -q '^89504e47'; then
+      local fname
+      fname=$(basename "$file")
+      cp "$file" "$ASSETS_DIR/screenshot-${fname}.png"
+      echo "  Extracted screenshot-${fname}.png (from bundle)"
+      found_any=true
+    fi
+  done < <(find "$RESULT_PATH" -type f -print0 2>/dev/null)
+
+  [ "$found_any" = true ] && return 0
+  return 1
+}
+
+# Try strategies in order
+echo "Trying new xcresulttool API..."
+if extract_with_new_api; then
+  echo "Extraction complete (new API)."
+else
+  echo "New API not available, trying legacy API..."
+  if extract_with_legacy_api; then
+    echo "Extraction complete (legacy API)."
+  else
+    echo "Legacy API failed, trying direct filesystem extraction..."
+    if extract_with_filesystem; then
+      echo "Extraction complete (filesystem)."
+    else
+      echo "Error: all extraction strategies failed."
+      exit 1
+    fi
+  fi
 fi
 
-ASSETS_DIR="$REPO_ROOT/assets"
-mkdir -p "$ASSETS_DIR"
-
-COUNT=0
-while IFS='|' read -r ATT_ID ATT_NAME; do
-  OUTPUT_FILE="$ASSETS_DIR/${ATT_NAME}.png"
-  echo "  Extracting $ATT_NAME -> $OUTPUT_FILE"
-  xcrun xcresulttool export --path "$RESULT_PATH" --id "$ATT_ID" --output-path "$OUTPUT_FILE" --type file 2>/dev/null
-  COUNT=$((COUNT + 1))
-done <<< "$ATTACHMENTS"
-
-echo "Done! $COUNT screenshots saved to assets/"
+# Count final results
+FINAL_COUNT=$(find "$ASSETS_DIR" -name "screenshot-*.png" 2>/dev/null | wc -l | tr -d ' ')
+echo "Done! $FINAL_COUNT screenshot(s) in assets/"
