@@ -8,8 +8,9 @@
 
 > A minimal native code editor for macOS.
 
-<!-- TODO: hero screenshot — full editor window with Liquid Glass, dark mode, real project open -->
-<!-- Screenshots will be added by Fedor -->
+<p align="center">
+  <img src="assets/screenshot-editor.png" width="800" alt="Pine Editor — syntax highlighting, minimap, and Liquid Glass UI">
+</p>
 
 Pine is a code editor for developers who want a fast, native Mac app without the overhead of Electron. Built with SwiftUI and AppKit, designed for macOS 26 Liquid Glass. Opens instantly, stays out of your way.
 
@@ -34,11 +35,19 @@ Pine is a code editor for developers who want a fast, native Mac app without the
 - **Auto-updates** — Built-in via [Sparkle](https://sparkle-project.org)
 - **Localized** — English, German, Spanish, French, Japanese, Korean, Portuguese (BR), Russian, Simplified Chinese
 
-<!-- TODO: 3-4 screenshots showing key features -->
-<!-- - Editor with syntax highlighting + minimap -->
-<!-- - Git blame + diff markers + branch switcher -->
-<!-- - Terminal split view -->
-<!-- - Welcome screen -->
+<details>
+<summary>Screenshots</summary>
+
+### Welcome Screen
+<img src="assets/screenshot-welcome.png" width="600" alt="Pine Welcome Screen">
+
+### Built-in Terminal
+<img src="assets/screenshot-terminal.png" width="800" alt="Pine Terminal">
+
+### Markdown Preview
+<img src="assets/screenshot-markdown.png" width="800" alt="Pine Markdown Preview">
+
+</details>
 
 ## Install
 
