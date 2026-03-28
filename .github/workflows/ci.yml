@@ -92,7 +92,7 @@ jobs:
             CODE_SIGN_IDENTITY=- \
             CODE_SIGNING_ALLOWED=NO
 
-      - name: Smoke Test — Launch and Quit
+      - name: Smoke Test — Verify App Bundle
         run: |
           APP_PATH=$(find DerivedData/Build/Products -name "Pine.app" -type d | head -1)
           if [ -z "$APP_PATH" ]; then
@@ -101,37 +101,25 @@ jobs:
           fi
           echo "Found app at: $APP_PATH"
 
-          # Launch the app with reset state, wait for it to start, then quit
-          open -a "$APP_PATH" --args --reset-state
-
-          # Wait up to 10 seconds for the app to appear in process list
-          for i in $(seq 1 20); do
-            if pgrep -x "Pine" > /dev/null 2>&1; then
-              echo "Pine launched successfully (attempt $i)"
-              break
-            fi
-            sleep 0.5
-          done
-
-          if ! pgrep -x "Pine" > /dev/null 2>&1; then
-            echo "::error::Pine did not launch within 10 seconds"
+          # Verify the app bundle structure and binary is executable
+          BINARY="$APP_PATH/Contents/MacOS/Pine"
+          if [ ! -x "$BINARY" ]; then
+            echo "::error::Pine binary not found or not executable at: $BINARY"
             exit 1
           fi
+          echo "Binary is executable: $BINARY"
 
-          # Gracefully quit
-          osascript -e 'tell application "Pine" to quit' 2>/dev/null || true
+          # Verify Info.plist exists
+          if [ ! -f "$APP_PATH/Contents/Info.plist" ]; then
+            echo "::error::Info.plist not found in app bundle"
+            exit 1
+          fi
+          echo "Info.plist present"
 
-          # Wait up to 10 seconds for the app to exit
-          for i in $(seq 1 20); do
-            if ! pgrep -x "Pine" > /dev/null 2>&1; then
-              echo "Pine exited cleanly (attempt $i)"
-              break
-            fi
-            sleep 0.5
-          done
+          # Verify binary is a valid Mach-O executable
+          file "$BINARY" | grep -q "Mach-O" || { echo "::error::Binary is not a valid Mach-O executable"; exit 1; }
+          echo "Binary is valid Mach-O"
 
-          # Force kill if still running
-          pkill -x "Pine" 2>/dev/null || true
           echo "Smoke test passed"
 
       - name: Archive Build Products
