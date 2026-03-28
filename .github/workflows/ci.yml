@@ -92,6 +92,36 @@ jobs:
             CODE_SIGN_IDENTITY=- \
             CODE_SIGNING_ALLOWED=NO
 
+      - name: Smoke Test — Verify App Bundle
+        run: |
+          APP_PATH=$(find DerivedData/Build/Products -name "Pine.app" -type d | head -1)
+          if [ -z "$APP_PATH" ]; then
+            echo "::error::Pine.app not found in build products"
+            exit 1
+          fi
+          echo "Found app at: $APP_PATH"
+
+          # Verify the app bundle structure and binary is executable
+          BINARY="$APP_PATH/Contents/MacOS/Pine"
+          if [ ! -x "$BINARY" ]; then
+            echo "::error::Pine binary not found or not executable at: $BINARY"
+            exit 1
+          fi
+          echo "Binary is executable: $BINARY"
+
+          # Verify Info.plist exists
+          if [ ! -f "$APP_PATH/Contents/Info.plist" ]; then
+            echo "::error::Info.plist not found in app bundle"
+            exit 1
+          fi
+          echo "Info.plist present"
+
+          # Verify binary is a valid Mach-O executable
+          file "$BINARY" | grep -q "Mach-O" || { echo "::error::Binary is not a valid Mach-O executable"; exit 1; }
+          echo "Binary is valid Mach-O"
+
+          echo "Smoke test passed"
+
       - name: Archive Build Products
         run: tar -cf build-products.tar --exclude='DerivedData/ModuleCache' DerivedData
 
@@ -295,7 +325,7 @@ jobs:
             const coverage = process.env.COVERAGE_VALUE;
             const threshold = parseFloat(process.env.COVERAGE_MIN);
             const passing = parseFloat(coverage) >= threshold;
-            const icon = passing ? '✅' : '⚠️';
+            const icon = passing ? '✅' : '❌';
 
             const flakyCount = parseInt(process.env.FLAKY_COUNT || '0', 10);
             // FLAKY_TESTS is JSON-encoded by the detection script
@@ -307,7 +337,7 @@ jobs:
               '',
               `Threshold: ${threshold}%`,
               '',
-              `${passing ? 'Coverage is above the minimum threshold.' : '**Coverage is below the minimum threshold.**'}`,
+              `${passing ? 'Coverage is above the minimum threshold.' : '**Coverage is below the minimum threshold. This is a blocking check — the PR cannot be merged.**'}`,
             ];
 
             if (flakyCount > 0) {
