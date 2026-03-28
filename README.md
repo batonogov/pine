@@ -104,8 +104,6 @@ Dependencies resolve automatically via Swift Package Manager on first build.
 
 MVVM with SwiftUI views backed by AppKit via `NSViewRepresentable`. The editor core uses the native NSTextStorage/NSLayoutManager/NSTextContainer stack. Syntax highlighting runs asynchronously on a background queue with generation tokens to prevent stale results. Git operations run in parallel via GCD. Project-wide search uses Swift concurrency with sliding-window parallelism.
 
-See [CLAUDE.md](CLAUDE.md) for the full technical reference.
-
 ## Contributing
 
 Contributions are welcome. Please open an issue first to discuss what you'd like to change. See the [Issues](https://github.com/batonogov/pine/issues) page.
