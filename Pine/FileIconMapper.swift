@@ -12,16 +12,26 @@ enum FileIconMapper {
     static func colorForFile(_ name: String) -> Color {
         let lowered = name.lowercased()
 
+        // .env variants (hasPrefix covers .env, .env.local, .env.production, etc.)
+        if lowered.hasPrefix(".env") {
+            return .yellow
+        }
+
         // Exact filename matches
         switch lowered {
         case "dockerfile", "containerfile":    return .blue
-        case "makefile", "cmakelists.txt":     return .secondary
+        case ".dockerignore":                  return .secondary
+        case "makefile":                       return .green
+        case "cmakelists.txt":                 return .green
         case ".gitignore", ".gitattributes":   return .orange
-        case ".env", ".env.local":             return .yellow
         case "license", "licence":             return .secondary
-        case "package.json", "package-lock.json",
-             "cargo.toml", "go.mod",
-             "podfile", "gemfile":             return .secondary
+        case "package.json", "package-lock.json": return .green
+        case "cargo.toml", "go.mod":           return .secondary
+        case "podfile", "podfile.lock":        return .red
+        case "gemfile":                        return .secondary
+        case "yarn.lock":                      return .blue
+        case "requirements.txt":               return .blue
+        case "setup.py":                       return .blue
         default: break
         }
 
@@ -111,16 +121,25 @@ enum FileIconMapper {
     static func iconForFile(_ name: String) -> String {
         let lowered = name.lowercased()
 
+        // .env variants (hasPrefix covers .env, .env.local, .env.production, etc.)
+        if lowered.hasPrefix(".env") {
+            return "lock.shield"
+        }
+
         // Exact filename matches
         switch lowered {
         case "dockerfile", "containerfile":    return "shippingbox"
+        case ".dockerignore":                  return "shippingbox"
         case "makefile", "cmakelists.txt":     return "hammer"
         case ".gitignore", ".gitattributes":   return "arrow.triangle.branch"
-        case ".env", ".env.local":             return "lock.shield"
         case "license", "licence":             return "doc.text.magnifyingglass"
         case "package.json", "package-lock.json",
              "cargo.toml", "go.mod",
-             "podfile", "gemfile":             return "shippingbox"
+             "podfile", "podfile.lock",
+             "gemfile":                        return "shippingbox"
+        case "yarn.lock":                      return "shippingbox"
+        case "requirements.txt":               return "doc.plaintext"
+        case "setup.py":                       return "terminal"
         default: break
         }
 

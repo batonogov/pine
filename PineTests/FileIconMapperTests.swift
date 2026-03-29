@@ -14,12 +14,15 @@ struct FileIconMapperTests {
     @Test(arguments: [
         ("Dockerfile", "shippingbox"),
         ("Containerfile", "shippingbox"),
+        (".dockerignore", "shippingbox"),
         ("Makefile", "hammer"),
         ("CMakeLists.txt", "hammer"),
         (".gitignore", "arrow.triangle.branch"),
         (".gitattributes", "arrow.triangle.branch"),
         (".env", "lock.shield"),
         (".env.local", "lock.shield"),
+        (".env.production", "lock.shield"),
+        (".env.staging", "lock.shield"),
         ("LICENSE", "doc.text.magnifyingglass"),
         ("licence", "doc.text.magnifyingglass"),
         ("package.json", "shippingbox"),
@@ -27,7 +30,11 @@ struct FileIconMapperTests {
         ("Cargo.toml", "shippingbox"),
         ("go.mod", "shippingbox"),
         ("Podfile", "shippingbox"),
+        ("Podfile.lock", "shippingbox"),
         ("Gemfile", "shippingbox"),
+        ("yarn.lock", "shippingbox"),
+        ("requirements.txt", "doc.plaintext"),
+        ("setup.py", "terminal"),
     ])
     func fileExactName(name: String, expected: String) {
         #expect(FileIconMapper.iconForFile(name) == expected)
@@ -196,11 +203,45 @@ struct FileIconMapperTests {
 
     // MARK: - colorForFile — exact filename matches
 
-    @Test func fileColorExactFilenames() {
+    @Test func fileColorDockerfiles() {
         #expect(FileIconMapper.colorForFile("Dockerfile") == .blue)
         #expect(FileIconMapper.colorForFile("Containerfile") == .blue)
+        #expect(FileIconMapper.colorForFile(".dockerignore") == .secondary)
+    }
+
+    @Test func fileColorBuildTools() {
+        #expect(FileIconMapper.colorForFile("Makefile") == .green)
+        #expect(FileIconMapper.colorForFile("CMakeLists.txt") == .green)
+    }
+
+    @Test func fileColorGitFiles() {
         #expect(FileIconMapper.colorForFile(".gitignore") == .orange)
+        #expect(FileIconMapper.colorForFile(".gitattributes") == .orange)
+    }
+
+    @Test func fileColorEnvFiles() {
         #expect(FileIconMapper.colorForFile(".env") == .yellow)
+        #expect(FileIconMapper.colorForFile(".env.local") == .yellow)
+        #expect(FileIconMapper.colorForFile(".env.production") == .yellow)
+        #expect(FileIconMapper.colorForFile(".env.staging") == .yellow)
+    }
+
+    @Test func fileColorLicense() {
+        #expect(FileIconMapper.colorForFile("LICENSE") == .secondary)
+        #expect(FileIconMapper.colorForFile("licence") == .secondary)
+    }
+
+    @Test func fileColorPackageManagers() {
+        #expect(FileIconMapper.colorForFile("package.json") == .green)
+        #expect(FileIconMapper.colorForFile("package-lock.json") == .green)
+        #expect(FileIconMapper.colorForFile("Podfile") == .red)
+        #expect(FileIconMapper.colorForFile("Podfile.lock") == .red)
+        #expect(FileIconMapper.colorForFile("yarn.lock") == .blue)
+        #expect(FileIconMapper.colorForFile("requirements.txt") == .blue)
+        #expect(FileIconMapper.colorForFile("setup.py") == .blue)
+        #expect(FileIconMapper.colorForFile("Cargo.toml") == .secondary)
+        #expect(FileIconMapper.colorForFile("go.mod") == .secondary)
+        #expect(FileIconMapper.colorForFile("Gemfile") == .secondary)
     }
 
     // MARK: - colorForFile — Swift / Apple
