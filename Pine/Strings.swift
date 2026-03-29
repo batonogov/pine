@@ -176,6 +176,11 @@ enum Strings {
         String(localized: "branch.uncommittedChanges.switch")
     }
 
+    // MARK: - Editor Themes
+
+    static let menuEditorTheme: LocalizedStringKey = "menu.editorTheme"
+    static let themeSystemDefault: LocalizedStringKey = "theme.systemDefault"
+
     static let menuAutoSave: LocalizedStringKey = "menu.autoSave"
     static let autoSaving: LocalizedStringKey = "editor.autoSaving"
     static let menuSave: LocalizedStringKey = "menu.save"

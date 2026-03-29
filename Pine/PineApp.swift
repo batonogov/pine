@@ -145,6 +145,10 @@ struct PineApp: App {
 
                 Divider()
 
+                ThemeMenuView()
+
+                Divider()
+
                 Button {
                     guard let pm = focusedProject,
                           let url = pm.tabManager.activeTab?.url else { return }
@@ -1213,4 +1217,6 @@ extension Notification.Name {
     static let sendToTerminal = Notification.Name("sendToTerminal")
     /// userInfo: ["text": String]
     static let sendTextToTerminal = Notification.Name("sendTextToTerminal")
+    // Editor Themes (issue #636)
+    static let themeChanged = Notification.Name("themeChanged")
 }

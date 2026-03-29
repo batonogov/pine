@@ -40,6 +40,8 @@ nonisolated enum MenuIcons {
     static let toggleMinimap = "sidebar.right"
     static let toggleBlame = "person.text.rectangle"
     static let toggleWordWrap = "text.word.spacing"
+    static let editorTheme = "paintpalette"
+    static let themeSystem = "circle.lefthalf.filled"
     static let revealFileInFinder = "doc.viewfinder"
     static let revealProjectInFinder = "arrow.right.circle"
 

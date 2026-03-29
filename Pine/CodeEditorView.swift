@@ -655,6 +655,14 @@ struct CodeEditorView: NSViewRepresentable {
             object: nil
         )
 
+        // Observe theme changes — re-highlight the entire file
+        NotificationCenter.default.addObserver(
+            context.coordinator,
+            selector: #selector(Coordinator.handleThemeChanged),
+            name: .themeChanged,
+            object: nil
+        )
+
         // Calculate initial foldable ranges
         context.coordinator.recalculateFoldableRanges()
 
@@ -1325,6 +1333,38 @@ struct CodeEditorView: NSViewRepresentable {
 
         /// Extracts selected text (or current line if no selection) and posts
         /// `.sendTextToTerminal` notification with the text in userInfo.
+        @objc func handleThemeChanged() {
+            guard let sv = scrollView,
+                  let textView = sv.documentView as? GutterTextView else { return }
+
+            // Apply editor chrome colors (background, text, gutter)
+            if let theme = ThemeManager.shared.activeTheme {
+                let bgColor = theme.editor.background.nsColor
+                let textColor = theme.editor.text.nsColor
+                sv.backgroundColor = bgColor
+                textView.backgroundColor = bgColor
+                textView.textColor = textColor
+                textView.insertionPointColor = textColor
+            } else {
+                sv.backgroundColor = .textBackgroundColor
+                textView.backgroundColor = .textBackgroundColor
+                textView.textColor = .textColor
+                textView.insertionPointColor = .textColor
+            }
+
+            // Re-highlight syntax with the new theme
+            guard !parent.syntaxHighlightingDisabled,
+                  let storage = textView.textStorage else { return }
+            SyntaxHighlighter.shared.highlight(
+                textStorage: storage,
+                language: parent.language,
+                fileName: parent.fileName,
+                font: parent.editorFont
+            )
+            // Minimap also needs to redraw with new theme colors
+            minimapView?.needsDisplay = true
+        }
+
         @objc func handleSendToTerminal() {
             guard let sv = scrollView,
                   let textView = sv.documentView as? GutterTextView,
