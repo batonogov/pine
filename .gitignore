@@ -29,4 +29,3 @@ assets/screenshot-*.png
 
 # Claude Code
 .claude/
-# trigger CI
