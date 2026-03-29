@@ -658,12 +658,19 @@ final class TabManager {
         enum Kind: Equatable { case modified, deleted }
     }
 
+    /// Result of checking external changes — includes both conflicts and silently reloaded files.
+    struct ExternalChangeResult {
+        let conflicts: [ExternalConflict]
+        let reloadedFileNames: [String]
+    }
+
     /// Checks open tabs against disk state. Silently reloads clean tabs that were
     /// modified externally. Closes clean tabs for deleted files. Returns conflicts
-    /// for dirty tabs that need user resolution.
-    func checkExternalChanges() -> [ExternalConflict] {
+    /// for dirty tabs that need user resolution, plus names of silently reloaded files.
+    func checkExternalChanges() -> ExternalChangeResult {
         var conflicts: [ExternalConflict] = []
         var cleanDeletedIDs: [UUID] = []
+        var reloadedNames: [String] = []
 
         for index in tabs.indices {
             let tab = tabs[index]
@@ -694,6 +701,7 @@ final class TabManager {
                     tabs[index].content = content
                     tabs[index].savedContent = content
                     tabs[index].lastModDate = diskMod
+                    reloadedNames.append(tab.url.lastPathComponent)
                 } catch {
                     Self.logger.error("Failed to reload tab \(tab.url.lastPathComponent): \(error)")
                 }
@@ -704,7 +712,7 @@ final class TabManager {
             closeTab(id: id)
         }
 
-        return conflicts
+        return ExternalChangeResult(conflicts: conflicts, reloadedFileNames: reloadedNames)
     }
 
     /// Reloads a tab's content from disk (used after user chooses "reload" in conflict dialog).

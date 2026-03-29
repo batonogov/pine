@@ -83,6 +83,9 @@ nonisolated enum AccessibilityID {
     static let symbolResultsList = "symbolResultsList"
     static func symbolItem(_ name: String) -> String { "symbolItem_\(name)" }
 
+    // MARK: - Toast notifications
+    static let toastNotification = "toastNotification"
+
     // MARK: - Status bar
     static let statusBar = "statusBar"
     static let terminalToggleButton = "terminalToggleButton"

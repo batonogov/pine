@@ -19,6 +19,7 @@ final class ProjectManager {
     let quickOpenProvider = QuickOpenProvider()
     let progress = ProgressTracker()
     let contextFileWriter = ContextFileWriter()
+    let toastManager = ToastManager()
     // nonisolated(unsafe) allows deinit to call stopPeriodicSnapshots().
     // RecoveryManager is only mutated on @MainActor; deinit is the only
     // nonisolated access point, and it runs after the last reference is dropped.

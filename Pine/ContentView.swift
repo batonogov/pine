@@ -87,6 +87,9 @@ struct ContentView: View {
                 )
             }
         }
+        .overlay(alignment: .top) {
+            ToastOverlay()
+        }
         .modifier(ProjectSearchModifier(
             projectManager: projectManager,
             isSearchPresented: $isSearchPresented
@@ -188,7 +191,7 @@ struct ContentView: View {
             onCloseTab: { closeTabWithConfirmation($0) },
             onOpenNewProject: { openNewProject() },
             onHandleFileDeletion: { handleFileDeletion($0) },
-            onHandleExternalConflicts: { handleExternalConflicts($0) },
+            onHandleExternalChanges: { handleExternalChanges($0) },
             onNavigateToChange: { navigateToChange(direction: $0) }
         ))
         .onReceive(NotificationCenter.default.publisher(for: .toggleWordWrap)) { _ in
@@ -261,5 +264,6 @@ struct ContentView: View {
         .environment(projectManager.workspace)
         .environment(projectManager.terminal)
         .environment(projectManager.tabManager)
+        .environment(projectManager.toastManager)
         .environment(registry)
 }

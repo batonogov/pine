@@ -271,9 +271,14 @@ extension ContentView {
         }
     }
 
-    func handleExternalConflicts(_ conflicts: [TabManager.ExternalConflict]) {
-        let modified = conflicts.filter { $0.kind == .modified }
-        let deleted = conflicts.filter { $0.kind == .deleted }
+    func handleExternalChanges(_ result: TabManager.ExternalChangeResult) {
+        // Show toast for silently reloaded files
+        if !result.reloadedFileNames.isEmpty {
+            projectManager.toastManager.showFilesReloaded(result.reloadedFileNames)
+        }
+
+        let modified = result.conflicts.filter { $0.kind == .modified }
+        let deleted = result.conflicts.filter { $0.kind == .deleted }
 
         if !modified.isEmpty {
             let names = modified.map(\.url.lastPathComponent).joined(separator: ", ")
