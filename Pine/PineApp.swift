@@ -290,6 +290,48 @@ struct PineApp: App {
                 .keyboardShortcut(.upArrow, modifiers: [.control, .option])
                 .disabled(focusedProject?.tabManager.activeTab == nil)
 
+                Button {
+                    NotificationCenter.default.post(
+                        name: .inlineDiffAction, object: nil,
+                        userInfo: ["action": "accept"]
+                    )
+                } label: {
+                    Label(Strings.menuAcceptChange, systemImage: MenuIcons.acceptChange)
+                }
+                .keyboardShortcut(.return, modifiers: [.control, .option])
+                .disabled(focusedProject?.tabManager.activeTab == nil)
+
+                Button {
+                    NotificationCenter.default.post(
+                        name: .inlineDiffAction, object: nil,
+                        userInfo: ["action": "revert"]
+                    )
+                } label: {
+                    Label(Strings.menuRevertChange, systemImage: MenuIcons.revertChange)
+                }
+                .keyboardShortcut(.delete, modifiers: [.control, .option])
+                .disabled(focusedProject?.tabManager.activeTab == nil)
+
+                Button {
+                    NotificationCenter.default.post(
+                        name: .inlineDiffAction, object: nil,
+                        userInfo: ["action": "acceptAll"]
+                    )
+                } label: {
+                    Label(Strings.menuAcceptAllChanges, systemImage: MenuIcons.acceptAllChanges)
+                }
+                .disabled(focusedProject?.tabManager.activeTab == nil)
+
+                Button {
+                    NotificationCenter.default.post(
+                        name: .inlineDiffAction, object: nil,
+                        userInfo: ["action": "revertAll"]
+                    )
+                } label: {
+                    Label(Strings.menuRevertAllChanges, systemImage: MenuIcons.revertAllChanges)
+                }
+                .disabled(focusedProject?.tabManager.activeTab == nil)
+
                 Divider()
 
                 Button {
@@ -1216,4 +1258,6 @@ extension Notification.Name {
     static let sendTextToTerminal = Notification.Name("sendTextToTerminal")
     /// userInfo: ["url": URL] — reveals a file in the sidebar tree
     static let revealInSidebar = Notification.Name("revealInSidebar")
+    /// userInfo: ["action": "accept" | "revert" | "acceptAll" | "revertAll"]
+    static let inlineDiffAction = Notification.Name("inlineDiffAction")
 }

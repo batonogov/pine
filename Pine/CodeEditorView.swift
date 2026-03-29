@@ -398,6 +398,12 @@ struct CodeEditorView: NSViewRepresentable {
     var language: String
     var fileName: String?
     var lineDiffs: [GitLineDiff] = []
+    /// Diff hunks for accept/revert buttons in the gutter.
+    var diffHunks: [DiffHunk] = []
+    /// Callback for accepting (staging) a hunk.
+    var onAcceptHunk: ((DiffHunk) -> Void)?
+    /// Callback for reverting a hunk.
+    var onRevertHunk: ((DiffHunk) -> Void)?
     /// Whether inline blame annotation is visible on the cursor line.
     var isBlameVisible: Bool = false
     /// Blame data for the current file.
@@ -526,6 +532,13 @@ struct CodeEditorView: NSViewRepresentable {
         let coordinator = context.coordinator
         lineNumberView.onFoldToggle = { [weak coordinator] foldable in
             coordinator?.handleFoldToggle(foldable)
+        }
+        lineNumberView.diffHunks = diffHunks
+        lineNumberView.onAcceptHunk = { [weak coordinator] hunk in
+            coordinator?.onAcceptHunk?(hunk)
+        }
+        lineNumberView.onRevertHunk = { [weak coordinator] hunk in
+            coordinator?.onRevertHunk?(hunk)
         }
         container.addSubview(lineNumberView)
 
@@ -731,8 +744,11 @@ struct CodeEditorView: NSViewRepresentable {
         // Обновляем diff-данные LineNumberView и MinimapView
         if let lineNumberView = context.coordinator.lineNumberView {
             lineNumberView.lineDiffs = lineDiffs
+            lineNumberView.diffHunks = diffHunks
             lineNumberView.foldState = foldState
         }
+        context.coordinator.onAcceptHunk = onAcceptHunk
+        context.coordinator.onRevertHunk = onRevertHunk
         if let minimapView = context.coordinator.minimapView {
             minimapView.lineDiffs = lineDiffs
         }
@@ -782,6 +798,11 @@ struct CodeEditorView: NSViewRepresentable {
 
         /// Last consumed navigation request ID — prevents re-processing.
         var lastGoToID: UUID?
+
+        /// Callback for accepting (staging) a hunk via gutter button click.
+        var onAcceptHunk: ((DiffHunk) -> Void)?
+        /// Callback for reverting a hunk via gutter button click.
+        var onRevertHunk: ((DiffHunk) -> Void)?
 
         /// Generation counter for cancelling stale async highlight requests.
         let highlightGeneration = HighlightGeneration()
