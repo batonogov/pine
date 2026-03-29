@@ -376,6 +376,26 @@ enum Strings {
         String(localized: "terminal.tabCloseWarning.close")
     }
 
+    // MARK: - Config Validation
+
+    static let menuToggleValidation: LocalizedStringKey = "menu.toggleValidation"
+
+    static var validationErrorCount: (Int) -> String = { count in
+        String(localized: "validation.errorCount \(count)")
+    }
+
+    static var validationWarningCount: (Int) -> String = { count in
+        String(localized: "validation.warningCount \(count)")
+    }
+
+    static var validationToolNotInstalled: (String) -> String = { tool in
+        String(localized: "validation.toolNotInstalled \(tool)")
+    }
+
+    static var validationPassed: String {
+        String(localized: "validation.passed")
+    }
+
     // MARK: - Progress Indicators
 
     static var progressLoadingProject: String {
