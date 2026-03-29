@@ -205,6 +205,14 @@ struct PineApp: App {
                 }
                 .keyboardShortcut("/", modifiers: .command)
 
+                Button {
+                    NotificationCenter.default.post(name: .addNextOccurrence, object: nil)
+                } label: {
+                    Label(Strings.menuAddNextOccurrence, systemImage: MenuIcons.addNextOccurrence)
+                }
+                .keyboardShortcut("d", modifiers: .command)
+                .disabled(focusedProject?.tabManager.activeTab == nil)
+
                 Divider()
 
                 Button {
@@ -1260,4 +1268,6 @@ extension Notification.Name {
     static let revealInSidebar = Notification.Name("revealInSidebar")
     /// userInfo: ["action": InlineDiffAction]
     static let inlineDiffAction = Notification.Name("inlineDiffAction")
+    // Multiple cursors (issue #333)
+    static let addNextOccurrence = Notification.Name("addNextOccurrence")
 }

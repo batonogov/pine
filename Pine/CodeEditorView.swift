@@ -20,6 +20,9 @@ final class GutterTextView: NSTextView {
     /// Indentation style for indent guide rendering.
     var indentStyle: IndentationStyle = .spaces(4)
 
+    /// Multi-cursor state (issue #333).
+    var multiCursorState = MultiCursorState()
+
     /// Bottom padding so the last line is not clipped (issue #258).
     static let defaultBottomInset: CGFloat = 5
 
@@ -116,6 +119,12 @@ final class GutterTextView: NSTextView {
         if isBlameVisible, !blameLookup.isEmpty {
             drawInlineBlame(lineRect: lineRect, layoutManager: layoutManager)
         }
+
+        // ── Multi-cursor overlays (issue #333) ──
+        if multiCursorState.isMultiCursor {
+            drawMultiCursorLineHighlights()
+            drawMultiCursors(in: rect)
+        }
     }
 
     /// Draws inline blame annotation after the line content on the cursor line.
@@ -197,6 +206,367 @@ final class GutterTextView: NSTextView {
         if isBlameVisible { setNeedsDisplay(bounds) }
         super.setSelectedRanges(ranges, affinity: affinity, stillSelecting: stillSelecting)
         needsDisplay = true
+    }
+
+    // MARK: - Multi-cursor rendering (issue #333)
+
+    /// Color for extra cursor carets (secondary cursors).
+    private static let secondaryCursorColor = NSColor(name: nil) { appearance in
+        if appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua {
+            return NSColor.white.withAlphaComponent(0.9)
+        } else {
+            return NSColor.black.withAlphaComponent(0.9)
+        }
+    }
+
+    /// Color for secondary selection highlights.
+    private static let secondarySelectionColor = NSColor(name: nil) { appearance in
+        if appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua {
+            return NSColor.controlAccentColor.withAlphaComponent(0.25)
+        } else {
+            return NSColor.controlAccentColor.withAlphaComponent(0.2)
+        }
+    }
+
+    /// Draws secondary cursor carets and selection highlights.
+    private func drawMultiCursors(in rect: NSRect) {
+        guard multiCursorState.isMultiCursor,
+              let layoutManager = layoutManager,
+              let container = textContainer else { return }
+
+        let primaryRange = selectedRange()
+        let textLength = (string as NSString).length
+
+        for cursor in multiCursorState.cursors {
+            // Skip the primary cursor — NSTextView draws it natively
+            if cursor.range == primaryRange { continue }
+
+            guard cursor.range.location <= textLength else { continue }
+
+            if cursor.range.length > 0 {
+                // Draw selection highlight
+                let safeLength = min(cursor.range.length, textLength - cursor.range.location)
+                let safeRange = NSRange(location: cursor.range.location, length: safeLength)
+                let glyphRange = layoutManager.glyphRange(
+                    forCharacterRange: safeRange, actualCharacterRange: nil
+                )
+                Self.secondarySelectionColor.setFill()
+                layoutManager.enumerateEnclosingRects(
+                    forGlyphRange: glyphRange, withinSelectedGlyphRange: glyphRange,
+                    in: container
+                ) { selRect, _ in
+                    var adjustedRect = selRect
+                    adjustedRect.origin.x += self.textContainerOrigin.x
+                    adjustedRect.origin.y += self.textContainerOrigin.y
+                    adjustedRect.fill()
+                }
+            }
+
+            // Draw caret
+            let caretLocation = min(cursor.range.location + cursor.range.length, textLength)
+            let glyphIndex = layoutManager.glyphIndexForCharacter(at: min(caretLocation, max(textLength - 1, 0)))
+            let lineRect = layoutManager.lineFragmentRect(forGlyphAt: glyphIndex, effectiveRange: nil)
+            let charPoint = layoutManager.location(forGlyphAt: glyphIndex)
+
+            var caretRect = NSRect(
+                x: lineRect.origin.x + charPoint.x + textContainerOrigin.x,
+                y: lineRect.origin.y + textContainerOrigin.y,
+                width: 1.5,
+                height: lineRect.height
+            )
+            // Ensure caret is within dirty rect for efficient drawing
+            guard caretRect.intersects(rect) else { continue }
+            caretRect = caretRect.intersection(rect)
+            Self.secondaryCursorColor.setFill()
+            caretRect.fill()
+        }
+    }
+
+    /// Highlight all lines that have a multi-cursor on them.
+    private func drawMultiCursorLineHighlights() {
+        guard multiCursorState.isMultiCursor,
+              let layoutManager = layoutManager else { return }
+
+        let textLength = (string as NSString).length
+
+        for cursor in multiCursorState.cursors {
+            // Skip primary — already drawn by drawBackground
+            if cursor.range == selectedRange() { continue }
+            guard cursor.range.location <= textLength else { continue }
+
+            let safeLoc = min(cursor.range.location, max(textLength - 1, 0))
+            let glyphIndex = layoutManager.glyphIndexForCharacter(at: safeLoc)
+            var lineRect = layoutManager.lineFragmentRect(forGlyphAt: glyphIndex, effectiveRange: nil)
+            lineRect.origin.x = 0
+            lineRect.size.width = bounds.width
+            lineRect.origin.y += textContainerOrigin.y
+
+            currentLineColor.setFill()
+            lineRect.fill()
+        }
+    }
+
+    // MARK: - Multi-cursor keyboard handling (Cmd+D, Escape)
+
+    override func keyDown(with event: NSEvent) {
+        // Escape — collapse to single cursor
+        if event.keyCode == 53 && multiCursorState.isMultiCursor { // 53 = Escape
+            multiCursorState.collapseToSingle()
+            clearSecondaryHighlights()
+            needsDisplay = true
+            return
+        }
+
+        super.keyDown(with: event)
+    }
+
+    /// Cmd+D handler: selects the next occurrence of the current word/selection.
+    func selectNextOccurrence() {
+        let source = string as NSString
+        guard source.length > 0 else { return }
+
+        let currentSelection = selectedRange()
+
+        // If no selection, first select the word under cursor
+        if currentSelection.length == 0 {
+            if let wordRange = MultiCursorState.wordAtCursor(in: source, cursorLocation: currentSelection.location) {
+                setSelectedRange(wordRange)
+                multiCursorState.setSingle(wordRange)
+                applySecondaryHighlights()
+                return
+            }
+            return
+        }
+
+        // Get the selected text
+        let selectedText = source.substring(with: currentSelection)
+
+        // Find next occurrence
+        let existingRanges = multiCursorState.cursors.map(\.range)
+        let lastCursor = multiCursorState.cursors.last ?? CursorSelection(range: currentSelection)
+        let searchFrom = NSMaxRange(lastCursor.range)
+
+        guard let nextRange = MultiCursorState.findNextOccurrence(
+            of: selectedText,
+            in: source,
+            searchFrom: searchFrom,
+            existingRanges: existingRanges
+        ) else { return }
+
+        // On first Cmd+D with existing selection but single cursor,
+        // ensure the current selection is tracked
+        if !multiCursorState.isMultiCursor {
+            multiCursorState.setSingle(currentSelection)
+        }
+
+        multiCursorState.addCursor(at: nextRange)
+        applySecondaryHighlights()
+
+        // Scroll to make the new cursor visible
+        scrollRangeToVisible(nextRange)
+        needsDisplay = true
+    }
+
+    // MARK: - Multi-cursor mouse handling (Option+Click)
+
+    override func mouseDown(with event: NSEvent) {
+        if event.modifierFlags.contains(.option) && !event.modifierFlags.contains(.shift) {
+            // Option+Click — add cursor at click position
+            let localPoint = convert(event.locationInWindow, from: nil)
+            let adjustedPoint = NSPoint(
+                x: localPoint.x - textContainerOrigin.x,
+                y: localPoint.y - textContainerOrigin.y
+            )
+
+            guard let container = textContainer,
+                  let layoutManager = layoutManager else {
+                super.mouseDown(with: event)
+                return
+            }
+
+            var fraction: CGFloat = 0
+            let glyphIndex = layoutManager.glyphIndex(for: adjustedPoint, in: container, fractionOfDistanceThroughGlyph: &fraction)
+            let charIndex = layoutManager.characterIndexForGlyph(at: glyphIndex)
+
+            if !multiCursorState.isMultiCursor {
+                // Start multi-cursor mode — add current cursor position first
+                multiCursorState.setSingle(selectedRange())
+            }
+
+            multiCursorState.addCursor(at: NSRange(location: charIndex, length: 0))
+            applySecondaryHighlights()
+            needsDisplay = true
+            return
+        }
+
+        // Normal click — reset to single cursor
+        if multiCursorState.isMultiCursor {
+            multiCursorState.collapseToSingle()
+            clearSecondaryHighlights()
+        }
+        super.mouseDown(with: event)
+    }
+
+    // MARK: - Multi-cursor text editing
+
+    override func insertText(_ string: Any, replacementRange: NSRange) {
+        guard multiCursorState.isMultiCursor else {
+            super.insertText(string, replacementRange: replacementRange)
+            return
+        }
+
+        let insertString: String
+        if let str = string as? String {
+            insertString = str
+        } else if let attrStr = string as? NSAttributedString {
+            insertString = attrStr.string
+        } else {
+            super.insertText(string, replacementRange: replacementRange)
+            return
+        }
+
+        let insertLength = (insertString as NSString).length
+
+        // Apply edits in reverse order so positions remain valid
+        let sortedCursors = multiCursorState.cursors.sorted(by: { $0.range.location > $1.range.location })
+
+        // Group undo
+        undoManager?.beginUndoGrouping()
+
+        for cursor in sortedCursors {
+            let source = self.string as NSString
+            let safeLoc = min(cursor.range.location, source.length)
+            let safeLen = min(cursor.range.length, source.length - safeLoc)
+            let safeRange = NSRange(location: safeLoc, length: safeLen)
+
+            if shouldChangeText(in: safeRange, replacementString: insertString) {
+                replaceCharacters(in: safeRange, with: insertString)
+                didChangeText()
+            }
+        }
+
+        undoManager?.endUndoGrouping()
+
+        // Update cursor positions after all edits
+        var newCursors: [CursorSelection] = []
+        var offset = 0
+        let originalSorted = multiCursorState.cursors.sorted()
+
+        for cursor in originalSorted {
+            let newLocation = cursor.range.location + offset + insertLength
+            newCursors.append(CursorSelection(range: NSRange(location: newLocation, length: 0)))
+            offset += insertLength - cursor.range.length
+        }
+
+        multiCursorState = MultiCursorState()
+        for cursor in newCursors {
+            multiCursorState.addCursor(at: cursor.range)
+        }
+
+        // Set primary selection to last cursor
+        if let last = newCursors.last {
+            setSelectedRange(last.range)
+        }
+
+        applySecondaryHighlights()
+        needsDisplay = true
+    }
+
+    override func deleteBackward(_ sender: Any?) {
+        guard multiCursorState.isMultiCursor else {
+            super.deleteBackward(sender)
+            return
+        }
+
+        let sortedCursors = multiCursorState.cursors.sorted(by: { $0.range.location > $1.range.location })
+
+        undoManager?.beginUndoGrouping()
+
+        for cursor in sortedCursors {
+            let source = self.string as NSString
+            let deleteRange: NSRange
+            if cursor.range.length > 0 {
+                let safeLoc = min(cursor.range.location, source.length)
+                let safeLen = min(cursor.range.length, source.length - safeLoc)
+                deleteRange = NSRange(location: safeLoc, length: safeLen)
+            } else {
+                guard cursor.range.location > 0 else { continue }
+                let safeLoc = min(cursor.range.location, source.length)
+                deleteRange = NSRange(location: safeLoc - 1, length: 1)
+            }
+
+            if shouldChangeText(in: deleteRange, replacementString: "") {
+                replaceCharacters(in: deleteRange, with: "")
+                didChangeText()
+            }
+        }
+
+        undoManager?.endUndoGrouping()
+
+        // Recalculate cursor positions
+        var newCursors: [CursorSelection] = []
+        var offset = 0
+        let originalSorted = multiCursorState.cursors.sorted()
+
+        for cursor in originalSorted {
+            let deleteLen = cursor.range.length > 0 ? cursor.range.length : (cursor.range.location > 0 ? 1 : 0)
+            let newLoc = max(0, cursor.range.location + offset - (cursor.range.length > 0 ? 0 : min(1, cursor.range.location)))
+            newCursors.append(CursorSelection(range: NSRange(location: newLoc, length: 0)))
+            offset -= deleteLen
+        }
+
+        multiCursorState = MultiCursorState()
+        for cursor in newCursors {
+            multiCursorState.addCursor(at: cursor.range)
+        }
+
+        if let first = newCursors.first {
+            setSelectedRange(first.range)
+        }
+
+        applySecondaryHighlights()
+        needsDisplay = true
+    }
+
+    // MARK: - Secondary cursor highlight management
+
+    /// Applies temporary highlight attributes for secondary cursors' selections.
+    private func applySecondaryHighlights() {
+        guard let layoutManager = layoutManager else { return }
+        let textLength = (string as NSString).length
+        let primaryRange = selectedRange()
+
+        // Clear previous secondary highlights
+        if textLength > 0 {
+            layoutManager.removeTemporaryAttribute(
+                .backgroundColor,
+                forCharacterRange: NSRange(location: 0, length: textLength)
+            )
+        }
+
+        // Apply highlights for all cursor selections (including primary for visual consistency)
+        for cursor in multiCursorState.cursors where cursor.range.length > 0 {
+            if cursor.range == primaryRange { continue } // NSTextView handles primary
+            let safeLoc = min(cursor.range.location, textLength)
+            let safeLen = min(cursor.range.length, textLength - safeLoc)
+            guard safeLen > 0 else { continue }
+            layoutManager.addTemporaryAttribute(
+                .backgroundColor,
+                value: Self.secondarySelectionColor,
+                forCharacterRange: NSRange(location: safeLoc, length: safeLen)
+            )
+        }
+    }
+
+    /// Removes all secondary cursor highlights.
+    private func clearSecondaryHighlights() {
+        guard let layoutManager = layoutManager else { return }
+        let textLength = (string as NSString).length
+        guard textLength > 0 else { return }
+        layoutManager.removeTemporaryAttribute(
+            .backgroundColor,
+            forCharacterRange: NSRange(location: 0, length: textLength)
+        )
     }
 
     // MARK: - Toggle comment
@@ -637,6 +1007,14 @@ struct CodeEditorView: NSViewRepresentable {
             context.coordinator,
             selector: #selector(Coordinator.handleToggleComment),
             name: .toggleComment,
+            object: nil
+        )
+
+        // Observe add next occurrence notification (Cmd+D, issue #333)
+        NotificationCenter.default.addObserver(
+            context.coordinator,
+            selector: #selector(Coordinator.handleAddNextOccurrence),
+            name: .addNextOccurrence,
             object: nil
         )
 
@@ -1322,6 +1700,15 @@ struct CodeEditorView: NSViewRepresentable {
                   let gutterView = sv.documentView as? GutterTextView,
                   gutterView.window?.isKeyWindow == true else { return }
             gutterView.toggleComment()
+        }
+
+        // MARK: - Add Next Occurrence (issue #333)
+
+        @objc func handleAddNextOccurrence() {
+            guard let sv = scrollView,
+                  let gutterView = sv.documentView as? GutterTextView,
+                  gutterView.window?.isKeyWindow == true else { return }
+            gutterView.selectNextOccurrence()
         }
 
         // MARK: - Find & Replace (issue #275)
