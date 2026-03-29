@@ -1,0 +1,24 @@
+# NOTE: All third-party actions are pinned by full commit SHA for supply-chain safety.
+name: Update Screenshots
+
+on:
+  workflow_dispatch:
+  release:
+    types: [published]
+
+jobs:
+  screenshots:
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+
+      - name: Run screenshot tests and extract
+        run: bash scripts/update-screenshots.sh
+
+      - name: Commit screenshots
+        run: |
+          git config user.name "github-actions"
+          git config user.email "actions@github.com"
+          git add assets/screenshot-*.png
+          git diff --staged --quiet || git commit -m "chore: update screenshots"
+          git push
