@@ -23,6 +23,9 @@ struct EditorAreaView: View {
     var isMinimapVisible: Bool
     var isWordWrapEnabled: Bool
     var onCloseTab: (EditorTab) -> Void
+    var onCloseOtherTabs: ((UUID) -> Void)?
+    var onCloseTabsToTheRight: ((UUID) -> Void)?
+    var onCloseAllTabs: (() -> Void)?
     var onSaveSession: () -> Void
 
     @Environment(\.openWindow) private var openWindow
@@ -35,11 +38,15 @@ struct EditorAreaView: View {
                 EditorTabBar(
                     tabManager: tabManager,
                     onCloseTab: { tab in onCloseTab(tab) },
+                    onCloseOtherTabs: onCloseOtherTabs,
+                    onCloseTabsToTheRight: onCloseTabsToTheRight,
+                    onCloseAllTabs: onCloseAllTabs,
                     onReorder: { onSaveSession() },
                     isMarkdownFile: activeTab?.isMarkdownFile ?? false,
                     previewMode: activeTab?.previewMode ?? .source,
                     onTogglePreview: { tabManager.togglePreviewMode() },
-                    isAutoSaving: tabManager.isAutoSaving
+                    isAutoSaving: tabManager.isAutoSaving,
+                    projectRootURL: workspace.rootURL
                 )
             }
 

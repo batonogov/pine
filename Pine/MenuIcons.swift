@@ -56,4 +56,12 @@ nonisolated enum MenuIcons {
     static let revealInFinder = "arrow.right.circle"
     static let rename = "pencil"
     static let delete = "trash"
+
+    // MARK: - Tab context menu
+    static let closeOtherTabs = "xmark.square"
+    static let closeTabsToTheRight = "xmark.rectangle"
+    static let closeAllTabs = "xmark.rectangle.fill"
+    static let copyPath = "doc.on.clipboard"
+    static let copyRelativePath = "link"
+    static let revealInSidebar = "sidebar.left"
 }

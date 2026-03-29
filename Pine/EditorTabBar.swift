@@ -14,6 +14,12 @@ struct EditorTabBar: View {
     /// Called when user clicks the close button on a tab.
     /// The caller is responsible for unsaved-changes protection.
     var onCloseTab: (EditorTab) -> Void
+    /// Called when user chooses "Close Other Tabs" from context menu.
+    var onCloseOtherTabs: ((UUID) -> Void)?
+    /// Called when user chooses "Close Tabs to the Right" from context menu.
+    var onCloseTabsToTheRight: ((UUID) -> Void)?
+    /// Called when user chooses "Close All Tabs" from context menu.
+    var onCloseAllTabs: (() -> Void)?
     /// Called after tabs are reordered via drag-and-drop.
     var onReorder: (() -> Void)?
     /// Whether the active tab is a Markdown file.
@@ -24,6 +30,23 @@ struct EditorTabBar: View {
     var onTogglePreview: (() -> Void)?
     /// Whether an auto-save is in progress (shows a subtle indicator).
     var isAutoSaving: Bool = false
+    /// Project root URL for computing relative paths.
+    var projectRootURL: URL?
+
+    /// Computes the relative path of a file URL relative to a project root URL.
+    /// Normalizes both paths via `standardizedFileURL` to handle trailing slashes
+    /// and symlinks consistently.
+    static func computeRelativePath(fileURL: URL, projectRootURL: URL?) -> String {
+        guard let root = projectRootURL else { return fileURL.path }
+        let normalizedFile = fileURL.standardizedFileURL.path
+        let normalizedRoot = root.standardizedFileURL.path
+        // Ensure root path ends with "/" for clean prefix stripping
+        let rootPrefix = normalizedRoot.hasSuffix("/") ? normalizedRoot : normalizedRoot + "/"
+        if normalizedFile.hasPrefix(rootPrefix) {
+            return String(normalizedFile.dropFirst(rootPrefix.count))
+        }
+        return fileURL.path
+    }
 
     @State private var draggingTabID: UUID?
     @State private var hoverTargetTabID: UUID?
@@ -79,6 +102,41 @@ struct EditorTabBar: View {
                                     onSelect: { tabManager.activeTabID = tab.id },
                                     onClose: { onCloseTab(tab) },
                                     onTogglePin: { tabManager.togglePin(id: tab.id) },
+                                    onCloseOtherTabs: {
+                                        onCloseOtherTabs?(tab.id)
+                                    },
+                                    onCloseTabsToTheRight: {
+                                        onCloseTabsToTheRight?(tab.id)
+                                    },
+                                    onCloseAllTabs: { onCloseAllTabs?() },
+                                    onCopyPath: {
+                                        NSPasteboard.general.clearContents()
+                                        NSPasteboard.general.setString(
+                                            tab.url.path, forType: .string
+                                        )
+                                    },
+                                    onCopyRelativePath: {
+                                        let relativePath = Self.computeRelativePath(
+                                            fileURL: tab.url,
+                                            projectRootURL: projectRootURL
+                                        )
+                                        NSPasteboard.general.clearContents()
+                                        NSPasteboard.general.setString(
+                                            relativePath, forType: .string
+                                        )
+                                    },
+                                    onRevealInSidebar: {
+                                        NotificationCenter.default.post(
+                                            name: .revealInSidebar,
+                                            object: nil,
+                                            userInfo: ["url": tab.url]
+                                        )
+                                    },
+                                    onRevealInFinder: {
+                                        NSWorkspace.shared.activateFileViewerSelecting(
+                                            [tab.url]
+                                        )
+                                    },
                                     constrainedWidth: tab.isPinned
                                         ? Self.pinnedTabWidth
                                         : isActive ? Self.maxTabWidth : inactiveWidth
@@ -229,6 +287,13 @@ struct EditorTabItem: View {
     let onSelect: () -> Void
     let onClose: () -> Void
     var onTogglePin: (() -> Void)?
+    var onCloseOtherTabs: (() -> Void)?
+    var onCloseTabsToTheRight: (() -> Void)?
+    var onCloseAllTabs: (() -> Void)?
+    var onCopyPath: (() -> Void)?
+    var onCopyRelativePath: (() -> Void)?
+    var onRevealInSidebar: (() -> Void)?
+    var onRevealInFinder: (() -> Void)?
     var constrainedWidth: CGFloat?
 
     @State private var isHovering = false
@@ -271,6 +336,61 @@ struct EditorTabItem: View {
                     Label(Strings.menuCloseTab, systemImage: "xmark")
                 }
             }
+
+            Divider()
+
+            Button {
+                onCloseOtherTabs?()
+            } label: {
+                Label(Strings.tabCloseOtherTabs, systemImage: MenuIcons.closeOtherTabs)
+            }
+            .accessibilityIdentifier(AccessibilityID.editorTabCloseOthers(tab.fileName))
+
+            Button {
+                onCloseTabsToTheRight?()
+            } label: {
+                Label(Strings.tabCloseTabsToTheRight, systemImage: MenuIcons.closeTabsToTheRight)
+            }
+            .accessibilityIdentifier(AccessibilityID.editorTabCloseRight(tab.fileName))
+
+            Button(role: .destructive) {
+                onCloseAllTabs?()
+            } label: {
+                Label(Strings.tabCloseAllTabs, systemImage: MenuIcons.closeAllTabs)
+            }
+            .accessibilityIdentifier(AccessibilityID.editorTabCloseAll(tab.fileName))
+
+            Divider()
+
+            Button {
+                onCopyPath?()
+            } label: {
+                Label(Strings.tabCopyPath, systemImage: MenuIcons.copyPath)
+            }
+            .accessibilityIdentifier(AccessibilityID.editorTabCopyPath(tab.fileName))
+
+            Button {
+                onCopyRelativePath?()
+            } label: {
+                Label(Strings.tabCopyRelativePath, systemImage: MenuIcons.copyRelativePath)
+            }
+            .accessibilityIdentifier(AccessibilityID.editorTabCopyRelativePath(tab.fileName))
+
+            Divider()
+
+            Button {
+                onRevealInSidebar?()
+            } label: {
+                Label(Strings.tabRevealInSidebar, systemImage: MenuIcons.revealInSidebar)
+            }
+            .accessibilityIdentifier(AccessibilityID.editorTabRevealInSidebar(tab.fileName))
+
+            Button {
+                onRevealInFinder?()
+            } label: {
+                Label(Strings.tabRevealInFinder, systemImage: MenuIcons.revealInFinder)
+            }
+            .accessibilityIdentifier(AccessibilityID.editorTabRevealInFinder(tab.fileName))
         }
         .accessibilityRepresentation {
             HStack {

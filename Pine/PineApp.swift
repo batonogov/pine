@@ -1214,4 +1214,6 @@ extension Notification.Name {
     static let sendToTerminal = Notification.Name("sendToTerminal")
     /// userInfo: ["text": String]
     static let sendTextToTerminal = Notification.Name("sendTextToTerminal")
+    /// userInfo: ["url": URL] — reveals a file in the sidebar tree
+    static let revealInSidebar = Notification.Name("revealInSidebar")
 }

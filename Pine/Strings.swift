@@ -189,6 +189,16 @@ enum Strings {
     static let tabPin: LocalizedStringKey = "tab.pin"
     static let tabUnpin: LocalizedStringKey = "tab.unpin"
 
+    // MARK: - Tab Context Menu
+
+    static let tabCloseOtherTabs: LocalizedStringKey = "tab.closeOtherTabs"
+    static let tabCloseTabsToTheRight: LocalizedStringKey = "tab.closeTabsToTheRight"
+    static let tabCloseAllTabs: LocalizedStringKey = "tab.closeAllTabs"
+    static let tabCopyPath: LocalizedStringKey = "tab.copyPath"
+    static let tabCopyRelativePath: LocalizedStringKey = "tab.copyRelativePath"
+    static let tabRevealInSidebar: LocalizedStringKey = "tab.revealInSidebar"
+    static let tabRevealInFinder: LocalizedStringKey = "tab.revealInFinder"
+
     // MARK: - Unsaved Changes Dialog (AppKit)
 
     static var unsavedChangesTitle: String {

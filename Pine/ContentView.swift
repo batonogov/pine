@@ -197,6 +197,13 @@ struct ContentView: View {
         .onReceive(NotificationCenter.default.publisher(for: .toggleWordWrap)) { _ in
             isWordWrapEnabled.toggle()
         }
+        .onReceive(NotificationCenter.default.publisher(for: .revealInSidebar)) { notification in
+            guard let url = notification.userInfo?["url"] as? URL else { return }
+            if let node = findNode(url: url, in: workspace.rootNodes) {
+                selectedNode = node
+                columnVisibility = .all
+            }
+        }
         .onReceive(NotificationCenter.default.publisher(for: .sendTextToTerminal)) { notification in
             guard controlActiveState == .key,
                   let text = notification.userInfo?["text"] as? String,
@@ -237,6 +244,9 @@ struct ContentView: View {
             isMinimapVisible: isMinimapVisible,
             isWordWrapEnabled: isWordWrapEnabled,
             onCloseTab: { closeTabWithConfirmation($0) },
+            onCloseOtherTabs: { closeOtherTabsWithConfirmation(keeping: $0) },
+            onCloseTabsToTheRight: { closeTabsToTheRightWithConfirmation(of: $0) },
+            onCloseAllTabs: { closeAllTabsWithConfirmation() },
             onSaveSession: { projectManager.saveSession() }
         )
     }
