@@ -325,4 +325,383 @@ struct GitDiffProviderTests {
         #expect(diff1 == diff2)
         #expect(diff1 != diff3)
     }
+
+    @Test func fileDiffInequalityByPath() {
+        let diff1 = FileDiff(filePath: "a.swift", hunks: [], isStaged: true)
+        let diff2 = FileDiff(filePath: "b.swift", hunks: [], isStaged: true)
+        #expect(diff1 != diff2)
+    }
+
+    @Test func fileDiffInequalityByHunks() {
+        let hunk = DiffHunk(header: "@@ -1 +1 @@", lines: [DiffLine(kind: .added, text: "x")])
+        let diff1 = FileDiff(filePath: "a.swift", hunks: [], isStaged: true)
+        let diff2 = FileDiff(filePath: "a.swift", hunks: [hunk], isStaged: true)
+        #expect(diff1 != diff2)
+    }
+
+    @Test func fileDiffDistinctIDs() {
+        let diff1 = FileDiff(filePath: "a.swift", hunks: [], isStaged: true)
+        let diff2 = FileDiff(filePath: "a.swift", hunks: [], isStaged: true)
+        #expect(diff1 == diff2)
+        #expect(diff1.id != diff2.id)
+    }
+
+    // MARK: - DiffHunk equality with lines
+
+    @Test func diffHunkEqualityWithMatchingLines() {
+        let lines = [DiffLine(kind: .added, text: "hello"), DiffLine(kind: .removed, text: "world")]
+        let hunk1 = DiffHunk(header: "@@ -1 +1 @@", lines: lines)
+        let hunk2 = DiffHunk(header: "@@ -1 +1 @@", lines: lines)
+        #expect(hunk1 == hunk2)
+    }
+
+    @Test func diffHunkInequalityWithDifferentLines() {
+        let hunk1 = DiffHunk(header: "@@ -1 +1 @@", lines: [DiffLine(kind: .added, text: "a")])
+        let hunk2 = DiffHunk(header: "@@ -1 +1 @@", lines: [DiffLine(kind: .added, text: "b")])
+        #expect(hunk1 != hunk2)
+    }
+
+    @Test func diffHunkDistinctIDs() {
+        let hunk1 = DiffHunk(header: "@@ -1 +1 @@", lines: [])
+        let hunk2 = DiffHunk(header: "@@ -1 +1 @@", lines: [])
+        #expect(hunk1 == hunk2)
+        #expect(hunk1.id != hunk2.id)
+    }
+
+    // MARK: - DiffLineKind — all variants
+
+    @Test func diffLineKindEquality() {
+        #expect(DiffLineKind.context == DiffLineKind.context)
+        #expect(DiffLineKind.added == DiffLineKind.added)
+        #expect(DiffLineKind.removed == DiffLineKind.removed)
+        #expect(DiffLineKind.hunkHeader == DiffLineKind.hunkHeader)
+        #expect(DiffLineKind.context != DiffLineKind.added)
+        #expect(DiffLineKind.added != DiffLineKind.removed)
+        #expect(DiffLineKind.removed != DiffLineKind.hunkHeader)
+        #expect(DiffLineKind.hunkHeader != DiffLineKind.context)
+    }
+
+    // MARK: - DiffLine with hunkHeader kind
+
+    @Test func diffLineHunkHeaderKind() {
+        let line = DiffLine(kind: .hunkHeader, text: "@@ -1 +1 @@")
+        #expect(line.kind == .hunkHeader)
+        #expect(line.text == "@@ -1 +1 @@")
+    }
+
+    // MARK: - parseFilePath — additional edge cases
+
+    @Test func parseFilePathWithNoBSlash() {
+        // Fallback path when there's no " b/" separator
+        let line = "diff --git something"
+        let result = GitDiffProvider.parseFilePath(from: line)
+        // Should use fallback (after a/)
+        #expect(!result.isEmpty)
+    }
+
+    @Test func parseFilePathSingleComponent() {
+        let line = "diff --git a/README.md b/README.md"
+        let result = GitDiffProvider.parseFilePath(from: line)
+        #expect(result == "README.md")
+    }
+
+    @Test func parseFilePathWithDotsInName() {
+        let line = "diff --git a/some.test.file.swift b/some.test.file.swift"
+        let result = GitDiffProvider.parseFilePath(from: line)
+        #expect(result == "some.test.file.swift")
+    }
+
+    @Test func parseFilePathWithDashes() {
+        let line = "diff --git a/my-great-file.swift b/my-great-file.swift"
+        let result = GitDiffProvider.parseFilePath(from: line)
+        #expect(result == "my-great-file.swift")
+    }
+
+    @Test func parseFilePathDeepNested() {
+        let line = "diff --git a/a/b/c/d/e/f.swift b/a/b/c/d/e/f.swift"
+        let result = GitDiffProvider.parseFilePath(from: line)
+        #expect(result == "a/b/c/d/e/f.swift")
+    }
+
+    // MARK: - parseUnifiedDiff — deleted file (only removals)
+
+    @Test func parsesDeletedFileAllRemoved() {
+        let diff = """
+        diff --git a/old.swift b/old.swift
+        deleted file mode 100644
+        index abc1234..0000000
+        --- a/old.swift
+        +++ /dev/null
+        @@ -1,3 +0,0 @@
+        -line1
+        -line2
+        -line3
+        """
+        let result = GitDiffProvider.parseUnifiedDiff(diff, isStaged: false)
+        #expect(result.count == 1)
+        #expect(result[0].filePath == "old.swift")
+        let lines = result[0].hunks[0].lines
+        #expect(lines.count == 3)
+        #expect(lines.allSatisfy { $0.kind == .removed })
+    }
+
+    // MARK: - parseUnifiedDiff — binary file (no hunks)
+
+    @Test func parsesBinaryFileDiffNoHunks() {
+        let diff = """
+        diff --git a/image.png b/image.png
+        index abc..def 100644
+        Binary files a/image.png and b/image.png differ
+        """
+        let result = GitDiffProvider.parseUnifiedDiff(diff, isStaged: false)
+        // Binary files have no hunks, so should not appear in results
+        #expect(result.isEmpty)
+    }
+
+    @Test func parsesBinaryFileAmongTextFiles() {
+        let diff = """
+        diff --git a/code.swift b/code.swift
+        index abc..def 100644
+        --- a/code.swift
+        +++ b/code.swift
+        @@ -1 +1 @@
+        -old
+        +new
+        diff --git a/image.png b/image.png
+        index 111..222 100644
+        Binary files a/image.png and b/image.png differ
+        diff --git a/other.swift b/other.swift
+        index 333..444 100644
+        --- a/other.swift
+        +++ b/other.swift
+        @@ -1 +1 @@
+        -foo
+        +bar
+        """
+        let result = GitDiffProvider.parseUnifiedDiff(diff, isStaged: false)
+        // Only text files with hunks should appear
+        #expect(result.count == 2)
+        #expect(result[0].filePath == "code.swift")
+        #expect(result[1].filePath == "other.swift")
+    }
+
+    // MARK: - parseUnifiedDiff — only context lines (no actual changes)
+
+    @Test func parsesOnlyContextLinesInHunk() {
+        let diff = """
+        diff --git a/file.swift b/file.swift
+        index abc..def 100644
+        --- a/file.swift
+        +++ b/file.swift
+        @@ -1,2 +1,2 @@
+         line1
+         line2
+        """
+        let result = GitDiffProvider.parseUnifiedDiff(diff, isStaged: false)
+        #expect(result.count == 1)
+        let lines = result[0].hunks[0].lines
+        #expect(lines.allSatisfy { $0.kind == .context })
+    }
+
+    // MARK: - parseUnifiedDiff — garbage input
+
+    @Test func garbageInputReturnsEmpty() {
+        let result = GitDiffProvider.parseUnifiedDiff("random garbage text\nno diffs here", isStaged: false)
+        #expect(result.isEmpty)
+    }
+
+    @Test func singleLineGarbage() {
+        let result = GitDiffProvider.parseUnifiedDiff("hello", isStaged: true)
+        #expect(result.isEmpty)
+    }
+
+    // MARK: - parseUnifiedDiff — whitespace-only input
+
+    @Test func whitespaceOnlyInputReturnsEmpty() {
+        let result = GitDiffProvider.parseUnifiedDiff("   \n  \n\t\n", isStaged: false)
+        #expect(result.isEmpty)
+    }
+
+    // MARK: - parseUnifiedDiff — many files
+
+    @Test func parsesManyFiles() {
+        var diff = ""
+        for i in 0..<10 {
+            diff += """
+            diff --git a/file\(i).swift b/file\(i).swift
+            index abc..def 100644
+            --- a/file\(i).swift
+            +++ b/file\(i).swift
+            @@ -1 +1 @@
+            -old\(i)
+            +new\(i)\n
+            """
+        }
+        let result = GitDiffProvider.parseUnifiedDiff(diff, isStaged: false)
+        #expect(result.count == 10)
+        for i in 0..<10 {
+            #expect(result[i].filePath == "file\(i).swift")
+        }
+    }
+
+    // MARK: - parseUnifiedDiff — large hunk with many lines
+
+    @Test func parsesLargeHunk() {
+        var diffText = """
+        diff --git a/big.swift b/big.swift
+        index abc..def 100644
+        --- a/big.swift
+        +++ b/big.swift
+        @@ -1,100 +1,200 @@
+        """
+        for i in 0..<100 {
+            diffText += "\n+added line \(i)"
+        }
+        let result = GitDiffProvider.parseUnifiedDiff(diffText, isStaged: false)
+        #expect(result.count == 1)
+        #expect(result[0].hunks[0].lines.count == 100)
+        #expect(result[0].hunks[0].lines.allSatisfy { $0.kind == .added })
+    }
+
+    // MARK: - allChangedPaths
+
+    @Test func allChangedPathsEmpty() {
+        let provider = GitDiffProvider()
+        #expect(provider.allChangedPaths.isEmpty)
+    }
+
+    @Test func allChangedPathsFromStagedOnly() {
+        let provider = GitDiffProvider()
+        let hunk = DiffHunk(header: "@@ -1 +1 @@", lines: [DiffLine(kind: .added, text: "x")])
+        provider.stagedFiles = [
+            FileDiff(filePath: "b.swift", hunks: [hunk], isStaged: true),
+            FileDiff(filePath: "a.swift", hunks: [hunk], isStaged: true)
+        ]
+        #expect(provider.allChangedPaths == ["a.swift", "b.swift"])
+    }
+
+    @Test func allChangedPathsFromUnstagedOnly() {
+        let provider = GitDiffProvider()
+        let hunk = DiffHunk(header: "@@ -1 +1 @@", lines: [DiffLine(kind: .removed, text: "x")])
+        provider.unstagedFiles = [
+            FileDiff(filePath: "c.swift", hunks: [hunk], isStaged: false)
+        ]
+        #expect(provider.allChangedPaths == ["c.swift"])
+    }
+
+    @Test func allChangedPathsDeduplicatesStagedAndUnstaged() {
+        let provider = GitDiffProvider()
+        let hunk = DiffHunk(header: "@@ -1 +1 @@", lines: [DiffLine(kind: .added, text: "x")])
+        provider.stagedFiles = [
+            FileDiff(filePath: "shared.swift", hunks: [hunk], isStaged: true),
+            FileDiff(filePath: "staged-only.swift", hunks: [hunk], isStaged: true)
+        ]
+        provider.unstagedFiles = [
+            FileDiff(filePath: "shared.swift", hunks: [hunk], isStaged: false),
+            FileDiff(filePath: "unstaged-only.swift", hunks: [hunk], isStaged: false)
+        ]
+        let paths = provider.allChangedPaths
+        #expect(paths.count == 3)
+        #expect(paths == ["shared.swift", "staged-only.swift", "unstaged-only.swift"])
+    }
+
+    @Test func allChangedPathsAreSorted() {
+        let provider = GitDiffProvider()
+        let hunk = DiffHunk(header: "@@ -1 +1 @@", lines: [])
+        provider.stagedFiles = [
+            FileDiff(filePath: "z.swift", hunks: [hunk], isStaged: true),
+            FileDiff(filePath: "a.swift", hunks: [hunk], isStaged: true),
+            FileDiff(filePath: "m.swift", hunks: [hunk], isStaged: true)
+        ]
+        #expect(provider.allChangedPaths == ["a.swift", "m.swift", "z.swift"])
+    }
+
+    // MARK: - GitDiffProvider initial state
+
+    @Test func initialStateIsEmpty() {
+        let provider = GitDiffProvider()
+        #expect(provider.stagedFiles.isEmpty)
+        #expect(provider.unstagedFiles.isEmpty)
+        #expect(provider.isRefreshing == false)
+        #expect(provider.allChangedPaths.isEmpty)
+    }
+
+    // MARK: - parseUnifiedDiff — mode change without content
+
+    @Test func parsesModeChangeOnly() {
+        let diff = """
+        diff --git a/script.sh b/script.sh
+        old mode 100644
+        new mode 100755
+        """
+        let result = GitDiffProvider.parseUnifiedDiff(diff, isStaged: false)
+        // Mode-only change has no hunks
+        #expect(result.isEmpty)
+    }
+
+    // MARK: - parseUnifiedDiff — file with empty lines in diff
+
+    @Test func parsesFileWithEmptyContextLines() {
+        let diff = """
+        diff --git a/file.swift b/file.swift
+        index abc..def 100644
+        --- a/file.swift
+        +++ b/file.swift
+        @@ -1,4 +1,5 @@
+         line1
+
+        +inserted
+
+         line4
+        """
+        let result = GitDiffProvider.parseUnifiedDiff(diff, isStaged: false)
+        #expect(result.count == 1)
+        let lines = result[0].hunks[0].lines
+        let addedLines = lines.filter { $0.kind == .added }
+        #expect(addedLines.count == 1)
+        #expect(addedLines[0].text == "inserted")
+    }
+
+    // MARK: - parseUnifiedDiff — rename with content changes
+
+    @Test func parsesRenamedFileWithChanges() {
+        let diff = """
+        diff --git a/old_name.swift b/new_name.swift
+        similarity index 80%
+        rename from old_name.swift
+        rename to new_name.swift
+        index abc..def 100644
+        --- a/old_name.swift
+        +++ b/new_name.swift
+        @@ -1,2 +1,2 @@
+        -old content
+        +new content
+        """
+        let result = GitDiffProvider.parseUnifiedDiff(diff, isStaged: true)
+        #expect(result.count == 1)
+        #expect(result[0].filePath == "new_name.swift")
+        #expect(result[0].isStaged == true)
+    }
+
+    // MARK: - parseUnifiedDiff — context line without leading space
+
+    @Test func parsesContextLineWithoutLeadingSpace() {
+        let diff = """
+        diff --git a/file.swift b/file.swift
+        index abc..def 100644
+        --- a/file.swift
+        +++ b/file.swift
+        @@ -1,3 +1,4 @@
+        noSpaceLine
+        +added
+         normalContext
+         another
+        """
+        let result = GitDiffProvider.parseUnifiedDiff(diff, isStaged: false)
+        #expect(result.count == 1)
+        let lines = result[0].hunks[0].lines
+        // "noSpaceLine" has no prefix, treated as context
+        #expect(lines[0].kind == .context)
+        #expect(lines[0].text == "noSpaceLine")
+    }
 }
