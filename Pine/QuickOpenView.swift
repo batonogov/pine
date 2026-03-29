@@ -98,7 +98,7 @@ struct QuickOpenView: View {
         HStack(spacing: 8) {
             Image(systemName: FileIconMapper.iconForFile(result.fileName))
                 .font(.system(size: 14))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(FileIconMapper.colorForFile(result.fileName))
                 .frame(width: 20)
 
             VStack(alignment: .leading, spacing: 1) {

@@ -290,7 +290,7 @@ struct EditorTabItem: View {
         ZStack(alignment: .topTrailing) {
             Image(systemName: FileIconMapper.iconForFile(tab.fileName))
                 .font(.system(size: LayoutMetrics.iconSmallFontSize))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(FileIconMapper.colorForFile(tab.fileName))
                 .padding(.horizontal, 10)
                 .padding(.vertical, 4)
 
@@ -332,7 +332,7 @@ struct EditorTabItem: View {
 
             Image(systemName: FileIconMapper.iconForFile(tab.fileName))
                 .font(.system(size: LayoutMetrics.iconSmallFontSize))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(FileIconMapper.colorForFile(tab.fileName))
 
             Text(tab.fileName)
                 .font(.system(size: LayoutMetrics.bodySmallFontSize))
