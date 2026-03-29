@@ -3,6 +3,7 @@
 //  PineTests
 //
 
+import SwiftUI
 import Testing
 @testable import Pine
 
@@ -191,5 +192,87 @@ struct FileIconMapperTests {
         #expect(FileIconMapper.iconForFolder("Tests") == "folder")
         #expect(FileIconMapper.iconForFolder("docs") == "folder")
         #expect(FileIconMapper.iconForFolder("my-feature") == "folder")
+    }
+
+    // MARK: - colorForFile — exact filename matches
+
+    @Test func fileColorExactFilenames() {
+        #expect(FileIconMapper.colorForFile("Dockerfile") == .blue)
+        #expect(FileIconMapper.colorForFile("Containerfile") == .blue)
+        #expect(FileIconMapper.colorForFile(".gitignore") == .orange)
+        #expect(FileIconMapper.colorForFile(".env") == .yellow)
+    }
+
+    // MARK: - colorForFile — Swift / Apple
+
+    @Test func fileColorSwift() {
+        #expect(FileIconMapper.colorForFile("main.swift") == .orange)
+    }
+
+    // MARK: - colorForFile — Web languages
+
+    @Test func fileColorWeb() {
+        #expect(FileIconMapper.colorForFile("app.js") == .yellow)
+        #expect(FileIconMapper.colorForFile("index.ts") == .blue)
+        #expect(FileIconMapper.colorForFile("App.jsx") == .cyan)
+        #expect(FileIconMapper.colorForFile("index.html") == .orange)
+        #expect(FileIconMapper.colorForFile("style.css") == .purple)
+        #expect(FileIconMapper.colorForFile("App.vue") == .green)
+    }
+
+    // MARK: - colorForFile — Data / Config
+
+    @Test func fileColorDataConfig() {
+        #expect(FileIconMapper.colorForFile("data.json") == .yellow)
+        #expect(FileIconMapper.colorForFile("config.yaml") == .red)
+    }
+
+    // MARK: - colorForFile — Scripting / Systems
+
+    @Test func fileColorScripting() {
+        #expect(FileIconMapper.colorForFile("main.py") == .blue)
+        #expect(FileIconMapper.colorForFile("script.rb") == .red)
+        #expect(FileIconMapper.colorForFile("run.sh") == .green)
+        #expect(FileIconMapper.colorForFile("main.go") == .cyan)
+        #expect(FileIconMapper.colorForFile("main.rs") == .orange)
+        #expect(FileIconMapper.colorForFile("main.c") == .blue)
+        #expect(FileIconMapper.colorForFile("App.java") == .red)
+        #expect(FileIconMapper.colorForFile("Program.cs") == .purple)
+    }
+
+    // MARK: - colorForFile — Documentation / Media / Archives
+
+    @Test func fileColorDocMediaArchive() {
+        #expect(FileIconMapper.colorForFile("README.md") == .blue)
+        #expect(FileIconMapper.colorForFile("photo.png") == .green)
+        #expect(FileIconMapper.colorForFile("song.mp3") == .purple)
+        #expect(FileIconMapper.colorForFile("clip.mp4") == .pink)
+        #expect(FileIconMapper.colorForFile("archive.zip") == .brown)
+        #expect(FileIconMapper.colorForFile("font.ttf") == .red)
+    }
+
+    // MARK: - colorForFile — unknown extension falls back to .secondary
+
+    @Test func fileColorUnknownExtension() {
+        #expect(FileIconMapper.colorForFile("data.xyz") == .secondary)
+        #expect(FileIconMapper.colorForFile("noext") == .secondary)
+    }
+
+    // MARK: - colorForFolder
+
+    @Test func folderColorXcodeProject() {
+        #expect(FileIconMapper.colorForFolder("App.xcodeproj") == .blue)
+        #expect(FileIconMapper.colorForFolder("App.xcworkspace") == .blue)
+    }
+
+    @Test func folderColorBuildDirs() {
+        #expect(FileIconMapper.colorForFolder("node_modules") == .secondary)
+        #expect(FileIconMapper.colorForFolder("build") == .secondary)
+        #expect(FileIconMapper.colorForFolder("dist") == .secondary)
+    }
+
+    @Test func folderColorDefault() {
+        #expect(FileIconMapper.colorForFolder("Sources") == .blue)
+        #expect(FileIconMapper.colorForFolder("Tests") == .blue)
     }
 }
