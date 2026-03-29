@@ -346,11 +346,11 @@ final class SyntaxHighlighter: @unchecked Sendable {
     }
 
     /// Количество строк контекста для viewport-based подсветки (больше, чем для edit).
-    private let viewportContextLines = 100
+    private let viewportContextLines = 50
     /// Extra context lines for multiline rules (block comments, multiline strings).
-    /// 500 lines in each direction is enough to catch most multiline constructs
+    /// 200 lines in each direction is enough to catch most multiline constructs
     /// without scanning the entire file.
-    private let multilineContextLines = 500
+    private let multilineContextLines = 200
 
     /// Подсветка только видимой области + буфер.
     /// Используется для больших файлов вместо полного `highlight()`.

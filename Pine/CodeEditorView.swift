@@ -427,7 +427,8 @@ struct CodeEditorView: NSViewRepresentable {
     var indentStyle: IndentationStyle = .spaces(4)
 
     /// Порог (в символах) для переключения на viewport-based подсветку.
-    static let viewportHighlightThreshold = 100_000
+    /// Lowered from 100KB to 50KB to be more aggressive about lazy highlighting (#637).
+    static let viewportHighlightThreshold = 50_000
 
     /// Файл достаточно большой для viewport-based подсветки?
     private var useViewportHighlighting: Bool {
