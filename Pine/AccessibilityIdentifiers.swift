@@ -83,6 +83,11 @@ nonisolated enum AccessibilityID {
     static let symbolResultsList = "symbolResultsList"
     static func symbolItem(_ name: String) -> String { "symbolItem_\(name)" }
 
+    // MARK: - Split Panes
+    static let paneDivider = "paneDivider"
+    static let paneDropOverlay = "paneDropOverlay"
+    static func paneLeaf(_ id: String) -> String { "paneLeaf_\(id)" }
+
     // MARK: - Status bar
     static let statusBar = "statusBar"
     static let terminalToggleButton = "terminalToggleButton"

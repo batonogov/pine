@@ -14,6 +14,7 @@ struct EditorAreaView: View {
     @Environment(TabManager.self) private var tabManager
     @Environment(WorkspaceManager.self) private var workspace
     @Environment(ProjectManager.self) private var projectManager
+    @Environment(PaneManager.self) private var paneManager
     @Environment(ProjectRegistry.self) private var registry
     @Binding var lineDiffs: [GitLineDiff]
     @Binding var isDragTargeted: Bool
@@ -26,6 +27,7 @@ struct EditorAreaView: View {
     var onSaveSession: () -> Void
 
     @Environment(\.openWindow) private var openWindow
+    @State private var dropZone: PaneDropZone?
 
     private var activeTab: EditorTab? { tabManager.activeTab }
 
@@ -98,6 +100,13 @@ struct EditorAreaView: View {
                     .allowsHitTesting(false)
             }
         }
+        .overlay {
+            PaneDropOverlay(dropZone: dropZone)
+        }
+        .onDrop(of: [.text], delegate: SinglePaneSplitDropDelegate(
+            paneManager: paneManager,
+            dropZone: $dropZone
+        ))
     }
 
     @ViewBuilder
@@ -162,6 +171,82 @@ struct EditorAreaView: View {
                     DropHandler.openFilesAsTabs(classified.files, in: tabManager)
                 }
             }
+        }
+    }
+}
+
+// MARK: - Single Pane Split Drop Delegate
+
+/// Handles tab drops on the single-pane editor area to initiate a split.
+/// Only activates when a pane tab drag (not a file drop) enters the editor.
+struct SinglePaneSplitDropDelegate: DropDelegate {
+    let paneManager: PaneManager
+    @Binding var dropZone: PaneDropZone?
+
+    func validateDrop(info: DropInfo) -> Bool {
+        info.hasItemsConforming(to: [.text])
+    }
+
+    func dropEntered(info: DropInfo) {
+        updateDropZone(info: info)
+    }
+
+    func dropUpdated(info: DropInfo) -> DropProposal? {
+        updateDropZone(info: info)
+        return DropProposal(operation: .move)
+    }
+
+    func dropExited(info: DropInfo) {
+        dropZone = nil
+    }
+
+    func performDrop(info: DropInfo) -> Bool {
+        guard let zone = dropZone else { return false }
+        dropZone = nil
+
+        let providers = info.itemProviders(for: [.text])
+        guard let provider = providers.first else { return false }
+
+        provider.loadItem(forTypeIdentifier: "public.text", options: nil) { data, _ in
+            guard let data = data as? Data,
+                  let string = String(data: data, encoding: .utf8),
+                  let dragInfo = TabDragInfo.decode(from: string) else { return }
+
+            DispatchQueue.main.async {
+                guard let firstLeafID = paneManager.root.firstLeafID else { return }
+                let sourcePaneID = PaneID(id: dragInfo.paneID)
+
+                switch zone {
+                case .right:
+                    paneManager.splitPane(
+                        firstLeafID,
+                        axis: .horizontal,
+                        tabURL: dragInfo.fileURL,
+                        sourcePane: sourcePaneID
+                    )
+                case .bottom:
+                    paneManager.splitPane(
+                        firstLeafID,
+                        axis: .vertical,
+                        tabURL: dragInfo.fileURL,
+                        sourcePane: sourcePaneID
+                    )
+                case .center:
+                    break // No split needed for center drop on single pane
+                }
+            }
+        }
+        return true
+    }
+
+    private func updateDropZone(info: DropInfo) {
+        let location = info.location
+        if location.x > 300 && location.x > location.y * 1.2 {
+            dropZone = .right
+        } else if location.y > 200 && location.y > location.x * 0.8 {
+            dropZone = .bottom
+        } else {
+            dropZone = .center
         }
     }
 }

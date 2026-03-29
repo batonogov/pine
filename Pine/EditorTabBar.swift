@@ -25,6 +25,8 @@ struct EditorTabBar: View {
     /// Whether an auto-save is in progress (shows a subtle indicator).
     var isAutoSaving: Bool = false
 
+    @Environment(PaneManager.self) private var paneManager
+
     @State private var draggingTabID: UUID?
     @State private var hoverTargetTabID: UUID?
 
@@ -89,7 +91,13 @@ struct EditorTabBar: View {
                                 .id(tab.id)
                                 .onDrag {
                                     draggingTabID = tab.id
-                                    return NSItemProvider(object: tab.id.uuidString as NSString)
+                                    let paneID = paneManager.activePaneID
+                                    let info = TabDragInfo(
+                                        paneID: paneID.id,
+                                        tabID: tab.id,
+                                        fileURL: tab.url
+                                    )
+                                    return NSItemProvider(object: info.encoded as NSString)
                                 }
                                 .onDrop(of: [.text], delegate: TabDropDelegate(
                                     tabManager: tabManager,

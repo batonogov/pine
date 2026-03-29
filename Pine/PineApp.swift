@@ -505,6 +505,7 @@ private struct ProjectWindowView: View {
                     .environment(pm.workspace)
                     .environment(pm.terminal)
                     .environment(pm.tabManager)
+                    .environment(pm.paneManager)
                     .environment(registry)
                     .focusedSceneValue(\.projectManager, pm)
                     .background {
