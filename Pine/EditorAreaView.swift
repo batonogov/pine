@@ -39,7 +39,8 @@ struct EditorAreaView: View {
                     isMarkdownFile: activeTab?.isMarkdownFile ?? false,
                     previewMode: activeTab?.previewMode ?? .source,
                     onTogglePreview: { tabManager.togglePreviewMode() },
-                    isAutoSaving: tabManager.isAutoSaving
+                    isAutoSaving: tabManager.isAutoSaving,
+                    projectRootURL: workspace.rootURL
                 )
             }
 

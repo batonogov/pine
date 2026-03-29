@@ -400,6 +400,39 @@ final class TabManager {
         tabs = pinned + unpinned
     }
 
+    // MARK: - Context menu actions
+
+    /// Closes all tabs except the one with the given ID.
+    /// Pinned tabs are preserved unless they are the target tab.
+    func closeOtherTabs(keeping tabID: UUID) {
+        cancelAutoSave()
+        let idsToClose = tabs.filter { $0.id != tabID && !$0.isPinned }.map(\.id)
+        for id in idsToClose {
+            closeTab(id: id, force: true)
+        }
+        activeTabID = tabID
+    }
+
+    /// Closes all tabs to the right of the tab with the given ID.
+    /// Pinned tabs are not closed.
+    func closeTabsToTheRight(of tabID: UUID) {
+        guard let index = tabs.firstIndex(where: { $0.id == tabID }) else { return }
+        cancelAutoSave()
+        let rightTabs = tabs[(index + 1)...].filter { !$0.isPinned }
+        for tab in rightTabs.reversed() {
+            closeTab(id: tab.id, force: true)
+        }
+    }
+
+    /// Closes all tabs. Pinned tabs are force-closed.
+    func closeAllTabs() {
+        cancelAutoSave()
+        let allIDs = tabs.map(\.id)
+        for id in allIDs {
+            closeTab(id: id, force: true)
+        }
+    }
+
     // MARK: - Keyboard tab navigation
 
     /// Selects the tab at the given 0-based index. No-op if out of bounds.
