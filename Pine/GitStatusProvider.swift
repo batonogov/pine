@@ -423,7 +423,7 @@ final class GitStatusProvider {
 
     /// Creates a commit with the given message. Files must be staged before calling.
     nonisolated static func commit(message: String, at repoURL: URL) -> (success: Bool, error: String) {
-        let result = runGit(["commit", "-m", message], at: repoURL)
+        let result = runGit(["commit", "-m", "--", message], at: repoURL)
         if result.exitCode == 0 {
             return (true, "")
         }
