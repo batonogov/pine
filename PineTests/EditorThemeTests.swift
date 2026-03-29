@@ -329,4 +329,41 @@ struct EditorThemeTests {
     func themeChangedNotification() {
         #expect(Notification.Name.themeChanged.rawValue == "themeChanged")
     }
+
+    // MARK: - Bundle integration: all 4 theme JSONs decode
+
+    @Test("All bundled theme JSONs decode successfully",
+          arguments: ["Monokai", "OneDark", "SolarizedDark", "GitHubLight"])
+    func bundledThemeDecodes(fileName: String) throws {
+        let url = try #require(
+            Bundle.main.url(forResource: fileName, withExtension: "json", subdirectory: "Themes"),
+            "Theme file \(fileName).json not found in Themes/ subdirectory"
+        )
+        let data = try Data(contentsOf: url)
+        let theme = try JSONDecoder().decode(EditorTheme.self, from: data)
+        #expect(!theme.id.isEmpty)
+        #expect(!theme.name.isEmpty)
+        #expect(!theme.scopes.isEmpty)
+        // Verify all standard scopes are present
+        let standardScopes = ["comment", "string", "keyword", "number", "type", "attribute", "function"]
+        for scope in standardScopes {
+            #expect(theme.scopes[scope] != nil, "Theme \(theme.name) missing scope: \(scope)")
+        }
+        // Verify editor colors are present (non-zero check)
+        let editor = theme.editor
+        #expect(editor.background != editor.text, "Background and text should differ in \(theme.name)")
+    }
+
+    // MARK: - Solarized Dark selection differs from currentLine
+
+    @Test("Solarized Dark selection color differs from currentLine")
+    func solarizedDarkSelectionDiffersFromCurrentLine() throws {
+        let url = try #require(
+            Bundle.main.url(forResource: "SolarizedDark", withExtension: "json", subdirectory: "Themes")
+        )
+        let data = try Data(contentsOf: url)
+        let theme = try JSONDecoder().decode(EditorTheme.self, from: data)
+        #expect(theme.editor.selection != theme.editor.currentLine,
+                "Selection must differ from currentLine in Solarized Dark")
+    }
 }

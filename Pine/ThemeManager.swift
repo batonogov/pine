@@ -35,7 +35,13 @@ final class ThemeManager {
     /// The resolved EditorTheme (nil when using system default).
     private(set) var activeTheme: EditorTheme?
 
-    init(defaults: UserDefaults = .standard) {
+    /// Shared singleton uses private init.
+    private convenience init() {
+        self.init(defaults: .standard)
+    }
+
+    /// Internal init for testing — allows injecting custom UserDefaults.
+    init(defaults: UserDefaults) {
         self.defaults = defaults
         self.selectedThemeID = defaults.string(forKey: Self.userDefaultsKey) ?? Self.systemThemeID
         loadThemes()
@@ -57,7 +63,7 @@ final class ThemeManager {
     // MARK: - Theme loading
 
     private func loadThemes() {
-        guard let urls = Bundle.main.urls(forResourcesWithExtension: "json", subdirectory: nil) else {
+        guard let urls = Bundle.main.urls(forResourcesWithExtension: "json", subdirectory: "Themes") else {
             return
         }
 
@@ -70,7 +76,7 @@ final class ThemeManager {
                 let theme = try decoder.decode(EditorTheme.self, from: data)
                 themes.append(theme)
             } catch {
-                // Not a theme file — skip silently (grammars, etc.)
+                Logger.syntax.error("Failed to decode theme from \(url.lastPathComponent): \(error)")
                 continue
             }
         }

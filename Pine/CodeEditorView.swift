@@ -40,12 +40,19 @@ final class GutterTextView: NSTextView {
 
     // MARK: - Highlight current line
 
-    private let currentLineColor = NSColor(name: nil) { appearance in
+    private let defaultCurrentLineColor = NSColor(name: nil) { appearance in
         if appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua {
             return NSColor.white.withAlphaComponent(0.06)
         } else {
             return NSColor.black.withAlphaComponent(0.06)
         }
+    }
+
+    /// Theme-supplied current line color (nil = use default adaptive color).
+    var themeCurrentLineColor: NSColor?
+
+    private var currentLineColor: NSColor {
+        themeCurrentLineColor ?? defaultCurrentLineColor
     }
 
     /// Blame lookup: line number → GitBlameLine (O(1) access).
@@ -1337,7 +1344,7 @@ struct CodeEditorView: NSViewRepresentable {
             guard let sv = scrollView,
                   let textView = sv.documentView as? GutterTextView else { return }
 
-            // Apply editor chrome colors (background, text, gutter)
+            // Apply all editor chrome colors from the theme
             if let theme = ThemeManager.shared.activeTheme {
                 let bgColor = theme.editor.background.nsColor
                 let textColor = theme.editor.text.nsColor
@@ -1345,23 +1352,57 @@ struct CodeEditorView: NSViewRepresentable {
                 textView.backgroundColor = bgColor
                 textView.textColor = textColor
                 textView.insertionPointColor = textColor
+                textView.selectedTextAttributes = [
+                    .backgroundColor: theme.editor.selection.nsColor
+                ]
+                textView.themeCurrentLineColor = theme.editor.currentLine.nsColor
+                lineNumberView?.themeGutterBgColor = theme.editor.gutter.nsColor
+                lineNumberView?.themeGutterTextColor = theme.editor.gutterText.nsColor
             } else {
                 sv.backgroundColor = .textBackgroundColor
                 textView.backgroundColor = .textBackgroundColor
                 textView.textColor = .textColor
                 textView.insertionPointColor = .textColor
+                textView.selectedTextAttributes = [:]
+                textView.themeCurrentLineColor = nil
+                lineNumberView?.themeGutterBgColor = nil
+                lineNumberView?.themeGutterTextColor = nil
             }
 
             // Re-highlight syntax with the new theme
             guard !parent.syntaxHighlightingDisabled,
                   let storage = textView.textStorage else { return }
-            SyntaxHighlighter.shared.highlight(
-                textStorage: storage,
-                language: parent.language,
-                fileName: parent.fileName,
-                font: parent.editorFont
-            )
-            // Minimap also needs to redraw with new theme colors
+
+            // For large files (>50KB), only highlight the visible viewport
+            if storage.length > CodeEditorView.viewportHighlightThreshold,
+               let container = textView.textContainer {
+                let visibleRect = sv.contentView.documentVisibleRect
+                let glyphRange = textView.layoutManager?.glyphRange(
+                    forBoundingRect: visibleRect,
+                    in: container
+                ) ?? NSRange()
+                let charRange = textView.layoutManager?.characterRange(
+                    forGlyphRange: glyphRange,
+                    actualGlyphRange: nil
+                ) ?? NSRange()
+                SyntaxHighlighter.shared.highlightVisibleRange(
+                    textStorage: storage,
+                    visibleCharRange: charRange,
+                    language: parent.language,
+                    fileName: parent.fileName,
+                    font: parent.editorFont
+                )
+            } else {
+                SyntaxHighlighter.shared.highlight(
+                    textStorage: storage,
+                    language: parent.language,
+                    fileName: parent.fileName,
+                    font: parent.editorFont
+                )
+            }
+            // Redraw gutter and minimap with new theme colors
+            lineNumberView?.needsDisplay = true
+            textView.needsDisplay = true
             minimapView?.needsDisplay = true
         }
 

@@ -23,9 +23,20 @@ final class LineNumberView: NSView {
     var baselineOffset: CGFloat {
         editorFont.ascender - gutterFont.ascender
     }
-    private let gutterTextColor = NSColor.secondaryLabelColor
-    private let gutterBgColor = NSColor.controlBackgroundColor
+    private let defaultGutterTextColor = NSColor.secondaryLabelColor
+    private let defaultGutterBgColor = NSColor.controlBackgroundColor
     private let separatorColor = NSColor.separatorColor
+
+    /// Theme-supplied gutter colors (nil = use system defaults).
+    var themeGutterBgColor: NSColor?
+    var themeGutterTextColor: NSColor?
+
+    private var gutterTextColor: NSColor {
+        themeGutterTextColor ?? defaultGutterTextColor
+    }
+    private var gutterBgColor: NSColor {
+        themeGutterBgColor ?? defaultGutterBgColor
+    }
 
     var gutterWidth: CGFloat = 40
     var lineDiffs: [GitLineDiff] = [] {
