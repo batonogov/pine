@@ -253,4 +253,100 @@ struct ValidationGutterTests {
         view.validationDiagnostics = diags
         #expect(view.validationDiagnostics.count == 50)
     }
+
+    // MARK: - diagnosticMap via rebuildDiagnosticMap
+
+    @Test func diagnosticMap_singleDiagnostic() {
+        let (view, _) = makeView()
+        view.validationDiagnostics = [
+            ValidationDiagnostic(
+                line: 2, column: nil, message: "something wrong",
+                severity: .error, source: "yamllint"
+            )
+        ]
+        #expect(view.diagnosticMap.count == 1)
+        #expect(view.diagnosticMap[2]?.severity == .error)
+        #expect(view.diagnosticMap[2]?.message == "something wrong")
+    }
+
+    @Test func diagnosticMap_highestSeverityWins() {
+        let (view, _) = makeView()
+        view.validationDiagnostics = [
+            ValidationDiagnostic(
+                line: 1, column: nil, message: "info msg",
+                severity: .info, source: "test"
+            ),
+            ValidationDiagnostic(
+                line: 1, column: nil, message: "warning msg",
+                severity: .warning, source: "test"
+            ),
+            ValidationDiagnostic(
+                line: 1, column: nil, message: "error msg",
+                severity: .error, source: "test"
+            )
+        ]
+        #expect(view.diagnosticMap.count == 1)
+        #expect(view.diagnosticMap[1]?.severity == .error)
+        #expect(view.diagnosticMap[1]?.message == "error msg")
+    }
+
+    @Test func diagnosticMap_errorNotReplacedByLowerSeverity() {
+        let (view, _) = makeView()
+        // Error comes first — subsequent info/warning must NOT override
+        view.validationDiagnostics = [
+            ValidationDiagnostic(
+                line: 1, column: nil, message: "error first",
+                severity: .error, source: "test"
+            ),
+            ValidationDiagnostic(
+                line: 1, column: nil, message: "info later",
+                severity: .info, source: "test"
+            )
+        ]
+        #expect(view.diagnosticMap[1]?.severity == .error)
+        #expect(view.diagnosticMap[1]?.message == "error first")
+    }
+
+    @Test func diagnosticMap_multipleLinesIndependent() {
+        let (view, _) = makeView()
+        view.validationDiagnostics = [
+            ValidationDiagnostic(
+                line: 1, column: nil, message: "err", severity: .error, source: "a"
+            ),
+            ValidationDiagnostic(
+                line: 3, column: nil, message: "warn", severity: .warning, source: "b"
+            )
+        ]
+        #expect(view.diagnosticMap.count == 2)
+        #expect(view.diagnosticMap[1]?.severity == .error)
+        #expect(view.diagnosticMap[3]?.severity == .warning)
+        #expect(view.diagnosticMap[2] == nil)
+    }
+
+    @Test func diagnosticMap_clearedWhenEmpty() {
+        let (view, _) = makeView()
+        view.validationDiagnostics = [
+            ValidationDiagnostic(
+                line: 1, column: nil, message: "err", severity: .error, source: "a"
+            )
+        ]
+        #expect(view.diagnosticMap.count == 1)
+        view.validationDiagnostics = []
+        #expect(view.diagnosticMap.isEmpty)
+    }
+
+    @Test func diagnosticMap_rebuildDirectly() {
+        let (view, _) = makeView()
+        // Set diagnostics without going through didSet — call rebuildDiagnosticMap directly
+        view.validationDiagnostics = [
+            ValidationDiagnostic(
+                line: 5, column: 2, message: "manual rebuild",
+                severity: .warning, source: "shellcheck"
+            )
+        ]
+        // Force a rebuild to verify idempotency
+        view.rebuildDiagnosticMap()
+        #expect(view.diagnosticMap.count == 1)
+        #expect(view.diagnosticMap[5]?.message == "manual rebuild")
+    }
 }

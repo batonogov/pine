@@ -66,7 +66,7 @@ final class LineNumberView: NSView {
     private var foldStartMap: [Int: FoldableRange] = [:]
 
     /// Pre-indexed diagnostic lookup: line number → highest-severity diagnostic.
-    private var diagnosticMap: [Int: ValidationDiagnostic] = [:]
+    private(set) var diagnosticMap: [Int: ValidationDiagnostic] = [:]
 
     /// Whether the mouse is currently inside the gutter (for showing fold indicators).
     private var isMouseInside = false
@@ -79,7 +79,7 @@ final class LineNumberView: NSView {
         foldStartMap = Dictionary(foldableRanges.map { ($0.startLine, $0) }, uniquingKeysWith: { _, last in last })
     }
 
-    private func rebuildDiagnosticMap() {
+    func rebuildDiagnosticMap() {
         diagnosticMap = [:]
         for diag in validationDiagnostics {
             if let existing = diagnosticMap[diag.line] {
@@ -120,8 +120,12 @@ final class LineNumberView: NSView {
     private let modifiedColor = NSColor.systemBlue
     private let deletedColor = NSColor.systemRed
 
-    // Fold indicator colors
+    // Fold indicator layout
     private let foldIndicatorColor = NSColor.secondaryLabelColor
+    /// Left margin where the fold disclosure triangle starts.
+    private let foldIndicatorX: CGFloat = 3
+    /// Width reserved for the fold indicator click area.
+    private let foldIndicatorAreaWidth: CGFloat = 14
 
     // Diagnostic marker colors
     private let diagnosticErrorColor = NSColor.systemRed
@@ -129,7 +133,10 @@ final class LineNumberView: NSView {
     private let diagnosticInfoColor = NSColor.systemBlue
 
     /// Stores rects for diagnostic icons so we can show tooltips on hover.
-    private var diagnosticHitRects: [(rect: NSRect, message: String)] = []
+    private(set) var diagnosticHitRects: [(rect: NSRect, message: String)] = []
+
+    /// Snapshot of diagnostic messages from the last tooltip rebuild to avoid redundant work.
+    private var lastToolTipMessages: [String] = []
 
     override var isFlipped: Bool { true }
 
@@ -212,8 +219,7 @@ final class LineNumberView: NSView {
     override func mouseDown(with event: NSEvent) {
         let point = convert(event.locationInWindow, from: nil)
         // Only handle clicks on the fold indicator area (left portion of gutter)
-        let foldIndicatorWidth: CGFloat = 14
-        guard point.x < foldIndicatorWidth else {
+        guard point.x < foldIndicatorAreaWidth else {
             super.mouseDown(with: event)
             return
         }
@@ -484,7 +490,8 @@ final class LineNumberView: NSView {
         // Update tooltip rects after drawing diagnostic icons
         if !diagnosticHitRects.isEmpty {
             updateToolTips()
-        } else {
+        } else if !lastToolTipMessages.isEmpty {
+            lastToolTipMessages = []
             removeAllToolTips()
         }
     }
@@ -495,7 +502,7 @@ final class LineNumberView: NSView {
     private func drawFoldIndicator(at y: CGFloat, lineHeight: CGFloat, isFolded: Bool) {
         let size: CGFloat = 8
         let centerY = y + lineHeight / 2
-        let x: CGFloat = 3
+        let x = foldIndicatorX
 
         let path = NSBezierPath()
         if isFolded {
@@ -525,7 +532,7 @@ final class LineNumberView: NSView {
         let iconSize: CGFloat = 12
         let centerY = y + (lineHeight - iconSize) / 2
         // Position to the left of line numbers, after fold indicators
-        let iconX: CGFloat = 15
+        let iconX = foldIndicatorAreaWidth + 1
 
         let symbolName: String
         let tintColor: NSColor
@@ -574,7 +581,11 @@ final class LineNumberView: NSView {
     }
 
     /// Rebuild tooltip rects after each draw cycle.
+    /// Skips redundant rebuilds when the set of diagnostic messages hasn't changed.
     private func updateToolTips() {
+        let currentMessages = diagnosticHitRects.map(\.message)
+        guard currentMessages != lastToolTipMessages else { return }
+        lastToolTipMessages = currentMessages
         removeAllToolTips()
         for entry in diagnosticHitRects {
             addToolTip(entry.rect.insetBy(dx: -4, dy: -4), owner: self, userData: nil)
