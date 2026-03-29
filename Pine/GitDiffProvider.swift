@@ -11,43 +11,43 @@ import Foundation
 // MARK: - Models
 
 /// A single line in a unified diff.
-enum DiffLineKind: Equatable {
+enum GitDiffLineKind: Equatable {
     case context
     case added
     case removed
     case hunkHeader
 }
 
-struct DiffLine: Equatable, Identifiable {
+struct GitDiffLine: Equatable, Identifiable {
     let id = UUID()
-    let kind: DiffLineKind
+    let kind: GitDiffLineKind
     let text: String
 
-    static func == (lhs: DiffLine, rhs: DiffLine) -> Bool {
+    static func == (lhs: GitDiffLine, rhs: GitDiffLine) -> Bool {
         lhs.kind == rhs.kind && lhs.text == rhs.text
     }
 }
 
 /// A contiguous hunk of changes within a file diff.
-struct DiffHunk: Equatable, Identifiable {
+struct GitDiffHunk: Equatable, Identifiable {
     let id = UUID()
     let header: String
-    let lines: [DiffLine]
+    let lines: [GitDiffLine]
 
-    static func == (lhs: DiffHunk, rhs: DiffHunk) -> Bool {
+    static func == (lhs: GitDiffHunk, rhs: GitDiffHunk) -> Bool {
         lhs.header == rhs.header && lhs.lines == rhs.lines
     }
 }
 
 /// A complete diff for a single file.
-struct FileDiff: Equatable, Identifiable {
+struct GitFileDiff: Equatable, Identifiable {
     let id = UUID()
     let filePath: String
-    let hunks: [DiffHunk]
+    let hunks: [GitDiffHunk]
     /// Whether this diff represents staged (cached) changes.
     let isStaged: Bool
 
-    static func == (lhs: FileDiff, rhs: FileDiff) -> Bool {
+    static func == (lhs: GitFileDiff, rhs: GitFileDiff) -> Bool {
         lhs.filePath == rhs.filePath && lhs.hunks == rhs.hunks && lhs.isStaged == rhs.isStaged
     }
 }
@@ -56,8 +56,8 @@ struct FileDiff: Equatable, Identifiable {
 
 @Observable
 final class GitDiffProvider {
-    var stagedFiles: [FileDiff] = []
-    var unstagedFiles: [FileDiff] = []
+    var stagedFiles: [GitFileDiff] = []
+    var unstagedFiles: [GitFileDiff] = []
 
     /// True when a refresh is in progress.
     var isRefreshing: Bool = false
@@ -111,7 +111,8 @@ final class GitDiffProvider {
     // MARK: - Async Git Helper
 
     /// Runs a closure on a background queue and returns the result via `withCheckedContinuation`.
-    private func runGitAsync<T>(_ work: @escaping @Sendable () -> T) async -> T {
+    /// Internal for testability — used by unit tests to verify background dispatch behavior.
+    func runGitAsync<T>(_ work: @escaping @Sendable () -> T) async -> T {
         await withCheckedContinuation { continuation in
             DispatchQueue.global(qos: .userInitiated).async {
                 continuation.resume(returning: work())
@@ -158,11 +159,11 @@ final class GitDiffProvider {
 
     // MARK: - Unified Diff Parser
 
-    /// Parses unified diff output into per-file `FileDiff` structures.
-    static func parseUnifiedDiff(_ output: String, isStaged: Bool) -> [FileDiff] {
+    /// Parses unified diff output into per-file `GitFileDiff` structures.
+    static func parseUnifiedDiff(_ output: String, isStaged: Bool) -> [GitFileDiff] {
         guard !output.isEmpty else { return [] }
 
-        var fileDiffs: [FileDiff] = []
+        var fileDiffs: [GitFileDiff] = []
         let lines = output.components(separatedBy: "\n")
         var i = 0
 
@@ -192,18 +193,18 @@ final class GitDiffProvider {
             }
 
             // Parse hunks
-            var hunks: [DiffHunk] = []
+            var hunks: [GitDiffHunk] = []
             while i < lines.count && !lines[i].hasPrefix("diff --git ") {
                 if lines[i].hasPrefix("@@") {
                     let header = lines[i]
                     i += 1
 
-                    var hunkLines: [DiffLine] = []
+                    var hunkLines: [GitDiffLine] = []
                     while i < lines.count
                         && !lines[i].hasPrefix("@@")
                         && !lines[i].hasPrefix("diff --git ") {
                         let line = lines[i]
-                        let kind: DiffLineKind
+                        let kind: GitDiffLineKind
                         let text: String
 
                         if line.hasPrefix("+") {
@@ -221,18 +222,18 @@ final class GitDiffProvider {
                             text = line.hasPrefix(" ") ? String(line.dropFirst()) : line
                         }
 
-                        hunkLines.append(DiffLine(kind: kind, text: text))
+                        hunkLines.append(GitDiffLine(kind: kind, text: text))
                         i += 1
                     }
 
-                    hunks.append(DiffHunk(header: header, lines: hunkLines))
+                    hunks.append(GitDiffHunk(header: header, lines: hunkLines))
                 } else {
                     i += 1
                 }
             }
 
             if !hunks.isEmpty {
-                fileDiffs.append(FileDiff(filePath: filePath, hunks: hunks, isStaged: isStaged))
+                fileDiffs.append(GitFileDiff(filePath: filePath, hunks: hunks, isStaged: isStaged))
             }
         }
 

@@ -111,7 +111,7 @@ struct GitChangesEmptyState: View {
 
 struct GitChangesSectionView: View {
     let title: LocalizedStringKey
-    let files: [FileDiff]
+    let files: [GitFileDiff]
     let isStagedSection: Bool
     let diffProvider: GitDiffProvider
 
@@ -179,7 +179,7 @@ struct GitChangesSectionView: View {
 // MARK: - File Row
 
 struct GitChangesFileRow: View {
-    let file: FileDiff
+    let file: GitFileDiff
     let isStagedSection: Bool
     let diffProvider: GitDiffProvider
 
@@ -215,7 +215,7 @@ struct GitChangesFileRow: View {
             .onTapGesture { isExpanded.toggle() }
 
             if isExpanded {
-                DiffHunkListView(hunks: file.hunks)
+                GitDiffHunkListView(hunks: file.hunks)
                     .padding(.leading, 28)
             }
         }
@@ -279,7 +279,7 @@ struct GitChangesFileRow: View {
         }
     }
 
-    private func confirmDiscard(file: FileDiff) {
+    private func confirmDiscard(file: GitFileDiff) {
         let alert = NSAlert()
         alert.messageText = Strings.gitChangesDiscardConfirmTitle
         alert.informativeText = Strings.gitChangesDiscardConfirmMessage(
@@ -310,8 +310,8 @@ struct GitChangesFileRow: View {
 
 // MARK: - Diff Hunk List
 
-struct DiffHunkListView: View {
-    let hunks: [DiffHunk]
+struct GitDiffHunkListView: View {
+    let hunks: [GitDiffHunk]
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -323,7 +323,7 @@ struct DiffHunkListView: View {
                         .padding(.vertical, 2)
 
                     ForEach(hunk.lines) { line in
-                        DiffLineView(line: line)
+                        GitDiffLineView(line: line)
                     }
                 }
                 .padding(.bottom, 4)
@@ -334,8 +334,8 @@ struct DiffHunkListView: View {
 
 // MARK: - Diff Line
 
-struct DiffLineView: View {
-    let line: DiffLine
+struct GitDiffLineView: View {
+    let line: GitDiffLine
 
     var body: some View {
         HStack(spacing: 0) {

@@ -282,13 +282,13 @@ struct GitDiffProviderTests {
         #expect(lines.allSatisfy { $0.kind == .added })
     }
 
-    // MARK: - DiffLine equality
+    // MARK: - GitDiffLine equality
 
     @Test func diffLineEquality() {
-        let line1 = DiffLine(kind: .added, text: "hello")
-        let line2 = DiffLine(kind: .added, text: "hello")
-        let line3 = DiffLine(kind: .removed, text: "hello")
-        let line4 = DiffLine(kind: .added, text: "world")
+        let line1 = GitDiffLine(kind: .added, text: "hello")
+        let line2 = GitDiffLine(kind: .added, text: "hello")
+        let line3 = GitDiffLine(kind: .removed, text: "hello")
+        let line4 = GitDiffLine(kind: .added, text: "world")
         // Custom == compares kind + text, ignoring UUID id
         #expect(line1 == line2)
         #expect(line1 != line3)
@@ -297,94 +297,94 @@ struct GitDiffProviderTests {
         #expect(line1.id != line2.id)
     }
 
-    // MARK: - DiffLine Identifiable distinct IDs
+    // MARK: - GitDiffLine Identifiable distinct IDs
 
     @Test func diffLineHasDistinctIDs() {
-        let a = DiffLine(kind: .context, text: "same")
-        let b = DiffLine(kind: .context, text: "same")
+        let a = GitDiffLine(kind: .context, text: "same")
+        let b = GitDiffLine(kind: .context, text: "same")
         #expect(a == b)
         #expect(a.id != b.id)
     }
 
-    // MARK: - DiffHunk equality
+    // MARK: - GitDiffHunk equality
 
     @Test func diffHunkEqualityByHeaderAndLines() {
-        let hunk1 = DiffHunk(header: "@@ -1 +1 @@", lines: [])
-        let hunk2 = DiffHunk(header: "@@ -1 +1 @@", lines: [])
-        let hunk3 = DiffHunk(header: "@@ -2 +2 @@", lines: [])
+        let hunk1 = GitDiffHunk(header: "@@ -1 +1 @@", lines: [])
+        let hunk2 = GitDiffHunk(header: "@@ -1 +1 @@", lines: [])
+        let hunk3 = GitDiffHunk(header: "@@ -2 +2 @@", lines: [])
         #expect(hunk1 == hunk2)
         #expect(hunk1 != hunk3)
     }
 
-    // MARK: - FileDiff equality
+    // MARK: - GitFileDiff equality
 
     @Test func fileDiffEqualityByPathAndStaged() {
-        let diff1 = FileDiff(filePath: "a.swift", hunks: [], isStaged: true)
-        let diff2 = FileDiff(filePath: "a.swift", hunks: [], isStaged: true)
-        let diff3 = FileDiff(filePath: "a.swift", hunks: [], isStaged: false)
+        let diff1 = GitFileDiff(filePath: "a.swift", hunks: [], isStaged: true)
+        let diff2 = GitFileDiff(filePath: "a.swift", hunks: [], isStaged: true)
+        let diff3 = GitFileDiff(filePath: "a.swift", hunks: [], isStaged: false)
         #expect(diff1 == diff2)
         #expect(diff1 != diff3)
     }
 
     @Test func fileDiffInequalityByPath() {
-        let diff1 = FileDiff(filePath: "a.swift", hunks: [], isStaged: true)
-        let diff2 = FileDiff(filePath: "b.swift", hunks: [], isStaged: true)
+        let diff1 = GitFileDiff(filePath: "a.swift", hunks: [], isStaged: true)
+        let diff2 = GitFileDiff(filePath: "b.swift", hunks: [], isStaged: true)
         #expect(diff1 != diff2)
     }
 
     @Test func fileDiffInequalityByHunks() {
-        let hunk = DiffHunk(header: "@@ -1 +1 @@", lines: [DiffLine(kind: .added, text: "x")])
-        let diff1 = FileDiff(filePath: "a.swift", hunks: [], isStaged: true)
-        let diff2 = FileDiff(filePath: "a.swift", hunks: [hunk], isStaged: true)
+        let hunk = GitDiffHunk(header: "@@ -1 +1 @@", lines: [GitDiffLine(kind: .added, text: "x")])
+        let diff1 = GitFileDiff(filePath: "a.swift", hunks: [], isStaged: true)
+        let diff2 = GitFileDiff(filePath: "a.swift", hunks: [hunk], isStaged: true)
         #expect(diff1 != diff2)
     }
 
     @Test func fileDiffDistinctIDs() {
-        let diff1 = FileDiff(filePath: "a.swift", hunks: [], isStaged: true)
-        let diff2 = FileDiff(filePath: "a.swift", hunks: [], isStaged: true)
+        let diff1 = GitFileDiff(filePath: "a.swift", hunks: [], isStaged: true)
+        let diff2 = GitFileDiff(filePath: "a.swift", hunks: [], isStaged: true)
         #expect(diff1 == diff2)
         #expect(diff1.id != diff2.id)
     }
 
-    // MARK: - DiffHunk equality with lines
+    // MARK: - GitDiffHunk equality with lines
 
     @Test func diffHunkEqualityWithMatchingLines() {
-        let lines = [DiffLine(kind: .added, text: "hello"), DiffLine(kind: .removed, text: "world")]
-        let hunk1 = DiffHunk(header: "@@ -1 +1 @@", lines: lines)
-        let hunk2 = DiffHunk(header: "@@ -1 +1 @@", lines: lines)
+        let lines = [GitDiffLine(kind: .added, text: "hello"), GitDiffLine(kind: .removed, text: "world")]
+        let hunk1 = GitDiffHunk(header: "@@ -1 +1 @@", lines: lines)
+        let hunk2 = GitDiffHunk(header: "@@ -1 +1 @@", lines: lines)
         #expect(hunk1 == hunk2)
     }
 
     @Test func diffHunkInequalityWithDifferentLines() {
-        let hunk1 = DiffHunk(header: "@@ -1 +1 @@", lines: [DiffLine(kind: .added, text: "a")])
-        let hunk2 = DiffHunk(header: "@@ -1 +1 @@", lines: [DiffLine(kind: .added, text: "b")])
+        let hunk1 = GitDiffHunk(header: "@@ -1 +1 @@", lines: [GitDiffLine(kind: .added, text: "a")])
+        let hunk2 = GitDiffHunk(header: "@@ -1 +1 @@", lines: [GitDiffLine(kind: .added, text: "b")])
         #expect(hunk1 != hunk2)
     }
 
     @Test func diffHunkDistinctIDs() {
-        let hunk1 = DiffHunk(header: "@@ -1 +1 @@", lines: [])
-        let hunk2 = DiffHunk(header: "@@ -1 +1 @@", lines: [])
+        let hunk1 = GitDiffHunk(header: "@@ -1 +1 @@", lines: [])
+        let hunk2 = GitDiffHunk(header: "@@ -1 +1 @@", lines: [])
         #expect(hunk1 == hunk2)
         #expect(hunk1.id != hunk2.id)
     }
 
-    // MARK: - DiffLineKind — all variants
+    // MARK: - GitDiffLineKind — all variants
 
     @Test func diffLineKindEquality() {
-        #expect(DiffLineKind.context == DiffLineKind.context)
-        #expect(DiffLineKind.added == DiffLineKind.added)
-        #expect(DiffLineKind.removed == DiffLineKind.removed)
-        #expect(DiffLineKind.hunkHeader == DiffLineKind.hunkHeader)
-        #expect(DiffLineKind.context != DiffLineKind.added)
-        #expect(DiffLineKind.added != DiffLineKind.removed)
-        #expect(DiffLineKind.removed != DiffLineKind.hunkHeader)
-        #expect(DiffLineKind.hunkHeader != DiffLineKind.context)
+        #expect(GitDiffLineKind.context == GitDiffLineKind.context)
+        #expect(GitDiffLineKind.added == GitDiffLineKind.added)
+        #expect(GitDiffLineKind.removed == GitDiffLineKind.removed)
+        #expect(GitDiffLineKind.hunkHeader == GitDiffLineKind.hunkHeader)
+        #expect(GitDiffLineKind.context != GitDiffLineKind.added)
+        #expect(GitDiffLineKind.added != GitDiffLineKind.removed)
+        #expect(GitDiffLineKind.removed != GitDiffLineKind.hunkHeader)
+        #expect(GitDiffLineKind.hunkHeader != GitDiffLineKind.context)
     }
 
-    // MARK: - DiffLine with hunkHeader kind
+    // MARK: - GitDiffLine with hunkHeader kind
 
     @Test func diffLineHunkHeaderKind() {
-        let line = DiffLine(kind: .hunkHeader, text: "@@ -1 +1 @@")
+        let line = GitDiffLine(kind: .hunkHeader, text: "@@ -1 +1 @@")
         #expect(line.kind == .hunkHeader)
         #expect(line.text == "@@ -1 +1 @@")
     }
@@ -447,7 +447,7 @@ struct GitDiffProviderTests {
 
     // MARK: - parseUnifiedDiff — binary file (no hunks)
 
-    @Test func parsesBinaryFileDiffNoHunks() {
+    @Test func parsesBinaryGitFileDiffNoHunks() {
         let diff = """
         diff --git a/image.png b/image.png
         index abc..def 100644
@@ -572,33 +572,33 @@ struct GitDiffProviderTests {
 
     @Test func allChangedPathsFromStagedOnly() {
         let provider = GitDiffProvider()
-        let hunk = DiffHunk(header: "@@ -1 +1 @@", lines: [DiffLine(kind: .added, text: "x")])
+        let hunk = GitDiffHunk(header: "@@ -1 +1 @@", lines: [GitDiffLine(kind: .added, text: "x")])
         provider.stagedFiles = [
-            FileDiff(filePath: "b.swift", hunks: [hunk], isStaged: true),
-            FileDiff(filePath: "a.swift", hunks: [hunk], isStaged: true)
+            GitFileDiff(filePath: "b.swift", hunks: [hunk], isStaged: true),
+            GitFileDiff(filePath: "a.swift", hunks: [hunk], isStaged: true)
         ]
         #expect(provider.allChangedPaths == ["a.swift", "b.swift"])
     }
 
     @Test func allChangedPathsFromUnstagedOnly() {
         let provider = GitDiffProvider()
-        let hunk = DiffHunk(header: "@@ -1 +1 @@", lines: [DiffLine(kind: .removed, text: "x")])
+        let hunk = GitDiffHunk(header: "@@ -1 +1 @@", lines: [GitDiffLine(kind: .removed, text: "x")])
         provider.unstagedFiles = [
-            FileDiff(filePath: "c.swift", hunks: [hunk], isStaged: false)
+            GitFileDiff(filePath: "c.swift", hunks: [hunk], isStaged: false)
         ]
         #expect(provider.allChangedPaths == ["c.swift"])
     }
 
     @Test func allChangedPathsDeduplicatesStagedAndUnstaged() {
         let provider = GitDiffProvider()
-        let hunk = DiffHunk(header: "@@ -1 +1 @@", lines: [DiffLine(kind: .added, text: "x")])
+        let hunk = GitDiffHunk(header: "@@ -1 +1 @@", lines: [GitDiffLine(kind: .added, text: "x")])
         provider.stagedFiles = [
-            FileDiff(filePath: "shared.swift", hunks: [hunk], isStaged: true),
-            FileDiff(filePath: "staged-only.swift", hunks: [hunk], isStaged: true)
+            GitFileDiff(filePath: "shared.swift", hunks: [hunk], isStaged: true),
+            GitFileDiff(filePath: "staged-only.swift", hunks: [hunk], isStaged: true)
         ]
         provider.unstagedFiles = [
-            FileDiff(filePath: "shared.swift", hunks: [hunk], isStaged: false),
-            FileDiff(filePath: "unstaged-only.swift", hunks: [hunk], isStaged: false)
+            GitFileDiff(filePath: "shared.swift", hunks: [hunk], isStaged: false),
+            GitFileDiff(filePath: "unstaged-only.swift", hunks: [hunk], isStaged: false)
         ]
         let paths = provider.allChangedPaths
         #expect(paths.count == 3)
@@ -607,11 +607,11 @@ struct GitDiffProviderTests {
 
     @Test func allChangedPathsAreSorted() {
         let provider = GitDiffProvider()
-        let hunk = DiffHunk(header: "@@ -1 +1 @@", lines: [])
+        let hunk = GitDiffHunk(header: "@@ -1 +1 @@", lines: [])
         provider.stagedFiles = [
-            FileDiff(filePath: "z.swift", hunks: [hunk], isStaged: true),
-            FileDiff(filePath: "a.swift", hunks: [hunk], isStaged: true),
-            FileDiff(filePath: "m.swift", hunks: [hunk], isStaged: true)
+            GitFileDiff(filePath: "z.swift", hunks: [hunk], isStaged: true),
+            GitFileDiff(filePath: "a.swift", hunks: [hunk], isStaged: true),
+            GitFileDiff(filePath: "m.swift", hunks: [hunk], isStaged: true)
         ]
         #expect(provider.allChangedPaths == ["a.swift", "m.swift", "z.swift"])
     }
@@ -681,6 +681,283 @@ struct GitDiffProviderTests {
         #expect(result.count == 1)
         #expect(result[0].filePath == "new_name.swift")
         #expect(result[0].isStaged == true)
+    }
+
+    // MARK: - runGitAsync
+
+    @Test func runGitAsyncReturnsValueFromBackground() async {
+        let provider = GitDiffProvider()
+        let result = await provider.runGitAsync { 42 }
+        #expect(result == 42)
+    }
+
+    @Test func runGitAsyncReturnsStringFromBackground() async {
+        let provider = GitDiffProvider()
+        let result = await provider.runGitAsync { "hello from background" }
+        #expect(result == "hello from background")
+    }
+
+    @Test func runGitAsyncExecutesClosure() async {
+        let provider = GitDiffProvider()
+        let result = await provider.runGitAsync {
+            let arr = (0..<100).map { $0 * 2 }
+            return arr.reduce(0, +)
+        }
+        // Sum of 0, 2, 4, ..., 198 = 2 * (0+1+...+99) = 2 * 4950 = 9900
+        #expect(result == 9900)
+    }
+
+    @Test func runGitAsyncReturnsTuple() async {
+        let provider = GitDiffProvider()
+        let (a, b) = await provider.runGitAsync { (1, "test") }
+        #expect(a == 1)
+        #expect(b == "test")
+    }
+
+    // MARK: - refresh with real git repo
+
+    @Test func refreshInNonGitDirectoryProducesEmptyResults() async {
+        let provider = GitDiffProvider()
+        let tmpDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("pine-test-no-git-\(UUID().uuidString)")
+        try? FileManager.default.createDirectory(at: tmpDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tmpDir) }
+
+        await provider.refresh(at: tmpDir)
+
+        #expect(provider.stagedFiles.isEmpty)
+        #expect(provider.unstagedFiles.isEmpty)
+        #expect(provider.isRefreshing == false)
+    }
+
+    @Test func refreshInGitRepoWithNoChangesProducesEmptyResults() async throws {
+        let tmpDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("pine-test-git-empty-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: tmpDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tmpDir) }
+
+        // Init git repo with initial commit
+        let initResult = GitStatusProvider.runGit(["init"], at: tmpDir)
+        guard initResult.exitCode == 0 else { return }
+
+        let testFile = tmpDir.appendingPathComponent("test.txt")
+        try "hello".write(to: testFile, atomically: true, encoding: .utf8)
+        _ = GitStatusProvider.runGit(["add", "."], at: tmpDir)
+        _ = GitStatusProvider.runGit(
+            ["-c", "user.name=Test", "-c", "user.email=test@test.com", "commit", "-m", "init"],
+            at: tmpDir
+        )
+
+        let provider = GitDiffProvider()
+        await provider.refresh(at: tmpDir)
+
+        #expect(provider.stagedFiles.isEmpty)
+        #expect(provider.unstagedFiles.isEmpty)
+        #expect(provider.isRefreshing == false)
+    }
+
+    @Test func refreshDetectsUnstagedChanges() async throws {
+        let tmpDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("pine-test-git-unstaged-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: tmpDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tmpDir) }
+
+        let initResult = GitStatusProvider.runGit(["init"], at: tmpDir)
+        guard initResult.exitCode == 0 else { return }
+
+        let testFile = tmpDir.appendingPathComponent("test.txt")
+        try "hello".write(to: testFile, atomically: true, encoding: .utf8)
+        _ = GitStatusProvider.runGit(["add", "."], at: tmpDir)
+        _ = GitStatusProvider.runGit(
+            ["-c", "user.name=Test", "-c", "user.email=test@test.com", "commit", "-m", "init"],
+            at: tmpDir
+        )
+
+        // Make an unstaged change
+        try "hello world".write(to: testFile, atomically: true, encoding: .utf8)
+
+        let provider = GitDiffProvider()
+        await provider.refresh(at: tmpDir)
+
+        #expect(!provider.unstagedFiles.isEmpty)
+        #expect(provider.unstagedFiles[0].filePath == "test.txt")
+        #expect(provider.stagedFiles.isEmpty)
+    }
+
+    @Test func refreshDetectsStagedChanges() async throws {
+        let tmpDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("pine-test-git-staged-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: tmpDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tmpDir) }
+
+        let initResult = GitStatusProvider.runGit(["init"], at: tmpDir)
+        guard initResult.exitCode == 0 else { return }
+
+        let testFile = tmpDir.appendingPathComponent("test.txt")
+        try "hello".write(to: testFile, atomically: true, encoding: .utf8)
+        _ = GitStatusProvider.runGit(["add", "."], at: tmpDir)
+        _ = GitStatusProvider.runGit(
+            ["-c", "user.name=Test", "-c", "user.email=test@test.com", "commit", "-m", "init"],
+            at: tmpDir
+        )
+
+        // Make a staged change
+        try "hello world".write(to: testFile, atomically: true, encoding: .utf8)
+        _ = GitStatusProvider.runGit(["add", "test.txt"], at: tmpDir)
+
+        let provider = GitDiffProvider()
+        await provider.refresh(at: tmpDir)
+
+        #expect(!provider.stagedFiles.isEmpty)
+        #expect(provider.stagedFiles[0].filePath == "test.txt")
+    }
+
+    // MARK: - Stage / Unstage / Discard integration
+
+    @Test func stageFileWorksInRealRepo() async throws {
+        let tmpDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("pine-test-git-stage-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: tmpDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tmpDir) }
+
+        let initResult = GitStatusProvider.runGit(["init"], at: tmpDir)
+        guard initResult.exitCode == 0 else { return }
+
+        let testFile = tmpDir.appendingPathComponent("test.txt")
+        try "hello".write(to: testFile, atomically: true, encoding: .utf8)
+        _ = GitStatusProvider.runGit(["add", "."], at: tmpDir)
+        _ = GitStatusProvider.runGit(
+            ["-c", "user.name=Test", "-c", "user.email=test@test.com", "commit", "-m", "init"],
+            at: tmpDir
+        )
+
+        try "modified".write(to: testFile, atomically: true, encoding: .utf8)
+
+        let provider = GitDiffProvider()
+        let success = await provider.stageFile("test.txt", at: tmpDir)
+        #expect(success)
+
+        // Verify it's now staged
+        await provider.refresh(at: tmpDir)
+        #expect(!provider.stagedFiles.isEmpty)
+    }
+
+    @Test func unstageFileWorksInRealRepo() async throws {
+        let tmpDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("pine-test-git-unstage-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: tmpDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tmpDir) }
+
+        let initResult = GitStatusProvider.runGit(["init"], at: tmpDir)
+        guard initResult.exitCode == 0 else { return }
+
+        let testFile = tmpDir.appendingPathComponent("test.txt")
+        try "hello".write(to: testFile, atomically: true, encoding: .utf8)
+        _ = GitStatusProvider.runGit(["add", "."], at: tmpDir)
+        _ = GitStatusProvider.runGit(
+            ["-c", "user.name=Test", "-c", "user.email=test@test.com", "commit", "-m", "init"],
+            at: tmpDir
+        )
+
+        try "modified".write(to: testFile, atomically: true, encoding: .utf8)
+        _ = GitStatusProvider.runGit(["add", "test.txt"], at: tmpDir)
+
+        let provider = GitDiffProvider()
+        let success = await provider.unstageFile("test.txt", at: tmpDir)
+        #expect(success)
+
+        // Verify it's now unstaged
+        await provider.refresh(at: tmpDir)
+        #expect(provider.stagedFiles.isEmpty)
+        #expect(!provider.unstagedFiles.isEmpty)
+    }
+
+    @Test func discardChangesWorksInRealRepo() async throws {
+        let tmpDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("pine-test-git-discard-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: tmpDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tmpDir) }
+
+        let initResult = GitStatusProvider.runGit(["init"], at: tmpDir)
+        guard initResult.exitCode == 0 else { return }
+
+        let testFile = tmpDir.appendingPathComponent("test.txt")
+        try "hello".write(to: testFile, atomically: true, encoding: .utf8)
+        _ = GitStatusProvider.runGit(["add", "."], at: tmpDir)
+        _ = GitStatusProvider.runGit(
+            ["-c", "user.name=Test", "-c", "user.email=test@test.com", "commit", "-m", "init"],
+            at: tmpDir
+        )
+
+        try "modified".write(to: testFile, atomically: true, encoding: .utf8)
+
+        let provider = GitDiffProvider()
+        let success = await provider.discardChanges("test.txt", at: tmpDir)
+        #expect(success)
+
+        // Verify file is restored
+        let content = try String(contentsOf: testFile, encoding: .utf8)
+        #expect(content == "hello")
+    }
+
+    @Test func stageAllWorksInRealRepo() async throws {
+        let tmpDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("pine-test-git-stageall-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: tmpDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tmpDir) }
+
+        let initResult = GitStatusProvider.runGit(["init"], at: tmpDir)
+        guard initResult.exitCode == 0 else { return }
+
+        let file1 = tmpDir.appendingPathComponent("a.txt")
+        let file2 = tmpDir.appendingPathComponent("b.txt")
+        try "a".write(to: file1, atomically: true, encoding: .utf8)
+        try "b".write(to: file2, atomically: true, encoding: .utf8)
+        _ = GitStatusProvider.runGit(["add", "."], at: tmpDir)
+        _ = GitStatusProvider.runGit(
+            ["-c", "user.name=Test", "-c", "user.email=test@test.com", "commit", "-m", "init"],
+            at: tmpDir
+        )
+
+        try "a modified".write(to: file1, atomically: true, encoding: .utf8)
+        try "b modified".write(to: file2, atomically: true, encoding: .utf8)
+
+        let provider = GitDiffProvider()
+        let success = await provider.stageAll(at: tmpDir)
+        #expect(success)
+
+        await provider.refresh(at: tmpDir)
+        #expect(!provider.stagedFiles.isEmpty)
+        #expect(provider.unstagedFiles.isEmpty)
+    }
+
+    @Test func unstageAllWorksInRealRepo() async throws {
+        let tmpDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("pine-test-git-unstageall-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: tmpDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tmpDir) }
+
+        let initResult = GitStatusProvider.runGit(["init"], at: tmpDir)
+        guard initResult.exitCode == 0 else { return }
+
+        let testFile = tmpDir.appendingPathComponent("test.txt")
+        try "hello".write(to: testFile, atomically: true, encoding: .utf8)
+        _ = GitStatusProvider.runGit(["add", "."], at: tmpDir)
+        _ = GitStatusProvider.runGit(
+            ["-c", "user.name=Test", "-c", "user.email=test@test.com", "commit", "-m", "init"],
+            at: tmpDir
+        )
+
+        try "modified".write(to: testFile, atomically: true, encoding: .utf8)
+        _ = GitStatusProvider.runGit(["add", "."], at: tmpDir)
+
+        let provider = GitDiffProvider()
+        let success = await provider.unstageAll(at: tmpDir)
+        #expect(success)
+
+        await provider.refresh(at: tmpDir)
+        #expect(provider.stagedFiles.isEmpty)
+        #expect(!provider.unstagedFiles.isEmpty)
     }
 
     // MARK: - parseUnifiedDiff — context line without leading space
