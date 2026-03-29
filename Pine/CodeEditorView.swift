@@ -785,6 +785,10 @@ struct CodeEditorView: NSViewRepresentable {
         /// resets it to NSNotFound. Used by textDidChange for incremental highlighting.
         var pendingEditedRange: NSRange?
 
+        /// Change in length captured alongside pendingEditedRange from
+        /// NSTextStorageDelegate. Used for incremental lineStartsCache update.
+        var pendingChangeInLength: Int = 0
+
         /// Last consumed navigation request ID — prevents re-processing.
         var lastGoToID: UUID?
 
@@ -903,6 +907,7 @@ struct CodeEditorView: NSViewRepresentable {
             if textChanged && textView.string != text {
                 isProgrammaticTextChange = true
                 pendingEditedRange = nil
+                pendingChangeInLength = 0
                 textView.string = text
                 isProgrammaticTextChange = false
             }
@@ -1015,6 +1020,7 @@ struct CodeEditorView: NSViewRepresentable {
             // changes from highlighting, and not programmatic text replacement).
             if editedMask.contains(.editedCharacters), !isProgrammaticTextChange {
                 pendingEditedRange = editedRange
+                pendingChangeInLength = delta
             }
         }
 
@@ -1026,6 +1032,7 @@ struct CodeEditorView: NSViewRepresentable {
             // full highlight. Only update caches that it doesn't handle.
             if isProgrammaticTextChange {
                 pendingEditedRange = nil
+                pendingChangeInLength = 0
                 previousBracketRanges = []
                 highlightedCharRange = nil
                 reportStateChange()
@@ -1046,13 +1053,15 @@ struct CodeEditorView: NSViewRepresentable {
             // Report state change
             reportStateChange()
 
-            // Update line starts cache incrementally if possible, otherwise full rebuild
+            // Update line starts cache incrementally if possible, otherwise full rebuild.
+            // We use pendingEditedRange / pendingChangeInLength captured by the
+            // NSTextStorageDelegate — by the time textDidChange fires,
+            // storage.editedRange is already reset to NSNotFound.
             if var cache = lineStartsCache,
-               let storage = textView.textStorage,
-               storage.editedRange.location != NSNotFound {
+               let editRange = pendingEditedRange {
                 cache.update(
-                    editedRange: storage.editedRange,
-                    changeInLength: storage.changeInLength,
+                    editedRange: editRange,
+                    changeInLength: pendingChangeInLength,
                     in: textView.string as NSString
                 )
                 lineStartsCache = cache
@@ -1068,6 +1077,7 @@ struct CodeEditorView: NSViewRepresentable {
             // time textDidChange fires, so we rely on pendingEditedRange instead.
             let editedRange = pendingEditedRange
             pendingEditedRange = nil
+            pendingChangeInLength = 0
 
             // Skip highlighting for large files opened without syntax highlighting
             guard !parent.syntaxHighlightingDisabled else { return }
