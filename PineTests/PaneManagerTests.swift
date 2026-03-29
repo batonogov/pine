@@ -282,4 +282,192 @@ struct PaneManagerTests {
         #expect(newTabs.count == 1)
         #expect(newTabs.first?.url == url2)
     }
+
+    // MARK: - Focus cycle
+
+    @MainActor @Test func focusCycle_threePanes_cyclesThroughAll() {
+        let manager = PaneManager()
+        let firstPane = manager.activePaneID
+
+        guard let secondPane = manager.splitPane(firstPane, axis: .horizontal) else {
+            Issue.record("Split failed")
+            return
+        }
+        guard let thirdPane = manager.splitPane(secondPane, axis: .vertical) else {
+            Issue.record("Split failed")
+            return
+        }
+
+        #expect(manager.activePaneID == thirdPane)
+
+        let allLeafIDs = manager.root.leafIDs
+        #expect(allLeafIDs.count == 3)
+        #expect(allLeafIDs.contains(firstPane))
+        #expect(allLeafIDs.contains(secondPane))
+        #expect(allLeafIDs.contains(thirdPane))
+
+        for paneID in allLeafIDs {
+            manager.activePaneID = paneID
+            #expect(manager.activePaneID == paneID)
+            #expect(manager.activeTabManager === manager.tabManager(for: paneID))
+        }
+    }
+
+    // MARK: - updateSplitRatio
+
+    @MainActor @Test func updateSplitRatio_changesParentOfNestedPane() {
+        let manager = PaneManager()
+        let firstPane = manager.activePaneID
+
+        guard let secondPane = manager.splitPane(firstPane, axis: .horizontal) else {
+            Issue.record("Split failed")
+            return
+        }
+        guard let thirdPane = manager.splitPane(secondPane, axis: .vertical) else {
+            Issue.record("Split failed")
+            return
+        }
+
+        manager.updateSplitRatio(containing: thirdPane, ratio: 0.3)
+        #expect(manager.root.leafCount == 3)
+        #expect(manager.tabManagers.count == 3)
+    }
+
+    // MARK: - Move tab edge cases
+
+    @MainActor @Test func moveTabBetweenPanes_invalidSourcePane_doesNothing() {
+        let manager = PaneManager()
+        let firstPane = manager.activePaneID
+        let testURL = URL(fileURLWithPath: "/tmp/test.swift")
+        manager.tabManager(for: firstPane)?.openTab(url: testURL)
+
+        guard let secondPane = manager.splitPane(firstPane, axis: .horizontal) else {
+            Issue.record("Split failed")
+            return
+        }
+
+        let fakePaneID = PaneID()
+        manager.moveTabBetweenPanes(tabURL: testURL, from: fakePaneID, to: secondPane)
+        #expect(manager.tabManager(for: firstPane)?.tabs.count == 1)
+    }
+
+    @MainActor @Test func moveTabBetweenPanes_nonExistentTab_doesNothing() {
+        let manager = PaneManager()
+        let firstPane = manager.activePaneID
+        let testURL = URL(fileURLWithPath: "/tmp/test.swift")
+        let ghostURL = URL(fileURLWithPath: "/tmp/ghost.swift")
+        manager.tabManager(for: firstPane)?.openTab(url: testURL)
+
+        guard let secondPane = manager.splitPane(firstPane, axis: .horizontal) else {
+            Issue.record("Split failed")
+            return
+        }
+
+        manager.moveTabBetweenPanes(tabURL: ghostURL, from: firstPane, to: secondPane)
+        #expect(manager.tabManager(for: firstPane)?.tabs.count == 1)
+        #expect(manager.tabManager(for: secondPane)?.tabs.isEmpty == true)
+    }
+
+    @MainActor @Test func moveTabBetweenPanes_preservesTabContent() {
+        let manager = PaneManager()
+        let firstPane = manager.activePaneID
+        let testURL = URL(fileURLWithPath: "/tmp/test.swift")
+        manager.tabManager(for: firstPane)?.openTab(url: testURL)
+
+        let testContent = "func hello() { print(\"world\") }"
+        manager.tabManager(for: firstPane)?.updateContent(testContent)
+
+        let anotherURL = URL(fileURLWithPath: "/tmp/another.swift")
+        manager.tabManager(for: firstPane)?.openTab(url: anotherURL)
+
+        guard let secondPane = manager.splitPane(firstPane, axis: .horizontal) else {
+            Issue.record("Split failed")
+            return
+        }
+
+        manager.moveTabBetweenPanes(tabURL: testURL, from: firstPane, to: secondPane)
+        let destTab = manager.tabManager(for: secondPane)?.tabs.first(where: { $0.url == testURL })
+        #expect(destTab != nil)
+    }
+
+    // MARK: - Remove pane edge cases
+
+    @MainActor @Test func removePane_fromThreePanes_keepsTwo() {
+        let manager = PaneManager()
+        let firstPane = manager.activePaneID
+
+        guard let secondPane = manager.splitPane(firstPane, axis: .horizontal) else {
+            Issue.record("Split failed")
+            return
+        }
+        guard let thirdPane = manager.splitPane(secondPane, axis: .vertical) else {
+            Issue.record("Split failed")
+            return
+        }
+
+        manager.removePane(secondPane)
+        #expect(manager.root.leafCount == 2)
+        #expect(manager.tabManagers[secondPane] == nil)
+        #expect(manager.tabManagers[firstPane] != nil)
+        #expect(manager.tabManagers[thirdPane] != nil)
+    }
+
+    @MainActor @Test func removePane_invalidPaneID_doesNothing() {
+        let manager = PaneManager()
+        let firstPane = manager.activePaneID
+        _ = manager.splitPane(firstPane, axis: .horizontal)
+
+        let fakePaneID = PaneID()
+        manager.removePane(fakePaneID)
+        #expect(manager.root.leafCount == 2)
+    }
+
+    // MARK: - Split with nil tabURL
+
+    @MainActor @Test func splitPane_withNilTabURL_createsEmptyPane() {
+        let manager = PaneManager()
+        let firstPane = manager.activePaneID
+        manager.tabManager(for: firstPane)?.openTab(url: URL(fileURLWithPath: "/tmp/test.swift"))
+
+        let newID = manager.splitPane(firstPane, axis: .horizontal, tabURL: nil, sourcePane: nil)
+        guard let newID else {
+            Issue.record("Split failed")
+            return
+        }
+
+        #expect(manager.tabManager(for: newID)?.tabs.isEmpty == true)
+        #expect(manager.tabManager(for: firstPane)?.tabs.count == 1)
+    }
+
+    // MARK: - Multiple rapid splits
+
+    @MainActor @Test func rapidSplits_allPanesHaveTabManagers() {
+        let manager = PaneManager()
+        var lastPaneID = manager.activePaneID
+
+        for idx in 0..<5 {
+            let axis: SplitAxis = idx % 2 == 0 ? .horizontal : .vertical
+            guard let newID = manager.splitPane(lastPaneID, axis: axis) else {
+                Issue.record("Split \(idx) failed")
+                return
+            }
+            lastPaneID = newID
+        }
+
+        #expect(manager.root.leafCount == 6)
+        #expect(manager.tabManagers.count == 6)
+
+        for leafID in manager.root.leafIDs {
+            #expect(manager.tabManager(for: leafID) != nil)
+        }
+    }
+
+    // MARK: - updateRatio edge cases
+
+    @MainActor @Test func updateRatio_onSinglePane_noChange() {
+        let manager = PaneManager()
+        let onlyPane = manager.activePaneID
+        manager.updateRatio(for: onlyPane, ratio: 0.7)
+        #expect(manager.root.leafCount == 1)
+    }
 }
