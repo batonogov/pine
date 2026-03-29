@@ -241,6 +241,9 @@ struct ContentView: View {
             isMinimapVisible: isMinimapVisible,
             isWordWrapEnabled: isWordWrapEnabled,
             onCloseTab: { closeTabWithConfirmation($0) },
+            onCloseOtherTabs: { closeOtherTabsWithConfirmation(keeping: $0) },
+            onCloseTabsToTheRight: { closeTabsToTheRightWithConfirmation(of: $0) },
+            onCloseAllTabs: { closeAllTabsWithConfirmation() },
             onSaveSession: { projectManager.saveSession() }
         )
     }

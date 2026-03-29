@@ -402,33 +402,62 @@ final class TabManager {
 
     // MARK: - Context menu actions
 
+    /// Returns the dirty (unsaved) tabs that would be closed by `closeOtherTabs`.
+    /// Pinned tabs and the kept tab are excluded.
+    func dirtyTabsForCloseOthers(keeping tabID: UUID) -> [EditorTab] {
+        tabs.filter { $0.id != tabID && !$0.isPinned && $0.isDirty }
+    }
+
     /// Closes all tabs except the one with the given ID.
     /// Pinned tabs are preserved unless they are the target tab.
-    func closeOtherTabs(keeping tabID: UUID) {
+    /// When `force` is true, dirty tabs are closed without confirmation.
+    /// When `force` is false, dirty tabs are skipped (caller must handle them).
+    func closeOtherTabs(keeping tabID: UUID, force: Bool = false) {
         cancelAutoSave()
-        let idsToClose = tabs.filter { $0.id != tabID && !$0.isPinned }.map(\.id)
+        let idsToClose = tabs.filter { tab in
+            tab.id != tabID && !tab.isPinned && (force || !tab.isDirty)
+        }.map(\.id)
         for id in idsToClose {
             closeTab(id: id, force: true)
         }
         activeTabID = tabID
     }
 
+    /// Returns the dirty (unsaved) tabs that would be closed by `closeTabsToTheRight`.
+    func dirtyTabsForCloseRight(of tabID: UUID) -> [EditorTab] {
+        guard let index = tabs.firstIndex(where: { $0.id == tabID }) else { return [] }
+        return Array(tabs[(index + 1)...].filter { !$0.isPinned && $0.isDirty })
+    }
+
     /// Closes all tabs to the right of the tab with the given ID.
     /// Pinned tabs are not closed.
-    func closeTabsToTheRight(of tabID: UUID) {
+    /// When `force` is true, dirty tabs are closed without confirmation.
+    /// When `force` is false, dirty tabs are skipped.
+    func closeTabsToTheRight(of tabID: UUID, force: Bool = false) {
         guard let index = tabs.firstIndex(where: { $0.id == tabID }) else { return }
         cancelAutoSave()
-        let rightTabs = tabs[(index + 1)...].filter { !$0.isPinned }
+        let rightTabs = tabs[(index + 1)...].filter { tab in
+            !tab.isPinned && (force || !tab.isDirty)
+        }
         for tab in rightTabs.reversed() {
             closeTab(id: tab.id, force: true)
         }
     }
 
+    /// Returns the dirty (unsaved) tabs that would be closed by `closeAllTabs`.
+    func dirtyTabsForCloseAll() -> [EditorTab] {
+        tabs.filter(\.isDirty)
+    }
+
     /// Closes all tabs. Pinned tabs are force-closed.
-    func closeAllTabs() {
+    /// When `force` is true, dirty tabs are closed without confirmation.
+    /// When `force` is false, dirty tabs are skipped.
+    func closeAllTabs(force: Bool = false) {
         cancelAutoSave()
-        let allIDs = tabs.map(\.id)
-        for id in allIDs {
+        let idsToClose = tabs.filter { tab in
+            force || !tab.isDirty
+        }.map(\.id)
+        for id in idsToClose {
             closeTab(id: id, force: true)
         }
     }

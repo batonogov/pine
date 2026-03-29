@@ -243,6 +243,59 @@ extension ContentView {
 
 extension ContentView {
 
+    /// Shows a confirmation dialog for bulk close operations when there are dirty tabs.
+    /// Returns `true` if the operation should proceed (user chose Save All or Don't Save),
+    /// `false` if cancelled. When the user chooses Save All, all dirty tabs are saved first.
+    private func confirmBulkClose(dirtyTabs: [EditorTab]) -> Bool {
+        guard !dirtyTabs.isEmpty else { return true }
+
+        let fileList = dirtyTabs.map { "  \u{2022} \($0.fileName)" }.joined(separator: "\n")
+        let alert = NSAlert()
+        alert.messageText = Strings.unsavedChangesTitle
+        alert.informativeText = Strings.unsavedChangesListMessage(fileList)
+        alert.addButton(withTitle: Strings.dialogSaveAll)
+        alert.addButton(withTitle: Strings.dialogDontSave)
+        alert.addButton(withTitle: Strings.dialogCancel)
+        alert.alertStyle = .warning
+
+        let response = alert.runModal()
+        switch response {
+        case .alertFirstButtonReturn:
+            // Save all dirty tabs; abort if any save fails
+            for tab in dirtyTabs {
+                guard let index = tabManager.tabs.firstIndex(where: { $0.id == tab.id }) else { continue }
+                guard tabManager.saveTab(at: index) else { return false }
+            }
+            Task { await workspace.gitProvider.refreshAsync() }
+            return true
+        case .alertSecondButtonReturn:
+            return true
+        default:
+            return false
+        }
+    }
+
+    /// Closes all tabs except the one with the given ID, with unsaved-changes protection.
+    func closeOtherTabsWithConfirmation(keeping tabID: UUID) {
+        let dirty = tabManager.dirtyTabsForCloseOthers(keeping: tabID)
+        guard confirmBulkClose(dirtyTabs: dirty) else { return }
+        tabManager.closeOtherTabs(keeping: tabID, force: true)
+    }
+
+    /// Closes all tabs to the right of the given tab, with unsaved-changes protection.
+    func closeTabsToTheRightWithConfirmation(of tabID: UUID) {
+        let dirty = tabManager.dirtyTabsForCloseRight(of: tabID)
+        guard confirmBulkClose(dirtyTabs: dirty) else { return }
+        tabManager.closeTabsToTheRight(of: tabID, force: true)
+    }
+
+    /// Closes all tabs with unsaved-changes protection.
+    func closeAllTabsWithConfirmation() {
+        let dirty = tabManager.dirtyTabsForCloseAll()
+        guard confirmBulkClose(dirtyTabs: dirty) else { return }
+        tabManager.closeAllTabs(force: true)
+    }
+
     /// Closes a tab with unsaved-changes protection.
     func closeTabWithConfirmation(_ tab: EditorTab) {
         if tab.isDirty {
