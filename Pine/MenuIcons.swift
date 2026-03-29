@@ -5,7 +5,7 @@
 //  SF Symbol names for menu items. Used by both app code and tests.
 //
 
-enum MenuIcons {
+nonisolated enum MenuIcons {
     // MARK: - File menu
     static let openFolder = "folder"
     static let save = "square.and.arrow.down"

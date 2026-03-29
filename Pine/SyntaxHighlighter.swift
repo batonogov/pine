@@ -7,6 +7,7 @@
 
 import AppKit
 import os
+import Synchronization
 
 // MARK: - Модели грамматики
 
@@ -76,17 +77,16 @@ struct Theme {
 /// Загружает грамматики из JSON-файлов в папке Grammars/ в бандле приложения.
 /// При подсветке выбирает грамматику по расширению файла и применяет правила.
 /// Thread-safe generation counter for cancelling stale highlight requests.
-final class HighlightGeneration: @unchecked Sendable {
-    private let lock = NSLock()
-    private var value: Int = 0
+final class HighlightGeneration: Sendable {
+    private let storage = Mutex<Int>(0)
 
     var current: Int {
-        lock.withLock { value }
+        storage.withLock { $0 }
     }
 
     @discardableResult
     func increment() -> Int {
-        lock.withLock {
+        storage.withLock { value in
             value += 1
             return value
         }

@@ -10,7 +10,7 @@ import Foundation
 // MARK: - ASCII Character Codes
 
 /// Common ASCII character codes used for text scanning.
-enum ASCII {
+nonisolated enum ASCII {
     /// Line feed (`\n`) — 0x0A
     static let newline: unichar = 0x0A
     /// Carriage return (`\r`) — 0x0D
@@ -20,7 +20,7 @@ enum ASCII {
 // MARK: - File Size Constants
 
 /// Commonly used file size values in bytes.
-enum FileSizeConstants {
+nonisolated enum FileSizeConstants {
     /// 1 KB = 1,024 bytes
     static let oneKB = 1_024
     /// 1 MB = 1,048,576 bytes
@@ -32,7 +32,7 @@ enum FileSizeConstants {
 // MARK: - Editor Constants
 
 /// Constants used by the code editor (CodeEditorView).
-enum EditorConstants {
+nonisolated enum EditorConstants {
     /// Number of characters to search in each direction when looking for bracket matches.
     /// Large enough to find nearby brackets, small enough to avoid scanning the entire file.
     static let bracketSearchRadius = 5000
@@ -41,7 +41,7 @@ enum EditorConstants {
 // MARK: - Search Constants
 
 /// Constants used by project search (ProjectSearchProvider).
-enum SearchConstants {
+nonisolated enum SearchConstants {
     /// Maximum number of characters to keep from a matched line for display.
     static let lineContentPrefixLimit = 200
 }
@@ -49,7 +49,7 @@ enum SearchConstants {
 // MARK: - Minimap Constants
 
 /// Constants used by the minimap view (MinimapView).
-enum MinimapConstants {
+nonisolated enum MinimapConstants {
     /// Alpha component for syntax-colored segments in the minimap.
     static let syntaxSegmentAlpha: CGFloat = 0.55
     /// Width of git diff marker strips on the right edge.

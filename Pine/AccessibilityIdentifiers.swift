@@ -5,7 +5,7 @@
 //  Shared accessibility identifiers used by both app code and UI tests.
 //
 
-enum AccessibilityID {
+nonisolated enum AccessibilityID {
     // MARK: - Welcome window
     static let welcomeWindow = "welcomeWindow"
     static let welcomeOpenFolderButton = "welcomeOpenFolderButton"

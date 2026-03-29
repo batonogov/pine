@@ -622,7 +622,9 @@ class CloseDelegate: NSObject, NSWindowDelegate {
     private var didHandleClose = false
 
     /// NotificationCenter observer token for the willClose fallback.
-    private var closeObserver: Any?
+    /// nonisolated(unsafe): accessed from deinit (nonisolated) to remove observer.
+    /// CloseDelegate is always deallocated on the main thread.
+    nonisolated(unsafe) private var closeObserver: Any?
 
     init(
         projectManager: ProjectManager,
@@ -646,8 +648,10 @@ class CloseDelegate: NSObject, NSWindowDelegate {
             forName: NSWindow.willCloseNotification,
             object: window,
             queue: .main
-        ) { [weak self] notification in
-            self?.handleClose(notification)
+        ) { [weak self] _ in
+            MainActor.assumeIsolated {
+                self?.handleWindowClose()
+            }
         }
     }
 
@@ -721,12 +725,12 @@ class CloseDelegate: NSObject, NSWindowDelegate {
     // Forward other delegate calls to the original
     func windowWillClose(_ notification: Notification) {
         original?.windowWillClose?(notification)
-        handleClose(notification)
+        handleWindowClose()
     }
 
     /// Shared close handler used by both the delegate method and the
     /// NotificationCenter fallback. Guarded by `didHandleClose` to run once.
-    private func handleClose(_ notification: Notification) {
+    private func handleWindowClose() {
         guard !didHandleClose else { return }
         didHandleClose = true
         appDelegate?.handleProjectWindowDisappear(

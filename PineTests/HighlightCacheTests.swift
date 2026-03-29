@@ -12,7 +12,7 @@ import AppKit
 @Suite(.serialized)
 struct HighlightCacheTests {
 
-    private let font = NSFont.monospacedSystemFont(ofSize: 13, weight: .regular)
+    nonisolated(unsafe) private let font = NSFont.monospacedSystemFont(ofSize: 13, weight: .regular)
 
     private let swiftGrammar = Grammar(
         name: "TestSwift",

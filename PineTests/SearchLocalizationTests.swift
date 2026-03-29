@@ -13,10 +13,10 @@ import Testing
 struct SearchLocalizationTests {
 
     /// All languages the app supports.
-    private static let supportedLanguages = ["en", "de", "es", "fr", "ja", "ko", "pt-BR", "ru", "zh-Hans"]
+    nonisolated private static let supportedLanguages = ["en", "de", "es", "fr", "ja", "ko", "pt-BR", "ru", "zh-Hans"]
 
     /// Search-related localization keys added in the .searchable migration.
-    private static let searchKeys = [
+    nonisolated private static let searchKeys = [
         "search.placeholder",
         "search.noResults",
         "search.caseSensitive",
