@@ -1464,9 +1464,10 @@ struct TabManagerTests {
             [.modificationDate: futureDate], ofItemAtPath: url.path
         )
 
-        let conflicts = manager.checkExternalChanges()
+        let result = manager.checkExternalChanges()
 
-        #expect(conflicts.isEmpty)
+        #expect(result.conflicts.isEmpty)
+        #expect(result.reloadedFileNames.count == 1)
         #expect(manager.activeTab?.content == "updated by external tool")
         #expect(manager.activeTab?.savedContent == "updated by external tool")
         // contentVersion must increment so CodeEditorView picks up the change
@@ -1488,10 +1489,11 @@ struct TabManagerTests {
             [.modificationDate: futureDate], ofItemAtPath: url.path
         )
 
-        let conflicts = manager.checkExternalChanges()
+        let result = manager.checkExternalChanges()
 
-        #expect(conflicts.count == 1)
-        #expect(conflicts.first?.kind == .modified)
+        #expect(result.conflicts.count == 1)
+        #expect(result.conflicts.first?.kind == .modified)
+        #expect(result.reloadedFileNames.isEmpty)
         // Content should NOT be overwritten — user has unsaved changes
         #expect(manager.activeTab?.content == "user edits")
     }

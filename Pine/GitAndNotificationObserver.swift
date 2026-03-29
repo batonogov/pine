@@ -54,7 +54,7 @@ struct GitAndNotificationObserver: ViewModifier {
     var onCloseTab: (EditorTab) -> Void
     var onOpenNewProject: () -> Void
     var onHandleFileDeletion: (URL) -> Void
-    var onHandleExternalConflicts: ([TabManager.ExternalConflict]) -> Void
+    var onHandleExternalChanges: (TabManager.ExternalChangeResult) -> Void
     var onNavigateToChange: (ContentView.ChangeDirection) -> Void
 
     func body(content: Content) -> some View {
@@ -99,15 +99,15 @@ struct GitAndNotificationObserver: ViewModifier {
             }
             .onChange(of: workspace.externalChangeToken) { _, _ in
                 guard controlActiveState == .key else { return }
-                let conflicts = tabManager.checkExternalChanges()
-                onHandleExternalConflicts(conflicts)
+                let result = tabManager.checkExternalChanges()
+                onHandleExternalChanges(result)
             }
             .onChange(of: controlActiveState) { _, newState in
                 // When the window becomes key, check for external changes that
                 // may have been missed while the window was inactive (issue #438).
                 guard newState == .key else { return }
-                let conflicts = tabManager.checkExternalChanges()
-                onHandleExternalConflicts(conflicts)
+                let result = tabManager.checkExternalChanges()
+                onHandleExternalChanges(result)
             }
             .onReceive(NotificationCenter.default.publisher(for: .showProjectSearch)) { _ in
                 withAnimation(PineAnimation.quick) {

@@ -397,6 +397,20 @@ enum Strings {
         String(localized: "validation.passed")
     }
 
+    // MARK: - Toast Notifications
+
+    static func toastFileReloaded(_ name: String) -> String {
+        String(localized: "toast.fileReloaded \(name)")
+    }
+
+    static func toastFilesReloaded(count: Int, names: String) -> String {
+        String(localized: "toast.filesReloaded \(count) \(names)")
+    }
+
+    static func toastFilesReloadedMore(count: Int, names: String, remaining: Int) -> String {
+        String(localized: "toast.filesReloaded.more \(count) \(names) \(remaining)")
+    }
+
     // MARK: - Progress Indicators
 
     static var progressLoadingProject: String {
