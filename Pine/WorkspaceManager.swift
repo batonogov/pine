@@ -11,10 +11,11 @@ import SwiftUI
 /// Manages the project file tree, root directory, and git integration.
 ///
 /// All public/internal methods and property access must happen on the
-/// main thread (enforced by SwiftUI's @Observable).
+/// main thread (enforced by SwiftUI's @Observable and @MainActor).
+@MainActor
 @Observable
 final class WorkspaceManager {
-    private static let logger = Logger.fileTree
+    nonisolated private static let logger = Logger.fileTree
     var rootNodes: [FileNode] = []
     var projectName: String = "Pine"
     var rootURL: URL?
@@ -24,8 +25,8 @@ final class WorkspaceManager {
     let gitProvider = GitStatusProvider()
     /// Shared progress tracker — set by ProjectManager after init.
     weak var progressTracker: ProgressTracker?
-    /// nonisolated(unsafe): FileSystemWatcher is internally synchronized via its serial queue.
-    /// Accessed from deinit (nonisolated) and main actor methods.
+    // nonisolated(unsafe) allows deinit to access fileWatcher.
+    // FileSystemWatcher.stop() is thread-safe (uses queue.sync internally).
     nonisolated(unsafe) private var fileWatcher: FileSystemWatcher?
 
     /// Incremented on every file-watcher event so ContentView can trigger
@@ -212,7 +213,7 @@ final class WorkspaceManager {
     /// Each top-level subdirectory builds its full subtree on a separate GCD thread,
     /// while files are collected as-is. Results are merged and sorted to match
     /// the standard display order (directories first, then case-insensitive by name).
-    private static func loadTopLevelInParallel(
+    nonisolated private static func loadTopLevelInParallel(
         url: URL, ignoredPaths: Set<String>
     ) -> [FileNode] {
         let hiddenNames: Set<String> = [".git", ".DS_Store"]

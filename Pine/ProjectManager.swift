@@ -9,6 +9,7 @@ import SwiftUI
 
 /// Thin coordinator that owns the workspace, terminal, and tab managers.
 /// Passed via environment so views can access all sub-managers.
+@MainActor
 @Observable
 final class ProjectManager {
     let workspace = WorkspaceManager()
@@ -18,8 +19,9 @@ final class ProjectManager {
     let quickOpenProvider = QuickOpenProvider()
     let progress = ProgressTracker()
     let contextFileWriter = ContextFileWriter()
-    /// nonisolated(unsafe): accessed from deinit (nonisolated) to stop periodic snapshots.
-    /// RecoveryManager.stopPeriodicSnapshots() is safe to call from any thread.
+    // nonisolated(unsafe) allows deinit to call stopPeriodicSnapshots().
+    // RecoveryManager is only mutated on @MainActor; deinit is the only
+    // nonisolated access point, and it runs after the last reference is dropped.
     nonisolated(unsafe) private(set) var recoveryManager: RecoveryManager?
 
     init() {
@@ -35,7 +37,9 @@ final class ProjectManager {
     }
 
     deinit {
-        // ProjectManager is always deallocated on the main thread (SwiftUI lifecycle).
+        // Safe: ProjectManager is @MainActor, so deinit runs on main thread
+        // when the last reference is dropped from a MainActor context.
+        // recoveryManager is nonisolated(unsafe) to allow this access.
         MainActor.assumeIsolated {
             recoveryManager?.stopPeriodicSnapshots()
         }
