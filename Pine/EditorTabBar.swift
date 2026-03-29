@@ -97,9 +97,18 @@ struct EditorTabBar: View {
                                         tabID: tab.id,
                                         fileURL: tab.url
                                     )
-                                    return NSItemProvider(object: info.encoded as NSString)
+                                    let provider = NSItemProvider()
+                                    provider.registerDataRepresentation(
+                                        forTypeIdentifier: UTType.paneTabDrag.identifier,
+                                        visibility: .ownProcess
+                                    ) { completion in
+                                        let data = info.encoded.data(using: .utf8) ?? Data()
+                                        completion(data, nil)
+                                        return nil
+                                    }
+                                    return provider
                                 }
-                                .onDrop(of: [.text], delegate: TabDropDelegate(
+                                .onDrop(of: [.paneTabDrag], delegate: TabDropDelegate(
                                     tabManager: tabManager,
                                     targetTabID: tab.id,
                                     draggingTabID: $draggingTabID,

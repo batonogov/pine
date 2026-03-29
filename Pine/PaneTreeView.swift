@@ -119,6 +119,7 @@ struct PaneDividerView: View {
     private static let hitTarget: CGFloat = 8
 
     @State private var isHovering = false
+    @State private var isCursorPushed = false
 
     var body: some View {
         Rectangle()
@@ -147,12 +148,16 @@ struct PaneDividerView: View {
             .onContinuousHover { phase in
                 switch phase {
                 case .active:
+                    guard !isCursorPushed else { return }
+                    isCursorPushed = true
                     if axis == .horizontal {
                         NSCursor.resizeLeftRight.push()
                     } else {
                         NSCursor.resizeUpDown.push()
                     }
                 case .ended:
+                    guard isCursorPushed else { return }
+                    isCursorPushed = false
                     NSCursor.pop()
                 }
             }
@@ -175,6 +180,7 @@ struct PaneLeafView: View {
     @State private var isDragTargeted = false
     @State private var goToLineOffset: GoToRequest?
     @State private var dropZone: PaneDropZone?
+    @State private var paneSize: CGSize = .zero
 
     @AppStorage("minimapVisible") private var isMinimapVisible = true
     @AppStorage(BlameConstants.storageKey) private var isBlameVisible = true
@@ -191,11 +197,19 @@ struct PaneLeafView: View {
                     paneManager.activePaneID = paneID
                 }
                 .overlay {
+                    GeometryReader { geometry in
+                        Color.clear
+                            .preference(key: PaneSizePreferenceKey.self, value: geometry.size)
+                    }
+                }
+                .onPreferenceChange(PaneSizePreferenceKey.self) { paneSize = $0 }
+                .overlay {
                     PaneDropOverlay(dropZone: dropZone)
                 }
-                .onDrop(of: [.text], delegate: PaneSplitDropDelegate(
+                .onDrop(of: [.paneTabDrag], delegate: PaneSplitDropDelegate(
                     paneID: paneID,
                     paneManager: paneManager,
+                    paneSize: paneSize,
                     dropZone: $dropZone
                 ))
                 .border(
@@ -324,16 +338,31 @@ struct PaneDropOverlay: View {
     }
 }
 
+// MARK: - Preference Key for Pane Size
+
+/// Captures the pane size via GeometryReader for use in drop zone calculations.
+private struct PaneSizePreferenceKey: PreferenceKey {
+    static var defaultValue: CGSize = .zero
+    static func reduce(value: inout CGSize, nextValue: () -> CGSize) {
+        value = nextValue()
+    }
+}
+
 // MARK: - Drop Delegate
 
 /// Handles drop events on a pane to determine split direction.
 struct PaneSplitDropDelegate: DropDelegate {
     let paneID: PaneID
     let paneManager: PaneManager
+    /// Actual pane size from GeometryReader, used for percentage-based drop zone detection.
+    let paneSize: CGSize
     @Binding var dropZone: PaneDropZone?
 
+    /// Fraction of pane width/height that triggers edge drop zones (right/bottom).
+    private static let edgeThreshold: CGFloat = 0.7
+
     func validateDrop(info: DropInfo) -> Bool {
-        info.hasItemsConforming(to: [.text])
+        info.hasItemsConforming(to: [.paneTabDrag])
     }
 
     func dropEntered(info: DropInfo) {
@@ -354,10 +383,10 @@ struct PaneSplitDropDelegate: DropDelegate {
         dropZone = nil
 
         // Extract the drag data
-        let providers = info.itemProviders(for: [.text])
+        let providers = info.itemProviders(for: [.paneTabDrag])
         guard let provider = providers.first else { return false }
 
-        provider.loadItem(forTypeIdentifier: "public.text", options: nil) { data, _ in
+        provider.loadItem(forTypeIdentifier: UTType.paneTabDrag.identifier, options: nil) { data, _ in
             guard let data = data as? Data,
                   let string = String(data: data, encoding: .utf8),
                   let dragInfo = TabDragInfo.decode(from: string) else { return }
@@ -396,29 +425,18 @@ struct PaneSplitDropDelegate: DropDelegate {
     }
 
     private func updateDropZone(info: DropInfo) {
-        // Determine zone based on cursor position within the pane
-        // Right 30% = split right, bottom 30% = split down, center = move to pane
         let location = info.location
+        let width = paneSize.width
+        let height = paneSize.height
 
-        // We need the view's bounds; DropInfo.location is in the view's coordinate space
-        // Use a heuristic: if x > 70% of some reasonable width, it's right zone
-        // Since we don't have geometry here, we classify based on the raw location
-        // The view's coordinate system starts at (0,0) top-left
+        // Use percentage-based thresholds relative to actual pane size.
+        // Right 30% = split right, bottom 30% = split down, center = move to pane.
+        let inRightZone = width > 0 && location.x > width * Self.edgeThreshold
+        let inBottomZone = height > 0 && location.y > height * Self.edgeThreshold
 
-        // We'll use a simple approach: check if near right or bottom edge
-        let rightThreshold: CGFloat = 0.7
-        let bottomThreshold: CGFloat = 0.7
-
-        // Since DropInfo.location is in the view's coordinate space and we don't know
-        // the exact size, we check using the location relative to common editor widths.
-        // A more robust approach uses GeometryReader, but for drop delegates we use
-        // the practical heuristic of comparing x vs y dominance.
-
-        // Simplified: if location is far right, split right; far bottom, split down; else center
-        // We'll estimate: typical pane is at least 400x300
-        if location.x > 300 && location.x > location.y * 1.2 {
+        if inRightZone && (!inBottomZone || location.x / width > location.y / height) {
             dropZone = .right
-        } else if location.y > 200 && location.y > location.x * 0.8 {
+        } else if inBottomZone {
             dropZone = .bottom
         } else {
             dropZone = .center
@@ -473,9 +491,18 @@ struct PaneEditorTabBar: View {
                                         tabID: tab.id,
                                         fileURL: tab.url
                                     )
-                                    return NSItemProvider(object: info.encoded as NSString)
+                                    let provider = NSItemProvider()
+                                    provider.registerDataRepresentation(
+                                        forTypeIdentifier: UTType.paneTabDrag.identifier,
+                                        visibility: .ownProcess
+                                    ) { completion in
+                                        let data = info.encoded.data(using: .utf8) ?? Data()
+                                        completion(data, nil)
+                                        return nil
+                                    }
+                                    return provider
                                 }
-                                .onDrop(of: [.text], delegate: TabDropDelegate(
+                                .onDrop(of: [.paneTabDrag], delegate: TabDropDelegate(
                                     tabManager: tabManager,
                                     targetTabID: tab.id,
                                     draggingTabID: $draggingTabID,
