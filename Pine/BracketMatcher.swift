@@ -6,7 +6,7 @@
 import Foundation
 
 /// Результат поиска парной скобки.
-struct BracketMatch: Equatable {
+struct BracketMatch: Equatable, Sendable {
     /// UTF-16 позиция открывающей скобки
     let opener: Int
     /// UTF-16 позиция закрывающей скобки
@@ -14,7 +14,7 @@ struct BracketMatch: Equatable {
 }
 
 /// Результат подсветки скобки: найдена пара или orphan.
-enum BracketHighlightResult: Equatable {
+enum BracketHighlightResult: Equatable, Sendable {
     /// Скобки совпали — подсветить обе
     case matched(BracketMatch)
     /// Скобка без пары — подсветить как ошибку

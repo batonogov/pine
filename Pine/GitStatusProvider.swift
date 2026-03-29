@@ -10,7 +10,7 @@ import SwiftUI
 
 // MARK: - Models
 
-enum GitFileStatus: Equatable {
+enum GitFileStatus: Equatable, Sendable {
     case untracked
     case modified
     case staged
@@ -33,8 +33,8 @@ extension GitFileStatus {
     }
 }
 
-struct GitLineDiff: Equatable {
-    enum Kind { case added, modified, deleted }
+struct GitLineDiff: Equatable, Sendable {
+    enum Kind: Sendable { case added, modified, deleted }
     let line: Int
     let kind: Kind
 
@@ -107,6 +107,7 @@ struct GitLineDiff: Equatable {
 
 // MARK: - GitStatusProvider
 
+@MainActor
 @Observable
 final class GitStatusProvider {
     var currentBranch: String = ""
@@ -192,7 +193,7 @@ final class GitStatusProvider {
     /// Safe to call from any thread (all work happens on background queues).
     /// Each variable is written by exactly one thread; `group.wait()` ensures
     /// happens-before ordering so the reads after wait are safe.
-    static func fetchAllInParallel(
+    nonisolated static func fetchAllInParallel(
         at url: URL
     ) -> (branch: String, statuses: [String: GitFileStatus], ignored: Set<String>, branches: [String]) {
         let group = DispatchGroup()
@@ -227,14 +228,14 @@ final class GitStatusProvider {
         return (branch, statuses, ignored, branchList)
     }
 
-    static func fetchBranch(at url: URL) -> String {
+    nonisolated static func fetchBranch(at url: URL) -> String {
         let result = runGit(["rev-parse", "--abbrev-ref", "HEAD"], at: url)
         return result.exitCode == 0
             ? result.output.trimmingCharacters(in: .whitespacesAndNewlines)
             : ""
     }
 
-    static func fetchStatusAndIgnored(
+    nonisolated static func fetchStatusAndIgnored(
         at url: URL
     ) -> (statuses: [String: GitFileStatus], ignored: Set<String>) {
         let result = runGit(["--no-optional-locks", "status", "--ignored", "--porcelain"], at: url)
@@ -242,7 +243,7 @@ final class GitStatusProvider {
         return (parseStatusOutput(result.output), parseIgnoredOutput(result.output))
     }
 
-    static func fetchBranches(at url: URL) -> [String] {
+    nonisolated static func fetchBranches(at url: URL) -> [String] {
         let result = runGit(["branch", "--sort=-committerdate", "--format=%(refname:short)"], at: url)
         guard result.exitCode == 0 else { return [] }
         return result.output
@@ -418,7 +419,7 @@ final class GitStatusProvider {
     /// non-ASCII characters, or special characters.
     /// `"examples copy/"` → `examples copy/`
     /// `"\320\241\320\275\320\270\320\274\320\276\320\272.png"` → `Снимок.png`
-    static func unquoteGitPath(_ path: String) -> String {
+    nonisolated static func unquoteGitPath(_ path: String) -> String {
         guard path.hasPrefix("\"") && path.hasSuffix("\"") && path.count >= 2 else {
             return path
         }
@@ -505,7 +506,7 @@ final class GitStatusProvider {
         return String(filePath.dropFirst(prefix.count))
     }
 
-    static func parseStatusOutput(_ output: String) -> [String: GitFileStatus] {
+    nonisolated static func parseStatusOutput(_ output: String) -> [String: GitFileStatus] {
         var statuses: [String: GitFileStatus] = [:]
 
         for line in output.components(separatedBy: "\n") {
@@ -557,7 +558,7 @@ final class GitStatusProvider {
         return statuses
     }
 
-    static func parseIgnoredOutput(_ output: String) -> Set<String> {
+    nonisolated static func parseIgnoredOutput(_ output: String) -> Set<String> {
         var paths: Set<String> = []
         for line in output.components(separatedBy: "\n") {
             guard line.hasPrefix("!! ") else { continue }

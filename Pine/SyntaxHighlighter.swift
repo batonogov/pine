@@ -11,20 +11,20 @@ import os
 // MARK: - Модели грамматики
 
 /// Одно правило подсветки из JSON.
-struct GrammarRule: Codable {
+struct GrammarRule: Codable, Sendable {
     let pattern: String      // Regex-паттерн
     let scope: String        // Семантический scope: "keyword", "string", "comment" и т.д.
     var options: [String]?   // Опции regex: ["anchorsMatchLines"]
 }
 
 /// Block comment delimiters (e.g. `/* */`, `<!-- -->`).
-struct BlockCommentDelimiters: Codable {
+struct BlockCommentDelimiters: Codable, Sendable {
     let open: String
     let close: String
 }
 
 /// Грамматика языка, загружаемая из JSON-файла.
-struct Grammar: Codable {
+struct Grammar: Codable, Sendable {
     let name: String             // "Swift", "Python" и т.д.
     let extensions: [String]     // ["swift"], ["py", "pyw"]
     let rules: [GrammarRule]     // Правила подсветки

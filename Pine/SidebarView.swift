@@ -10,6 +10,7 @@ import SwiftUI
 // MARK: - Sidebar edit state
 
 /// Tracks inline rename / new-item state for the sidebar file tree.
+@MainActor
 @Observable
 final class SidebarEditState {
     var renamingURL: URL?

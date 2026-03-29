@@ -9,7 +9,7 @@ import Foundation
 import os
 
 /// Один узел дерева файлов — файл или папка.
-final class FileNode: Identifiable, Hashable {
+final class FileNode: Identifiable, Hashable, @unchecked Sendable {
     let id: URL               // Уникальный идентификатор = полный путь к файлу
     let name: String           // Имя файла/папки (отображается в UI)
     let url: URL               // Полный путь

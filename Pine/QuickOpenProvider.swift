@@ -8,6 +8,7 @@
 import Foundation
 
 /// Provides fuzzy file search over the project tree for Quick Open.
+@MainActor
 @Observable
 final class QuickOpenProvider {
 

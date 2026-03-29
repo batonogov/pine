@@ -254,6 +254,7 @@ struct TerminalSearchMatch {
 
 /// Одна вкладка терминала. Содержит SwiftTerm LocalProcessTerminalView.
 /// class (не struct), чтобы view не копировался при передаче.
+@MainActor
 @Observable
 final class TerminalTab: Identifiable, Hashable {
     let id = UUID()

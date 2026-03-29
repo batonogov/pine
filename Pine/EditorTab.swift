@@ -11,7 +11,7 @@ import Foundation
 struct EditorTab: Identifiable, Hashable {
 
     /// Whether this tab shows an editable text file or a Quick Look preview.
-    enum TabKind { case text, preview }
+    enum TabKind: Sendable { case text, preview }
 
     let id: UUID
     var url: URL

@@ -8,6 +8,7 @@
 import SwiftUI
 
 /// Manages terminal tabs, sessions, and visibility state.
+@MainActor
 @Observable
 final class TerminalManager {
     var isTerminalVisible = false

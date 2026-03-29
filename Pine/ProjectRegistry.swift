@@ -9,6 +9,7 @@ import SwiftUI
 
 /// Manages open projects and recent project history.
 /// Each project directory maps to a single ProjectManager instance.
+@MainActor
 @Observable
 final class ProjectRegistry {
     /// Open projects keyed by their root directory URL.

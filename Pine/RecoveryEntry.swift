@@ -6,7 +6,7 @@
 import Foundation
 
 /// Represents a snapshot of unsaved editor content for crash recovery.
-struct RecoveryEntry: Codable {
+struct RecoveryEntry: Codable, Sendable {
     /// Path to the original file on disk (empty string for untitled tabs).
     let originalPath: String
     /// The unsaved content at the time of the snapshot.

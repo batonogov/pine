@@ -9,7 +9,7 @@
 
 import Foundation
 
-final class FileSystemWatcher {
+final class FileSystemWatcher: @unchecked Sendable {
     private var stream: FSEventStreamRef?
     private let callback: @MainActor () -> Void
     private let debounceInterval: TimeInterval

@@ -8,7 +8,7 @@
 import Foundation
 
 /// A symbol extracted from source code.
-struct PineSymbol: Identifiable, Equatable {
+struct PineSymbol: Identifiable, Equatable, Sendable {
     let id = UUID()
     let name: String
     let kind: PineSymbolKind
@@ -21,7 +21,7 @@ struct PineSymbol: Identifiable, Equatable {
 }
 
 /// The kind of a document symbol.
-enum PineSymbolKind: String, CaseIterable, Comparable {
+enum PineSymbolKind: String, CaseIterable, Comparable, Sendable {
     case `class`
     case `struct`
     case `enum`
