@@ -51,6 +51,14 @@ final class LineNumberView: NSView {
     /// Callback при клике по fold indicator.
     var onFoldToggle: ((FoldableRange) -> Void)?
 
+    /// Validation diagnostics for the current file (error/warning/info icons).
+    var validationDiagnostics: [ValidationDiagnostic] = [] {
+        didSet {
+            rebuildDiagnosticMap()
+            needsDisplay = true
+        }
+    }
+
     /// Diff hunks for the current file (for accept/revert buttons).
     var diffHunks: [DiffHunk] = [] {
         didSet {
@@ -75,6 +83,9 @@ final class LineNumberView: NSView {
     /// Pre-indexed diff lookup: line number → kind (cached, rebuilt when lineDiffs changes)
     private var diffMap: [Int: GitLineDiff.Kind] = [:]
 
+    /// Pre-indexed diagnostic lookup: line number → highest severity diagnostic.
+    private var diagnosticMap: [Int: ValidationDiagnostic] = [:]
+
     /// Pre-indexed fold lookup: start line → FoldableRange.
     private var foldStartMap: [Int: FoldableRange] = [:]
 
@@ -87,6 +98,29 @@ final class LineNumberView: NSView {
 
     private func rebuildFoldStartMap() {
         foldStartMap = Dictionary(foldableRanges.map { ($0.startLine, $0) }, uniquingKeysWith: { _, last in last })
+    }
+
+    /// Rebuilds the diagnostic map, keeping only the highest-severity diagnostic per line.
+    private func rebuildDiagnosticMap() {
+        diagnosticMap = [:]
+        for diag in validationDiagnostics {
+            if let existing = diagnosticMap[diag.line] {
+                if Self.severityRank(diag.severity) > Self.severityRank(existing.severity) {
+                    diagnosticMap[diag.line] = diag
+                }
+            } else {
+                diagnosticMap[diag.line] = diag
+            }
+        }
+    }
+
+    /// Returns a numeric rank for severity (higher = more severe).
+    static func severityRank(_ severity: ValidationSeverity) -> Int {
+        switch severity {
+        case .error: return 3
+        case .warning: return 2
+        case .info: return 1
+        }
     }
 
     #if DEBUG
@@ -429,6 +463,14 @@ final class LineNumberView: NSView {
                     }
                 }
 
+                // ── Validation diagnostic icon ──
+                if let diag = self.diagnosticMap[lineNumber] {
+                    self.drawDiagnosticIcon(
+                        at: y, lineHeight: lineRect.height,
+                        severity: diag.severity
+                    )
+                }
+
                 // ── Accept/Revert buttons on hunk start lines (hover only) ──
                 if self.isMouseInside, self.hunkStartMap[lineNumber] != nil {
                     self.drawHunkActionButtons(at: y, lineHeight: lineRect.height)
@@ -468,6 +510,44 @@ final class LineNumberView: NSView {
                 gutterTextView.needsDisplay = true
             }
         }
+    }
+
+    // MARK: - Diagnostic icon drawing
+
+    /// SF Symbol names for each severity level.
+    static let diagnosticSymbolNames: [ValidationSeverity: String] = [
+        .error: "xmark.circle.fill",
+        .warning: "exclamationmark.triangle.fill",
+        .info: "info.circle.fill"
+    ]
+
+    /// Colors for each severity level.
+    static let diagnosticColors: [ValidationSeverity: NSColor] = [
+        .error: .systemRed,
+        .warning: .systemYellow,
+        .info: .systemBlue
+    ]
+
+    /// Draws an SF Symbol icon for a validation diagnostic at the given line position.
+    func drawDiagnosticIcon(at y: CGFloat, lineHeight: CGFloat, severity: ValidationSeverity) {
+        guard let symbolName = Self.diagnosticSymbolNames[severity],
+              let color = Self.diagnosticColors[severity] else { return }
+
+        let iconSize: CGFloat = min(lineHeight - 2, 14)
+        let config = NSImage.SymbolConfiguration(pointSize: iconSize, weight: .regular)
+        guard let image = NSImage(systemSymbolName: symbolName, accessibilityDescription: nil)?
+            .withSymbolConfiguration(config) else { return }
+
+        let tintedImage = image.tinted(with: color)
+        let imageSize = tintedImage.size
+        let centerY = y + (lineHeight - imageSize.height) / 2
+        // Draw in the fold indicator area (left side of gutter)
+        let x: CGFloat = 1
+
+        tintedImage.draw(in: NSRect(
+            x: x, y: centerY,
+            width: imageSize.width, height: imageSize.height
+        ))
     }
 
     // MARK: - Fold indicator drawing
