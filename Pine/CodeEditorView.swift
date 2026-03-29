@@ -578,10 +578,11 @@ struct CodeEditorView: NSViewRepresentable {
             }
         }
 
-        // Set delegate now — after text and highlighting are configured,
+        // Set delegates now — after text and highlighting are configured,
         // so textDidChange won't fire during initial setup and cause a
         // re-highlight cycle that strips syntax colors (issue #556).
         textView.delegate = context.coordinator
+        textStorage.delegate = context.coordinator
 
         // Restore cursor and scroll from saved per-tab state.
         // initialCursorPosition is stored as NSRange.location (UTF-16 offset),
@@ -752,7 +753,7 @@ struct CodeEditorView: NSViewRepresentable {
         Coordinator(parent: self)
     }
 
-    class Coordinator: NSObject, NSTextViewDelegate, NSLayoutManagerDelegate {
+    class Coordinator: NSObject, NSTextViewDelegate, NSTextStorageDelegate, NSLayoutManagerDelegate {
         var parent: CodeEditorView
         var scrollView: NSScrollView?
         var lineNumberView: LineNumberView?
@@ -779,6 +780,10 @@ struct CodeEditorView: NSViewRepresentable {
         /// (and resetting the cursor) on the SwiftUI re-render that follows.
         /// Internal access for testability (`@testable import`).
         var didChangeFromTextView = false
+
+        /// Edited range captured from NSTextStorageDelegate before processEditing
+        /// resets it to NSNotFound. Used by textDidChange for incremental highlighting.
+        var pendingEditedRange: NSRange?
 
         /// Last consumed navigation request ID — prevents re-processing.
         var lastGoToID: UUID?
@@ -897,6 +902,7 @@ struct CodeEditorView: NSViewRepresentable {
             // highlighting (issue #556).
             if textChanged && textView.string != text {
                 isProgrammaticTextChange = true
+                pendingEditedRange = nil
                 textView.string = text
                 isProgrammaticTextChange = false
             }
@@ -994,6 +1000,24 @@ struct CodeEditorView: NSViewRepresentable {
             lineNumberView?.needsDisplay = true
         }
 
+        // MARK: - NSTextStorageDelegate
+
+        /// Captures editedRange before NSTextStorage.processEditing() resets it
+        /// to NSNotFound. This range is consumed by textDidChange for incremental
+        /// highlighting — without it, every edit falls back to a full re-highlight.
+        func textStorage(
+            _ textStorage: NSTextStorage,
+            didProcessEditing editedMask: NSTextStorageEditActions,
+            range editedRange: NSRange,
+            changeInLength delta: Int
+        ) {
+            // Only capture character edits from user typing (not attribute-only
+            // changes from highlighting, and not programmatic text replacement).
+            if editedMask.contains(.editedCharacters), !isProgrammaticTextChange {
+                pendingEditedRange = editedRange
+            }
+        }
+
         func textDidChange(_ notification: Notification) {
             guard let textView = notification.object as? NSTextView else { return }
 
@@ -1001,6 +1025,7 @@ struct CodeEditorView: NSViewRepresentable {
             // skip highlight scheduling — updateContentIfNeeded handles its own
             // full highlight. Only update caches that it doesn't handle.
             if isProgrammaticTextChange {
+                pendingEditedRange = nil
                 previousBracketRanges = []
                 highlightedCharRange = nil
                 reportStateChange()
@@ -1038,15 +1063,11 @@ struct CodeEditorView: NSViewRepresentable {
             // Recalculate foldable ranges (debounced — expensive operation)
             scheduleFoldRecalculation()
 
-            // Захватываем editedRange из textStorage сейчас,
-            // пока он валиден в координатах текущей версии текста
-            var editedRange: NSRange?
-            if let storage = textView.textStorage {
-                let edited = storage.editedRange
-                if edited.location != NSNotFound {
-                    editedRange = edited
-                }
-            }
+            // Consume the edited range captured by NSTextStorageDelegate.
+            // NSTextStorage.editedRange is already reset to NSNotFound by the
+            // time textDidChange fires, so we rely on pendingEditedRange instead.
+            let editedRange = pendingEditedRange
+            pendingEditedRange = nil
 
             // Skip highlighting for large files opened without syntax highlighting
             guard !parent.syntaxHighlightingDisabled else { return }

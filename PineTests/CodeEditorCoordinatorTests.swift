@@ -345,4 +345,156 @@ struct CodeEditorCoordinatorTests {
         #expect(textView.string == "")
         #expect(textView.selectedRange().location == 0)
     }
+
+    // MARK: - Issue #649: pendingEditedRange captured via NSTextStorageDelegate
+
+    @Test func pendingEditedRange_capturedByTextStorageDelegate() {
+        let text = "key: value"
+        let (scrollView, _) = makeTextStack(text: text)
+        guard let textView = scrollView.documentView as? NSTextView else {
+            Issue.record("Failed to get NSTextView from scroll view")
+            return
+        }
+
+        let editorView = CodeEditorView(
+            text: .constant(text),
+            contentVersion: 0,
+            language: "yaml",
+            fileName: "test.yaml",
+            foldState: .constant(FoldState())
+        )
+        let coordinator = CodeEditorView.Coordinator(parent: editorView)
+        coordinator.scrollView = scrollView
+
+        // Wire up NSTextStorageDelegate
+        textView.textStorage?.delegate = coordinator
+
+        // Initially nil
+        #expect(coordinator.pendingEditedRange == nil)
+
+        // Simulate typing: insert a character
+        textView.textStorage?.beginEditing()
+        textView.textStorage?.replaceCharacters(
+            in: NSRange(location: 10, length: 0), with: "s"
+        )
+        textView.textStorage?.endEditing()
+
+        // pendingEditedRange should have been captured by the delegate
+        #expect(coordinator.pendingEditedRange != nil,
+                "NSTextStorageDelegate must capture editedRange before it resets")
+        #expect(coordinator.pendingEditedRange?.location == 10,
+                "Captured range must start at the insertion point")
+    }
+
+    @Test func pendingEditedRange_consumedByTextDidChange() {
+        let text = "name: test"
+        let (scrollView, _) = makeTextStack(text: text)
+        guard let textView = scrollView.documentView as? NSTextView else {
+            Issue.record("Failed to get NSTextView from scroll view")
+            return
+        }
+
+        let editorView = CodeEditorView(
+            text: .constant(text),
+            contentVersion: 0,
+            language: "yaml",
+            fileName: "test.yaml",
+            foldState: .constant(FoldState())
+        )
+        let coordinator = CodeEditorView.Coordinator(parent: editorView)
+        coordinator.scrollView = scrollView
+        coordinator.syncContentVersion()
+
+        // Set up delegates
+        textView.delegate = coordinator
+        textView.textStorage?.delegate = coordinator
+
+        // Pre-set a pending range (simulating what the delegate would capture)
+        coordinator.pendingEditedRange = NSRange(location: 5, length: 1)
+
+        // Fire textDidChange — it should consume pendingEditedRange
+        NotificationCenter.default.post(
+            name: NSText.didChangeNotification, object: textView
+        )
+
+        #expect(coordinator.pendingEditedRange == nil,
+                "textDidChange must consume pendingEditedRange")
+    }
+
+    @Test func pendingEditedRange_clearedOnProgrammaticTextChange() {
+        let text = "hello"
+        let (scrollView, _) = makeTextStack(text: text)
+        guard let textView = scrollView.documentView as? NSTextView else {
+            Issue.record("Failed to get NSTextView from scroll view")
+            return
+        }
+
+        let editorView = CodeEditorView(
+            text: .constant(text),
+            contentVersion: 0,
+            language: "txt",
+            fileName: "test.txt",
+            foldState: .constant(FoldState())
+        )
+        let coordinator = CodeEditorView.Coordinator(parent: editorView)
+        coordinator.scrollView = scrollView
+        coordinator.syncContentVersion()
+        textView.delegate = coordinator
+        textView.textStorage?.delegate = coordinator
+
+        // Set a pending range and mark as programmatic change
+        coordinator.pendingEditedRange = NSRange(location: 0, length: 5)
+
+        // Simulate programmatic text replacement (as in updateContentIfNeeded)
+        let updatedEditor = CodeEditorView(
+            text: .constant("world"),
+            contentVersion: 1,
+            language: "txt",
+            fileName: "test.txt",
+            foldState: .constant(FoldState())
+        )
+        coordinator.parent = updatedEditor
+
+        coordinator.updateContentIfNeeded(
+            text: "world", language: "txt", fileName: "test.txt", font: font
+        )
+
+        // After programmatic text change, pendingEditedRange should be cleared
+        // (the textDidChange handler clears it when isProgrammaticTextChange is true)
+        #expect(coordinator.pendingEditedRange == nil,
+                "pendingEditedRange must be cleared after programmatic text change")
+    }
+
+    @Test func pendingEditedRange_notSetForAttributeOnlyEdits() {
+        let text = "key: value"
+        let (scrollView, _) = makeTextStack(text: text)
+        guard let textView = scrollView.documentView as? NSTextView else {
+            Issue.record("Failed to get NSTextView from scroll view")
+            return
+        }
+
+        let editorView = CodeEditorView(
+            text: .constant(text),
+            contentVersion: 0,
+            language: "yaml",
+            fileName: "test.yaml",
+            foldState: .constant(FoldState())
+        )
+        let coordinator = CodeEditorView.Coordinator(parent: editorView)
+        coordinator.scrollView = scrollView
+        textView.textStorage?.delegate = coordinator
+
+        // Attribute-only edit (like syntax highlighting applying colors)
+        textView.textStorage?.beginEditing()
+        textView.textStorage?.addAttribute(
+            .foregroundColor,
+            value: NSColor.red,
+            range: NSRange(location: 0, length: 3)
+        )
+        textView.textStorage?.endEditing()
+
+        // pendingEditedRange should NOT be set for attribute-only edits
+        #expect(coordinator.pendingEditedRange == nil,
+                "Attribute-only edits must not set pendingEditedRange")
+    }
 }
