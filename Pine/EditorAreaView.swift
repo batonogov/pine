@@ -22,9 +22,6 @@ struct EditorAreaView: View {
     var blameLines: [GitBlameLine]
     var isMinimapVisible: Bool
     var isWordWrapEnabled: Bool
-    var diffHunks: [DiffHunk] = []
-    var onAcceptHunk: ((DiffHunk) -> Void)?
-    var onRevertHunk: ((DiffHunk) -> Void)?
     var onCloseTab: (EditorTab) -> Void
     var onCloseOtherTabs: ((UUID) -> Void)?
     var onCloseTabsToTheRight: ((UUID) -> Void)?
@@ -32,6 +29,9 @@ struct EditorAreaView: View {
     var onSaveSession: () -> Void
 
     @Environment(\.openWindow) private var openWindow
+
+    /// Config validator for the active file (yamllint, shellcheck, etc.).
+    @State private var configValidator = ConfigValidator()
 
     private var activeTab: EditorTab? { tabManager.activeTab }
 
@@ -121,9 +121,7 @@ struct EditorAreaView: View {
             language: tab.language,
             fileName: tab.fileName,
             lineDiffs: lineDiffs,
-            diffHunks: diffHunks,
-            onAcceptHunk: onAcceptHunk,
-            onRevertHunk: onRevertHunk,
+            validationDiagnostics: configValidator.diagnostics,
             isBlameVisible: isBlameVisible,
             blameLines: blameLines,
             foldState: Binding(
@@ -148,7 +146,13 @@ struct EditorAreaView: View {
         )
         .id(tab.id)
         .accessibilityIdentifier(AccessibilityID.codeEditor)
-        .onAppear { goToLineOffset = nil }
+        .onAppear {
+            goToLineOffset = nil
+            configValidator.validate(url: tab.url, content: tab.content)
+        }
+        .onChange(of: tab.contentVersion) {
+            configValidator.validate(url: tab.url, content: tab.content)
+        }
     }
 
     // MARK: - Drag & Drop

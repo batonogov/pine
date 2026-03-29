@@ -398,12 +398,8 @@ struct CodeEditorView: NSViewRepresentable {
     var language: String
     var fileName: String?
     var lineDiffs: [GitLineDiff] = []
-    /// Diff hunks for accept/revert buttons in the gutter.
-    var diffHunks: [DiffHunk] = []
-    /// Callback for accepting (staging) a hunk.
-    var onAcceptHunk: ((DiffHunk) -> Void)?
-    /// Callback for reverting a hunk.
-    var onRevertHunk: ((DiffHunk) -> Void)?
+    /// Validation diagnostics from config validators (yamllint, shellcheck, etc.).
+    var validationDiagnostics: [ValidationDiagnostic] = []
     /// Whether inline blame annotation is visible on the cursor line.
     var isBlameVisible: Bool = false
     /// Blame data for the current file.
@@ -533,13 +529,6 @@ struct CodeEditorView: NSViewRepresentable {
         lineNumberView.onFoldToggle = { [weak coordinator] foldable in
             coordinator?.handleFoldToggle(foldable)
         }
-        lineNumberView.diffHunks = diffHunks
-        lineNumberView.onAcceptHunk = { [weak coordinator] hunk in
-            coordinator?.onAcceptHunk?(hunk)
-        }
-        lineNumberView.onRevertHunk = { [weak coordinator] hunk in
-            coordinator?.onRevertHunk?(hunk)
-        }
         container.addSubview(lineNumberView)
 
         // ── Minimap — справа от scroll view ──
@@ -591,11 +580,10 @@ struct CodeEditorView: NSViewRepresentable {
             }
         }
 
-        // Set delegates now — after text and highlighting are configured,
+        // Set delegate now — after text and highlighting are configured,
         // so textDidChange won't fire during initial setup and cause a
         // re-highlight cycle that strips syntax colors (issue #556).
         textView.delegate = context.coordinator
-        textStorage.delegate = context.coordinator
 
         // Restore cursor and scroll from saved per-tab state.
         // initialCursorPosition is stored as NSRange.location (UTF-16 offset),
@@ -745,11 +733,9 @@ struct CodeEditorView: NSViewRepresentable {
         // Обновляем diff-данные LineNumberView и MinimapView
         if let lineNumberView = context.coordinator.lineNumberView {
             lineNumberView.lineDiffs = lineDiffs
-            lineNumberView.diffHunks = diffHunks
+            lineNumberView.validationDiagnostics = validationDiagnostics
             lineNumberView.foldState = foldState
         }
-        context.coordinator.onAcceptHunk = onAcceptHunk
-        context.coordinator.onRevertHunk = onRevertHunk
         if let minimapView = context.coordinator.minimapView {
             minimapView.lineDiffs = lineDiffs
         }
@@ -769,7 +755,7 @@ struct CodeEditorView: NSViewRepresentable {
         Coordinator(parent: self)
     }
 
-    class Coordinator: NSObject, NSTextViewDelegate, NSTextStorageDelegate, NSLayoutManagerDelegate {
+    class Coordinator: NSObject, NSTextViewDelegate, NSLayoutManagerDelegate {
         var parent: CodeEditorView
         var scrollView: NSScrollView?
         var lineNumberView: LineNumberView?
@@ -797,21 +783,8 @@ struct CodeEditorView: NSViewRepresentable {
         /// Internal access for testability (`@testable import`).
         var didChangeFromTextView = false
 
-        /// Edited range captured from NSTextStorageDelegate before processEditing
-        /// resets it to NSNotFound. Used by textDidChange for incremental highlighting.
-        var pendingEditedRange: NSRange?
-
-        /// Change in length captured alongside pendingEditedRange from
-        /// NSTextStorageDelegate. Used for incremental lineStartsCache update.
-        var pendingChangeInLength: Int = 0
-
         /// Last consumed navigation request ID — prevents re-processing.
         var lastGoToID: UUID?
-
-        /// Callback for accepting (staging) a hunk via gutter button click.
-        var onAcceptHunk: ((DiffHunk) -> Void)?
-        /// Callback for reverting a hunk via gutter button click.
-        var onRevertHunk: ((DiffHunk) -> Void)?
 
         /// Generation counter for cancelling stale async highlight requests.
         let highlightGeneration = HighlightGeneration()
@@ -927,8 +900,6 @@ struct CodeEditorView: NSViewRepresentable {
             // highlighting (issue #556).
             if textChanged && textView.string != text {
                 isProgrammaticTextChange = true
-                pendingEditedRange = nil
-                pendingChangeInLength = 0
                 textView.string = text
                 isProgrammaticTextChange = false
             }
@@ -1026,25 +997,6 @@ struct CodeEditorView: NSViewRepresentable {
             lineNumberView?.needsDisplay = true
         }
 
-        // MARK: - NSTextStorageDelegate
-
-        /// Captures editedRange before NSTextStorage.processEditing() resets it
-        /// to NSNotFound. This range is consumed by textDidChange for incremental
-        /// highlighting — without it, every edit falls back to a full re-highlight.
-        func textStorage(
-            _ textStorage: NSTextStorage,
-            didProcessEditing editedMask: NSTextStorageEditActions,
-            range editedRange: NSRange,
-            changeInLength delta: Int
-        ) {
-            // Only capture character edits from user typing (not attribute-only
-            // changes from highlighting, and not programmatic text replacement).
-            if editedMask.contains(.editedCharacters), !isProgrammaticTextChange {
-                pendingEditedRange = editedRange
-                pendingChangeInLength = delta
-            }
-        }
-
         func textDidChange(_ notification: Notification) {
             guard let textView = notification.object as? NSTextView else { return }
 
@@ -1052,8 +1004,6 @@ struct CodeEditorView: NSViewRepresentable {
             // skip highlight scheduling — updateContentIfNeeded handles its own
             // full highlight. Only update caches that it doesn't handle.
             if isProgrammaticTextChange {
-                pendingEditedRange = nil
-                pendingChangeInLength = 0
                 previousBracketRanges = []
                 highlightedCharRange = nil
                 reportStateChange()
@@ -1074,15 +1024,13 @@ struct CodeEditorView: NSViewRepresentable {
             // Report state change
             reportStateChange()
 
-            // Update line starts cache incrementally if possible, otherwise full rebuild.
-            // We use pendingEditedRange / pendingChangeInLength captured by the
-            // NSTextStorageDelegate — by the time textDidChange fires,
-            // storage.editedRange is already reset to NSNotFound.
+            // Update line starts cache incrementally if possible, otherwise full rebuild
             if var cache = lineStartsCache,
-               let editRange = pendingEditedRange {
+               let storage = textView.textStorage,
+               storage.editedRange.location != NSNotFound {
                 cache.update(
-                    editedRange: editRange,
-                    changeInLength: pendingChangeInLength,
+                    editedRange: storage.editedRange,
+                    changeInLength: storage.changeInLength,
                     in: textView.string as NSString
                 )
                 lineStartsCache = cache
@@ -1093,12 +1041,15 @@ struct CodeEditorView: NSViewRepresentable {
             // Recalculate foldable ranges (debounced — expensive operation)
             scheduleFoldRecalculation()
 
-            // Consume the edited range captured by NSTextStorageDelegate.
-            // NSTextStorage.editedRange is already reset to NSNotFound by the
-            // time textDidChange fires, so we rely on pendingEditedRange instead.
-            let editedRange = pendingEditedRange
-            pendingEditedRange = nil
-            pendingChangeInLength = 0
+            // Захватываем editedRange из textStorage сейчас,
+            // пока он валиден в координатах текущей версии текста
+            var editedRange: NSRange?
+            if let storage = textView.textStorage {
+                let edited = storage.editedRange
+                if edited.location != NSNotFound {
+                    editedRange = edited
+                }
+            }
 
             // Skip highlighting for large files opened without syntax highlighting
             guard !parent.syntaxHighlightingDisabled else { return }
