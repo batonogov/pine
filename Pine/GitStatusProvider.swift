@@ -378,6 +378,123 @@ final class GitStatusProvider {
         }
     }
 
+    // MARK: - Staging Operations
+
+    /// Stages a file for commit.
+    nonisolated static func stageFile(_ path: String, at repoURL: URL) -> (success: Bool, error: String) {
+        let result = runGit(["add", "--", path], at: repoURL)
+        if result.exitCode == 0 {
+            return (true, "")
+        }
+        return (false, result.errorOutput.trimmingCharacters(in: .whitespacesAndNewlines))
+    }
+
+    /// Unstages a file (resets to HEAD).
+    nonisolated static func unstageFile(_ path: String, at repoURL: URL) -> (success: Bool, error: String) {
+        // For untracked files, use rm --cached; for others, use reset HEAD
+        let result = runGit(["reset", "HEAD", "--", path], at: repoURL)
+        if result.exitCode == 0 {
+            return (true, "")
+        }
+        return (false, result.errorOutput.trimmingCharacters(in: .whitespacesAndNewlines))
+    }
+
+    /// Stages multiple files at once.
+    nonisolated static func stageFiles(_ paths: [String], at repoURL: URL) -> (success: Bool, error: String) {
+        let args = ["add", "--"] + paths
+        let result = runGit(args, at: repoURL)
+        if result.exitCode == 0 {
+            return (true, "")
+        }
+        return (false, result.errorOutput.trimmingCharacters(in: .whitespacesAndNewlines))
+    }
+
+    /// Unstages multiple files at once.
+    nonisolated static func unstageFiles(_ paths: [String], at repoURL: URL) -> (success: Bool, error: String) {
+        let args = ["reset", "HEAD", "--"] + paths
+        let result = runGit(args, at: repoURL)
+        if result.exitCode == 0 {
+            return (true, "")
+        }
+        return (false, result.errorOutput.trimmingCharacters(in: .whitespacesAndNewlines))
+    }
+
+    // MARK: - Commit Operations
+
+    /// Creates a commit with the given message. Files must be staged before calling.
+    nonisolated static func commit(message: String, at repoURL: URL) -> (success: Bool, error: String) {
+        let result = runGit(["commit", "-m", message], at: repoURL)
+        if result.exitCode == 0 {
+            return (true, "")
+        }
+        return (false, result.errorOutput.trimmingCharacters(in: .whitespacesAndNewlines))
+    }
+
+    /// Returns the diff output for a specific file (unstaged changes).
+    nonisolated static func diffForCommitFile(_ path: String, at repoURL: URL) -> String {
+        let result = runGit(["diff", "--", path], at: repoURL)
+        if result.exitCode == 0 { return result.output }
+        return ""
+    }
+
+    /// Returns the diff output for a staged file.
+    nonisolated static func diffForStagedFile(_ path: String, at repoURL: URL) -> String {
+        let result = runGit(["diff", "--cached", "--", path], at: repoURL)
+        if result.exitCode == 0 { return result.output }
+        return ""
+    }
+
+    /// Returns staged and unstaged file lists separately by parsing porcelain output.
+    nonisolated static func parseStagedAndUnstaged(
+        _ output: String
+    ) -> (staged: [String: GitFileStatus], unstaged: [String: GitFileStatus]) {
+        var staged: [String: GitFileStatus] = [:]
+        var unstaged: [String: GitFileStatus] = [:]
+
+        for line in output.components(separatedBy: "\n") {
+            guard line.count >= 3 else { continue }
+            guard !line.hasPrefix("!!") else { continue }
+            let indexChar = line[line.startIndex]
+            let workTreeChar = line[line.index(after: line.startIndex)]
+            var path = String(line.dropFirst(3))
+            path = Self.unquoteGitPath(path)
+
+            if path.contains(" -> ") {
+                let parts = path.components(separatedBy: " -> ")
+                if parts.count == 2 { path = parts[1] }
+            }
+
+            // Staged changes (index column)
+            switch indexChar {
+            case "A": staged[path] = .added
+            case "M": staged[path] = .staged
+            case "D": staged[path] = .deleted
+            case "R": staged[path] = .staged
+            default: break
+            }
+
+            // Unstaged changes (worktree column)
+            switch workTreeChar {
+            case "M": unstaged[path] = .modified
+            case "D": unstaged[path] = .deleted
+            case "?":
+                if indexChar == "?" { unstaged[path] = .untracked }
+            default: break
+            }
+        }
+
+        return (staged, unstaged)
+    }
+
+    /// Fetches staged and unstaged file lists from the repository.
+    nonisolated static func fetchStagedAndUnstaged(
+        at url: URL
+    ) -> (staged: [String: GitFileStatus], unstaged: [String: GitFileStatus]) {
+        let result = runGit(["--no-optional-locks", "status", "--porcelain"], at: url)
+        guard result.exitCode == 0 else { return ([:], [:]) }
+        return parseStagedAndUnstaged(result.output)
+    }
+
     // MARK: - Branch Operations
 
     func checkoutBranch(_ branch: String) -> (success: Bool, error: String) {

@@ -35,6 +35,7 @@ struct ContentView: View {
     @State var isQuickOpenPresented = false
     @State var isSymbolNavigatorPresented = false
     @State var showGoToLine = false
+    @State var showCommitView = false
     @AppStorage("minimapVisible") var isMinimapVisible = true
     @AppStorage(BlameConstants.storageKey) var isBlameVisible = true
     @AppStorage("wordWrapEnabled") var isWordWrapEnabled = true
@@ -146,6 +147,16 @@ struct ContentView: View {
                     )
                 }
             )
+        }
+        .sheet(isPresented: $showCommitView) {
+            CommitView(
+                gitProvider: workspace.gitProvider,
+                isPresented: $showCommitView
+            )
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .showCommitView)) { _ in
+            guard workspace.gitProvider.isGitRepository else { return }
+            showCommitView = true
         }
         .onChange(of: selectedNode) { _, newNode in
             guard let node = newNode, !node.isDirectory else { return }

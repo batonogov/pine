@@ -376,6 +376,33 @@ enum Strings {
         String(localized: "terminal.tabCloseWarning.close")
     }
 
+    // MARK: - Git Commit UI
+
+    static let menuCommit: LocalizedStringKey = "menu.commit"
+    static let commitTitle: LocalizedStringKey = "commit.title"
+    static let commitButton: LocalizedStringKey = "commit.button"
+    static let commitNoChanges: LocalizedStringKey = "commit.noChanges"
+    static let commitStagedSection: LocalizedStringKey = "commit.staged"
+    static let commitUnstagedSection: LocalizedStringKey = "commit.unstaged"
+    static let commitMessagePlaceholder: LocalizedStringKey = "commit.messagePlaceholder"
+    static let commitSelectFile: LocalizedStringKey = "commit.selectFile"
+
+    static var commitEmptyMessageTitle: String {
+        String(localized: "commit.emptyMessage.title")
+    }
+
+    static var commitEmptyMessageBody: String {
+        String(localized: "commit.emptyMessage.body")
+    }
+
+    static var commitEmptyMessageConfirm: String {
+        String(localized: "commit.emptyMessage.confirm")
+    }
+
+    static var commitEmptyMessageCancel: String {
+        String(localized: "commit.emptyMessage.cancel")
+    }
+
     // MARK: - Progress Indicators
 
     static var progressLoadingProject: String {

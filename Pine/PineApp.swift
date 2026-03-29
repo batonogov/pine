@@ -186,6 +186,26 @@ struct PineApp: App {
                 }
                 .disabled(focusedProject?.terminal.isTerminalVisible != true)
             }
+            // Git menu: Switch Branch, Commit
+            CommandMenu(Strings.menuGit) {
+                Button {
+                    NotificationCenter.default.post(name: .switchBranch, object: nil)
+                } label: {
+                    Label(Strings.menuSwitchBranch, systemImage: MenuIcons.switchBranch)
+                }
+                .keyboardShortcut("b", modifiers: [.command, .shift])
+                .disabled(focusedProject?.workspace.gitProvider.isGitRepository != true)
+
+                Divider()
+
+                Button {
+                    NotificationCenter.default.post(name: .showCommitView, object: nil)
+                } label: {
+                    Label(Strings.menuCommit, systemImage: MenuIcons.commit)
+                }
+                .keyboardShortcut("k", modifiers: [.command, .shift])
+                .disabled(focusedProject?.workspace.gitProvider.isGitRepository != true)
+            }
             // Edit menu: Toggle Comment, Find & Replace, Find in Project
             CommandGroup(after: .pasteboard) {
                 Button {
@@ -1195,4 +1215,6 @@ extension Notification.Name {
     // Symbol Navigation (issue #306)
     static let showSymbolNavigator = Notification.Name("showSymbolNavigator")
     static let symbolNavigate = Notification.Name("symbolNavigate")
+    // Git Commit UI (issue #302)
+    static let showCommitView = Notification.Name("showCommitView")
 }

@@ -83,6 +83,15 @@ enum AccessibilityID {
     static let symbolResultsList = "symbolResultsList"
     static func symbolItem(_ name: String) -> String { "symbolItem_\(name)" }
 
+    // MARK: - Git Commit
+    static let commitSheet = "commitSheet"
+    static let commitFileList = "commitFileList"
+    static let commitMessageField = "commitMessageField"
+    static let commitButton = "commitButton"
+    static let commitCloseButton = "commitCloseButton"
+    static let commitDiffPreview = "commitDiffPreview"
+    static func commitFileEntry(_ path: String) -> String { "commitFileEntry_\(path)" }
+
     // MARK: - Status bar
     static let statusBar = "statusBar"
     static let terminalToggleButton = "terminalToggleButton"
