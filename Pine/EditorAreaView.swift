@@ -22,6 +22,9 @@ struct EditorAreaView: View {
     var blameLines: [GitBlameLine]
     var isMinimapVisible: Bool
     var isWordWrapEnabled: Bool
+    var diffHunks: [DiffHunk] = []
+    var onAcceptHunk: ((DiffHunk) -> Void)?
+    var onRevertHunk: ((DiffHunk) -> Void)?
     var onCloseTab: (EditorTab) -> Void
     var onCloseOtherTabs: ((UUID) -> Void)?
     var onCloseTabsToTheRight: ((UUID) -> Void)?
@@ -118,6 +121,9 @@ struct EditorAreaView: View {
             language: tab.language,
             fileName: tab.fileName,
             lineDiffs: lineDiffs,
+            diffHunks: diffHunks,
+            onAcceptHunk: onAcceptHunk,
+            onRevertHunk: onRevertHunk,
             isBlameVisible: isBlameVisible,
             blameLines: blameLines,
             foldState: Binding(

@@ -199,22 +199,27 @@ extension ContentView {
         }
     }
 
-    /// Refreshes cached line diffs for the active tab.
+    /// Refreshes cached line diffs and diff hunks for the active tab.
     func refreshLineDiffs() {
         guard let tab = tabManager.activeTab else {
             lineDiffs = []
+            diffHunks = []
             return
         }
         let fileURL = tab.url
         let provider = workspace.gitProvider
-        guard provider.isGitRepository else {
+        guard provider.isGitRepository, let repoURL = workspace.rootURL else {
             lineDiffs = []
+            diffHunks = []
             return
         }
         Task {
-            let diffs = await provider.diffForFileAsync(at: fileURL)
+            async let diffs = provider.diffForFileAsync(at: fileURL)
+            async let hunks = InlineDiffProvider.fetchHunks(for: fileURL, repoURL: repoURL)
+            let (resolvedDiffs, resolvedHunks) = await (diffs, hunks)
             if tabManager.activeTab?.url == fileURL {
-                lineDiffs = diffs
+                lineDiffs = resolvedDiffs
+                diffHunks = resolvedHunks
             }
         }
     }
@@ -235,6 +240,99 @@ extension ContentView {
         }
         if let line = targetLine {
             goToLineOffset = GoToRequest(offset: Self.cursorOffset(forLine: line, in: tab.content))
+        }
+    }
+
+    // MARK: - Gutter accept/revert buttons
+
+    func handleGutterAccept(_ hunk: DiffHunk) {
+        guard let tab = tabManager.activeTab,
+              let repoURL = workspace.rootURL else { return }
+        Task {
+            await InlineDiffProvider.acceptHunk(hunk, fileURL: tab.url, repoURL: repoURL)
+            await workspace.gitProvider.refreshAsync()
+            refreshLineDiffs()
+        }
+    }
+
+    func handleGutterRevert(_ hunk: DiffHunk) {
+        guard let tab = tabManager.activeTab,
+              let repoURL = workspace.rootURL else { return }
+        Task {
+            if let newContent = await InlineDiffProvider.revertHunk(hunk, fileURL: tab.url, repoURL: repoURL) {
+                tabManager.updateContent(newContent)
+                tabManager.reloadTab(url: tab.url)
+                await workspace.gitProvider.refreshAsync()
+                refreshLineDiffs()
+            }
+        }
+    }
+
+    // MARK: - Inline diff actions (menu/keyboard)
+
+    func handleInlineDiffAction(_ action: InlineDiffAction) {
+        guard let tab = tabManager.activeTab,
+              let repoURL = workspace.rootURL,
+              workspace.gitProvider.isGitRepository else { return }
+
+        let fileURL = tab.url
+
+        switch action {
+        case .accept:
+            Task {
+                let hunks = await InlineDiffProvider.fetchHunks(for: fileURL, repoURL: repoURL)
+                let currentLine = Self.lineNumber(forOffset: tab.cursorPosition, in: tab.content)
+                guard let hunk = InlineDiffProvider.hunk(atLine: currentLine, in: hunks) else { return }
+                await InlineDiffProvider.acceptHunk(hunk, fileURL: fileURL, repoURL: repoURL)
+                await workspace.gitProvider.refreshAsync()
+                refreshLineDiffs()
+            }
+        case .revert:
+            Task {
+                let hunks = await InlineDiffProvider.fetchHunks(for: fileURL, repoURL: repoURL)
+                let currentLine = Self.lineNumber(forOffset: tab.cursorPosition, in: tab.content)
+                guard let hunk = InlineDiffProvider.hunk(atLine: currentLine, in: hunks) else { return }
+                if let newContent = await InlineDiffProvider.revertHunk(hunk, fileURL: fileURL, repoURL: repoURL) {
+                    tabManager.updateContent(newContent)
+                    tabManager.reloadTab(url: fileURL)
+                    await workspace.gitProvider.refreshAsync()
+                    refreshLineDiffs()
+                }
+            }
+        case .acceptAll:
+            Task {
+                await InlineDiffProvider.acceptAllHunks(fileURL: fileURL, repoURL: repoURL)
+                await workspace.gitProvider.refreshAsync()
+                refreshLineDiffs()
+            }
+        case .revertAll:
+            Self.confirmRevertAll(fileName: fileURL.lastPathComponent) { confirmed in
+                guard confirmed else { return }
+                Task {
+                    if let newContent = await InlineDiffProvider.revertAllHunks(
+                        fileURL: fileURL, repoURL: repoURL
+                    ) {
+                        self.tabManager.updateContent(newContent)
+                        self.tabManager.reloadTab(url: fileURL)
+                        await self.workspace.gitProvider.refreshAsync()
+                        self.refreshLineDiffs()
+                    }
+                }
+            }
+        }
+    }
+
+    /// Shows a confirmation dialog before reverting all changes in a file.
+    static func confirmRevertAll(fileName: String, completion: @escaping (Bool) -> Void) {
+        DispatchQueue.main.async {
+            let alert = NSAlert()
+            alert.messageText = "Revert All Changes?"
+            alert.informativeText = "All changes in \"\(fileName)\" will be permanently lost. This action cannot be undone."
+            alert.alertStyle = .warning
+            alert.addButton(withTitle: "Revert All")
+            alert.addButton(withTitle: "Cancel")
+            let response = alert.runModal()
+            completion(response == .alertFirstButtonReturn)
         }
     }
 }

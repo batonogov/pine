@@ -24,6 +24,7 @@ struct ContentView: View {
     @State var selectedNode: FileNode?
     @State var columnVisibility: NavigationSplitViewVisibility = .all
     @State var lineDiffs: [GitLineDiff] = []
+    @State var diffHunks: [DiffHunk] = []
     @State var blameLines: [GitBlameLine] = []
     @State var blameTask: Task<Void, Never>?
     @State var didRestoreSession = false
@@ -156,6 +157,7 @@ struct ContentView: View {
         }
         .onChange(of: workspace.rootURL) { _, _ in
             lineDiffs = []
+            diffHunks = []
             projectManager.quickOpenProvider.invalidateIndex()
             projectManager.saveSession()
             applySearchQueryFromEnvironment()
@@ -192,7 +194,8 @@ struct ContentView: View {
             onOpenNewProject: { openNewProject() },
             onHandleFileDeletion: { handleFileDeletion($0) },
             onHandleExternalChanges: { handleExternalChanges($0) },
-            onNavigateToChange: { navigateToChange(direction: $0) }
+            onNavigateToChange: { navigateToChange(direction: $0) },
+            onInlineDiffAction: { handleInlineDiffAction($0) }
         ))
         .onReceive(NotificationCenter.default.publisher(for: .toggleWordWrap)) { _ in
             isWordWrapEnabled.toggle()
@@ -243,6 +246,9 @@ struct ContentView: View {
             blameLines: blameLines,
             isMinimapVisible: isMinimapVisible,
             isWordWrapEnabled: isWordWrapEnabled,
+            diffHunks: diffHunks,
+            onAcceptHunk: { hunk in handleGutterAccept(hunk) },
+            onRevertHunk: { hunk in handleGutterRevert(hunk) },
             onCloseTab: { closeTabWithConfirmation($0) },
             onCloseOtherTabs: { closeOtherTabsWithConfirmation(keeping: $0) },
             onCloseTabsToTheRight: { closeTabsToTheRightWithConfirmation(of: $0) },

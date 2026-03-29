@@ -51,6 +51,27 @@ final class LineNumberView: NSView {
     /// Callback при клике по fold indicator.
     var onFoldToggle: ((FoldableRange) -> Void)?
 
+    /// Diff hunks for the current file (for accept/revert buttons).
+    var diffHunks: [DiffHunk] = [] {
+        didSet {
+            rebuildHunkStartMap()
+            needsDisplay = true
+        }
+    }
+
+    /// Callback for accepting (staging) a hunk at the given line.
+    var onAcceptHunk: ((DiffHunk) -> Void)?
+
+    /// Callback for reverting a hunk at the given line.
+    var onRevertHunk: ((DiffHunk) -> Void)?
+
+    /// Pre-indexed hunk lookup: first line of hunk → DiffHunk.
+    private var hunkStartMap: [Int: DiffHunk] = [:]
+
+    private func rebuildHunkStartMap() {
+        hunkStartMap = Dictionary(diffHunks.map { ($0.newStart, $0) }, uniquingKeysWith: { _, last in last })
+    }
+
     /// Pre-indexed diff lookup: line number → kind (cached, rebuilt when lineDiffs changes)
     private var diffMap: [Int: GitLineDiff.Kind] = [:]
 
@@ -169,6 +190,22 @@ final class LineNumberView: NSView {
 
     override func mouseDown(with event: NSEvent) {
         let point = convert(event.locationInWindow, from: nil)
+
+        // Check for hunk action button clicks first
+        if let lineNum = lineNumber(at: point),
+           let hunk = hunkStartMap[lineNum],
+           let action = hunkButtonHitTest(at: point, lineNumber: lineNum) {
+            switch action {
+            case .accept:
+                onAcceptHunk?(hunk)
+            case .revert:
+                onRevertHunk?(hunk)
+            default:
+                break
+            }
+            return
+        }
+
         // Only handle clicks on the fold indicator area (left portion of gutter)
         let foldIndicatorWidth: CGFloat = 14
         guard point.x < foldIndicatorWidth else {
@@ -392,6 +429,11 @@ final class LineNumberView: NSView {
                     }
                 }
 
+                // ── Accept/Revert buttons on hunk start lines (hover only) ──
+                if self.isMouseInside, self.hunkStartMap[lineNumber] != nil {
+                    self.drawHunkActionButtons(at: y, lineHeight: lineRect.height)
+                }
+
                 lineNumber += 1
             }
 
@@ -451,5 +493,93 @@ final class LineNumberView: NSView {
         path.close()
         foldIndicatorColor.setFill()
         path.fill()
+    }
+
+    // MARK: - Accept/Revert button drawing
+
+    /// Width of each hunk action button area, derived from gutter font size.
+    private var hunkButtonSize: CGFloat {
+        gutterFont.pointSize + 1
+    }
+
+    /// X position for the first (accept) button, based on gutter font metrics.
+    private var hunkButtonStartX: CGFloat {
+        gutterFont.pointSize + 2
+    }
+
+    /// Draws accept (checkmark) and revert (arrow) icons at the top of a hunk.
+    private func drawHunkActionButtons(at y: CGFloat, lineHeight: CGFloat) {
+        let centerY = y + lineHeight / 2
+        let checkmarkX = hunkButtonStartX
+        let revertX = checkmarkX + hunkButtonSize + 2
+
+        // Accept button (checkmark)
+        drawCheckmark(
+            at: NSPoint(x: checkmarkX, y: centerY),
+            size: hunkButtonSize,
+            color: addedColor
+        )
+
+        // Revert button (curved arrow)
+        drawRevertArrow(
+            at: NSPoint(x: revertX, y: centerY),
+            size: hunkButtonSize,
+            color: NSColor.systemOrange
+        )
+    }
+
+    /// Draws a small checkmark icon.
+    private func drawCheckmark(at center: NSPoint, size: CGFloat, color: NSColor) {
+        let half = size / 2
+        let path = NSBezierPath()
+        path.lineWidth = 1.5
+        path.move(to: NSPoint(x: center.x - half * 0.4, y: center.y))
+        path.line(to: NSPoint(x: center.x - half * 0.1, y: center.y + half * 0.4))
+        path.line(to: NSPoint(x: center.x + half * 0.5, y: center.y - half * 0.4))
+        color.setStroke()
+        path.stroke()
+    }
+
+    /// Draws a small revert (undo) arrow icon.
+    private func drawRevertArrow(at center: NSPoint, size: CGFloat, color: NSColor) {
+        let half = size / 2
+        let path = NSBezierPath()
+        path.lineWidth = 1.5
+        // Curved arrow
+        path.appendArc(
+            withCenter: NSPoint(x: center.x, y: center.y),
+            radius: half * 0.4,
+            startAngle: 45,
+            endAngle: 270,
+            clockwise: false
+        )
+        // Arrowhead
+        let tipX = center.x
+        let tipY = center.y - half * 0.4
+        let arrowSize: CGFloat = half * 0.3
+        let arrowPath = NSBezierPath()
+        arrowPath.move(to: NSPoint(x: tipX - arrowSize, y: tipY - arrowSize))
+        arrowPath.line(to: NSPoint(x: tipX, y: tipY))
+        arrowPath.line(to: NSPoint(x: tipX + arrowSize, y: tipY - arrowSize))
+        arrowPath.lineWidth = 1.5
+        color.setStroke()
+        path.stroke()
+        arrowPath.stroke()
+    }
+
+    /// Hit test for hunk action buttons. Returns the action if clicked, nil otherwise.
+    func hunkButtonHitTest(at point: NSPoint, lineNumber: Int) -> InlineDiffAction? {
+        guard hunkStartMap[lineNumber] != nil else { return nil }
+        let checkmarkX = hunkButtonStartX
+        let revertX = checkmarkX + hunkButtonSize + 2
+        let hitWidth = hunkButtonSize + 4
+
+        if point.x >= checkmarkX - 2 && point.x <= checkmarkX + hitWidth - 4 {
+            return .accept
+        }
+        if point.x >= revertX - 2 && point.x <= revertX + hitWidth - 4 {
+            return .revert
+        }
+        return nil
     }
 }
