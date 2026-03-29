@@ -386,6 +386,141 @@ struct CrashReportStoreTests {
     }
 }
 
+// MARK: - extractCallStackFrames Tests
+
+struct ExtractCallStackFramesTests {
+
+    @Test func emptyData_returnsEmpty() {
+        let frames = CrashReportingManager.extractCallStackFrames(from: Data())
+        #expect(frames.isEmpty)
+    }
+
+    @Test func invalidJSON_returnsEmpty() {
+        let data = Data("not json".utf8)
+        let frames = CrashReportingManager.extractCallStackFrames(from: data)
+        #expect(frames.isEmpty)
+    }
+
+    @Test func missingCallStackTree_returnsEmpty() throws {
+        let json: [String: Any] = ["other": "data"]
+        let data = try JSONSerialization.data(withJSONObject: json)
+        let frames = CrashReportingManager.extractCallStackFrames(from: data)
+        #expect(frames.isEmpty)
+    }
+
+    @Test func missingCallStacks_returnsEmpty() throws {
+        let json: [String: Any] = ["callStackTree": ["other": "data"]]
+        let data = try JSONSerialization.data(withJSONObject: json)
+        let frames = CrashReportingManager.extractCallStackFrames(from: data)
+        #expect(frames.isEmpty)
+    }
+
+    @Test func singleFrame_parsesCorrectly() throws {
+        let json: [String: Any] = [
+            "callStackTree": [
+                "callStacks": [
+                    [
+                        "callStackRootFrames": [
+                            [
+                                "binaryName": "Pine",
+                                "address": 4_294_967_296,
+                                "offsetIntoBinaryTextSegment": 1234
+                            ]
+                        ]
+                    ]
+                ]
+            ]
+        ]
+        let data = try JSONSerialization.data(withJSONObject: json)
+        let frames = CrashReportingManager.extractCallStackFrames(from: data)
+        #expect(frames.count == 1)
+        #expect(frames[0].contains("Pine"))
+    }
+
+    @Test func nestedSubFrames_flattensAll() throws {
+        let json: [String: Any] = [
+            "callStackTree": [
+                "callStacks": [
+                    [
+                        "callStackRootFrames": [
+                            [
+                                "binaryName": "Pine",
+                                "address": 100,
+                                "offsetIntoBinaryTextSegment": 10,
+                                "subFrames": [
+                                    [
+                                        "binaryName": "libsystem",
+                                        "address": 200,
+                                        "offsetIntoBinaryTextSegment": 20
+                                    ]
+                                ]
+                            ]
+                        ]
+                    ]
+                ]
+            ]
+        ]
+        let data = try JSONSerialization.data(withJSONObject: json)
+        let frames = CrashReportingManager.extractCallStackFrames(from: data)
+        #expect(frames.count == 2)
+        #expect(frames[0].contains("Pine"))
+        #expect(frames[1].contains("libsystem"))
+    }
+
+    @Test func multipleCallStacks_parsesAll() throws {
+        let json: [String: Any] = [
+            "callStackTree": [
+                "callStacks": [
+                    [
+                        "callStackRootFrames": [
+                            ["binaryName": "Pine", "address": 100, "offsetIntoBinaryTextSegment": 10]
+                        ]
+                    ],
+                    [
+                        "callStackRootFrames": [
+                            ["binaryName": "AppKit", "address": 200, "offsetIntoBinaryTextSegment": 20]
+                        ]
+                    ]
+                ]
+            ]
+        ]
+        let data = try JSONSerialization.data(withJSONObject: json)
+        let frames = CrashReportingManager.extractCallStackFrames(from: data)
+        #expect(frames.count == 2)
+        #expect(frames[0].contains("Pine"))
+        #expect(frames[1].contains("AppKit"))
+    }
+
+    @Test func missingBinaryName_usesFallback() throws {
+        let json: [String: Any] = [
+            "callStackTree": [
+                "callStacks": [
+                    [
+                        "callStackRootFrames": [
+                            ["address": 100, "offsetIntoBinaryTextSegment": 10]
+                        ]
+                    ]
+                ]
+            ]
+        ]
+        let data = try JSONSerialization.data(withJSONObject: json)
+        let frames = CrashReportingManager.extractCallStackFrames(from: data)
+        #expect(frames.count == 1)
+        #expect(frames[0].contains("?"))
+    }
+
+    @Test func emptyCallStacks_returnsEmpty() throws {
+        let json: [String: Any] = [
+            "callStackTree": [
+                "callStacks": [] as [[String: Any]]
+            ]
+        ]
+        let data = try JSONSerialization.data(withJSONObject: json)
+        let frames = CrashReportingManager.extractCallStackFrames(from: data)
+        #expect(frames.isEmpty)
+    }
+}
+
 // MARK: - MenuIcons Tests
 
 struct CrashReportingMenuIconTests {

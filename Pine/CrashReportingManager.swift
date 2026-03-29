@@ -10,6 +10,14 @@ import Foundation
 import MetricKit
 import os
 
+// MARK: - Global async-signal-safe storage for crash marker path
+
+/// Pre-computed C string for the crash marker path.
+/// Set once during `installSignalHandlers()`, read-only in the signal handler.
+/// Using nonisolated(unsafe) because signal handlers are inherently unsafe
+/// and this is written once before any signal can fire.
+nonisolated(unsafe) private var crashMarkerCString: UnsafeMutablePointer<CChar>?
+
 /// Coordinates crash reporting using MetricKit (MXCrashDiagnostic) as the
 /// primary source and POSIX signal handlers as a minimal async-signal-safe fallback.
 ///
@@ -58,6 +66,40 @@ final class CrashReportingManager: NSObject, MXMetricManagerSubscriber {
         logger.info("Crash reporting started (MetricKit + signal handler fallback)")
     }
 
+    /// Extracts call stack frame strings from MetricKit JSON representation.
+    /// Parses the `callStackTree` → `callStacks` → `callStackRootFrames` hierarchy,
+    /// flattening nested frames into human-readable strings.
+    static func extractCallStackFrames(from jsonData: Data) -> [String] {
+        guard let json = try? JSONSerialization.jsonObject(with: jsonData) as? [String: Any],
+              let callStackTree = json["callStackTree"] as? [String: Any],
+              let callStacks = callStackTree["callStacks"] as? [[String: Any]] else {
+            return []
+        }
+
+        var frames: [String] = []
+        for stack in callStacks {
+            guard let rootFrames = stack["callStackRootFrames"] as? [[String: Any]] else { continue }
+            Self.flattenFrames(rootFrames, into: &frames)
+        }
+        return frames
+    }
+
+    /// Recursively flattens nested call stack frames into a flat list of strings.
+    private static func flattenFrames(_ frameList: [[String: Any]], into result: inout [String]) {
+        for frame in frameList {
+            let address = frame["address"] as? UInt64 ?? 0
+            let binaryName = frame["binaryName"] as? String ?? "?"
+            let offsetIntoBinaryTextSegment = frame["offsetIntoBinaryTextSegment"] as? UInt64 ?? 0
+            result.append(String(
+                format: "%@ 0x%llx +%llu",
+                binaryName, address, offsetIntoBinaryTextSegment
+            ))
+            if let subFrames = frame["subFrames"] as? [[String: Any]] {
+                flattenFrames(subFrames, into: &result)
+            }
+        }
+    }
+
     /// Stops crash reporting (unsubscribes from MetricKit).
     func stop() {
         MXMetricManager.shared.remove(self)
@@ -81,15 +123,7 @@ final class CrashReportingManager: NSObject, MXMetricManagerSubscriber {
 
     /// Processes a single MetricKit crash diagnostic into a CrashReport.
     private func processCrashDiagnostic(_ diagnostic: MXCrashDiagnostic) {
-        let callStack: [String]
-        let jsonData = diagnostic.jsonRepresentation()
-        if let json = try? JSONSerialization.jsonObject(with: jsonData) as? [String: Any],
-           let stacks = json["callStackTree"] as? [String: Any],
-           let callStackString = stacks.description.data(using: .utf8) {
-            callStack = CrashReport.parseCallStack(String(data: callStackString, encoding: .utf8) ?? "")
-        } else {
-            callStack = []
-        }
+        let callStack: [String] = Self.extractCallStackFrames(from: diagnostic.jsonRepresentation())
 
         let report = CrashReport(
             signal: diagnostic.signal?.description,
@@ -105,16 +139,19 @@ final class CrashReportingManager: NSObject, MXMetricManagerSubscriber {
     // MARK: - Signal Handler Fallback
 
     /// Installs POSIX signal handlers for common crash signals.
-    /// The handler is strictly async-signal-safe: only POSIX write() and _exit().
+    /// Pre-computes the crash marker path as a C string so the handler
+    /// never touches Swift/Foundation/malloc.
     private func installSignalHandlers() {
+        // Pre-compute the path as a C string BEFORE installing handlers.
+        // This is the ONLY place we allocate — the handler only reads this pointer.
+        let path = Self.crashMarkerPath
+        let cString = strdup(path)
+        crashMarkerCString = cString
+
         let signals: [Int32] = [SIGSEGV, SIGABRT, SIGBUS, SIGFPE, SIGILL, SIGTRAP]
 
         for sig in signals {
-            var action = sigaction()
-            action.__sigaction_u.__sa_handler = signalHandler
-            sigemptyset(&action.sa_mask)
-            action.sa_flags = 0
-            sigaction(sig, &action, nil)
+            signal(sig, signalHandler)
         }
     }
 
@@ -155,44 +192,71 @@ final class CrashReportingManager: NSObject, MXMetricManagerSubscriber {
 /// Strictly async-signal-safe signal handler.
 /// Uses ONLY POSIX APIs: open(), write(), close(), _exit().
 /// No Swift runtime, no Foundation, no malloc, no ObjC messaging.
-private func signalHandler(_ signal: Int32) {
-    // Get the crash marker path — this is a compile-time known location
-    // We cannot use Swift String here, so we use a pre-computed C string
-    let path = CrashReportingManager.crashMarkerPath
-
-    path.withCString { cPath in
-        // Open file for writing (create if needed, truncate)
-        let fd = open(cPath, O_WRONLY | O_CREAT | O_TRUNC, 0o644)
-        guard fd >= 0 else {
-            _exit(signal)
-        }
-
-        // Write the signal number as ASCII digits
-        var sigNum = signal
-        var digits: [UInt8] = []
-
-        if sigNum == 0 {
-            digits.append(0x30) // '0'
-        } else {
-            while sigNum > 0 {
-                digits.append(UInt8(0x30 + sigNum % 10))
-                sigNum /= 10
-            }
-            digits.reverse()
-        }
-
-        digits.withUnsafeBufferPointer { buf in
-            _ = write(fd, buf.baseAddress, buf.count)
-        }
-
-        // Write newline
-        var newline: UInt8 = 0x0A
-        _ = write(fd, &newline, 1)
-
-        close(fd)
+///
+/// The crash marker path is pre-computed in `installSignalHandlers()` and stored
+/// in the global `crashMarkerCString`. This function only reads that pointer.
+private func signalHandler(_ sig: Int32) {
+    // Read pre-computed C string path — no allocation, no Swift runtime
+    guard let cPath = crashMarkerCString else {
+        _exit(sig)
     }
 
+    // Open file for writing (create if needed, truncate)
+    let fd = open(cPath, O_WRONLY | O_CREAT | O_TRUNC, 0o644)
+    guard fd >= 0 else {
+        _exit(sig)
+    }
+
+    // Write the signal number as ASCII digits using a stack buffer (no malloc).
+    // Max digits for Int32: 10 digits + newline = 11 bytes. Using a 4-byte tuple
+    // is sufficient since POSIX signals are small numbers (1-31).
+    var buf = (UInt8(0), UInt8(0), UInt8(0), UInt8(0))
+    var sigNum = sig
+    var len = 0
+
+    if sigNum == 0 {
+        buf.0 = 0x30 // '0'
+        len = 1
+    } else {
+        // Signals are 1-31, so at most 2 digits — reverse into buf
+        var tmp = (UInt8(0), UInt8(0))
+        var tmpLen = 0
+        while sigNum > 0, tmpLen < 2 {
+            if tmpLen == 0 {
+                tmp.0 = UInt8(0x30 + sigNum % 10)
+            } else {
+                tmp.1 = UInt8(0x30 + sigNum % 10)
+            }
+            tmpLen += 1
+            sigNum /= 10
+        }
+        if tmpLen == 1 {
+            buf.0 = tmp.0
+        } else {
+            buf.0 = tmp.1
+            buf.1 = tmp.0
+        }
+        len = tmpLen
+    }
+
+    // Append newline
+    if len == 0 {
+        buf.0 = 0x0A
+    } else if len == 1 {
+        buf.1 = 0x0A
+    } else {
+        buf.2 = 0x0A
+    }
+    len += 1
+
+    // Write using POSIX write() — async-signal-safe
+    withUnsafePointer(to: &buf) { ptr in
+        _ = write(fd, ptr, len)
+    }
+
+    close(fd)
+
     // Re-raise with default handler to get proper exit code
-    Darwin.signal(signal, SIG_DFL)
-    raise(signal)
+    Darwin.signal(sig, SIG_DFL)
+    raise(sig)
 }
