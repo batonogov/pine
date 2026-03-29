@@ -13,6 +13,7 @@ struct PineApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
     @FocusedValue(\.projectManager) private var focusedProject: ProjectManager?
     @AppStorage(TabManager.autoSaveKey) private var autoSaveEnabled = false
+    @AppStorage(CrashReportingSettings.enabledKey) private var crashReportingEnabled = false
 
     private var registry: ProjectRegistry { appDelegate.registry }
 
@@ -448,6 +449,17 @@ struct PineApp: App {
 
                 Toggle(isOn: $autoSaveEnabled) {
                     Label(Strings.menuAutoSave, systemImage: MenuIcons.autoSave)
+                }
+
+                Toggle(isOn: $crashReportingEnabled) {
+                    Label(Strings.menuCrashReporting, systemImage: MenuIcons.crashReporting)
+                }
+                .onChange(of: crashReportingEnabled) { _, newValue in
+                    if newValue {
+                        CrashReportingManager.shared.startIfEnabled()
+                    } else {
+                        CrashReportingManager.shared.stop()
+                    }
                 }
             }
             // Cmd+W is intercepted by AppDelegate's local event monitor
@@ -948,6 +960,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate {
 
         // Clean up stale recovery files older than 7 days across all projects
         RecoveryManager.cleanupAllStaleEntries(olderThan: 7)
+
+        // Start crash reporting if previously opted in
+        CrashReportingManager.shared.startIfEnabled()
 
         // Intercept Cmd+W before the system "Close" menu item.
         // For project windows: close active tab (or close window if no tabs).

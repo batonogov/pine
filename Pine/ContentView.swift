@@ -36,6 +36,7 @@ struct ContentView: View {
     @State var isQuickOpenPresented = false
     @State var isSymbolNavigatorPresented = false
     @State var showGoToLine = false
+    @State var showCrashReportingOptIn = false
     @AppStorage("minimapVisible") var isMinimapVisible = true
     @AppStorage(BlameConstants.storageKey) var isBlameVisible = true
     @AppStorage("wordWrapEnabled") var isWordWrapEnabled = true
@@ -114,6 +115,7 @@ struct ContentView: View {
             syncSidebarSelection()
             applySearchQueryFromEnvironment()
             refreshBlame()
+            showCrashReportingOptInIfNeeded()
         }
         .sheet(isPresented: $showRecoveryDialog) {
             RecoveryDialogView(
@@ -222,6 +224,13 @@ struct ContentView: View {
             guard let line = newLine, let tab = tabManager.activeTab else { return }
             tabManager.pendingGoToLine = nil
             goToLineOffset = GoToRequest(offset: Self.cursorOffset(forLine: line, in: tab.content))
+        }
+        .sheet(isPresented: $showCrashReportingOptIn) {
+            CrashReportingOptInView(isPresented: $showCrashReportingOptIn) { enabled in
+                if enabled {
+                    CrashReportingManager.shared.startIfEnabled()
+                }
+            }
         }
     }
 

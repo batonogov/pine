@@ -425,6 +425,13 @@ enum Strings {
         String(localized: "toast.filesReloaded.more \(count) \(names) \(remaining)")
     }
 
+    // MARK: - Crash Reporting
+
+    static let menuCrashReporting: LocalizedStringKey = "menu.crashReporting"
+    static let crashReportingOptInTitle: LocalizedStringKey = "crashReporting.optIn.title"
+    static let crashReportingOptInMessage: LocalizedStringKey = "crashReporting.optIn.message"
+    static let crashReportingOptInPrivacy: LocalizedStringKey = "crashReporting.optIn.privacy"
+
     // MARK: - Progress Indicators
 
     static var progressLoadingProject: String {

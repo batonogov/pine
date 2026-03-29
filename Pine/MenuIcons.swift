@@ -54,6 +54,9 @@ nonisolated enum MenuIcons {
     // MARK: - Validation
     static let toggleValidation = "checkmark.shield"
 
+    // MARK: - Crash Reporting
+    static let crashReporting = "ant.circle"
+
     // MARK: - Context menu
     static let newFile = "doc.badge.plus"
     static let newFolder = "folder.badge.plus"

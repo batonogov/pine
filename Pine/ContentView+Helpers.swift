@@ -505,6 +505,19 @@ extension ContentView {
     }
 }
 
+// MARK: - Crash Reporting Opt-In
+
+extension ContentView {
+    /// Shows the crash reporting opt-in dialog on first launch.
+    func showCrashReportingOptInIfNeeded() {
+        guard CrashReportingSettings.needsPrompt else { return }
+        // Slight delay to avoid showing during initial window setup
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+            showCrashReportingOptIn = true
+        }
+    }
+}
+
 // MARK: - Line / offset helpers
 
 extension ContentView {

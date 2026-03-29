@@ -1443,6 +1443,366 @@
         }
       }
     },
+    "crashReporting.optIn.disable" : {
+      "comment" : "Button to decline crash reporting in the opt-in dialog.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nicht aktivieren"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Don't Enable"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No activar"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ne pas activer"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "有効にしない"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "활성화하지 않기"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Não ativar"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Не включать"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "不启用"
+          }
+        }
+      }
+    },
+    "crashReporting.optIn.enable" : {
+      "comment" : "Button to accept crash reporting in the opt-in dialog.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aktivieren"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Enable"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Activar"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Activer"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "有効にする"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "활성화"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ativar"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Включить"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "启用"
+          }
+        }
+      }
+    },
+    "crashReporting.optIn.message" : {
+      "comment" : "Explanatory message in the crash reporting opt-in dialog.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pine kann anonyme Absturzberichte senden, um die App-Stabilität zu verbessern. Es werden nur technische Daten gesendet — keine Dateiinhalte oder Pfade."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pine can send anonymous crash reports to help improve app stability. Only technical data is sent — no file contents or paths."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pine puede enviar informes de error anónimos para mejorar la estabilidad. Solo se envían datos técnicos, sin contenido ni rutas de archivos."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pine peut envoyer des rapports de plantage anonymes pour améliorer la stabilité. Seules des données techniques sont envoyées — aucun contenu ni chemin de fichier."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pineはアプリの安定性向上のため匿名のクラッシュレポートを送信できます。技術データのみが送信され、ファイルの内容やパスは含まれません。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pine은 앱 안정성 향상을 위해 익명 충돌 보고서를 보낼 수 있습니다. 기술 데이터만 전송되며 파일 내용이나 경로는 포함되지 않습니다."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pine pode enviar relatórios de falhas anônimos para melhorar a estabilidade. Apenas dados técnicos são enviados — sem conteúdo ou caminhos de arquivos."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pine может отправлять анонимные отчёты об ошибках для улучшения стабильности. Передаются только технические данные — без содержимого файлов и путей."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pine 可以发送匿名崩溃报告以帮助改进应用稳定性。仅发送技术数据，不包含文件内容或路径。"
+          }
+        }
+      }
+    },
+    "crashReporting.optIn.privacy" : {
+      "comment" : "Privacy note in the crash reporting opt-in dialog.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Gesammelt: Stack-Trace, OS-Version, App-Version, Anzahl offener Tabs. Sie können dies jederzeit im Menü Datei ändern."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Collected: stack trace, OS version, app version, open tab count. You can change this anytime in the File menu."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Recopilado: traza de pila, versión del SO, versión de la app, cantidad de pestañas abiertas. Puedes cambiarlo en cualquier momento en el menú Archivo."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Collecté : trace de pile, version du SE, version de l'app, nombre d'onglets ouverts. Vous pouvez modifier ce choix à tout moment dans le menu Fichier."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "収集データ：スタックトレース、OS バージョン、アプリバージョン、開いているタブ数。「ファイル」メニューからいつでも変更できます。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "수집 항목: 스택 추적, OS 버전, 앱 버전, 열린 탭 수. 파일 메뉴에서 언제든지 변경할 수 있습니다."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Coletado: rastreamento de pilha, versão do SO, versão do app, quantidade de abas abertas. Você pode alterar a qualquer momento no menu Arquivo."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Собирается: стек вызовов, версия ОС, версия приложения, количество открытых вкладок. Вы можете изменить это в любое время в меню «Файл»."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "收集内容：堆栈跟踪、操作系统版本、应用版本、打开的标签页数量。您可以随时在「文件」菜单中更改此设置。"
+          }
+        }
+      }
+    },
+    "crashReporting.optIn.title" : {
+      "comment" : "Title of the crash reporting opt-in dialog shown on first launch.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Absturzberichte verbessern Pine"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Crash Reports Help Improve Pine"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Los informes de error mejoran Pine"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Les rapports de plantage aident à améliorer Pine"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "クラッシュレポートで Pine を改善"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "충돌 보고서로 Pine 개선에 기여"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Relatórios de falhas ajudam a melhorar o Pine"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Отчёты о сбоях помогают улучшить Pine"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "崩溃报告有助于改进 Pine"
+          }
+        }
+      }
+    },
+    "menu.crashReporting" : {
+      "comment" : "Menu item to toggle crash reporting on or off.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Absturzberichte"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Crash Reporting"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Informes de error"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Rapports de plantage"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "クラッシュレポート"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "충돌 보고"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Relatórios de falhas"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Отчёты о сбоях"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "崩溃报告"
+          }
+        }
+      }
+    },
     "dialog.ok" : {
       "comment" : "OK button in dialogs.",
       "extractionState" : "manual",
