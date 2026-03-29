@@ -195,10 +195,13 @@ final class LineNumberView: NSView {
         if let lineNum = lineNumber(at: point),
            let hunk = hunkStartMap[lineNum],
            let action = hunkButtonHitTest(at: point, lineNumber: lineNum) {
-            if action == "accept" {
+            switch action {
+            case .accept:
                 onAcceptHunk?(hunk)
-            } else if action == "revert" {
+            case .revert:
                 onRevertHunk?(hunk)
+            default:
+                break
             }
             return
         }
@@ -494,13 +497,20 @@ final class LineNumberView: NSView {
 
     // MARK: - Accept/Revert button drawing
 
-    /// Width of each hunk action button area.
-    private let hunkButtonSize: CGFloat = 12
+    /// Width of each hunk action button area, derived from gutter font size.
+    private var hunkButtonSize: CGFloat {
+        gutterFont.pointSize + 1
+    }
+
+    /// X position for the first (accept) button, based on gutter font metrics.
+    private var hunkButtonStartX: CGFloat {
+        gutterFont.pointSize + 2
+    }
 
     /// Draws accept (checkmark) and revert (arrow) icons at the top of a hunk.
     private func drawHunkActionButtons(at y: CGFloat, lineHeight: CGFloat) {
         let centerY = y + lineHeight / 2
-        let checkmarkX: CGFloat = 15
+        let checkmarkX = hunkButtonStartX
         let revertX = checkmarkX + hunkButtonSize + 2
 
         // Accept button (checkmark)
@@ -557,18 +567,18 @@ final class LineNumberView: NSView {
         arrowPath.stroke()
     }
 
-    /// Hit test for hunk action buttons. Returns "accept" or "revert" if clicked, nil otherwise.
-    func hunkButtonHitTest(at point: NSPoint, lineNumber: Int) -> String? {
+    /// Hit test for hunk action buttons. Returns the action if clicked, nil otherwise.
+    func hunkButtonHitTest(at point: NSPoint, lineNumber: Int) -> InlineDiffAction? {
         guard hunkStartMap[lineNumber] != nil else { return nil }
-        let checkmarkX: CGFloat = 15
+        let checkmarkX = hunkButtonStartX
         let revertX = checkmarkX + hunkButtonSize + 2
         let hitWidth = hunkButtonSize + 4
 
         if point.x >= checkmarkX - 2 && point.x <= checkmarkX + hitWidth - 4 {
-            return "accept"
+            return .accept
         }
         if point.x >= revertX - 2 && point.x <= revertX + hitWidth - 4 {
-            return "revert"
+            return .revert
         }
         return nil
     }

@@ -8,6 +8,16 @@
 
 import Foundation
 
+// MARK: - InlineDiffAction
+
+/// Type-safe actions for inline diff operations.
+enum InlineDiffAction: String, Sendable {
+    case accept
+    case revert
+    case acceptAll
+    case revertAll
+}
+
 // MARK: - Models
 
 /// A single diff hunk with enough context to stage or revert it.
@@ -178,7 +188,7 @@ enum InlineDiffProvider {
                     return
                 }
                 let result = GitStatusProvider.runGit(
-                    ["diff", "HEAD", "--unified=0", "--", fileURL.path],
+                    ["diff", "HEAD", "--unified=1", "--", fileURL.path],
                     at: repoURL
                 )
                 guard result.exitCode == 0, !result.output.isEmpty else {
@@ -278,12 +288,17 @@ enum InlineDiffProvider {
             relativePath = fileURL.lastPathComponent
         }
 
-        return """
+        var patch = """
         diff --git a/\(relativePath) b/\(relativePath)
         --- a/\(relativePath)
         +++ b/\(relativePath)
         \(hunk.rawText)
         """
+        // git apply requires a trailing newline
+        if !patch.hasSuffix("\n") {
+            patch.append("\n")
+        }
+        return patch
     }
 
     /// Pipes a patch string into a git command via stdin.

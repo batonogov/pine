@@ -56,7 +56,7 @@ struct GitAndNotificationObserver: ViewModifier {
     var onHandleFileDeletion: (URL) -> Void
     var onHandleExternalChanges: (TabManager.ExternalChangeResult) -> Void
     var onNavigateToChange: (ContentView.ChangeDirection) -> Void
-    var onInlineDiffAction: (String) -> Void
+    var onInlineDiffAction: (InlineDiffAction) -> Void
 
     func body(content: Content) -> some View {
         content
@@ -128,7 +128,7 @@ struct GitAndNotificationObserver: ViewModifier {
             }
             .onReceive(NotificationCenter.default.publisher(for: .inlineDiffAction)) { notification in
                 guard controlActiveState == .key,
-                      let action = notification.userInfo?["action"] as? String else { return }
+                      let action = notification.userInfo?["action"] as? InlineDiffAction else { return }
                 onInlineDiffAction(action)
             }
     }

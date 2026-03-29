@@ -293,7 +293,7 @@ struct PineApp: App {
                 Button {
                     NotificationCenter.default.post(
                         name: .inlineDiffAction, object: nil,
-                        userInfo: ["action": "accept"]
+                        userInfo: ["action": InlineDiffAction.accept]
                     )
                 } label: {
                     Label(Strings.menuAcceptChange, systemImage: MenuIcons.acceptChange)
@@ -304,7 +304,7 @@ struct PineApp: App {
                 Button {
                     NotificationCenter.default.post(
                         name: .inlineDiffAction, object: nil,
-                        userInfo: ["action": "revert"]
+                        userInfo: ["action": InlineDiffAction.revert]
                     )
                 } label: {
                     Label(Strings.menuRevertChange, systemImage: MenuIcons.revertChange)
@@ -315,7 +315,7 @@ struct PineApp: App {
                 Button {
                     NotificationCenter.default.post(
                         name: .inlineDiffAction, object: nil,
-                        userInfo: ["action": "acceptAll"]
+                        userInfo: ["action": InlineDiffAction.acceptAll]
                     )
                 } label: {
                     Label(Strings.menuAcceptAllChanges, systemImage: MenuIcons.acceptAllChanges)
@@ -325,7 +325,7 @@ struct PineApp: App {
                 Button {
                     NotificationCenter.default.post(
                         name: .inlineDiffAction, object: nil,
-                        userInfo: ["action": "revertAll"]
+                        userInfo: ["action": InlineDiffAction.revertAll]
                     )
                 } label: {
                     Label(Strings.menuRevertAllChanges, systemImage: MenuIcons.revertAllChanges)
@@ -1258,6 +1258,6 @@ extension Notification.Name {
     static let sendTextToTerminal = Notification.Name("sendTextToTerminal")
     /// userInfo: ["url": URL] — reveals a file in the sidebar tree
     static let revealInSidebar = Notification.Name("revealInSidebar")
-    /// userInfo: ["action": "accept" | "revert" | "acceptAll" | "revertAll"]
+    /// userInfo: ["action": InlineDiffAction]
     static let inlineDiffAction = Notification.Name("inlineDiffAction")
 }

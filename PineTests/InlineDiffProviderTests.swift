@@ -276,6 +276,31 @@ struct InlineDiffProviderTests {
         #expect(patch.contains("b/file.swift"))
     }
 
+    @Test func buildPatchEndsWithTrailingNewline() {
+        let hunk = DiffHunk(
+            newStart: 1, newCount: 1, oldStart: 1, oldCount: 1,
+            rawText: "@@ -1,1 +1,1 @@\n-old\n+new"
+        )
+        let repoURL = URL(fileURLWithPath: "/repo")
+        let fileURL = URL(fileURLWithPath: "/repo/src/file.swift")
+        let patch = InlineDiffProvider.buildPatch(hunk: hunk, fileURL: fileURL, repoURL: repoURL)
+
+        #expect(patch.hasSuffix("\n"), "Patch must end with trailing newline for git apply")
+    }
+
+    @Test func buildPatchDoesNotDoubleNewline() {
+        let hunk = DiffHunk(
+            newStart: 1, newCount: 1, oldStart: 1, oldCount: 1,
+            rawText: "@@ -1,1 +1,1 @@\n-old\n+new\n"
+        )
+        let repoURL = URL(fileURLWithPath: "/repo")
+        let fileURL = URL(fileURLWithPath: "/repo/file.swift")
+        let patch = InlineDiffProvider.buildPatch(hunk: hunk, fileURL: fileURL, repoURL: repoURL)
+
+        #expect(patch.hasSuffix("\n"))
+        #expect(!patch.hasSuffix("\n\n"), "Patch should not have double trailing newline")
+    }
+
     // MARK: - parseSidePart (via parseHunkHeader)
 
     @Test func parsesHeaderWithLargeNumbers() {
@@ -339,5 +364,30 @@ struct InlineDiffProviderTests {
         #expect(hunks[0].newStart == 1)
         #expect(hunks[1].newStart == 6)
         #expect(hunks[2].newStart == 12)
+    }
+
+    // MARK: - InlineDiffAction enum
+
+    @Test func inlineDiffActionRawValues() {
+        #expect(InlineDiffAction.accept.rawValue == "accept")
+        #expect(InlineDiffAction.revert.rawValue == "revert")
+        #expect(InlineDiffAction.acceptAll.rawValue == "acceptAll")
+        #expect(InlineDiffAction.revertAll.rawValue == "revertAll")
+    }
+
+    @Test func inlineDiffActionFromRawValue() {
+        #expect(InlineDiffAction(rawValue: "accept") == .accept)
+        #expect(InlineDiffAction(rawValue: "revert") == .revert)
+        #expect(InlineDiffAction(rawValue: "acceptAll") == .acceptAll)
+        #expect(InlineDiffAction(rawValue: "revertAll") == .revertAll)
+        #expect(InlineDiffAction(rawValue: "invalid") == nil)
+    }
+
+    @Test func inlineDiffActionIsSendable() {
+        // InlineDiffAction conforms to Sendable — verify it can cross concurrency boundaries
+        let action: InlineDiffAction = .accept
+        Task {
+            _ = action
+        }
     }
 }
