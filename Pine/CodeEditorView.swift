@@ -1037,13 +1037,16 @@ struct CodeEditorView: NSViewRepresentable {
             range editedRange: NSRange,
             changeInLength delta: Int
         ) {
-            // Only capture character edits from user typing (not attribute-only
-            // changes from highlighting, and not programmatic text replacement).
             if editedMask.contains(.editedCharacters), !isProgrammaticTextChange {
                 pendingEditedRange = editedRange
                 pendingChangeInLength = delta
             }
         }
+
+        /// True while undo/redo is in progress. Prevents syntax highlighting
+        /// from modifying NSTextStorage attributes concurrently with the undo
+        /// manager's grouped operations, which causes EXC_BAD_ACCESS (#650).
+        private(set) var isUndoRedoInProgress = false
 
         func textDidChange(_ notification: Notification) {
             guard let textView = notification.object as? NSTextView else { return }
@@ -1061,6 +1064,15 @@ struct CodeEditorView: NSViewRepresentable {
                 scheduleFoldRecalculation()
                 return
             }
+
+            // Detect undo/redo in progress. When the undo manager is unwinding
+            // grouped operations, modifying NSTextStorage attributes (via syntax
+            // highlighting beginEditing/endEditing) can cause a race condition
+            // leading to EXC_BAD_ACCESS. We defer highlighting until the undo
+            // manager finishes its current operation (#650).
+            let undoing = textView.undoManager?.isUndoing == true
+            let redoing = textView.undoManager?.isRedoing == true
+            isUndoRedoInProgress = undoing || redoing
 
             // Mark that this change originated from the user typing,
             // so the upcoming updateNSView won't overwrite the text and reset the cursor.
@@ -1107,6 +1119,53 @@ struct CodeEditorView: NSViewRepresentable {
             // сдвигает символьные смещения, старый диапазон некорректен
             highlightedCharRange = nil
 
+            // During undo/redo, cancel any pending highlight and skip scheduling
+            // a new one. The undo manager may still be processing grouped
+            // operations — modifying textStorage attributes now would cause
+            // EXC_BAD_ACCESS. We schedule a deferred highlight after the undo
+            // manager finishes (on the next run loop iteration).
+            if isUndoRedoInProgress {
+                highlightWorkItem?.cancel()
+                highlightTask?.cancel()
+                let deferredItem = DispatchWorkItem { [weak self] in
+                    guard let self else { return }
+                    self.isUndoRedoInProgress = false
+                    guard let sv = self.scrollView,
+                          let tv = sv.documentView as? NSTextView,
+                          let storage = tv.textStorage else { return }
+                    // Full re-highlight after undo/redo completes safely
+                    self.highlightGeneration.increment()
+                    let gen = self.highlightGeneration
+                    let lang = self.parent.language
+                    let name = self.parent.fileName
+                    let font = self.parent.editorFont
+                    let isLargeFile = storage.length > CodeEditorView.viewportHighlightThreshold
+                    if isLargeFile {
+                        self.scheduleViewportHighlighting(textView: tv)
+                    } else {
+                        self.highlightTask = Task { @MainActor [weak self] in
+                            let result = await SyntaxHighlighter.shared.highlightAsync(
+                                textStorage: storage,
+                                language: lang,
+                                fileName: name,
+                                font: font,
+                                generation: gen
+                            )
+                            if let result {
+                                self?.parent.onHighlightCacheUpdate?(result)
+                            }
+                        }
+                    }
+                }
+                highlightWorkItem = deferredItem
+                // Defer to next run loop — undo manager will have finished by then
+                DispatchQueue.main.asyncAfter(
+                    deadline: .now() + highlightDelay * 2,
+                    execute: deferredItem
+                )
+                return
+            }
+
             // Дебаунсинг: откладываем подсветку до паузы в вводе.
             // Не накапливаем диапазоны — каждый textDidChange работает
             // в своих координатах; union между версиями некорректен.
@@ -1120,6 +1179,12 @@ struct CodeEditorView: NSViewRepresentable {
                 guard let sv = self.scrollView,
                       let tv = sv.documentView as? NSTextView,
                       let storage = tv.textStorage else { return }
+
+                // Double-check: if an undo/redo started between scheduling and
+                // execution, bail out to avoid the same race condition.
+                if tv.undoManager?.isUndoing == true || tv.undoManager?.isRedoing == true {
+                    return
+                }
 
                 self.highlightGeneration.increment()
                 let gen = self.highlightGeneration
