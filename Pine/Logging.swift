@@ -9,7 +9,7 @@ import Foundation
 import os
 
 /// Категории логирования Pine для Console.app.
-enum LogCategory: String, CaseIterable {
+nonisolated enum LogCategory: String, CaseIterable {
     case syntax
     case git
     case fileTree
@@ -23,7 +23,7 @@ enum LogCategory: String, CaseIterable {
     static let subsystem = Bundle.main.bundleIdentifier ?? "io.github.batonogov.pine"
 }
 
-extension Logger {
+nonisolated extension Logger {
 
     /// Подсветка синтаксиса: загрузка грамматик, компиляция regex, применение стилей.
     static let syntax = Logger(subsystem: LogCategory.subsystem, category: LogCategory.syntax.rawValue)

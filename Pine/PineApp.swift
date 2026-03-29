@@ -622,7 +622,7 @@ class CloseDelegate: NSObject, NSWindowDelegate {
     private var didHandleClose = false
 
     /// NotificationCenter observer token for the willClose fallback.
-    private var closeObserver: Any?
+    nonisolated(unsafe) private var closeObserver: Any?
 
     init(
         projectManager: ProjectManager,
@@ -646,8 +646,11 @@ class CloseDelegate: NSObject, NSWindowDelegate {
             forName: NSWindow.willCloseNotification,
             object: window,
             queue: .main
-        ) { [weak self] notification in
-            self?.handleClose(notification)
+        ) { [weak self] in
+            nonisolated(unsafe) let notif = $0
+            MainActor.assumeIsolated {
+                self?.handleClose(notif)
+            }
         }
     }
 

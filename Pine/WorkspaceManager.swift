@@ -11,8 +11,7 @@ import SwiftUI
 /// Manages the project file tree, root directory, and git integration.
 ///
 /// All public/internal methods and property access must happen on the
-/// main thread (enforced by SwiftUI's @Observable and @MainActor).
-@MainActor
+/// main thread (enforced by SwiftUI's @Observable).
 @Observable
 final class WorkspaceManager {
     private static let logger = Logger.fileTree
@@ -25,8 +24,6 @@ final class WorkspaceManager {
     let gitProvider = GitStatusProvider()
     /// Shared progress tracker — set by ProjectManager after init.
     weak var progressTracker: ProgressTracker?
-    // nonisolated(unsafe) allows deinit to access fileWatcher.
-    // FileSystemWatcher.stop() is thread-safe (uses queue.sync internally).
     nonisolated(unsafe) private var fileWatcher: FileSystemWatcher?
 
     /// Incremented on every file-watcher event so ContentView can trigger
@@ -141,7 +138,7 @@ final class WorkspaceManager {
     private func loadDirectoryContentsAsync(
         url: URL,
         generation: Int,
-        completion: (() -> Void)? = nil
+        completion: (@MainActor @Sendable () -> Void)? = nil
     ) {
         let progressID = progressTracker?.beginOperation(Strings.progressLoadingProject)
         DispatchQueue.global(qos: .userInitiated).async {
@@ -176,7 +173,7 @@ final class WorkspaceManager {
                 if !shallowResult.wasDepthLimited {
                     self.isLoading = false
                     if let progressID { self.progressTracker?.endOperation(progressID) }
-                    completion?()
+                    MainActor.assumeIsolated { completion?() }
                 }
             }
 
@@ -200,7 +197,7 @@ final class WorkspaceManager {
                 self.notifyRootNodesChanged(fullChildren)
                 self.isLoading = false
                 if let progressID { self.progressTracker?.endOperation(progressID) }
-                completion?()
+                MainActor.assumeIsolated { completion?() }
             }
         }
     }
@@ -210,7 +207,7 @@ final class WorkspaceManager {
     /// Each top-level subdirectory builds its full subtree on a separate GCD thread,
     /// while files are collected as-is. Results are merged and sorted to match
     /// the standard display order (directories first, then case-insensitive by name).
-    nonisolated private static func loadTopLevelInParallel(
+    private static func loadTopLevelInParallel(
         url: URL, ignoredPaths: Set<String>
     ) -> [FileNode] {
         let hiddenNames: Set<String> = [".git", ".DS_Store"]

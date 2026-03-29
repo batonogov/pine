@@ -9,7 +9,7 @@
 
 import Foundation
 
-final class FileSystemWatcher: @unchecked Sendable {
+nonisolated final class FileSystemWatcher {
     private var stream: FSEventStreamRef?
     private let callback: @MainActor () -> Void
     private let debounceInterval: TimeInterval
@@ -106,7 +106,7 @@ final class FileSystemWatcher: @unchecked Sendable {
             // If stop() was called between enqueue and delivery,
             // the generation will have changed — skip the callback.
             guard self.isActive(generation: generation) else { return }
-            cb()
+            MainActor.assumeIsolated { cb() }
         }
         debounceWorkItem = work
         DispatchQueue.main.asyncAfter(deadline: .now() + debounceInterval, execute: work)
@@ -114,7 +114,7 @@ final class FileSystemWatcher: @unchecked Sendable {
 }
 
 // swiftlint:disable:next function_parameter_count
-private func fsEventCallback(
+nonisolated private func fsEventCallback(
     _ streamRef: ConstFSEventStreamRef,
     _ clientCallBackInfo: UnsafeMutableRawPointer?,
     _ numEvents: Int,

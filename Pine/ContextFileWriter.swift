@@ -23,7 +23,7 @@ actor ContextFileWriter {
     static let contextsDirName = "Pine/contexts"
 
     /// File permissions: owner read/write only (0600).
-    private static let filePermissions: [FileAttributeKey: Any] = [
+    nonisolated(unsafe) private static let filePermissions: [FileAttributeKey: Any] = [
         .posixPermissions: NSNumber(value: 0o600)
     ]
 

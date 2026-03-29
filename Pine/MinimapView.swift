@@ -164,7 +164,7 @@ final class MinimapView: NSView {
     /// Timestamp of last scroll-triggered redraw.
     private var lastScrollRedrawTime: CFTimeInterval = 0
     /// Pending throttled redraw work item.
-    private var scrollRedrawWorkItem: DispatchWorkItem?
+    nonisolated(unsafe) private var scrollRedrawWorkItem: DispatchWorkItem?
 
     deinit {
         scrollRedrawWorkItem?.cancel()
