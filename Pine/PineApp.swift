@@ -185,6 +185,16 @@ struct PineApp: App {
                     Label(Strings.menuFindInTerminal, systemImage: MenuIcons.find)
                 }
                 .disabled(focusedProject?.terminal.isTerminalVisible != true)
+
+                Divider()
+
+                Button {
+                    NotificationCenter.default.post(name: .sendToTerminal, object: nil)
+                } label: {
+                    Label(Strings.menuSendToTerminal, systemImage: MenuIcons.sendToTerminal)
+                }
+                .keyboardShortcut(.return, modifiers: [.command, .shift])
+                .disabled(focusedProject?.tabManager.activeTab == nil)
             }
             // Edit menu: Toggle Comment, Find & Replace, Find in Project
             CommandGroup(after: .pasteboard) {
@@ -1195,4 +1205,8 @@ extension Notification.Name {
     // Symbol Navigation (issue #306)
     static let showSymbolNavigator = Notification.Name("showSymbolNavigator")
     static let symbolNavigate = Notification.Name("symbolNavigate")
+    // Send to Terminal (issue #311)
+    static let sendToTerminal = Notification.Name("sendToTerminal")
+    /// userInfo: ["text": String]
+    static let sendTextToTerminal = Notification.Name("sendTextToTerminal")
 }

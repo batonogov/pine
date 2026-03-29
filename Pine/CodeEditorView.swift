@@ -647,6 +647,14 @@ struct CodeEditorView: NSViewRepresentable {
             object: nil
         )
 
+        // Observe send to terminal notification (Cmd+Shift+Enter)
+        NotificationCenter.default.addObserver(
+            context.coordinator,
+            selector: #selector(Coordinator.handleSendToTerminal),
+            name: .sendToTerminal,
+            object: nil
+        )
+
         // Calculate initial foldable ranges
         context.coordinator.recalculateFoldableRanges()
 
@@ -1312,6 +1320,84 @@ struct CodeEditorView: NSViewRepresentable {
         @objc func handleFindNext() { performFindAction(.nextMatch) }
         @objc func handleFindPrevious() { performFindAction(.previousMatch) }
         @objc func handleUseSelectionForFind() { performFindAction(.setSearchString) }
+
+        // MARK: - Send to Terminal (issue #311)
+
+        /// Extracts selected text (or current line if no selection) and posts
+        /// `.sendTextToTerminal` notification with the text in userInfo.
+        @objc func handleSendToTerminal() {
+            guard let sv = scrollView,
+                  let textView = sv.documentView as? GutterTextView,
+                  textView.window?.isKeyWindow == true else { return }
+
+            let text = extractTextForTerminal(from: textView)
+            guard !text.isEmpty else { return }
+
+            // Flash highlight the sent text range for visual feedback
+            flashSentTextHighlight(in: textView)
+
+            NotificationCenter.default.post(
+                name: .sendTextToTerminal,
+                object: nil,
+                userInfo: ["text": text]
+            )
+        }
+
+        /// Returns selected text or the current line if nothing is selected.
+        /// Internal access for testability.
+        func extractTextForTerminal(from textView: NSTextView) -> String {
+            let selectedRange = textView.selectedRange()
+            let source = textView.string as NSString
+
+            if selectedRange.length > 0 {
+                // Has selection — return selected text
+                guard selectedRange.location + selectedRange.length <= source.length else { return "" }
+                return source.substring(with: selectedRange)
+            } else {
+                // No selection — return current line
+                let lineRange = source.lineRange(for: NSRange(location: selectedRange.location, length: 0))
+                var lineText = source.substring(with: lineRange)
+                // Strip trailing newline
+                if lineText.hasSuffix("\n") {
+                    lineText = String(lineText.dropLast())
+                }
+                if lineText.hasSuffix("\r") {
+                    lineText = String(lineText.dropLast())
+                }
+                return lineText
+            }
+        }
+
+        /// Briefly highlights the sent text with a flash effect.
+        private func flashSentTextHighlight(in textView: NSTextView) {
+            let selectedRange = textView.selectedRange()
+            let source = textView.string as NSString
+            let rangeToFlash: NSRange
+
+            if selectedRange.length > 0 {
+                rangeToFlash = selectedRange
+            } else {
+                rangeToFlash = source.lineRange(
+                    for: NSRange(location: selectedRange.location, length: 0)
+                )
+            }
+
+            guard rangeToFlash.location + rangeToFlash.length <= source.length else { return }
+
+            let flashColor = NSColor.controlAccentColor.withAlphaComponent(0.3)
+            textView.layoutManager?.addTemporaryAttribute(
+                .backgroundColor,
+                value: flashColor,
+                forCharacterRange: rangeToFlash
+            )
+
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+                textView.layoutManager?.removeTemporaryAttribute(
+                    .backgroundColor,
+                    forCharacterRange: rangeToFlash
+                )
+            }
+        }
 
         // MARK: - Code folding
 

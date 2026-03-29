@@ -398,4 +398,24 @@ extension ContentView {
         }
         return line
     }
+
+    // MARK: - Send to Terminal (issue #311)
+
+    /// Sends text to the active terminal tab.
+    /// If the terminal is hidden, shows it first. If no terminal tabs exist, creates one.
+    func sendTextToTerminal(_ text: String) {
+        // Ensure terminal is visible
+        if !terminal.isTerminalVisible {
+            terminal.isTerminalVisible = true
+        }
+
+        // Ensure there is an active terminal tab
+        if terminal.activeTerminalTab == nil {
+            projectManager.addTerminalTab()
+        }
+
+        // Send text followed by newline to execute
+        guard let activeTab = terminal.activeTerminalTab else { return }
+        activeTab.sendText(text + "\n")
+    }
 }

@@ -484,6 +484,16 @@ final class TerminalTab: Identifiable, Hashable {
         terminalView.findNext(lastSearchQuery, options: lastSearchOptions)
     }
 
+    // MARK: - Send text to terminal
+
+    /// Sends the given text to the terminal process as keyboard input.
+    /// The text is written to the PTY as if the user typed it.
+    func sendText(_ text: String) {
+        guard isProcessRunning else { return }
+        let data = Array(text.utf8)
+        terminalView.process.send(data: data[...])
+    }
+
     static func == (lhs: TerminalTab, rhs: TerminalTab) -> Bool { lhs.id == rhs.id }
     func hash(into hasher: inout Hasher) { hasher.combine(id) }
 }
