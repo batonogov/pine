@@ -11,7 +11,7 @@ import SwiftUI
 /// Tests for CodeEditorView.Coordinator behavior.
 struct CodeEditorCoordinatorTests {
 
-    private let font = NSFont.monospacedSystemFont(ofSize: 13, weight: .regular)
+    nonisolated(unsafe) private let font = NSFont.monospacedSystemFont(ofSize: 13, weight: .regular)
 
     /// Builds a minimal text system stack (same as CodeEditorView.makeNSView).
     private func makeTextStack(text: String) -> (NSScrollView, NSTextView) {

@@ -13,7 +13,8 @@ import AppKit
 @Suite(.serialized)
 struct ConcurrentHighlightingTests {
 
-    private let font = NSFont.monospacedSystemFont(ofSize: 13, weight: .regular)
+    // NSFont is immutable but not Sendable; safe to share across actors.
+    nonisolated(unsafe) private let font = NSFont.monospacedSystemFont(ofSize: 13, weight: .regular)
 
     private let swiftGrammar = Grammar(
         name: "ConcTestSwift",

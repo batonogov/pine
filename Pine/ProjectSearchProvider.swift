@@ -32,7 +32,7 @@ struct SearchFileGroup: Identifiable, Sendable {
 @MainActor
 @Observable
 final class ProjectSearchProvider {
-    private static let logger = Logger.search
+    nonisolated private static let logger = Logger.search
     var query: String = ""
     var isCaseSensitive: Bool = false
     private(set) var isSearching: Bool = false

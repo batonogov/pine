@@ -13,7 +13,7 @@ import SwiftUI
 @Suite(.serialized)
 struct HighlightPersistenceTests {
 
-    private let font = NSFont.monospacedSystemFont(ofSize: 13, weight: .regular)
+    nonisolated(unsafe) private let font = NSFont.monospacedSystemFont(ofSize: 13, weight: .regular)
 
     private let yamlGrammar = Grammar(
         name: "TestYAML556",

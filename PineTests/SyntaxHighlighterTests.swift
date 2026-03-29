@@ -13,7 +13,7 @@ import SwiftUI
 @Suite(.serialized)
 struct SyntaxHighlighterTests {
 
-    private let font = NSFont.monospacedSystemFont(ofSize: 13, weight: .regular)
+    nonisolated(unsafe) private let font = NSFont.monospacedSystemFont(ofSize: 13, weight: .regular)
 
     /// Grammar with multiline block comment (`/* ... */`) and single-line keyword (`func`)
     private let langA = Grammar(

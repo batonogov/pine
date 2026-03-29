@@ -15,7 +15,7 @@ import SwiftUI
 @MainActor
 @Observable
 final class WorkspaceManager {
-    private static let logger = Logger.fileTree
+    nonisolated private static let logger = Logger.fileTree
     var rootNodes: [FileNode] = []
     var projectName: String = "Pine"
     var rootURL: URL?
@@ -144,6 +144,9 @@ final class WorkspaceManager {
         completion: (() -> Void)? = nil
     ) {
         let progressID = progressTracker?.beginOperation(Strings.progressLoadingProject)
+        // nonisolated(unsafe): completion is always called on the main queue
+        // (inside DispatchQueue.main.async), but Swift 6 cannot prove this statically.
+        nonisolated(unsafe) let completion = completion
         DispatchQueue.global(qos: .userInitiated).async {
             // Run git setup first so we know which paths are ignored
             let bgGit = GitStatusProvider()

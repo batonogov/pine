@@ -10,7 +10,7 @@ import AppKit
 @Suite(.serialized)
 struct YAMLGrammarTests {
 
-    private let font = NSFont.monospacedSystemFont(ofSize: 13, weight: .regular)
+    nonisolated(unsafe) private let font = NSFont.monospacedSystemFont(ofSize: 13, weight: .regular)
     private let hl = SyntaxHighlighter.shared
 
     private var commentColor: NSColor { hl.theme.color(for: "comment")! } // swiftlint:disable:this force_unwrapping

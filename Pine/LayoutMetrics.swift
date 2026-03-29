@@ -17,7 +17,7 @@ import Foundation
 /// Usage: `LayoutMetrics.statusBarHeight`, `LayoutMetrics.bodySmallFontSize`, etc.
 /// Centralizing these values ensures visual consistency and makes
 /// design changes a single-point edit.
-enum LayoutMetrics {
+nonisolated enum LayoutMetrics {
 
     // MARK: - Font sizes
 

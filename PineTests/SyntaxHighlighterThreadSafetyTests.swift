@@ -16,7 +16,7 @@ import AppKit
 @Suite(.serialized)
 struct SyntaxHighlighterThreadSafetyTests {
 
-    private let font = NSFont.monospacedSystemFont(ofSize: 13, weight: .regular)
+    nonisolated(unsafe) private let font = NSFont.monospacedSystemFont(ofSize: 13, weight: .regular)
 
     private let testGrammar = Grammar(
         name: "ThreadTestLang",
