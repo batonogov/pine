@@ -45,6 +45,7 @@ nonisolated enum MenuIcons {
 
     // MARK: - Terminal menu
     static let newTerminalTab = "plus"
+    static let sendToTerminal = "paperplane"
 
     // MARK: - Validation
     static let toggleValidation = "checkmark.shield"

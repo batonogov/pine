@@ -304,6 +304,7 @@ enum Strings {
 
     static let terminalSearchPlaceholder: LocalizedStringKey = "terminal.search.placeholder"
     static let menuFindInTerminal: LocalizedStringKey = "menu.findInTerminal"
+    static let menuSendToTerminal: LocalizedStringKey = "menu.sendToTerminal"
 
     static var terminalSearchPreviousTooltip: String {
         String(localized: "terminal.search.previousTooltip")

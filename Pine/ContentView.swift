@@ -194,6 +194,12 @@ struct ContentView: View {
         .onReceive(NotificationCenter.default.publisher(for: .toggleWordWrap)) { _ in
             isWordWrapEnabled.toggle()
         }
+        .onReceive(NotificationCenter.default.publisher(for: .sendTextToTerminal)) { notification in
+            guard controlActiveState == .key,
+                  let text = notification.userInfo?["text"] as? String,
+                  !text.isEmpty else { return }
+            sendTextToTerminal(text)
+        }
         .onChange(of: tabManager.pendingGoToLine) { _, newLine in
             guard let line = newLine, let tab = tabManager.activeTab else { return }
             tabManager.pendingGoToLine = nil
