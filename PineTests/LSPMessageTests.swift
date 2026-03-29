@@ -9,84 +9,143 @@ import Foundation
 
 struct LSPMessageTests {
 
-    // MARK: - AnyCodable
+    // MARK: - JSONValue
 
-    @Test func anyCodableEncodesString() throws {
-        let value = AnyCodable("hello")
+    @Test func jsonValueEncodesString() throws {
+        let value: JSONValue = .string("hello")
         let data = try JSONEncoder().encode(value)
-        let decoded = try JSONDecoder().decode(AnyCodable.self, from: data)
-        #expect(decoded.value as? String == "hello")
+        let decoded = try JSONDecoder().decode(JSONValue.self, from: data)
+        #expect(decoded == .string("hello"))
     }
 
-    @Test func anyCodableEncodesInt() throws {
-        let value = AnyCodable(42)
+    @Test func jsonValueEncodesInt() throws {
+        let value: JSONValue = .int(42)
         let data = try JSONEncoder().encode(value)
-        let decoded = try JSONDecoder().decode(AnyCodable.self, from: data)
-        #expect(decoded.value as? Int == 42)
+        let decoded = try JSONDecoder().decode(JSONValue.self, from: data)
+        #expect(decoded == .int(42))
     }
 
-    @Test func anyCodableEncodesBool() throws {
-        let value = AnyCodable(true)
+    @Test func jsonValueEncodesBool() throws {
+        let value: JSONValue = .bool(true)
         let data = try JSONEncoder().encode(value)
-        let decoded = try JSONDecoder().decode(AnyCodable.self, from: data)
-        #expect(decoded.value as? Bool == true)
+        let decoded = try JSONDecoder().decode(JSONValue.self, from: data)
+        #expect(decoded == .bool(true))
     }
 
-    @Test func anyCodableEncodesDouble() throws {
-        let value = AnyCodable(3.14)
+    @Test func jsonValueEncodesDouble() throws {
+        let value: JSONValue = .double(3.14)
         let data = try JSONEncoder().encode(value)
-        let decoded = try JSONDecoder().decode(AnyCodable.self, from: data)
-        #expect(decoded.value as? Double == 3.14)
+        let decoded = try JSONDecoder().decode(JSONValue.self, from: data)
+        #expect(decoded == .double(3.14))
     }
 
-    @Test func anyCodableEncodesNull() throws {
-        let value = AnyCodable(NSNull())
+    @Test func jsonValueEncodesNull() throws {
+        let value: JSONValue = .null
         let data = try JSONEncoder().encode(value)
         let json = String(data: data, encoding: .utf8)
         #expect(json == "null")
     }
 
-    @Test func anyCodableEncodesArray() throws {
-        let value = AnyCodable([1, 2, 3])
+    @Test func jsonValueEncodesArray() throws {
+        let value: JSONValue = .array([.int(1), .int(2), .int(3)])
         let data = try JSONEncoder().encode(value)
-        let decoded = try JSONDecoder().decode(AnyCodable.self, from: data)
-        let array = decoded.value as? [Any]
-        #expect(array?.count == 3)
+        let decoded = try JSONDecoder().decode(JSONValue.self, from: data)
+        #expect(decoded.arrayValue?.count == 3)
     }
 
-    @Test func anyCodableEncodesDictionary() throws {
-        let value = AnyCodable(["key": "value"])
+    @Test func jsonValueEncodesDictionary() throws {
+        let value: JSONValue = .object(["key": .string("value")])
         let data = try JSONEncoder().encode(value)
-        let decoded = try JSONDecoder().decode(AnyCodable.self, from: data)
-        let dict = decoded.value as? [String: Any]
-        #expect(dict?["key"] as? String == "value")
+        let decoded = try JSONDecoder().decode(JSONValue.self, from: data)
+        #expect(decoded["key"] == .string("value"))
     }
 
-    @Test func anyCodableEquality() {
-        let a = AnyCodable(42)
-        let b = AnyCodable(42)
-        let c = AnyCodable("42")
-        #expect(a == b)
-        #expect(a != c)
+    @Test func jsonValueEquality() {
+        let intA: JSONValue = .int(42)
+        let intB: JSONValue = .int(42)
+        let str: JSONValue = .string("42")
+        #expect(intA == intB)
+        #expect(intA != str)
     }
 
-    @Test func anyCodableNestedStructure() throws {
-        let nested: [String: Any] = [
-            "name": "test",
-            "items": [1, 2, 3],
-            "meta": ["active": true]
-        ]
-        let value = AnyCodable(nested)
-        let data = try JSONEncoder().encode(value)
-        let decoded = try JSONDecoder().decode(AnyCodable.self, from: data)
-        let dict = decoded.value as? [String: Any]
-        #expect(dict?["name"] as? String == "test")
+    @Test func jsonValueNestedStructure() throws {
+        let nested: JSONValue = .object([
+            "name": .string("test"),
+            "items": .array([.int(1), .int(2), .int(3)]),
+            "meta": .object(["active": .bool(true)])
+        ])
+        let data = try JSONEncoder().encode(nested)
+        let decoded = try JSONDecoder().decode(JSONValue.self, from: data)
+        #expect(decoded["name"] == .string("test"))
+        #expect(decoded["meta"]?["active"] == .bool(true))
+    }
+
+    @Test func jsonValueSubscripts() {
+        let obj: JSONValue = .object(["key": .string("val")])
+        #expect(obj["key"]?.stringValue == "val")
+        #expect(obj["missing"] == nil)
+
+        let arr: JSONValue = .array([.int(10), .int(20)])
+        #expect(arr[0]?.intValue == 10)
+        #expect(arr[5] == nil)
+    }
+
+    @Test func jsonValueAccessors() {
+        #expect(JSONValue.string("hi").stringValue == "hi")
+        #expect(JSONValue.int(5).intValue == 5)
+        #expect(JSONValue.bool(true).boolValue == true)
+        #expect(JSONValue.array([]).arrayValue != nil)
+        #expect(JSONValue.object([:]).objectValue != nil)
+        // Wrong type returns nil
+        #expect(JSONValue.string("hi").intValue == nil)
+        #expect(JSONValue.int(5).stringValue == nil)
+    }
+
+    @Test func jsonValueFromAny() {
+        let fromString = JSONValue("hello" as Any)
+        #expect(fromString == .string("hello"))
+
+        let fromInt = JSONValue(42 as Any)
+        #expect(fromInt == .int(42))
+
+        let fromDict = JSONValue(["key": "value"] as Any)
+        #expect(fromDict["key"] == .string("value"))
+
+        let fromArray = JSONValue([1, 2, 3] as Any)
+        #expect(fromArray.arrayValue?.count == 3)
+    }
+
+    @Test func jsonValueLiterals() {
+        let str: JSONValue = "hello"
+        #expect(str == .string("hello"))
+
+        let num: JSONValue = 42
+        #expect(num == .int(42))
+
+        let flag: JSONValue = true
+        #expect(flag == .bool(true))
+
+        let nothing: JSONValue = nil
+        #expect(nothing == .null)
+
+        let arr: JSONValue = [1, 2, 3]
+        #expect(arr.arrayValue?.count == 3)
+
+        let dict: JSONValue = ["key": "value"]
+        #expect(dict["key"] == .string("value"))
+    }
+
+    @Test func jsonValueHashable() {
+        let set: Set<JSONValue> = [.int(1), .int(2), .int(1)]
+        #expect(set.count == 2)
     }
 
     // MARK: - JSONRPCRequest Encoding
 
     @Test func requestEncodesCorrectly() throws {
-        let request = JSONRPCRequest(id: 1, method: "initialize", params: AnyCodable(["rootUri": "/test"]))
+        let request = JSONRPCRequest(
+            id: 1, method: "initialize", params: .object(["rootUri": .string("/test")])
+        )
         let data = try JSONEncoder().encode(request)
         let json = try JSONSerialization.jsonObject(with: data) as? [String: Any]
         #expect(json?["jsonrpc"] as? String == "2.0")
@@ -103,7 +162,9 @@ struct LSPMessageTests {
     }
 
     @Test func requestRoundTrips() throws {
-        let original = JSONRPCRequest(id: 3, method: "textDocument/completion", params: AnyCodable(["line": 10]))
+        let original = JSONRPCRequest(
+            id: 3, method: "textDocument/completion", params: .object(["line": .int(10)])
+        )
         let data = try JSONEncoder().encode(original)
         let decoded = try JSONDecoder().decode(JSONRPCRequest.self, from: data)
         #expect(decoded.jsonrpc == "2.0")
@@ -114,7 +175,7 @@ struct LSPMessageTests {
     // MARK: - JSONRPCNotification Encoding
 
     @Test func notificationEncodesCorrectly() throws {
-        let notif = JSONRPCNotification(method: "initialized", params: AnyCodable([:] as [String: Any]))
+        let notif = JSONRPCNotification(method: "initialized", params: .object([:]))
         let data = try JSONEncoder().encode(notif)
         let json = try JSONSerialization.jsonObject(with: data) as? [String: Any]
         #expect(json?["jsonrpc"] as? String == "2.0")
@@ -162,6 +223,42 @@ struct LSPMessageTests {
         let response = try JSONDecoder().decode(JSONRPCResponse.self, from: data)
         #expect(response.id == 3)
         #expect(response.error == nil)
+    }
+
+    // MARK: - JSONRPCMessage (Unified)
+
+    @Test func unifiedMessageDecodesNotification() throws {
+        let json = """
+        {"jsonrpc":"2.0","method":"textDocument/publishDiagnostics","params":{"uri":"file:///test.swift","diagnostics":[]}}
+        """
+        let data = Data(json.utf8)
+        let message = try JSONDecoder().decode(JSONRPCMessage.self, from: data)
+        #expect(message.isNotification)
+        #expect(!message.isResponse)
+        #expect(message.method == "textDocument/publishDiagnostics")
+    }
+
+    @Test func unifiedMessageDecodesResponse() throws {
+        let json = """
+        {"jsonrpc":"2.0","id":1,"result":{"capabilities":{}}}
+        """
+        let data = Data(json.utf8)
+        let message = try JSONDecoder().decode(JSONRPCMessage.self, from: data)
+        #expect(message.isResponse)
+        #expect(!message.isNotification)
+        #expect(message.id == 1)
+    }
+
+    @Test func unifiedMessageDecodesLogMessage() throws {
+        let json = """
+        {"jsonrpc":"2.0","method":"window/logMessage","params":{"type":3,"message":"Server ready"}}
+        """
+        let data = Data(json.utf8)
+        let message = try JSONDecoder().decode(JSONRPCMessage.self, from: data)
+        #expect(message.isNotification)
+        #expect(message.method == "window/logMessage")
+        #expect(message.params?["type"] == .int(3))
+        #expect(message.params?["message"] == .string("Server ready"))
     }
 
     // MARK: - LSP Message Framing
@@ -245,6 +342,17 @@ struct LSPMessageTests {
         #expect(result?.0.error?.message == "Method not found")
     }
 
+    @Test func decodeMessageFromFramedNotification() throws {
+        let json = """
+        {"jsonrpc":"2.0","method":"textDocument/publishDiagnostics","params":{"uri":"file:///test","diagnostics":[]}}
+        """
+        let framed = LSPMessageCodec.frame(Data(json.utf8))
+        let result = LSPMessageCodec.decodeMessage(from: framed)
+        #expect(result != nil)
+        #expect(result?.0.isNotification == true)
+        #expect(result?.0.method == "textDocument/publishDiagnostics")
+    }
+
     // MARK: - Content-Length Parsing
 
     @Test func parseContentLengthFromHeader() {
@@ -274,11 +382,11 @@ struct LSPMessageTests {
     // MARK: - LSP Position/Range
 
     @Test func positionEquality() {
-        let a = LSPPosition(line: 5, character: 10)
-        let b = LSPPosition(line: 5, character: 10)
-        let c = LSPPosition(line: 5, character: 11)
-        #expect(a == b)
-        #expect(a != c)
+        let posA = LSPPosition(line: 5, character: 10)
+        let posB = LSPPosition(line: 5, character: 10)
+        let posC = LSPPosition(line: 5, character: 11)
+        #expect(posA == posB)
+        #expect(posA != posC)
     }
 
     @Test func rangeEquality() {
@@ -315,7 +423,9 @@ struct LSPMessageTests {
     }
 
     @Test func textDocumentItemEncodes() throws {
-        let item = TextDocumentItem(uri: "file:///test.swift", languageId: "swift", version: 1, text: "import Foundation")
+        let item = TextDocumentItem(
+            uri: "file:///test.swift", languageId: "swift", version: 1, text: "import Foundation"
+        )
         let data = try JSONEncoder().encode(item)
         let json = try JSONSerialization.jsonObject(with: data) as? [String: Any]
         #expect(json?["uri"] as? String == "file:///test.swift")
@@ -363,11 +473,11 @@ struct LSPMessageTests {
     }
 
     @Test func completionItemEquality() {
-        let a = CompletionItem(label: "test", kind: 3, detail: "detail")
-        let b = CompletionItem(label: "test", kind: 3, detail: "detail")
-        let c = CompletionItem(label: "other")
-        #expect(a == b)
-        #expect(a != c)
+        let itemA = CompletionItem(label: "test", kind: 3, detail: "detail")
+        let itemB = CompletionItem(label: "test", kind: 3, detail: "detail")
+        let itemC = CompletionItem(label: "other")
+        #expect(itemA == itemB)
+        #expect(itemA != itemC)
     }
 
     @Test func completionListDecodes() throws {
@@ -433,5 +543,66 @@ struct LSPMessageTests {
         let completion = textDoc?["completion"] as? [String: Any]
         let completionItem = completion?["completionItem"] as? [String: Any]
         #expect(completionItem?["snippetSupport"] as? Bool == false)
+    }
+
+    // MARK: - LSP Diagnostic Types
+
+    @Test func diagnosticDecodes() throws {
+        let json = """
+        {
+            "range": {"start": {"line": 5, "character": 0}, "end": {"line": 5, "character": 10}},
+            "severity": 1,
+            "message": "Use of undeclared type 'Foo'"
+        }
+        """
+        let data = Data(json.utf8)
+        let diag = try JSONDecoder().decode(LSPDiagnostic.self, from: data)
+        #expect(diag.range.start.line == 5)
+        #expect(diag.severity == LSPDiagnostic.Severity.error.rawValue)
+        #expect(diag.message == "Use of undeclared type 'Foo'")
+    }
+
+    @Test func publishDiagnosticsParamsDecodes() throws {
+        let json = """
+        {
+            "uri": "file:///test.swift",
+            "diagnostics": [
+                {
+                    "range": {"start": {"line": 0, "character": 0}, "end": {"line": 0, "character": 5}},
+                    "severity": 2,
+                    "message": "Unused variable"
+                }
+            ]
+        }
+        """
+        let data = Data(json.utf8)
+        let params = try JSONDecoder().decode(PublishDiagnosticsParams.self, from: data)
+        #expect(params.uri == "file:///test.swift")
+        #expect(params.diagnostics.count == 1)
+        #expect(params.diagnostics[0].severity == LSPDiagnostic.Severity.warning.rawValue)
+    }
+
+    @Test func logMessageParamsDecodes() throws {
+        let json = """
+        {"type": 3, "message": "Server initialized successfully"}
+        """
+        let data = Data(json.utf8)
+        let params = try JSONDecoder().decode(LogMessageParams.self, from: data)
+        #expect(params.type == LogMessageParams.MessageType.info.rawValue)
+        #expect(params.message == "Server initialized successfully")
+    }
+
+    @Test func diagnosticSeverityValues() {
+        #expect(LSPDiagnostic.Severity.error.rawValue == 1)
+        #expect(LSPDiagnostic.Severity.warning.rawValue == 2)
+        #expect(LSPDiagnostic.Severity.information.rawValue == 3)
+        #expect(LSPDiagnostic.Severity.hint.rawValue == 4)
+    }
+
+    @Test func logMessageTypeValues() {
+        #expect(LogMessageParams.MessageType.error.rawValue == 1)
+        #expect(LogMessageParams.MessageType.warning.rawValue == 2)
+        #expect(LogMessageParams.MessageType.info.rawValue == 3)
+        #expect(LogMessageParams.MessageType.log.rawValue == 4)
     }
 }

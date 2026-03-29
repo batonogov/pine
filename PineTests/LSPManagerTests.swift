@@ -180,25 +180,25 @@ struct LSPManagerTests {
     // MARK: - ServerConfig Equatable
 
     @Test func serverConfigEquality() {
-        let a = LSPManager.ServerConfig(
+        let cfgA = LSPManager.ServerConfig(
             languageId: "swift",
             serverPath: "/usr/bin/xcrun",
             arguments: ["sourcekit-lsp"],
             extensions: ["swift"]
         )
-        let b = LSPManager.ServerConfig(
+        let cfgB = LSPManager.ServerConfig(
             languageId: "swift",
             serverPath: "/usr/bin/xcrun",
             arguments: ["sourcekit-lsp"],
             extensions: ["swift"]
         )
-        let c = LSPManager.ServerConfig(
+        let cfgC = LSPManager.ServerConfig(
             languageId: "python",
             serverPath: "/usr/local/bin/pylsp",
             extensions: ["py"]
         )
-        #expect(a == b)
-        #expect(a != c)
+        #expect(cfgA == cfgB)
+        #expect(cfgA != cfgC)
     }
 
     // MARK: - Shutdown
@@ -209,6 +209,62 @@ struct LSPManagerTests {
             manager.shutdownAll {
                 continuation.resume()
             }
+        }
+    }
+
+    // MARK: - Server Path Resolution
+
+    @Test func resolveAbsolutePathThatExists() {
+        // /usr/bin/xcrun should exist on macOS
+        let resolved = LSPManager.resolveServerPath("/usr/bin/xcrun")
+        #expect(resolved == "/usr/bin/xcrun")
+    }
+
+    @Test func resolveAbsolutePathThatDoesNotExist() {
+        let resolved = LSPManager.resolveServerPath("/nonexistent/binary")
+        #expect(resolved == nil)
+    }
+
+    @Test func resolveRelativeNameFindsInSearchPaths() {
+        // "xcrun" should be found at /usr/bin/xcrun
+        let resolved = LSPManager.resolveServerPath("xcrun")
+        #expect(resolved != nil)
+        #expect(resolved?.hasSuffix("xcrun") == true)
+    }
+
+    @Test func resolveRelativeNameReturnsNilForUnknown() {
+        let resolved = LSPManager.resolveServerPath("totally_nonexistent_binary_xyz")
+        #expect(resolved == nil)
+    }
+
+    @Test func serverSearchPathsIncludeHomebrewPaths() {
+        let paths = LSPManager.serverSearchPaths
+        #expect(paths.contains("/opt/homebrew/bin"))
+        #expect(paths.contains("/usr/local/bin"))
+        #expect(paths.contains("/usr/bin"))
+    }
+
+    // MARK: - ensureClient with Missing Server
+
+    @Test func ensureClientFailsForMissingServer() async {
+        let custom = LSPManager.ServerConfig(
+            languageId: "fakeLang",
+            serverPath: "totally_nonexistent_server_abc",
+            extensions: ["fake"]
+        )
+        let manager = LSPManager(configs: [custom])
+
+        let result: Result<LSPClient, LSPClient.LSPClientError> = await withCheckedContinuation { continuation in
+            manager.ensureClient(for: "fakeLang") { result in
+                continuation.resume(returning: result)
+            }
+        }
+
+        switch result {
+        case .success:
+            Issue.record("Expected failure for nonexistent server")
+        case .failure(let error):
+            #expect(error == .serverNotRunning)
         }
     }
 }

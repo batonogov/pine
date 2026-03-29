@@ -10,6 +10,9 @@ import os
 ///
 /// Determines the appropriate language server based on file extension,
 /// starts/stops servers as needed, and routes document events.
+/// Marked `@unchecked Sendable` because all mutable state is protected by `queue`
+/// (a serial DispatchQueue). The compiler cannot verify GCD-based synchronization,
+/// so we use `@unchecked` and maintain the invariant manually.
 final class LSPManager: @unchecked Sendable {
 
     // MARK: - Types
@@ -36,7 +39,33 @@ final class LSPManager: @unchecked Sendable {
     private var configs: [ServerConfig]
     private var rootUri: String?
 
+    /// Common search paths for language server binaries.
+    /// Includes both Intel (`/usr/local/bin`) and Apple Silicon (`/opt/homebrew/bin`) Homebrew paths.
+    static let serverSearchPaths: [String] = [
+        "/usr/local/bin",
+        "/opt/homebrew/bin",
+        "/usr/bin"
+    ]
+
+    /// Resolves the first existing executable path for a binary name across known search paths.
+    /// Returns the full path if found, or the original path if it's already absolute.
+    static func resolveServerPath(_ name: String) -> String? {
+        // If already an absolute path, return as-is if executable
+        if name.hasPrefix("/") {
+            return FileManager.default.isExecutableFile(atPath: name) ? name : nil
+        }
+        // Search common paths
+        for dir in serverSearchPaths {
+            let fullPath = "\(dir)/\(name)"
+            if FileManager.default.isExecutableFile(atPath: fullPath) {
+                return fullPath
+            }
+        }
+        return nil
+    }
+
     /// Known server configurations.
+    /// Server paths use `resolveServerPath` at lookup time to support both Intel and Apple Silicon Macs.
     static let defaultConfigs: [ServerConfig] = [
         ServerConfig(
             languageId: "swift",
@@ -46,31 +75,31 @@ final class LSPManager: @unchecked Sendable {
         ),
         ServerConfig(
             languageId: "typescript",
-            serverPath: "/usr/local/bin/typescript-language-server",
+            serverPath: "typescript-language-server",
             arguments: ["--stdio"],
             extensions: ["ts", "tsx"]
         ),
         ServerConfig(
             languageId: "javascript",
-            serverPath: "/usr/local/bin/typescript-language-server",
+            serverPath: "typescript-language-server",
             arguments: ["--stdio"],
             extensions: ["js", "jsx"]
         ),
         ServerConfig(
             languageId: "python",
-            serverPath: "/usr/local/bin/pylsp",
+            serverPath: "pylsp",
             arguments: [],
             extensions: ["py"]
         ),
         ServerConfig(
             languageId: "go",
-            serverPath: "/usr/local/bin/gopls",
+            serverPath: "gopls",
             arguments: ["serve"],
             extensions: ["go"]
         ),
         ServerConfig(
             languageId: "rust",
-            serverPath: "/usr/local/bin/rust-analyzer",
+            serverPath: "rust-analyzer",
             arguments: [],
             extensions: ["rs"]
         ),
@@ -138,34 +167,38 @@ final class LSPManager: @unchecked Sendable {
                 return
             }
 
-            // Verify server exists
-            guard FileManager.default.isExecutableFile(atPath: config.serverPath) else {
-                Logger.lsp.warning("Server not found at: \(config.serverPath)")
+            // Resolve server path (supports both Intel and Apple Silicon)
+            guard let resolvedPath = Self.resolveServerPath(config.serverPath) else {
+                Logger.lsp.warning(
+                    "Server not found for \(languageId). Searched: \(config.serverPath) in \(Self.serverSearchPaths)"
+                )
                 completion(.failure(.serverNotRunning))
                 return
             }
 
-            let client = LSPClient(serverPath: config.serverPath, arguments: config.arguments)
+            let client = LSPClient(serverPath: resolvedPath, arguments: config.arguments)
             self.clients[languageId] = client
 
-            do {
-                try client.start()
-            } catch {
-                Logger.lsp.error("Failed to start LSP server for \(languageId): \(error)")
-                self.clients.removeValue(forKey: languageId)
-                completion(.failure(.serverNotRunning))
-                return
-            }
-
-            let rootUri = self.rootUri
-            client.initialize(rootUri: rootUri) { result in
+            client.start { [weak self] result in
                 switch result {
                 case .success:
-                    Logger.lsp.info("LSP initialized for \(languageId)")
-                    completion(.success(client))
+                    let rootUri = self?.queue.sync { self?.rootUri }
+                    client.initialize(rootUri: rootUri ?? nil) { initResult in
+                        switch initResult {
+                        case .success:
+                            Logger.lsp.info("LSP initialized for \(languageId)")
+                            completion(.success(client))
+                        case .failure(let error):
+                            Logger.lsp.error("LSP initialize failed for \(languageId): \(error)")
+                            completion(.failure(error))
+                        }
+                    }
                 case .failure(let error):
-                    Logger.lsp.error("LSP initialize failed for \(languageId): \(error)")
-                    completion(.failure(error))
+                    Logger.lsp.error("Failed to start LSP server for \(languageId): \(error)")
+                    self?.queue.async {
+                        self?.clients.removeValue(forKey: languageId)
+                    }
+                    completion(.failure(.serverNotRunning))
                 }
             }
         }

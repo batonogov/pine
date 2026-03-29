@@ -12,11 +12,11 @@ struct LSPClientTests {
     // MARK: - Parse Completion Items
 
     @Test func parseCompletionItemsFromArray() {
-        let items: [[String: Any]] = [
-            ["label": "print", "kind": 3, "detail": "func print()"],
-            ["label": "String", "kind": 7]
-        ]
-        let result = LSPClient.parseCompletionItems(from: AnyCodable(items))
+        let items: JSONValue = .array([
+            .object(["label": .string("print"), "kind": .int(3), "detail": .string("func print()")]),
+            .object(["label": .string("String"), "kind": .int(7)])
+        ])
+        let result = LSPClient.parseCompletionItems(from: items)
         #expect(result.count == 2)
         #expect(result[0].label == "print")
         #expect(result[0].kind == 3)
@@ -26,14 +26,18 @@ struct LSPClientTests {
     }
 
     @Test func parseCompletionItemsFromCompletionList() {
-        let list: [String: Any] = [
-            "isIncomplete": false,
-            "items": [
-                ["label": "forEach", "kind": 2, "insertText": "forEach { $1 }"],
-                ["label": "map", "kind": 2]
-            ]
-        ]
-        let result = LSPClient.parseCompletionItems(from: AnyCodable(list))
+        let list: JSONValue = .object([
+            "isIncomplete": .bool(false),
+            "items": .array([
+                .object([
+                    "label": .string("forEach"),
+                    "kind": .int(2),
+                    "insertText": .string("forEach { $1 }")
+                ]),
+                .object(["label": .string("map"), "kind": .int(2)])
+            ])
+        ])
+        let result = LSPClient.parseCompletionItems(from: list)
         #expect(result.count == 2)
         #expect(result[0].label == "forEach")
         #expect(result[0].insertText == "forEach { $1 }")
@@ -46,36 +50,36 @@ struct LSPClientTests {
     }
 
     @Test func parseCompletionItemsFromEmptyArray() {
-        let result = LSPClient.parseCompletionItems(from: AnyCodable([] as [Any]))
+        let result = LSPClient.parseCompletionItems(from: .array([]))
         #expect(result.isEmpty)
     }
 
     @Test func parseCompletionItemsFromEmptyList() {
-        let list: [String: Any] = ["isIncomplete": true, "items": [] as [Any]]
-        let result = LSPClient.parseCompletionItems(from: AnyCodable(list))
+        let list: JSONValue = .object(["isIncomplete": .bool(true), "items": .array([])])
+        let result = LSPClient.parseCompletionItems(from: list)
         #expect(result.isEmpty)
     }
 
     @Test func parseCompletionItemsSkipsInvalidEntries() {
         // Items without "label" should be skipped
-        let items: [[String: Any]] = [
-            ["label": "valid", "kind": 1],
-            ["kind": 3], // no label — should be skipped
-            ["label": "also_valid"]
-        ]
-        let result = LSPClient.parseCompletionItems(from: AnyCodable(items))
+        let items: JSONValue = .array([
+            .object(["label": .string("valid"), "kind": .int(1)]),
+            .object(["kind": .int(3)]), // no label — should be skipped
+            .object(["label": .string("also_valid")])
+        ])
+        let result = LSPClient.parseCompletionItems(from: items)
         #expect(result.count == 2)
         #expect(result[0].label == "valid")
         #expect(result[1].label == "also_valid")
     }
 
     @Test func parseCompletionItemsFromScalarReturnsEmpty() {
-        let result = LSPClient.parseCompletionItems(from: AnyCodable("not an array"))
+        let result = LSPClient.parseCompletionItems(from: .string("not an array"))
         #expect(result.isEmpty)
     }
 
     @Test func parseCompletionItemsFromIntReturnsEmpty() {
-        let result = LSPClient.parseCompletionItems(from: AnyCodable(42))
+        let result = LSPClient.parseCompletionItems(from: .int(42))
         #expect(result.isEmpty)
     }
 
@@ -93,22 +97,38 @@ struct LSPClientTests {
         }
     }
 
+    @Test func asyncStartCallsCompletion() async {
+        let client = LSPClient(serverPath: "/nonexistent/server")
+        let result: Result<Void, any Error> = await withCheckedContinuation { continuation in
+            client.start { result in
+                continuation.resume(returning: result)
+            }
+        }
+        // Should fail since the server doesn't exist
+        switch result {
+        case .success:
+            Issue.record("Expected failure for nonexistent server")
+        case .failure:
+            #expect(client.state == .idle)
+        }
+    }
+
     // MARK: - LSPClientError
 
     @Test func errorEquality() {
-        let a = LSPClient.LSPClientError.serverNotRunning
-        let b = LSPClient.LSPClientError.serverNotRunning
-        #expect(a == b)
+        let errA = LSPClient.LSPClientError.serverNotRunning
+        let errB = LSPClient.LSPClientError.serverNotRunning
+        #expect(errA == errB)
 
-        let c = LSPClient.LSPClientError.encodingFailed
-        #expect(a != c)
+        let errC = LSPClient.LSPClientError.encodingFailed
+        #expect(errA != errC)
 
-        let d = LSPClient.LSPClientError.serverError(code: -32600, message: "Invalid")
-        let e = LSPClient.LSPClientError.serverError(code: -32600, message: "Invalid")
-        #expect(d == e)
+        let errD = LSPClient.LSPClientError.serverError(code: -32600, message: "Invalid")
+        let errE = LSPClient.LSPClientError.serverError(code: -32600, message: "Invalid")
+        #expect(errD == errE)
 
-        let f = LSPClient.LSPClientError.serverError(code: -32601, message: "Not found")
-        #expect(d != f)
+        let errF = LSPClient.LSPClientError.serverError(code: -32601, message: "Not found")
+        #expect(errD != errF)
     }
 
     @Test func requestTimeoutError() {
@@ -124,5 +144,29 @@ struct LSPClientTests {
         #expect(LSPClient.State.running == .running)
         #expect(LSPClient.State.idle != .running)
         #expect(LSPClient.State.starting != .shutdown)
+    }
+
+    // MARK: - Timeout Configuration
+
+    @Test func requestTimeoutIntervalIs30Seconds() {
+        #expect(LSPClient.requestTimeoutInterval == 30)
+    }
+
+    // MARK: - Thread-safe State Access
+
+    @Test func stateIsThreadSafe() async {
+        let client = LSPClient(serverPath: "/nonexistent")
+
+        // Access state from multiple concurrent tasks
+        await withTaskGroup(of: LSPClient.State.self) { group in
+            for _ in 0..<10 {
+                group.addTask {
+                    client.state
+                }
+            }
+            for await state in group {
+                #expect(state == .idle)
+            }
+        }
     }
 }
