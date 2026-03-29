@@ -10,21 +10,22 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 /// Manages the set of open editor tabs and the active selection.
+@MainActor
 @Observable
 final class TabManager {
     private static let logger = Logger.editor
 
     /// Maximum number of simultaneously open tabs. Prevents unbounded memory growth.
-    static let maxTabs = 1_000
+    nonisolated static let maxTabs = 1_000
 
     /// File size threshold (in bytes) above which a warning is shown before opening.
-    static let largeFileThreshold = FileSizeConstants.oneMB
+    nonisolated static let largeFileThreshold = FileSizeConstants.oneMB
 
     /// File size threshold (in bytes) above which only a partial load is performed.
-    static let hugeFileThreshold = FileSizeConstants.tenMB
+    nonisolated static let hugeFileThreshold = FileSizeConstants.tenMB
 
     /// Number of bytes to load from the beginning of a huge file.
-    static let hugeFilePartialLoadSize = FileSizeConstants.oneMB
+    nonisolated static let hugeFilePartialLoadSize = FileSizeConstants.oneMB
 
     var tabs: [EditorTab] = []
     var activeTabID: UUID? {
@@ -579,7 +580,7 @@ final class TabManager {
     // MARK: - Auto-save
 
     /// UserDefaults key for the auto-save toggle.
-    static let autoSaveKey = "autoSaveEnabled"
+    nonisolated static let autoSaveKey = "autoSaveEnabled"
 
     /// Whether auto-save is currently in progress (for UI indicator).
     private(set) var isAutoSaving = false

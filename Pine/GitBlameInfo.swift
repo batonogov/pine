@@ -6,7 +6,7 @@
 import Foundation
 
 /// A single line of git blame output.
-struct GitBlameLine: Equatable {
+struct GitBlameLine: Equatable, Sendable {
     let hash: String
     let author: String
     let authorTime: Date

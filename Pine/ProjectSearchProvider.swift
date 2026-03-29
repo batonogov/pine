@@ -29,6 +29,7 @@ struct SearchFileGroup: Identifiable, Sendable {
 
 // MARK: - Search Provider
 
+@MainActor
 @Observable
 final class ProjectSearchProvider {
     private static let logger = Logger.search

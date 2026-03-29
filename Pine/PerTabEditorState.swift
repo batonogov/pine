@@ -10,13 +10,13 @@ import os.log
 
 /// Codable representation of per-tab editor state (cursor, scroll, folds).
 /// Stored in SessionState keyed by file path.
-struct PerTabEditorState: Codable, Equatable {
+struct PerTabEditorState: Codable, Equatable, Sendable {
     var cursorPosition: Int
     var scrollOffset: CGFloat
     var foldedRanges: [SerializableFoldRange]?
 
     /// Codable representation of a FoldableRange.
-    struct SerializableFoldRange: Codable, Equatable {
+    struct SerializableFoldRange: Codable, Equatable, Sendable {
         let startLine: Int
         let endLine: Int
         let startCharIndex: Int

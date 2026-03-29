@@ -8,7 +8,7 @@
 import Foundation
 
 /// Cursor position expressed as line and column (both 1-based).
-struct CursorLocation: Equatable {
+struct CursorLocation: Equatable, Sendable {
     let line: Int
     let column: Int
 
@@ -42,7 +42,7 @@ struct CursorLocation: Equatable {
 }
 
 /// Line ending style detected in file content.
-enum LineEnding: Equatable {
+enum LineEnding: Equatable, Sendable {
     case lf
     case crlf
 
@@ -99,7 +99,7 @@ enum LineEnding: Equatable {
 }
 
 /// Indentation style detected in file content.
-enum IndentationStyle: Equatable {
+enum IndentationStyle: Equatable, Sendable {
     case spaces(Int)
     case tabs
 

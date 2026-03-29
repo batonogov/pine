@@ -12,28 +12,29 @@ import os
 /// Periodically writes dirty tab content to a recovery directory so it can
 /// be restored after a crash, force quit, or power loss.
 /// Each project gets its own subdirectory to avoid mixing recovery files.
+@MainActor
 final class RecoveryManager {
 
     private static let logger = Logger.app
 
     /// Root recovery directory under Application Support.
-    static var rootDirectory: URL {
+    nonisolated static var rootDirectory: URL {
         FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("Pine/Recovery")
     }
 
     /// Returns a per-project recovery subdirectory based on a SHA-256 hash of the project path.
-    static func directory(for projectURL: URL) -> URL {
+    nonisolated static func directory(for projectURL: URL) -> URL {
         let path = projectURL.resolvingSymlinksInPath().path
         let hash = sha256(path)
         return rootDirectory.appendingPathComponent(hash)
     }
 
     /// Periodic snapshot interval in seconds.
-    static let periodicInterval: TimeInterval = 30
+    nonisolated static let periodicInterval: TimeInterval = 30
 
     /// Debounce delay for edit-triggered snapshots.
-    static let debounceDelay: TimeInterval = 5
+    nonisolated static let debounceDelay: TimeInterval = 5
 
     private let recoveryDirectory: URL
     private var periodicTimer: Timer?
@@ -297,7 +298,7 @@ final class RecoveryManager {
     }
 
     /// Returns a hex-encoded SHA-256 hash of the given string.
-    private static func sha256(_ string: String) -> String {
+    nonisolated private static func sha256(_ string: String) -> String {
         let data = Data(string.utf8)
         var hash = [UInt8](repeating: 0, count: Int(CC_SHA256_DIGEST_LENGTH))
         data.withUnsafeBytes { buffer in

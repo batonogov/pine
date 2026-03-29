@@ -5,6 +5,7 @@
 
 import Foundation
 
+@MainActor
 @Observable
 final class ShellSettings {
     static let shared = ShellSettings()
@@ -17,7 +18,7 @@ final class ShellSettings {
         var id: String { path }
     }
 
-    static let commonShells: [ShellOption] = [
+    nonisolated static let commonShells: [ShellOption] = [
         ShellOption(name: "zsh", path: "/bin/zsh", defaultArgs: ["--login"]),
         ShellOption(name: "bash", path: "/bin/bash", defaultArgs: ["--login"]),
         ShellOption(name: "fish", path: "/usr/local/bin/fish", defaultArgs: ["-l"]),
@@ -31,7 +32,7 @@ final class ShellSettings {
 
     /// Reads the user's login shell from the POSIX account database.
     /// Works reliably inside Xcode sandbox and App Sandbox where `$SHELL` may be absent or wrong.
-    static func systemShellPath() -> String? {
+    nonisolated static func systemShellPath() -> String? {
         guard let pw = getpwuid(getuid()) else { return nil }
         guard let shell = pw.pointee.pw_shell else { return nil }
         let path = String(cString: shell)

@@ -5,13 +5,14 @@
 
 import AppKit
 
+@MainActor
 @Observable
 final class FontSizeSettings {
     static let shared = FontSizeSettings()
 
-    static let defaultSize: CGFloat = 13
-    static let minSize: CGFloat = 8
-    static let maxSize: CGFloat = 32
+    nonisolated static let defaultSize: CGFloat = 13
+    nonisolated static let minSize: CGFloat = 8
+    nonisolated static let maxSize: CGFloat = 32
 
     private static let userDefaultsKey = "editorFontSize"
     private let defaults: UserDefaults
