@@ -33,8 +33,9 @@ final class ProjectManager {
     }
 
     deinit {
-        MainActor.assumeIsolated {
-            recoveryManager?.stopPeriodicSnapshots()
+        let recovery = recoveryManager
+        DispatchQueue.main.async {
+            recovery?.stopPeriodicSnapshots()
         }
     }
 
