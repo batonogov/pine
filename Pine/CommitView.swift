@@ -142,7 +142,7 @@ struct CommitView: View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 0) {
                 if !stagedEntries.isEmpty {
-                    sectionHeader(Strings.commitStagedSection, count: stagedEntries.count) {
+                    sectionHeader(Strings.commitStagedSection, count: stagedEntries.count, isStaged: true) {
                         unstageAll()
                     }
 
@@ -152,7 +152,7 @@ struct CommitView: View {
                 }
 
                 if !unstagedEntries.isEmpty {
-                    sectionHeader(Strings.commitUnstagedSection, count: unstagedEntries.count) {
+                    sectionHeader(Strings.commitUnstagedSection, count: unstagedEntries.count, isStaged: false) {
                         stageAll()
                     }
 
@@ -168,6 +168,7 @@ struct CommitView: View {
     private func sectionHeader(
         _ title: LocalizedStringKey,
         count: Int,
+        isStaged: Bool,
         action: @escaping () -> Void
     ) -> some View {
         HStack {
@@ -182,13 +183,12 @@ struct CommitView: View {
             Button {
                 action()
             } label: {
-                Image(systemName: title == Strings.commitStagedSection
-                      ? "minus.circle" : "plus.circle")
+                Image(systemName: isStaged ? "minus.circle" : "plus.circle")
                     .font(.system(size: 11))
                     .foregroundStyle(.secondary)
             }
             .buttonStyle(.plain)
-            .help(title == Strings.commitStagedSection
+            .help(isStaged
                   ? String(localized: "commit.unstageAll")
                   : String(localized: "commit.stageAll"))
         }
@@ -393,6 +393,7 @@ struct CommitView: View {
     }
 
     private func performCommit() {
+        guard !isCommitting else { return }
         guard let url = gitProvider.repositoryURL else { return }
         guard !stagedFiles.isEmpty else { return }
 
