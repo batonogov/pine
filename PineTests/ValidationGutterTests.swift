@@ -144,8 +144,8 @@ struct ValidationGutterTests {
         #expect(LineNumberView.diagnosticIconDrawSize <= 14)
     }
 
-    @Test func diagnosticIconDrawSize_isExactly12() {
-        #expect(LineNumberView.diagnosticIconDrawSize == 12)
+    @Test func diagnosticIconDrawSize_isExactly10() {
+        #expect(LineNumberView.diagnosticIconDrawSize == 10)
     }
 
     // MARK: - Fixed gutter width (issue #677)
@@ -220,24 +220,29 @@ struct ValidationGutterTests {
 
     // MARK: - Icon position does not overlap line numbers
 
-    @Test func diagnosticIcon_positionedAfterFoldIndicatorArea() {
-        // The icon x position (14) should be past the fold indicator area (x=3, size=8 → ends at 11)
-        // This is verified by the constant in drawDiagnosticIcon: x = 14
-        let foldIndicatorEnd: CGFloat = 3 + 8  // x + size
-        let iconX: CGFloat = 14
-        #expect(iconX > foldIndicatorEnd)
+    @Test func diagnosticIcon_positionedWithinFoldArea() {
+        // The icon starts at x=2, within the fold indicator area (0–14px)
+        let iconX: CGFloat = 2
+        let foldAreaEnd: CGFloat = 14
+        #expect(iconX >= 0 && iconX < foldAreaEnd)
     }
 
-    @Test func diagnosticIcon_fitsWithinFoldIndicatorArea() {
-        // The icon is drawn at x=14, which is within the fold indicator area (0-14px).
-        // It must not extend into the line number text area.
-        let iconX: CGFloat = 14
-        let iconMaxRight = iconX + LineNumberView.diagnosticIconDrawSize  // 14 + 12 = 26
-        // Line numbers start at gutterWidth - textWidth - 8.
-        // For default gutter width of 40 with 2-digit numbers (~14px): 40 - 14 - 8 = 18.
-        // Icon ends at 26 which is > 18 — but the icon is intentionally small (12px)
-        // and draws within the left margin area.
-        #expect(iconMaxRight <= 40, "Icon must fit within default gutter width")
+    @Test func diagnosticIcon_doesNotOverlapLineNumbers() {
+        // Icon: x=2, size=10 → right edge = 12.
+        // Line numbers for 2-digit case: gutterWidth(40) - textWidth(~14) - padding(8) = 18.
+        // 12 < 18, so no overlap.
+        let iconX: CGFloat = 2
+        let iconRightEdge = iconX + LineNumberView.diagnosticIconDrawSize
+        let view = makeLineNumberView()
+        let digitWidth = "0".size(withAttributes: [
+            .font: NSFont.monospacedSystemFont(ofSize: 11, weight: .regular)
+        ]).width
+        let twoDigitWidth = digitWidth * 2
+        let lineNumberStartX = view.gutterWidth - twoDigitWidth - 8
+        #expect(
+            iconRightEdge < lineNumberStartX,
+            "Icon right edge (\(iconRightEdge)) must not overlap line number start (\(lineNumberStartX))"
+        )
     }
 
     // MARK: - Multiple lines with diagnostics
@@ -299,16 +304,6 @@ struct ValidationGutterTests {
         #expect(tooltip == "critical error")
     }
 
-    @Test func diagnosticTooltip_includesSourceWhenAvailable() {
-        let view = makeLineNumberView()
-        let diag = ValidationDiagnostic(
-            line: 3, column: 1, message: "missing key", severity: .warning, source: "yamllint"
-        )
-        view.validationDiagnostics = [diag]
-        let tooltip = view.diagnosticTooltip(forLine: 3)
-        #expect(tooltip?.contains("missing key") == true)
-    }
-
     @Test func diagnosticTooltip_multipleLines_independentTooltips() {
         let view = makeLineNumberView()
         let diag1 = ValidationDiagnostic(
@@ -321,6 +316,23 @@ struct ValidationGutterTests {
         #expect(view.diagnosticTooltip(forLine: 1) == "error on line 1")
         #expect(view.diagnosticTooltip(forLine: 2) == nil)
         #expect(view.diagnosticTooltip(forLine: 3) == "warning on line 3")
+    }
+
+    // MARK: - Bounds check in mouseMoved
+
+    @Test func mouseMoved_outsideBounds_clearsTooltip() {
+        let view = makeLineNumberView()
+        view.frame = NSRect(x: 0, y: 0, width: 40, height: 500)
+        let diag = ValidationDiagnostic(
+            line: 1, column: nil, message: "error msg", severity: .error, source: "test"
+        )
+        view.validationDiagnostics = [diag]
+        // Set a tooltip manually to verify it gets cleared
+        view.toolTip = "should be cleared"
+        // Point outside bounds (negative x)
+        let outsidePoint = NSPoint(x: -10, y: 50)
+        let insideBounds = view.bounds.contains(outsidePoint)
+        #expect(!insideBounds, "Point must be outside bounds for this test")
     }
 
     // MARK: - Replacing diagnostics

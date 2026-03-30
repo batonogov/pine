@@ -94,9 +94,6 @@ final class LineNumberView: NSView {
     /// Pre-indexed diagnostic lookup: line number → highest severity diagnostic.
     private var diagnosticMap: [Int: ValidationDiagnostic] = [:]
 
-    /// Whether any diagnostics are present.
-    private var hasDiagnostics: Bool { !diagnosticMap.isEmpty }
-
     /// Pre-indexed fold lookup: start line → FoldableRange.
     private var foldStartMap: [Int: FoldableRange] = [:]
 
@@ -559,12 +556,13 @@ final class LineNumberView: NSView {
         .info: .systemBlue
     ]
 
-    /// Fixed draw size for diagnostic icons — used for gutter width calculation and rendering.
-    static let diagnosticIconDrawSize: CGFloat = 12
+    /// Fixed draw size for diagnostic icons — small enough to fit inside the fold indicator area
+    /// without overlapping line numbers.
+    static let diagnosticIconDrawSize: CGFloat = 10
 
     /// Draws an SF Symbol icon for a validation diagnostic at the given line position.
-    /// The icon is placed to the left of the line number, in the extra gutter space
-    /// reserved when diagnostics are present.
+    /// The icon is drawn inside the fold indicator area (leftmost ~14px of the gutter),
+    /// keeping it clear of line number text.
     func drawDiagnosticIcon(at y: CGFloat, lineHeight: CGFloat, severity: ValidationSeverity) {
         guard let symbolName = Self.diagnosticSymbolNames[severity],
               let color = Self.diagnosticColors[severity] else { return }
@@ -577,8 +575,8 @@ final class LineNumberView: NSView {
         let tintedImage = image.tinted(with: color)
         let imageSize = tintedImage.size
         let centerY = y + (lineHeight - imageSize.height) / 2
-        // Position to the left of the line number, after the fold indicator area
-        let x: CGFloat = 14
+        // Position at the left edge of the gutter, within the fold indicator area (0–14px)
+        let x: CGFloat = 2
 
         tintedImage.draw(in: NSRect(
             x: x, y: centerY,
@@ -596,6 +594,11 @@ final class LineNumberView: NSView {
     /// Updates the tooltip based on mouse position — shows diagnostic message on hover.
     override func mouseMoved(with event: NSEvent) {
         let point = convert(event.locationInWindow, from: nil)
+        guard bounds.contains(point) else {
+            self.toolTip = nil
+            super.mouseMoved(with: event)
+            return
+        }
         if let line = lineNumber(at: point),
            let tooltip = diagnosticTooltip(forLine: line) {
             self.toolTip = tooltip
