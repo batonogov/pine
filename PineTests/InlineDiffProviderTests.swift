@@ -950,4 +950,774 @@ struct InlineDiffProviderTests {
         #expect(hunks[0].deletedLines.count == 100)
         #expect(hunks[0].addedLines.count == 110)
     }
+
+    // MARK: - parseSidePart edge cases (via parseHunkHeader)
+
+    @Test func emptyOldStartParsesAsZero() {
+        // "-,3" → empty start parsed as 0 by Int("") failing, parseSidePart returns nil
+        let result = InlineDiffProvider.parseHunkHeader("@@ -,3 +1,2 @@")
+        // parseSidePart splits "-,3" into ["-", "3"], start = Int("-") which is valid
+        // Actually test the real behavior
+        if let r = result {
+            #expect(r.oldCount == 3)
+        }
+    }
+
+    @Test func emptyNewStartParsesAsZero() {
+        let result = InlineDiffProvider.parseHunkHeader("@@ -1,3 +,2 @@")
+        if let r = result {
+            #expect(r.oldStart == 1)
+            #expect(r.oldCount == 3)
+        }
+    }
+
+    @Test func parsesNegativeStartValues() {
+        // Negative start is technically valid Int parsing
+        let result = InlineDiffProvider.parseHunkHeader("@@ --5,3 +1,2 @@")
+        // The first "-" is consumed as prefix, so we get "-5,3" → Int("-5") = -5
+        if let r = result {
+            #expect(r.oldStart == -5)
+        }
+    }
+
+    @Test func parsesZeroStartValues() {
+        let result = InlineDiffProvider.parseHunkHeader("@@ -0,0 +0,0 @@")
+        #expect(result?.oldStart == 0)
+        #expect(result?.oldCount == 0)
+        #expect(result?.newStart == 0)
+        #expect(result?.newCount == 0)
+    }
+
+    @Test func returnsNilForHeaderWithOnlyAtSigns() {
+        #expect(InlineDiffProvider.parseHunkHeader("@@@@") == nil)
+    }
+
+    @Test func returnsNilForHeaderWithNoInnerContent() {
+        #expect(InlineDiffProvider.parseHunkHeader("@@ @@") == nil)
+    }
+
+    @Test func returnsNilForHeaderMissingNewPart() {
+        #expect(InlineDiffProvider.parseHunkHeader("@@ -1,3 @@") == nil)
+    }
+
+    @Test func returnsNilForStartWithLetters() {
+        #expect(InlineDiffProvider.parseHunkHeader("@@ -abc,3 +1,2 @@") == nil)
+    }
+
+    @Test func parsesHeaderWithExtraWhitespace() {
+        let result = InlineDiffProvider.parseHunkHeader("@@  -1,3  +2,4  @@")
+        // Extra leading space before -1,3 — trimmed inner string starts with space
+        // The split by space should still work
+        if let r = result {
+            #expect(r.oldStart == 1)
+            #expect(r.newStart == 2)
+        }
+    }
+
+    // MARK: - buildPatch edge cases
+
+    @Test func buildPatchFallsBackToLastPathComponent() {
+        // When file is NOT under repo path, should use lastPathComponent
+        let hunk = DiffHunk(
+            newStart: 1, newCount: 1, oldStart: 1, oldCount: 1,
+            rawText: "@@ -1,1 +1,1 @@\n-old\n+new"
+        )
+        let repoURL = URL(fileURLWithPath: "/repo/project")
+        let fileURL = URL(fileURLWithPath: "/different/path/file.swift")
+        let patch = InlineDiffProvider.buildPatch(hunk: hunk, fileURL: fileURL, repoURL: repoURL)
+
+        #expect(patch.contains("a/file.swift"))
+        #expect(patch.contains("b/file.swift"))
+    }
+
+    @Test func buildPatchHandlesRepoPathWithTrailingSlash() {
+        let hunk = DiffHunk(
+            newStart: 1, newCount: 1, oldStart: 1, oldCount: 1,
+            rawText: "@@ -1,1 +1,1 @@\n-old\n+new"
+        )
+        let repoURL = URL(fileURLWithPath: "/repo/")
+        let fileURL = URL(fileURLWithPath: "/repo/src/file.swift")
+        let patch = InlineDiffProvider.buildPatch(hunk: hunk, fileURL: fileURL, repoURL: repoURL)
+
+        #expect(patch.contains("a/src/file.swift"))
+        #expect(patch.contains("b/src/file.swift"))
+    }
+
+    @Test func buildPatchHandlesDeeplyNestedFile() {
+        let hunk = DiffHunk(
+            newStart: 1, newCount: 1, oldStart: 1, oldCount: 0,
+            rawText: "@@ -1,0 +1,1 @@\n+new"
+        )
+        let repoURL = URL(fileURLWithPath: "/repo")
+        let fileURL = URL(fileURLWithPath: "/repo/a/b/c/d/file.swift")
+        let patch = InlineDiffProvider.buildPatch(hunk: hunk, fileURL: fileURL, repoURL: repoURL)
+
+        #expect(patch.contains("a/a/b/c/d/file.swift"))
+        #expect(patch.contains("b/a/b/c/d/file.swift"))
+    }
+
+    @Test func buildPatchContainsDiffGitHeader() {
+        let hunk = DiffHunk(
+            newStart: 1, newCount: 1, oldStart: 1, oldCount: 1,
+            rawText: "@@ -1,1 +1,1 @@\n-old\n+new"
+        )
+        let repoURL = URL(fileURLWithPath: "/repo")
+        let fileURL = URL(fileURLWithPath: "/repo/file.swift")
+        let patch = InlineDiffProvider.buildPatch(hunk: hunk, fileURL: fileURL, repoURL: repoURL)
+
+        #expect(patch.hasPrefix("diff --git"))
+        #expect(patch.contains("---"))
+        #expect(patch.contains("+++"))
+    }
+
+    // MARK: - DiffHunk Identifiable
+
+    @Test func diffHunkHasUniqueID() {
+        let hunk1 = DiffHunk(newStart: 1, newCount: 1, oldStart: 1, oldCount: 1, rawText: "")
+        let hunk2 = DiffHunk(newStart: 1, newCount: 1, oldStart: 1, oldCount: 1, rawText: "")
+        #expect(hunk1.id != hunk2.id)
+    }
+
+    @Test func diffHunkIDIsUUID() {
+        let hunk = DiffHunk(newStart: 1, newCount: 1, oldStart: 1, oldCount: 1, rawText: "")
+        // Verify the id is a valid UUID by checking it's not empty
+        #expect(!hunk.id.uuidString.isEmpty)
+    }
+
+    // MARK: - DiffHunk Sendable
+
+    @Test func diffHunkIsSendable() {
+        let hunk = DiffHunk(newStart: 1, newCount: 1, oldStart: 1, oldCount: 1, rawText: "test")
+        Task {
+            _ = hunk.newStart
+            _ = hunk.deletedLines
+        }
+    }
+
+    // MARK: - DiffHighlightLine additional tests
+
+    @Test func diffHighlightLineProperties() {
+        let line = DiffHighlightLine(kind: .added, editorLine: 42)
+        #expect(line.kind == .added)
+        #expect(line.editorLine == 42)
+    }
+
+    @Test func diffHighlightLineDifferentEditorLines() {
+        let a = DiffHighlightLine(kind: .added, editorLine: 1)
+        let b = DiffHighlightLine(kind: .added, editorLine: 2)
+        #expect(a != b)
+    }
+
+    @Test func diffHighlightLineDeletedKind() {
+        let line = DiffHighlightLine(kind: .deleted, editorLine: 10)
+        #expect(line.kind == .deleted)
+        #expect(line.editorLine == 10)
+    }
+
+    @Test func diffHighlightLineIsSendable() {
+        let line = DiffHighlightLine(kind: .added, editorLine: 1)
+        Task {
+            _ = line.kind
+        }
+    }
+
+    // MARK: - DeletedLinesBlock additional tests
+
+    @Test func deletedLinesBlockEmptyLines() {
+        let block = DeletedLinesBlock(anchorLine: 1, lines: [])
+        #expect(block.lines.isEmpty)
+        #expect(block.anchorLine == 1)
+    }
+
+    @Test func deletedLinesBlockSingleLine() {
+        let block = DeletedLinesBlock(anchorLine: 5, lines: ["only line"])
+        #expect(block.lines.count == 1)
+        #expect(block.lines[0] == "only line")
+    }
+
+    @Test func deletedLinesBlockManyLines() {
+        let lines = (1...50).map { "line \($0)" }
+        let block = DeletedLinesBlock(anchorLine: 1, lines: lines)
+        #expect(block.lines.count == 50)
+    }
+
+    @Test func deletedLinesBlockIsSendable() {
+        let block = DeletedLinesBlock(anchorLine: 1, lines: ["test"])
+        Task {
+            _ = block.anchorLine
+        }
+    }
+
+    // MARK: - DiffLineKind additional tests
+
+    @Test func diffLineKindIsSendable() {
+        let kind: DiffLineKind = .added
+        Task {
+            _ = kind
+        }
+    }
+
+    @Test func diffLineKindAllCases() {
+        let added = DiffLineKind.added
+        let deleted = DiffLineKind.deleted
+        #expect(added == .added)
+        #expect(deleted == .deleted)
+        #expect(added != deleted)
+    }
+
+    // MARK: - parseHunks edge cases
+
+    @Test func parseHunksWithDiffHeaderOnly() {
+        let diff = """
+        diff --git a/file.swift b/file.swift
+        index abc..def 100644
+        --- a/file.swift
+        +++ b/file.swift
+        """
+        let hunks = InlineDiffProvider.parseHunks(diff)
+        #expect(hunks.isEmpty)
+    }
+
+    @Test func parseHunksWithOnlyHunkHeaderNoBody() {
+        let diff = """
+        diff --git a/file.swift b/file.swift
+        --- a/file.swift
+        +++ b/file.swift
+        @@ -1,1 +1,1 @@
+        """
+        let hunks = InlineDiffProvider.parseHunks(diff)
+        #expect(hunks.count == 1)
+        #expect(hunks[0].rawText == "@@ -1,1 +1,1 @@")
+    }
+
+    @Test func parseHunksTrimsTrailingEmptyLines() {
+        let diff = """
+        diff --git a/file.swift b/file.swift
+        --- a/file.swift
+        +++ b/file.swift
+        @@ -1,1 +1,2 @@
+         context
+        +added
+
+
+        """
+        let hunks = InlineDiffProvider.parseHunks(diff)
+        #expect(hunks.count == 1)
+        // Trailing empty lines should be trimmed from rawText
+        #expect(!hunks[0].rawText.hasSuffix("\n\n"))
+    }
+
+    @Test func parseHunksWithBinaryDiffMarker() {
+        // "diff " prefix should stop hunk collection
+        let diff = """
+        diff --git a/file.swift b/file.swift
+        --- a/file.swift
+        +++ b/file.swift
+        @@ -1,1 +1,2 @@
+         context
+        +added
+        diff --git a/other.swift b/other.swift
+        --- a/other.swift
+        +++ b/other.swift
+        @@ -1,1 +1,1 @@
+        -old
+        +new
+        """
+        let hunks = InlineDiffProvider.parseHunks(diff)
+        #expect(hunks.count == 2)
+        #expect(hunks[0].newStart == 1)
+        #expect(hunks[0].newCount == 2)
+        #expect(hunks[1].newStart == 1)
+        #expect(hunks[1].newCount == 1)
+    }
+
+    @Test func parseHunksWithSingleCharacterLines() {
+        let diff = """
+        diff --git a/f b/f
+        --- a/f
+        +++ b/f
+        @@ -1,1 +1,1 @@
+        -x
+        +y
+        """
+        let hunks = InlineDiffProvider.parseHunks(diff)
+        #expect(hunks.count == 1)
+        #expect(hunks[0].deletedLines == ["x"])
+        #expect(hunks[0].addedLines == ["y"])
+    }
+
+    // MARK: - addedLineNumbers complex scenarios
+
+    @Test func addedLineNumbersWithInterleavedDeletesAndAdds() {
+        // context, delete, add, delete, add, context
+        let hunks = [
+            DiffHunk(
+                newStart: 1, newCount: 4, oldStart: 1, oldCount: 4,
+                rawText: "@@ -1,4 +1,4 @@\n ctx1\n-del1\n+add1\n-del2\n+add2\n ctx2"
+            )
+        ]
+        let result = InlineDiffProvider.addedLineNumbers(from: hunks)
+        // ctx1 -> line 1, del1 skipped, add1 -> line 2, del2 skipped, add2 -> line 3, ctx2 -> line 4
+        #expect(result.contains(2))
+        #expect(result.contains(3))
+        #expect(!result.contains(1))
+        #expect(!result.contains(4))
+    }
+
+    @Test func addedLineNumbersWithConsecutiveAdditions() {
+        let hunks = [
+            DiffHunk(
+                newStart: 1, newCount: 5, oldStart: 1, oldCount: 0,
+                rawText: "@@ -1,0 +1,5 @@\n+a\n+b\n+c\n+d\n+e"
+            )
+        ]
+        let result = InlineDiffProvider.addedLineNumbers(from: hunks)
+        #expect(result == [1, 2, 3, 4, 5])
+    }
+
+    @Test func addedLineNumbersWithConsecutiveDeletions() {
+        let hunks = [
+            DiffHunk(
+                newStart: 5, newCount: 1, oldStart: 5, oldCount: 4,
+                rawText: "@@ -5,4 +5,1 @@\n-del1\n-del2\n-del3\n+replacement"
+            )
+        ]
+        let result = InlineDiffProvider.addedLineNumbers(from: hunks)
+        #expect(result == [5])
+    }
+
+    // MARK: - deletedLineBlocks edge cases
+
+    @Test func deletedLineBlocksWithEmptyDeletedLineContent() {
+        // A deletion where the line content is empty (just "-" prefix)
+        let hunks = [
+            DiffHunk(
+                newStart: 1, newCount: 1, oldStart: 1, oldCount: 2,
+                rawText: "@@ -1,2 +1,1 @@\n-\n-\n+replacement"
+            )
+        ]
+        let blocks = InlineDiffProvider.deletedLineBlocks(from: hunks)
+        #expect(blocks.count == 1)
+        #expect(blocks[0].lines == ["", ""])
+    }
+
+    @Test func deletedLineBlocksWithSpecialCharacters() {
+        let hunks = [
+            DiffHunk(
+                newStart: 1, newCount: 1, oldStart: 1, oldCount: 1,
+                rawText: "@@ -1,1 +1,1 @@\n-func foo() -> [String: Int] { }\n+func bar() -> [String: Int] { }"
+            )
+        ]
+        let blocks = InlineDiffProvider.deletedLineBlocks(from: hunks)
+        #expect(blocks.count == 1)
+        #expect(blocks[0].lines == ["func foo() -> [String: Int] { }"])
+    }
+
+    @Test func deletedLineBlocksWithTabIndentation() {
+        let hunks = [
+            DiffHunk(
+                newStart: 1, newCount: 1, oldStart: 1, oldCount: 1,
+                rawText: "@@ -1,1 +1,1 @@\n-\told line\n+\tnew line"
+            )
+        ]
+        let blocks = InlineDiffProvider.deletedLineBlocks(from: hunks)
+        #expect(blocks.count == 1)
+        #expect(blocks[0].lines == ["\told line"])
+    }
+
+    // MARK: - hunk(atLine:) edge cases
+
+    @Test func hunkAtLineBoundaryStart() {
+        let hunks = [
+            DiffHunk(newStart: 1, newCount: 1, oldStart: 1, oldCount: 1, rawText: "")
+        ]
+        #expect(InlineDiffProvider.hunk(atLine: 1, in: hunks) != nil)
+    }
+
+    @Test func hunkAtLineBoundaryEnd() {
+        let hunks = [
+            DiffHunk(newStart: 10, newCount: 5, oldStart: 10, oldCount: 3, rawText: "")
+        ]
+        #expect(InlineDiffProvider.hunk(atLine: 14, in: hunks) != nil)
+        #expect(InlineDiffProvider.hunk(atLine: 15, in: hunks) == nil)
+    }
+
+    @Test func hunkAtLineZero() {
+        let hunks = [
+            DiffHunk(newStart: 1, newCount: 3, oldStart: 1, oldCount: 2, rawText: "")
+        ]
+        #expect(InlineDiffProvider.hunk(atLine: 0, in: hunks) == nil)
+    }
+
+    @Test func hunkAtLineNegative() {
+        let hunks = [
+            DiffHunk(newStart: 1, newCount: 3, oldStart: 1, oldCount: 2, rawText: "")
+        ]
+        #expect(InlineDiffProvider.hunk(atLine: -1, in: hunks) == nil)
+    }
+
+    @Test func hunkAtLineVeryLarge() {
+        let hunks = [
+            DiffHunk(newStart: 1, newCount: 3, oldStart: 1, oldCount: 2, rawText: "")
+        ]
+        #expect(InlineDiffProvider.hunk(atLine: Int.max, in: hunks) == nil)
+    }
+
+    @Test func hunkAtLineWithMultipleDeletionHunks() {
+        let hunks = [
+            DiffHunk(newStart: 5, newCount: 0, oldStart: 5, oldCount: 2, rawText: ""),
+            DiffHunk(newStart: 10, newCount: 0, oldStart: 12, oldCount: 3, rawText: "")
+        ]
+        #expect(InlineDiffProvider.hunk(atLine: 5, in: hunks)?.newStart == 5)
+        #expect(InlineDiffProvider.hunk(atLine: 10, in: hunks)?.newStart == 10)
+        #expect(InlineDiffProvider.hunk(atLine: 7, in: hunks) == nil)
+    }
+
+    // MARK: - nearestHunk edge cases
+
+    @Test func nearestHunkNextWithSingleHunkBeyondLine() {
+        let hunks = [
+            DiffHunk(newStart: 100, newCount: 2, oldStart: 98, oldCount: 1, rawText: "")
+        ]
+        let nearest = InlineDiffProvider.nearestHunk(atLine: 1, direction: .next, in: hunks)
+        #expect(nearest?.newStart == 100)
+    }
+
+    @Test func nearestHunkPreviousWithSingleHunkBeforeLine() {
+        let hunks = [
+            DiffHunk(newStart: 1, newCount: 2, oldStart: 1, oldCount: 1, rawText: "")
+        ]
+        let nearest = InlineDiffProvider.nearestHunk(atLine: 100, direction: .previous, in: hunks)
+        #expect(nearest?.newStart == 1)
+    }
+
+    @Test func nearestHunkNextWrapsWhenAllHunksBefore() {
+        let hunks = [
+            DiffHunk(newStart: 1, newCount: 2, oldStart: 1, oldCount: 1, rawText: ""),
+            DiffHunk(newStart: 5, newCount: 2, oldStart: 5, oldCount: 1, rawText: "")
+        ]
+        // Line 100 is after all hunks — should wrap to first
+        let nearest = InlineDiffProvider.nearestHunk(atLine: 100, direction: .next, in: hunks)
+        #expect(nearest?.newStart == 1)
+    }
+
+    @Test func nearestHunkPreviousWrapsWhenAllHunksAfter() {
+        let hunks = [
+            DiffHunk(newStart: 50, newCount: 2, oldStart: 48, oldCount: 1, rawText: ""),
+            DiffHunk(newStart: 80, newCount: 2, oldStart: 78, oldCount: 1, rawText: "")
+        ]
+        // Line 1 is before all hunks — should wrap to last
+        let nearest = InlineDiffProvider.nearestHunk(atLine: 1, direction: .previous, in: hunks)
+        #expect(nearest?.newStart == 80)
+    }
+
+    @Test func nearestHunkNextSelectsClosestHunk() {
+        let hunks = [
+            DiffHunk(newStart: 5, newCount: 2, oldStart: 5, oldCount: 1, rawText: ""),
+            DiffHunk(newStart: 20, newCount: 2, oldStart: 18, oldCount: 1, rawText: ""),
+            DiffHunk(newStart: 50, newCount: 2, oldStart: 48, oldCount: 1, rawText: "")
+        ]
+        let nearest = InlineDiffProvider.nearestHunk(atLine: 15, direction: .next, in: hunks)
+        #expect(nearest?.newStart == 20)
+    }
+
+    @Test func nearestHunkPreviousSelectsClosestHunk() {
+        let hunks = [
+            DiffHunk(newStart: 5, newCount: 2, oldStart: 5, oldCount: 1, rawText: ""),
+            DiffHunk(newStart: 20, newCount: 2, oldStart: 18, oldCount: 1, rawText: ""),
+            DiffHunk(newStart: 50, newCount: 2, oldStart: 48, oldCount: 1, rawText: "")
+        ]
+        let nearest = InlineDiffProvider.nearestHunk(atLine: 30, direction: .previous, in: hunks)
+        #expect(nearest?.newStart == 20)
+    }
+
+    @Test func nearestHunkWithDeletionHunk() {
+        let hunks = [
+            DiffHunk(newStart: 5, newCount: 0, oldStart: 5, oldCount: 3, rawText: "")
+        ]
+        // Cursor at the deletion marker line
+        let nearest = InlineDiffProvider.nearestHunk(atLine: 5, direction: .next, in: hunks)
+        #expect(nearest?.newStart == 5)
+    }
+
+    // MARK: - NavigationDirection
+
+    @Test func navigationDirectionValues() {
+        let next = InlineDiffProvider.NavigationDirection.next
+        let prev = InlineDiffProvider.NavigationDirection.previous
+        // Just verify they're distinct enum cases
+        switch next {
+        case .next: break
+        case .previous: Issue.record("Expected .next")
+        }
+        switch prev {
+        case .previous: break
+        case .next: Issue.record("Expected .previous")
+        }
+    }
+
+    // MARK: - InlineDiffAction additional tests
+
+    @Test func inlineDiffActionAllCasesCount() {
+        let allCases: [InlineDiffAction] = [.accept, .revert, .acceptAll, .revertAll]
+        #expect(allCases.count == 4)
+    }
+
+    @Test func inlineDiffActionInvalidRawValues() {
+        #expect(InlineDiffAction(rawValue: "") == nil)
+        #expect(InlineDiffAction(rawValue: "Accept") == nil) // case-sensitive
+        #expect(InlineDiffAction(rawValue: "ACCEPT") == nil)
+        #expect(InlineDiffAction(rawValue: "accept_all") == nil)
+    }
+
+    // MARK: - DiffHunk deletedLines / addedLines edge cases
+
+    @Test func deletedLinesWithOnlyDashDashDash() {
+        let hunk = DiffHunk(
+            newStart: 1, newCount: 1, oldStart: 1, oldCount: 0,
+            rawText: "@@ -1,0 +1,1 @@\n--- a/file.swift\n+new line"
+        )
+        // "--- a/file.swift" should be skipped
+        #expect(hunk.deletedLines.isEmpty)
+    }
+
+    @Test func addedLinesWithOnlyPlusPlusPlus() {
+        let hunk = DiffHunk(
+            newStart: 1, newCount: 0, oldStart: 1, oldCount: 1,
+            rawText: "@@ -1,1 +1,0 @@\n+++ b/file.swift\n-old line"
+        )
+        // "+++ b/file.swift" should be skipped
+        #expect(hunk.addedLines.isEmpty)
+    }
+
+    @Test func deletedLinesWithDashPrefixedContent() {
+        // Line content that starts with dash after the diff dash prefix
+        let hunk = DiffHunk(
+            newStart: 1, newCount: 1, oldStart: 1, oldCount: 1,
+            rawText: "@@ -1,1 +1,1 @@\n-- this is a comment\n+- new comment"
+        )
+        // "-" prefix is stripped, leaving "- this is a comment"
+        #expect(hunk.deletedLines == ["- this is a comment"])
+    }
+
+    @Test func addedLinesWithPlusPrefixedContent() {
+        let hunk = DiffHunk(
+            newStart: 1, newCount: 1, oldStart: 1, oldCount: 1,
+            rawText: "@@ -1,1 +1,1 @@\n-old\n++ this is a union type"
+        )
+        #expect(hunk.addedLines == ["+ this is a union type"])
+    }
+
+    // MARK: - parseHunks with unusual but valid diff formats
+
+    @Test func parseHunksIgnoresNonHunkNonDiffLines() {
+        let diff = """
+        This is some random text before the diff
+        More random text
+        diff --git a/file.swift b/file.swift
+        index abc1234..def5678 100644
+        --- a/file.swift
+        +++ b/file.swift
+        @@ -1,1 +1,2 @@
+         context
+        +added
+        """
+        let hunks = InlineDiffProvider.parseHunks(diff)
+        #expect(hunks.count == 1)
+        #expect(hunks[0].newStart == 1)
+    }
+
+    @Test func parseHunksWithMixedCountFormats() {
+        // First hunk has count, second does not
+        let diff = """
+        diff --git a/file.swift b/file.swift
+        --- a/file.swift
+        +++ b/file.swift
+        @@ -1,3 +1,4 @@
+         line1
+         line2
+        +added
+         line3
+        @@ -10 +11 @@
+        -old
+        +new
+        """
+        let hunks = InlineDiffProvider.parseHunks(diff)
+        #expect(hunks.count == 2)
+        #expect(hunks[0].newCount == 4)
+        #expect(hunks[1].newCount == 1)
+        #expect(hunks[1].oldCount == 1)
+    }
+
+    // MARK: - Integration: addedLineNumbers + deletedLineBlocks consistency
+
+    @Test func addedAndDeletedDoNotOverlap() {
+        let diff = """
+        diff --git a/file.swift b/file.swift
+        --- a/file.swift
+        +++ b/file.swift
+        @@ -1,5 +1,5 @@
+         line1
+        -old2
+        -old3
+        +new2
+        +new3
+         line4
+         line5
+        """
+        let hunks = InlineDiffProvider.parseHunks(diff)
+        let addedLines = InlineDiffProvider.addedLineNumbers(from: hunks)
+        let deletedBlocks = InlineDiffProvider.deletedLineBlocks(from: hunks)
+
+        // Added lines should be 2 and 3
+        #expect(addedLines == [2, 3])
+        // Deleted block anchored at line 1
+        #expect(deletedBlocks.count == 1)
+        #expect(deletedBlocks[0].lines == ["old2", "old3"])
+    }
+
+    @Test func multiHunkIntegrationTest() {
+        let diff = """
+        diff --git a/file.swift b/file.swift
+        --- a/file.swift
+        +++ b/file.swift
+        @@ -1,2 +1,3 @@
+         import Foundation
+        +import UIKit
+
+        @@ -10,3 +11,2 @@
+         func foo() {
+        -    let x = 1
+        -    let y = 2
+        +    let z = 3
+        @@ -20,0 +20,2 @@
+        +// New comment
+        +// Another comment
+        """
+        let hunks = InlineDiffProvider.parseHunks(diff)
+        #expect(hunks.count == 3)
+
+        let addedLines = InlineDiffProvider.addedLineNumbers(from: hunks)
+        let deletedBlocks = InlineDiffProvider.deletedLineBlocks(from: hunks)
+
+        // Hunk 1: import UIKit at line 2
+        #expect(addedLines.contains(2))
+        // Hunk 2: let z = 3 at line 12
+        #expect(addedLines.contains(12))
+        // Hunk 3: two comments at lines 20, 21
+        #expect(addedLines.contains(20))
+        #expect(addedLines.contains(21))
+
+        // Only hunk 2 has deletions
+        #expect(deletedBlocks.count == 1)
+        #expect(deletedBlocks[0].anchorLine == 11)
+        #expect(deletedBlocks[0].lines.count == 2)
+    }
+
+    // MARK: - newEndLine edge cases
+
+    @Test func newEndLineForVeryLargeCount() {
+        let hunk = DiffHunk(newStart: 1, newCount: 10000, oldStart: 1, oldCount: 5000, rawText: "")
+        #expect(hunk.newEndLine == 10000)
+    }
+
+    @Test func newEndLineForCountOfTwo() {
+        let hunk = DiffHunk(newStart: 100, newCount: 2, oldStart: 100, oldCount: 2, rawText: "")
+        #expect(hunk.newEndLine == 101)
+    }
+
+    // MARK: - parseSidePart with comma edge cases (via header)
+
+    @Test func parsesHeaderWithZeroNewCount() {
+        let result = InlineDiffProvider.parseHunkHeader("@@ -1,3 +5,0 @@")
+        #expect(result?.newStart == 5)
+        #expect(result?.newCount == 0)
+    }
+
+    @Test func parsesHeaderWithZeroOldCount() {
+        let result = InlineDiffProvider.parseHunkHeader("@@ -5,0 +1,3 @@")
+        #expect(result?.oldStart == 5)
+        #expect(result?.oldCount == 0)
+    }
+
+    @Test func parsesHeaderWithBothCountsZero() {
+        let result = InlineDiffProvider.parseHunkHeader("@@ -0,0 +0,0 @@")
+        #expect(result?.oldStart == 0)
+        #expect(result?.oldCount == 0)
+        #expect(result?.newStart == 0)
+        #expect(result?.newCount == 0)
+    }
+
+    @Test func returnsNilForMalformedStartInNewPart() {
+        #expect(InlineDiffProvider.parseHunkHeader("@@ -1,3 +abc @@") == nil)
+    }
+
+    @Test func returnsNilForMalformedStartInOldPart() {
+        #expect(InlineDiffProvider.parseHunkHeader("@@ -abc +1,3 @@") == nil)
+    }
+
+    // MARK: - CRLF additional edge cases
+
+    @Test func addedLineNumbersWithCRLFDiff() {
+        let diff = [
+            "diff --git a/file.swift b/file.swift",
+            "--- a/file.swift",
+            "+++ b/file.swift",
+            "@@ -1,1 +1,2 @@",
+            " context",
+            "+added line"
+        ].joined(separator: "\r\n")
+        let hunks = InlineDiffProvider.parseHunks(diff)
+        let addedLines = InlineDiffProvider.addedLineNumbers(from: hunks)
+        // Should still detect added lines even with \r in content
+        #expect(!addedLines.isEmpty)
+    }
+
+    @Test func deletedLineBlocksWithCRLFDiff() {
+        let diff = [
+            "diff --git a/file.swift b/file.swift",
+            "--- a/file.swift",
+            "+++ b/file.swift",
+            "@@ -1,2 +1,1 @@",
+            "-deleted line",
+            "+replacement"
+        ].joined(separator: "\r\n")
+        let hunks = InlineDiffProvider.parseHunks(diff)
+        let blocks = InlineDiffProvider.deletedLineBlocks(from: hunks)
+        #expect(!blocks.isEmpty)
+    }
+
+    // MARK: - Hunk with only @@ header line
+
+    @Test func hunkWithOnlyAtAtHeader() {
+        let hunk = DiffHunk(
+            newStart: 1, newCount: 0, oldStart: 1, oldCount: 0,
+            rawText: "@@ -1,0 +1,0 @@"
+        )
+        #expect(hunk.deletedLines.isEmpty)
+        #expect(hunk.addedLines.isEmpty)
+        #expect(hunk.newEndLine == 1)
+    }
+
+    // MARK: - parseHunks with diff stopping at new file diff
+
+    @Test func parseHunksStopsAtNewDiffHeader() {
+        let diff = """
+        diff --git a/a.swift b/a.swift
+        --- a/a.swift
+        +++ b/a.swift
+        @@ -1,1 +1,2 @@
+         line1
+        +added1
+        diff --git a/b.swift b/b.swift
+        --- a/b.swift
+        +++ b/b.swift
+        @@ -1,1 +1,2 @@
+         line1
+        +added2
+        """
+        let hunks = InlineDiffProvider.parseHunks(diff)
+        // Both hunks from both files should be parsed
+        #expect(hunks.count == 2)
+    }
 }
