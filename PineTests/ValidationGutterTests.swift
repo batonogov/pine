@@ -410,7 +410,7 @@ struct ValidationGutterTests {
         // With default font ~14px line height, line 3 starts around y=28
         let lineThreePoint = NSPoint(x: 10, y: 35)
         let tooltip = gutterView.resolveTooltip(at: lineThreePoint)
-        #expect(tooltip != "err", "Line 3 should not show line 1's tooltip")
+        #expect(tooltip == nil, "Line 3 should not show line 1's tooltip")
     }
 
     @Test func tooltipOwner_hasTooltipRectRegistered() {
