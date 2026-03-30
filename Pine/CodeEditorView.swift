@@ -38,6 +38,56 @@ final class GutterTextView: NSTextView {
         NSPoint(x: gutterInset, y: 8)
     }
 
+    // MARK: - Inline diff highlight
+
+    /// Set of 1-based line numbers that are added in the current diff (green background).
+    var addedLineNumbers: Set<Int> = []
+
+    /// Blocks of deleted lines to render as phantom text above the anchor line (red background).
+    var deletedLineBlocks: [DeletedLinesBlock] = []
+
+    /// Subtle green tint for added lines.
+    private static let addedLineColor = NSColor(name: nil) { appearance in
+        if appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua {
+            return NSColor.systemGreen.withAlphaComponent(0.08)
+        } else {
+            return NSColor.systemGreen.withAlphaComponent(0.10)
+        }
+    }
+
+    /// Subtle red tint for deleted lines (phantom blocks).
+    private static let deletedLineColor = NSColor(name: nil) { appearance in
+        if appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua {
+            return NSColor.systemRed.withAlphaComponent(0.08)
+        } else {
+            return NSColor.systemRed.withAlphaComponent(0.10)
+        }
+    }
+
+    /// Font for rendering deleted (phantom) lines — derived from the editor's current font size.
+    private var deletedLineFont: NSFont {
+        let size = font?.pointSize ?? 12
+        return NSFont.monospacedSystemFont(ofSize: size, weight: .regular)
+    }
+
+    /// Text color for deleted phantom lines (dimmed, strikethrough-like).
+    private static let deletedLineTextColor = NSColor(name: nil) { appearance in
+        if appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua {
+            return NSColor.systemRed.withAlphaComponent(0.60)
+        } else {
+            return NSColor.systemRed.withAlphaComponent(0.55)
+        }
+    }
+
+    /// Separator line between deleted phantom block and editor content (adaptive).
+    private static let deletedSeparatorColor = NSColor(name: nil) { appearance in
+        if appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua {
+            return NSColor.systemRed.withAlphaComponent(0.3)
+        } else {
+            return NSColor.systemRed.withAlphaComponent(0.25)
+        }
+    }
+
     // MARK: - Highlight current line
 
     private let currentLineColor = NSColor(name: nil) { appearance in
@@ -94,10 +144,16 @@ final class GutterTextView: NSTextView {
         super.drawBackground(in: rect)
 
         guard let layoutManager = layoutManager,
-              textContainer != nil else { return }
+              let textContainer = textContainer else { return }
 
         // ── Indent guides (behind everything else) ──
         IndentGuideRenderer.draw(in: self, dirtyRect: rect, indentStyle: indentStyle)
+
+        // ── Inline diff: green background on added lines, red phantom blocks for deleted lines ──
+        let hasDiffHighlights = !addedLineNumbers.isEmpty || !deletedLineBlocks.isEmpty
+        if hasDiffHighlights {
+            drawInlineDiffHighlights(in: rect, layoutManager: layoutManager, textContainer: textContainer)
+        }
 
         let cursorRange = selectedRange()
         guard cursorRange.length == 0 else { return }
@@ -116,6 +172,141 @@ final class GutterTextView: NSTextView {
         if isBlameVisible, !blameLookup.isEmpty {
             drawInlineBlame(lineRect: lineRect, layoutManager: layoutManager)
         }
+    }
+
+    // MARK: - Inline diff drawing
+
+    /// Draws green background highlights on added lines and red phantom blocks for deleted lines.
+    private func drawInlineDiffHighlights(
+        in rect: NSRect,
+        layoutManager: NSLayoutManager,
+        textContainer: NSTextContainer
+    ) {
+        guard let scrollView = enclosingScrollView else { return }
+        let visibleRect = scrollView.contentView.bounds
+        let source = string as NSString
+        guard source.length > 0 else { return }
+
+        let originY = textContainerOrigin.y
+
+        // Get visible glyph range
+        let visibleGlyphRange = layoutManager.glyphRange(
+            forBoundingRect: visibleRect, in: textContainer
+        )
+        guard visibleGlyphRange.location != NSNotFound else { return }
+
+        // Count the line number of the first visible character
+        let firstVisibleCharIndex = layoutManager.characterIndexForGlyph(
+            at: visibleGlyphRange.location
+        )
+        var lineNumber = 1
+        for i in 0..<firstVisibleCharIndex where source.character(at: i) == ASCII.newline {
+            lineNumber += 1
+        }
+
+        // Build lookup: anchor line → array of deleted blocks (handles multiple blocks at same anchor)
+        let deletedAnchorSet = Set(deletedLineBlocks.map(\.anchorLine))
+        var deletedAnchorMap: [Int: [DeletedLinesBlock]] = [:]
+        for block in deletedLineBlocks {
+            deletedAnchorMap[block.anchorLine, default: []].append(block)
+        }
+
+        // Enumerate visible line fragments to draw highlights
+        var previousLineCharIndex = -1
+
+        layoutManager.enumerateLineFragments(
+            forGlyphRange: visibleGlyphRange
+        ) { [self] lineRect, _, _, glyphRange, _ in
+            let charIndex = layoutManager.characterIndexForGlyph(at: glyphRange.location)
+
+            // Determine if this is a new logical line
+            let isNewLogicalLine: Bool
+            if previousLineCharIndex < 0 {
+                isNewLogicalLine = true
+            } else if charIndex > previousLineCharIndex {
+                let range = NSRange(location: previousLineCharIndex,
+                                    length: charIndex - previousLineCharIndex)
+                isNewLogicalLine = source.substring(with: range).contains("\n")
+            } else {
+                isNewLogicalLine = false
+            }
+
+            if isNewLogicalLine {
+                let y = lineRect.origin.y + originY - visibleRect.origin.y
+
+                // Draw deleted phantom blocks above this line if it's an anchor
+                if deletedAnchorSet.contains(lineNumber), let blocks = deletedAnchorMap[lineNumber] {
+                    var currentY = y
+                    for block in blocks {
+                        let blockHeight = CGFloat(block.lines.count) * lineRect.height
+                        currentY -= blockHeight
+                    }
+                    // Draw blocks top-down so they stack correctly
+                    var drawY = currentY
+                    for block in blocks {
+                        let blockHeight = CGFloat(block.lines.count) * lineRect.height
+                        self.drawDeletedPhantomBlock(block, at: drawY + blockHeight, lineHeight: lineRect.height)
+                        drawY += blockHeight
+                    }
+                }
+
+                // Draw green background on added lines
+                if self.addedLineNumbers.contains(lineNumber) {
+                    var highlightRect = lineRect
+                    highlightRect.origin.x = 0
+                    highlightRect.size.width = self.bounds.width
+                    highlightRect.origin.y = y
+                    Self.addedLineColor.setFill()
+                    highlightRect.fill()
+                }
+
+                lineNumber += 1
+            }
+            previousLineCharIndex = charIndex
+        }
+    }
+
+    /// Draws a block of deleted phantom lines above the given Y position.
+    /// Each deleted line is rendered with red background and dimmed red text.
+    private func drawDeletedPhantomBlock(_ block: DeletedLinesBlock, at anchorY: CGFloat, lineHeight: CGFloat) {
+        guard !block.lines.isEmpty else { return }
+
+        let font = deletedLineFont
+        let textColor = Self.deletedLineTextColor
+        let bgColor = Self.deletedLineColor
+
+        let lineCount = CGFloat(block.lines.count)
+        let blockHeight = lineCount * lineHeight
+        let blockY = anchorY - blockHeight
+
+        // Draw background for the entire deleted block
+        let bgRect = NSRect(x: 0, y: blockY, width: bounds.width, height: blockHeight)
+        bgColor.setFill()
+        bgRect.fill()
+
+        // Draw each deleted line with text
+        let attrs: [NSAttributedString.Key: Any] = [
+            .font: font,
+            .foregroundColor: textColor,
+            .strikethroughStyle: NSUnderlineStyle.single.rawValue,
+            .strikethroughColor: textColor
+        ]
+
+        for (index, line) in block.lines.enumerated() {
+            let lineY = blockY + CGFloat(index) * lineHeight
+            let text = line as NSString
+            let drawPoint = NSPoint(x: textContainerOrigin.x, y: lineY)
+            text.draw(at: drawPoint, withAttributes: attrs)
+        }
+
+        // Draw a subtle separator line between deleted block and editor content
+        let separatorY = anchorY
+        let separatorPath = NSBezierPath()
+        separatorPath.move(to: NSPoint(x: 0, y: separatorY))
+        separatorPath.line(to: NSPoint(x: bounds.width, y: separatorY))
+        separatorPath.lineWidth = 0.5
+        Self.deletedSeparatorColor.setStroke()
+        separatorPath.stroke()
     }
 
     /// Draws inline blame annotation after the line content on the cursor line.
@@ -515,6 +706,8 @@ struct CodeEditorView: NSViewRepresentable {
         textView.setBlameLines(blameLines)
         textView.isBlameVisible = isBlameVisible
         textView.indentStyle = indentStyle
+        textView.addedLineNumbers = InlineDiffProvider.addedLineNumbers(from: diffHunks)
+        textView.deletedLineBlocks = InlineDiffProvider.deletedLineBlocks(from: diffHunks)
         // Delegate set AFTER text/highlight setup to prevent textDidChange from firing
         // during makeNSView and causing a spurious updateContent → cachedHighlightResult = nil
         // → contentVersion bump → updateNSView re-sets text → stripping highlight attributes.
@@ -732,6 +925,15 @@ struct CodeEditorView: NSViewRepresentable {
             if gutterView.isBlameVisible != isBlameVisible {
                 gutterView.isBlameVisible = isBlameVisible
                 gutterView.display()
+            }
+            // Update inline diff highlight data
+            let newAddedLines = InlineDiffProvider.addedLineNumbers(from: diffHunks)
+            let newDeletedBlocks = InlineDiffProvider.deletedLineBlocks(from: diffHunks)
+            if gutterView.addedLineNumbers != newAddedLines
+                || gutterView.deletedLineBlocks != newDeletedBlocks {
+                gutterView.addedLineNumbers = newAddedLines
+                gutterView.deletedLineBlocks = newDeletedBlocks
+                gutterView.needsDisplay = true
             }
         }
 
