@@ -63,19 +63,17 @@ struct InlineDiffRenderingTests {
         return LineNumberView(textView: textView)
     }
 
-    // MARK: - Modified marker color (yellow instead of blue)
+    // MARK: - Modified diffs can be set on LineNumberView
 
-    @Test func modifiedMarkerColorIsYellow() {
+    @Test func modifiedDiffsCanBeSet() {
         let view = makeLineNumberView()
-        // The modifiedColor property should be systemYellow (not systemBlue)
-        // We verify by checking the color is accessible and used correctly
-        // The color is private, so we test indirectly via the diff map rendering
         let diffs: [GitLineDiff] = [GitLineDiff(line: 1, kind: .modified)]
         view.lineDiffs = diffs
-        // If we set modified diffs, the view should render with yellow
-        // (Visual verification — but we ensure the constant changed)
+        // Note: modifiedColor is private — we can only verify the diff data is stored correctly.
+        // The actual color (systemYellow vs systemBlue) is a visual property tested via manual/UI review.
         #expect(view.lineDiffs.count == 1)
         #expect(view.lineDiffs[0].kind == .modified)
+        #expect(view.lineDiffs[0].line == 1)
     }
 
     // MARK: - Deleted phantom lines: no strikethrough
@@ -113,16 +111,17 @@ struct InlineDiffRenderingTests {
         #expect(hitAccept == .accept)
     }
 
-    @Test func hunkActionButtonsHiddenWhenCollapsed() {
+    @Test func hitTestFindsButtonAreaRegardlessOfExpandState() {
         let view = makeLineNumberView()
         let hunk = makeHunk(newStart: 1)
         view.diffHunks = [hunk]
         view.expandedHunkID = nil
 
-        // When no hunk is expanded, hit test should still find the hunk
-        // (buttons are drawn based on expandedHunkID in draw(), not in hit test)
+        // hunkButtonHitTest only checks X coordinate and hunkStartMap presence —
+        // it does NOT check expandedHunkID (that guard lives in mouseDown).
+        // So hit test finds the button area even when collapsed.
         let hitAccept = view.hunkButtonHitTest(at: NSPoint(x: 15, y: 10), lineNumber: 1)
-        #expect(hitAccept == .accept) // hit test finds the button area
+        #expect(hitAccept == .accept)
     }
 
     // MARK: - Gutter diff marker click detects hunk across full range
@@ -154,12 +153,14 @@ struct InlineDiffRenderingTests {
         // Expand
         tv.expandedHunkID = hunk.id
         #expect(tv.expandedHunkID == hunk.id)
+        #expect(tv.diffHunksForHighlight.count == 1, "Hunks remain during expand")
 
         // Collapse
         tv.expandedHunkID = nil
-        #expect(tv.expandedHunkID == nil)
-        // Ensure no residual highlight state
-        #expect(tv.addedLineNumbers.isEmpty || tv.expandedHunkID == nil)
+        #expect(tv.expandedHunkID == nil, "Expanded hunk ID cleared after collapse")
+        // After collapse: hunks stay (they describe the file diff), but no hunk is expanded
+        #expect(tv.diffHunksForHighlight.count == 1, "Hunks persist after collapse")
+        #expect(tv.addedLineNumbers.isEmpty, "No residual added-line highlights after collapse")
     }
 
     // MARK: - Multiple hunks: only expanded hunk shows highlights
