@@ -580,8 +580,9 @@ final class LineNumberView: NSView {
     ]
 
     /// Fixed draw size for diagnostic icons — small enough to fit inside the fold indicator area
-    /// without overlapping line numbers.
-    static let diagnosticIconDrawSize: CGFloat = 10
+    /// without overlapping line numbers. Kept at 8px so the right edge (x=1 + 8 = 9px) stays
+    /// well clear of two-digit line numbers that start around x≈18.
+    static let diagnosticIconDrawSize: CGFloat = 8
 
     /// Draws an SF Symbol icon for a validation diagnostic at the given line position.
     /// The icon is drawn inside the fold indicator area (leftmost ~14px of the gutter),
@@ -598,8 +599,9 @@ final class LineNumberView: NSView {
         let tintedImage = image.tinted(with: color)
         let imageSize = tintedImage.size
         let centerY = y + (lineHeight - imageSize.height) / 2
-        // Position at the left edge of the gutter, within the fold indicator area (0–14px)
-        let x: CGFloat = 2
+        // Position at the left edge of the gutter, within the fold indicator area (0–14px).
+        // x=1 + iconSize=8 → right edge at 9px, well clear of two-digit line numbers (~18px).
+        let x: CGFloat = 1
 
         tintedImage.draw(in: NSRect(
             x: x, y: centerY,

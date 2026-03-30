@@ -144,8 +144,8 @@ struct ValidationGutterTests {
         #expect(LineNumberView.diagnosticIconDrawSize <= 14)
     }
 
-    @Test func diagnosticIconDrawSize_isExactly10() {
-        #expect(LineNumberView.diagnosticIconDrawSize == 10)
+    @Test func diagnosticIconDrawSize_isExactly8() {
+        #expect(LineNumberView.diagnosticIconDrawSize == 8)
     }
 
     // MARK: - Fixed gutter width (issue #677)
@@ -221,17 +221,17 @@ struct ValidationGutterTests {
     // MARK: - Icon position does not overlap line numbers
 
     @Test func diagnosticIcon_positionedWithinFoldArea() {
-        // The icon starts at x=2, within the fold indicator area (0–14px)
-        let iconX: CGFloat = 2
+        // The icon starts at x=1, within the fold indicator area (0–14px)
+        let iconX: CGFloat = 1
         let foldAreaEnd: CGFloat = 14
         #expect(iconX >= 0 && iconX < foldAreaEnd)
     }
 
     @Test func diagnosticIcon_doesNotOverlapLineNumbers() {
-        // Icon: x=2, size=10 → right edge = 12.
+        // Icon: x=1, size=8 → right edge = 9.
         // Line numbers for 2-digit case: gutterWidth(40) - textWidth(~14) - padding(8) = 18.
-        // 12 < 18, so no overlap.
-        let iconX: CGFloat = 2
+        // 9 < 18, so no overlap.
+        let iconX: CGFloat = 1
         let iconRightEdge = iconX + LineNumberView.diagnosticIconDrawSize
         let view = makeLineNumberView()
         let digitWidth = "0".size(withAttributes: [
