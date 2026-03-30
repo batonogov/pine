@@ -101,11 +101,13 @@ class TerminalContainerView: NSView {
         if tabChanged {
             subviews.forEach { $0.removeFromSuperview() }
             currentTabID = tab.id
-            tab.terminalView.frame = bounds
+            let effectiveBounds = bounds.size.width > 0 && bounds.size.height > 0
+                ? bounds : NSRect(x: 0, y: 0, width: 800, height: 300)
+            tab.terminalView.frame = effectiveBounds
             addSubview(tab.terminalView)
 
             // Place click interceptor on top of the terminal view
-            scrollInterceptor.frame = bounds
+            scrollInterceptor.frame = effectiveBounds
             scrollInterceptor.terminalView = tab.terminalView
             addSubview(scrollInterceptor)
         }
@@ -226,14 +228,26 @@ class TerminalContainerView: NSView {
     override func layout() {
         super.layout()
         guard let terminal, let tab = terminal.activeTerminalTab else { return }
+        // Do not start the process or update frames until the container has a real size.
+        // SwiftTerm derives cols/rows from the frame; a zero-size frame produces a 0×0
+        // terminal which renders as a blank screen (issue #661).
+        guard bounds.size.width > 0, bounds.size.height > 0 else { return }
         if tab.terminalView.superview === self {
+            let sizeChanged = tab.terminalView.frame.size != bounds.size
             tab.terminalView.frame = bounds
             tab.terminalView.needsLayout = true
             scrollInterceptor.frame = bounds
+            if sizeChanged {
+                // Force SwiftTerm to recalculate cols/rows and re-render.
+                // This handles the transition from a placeholder frame to the
+                // real container size, ensuring the PTY gets the correct window size.
+                tab.terminalView.needsDisplay = true
+            }
             tab.startIfNeeded()
         } else {
             showTab(tab)
             tab.terminalView.needsLayout = true
+            tab.terminalView.needsDisplay = true
             tab.startIfNeeded()
         }
     }
@@ -347,9 +361,14 @@ final class TerminalTab: Identifiable, Hashable {
         workingDirectory?.path ?? (ProcessInfo.processInfo.environment["HOME"] ?? "/")
     }
 
-    /// Запускает процесс если ещё не запущен и view добавлен в иерархию
+    /// Запускает процесс если ещё не запущен и view добавлен в иерархию.
+    /// The terminal view must have a non-zero frame so SwiftTerm can calculate
+    /// the correct column/row count for the PTY. Starting with a zero frame
+    /// causes a blank terminal (issue #661).
     func startIfNeeded() {
         guard !processStarted else { return }
+        guard terminalView.frame.size.width > 0,
+              terminalView.frame.size.height > 0 else { return }
         processStarted = true
 
         let env = buildEnvironment()

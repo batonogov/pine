@@ -464,4 +464,126 @@ struct TerminalTabTests {
         container.showTab(manager.activeTerminalTab)
         #expect(manager.pendingFocusTabID == nil)
     }
+
+    // MARK: - Blank terminal fix (issue #661)
+
+    @Test("startIfNeeded does not start with zero-size frame")
+    func startIfNeededGuardsZeroFrame() {
+        // Terminal created with default 800×300 frame
+        let tab = TerminalTab(name: "test")
+        // Override to zero to simulate the bug scenario
+        tab.terminalView.frame = .zero
+        tab.configure(workingDirectory: nil)
+        tab.startIfNeeded()
+        // Process should NOT have started because frame is zero
+        #expect(!tab.isProcessRunning)
+    }
+
+    @Test("startIfNeeded does not start with zero-width frame")
+    func startIfNeededGuardsZeroWidth() {
+        let tab = TerminalTab(name: "test")
+        tab.terminalView.frame = NSRect(x: 0, y: 0, width: 0, height: 300)
+        tab.configure(workingDirectory: nil)
+        tab.startIfNeeded()
+        #expect(!tab.isProcessRunning)
+    }
+
+    @Test("startIfNeeded does not start with zero-height frame")
+    func startIfNeededGuardsZeroHeight() {
+        let tab = TerminalTab(name: "test")
+        tab.terminalView.frame = NSRect(x: 0, y: 0, width: 800, height: 0)
+        tab.configure(workingDirectory: nil)
+        tab.startIfNeeded()
+        #expect(!tab.isProcessRunning)
+    }
+
+    @Test("startIfNeeded can be retried after frame becomes non-zero")
+    func startIfNeededRetriesAfterResize() {
+        let tab = TerminalTab(name: "test")
+        tab.terminalView.frame = .zero
+        tab.configure(workingDirectory: nil)
+        tab.startIfNeeded()
+        #expect(!tab.isProcessRunning)
+
+        // Now give it a real frame and try again
+        tab.terminalView.frame = NSRect(x: 0, y: 0, width: 800, height: 300)
+        tab.startIfNeeded()
+        // Process should have started now
+        #expect(tab.isProcessRunning)
+    }
+
+    @Test("showTab uses fallback bounds when container has zero bounds")
+    func showTabFallbackBoundsOnZeroContainer() {
+        let container = TerminalContainerView(frame: .zero)
+        let tab = TerminalTab(name: "test")
+        container.showTab(tab)
+
+        // Terminal view should get a fallback frame (800×300), not zero
+        #expect(tab.terminalView.frame.size.width == 800)
+        #expect(tab.terminalView.frame.size.height == 300)
+    }
+
+    @Test("showTab uses container bounds when non-zero")
+    func showTabUsesRealBounds() {
+        let container = TerminalContainerView(frame: NSRect(x: 0, y: 0, width: 1024, height: 768))
+        let tab = TerminalTab(name: "test")
+        container.showTab(tab)
+
+        #expect(tab.terminalView.frame.size.width == 1024)
+        #expect(tab.terminalView.frame.size.height == 768)
+    }
+
+    @Test("layout with zero bounds does not start process")
+    func layoutZeroBoundsDoesNotStart() throws {
+        let manager = TerminalManager()
+        manager.startTerminals(workingDirectory: nil)
+        let tab = try #require(manager.activeTerminalTab)
+        // Give terminal view a zero frame to simulate the issue
+        tab.terminalView.frame = .zero
+
+        let container = TerminalContainerView(frame: .zero)
+        container.terminal = manager
+        container.showTab(tab)
+
+        // Trigger layout with zero bounds
+        container.layout()
+
+        // Process should NOT have started
+        #expect(!tab.isProcessRunning)
+    }
+
+    @Test("layout with non-zero bounds starts process")
+    func layoutNonZeroBoundsStartsProcess() throws {
+        let manager = TerminalManager()
+        manager.startTerminals(workingDirectory: nil)
+
+        let container = TerminalContainerView(frame: NSRect(x: 0, y: 0, width: 800, height: 300))
+        container.terminal = manager
+        container.showTab(manager.activeTerminalTab)
+
+        // Trigger layout with valid bounds
+        container.layout()
+
+        let tab = try #require(manager.activeTerminalTab)
+        #expect(tab.isProcessRunning)
+    }
+
+    @Test("layout updates terminal view frame to match container bounds")
+    func layoutUpdatesFrame() throws {
+        let manager = TerminalManager()
+        manager.startTerminals(workingDirectory: nil)
+
+        let container = TerminalContainerView(frame: NSRect(x: 0, y: 0, width: 800, height: 300))
+        container.terminal = manager
+        container.showTab(manager.activeTerminalTab)
+        container.layout()
+
+        // Now resize container
+        container.frame = NSRect(x: 0, y: 0, width: 1200, height: 600)
+        container.layout()
+
+        let tab = try #require(manager.activeTerminalTab)
+        #expect(tab.terminalView.frame.size.width == 1200)
+        #expect(tab.terminalView.frame.size.height == 600)
+    }
 }
