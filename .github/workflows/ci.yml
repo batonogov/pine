@@ -16,7 +16,9 @@ permissions:
 jobs:
   # Detect whether the PR/push touches only docs/config files.
   # When only non-code files change, downstream jobs are skipped —
-  # GitHub treats skipped required checks as passed (strict policy is off).
+  # GitHub treats skipped required checks as passed because
+  # strict_required_status_checks_policy is OFF in branch protection.
+  # If strict policy is ever enabled, skipped jobs will BLOCK merges.
   changes:
     name: Detect Changes
     runs-on: ubuntu-latest
@@ -25,7 +27,7 @@ jobs:
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
-          fetch-depth: 0
+          fetch-depth: 2
 
       - name: Check for code changes
         id: filter
@@ -38,8 +40,13 @@ jobs:
             HEAD="${{ github.sha }}"
           fi
 
+          # On branch creation, github.event.before is the null SHA — fall back to parent
+          if [ "$BASE" = "0000000000000000000000000000000000000000" ]; then
+            BASE="HEAD~1"
+          fi
+
           # List changed files, exclude docs/config-only paths
-          CHANGED=$(git diff --name-only "$BASE" "$HEAD" | grep -cvE '^(.*\.md|docs/|assets/|LICENSE|\.github/ISSUE_TEMPLATE/|\.release-please-manifest\.json|release-please-config\.json)$' || true)
+          CHANGED=$(git diff --name-only "$BASE" "$HEAD" | grep -cvE '^(.*\.md|docs/.*|assets/.*|LICENSE|\.github/ISSUE_TEMPLATE/.*|\.release-please-manifest\.json|release-please-config\.json)$' || true)
 
           if [ "$CHANGED" -gt 0 ]; then
             echo "code=true" >> "$GITHUB_OUTPUT"
