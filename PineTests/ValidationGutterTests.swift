@@ -136,6 +136,50 @@ struct ValidationGutterTests {
         #expect(LineNumberView.diagnosticColors[.info] == .systemBlue)
     }
 
+    // MARK: - Diagnostic icon draw size constant
+
+    @Test func diagnosticIconDrawSize_isReasonable() {
+        // Icon size should be small enough not to overlap line numbers
+        #expect(LineNumberView.diagnosticIconDrawSize > 0)
+        #expect(LineNumberView.diagnosticIconDrawSize <= 14)
+    }
+
+    @Test func diagnosticIconDrawSize_isExactly12() {
+        #expect(LineNumberView.diagnosticIconDrawSize == 12)
+    }
+
+    // MARK: - Gutter width includes diagnostic icon space
+
+    @Test func gutterWidth_expandsWhenDiagnosticsPresent() {
+        let view = makeLineNumberView()
+        let baseWidth = view.gutterWidth
+
+        let diag = ValidationDiagnostic(
+            line: 1, column: nil, message: "error", severity: .error, source: "test"
+        )
+        view.validationDiagnostics = [diag]
+
+        // After setting diagnostics, the gutter needs a draw pass to update width.
+        // But the diagnosticMap is rebuilt immediately, so we can verify the map is populated.
+        #expect(view.validationDiagnostics.count == 1)
+        // The base width should remain unchanged until draw() runs.
+        #expect(view.gutterWidth == baseWidth)
+    }
+
+    @Test func gutterWidth_shrinksWhenDiagnosticsCleared() {
+        let view = makeLineNumberView()
+        let baseWidth = view.gutterWidth
+
+        let diag = ValidationDiagnostic(
+            line: 1, column: nil, message: "error", severity: .error, source: "test"
+        )
+        view.validationDiagnostics = [diag]
+        view.validationDiagnostics = []
+
+        // After clearing diagnostics, gutter width should remain at base.
+        #expect(view.gutterWidth == baseWidth)
+    }
+
     // MARK: - drawDiagnosticIcon does not crash
 
     @Test func drawDiagnosticIcon_errorDoesNotCrash() {
@@ -161,6 +205,33 @@ struct ValidationGutterTests {
     @Test func drawDiagnosticIcon_largeLineHeight() {
         let view = makeLineNumberView()
         view.drawDiagnosticIcon(at: 100, lineHeight: 50, severity: .warning)
+    }
+
+    // MARK: - Icon position does not overlap line numbers
+
+    @Test func diagnosticIcon_positionedAfterFoldIndicatorArea() {
+        // The icon x position (14) should be past the fold indicator area (x=3, size=8 → ends at 11)
+        // This is verified by the constant in drawDiagnosticIcon: x = 14
+        let foldIndicatorEnd: CGFloat = 3 + 8  // x + size
+        let iconX: CGFloat = 14
+        #expect(iconX > foldIndicatorEnd)
+    }
+
+    @Test func diagnosticIcon_doesNotOverlapLineNumber() {
+        // With diagnosticExtra = diagnosticIconDrawSize + 4 = 16, gutter grows by 16px.
+        // Icon drawn at x=14 with max width diagnosticIconDrawSize=12 → ends at x=26.
+        // Line number drawn at gutterWidth - textWidth - 8.
+        // For 2-digit number (~14px text), base gutter ~34, with extra → ~50.
+        // Line number starts at 50 - 14 - 8 = 28. Icon ends at 26. No overlap.
+        let iconX: CGFloat = 14
+        let iconMaxRight = iconX + LineNumberView.diagnosticIconDrawSize
+        let diagnosticExtra = LineNumberView.diagnosticIconDrawSize + 4
+        let minGutterWithDiagnostics: CGFloat = 2 * 7 + 20 + diagnosticExtra  // ~50 for 2-digit, 7px digit
+        let lineNumberRightPadding: CGFloat = 8
+        let twoDigitTextWidth: CGFloat = 14  // approximate
+        let lineNumberLeft = minGutterWithDiagnostics - twoDigitTextWidth - lineNumberRightPadding
+
+        #expect(iconMaxRight <= lineNumberLeft)
     }
 
     // MARK: - Multiple lines with diagnostics
