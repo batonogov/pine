@@ -77,12 +77,11 @@ struct InlineDiffRenderingTests {
         #expect(view.lineDiffs[0].line == 1)
     }
 
-    // MARK: - Deleted phantom lines: no strikethrough
+    // MARK: - Deleted phantom lines: parsing
 
-    @Test func deletedPhantomBlockUsesNoStrikethrough() {
-        // The drawDeletedPhantomBlock method should NOT use strikethrough attributes.
-        // We verify by checking that GutterTextView's deleted line rendering
-        // uses plain text (not strikethrough).
+    @Test func pureDeletionHunkParsesDeletedLines() {
+        // Verify that a pure-deletion hunk correctly parses deleted lines
+        // from the raw diff text.
         let tv = makeTextView()
         let hunk = DiffHunk(
             newStart: 2, newCount: 1, oldStart: 2, oldCount: 2,
