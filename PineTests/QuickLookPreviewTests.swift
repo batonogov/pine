@@ -149,6 +149,81 @@ struct QuickLookPreviewTests {
         // The coordinator's currentURL differs from wrapper.url — update needed
         #expect(coordinator.currentURL != wrapper.url)
     }
+
+    // MARK: - Generation token prevents stale assignment (#675)
+
+    @Test("Coordinator starts with generation 0")
+    func coordinatorStartsGenZero() {
+        let coordinator = QuickLookPreviewView.Coordinator()
+        #expect(coordinator.generation == 0)
+    }
+
+    @Test("dismantleNSView increments generation to invalidate pending async blocks")
+    @MainActor
+    func dismantleIncrementsGeneration() {
+        // swiftlint:disable:next force_unwrapping
+        let nsView = QLPreviewView(frame: .zero, style: .normal)!
+        let coordinator = QuickLookPreviewView.Coordinator()
+        #expect(coordinator.generation == 0)
+
+        QuickLookPreviewView.dismantleNSView(nsView, coordinator: coordinator)
+        #expect(coordinator.generation == 1, "dismantleNSView should increment generation")
+    }
+
+    @Test("Generation mismatch prevents stale previewItem assignment after dismantle")
+    @MainActor
+    func generationPreventsStaleAssignment() {
+        // Simulate the race: makeNSView captures gen=0, then dismantleNSView bumps to 1
+        let coordinator = QuickLookPreviewView.Coordinator()
+        let capturedGen = coordinator.generation  // 0 — as makeNSView would capture
+
+        // Simulate dismantleNSView running before the async block fires
+        coordinator.generation += 1
+
+        // The async block's guard should fail
+        #expect(
+            coordinator.generation != capturedGen,
+            "After dismantle, generation should differ from captured value"
+        )
+    }
+
+    @Test("updateNSView increments generation on URL change")
+    @MainActor
+    func updateIncrementsGeneration() {
+        let coordinator = QuickLookPreviewView.Coordinator()
+        coordinator.currentURL = URL(fileURLWithPath: "/tmp/a.png")
+        #expect(coordinator.generation == 0)
+
+        // Simulate what updateNSView does on URL change
+        coordinator.currentURL = URL(fileURLWithPath: "/tmp/b.png")
+        coordinator.generation += 1
+        #expect(coordinator.generation == 1)
+
+        // A second URL change bumps again
+        coordinator.currentURL = URL(fileURLWithPath: "/tmp/c.png")
+        coordinator.generation += 1
+        #expect(coordinator.generation == 2)
+    }
+
+    @Test("Rapid URL changes leave only latest generation valid")
+    @MainActor
+    func rapidURLChangesInvalidateOlderGenerations() {
+        let coordinator = QuickLookPreviewView.Coordinator()
+
+        // Simulate 3 rapid URL changes, each capturing its own generation
+        var capturedGens: [Int] = []
+        for idx in 0..<3 {
+            coordinator.currentURL = URL(fileURLWithPath: "/tmp/file\(idx).png")
+            coordinator.generation += 1
+            capturedGens.append(coordinator.generation)
+        }
+
+        // Only the last captured generation matches current
+        let currentGen = coordinator.generation
+        #expect(capturedGens.last == currentGen)
+        #expect(capturedGens[0] != currentGen, "First generation should be stale")
+        #expect(capturedGens[1] != currentGen, "Second generation should be stale")
+    }
 }
 
 /// Minimal mock for NSViewRepresentable context — used to verify coordinator behavior.

@@ -29,8 +29,10 @@ struct QuickLookPreviewView: NSViewRepresentable {
         // Defer previewItem assignment to the next runloop iteration so the view
         // is fully embedded in the window hierarchy before QuickLookUI attempts
         // its internal overlay/border update (#673).
+        let gen = context.coordinator.generation
         DispatchQueue.main.async { [weak view] in
             guard let view, view.window != nil else { return }
+            guard context.coordinator.generation == gen else { return }
             view.previewItem = PreviewItem(url: url)
         }
         return view
@@ -44,17 +46,23 @@ struct QuickLookPreviewView: NSViewRepresentable {
         let current = context.coordinator.currentURL
         if current != url {
             context.coordinator.currentURL = url
+            context.coordinator.generation += 1
             let newItem = PreviewItem(url: url)
             guard newItem.previewItemURL != nil else { return }
             // Defer update as well to avoid the same _updateOverlayBorder crash (#673)
+            let gen = context.coordinator.generation
             DispatchQueue.main.async { [weak nsView] in
                 guard let nsView, nsView.window != nil else { return }
+                guard context.coordinator.generation == gen else { return }
                 nsView.previewItem = newItem
             }
         }
     }
 
     static func dismantleNSView(_ nsView: QLPreviewView, coordinator: Coordinator) {
+        // Increment generation so any pending async blocks from makeNSView/updateNSView
+        // see a mismatch and skip the stale previewItem assignment.
+        coordinator.generation += 1
         // Clear the preview item before the view is torn down to prevent
         // QuickLookUI from accessing stale internal state during deallocation (#673).
         nsView.previewItem = nil
@@ -62,9 +70,11 @@ struct QuickLookPreviewView: NSViewRepresentable {
 
     /// Coordinator tracks the currently-requested URL so we can detect changes
     /// without reading back from `QLPreviewView.previewItem` (which may be stale
-    /// due to deferred assignment).
+    /// due to deferred assignment). A generation counter prevents stale async
+    /// blocks from overwriting `previewItem` after `dismantleNSView` clears it.
     final class Coordinator {
         var currentURL: URL?
+        var generation: Int = 0
     }
 }
 
