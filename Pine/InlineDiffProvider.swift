@@ -153,10 +153,14 @@ enum InlineDiffProvider {
     static func parseHunkHeader(_ header: String) -> (oldStart: Int, oldCount: Int, newStart: Int, newCount: Int)? {
         // Format: @@ -old[,count] +new[,count] @@
         // Example: @@ -10,5 +12,7 @@ func foo()
-        guard let atRange = header.range(of: "@@", range: header.index(header.startIndex, offsetBy: 2)..<header.endIndex) else {
+        guard header.count > 4 else { return nil }
+        let searchStart = header.index(header.startIndex, offsetBy: 2)
+        guard let atRange = header.range(of: "@@", range: searchStart..<header.endIndex) else {
             return nil
         }
-        let inner = String(header[header.index(header.startIndex, offsetBy: 3)..<atRange.lowerBound]).trimmingCharacters(in: .whitespaces)
+        let innerStart = header.index(header.startIndex, offsetBy: 3)
+        guard innerStart < atRange.lowerBound else { return nil }
+        let inner = String(header[innerStart..<atRange.lowerBound]).trimmingCharacters(in: .whitespaces)
         let parts = inner.split(separator: " ")
         guard parts.count >= 2 else { return nil }
 
