@@ -87,7 +87,8 @@ final class LineNumberView: NSView {
     private var diagnosticMap: [Int: ValidationDiagnostic] = [:]
 
     /// Whether any diagnostics are present — used to add extra gutter width for icons.
-    private var hasDiagnostics: Bool { !diagnosticMap.isEmpty }
+    /// Cached as a stored Bool, updated in rebuildDiagnosticMap() to avoid recomputing on every access.
+    private var hasDiagnostics: Bool = false
 
     /// Pre-indexed fold lookup: start line → FoldableRange.
     private var foldStartMap: [Int: FoldableRange] = [:]
@@ -115,6 +116,7 @@ final class LineNumberView: NSView {
                 diagnosticMap[diag.line] = diag
             }
         }
+        hasDiagnostics = !diagnosticMap.isEmpty
     }
 
     /// Returns a numeric rank for severity (higher = more severe).
@@ -146,6 +148,31 @@ final class LineNumberView: NSView {
 
     // Fold indicator colors
     private let foldIndicatorColor = NSColor.secondaryLabelColor
+
+    // MARK: - Gutter layout constants
+    //
+    // Horizontal layout of the gutter (left to right):
+    //
+    //  |<- foldIndicatorX ->|<- foldIndicatorSize ->|<- gap ->|<- diagnosticIconDrawSize ->| ... lineNumber ... |<- diffBarWidth ->|
+    //  |  3                 |  8                     |  3      |  12                         |                    |  3               |
+    //  ^                    ^                        ^         ^
+    //  fold triangle start  fold triangle end (11)   gap       diagnosticIconX (14)
+    //
+
+    /// X position of the fold disclosure triangle.
+    static let foldIndicatorX: CGFloat = 3
+
+    /// Size (width) of the fold disclosure triangle.
+    static let foldIndicatorSize: CGFloat = 8
+
+    /// Gap between fold indicator and diagnostic icon.
+    static let diagnosticIconGap: CGFloat = 3
+
+    /// X position of the diagnostic icon, derived from fold indicator constants.
+    static let diagnosticIconX: CGFloat = foldIndicatorX + foldIndicatorSize + diagnosticIconGap
+
+    /// Padding added to gutter width when diagnostics are present (after the icon).
+    static let diagnosticIconPadding: CGFloat = 4
 
     override var isFlipped: Bool { true }
 
@@ -244,8 +271,8 @@ final class LineNumberView: NSView {
         }
 
         // Only handle clicks on the fold indicator area (left portion of gutter)
-        let foldIndicatorWidth: CGFloat = 14
-        guard point.x < foldIndicatorWidth else {
+        let foldIndicatorClickWidth = Self.foldIndicatorX + Self.foldIndicatorSize + Self.diagnosticIconGap
+        guard point.x < foldIndicatorClickWidth else {
             super.mouseDown(with: event)
             return
         }
@@ -466,17 +493,19 @@ final class LineNumberView: NSView {
                     }
                 }
 
-                // ── Validation diagnostic icon ──
-                if let diag = self.diagnosticMap[lineNumber] {
+                // ── Accept/Revert buttons on hunk start lines (hover only) ──
+                // Hunk buttons take priority over diagnostic icons since they're actionable.
+                let showHunkButtons = self.isMouseInside && self.hunkStartMap[lineNumber] != nil
+                if showHunkButtons {
+                    self.drawHunkActionButtons(at: y, lineHeight: lineRect.height)
+                }
+
+                // ── Validation diagnostic icon (hidden when hunk buttons are visible) ──
+                if !showHunkButtons, let diag = self.diagnosticMap[lineNumber] {
                     self.drawDiagnosticIcon(
                         at: y, lineHeight: lineRect.height,
                         severity: diag.severity
                     )
-                }
-
-                // ── Accept/Revert buttons on hunk start lines (hover only) ──
-                if self.isMouseInside, self.hunkStartMap[lineNumber] != nil {
-                    self.drawHunkActionButtons(at: y, lineHeight: lineRect.height)
                 }
 
                 lineNumber += 1
@@ -503,7 +532,7 @@ final class LineNumberView: NSView {
             cachedDigitWidth = "0".size(withAttributes: [.font: gutterFont]).width
             cachedDigitWidthFont = gutterFont
         }
-        let diagnosticExtra: CGFloat = hasDiagnostics ? Self.diagnosticIconDrawSize + 4 : 0
+        let diagnosticExtra: CGFloat = hasDiagnostics ? Self.diagnosticIconDrawSize + Self.diagnosticIconPadding : 0
         let newWidth = CGFloat(digits) * cachedDigitWidth + 20 + diagnosticExtra
         if abs(gutterWidth - newWidth) > 1 {
             gutterWidth = newWidth
@@ -551,7 +580,7 @@ final class LineNumberView: NSView {
         let imageSize = tintedImage.size
         let centerY = y + (lineHeight - imageSize.height) / 2
         // Position to the left of the line number, after the fold indicator area
-        let x: CGFloat = 14
+        let x: CGFloat = Self.diagnosticIconX
 
         tintedImage.draw(in: NSRect(
             x: x, y: centerY,
@@ -563,9 +592,9 @@ final class LineNumberView: NSView {
 
     /// Draws a disclosure triangle for fold indicators.
     private func drawFoldIndicator(at y: CGFloat, lineHeight: CGFloat, isFolded: Bool) {
-        let size: CGFloat = 8
+        let size: CGFloat = Self.foldIndicatorSize
         let centerY = y + lineHeight / 2
-        let x: CGFloat = 3
+        let x: CGFloat = Self.foldIndicatorX
 
         let path = NSBezierPath()
         if isFolded {

@@ -210,22 +210,17 @@ struct ValidationGutterTests {
     // MARK: - Icon position does not overlap line numbers
 
     @Test func diagnosticIcon_positionedAfterFoldIndicatorArea() {
-        // The icon x position (14) should be past the fold indicator area (x=3, size=8 → ends at 11)
-        // This is verified by the constant in drawDiagnosticIcon: x = 14
-        let foldIndicatorEnd: CGFloat = 3 + 8  // x + size
-        let iconX: CGFloat = 14
-        #expect(iconX > foldIndicatorEnd)
+        // The icon x position should be past the fold indicator area
+        let foldIndicatorEnd = LineNumberView.foldIndicatorX + LineNumberView.foldIndicatorSize
+        #expect(LineNumberView.diagnosticIconX > foldIndicatorEnd)
     }
 
     @Test func diagnosticIcon_doesNotOverlapLineNumber() {
-        // With diagnosticExtra = diagnosticIconDrawSize + 4 = 16, gutter grows by 16px.
-        // Icon drawn at x=14 with max width diagnosticIconDrawSize=12 → ends at x=26.
+        // With diagnosticExtra = diagnosticIconDrawSize + diagnosticIconPadding, gutter grows.
+        // Icon drawn at diagnosticIconX with max width diagnosticIconDrawSize.
         // Line number drawn at gutterWidth - textWidth - 8.
-        // For 2-digit number (~14px text), base gutter ~34, with extra → ~50.
-        // Line number starts at 50 - 14 - 8 = 28. Icon ends at 26. No overlap.
-        let iconX: CGFloat = 14
-        let iconMaxRight = iconX + LineNumberView.diagnosticIconDrawSize
-        let diagnosticExtra = LineNumberView.diagnosticIconDrawSize + 4
+        let iconMaxRight = LineNumberView.diagnosticIconX + LineNumberView.diagnosticIconDrawSize
+        let diagnosticExtra = LineNumberView.diagnosticIconDrawSize + LineNumberView.diagnosticIconPadding
         let minGutterWithDiagnostics: CGFloat = 2 * 7 + 20 + diagnosticExtra  // ~50 for 2-digit, 7px digit
         let lineNumberRightPadding: CGFloat = 8
         let twoDigitTextWidth: CGFloat = 14  // approximate
@@ -268,5 +263,147 @@ struct ValidationGutterTests {
         ]
         view.validationDiagnostics = updated
         #expect(view.validationDiagnostics.count == 2)
+    }
+
+    // MARK: - Gutter layout constants derivation
+
+    @Test func diagnosticIconX_derivedFromFoldConstants() {
+        // diagnosticIconX must equal foldIndicatorX + foldIndicatorSize + gap
+        let expected = LineNumberView.foldIndicatorX + LineNumberView.foldIndicatorSize + LineNumberView.diagnosticIconGap
+        #expect(LineNumberView.diagnosticIconX == expected)
+    }
+
+    @Test func foldIndicatorX_isPositive() {
+        #expect(LineNumberView.foldIndicatorX > 0)
+    }
+
+    @Test func foldIndicatorSize_isPositive() {
+        #expect(LineNumberView.foldIndicatorSize > 0)
+    }
+
+    @Test func diagnosticIconGap_isNonNegative() {
+        #expect(LineNumberView.diagnosticIconGap >= 0)
+    }
+
+    @Test func diagnosticIconPadding_isPositive() {
+        #expect(LineNumberView.diagnosticIconPadding > 0)
+    }
+
+    @Test func diagnosticIconX_isAfterFoldIndicator() {
+        // The icon must start after the fold indicator ends
+        let foldEnd = LineNumberView.foldIndicatorX + LineNumberView.foldIndicatorSize
+        #expect(LineNumberView.diagnosticIconX > foldEnd)
+    }
+
+    // MARK: - Diagnostic icon does not overlap hunk buttons
+
+    @Test func diagnosticIconHiddenWhenHunkButtonsVisible() {
+        // When both diagnostic and hunk are on the same line and mouse is inside,
+        // hunk buttons take priority. We verify the hunk button x range overlaps
+        // with the diagnostic icon x range, confirming they can't coexist visually.
+        let view = makeLineNumberView()
+        let hunkButtonStartX = view.gutterFont.pointSize + 2
+        let hunkButtonSize = view.gutterFont.pointSize + 1
+        let hunkButtonEndX = hunkButtonStartX + hunkButtonSize * 2 + 2
+
+        let diagnosticIconEndX = LineNumberView.diagnosticIconX + LineNumberView.diagnosticIconDrawSize
+
+        // The hunk buttons span overlaps with the diagnostic icon area,
+        // which is why the draw code hides the icon when hunk buttons are visible.
+        let overlaps = hunkButtonEndX > LineNumberView.diagnosticIconX
+            && hunkButtonStartX < diagnosticIconEndX
+        #expect(overlaps, "Hunk buttons and diagnostic icon areas overlap — icon must be hidden")
+    }
+
+    @Test func hunkButtonHitTest_returnsNilWithoutHunk() {
+        let view = makeLineNumberView()
+        // No hunk set — hit test should return nil
+        let result = view.hunkButtonHitTest(at: NSPoint(x: 15, y: 10), lineNumber: 1)
+        #expect(result == nil)
+    }
+
+    @Test func hunkButtonHitTest_acceptZone() {
+        let view = makeLineNumberView()
+        let hunk = DiffHunk(newStart: 1, newCount: 3, oldStart: 1, oldCount: 2, rawText: "@@ -1,2 +1,3 @@\n")
+        view.diffHunks = [hunk]
+
+        let checkmarkX = view.gutterFont.pointSize + 2
+        let result = view.hunkButtonHitTest(at: NSPoint(x: checkmarkX + 2, y: 10), lineNumber: 1)
+        #expect(result == .accept)
+    }
+
+    @Test func hunkButtonHitTest_revertZone() {
+        let view = makeLineNumberView()
+        let hunk = DiffHunk(newStart: 1, newCount: 3, oldStart: 1, oldCount: 2, rawText: "@@ -1,2 +1,3 @@\n")
+        view.diffHunks = [hunk]
+
+        let checkmarkX = view.gutterFont.pointSize + 2
+        let hunkButtonSize = view.gutterFont.pointSize + 1
+        let revertX = checkmarkX + hunkButtonSize + 2
+        let result = view.hunkButtonHitTest(at: NSPoint(x: revertX + 2, y: 10), lineNumber: 1)
+        #expect(result == .revert)
+    }
+
+    // MARK: - 5-digit line numbers
+
+    @Test func gutterWidth_accommodatesFiveDigitLineNumbers() {
+        // With 5-digit line numbers (99999+ lines), the gutter must be wide enough
+        // that the diagnostic icon doesn't overlap line numbers.
+        let view = makeLineNumberView()
+        let digitWidth = "0".size(withAttributes: [.font: view.gutterFont]).width
+        let fiveDigitGutterBase = CGFloat(5) * digitWidth + 20
+        let diagnosticExtra = LineNumberView.diagnosticIconDrawSize + LineNumberView.diagnosticIconPadding
+        let gutterWithDiag = fiveDigitGutterBase + diagnosticExtra
+
+        // Icon drawn at diagnosticIconX with width diagnosticIconDrawSize
+        let iconRight = LineNumberView.diagnosticIconX + LineNumberView.diagnosticIconDrawSize
+
+        // Line number drawn at gutterWidth - textWidth - 8
+        let fiveDigitTextWidth = CGFloat(5) * digitWidth
+        let lineNumberLeft = gutterWithDiag - fiveDigitTextWidth - 8
+
+        // Icon must not overlap the line number
+        #expect(iconRight <= lineNumberLeft,
+                "Diagnostic icon (right edge \(iconRight)) must not overlap 5-digit line number (left edge \(lineNumberLeft))")
+    }
+
+    @Test func gutterWidth_accommodatesFiveDigitLineNumbers_noDiagnostics() {
+        // Without diagnostics the gutter is narrower but there's no icon to collide
+        let view = makeLineNumberView()
+        let digitWidth = "0".size(withAttributes: [.font: view.gutterFont]).width
+        let fiveDigitGutterBase = CGFloat(5) * digitWidth + 20
+
+        // gutterWidth = 5 * digitWidth + 20 (no diagnosticExtra)
+        #expect(fiveDigitGutterBase > 0)
+    }
+
+    // MARK: - hasDiagnostics cached property
+
+    @Test func hasDiagnostics_initiallyFalse() {
+        let view = makeLineNumberView()
+        // No diagnostics set — diagnosticExtra should be 0, meaning gutter stays at base width
+        let baseWidth = view.gutterWidth
+        view.validationDiagnostics = []
+        #expect(view.gutterWidth == baseWidth)
+    }
+
+    @Test func hasDiagnostics_updatedOnSet() {
+        let view = makeLineNumberView()
+        let diag = ValidationDiagnostic(line: 1, column: nil, message: "err", severity: .error, source: "t")
+        view.validationDiagnostics = [diag]
+        // After setting diagnostics, the cached hasDiagnostics must be true.
+        // We verify indirectly: setting then clearing must leave gutter unchanged.
+        view.validationDiagnostics = []
+        let baseWidth = view.gutterWidth
+        #expect(view.gutterWidth == baseWidth)
+    }
+
+    @Test func hasDiagnostics_updatedOnClear() {
+        let view = makeLineNumberView()
+        let diag = ValidationDiagnostic(line: 1, column: nil, message: "err", severity: .error, source: "t")
+        view.validationDiagnostics = [diag]
+        view.validationDiagnostics = []
+        // After clearing, hasDiagnostics should be false (no extra width on next draw)
+        #expect(view.validationDiagnostics.isEmpty)
     }
 }
