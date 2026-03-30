@@ -481,12 +481,12 @@ struct ConfigValidatorTests {
         #expect(!trailingMsg.isEmpty)
     }
 
-    @Test func builtinYAML_oddIndentation_producesWarning() {
+    @Test func builtinYAML_unusualIndentation_producesWarning() {
         let content = "parent:\n   child: value\n"
         let results = BuiltinValidator.validateYAML(content)
         let oddWarn = results.filter { $0.line == 2 && $0.severity == .warning }
         #expect(!oddWarn.isEmpty)
-        let indentMsg = results.filter { $0.message.contains("Odd indentation") }
+        let indentMsg = results.filter { $0.message.contains("Unusual indentation") }
         #expect(!indentMsg.isEmpty)
     }
 
@@ -723,5 +723,74 @@ struct ConfigValidatorTests {
         let content = "defaults: &defaults\n  adapter: postgres\ndev:\n  <<: *defaults\n"
         let results = BuiltinValidator.validateYAML(content)
         #expect(results.isEmpty)
+    }
+
+    // MARK: - Fix: built-in fallback when external tool returns empty
+
+    @Test func builtinFallback_runsWhenExternalToolReturnsEmpty() {
+        // Simulate: external tool exists but returned empty output.
+        // The built-in YAML validator should still catch tab indentation.
+        let content = "key: value\n\tindented: bad\n"
+        let results = BuiltinValidator.validateYAML(content)
+        let tabErrors = results.filter { $0.message.contains("tab") }
+        #expect(!tabErrors.isEmpty, "Built-in validator must produce diagnostics as fallback")
+    }
+
+    // MARK: - Fix: backticks in quotes should NOT warn
+
+    @Test func builtinShell_backticksInDoubleQuotes_noWarning() {
+        let content = "echo \"result is `date`\"\n"
+        let results = BuiltinValidator.validateShell(content)
+        let backtickInfo = results.filter { $0.message.contains("backtick") }
+        #expect(backtickInfo.isEmpty, "Backticks inside double quotes should not trigger a warning")
+    }
+
+    @Test func builtinShell_backticksInSingleQuotes_noWarning() {
+        let content = "echo 'result is `date`'\n"
+        let results = BuiltinValidator.validateShell(content)
+        let backtickInfo = results.filter { $0.message.contains("backtick") }
+        #expect(backtickInfo.isEmpty, "Backticks inside single quotes should not trigger a warning")
+    }
+
+    @Test func builtinShell_backticksOutsideQuotes_warns() {
+        let content = "result=`date`\n"
+        let results = BuiltinValidator.validateShell(content)
+        let backtickInfo = results.filter { $0.severity == .info }
+        #expect(!backtickInfo.isEmpty, "Backticks outside quotes should still warn")
+    }
+
+    // MARK: - Fix: 4-space YAML indentation should NOT warn
+
+    @Test func builtinYAML_fourSpaceIndent_noWarning() {
+        let content = "parent:\n    child:\n        grandchild: value\n"
+        let results = BuiltinValidator.validateYAML(content)
+        let indentWarn = results.filter { $0.message.contains("indentation") }
+        #expect(indentWarn.isEmpty, "4-space and 8-space indents are valid YAML")
+    }
+
+    @Test func builtinYAML_oneSpaceIndent_warns() {
+        let content = "parent:\n child: value\n"
+        let results = BuiltinValidator.validateYAML(content)
+        let indentWarn = results.filter { $0.message.contains("Unusual indentation") }
+        #expect(!indentWarn.isEmpty, "1-space indent is unusual and should warn")
+    }
+
+    @Test func builtinYAML_fiveSpaceIndent_noWarning() {
+        let content = "parent:\n     child: value\n"
+        let results = BuiltinValidator.validateYAML(content)
+        let indentWarn = results.filter { $0.message.contains("indentation") }
+        #expect(indentWarn.isEmpty, "5-space indent should not warn (only 1 and 3 are flagged)")
+    }
+
+    // MARK: - Fix: Dockerfile with multiple issues
+
+    @Test func builtinDockerfile_missingFromAndInvalidInstruction() {
+        let content = "INVALID_CMD echo hello\nCOPY . /app\n"
+        let results = BuiltinValidator.validateDockerfile(content)
+        let missingFrom = results.filter { $0.message.contains("FROM") }
+        let invalidInstr = results.filter { $0.message.contains("Invalid Dockerfile instruction") }
+        #expect(!missingFrom.isEmpty, "Should report missing FROM instruction")
+        #expect(!invalidInstr.isEmpty, "Should report invalid instruction")
+        #expect(results.filter { $0.severity == .error }.count >= 2, "Should have at least 2 errors")
     }
 }
