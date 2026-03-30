@@ -155,14 +155,11 @@ struct EditorAreaView: View {
             goToLineOffset = nil
             configValidator.validate(url: tab.url, content: tab.content)
         }
+        .onDisappear {
+            configValidator.clear()
+        }
         .onChange(of: tab.content) { _, newValue in
             configValidator.validate(url: tab.url, content: newValue)
-        }
-        .onChange(of: tab.id) { _, _ in
-            configValidator.clear()
-            if let currentTab = activeTab {
-                configValidator.validate(url: currentTab.url, content: currentTab.content)
-            }
         }
     }
 

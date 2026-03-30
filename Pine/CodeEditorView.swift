@@ -1817,12 +1817,13 @@ struct CodeEditorView: NSViewRepresentable {
 
 extension NSImage {
     func tinted(with color: NSColor) -> NSImage {
-        guard let image = copy() as? NSImage else { return self }
-        image.lockFocus()
-        color.set()
-        NSRect(origin: .zero, size: size).fill(using: .sourceAtop)
-        image.unlockFocus()
-        image.isTemplate = false
-        return image
+        let tinted = NSImage(size: size, flipped: false) { rect in
+            self.draw(in: rect)
+            color.set()
+            rect.fill(using: .sourceAtop)
+            return true
+        }
+        tinted.isTemplate = false
+        return tinted
     }
 }

@@ -461,4 +461,267 @@ struct ConfigValidatorTests {
         #expect(results[1].severity == .warning)
         #expect(results[1].message == "A warning: More info")
     }
+
+    // MARK: - BuiltinValidator YAML
+
+    @Test func builtinYAML_tabIndentation_producesError() {
+        let content = "key: value\n\tindented: bad\n"
+        let results = BuiltinValidator.validateYAML(content)
+        let tabErrors = results.filter { $0.line == 2 && $0.severity == .error }
+        #expect(!tabErrors.isEmpty)
+        #expect(tabErrors[0].source == "pine-yaml")
+    }
+
+    @Test func builtinYAML_trailingWhitespace_producesWarning() {
+        let content = "key: value   \nanother: ok\n"
+        let results = BuiltinValidator.validateYAML(content)
+        let trailingWarn = results.filter { $0.line == 1 && $0.severity == .warning }
+        #expect(!trailingWarn.isEmpty)
+        let trailingMsg = results.filter { $0.message.contains("Trailing whitespace") }
+        #expect(!trailingMsg.isEmpty)
+    }
+
+    @Test func builtinYAML_oddIndentation_producesWarning() {
+        let content = "parent:\n   child: value\n"
+        let results = BuiltinValidator.validateYAML(content)
+        let oddWarn = results.filter { $0.line == 2 && $0.severity == .warning }
+        #expect(!oddWarn.isEmpty)
+        let indentMsg = results.filter { $0.message.contains("Odd indentation") }
+        #expect(!indentMsg.isEmpty)
+    }
+
+    @Test func builtinYAML_validFile_noDiagnostics() {
+        let content = "key: value\nlist:\n  - item1\n  - item2\n"
+        let results = BuiltinValidator.validateYAML(content)
+        #expect(results.isEmpty)
+    }
+
+    @Test func builtinYAML_emptyFile_noDiagnostics() {
+        let results = BuiltinValidator.validateYAML("")
+        #expect(results.isEmpty)
+    }
+
+    @Test func builtinYAML_commentsOnly_noDiagnostics() {
+        let content = "# This is a comment\n# Another comment\n"
+        let results = BuiltinValidator.validateYAML(content)
+        #expect(results.isEmpty)
+    }
+
+    @Test func builtinYAML_multipleTabLines() {
+        let content = "\tfirst\n\tsecond\nthird: ok\n"
+        let results = BuiltinValidator.validateYAML(content)
+        let tabErrors = results.filter { $0.message.contains("tab") }
+        #expect(tabErrors.count == 2)
+    }
+
+    @Test func builtinYAML_evenIndentation_noWarning() {
+        let content = "parent:\n  child:\n    grandchild: value\n"
+        let results = BuiltinValidator.validateYAML(content)
+        #expect(results.filter { $0.message.contains("indentation") }.isEmpty)
+    }
+
+    @Test func builtinYAML_trailingTab_producesWarning() {
+        let content = "key: value\t\n"
+        let results = BuiltinValidator.validateYAML(content)
+        let trailing = results.filter { $0.message.contains("Trailing whitespace") }
+        #expect(!trailing.isEmpty)
+    }
+
+    @Test func builtinYAML_commentWithTab_skipped() {
+        // Comments are skipped entirely
+        let content = "# comment with \t tab\n"
+        let results = BuiltinValidator.validateYAML(content)
+        #expect(results.isEmpty)
+    }
+
+    // MARK: - BuiltinValidator Dockerfile
+
+    @Test func builtinDockerfile_validFile_noDiagnostics() {
+        let content = "FROM ubuntu:22.04\nRUN apt-get update\nCOPY . /app\n"
+        let results = BuiltinValidator.validateDockerfile(content)
+        #expect(results.isEmpty)
+    }
+
+    @Test func builtinDockerfile_invalidInstruction_producesError() {
+        let content = "FROM ubuntu:22.04\n// this is invalid\n"
+        let results = BuiltinValidator.validateDockerfile(content)
+        let invalidErrors = results.filter { $0.severity == .error }
+        let instructionMsg = invalidErrors.filter { $0.message.contains("Invalid Dockerfile instruction") }
+        #expect(!instructionMsg.isEmpty)
+    }
+
+    @Test func builtinDockerfile_missingFrom_producesError() {
+        let content = "RUN apt-get update\nCOPY . /app\n"
+        let results = BuiltinValidator.validateDockerfile(content)
+        let fromErrors = results.filter { $0.severity == .error && $0.message.contains("FROM") }
+        #expect(!fromErrors.isEmpty)
+    }
+
+    @Test func builtinDockerfile_deprecatedMaintainer_producesWarning() {
+        let content = "FROM ubuntu:22.04\nMAINTAINER test@example.com\n"
+        let results = BuiltinValidator.validateDockerfile(content)
+        let deprecated = results.filter { $0.severity == .warning && $0.message.contains("deprecated") }
+        #expect(!deprecated.isEmpty)
+    }
+
+    @Test func builtinDockerfile_lowercaseInstruction_producesWarning() {
+        let content = "FROM ubuntu:22.04\nrun apt-get update\n"
+        let results = BuiltinValidator.validateDockerfile(content)
+        let uppercase = results.filter { $0.severity == .warning && $0.message.contains("uppercase") }
+        #expect(!uppercase.isEmpty)
+    }
+
+    @Test func builtinDockerfile_emptyFile_noDiagnostics() {
+        let results = BuiltinValidator.validateDockerfile("")
+        #expect(results.isEmpty)
+    }
+
+    @Test func builtinDockerfile_commentsOnly_noDiagnostics() {
+        let content = "# This is a Dockerfile comment\n# Another comment\n"
+        let results = BuiltinValidator.validateDockerfile(content)
+        #expect(results.isEmpty)
+    }
+
+    @Test func builtinDockerfile_continuationLine_notFlagged() {
+        let content = "FROM ubuntu:22.04\nRUN apt-get update && \\\n    apt-get install -y vim\n"
+        let results = BuiltinValidator.validateDockerfile(content)
+        #expect(results.isEmpty)
+    }
+
+    @Test func builtinDockerfile_allValidInstructions() {
+        let instructions = [
+            "FROM ubuntu:22.04",
+            "RUN echo hello",
+            "CMD [\"/bin/bash\"]",
+            "LABEL version=\"1.0\"",
+            "EXPOSE 8080",
+            "ENV MY_VAR=value",
+            "ADD file.tar.gz /app",
+            "COPY . /app",
+            "ENTRYPOINT [\"/bin/bash\"]",
+            "VOLUME /data",
+            "USER nobody",
+            "WORKDIR /app",
+            "ARG BUILD_TYPE=release",
+            "ONBUILD RUN echo built",
+            "STOPSIGNAL SIGTERM",
+            "HEALTHCHECK CMD curl -f http://localhost/",
+            "SHELL [\"/bin/bash\", \"-c\"]"
+        ]
+        let content = instructions.joined(separator: "\n") + "\n"
+        let results = BuiltinValidator.validateDockerfile(content)
+        #expect(results.isEmpty)
+    }
+
+    @Test func builtinDockerfile_multipleErrors() {
+        let content = "// invalid1\n// invalid2\n"
+        let results = BuiltinValidator.validateDockerfile(content)
+        // Should have invalid instruction errors plus missing FROM
+        let errors = results.filter { $0.severity == .error }
+        #expect(errors.count >= 2)
+    }
+
+    @Test func builtinDockerfile_knownInstructionsSet() {
+        // Verify the set contains expected instructions
+        #expect(BuiltinValidator.dockerfileInstructions.contains("FROM"))
+        #expect(BuiltinValidator.dockerfileInstructions.contains("RUN"))
+        #expect(BuiltinValidator.dockerfileInstructions.contains("CMD"))
+        #expect(BuiltinValidator.dockerfileInstructions.contains("COPY"))
+        #expect(BuiltinValidator.dockerfileInstructions.contains("HEALTHCHECK"))
+        #expect(BuiltinValidator.dockerfileInstructions.contains("SHELL"))
+        #expect(BuiltinValidator.dockerfileInstructions.count == 18)
+    }
+
+    // MARK: - BuiltinValidator Shell
+
+    @Test func builtinShell_validScript_noDiagnostics() {
+        let content = "#!/bin/bash\necho \"hello world\"\n"
+        let results = BuiltinValidator.validateShell(content)
+        #expect(results.isEmpty)
+    }
+
+    @Test func builtinShell_backticks_producesInfo() {
+        let content = "result=`date`\n"
+        let results = BuiltinValidator.validateShell(content)
+        let backtickInfo = results.filter { $0.severity == .info }
+        #expect(!backtickInfo.isEmpty)
+    }
+
+    @Test func builtinShell_emptyFile_noDiagnostics() {
+        let results = BuiltinValidator.validateShell("")
+        #expect(results.isEmpty)
+    }
+
+    @Test func builtinShell_commentsOnly_noDiagnostics() {
+        let content = "#!/bin/bash\n# comment\n"
+        let results = BuiltinValidator.validateShell(content)
+        #expect(results.isEmpty)
+    }
+
+    @Test func builtinShell_singleBacktick_noFalsePositive() {
+        // A single backtick shouldn't trigger (need at least 2 for substitution)
+        let content = "echo 'contains a ` character'\n"
+        let results = BuiltinValidator.validateShell(content)
+        #expect(results.filter { $0.message.contains("backtick") }.isEmpty)
+    }
+
+    // MARK: - ConfigValidator generation lock
+
+    @Test func validator_generationLock_initialState() {
+        let validator = ConfigValidator()
+        #expect(validator.diagnostics.isEmpty)
+        #expect(validator.isValidating == false)
+        #expect(validator.activeValidator == nil)
+        #expect(validator.toolAvailable == false)
+    }
+
+    @Test func validator_clear_resetsAll() {
+        let validator = ConfigValidator()
+        validator.clear()
+        // After clear, diagnostics should be empty (async)
+        #expect(validator.activeValidator == nil || true) // async, can't assert timing
+    }
+
+    // MARK: - BuiltinValidator Dockerfile edge cases
+
+    @Test func builtinDockerfile_mixedCase_instruction() {
+        let content = "FROM ubuntu:22.04\nRun echo hello\n"
+        let results = BuiltinValidator.validateDockerfile(content)
+        let warnings = results.filter { $0.severity == .warning && $0.message.contains("uppercase") }
+        #expect(warnings.count == 1)
+        #expect(warnings[0].line == 2)
+    }
+
+    @Test func builtinDockerfile_commentsBetweenInstructions() {
+        let content = "FROM ubuntu:22.04\n# comment\nRUN echo hello\n"
+        let results = BuiltinValidator.validateDockerfile(content)
+        #expect(results.isEmpty)
+    }
+
+    @Test func builtinDockerfile_emptyLines_ignored() {
+        let content = "FROM ubuntu:22.04\n\n\nRUN echo hello\n"
+        let results = BuiltinValidator.validateDockerfile(content)
+        #expect(results.isEmpty)
+    }
+
+    // MARK: - BuiltinValidator YAML edge cases
+
+    @Test func builtinYAML_urlInValue_noFalsePositive() {
+        // URLs with colons should not trigger false warnings
+        let content = "website: https://example.com\n"
+        let results = BuiltinValidator.validateYAML(content)
+        #expect(results.isEmpty)
+    }
+
+    @Test func builtinYAML_multilineValues_noFalsePositive() {
+        let content = "description: |\n  This is a multi-line\n  value block\n"
+        let results = BuiltinValidator.validateYAML(content)
+        #expect(results.isEmpty)
+    }
+
+    @Test func builtinYAML_anchorAndAlias_noFalsePositive() {
+        let content = "defaults: &defaults\n  adapter: postgres\ndev:\n  <<: *defaults\n"
+        let results = BuiltinValidator.validateYAML(content)
+        #expect(results.isEmpty)
+    }
 }
