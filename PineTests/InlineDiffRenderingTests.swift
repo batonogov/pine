@@ -2,11 +2,12 @@
 //  InlineDiffRenderingTests.swift
 //  PineTests
 //
-//  Tests for inline diff rendering improvements (#678):
+//  Tests for inline diff rendering improvements (#678, #681):
 //  - Modified marker color changed from blue to yellow
 //  - Deleted phantom lines use no strikethrough
 //  - Accept/Revert buttons visible when hunk is expanded (no hover required)
 //  - Gutter diff marker click area covers full hunk range
+//  - Modified hunks (delete+add) do not render phantom overlay (#681)
 //
 
 import Testing
@@ -230,9 +231,9 @@ struct InlineDiffRenderingTests {
         #expect(addedLines.contains(11), "First added line after context and deletion")
         #expect(addedLines.contains(12), "Second added line")
 
+        // This hunk has both deleted and added lines → modified → no phantom blocks (#681)
         let blocks = InlineDiffProvider.deletedLineBlocks(from: [hunk])
-        #expect(blocks.count == 1)
-        #expect(blocks[0].lines == ["removed"])
+        #expect(blocks.isEmpty, "Modified hunk (context+delete+add) should not produce phantom blocks")
     }
 
     // MARK: - Empty hunk edge case
@@ -272,6 +273,101 @@ struct InlineDiffRenderingTests {
             let found = InlineDiffProvider.hunk(atLine: line, in: [hunk])
             #expect(found?.id == hunk.id, "Line \(line) should map to hunk")
         }
+    }
+
+    // MARK: - Modified hunks: no phantom overlay (#681)
+
+    @Test func isModifiedHunkReturnsTrueForDeletePlusAdd() {
+        // A hunk with both deleted and added lines is a "modified" hunk
+        let hunk = DiffHunk(
+            newStart: 5, newCount: 1, oldStart: 5, oldCount: 1,
+            rawText: "@@ -5,1 +5,1 @@\n-old CMD line\n+new ENV PATH line"
+        )
+        #expect(InlineDiffProvider.isModifiedHunk(hunk) == true)
+    }
+
+    @Test func isModifiedHunkReturnsFalseForPureDeletion() {
+        let hunk = DiffHunk(
+            newStart: 5, newCount: 0, oldStart: 5, oldCount: 2,
+            rawText: "@@ -5,2 +5,0 @@\n-deleted1\n-deleted2"
+        )
+        #expect(InlineDiffProvider.isModifiedHunk(hunk) == false)
+    }
+
+    @Test func isModifiedHunkReturnsFalseForPureAddition() {
+        let hunk = DiffHunk(
+            newStart: 3, newCount: 2, oldStart: 3, oldCount: 0,
+            rawText: "@@ -3,0 +3,2 @@\n+new1\n+new2"
+        )
+        #expect(InlineDiffProvider.isModifiedHunk(hunk) == false)
+    }
+
+    @Test func isModifiedHunkReturnsFalseForContextOnly() {
+        let hunk = DiffHunk(
+            newStart: 1, newCount: 2, oldStart: 1, oldCount: 2,
+            rawText: "@@ -1,2 +1,2 @@\n context1\n context2"
+        )
+        #expect(InlineDiffProvider.isModifiedHunk(hunk) == false)
+    }
+
+    @Test func modifiedHunkDoesNotProduceDeletedBlocks() {
+        // Modified hunk (delete + add) should NOT produce phantom deleted blocks
+        let modifiedHunk = DiffHunk(
+            newStart: 5, newCount: 1, oldStart: 5, oldCount: 1,
+            rawText: "@@ -5,1 +5,1 @@\n-old CMD line\n+new ENV PATH line"
+        )
+        let blocks = InlineDiffProvider.deletedLineBlocks(from: [modifiedHunk])
+        #expect(blocks.isEmpty, "Modified hunks should not produce phantom overlay blocks")
+    }
+
+    @Test func modifiedHunkStillProducesAddedLines() {
+        // Modified hunk should still highlight added lines with green background
+        let modifiedHunk = DiffHunk(
+            newStart: 5, newCount: 1, oldStart: 5, oldCount: 1,
+            rawText: "@@ -5,1 +5,1 @@\n-old CMD line\n+new ENV PATH line"
+        )
+        let addedLines = InlineDiffProvider.addedLineNumbers(from: [modifiedHunk])
+        #expect(addedLines.contains(5), "Modified hunk should still highlight added lines")
+    }
+
+    @Test func mixedHunksFilterCorrectly() {
+        // Pure deletion hunk should still produce phantom blocks
+        let pureDelete = DiffHunk(
+            newStart: 3, newCount: 0, oldStart: 3, oldCount: 2,
+            rawText: "@@ -3,2 +3,0 @@\n-removed1\n-removed2"
+        )
+        // Modified hunk should NOT produce phantom blocks
+        let modified = DiffHunk(
+            newStart: 8, newCount: 1, oldStart: 7, oldCount: 1,
+            rawText: "@@ -7,1 +8,1 @@\n-old line\n+new line"
+        )
+
+        let blocks = InlineDiffProvider.deletedLineBlocks(from: [pureDelete, modified])
+        #expect(blocks.count == 1, "Only pure deletion hunks produce phantom blocks")
+        #expect(blocks[0].anchorLine == 3)
+        #expect(blocks[0].lines == ["removed1", "removed2"])
+    }
+
+    @Test func multiLineModifiedHunkDoesNotProduceDeletedBlocks() {
+        // Multi-line modification (multiple deletes + multiple adds)
+        let hunk = DiffHunk(
+            newStart: 10, newCount: 3, oldStart: 10, oldCount: 2,
+            rawText: "@@ -10,2 +10,3 @@\n-old1\n-old2\n+new1\n+new2\n+new3"
+        )
+        #expect(InlineDiffProvider.isModifiedHunk(hunk) == true)
+        let blocks = InlineDiffProvider.deletedLineBlocks(from: [hunk])
+        #expect(blocks.isEmpty, "Multi-line modified hunk should not produce phantom blocks")
+    }
+
+    @Test func hunkWithContextAndModificationIsModified() {
+        // Hunk with context lines around a modification
+        let hunk = DiffHunk(
+            newStart: 10, newCount: 4, oldStart: 10, oldCount: 3,
+            rawText: "@@ -10,3 +10,4 @@\n context1\n-removed\n+added1\n+added2\n context2"
+        )
+        #expect(InlineDiffProvider.isModifiedHunk(hunk) == true)
+        let blocks = InlineDiffProvider.deletedLineBlocks(from: [hunk])
+        #expect(blocks.isEmpty, "Hunk with context + modification should not produce phantom blocks")
     }
 
     // MARK: - Adjacent hunks do not overlap
