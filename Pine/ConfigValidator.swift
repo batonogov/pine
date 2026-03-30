@@ -341,6 +341,12 @@ enum ValidatorOutputParser {
 /// These provide basic validation when CLI tools (yamllint, hadolint, etc.) are not installed.
 enum BuiltinValidator {
 
+    // Cached regex for detecting unquoted variables in shell test expressions.
+    // swiftlint:disable:next force_try
+    private static let unquotedVarInTestRegex = try! NSRegularExpression(
+        pattern: #"\[\s+\$\w+\s+(==?|!=|-eq|-ne|-lt|-gt)\s+"#
+    )
+
     // MARK: - YAML
 
     /// Basic YAML validation using regex patterns.
@@ -410,13 +416,15 @@ enum BuiltinValidator {
                 ))
             }
 
-            // Detect inconsistent indentation (odd indentation levels)
+            // Detect unusual indentation (1 or 3 spaces).
+            // 2-space and 4-space indents are both common in YAML so we only flag
+            // truly unusual levels that likely indicate a mistake.
             let leadingSpaces = line.prefix(while: { $0 == " " }).count
-            if leadingSpaces > 0 && leadingSpaces % 2 != 0 {
+            if leadingSpaces == 1 || leadingSpaces == 3 {
                 diagnostics.append(ValidationDiagnostic(
                     line: lineNum,
                     column: 1,
-                    message: "Odd indentation level (\(leadingSpaces) spaces) — YAML conventionally uses 2-space indent",
+                    message: "Unusual indentation (\(leadingSpaces) spaces) — YAML typically uses 2 or 4 spaces",
                     severity: .warning,
                     source: "pine-yaml"
                 ))
@@ -534,25 +542,33 @@ enum BuiltinValidator {
             if trimmed.isEmpty || trimmed.hasPrefix("#") { continue }
 
             // Detect common quoting issues: unquoted variable in test
-            if let regex = try? NSRegularExpression(
-                pattern: #"\[\s+\$\w+\s+(==?|!=|-eq|-ne|-lt|-gt)\s+"#
-            ) {
-                let range = NSRange(trimmed.startIndex..., in: trimmed)
-                if regex.firstMatch(in: trimmed, range: range) != nil {
-                    diagnostics.append(ValidationDiagnostic(
-                        line: lineNum,
-                        column: nil,
-                        message: "Unquoted variable in test — use \"$var\" to prevent word splitting",
-                        severity: .warning,
-                        source: "pine-shell"
-                    ))
-                }
+            let range = NSRange(trimmed.startIndex..., in: trimmed)
+            if unquotedVarInTestRegex.firstMatch(in: trimmed, range: range) != nil {
+                diagnostics.append(ValidationDiagnostic(
+                    line: lineNum,
+                    column: nil,
+                    message: "Unquoted variable in test — use \"$var\" to prevent word splitting",
+                    severity: .warning,
+                    source: "pine-shell"
+                ))
             }
 
             // Detect backtick command substitution (prefer $())
+            // Only count backticks that are outside single and double quotes.
             if trimmed.contains("`") && !trimmed.hasPrefix("#") {
-                let backtickCount = trimmed.filter { $0 == "`" }.count
-                if backtickCount >= 2 {
+                var inSingle = false
+                var inDouble = false
+                var unquotedBackticks = 0
+                for char in trimmed {
+                    if char == "'" && !inDouble {
+                        inSingle.toggle()
+                    } else if char == "\"" && !inSingle {
+                        inDouble.toggle()
+                    } else if char == "`" && !inSingle && !inDouble {
+                        unquotedBackticks += 1
+                    }
+                }
+                if unquotedBackticks >= 2 {
                     diagnostics.append(ValidationDiagnostic(
                         line: lineNum,
                         column: nil,
@@ -700,9 +716,9 @@ final class ConfigValidator {
 
         guard currentGeneration() == currentGen else { return }
 
-        // Fall back to built-in validation when external tool is not available
-        // or when external tool returned no results
-        if parsed.isEmpty && !hasExternalTool {
+        // Fall back to built-in validation when external tool produced no diagnostics.
+        // This covers both "tool not installed" and "tool crashed / returned empty output".
+        if parsed.isEmpty {
             switch kind {
             case .yamllint:
                 parsed = BuiltinValidator.validateYAML(content)
