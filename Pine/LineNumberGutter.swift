@@ -67,6 +67,14 @@ final class LineNumberView: NSView {
         }
     }
 
+    /// The ID of the currently expanded hunk (shows inline diff). Nil = all collapsed.
+    var expandedHunkID: UUID? {
+        didSet { needsDisplay = true }
+    }
+
+    /// Callback when a diff marker in the gutter is clicked (to toggle inline diff).
+    var onDiffMarkerClick: ((DiffHunk) -> Void)?
+
     /// Callback for accepting (staging) a hunk at the given line.
     var onAcceptHunk: ((DiffHunk) -> Void)?
 
@@ -228,9 +236,10 @@ final class LineNumberView: NSView {
     override func mouseDown(with event: NSEvent) {
         let point = convert(event.locationInWindow, from: nil)
 
-        // Check for hunk action button clicks first
+        // Check for hunk action button clicks first (only when hunk is expanded)
         if let lineNum = lineNumber(at: point),
            let hunk = hunkStartMap[lineNum],
+           expandedHunkID == hunk.id,
            let action = hunkButtonHitTest(at: point, lineNumber: lineNum) {
             switch action {
             case .accept:
@@ -241,6 +250,16 @@ final class LineNumberView: NSView {
                 break
             }
             return
+        }
+
+        // Check for diff marker click (right edge of gutter)
+        let diffBarWidth: CGFloat = 3
+        if point.x >= gutterWidth - diffBarWidth - 4 {
+            if let lineNum = lineNumber(at: point),
+               let hunk = hunkForLine(lineNum) {
+                onDiffMarkerClick?(hunk)
+                return
+            }
         }
 
         // Only handle clicks on the fold indicator area (left portion of gutter)
@@ -255,6 +274,13 @@ final class LineNumberView: NSView {
            let foldable = foldStartMap[lineNumber] {
             onFoldToggle?(foldable)
         }
+    }
+
+    /// Returns the hunk that covers the given line number, if any.
+    private func hunkForLine(_ line: Int) -> DiffHunk? {
+        // Check if line has a diff marker
+        guard diffMap[line] != nil else { return nil }
+        return InlineDiffProvider.hunk(atLine: line, in: diffHunks)
     }
 
     /// Cached line starts for O(log n) line number lookups in click handling.
@@ -474,8 +500,10 @@ final class LineNumberView: NSView {
                     )
                 }
 
-                // ── Accept/Revert buttons on hunk start lines (hover only) ──
-                if self.isMouseInside, self.hunkStartMap[lineNumber] != nil {
+                // ── Accept/Revert buttons on hunk start lines (only when hunk is expanded) ──
+                if self.isMouseInside,
+                   let hunk = self.hunkStartMap[lineNumber],
+                   self.expandedHunkID == hunk.id {
                     self.drawHunkActionButtons(at: y, lineHeight: lineRect.height)
                 }
 

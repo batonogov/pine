@@ -46,6 +46,14 @@ final class GutterTextView: NSTextView {
     /// Blocks of deleted lines to render as phantom text above the anchor line (red background).
     var deletedLineBlocks: [DeletedLinesBlock] = []
 
+    /// The diff hunks for the current file — used to filter highlights to the expanded hunk only.
+    var diffHunksForHighlight: [DiffHunk] = []
+
+    /// The ID of the currently expanded hunk (shows inline diff). Nil = all collapsed.
+    var expandedHunkID: UUID? {
+        didSet { needsDisplay = true }
+    }
+
     /// Subtle green tint for added lines.
     private static let addedLineColor = NSColor(name: nil) { appearance in
         if appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua {
@@ -149,10 +157,15 @@ final class GutterTextView: NSTextView {
         // ── Indent guides (behind everything else) ──
         IndentGuideRenderer.draw(in: self, dirtyRect: rect, indentStyle: indentStyle)
 
-        // ── Inline diff: green background on added lines, red phantom blocks for deleted lines ──
-        let hasDiffHighlights = !addedLineNumbers.isEmpty || !deletedLineBlocks.isEmpty
-        if hasDiffHighlights {
-            drawInlineDiffHighlights(in: rect, layoutManager: layoutManager, textContainer: textContainer)
+        // ── Inline diff: only shown when a hunk is expanded via gutter click ──
+        if let expandedID = expandedHunkID,
+           let expandedHunk = diffHunksForHighlight.first(where: { $0.id == expandedID }) {
+            drawInlineDiffHighlights(
+                in: rect,
+                layoutManager: layoutManager,
+                textContainer: textContainer,
+                expandedHunk: expandedHunk
+            )
         }
 
         let cursorRange = selectedRange()
@@ -177,10 +190,12 @@ final class GutterTextView: NSTextView {
     // MARK: - Inline diff drawing
 
     /// Draws green background highlights on added lines and red phantom blocks for deleted lines.
+    /// Only draws highlights for the given expanded hunk.
     private func drawInlineDiffHighlights(
         in rect: NSRect,
         layoutManager: NSLayoutManager,
-        textContainer: NSTextContainer
+        textContainer: NSTextContainer,
+        expandedHunk: DiffHunk
     ) {
         guard let scrollView = enclosingScrollView else { return }
         let visibleRect = scrollView.contentView.bounds
@@ -204,10 +219,14 @@ final class GutterTextView: NSTextView {
             lineNumber += 1
         }
 
-        // Build lookup: anchor line → array of deleted blocks (handles multiple blocks at same anchor)
-        let deletedAnchorSet = Set(deletedLineBlocks.map(\.anchorLine))
+        // Filter to only the expanded hunk's added lines and deleted blocks
+        let hunkAddedLines = InlineDiffProvider.addedLineNumbers(from: [expandedHunk])
+        let hunkDeletedBlocks = InlineDiffProvider.deletedLineBlocks(from: [expandedHunk])
+
+        // Build lookup: anchor line → array of deleted blocks
+        let deletedAnchorSet = Set(hunkDeletedBlocks.map(\.anchorLine))
         var deletedAnchorMap: [Int: [DeletedLinesBlock]] = [:]
-        for block in deletedLineBlocks {
+        for block in hunkDeletedBlocks {
             deletedAnchorMap[block.anchorLine, default: []].append(block)
         }
 
@@ -250,8 +269,8 @@ final class GutterTextView: NSTextView {
                     }
                 }
 
-                // Draw green background on added lines
-                if self.addedLineNumbers.contains(lineNumber) {
+                // Draw green background on added lines (only for expanded hunk)
+                if hunkAddedLines.contains(lineNumber) {
                     var highlightRect = lineRect
                     highlightRect.origin.x = 0
                     highlightRect.size.width = self.bounds.width
@@ -483,6 +502,26 @@ final class GutterTextView: NSTextView {
 
         insertText("\n\(indent)", replacementRange: selectedRange())
     }
+
+    // MARK: - Escape key collapses expanded inline diff
+
+    override func keyDown(with event: NSEvent) {
+        if event.keyCode == 53, expandedHunkID != nil {
+            // Escape key (keyCode 53) collapses expanded inline diff
+            expandedHunkID = nil
+            // Also collapse in the sibling LineNumberView
+            if let container = enclosingScrollView?.superview as? EditorContainerView {
+                for subview in container.subviews {
+                    if let lineNumberView = subview as? LineNumberView {
+                        lineNumberView.expandedHunkID = nil
+                        break
+                    }
+                }
+            }
+            return
+        }
+        super.keyDown(with: event)
+    }
 }
 
 // MARK: - Editor scroll view with find bar height tracking
@@ -708,6 +747,7 @@ struct CodeEditorView: NSViewRepresentable {
         textView.indentStyle = indentStyle
         textView.addedLineNumbers = InlineDiffProvider.addedLineNumbers(from: diffHunks)
         textView.deletedLineBlocks = InlineDiffProvider.deletedLineBlocks(from: diffHunks)
+        textView.diffHunksForHighlight = diffHunks
         // Delegate set AFTER text/highlight setup to prevent textDidChange from firing
         // during makeNSView and causing a spurious updateContent → cachedHighlightResult = nil
         // → contentVersion bump → updateNSView re-sets text → stripping highlight attributes.
@@ -735,6 +775,9 @@ struct CodeEditorView: NSViewRepresentable {
         }
         lineNumberView.onRevertHunk = { [weak coordinator] hunk in
             coordinator?.onRevertHunk?(hunk)
+        }
+        lineNumberView.onDiffMarkerClick = { [weak coordinator] hunk in
+            coordinator?.handleDiffMarkerClick(hunk)
         }
         container.addSubview(lineNumberView)
 
@@ -933,6 +976,12 @@ struct CodeEditorView: NSViewRepresentable {
                 || gutterView.deletedLineBlocks != newDeletedBlocks {
                 gutterView.addedLineNumbers = newAddedLines
                 gutterView.deletedLineBlocks = newDeletedBlocks
+                gutterView.diffHunksForHighlight = diffHunks
+                // Collapse expanded hunk when diff data changes (hunks may have shifted)
+                if gutterView.expandedHunkID != nil {
+                    gutterView.expandedHunkID = nil
+                    context.coordinator.lineNumberView?.expandedHunkID = nil
+                }
                 gutterView.needsDisplay = true
             }
         }
@@ -1766,6 +1815,16 @@ struct CodeEditorView: NSViewRepresentable {
         func handleFoldToggle(_ foldable: FoldableRange) {
             parent.foldState.toggle(foldable)
             applyFoldState()
+        }
+
+        /// Toggles inline diff expansion for a hunk when user clicks a gutter diff marker.
+        func handleDiffMarkerClick(_ hunk: DiffHunk) {
+            guard let sv = scrollView,
+                  let gutterView = sv.documentView as? GutterTextView else { return }
+
+            let newID: UUID? = (gutterView.expandedHunkID == hunk.id) ? nil : hunk.id
+            gutterView.expandedHunkID = newID
+            lineNumberView?.expandedHunkID = newID
         }
 
         /// Handles fold code notifications from menu/keyboard shortcuts.
