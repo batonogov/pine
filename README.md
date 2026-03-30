@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/batonogov/pine/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/batonogov/pine/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/batonogov/pine)](https://github.com/batonogov/pine/releases/latest)
-[![Homebrew](https://img.shields.io/homebrew/cask/v/pine-editor)](https://formulae.brew.sh/cask/pine-editor)
+[![Homebrew Cask](https://img.shields.io/badge/homebrew-pine--editor-orange)](https://github.com/batonogov/homebrew-tap)
 [![License: MIT](https://img.shields.io/github/license/batonogov/pine)](https://github.com/batonogov/pine/blob/main/LICENSE)
 [![macOS](https://img.shields.io/badge/macOS-26%2B-blue)](https://github.com/batonogov/pine)
 
