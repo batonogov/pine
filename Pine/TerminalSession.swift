@@ -84,6 +84,11 @@ struct TerminalContentView: NSViewRepresentable {
 /// With internal editor tabs there is only one window,
 /// so no multi-window reclaim logic is needed.
 class TerminalContainerView: NSView {
+    /// Default frame used when the container has zero bounds (e.g. before the first
+    /// SwiftUI layout pass). Gives SwiftTerm a reasonable cols/rows so the terminal
+    /// is not blank when it first appears. The real size replaces this in `layout()`.
+    static let defaultTerminalFrame = NSRect(x: 0, y: 0, width: 800, height: 300)
+
     var terminal: TerminalManager?
     private var currentTabID: UUID?
     private let scrollInterceptor = TerminalScrollInterceptor()
@@ -102,7 +107,7 @@ class TerminalContainerView: NSView {
             subviews.forEach { $0.removeFromSuperview() }
             currentTabID = tab.id
             let effectiveBounds = bounds.size.width > 0 && bounds.size.height > 0
-                ? bounds : NSRect(x: 0, y: 0, width: 800, height: 300)
+                ? bounds : Self.defaultTerminalFrame
             tab.terminalView.frame = effectiveBounds
             addSubview(tab.terminalView)
 
@@ -233,6 +238,9 @@ class TerminalContainerView: NSView {
         // terminal which renders as a blank screen (issue #661).
         guard bounds.size.width > 0, bounds.size.height > 0 else { return }
         if tab.terminalView.superview === self {
+            // Terminal view is already in the hierarchy — just update its frame.
+            // Only set needsDisplay when the size actually changed to avoid
+            // redundant redraws on no-op layout passes.
             let sizeChanged = tab.terminalView.frame.size != bounds.size
             tab.terminalView.frame = bounds
             tab.terminalView.needsLayout = true
@@ -245,6 +253,9 @@ class TerminalContainerView: NSView {
             }
             tab.startIfNeeded()
         } else {
+            // Terminal view was removed (e.g. tab switch race) — re-add it.
+            // Always set needsDisplay here because showTab just inserted a fresh
+            // subview that has never been drawn at this container's size.
             showTab(tab)
             tab.terminalView.needsLayout = true
             tab.terminalView.needsDisplay = true
@@ -293,7 +304,7 @@ final class TerminalTab: Identifiable, Hashable {
     init(name: String, shellSettings: ShellSettings = .shared) {
         self.name = name
         self.shellSettings = shellSettings
-        self.terminalView = LocalProcessTerminalView(frame: NSRect(x: 0, y: 0, width: 800, height: 300))
+        self.terminalView = LocalProcessTerminalView(frame: TerminalContainerView.defaultTerminalFrame)
         self.delegate = TerminalTabDelegate()
         self.delegate.tab = self
         self.terminalView.processDelegate = self.delegate
