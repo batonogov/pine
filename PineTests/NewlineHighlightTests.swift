@@ -918,4 +918,50 @@ struct NewlineHighlightTests {
         #expect(foregroundColor(in: storage, at: vPos) == attributeColor,
                 "'version' must be colored with paragraph-extended range")
     }
+
+    // MARK: - Generation invalidation
+
+    @Test func generationIncrementInvalidatesStaleCapture() {
+        let gen = HighlightGeneration()
+
+        // Step 1: first increment simulates the immediate bump in
+        // scheduleDeferredHighlight (invalidates prior in-flight Tasks).
+        gen.increment()
+
+        // Step 2: second increment simulates the bump inside the workItem
+        // right before spawning the new Task.
+        gen.increment()
+        let capturedGen = gen.current  // Task captures this value
+
+        // Step 3: another edit arrives — immediate bump again.
+        gen.increment()
+
+        // The captured generation is now stale; the Task should discard its
+        // result because capturedGen != gen.current.
+        #expect(capturedGen != gen.current,
+                "Captured generation must differ from current after a subsequent edit")
+    }
+
+    @Test func generationRemainsValidWithoutIntervening() {
+        let gen = HighlightGeneration()
+
+        // Simulate the two-phase increment for a single edit.
+        gen.increment()  // immediate bump
+        gen.increment()  // workItem bump
+        let capturedGen = gen.current
+
+        // No further edits — captured generation is still valid.
+        #expect(capturedGen == gen.current,
+                "Captured generation must equal current when no new edit intervenes")
+    }
+
+    @Test func generationIncrementIsMonotonic() {
+        let gen = HighlightGeneration()
+        let first = gen.increment()
+        let second = gen.increment()
+        let third = gen.increment()
+
+        #expect(first < second, "Generation must increase monotonically")
+        #expect(second < third, "Generation must increase monotonically")
+    }
 }
