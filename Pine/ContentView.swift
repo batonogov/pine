@@ -107,7 +107,9 @@ struct ContentView: View {
             RepresentedFileTracker(url: activeTab?.url ?? workspace.rootURL)
         }
         .task {
-            restoreSessionIfNeeded()
+            if restoreSessionIfNeeded() {
+                refreshLineDiffs()
+            }
             checkForRecovery()
             syncSidebarSelection()
             applySearchQueryFromEnvironment()
@@ -173,7 +175,10 @@ struct ContentView: View {
             onRefresh: { refreshBlame() }
         ))
         .onChange(of: workspace.rootNodes) { _, _ in
-            restoreSessionIfNeeded()
+            if restoreSessionIfNeeded() {
+                refreshLineDiffs()
+                refreshBlame()
+            }
             syncSidebarSelection()
         }
         .onChange(of: tabManager.tabs.count) { _, _ in

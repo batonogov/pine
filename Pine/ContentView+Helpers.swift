@@ -11,16 +11,22 @@ import SwiftUI
 
 extension ContentView {
 
-    func restoreSessionIfNeeded() {
-        guard !didRestoreSession else { return }
+    /// Restores editor tabs, terminal state, and pinned state from the saved session.
+    /// Returns `true` when editor tabs were actually restored (used by callers to
+    /// trigger git diff / blame refresh that depends on an active tab existing).
+    @discardableResult
+    func restoreSessionIfNeeded() -> Bool {
+        guard !didRestoreSession else { return false }
         didRestoreSession = true
 
         guard let rootURL = workspace.rootURL else {
             didRestoreSession = false // Allow retry when rootURL becomes available
-            return
+            return false
         }
 
-        guard let session = SessionState.load(for: rootURL) else { return }
+        guard let session = SessionState.load(for: rootURL) else { return false }
+
+        var didRestoreTabs = false
 
         // Restore editor tabs only if PM has no tabs (fresh or after restart)
         if tabManager.tabs.isEmpty {
@@ -55,6 +61,8 @@ extension ContentView {
                let tab = tabManager.tab(for: activeURL) {
                 tabManager.activeTabID = tab.id
             }
+
+            didRestoreTabs = !tabManager.tabs.isEmpty
         }
 
         // Restore terminal state
@@ -76,6 +84,8 @@ extension ContentView {
            activeIndex < terminal.terminalTabs.count {
             terminal.activeTerminalID = terminal.terminalTabs[activeIndex].id
         }
+
+        return didRestoreTabs
     }
 
     func checkForRecovery() {
