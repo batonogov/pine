@@ -94,7 +94,7 @@ final class LineNumberView: NSView {
     /// Pre-indexed diagnostic lookup: line number → highest severity diagnostic.
     private var diagnosticMap: [Int: ValidationDiagnostic] = [:]
 
-    /// Whether any diagnostics are present — used to add extra gutter width for icons.
+    /// Whether any diagnostics are present.
     private var hasDiagnostics: Bool { !diagnosticMap.isEmpty }
 
     /// Pre-indexed fold lookup: start line → FoldableRange.
@@ -216,7 +216,7 @@ final class LineNumberView: NSView {
         }
         let area = NSTrackingArea(
             rect: bounds,
-            options: [.mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect],
+            options: [.mouseEnteredAndExited, .mouseMoved, .activeInKeyWindow, .inVisibleRect],
             owner: self,
             userInfo: nil
         )
@@ -531,8 +531,7 @@ final class LineNumberView: NSView {
             cachedDigitWidth = "0".size(withAttributes: [.font: gutterFont]).width
             cachedDigitWidthFont = gutterFont
         }
-        let diagnosticExtra: CGFloat = hasDiagnostics ? Self.diagnosticIconDrawSize + 4 : 0
-        let newWidth = CGFloat(digits) * cachedDigitWidth + 20 + diagnosticExtra
+        let newWidth = CGFloat(digits) * cachedDigitWidth + 20
         if abs(gutterWidth - newWidth) > 1 {
             gutterWidth = newWidth
             frame.size.width = newWidth
@@ -585,6 +584,25 @@ final class LineNumberView: NSView {
             x: x, y: centerY,
             width: imageSize.width, height: imageSize.height
         ))
+    }
+
+    // MARK: - Diagnostic tooltips
+
+    /// Returns the diagnostic message for the given line number, or nil if none.
+    func diagnosticTooltip(forLine line: Int) -> String? {
+        diagnosticMap[line]?.message
+    }
+
+    /// Updates the tooltip based on mouse position — shows diagnostic message on hover.
+    override func mouseMoved(with event: NSEvent) {
+        let point = convert(event.locationInWindow, from: nil)
+        if let line = lineNumber(at: point),
+           let tooltip = diagnosticTooltip(forLine: line) {
+            self.toolTip = tooltip
+        } else {
+            self.toolTip = nil
+        }
+        super.mouseMoved(with: event)
     }
 
     // MARK: - Fold indicator drawing
