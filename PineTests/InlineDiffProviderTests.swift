@@ -390,4 +390,353 @@ struct InlineDiffProviderTests {
             _ = action
         }
     }
+
+    // MARK: - DiffHunk.deletedLines
+
+    @Test func deletedLinesFromModificationHunk() {
+        let hunk = DiffHunk(
+            newStart: 10, newCount: 2, oldStart: 10, oldCount: 2,
+            rawText: "@@ -10,2 +10,2 @@\n-old line 1\n-old line 2\n+new line 1\n+new line 2"
+        )
+        #expect(hunk.deletedLines == ["old line 1", "old line 2"])
+    }
+
+    @Test func deletedLinesFromPureDeletionHunk() {
+        let hunk = DiffHunk(
+            newStart: 5, newCount: 0, oldStart: 5, oldCount: 3,
+            rawText: "@@ -5,3 +5,0 @@\n-removed1\n-removed2\n-removed3"
+        )
+        #expect(hunk.deletedLines == ["removed1", "removed2", "removed3"])
+    }
+
+    @Test func deletedLinesFromPureAdditionHunk() {
+        let hunk = DiffHunk(
+            newStart: 1, newCount: 3, oldStart: 0, oldCount: 0,
+            rawText: "@@ -0,0 +1,3 @@\n+line1\n+line2\n+line3"
+        )
+        #expect(hunk.deletedLines.isEmpty)
+    }
+
+    @Test func deletedLinesSkipsDashDashDash() {
+        // Ensure "---" lines (diff header) are not treated as deletions
+        let hunk = DiffHunk(
+            newStart: 1, newCount: 1, oldStart: 1, oldCount: 1,
+            rawText: "@@ -1,1 +1,1 @@\n--- should be skipped\n-real deletion\n+addition"
+        )
+        #expect(hunk.deletedLines == ["real deletion"])
+    }
+
+    @Test func deletedLinesWithEmptyRawText() {
+        let hunk = DiffHunk(
+            newStart: 1, newCount: 0, oldStart: 1, oldCount: 0,
+            rawText: ""
+        )
+        #expect(hunk.deletedLines.isEmpty)
+    }
+
+    @Test func deletedLinesPreservesLeadingWhitespace() {
+        let hunk = DiffHunk(
+            newStart: 1, newCount: 1, oldStart: 1, oldCount: 1,
+            rawText: "@@ -1,1 +1,1 @@\n-    indented line\n+    new indented line"
+        )
+        #expect(hunk.deletedLines == ["    indented line"])
+    }
+
+    // MARK: - DiffHunk.addedLines
+
+    @Test func addedLinesFromModificationHunk() {
+        let hunk = DiffHunk(
+            newStart: 10, newCount: 2, oldStart: 10, oldCount: 2,
+            rawText: "@@ -10,2 +10,2 @@\n-old line 1\n-old line 2\n+new line 1\n+new line 2"
+        )
+        #expect(hunk.addedLines == ["new line 1", "new line 2"])
+    }
+
+    @Test func addedLinesFromPureAdditionHunk() {
+        let hunk = DiffHunk(
+            newStart: 1, newCount: 3, oldStart: 0, oldCount: 0,
+            rawText: "@@ -0,0 +1,3 @@\n+line1\n+line2\n+line3"
+        )
+        #expect(hunk.addedLines == ["line1", "line2", "line3"])
+    }
+
+    @Test func addedLinesFromPureDeletionHunk() {
+        let hunk = DiffHunk(
+            newStart: 5, newCount: 0, oldStart: 5, oldCount: 3,
+            rawText: "@@ -5,3 +5,0 @@\n-removed1\n-removed2\n-removed3"
+        )
+        #expect(hunk.addedLines.isEmpty)
+    }
+
+    @Test func addedLinesSkipsPlusPlusPlus() {
+        let hunk = DiffHunk(
+            newStart: 1, newCount: 1, oldStart: 1, oldCount: 1,
+            rawText: "@@ -1,1 +1,1 @@\n+++ should be skipped\n-deletion\n+real addition"
+        )
+        #expect(hunk.addedLines == ["real addition"])
+    }
+
+    @Test func addedLinesPreservesLeadingWhitespace() {
+        let hunk = DiffHunk(
+            newStart: 1, newCount: 1, oldStart: 1, oldCount: 1,
+            rawText: "@@ -1,1 +1,1 @@\n-old\n+    indented new"
+        )
+        #expect(hunk.addedLines == ["    indented new"])
+    }
+
+    // MARK: - addedLineNumbers
+
+    @Test func addedLineNumbersForSingleHunk() {
+        let hunks = [
+            DiffHunk(
+                newStart: 5, newCount: 3, oldStart: 5, oldCount: 1,
+                rawText: "@@ -5,1 +5,3 @@\n-old\n+new1\n+new2\n+new3"
+            )
+        ]
+        let result = InlineDiffProvider.addedLineNumbers(from: hunks)
+        #expect(result == [5, 6, 7])
+    }
+
+    @Test func addedLineNumbersForMultipleHunks() {
+        let hunks = [
+            DiffHunk(
+                newStart: 1, newCount: 2, oldStart: 1, oldCount: 1,
+                rawText: "@@ -1,1 +1,2 @@\n-old\n+new1\n+new2"
+            ),
+            DiffHunk(
+                newStart: 10, newCount: 1, oldStart: 9, oldCount: 0,
+                rawText: "@@ -9,0 +10,1 @@\n+inserted"
+            )
+        ]
+        let result = InlineDiffProvider.addedLineNumbers(from: hunks)
+        #expect(result == [1, 2, 10])
+    }
+
+    @Test func addedLineNumbersSkipsContextLines() {
+        let hunks = [
+            DiffHunk(
+                newStart: 1, newCount: 4, oldStart: 1, oldCount: 3,
+                rawText: "@@ -1,3 +1,4 @@\n context1\n+added\n context2\n context3"
+            )
+        ]
+        let result = InlineDiffProvider.addedLineNumbers(from: hunks)
+        #expect(result == [2])
+    }
+
+    @Test func addedLineNumbersForPureDeletion() {
+        let hunks = [
+            DiffHunk(
+                newStart: 5, newCount: 0, oldStart: 5, oldCount: 3,
+                rawText: "@@ -5,3 +5,0 @@\n-del1\n-del2\n-del3"
+            )
+        ]
+        let result = InlineDiffProvider.addedLineNumbers(from: hunks)
+        #expect(result.isEmpty)
+    }
+
+    @Test func addedLineNumbersEmptyHunks() {
+        let result = InlineDiffProvider.addedLineNumbers(from: [])
+        #expect(result.isEmpty)
+    }
+
+    @Test func addedLineNumbersWithMixedContextAndChanges() {
+        // Hunk: context, deletion, addition, context
+        let hunks = [
+            DiffHunk(
+                newStart: 10, newCount: 3, oldStart: 10, oldCount: 3,
+                rawText: "@@ -10,3 +10,3 @@\n context\n-old\n+new\n context2"
+            )
+        ]
+        let result = InlineDiffProvider.addedLineNumbers(from: hunks)
+        // context at line 10, deletion doesn't count, addition at line 11, context at line 12
+        #expect(result == [11])
+    }
+
+    // MARK: - deletedLineBlocks
+
+    @Test func deletedLineBlocksForModificationHunk() {
+        let hunks = [
+            DiffHunk(
+                newStart: 10, newCount: 2, oldStart: 10, oldCount: 2,
+                rawText: "@@ -10,2 +10,2 @@\n-old1\n-old2\n+new1\n+new2"
+            )
+        ]
+        let blocks = InlineDiffProvider.deletedLineBlocks(from: hunks)
+        #expect(blocks.count == 1)
+        #expect(blocks[0].anchorLine == 10)
+        #expect(blocks[0].lines == ["old1", "old2"])
+    }
+
+    @Test func deletedLineBlocksForPureDeletionHunk() {
+        let hunks = [
+            DiffHunk(
+                newStart: 5, newCount: 0, oldStart: 5, oldCount: 3,
+                rawText: "@@ -5,3 +5,0 @@\n-removed1\n-removed2\n-removed3"
+            )
+        ]
+        let blocks = InlineDiffProvider.deletedLineBlocks(from: hunks)
+        #expect(blocks.count == 1)
+        #expect(blocks[0].anchorLine == 5)
+        #expect(blocks[0].lines == ["removed1", "removed2", "removed3"])
+    }
+
+    @Test func deletedLineBlocksForPureAdditionReturnsEmpty() {
+        let hunks = [
+            DiffHunk(
+                newStart: 1, newCount: 3, oldStart: 0, oldCount: 0,
+                rawText: "@@ -0,0 +1,3 @@\n+line1\n+line2\n+line3"
+            )
+        ]
+        let blocks = InlineDiffProvider.deletedLineBlocks(from: hunks)
+        #expect(blocks.isEmpty)
+    }
+
+    @Test func deletedLineBlocksMultipleHunks() {
+        let hunks = [
+            DiffHunk(
+                newStart: 1, newCount: 1, oldStart: 1, oldCount: 2,
+                rawText: "@@ -1,2 +1,1 @@\n-old1\n-old2\n+replacement"
+            ),
+            DiffHunk(
+                newStart: 20, newCount: 0, oldStart: 18, oldCount: 1,
+                rawText: "@@ -18,1 +20,0 @@\n-deleted"
+            )
+        ]
+        let blocks = InlineDiffProvider.deletedLineBlocks(from: hunks)
+        #expect(blocks.count == 2)
+        #expect(blocks[0].anchorLine == 1)
+        #expect(blocks[0].lines == ["old1", "old2"])
+        #expect(blocks[1].anchorLine == 20)
+        #expect(blocks[1].lines == ["deleted"])
+    }
+
+    @Test func deletedLineBlocksEmptyHunks() {
+        let blocks = InlineDiffProvider.deletedLineBlocks(from: [])
+        #expect(blocks.isEmpty)
+    }
+
+    @Test func deletedLineBlocksPreservesWhitespace() {
+        let hunks = [
+            DiffHunk(
+                newStart: 1, newCount: 1, oldStart: 1, oldCount: 1,
+                rawText: "@@ -1,1 +1,1 @@\n-    indented old\n+    indented new"
+            )
+        ]
+        let blocks = InlineDiffProvider.deletedLineBlocks(from: hunks)
+        #expect(blocks.count == 1)
+        #expect(blocks[0].lines == ["    indented old"])
+    }
+
+    // MARK: - DiffLineKind
+
+    @Test func diffLineKindEquality() {
+        #expect(DiffLineKind.added == DiffLineKind.added)
+        #expect(DiffLineKind.deleted == DiffLineKind.deleted)
+        #expect(DiffLineKind.added != DiffLineKind.deleted)
+    }
+
+    // MARK: - DiffHighlightLine
+
+    @Test func diffHighlightLineEquality() {
+        let a = DiffHighlightLine(kind: .added, editorLine: 5)
+        let b = DiffHighlightLine(kind: .added, editorLine: 5)
+        let c = DiffHighlightLine(kind: .deleted, editorLine: 5)
+        #expect(a == b)
+        #expect(a != c)
+    }
+
+    // MARK: - DeletedLinesBlock
+
+    @Test func deletedLinesBlockEquality() {
+        let a = DeletedLinesBlock(anchorLine: 10, lines: ["old"])
+        let b = DeletedLinesBlock(anchorLine: 10, lines: ["old"])
+        let c = DeletedLinesBlock(anchorLine: 10, lines: ["different"])
+        #expect(a == b)
+        #expect(a != c)
+    }
+
+    @Test func deletedLinesBlockDifferentAnchor() {
+        let a = DeletedLinesBlock(anchorLine: 1, lines: ["line"])
+        let b = DeletedLinesBlock(anchorLine: 2, lines: ["line"])
+        #expect(a != b)
+    }
+
+    // MARK: - Integration: full diff → highlights
+
+    @Test func fullDiffProducesCorrectHighlights() {
+        let diff = """
+        diff --git a/file.swift b/file.swift
+        --- a/file.swift
+        +++ b/file.swift
+        @@ -1,3 +1,4 @@
+        +new first line
+         existing line 1
+         existing line 2
+         existing line 3
+        @@ -10,2 +11,2 @@
+        -old line at 10
+        -old line at 11
+        +new line at 11
+        +new line at 12
+        """
+        let hunks = InlineDiffProvider.parseHunks(diff)
+        let addedLines = InlineDiffProvider.addedLineNumbers(from: hunks)
+        let deletedBlocks = InlineDiffProvider.deletedLineBlocks(from: hunks)
+
+        // First hunk: pure addition at line 1
+        #expect(addedLines.contains(1))
+        // Second hunk: lines 11 and 12 are added
+        #expect(addedLines.contains(11))
+        #expect(addedLines.contains(12))
+        // Context lines should NOT be in added set
+        #expect(!addedLines.contains(2))
+        #expect(!addedLines.contains(3))
+        #expect(!addedLines.contains(4))
+
+        // First hunk has no deletions
+        // Second hunk has deletions anchored at line 11
+        #expect(deletedBlocks.count == 1)
+        #expect(deletedBlocks[0].anchorLine == 11)
+        #expect(deletedBlocks[0].lines == ["old line at 10", "old line at 11"])
+    }
+
+    @Test func fullDiffPureDeletionOnlyBlock() {
+        let diff = """
+        diff --git a/file.swift b/file.swift
+        --- a/file.swift
+        +++ b/file.swift
+        @@ -5,3 +5,0 @@
+        -deleted line 1
+        -deleted line 2
+        -deleted line 3
+        """
+        let hunks = InlineDiffProvider.parseHunks(diff)
+        let addedLines = InlineDiffProvider.addedLineNumbers(from: hunks)
+        let deletedBlocks = InlineDiffProvider.deletedLineBlocks(from: hunks)
+
+        #expect(addedLines.isEmpty)
+        #expect(deletedBlocks.count == 1)
+        #expect(deletedBlocks[0].anchorLine == 5)
+        #expect(deletedBlocks[0].lines.count == 3)
+    }
+
+    @Test func emptyDiffProducesNoHighlights() {
+        let hunks = InlineDiffProvider.parseHunks("")
+        let addedLines = InlineDiffProvider.addedLineNumbers(from: hunks)
+        let deletedBlocks = InlineDiffProvider.deletedLineBlocks(from: hunks)
+        #expect(addedLines.isEmpty)
+        #expect(deletedBlocks.isEmpty)
+    }
+
+    @Test func addedLineNumbersHandlesEmptyLines() {
+        // A hunk that adds empty lines (just "+")
+        let hunks = [
+            DiffHunk(
+                newStart: 1, newCount: 2, oldStart: 1, oldCount: 0,
+                rawText: "@@ -1,0 +1,2 @@\n+\n+second"
+            )
+        ]
+        let result = InlineDiffProvider.addedLineNumbers(from: hunks)
+        #expect(result == [1, 2])
+    }
 }

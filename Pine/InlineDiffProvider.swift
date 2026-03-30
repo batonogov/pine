@@ -47,6 +47,47 @@ struct DiffHunk: Equatable, Sendable, Identifiable {
     var newEndLine: Int {
         newCount > 0 ? newStart + newCount - 1 : newStart
     }
+
+    /// Extracts deleted lines (prefixed with `-`) from rawText, stripping the prefix.
+    var deletedLines: [String] {
+        rawText.components(separatedBy: "\n")
+            .filter { $0.hasPrefix("-") && !$0.hasPrefix("---") }
+            .map { String($0.dropFirst()) }
+    }
+
+    /// Extracts added lines (prefixed with `+`) from rawText, stripping the prefix.
+    var addedLines: [String] {
+        rawText.components(separatedBy: "\n")
+            .filter { $0.hasPrefix("+") && !$0.hasPrefix("+++") }
+            .map { String($0.dropFirst()) }
+    }
+}
+
+// MARK: - Inline diff highlight models
+
+/// Describes the kind of highlight for a line in the inline diff view.
+enum DiffLineKind: Equatable, Sendable {
+    /// A line that was added (exists in the editor) — shown with green background.
+    case added
+    /// A line that was deleted (phantom, not in the editor) — shown with red background.
+    case deleted
+}
+
+/// A single line to highlight in the inline diff view.
+struct DiffHighlightLine: Equatable, Sendable {
+    /// The kind of diff highlight.
+    let kind: DiffLineKind
+    /// For `.added`: the 1-based editor line number.
+    /// For `.deleted`: not used directly (deleted lines are grouped by hunk).
+    let editorLine: Int
+}
+
+/// A group of deleted lines that should be rendered as phantom text above a given editor line.
+struct DeletedLinesBlock: Equatable, Sendable {
+    /// The 1-based editor line above which (or at which) these deleted lines should be drawn.
+    let anchorLine: Int
+    /// The deleted line contents (without the `-` prefix).
+    let lines: [String]
 }
 
 // MARK: - InlineDiffProvider
@@ -173,6 +214,46 @@ enum InlineDiffProvider {
 
     enum NavigationDirection {
         case next, previous
+    }
+
+    // MARK: - Highlight computation
+
+    /// Computes which editor lines should have added (green) backgrounds based on diff hunks.
+    /// Returns a set of 1-based line numbers that are added lines.
+    static func addedLineNumbers(from hunks: [DiffHunk]) -> Set<Int> {
+        var result = Set<Int>()
+        for hunk in hunks {
+            let lines = hunk.rawText.components(separatedBy: "\n")
+            // Track the current new-side line number
+            var newLine = hunk.newStart
+            for line in lines where !line.hasPrefix("@@") {
+                if line.hasPrefix("+") && !line.hasPrefix("+++") {
+                    result.insert(newLine)
+                    newLine += 1
+                } else if line.hasPrefix("-") && !line.hasPrefix("---") {
+                    // Deleted lines don't increment the new-side counter
+                    continue
+                } else {
+                    // Context line
+                    newLine += 1
+                }
+            }
+        }
+        return result
+    }
+
+    /// Computes blocks of deleted lines from hunks, each anchored to an editor line.
+    /// The anchor line is the first added/context line after the deletion, or the hunk's newStart
+    /// for pure deletion hunks.
+    static func deletedLineBlocks(from hunks: [DiffHunk]) -> [DeletedLinesBlock] {
+        var blocks: [DeletedLinesBlock] = []
+        for hunk in hunks {
+            let deleted = hunk.deletedLines
+            guard !deleted.isEmpty else { continue }
+            // Anchor: the hunk's newStart line in the editor
+            blocks.append(DeletedLinesBlock(anchorLine: hunk.newStart, lines: deleted))
+        }
+        return blocks
     }
 
     // MARK: - Fetch hunks for file
