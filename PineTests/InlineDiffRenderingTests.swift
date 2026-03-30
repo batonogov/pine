@@ -65,20 +65,20 @@ struct InlineDiffRenderingTests {
 
     // MARK: - Modified diffs can be set on LineNumberView
 
-    @Test func modifiedDiffsCanBeSet() {
+    @Test func modifiedDiffsCanBeSet() throws {
         let view = makeLineNumberView()
         let diffs: [GitLineDiff] = [GitLineDiff(line: 1, kind: .modified)]
         view.lineDiffs = diffs
         // Note: modifiedColor is private — we can only verify the diff data is stored correctly.
         // The actual color (systemYellow vs systemBlue) is a visual property tested via manual/UI review.
-        #expect(view.lineDiffs.count == 1)
+        try #require(view.lineDiffs.count == 1, "Expected exactly one diff entry")
         #expect(view.lineDiffs[0].kind == .modified)
         #expect(view.lineDiffs[0].line == 1)
     }
 
     // MARK: - Deleted phantom lines: no strikethrough
 
-    @Test func deletedPhantomBlockUsesNoStrikethrough() {
+    @Test func deletedPhantomBlockUsesNoStrikethrough() throws {
         // The drawDeletedPhantomBlock method should NOT use strikethrough attributes.
         // We verify by checking that GutterTextView's deleted line rendering
         // uses plain text (not strikethrough).
@@ -91,8 +91,8 @@ struct InlineDiffRenderingTests {
         tv.expandedHunkID = hunk.id
 
         let blocks = InlineDiffProvider.deletedLineBlocks(from: [hunk])
-        #expect(blocks.count == 1)
-        #expect(blocks[0].lines.count == 2)
+        try #require(blocks.count == 1, "Expected exactly one deleted block")
+        try #require(blocks[0].lines.count == 2, "Expected two deleted lines")
         #expect(blocks[0].lines[0] == "old line 1")
         #expect(blocks[0].lines[1] == "old line 2")
     }
@@ -186,7 +186,7 @@ struct InlineDiffRenderingTests {
 
     // MARK: - Pure deletion hunk renders correctly
 
-    @Test func pureDeletionHunkRendersDeletedBlock() {
+    @Test func pureDeletionHunkRendersDeletedBlock() throws {
         let hunk = DiffHunk(
             newStart: 5, newCount: 0, oldStart: 5, oldCount: 3,
             rawText: "@@ -5,3 +5,0 @@\n-line1\n-line2\n-line3"
@@ -196,8 +196,8 @@ struct InlineDiffRenderingTests {
         #expect(addedLines.isEmpty, "Pure deletion should have no added lines")
 
         let blocks = InlineDiffProvider.deletedLineBlocks(from: [hunk])
-        #expect(blocks.count == 1)
-        #expect(blocks[0].lines.count == 3)
+        try #require(blocks.count == 1, "Expected exactly one deleted block")
+        try #require(blocks[0].lines.count == 3, "Expected three deleted lines")
         #expect(blocks[0].anchorLine == 5)
     }
 
@@ -219,7 +219,7 @@ struct InlineDiffRenderingTests {
 
     // MARK: - Mixed hunk with context lines
 
-    @Test func mixedHunkWithContextLines() {
+    @Test func mixedHunkWithContextLines() throws {
         let hunk = DiffHunk(
             newStart: 10, newCount: 4, oldStart: 10, oldCount: 3,
             rawText: "@@ -10,3 +10,4 @@\n context1\n-removed\n+added1\n+added2\n context2"
@@ -231,7 +231,7 @@ struct InlineDiffRenderingTests {
         #expect(addedLines.contains(12), "Second added line")
 
         let blocks = InlineDiffProvider.deletedLineBlocks(from: [hunk])
-        #expect(blocks.count == 1)
+        try #require(blocks.count == 1, "Expected exactly one deleted block")
         #expect(blocks[0].lines == ["removed"])
     }
 
