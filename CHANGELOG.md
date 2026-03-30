@@ -1,5 +1,51 @@
 # Changelog
 
+## [1.15.0](https://github.com/batonogov/pine/compare/v1.14.0...v1.15.0) (2026-03-30)
+
+
+### Features
+
+* add file type icon colors in sidebar, tab bar, and quick open ([#644](https://github.com/batonogov/pine/issues/644)) ([61106a0](https://github.com/batonogov/pine/commit/61106a00d5999f859b2b4fa621091670cb995c17))
+* add inline config validation for YAML, Terraform, shell scripts, and Dockerfiles ([#314](https://github.com/batonogov/pine/issues/314)) ([#627](https://github.com/batonogov/pine/issues/627)) ([85ddb19](https://github.com/batonogov/pine/commit/85ddb1932a208cdedc3cf5190aa606b27a07236a))
+* add tab context menu with close, copy path, reveal actions ([#634](https://github.com/batonogov/pine/issues/634)) ([#641](https://github.com/batonogov/pine/issues/641)) ([9f5bfa9](https://github.com/batonogov/pine/commit/9f5bfa9a84bf0b23f7c2ea4156f0c8e73408cfc3))
+* add toast notifications for live file reload ([#312](https://github.com/batonogov/pine/issues/312)) ([#628](https://github.com/batonogov/pine/issues/628)) ([3077b22](https://github.com/batonogov/pine/commit/3077b223bcdc82ccbd5916b8044465ed2ba7c799))
+* add validation diagnostic icons in editor gutter ([#648](https://github.com/batonogov/pine/issues/648)) ([#658](https://github.com/batonogov/pine/issues/658)) ([7845636](https://github.com/batonogov/pine/commit/784563651c2ee19a60d4c201a2d069be3cd32bd8))
+* inline diff review with Accept/Revert for AI agent changes ([#313](https://github.com/batonogov/pine/issues/313)) ([#632](https://github.com/batonogov/pine/issues/632)) ([2982e9b](https://github.com/batonogov/pine/commit/2982e9bae0ff0dac4d830cdc95f9271ea28089ce))
+* migrate Pine app target to Swift 6 and tighten concurrency ([#626](https://github.com/batonogov/pine/issues/626)) ([d4789fc](https://github.com/batonogov/pine/commit/d4789fc3d49c3383440ef528ec55d8cad0b1265d))
+* prepare codebase for Swift 6 strict concurrency ([#574](https://github.com/batonogov/pine/issues/574)) ([#625](https://github.com/batonogov/pine/issues/625)) ([56d0cf8](https://github.com/batonogov/pine/commit/56d0cf8ef4dcaf43f34c38de5686d2096272c494))
+* send selected code to terminal via Cmd+Shift+Enter ([#311](https://github.com/batonogov/pine/issues/311)) ([#630](https://github.com/batonogov/pine/issues/630)) ([c89e27d](https://github.com/batonogov/pine/commit/c89e27db378ae4625bd77c8303f462cc9249c666))
+* show inline diff on gutter click instead of always visible ([#672](https://github.com/batonogov/pine/issues/672)) ([#676](https://github.com/batonogov/pine/issues/676)) ([0aa4c31](https://github.com/batonogov/pine/commit/0aa4c310f6b1a7597fc1e46981bce741252498ff))
+
+
+### Bug Fixes
+
+* add built-in validators so diagnostic icons appear without external tools ([#663](https://github.com/batonogov/pine/issues/663)) ([#666](https://github.com/batonogov/pine/issues/666)) ([454e6fb](https://github.com/batonogov/pine/commit/454e6fbcc56119b6a5298cf39f0d745fa10ae0c3))
+* add visual before/after comparison for inline diff review ([#664](https://github.com/batonogov/pine/issues/664)) ([09ef5da](https://github.com/batonogov/pine/commit/09ef5daff9c9519047475bec87b6f3dd775ef393))
+* capture editedRange via NSTextStorageDelegate for incremental highlighting ([#655](https://github.com/batonogov/pine/issues/655)) ([bb452b2](https://github.com/batonogov/pine/commit/bb452b2d81e4e080c1ab172ffa6e1a410517dd7d))
+* improve config validator accuracy and add fallback ([#663](https://github.com/batonogov/pine/issues/663)) ([#667](https://github.com/batonogov/pine/issues/667)) ([cfeef3a](https://github.com/batonogov/pine/commit/cfeef3a24ce7922cf18765bc737120e7676fbc7e))
+* make screenshot extraction work on macOS 26 with fallback strategies ([#622](https://github.com/batonogov/pine/issues/622)) ([af2d0b5](https://github.com/batonogov/pine/commit/af2d0b5be1b6fc9fc32a455a07257206c5b9f6a4))
+* prevent blank terminal by deferring PTY start until non-zero size ([#662](https://github.com/batonogov/pine/issues/662)) ([f6f1fef](https://github.com/batonogov/pine/commit/f6f1fef3ba3f7b9a7ceeb6512617b1aa0b6ba22d))
+* prevent diagnostic icon from overlapping line numbers in gutter ([#669](https://github.com/batonogov/pine/issues/669)) ([#670](https://github.com/batonogov/pine/issues/670)) ([84199e4](https://github.com/batonogov/pine/commit/84199e4e77130005875c4a49edb7c43b67a532b9))
+* prevent EXC_BAD_ACCESS crash on Cmd+Z by deferring syntax highlighting during undo ([#650](https://github.com/batonogov/pine/issues/650)) ([#653](https://github.com/batonogov/pine/issues/653)) ([1ca7864](https://github.com/batonogov/pine/commit/1ca78642d5a3543f9bb542ec2b5fe5dfb84d73e2))
+* prevent stale highlight from overwriting colors after newline insertion ([#665](https://github.com/batonogov/pine/issues/665)) ([f2f0b7b](https://github.com/batonogov/pine/commit/f2f0b7b5048c1359779d19775cbbf49bcd40ef43))
+* trigger highlighting for session-restored tabs ([#671](https://github.com/batonogov/pine/issues/671)) ([#674](https://github.com/batonogov/pine/issues/674)) ([06edb9b](https://github.com/batonogov/pine/commit/06edb9b99e1cf80196354bd7bc88cd16f4a3ed73))
+* work around QuickLookUI crash on macOS 26 ([#675](https://github.com/batonogov/pine/issues/675)) ([7de8b75](https://github.com/batonogov/pine/commit/7de8b75dd1206f334783e0de8d33090f9134308c))
+
+
+### Performance Improvements
+
+* lazy syntax highlighting for visible viewport only ([#640](https://github.com/batonogov/pine/issues/640)) ([91af3aa](https://github.com/batonogov/pine/commit/91af3aaf2640b1a69ed19792fb1319a36a5352dd))
+
+
+### Documentation
+
+* rewrite README with marketing story and feature overview ([#607](https://github.com/batonogov/pine/issues/607)) ([9b3b714](https://github.com/batonogov/pine/commit/9b3b7148fdcc497f88af82a731c6e36d7b1113c1))
+
+
+### Miscellaneous
+
+* exclude CodeEditorView.swift from coverage threshold ([#668](https://github.com/batonogov/pine/issues/668)) ([02289b8](https://github.com/batonogov/pine/commit/02289b8dcd537526a66159ac6597850dbcf6b737))
+
 ## [1.14.0](https://github.com/batonogov/pine/compare/v1.13.1...v1.14.0) (2026-03-28)
 
 
