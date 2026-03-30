@@ -149,7 +149,7 @@ final class LineNumberView: NSView {
 
     // Diff marker colors
     private let addedColor = NSColor.systemGreen
-    private let modifiedColor = NSColor.systemBlue
+    private let modifiedColor = NSColor.systemYellow
     private let deletedColor = NSColor.systemRed
 
     // Fold indicator colors
@@ -500,9 +500,8 @@ final class LineNumberView: NSView {
                     )
                 }
 
-                // ── Accept/Revert buttons on hunk start lines (only when hunk is expanded) ──
-                if self.isMouseInside,
-                   let hunk = self.hunkStartMap[lineNumber],
+                // ── Accept/Revert buttons on hunk start lines (visible when hunk is expanded) ──
+                if let hunk = self.hunkStartMap[lineNumber],
                    self.expandedHunkID == hunk.id {
                     self.drawHunkActionButtons(at: y, lineHeight: lineRect.height)
                 }
