@@ -591,20 +591,19 @@ final class LineNumberView: NSView {
         diagnosticMap[line]?.message
     }
 
+    /// Resolves the tooltip for a given point in view coordinates.
+    /// Returns the diagnostic message if the point is inside bounds and over a line with a diagnostic,
+    /// or nil otherwise. This is a pure query method, safe to call from tests.
+    func resolveTooltip(at point: NSPoint) -> String? {
+        guard bounds.contains(point) else { return nil }
+        guard let line = lineNumber(at: point) else { return nil }
+        return diagnosticTooltip(forLine: line)
+    }
+
     /// Updates the tooltip based on mouse position — shows diagnostic message on hover.
     override func mouseMoved(with event: NSEvent) {
         let point = convert(event.locationInWindow, from: nil)
-        guard bounds.contains(point) else {
-            self.toolTip = nil
-            super.mouseMoved(with: event)
-            return
-        }
-        if let line = lineNumber(at: point),
-           let tooltip = diagnosticTooltip(forLine: line) {
-            self.toolTip = tooltip
-        } else {
-            self.toolTip = nil
-        }
+        self.toolTip = resolveTooltip(at: point)
         super.mouseMoved(with: event)
     }
 

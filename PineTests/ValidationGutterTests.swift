@@ -318,21 +318,30 @@ struct ValidationGutterTests {
         #expect(view.diagnosticTooltip(forLine: 3) == "warning on line 3")
     }
 
-    // MARK: - Bounds check in mouseMoved
+    // MARK: - resolveTooltip(at:) — extracted tooltip logic
 
-    @Test func mouseMoved_outsideBounds_clearsTooltip() {
+    @Test func resolveTooltip_outsideBounds_returnsNil() {
         let view = makeLineNumberView()
         view.frame = NSRect(x: 0, y: 0, width: 40, height: 500)
         let diag = ValidationDiagnostic(
             line: 1, column: nil, message: "error msg", severity: .error, source: "test"
         )
         view.validationDiagnostics = [diag]
-        // Set a tooltip manually to verify it gets cleared
-        view.toolTip = "should be cleared"
-        // Point outside bounds (negative x)
-        let outsidePoint = NSPoint(x: -10, y: 50)
-        let insideBounds = view.bounds.contains(outsidePoint)
-        #expect(!insideBounds, "Point must be outside bounds for this test")
+        // Point outside bounds (negative x) — resolveTooltip must return nil
+        let result = view.resolveTooltip(at: NSPoint(x: -10, y: 50))
+        #expect(result == nil)
+    }
+
+    @Test func resolveTooltip_insideBoundsNoScrollView_returnsNil() {
+        let view = makeLineNumberView()
+        view.frame = NSRect(x: 0, y: 0, width: 40, height: 500)
+        let diag = ValidationDiagnostic(
+            line: 1, column: nil, message: "error msg", severity: .error, source: "test"
+        )
+        view.validationDiagnostics = [diag]
+        // Point inside bounds but lineNumber(at:) returns nil without a real scroll view
+        let result = view.resolveTooltip(at: NSPoint(x: 20, y: 50))
+        #expect(result == nil)
     }
 
     // MARK: - Replacing diagnostics
