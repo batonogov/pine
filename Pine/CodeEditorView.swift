@@ -63,12 +63,12 @@ final class GutterTextView: NSTextView {
         }
     }
 
-    /// Subtle red tint for deleted lines (phantom blocks).
+    /// Red tint for deleted lines (phantom blocks) — more visible for clarity.
     private static let deletedLineColor = NSColor(name: nil) { appearance in
         if appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua {
-            return NSColor.systemRed.withAlphaComponent(0.08)
+            return NSColor.systemRed.withAlphaComponent(0.12)
         } else {
-            return NSColor.systemRed.withAlphaComponent(0.10)
+            return NSColor.systemRed.withAlphaComponent(0.14)
         }
     }
 
@@ -78,12 +78,12 @@ final class GutterTextView: NSTextView {
         return NSFont.monospacedSystemFont(ofSize: size, weight: .regular)
     }
 
-    /// Text color for deleted phantom lines (dimmed, strikethrough-like).
+    /// Text color for deleted phantom lines (dimmed, readable on red background).
     private static let deletedLineTextColor = NSColor(name: nil) { appearance in
         if appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua {
-            return NSColor.systemRed.withAlphaComponent(0.60)
+            return NSColor.white.withAlphaComponent(0.55)
         } else {
-            return NSColor.systemRed.withAlphaComponent(0.55)
+            return NSColor.black.withAlphaComponent(0.50)
         }
     }
 
@@ -306,9 +306,7 @@ final class GutterTextView: NSTextView {
         // Draw each deleted line with text
         let attrs: [NSAttributedString.Key: Any] = [
             .font: font,
-            .foregroundColor: textColor,
-            .strikethroughStyle: NSUnderlineStyle.single.rawValue,
-            .strikethroughColor: textColor
+            .foregroundColor: textColor
         ]
 
         for (index, line) in block.lines.enumerated() {
