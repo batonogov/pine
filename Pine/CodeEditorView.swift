@@ -400,6 +400,8 @@ struct CodeEditorView: NSViewRepresentable {
     var lineDiffs: [GitLineDiff] = []
     /// Diff hunks for accept/revert buttons in the gutter.
     var diffHunks: [DiffHunk] = []
+    /// Validation diagnostics for gutter icons (error/warning/info).
+    var validationDiagnostics: [ValidationDiagnostic] = []
     /// Callback for accepting (staging) a hunk.
     var onAcceptHunk: ((DiffHunk) -> Void)?
     /// Callback for reverting a hunk.
@@ -534,6 +536,7 @@ struct CodeEditorView: NSViewRepresentable {
             coordinator?.handleFoldToggle(foldable)
         }
         lineNumberView.diffHunks = diffHunks
+        lineNumberView.validationDiagnostics = validationDiagnostics
         lineNumberView.onAcceptHunk = { [weak coordinator] hunk in
             coordinator?.onAcceptHunk?(hunk)
         }
@@ -746,6 +749,7 @@ struct CodeEditorView: NSViewRepresentable {
         if let lineNumberView = context.coordinator.lineNumberView {
             lineNumberView.lineDiffs = lineDiffs
             lineNumberView.diffHunks = diffHunks
+            lineNumberView.validationDiagnostics = validationDiagnostics
             lineNumberView.foldState = foldState
         }
         context.coordinator.onAcceptHunk = onAcceptHunk
