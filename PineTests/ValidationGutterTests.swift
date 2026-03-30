@@ -344,6 +344,134 @@ struct ValidationGutterTests {
         #expect(result == nil)
     }
 
+    // MARK: - NSView tooltip owner (dynamic tooltips via addToolTip rect)
+
+    @Test func tooltipOwner_returnsMessageForDiagnosticLine() {
+        // Create a LineNumberView embedded in a real scroll view so lineNumber(at:) works
+        let scrollView = NSScrollView(frame: NSRect(x: 0, y: 0, width: 600, height: 400))
+        let textStorage = NSTextStorage(string: "line1\nline2\nline3\nline4\nline5\n")
+        let layoutManager = NSLayoutManager()
+        textStorage.addLayoutManager(layoutManager)
+        let textContainer = NSTextContainer(
+            containerSize: NSSize(width: 500, height: CGFloat.greatestFiniteMagnitude)
+        )
+        textContainer.widthTracksTextView = true
+        layoutManager.addTextContainer(textContainer)
+        let textView = NSTextView(
+            frame: NSRect(x: 0, y: 0, width: 500, height: 400),
+            textContainer: textContainer
+        )
+        scrollView.documentView = textView
+        // Force layout so line fragments exist
+        layoutManager.ensureLayout(forCharacterRange: NSRange(location: 0, length: textStorage.length))
+
+        let gutterView = LineNumberView(textView: textView, clipView: scrollView.contentView)
+        gutterView.frame = NSRect(x: 0, y: 0, width: 40, height: 400)
+
+        let diag = ValidationDiagnostic(
+            line: 1, column: nil, message: "syntax error", severity: .error, source: "yamllint"
+        )
+        gutterView.validationDiagnostics = [diag]
+
+        // The tooltip owner method should resolve tooltip based on point
+        // Point near top of view (line 1 area)
+        let topPoint = NSPoint(x: 10, y: 5)
+        let tooltip = gutterView.resolveTooltip(at: topPoint)
+        #expect(tooltip == "syntax error")
+    }
+
+    @Test func tooltipOwner_returnsNilForLineWithoutDiagnostic() {
+        let scrollView = NSScrollView(frame: NSRect(x: 0, y: 0, width: 600, height: 400))
+        let textStorage = NSTextStorage(string: "line1\nline2\nline3\n")
+        let layoutManager = NSLayoutManager()
+        textStorage.addLayoutManager(layoutManager)
+        let textContainer = NSTextContainer(
+            containerSize: NSSize(width: 500, height: CGFloat.greatestFiniteMagnitude)
+        )
+        textContainer.widthTracksTextView = true
+        layoutManager.addTextContainer(textContainer)
+        let textView = NSTextView(
+            frame: NSRect(x: 0, y: 0, width: 500, height: 400),
+            textContainer: textContainer
+        )
+        scrollView.documentView = textView
+        layoutManager.ensureLayout(forCharacterRange: NSRange(location: 0, length: textStorage.length))
+
+        let gutterView = LineNumberView(textView: textView, clipView: scrollView.contentView)
+        gutterView.frame = NSRect(x: 0, y: 0, width: 40, height: 400)
+
+        // Diagnostic on line 1 only
+        let diag = ValidationDiagnostic(
+            line: 1, column: nil, message: "err", severity: .error, source: "test"
+        )
+        gutterView.validationDiagnostics = [diag]
+
+        // Point at a y that maps to line 3 — well below line 1
+        // With default font ~14px line height, line 3 starts around y=28
+        let lineThreePoint = NSPoint(x: 10, y: 35)
+        let tooltip = gutterView.resolveTooltip(at: lineThreePoint)
+        #expect(tooltip != "err", "Line 3 should not show line 1's tooltip")
+    }
+
+    @Test func tooltipOwner_hasTooltipRectRegistered() {
+        // Verify that after diagnostics are set, a tooltip rect is added to the view
+        let scrollView = NSScrollView(frame: NSRect(x: 0, y: 0, width: 600, height: 400))
+        let textStorage = NSTextStorage(string: "line1\n")
+        let layoutManager = NSLayoutManager()
+        textStorage.addLayoutManager(layoutManager)
+        let textContainer = NSTextContainer(
+            containerSize: NSSize(width: 500, height: CGFloat.greatestFiniteMagnitude)
+        )
+        layoutManager.addTextContainer(textContainer)
+        let textView = NSTextView(
+            frame: NSRect(x: 0, y: 0, width: 500, height: 400),
+            textContainer: textContainer
+        )
+        scrollView.documentView = textView
+
+        let gutterView = LineNumberView(textView: textView, clipView: scrollView.contentView)
+        gutterView.frame = NSRect(x: 0, y: 0, width: 40, height: 400)
+
+        // Initially no diagnostics — no tooltip rects needed
+        gutterView.validationDiagnostics = []
+        #expect(gutterView.toolTipTag == nil, "No tooltip tag when no diagnostics")
+
+        // Add diagnostic — tooltip rect should be registered
+        let diag = ValidationDiagnostic(
+            line: 1, column: nil, message: "err", severity: .error, source: "test"
+        )
+        gutterView.validationDiagnostics = [diag]
+        #expect(gutterView.toolTipTag != nil, "Tooltip tag should exist when diagnostics present")
+    }
+
+    @Test func tooltipOwner_clearsTooltipRectWhenDiagnosticsEmpty() {
+        let scrollView = NSScrollView(frame: NSRect(x: 0, y: 0, width: 600, height: 400))
+        let textStorage = NSTextStorage(string: "line1\n")
+        let layoutManager = NSLayoutManager()
+        textStorage.addLayoutManager(layoutManager)
+        let textContainer = NSTextContainer(
+            containerSize: NSSize(width: 500, height: CGFloat.greatestFiniteMagnitude)
+        )
+        layoutManager.addTextContainer(textContainer)
+        let textView = NSTextView(
+            frame: NSRect(x: 0, y: 0, width: 500, height: 400),
+            textContainer: textContainer
+        )
+        scrollView.documentView = textView
+
+        let gutterView = LineNumberView(textView: textView, clipView: scrollView.contentView)
+        gutterView.frame = NSRect(x: 0, y: 0, width: 40, height: 400)
+
+        let diag = ValidationDiagnostic(
+            line: 1, column: nil, message: "err", severity: .error, source: "test"
+        )
+        gutterView.validationDiagnostics = [diag]
+        #expect(gutterView.toolTipTag != nil)
+
+        gutterView.validationDiagnostics = []
+        #expect(gutterView.toolTipTag == nil, "Tooltip tag should be removed when diagnostics cleared")
+    }
+
     // MARK: - Replacing diagnostics
 
     @Test func replacingDiagnostics_updatesCleanly() {

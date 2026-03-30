@@ -100,6 +100,9 @@ final class LineNumberView: NSView {
     /// Whether the mouse is currently inside the gutter (for showing fold indicators).
     private var isMouseInside = false
 
+    /// Active tooltip rect tag — non-nil when diagnostics are present and tooltip rect is registered.
+    private(set) var toolTipTag: NSView.ToolTipTag?
+
     private func rebuildDiffMap() {
         diffMap = Dictionary(lineDiffs.map { ($0.line, $0.kind) }, uniquingKeysWith: { _, last in last })
     }
@@ -109,6 +112,7 @@ final class LineNumberView: NSView {
     }
 
     /// Rebuilds the diagnostic map, keeping only the highest-severity diagnostic per line.
+    /// Also registers/removes the tooltip rect for dynamic tooltip resolution.
     private func rebuildDiagnosticMap() {
         diagnosticMap = [:]
         for diag in validationDiagnostics {
@@ -119,6 +123,23 @@ final class LineNumberView: NSView {
             } else {
                 diagnosticMap[diag.line] = diag
             }
+        }
+        updateTooltipRect()
+    }
+
+    /// Registers or removes the tooltip rect covering the entire gutter.
+    /// When diagnostics are present, a single tooltip rect is registered with `self` as owner.
+    /// AppKit calls `view(_:stringForToolTip:point:userData:)` to resolve the tooltip text
+    /// dynamically based on mouse position.
+    private func updateTooltipRect() {
+        // Remove existing tooltip rect
+        if let tag = toolTipTag {
+            removeToolTip(tag)
+            toolTipTag = nil
+        }
+        // Register new tooltip rect only if there are diagnostics
+        if !diagnosticMap.isEmpty {
+            toolTipTag = addToolTip(bounds, owner: self, userData: nil)
         }
     }
 
@@ -218,6 +239,8 @@ final class LineNumberView: NSView {
             userInfo: nil
         )
         addTrackingArea(area)
+        // Re-register tooltip rect with updated bounds
+        updateTooltipRect()
     }
 
     override func mouseEntered(with event: NSEvent) {
@@ -600,11 +623,15 @@ final class LineNumberView: NSView {
         return diagnosticTooltip(forLine: line)
     }
 
-    /// Updates the tooltip based on mouse position — shows diagnostic message on hover.
-    override func mouseMoved(with event: NSEvent) {
-        let point = convert(event.locationInWindow, from: nil)
-        self.toolTip = resolveTooltip(at: point)
-        super.mouseMoved(with: event)
+    /// NSView tooltip owner callback — AppKit calls this to resolve tooltip text dynamically
+    /// for the registered tooltip rect. Returns the diagnostic message for the line under the cursor.
+    func view(
+        _ view: NSView,
+        stringForToolTip tag: NSView.ToolTipTag,
+        point: NSPoint,
+        userData data: UnsafeMutableRawPointer?
+    ) -> String {
+        resolveTooltip(at: point) ?? ""
     }
 
     // MARK: - Fold indicator drawing
