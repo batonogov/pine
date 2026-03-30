@@ -716,9 +716,9 @@ final class ConfigValidator {
 
         guard currentGeneration() == currentGen else { return }
 
-        // Fall back to built-in validation when external tool produced no diagnostics.
-        // This covers both "tool not installed" and "tool crashed / returned empty output".
-        if parsed.isEmpty {
+        // Fall back to built-in validation only when external tool is not installed.
+        // If external tool is installed and returned empty output, the file is valid.
+        if parsed.isEmpty && !hasExternalTool {
             switch kind {
             case .yamllint:
                 parsed = BuiltinValidator.validateYAML(content)
