@@ -64,8 +64,11 @@ final class GutterTextView: NSTextView {
         }
     }
 
-    /// Font used for rendering deleted (phantom) lines.
-    private static let deletedLineFont: NSFont = NSFont.monospacedSystemFont(ofSize: 12, weight: .regular)
+    /// Font for rendering deleted (phantom) lines — derived from the editor's current font size.
+    private var deletedLineFont: NSFont {
+        let size = font?.pointSize ?? 12
+        return NSFont.monospacedSystemFont(ofSize: size, weight: .regular)
+    }
 
     /// Text color for deleted phantom lines (dimmed, strikethrough-like).
     private static let deletedLineTextColor = NSColor(name: nil) { appearance in
@@ -73,6 +76,15 @@ final class GutterTextView: NSTextView {
             return NSColor.systemRed.withAlphaComponent(0.60)
         } else {
             return NSColor.systemRed.withAlphaComponent(0.55)
+        }
+    }
+
+    /// Separator line between deleted phantom block and editor content (adaptive).
+    private static let deletedSeparatorColor = NSColor(name: nil) { appearance in
+        if appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua {
+            return NSColor.systemRed.withAlphaComponent(0.3)
+        } else {
+            return NSColor.systemRed.withAlphaComponent(0.25)
         }
     }
 
@@ -192,12 +204,12 @@ final class GutterTextView: NSTextView {
             lineNumber += 1
         }
 
-        // Build set of anchor lines for deleted blocks for quick lookup
+        // Build lookup: anchor line → array of deleted blocks (handles multiple blocks at same anchor)
         let deletedAnchorSet = Set(deletedLineBlocks.map(\.anchorLine))
-        let deletedAnchorMap = Dictionary(
-            deletedLineBlocks.map { ($0.anchorLine, $0) },
-            uniquingKeysWith: { _, last in last }
-        )
+        var deletedAnchorMap: [Int: [DeletedLinesBlock]] = [:]
+        for block in deletedLineBlocks {
+            deletedAnchorMap[block.anchorLine, default: []].append(block)
+        }
 
         // Enumerate visible line fragments to draw highlights
         var previousLineCharIndex = -1
@@ -222,9 +234,20 @@ final class GutterTextView: NSTextView {
             if isNewLogicalLine {
                 let y = lineRect.origin.y + originY - visibleRect.origin.y
 
-                // Draw deleted phantom block above this line if it's an anchor
-                if deletedAnchorSet.contains(lineNumber), let block = deletedAnchorMap[lineNumber] {
-                    self.drawDeletedPhantomBlock(block, at: y, lineHeight: lineRect.height)
+                // Draw deleted phantom blocks above this line if it's an anchor
+                if deletedAnchorSet.contains(lineNumber), let blocks = deletedAnchorMap[lineNumber] {
+                    var currentY = y
+                    for block in blocks {
+                        let blockHeight = CGFloat(block.lines.count) * lineRect.height
+                        currentY -= blockHeight
+                    }
+                    // Draw blocks top-down so they stack correctly
+                    var drawY = currentY
+                    for block in blocks {
+                        let blockHeight = CGFloat(block.lines.count) * lineRect.height
+                        self.drawDeletedPhantomBlock(block, at: drawY + blockHeight, lineHeight: lineRect.height)
+                        drawY += blockHeight
+                    }
                 }
 
                 // Draw green background on added lines
@@ -248,7 +271,7 @@ final class GutterTextView: NSTextView {
     private func drawDeletedPhantomBlock(_ block: DeletedLinesBlock, at anchorY: CGFloat, lineHeight: CGFloat) {
         guard !block.lines.isEmpty else { return }
 
-        let font = Self.deletedLineFont
+        let font = deletedLineFont
         let textColor = Self.deletedLineTextColor
         let bgColor = Self.deletedLineColor
 
@@ -282,7 +305,7 @@ final class GutterTextView: NSTextView {
         separatorPath.move(to: NSPoint(x: 0, y: separatorY))
         separatorPath.line(to: NSPoint(x: bounds.width, y: separatorY))
         separatorPath.lineWidth = 0.5
-        NSColor.systemRed.withAlphaComponent(0.3).setStroke()
+        Self.deletedSeparatorColor.setStroke()
         separatorPath.stroke()
     }
 

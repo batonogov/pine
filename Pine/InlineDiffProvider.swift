@@ -173,11 +173,15 @@ enum InlineDiffProvider {
     }
 
     /// Parses "start,count" or "start" into (start, count).
+    /// Returns nil if either component is not a valid integer.
     private static func parseSidePart(_ str: String) -> (start: Int, count: Int)? {
         let comps = str.split(separator: ",")
         guard let start = Int(comps[0]) else { return nil }
-        let count = comps.count > 1 ? (Int(comps[1]) ?? 1) : 1
-        return (start, count)
+        if comps.count > 1 {
+            guard let count = Int(comps[1]) else { return nil }
+            return (start, count)
+        }
+        return (start, 1)
     }
 
     // MARK: - Hunk lookup

@@ -739,4 +739,215 @@ struct InlineDiffProviderTests {
         let result = InlineDiffProvider.addedLineNumbers(from: hunks)
         #expect(result == [1, 2])
     }
+
+    // MARK: - Malformed count values in diff headers
+
+    @Test func returnsNilForMalformedNewCount() {
+        // "+1,abc" should be rejected (count is not an integer)
+        let result = InlineDiffProvider.parseHunkHeader("@@ -1,3 +1,abc @@")
+        #expect(result == nil)
+    }
+
+    @Test func returnsNilForMalformedOldCount() {
+        // "-2,xyz" should be rejected
+        let result = InlineDiffProvider.parseHunkHeader("@@ -2,xyz +1,3 @@")
+        #expect(result == nil)
+    }
+
+    @Test func returnsNilForBothCountsMalformed() {
+        let result = InlineDiffProvider.parseHunkHeader("@@ -1,foo +2,bar @@")
+        #expect(result == nil)
+    }
+
+    @Test func parseHunksSkipsMalformedHeaders() {
+        let diff = """
+        diff --git a/file.swift b/file.swift
+        --- a/file.swift
+        +++ b/file.swift
+        @@ -1,abc +2,3 @@
+        +should be skipped
+        @@ -5,2 +6,3 @@
+         context
+        +valid added line
+         more context
+        """
+        let hunks = InlineDiffProvider.parseHunks(diff)
+        // Only the second (valid) hunk should be parsed
+        #expect(hunks.count == 1)
+        #expect(hunks[0].newStart == 6)
+        #expect(hunks[0].newCount == 3)
+    }
+
+    // MARK: - Same anchor line with multiple deleted blocks
+
+    @Test func deletedLineBlocksMultipleBlocksSameAnchor() {
+        // Two hunks that both anchor at the same editor line
+        let hunks = [
+            DiffHunk(
+                newStart: 5, newCount: 1, oldStart: 5, oldCount: 2,
+                rawText: "@@ -5,2 +5,1 @@\n-old1\n-old2\n+replacement"
+            ),
+            DiffHunk(
+                newStart: 5, newCount: 1, oldStart: 7, oldCount: 2,
+                rawText: "@@ -7,2 +5,1 @@\n-another1\n-another2\n+another replacement"
+            )
+        ]
+        let blocks = InlineDiffProvider.deletedLineBlocks(from: hunks)
+        #expect(blocks.count == 2)
+        // Both should be anchored at the same line
+        #expect(blocks[0].anchorLine == 5)
+        #expect(blocks[1].anchorLine == 5)
+        #expect(blocks[0].lines == ["old1", "old2"])
+        #expect(blocks[1].lines == ["another1", "another2"])
+    }
+
+    // MARK: - CRLF line endings in diff content
+
+    @Test func parseHunksHandlesCRLFLineEndings() {
+        let diff = [
+            "diff --git a/file.swift b/file.swift",
+            "--- a/file.swift",
+            "+++ b/file.swift",
+            "@@ -1,2 +1,3 @@",
+            " context",
+            "+added line",
+            " more context",
+            ""
+        ].joined(separator: "\r\n")
+        let hunks = InlineDiffProvider.parseHunks(diff)
+        // CRLF splits on \n, \r stays — but hunk should still be parsed
+        #expect(hunks.count == 1)
+    }
+
+    @Test func deletedLinesWithCRLFContent() {
+        let hunk = DiffHunk(
+            newStart: 1, newCount: 1, oldStart: 1, oldCount: 2,
+            rawText: "@@ -1,2 +1,1 @@\r\n-old line 1\r\n-old line 2\r\n+new line"
+        )
+        let deleted = hunk.deletedLines
+        // Each line may retain \r — the important thing is we get both lines
+        #expect(deleted.count == 2)
+    }
+
+    @Test func addedLinesWithCRLFContent() {
+        let hunk = DiffHunk(
+            newStart: 1, newCount: 2, oldStart: 1, oldCount: 1,
+            rawText: "@@ -1,1 +1,2 @@\r\n-old\r\n+new1\r\n+new2"
+        )
+        let added = hunk.addedLines
+        #expect(added.count == 2)
+    }
+
+    // MARK: - Empty deleted/added sections
+
+    @Test func hunkWithOnlyContextLines() {
+        let hunk = DiffHunk(
+            newStart: 1, newCount: 3, oldStart: 1, oldCount: 3,
+            rawText: "@@ -1,3 +1,3 @@\n context1\n context2\n context3"
+        )
+        #expect(hunk.deletedLines.isEmpty)
+        #expect(hunk.addedLines.isEmpty)
+    }
+
+    @Test func emptyAddedSectionInDiff() {
+        let diff = """
+        diff --git a/file.swift b/file.swift
+        --- a/file.swift
+        +++ b/file.swift
+        @@ -5,3 +5,0 @@
+        -line1
+        -line2
+        -line3
+        """
+        let hunks = InlineDiffProvider.parseHunks(diff)
+        let addedLines = InlineDiffProvider.addedLineNumbers(from: hunks)
+        #expect(addedLines.isEmpty)
+        #expect(hunks[0].addedLines.isEmpty)
+    }
+
+    @Test func emptyDeletedSectionInDiff() {
+        let diff = """
+        diff --git a/file.swift b/file.swift
+        --- a/file.swift
+        +++ b/file.swift
+        @@ -0,0 +1,2 @@
+        +new1
+        +new2
+        """
+        let hunks = InlineDiffProvider.parseHunks(diff)
+        let blocks = InlineDiffProvider.deletedLineBlocks(from: hunks)
+        #expect(blocks.isEmpty)
+        #expect(hunks[0].deletedLines.isEmpty)
+    }
+
+    // MARK: - Very large hunks (100+ lines)
+
+    @Test func parsesVeryLargeAdditionHunk() {
+        var diffLines = [
+            "diff --git a/file.swift b/file.swift",
+            "--- a/file.swift",
+            "+++ b/file.swift",
+            "@@ -0,0 +1,150 @@"
+        ]
+        for i in 1...150 {
+            diffLines.append("+line \(i)")
+        }
+        let diff = diffLines.joined(separator: "\n")
+        let hunks = InlineDiffProvider.parseHunks(diff)
+
+        #expect(hunks.count == 1)
+        #expect(hunks[0].newCount == 150)
+        #expect(hunks[0].addedLines.count == 150)
+
+        let addedLineNumbers = InlineDiffProvider.addedLineNumbers(from: hunks)
+        #expect(addedLineNumbers.count == 150)
+        #expect(addedLineNumbers.contains(1))
+        #expect(addedLineNumbers.contains(150))
+    }
+
+    @Test func parsesVeryLargeDeletionHunk() {
+        var diffLines = [
+            "diff --git a/file.swift b/file.swift",
+            "--- a/file.swift",
+            "+++ b/file.swift",
+            "@@ -1,120 +1,0 @@"
+        ]
+        for i in 1...120 {
+            diffLines.append("-deleted line \(i)")
+        }
+        let diff = diffLines.joined(separator: "\n")
+        let hunks = InlineDiffProvider.parseHunks(diff)
+
+        #expect(hunks.count == 1)
+        #expect(hunks[0].oldCount == 120)
+        #expect(hunks[0].deletedLines.count == 120)
+
+        let blocks = InlineDiffProvider.deletedLineBlocks(from: hunks)
+        #expect(blocks.count == 1)
+        #expect(blocks[0].lines.count == 120)
+    }
+
+    @Test func parsesVeryLargeMixedHunk() {
+        var diffLines = [
+            "diff --git a/file.swift b/file.swift",
+            "--- a/file.swift",
+            "+++ b/file.swift",
+            "@@ -1,100 +1,110 @@"
+        ]
+        // 100 deletions followed by 110 additions
+        for i in 1...100 {
+            diffLines.append("-old line \(i)")
+        }
+        for i in 1...110 {
+            diffLines.append("+new line \(i)")
+        }
+        let diff = diffLines.joined(separator: "\n")
+        let hunks = InlineDiffProvider.parseHunks(diff)
+
+        #expect(hunks.count == 1)
+        #expect(hunks[0].oldCount == 100)
+        #expect(hunks[0].newCount == 110)
+        #expect(hunks[0].deletedLines.count == 100)
+        #expect(hunks[0].addedLines.count == 110)
+    }
 }
