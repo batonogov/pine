@@ -1156,6 +1156,23 @@ struct CodeEditorView: NSViewRepresentable {
             highlightWorkItem?.cancel()
             highlightTask?.cancel()
 
+            // Two-phase generation increment (#659):
+            //
+            // 1) Immediate increment (here): invalidates any in-flight Task spawned
+            //    by a prior edit. If that Task's background work finishes during the
+            //    debounce window, it will compare its captured generation against the
+            //    (now-bumped) current value, see a mismatch, and discard its stale
+            //    results instead of applying outdated colors.
+            //
+            // 2) Second increment (inside the workItem, line ~1186): captures a fresh
+            //    generation for the NEW Task that is about to be created. Without this,
+            //    the new Task would reuse the generation from step 1, which could
+            //    already be stale if yet another edit arrives before the Task checks.
+            //
+            // Both are required: without (1) stale Tasks aren't rejected; without (2)
+            // new Tasks use a generation that a subsequent edit has already invalidated.
+            highlightGeneration.increment()
+
             let isUndoRedo = isUndoRedoInProgress
 
             let workItem = DispatchWorkItem { [weak self] in
