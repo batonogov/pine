@@ -472,6 +472,105 @@ struct ValidationGutterTests {
         #expect(gutterView.toolTipTag == nil, "Tooltip tag should be removed when diagnostics cleared")
     }
 
+    // MARK: - @objc tooltip owner method (issue #680)
+
+    @Test func tooltipOwnerObjcMethod_respondsToSelector() {
+        let view = makeLineNumberView()
+        // NSToolTipOwner informal protocol selector — must be visible to ObjC runtime
+        let selector = #selector(LineNumberView.view(_:stringForToolTip:point:userData:))
+        #expect(view.responds(to: selector), "LineNumberView must respond to tooltip owner selector via @objc")
+    }
+
+    @Test func tooltipOwnerMethod_directCall_returnsMessage() {
+        let scrollView = NSScrollView(frame: NSRect(x: 0, y: 0, width: 600, height: 400))
+        let textStorage = NSTextStorage(string: "line1\nline2\nline3\n")
+        let layoutManager = NSLayoutManager()
+        textStorage.addLayoutManager(layoutManager)
+        let textContainer = NSTextContainer(
+            containerSize: NSSize(width: 500, height: CGFloat.greatestFiniteMagnitude)
+        )
+        textContainer.widthTracksTextView = true
+        layoutManager.addTextContainer(textContainer)
+        let textView = NSTextView(
+            frame: NSRect(x: 0, y: 0, width: 500, height: 400),
+            textContainer: textContainer
+        )
+        scrollView.documentView = textView
+        layoutManager.ensureLayout(forCharacterRange: NSRange(location: 0, length: textStorage.length))
+
+        let gutterView = LineNumberView(textView: textView, clipView: scrollView.contentView)
+        gutterView.frame = NSRect(x: 0, y: 0, width: 40, height: 400)
+
+        let diag = ValidationDiagnostic(
+            line: 1, column: nil, message: "missing colon", severity: .error, source: "yamllint"
+        )
+        gutterView.validationDiagnostics = [diag]
+
+        // Call the @objc tooltip owner method directly (as AppKit would)
+        let tag = gutterView.toolTipTag ?? 0
+        let result = gutterView.view(
+            gutterView,
+            stringForToolTip: tag,
+            point: NSPoint(x: 10, y: 5),
+            userData: nil
+        )
+        #expect(result == "missing colon")
+    }
+
+    @Test func tooltipOwnerMethod_directCall_returnsEmptyForNoMatch() {
+        let scrollView = NSScrollView(frame: NSRect(x: 0, y: 0, width: 600, height: 400))
+        let textStorage = NSTextStorage(string: "line1\nline2\nline3\n")
+        let layoutManager = NSLayoutManager()
+        textStorage.addLayoutManager(layoutManager)
+        let textContainer = NSTextContainer(
+            containerSize: NSSize(width: 500, height: CGFloat.greatestFiniteMagnitude)
+        )
+        textContainer.widthTracksTextView = true
+        layoutManager.addTextContainer(textContainer)
+        let textView = NSTextView(
+            frame: NSRect(x: 0, y: 0, width: 500, height: 400),
+            textContainer: textContainer
+        )
+        scrollView.documentView = textView
+        layoutManager.ensureLayout(forCharacterRange: NSRange(location: 0, length: textStorage.length))
+
+        let gutterView = LineNumberView(textView: textView, clipView: scrollView.contentView)
+        gutterView.frame = NSRect(x: 0, y: 0, width: 40, height: 400)
+
+        // Diagnostic on line 1, but query point at line 3 area (y ~= 35)
+        let diag = ValidationDiagnostic(
+            line: 1, column: nil, message: "err", severity: .error, source: "test"
+        )
+        gutterView.validationDiagnostics = [diag]
+
+        let result = gutterView.view(
+            gutterView,
+            stringForToolTip: 0,
+            point: NSPoint(x: 10, y: 35),
+            userData: nil
+        )
+        #expect(result == "", "Should return empty string when no diagnostic at line")
+    }
+
+    @Test func tooltipOwnerMethod_directCall_outsideBounds() {
+        let gutterView = makeLineNumberView()
+        gutterView.frame = NSRect(x: 0, y: 0, width: 40, height: 400)
+
+        let diag = ValidationDiagnostic(
+            line: 1, column: nil, message: "err", severity: .error, source: "test"
+        )
+        gutterView.validationDiagnostics = [diag]
+
+        // Point outside bounds — should return empty string
+        let result = gutterView.view(
+            gutterView,
+            stringForToolTip: 0,
+            point: NSPoint(x: -10, y: 5),
+            userData: nil
+        )
+        #expect(result == "", "Should return empty string for point outside bounds")
+    }
+
     // MARK: - Replacing diagnostics
 
     @Test func replacingDiagnostics_updatesCleanly() {

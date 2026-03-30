@@ -625,7 +625,12 @@ final class LineNumberView: NSView {
 
     /// NSView tooltip owner callback — AppKit calls this to resolve tooltip text dynamically
     /// for the registered tooltip rect. Returns the diagnostic message for the line under the cursor.
-    func view(
+    ///
+    /// Must be annotated `@objc` so that AppKit can find this method via Objective-C message
+    /// dispatch. The `NSToolTipOwner` informal protocol is an ObjC category on `NSObject` —
+    /// Swift does not automatically bridge it, so without `@objc` AppKit falls back to the
+    /// default `NSView` implementation which returns the view's `description`.
+    @objc func view(
         _ view: NSView,
         stringForToolTip tag: NSView.ToolTipTag,
         point: NSPoint,
