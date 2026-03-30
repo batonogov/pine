@@ -1156,6 +1156,13 @@ struct CodeEditorView: NSViewRepresentable {
             highlightWorkItem?.cancel()
             highlightTask?.cancel()
 
+            // Bump the generation counter immediately — not inside the debounced
+            // workItem — so that any in-flight highlight Task whose background work
+            // completes during the debounce window will see a stale generation and
+            // discard its result instead of applying outdated colors to the modified
+            // text storage (#659).
+            highlightGeneration.increment()
+
             let isUndoRedo = isUndoRedoInProgress
 
             let workItem = DispatchWorkItem { [weak self] in
