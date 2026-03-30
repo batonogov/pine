@@ -86,6 +86,9 @@ final class LineNumberView: NSView {
     /// Pre-indexed diagnostic lookup: line number → highest severity diagnostic.
     private var diagnosticMap: [Int: ValidationDiagnostic] = [:]
 
+    /// Whether any diagnostics are present — used to add extra gutter width for icons.
+    private var hasDiagnostics: Bool { !diagnosticMap.isEmpty }
+
     /// Pre-indexed fold lookup: start line → FoldableRange.
     private var foldStartMap: [Int: FoldableRange] = [:]
 
@@ -500,7 +503,8 @@ final class LineNumberView: NSView {
             cachedDigitWidth = "0".size(withAttributes: [.font: gutterFont]).width
             cachedDigitWidthFont = gutterFont
         }
-        let newWidth = CGFloat(digits) * cachedDigitWidth + 20
+        let diagnosticExtra: CGFloat = hasDiagnostics ? Self.diagnosticIconDrawSize + 4 : 0
+        let newWidth = CGFloat(digits) * cachedDigitWidth + 20 + diagnosticExtra
         if abs(gutterWidth - newWidth) > 1 {
             gutterWidth = newWidth
             frame.size.width = newWidth
@@ -528,12 +532,17 @@ final class LineNumberView: NSView {
         .info: .systemBlue
     ]
 
+    /// Fixed draw size for diagnostic icons — used for gutter width calculation and rendering.
+    static let diagnosticIconDrawSize: CGFloat = 12
+
     /// Draws an SF Symbol icon for a validation diagnostic at the given line position.
+    /// The icon is placed to the left of the line number, in the extra gutter space
+    /// reserved when diagnostics are present.
     func drawDiagnosticIcon(at y: CGFloat, lineHeight: CGFloat, severity: ValidationSeverity) {
         guard let symbolName = Self.diagnosticSymbolNames[severity],
               let color = Self.diagnosticColors[severity] else { return }
 
-        let iconSize: CGFloat = min(lineHeight - 2, 14)
+        let iconSize: CGFloat = min(lineHeight - 2, Self.diagnosticIconDrawSize)
         let config = NSImage.SymbolConfiguration(pointSize: iconSize, weight: .regular)
         guard let image = NSImage(systemSymbolName: symbolName, accessibilityDescription: nil)?
             .withSymbolConfiguration(config) else { return }
@@ -541,8 +550,8 @@ final class LineNumberView: NSView {
         let tintedImage = image.tinted(with: color)
         let imageSize = tintedImage.size
         let centerY = y + (lineHeight - imageSize.height) / 2
-        // Draw in the fold indicator area (left side of gutter)
-        let x: CGFloat = 1
+        // Position to the left of the line number, after the fold indicator area
+        let x: CGFloat = 14
 
         tintedImage.draw(in: NSRect(
             x: x, y: centerY,
