@@ -32,6 +32,22 @@ enum FileIconMapper {
         case "yarn.lock":                      return .blue
         case "requirements.txt":               return .blue
         case "setup.py":                       return .blue
+
+        // Infrastructure / DevOps
+        case "vagrantfile":                    return .blue
+        case "jenkinsfile":                    return .blue
+        case ".helmignore":                    return .secondary
+        case "chart.yaml", "values.yaml",
+             "kustomization.yaml":             return .blue
+
+        // Linting / Quality
+        case ".pylintrc", ".flake8":           return .secondary
+        case ".pre-commit-config.yaml":        return .orange
+        case ".editorconfig":                  return .secondary
+        case ".eslintrc", ".prettierrc",
+             ".stylelintrc":                   return .secondary
+        case ".secrets.baseline":              return .red
+
         default: break
         }
 
@@ -56,6 +72,13 @@ enum FileIconMapper {
         case "toml", "ini", "cfg", "conf":    return .secondary
         case "xml", "svg":                     return .orange
         case "graphql", "gql":                 return .pink
+
+        // Infrastructure / DevOps
+        case "tf", "tfvars":                   return .purple
+        case "hcl":                            return .purple
+
+        // Diagrams
+        case "drawio":                         return .green
 
         // Scripting / Systems
         case "py", "pyw":                      return .blue
@@ -140,6 +163,22 @@ enum FileIconMapper {
         case "yarn.lock":                      return "shippingbox"
         case "requirements.txt":               return "doc.plaintext"
         case "setup.py":                       return "terminal"
+
+        // Infrastructure / DevOps
+        case "vagrantfile":                    return "desktopcomputer"
+        case "jenkinsfile":                    return "gearshape.2"
+        case ".helmignore":                    return "arrow.triangle.branch"
+        case "chart.yaml", "values.yaml",
+             "kustomization.yaml":             return "square.stack.3d.up"
+
+        // Linting / Quality
+        case ".pylintrc", ".flake8":           return "checkmark.circle"
+        case ".pre-commit-config.yaml":        return "checkmark.shield"
+        case ".editorconfig":                  return "gearshape"
+        case ".eslintrc", ".prettierrc",
+             ".stylelintrc":                   return "checkmark.circle"
+        case ".secrets.baseline":              return "lock.shield"
+
         default: break
         }
 
@@ -164,6 +203,13 @@ enum FileIconMapper {
         case "toml", "ini", "cfg", "conf":    return "gearshape"
         case "xml", "svg":                     return "chevron.left.forwardslash.chevron.right"
         case "graphql", "gql":                 return "point.3.connected.trianglepath.dotted"
+
+        // Infrastructure / DevOps
+        case "tf", "tfvars":                   return "server.rack"
+        case "hcl":                            return "gearshape"
+
+        // Diagrams
+        case "drawio":                         return "square.and.pencil"
 
         // Scripting / Systems
         case "py", "pyw":                      return "terminal"
