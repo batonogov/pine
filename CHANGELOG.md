@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.16.1](https://github.com/batonogov/pine/compare/v1.16.0...v1.16.1) (2026-03-31)
+
+
+### Bug Fixes
+
+* resolve ConfigValidator SIGTRAP crash ([#700](https://github.com/batonogov/pine/issues/700)) ([018e6cc](https://github.com/batonogov/pine/commit/018e6cc0e0f8297fba7f85e0e42b0a199623b499))
+
 ## [1.16.0](https://github.com/batonogov/pine/compare/v1.15.0...v1.16.0) (2026-03-31)
 
 
