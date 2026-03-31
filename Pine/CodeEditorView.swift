@@ -38,6 +38,64 @@ final class GutterTextView: NSTextView {
         NSPoint(x: gutterInset, y: 8)
     }
 
+    // MARK: - Inline diff highlight
+
+    /// Set of 1-based line numbers that are added in the current diff (green background).
+    var addedLineNumbers: Set<Int> = []
+
+    /// Blocks of deleted lines to render as phantom text above the anchor line (red background).
+    var deletedLineBlocks: [DeletedLinesBlock] = []
+
+    /// The diff hunks for the current file — used to filter highlights to the expanded hunk only.
+    var diffHunksForHighlight: [DiffHunk] = []
+
+    /// The ID of the currently expanded hunk (shows inline diff). Nil = all collapsed.
+    var expandedHunkID: UUID? {
+        didSet { needsDisplay = true }
+    }
+
+    /// Subtle green tint for added lines.
+    private static let addedLineColor = NSColor(name: nil) { appearance in
+        if appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua {
+            return NSColor.systemGreen.withAlphaComponent(0.08)
+        } else {
+            return NSColor.systemGreen.withAlphaComponent(0.10)
+        }
+    }
+
+    /// Red tint for deleted lines (phantom blocks) — more visible for clarity.
+    private static let deletedLineColor = NSColor(name: nil) { appearance in
+        if appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua {
+            return NSColor.systemRed.withAlphaComponent(0.12)
+        } else {
+            return NSColor.systemRed.withAlphaComponent(0.14)
+        }
+    }
+
+    /// Font for rendering deleted (phantom) lines — derived from the editor's current font size.
+    private var deletedLineFont: NSFont {
+        let size = font?.pointSize ?? 12
+        return NSFont.monospacedSystemFont(ofSize: size, weight: .regular)
+    }
+
+    /// Text color for deleted phantom lines (dimmed, readable on red background).
+    private static let deletedLineTextColor = NSColor(name: nil) { appearance in
+        if appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua {
+            return NSColor.white.withAlphaComponent(0.55)
+        } else {
+            return NSColor.black.withAlphaComponent(0.50)
+        }
+    }
+
+    /// Separator line between deleted phantom block and editor content (adaptive).
+    private static let deletedSeparatorColor = NSColor(name: nil) { appearance in
+        if appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua {
+            return NSColor.systemRed.withAlphaComponent(0.3)
+        } else {
+            return NSColor.systemRed.withAlphaComponent(0.25)
+        }
+    }
+
     // MARK: - Highlight current line
 
     private let currentLineColor = NSColor(name: nil) { appearance in
@@ -94,10 +152,21 @@ final class GutterTextView: NSTextView {
         super.drawBackground(in: rect)
 
         guard let layoutManager = layoutManager,
-              textContainer != nil else { return }
+              let textContainer = textContainer else { return }
 
         // ── Indent guides (behind everything else) ──
         IndentGuideRenderer.draw(in: self, dirtyRect: rect, indentStyle: indentStyle)
+
+        // ── Inline diff: only shown when a hunk is expanded via gutter click ──
+        if let expandedID = expandedHunkID,
+           let expandedHunk = diffHunksForHighlight.first(where: { $0.id == expandedID }) {
+            drawInlineDiffHighlights(
+                in: rect,
+                layoutManager: layoutManager,
+                textContainer: textContainer,
+                expandedHunk: expandedHunk
+            )
+        }
 
         let cursorRange = selectedRange()
         guard cursorRange.length == 0 else { return }
@@ -116,6 +185,145 @@ final class GutterTextView: NSTextView {
         if isBlameVisible, !blameLookup.isEmpty {
             drawInlineBlame(lineRect: lineRect, layoutManager: layoutManager)
         }
+    }
+
+    // MARK: - Inline diff drawing
+
+    /// Draws green background highlights on added lines and red phantom blocks for deleted lines.
+    /// Only draws highlights for the given expanded hunk.
+    private func drawInlineDiffHighlights(
+        in rect: NSRect,
+        layoutManager: NSLayoutManager,
+        textContainer: NSTextContainer,
+        expandedHunk: DiffHunk
+    ) {
+        guard let scrollView = enclosingScrollView else { return }
+        let visibleRect = scrollView.contentView.bounds
+        let source = string as NSString
+        guard source.length > 0 else { return }
+
+        let originY = textContainerOrigin.y
+
+        // Get visible glyph range
+        let visibleGlyphRange = layoutManager.glyphRange(
+            forBoundingRect: visibleRect, in: textContainer
+        )
+        guard visibleGlyphRange.location != NSNotFound else { return }
+
+        // Count the line number of the first visible character
+        let firstVisibleCharIndex = layoutManager.characterIndexForGlyph(
+            at: visibleGlyphRange.location
+        )
+        var lineNumber = 1
+        for i in 0..<firstVisibleCharIndex where source.character(at: i) == ASCII.newline {
+            lineNumber += 1
+        }
+
+        // Filter to only the expanded hunk's added lines and deleted blocks
+        let hunkAddedLines = InlineDiffProvider.addedLineNumbers(from: [expandedHunk])
+        let hunkDeletedBlocks = InlineDiffProvider.deletedLineBlocks(from: [expandedHunk])
+
+        // Build lookup: anchor line → array of deleted blocks
+        let deletedAnchorSet = Set(hunkDeletedBlocks.map(\.anchorLine))
+        var deletedAnchorMap: [Int: [DeletedLinesBlock]] = [:]
+        for block in hunkDeletedBlocks {
+            deletedAnchorMap[block.anchorLine, default: []].append(block)
+        }
+
+        // Enumerate visible line fragments to draw highlights
+        var previousLineCharIndex = -1
+
+        layoutManager.enumerateLineFragments(
+            forGlyphRange: visibleGlyphRange
+        ) { [self] lineRect, _, _, glyphRange, _ in
+            let charIndex = layoutManager.characterIndexForGlyph(at: glyphRange.location)
+
+            // Determine if this is a new logical line
+            let isNewLogicalLine: Bool
+            if previousLineCharIndex < 0 {
+                isNewLogicalLine = true
+            } else if charIndex > previousLineCharIndex {
+                let range = NSRange(location: previousLineCharIndex,
+                                    length: charIndex - previousLineCharIndex)
+                isNewLogicalLine = source.substring(with: range).contains("\n")
+            } else {
+                isNewLogicalLine = false
+            }
+
+            if isNewLogicalLine {
+                let y = lineRect.origin.y + originY - visibleRect.origin.y
+
+                // Draw deleted phantom blocks above this line if it's an anchor
+                if deletedAnchorSet.contains(lineNumber), let blocks = deletedAnchorMap[lineNumber] {
+                    var currentY = y
+                    for block in blocks {
+                        let blockHeight = CGFloat(block.lines.count) * lineRect.height
+                        currentY -= blockHeight
+                    }
+                    // Draw blocks top-down so they stack correctly
+                    var drawY = currentY
+                    for block in blocks {
+                        let blockHeight = CGFloat(block.lines.count) * lineRect.height
+                        self.drawDeletedPhantomBlock(block, at: drawY + blockHeight, lineHeight: lineRect.height)
+                        drawY += blockHeight
+                    }
+                }
+
+                // Draw green background on added lines (only for expanded hunk)
+                if hunkAddedLines.contains(lineNumber) {
+                    var highlightRect = lineRect
+                    highlightRect.origin.x = 0
+                    highlightRect.size.width = self.bounds.width
+                    highlightRect.origin.y = y
+                    Self.addedLineColor.setFill()
+                    highlightRect.fill()
+                }
+
+                lineNumber += 1
+            }
+            previousLineCharIndex = charIndex
+        }
+    }
+
+    /// Draws a block of deleted phantom lines above the given Y position.
+    /// Each deleted line is rendered with red background and dimmed red text.
+    private func drawDeletedPhantomBlock(_ block: DeletedLinesBlock, at anchorY: CGFloat, lineHeight: CGFloat) {
+        guard !block.lines.isEmpty else { return }
+
+        let font = deletedLineFont
+        let textColor = Self.deletedLineTextColor
+        let bgColor = Self.deletedLineColor
+
+        let lineCount = CGFloat(block.lines.count)
+        let blockHeight = lineCount * lineHeight
+        let blockY = anchorY - blockHeight
+
+        // Draw background for the entire deleted block
+        let bgRect = NSRect(x: 0, y: blockY, width: bounds.width, height: blockHeight)
+        bgColor.setFill()
+        bgRect.fill()
+
+        // Draw each deleted line with text
+        let attrs: [NSAttributedString.Key: Any] = [
+            .font: font,
+            .foregroundColor: textColor
+        ]
+
+        for (index, line) in block.lines.enumerated() {
+            let lineY = blockY + CGFloat(index) * lineHeight
+            let text = line as NSString
+            let drawPoint = NSPoint(x: textContainerOrigin.x, y: lineY)
+            text.draw(at: drawPoint, withAttributes: attrs)
+        }
+
+        // Draw a subtle separator line between deleted block and editor content
+        let separatorY = anchorY
+        let separatorPath = NSBezierPath()
+        separatorPath.move(to: NSPoint(x: 0, y: separatorY))
+        separatorPath.line(to: NSPoint(x: bounds.width, y: separatorY))
+        separatorPath.lineWidth = 0.5
+        Self.deletedSeparatorColor.setStroke()
+        separatorPath.stroke()
     }
 
     /// Draws inline blame annotation after the line content on the cursor line.
@@ -292,6 +500,26 @@ final class GutterTextView: NSTextView {
 
         insertText("\n\(indent)", replacementRange: selectedRange())
     }
+
+    // MARK: - Escape key collapses expanded inline diff
+
+    override func keyDown(with event: NSEvent) {
+        if event.keyCode == 53, expandedHunkID != nil {
+            // Escape key (keyCode 53) collapses expanded inline diff
+            expandedHunkID = nil
+            // Also collapse in the sibling LineNumberView
+            if let container = enclosingScrollView?.superview as? EditorContainerView {
+                for subview in container.subviews {
+                    if let lineNumberView = subview as? LineNumberView {
+                        lineNumberView.expandedHunkID = nil
+                        break
+                    }
+                }
+            }
+            return
+        }
+        super.keyDown(with: event)
+    }
 }
 
 // MARK: - Editor scroll view with find bar height tracking
@@ -398,6 +626,14 @@ struct CodeEditorView: NSViewRepresentable {
     var language: String
     var fileName: String?
     var lineDiffs: [GitLineDiff] = []
+    /// Diff hunks for accept/revert buttons in the gutter.
+    var diffHunks: [DiffHunk] = []
+    /// Validation diagnostics for gutter icons (error/warning/info).
+    var validationDiagnostics: [ValidationDiagnostic] = []
+    /// Callback for accepting (staging) a hunk.
+    var onAcceptHunk: ((DiffHunk) -> Void)?
+    /// Callback for reverting a hunk.
+    var onRevertHunk: ((DiffHunk) -> Void)?
     /// Whether inline blame annotation is visible on the cursor line.
     var isBlameVisible: Bool = false
     /// Blame data for the current file.
@@ -427,7 +663,8 @@ struct CodeEditorView: NSViewRepresentable {
     var indentStyle: IndentationStyle = .spaces(4)
 
     /// Порог (в символах) для переключения на viewport-based подсветку.
-    static let viewportHighlightThreshold = 100_000
+    /// Lowered from 100KB to 50KB to be more aggressive about lazy highlighting (#637).
+    static let viewportHighlightThreshold = 50_000
 
     /// Файл достаточно большой для viewport-based подсветки?
     private var useViewportHighlighting: Bool {
@@ -506,6 +743,9 @@ struct CodeEditorView: NSViewRepresentable {
         textView.setBlameLines(blameLines)
         textView.isBlameVisible = isBlameVisible
         textView.indentStyle = indentStyle
+        textView.addedLineNumbers = InlineDiffProvider.addedLineNumbers(from: diffHunks)
+        textView.deletedLineBlocks = InlineDiffProvider.deletedLineBlocks(from: diffHunks)
+        textView.diffHunksForHighlight = diffHunks
         // Delegate set AFTER text/highlight setup to prevent textDidChange from firing
         // during makeNSView and causing a spurious updateContent → cachedHighlightResult = nil
         // → contentVersion bump → updateNSView re-sets text → stripping highlight attributes.
@@ -525,6 +765,17 @@ struct CodeEditorView: NSViewRepresentable {
         let coordinator = context.coordinator
         lineNumberView.onFoldToggle = { [weak coordinator] foldable in
             coordinator?.handleFoldToggle(foldable)
+        }
+        lineNumberView.diffHunks = diffHunks
+        lineNumberView.validationDiagnostics = validationDiagnostics
+        lineNumberView.onAcceptHunk = { [weak coordinator] hunk in
+            coordinator?.onAcceptHunk?(hunk)
+        }
+        lineNumberView.onRevertHunk = { [weak coordinator] hunk in
+            coordinator?.onRevertHunk?(hunk)
+        }
+        lineNumberView.onDiffMarkerClick = { [weak coordinator] hunk in
+            coordinator?.handleDiffMarkerClick(hunk)
         }
         container.addSubview(lineNumberView)
 
@@ -577,10 +828,11 @@ struct CodeEditorView: NSViewRepresentable {
             }
         }
 
-        // Set delegate now — after text and highlighting are configured,
+        // Set delegates now — after text and highlighting are configured,
         // so textDidChange won't fire during initial setup and cause a
         // re-highlight cycle that strips syntax colors (issue #556).
         textView.delegate = context.coordinator
+        textStorage.delegate = context.coordinator
 
         // Restore cursor and scroll from saved per-tab state.
         // initialCursorPosition is stored as NSRange.location (UTF-16 offset),
@@ -715,6 +967,21 @@ struct CodeEditorView: NSViewRepresentable {
                 gutterView.isBlameVisible = isBlameVisible
                 gutterView.display()
             }
+            // Update inline diff highlight data
+            let newAddedLines = InlineDiffProvider.addedLineNumbers(from: diffHunks)
+            let newDeletedBlocks = InlineDiffProvider.deletedLineBlocks(from: diffHunks)
+            if gutterView.addedLineNumbers != newAddedLines
+                || gutterView.deletedLineBlocks != newDeletedBlocks {
+                gutterView.addedLineNumbers = newAddedLines
+                gutterView.deletedLineBlocks = newDeletedBlocks
+                gutterView.diffHunksForHighlight = diffHunks
+                // Collapse expanded hunk when diff data changes (hunks may have shifted)
+                if gutterView.expandedHunkID != nil {
+                    gutterView.expandedHunkID = nil
+                    context.coordinator.lineNumberView?.expandedHunkID = nil
+                }
+                gutterView.needsDisplay = true
+            }
         }
 
         context.coordinator.updateContentIfNeeded(
@@ -730,8 +997,12 @@ struct CodeEditorView: NSViewRepresentable {
         // Обновляем diff-данные LineNumberView и MinimapView
         if let lineNumberView = context.coordinator.lineNumberView {
             lineNumberView.lineDiffs = lineDiffs
+            lineNumberView.diffHunks = diffHunks
+            lineNumberView.validationDiagnostics = validationDiagnostics
             lineNumberView.foldState = foldState
         }
+        context.coordinator.onAcceptHunk = onAcceptHunk
+        context.coordinator.onRevertHunk = onRevertHunk
         if let minimapView = context.coordinator.minimapView {
             minimapView.lineDiffs = lineDiffs
         }
@@ -751,7 +1022,7 @@ struct CodeEditorView: NSViewRepresentable {
         Coordinator(parent: self)
     }
 
-    class Coordinator: NSObject, NSTextViewDelegate, NSLayoutManagerDelegate {
+    class Coordinator: NSObject, NSTextViewDelegate, NSTextStorageDelegate, NSLayoutManagerDelegate {
         var parent: CodeEditorView
         var scrollView: NSScrollView?
         var lineNumberView: LineNumberView?
@@ -779,8 +1050,21 @@ struct CodeEditorView: NSViewRepresentable {
         /// Internal access for testability (`@testable import`).
         var didChangeFromTextView = false
 
+        /// Edited range captured from NSTextStorageDelegate before processEditing
+        /// resets it to NSNotFound. Used by textDidChange for incremental highlighting.
+        var pendingEditedRange: NSRange?
+
+        /// Change in length captured alongside pendingEditedRange from
+        /// NSTextStorageDelegate. Used for incremental lineStartsCache update.
+        var pendingChangeInLength: Int = 0
+
         /// Last consumed navigation request ID — prevents re-processing.
         var lastGoToID: UUID?
+
+        /// Callback for accepting (staging) a hunk via gutter button click.
+        var onAcceptHunk: ((DiffHunk) -> Void)?
+        /// Callback for reverting a hunk via gutter button click.
+        var onRevertHunk: ((DiffHunk) -> Void)?
 
         /// Generation counter for cancelling stale async highlight requests.
         let highlightGeneration = HighlightGeneration()
@@ -896,6 +1180,8 @@ struct CodeEditorView: NSViewRepresentable {
             // highlighting (issue #556).
             if textChanged && textView.string != text {
                 isProgrammaticTextChange = true
+                pendingEditedRange = nil
+                pendingChangeInLength = 0
                 textView.string = text
                 isProgrammaticTextChange = false
             }
@@ -993,13 +1279,42 @@ struct CodeEditorView: NSViewRepresentable {
             lineNumberView?.needsDisplay = true
         }
 
+        // MARK: - NSTextStorageDelegate
+
+        /// Captures editedRange before NSTextStorage.processEditing() resets it
+        /// to NSNotFound. This range is consumed by textDidChange for incremental
+        /// highlighting — without it, every edit falls back to a full re-highlight.
+        func textStorage(
+            _ textStorage: NSTextStorage,
+            didProcessEditing editedMask: NSTextStorageEditActions,
+            range editedRange: NSRange,
+            changeInLength delta: Int
+        ) {
+            if editedMask.contains(.editedCharacters), !isProgrammaticTextChange {
+                pendingEditedRange = editedRange
+                pendingChangeInLength = delta
+            }
+        }
+
+        /// True while undo/redo is in progress. Prevents syntax highlighting
+        /// from modifying NSTextStorage attributes concurrently with the undo
+        /// manager's grouped operations, which causes EXC_BAD_ACCESS (#650).
+        private(set) var isUndoRedoInProgress = false
+
         func textDidChange(_ notification: Notification) {
             guard let textView = notification.object as? NSTextView else { return }
+
+            // Always reset at the start of every textDidChange — prevents the flag
+            // from "sticking" if a previous deferred highlightWorkItem was cancelled
+            // before it could clear the flag (#650 review).
+            isUndoRedoInProgress = false
 
             // When text was replaced programmatically by updateContentIfNeeded,
             // skip highlight scheduling — updateContentIfNeeded handles its own
             // full highlight. Only update caches that it doesn't handle.
             if isProgrammaticTextChange {
+                pendingEditedRange = nil
+                pendingChangeInLength = 0
                 previousBracketRanges = []
                 highlightedCharRange = nil
                 reportStateChange()
@@ -1007,6 +1322,15 @@ struct CodeEditorView: NSViewRepresentable {
                 scheduleFoldRecalculation()
                 return
             }
+
+            // Detect undo/redo in progress. When the undo manager is unwinding
+            // grouped operations, modifying NSTextStorage attributes (via syntax
+            // highlighting beginEditing/endEditing) can cause a race condition
+            // leading to EXC_BAD_ACCESS. We defer highlighting until the undo
+            // manager finishes its current operation (#650).
+            let undoing = textView.undoManager?.isUndoing == true
+            let redoing = textView.undoManager?.isRedoing == true
+            isUndoRedoInProgress = undoing || redoing
 
             // Mark that this change originated from the user typing,
             // so the upcoming updateNSView won't overwrite the text and reset the cursor.
@@ -1020,13 +1344,15 @@ struct CodeEditorView: NSViewRepresentable {
             // Report state change
             reportStateChange()
 
-            // Update line starts cache incrementally if possible, otherwise full rebuild
+            // Update line starts cache incrementally if possible, otherwise full rebuild.
+            // We use pendingEditedRange / pendingChangeInLength captured by the
+            // NSTextStorageDelegate — by the time textDidChange fires,
+            // storage.editedRange is already reset to NSNotFound.
             if var cache = lineStartsCache,
-               let storage = textView.textStorage,
-               storage.editedRange.location != NSNotFound {
+               let editRange = pendingEditedRange {
                 cache.update(
-                    editedRange: storage.editedRange,
-                    changeInLength: storage.changeInLength,
+                    editedRange: editRange,
+                    changeInLength: pendingChangeInLength,
                     in: textView.string as NSString
                 )
                 lineStartsCache = cache
@@ -1037,15 +1363,12 @@ struct CodeEditorView: NSViewRepresentable {
             // Recalculate foldable ranges (debounced — expensive operation)
             scheduleFoldRecalculation()
 
-            // Захватываем editedRange из textStorage сейчас,
-            // пока он валиден в координатах текущей версии текста
-            var editedRange: NSRange?
-            if let storage = textView.textStorage {
-                let edited = storage.editedRange
-                if edited.location != NSNotFound {
-                    editedRange = edited
-                }
-            }
+            // Consume the edited range captured by NSTextStorageDelegate.
+            // NSTextStorage.editedRange is already reset to NSNotFound by the
+            // time textDidChange fires, so we rely on pendingEditedRange instead.
+            let editedRange = pendingEditedRange
+            pendingEditedRange = nil
+            pendingChangeInLength = 0
 
             // Skip highlighting for large files opened without syntax highlighting
             guard !parent.syntaxHighlightingDisabled else { return }
@@ -1054,25 +1377,77 @@ struct CodeEditorView: NSViewRepresentable {
             // сдвигает символьные смещения, старый диапазон некорректен
             highlightedCharRange = nil
 
+            // During undo/redo, cancel any pending highlight and schedule a
+            // deferred full re-highlight. The undo manager may still be processing
+            // grouped operations — modifying textStorage attributes now would cause
+            // EXC_BAD_ACCESS (#650).
+            if isUndoRedoInProgress {
+                scheduleDeferredHighlight(editedRange: nil)
+                return
+            }
+
             // Дебаунсинг: откладываем подсветку до паузы в вводе.
             // Не накапливаем диапазоны — каждый textDidChange работает
             // в своих координатах; union между версиями некорректен.
             // При быстром вводе последовательные правки обычно смежны,
             // и 20-строчный контекст в highlightEdited покрывает их.
+            scheduleDeferredHighlight(editedRange: editedRange)
+        }
+
+        /// Cancels any in-flight highlight work and schedules a new debounced
+        /// highlight pass. When `editedRange` is non-nil, an incremental
+        /// `highlightEditedAsync` is attempted first; otherwise a full
+        /// re-highlight runs.
+        ///
+        /// Called from both normal edits and undo/redo paths to avoid
+        /// duplicating the scheduling logic.
+        private func scheduleDeferredHighlight(editedRange: NSRange?) {
             highlightWorkItem?.cancel()
             highlightTask?.cancel()
-            let isLargeFile = (textView.string as NSString).length > CodeEditorView.viewportHighlightThreshold
+
+            // Two-phase generation increment (#659):
+            //
+            // 1) Immediate increment (here): invalidates any in-flight Task spawned
+            //    by a prior edit. If that Task's background work finishes during the
+            //    debounce window, it will compare its captured generation against the
+            //    (now-bumped) current value, see a mismatch, and discard its stale
+            //    results instead of applying outdated colors.
+            //
+            // 2) Second increment (inside the workItem, line ~1186): captures a fresh
+            //    generation for the NEW Task that is about to be created. Without this,
+            //    the new Task would reuse the generation from step 1, which could
+            //    already be stale if yet another edit arrives before the Task checks.
+            //
+            // Both are required: without (1) stale Tasks aren't rejected; without (2)
+            // new Tasks use a generation that a subsequent edit has already invalidated.
+            highlightGeneration.increment()
+
+            let isUndoRedo = isUndoRedoInProgress
+
             let workItem = DispatchWorkItem { [weak self] in
                 guard let self else { return }
+
+                // Clear the undo/redo flag now that we're past the danger zone.
+                if isUndoRedo {
+                    self.isUndoRedoInProgress = false
+                }
+
                 guard let sv = self.scrollView,
                       let tv = sv.documentView as? NSTextView,
                       let storage = tv.textStorage else { return }
+
+                // Double-check: if an undo/redo started between scheduling and
+                // execution, bail out to avoid the same race condition.
+                if tv.undoManager?.isUndoing == true || tv.undoManager?.isRedoing == true {
+                    return
+                }
 
                 self.highlightGeneration.increment()
                 let gen = self.highlightGeneration
                 let lang = self.parent.language
                 let name = self.parent.fileName
                 let font = self.parent.editorFont
+                let isLargeFile = storage.length > CodeEditorView.viewportHighlightThreshold
 
                 if let range = editedRange, range.location + range.length <= storage.length {
                     self.highlightTask = Task { @MainActor in
@@ -1103,7 +1478,11 @@ struct CodeEditorView: NSViewRepresentable {
                 }
             }
             highlightWorkItem = workItem
-            DispatchQueue.main.asyncAfter(deadline: .now() + highlightDelay, execute: workItem)
+            // During undo/redo, dispatch on next run loop iteration so the undo
+            // manager finishes its grouped operations before we touch textStorage.
+            // Normal edits use the standard debounce delay.
+            let delay: TimeInterval = isUndoRedo ? 0 : highlightDelay
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: workItem)
         }
 
         func textViewDidChangeSelection(_ notification: Notification) {
@@ -1436,6 +1815,16 @@ struct CodeEditorView: NSViewRepresentable {
             applyFoldState()
         }
 
+        /// Toggles inline diff expansion for a hunk when user clicks a gutter diff marker.
+        func handleDiffMarkerClick(_ hunk: DiffHunk) {
+            guard let sv = scrollView,
+                  let gutterView = sv.documentView as? GutterTextView else { return }
+
+            let newID: UUID? = (gutterView.expandedHunkID == hunk.id) ? nil : hunk.id
+            gutterView.expandedHunkID = newID
+            lineNumberView?.expandedHunkID = newID
+        }
+
         /// Handles fold code notifications from menu/keyboard shortcuts.
         @objc func handleFoldCode(_ notification: Notification) {
             guard let sv = scrollView,
@@ -1704,12 +2093,13 @@ struct CodeEditorView: NSViewRepresentable {
 
 extension NSImage {
     func tinted(with color: NSColor) -> NSImage {
-        guard let image = copy() as? NSImage else { return self }
-        image.lockFocus()
-        color.set()
-        NSRect(origin: .zero, size: size).fill(using: .sourceAtop)
-        image.unlockFocus()
-        image.isTemplate = false
-        return image
+        let tinted = NSImage(size: size, flipped: false) { rect in
+            self.draw(in: rect)
+            color.set()
+            rect.fill(using: .sourceAtop)
+            return true
+        }
+        tinted.isTemplate = false
+        return tinted
     }
 }

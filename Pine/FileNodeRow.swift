@@ -44,14 +44,25 @@ struct FileNodeRow: View {
             : FileIconMapper.iconForFile(node.name)
     }
 
+    private var iconColor: Color {
+        node.isDirectory
+            ? FileIconMapper.colorForFolder(node.name)
+            : FileIconMapper.colorForFile(node.name)
+    }
+
     var body: some View {
         Group {
             if isEditing {
                 inlineEditor
             } else {
-                Label(node.name, systemImage: iconName)
-                    .foregroundStyle(gitStatus?.color ?? .primary)
-                    .opacity(isGitIgnored ? 0.5 : 1.0)
+                Label {
+                    Text(node.name)
+                        .foregroundStyle(gitStatus?.color ?? .primary)
+                } icon: {
+                    Image(systemName: iconName)
+                        .foregroundStyle(iconColor)
+                }
+                .opacity(isGitIgnored ? 0.5 : 1.0)
             }
         }
         .tag(node)

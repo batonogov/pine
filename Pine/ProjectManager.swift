@@ -21,6 +21,7 @@ final class ProjectManager {
     let contextFileWriter = ContextFileWriter()
     @ObservationIgnored
     private(set) lazy var paneManager = PaneManager(existingTabManager: tabManager)
+    let toastManager = ToastManager()
     // nonisolated(unsafe) allows deinit to call stopPeriodicSnapshots().
     // RecoveryManager is only mutated on @MainActor; deinit is the only
     // nonisolated access point, and it runs after the last reference is dropped.

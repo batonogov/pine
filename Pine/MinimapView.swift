@@ -300,7 +300,7 @@ final class MinimapView: NSView {
                 let color: NSColor
                 switch kind {
                 case .added:    color = .systemGreen
-                case .modified: color = .systemBlue
+                case .modified: color = .systemYellow
                 case .deleted:  color = .systemRed
                 }
                 color.setFill()

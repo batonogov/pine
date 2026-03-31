@@ -51,8 +51,48 @@ final class LineNumberView: NSView {
     /// Callback при клике по fold indicator.
     var onFoldToggle: ((FoldableRange) -> Void)?
 
+    /// Validation diagnostics for the current file (error/warning/info icons).
+    var validationDiagnostics: [ValidationDiagnostic] = [] {
+        didSet {
+            rebuildDiagnosticMap()
+            needsDisplay = true
+        }
+    }
+
+    /// Diff hunks for the current file (for accept/revert buttons).
+    var diffHunks: [DiffHunk] = [] {
+        didSet {
+            rebuildHunkStartMap()
+            needsDisplay = true
+        }
+    }
+
+    /// The ID of the currently expanded hunk (shows inline diff). Nil = all collapsed.
+    var expandedHunkID: UUID? {
+        didSet { needsDisplay = true }
+    }
+
+    /// Callback when a diff marker in the gutter is clicked (to toggle inline diff).
+    var onDiffMarkerClick: ((DiffHunk) -> Void)?
+
+    /// Callback for accepting (staging) a hunk at the given line.
+    var onAcceptHunk: ((DiffHunk) -> Void)?
+
+    /// Callback for reverting a hunk at the given line.
+    var onRevertHunk: ((DiffHunk) -> Void)?
+
+    /// Pre-indexed hunk lookup: first line of hunk → DiffHunk.
+    private var hunkStartMap: [Int: DiffHunk] = [:]
+
+    private func rebuildHunkStartMap() {
+        hunkStartMap = Dictionary(diffHunks.map { ($0.newStart, $0) }, uniquingKeysWith: { _, last in last })
+    }
+
     /// Pre-indexed diff lookup: line number → kind (cached, rebuilt when lineDiffs changes)
     private var diffMap: [Int: GitLineDiff.Kind] = [:]
+
+    /// Pre-indexed diagnostic lookup: line number → highest severity diagnostic.
+    private var diagnosticMap: [Int: ValidationDiagnostic] = [:]
 
     /// Pre-indexed fold lookup: start line → FoldableRange.
     private var foldStartMap: [Int: FoldableRange] = [:]
@@ -60,12 +100,56 @@ final class LineNumberView: NSView {
     /// Whether the mouse is currently inside the gutter (for showing fold indicators).
     private var isMouseInside = false
 
+    /// Active tooltip rect tag — non-nil when diagnostics are present and tooltip rect is registered.
+    private(set) var toolTipTag: NSView.ToolTipTag?
+
     private func rebuildDiffMap() {
         diffMap = Dictionary(lineDiffs.map { ($0.line, $0.kind) }, uniquingKeysWith: { _, last in last })
     }
 
     private func rebuildFoldStartMap() {
         foldStartMap = Dictionary(foldableRanges.map { ($0.startLine, $0) }, uniquingKeysWith: { _, last in last })
+    }
+
+    /// Rebuilds the diagnostic map, keeping only the highest-severity diagnostic per line.
+    /// Also registers/removes the tooltip rect for dynamic tooltip resolution.
+    private func rebuildDiagnosticMap() {
+        diagnosticMap = [:]
+        for diag in validationDiagnostics {
+            if let existing = diagnosticMap[diag.line] {
+                if Self.severityRank(diag.severity) > Self.severityRank(existing.severity) {
+                    diagnosticMap[diag.line] = diag
+                }
+            } else {
+                diagnosticMap[diag.line] = diag
+            }
+        }
+        updateTooltipRect()
+    }
+
+    /// Registers or removes the tooltip rect covering the entire gutter.
+    /// When diagnostics are present, a single tooltip rect is registered with `self` as owner.
+    /// AppKit calls `view(_:stringForToolTip:point:userData:)` to resolve the tooltip text
+    /// dynamically based on mouse position.
+    private func updateTooltipRect() {
+        // Remove existing tooltip rect
+        if let tag = toolTipTag {
+            removeToolTip(tag)
+            toolTipTag = nil
+        }
+        // Register new tooltip rect only if there are diagnostics
+        if !diagnosticMap.isEmpty {
+            toolTipTag = addToolTip(bounds, owner: self, userData: nil)
+        }
+    }
+
+    /// Returns a numeric rank for severity (higher = more severe).
+    static func severityRank(_ severity: ValidationSeverity) -> Int {
+        switch severity {
+        case .error: return 3
+        case .warning: return 2
+        case .info: return 1
+        }
     }
 
     #if DEBUG
@@ -83,7 +167,7 @@ final class LineNumberView: NSView {
 
     // Diff marker colors
     private let addedColor = NSColor.systemGreen
-    private let modifiedColor = NSColor.systemBlue
+    private let modifiedColor = NSColor.systemYellow
     private let deletedColor = NSColor.systemRed
 
     // Fold indicator colors
@@ -155,6 +239,8 @@ final class LineNumberView: NSView {
             userInfo: nil
         )
         addTrackingArea(area)
+        // Re-register tooltip rect with updated bounds
+        updateTooltipRect()
     }
 
     override func mouseEntered(with event: NSEvent) {
@@ -169,6 +255,33 @@ final class LineNumberView: NSView {
 
     override func mouseDown(with event: NSEvent) {
         let point = convert(event.locationInWindow, from: nil)
+
+        // Check for hunk action button clicks first (only when hunk is expanded)
+        if let lineNum = lineNumber(at: point),
+           let hunk = hunkStartMap[lineNum],
+           expandedHunkID == hunk.id,
+           let action = hunkButtonHitTest(at: point, lineNumber: lineNum) {
+            switch action {
+            case .accept:
+                onAcceptHunk?(hunk)
+            case .revert:
+                onRevertHunk?(hunk)
+            default:
+                break
+            }
+            return
+        }
+
+        // Check for diff marker click (right edge of gutter)
+        let diffBarWidth: CGFloat = 3
+        if point.x >= gutterWidth - diffBarWidth - 4 {
+            if let lineNum = lineNumber(at: point),
+               let hunk = hunkForLine(lineNum) {
+                onDiffMarkerClick?(hunk)
+                return
+            }
+        }
+
         // Only handle clicks on the fold indicator area (left portion of gutter)
         let foldIndicatorWidth: CGFloat = 14
         guard point.x < foldIndicatorWidth else {
@@ -181,6 +294,13 @@ final class LineNumberView: NSView {
            let foldable = foldStartMap[lineNumber] {
             onFoldToggle?(foldable)
         }
+    }
+
+    /// Returns the hunk that covers the given line number, if any.
+    private func hunkForLine(_ line: Int) -> DiffHunk? {
+        // Check if line has a diff marker
+        guard diffMap[line] != nil else { return nil }
+        return InlineDiffProvider.hunk(atLine: line, in: diffHunks)
     }
 
     /// Cached line starts for O(log n) line number lookups in click handling.
@@ -392,6 +512,20 @@ final class LineNumberView: NSView {
                     }
                 }
 
+                // ── Validation diagnostic icon ──
+                if let diag = self.diagnosticMap[lineNumber] {
+                    self.drawDiagnosticIcon(
+                        at: y, lineHeight: lineRect.height,
+                        severity: diag.severity
+                    )
+                }
+
+                // ── Accept/Revert buttons on hunk start lines (visible when hunk is expanded) ──
+                if let hunk = self.hunkStartMap[lineNumber],
+                   self.expandedHunkID == hunk.id {
+                    self.drawHunkActionButtons(at: y, lineHeight: lineRect.height)
+                }
+
                 lineNumber += 1
             }
 
@@ -428,6 +562,84 @@ final class LineNumberView: NSView {
         }
     }
 
+    // MARK: - Diagnostic icon drawing
+
+    /// SF Symbol names for each severity level.
+    static let diagnosticSymbolNames: [ValidationSeverity: String] = [
+        .error: "xmark.circle.fill",
+        .warning: "exclamationmark.triangle.fill",
+        .info: "info.circle.fill"
+    ]
+
+    /// Colors for each severity level.
+    static let diagnosticColors: [ValidationSeverity: NSColor] = [
+        .error: .systemRed,
+        .warning: .systemYellow,
+        .info: .systemBlue
+    ]
+
+    /// Fixed draw size for diagnostic icons — small enough to fit inside the fold indicator area
+    /// without overlapping line numbers. Kept at 8px so the right edge (x=1 + 8 = 9px) stays
+    /// well clear of two-digit line numbers that start around x≈18.
+    static let diagnosticIconDrawSize: CGFloat = 8
+
+    /// Draws an SF Symbol icon for a validation diagnostic at the given line position.
+    /// The icon is drawn inside the fold indicator area (leftmost ~14px of the gutter),
+    /// keeping it clear of line number text.
+    func drawDiagnosticIcon(at y: CGFloat, lineHeight: CGFloat, severity: ValidationSeverity) {
+        guard let symbolName = Self.diagnosticSymbolNames[severity],
+              let color = Self.diagnosticColors[severity] else { return }
+
+        let iconSize: CGFloat = min(lineHeight - 2, Self.diagnosticIconDrawSize)
+        let config = NSImage.SymbolConfiguration(pointSize: iconSize, weight: .regular)
+        guard let image = NSImage(systemSymbolName: symbolName, accessibilityDescription: nil)?
+            .withSymbolConfiguration(config) else { return }
+
+        let tintedImage = image.tinted(with: color)
+        let imageSize = tintedImage.size
+        let centerY = y + (lineHeight - imageSize.height) / 2
+        // Position at the left edge of the gutter, within the fold indicator area (0–14px).
+        // x=1 + iconSize=8 → right edge at 9px, well clear of two-digit line numbers (~18px).
+        let x: CGFloat = 1
+
+        tintedImage.draw(in: NSRect(
+            x: x, y: centerY,
+            width: imageSize.width, height: imageSize.height
+        ))
+    }
+
+    // MARK: - Diagnostic tooltips
+
+    /// Returns the diagnostic message for the given line number, or nil if none.
+    func diagnosticTooltip(forLine line: Int) -> String? {
+        diagnosticMap[line]?.message
+    }
+
+    /// Resolves the tooltip for a given point in view coordinates.
+    /// Returns the diagnostic message if the point is inside bounds and over a line with a diagnostic,
+    /// or nil otherwise. This is a pure query method, safe to call from tests.
+    func resolveTooltip(at point: NSPoint) -> String? {
+        guard bounds.contains(point) else { return nil }
+        guard let line = lineNumber(at: point) else { return nil }
+        return diagnosticTooltip(forLine: line)
+    }
+
+    /// NSView tooltip owner callback — AppKit calls this to resolve tooltip text dynamically
+    /// for the registered tooltip rect. Returns the diagnostic message for the line under the cursor.
+    ///
+    /// Must be annotated `@objc` so that AppKit can find this method via Objective-C message
+    /// dispatch. The `NSToolTipOwner` informal protocol is an ObjC category on `NSObject` —
+    /// Swift does not automatically bridge it, so without `@objc` AppKit falls back to the
+    /// default `NSView` implementation which returns the view's `description`.
+    @objc func view(
+        _ view: NSView,
+        stringForToolTip tag: NSView.ToolTipTag,
+        point: NSPoint,
+        userData data: UnsafeMutableRawPointer?
+    ) -> String {
+        resolveTooltip(at: point) ?? ""
+    }
+
     // MARK: - Fold indicator drawing
 
     /// Draws a disclosure triangle for fold indicators.
@@ -451,5 +663,93 @@ final class LineNumberView: NSView {
         path.close()
         foldIndicatorColor.setFill()
         path.fill()
+    }
+
+    // MARK: - Accept/Revert button drawing
+
+    /// Width of each hunk action button area, derived from gutter font size.
+    private var hunkButtonSize: CGFloat {
+        gutterFont.pointSize + 1
+    }
+
+    /// X position for the first (accept) button, based on gutter font metrics.
+    private var hunkButtonStartX: CGFloat {
+        gutterFont.pointSize + 2
+    }
+
+    /// Draws accept (checkmark) and revert (arrow) icons at the top of a hunk.
+    private func drawHunkActionButtons(at y: CGFloat, lineHeight: CGFloat) {
+        let centerY = y + lineHeight / 2
+        let checkmarkX = hunkButtonStartX
+        let revertX = checkmarkX + hunkButtonSize + 2
+
+        // Accept button (checkmark)
+        drawCheckmark(
+            at: NSPoint(x: checkmarkX, y: centerY),
+            size: hunkButtonSize,
+            color: addedColor
+        )
+
+        // Revert button (curved arrow)
+        drawRevertArrow(
+            at: NSPoint(x: revertX, y: centerY),
+            size: hunkButtonSize,
+            color: NSColor.systemOrange
+        )
+    }
+
+    /// Draws a small checkmark icon.
+    private func drawCheckmark(at center: NSPoint, size: CGFloat, color: NSColor) {
+        let half = size / 2
+        let path = NSBezierPath()
+        path.lineWidth = 1.5
+        path.move(to: NSPoint(x: center.x - half * 0.4, y: center.y))
+        path.line(to: NSPoint(x: center.x - half * 0.1, y: center.y + half * 0.4))
+        path.line(to: NSPoint(x: center.x + half * 0.5, y: center.y - half * 0.4))
+        color.setStroke()
+        path.stroke()
+    }
+
+    /// Draws a small revert (undo) arrow icon.
+    private func drawRevertArrow(at center: NSPoint, size: CGFloat, color: NSColor) {
+        let half = size / 2
+        let path = NSBezierPath()
+        path.lineWidth = 1.5
+        // Curved arrow
+        path.appendArc(
+            withCenter: NSPoint(x: center.x, y: center.y),
+            radius: half * 0.4,
+            startAngle: 45,
+            endAngle: 270,
+            clockwise: false
+        )
+        // Arrowhead
+        let tipX = center.x
+        let tipY = center.y - half * 0.4
+        let arrowSize: CGFloat = half * 0.3
+        let arrowPath = NSBezierPath()
+        arrowPath.move(to: NSPoint(x: tipX - arrowSize, y: tipY - arrowSize))
+        arrowPath.line(to: NSPoint(x: tipX, y: tipY))
+        arrowPath.line(to: NSPoint(x: tipX + arrowSize, y: tipY - arrowSize))
+        arrowPath.lineWidth = 1.5
+        color.setStroke()
+        path.stroke()
+        arrowPath.stroke()
+    }
+
+    /// Hit test for hunk action buttons. Returns the action if clicked, nil otherwise.
+    func hunkButtonHitTest(at point: NSPoint, lineNumber: Int) -> InlineDiffAction? {
+        guard hunkStartMap[lineNumber] != nil else { return nil }
+        let checkmarkX = hunkButtonStartX
+        let revertX = checkmarkX + hunkButtonSize + 2
+        let hitWidth = hunkButtonSize + 4
+
+        if point.x >= checkmarkX - 2 && point.x <= checkmarkX + hitWidth - 4 {
+            return .accept
+        }
+        if point.x >= revertX - 2 && point.x <= revertX + hitWidth - 4 {
+            return .revert
+        }
+        return nil
     }
 }

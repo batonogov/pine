@@ -153,6 +153,90 @@ final class SyntaxHighlighterPerformanceTests: XCTestCase {
         }
     }
 
+    // MARK: - Viewport Highlight (lazy, ±50 line buffer)
+
+    func testViewportHighlight5000Lines() {
+        let code = generateSwiftCode(lines: 5000)
+        let textStorage = NSTextStorage(string: code)
+        let font = NSFont.monospacedSystemFont(ofSize: 12, weight: .regular)
+        let source = code as NSString
+
+        // Find char offset of line 2500 (middle of file)
+        var lineCount = 0
+        var midOffset = 0
+        for i in 0..<source.length {
+            if lineCount >= 2500 { midOffset = i; break }
+            if source.character(at: i) == 0x0A { lineCount += 1 }
+        }
+        // Visible range: ~20 lines in the middle
+        var endOffset = midOffset
+        var linesFound = 0
+        while endOffset < source.length && linesFound < 20 {
+            if source.character(at: endOffset) == 0x0A { linesFound += 1 }
+            endOffset += 1
+        }
+        let visibleRange = NSRange(location: midOffset, length: endOffset - midOffset)
+
+        measure {
+            highlighter.highlightVisibleRange(
+                textStorage: textStorage,
+                visibleCharRange: visibleRange,
+                language: "perfswift",
+                font: font
+            )
+        }
+    }
+
+    func testViewportHighlightVsFullHighlight5000Lines() {
+        let code = generateSwiftCode(lines: 5000)
+        let font = NSFont.monospacedSystemFont(ofSize: 12, weight: .regular)
+        let source = code as NSString
+
+        // Find char offset of line 2500
+        var lineCount = 0
+        var midOffset = 0
+        for i in 0..<source.length {
+            if lineCount >= 2500 { midOffset = i; break }
+            if source.character(at: i) == 0x0A { lineCount += 1 }
+        }
+        var endOffset = midOffset
+        var linesFound = 0
+        while endOffset < source.length && linesFound < 20 {
+            if source.character(at: endOffset) == 0x0A { linesFound += 1 }
+            endOffset += 1
+        }
+        let visibleRange = NSRange(location: midOffset, length: endOffset - midOffset)
+
+        // Viewport highlight should be significantly faster than full highlight
+        let viewportStorage = NSTextStorage(string: code)
+        let fullStorage = NSTextStorage(string: code)
+
+        let viewportStart = CFAbsoluteTimeGetCurrent()
+        for _ in 0..<10 {
+            highlighter.highlightVisibleRange(
+                textStorage: viewportStorage,
+                visibleCharRange: visibleRange,
+                language: "perfswift",
+                font: font
+            )
+        }
+        let viewportTime = CFAbsoluteTimeGetCurrent() - viewportStart
+
+        let fullStart = CFAbsoluteTimeGetCurrent()
+        for _ in 0..<10 {
+            highlighter.highlight(
+                textStorage: fullStorage,
+                language: "perfswift",
+                font: font
+            )
+        }
+        let fullTime = CFAbsoluteTimeGetCurrent() - fullStart
+
+        // Viewport highlighting should be at least 2x faster than full
+        XCTAssertLessThan(viewportTime, fullTime,
+                          "Viewport highlight (\(viewportTime)s) should be faster than full (\(fullTime)s)")
+    }
+
     // MARK: - Comment and String Ranges
 
     func testCommentAndStringRanges() {

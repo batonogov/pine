@@ -26,6 +26,10 @@ nonisolated enum MenuIcons {
     static let symbolNavigator = "list.bullet.indent"
     static let nextChange = "chevron.down"
     static let previousChange = "chevron.up"
+    static let acceptChange = "checkmark.circle"
+    static let revertChange = "arrow.uturn.backward.circle"
+    static let acceptAllChanges = "checkmark.circle.fill"
+    static let revertAllChanges = "arrow.uturn.backward.circle.fill"
     static let foldCode = "chevron.down.square"
     static let unfoldCode = "chevron.right.square"
     static let foldAll = "rectangle.compress.vertical"
@@ -56,4 +60,12 @@ nonisolated enum MenuIcons {
     static let revealInFinder = "arrow.right.circle"
     static let rename = "pencil"
     static let delete = "trash"
+
+    // MARK: - Tab context menu
+    static let closeOtherTabs = "xmark.square"
+    static let closeTabsToTheRight = "xmark.rectangle"
+    static let closeAllTabs = "xmark.rectangle.fill"
+    static let copyPath = "doc.on.clipboard"
+    static let copyRelativePath = "link"
+    static let revealInSidebar = "sidebar.left"
 }

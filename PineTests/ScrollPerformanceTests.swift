@@ -107,10 +107,10 @@ struct ScrollPerformanceTests {
 
     // MARK: - Viewport highlighting threshold
 
-    @Test("Viewport highlight threshold is 100_000 characters")
+    @Test("Viewport highlight threshold is 50_000 characters")
     @MainActor func viewportHighlightThresholdCheck() {
         // Verify threshold constant value
-        #expect(CodeEditorView.viewportHighlightThreshold == 100_000)
+        #expect(CodeEditorView.viewportHighlightThreshold == 50_000)
     }
 
     // MARK: - Gutter font equality (#440)

@@ -23,11 +23,19 @@ struct EditorAreaView: View {
     var blameLines: [GitBlameLine]
     var isMinimapVisible: Bool
     var isWordWrapEnabled: Bool
+    var diffHunks: [DiffHunk] = []
+    var onAcceptHunk: ((DiffHunk) -> Void)?
+    var onRevertHunk: ((DiffHunk) -> Void)?
     var onCloseTab: (EditorTab) -> Void
+    var onCloseOtherTabs: ((UUID) -> Void)?
+    var onCloseTabsToTheRight: ((UUID) -> Void)?
+    var onCloseAllTabs: (() -> Void)?
     var onSaveSession: () -> Void
 
     @Environment(\.openWindow) private var openWindow
     @State private var dropZone: PaneDropZone?
+
+    @State private var configValidator = ConfigValidator()
 
     private var activeTab: EditorTab? { tabManager.activeTab }
 
@@ -37,11 +45,15 @@ struct EditorAreaView: View {
                 EditorTabBar(
                     tabManager: tabManager,
                     onCloseTab: { tab in onCloseTab(tab) },
+                    onCloseOtherTabs: onCloseOtherTabs,
+                    onCloseTabsToTheRight: onCloseTabsToTheRight,
+                    onCloseAllTabs: onCloseAllTabs,
                     onReorder: { onSaveSession() },
                     isMarkdownFile: activeTab?.isMarkdownFile ?? false,
                     previewMode: activeTab?.previewMode ?? .source,
                     onTogglePreview: { tabManager.togglePreviewMode() },
-                    isAutoSaving: tabManager.isAutoSaving
+                    isAutoSaving: tabManager.isAutoSaving,
+                    projectRootURL: workspace.rootURL
                 )
             }
 
@@ -120,6 +132,10 @@ struct EditorAreaView: View {
             language: tab.language,
             fileName: tab.fileName,
             lineDiffs: lineDiffs,
+            diffHunks: diffHunks,
+            validationDiagnostics: configValidator.diagnostics,
+            onAcceptHunk: onAcceptHunk,
+            onRevertHunk: onRevertHunk,
             isBlameVisible: isBlameVisible,
             blameLines: blameLines,
             foldState: Binding(
@@ -144,7 +160,16 @@ struct EditorAreaView: View {
         )
         .id(tab.id)
         .accessibilityIdentifier(AccessibilityID.codeEditor)
-        .onAppear { goToLineOffset = nil }
+        .onAppear {
+            goToLineOffset = nil
+            configValidator.validate(url: tab.url, content: tab.content)
+        }
+        .onDisappear {
+            configValidator.clear()
+        }
+        .onChange(of: tab.content) { _, newValue in
+            configValidator.validate(url: tab.url, content: newValue)
+        }
     }
 
     // MARK: - Drag & Drop

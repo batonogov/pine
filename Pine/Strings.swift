@@ -189,6 +189,16 @@ enum Strings {
     static let tabPin: LocalizedStringKey = "tab.pin"
     static let tabUnpin: LocalizedStringKey = "tab.unpin"
 
+    // MARK: - Tab Context Menu
+
+    static let tabCloseOtherTabs: LocalizedStringKey = "tab.closeOtherTabs"
+    static let tabCloseTabsToTheRight: LocalizedStringKey = "tab.closeTabsToTheRight"
+    static let tabCloseAllTabs: LocalizedStringKey = "tab.closeAllTabs"
+    static let tabCopyPath: LocalizedStringKey = "tab.copyPath"
+    static let tabCopyRelativePath: LocalizedStringKey = "tab.copyRelativePath"
+    static let tabRevealInSidebar: LocalizedStringKey = "tab.revealInSidebar"
+    static let tabRevealInFinder: LocalizedStringKey = "tab.revealInFinder"
+
     // MARK: - Unsaved Changes Dialog (AppKit)
 
     static var unsavedChangesTitle: String {
@@ -293,6 +303,10 @@ enum Strings {
     static let menuGoToLine: LocalizedStringKey = "menu.goToLine"
     static let menuNextChange: LocalizedStringKey = "menu.nextChange"
     static let menuPreviousChange: LocalizedStringKey = "menu.previousChange"
+    static let menuAcceptChange: LocalizedStringKey = "menu.acceptChange"
+    static let menuRevertChange: LocalizedStringKey = "menu.revertChange"
+    static let menuAcceptAllChanges: LocalizedStringKey = "menu.acceptAllChanges"
+    static let menuRevertAllChanges: LocalizedStringKey = "menu.revertAllChanges"
     static let menuFoldCode: LocalizedStringKey = "menu.foldCode"
     static let menuUnfoldCode: LocalizedStringKey = "menu.unfoldCode"
     static let menuFoldAll: LocalizedStringKey = "menu.foldAll"
@@ -395,6 +409,20 @@ enum Strings {
 
     static var validationPassed: String {
         String(localized: "validation.passed")
+    }
+
+    // MARK: - Toast Notifications
+
+    static func toastFileReloaded(_ name: String) -> String {
+        String(localized: "toast.fileReloaded \(name)")
+    }
+
+    static func toastFilesReloaded(count: Int, names: String) -> String {
+        String(localized: "toast.filesReloaded \(count) \(names)")
+    }
+
+    static func toastFilesReloadedMore(count: Int, names: String, remaining: Int) -> String {
+        String(localized: "toast.filesReloaded.more \(count) \(names) \(remaining)")
     }
 
     // MARK: - Progress Indicators

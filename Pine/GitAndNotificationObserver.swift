@@ -54,8 +54,9 @@ struct GitAndNotificationObserver: ViewModifier {
     var onCloseTab: (EditorTab) -> Void
     var onOpenNewProject: () -> Void
     var onHandleFileDeletion: (URL) -> Void
-    var onHandleExternalConflicts: ([TabManager.ExternalConflict]) -> Void
+    var onHandleExternalChanges: (TabManager.ExternalChangeResult) -> Void
     var onNavigateToChange: (ContentView.ChangeDirection) -> Void
+    var onInlineDiffAction: (InlineDiffAction) -> Void
 
     func body(content: Content) -> some View {
         content
@@ -99,15 +100,15 @@ struct GitAndNotificationObserver: ViewModifier {
             }
             .onChange(of: workspace.externalChangeToken) { _, _ in
                 guard controlActiveState == .key else { return }
-                let conflicts = tabManager.checkExternalChanges()
-                onHandleExternalConflicts(conflicts)
+                let result = tabManager.checkExternalChanges()
+                onHandleExternalChanges(result)
             }
             .onChange(of: controlActiveState) { _, newState in
                 // When the window becomes key, check for external changes that
                 // may have been missed while the window was inactive (issue #438).
                 guard newState == .key else { return }
-                let conflicts = tabManager.checkExternalChanges()
-                onHandleExternalConflicts(conflicts)
+                let result = tabManager.checkExternalChanges()
+                onHandleExternalChanges(result)
             }
             .onReceive(NotificationCenter.default.publisher(for: .showProjectSearch)) { _ in
                 withAnimation(PineAnimation.quick) {
@@ -124,6 +125,11 @@ struct GitAndNotificationObserver: ViewModifier {
                 guard controlActiveState == .key,
                       let direction = notification.userInfo?["direction"] as? String else { return }
                 onNavigateToChange(direction == "next" ? .next : .previous)
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .inlineDiffAction)) { notification in
+                guard controlActiveState == .key,
+                      let action = notification.userInfo?["action"] as? InlineDiffAction else { return }
+                onInlineDiffAction(action)
             }
     }
 }

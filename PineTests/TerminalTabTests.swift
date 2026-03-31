@@ -14,7 +14,7 @@ struct TerminalTabTests {
 
     // MARK: - TerminalTab lifecycle
 
-    @Test func terminalTabInitialState() {
+    @Test @MainActor func terminalTabInitialState() {
         let tab = TerminalTab(name: "zsh")
         #expect(tab.name == "zsh")
         #expect(tab.isTerminated == false)
@@ -22,20 +22,20 @@ struct TerminalTabTests {
         #expect(tab.currentMatchIndex == -1)
     }
 
-    @Test func terminalTabsHaveUniqueIDs() {
+    @Test @MainActor func terminalTabsHaveUniqueIDs() {
         let tab1 = TerminalTab(name: "tab1")
         let tab2 = TerminalTab(name: "tab2")
         #expect(tab1.id != tab2.id)
         #expect(tab1 != tab2)
     }
 
-    @Test func terminalTabHashable() {
+    @Test @MainActor func terminalTabHashable() {
         let tab = TerminalTab(name: "test")
         var set: Set<TerminalTab> = [tab, tab]
         #expect(set.count == 1)
     }
 
-    @Test func stopSetsTerminatedIdempotently() {
+    @Test @MainActor func stopSetsTerminatedIdempotently() {
         let tab = TerminalTab(name: "test")
         tab.stop()
         #expect(tab.isTerminated == true)
@@ -45,19 +45,19 @@ struct TerminalTabTests {
 
     // MARK: - Search navigation with empty matches
 
-    @Test func nextMatchNoOpWithoutMatches() {
+    @Test @MainActor func nextMatchNoOpWithoutMatches() {
         let tab = TerminalTab(name: "test")
         tab.nextMatch()
         #expect(tab.currentMatchIndex == -1)
     }
 
-    @Test func previousMatchNoOpWithoutMatches() {
+    @Test @MainActor func previousMatchNoOpWithoutMatches() {
         let tab = TerminalTab(name: "test")
         tab.previousMatch()
         #expect(tab.currentMatchIndex == -1)
     }
 
-    @Test func clearSearchResetsState() {
+    @Test @MainActor func clearSearchResetsState() {
         let tab = TerminalTab(name: "test")
         tab.clearSearch()
         #expect(tab.searchMatches.isEmpty)
@@ -72,7 +72,7 @@ struct TerminalTabTests {
         #expect(container.subviews.isEmpty)
     }
 
-    @Test func showTabAddsTerminalView() {
+    @Test @MainActor func showTabAddsTerminalView() {
         let container = TerminalContainerView(frame: NSRect(x: 0, y: 0, width: 800, height: 300))
         let tab = TerminalTab(name: "test")
         container.showTab(tab)
@@ -81,7 +81,7 @@ struct TerminalTabTests {
         #expect(container.subviews.count == 2)
     }
 
-    @Test func showSameTabTwiceIsNoOp() {
+    @Test @MainActor func showSameTabTwiceIsNoOp() {
         let container = TerminalContainerView(frame: NSRect(x: 0, y: 0, width: 800, height: 300))
         let tab = TerminalTab(name: "test")
         container.showTab(tab)
@@ -90,7 +90,7 @@ struct TerminalTabTests {
         #expect(container.subviews.contains(tab.terminalView))
     }
 
-    @Test func switchTabsReplacesSubview() {
+    @Test @MainActor func switchTabsReplacesSubview() {
         let container = TerminalContainerView(frame: NSRect(x: 0, y: 0, width: 800, height: 300))
         let tab1 = TerminalTab(name: "tab1")
         let tab2 = TerminalTab(name: "tab2")
@@ -104,7 +104,7 @@ struct TerminalTabTests {
 
     // MARK: - TerminalContainerView scroll monitor lifecycle
 
-    @Test func showTabNilClearsScrollInterceptorTerminalView() {
+    @Test @MainActor func showTabNilClearsScrollInterceptorTerminalView() {
         let container = TerminalContainerView(frame: NSRect(x: 0, y: 0, width: 800, height: 300))
         let tab = TerminalTab(name: "test")
         container.showTab(tab)
@@ -113,7 +113,7 @@ struct TerminalTabTests {
         #expect(container.subviews.isEmpty)
     }
 
-    @Test func showTabSetsInterceptorFrameToContainerBounds() {
+    @Test @MainActor func showTabSetsInterceptorFrameToContainerBounds() {
         let container = TerminalContainerView(frame: NSRect(x: 0, y: 0, width: 800, height: 300))
         let tab = TerminalTab(name: "test")
         container.showTab(tab)
@@ -123,14 +123,14 @@ struct TerminalTabTests {
         #expect(interceptor?.frame == container.bounds)
     }
 
-    @Test func showTabSetsTerminalViewFrameToContainerBounds() {
+    @Test @MainActor func showTabSetsTerminalViewFrameToContainerBounds() {
         let container = TerminalContainerView(frame: NSRect(x: 0, y: 0, width: 800, height: 300))
         let tab = TerminalTab(name: "test")
         container.showTab(tab)
         #expect(tab.terminalView.frame == container.bounds)
     }
 
-    @Test func containerViewSubviewOrderIsTerminalThenInterceptor() {
+    @Test @MainActor func containerViewSubviewOrderIsTerminalThenInterceptor() {
         let container = TerminalContainerView(frame: NSRect(x: 0, y: 0, width: 800, height: 300))
         let tab = TerminalTab(name: "test")
         container.showTab(tab)
@@ -140,7 +140,7 @@ struct TerminalTabTests {
         #expect(container.subviews[1] is TerminalScrollInterceptor)
     }
 
-    @Test func removeFromSuperviewCleansUpContainer() {
+    @Test @MainActor func removeFromSuperviewCleansUpContainer() {
         let parent = NSView(frame: NSRect(x: 0, y: 0, width: 800, height: 300))
         let container = TerminalContainerView(frame: NSRect(x: 0, y: 0, width: 800, height: 300))
         parent.addSubview(container)
@@ -153,7 +153,7 @@ struct TerminalTabTests {
         #expect(container.superview == nil)
     }
 
-    @Test func switchingTabsUpdatesInterceptorTerminalView() {
+    @Test @MainActor func switchingTabsUpdatesInterceptorTerminalView() {
         let container = TerminalContainerView(frame: NSRect(x: 0, y: 0, width: 800, height: 300))
         let tab1 = TerminalTab(name: "tab1")
         let tab2 = TerminalTab(name: "tab2")
@@ -221,7 +221,7 @@ struct TerminalTabTests {
 
     // MARK: - TerminalTabDelegate
 
-    @Test func delegateSetTerminalTitle() {
+    @Test @MainActor func delegateSetTerminalTitle() {
         let delegate = TerminalTabDelegate()
         let tab = TerminalTab(name: "original")
         delegate.tab = tab
@@ -230,7 +230,7 @@ struct TerminalTabTests {
         #expect(tab.name == "new title")
     }
 
-    @Test func delegateProcessTerminatedSetsFlag() {
+    @Test @MainActor func delegateProcessTerminatedSetsFlag() {
         let delegate = TerminalTabDelegate()
         let tab = TerminalTab(name: "test")
         delegate.tab = tab
@@ -239,7 +239,7 @@ struct TerminalTabTests {
         #expect(tab.isTerminated == true)
     }
 
-    @Test func delegateProcessTerminatedWithNonZeroExitCode() {
+    @Test @MainActor func delegateProcessTerminatedWithNonZeroExitCode() {
         let delegate = TerminalTabDelegate()
         let tab = TerminalTab(name: "test")
         delegate.tab = tab
@@ -285,9 +285,7 @@ struct TerminalTabTests {
         ))
     }
 
-    @Test("mouseDown on interceptor makes terminal view first responder")
-    @MainActor
-    func mouseDownOnInterceptorFocusesTerminalView() throws {
+    @Test @MainActor func mouseDownOnInterceptorFocusesTerminalView() throws {
         let interceptor = TerminalScrollInterceptor()
         interceptor.frame = NSRect(x: 0, y: 0, width: 800, height: 600)
         let terminalView = LocalProcessTerminalView(frame: NSRect(x: 0, y: 0, width: 800, height: 600))
@@ -304,9 +302,7 @@ struct TerminalTabTests {
         #expect(window.firstResponder === terminalView)
     }
 
-    @Test("mouseDown with nil terminalView does not crash")
-    @MainActor
-    func mouseDownWithNilTerminalViewSafe() throws {
+    @Test @MainActor func mouseDownWithNilTerminalViewSafe() throws {
         let interceptor = TerminalScrollInterceptor()
         interceptor.frame = NSRect(x: 0, y: 0, width: 800, height: 600)
         interceptor.terminalView = nil
@@ -322,9 +318,7 @@ struct TerminalTabTests {
         #expect(window.firstResponder !== interceptor)
     }
 
-    @Test("rightMouseDown on interceptor makes terminal view first responder")
-    @MainActor
-    func rightMouseDownOnInterceptorFocusesTerminalView() throws {
+    @Test @MainActor func rightMouseDownOnInterceptorFocusesTerminalView() throws {
         let interceptor = TerminalScrollInterceptor()
         interceptor.frame = NSRect(x: 0, y: 0, width: 800, height: 600)
         let terminalView = LocalProcessTerminalView(frame: NSRect(x: 0, y: 0, width: 800, height: 600))
@@ -351,9 +345,7 @@ struct TerminalTabTests {
         #expect(window.firstResponder === terminalView)
     }
 
-    @Test("click-to-focus works for first tab without pendingFocusTabID (the bug scenario)")
-    @MainActor
-    func clickToFocusFirstTab() throws {
+    @Test @MainActor func clickToFocusFirstTab() throws {
         let manager = TerminalManager()
         manager.startTerminals(workingDirectory: nil)
         // After startTerminals, pendingFocusTabID is nil — this is the bug scenario
@@ -378,9 +370,7 @@ struct TerminalTabTests {
         #expect(window.firstResponder === activeTab.terminalView)
     }
 
-    @Test("focus works after tab switch without pendingFocusTabID")
-    @MainActor
-    func focusAfterTabSwitchViaClick() throws {
+    @Test @MainActor func focusAfterTabSwitchViaClick() throws {
         let manager = TerminalManager()
         manager.startTerminals(workingDirectory: nil)
 
@@ -416,9 +406,7 @@ struct TerminalTabTests {
 
     // MARK: - pendingFocusTabID consumption
 
-    @Test("showTab consumes pendingFocusTabID for matching tab")
-    @MainActor
-    func showTabConsumesPendingFocus() throws {
+    @Test @MainActor func showTabConsumesPendingFocus() throws {
         let manager = TerminalManager()
         manager.startTerminals(workingDirectory: nil)
         manager.addTerminalTab(workingDirectory: nil)
@@ -432,9 +420,7 @@ struct TerminalTabTests {
         #expect(manager.pendingFocusTabID == nil)
     }
 
-    @Test("showTab does NOT consume pendingFocusTabID for wrong tab")
-    @MainActor
-    func showTabDoesNotConsumeMismatchedPendingFocus() throws {
+    @Test @MainActor func showTabDoesNotConsumeMismatchedPendingFocus() throws {
         let manager = TerminalManager()
         manager.startTerminals(workingDirectory: nil)
         manager.addTerminalTab(workingDirectory: nil)
@@ -451,9 +437,7 @@ struct TerminalTabTests {
         #expect(manager.pendingFocusTabID == newTab.id)
     }
 
-    @Test("showTab without pending focus does not crash")
-    @MainActor
-    func showTabWithoutPendingFocusNoCrash() {
+    @Test @MainActor func showTabWithoutPendingFocusNoCrash() {
         let manager = TerminalManager()
         manager.startTerminals(workingDirectory: nil)
         #expect(manager.pendingFocusTabID == nil)
@@ -463,5 +447,149 @@ struct TerminalTabTests {
         // Should not crash
         container.showTab(manager.activeTerminalTab)
         #expect(manager.pendingFocusTabID == nil)
+    }
+
+    // MARK: - Blank terminal fix (issue #661)
+
+    @Test @MainActor func startIfNeededGuardsZeroFrame() {
+        // Terminal created with default 800×300 frame
+        let tab = TerminalTab(name: "test")
+        // Override to zero to simulate the bug scenario
+        tab.terminalView.frame = .zero
+        tab.configure(workingDirectory: nil)
+        tab.startIfNeeded()
+        // Process should NOT have started because frame is zero
+        #expect(!tab.isProcessRunning)
+    }
+
+    @Test @MainActor func startIfNeededGuardsZeroWidth() {
+        let tab = TerminalTab(name: "test")
+        tab.terminalView.frame = NSRect(x: 0, y: 0, width: 0, height: 300)
+        tab.configure(workingDirectory: nil)
+        tab.startIfNeeded()
+        #expect(!tab.isProcessRunning)
+    }
+
+    @Test @MainActor func startIfNeededGuardsZeroHeight() {
+        let tab = TerminalTab(name: "test")
+        tab.terminalView.frame = NSRect(x: 0, y: 0, width: 800, height: 0)
+        tab.configure(workingDirectory: nil)
+        tab.startIfNeeded()
+        #expect(!tab.isProcessRunning)
+    }
+
+    @Test @MainActor func startIfNeededRetriesAfterResize() {
+        let tab = TerminalTab(name: "test")
+        tab.terminalView.frame = .zero
+        tab.configure(workingDirectory: nil)
+        tab.startIfNeeded()
+        #expect(!tab.isProcessRunning)
+
+        // Now give it a real frame and try again
+        tab.terminalView.frame = NSRect(x: 0, y: 0, width: 800, height: 300)
+        tab.startIfNeeded()
+        // Process should have started now
+        #expect(tab.isProcessRunning)
+    }
+
+    @Test @MainActor func showTabFallbackBoundsOnZeroContainer() {
+        let container = TerminalContainerView(frame: .zero)
+        let tab = TerminalTab(name: "test")
+        container.showTab(tab)
+
+        // Terminal view should get the default fallback frame, not zero
+        let fallback = TerminalContainerView.defaultTerminalFrame
+        #expect(tab.terminalView.frame.size.width == fallback.size.width)
+        #expect(tab.terminalView.frame.size.height == fallback.size.height)
+    }
+
+    @Test @MainActor func showTabUsesRealBounds() {
+        let container = TerminalContainerView(frame: NSRect(x: 0, y: 0, width: 1024, height: 768))
+        let tab = TerminalTab(name: "test")
+        container.showTab(tab)
+
+        #expect(tab.terminalView.frame.size.width == 1024)
+        #expect(tab.terminalView.frame.size.height == 768)
+    }
+
+    @Test @MainActor func layoutZeroBoundsDoesNotStart() throws {
+        let manager = TerminalManager()
+        manager.startTerminals(workingDirectory: nil)
+        let tab = try #require(manager.activeTerminalTab)
+        // Give terminal view a zero frame to simulate the issue
+        tab.terminalView.frame = .zero
+
+        let container = TerminalContainerView(frame: .zero)
+        container.terminal = manager
+        container.showTab(tab)
+
+        // Trigger layout with zero bounds
+        container.layout()
+
+        // Process should NOT have started
+        #expect(!tab.isProcessRunning)
+    }
+
+    @Test @MainActor func layoutNonZeroBoundsStartsProcess() throws {
+        let manager = TerminalManager()
+        manager.startTerminals(workingDirectory: nil)
+
+        let container = TerminalContainerView(frame: NSRect(x: 0, y: 0, width: 800, height: 300))
+        container.terminal = manager
+        container.showTab(manager.activeTerminalTab)
+
+        // Trigger layout with valid bounds
+        container.layout()
+
+        let tab = try #require(manager.activeTerminalTab)
+        #expect(tab.isProcessRunning)
+    }
+
+    @Test @MainActor func layoutUpdatesFrame() throws {
+        let manager = TerminalManager()
+        manager.startTerminals(workingDirectory: nil)
+
+        let container = TerminalContainerView(frame: NSRect(x: 0, y: 0, width: 800, height: 300))
+        container.terminal = manager
+        container.showTab(manager.activeTerminalTab)
+        container.layout()
+
+        // Now resize container
+        container.frame = NSRect(x: 0, y: 0, width: 1200, height: 600)
+        container.layout()
+
+        let tab = try #require(manager.activeTerminalTab)
+        #expect(tab.terminalView.frame.size.width == 1200)
+        #expect(tab.terminalView.frame.size.height == 600)
+    }
+
+    @Test @MainActor func processStartsWithFallbackFrameAfterShowTabOnZeroContainer() throws {
+        // Integration test: showTab on a zero-bounds container uses the fallback
+        // frame, and a subsequent layout with real bounds starts the process.
+        let manager = TerminalManager()
+        manager.startTerminals(workingDirectory: nil)
+        let tab = try #require(manager.activeTerminalTab)
+
+        // Container starts with zero bounds (simulates first SwiftUI layout pass)
+        let container = TerminalContainerView(frame: .zero)
+        container.terminal = manager
+        container.showTab(tab)
+
+        // showTab should have used the fallback frame
+        let fallback = TerminalContainerView.defaultTerminalFrame
+        #expect(tab.terminalView.frame.size.width == fallback.size.width)
+        #expect(tab.terminalView.frame.size.height == fallback.size.height)
+
+        // Process should NOT be running yet (layout hasn't happened with real bounds)
+        #expect(!tab.isProcessRunning)
+
+        // Simulate the container getting a real size from SwiftUI
+        container.frame = NSRect(x: 0, y: 0, width: 1024, height: 768)
+        container.layout()
+
+        // Now the process should have started with the real frame
+        #expect(tab.isProcessRunning)
+        #expect(tab.terminalView.frame.size.width == 1024)
+        #expect(tab.terminalView.frame.size.height == 768)
     }
 }

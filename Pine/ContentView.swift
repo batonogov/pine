@@ -25,6 +25,7 @@ struct ContentView: View {
     @State var selectedNode: FileNode?
     @State var columnVisibility: NavigationSplitViewVisibility = .all
     @State var lineDiffs: [GitLineDiff] = []
+    @State var diffHunks: [DiffHunk] = []
     @State var blameLines: [GitBlameLine] = []
     @State var blameTask: Task<Void, Never>?
     @State var didRestoreSession = false
@@ -88,6 +89,9 @@ struct ContentView: View {
                 )
             }
         }
+        .overlay(alignment: .top) {
+            ToastOverlay()
+        }
         .modifier(ProjectSearchModifier(
             projectManager: projectManager,
             isSearchPresented: $isSearchPresented
@@ -104,7 +108,9 @@ struct ContentView: View {
             RepresentedFileTracker(url: activeTab?.url ?? workspace.rootURL)
         }
         .task {
-            restoreSessionIfNeeded()
+            if restoreSessionIfNeeded() {
+                refreshLineDiffs()
+            }
             checkForRecovery()
             syncSidebarSelection()
             applySearchQueryFromEnvironment()
@@ -154,6 +160,7 @@ struct ContentView: View {
         }
         .onChange(of: workspace.rootURL) { _, _ in
             lineDiffs = []
+            diffHunks = []
             projectManager.quickOpenProvider.invalidateIndex()
             projectManager.saveSession()
             applySearchQueryFromEnvironment()
@@ -169,7 +176,10 @@ struct ContentView: View {
             onRefresh: { refreshBlame() }
         ))
         .onChange(of: workspace.rootNodes) { _, _ in
-            restoreSessionIfNeeded()
+            if restoreSessionIfNeeded() {
+                refreshLineDiffs()
+                refreshBlame()
+            }
             syncSidebarSelection()
         }
         .onChange(of: tabManager.tabs.count) { _, _ in
@@ -189,11 +199,19 @@ struct ContentView: View {
             onCloseTab: { closeTabWithConfirmation($0) },
             onOpenNewProject: { openNewProject() },
             onHandleFileDeletion: { handleFileDeletion($0) },
-            onHandleExternalConflicts: { handleExternalConflicts($0) },
-            onNavigateToChange: { navigateToChange(direction: $0) }
+            onHandleExternalChanges: { handleExternalChanges($0) },
+            onNavigateToChange: { navigateToChange(direction: $0) },
+            onInlineDiffAction: { handleInlineDiffAction($0) }
         ))
         .onReceive(NotificationCenter.default.publisher(for: .toggleWordWrap)) { _ in
             isWordWrapEnabled.toggle()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .revealInSidebar)) { notification in
+            guard let url = notification.userInfo?["url"] as? URL else { return }
+            if let node = findNode(url: url, in: workspace.rootNodes) {
+                selectedNode = node
+                columnVisibility = .all
+            }
         }
         .onReceive(NotificationCenter.default.publisher(for: .sendTextToTerminal)) { notification in
             guard controlActiveState == .key,
@@ -237,7 +255,13 @@ struct ContentView: View {
                 blameLines: blameLines,
                 isMinimapVisible: isMinimapVisible,
                 isWordWrapEnabled: isWordWrapEnabled,
+                diffHunks: diffHunks,
+                onAcceptHunk: { hunk in handleGutterAccept(hunk) },
+                onRevertHunk: { hunk in handleGutterRevert(hunk) },
                 onCloseTab: { closeTabWithConfirmation($0) },
+                onCloseOtherTabs: { closeOtherTabsWithConfirmation(keeping: $0) },
+                onCloseTabsToTheRight: { closeTabsToTheRightWithConfirmation(of: $0) },
+                onCloseAllTabs: { closeAllTabsWithConfirmation() },
                 onSaveSession: { projectManager.saveSession() }
             )
         }
@@ -267,5 +291,6 @@ struct ContentView: View {
         .environment(projectManager.terminal)
         .environment(projectManager.tabManager)
         .environment(projectManager.paneManager)
+        .environment(projectManager.toastManager)
         .environment(registry)
 }

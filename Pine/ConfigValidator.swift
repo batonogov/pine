@@ -335,9 +335,259 @@ enum ValidatorOutputParser {
     }
 }
 
+// MARK: - Built-in Validators
+
+/// Built-in regex-based validators that work without external tools.
+/// These provide basic validation when CLI tools (yamllint, hadolint, etc.) are not installed.
+enum BuiltinValidator {
+
+    // Cached regex for detecting unquoted variables in shell test expressions.
+    // swiftlint:disable:next force_try
+    private static let unquotedVarInTestRegex = try! NSRegularExpression(
+        pattern: #"\[\s+\$\w+\s+(==?|!=|-eq|-ne|-lt|-gt)\s+"#
+    )
+
+    // MARK: - YAML
+
+    /// Basic YAML validation using regex patterns.
+    static func validateYAML(_ content: String) -> [ValidationDiagnostic] {
+        var diagnostics: [ValidationDiagnostic] = []
+        let lines = content.components(separatedBy: "\n")
+
+        for (index, line) in lines.enumerated() {
+            let lineNum = index + 1
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+
+            // Skip empty lines and comments
+            if trimmed.isEmpty || trimmed.hasPrefix("#") { continue }
+
+            // Detect tab indentation (YAML requires spaces)
+            if line.hasPrefix("\t") {
+                diagnostics.append(ValidationDiagnostic(
+                    line: lineNum,
+                    column: 1,
+                    message: "YAML does not allow tab characters for indentation, use spaces",
+                    severity: .error,
+                    source: "pine-yaml"
+                ))
+            }
+
+            // Detect duplicate colon in mapping (e.g. "key: value: extra")
+            // but skip lines that are valid multi-colon values like URLs
+            if let colonIdx = trimmed.firstIndex(of: ":"),
+               !trimmed.hasPrefix("-"),
+               !trimmed.hasPrefix("\""),
+               !trimmed.hasPrefix("'") {
+                let afterColon = trimmed[trimmed.index(after: colonIdx)...]
+                let afterTrimmed = afterColon.trimmingCharacters(in: .whitespaces)
+                // Check for unquoted value containing a colon (common URL pattern excluded)
+                if !afterTrimmed.isEmpty,
+                   !afterTrimmed.hasPrefix("\""),
+                   !afterTrimmed.hasPrefix("'"),
+                   !afterTrimmed.hasPrefix("//"),
+                   !afterTrimmed.hasPrefix("|"),
+                   !afterTrimmed.hasPrefix(">"),
+                   !afterTrimmed.hasPrefix("&"),
+                   !afterTrimmed.hasPrefix("*") {
+                    // Check for obviously broken mapping syntax
+                    if afterTrimmed.contains(": ") {
+                        let parts = trimmed.components(separatedBy: ": ")
+                        if parts.count > 2 && !trimmed.contains("\"") && !trimmed.contains("'") {
+                            diagnostics.append(ValidationDiagnostic(
+                                line: lineNum,
+                                column: nil,
+                                message: "Ambiguous mapping entry — value contains unquoted ': '",
+                                severity: .warning,
+                                source: "pine-yaml"
+                            ))
+                        }
+                    }
+                }
+            }
+
+            // Detect trailing spaces
+            if line.hasSuffix(" ") || line.hasSuffix("\t") {
+                diagnostics.append(ValidationDiagnostic(
+                    line: lineNum,
+                    column: nil,
+                    message: "Trailing whitespace",
+                    severity: .warning,
+                    source: "pine-yaml"
+                ))
+            }
+
+            // Detect unusual indentation (1 or 3 spaces).
+            // 2-space and 4-space indents are both common in YAML so we only flag
+            // truly unusual levels that likely indicate a mistake.
+            let leadingSpaces = line.prefix(while: { $0 == " " }).count
+            if leadingSpaces == 1 || leadingSpaces == 3 {
+                diagnostics.append(ValidationDiagnostic(
+                    line: lineNum,
+                    column: 1,
+                    message: "Unusual indentation (\(leadingSpaces) spaces) — YAML typically uses 2 or 4 spaces",
+                    severity: .warning,
+                    source: "pine-yaml"
+                ))
+            }
+        }
+
+        return diagnostics
+    }
+
+    // MARK: - Dockerfile
+
+    /// Known valid Dockerfile instructions (uppercase).
+    static let dockerfileInstructions: Set<String> = [
+        "FROM", "RUN", "CMD", "LABEL", "MAINTAINER", "EXPOSE", "ENV",
+        "ADD", "COPY", "ENTRYPOINT", "VOLUME", "USER", "WORKDIR",
+        "ARG", "ONBUILD", "STOPSIGNAL", "HEALTHCHECK", "SHELL"
+    ]
+
+    /// Basic Dockerfile validation using regex patterns.
+    static func validateDockerfile(_ content: String) -> [ValidationDiagnostic] {
+        var diagnostics: [ValidationDiagnostic] = []
+        let lines = content.components(separatedBy: "\n")
+        var hasFrom = false
+        var isContinuation = false
+
+        for (index, line) in lines.enumerated() {
+            let lineNum = index + 1
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+
+            // Skip empty lines and comments
+            if trimmed.isEmpty || trimmed.hasPrefix("#") {
+                isContinuation = false
+                continue
+            }
+
+            // Skip continuation lines (previous line ended with \)
+            if isContinuation {
+                isContinuation = trimmed.hasSuffix("\\")
+                continue
+            }
+
+            isContinuation = trimmed.hasSuffix("\\")
+
+            // Extract the instruction (first word)
+            let instruction = trimmed.split(separator: " ", maxSplits: 1).first.map(String.init) ?? trimmed
+            let upper = instruction.uppercased()
+
+            // Check for valid instruction
+            if !dockerfileInstructions.contains(upper) {
+                diagnostics.append(ValidationDiagnostic(
+                    line: lineNum,
+                    column: 1,
+                    message: "Invalid Dockerfile instruction '\(instruction)'",
+                    severity: .error,
+                    source: "pine-dockerfile"
+                ))
+                continue
+            }
+
+            // Track FROM instruction
+            if upper == "FROM" {
+                hasFrom = true
+            }
+
+            // Warn about deprecated MAINTAINER
+            if upper == "MAINTAINER" {
+                diagnostics.append(ValidationDiagnostic(
+                    line: lineNum,
+                    column: 1,
+                    message: "MAINTAINER is deprecated, use LABEL maintainer=\"...\" instead",
+                    severity: .warning,
+                    source: "pine-dockerfile"
+                ))
+            }
+
+            // Check instruction is uppercase (Dockerfile convention)
+            if instruction != upper && dockerfileInstructions.contains(upper) {
+                diagnostics.append(ValidationDiagnostic(
+                    line: lineNum,
+                    column: 1,
+                    message: "Instruction '\(instruction)' should be uppercase '\(upper)'",
+                    severity: .warning,
+                    source: "pine-dockerfile"
+                ))
+            }
+        }
+
+        // Check that FROM is present
+        if !hasFrom && !lines.allSatisfy({ $0.trimmingCharacters(in: .whitespaces).isEmpty
+            || $0.trimmingCharacters(in: .whitespaces).hasPrefix("#") }) {
+            diagnostics.insert(ValidationDiagnostic(
+                line: 1,
+                column: 1,
+                message: "Dockerfile must start with a FROM instruction",
+                severity: .error,
+                source: "pine-dockerfile"
+            ), at: 0)
+        }
+
+        return diagnostics
+    }
+
+    // MARK: - Shell scripts
+
+    /// Basic shell script validation using regex patterns.
+    static func validateShell(_ content: String) -> [ValidationDiagnostic] {
+        var diagnostics: [ValidationDiagnostic] = []
+        let lines = content.components(separatedBy: "\n")
+
+        for (index, line) in lines.enumerated() {
+            let lineNum = index + 1
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+
+            // Skip empty lines and comments
+            if trimmed.isEmpty || trimmed.hasPrefix("#") { continue }
+
+            // Detect common quoting issues: unquoted variable in test
+            let range = NSRange(trimmed.startIndex..., in: trimmed)
+            if unquotedVarInTestRegex.firstMatch(in: trimmed, range: range) != nil {
+                diagnostics.append(ValidationDiagnostic(
+                    line: lineNum,
+                    column: nil,
+                    message: "Unquoted variable in test — use \"$var\" to prevent word splitting",
+                    severity: .warning,
+                    source: "pine-shell"
+                ))
+            }
+
+            // Detect backtick command substitution (prefer $())
+            // Only count backticks that are outside single and double quotes.
+            if trimmed.contains("`") && !trimmed.hasPrefix("#") {
+                var inSingle = false
+                var inDouble = false
+                var unquotedBackticks = 0
+                for char in trimmed {
+                    if char == "'" && !inDouble {
+                        inSingle.toggle()
+                    } else if char == "\"" && !inSingle {
+                        inDouble.toggle()
+                    } else if char == "`" && !inSingle && !inDouble {
+                        unquotedBackticks += 1
+                    }
+                }
+                if unquotedBackticks >= 2 {
+                    diagnostics.append(ValidationDiagnostic(
+                        line: lineNum,
+                        column: nil,
+                        message: "Use $(...) instead of backticks for command substitution",
+                        severity: .info,
+                        source: "pine-shell"
+                    ))
+                }
+            }
+        }
+
+        return diagnostics
+    }
+}
+
 // MARK: - ConfigValidator
 
 /// Runs external config validators and produces diagnostics.
+/// Falls back to built-in regex-based validators when external tools are not installed.
 /// Designed to be called from a background queue with debouncing.
 @Observable
 final class ConfigValidator {
@@ -360,11 +610,30 @@ final class ConfigValidator {
     /// Serial queue for validation work.
     private let queue = DispatchQueue(label: "com.pine.config-validation", qos: .utility)
 
+    /// Lock protecting the generation token, which is read/written from both
+    /// the main thread (clear()) and the background queue (runValidation()).
+    private let generationLock = NSLock()
+
     /// Generation token to discard stale results.
     private var generation: UInt64 = 0
 
     /// Debounce work item.
     private var debounceWorkItem: DispatchWorkItem?
+
+    /// Thread-safe read of the current generation.
+    private func currentGeneration() -> UInt64 {
+        generationLock.lock()
+        defer { generationLock.unlock() }
+        return generation
+    }
+
+    /// Thread-safe increment-and-return of the generation.
+    private func nextGeneration() -> UInt64 {
+        generationLock.lock()
+        defer { generationLock.unlock() }
+        generation &+= 1
+        return generation
+    }
 
     /// Validates the given file content, debounced.
     /// - Parameters:
@@ -392,7 +661,7 @@ final class ConfigValidator {
     /// Clears all diagnostics (e.g. when switching tabs).
     func clear() {
         debounceWorkItem?.cancel()
-        generation &+= 1
+        _ = nextGeneration()
         DispatchQueue.main.async { [weak self] in
             self?.diagnostics = []
             self?.activeValidator = nil
@@ -404,8 +673,7 @@ final class ConfigValidator {
     // MARK: - Private
 
     private func runValidation(url: URL, content: String, kind: ValidatorKind) {
-        let currentGen = generation &+ 1
-        generation = currentGen
+        let currentGen = nextGeneration()
 
         DispatchQueue.main.async { [weak self] in
             self?.isValidating = true
@@ -413,56 +681,62 @@ final class ConfigValidator {
         }
 
         // Check tool availability
-        guard let toolPath = ToolAvailability.path(for: kind.toolName) else {
-            DispatchQueue.main.async { [weak self] in
-                guard self?.generation == currentGen else { return }
-                self?.diagnostics = []
-                self?.toolAvailable = false
-                self?.isValidating = false
+        let toolPath = ToolAvailability.path(for: kind.toolName)
+        let hasExternalTool = toolPath != nil
+
+        // Run external tool if available
+        var parsed: [ValidationDiagnostic] = []
+        if let toolPath = toolPath {
+            // Write content to temp file for validation
+            let tempDir = FileManager.default.temporaryDirectory
+            let tempFile = tempDir.appendingPathComponent(url.lastPathComponent)
+
+            do {
+                try content.write(to: tempFile, atomically: true, encoding: .utf8)
+                defer { try? FileManager.default.removeItem(at: tempFile) }
+
+                let result = runTool(toolPath: toolPath, kind: kind, filePath: tempFile.path)
+
+                guard currentGeneration() == currentGen else { return }
+
+                switch kind {
+                case .yamllint:
+                    parsed = ValidatorOutputParser.parseYamllint(result)
+                case .shellcheck:
+                    parsed = ValidatorOutputParser.parseShellcheck(result)
+                case .terraform:
+                    parsed = ValidatorOutputParser.parseTerraform(result)
+                case .hadolint:
+                    parsed = ValidatorOutputParser.parseHadolint(result)
+                }
+            } catch {
+                // Temp file write failed — fall through to built-in
             }
-            return
         }
+
+        guard currentGeneration() == currentGen else { return }
+
+        // Fall back to built-in validation only when external tool is not installed.
+        // If external tool is installed and returned empty output, the file is valid.
+        if parsed.isEmpty && !hasExternalTool {
+            switch kind {
+            case .yamllint:
+                parsed = BuiltinValidator.validateYAML(content)
+            case .hadolint:
+                parsed = BuiltinValidator.validateDockerfile(content)
+            case .shellcheck:
+                parsed = BuiltinValidator.validateShell(content)
+            case .terraform:
+                break // No built-in terraform validation
+            }
+        }
+
+        guard currentGeneration() == currentGen else { return }
 
         DispatchQueue.main.async { [weak self] in
-            self?.toolAvailable = true
-        }
-
-        // Write content to temp file for validation
-        let tempDir = FileManager.default.temporaryDirectory
-        let tempFile = tempDir.appendingPathComponent(url.lastPathComponent)
-
-        do {
-            try content.write(to: tempFile, atomically: true, encoding: .utf8)
-        } catch {
-            DispatchQueue.main.async { [weak self] in
-                guard self?.generation == currentGen else { return }
-                self?.diagnostics = []
-                self?.isValidating = false
-            }
-            return
-        }
-
-        defer { try? FileManager.default.removeItem(at: tempFile) }
-
-        let result = runTool(toolPath: toolPath, kind: kind, filePath: tempFile.path)
-
-        guard generation == currentGen else { return }
-
-        let parsed: [ValidationDiagnostic]
-        switch kind {
-        case .yamllint:
-            parsed = ValidatorOutputParser.parseYamllint(result)
-        case .shellcheck:
-            parsed = ValidatorOutputParser.parseShellcheck(result)
-        case .terraform:
-            parsed = ValidatorOutputParser.parseTerraform(result)
-        case .hadolint:
-            parsed = ValidatorOutputParser.parseHadolint(result)
-        }
-
-        DispatchQueue.main.async { [weak self] in
-            guard self?.generation == currentGen else { return }
+            guard self?.currentGeneration() == currentGen else { return }
             self?.diagnostics = parsed
+            self?.toolAvailable = hasExternalTool
             self?.isValidating = false
         }
     }

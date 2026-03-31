@@ -25,6 +25,19 @@ nonisolated enum AccessibilityID {
     static func editorTab(_ name: String) -> String { "editorTab_\(name)" }
     static func editorTabCloseButton(_ name: String) -> String { "editorTabClose_\(name)" }
     static func editorTabPinToggle(_ name: String) -> String { "editorTabPinToggle_\(name)" }
+    static func editorTabCloseOthers(_ name: String) -> String { "editorTabCloseOthers_\(name)" }
+    static func editorTabCloseRight(_ name: String) -> String { "editorTabCloseRight_\(name)" }
+    static func editorTabCloseAll(_ name: String) -> String { "editorTabCloseAll_\(name)" }
+    static func editorTabCopyPath(_ name: String) -> String { "editorTabCopyPath_\(name)" }
+    static func editorTabCopyRelativePath(_ name: String) -> String {
+        "editorTabCopyRelativePath_\(name)"
+    }
+    static func editorTabRevealInSidebar(_ name: String) -> String {
+        "editorTabRevealInSidebar_\(name)"
+    }
+    static func editorTabRevealInFinder(_ name: String) -> String {
+        "editorTabRevealInFinder_\(name)"
+    }
     static let editorPlaceholder = "editorPlaceholder"
     static let codeEditor = "codeEditor"
     static let lineNumberGutter = "lineNumberGutter"
@@ -87,6 +100,9 @@ nonisolated enum AccessibilityID {
     static let paneDivider = "paneDivider"
     static let paneDropOverlay = "paneDropOverlay"
     static func paneLeaf(_ id: String) -> String { "paneLeaf_\(id)" }
+
+    // MARK: - Toast notifications
+    static let toastNotification = "toastNotification"
 
     // MARK: - Status bar
     static let statusBar = "statusBar"

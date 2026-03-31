@@ -296,10 +296,10 @@ struct SyntaxHighlighterTests {
         #expect(foregroundColor(in: storage, at: line305Offset) == keywordColor,
                 "Line 305 (within visible range) should have keyword color")
 
-        // Line 0 should NOT have keyword color (outside visible range + 100-line buffer)
+        // Line 0 should NOT have keyword color (outside visible range + 50-line buffer)
         let line0Color = foregroundColor(in: storage, at: 0)
         #expect(line0Color != keywordColor,
-                "Line 0 (outside visible range + buffer) should not have keyword color")
+                "Line 0 (outside visible range + 50-line buffer) should not have keyword color")
     }
 
     // MARK: - 7. highlightVisibleRange detects multiline tokens
@@ -605,5 +605,130 @@ struct SyntaxHighlighterTests {
                 "`#` must become comment in langB")
         #expect(foregroundColor(in: textStorage, at: funcPos) != keywordColor,
                 "`func` must lose keyword color in langB")
+    }
+
+    // MARK: - 12. Viewport buffer is 50 lines (#637)
+
+    @Test func viewportBufferIs50Lines() {
+        register(langA)
+
+        // 300 lines of "func lineN()"
+        let lines = (0..<300).map { "func line\($0)()" }
+        let text = lines.joined(separator: "\n")
+        let storage = NSTextStorage(string: text)
+        let hl = SyntaxHighlighter.shared
+        let keywordColor = hl.theme.color(for: "keyword")
+
+        // Highlight only lines 150-160 (middle of file)
+        let rangeStart = lineOffset(150, in: text)
+        let rangeEnd = lineOffset(161, in: text)
+        let visibleRange = NSRange(location: rangeStart, length: rangeEnd - rangeStart)
+
+        hl.highlightVisibleRange(
+            textStorage: storage,
+            visibleCharRange: visibleRange,
+            language: "langa",
+            font: font
+        )
+
+        // Line 155 (within visible range) should have keyword color
+        let line155Offset = lineOffset(155, in: text)
+        #expect(foregroundColor(in: storage, at: line155Offset) == keywordColor,
+                "Line 155 (within visible range) should have keyword color")
+
+        // Line 110 (within 50-line buffer: 150 - 50 = 100) should have keyword color
+        let line110Offset = lineOffset(110, in: text)
+        #expect(foregroundColor(in: storage, at: line110Offset) == keywordColor,
+                "Line 110 (within 50-line buffer) should have keyword color")
+
+        // Line 0 (far outside 50-line buffer) should NOT have keyword color
+        let line0Color = foregroundColor(in: storage, at: 0)
+        #expect(line0Color != keywordColor,
+                "Line 0 (outside 50-line buffer) should not have keyword color")
+
+        // Line 299 (far outside 50-line buffer) should NOT have keyword color
+        let line299Offset = lineOffset(299, in: text)
+        let line299Color = foregroundColor(in: storage, at: line299Offset)
+        #expect(line299Color != keywordColor,
+                "Line 299 (outside 50-line buffer) should not have keyword color")
+    }
+
+    // MARK: - 13. viewportHighlightThreshold is 50KB (#637)
+
+    @Test func viewportHighlightThresholdIs50KB() {
+        #expect(CodeEditorView.viewportHighlightThreshold == 50_000,
+                "viewportHighlightThreshold should be 50KB for aggressive viewport highlighting")
+    }
+
+    // MARK: - 14. Viewport highlighting leaves untouched regions with default color
+
+    @Test func viewportHighlightingLeavesUntouchedRegionsDefault() {
+        register(langA)
+
+        // 400 lines of "func lineN()"
+        let lines = (0..<400).map { "func line\($0)()" }
+        let text = lines.joined(separator: "\n")
+        let storage = NSTextStorage(string: text)
+        let hl = SyntaxHighlighter.shared
+        let keywordColor = hl.theme.color(for: "keyword")
+
+        // Set a custom color on line 0 before any highlighting
+        storage.addAttribute(.foregroundColor, value: NSColor.orange,
+                             range: NSRange(location: 0, length: 4))
+
+        // Highlight only lines 200-210
+        let rangeStart = lineOffset(200, in: text)
+        let rangeEnd = lineOffset(211, in: text)
+        let visibleRange = NSRange(location: rangeStart, length: rangeEnd - rangeStart)
+
+        hl.highlightVisibleRange(
+            textStorage: storage,
+            visibleCharRange: visibleRange,
+            language: "langa",
+            font: font
+        )
+
+        // Line 0 should still have orange color (untouched by viewport highlighting)
+        let line0Color = foregroundColor(in: storage, at: 0)
+        #expect(line0Color == NSColor.orange,
+                "Line 0 (far outside viewport) should retain its pre-existing color")
+
+        // Line 205 should have keyword color (within viewport)
+        let line205Offset = lineOffset(205, in: text)
+        #expect(foregroundColor(in: storage, at: line205Offset) == keywordColor,
+                "Line 205 (within viewport) should have keyword color")
+    }
+
+    // MARK: - 15. Multiline context is 200 lines (#637)
+
+    @Test func multilineContextDetectsCommentWithin200Lines() {
+        register(langA)
+
+        // Block comment starting at line 0, spanning 180 lines,
+        // then some code. Ask to highlight lines 190-200.
+        // The multiline context (200 lines) should reach back to line 0
+        // and detect the block comment.
+        let text = makeLongComment(prefixLines: 0, commentLines: 180)
+        let storage = NSTextStorage(string: text)
+        let hl = SyntaxHighlighter.shared
+        let commentColor = hl.theme.color(for: "comment")
+
+        // Highlight lines near the end of the comment
+        let rangeStart = lineOffset(170, in: text)
+        let rangeEnd = lineOffset(178, in: text)
+        let visibleRange = NSRange(location: rangeStart, length: rangeEnd - rangeStart)
+
+        hl.highlightVisibleRange(
+            textStorage: storage,
+            visibleCharRange: visibleRange,
+            language: "langa",
+            font: font
+        )
+
+        // Line 175 should be comment-colored (multiline context of 200 lines
+        // should detect the block comment opening at line 0)
+        let line175Offset = lineOffset(175, in: text) + 3
+        #expect(foregroundColor(in: storage, at: line175Offset) == commentColor,
+                "Line 175 inside block comment should be detected within 200-line multiline context")
     }
 }
