@@ -257,86 +257,23 @@ struct PaneLeafView: View {
 
     // MARK: - Tab close with dirty confirmation
 
-    /// Closes a tab with unsaved-changes protection.
     private func closeTabWithConfirmation(_ tab: EditorTab, tabManager: TabManager) {
-        if tab.isDirty {
-            let alert = NSAlert()
-            alert.messageText = Strings.unsavedChangesTitle
-            alert.informativeText = Strings.unsavedChangesMessage
-            alert.addButton(withTitle: Strings.dialogSave)
-            alert.addButton(withTitle: Strings.dialogDontSave)
-            alert.addButton(withTitle: Strings.dialogCancel)
-            alert.alertStyle = .warning
-
-            let response = alert.runModal()
-            switch response {
-            case .alertFirstButtonReturn:
-                guard let index = tabManager.tabs.firstIndex(where: { $0.id == tab.id }) else { return }
-                guard tabManager.saveTab(at: index) else { return }
-                Task { await workspace.gitProvider.refreshAsync() }
-                tabManager.closeTab(id: tab.id)
-            case .alertSecondButtonReturn:
-                tabManager.closeTab(id: tab.id)
-            default:
-                return
-            }
-        } else {
-            tabManager.closeTab(id: tab.id)
-        }
-
+        TabCloseHelper.closeTab(tab, in: tabManager, gitProvider: workspace.gitProvider)
         if tabManager.tabs.isEmpty {
             paneManager.removePane(paneID)
         }
     }
 
-    /// Confirms and closes all tabs except the one with the given ID.
     private func closeOtherTabsWithConfirmation(keeping tabID: UUID, tabManager: TabManager) {
-        let dirty = tabManager.dirtyTabsForCloseOthers(keeping: tabID)
-        guard confirmBulkClose(dirtyTabs: dirty, tabManager: tabManager) else { return }
-        tabManager.closeOtherTabs(keeping: tabID, force: true)
+        TabCloseHelper.closeOtherTabs(keeping: tabID, in: tabManager, gitProvider: workspace.gitProvider)
     }
 
-    /// Confirms and closes all tabs to the right of the given tab.
     private func closeTabsToTheRightWithConfirmation(of tabID: UUID, tabManager: TabManager) {
-        let dirty = tabManager.dirtyTabsForCloseRight(of: tabID)
-        guard confirmBulkClose(dirtyTabs: dirty, tabManager: tabManager) else { return }
-        tabManager.closeTabsToTheRight(of: tabID, force: true)
+        TabCloseHelper.closeTabsToTheRight(of: tabID, in: tabManager, gitProvider: workspace.gitProvider)
     }
 
-    /// Confirms and closes all tabs.
     private func closeAllTabsWithConfirmation(tabManager: TabManager) {
-        let dirty = tabManager.dirtyTabsForCloseAll()
-        guard confirmBulkClose(dirtyTabs: dirty, tabManager: tabManager) else { return }
-        tabManager.closeAllTabs(force: true)
+        TabCloseHelper.closeAllTabs(in: tabManager, gitProvider: workspace.gitProvider)
         paneManager.removePane(paneID)
-    }
-
-    /// Prompts the user when dirty tabs would be closed in a bulk operation.
-    private func confirmBulkClose(dirtyTabs: [EditorTab], tabManager: TabManager) -> Bool {
-        guard !dirtyTabs.isEmpty else { return true }
-
-        let fileList = dirtyTabs.map { "  \u{2022} \($0.fileName)" }.joined(separator: "\n")
-        let alert = NSAlert()
-        alert.messageText = Strings.unsavedChangesTitle
-        alert.informativeText = Strings.unsavedChangesListMessage(fileList)
-        alert.addButton(withTitle: Strings.dialogSaveAll)
-        alert.addButton(withTitle: Strings.dialogDontSave)
-        alert.addButton(withTitle: Strings.dialogCancel)
-        alert.alertStyle = .warning
-
-        let response = alert.runModal()
-        switch response {
-        case .alertFirstButtonReturn:
-            for tab in dirtyTabs {
-                guard let index = tabManager.tabs.firstIndex(where: { $0.id == tab.id }) else { continue }
-                guard tabManager.saveTab(at: index) else { return false }
-            }
-            Task { await workspace.gitProvider.refreshAsync() }
-            return true
-        case .alertSecondButtonReturn:
-            return true
-        default:
-            return false
-        }
     }
 }
