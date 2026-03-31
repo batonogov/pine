@@ -10,14 +10,14 @@ import Foundation
 // MARK: - Models
 
 /// Severity of a validation diagnostic.
-enum ValidationSeverity: Sendable, Equatable {
+nonisolated enum ValidationSeverity: Sendable, Equatable {
     case error
     case warning
     case info
 }
 
 /// A single validation diagnostic tied to a line in the file.
-struct ValidationDiagnostic: Sendable, Equatable, Identifiable {
+nonisolated struct ValidationDiagnostic: Sendable, Equatable, Identifiable {
     let id = UUID()
     let line: Int
     let column: Int?
@@ -36,7 +36,7 @@ struct ValidationDiagnostic: Sendable, Equatable, Identifiable {
 }
 
 /// The type of config validator to use for a given file.
-enum ValidatorKind: Sendable, Equatable {
+nonisolated enum ValidatorKind: Sendable, Equatable {
     case yamllint
     case terraform
     case shellcheck
@@ -66,7 +66,7 @@ enum ValidatorKind: Sendable, Equatable {
 // MARK: - Validator Detection
 
 /// Determines which validator to use based on file extension or name.
-enum ValidatorDetector {
+nonisolated enum ValidatorDetector {
     static func detect(for url: URL) -> ValidatorKind? {
         let ext = url.pathExtension.lowercased()
         let name = url.lastPathComponent.lowercased()
@@ -94,9 +94,10 @@ enum ValidatorDetector {
 // MARK: - Tool Availability
 
 /// Checks whether a command-line tool is available via `which`.
-enum ToolAvailability {
+nonisolated enum ToolAvailability {
     /// Cached availability results to avoid repeated `which` calls.
-    private static var cache: [String: String?] = [:]
+    /// nonisolated(unsafe): protected by `lock` — all reads and writes go through lock/unlock.
+    nonisolated(unsafe) private static var cache: [String: String?] = [:]
     private static let lock = NSLock()
 
     /// Returns the full path to the tool if installed, nil otherwise.
@@ -163,7 +164,7 @@ enum ToolAvailability {
 // MARK: - Output Parsers
 
 /// Parses output from various config validators into diagnostics.
-enum ValidatorOutputParser {
+nonisolated enum ValidatorOutputParser {
 
     // MARK: - yamllint
 
@@ -339,7 +340,7 @@ enum ValidatorOutputParser {
 
 /// Built-in regex-based validators that work without external tools.
 /// These provide basic validation when CLI tools (yamllint, hadolint, etc.) are not installed.
-enum BuiltinValidator {
+nonisolated enum BuiltinValidator {
 
     // Cached regex for detecting unquoted variables in shell test expressions.
     // swiftlint:disable:next force_try
@@ -584,102 +585,22 @@ enum BuiltinValidator {
     }
 }
 
-// MARK: - ConfigValidator
+// MARK: - ConfigValidationWorker
 
-/// Runs external config validators and produces diagnostics.
-/// Falls back to built-in regex-based validators when external tools are not installed.
-/// Designed to be called from a background queue with debouncing.
-@Observable
-final class ConfigValidator {
+/// Namespace for config validation work that runs on background threads.
+/// Deliberately **not** `@MainActor` so closures inside `DispatchQueue.global().async`
+/// do not inherit MainActor isolation — prevents `dispatch_assert_queue_fail`
+/// crash under Swift 6 strict concurrency.
+/// Marked `nonisolated` to opt out of `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor`.
+nonisolated enum ConfigValidationWorker {
 
-    /// Current diagnostics for the active file.
-    private(set) var diagnostics: [ValidationDiagnostic] = []
-
-    /// Whether validation is currently running.
-    private(set) var isValidating = false
-
-    /// The validator kind for the current file, if any.
-    private(set) var activeValidator: ValidatorKind?
-
-    /// Whether the required tool is available.
-    private(set) var toolAvailable = false
-
-    /// Debounce interval in seconds.
-    static let debounceInterval: TimeInterval = 0.3
-
-    /// Serial queue for validation work.
-    private let queue = DispatchQueue(label: "com.pine.config-validation", qos: .utility)
-
-    /// Lock protecting the generation token, which is read/written from both
-    /// the main thread (clear()) and the background queue (runValidation()).
-    private let generationLock = NSLock()
-
-    /// Generation token to discard stale results.
-    private var generation: UInt64 = 0
-
-    /// Debounce work item.
-    private var debounceWorkItem: DispatchWorkItem?
-
-    /// Thread-safe read of the current generation.
-    private func currentGeneration() -> UInt64 {
-        generationLock.lock()
-        defer { generationLock.unlock() }
-        return generation
-    }
-
-    /// Thread-safe increment-and-return of the generation.
-    private func nextGeneration() -> UInt64 {
-        generationLock.lock()
-        defer { generationLock.unlock() }
-        generation &+= 1
-        return generation
-    }
-
-    /// Validates the given file content, debounced.
-    /// - Parameters:
-    ///   - url: The file URL (used for extension detection and temp file creation).
-    ///   - content: The current file content.
-    func validate(url: URL, content: String) {
-        debounceWorkItem?.cancel()
-
-        guard let kind = ValidatorDetector.detect(for: url) else {
-            DispatchQueue.main.async { [weak self] in
-                self?.diagnostics = []
-                self?.activeValidator = nil
-                self?.toolAvailable = false
-            }
-            return
-        }
-
-        let workItem = DispatchWorkItem { [weak self] in
-            self?.runValidation(url: url, content: content, kind: kind)
-        }
-        debounceWorkItem = workItem
-        queue.asyncAfter(deadline: .now() + Self.debounceInterval, execute: workItem)
-    }
-
-    /// Clears all diagnostics (e.g. when switching tabs).
-    func clear() {
-        debounceWorkItem?.cancel()
-        _ = nextGeneration()
-        DispatchQueue.main.async { [weak self] in
-            self?.diagnostics = []
-            self?.activeValidator = nil
-            self?.toolAvailable = false
-            self?.isValidating = false
-        }
-    }
-
-    // MARK: - Private
-
-    private func runValidation(url: URL, content: String, kind: ValidatorKind) {
-        let currentGen = nextGeneration()
-
-        DispatchQueue.main.async { [weak self] in
-            self?.isValidating = true
-            self?.activeValidator = kind
-        }
-
+    /// Runs validation on the current thread (expected to be called from a background queue).
+    /// Returns parsed diagnostics and whether an external tool was available.
+    static func runValidation(
+        url: URL,
+        content: String,
+        kind: ValidatorKind
+    ) -> (diagnostics: [ValidationDiagnostic], toolAvailable: Bool) {
         // Check tool availability
         let toolPath = ToolAvailability.path(for: kind.toolName)
         let hasExternalTool = toolPath != nil
@@ -697,8 +618,6 @@ final class ConfigValidator {
 
                 let result = runTool(toolPath: toolPath, kind: kind, filePath: tempFile.path)
 
-                guard currentGeneration() == currentGen else { return }
-
                 switch kind {
                 case .yamllint:
                     parsed = ValidatorOutputParser.parseYamllint(result)
@@ -713,8 +632,6 @@ final class ConfigValidator {
                 // Temp file write failed — fall through to built-in
             }
         }
-
-        guard currentGeneration() == currentGen else { return }
 
         // Fall back to built-in validation only when external tool is not installed.
         // If external tool is installed and returned empty output, the file is valid.
@@ -731,17 +648,10 @@ final class ConfigValidator {
             }
         }
 
-        guard currentGeneration() == currentGen else { return }
-
-        DispatchQueue.main.async { [weak self] in
-            guard self?.currentGeneration() == currentGen else { return }
-            self?.diagnostics = parsed
-            self?.toolAvailable = hasExternalTool
-            self?.isValidating = false
-        }
+        return (parsed, hasExternalTool)
     }
 
-    private func runTool(toolPath: String, kind: ValidatorKind, filePath: String) -> String {
+    static func runTool(toolPath: String, kind: ValidatorKind, filePath: String) -> String {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: toolPath)
 
@@ -788,5 +698,101 @@ final class ConfigValidator {
 
         // Return whichever has content
         return output.isEmpty ? errOutput : output
+    }
+}
+
+// MARK: - ConfigValidator
+
+/// Runs external config validators and produces diagnostics.
+/// Falls back to built-in regex-based validators when external tools are not installed.
+/// Explicitly `@MainActor` — all UI state lives here. Heavy validation work is
+/// dispatched to `ConfigValidationWorker` (nonisolated) to avoid
+/// `dispatch_assert_queue_fail` crashes under `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor`.
+@MainActor
+@Observable
+final class ConfigValidator {
+
+    /// Current diagnostics for the active file.
+    private(set) var diagnostics: [ValidationDiagnostic] = []
+
+    /// Whether validation is currently running.
+    private(set) var isValidating = false
+
+    /// The validator kind for the current file, if any.
+    private(set) var activeValidator: ValidatorKind?
+
+    /// Whether the required tool is available.
+    private(set) var toolAvailable = false
+
+    /// Debounce interval in seconds.
+    nonisolated static let debounceInterval: TimeInterval = 0.3
+
+    /// Generation token to discard stale results.
+    private var generation: UInt64 = 0
+
+    /// Debounce task handle.
+    private var debounceTask: Task<Void, Never>?
+
+    /// Increments and returns the new generation token.
+    private func nextGeneration() -> UInt64 {
+        generation &+= 1
+        return generation
+    }
+
+    /// Validates the given file content, debounced.
+    /// - Parameters:
+    ///   - url: The file URL (used for extension detection and temp file creation).
+    ///   - content: The current file content.
+    func validate(url: URL, content: String) {
+        debounceTask?.cancel()
+
+        guard let kind = ValidatorDetector.detect(for: url) else {
+            diagnostics = []
+            activeValidator = nil
+            toolAvailable = false
+            return
+        }
+
+        let currentGen = nextGeneration()
+
+        debounceTask = Task { [weak self] in
+            // Debounce
+            try? await Task.sleep(for: .milliseconds(300))
+            guard !Task.isCancelled, let self else { return }
+
+            self.runValidation(url: url, content: content, kind: kind, expectedGen: currentGen)
+        }
+    }
+
+    /// Clears all diagnostics (e.g. when switching tabs).
+    func clear() {
+        debounceTask?.cancel()
+        _ = nextGeneration()
+        diagnostics = []
+        activeValidator = nil
+        toolAvailable = false
+        isValidating = false
+    }
+
+    // MARK: - Private
+
+    private func runValidation(url: URL, content: String, kind: ValidatorKind, expectedGen: UInt64) {
+        guard generation == expectedGen else { return }
+
+        isValidating = true
+        activeValidator = kind
+
+        let capturedGen = expectedGen
+
+        Task.detached {
+            let result = ConfigValidationWorker.runValidation(url: url, content: content, kind: kind)
+
+            await MainActor.run { [weak self] in
+                guard let self, self.generation == capturedGen else { return }
+                self.diagnostics = result.diagnostics
+                self.toolAvailable = result.toolAvailable
+                self.isValidating = false
+            }
+        }
     }
 }
