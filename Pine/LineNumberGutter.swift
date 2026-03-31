@@ -94,14 +94,14 @@ final class LineNumberView: NSView {
     /// Pre-indexed diagnostic lookup: line number → highest severity diagnostic.
     private var diagnosticMap: [Int: ValidationDiagnostic] = [:]
 
-    /// Whether any diagnostics are present — used to add extra gutter width for icons.
-    private var hasDiagnostics: Bool { !diagnosticMap.isEmpty }
-
     /// Pre-indexed fold lookup: start line → FoldableRange.
     private var foldStartMap: [Int: FoldableRange] = [:]
 
     /// Whether the mouse is currently inside the gutter (for showing fold indicators).
     private var isMouseInside = false
+
+    /// Active tooltip rect tag — non-nil when diagnostics are present and tooltip rect is registered.
+    private(set) var toolTipTag: NSView.ToolTipTag?
 
     private func rebuildDiffMap() {
         diffMap = Dictionary(lineDiffs.map { ($0.line, $0.kind) }, uniquingKeysWith: { _, last in last })
@@ -112,6 +112,7 @@ final class LineNumberView: NSView {
     }
 
     /// Rebuilds the diagnostic map, keeping only the highest-severity diagnostic per line.
+    /// Also registers/removes the tooltip rect for dynamic tooltip resolution.
     private func rebuildDiagnosticMap() {
         diagnosticMap = [:]
         for diag in validationDiagnostics {
@@ -122,6 +123,23 @@ final class LineNumberView: NSView {
             } else {
                 diagnosticMap[diag.line] = diag
             }
+        }
+        updateTooltipRect()
+    }
+
+    /// Registers or removes the tooltip rect covering the entire gutter.
+    /// When diagnostics are present, a single tooltip rect is registered with `self` as owner.
+    /// AppKit calls `view(_:stringForToolTip:point:userData:)` to resolve the tooltip text
+    /// dynamically based on mouse position.
+    private func updateTooltipRect() {
+        // Remove existing tooltip rect
+        if let tag = toolTipTag {
+            removeToolTip(tag)
+            toolTipTag = nil
+        }
+        // Register new tooltip rect only if there are diagnostics
+        if !diagnosticMap.isEmpty {
+            toolTipTag = addToolTip(bounds, owner: self, userData: nil)
         }
     }
 
@@ -221,6 +239,8 @@ final class LineNumberView: NSView {
             userInfo: nil
         )
         addTrackingArea(area)
+        // Re-register tooltip rect with updated bounds
+        updateTooltipRect()
     }
 
     override func mouseEntered(with event: NSEvent) {
@@ -530,8 +550,7 @@ final class LineNumberView: NSView {
             cachedDigitWidth = "0".size(withAttributes: [.font: gutterFont]).width
             cachedDigitWidthFont = gutterFont
         }
-        let diagnosticExtra: CGFloat = hasDiagnostics ? Self.diagnosticIconDrawSize + 4 : 0
-        let newWidth = CGFloat(digits) * cachedDigitWidth + 20 + diagnosticExtra
+        let newWidth = CGFloat(digits) * cachedDigitWidth + 20
         if abs(gutterWidth - newWidth) > 1 {
             gutterWidth = newWidth
             frame.size.width = newWidth
@@ -559,12 +578,14 @@ final class LineNumberView: NSView {
         .info: .systemBlue
     ]
 
-    /// Fixed draw size for diagnostic icons — used for gutter width calculation and rendering.
-    static let diagnosticIconDrawSize: CGFloat = 12
+    /// Fixed draw size for diagnostic icons — small enough to fit inside the fold indicator area
+    /// without overlapping line numbers. Kept at 8px so the right edge (x=1 + 8 = 9px) stays
+    /// well clear of two-digit line numbers that start around x≈18.
+    static let diagnosticIconDrawSize: CGFloat = 8
 
     /// Draws an SF Symbol icon for a validation diagnostic at the given line position.
-    /// The icon is placed to the left of the line number, in the extra gutter space
-    /// reserved when diagnostics are present.
+    /// The icon is drawn inside the fold indicator area (leftmost ~14px of the gutter),
+    /// keeping it clear of line number text.
     func drawDiagnosticIcon(at y: CGFloat, lineHeight: CGFloat, severity: ValidationSeverity) {
         guard let symbolName = Self.diagnosticSymbolNames[severity],
               let color = Self.diagnosticColors[severity] else { return }
@@ -577,13 +598,46 @@ final class LineNumberView: NSView {
         let tintedImage = image.tinted(with: color)
         let imageSize = tintedImage.size
         let centerY = y + (lineHeight - imageSize.height) / 2
-        // Position to the left of the line number, after the fold indicator area
-        let x: CGFloat = 14
+        // Position at the left edge of the gutter, within the fold indicator area (0–14px).
+        // x=1 + iconSize=8 → right edge at 9px, well clear of two-digit line numbers (~18px).
+        let x: CGFloat = 1
 
         tintedImage.draw(in: NSRect(
             x: x, y: centerY,
             width: imageSize.width, height: imageSize.height
         ))
+    }
+
+    // MARK: - Diagnostic tooltips
+
+    /// Returns the diagnostic message for the given line number, or nil if none.
+    func diagnosticTooltip(forLine line: Int) -> String? {
+        diagnosticMap[line]?.message
+    }
+
+    /// Resolves the tooltip for a given point in view coordinates.
+    /// Returns the diagnostic message if the point is inside bounds and over a line with a diagnostic,
+    /// or nil otherwise. This is a pure query method, safe to call from tests.
+    func resolveTooltip(at point: NSPoint) -> String? {
+        guard bounds.contains(point) else { return nil }
+        guard let line = lineNumber(at: point) else { return nil }
+        return diagnosticTooltip(forLine: line)
+    }
+
+    /// NSView tooltip owner callback — AppKit calls this to resolve tooltip text dynamically
+    /// for the registered tooltip rect. Returns the diagnostic message for the line under the cursor.
+    ///
+    /// Must be annotated `@objc` so that AppKit can find this method via Objective-C message
+    /// dispatch. The `NSToolTipOwner` informal protocol is an ObjC category on `NSObject` —
+    /// Swift does not automatically bridge it, so without `@objc` AppKit falls back to the
+    /// default `NSView` implementation which returns the view's `description`.
+    @objc func view(
+        _ view: NSView,
+        stringForToolTip tag: NSView.ToolTipTag,
+        point: NSPoint,
+        userData data: UnsafeMutableRawPointer?
+    ) -> String {
+        resolveTooltip(at: point) ?? ""
     }
 
     // MARK: - Fold indicator drawing
