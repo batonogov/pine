@@ -128,6 +128,37 @@ final class PaneManager {
         }
     }
 
+    // MARK: - Session restore
+
+    /// Restores a previously saved pane layout.
+    /// Creates TabManagers for each leaf and returns the paneID-to-TabManager mapping
+    /// so the caller can populate tabs.
+    func restoreLayout(
+        from node: PaneNode,
+        activePaneUUID: UUID?
+    ) {
+        // Collect all leaf IDs from the restored tree
+        let leafIDs = node.leafIDs
+
+        // Create TabManagers for each leaf
+        var newTabManagers: [PaneID: TabManager] = [:]
+        for leafID in leafIDs {
+            newTabManagers[leafID] = TabManager()
+        }
+
+        // Replace root and tab managers atomically
+        root = node
+        tabManagers = newTabManagers
+
+        // Restore active pane
+        if let uuid = activePaneUUID,
+           let paneID = leafIDs.first(where: { $0.id == uuid }) {
+            activePaneID = paneID
+        } else if let firstLeaf = root.firstLeafID {
+            activePaneID = firstLeaf
+        }
+    }
+
     // MARK: - Private helpers
 
     private func moveTab(url: URL, from source: TabManager, to destination: TabManager) {

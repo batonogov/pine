@@ -31,30 +31,38 @@ extension ContentView {
         // Restore editor tabs only if PM has no tabs (fresh or after restart)
         if tabManager.tabs.isEmpty {
             let disabledSet = Set(session.existingHighlightingDisabledPaths ?? [])
-            for url in session.existingFileURLs {
-                let disabled = disabledSet.contains(url.path)
-                tabManager.openTab(url: url, syntaxHighlightingDisabled: disabled)
-            }
+            let previewModes = session.existingPreviewModes
+            let editorStates = session.existingEditorStates
+            let pinnedSet = session.existingPinnedPaths
 
-            // Restore preview modes for markdown tabs
-            if let previewModes = session.existingPreviewModes {
-                for index in tabManager.tabs.indices {
-                    let path = tabManager.tabs[index].url.path
-                    if let rawMode = previewModes[path],
-                       let mode = MarkdownPreviewMode(rawValue: rawMode) {
-                        tabManager.tabs[index].previewMode = mode
-                    }
-                }
-            }
+            // Try to restore pane layout if available
+            if let layoutData = session.paneLayoutData,
+               let restoredNode = try? JSONDecoder().decode(PaneNode.self, from: layoutData),
+               let assignments = session.paneTabAssignments,
+               restoredNode.leafCount > 1 {
+                let activePaneUUID = session.activePaneID.flatMap { UUID(uuidString: $0) }
+                paneManager.restoreLayout(from: restoredNode, activePaneUUID: activePaneUUID)
 
-            // Restore per-tab editor state (cursor, scroll, folds)
-            if let editorStates = session.existingEditorStates {
-                for index in tabManager.tabs.indices {
-                    let path = tabManager.tabs[index].url.path
-                    if let state = editorStates[path] {
-                        state.apply(to: &tabManager.tabs[index])
+                // Populate tabs into each pane's TabManager
+                for (paneID, tm) in paneManager.tabManagers {
+                    guard let paths = assignments[paneID.id.uuidString] else { continue }
+                    for path in paths {
+                        let url = URL(fileURLWithPath: path)
+                        guard FileManager.default.fileExists(atPath: path) else { continue }
+                        let disabled = disabledSet.contains(path)
+                        tm.openTab(url: url, syntaxHighlightingDisabled: disabled)
                     }
+                    Self.applyTabState(to: tm, previewModes: previewModes,
+                                       editorStates: editorStates, pinnedPaths: pinnedSet)
                 }
+            } else {
+                // Single-pane restore (backwards compatible)
+                for url in session.existingFileURLs {
+                    let disabled = disabledSet.contains(url.path)
+                    tabManager.openTab(url: url, syntaxHighlightingDisabled: disabled)
+                }
+                Self.applyTabState(to: tabManager, previewModes: previewModes,
+                                   editorStates: editorStates, pinnedPaths: pinnedSet)
             }
 
             if let activeURL = session.activeFileURL,
@@ -62,7 +70,7 @@ extension ContentView {
                 tabManager.activeTabID = tab.id
             }
 
-            didRestoreTabs = !tabManager.tabs.isEmpty
+            didRestoreTabs = !projectManager.allTabs.isEmpty
         }
 
         // Restore terminal state
@@ -86,6 +94,28 @@ extension ContentView {
         }
 
         return didRestoreTabs
+    }
+
+    /// Applies preview modes, editor states, and pinned status to a TabManager's tabs.
+    private static func applyTabState(
+        to tm: TabManager,
+        previewModes: [String: String]?,
+        editorStates: [String: PerTabEditorState]?,
+        pinnedPaths: Set<String>?
+    ) {
+        for index in tm.tabs.indices {
+            let path = tm.tabs[index].url.path
+            if let rawMode = previewModes?[path],
+               let mode = MarkdownPreviewMode(rawValue: rawMode) {
+                tm.tabs[index].previewMode = mode
+            }
+            if let state = editorStates?[path] {
+                state.apply(to: &tm.tabs[index])
+            }
+            if pinnedPaths?.contains(path) == true {
+                tm.tabs[index].isPinned = true
+            }
+        }
     }
 
     func checkForRecovery() {

@@ -157,6 +157,23 @@ final class ProjectManager {
             terminal.terminalTabs.firstIndex { $0.id == id }
         }
 
+        // Pane layout — only persist when there are multiple panes
+        var paneLayoutData: Data?
+        var paneTabAssignments: [String: [String]]?
+        var activePaneIDString: String?
+        if paneManager.root.leafCount > 1 {
+            paneLayoutData = try? JSONEncoder().encode(paneManager.root)
+            var assignments: [String: [String]] = [:]
+            for (paneID, tm) in paneManager.tabManagers {
+                let paths = tm.tabs.map(\.url.path).filter { $0.hasPrefix(rootPath) }
+                if !paths.isEmpty {
+                    assignments[paneID.id.uuidString] = paths
+                }
+            }
+            paneTabAssignments = assignments.isEmpty ? nil : assignments
+            activePaneIDString = paneManager.activePaneID.id.uuidString
+        }
+
         SessionState.save(
             projectURL: rootURL,
             openFileURLs: openFileURLs,
@@ -168,7 +185,10 @@ final class ProjectManager {
             terminalTabCount: terminalTabCount,
             activeTerminalIndex: activeTerminalIndex,
             isTerminalVisible: terminal.isTerminalVisible,
-            isTerminalMaximized: terminal.isTerminalMaximized
+            isTerminalMaximized: terminal.isTerminalMaximized,
+            paneLayoutData: paneLayoutData,
+            paneTabAssignments: paneTabAssignments,
+            activePaneID: activePaneIDString
         )
     }
 
