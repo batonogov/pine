@@ -14,6 +14,8 @@ import SwiftUI
 final class ProjectManager {
     let workspace = WorkspaceManager()
     let terminal = TerminalManager()
+    /// The primary TabManager (first pane). For the *focused* pane's TabManager,
+    /// use ``activeTabManager`` which delegates to ``PaneManager/activeTabManager``.
     let tabManager = TabManager()
     let searchProvider = ProjectSearchProvider()
     let quickOpenProvider = QuickOpenProvider()
@@ -21,6 +23,36 @@ final class ProjectManager {
     let contextFileWriter = ContextFileWriter()
     @ObservationIgnored
     private(set) lazy var paneManager = PaneManager(existingTabManager: tabManager)
+
+    /// Returns the TabManager for the currently focused pane.
+    /// Falls back to the primary ``tabManager`` when paneManager has a single pane.
+    var activeTabManager: TabManager {
+        paneManager.activeTabManager ?? tabManager
+    }
+
+    /// Collects all tabs from every pane (for session save, dirty-tab checks, etc.).
+    var allTabs: [EditorTab] {
+        paneManager.tabManagers.values.flatMap(\.tabs)
+    }
+
+    /// Whether any tab in any pane has unsaved changes.
+    var hasUnsavedChanges: Bool {
+        paneManager.tabManagers.values.contains { $0.hasUnsavedChanges }
+    }
+
+    /// All dirty tabs across all panes.
+    var allDirtyTabs: [EditorTab] {
+        paneManager.tabManagers.values.flatMap(\.dirtyTabs)
+    }
+
+    /// Saves all tabs across all panes. Returns false if any save fails.
+    @discardableResult
+    func saveAllPaneTabs() -> Bool {
+        for tabMgr in paneManager.tabManagers.values {
+            guard tabMgr.saveAllTabs() else { return false }
+        }
+        return true
+    }
     let toastManager = ToastManager()
     // nonisolated(unsafe) allows deinit to call stopPeriodicSnapshots().
     // RecoveryManager is only mutated on @MainActor; deinit is the only
@@ -54,7 +86,7 @@ final class ProjectManager {
         guard recoveryManager == nil else { return }
         let manager = RecoveryManager(projectURL: projectURL)
         manager.tabsProvider = { [weak self] in
-            self?.tabManager.tabs ?? []
+            self?.allTabs ?? []
         }
         tabManager.recoveryManager = manager
         manager.startPeriodicSnapshots()
@@ -62,23 +94,26 @@ final class ProjectManager {
     }
 
     /// Persists current session (project + open file tabs) to UserDefaults.
-    /// Reads from tabManager.tabs for the authoritative tab list.
+    /// Collects tabs from ALL panes so split-pane tabs are not lost on restore.
     func saveSession() {
         guard let rootURL = workspace.rootURL else { return }
         let rootPath = rootURL.path + "/"
 
-        let openFileURLs = tabManager.tabs
+        // Gather tabs from all panes (not just the primary tabManager)
+        let everyTab = allTabs
+
+        let openFileURLs = everyTab
             .map(\.url)
             .filter { $0.path.hasPrefix(rootPath) }
 
         // Only persist active file if it belongs to the project
-        let activeFileURL: URL? = if let url = tabManager.activeTab?.url,
+        let activeFileURL: URL? = if let url = activeTabManager.activeTab?.url,
                                       url.path.hasPrefix(rootPath) { url } else { nil }
 
         // Collect preview modes for markdown tabs that aren't in default (.source) state
         // and belong to the project root
         var previewModes: [String: String]?
-        let mdTabs = tabManager.tabs.filter {
+        let mdTabs = everyTab.filter {
             $0.isMarkdownFile && $0.previewMode != .source && $0.url.path.hasPrefix(rootPath)
         }
         if !mdTabs.isEmpty {
@@ -89,7 +124,7 @@ final class ProjectManager {
         }
 
         // Collect tabs with syntax highlighting disabled (large files), scoped to project root
-        let disabledTabs = tabManager.tabs.filter {
+        let disabledTabs = everyTab.filter {
             $0.syntaxHighlightingDisabled && $0.url.path.hasPrefix(rootPath)
         }
         let highlightingDisabledPaths: [String]? = disabledTabs.isEmpty
@@ -98,7 +133,7 @@ final class ProjectManager {
 
         // Per-tab editor state (cursor, scroll, folds)
         var editorStates: [String: PerTabEditorState]?
-        let tabsWithState = tabManager.tabs.filter { tab in
+        let tabsWithState = everyTab.filter { tab in
             tab.url.path.hasPrefix(rootPath) && tab.kind == .text
         }
         if !tabsWithState.isEmpty {
@@ -109,7 +144,7 @@ final class ProjectManager {
         }
 
         // Pinned tabs, scoped to project root
-        let pinnedTabs = tabManager.tabs.filter {
+        let pinnedTabs = everyTab.filter {
             $0.isPinned && $0.url.path.hasPrefix(rootPath)
         }
         let pinnedPaths: [String]? = pinnedTabs.isEmpty
@@ -180,7 +215,7 @@ final class ProjectManager {
     /// context file writer. Called when the active tab or cursor position changes.
     func updateEditorContext() {
         guard let rootURL = workspace.rootURL else { return }
-        let tab = tabManager.activeTab
+        let tab = activeTabManager.activeTab
         let relativePath = ContextFileWriter.relativePath(
             fileURL: tab?.url,
             rootURL: rootURL

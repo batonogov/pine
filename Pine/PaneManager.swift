@@ -50,6 +50,11 @@ final class PaneManager {
         tabManagers[activePaneID]
     }
 
+    /// Returns all TabManagers across all panes.
+    var allTabManagers: [TabManager] {
+        Array(tabManagers.values)
+    }
+
     // MARK: - Split operations
 
     /// Splits a pane by placing a new pane alongside it.
@@ -129,11 +134,12 @@ final class PaneManager {
         guard let srcIdx = source.tabs.firstIndex(where: { $0.url == url }) else { return }
         // Take a copy of the full tab with all state
         let tab = source.tabs[srcIdx]
-        // Close in source first (force: skip dirty check — we're moving, not discarding)
-        source.closeTab(id: tab.id, force: true)
         // Re-mint identity so the tab is fresh in the destination
         let movedTab = EditorTab.reidentified(from: tab)
+        // Add to destination FIRST — if this crashes, the tab is still in source
         destination.tabs.append(movedTab)
         destination.activeTabID = movedTab.id
+        // Now safe to remove from source (force: skip dirty check — we're moving, not discarding)
+        source.closeTab(id: tab.id, force: true)
     }
 }

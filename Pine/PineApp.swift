@@ -71,7 +71,7 @@ struct PineApp: App {
                     Label(Strings.menuSymbolNavigator, systemImage: MenuIcons.symbolNavigator)
                 }
                 .keyboardShortcut("r", modifiers: .command)
-                .disabled(focusedProject?.tabManager.activeTab == nil)
+                .disabled(focusedProject?.activeTabManager.activeTab == nil)
             }
             // View menu — add items to the existing system View menu
             CommandGroup(after: .toolbar) {
@@ -113,7 +113,7 @@ struct PineApp: App {
 
                 Button {
                     guard let pm = focusedProject else { return }
-                    pm.tabManager.togglePreviewMode()
+                    pm.activeTabManager.togglePreviewMode()
                 } label: {
                     Label(Strings.menuTogglePreview, systemImage: MenuIcons.togglePreview)
                 }
@@ -147,13 +147,13 @@ struct PineApp: App {
 
                 Button {
                     guard let pm = focusedProject,
-                          let url = pm.tabManager.activeTab?.url else { return }
+                          let url = pm.activeTabManager.activeTab?.url else { return }
                     NSWorkspace.shared.activateFileViewerSelecting([url])
                 } label: {
                     Label(Strings.menuRevealFileInFinder, systemImage: MenuIcons.revealFileInFinder)
                 }
                 .keyboardShortcut("r", modifiers: [.command, .shift])
-                .disabled(focusedProject?.tabManager.activeTab == nil)
+                .disabled(focusedProject?.activeTabManager.activeTab == nil)
 
                 Button {
                     guard let pm = focusedProject,
@@ -194,7 +194,7 @@ struct PineApp: App {
                     Label(Strings.menuSendToTerminal, systemImage: MenuIcons.sendToTerminal)
                 }
                 .keyboardShortcut(.return, modifiers: [.command, .shift])
-                .disabled(focusedProject?.tabManager.activeTab == nil)
+                .disabled(focusedProject?.activeTabManager.activeTab == nil)
             }
             // Edit menu: Toggle Comment, Find & Replace, Find in Project
             CommandGroup(after: .pasteboard) {
@@ -213,7 +213,7 @@ struct PineApp: App {
                     Label(Strings.menuFind, systemImage: MenuIcons.find)
                 }
                 .keyboardShortcut("f", modifiers: .command)
-                .disabled(focusedProject?.tabManager.activeTab == nil)
+                .disabled(focusedProject?.activeTabManager.activeTab == nil)
 
                 Button {
                     NotificationCenter.default.post(name: .findAndReplace, object: nil)
@@ -221,7 +221,7 @@ struct PineApp: App {
                     Label(Strings.menuFindAndReplace, systemImage: MenuIcons.findAndReplace)
                 }
                 .keyboardShortcut("f", modifiers: [.command, .option])
-                .disabled(focusedProject?.tabManager.activeTab == nil)
+                .disabled(focusedProject?.activeTabManager.activeTab == nil)
 
                 Button {
                     NotificationCenter.default.post(name: .findNext, object: nil)
@@ -229,7 +229,7 @@ struct PineApp: App {
                     Label(Strings.menuFindNext, systemImage: MenuIcons.nextChange)
                 }
                 .keyboardShortcut("g", modifiers: .command)
-                .disabled(focusedProject?.tabManager.activeTab == nil)
+                .disabled(focusedProject?.activeTabManager.activeTab == nil)
 
                 Button {
                     NotificationCenter.default.post(name: .findPrevious, object: nil)
@@ -237,7 +237,7 @@ struct PineApp: App {
                     Label(Strings.menuFindPrevious, systemImage: MenuIcons.previousChange)
                 }
                 .keyboardShortcut("g", modifiers: [.command, .shift])
-                .disabled(focusedProject?.tabManager.activeTab == nil)
+                .disabled(focusedProject?.activeTabManager.activeTab == nil)
 
                 Button {
                     NotificationCenter.default.post(name: .useSelectionForFind, object: nil)
@@ -245,7 +245,7 @@ struct PineApp: App {
                     Label(Strings.menuUseSelectionForFind, systemImage: MenuIcons.find)
                 }
                 .keyboardShortcut("e", modifiers: .command)
-                .disabled(focusedProject?.tabManager.activeTab == nil)
+                .disabled(focusedProject?.activeTabManager.activeTab == nil)
 
                 Divider()
 
@@ -264,7 +264,7 @@ struct PineApp: App {
                     Label(Strings.menuGoToLine, systemImage: MenuIcons.goToLine)
                 }
                 .keyboardShortcut("l", modifiers: .command)
-                .disabled(focusedProject?.tabManager.activeTab == nil)
+                .disabled(focusedProject?.activeTabManager.activeTab == nil)
 
                 Divider()
 
@@ -277,7 +277,7 @@ struct PineApp: App {
                     Label(Strings.menuNextChange, systemImage: MenuIcons.nextChange)
                 }
                 .keyboardShortcut(.downArrow, modifiers: [.control, .option])
-                .disabled(focusedProject?.tabManager.activeTab == nil)
+                .disabled(focusedProject?.activeTabManager.activeTab == nil)
 
                 Button {
                     NotificationCenter.default.post(
@@ -288,7 +288,7 @@ struct PineApp: App {
                     Label(Strings.menuPreviousChange, systemImage: MenuIcons.previousChange)
                 }
                 .keyboardShortcut(.upArrow, modifiers: [.control, .option])
-                .disabled(focusedProject?.tabManager.activeTab == nil)
+                .disabled(focusedProject?.activeTabManager.activeTab == nil)
 
                 Button {
                     NotificationCenter.default.post(
@@ -299,7 +299,7 @@ struct PineApp: App {
                     Label(Strings.menuAcceptChange, systemImage: MenuIcons.acceptChange)
                 }
                 .keyboardShortcut(.return, modifiers: [.control, .option])
-                .disabled(focusedProject?.tabManager.activeTab == nil)
+                .disabled(focusedProject?.activeTabManager.activeTab == nil)
 
                 Button {
                     NotificationCenter.default.post(
@@ -310,7 +310,7 @@ struct PineApp: App {
                     Label(Strings.menuRevertChange, systemImage: MenuIcons.revertChange)
                 }
                 .keyboardShortcut(.delete, modifiers: [.control, .option])
-                .disabled(focusedProject?.tabManager.activeTab == nil)
+                .disabled(focusedProject?.activeTabManager.activeTab == nil)
 
                 Button {
                     NotificationCenter.default.post(
@@ -320,7 +320,7 @@ struct PineApp: App {
                 } label: {
                     Label(Strings.menuAcceptAllChanges, systemImage: MenuIcons.acceptAllChanges)
                 }
-                .disabled(focusedProject?.tabManager.activeTab == nil)
+                .disabled(focusedProject?.activeTabManager.activeTab == nil)
 
                 Button {
                     NotificationCenter.default.post(
@@ -330,7 +330,7 @@ struct PineApp: App {
                 } label: {
                     Label(Strings.menuRevertAllChanges, systemImage: MenuIcons.revertAllChanges)
                 }
-                .disabled(focusedProject?.tabManager.activeTab == nil)
+                .disabled(focusedProject?.activeTabManager.activeTab == nil)
 
                 Divider()
 
@@ -343,7 +343,7 @@ struct PineApp: App {
                     Label(Strings.menuFoldCode, systemImage: MenuIcons.foldCode)
                 }
                 .keyboardShortcut(.leftArrow, modifiers: [.command, .option])
-                .disabled(focusedProject?.tabManager.activeTab == nil)
+                .disabled(focusedProject?.activeTabManager.activeTab == nil)
 
                 Button {
                     NotificationCenter.default.post(
@@ -354,7 +354,7 @@ struct PineApp: App {
                     Label(Strings.menuUnfoldCode, systemImage: MenuIcons.unfoldCode)
                 }
                 .keyboardShortcut(.rightArrow, modifiers: [.command, .option])
-                .disabled(focusedProject?.tabManager.activeTab == nil)
+                .disabled(focusedProject?.activeTabManager.activeTab == nil)
 
                 Button {
                     NotificationCenter.default.post(
@@ -365,7 +365,7 @@ struct PineApp: App {
                     Label(Strings.menuFoldAll, systemImage: MenuIcons.foldAll)
                 }
                 .keyboardShortcut(.leftArrow, modifiers: [.command, .option, .shift])
-                .disabled(focusedProject?.tabManager.activeTab == nil)
+                .disabled(focusedProject?.activeTabManager.activeTab == nil)
 
                 Button {
                     NotificationCenter.default.post(
@@ -376,13 +376,13 @@ struct PineApp: App {
                     Label(Strings.menuUnfoldAll, systemImage: MenuIcons.unfoldAll)
                 }
                 .keyboardShortcut(.rightArrow, modifiers: [.command, .option, .shift])
-                .disabled(focusedProject?.tabManager.activeTab == nil)
+                .disabled(focusedProject?.activeTabManager.activeTab == nil)
             }
             // File menu: Save, Save All, Save As, Duplicate
             CommandGroup(replacing: .saveItem) {
                 Button {
                     guard let pm = focusedProject else { return }
-                    if pm.tabManager.saveActiveTab() {
+                    if pm.activeTabManager.saveActiveTab() {
                         Task {
                             await pm.workspace.gitProvider.refreshAsync()
                             NotificationCenter.default.post(name: .refreshLineDiffs, object: nil)
@@ -395,7 +395,7 @@ struct PineApp: App {
 
                 Button {
                     guard let pm = focusedProject else { return }
-                    if pm.tabManager.saveAllTabs() {
+                    if pm.saveAllPaneTabs() {
                         Task {
                             await pm.workspace.gitProvider.refreshAsync()
                             NotificationCenter.default.post(name: .refreshLineDiffs, object: nil)
@@ -410,16 +410,16 @@ struct PineApp: App {
 
                 Button {
                     guard let pm = focusedProject else { return }
-                    guard pm.tabManager.activeTab != nil else { return }
+                    guard pm.activeTabManager.activeTab != nil else { return }
                     let panel = NSSavePanel()
                     panel.title = Strings.saveAsPanelTitle
-                    panel.nameFieldStringValue = pm.tabManager.activeTab?.fileName ?? ""
-                    if let dir = pm.tabManager.activeTab?.url.deletingLastPathComponent() {
+                    panel.nameFieldStringValue = pm.activeTabManager.activeTab?.fileName ?? ""
+                    if let dir = pm.activeTabManager.activeTab?.url.deletingLastPathComponent() {
                         panel.directoryURL = dir
                     }
                     guard panel.runModal() == .OK, let url = panel.url else { return }
                     do {
-                        try pm.tabManager.saveActiveTabAs(to: url)
+                        try pm.activeTabManager.saveActiveTabAs(to: url)
                         Task {
                             await pm.workspace.gitProvider.refreshAsync()
                             NotificationCenter.default.post(name: .refreshLineDiffs, object: nil)
@@ -438,7 +438,7 @@ struct PineApp: App {
 
                 Button {
                     guard let pm = focusedProject else { return }
-                    pm.tabManager.duplicateActiveTab(projectRoot: pm.workspace.rootURL)
+                    pm.activeTabManager.duplicateActiveTab(projectRoot: pm.workspace.rootURL)
                 } label: {
                     Label(Strings.menuDuplicate, systemImage: MenuIcons.duplicate)
                 }
@@ -717,7 +717,8 @@ class CloseDelegate: NSObject, NSWindowDelegate {
 
     /// Closes the active tab with unsaved-changes dialog. Called by the Cmd+W event monitor.
     func closeActiveTab() {
-        guard let tab = projectManager.tabManager.activeTab else { return }
+        let activeTM = projectManager.activeTabManager
+        guard let tab = activeTM.activeTab else { return }
         if tab.isDirty {
             let alert = NSAlert()
             alert.messageText = Strings.unsavedChangesTitle
@@ -729,17 +730,17 @@ class CloseDelegate: NSObject, NSWindowDelegate {
             let response = alert.runModal()
             switch response {
             case .alertFirstButtonReturn:
-                if let idx = projectManager.tabManager.tabs.firstIndex(where: { $0.id == tab.id }) {
-                    guard projectManager.tabManager.saveTab(at: idx) else { return }
+                if let idx = activeTM.tabs.firstIndex(where: { $0.id == tab.id }) {
+                    guard activeTM.saveTab(at: idx) else { return }
                 }
-                projectManager.tabManager.closeTab(id: tab.id)
+                activeTM.closeTab(id: tab.id)
             case .alertSecondButtonReturn:
-                projectManager.tabManager.closeTab(id: tab.id)
+                activeTM.closeTab(id: tab.id)
             default:
                 break
             }
         } else {
-            projectManager.tabManager.closeTab(id: tab.id)
+            activeTM.closeTab(id: tab.id)
         }
     }
 
@@ -750,7 +751,7 @@ class CloseDelegate: NSObject, NSWindowDelegate {
         }
 
         // Close button → close the entire window.
-        let dirty = projectManager.tabManager.dirtyTabs
+        let dirty = projectManager.allDirtyTabs
         guard !dirty.isEmpty else { return true }
 
         let fileList = dirty.map { "  • \($0.fileName)" }.joined(separator: "\n")
@@ -765,7 +766,7 @@ class CloseDelegate: NSObject, NSWindowDelegate {
         let response = alert.runModal()
         switch response {
         case .alertFirstButtonReturn:
-            guard projectManager.tabManager.saveAllTabs() else {
+            guard projectManager.saveAllPaneTabs() else {
                 return false // Save failed — abort close
             }
             return true
@@ -960,7 +961,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate {
                   let closeDelegate = window.delegate as? CloseDelegate else {
                 return event
             }
-            if closeDelegate.projectManager.tabManager.activeTab != nil {
+            if closeDelegate.projectManager.activeTabManager.activeTab != nil {
                 closeDelegate.closeActiveTab()
             } else {
                 window.performClose(nil)
@@ -994,10 +995,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate {
             }
             let mods = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
             if mods == .control {
-                closeDelegate.projectManager.tabManager.selectNextTab()
+                closeDelegate.projectManager.activeTabManager.selectNextTab()
                 return nil
             } else if mods == [.control, .shift] {
-                closeDelegate.projectManager.tabManager.selectPreviousTab()
+                closeDelegate.projectManager.activeTabManager.selectPreviousTab()
                 return nil
             }
             return event
@@ -1014,13 +1015,13 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate {
                   let closeDelegate = window.delegate as? CloseDelegate else {
                 return event
             }
-            let tabManager = closeDelegate.projectManager.tabManager
-            guard !tabManager.tabs.isEmpty else { return event }
+            let activeTM = closeDelegate.projectManager.activeTabManager
+            guard !activeTM.tabs.isEmpty else { return event }
 
             if digit == "9" {
-                tabManager.selectLastTab()
+                activeTM.selectLastTab()
             } else if let index = digit.wholeNumberValue {
-                tabManager.selectTab(at: index - 1)
+                activeTM.selectTab(at: index - 1)
             }
             return nil // consume event
         }
@@ -1092,7 +1093,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate {
         // Open files: if a project window is active, add as tabs; otherwise open parent as project
         if !classified.files.isEmpty {
             if let activeProject = activeProjectManager() {
-                DropHandler.openFilesAsTabs(classified.files, in: activeProject.tabManager)
+                DropHandler.openFilesAsTabs(classified.files, in: activeProject.activeTabManager)
             } else if let firstFile = classified.files.first {
                 let projectDir = firstFile.deletingLastPathComponent().resolvingSymlinksInPath()
                 guard registry.projectManager(for: projectDir) != nil else { return }
@@ -1101,7 +1102,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate {
                 // Open files after project initializes
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
                     guard let pm = self?.registry.openProjects[projectDir] else { return }
-                    DropHandler.openFilesAsTabs(classified.files, in: pm.tabManager)
+                    DropHandler.openFilesAsTabs(classified.files, in: pm.activeTabManager)
                 }
             }
         }
@@ -1160,7 +1161,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate {
             pm.saveSession()
             pm.cleanupEditorContext()
             // Clean up recovery files if all tabs are saved
-            if !pm.tabManager.hasUnsavedChanges {
+            if !pm.hasUnsavedChanges {
                 pm.recoveryManager?.deleteAllRecoveryFiles()
             }
             pm.recoveryManager?.stopPeriodicSnapshots()
@@ -1173,7 +1174,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate {
 
         // Check for unsaved files
         for (_, pm) in registry.openProjects {
-            let dirty = pm.tabManager.dirtyTabs
+            let dirty = pm.allDirtyTabs
             guard !dirty.isEmpty else { continue }
 
             let fileList = dirty.map { "  • \($0.fileName)" }.joined(separator: "\n")
@@ -1188,7 +1189,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate {
             let response = alert.runModal()
             switch response {
             case .alertFirstButtonReturn:
-                guard pm.tabManager.saveAllTabs() else {
+                guard pm.saveAllPaneTabs() else {
                     isTerminating = false
                     return .terminateCancel
                 }

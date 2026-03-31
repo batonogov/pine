@@ -104,7 +104,7 @@ struct ContentView: View {
                 gitProvider: workspace.gitProvider,
                 isGitRepository: workspace.gitProvider.isGitRepository
             )
-            DocumentEditedTracker(isEdited: tabManager.hasUnsavedChanges)
+            DocumentEditedTracker(isEdited: projectManager.hasUnsavedChanges)
             RepresentedFileTracker(url: activeTab?.url ?? workspace.rootURL)
         }
         .task {

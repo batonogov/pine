@@ -102,10 +102,6 @@ struct EditorAreaView: View {
                 .accessibilityIdentifier(AccessibilityID.editorPlaceholder)
             }
         }
-        .onDrop(of: [.fileURL], isTargeted: $isDragTargeted) { providers in
-            handleFileDrop(providers: providers)
-            return true
-        }
         .overlay {
             if isDragTargeted {
                 RoundedRectangle(cornerRadius: 8)
@@ -123,10 +119,12 @@ struct EditorAreaView: View {
         .overlay {
             PaneDropOverlay(dropZone: dropZone)
         }
-        .onDrop(of: [.paneTabDrag], delegate: SinglePaneSplitDropDelegate(
+        .onDrop(of: [.fileURL, .paneTabDrag], delegate: EditorAreaUnifiedDropDelegate(
             paneManager: paneManager,
             dropZone: $dropZone,
-            viewSize: viewSize
+            isDragTargeted: $isDragTargeted,
+            viewSize: viewSize,
+            onFileDrop: { providers in handleFileDrop(providers: providers) }
         ))
     }
 
@@ -219,32 +217,60 @@ private struct EditorAreaSizeKey: PreferenceKey {
     }
 }
 
-/// Handles tab drops on the single-pane editor area to initiate a split.
-/// Only activates when a pane tab drag (not a file drop) enters the editor.
-struct SinglePaneSplitDropDelegate: DropDelegate {
+/// Unified drop delegate for the single-pane editor area.
+/// Handles both file drops from Finder (.fileURL) and pane tab drags (.paneTabDrag)
+/// in a single handler to avoid two `.onDrop` modifiers conflicting.
+struct EditorAreaUnifiedDropDelegate: DropDelegate {
     let paneManager: PaneManager
     @Binding var dropZone: PaneDropZone?
-    /// Actual view size from GeometryReader, used for percentage-based drop zone detection.
+    @Binding var isDragTargeted: Bool
     let viewSize: CGSize
+    let onFileDrop: ([NSItemProvider]) -> Void
 
     func validateDrop(info: DropInfo) -> Bool {
-        info.hasItemsConforming(to: [.paneTabDrag])
+        info.hasItemsConforming(to: [.paneTabDrag]) || info.hasItemsConforming(to: [.fileURL])
     }
 
     func dropEntered(info: DropInfo) {
-        updateDropZone(info: info)
+        if info.hasItemsConforming(to: [.paneTabDrag]) {
+            updateDropZone(info: info)
+        } else {
+            isDragTargeted = true
+        }
     }
 
     func dropUpdated(info: DropInfo) -> DropProposal? {
-        updateDropZone(info: info)
-        return DropProposal(operation: .move)
+        if info.hasItemsConforming(to: [.paneTabDrag]) {
+            updateDropZone(info: info)
+        }
+        return DropProposal(operation: info.hasItemsConforming(to: [.paneTabDrag]) ? .move : .copy)
     }
 
     func dropExited(info: DropInfo) {
         dropZone = nil
+        isDragTargeted = false
     }
 
     func performDrop(info: DropInfo) -> Bool {
+        isDragTargeted = false
+
+        // Pane tab drag takes priority
+        if info.hasItemsConforming(to: [.paneTabDrag]) {
+            return handlePaneTabDrop(info: info)
+        }
+
+        // File drop from Finder
+        if info.hasItemsConforming(to: [.fileURL]) {
+            onFileDrop(info.itemProviders(for: [.fileURL]))
+            return true
+        }
+
+        return false
+    }
+
+    // MARK: - Pane tab drop
+
+    private func handlePaneTabDrop(info: DropInfo) -> Bool {
         guard let zone = dropZone else { return false }
         dropZone = nil
 
