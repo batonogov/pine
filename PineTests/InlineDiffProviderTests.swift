@@ -554,7 +554,8 @@ struct InlineDiffProviderTests {
 
     // MARK: - deletedLineBlocks
 
-    @Test func deletedLineBlocksForModificationHunk() {
+    @Test func deletedLineBlocksForModificationHunkReturnsEmpty() {
+        // Modified hunks (delete+add) no longer produce phantom blocks (#681)
         let hunks = [
             DiffHunk(
                 newStart: 10, newCount: 2, oldStart: 10, oldCount: 2,
@@ -562,9 +563,7 @@ struct InlineDiffProviderTests {
             )
         ]
         let blocks = InlineDiffProvider.deletedLineBlocks(from: hunks)
-        #expect(blocks.count == 1)
-        #expect(blocks[0].anchorLine == 10)
-        #expect(blocks[0].lines == ["old1", "old2"])
+        #expect(blocks.isEmpty, "Modified hunk should not produce phantom blocks")
     }
 
     @Test func deletedLineBlocksForPureDeletionHunk() {
@@ -592,6 +591,8 @@ struct InlineDiffProviderTests {
     }
 
     @Test func deletedLineBlocksMultipleHunks() {
+        // First hunk is modified (delete+add) → no phantom block (#681)
+        // Second hunk is pure deletion → produces phantom block
         let hunks = [
             DiffHunk(
                 newStart: 1, newCount: 1, oldStart: 1, oldCount: 2,
@@ -603,11 +604,9 @@ struct InlineDiffProviderTests {
             )
         ]
         let blocks = InlineDiffProvider.deletedLineBlocks(from: hunks)
-        #expect(blocks.count == 2)
-        #expect(blocks[0].anchorLine == 1)
-        #expect(blocks[0].lines == ["old1", "old2"])
-        #expect(blocks[1].anchorLine == 20)
-        #expect(blocks[1].lines == ["deleted"])
+        #expect(blocks.count == 1, "Only pure deletion hunk produces phantom block")
+        #expect(blocks[0].anchorLine == 20)
+        #expect(blocks[0].lines == ["deleted"])
     }
 
     @Test func deletedLineBlocksEmptyHunks() {
@@ -615,11 +614,13 @@ struct InlineDiffProviderTests {
         #expect(blocks.isEmpty)
     }
 
-    @Test func deletedLineBlocksPreservesWhitespace() {
+    @Test func deletedLineBlocksPreservesWhitespaceForPureDeletion() {
+        // Modified hunk (delete+add) no longer produces phantom blocks (#681)
+        // Use a pure deletion hunk to test whitespace preservation
         let hunks = [
             DiffHunk(
-                newStart: 1, newCount: 1, oldStart: 1, oldCount: 1,
-                rawText: "@@ -1,1 +1,1 @@\n-    indented old\n+    indented new"
+                newStart: 1, newCount: 0, oldStart: 1, oldCount: 1,
+                rawText: "@@ -1,1 +1,0 @@\n-    indented old"
             )
         ]
         let blocks = InlineDiffProvider.deletedLineBlocks(from: hunks)
@@ -693,11 +694,9 @@ struct InlineDiffProviderTests {
         #expect(!addedLines.contains(3))
         #expect(!addedLines.contains(4))
 
-        // First hunk has no deletions
-        // Second hunk has deletions anchored at line 11
-        #expect(deletedBlocks.count == 1)
-        #expect(deletedBlocks[0].anchorLine == 11)
-        #expect(deletedBlocks[0].lines == ["old line at 10", "old line at 11"])
+        // First hunk is pure addition → no phantom blocks
+        // Second hunk is modified (delete+add) → no phantom blocks (#681)
+        #expect(deletedBlocks.isEmpty, "No pure deletion hunks → no phantom blocks")
     }
 
     @Test func fullDiffPureDeletionOnlyBlock() {
@@ -781,7 +780,7 @@ struct InlineDiffProviderTests {
     // MARK: - Same anchor line with multiple deleted blocks
 
     @Test func deletedLineBlocksMultipleBlocksSameAnchor() {
-        // Two hunks that both anchor at the same editor line
+        // Both hunks are modified (delete+add) → no phantom blocks (#681)
         let hunks = [
             DiffHunk(
                 newStart: 5, newCount: 1, oldStart: 5, oldCount: 2,
@@ -793,12 +792,7 @@ struct InlineDiffProviderTests {
             )
         ]
         let blocks = InlineDiffProvider.deletedLineBlocks(from: hunks)
-        #expect(blocks.count == 2)
-        // Both should be anchored at the same line
-        #expect(blocks[0].anchorLine == 5)
-        #expect(blocks[1].anchorLine == 5)
-        #expect(blocks[0].lines == ["old1", "old2"])
-        #expect(blocks[1].lines == ["another1", "another2"])
+        #expect(blocks.isEmpty, "Modified hunks should not produce phantom blocks")
     }
 
     // MARK: - CRLF line endings in diff content
@@ -1284,11 +1278,11 @@ struct InlineDiffProviderTests {
     // MARK: - deletedLineBlocks edge cases
 
     @Test func deletedLineBlocksWithEmptyDeletedLineContent() {
-        // A deletion where the line content is empty (just "-" prefix)
+        // A pure deletion where the line content is empty (just "-" prefix)
         let hunks = [
             DiffHunk(
-                newStart: 1, newCount: 1, oldStart: 1, oldCount: 2,
-                rawText: "@@ -1,2 +1,1 @@\n-\n-\n+replacement"
+                newStart: 1, newCount: 0, oldStart: 1, oldCount: 2,
+                rawText: "@@ -1,2 +1,0 @@\n-\n-"
             )
         ]
         let blocks = InlineDiffProvider.deletedLineBlocks(from: hunks)
@@ -1297,6 +1291,7 @@ struct InlineDiffProviderTests {
     }
 
     @Test func deletedLineBlocksWithSpecialCharacters() {
+        // Modified hunk (delete+add) → no phantom blocks (#681)
         let hunks = [
             DiffHunk(
                 newStart: 1, newCount: 1, oldStart: 1, oldCount: 1,
@@ -1304,11 +1299,11 @@ struct InlineDiffProviderTests {
             )
         ]
         let blocks = InlineDiffProvider.deletedLineBlocks(from: hunks)
-        #expect(blocks.count == 1)
-        #expect(blocks[0].lines == ["func foo() -> [String: Int] { }"])
+        #expect(blocks.isEmpty, "Modified hunk should not produce phantom blocks")
     }
 
     @Test func deletedLineBlocksWithTabIndentation() {
+        // Modified hunk (delete+add) → no phantom blocks (#681)
         let hunks = [
             DiffHunk(
                 newStart: 1, newCount: 1, oldStart: 1, oldCount: 1,
@@ -1316,8 +1311,7 @@ struct InlineDiffProviderTests {
             )
         ]
         let blocks = InlineDiffProvider.deletedLineBlocks(from: hunks)
-        #expect(blocks.count == 1)
-        #expect(blocks[0].lines == ["\told line"])
+        #expect(blocks.isEmpty, "Modified hunk should not produce phantom blocks")
     }
 
     // MARK: - hunk(atLine:) edge cases
@@ -1566,9 +1560,8 @@ struct InlineDiffProviderTests {
 
         // Added lines should be 2 and 3
         #expect(addedLines == [2, 3])
-        // Deleted block anchored at line 1
-        #expect(deletedBlocks.count == 1)
-        #expect(deletedBlocks[0].lines == ["old2", "old3"])
+        // This is a modified hunk (delete+add) → no phantom blocks (#681)
+        #expect(deletedBlocks.isEmpty, "Modified hunk should not produce phantom blocks")
     }
 
     @Test func multiHunkIntegrationTest() {
@@ -1603,10 +1596,9 @@ struct InlineDiffProviderTests {
         #expect(addedLines.contains(20))
         #expect(addedLines.contains(21))
 
-        // Only hunk 2 has deletions
-        #expect(deletedBlocks.count == 1)
-        #expect(deletedBlocks[0].anchorLine == 11)
-        #expect(deletedBlocks[0].lines.count == 2)
+        // Hunk 2 is modified (delete+add) → no phantom blocks (#681)
+        // Hunk 1 and 3 are pure additions → no phantom blocks either
+        #expect(deletedBlocks.isEmpty, "No pure deletion hunks → no phantom blocks")
     }
 
     // MARK: - newEndLine edge cases
@@ -1669,13 +1661,14 @@ struct InlineDiffProviderTests {
     }
 
     @Test func deletedLineBlocksWithCRLFDiff() {
+        // Pure deletion hunk with CRLF line endings
         let diff = [
             "diff --git a/file.swift b/file.swift",
             "--- a/file.swift",
             "+++ b/file.swift",
-            "@@ -1,2 +1,1 @@",
-            "-deleted line",
-            "+replacement"
+            "@@ -1,2 +1,0 @@",
+            "-deleted line1",
+            "-deleted line2"
         ].joined(separator: "\r\n")
         let hunks = InlineDiffProvider.parseHunks(diff)
         let blocks = InlineDiffProvider.deletedLineBlocks(from: hunks)
