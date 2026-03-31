@@ -97,31 +97,24 @@ struct InlineDiffRenderingTests {
         #expect(blocks[0].lines[1] == "old line 2")
     }
 
-    // MARK: - Accept/Revert buttons visible when expanded (no hover required)
+    // MARK: - Accept/Revert buttons removed (#688)
 
-    @Test func hunkActionButtonsVisibleWhenExpanded() {
+    @Test func gutterHasNoAcceptRevertButtons() {
+        // After #688, accept/revert buttons were removed from the gutter.
+        // LineNumberView no longer has hunkButtonHitTest, onAcceptHunk, or onRevertHunk.
+        // Diff markers (colored bars) still render correctly.
         let view = makeLineNumberView()
         let hunk = makeHunk(newStart: 1)
         view.diffHunks = [hunk]
         view.expandedHunkID = hunk.id
 
-        // Buttons should be visible even without mouse hover (isMouseInside = false)
-        // The hunkStartMap should contain the hunk
-        let hitAccept = view.hunkButtonHitTest(at: NSPoint(x: 15, y: 10), lineNumber: 1)
-        #expect(hitAccept == .accept)
-    }
-
-    @Test func hitTestFindsButtonAreaRegardlessOfExpandState() {
-        let view = makeLineNumberView()
-        let hunk = makeHunk(newStart: 1)
-        view.diffHunks = [hunk]
-        view.expandedHunkID = nil
-
-        // hunkButtonHitTest only checks X coordinate and hunkStartMap presence —
-        // it does NOT check expandedHunkID (that guard lives in mouseDown).
-        // So hit test finds the button area even when collapsed.
-        let hitAccept = view.hunkButtonHitTest(at: NSPoint(x: 15, y: 10), lineNumber: 1)
-        #expect(hitAccept == .accept)
+        // Verify diff hunks are still tracked for color markers
+        #expect(view.diffHunks.count == 1)
+        // onDiffMarkerClick still works for expand/collapse
+        var clicked = false
+        view.onDiffMarkerClick = { _ in clicked = true }
+        view.onDiffMarkerClick?(hunk)
+        #expect(clicked)
     }
 
     // MARK: - Gutter diff marker click detects hunk across full range

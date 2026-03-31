@@ -253,31 +253,6 @@ extension ContentView {
         }
     }
 
-    // MARK: - Gutter accept/revert buttons
-
-    func handleGutterAccept(_ hunk: DiffHunk) {
-        guard let tab = tabManager.activeTab,
-              let repoURL = workspace.rootURL else { return }
-        Task {
-            await InlineDiffProvider.acceptHunk(hunk, fileURL: tab.url, repoURL: repoURL)
-            await workspace.gitProvider.refreshAsync()
-            refreshLineDiffs()
-        }
-    }
-
-    func handleGutterRevert(_ hunk: DiffHunk) {
-        guard let tab = tabManager.activeTab,
-              let repoURL = workspace.rootURL else { return }
-        Task {
-            if let newContent = await InlineDiffProvider.revertHunk(hunk, fileURL: tab.url, repoURL: repoURL) {
-                tabManager.updateContent(newContent)
-                tabManager.reloadTab(url: tab.url)
-                await workspace.gitProvider.refreshAsync()
-                refreshLineDiffs()
-            }
-        }
-    }
-
     // MARK: - Inline diff actions (menu/keyboard)
 
     func handleInlineDiffAction(_ action: InlineDiffAction) {

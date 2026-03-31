@@ -131,22 +131,15 @@ struct InlineDiffExpandTests {
         #expect(clickedHunk?.id == hunk.id)
     }
 
-    // MARK: - Accept/Revert buttons visibility (only when expanded)
+    // MARK: - Accept/Revert buttons removed (#688)
 
-    @Test func hunkButtonHitTestReturnsNilForNonHunkLine() {
-        let view = makeLineNumberView()
-        let result = view.hunkButtonHitTest(at: NSPoint(x: 15, y: 10), lineNumber: 5)
-        #expect(result == nil)
-    }
-
-    @Test func hunkButtonHitTestReturnsActionForHunkStartLine() {
+    @Test func gutterNoLongerHasAcceptRevertButtons() {
+        // After #688, accept/revert buttons were removed from the gutter.
+        // Diff markers still work for expand/collapse via onDiffMarkerClick.
         let view = makeLineNumberView()
         let hunk = makeHunk(newStart: 1)
         view.diffHunks = [hunk]
-        // hunkButtonHitTest checks hunkStartMap which is rebuilt in didSet
-        let result = view.hunkButtonHitTest(at: NSPoint(x: 15, y: 10), lineNumber: 1)
-        // Should return accept for left area
-        #expect(result == .accept)
+        #expect(view.diffHunks.count == 1, "Diff hunks still tracked")
     }
 
     // MARK: - Escape key collapses expanded hunk
