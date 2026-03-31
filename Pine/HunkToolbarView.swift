@@ -58,63 +58,44 @@ final class HunkToolbarView: NSView {
     private func setupViews() {
         wantsLayer = true
         layer?.cornerRadius = Self.cornerRadius
-        layer?.masksToBounds = true
 
-        // Background: system material (vibrancy)
-        let bgColor = NSColor(name: nil) { appearance in
-            if appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua {
-                return NSColor.controlBackgroundColor.withAlphaComponent(0.95)
-            } else {
-                return NSColor.controlBackgroundColor.withAlphaComponent(0.92)
-            }
-        }
-        layer?.backgroundColor = bgColor.cgColor
-
-        // Border
-        let borderColor = NSColor(name: nil) { appearance in
-            if appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua {
-                return NSColor.separatorColor.withAlphaComponent(0.5)
-            } else {
-                return NSColor.separatorColor.withAlphaComponent(0.3)
-            }
-        }
-        layer?.borderColor = borderColor.cgColor
-        layer?.borderWidth = 0.5
-
-        // Shadow
+        // Shadow (must not use masksToBounds, otherwise shadow is clipped)
         shadow = NSShadow()
         layer?.shadowColor = NSColor.black.withAlphaComponent(0.15).cgColor
         layer?.shadowOffset = CGSize(width: 0, height: 1)
         layer?.shadowRadius = 3
         layer?.shadowOpacity = 1
 
+        // Apply appearance-dependent colors
+        updateAppearanceColors()
+
         // Configure buttons
         configureButton(
             prevButton,
             symbolName: "chevron.up",
-            tooltip: "Previous Change",
-            accessibilityID: HunkToolbarAction.previousHunk.accessibilityID,
+            tooltip: Strings.hunkToolbarPreviousChange,
+            accessibilityID: AccessibilityID.hunkToolbarPrevious,
             action: #selector(prevClicked)
         )
         configureButton(
             nextButton,
             symbolName: "chevron.down",
-            tooltip: "Next Change",
-            accessibilityID: HunkToolbarAction.nextHunk.accessibilityID,
+            tooltip: Strings.hunkToolbarNextChange,
+            accessibilityID: AccessibilityID.hunkToolbarNext,
             action: #selector(nextClicked)
         )
         configureButton(
             restoreButton,
             symbolName: "arrow.uturn.backward",
-            tooltip: "Restore",
-            accessibilityID: HunkToolbarAction.restore.accessibilityID,
+            tooltip: Strings.hunkToolbarRestore,
+            accessibilityID: AccessibilityID.hunkToolbarRestore,
             action: #selector(restoreClicked)
         )
         configureButton(
             dismissButton,
             symbolName: "xmark",
-            tooltip: "Dismiss",
-            accessibilityID: HunkToolbarAction.dismiss.accessibilityID,
+            tooltip: Strings.hunkToolbarDismiss,
+            accessibilityID: AccessibilityID.hunkToolbarDismiss,
             action: #selector(dismissClicked)
         )
 
@@ -122,7 +103,7 @@ final class HunkToolbarView: NSView {
         summaryLabel.font = NSFont.monospacedSystemFont(ofSize: Self.buttonFontSize, weight: .medium)
         summaryLabel.textColor = .secondaryLabelColor
         summaryLabel.setContentHuggingPriority(.defaultHigh, for: .horizontal)
-        summaryLabel.setAccessibilityIdentifier("hunk-toolbar-summary")
+        summaryLabel.setAccessibilityIdentifier(AccessibilityID.hunkToolbarSummary)
 
         // Separator views
         let sep1 = makeSeparator()
@@ -152,7 +133,7 @@ final class HunkToolbarView: NSView {
             stackView.bottomAnchor.constraint(equalTo: bottomAnchor)
         ])
 
-        setAccessibilityIdentifier("hunk-toolbar")
+        setAccessibilityIdentifier(AccessibilityID.hunkToolbar)
     }
 
     private func configureButton(
@@ -205,6 +186,28 @@ final class HunkToolbarView: NSView {
 
     @objc private func dismissClicked() {
         onAction?(.dismiss)
+    }
+
+    // MARK: - Appearance Updates
+
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        updateAppearanceColors()
+    }
+
+    /// Recomputes background and border colors for the current appearance (Dark/Light mode).
+    private func updateAppearanceColors() {
+        let isDark = effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+        let bgColor = isDark
+            ? NSColor.controlBackgroundColor.withAlphaComponent(0.95)
+            : NSColor.controlBackgroundColor.withAlphaComponent(0.92)
+        layer?.backgroundColor = bgColor.cgColor
+
+        let border = isDark
+            ? NSColor.separatorColor.withAlphaComponent(0.5)
+            : NSColor.separatorColor.withAlphaComponent(0.3)
+        layer?.borderColor = border.cgColor
+        layer?.borderWidth = 0.5
     }
 
     // MARK: - Sizing

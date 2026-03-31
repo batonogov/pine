@@ -425,6 +425,24 @@ enum Strings {
         String(localized: "toast.filesReloaded.more \(count) \(names) \(remaining)")
     }
 
+    // MARK: - Hunk Toolbar
+
+    static var hunkToolbarPreviousChange: String {
+        String(localized: "hunkToolbar.previousChange")
+    }
+
+    static var hunkToolbarNextChange: String {
+        String(localized: "hunkToolbar.nextChange")
+    }
+
+    static var hunkToolbarRestore: String {
+        String(localized: "hunkToolbar.restore")
+    }
+
+    static var hunkToolbarDismiss: String {
+        String(localized: "hunkToolbar.dismiss")
+    }
+
     // MARK: - Progress Indicators
 
     static var progressLoadingProject: String {

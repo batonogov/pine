@@ -16,6 +16,11 @@ enum HunkToolbarAction: String, Sendable {
 
     /// Accessibility identifier for UI testing.
     var accessibilityID: String {
-        "hunk-toolbar-\(rawValue.replacingOccurrences(of: "Hunk", with: "").lowercased())"
+        switch self {
+        case .previousHunk: return AccessibilityID.hunkToolbarPrevious
+        case .nextHunk: return AccessibilityID.hunkToolbarNext
+        case .restore: return AccessibilityID.hunkToolbarRestore
+        case .dismiss: return AccessibilityID.hunkToolbarDismiss
+        }
     }
 }

@@ -62,6 +62,9 @@ final class GutterTextView: NSTextView {
     /// Callback invoked when the expanded hunk is dismissed (for toolbar cleanup).
     var onHunkDismissed: (() -> Void)?
 
+    /// Cached line starts for O(log n) line lookups (set by Coordinator).
+    var lineStartsCache: LineStartsCache?
+
     /// Subtle green tint for added lines.
     private static let addedLineColor = NSColor(name: nil) { appearance in
         if appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua {
@@ -524,6 +527,7 @@ final class GutterTextView: NSTextView {
     }
 
     /// Returns the 1-based line number at the given point in text view coordinates.
+    /// Uses `lineStartsCache` for O(log n) lookup when available.
     private func lineNumberAtPoint(_ point: NSPoint) -> Int? {
         guard let layoutManager = layoutManager,
               let textContainer = textContainer else { return nil }
@@ -535,6 +539,11 @@ final class GutterTextView: NSTextView {
         let charIndex = layoutManager.characterIndexForGlyph(at: glyphIndex)
         let source = string as NSString
         guard charIndex <= source.length else { return nil }
+
+        if let cache = lineStartsCache {
+            return cache.lineNumber(at: charIndex)
+        }
+        // Fallback: O(n) scan if cache is unavailable
         var line = 1
         for i in 0..<min(charIndex, source.length) where source.character(at: i) == ASCII.newline {
             line += 1
@@ -1095,7 +1104,14 @@ struct CodeEditorView: NSViewRepresentable {
         var foldableRanges: [FoldableRange] = []
 
         /// Cached line starts for O(log n) line number lookups.
-        var lineStartsCache: LineStartsCache?
+        var lineStartsCache: LineStartsCache? {
+            didSet {
+                // Sync cache to GutterTextView for lineNumberAtPoint O(log n) lookups
+                if let sv = scrollView, let gutterView = sv.documentView as? GutterTextView {
+                    gutterView.lineStartsCache = lineStartsCache
+                }
+            }
+        }
 
         /// Debounced fold recalculation work item.
         private var foldWorkItem: DispatchWorkItem?
@@ -1948,15 +1964,9 @@ struct CodeEditorView: NSViewRepresentable {
             guard source.length > 0 else { return }
 
             // Find the character offset for the hunk's start line
-            let targetLine = hunk.newStart
-            var charOffset = 0
-            var currentLine = 1
-            while currentLine < targetLine && charOffset < source.length {
-                if source.character(at: charOffset) == ASCII.newline {
-                    currentLine += 1
-                }
-                charOffset += 1
-            }
+            let charOffset = CodeEditorView.charOffsetForLine(
+                hunk.newStart, in: source, totalLength: source.length, cache: lineStartsCache
+            )
 
             let glyphIndex = layoutManager.glyphIndexForCharacter(at: min(charOffset, source.length - 1))
             let lineRect = layoutManager.lineFragmentRect(forGlyphAt: glyphIndex, effectiveRange: nil)
@@ -2034,14 +2044,9 @@ struct CodeEditorView: NSViewRepresentable {
             guard source.length > 0,
                   let layoutManager = textView.layoutManager else { return }
 
-            var charOffset = 0
-            var currentLine = 1
-            while currentLine < hunk.newStart && charOffset < source.length {
-                if source.character(at: charOffset) == ASCII.newline {
-                    currentLine += 1
-                }
-                charOffset += 1
-            }
+            let charOffset = CodeEditorView.charOffsetForLine(
+                hunk.newStart, in: source, totalLength: source.length, cache: lineStartsCache
+            )
 
             let glyphIndex = layoutManager.glyphIndexForCharacter(at: min(charOffset, source.length - 1))
             let lineRect = layoutManager.lineFragmentRect(forGlyphAt: glyphIndex, effectiveRange: nil)
@@ -2236,13 +2241,13 @@ struct CodeEditorView: NSViewRepresentable {
         if scrollOffset > 0 {
             let lineHeight = fontSize * 1.2
             let estimatedLine = Int(scrollOffset / lineHeight)
-            startChar = charOffsetForLine(estimatedLine, in: source, totalLength: totalLength)
+            startChar = charOffsetForLine(estimatedLine + 1, in: source, totalLength: totalLength)
         } else if cursorPosition > 0 && cursorPosition < totalLength {
             // Center around cursor
             let linesBefore = estimatedScreenLines / 2
             let cursorLine = lineNumber(at: cursorPosition, in: source)
             let startLine = max(0, cursorLine - linesBefore)
-            startChar = charOffsetForLine(startLine, in: source, totalLength: totalLength)
+            startChar = charOffsetForLine(startLine + 1, in: source, totalLength: totalLength)
         } else {
             startChar = 0
         }
@@ -2258,8 +2263,19 @@ struct CodeEditorView: NSViewRepresentable {
         return NSRange(location: startChar, length: end - startChar)
     }
 
-    private static func charOffsetForLine(_ line: Int, in source: NSString, totalLength: Int) -> Int {
-        var currentLine = 0
+    /// Returns the UTF-16 character offset for the start of a 1-based line number.
+    /// Uses `LineStartsCache` for O(log n) when available, falls back to O(n) scan.
+    static func charOffsetForLine(
+        _ line: Int,
+        in source: NSString,
+        totalLength: Int,
+        cache: LineStartsCache? = nil
+    ) -> Int {
+        if let cache {
+            return cache.charOffset(forLine: line)
+        }
+        // Fallback: O(n) linear scan — 1-based line number
+        var currentLine = 1
         for i in 0..<totalLength {
             if currentLine >= line { return i }
             if source.character(at: i) == ASCII.newline { currentLine += 1 }

@@ -50,6 +50,13 @@ struct LineStartsCache {
         lineIndex(containing: charIndex) + 1
     }
 
+    /// Возвращает UTF-16 символьное смещение начала строки с данным 1-based номером.
+    /// Для строк за пределами кэша возвращает смещение последней строки.
+    func charOffset(forLine line: Int) -> Int {
+        let index = max(0, min(line - 1, lineStarts.count - 1))
+        return lineStarts[index]
+    }
+
     /// Инкрементально обновляет кэш после редактирования текста.
     /// - Parameters:
     ///   - editedRange: Диапазон в новом тексте, покрывающий вставленный/изменённый контент.

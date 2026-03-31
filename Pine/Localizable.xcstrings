@@ -2463,6 +2463,78 @@
         }
       }
     },
+    "hunkToolbar.dismiss" : {
+      "comment" : "Tooltip for dismiss button in the inline diff hunk toolbar.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dismiss"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Закрыть"
+          }
+        }
+      }
+    },
+    "hunkToolbar.nextChange" : {
+      "comment" : "Tooltip for next change button in the inline diff hunk toolbar.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Next Change"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Следующее изменение"
+          }
+        }
+      }
+    },
+    "hunkToolbar.previousChange" : {
+      "comment" : "Tooltip for previous change button in the inline diff hunk toolbar.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Previous Change"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Предыдущее изменение"
+          }
+        }
+      }
+    },
+    "hunkToolbar.restore" : {
+      "comment" : "Tooltip for restore (revert) button in the inline diff hunk toolbar.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Restore"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Восстановить"
+          }
+        }
+      }
+    },
     "largeFile.openWithHighlighting" : {
       "comment" : "Button: open a large file with syntax highlighting enabled.",
       "extractionState" : "manual",

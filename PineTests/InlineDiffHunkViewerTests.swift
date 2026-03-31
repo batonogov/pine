@@ -239,10 +239,10 @@ struct InlineDiffHunkViewerTests {
     }
 
     @Test func hunkToolbarActionAccessibilityIDs() {
-        #expect(HunkToolbarAction.previousHunk.accessibilityID == "hunk-toolbar-previous")
-        #expect(HunkToolbarAction.nextHunk.accessibilityID == "hunk-toolbar-next")
-        #expect(HunkToolbarAction.restore.accessibilityID == "hunk-toolbar-restore")
-        #expect(HunkToolbarAction.dismiss.accessibilityID == "hunk-toolbar-dismiss")
+        #expect(HunkToolbarAction.previousHunk.accessibilityID == AccessibilityID.hunkToolbarPrevious)
+        #expect(HunkToolbarAction.nextHunk.accessibilityID == AccessibilityID.hunkToolbarNext)
+        #expect(HunkToolbarAction.restore.accessibilityID == AccessibilityID.hunkToolbarRestore)
+        #expect(HunkToolbarAction.dismiss.accessibilityID == AccessibilityID.hunkToolbarDismiss)
     }
 
     // MARK: - Hunk Summary Text
@@ -337,7 +337,23 @@ struct InlineDiffHunkViewerTests {
 
     @Test func hunkToolbarViewCreation() {
         let toolbar = HunkToolbarView()
-        #expect(toolbar.accessibilityIdentifier() == "hunk-toolbar")
+        #expect(toolbar.accessibilityIdentifier() == AccessibilityID.hunkToolbar)
+    }
+
+    @Test func hunkToolbarViewShadowNotClipped() {
+        let toolbar = HunkToolbarView()
+        // masksToBounds must be false so shadow is visible
+        #expect(toolbar.layer?.masksToBounds != true)
+        #expect(toolbar.layer?.shadowOpacity == 1)
+        #expect(toolbar.layer?.shadowRadius == 3)
+    }
+
+    @Test func hunkToolbarViewHasAppearanceColors() {
+        let toolbar = HunkToolbarView()
+        // Background and border should be set after init
+        #expect(toolbar.layer?.backgroundColor != nil)
+        #expect(toolbar.layer?.borderColor != nil)
+        #expect(toolbar.layer?.borderWidth == 0.5)
     }
 
     @Test func hunkToolbarViewSummaryText() {

@@ -214,6 +214,55 @@ struct LineStartsCacheTests {
         #expect(cache.lineCount == fresh.lineCount)
     }
 
+    // MARK: - charOffset(forLine:)
+
+    @Test func charOffsetForFirstLine() {
+        let cache = LineStartsCache(text: "abc\ndef\nghi")
+        #expect(cache.charOffset(forLine: 1) == 0)
+    }
+
+    @Test func charOffsetForSecondLine() {
+        let cache = LineStartsCache(text: "abc\ndef\nghi")
+        #expect(cache.charOffset(forLine: 2) == 4)
+    }
+
+    @Test func charOffsetForThirdLine() {
+        let cache = LineStartsCache(text: "abc\ndef\nghi")
+        #expect(cache.charOffset(forLine: 3) == 8)
+    }
+
+    @Test func charOffsetForLineBeyondEnd() {
+        let cache = LineStartsCache(text: "abc\ndef")
+        // Line 100 is beyond the file — should clamp to last line start
+        #expect(cache.charOffset(forLine: 100) == 4)
+    }
+
+    @Test func charOffsetForLineZero() {
+        let cache = LineStartsCache(text: "abc\ndef")
+        // Line 0 (invalid, below minimum) — should clamp to first line
+        #expect(cache.charOffset(forLine: 0) == 0)
+    }
+
+    @Test func charOffsetForEmptyText() {
+        let cache = LineStartsCache(text: "")
+        #expect(cache.charOffset(forLine: 1) == 0)
+    }
+
+    @Test func charOffsetForSingleLine() {
+        let cache = LineStartsCache(text: "hello")
+        #expect(cache.charOffset(forLine: 1) == 0)
+        #expect(cache.charOffset(forLine: 2) == 0) // clamped to last
+    }
+
+    @Test func charOffsetRoundTrip() {
+        // Verify charOffset(forLine:) and lineNumber(at:) are consistent
+        let cache = LineStartsCache(text: "aaa\nbbb\nccc\nddd\neee")
+        for line in 1...5 {
+            let offset = cache.charOffset(forLine: line)
+            #expect(cache.lineNumber(at: offset) == line)
+        }
+    }
+
     // MARK: - Performance characteristic — binary search
 
     @Test func largeTextPerformance() {
