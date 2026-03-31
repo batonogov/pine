@@ -48,6 +48,7 @@ private func buildQuickOpenProvider(dir: URL) -> QuickOpenProvider {
 // MARK: - QuickOpenProvider: Unicode filenames
 
 @Suite("QuickOpenProvider Regression")
+@MainActor
 struct QuickOpenProviderRegressionTests {
 
     @Test("Unicode filenames with mixed scripts are indexed and searchable")
@@ -219,6 +220,7 @@ struct QuickOpenProviderRegressionTests {
 // MARK: - GoToLineParser: Edge Cases
 
 @Suite("GoToLineParser Regression")
+@MainActor
 struct GoToLineParserRegressionTests {
 
     @Test("Extremely large line number is parsed")
@@ -277,6 +279,7 @@ struct GoToLineParserRegressionTests {
 // MARK: - Strip Whitespace: Edge Cases
 
 @Suite("TrailingWhitespace Regression")
+@MainActor
 struct TrailingWhitespaceRegressionTests {
 
     @Test("Binary-like content is not corrupted")
@@ -359,6 +362,7 @@ struct TrailingWhitespaceRegressionTests {
 // MARK: - Parallel Search: Correctness
 
 @Suite("Parallel Search Regression")
+@MainActor
 struct ParallelSearchRegressionTests {
 
     @Test("Parallel search results match sequential search")
@@ -493,6 +497,7 @@ struct ParallelSearchRegressionTests {
 // MARK: - Partial Load: Edge Cases
 
 @Suite("Partial Load Regression")
+@MainActor
 struct PartialLoadRegressionTests {
 
     @Test("File at exactly 10MB threshold triggers partial load")
@@ -654,6 +659,7 @@ struct PartialLoadRegressionTests {
 // MARK: - Session Restore Regression
 
 @Suite("Session Restore Regression")
+@MainActor
 struct SessionRestoreRegressionTests {
 
     @Test("Session save and load round-trips correctly")

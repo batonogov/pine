@@ -9,6 +9,7 @@ import AppKit
 @testable import Pine
 
 @Suite("FontSizeSettings Tests")
+@MainActor
 struct FontSizeSettingsTests {
 
     private let suiteName = "PineTests.FontSize.\(UUID().uuidString)"

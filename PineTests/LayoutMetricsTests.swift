@@ -11,6 +11,7 @@ import Testing
 @testable import Pine
 
 @Suite("LayoutMetrics Constants")
+@MainActor
 struct LayoutMetricsTests {
 
     // MARK: - Font sizes

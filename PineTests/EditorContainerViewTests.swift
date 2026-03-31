@@ -9,6 +9,7 @@ import AppKit
 
 /// Tests for EditorContainerView and EditorScrollView layout behavior.
 @Suite("EditorContainerView Layout Tests")
+@MainActor
 struct EditorContainerViewTests {
 
     // MARK: - Layout with minimap

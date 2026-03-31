@@ -9,6 +9,7 @@ import Foundation
 
 /// Tests for ProjectRegistry.removeFromRecent(_:) — removing individual entries from recent projects.
 @Suite("ProjectRegistry Remove Recent Tests")
+@MainActor
 struct ProjectRegistryRemoveRecentTests {
 
     private func makeTempDir(name: String = "RemoveRecentTests") throws -> URL {

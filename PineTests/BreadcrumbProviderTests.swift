@@ -10,6 +10,7 @@ import Foundation
 @testable import Pine
 
 @Suite("BreadcrumbProvider")
+@MainActor
 struct BreadcrumbProviderTests {
 
     // MARK: - Path decomposition

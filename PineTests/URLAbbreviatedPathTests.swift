@@ -9,6 +9,7 @@ import Testing
 @testable import Pine
 
 @Suite("URL.abbreviatedPath Tests")
+@MainActor
 struct URLAbbreviatedPathTests {
 
     @Test func replacesHomeDirWithTilde() {

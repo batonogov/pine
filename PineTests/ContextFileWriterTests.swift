@@ -7,6 +7,7 @@ import Testing
 import Foundation
 @testable import Pine
 
+@MainActor
 struct ContextFileWriterTests {
 
     // MARK: - Helpers

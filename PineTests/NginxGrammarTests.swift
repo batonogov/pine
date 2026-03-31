@@ -8,6 +8,7 @@ import Testing
 import Foundation
 @testable import Pine
 
+@MainActor
 struct NginxGrammarTests {
 
     let grammar: Grammar

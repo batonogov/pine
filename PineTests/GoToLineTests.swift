@@ -7,6 +7,7 @@ import Testing
 import AppKit
 @testable import Pine
 
+@MainActor
 struct GoToLineTests {
 
     // MARK: - Parser: valid inputs

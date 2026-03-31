@@ -9,6 +9,7 @@ import Foundation
 
 /// Extended tests for RecoveryManager — hasPendingRecovery, timer, scheduling, cleanup.
 @Suite("RecoveryManager Extended Tests")
+@MainActor
 struct RecoveryManagerExtendedTests {
 
     private func makeTempDir() throws -> URL {

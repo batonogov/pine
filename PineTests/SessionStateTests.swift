@@ -7,6 +7,7 @@ import Testing
 import Foundation
 @testable import Pine
 
+@MainActor
 struct SessionStateTests {
 
     private let suiteName = "PineTests.SessionState.\(UUID().uuidString)"

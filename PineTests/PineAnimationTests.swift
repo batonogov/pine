@@ -12,6 +12,7 @@ import Testing
 @testable import Pine
 
 @Suite("PineAnimation Motion System")
+@MainActor
 struct PineAnimationTests {
 
     // MARK: - Constants existence and values

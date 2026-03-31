@@ -23,8 +23,6 @@ struct EditorAreaView: View {
     var isMinimapVisible: Bool
     var isWordWrapEnabled: Bool
     var diffHunks: [DiffHunk] = []
-    var onAcceptHunk: ((DiffHunk) -> Void)?
-    var onRevertHunk: ((DiffHunk) -> Void)?
     var onCloseTab: (EditorTab) -> Void
     var onCloseOtherTabs: ((UUID) -> Void)?
     var onCloseTabsToTheRight: ((UUID) -> Void)?
@@ -125,8 +123,6 @@ struct EditorAreaView: View {
             lineDiffs: lineDiffs,
             diffHunks: diffHunks,
             validationDiagnostics: configValidator.diagnostics,
-            onAcceptHunk: onAcceptHunk,
-            onRevertHunk: onRevertHunk,
             isBlameVisible: isBlameVisible,
             blameLines: blameLines,
             foldState: Binding(

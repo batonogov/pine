@@ -11,6 +11,7 @@ import AppKit
 /// Verifies that multiple tabs highlight in parallel and that
 /// generation tokens prevent stale results.
 @Suite(.serialized)
+@MainActor
 struct ConcurrentHighlightingTests {
 
     // NSFont is immutable but not Sendable; safe to share across actors.

@@ -261,8 +261,6 @@ struct ContentView: View {
             isMinimapVisible: isMinimapVisible,
             isWordWrapEnabled: isWordWrapEnabled,
             diffHunks: diffHunks,
-            onAcceptHunk: { hunk in handleGutterAccept(hunk) },
-            onRevertHunk: { hunk in handleGutterRevert(hunk) },
             onCloseTab: { closeTabWithConfirmation($0) },
             onCloseOtherTabs: { closeOtherTabsWithConfirmation(keeping: $0) },
             onCloseTabsToTheRight: { closeTabsToTheRightWithConfirmation(of: $0) },

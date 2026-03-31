@@ -12,6 +12,7 @@ import Testing
 @testable import Pine
 
 @Suite("Layout Stability Tests")
+@MainActor
 struct LayoutStabilityTests {
 
     // MARK: - WorkspaceManager loading state

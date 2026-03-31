@@ -8,6 +8,7 @@ import Foundation
 @testable import Pine
 
 /// Tests for IndentGuideCalculator — pure indent level and guide position logic.
+@MainActor
 struct IndentGuideCalculatorTests {
 
     // MARK: - indentLevel: Tab-only indentation

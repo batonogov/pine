@@ -9,6 +9,7 @@ import SwiftUI
 @testable import Pine
 
 /// Tests for CodeEditorView.Coordinator behavior.
+@MainActor
 struct CodeEditorCoordinatorTests {
 
     nonisolated(unsafe) private let font = NSFont.monospacedSystemFont(ofSize: 13, weight: .regular)

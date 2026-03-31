@@ -11,6 +11,7 @@ import Testing
 @testable import Pine
 
 @Suite("Search Highlight Offset Tests")
+@MainActor
 struct SearchHighlightTests {
 
     // MARK: - Helpers

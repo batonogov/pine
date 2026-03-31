@@ -11,6 +11,7 @@ import os
 
 @testable import Pine
 
+@MainActor
 struct LoggerTests {
 
     // MARK: - Subsystem

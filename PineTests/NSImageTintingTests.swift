@@ -9,6 +9,7 @@ import Testing
 @testable import Pine
 
 @Suite("NSImage Tinting Tests")
+@MainActor
 struct NSImageTintingTests {
 
     @Test("tinted(with:) returns an image of the same size")

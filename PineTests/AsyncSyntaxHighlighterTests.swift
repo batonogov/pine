@@ -10,6 +10,7 @@ import AppKit
 /// Tests for async syntax highlighting (background computation + main thread application).
 /// Serialized: all tests mutate singleton SyntaxHighlighter.shared.
 @Suite(.serialized)
+@MainActor
 struct AsyncSyntaxHighlighterTests {
 
     nonisolated(unsafe) private let font = NSFont.monospacedSystemFont(ofSize: 13, weight: .regular)

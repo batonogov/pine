@@ -11,6 +11,7 @@ import Testing
 @testable import Pine
 
 @Suite("PerTabEditorState Tests")
+@MainActor
 struct TabEditorStateTests {
 
     // MARK: - Serialization / deserialization

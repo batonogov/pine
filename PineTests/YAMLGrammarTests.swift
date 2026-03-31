@@ -8,6 +8,7 @@ import AppKit
 @testable import Pine
 
 @Suite(.serialized)
+@MainActor
 struct YAMLGrammarTests {
 
     nonisolated(unsafe) private let font = NSFont.monospacedSystemFont(ofSize: 13, weight: .regular)
