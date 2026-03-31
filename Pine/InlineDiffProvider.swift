@@ -93,7 +93,7 @@ struct DeletedLinesBlock: Equatable, Sendable {
 // MARK: - InlineDiffProvider
 
 /// Provides diff hunk parsing and accept/revert operations for editor files.
-enum InlineDiffProvider {
+nonisolated enum InlineDiffProvider {
 
     // MARK: - Hunk parsing
 
