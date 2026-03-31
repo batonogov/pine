@@ -224,6 +224,15 @@ enum InlineDiffProvider {
         case next, previous
     }
 
+    // MARK: - Hunk classification
+
+    /// Returns `true` when the hunk represents a modification (has both deleted and added lines).
+    /// Modified hunks should NOT render phantom overlay — only green background on added lines
+    /// and a yellow gutter marker. The old content is not shown as overlay text (#681).
+    static func isModifiedHunk(_ hunk: DiffHunk) -> Bool {
+        !hunk.deletedLines.isEmpty && !hunk.addedLines.isEmpty
+    }
+
     // MARK: - Highlight computation
 
     /// Computes which editor lines should have added (green) backgrounds based on diff hunks.
@@ -253,9 +262,13 @@ enum InlineDiffProvider {
     /// Computes blocks of deleted lines from hunks, each anchored to an editor line.
     /// The anchor line is the first added/context line after the deletion, or the hunk's newStart
     /// for pure deletion hunks.
+    /// Modified hunks (with both deleted and added lines) are skipped — they use only
+    /// yellow gutter markers and green added-line backgrounds, no phantom overlay (#681).
     static func deletedLineBlocks(from hunks: [DiffHunk]) -> [DeletedLinesBlock] {
         var blocks: [DeletedLinesBlock] = []
         for hunk in hunks {
+            // Skip modified hunks — no phantom overlay for modifications (#681)
+            guard !isModifiedHunk(hunk) else { continue }
             let deleted = hunk.deletedLines
             guard !deleted.isEmpty else { continue }
             // Anchor: the hunk's newStart line in the editor
