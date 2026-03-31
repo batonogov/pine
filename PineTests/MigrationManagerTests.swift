@@ -7,6 +7,7 @@ import Testing
 import Foundation
 @testable import Pine
 
+@MainActor
 struct MigrationManagerTests {
 
     /// Creates a fresh in-memory UserDefaults suite for test isolation.

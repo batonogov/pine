@@ -11,6 +11,7 @@ import Testing
 @testable import Pine
 
 @Suite("Integration Search Tests")
+@MainActor
 struct IntegrationSearchTests {
 
     // MARK: - Helpers

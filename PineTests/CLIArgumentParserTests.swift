@@ -8,6 +8,7 @@ import Testing
 
 @testable import Pine
 
+@MainActor
 struct CLIArgumentParserTests {
     // MARK: - Path resolution
 

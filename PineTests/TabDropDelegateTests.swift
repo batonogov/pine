@@ -11,6 +11,7 @@ import Testing
 @testable import Pine
 
 @Suite("Tab Drag Reorder Tests")
+@MainActor
 struct TabDragReorderTests {
 
     /// Creates a temporary file URL for testing.

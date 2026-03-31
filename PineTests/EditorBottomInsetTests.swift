@@ -8,6 +8,7 @@ import AppKit
 @testable import Pine
 
 /// Tests that the code editor has sufficient bottom inset so the last line is not clipped (issue #258).
+@MainActor
 struct EditorBottomInsetTests {
 
     private func makeGutterTextView(text: String = "line1\nline2\nline3") -> GutterTextView {

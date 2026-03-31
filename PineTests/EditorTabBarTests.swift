@@ -11,6 +11,7 @@ import Testing
 @testable import Pine
 
 @Suite("EditorTabBar Tab Width Tests")
+@MainActor
 struct EditorTabBarTests {
 
     // MARK: - inactiveTabWidth calculation

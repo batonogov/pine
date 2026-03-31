@@ -7,6 +7,7 @@ import AppKit
 import Testing
 @testable import Pine
 
+@MainActor
 struct AboutInfoTests {
 
     // MARK: - Version string

@@ -11,6 +11,7 @@ import Testing
 @testable import Pine
 
 @Suite("DropHandler Tests")
+@MainActor
 struct DropHandlerTests {
 
     /// Creates a temporary file for testing.

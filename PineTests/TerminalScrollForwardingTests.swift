@@ -13,6 +13,7 @@ import SwiftTerm
 /// scroll wheel events should be sent as mouse button 4/5 events
 /// instead of scrolling the scrollback buffer.
 @Suite("Terminal Scroll Forwarding Tests")
+@MainActor
 struct TerminalScrollForwardingTests {
 
     // MARK: - MouseScrollForwarder unit tests

@@ -11,6 +11,7 @@ import Testing
 @testable import Pine
 
 @Suite("File Encoding Detection Tests")
+@MainActor
 struct FileEncodingTests {
 
     /// Creates a temporary file with specific encoding.

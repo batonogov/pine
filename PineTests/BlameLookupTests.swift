@@ -8,6 +8,7 @@ import AppKit
 @testable import Pine
 
 /// Tests for GutterTextView.setBlameLines — blame lookup dictionary rebuild.
+@MainActor
 struct BlameLookupTests {
 
     private func makeGutterTextView() -> GutterTextView {

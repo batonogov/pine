@@ -9,6 +9,7 @@ import Testing
 @testable import Pine
 
 @Suite("FileNameGenerator Tests")
+@MainActor
 struct FileNameGeneratorTests {
 
     private let baseURL = URL(fileURLWithPath: "/tmp/test/file.swift")

@@ -10,6 +10,7 @@ import Testing
 @testable import Pine
 
 @Suite("Window Lifecycle Tests")
+@MainActor
 struct WindowLifecycleTests {
 
     private func makeTempDirectory() throws -> URL {

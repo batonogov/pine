@@ -11,6 +11,7 @@ import SwiftUI
 @testable import Pine
 
 @Suite(.serialized)
+@MainActor
 struct HighlightPersistenceTests {
 
     nonisolated(unsafe) private let font = NSFont.monospacedSystemFont(ofSize: 13, weight: .regular)

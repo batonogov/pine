@@ -11,6 +11,7 @@ import Testing
 @testable import Pine
 
 @Suite("GitStatusProvider Integration Tests")
+@MainActor
 struct GitStatusProviderTests {
 
     /// Creates a temporary git repository for testing.

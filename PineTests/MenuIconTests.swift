@@ -10,6 +10,7 @@ import Testing
 /// Validates that all SF Symbol names in ``MenuIcons`` resolve to real images.
 /// Catches typos and non-existent symbol names at test time rather than at runtime
 /// (where they silently render as blank space).
+@MainActor
 struct MenuIconTests {
 
     // MARK: - Main menu icons (PineApp.swift)

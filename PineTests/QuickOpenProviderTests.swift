@@ -9,6 +9,7 @@ import Testing
 @testable import Pine
 
 @Suite("QuickOpenProvider Tests")
+@MainActor
 struct QuickOpenProviderTests {
 
     // MARK: - Helpers
