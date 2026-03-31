@@ -368,7 +368,7 @@ struct PaneManagerTests {
         #expect(manager.tabManager(for: secondPane)?.tabs.isEmpty == true)
     }
 
-    @MainActor @Test func moveTabBetweenPanes_preservesTabContent() {
+    @MainActor @Test func moveTabBetweenPanes_preservesAllTabState() {
         let manager = PaneManager()
         let firstPane = manager.activePaneID
         let testURL = URL(fileURLWithPath: "/tmp/test.swift")
@@ -376,6 +376,19 @@ struct PaneManagerTests {
 
         let testContent = "func hello() { print(\"world\") }"
         manager.tabManager(for: firstPane)?.updateContent(testContent)
+
+        // Set various tab state properties
+        if let srcTM = manager.tabManager(for: firstPane),
+           let idx = srcTM.tabs.firstIndex(where: { $0.url == testURL }) {
+            srcTM.tabs[idx].cursorPosition = 42
+            srcTM.tabs[idx].scrollOffset = 123.5
+            srcTM.tabs[idx].cursorLine = 3
+            srcTM.tabs[idx].cursorColumn = 7
+            srcTM.tabs[idx].isPinned = true
+            srcTM.tabs[idx].foldState.toggle(FoldableRange(startLine: 1, endLine: 5, startCharIndex: 0, endCharIndex: 10, kind: .braces))
+            srcTM.tabs[idx].syntaxHighlightingDisabled = true
+            srcTM.tabs[idx].encoding = .utf16
+        }
 
         let anotherURL = URL(fileURLWithPath: "/tmp/another.swift")
         manager.tabManager(for: firstPane)?.openTab(url: anotherURL)
@@ -388,6 +401,15 @@ struct PaneManagerTests {
         manager.moveTabBetweenPanes(tabURL: testURL, from: firstPane, to: secondPane)
         let destTab = manager.tabManager(for: secondPane)?.tabs.first(where: { $0.url == testURL })
         #expect(destTab != nil)
+        #expect(destTab?.content == testContent)
+        #expect(destTab?.cursorPosition == 42)
+        #expect(destTab?.scrollOffset == 123.5)
+        #expect(destTab?.cursorLine == 3)
+        #expect(destTab?.cursorColumn == 7)
+        #expect(destTab?.isPinned == true)
+        #expect(destTab?.foldState.isLineHidden(2) == true)
+        #expect(destTab?.syntaxHighlightingDisabled == true)
+        #expect(destTab?.encoding == .utf16)
     }
 
     // MARK: - Remove pane edge cases

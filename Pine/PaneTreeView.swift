@@ -161,6 +161,12 @@ struct PaneDividerView: View {
                     NSCursor.pop()
                 }
             }
+            .onDisappear {
+                if isCursorPushed {
+                    NSCursor.pop()
+                    isCursorPushed = false
+                }
+            }
             .accessibilityIdentifier(AccessibilityID.paneDivider)
     }
 }
@@ -226,15 +232,15 @@ struct PaneLeafView: View {
     private func paneContent(tabManager: TabManager) -> some View {
         VStack(spacing: 0) {
             if !tabManager.tabs.isEmpty {
-                PaneEditorTabBar(
+                EditorTabBar(
                     tabManager: tabManager,
-                    paneID: paneID,
                     onCloseTab: { tab in
                         tabManager.closeTab(id: tab.id, force: false)
                         if tabManager.tabs.isEmpty {
                             paneManager.removePane(paneID)
                         }
-                    }
+                    },
+                    overridePaneID: paneID
                 )
             }
 
@@ -305,6 +311,28 @@ enum PaneDropZone: Equatable, Sendable {
     case right
     case bottom
     case center
+
+    /// Fraction of pane width/height that triggers edge drop zones (right/bottom).
+    static let edgeThreshold: CGFloat = 0.7
+
+    /// Determines the drop zone based on cursor location within a container of the given size.
+    /// Uses percentage-based thresholds: right 30% = split right, bottom 30% = split down,
+    /// center = move to pane.
+    static func zone(for location: CGPoint, in size: CGSize) -> PaneDropZone {
+        let width = size.width
+        let height = size.height
+
+        let inRightZone = width > 0 && location.x > width * edgeThreshold
+        let inBottomZone = height > 0 && location.y > height * edgeThreshold
+
+        if inRightZone && (!inBottomZone || location.x / width > location.y / height) {
+            return .right
+        } else if inBottomZone {
+            return .bottom
+        } else {
+            return .center
+        }
+    }
 }
 
 /// Visual overlay that shows the drop zone indicator.
@@ -357,9 +385,6 @@ struct PaneSplitDropDelegate: DropDelegate {
     /// Actual pane size from GeometryReader, used for percentage-based drop zone detection.
     let paneSize: CGSize
     @Binding var dropZone: PaneDropZone?
-
-    /// Fraction of pane width/height that triggers edge drop zones (right/bottom).
-    private static let edgeThreshold: CGFloat = 0.7
 
     func validateDrop(info: DropInfo) -> Bool {
         info.hasItemsConforming(to: [.paneTabDrag])
@@ -425,107 +450,6 @@ struct PaneSplitDropDelegate: DropDelegate {
     }
 
     private func updateDropZone(info: DropInfo) {
-        let location = info.location
-        let width = paneSize.width
-        let height = paneSize.height
-
-        // Use percentage-based thresholds relative to actual pane size.
-        // Right 30% = split right, bottom 30% = split down, center = move to pane.
-        let inRightZone = width > 0 && location.x > width * Self.edgeThreshold
-        let inBottomZone = height > 0 && location.y > height * Self.edgeThreshold
-
-        if inRightZone && (!inBottomZone || location.x / width > location.y / height) {
-            dropZone = .right
-        } else if inBottomZone {
-            dropZone = .bottom
-        } else {
-            dropZone = .center
-        }
-    }
-}
-
-// MARK: - Pane Editor Tab Bar
-
-/// A tab bar for a pane that supports dragging tabs to other panes.
-struct PaneEditorTabBar: View {
-    var tabManager: TabManager
-    let paneID: PaneID
-    var onCloseTab: (EditorTab) -> Void
-
-    @State private var draggingTabID: UUID?
-    @State private var hoverTargetTabID: UUID?
-
-    var body: some View {
-        HStack(alignment: .center, spacing: 0) {
-            GeometryReader { geometry in
-                ScrollViewReader { proxy in
-                    ScrollView(.horizontal, showsIndicators: false) {
-                        HStack(spacing: 2) {
-                            let pinnedCount = tabManager.pinnedTabCount
-                            let inactiveWidth = EditorTabBar.inactiveTabWidth(
-                                availableWidth: geometry.size.width,
-                                tabCount: tabManager.tabs.count,
-                                pinnedCount: pinnedCount
-                            )
-                            ForEach(tabManager.tabs) { tab in
-                                let isActive = tab.id == tabManager.activeTabID
-                                let isDragged = tab.id == draggingTabID
-                                EditorTabItem(
-                                    tab: tab,
-                                    isActive: isActive,
-                                    onSelect: { tabManager.activeTabID = tab.id },
-                                    onClose: { onCloseTab(tab) },
-                                    onTogglePin: { tabManager.togglePin(id: tab.id) },
-                                    constrainedWidth: tab.isPinned
-                                        ? EditorTabBar.pinnedTabWidth
-                                        : isActive ? EditorTabBar.maxTabWidth : inactiveWidth
-                                )
-                                .opacity(isDragged ? 0.4 : 1.0)
-                                .scaleEffect(isDragged ? 0.95 : 1.0)
-                                .transaction { $0.animation = nil }
-                                .id(tab.id)
-                                .onDrag {
-                                    draggingTabID = tab.id
-                                    let info = TabDragInfo(
-                                        paneID: paneID.id,
-                                        tabID: tab.id,
-                                        fileURL: tab.url
-                                    )
-                                    let provider = NSItemProvider()
-                                    provider.registerDataRepresentation(
-                                        forTypeIdentifier: UTType.paneTabDrag.identifier,
-                                        visibility: .ownProcess
-                                    ) { completion in
-                                        let data = info.encoded.data(using: .utf8) ?? Data()
-                                        completion(data, nil)
-                                        return nil
-                                    }
-                                    return provider
-                                }
-                                .onDrop(of: [.paneTabDrag], delegate: TabDropDelegate(
-                                    tabManager: tabManager,
-                                    targetTabID: tab.id,
-                                    draggingTabID: $draggingTabID,
-                                    hoverTargetTabID: $hoverTargetTabID,
-                                    onReorder: nil
-                                ))
-                            }
-                        }
-                        .padding(.leading, 4)
-                        .padding(.trailing, 8)
-                    }
-                    .frame(maxHeight: .infinity, alignment: .center)
-                    .onChange(of: tabManager.activeTabID) {
-                        guard let activeID = tabManager.activeTabID else { return }
-                        withAnimation(PineAnimation.quick) {
-                            proxy.scrollTo(activeID, anchor: .center)
-                        }
-                    }
-                }
-            }
-        }
-        .frame(height: LayoutMetrics.tabBarHeight)
-        .background(.bar)
-        .accessibilityIdentifier(AccessibilityID.editorTabBar)
+        dropZone = PaneDropZone.zone(for: info.location, in: paneSize)
     }
 }

@@ -126,18 +126,14 @@ final class PaneManager {
     // MARK: - Private helpers
 
     private func moveTab(url: URL, from source: TabManager, to destination: TabManager) {
-        guard let tab = source.tabs.first(where: { $0.url == url }) else { return }
-        // Open in destination first (preserves content)
-        destination.openTab(url: url)
-        // Copy content to the new tab
-        if let destTab = destination.tabs.first(where: { $0.url == url }) {
-            let destIndex = destination.tabs.firstIndex(of: destTab)
-            if let idx = destIndex {
-                destination.tabs[idx].content = tab.content
-                destination.tabs[idx].savedContent = tab.savedContent
-            }
-        }
-        // Close in source
+        guard let srcIdx = source.tabs.firstIndex(where: { $0.url == url }) else { return }
+        // Take a copy of the full tab with all state
+        let tab = source.tabs[srcIdx]
+        // Close in source first (force: skip dirty check — we're moving, not discarding)
         source.closeTab(id: tab.id, force: true)
+        // Re-mint identity so the tab is fresh in the destination
+        let movedTab = EditorTab.reidentified(from: tab)
+        destination.tabs.append(movedTab)
+        destination.activeTabID = movedTab.id
     }
 }

@@ -34,6 +34,7 @@ struct EditorAreaView: View {
 
     @Environment(\.openWindow) private var openWindow
     @State private var dropZone: PaneDropZone?
+    @State private var viewSize: CGSize = .zero
 
     @State private var configValidator = ConfigValidator()
 
@@ -113,11 +114,19 @@ struct EditorAreaView: View {
             }
         }
         .overlay {
+            GeometryReader { geometry in
+                Color.clear
+                    .preference(key: EditorAreaSizeKey.self, value: geometry.size)
+            }
+        }
+        .onPreferenceChange(EditorAreaSizeKey.self) { viewSize = $0 }
+        .overlay {
             PaneDropOverlay(dropZone: dropZone)
         }
-        .onDrop(of: [.text], delegate: SinglePaneSplitDropDelegate(
+        .onDrop(of: [.paneTabDrag], delegate: SinglePaneSplitDropDelegate(
             paneManager: paneManager,
-            dropZone: $dropZone
+            dropZone: $dropZone,
+            viewSize: viewSize
         ))
     }
 
@@ -202,14 +211,24 @@ struct EditorAreaView: View {
 
 // MARK: - Single Pane Split Drop Delegate
 
+/// Preference key for tracking the editor area size.
+private struct EditorAreaSizeKey: PreferenceKey {
+    static var defaultValue: CGSize = .zero
+    static func reduce(value: inout CGSize, nextValue: () -> CGSize) {
+        value = nextValue()
+    }
+}
+
 /// Handles tab drops on the single-pane editor area to initiate a split.
 /// Only activates when a pane tab drag (not a file drop) enters the editor.
 struct SinglePaneSplitDropDelegate: DropDelegate {
     let paneManager: PaneManager
     @Binding var dropZone: PaneDropZone?
+    /// Actual view size from GeometryReader, used for percentage-based drop zone detection.
+    let viewSize: CGSize
 
     func validateDrop(info: DropInfo) -> Bool {
-        info.hasItemsConforming(to: [.text])
+        info.hasItemsConforming(to: [.paneTabDrag])
     }
 
     func dropEntered(info: DropInfo) {
@@ -229,10 +248,10 @@ struct SinglePaneSplitDropDelegate: DropDelegate {
         guard let zone = dropZone else { return false }
         dropZone = nil
 
-        let providers = info.itemProviders(for: [.text])
+        let providers = info.itemProviders(for: [.paneTabDrag])
         guard let provider = providers.first else { return false }
 
-        provider.loadItem(forTypeIdentifier: "public.text", options: nil) { data, _ in
+        provider.loadItem(forTypeIdentifier: UTType.paneTabDrag.identifier, options: nil) { data, _ in
             guard let data = data as? Data,
                   let string = String(data: data, encoding: .utf8),
                   let dragInfo = TabDragInfo.decode(from: string) else { return }
@@ -265,13 +284,6 @@ struct SinglePaneSplitDropDelegate: DropDelegate {
     }
 
     private func updateDropZone(info: DropInfo) {
-        let location = info.location
-        if location.x > 300 && location.x > location.y * 1.2 {
-            dropZone = .right
-        } else if location.y > 200 && location.y > location.x * 0.8 {
-            dropZone = .bottom
-        } else {
-            dropZone = .center
-        }
+        dropZone = PaneDropZone.zone(for: info.location, in: viewSize)
     }
 }
