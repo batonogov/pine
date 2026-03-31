@@ -1803,6 +1803,42 @@
         }
       }
     },
+    "menu.crashReports.copy" : {
+      "comment" : "Menu item to copy all crash reports to clipboard.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Copy Crash Reports"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Скопировать отчёты о сбоях"
+          }
+        }
+      }
+    },
+    "menu.crashReports.reveal" : {
+      "comment" : "Menu item to reveal crash reports directory in Finder.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reveal Crash Reports in Finder"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Показать отчёты о сбоях в Finder"
+          }
+        }
+      }
+    },
     "dialog.ok" : {
       "comment" : "OK button in dialogs.",
       "extractionState" : "manual",

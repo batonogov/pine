@@ -461,6 +461,19 @@ struct PineApp: App {
                         CrashReportingManager.shared.stop()
                     }
                 }
+
+                Button {
+                    CrashReportStore.shared.revealInFinder()
+                } label: {
+                    Label(Strings.menuCrashReportsReveal, systemImage: MenuIcons.crashReportsReveal)
+                }
+
+                Button {
+                    CrashReportStore.shared.copyAllToClipboard()
+                } label: {
+                    Label(Strings.menuCrashReportsCopy, systemImage: MenuIcons.crashReportsCopy)
+                }
+                .disabled(CrashReportStore.shared.loadAll().isEmpty)
             }
             // Cmd+W is intercepted by AppDelegate's local event monitor
             // to close the active tab. The close button goes through

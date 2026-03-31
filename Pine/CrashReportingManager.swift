@@ -12,11 +12,37 @@ import os
 
 // MARK: - Global async-signal-safe storage for crash marker path
 
-/// Pre-computed C string for the crash marker path.
-/// Set once during `installSignalHandlers()`, read-only in the signal handler.
-/// Using nonisolated(unsafe) because signal handlers are inherently unsafe
-/// and this is written once before any signal can fire.
-nonisolated(unsafe) private var crashMarkerCString: UnsafeMutablePointer<CChar>?
+/// Thread-safe atomic storage for the crash marker C string pointer.
+/// Uses `os_unfair_lock` to protect reads/writes from concurrent access
+/// between `installSignalHandlers()`, `stop()`, and the signal handler.
+/// The signal handler reads via `loadCrashMarkerCString()` which uses
+/// `os_unfair_lock_trylock` (async-signal-safe) to avoid deadlock.
+private struct CrashMarkerStorage {
+    nonisolated(unsafe) static var lock = os_unfair_lock()
+    nonisolated(unsafe) static var cString: UnsafeMutablePointer<CChar>?
+
+    /// Stores a new C string path. Frees the previous one if set.
+    /// Called from main thread only (installSignalHandlers / stop).
+    static func store(_ newValue: UnsafeMutablePointer<CChar>?) {
+        os_unfair_lock_lock(&lock)
+        let previous = cString
+        cString = newValue
+        os_unfair_lock_unlock(&lock)
+        if let previous {
+            free(previous)
+        }
+    }
+
+    /// Loads the current C string pointer.
+    /// Uses trylock so it is safe to call from a signal handler (async-signal-safe).
+    /// Returns nil if the lock is contended (extremely unlikely during a crash).
+    static func load() -> UnsafeMutablePointer<CChar>? {
+        guard os_unfair_lock_trylock(&lock) else { return nil }
+        let value = cString
+        os_unfair_lock_unlock(&lock)
+        return value
+    }
+}
 
 /// Coordinates crash reporting using MetricKit (MXCrashDiagnostic) as the
 /// primary source and POSIX signal handlers as a minimal async-signal-safe fallback.
@@ -112,10 +138,7 @@ final class CrashReportingManager: NSObject, MXMetricManagerSubscriber {
         }
 
         // Free the strdup'd path to prevent memory leak on repeated start/stop cycles
-        if let ptr = crashMarkerCString {
-            free(ptr)
-            crashMarkerCString = nil
-        }
+        CrashMarkerStorage.store(nil)
 
         logger.info("Crash reporting stopped")
     }
@@ -158,14 +181,9 @@ final class CrashReportingManager: NSObject, MXMetricManagerSubscriber {
     private func installSignalHandlers() {
         // Pre-compute the path as a C string BEFORE installing handlers.
         // This is the ONLY place we allocate — the handler only reads this pointer.
-        // Free any previously allocated string to prevent leaks on repeated start() calls.
-        if let previous = crashMarkerCString {
-            free(previous)
-            crashMarkerCString = nil
-        }
+        // CrashMarkerStorage.store() frees any previous allocation to prevent leaks.
         let path = Self.crashMarkerPath
-        let cString = strdup(path)
-        crashMarkerCString = cString
+        CrashMarkerStorage.store(strdup(path))
 
         let signals: [Int32] = [SIGSEGV, SIGABRT, SIGBUS, SIGFPE, SIGILL, SIGTRAP]
 
@@ -209,37 +227,45 @@ final class CrashReportingManager: NSObject, MXMetricManagerSubscriber {
 // MARK: - Async-signal-safe crash handler (C-level, no Swift/Foundation)
 
 /// Strictly async-signal-safe signal handler.
-/// Uses ONLY POSIX APIs: open(), write(), close(), _exit().
-/// No Swift runtime, no Foundation, no malloc, no ObjC messaging.
+/// Uses ONLY POSIX APIs: open(), write(), close(), _exit(), signal(), raise().
+/// No Swift runtime (no guard/let/Optional unwrap), no Foundation, no malloc, no ObjC messaging.
 ///
 /// The crash marker path is pre-computed in `installSignalHandlers()` and stored
-/// in the global `crashMarkerCString`. This function only reads that pointer.
+/// in `CrashMarkerStorage`. This function reads via trylock (async-signal-safe).
 private func signalHandler(_ sig: Int32) {
-    // Read pre-computed C string path — no allocation, no Swift runtime
-    guard let cPath = crashMarkerCString else {
-        _exit(sig)
-    }
+    // Load pre-computed C string path via atomic trylock — no allocation, no Swift runtime.
+    // If trylock fails (lock contended) or path is nil, skip writing and just re-raise.
+    // Write marker file only if we successfully obtained the path.
+    writeMarkerIfPossible(sig)
+
+    // Re-raise with default handler to get proper exit code
+    Darwin.signal(sig, SIG_DFL)
+    raise(sig)
+}
+
+/// Writes the signal number to the crash marker file.
+/// Separated from signalHandler to allow structured control flow without force-unwrap.
+/// Still strictly async-signal-safe: only POSIX calls, no Swift runtime, no malloc.
+private func writeMarkerIfPossible(_ sig: Int32) {
+    guard let cPath = CrashMarkerStorage.load() else { return }
 
     // Open file for writing (create if needed, truncate)
     let fd = open(cPath, O_WRONLY | O_CREAT | O_TRUNC, 0o644)
-    guard fd >= 0 else {
-        _exit(sig)
-    }
+    if fd < 0 { return }
 
     // Write the signal number as ASCII digits using a stack buffer (no malloc).
-    // Max digits for Int32: 10 digits + newline = 11 bytes. Using a 4-byte tuple
-    // is sufficient since POSIX signals are small numbers (1-31).
-    var buf = (UInt8(0), UInt8(0), UInt8(0), UInt8(0))
+    // POSIX signals are small numbers (1-31), so 2 digits + newline suffice.
+    var buf: (UInt8, UInt8, UInt8, UInt8) = (0, 0, 0, 0)
     var sigNum = sig
-    var len = 0
+    var len: Int = 0
 
     if sigNum == 0 {
         buf.0 = 0x30 // '0'
         len = 1
     } else {
         // Signals are 1-31, so at most 2 digits — reverse into buf
-        var tmp = (UInt8(0), UInt8(0))
-        var tmpLen = 0
+        var tmp: (UInt8, UInt8) = (0, 0)
+        var tmpLen: Int = 0
         while sigNum > 0, tmpLen < 2 {
             if tmpLen == 0 {
                 tmp.0 = UInt8(0x30 + sigNum % 10)
@@ -268,14 +294,14 @@ private func signalHandler(_ sig: Int32) {
     }
     len += 1
 
-    // Write using POSIX write() — async-signal-safe
-    withUnsafePointer(to: &buf) { ptr in
-        _ = write(fd, ptr, len)
-    }
+    // Write each byte individually using POSIX write() — async-signal-safe.
+    // Avoids Swift closures (withUnsafePointer) inside signal handler.
+    var byte0 = buf.0
+    if len >= 1 { _ = write(fd, &byte0, 1) }
+    var byte1 = buf.1
+    if len >= 2 { _ = write(fd, &byte1, 1) }
+    var byte2 = buf.2
+    if len >= 3 { _ = write(fd, &byte2, 1) }
 
     close(fd)
-
-    // Re-raise with default handler to get proper exit code
-    Darwin.signal(sig, SIG_DFL)
-    raise(sig)
 }

@@ -428,6 +428,8 @@ enum Strings {
     // MARK: - Crash Reporting
 
     static let menuCrashReporting: LocalizedStringKey = "menu.crashReporting"
+    static let menuCrashReportsReveal: LocalizedStringKey = "menu.crashReports.reveal"
+    static let menuCrashReportsCopy: LocalizedStringKey = "menu.crashReports.copy"
     static let crashReportingOptInTitle: LocalizedStringKey = "crashReporting.optIn.title"
     static let crashReportingOptInMessage: LocalizedStringKey = "crashReporting.optIn.message"
     static let crashReportingOptInPrivacy: LocalizedStringKey = "crashReporting.optIn.privacy"

@@ -642,8 +642,8 @@ struct CrashReportStoreExportTests {
         let store = makeTempStore()
         defer { cleanup(store) }
 
-        let count = store.copyAllToClipboard()
-        #expect(count == 0)
+        let copiedCount = store.copyAllToClipboard()
+        #expect(copiedCount == 0)
     }
 
     @Test func copyAllToClipboard_withReports_returnsCopiedCount() {
@@ -653,8 +653,8 @@ struct CrashReportStoreExportTests {
         store.save(CrashReport(signal: "SIGSEGV"))
         store.save(CrashReport(signal: "SIGABRT"))
 
-        let count = store.copyAllToClipboard()
-        #expect(count == 2)
+        let copiedCount = store.copyAllToClipboard()
+        #expect(copiedCount == 2)
     }
 
     @Test func copyAllToClipboard_writesValidJSON() {
@@ -810,6 +810,20 @@ struct CrashReportingMenuIconTests {
         #expect(
             NSImage(systemSymbolName: MenuIcons.crashReporting, accessibilityDescription: nil) != nil,
             "SF Symbol '\(MenuIcons.crashReporting)' does not exist"
+        )
+    }
+
+    @Test func crashReportsReveal_iconExists() {
+        #expect(
+            NSImage(systemSymbolName: MenuIcons.crashReportsReveal, accessibilityDescription: nil) != nil,
+            "SF Symbol '\(MenuIcons.crashReportsReveal)' does not exist"
+        )
+    }
+
+    @Test func crashReportsCopy_iconExists() {
+        #expect(
+            NSImage(systemSymbolName: MenuIcons.crashReportsCopy, accessibilityDescription: nil) != nil,
+            "SF Symbol '\(MenuIcons.crashReportsCopy)' does not exist"
         )
     }
 }

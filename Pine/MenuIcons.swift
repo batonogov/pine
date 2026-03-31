@@ -56,6 +56,8 @@ nonisolated enum MenuIcons {
 
     // MARK: - Crash Reporting
     static let crashReporting = "ant.circle"
+    static let crashReportsReveal = "folder"
+    static let crashReportsCopy = "doc.on.doc"
 
     // MARK: - Context menu
     static let newFile = "doc.badge.plus"
