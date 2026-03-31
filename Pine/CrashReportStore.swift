@@ -74,10 +74,17 @@ final class CrashReportStore {
         }
     }
 
-    /// Returns the number of stored reports.
+    /// Returns the number of stored reports (directory listing only, no JSON decoding).
     var count: Int {
         queue.sync {
             _count()
+        }
+    }
+
+    /// Whether the store has no reports (directory listing only, no JSON decoding).
+    var isEmpty: Bool {
+        queue.sync {
+            _count() == 0
         }
     }
 

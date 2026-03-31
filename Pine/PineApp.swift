@@ -473,7 +473,7 @@ struct PineApp: App {
                 } label: {
                     Label(Strings.menuCrashReportsCopy, systemImage: MenuIcons.crashReportsCopy)
                 }
-                .disabled(CrashReportStore.shared.loadAll().isEmpty)
+                .disabled(CrashReportStore.shared.isEmpty)
             }
             // Cmd+W is intercepted by AppDelegate's local event monitor
             // to close the active tab. The close button goes through

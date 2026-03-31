@@ -290,6 +290,17 @@ struct CrashReportStoreTests {
         #expect(store.count == 2)
     }
 
+    @Test func isEmpty_reflectsStoreState() {
+        let store = makeTempStore()
+        defer { cleanup(store) }
+
+        #expect(store.isEmpty)
+        store.save(CrashReport(signal: "SIGSEGV"))
+        #expect(!store.isEmpty)
+        store.removeAll()
+        #expect(store.isEmpty)
+    }
+
     @Test func remove_byID() {
         let store = makeTempStore()
         defer { cleanup(store) }

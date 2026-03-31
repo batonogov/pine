@@ -183,7 +183,11 @@ final class CrashReportingManager: NSObject, MXMetricManagerSubscriber {
         // This is the ONLY place we allocate — the handler only reads this pointer.
         // CrashMarkerStorage.store() frees any previous allocation to prevent leaks.
         let path = Self.crashMarkerPath
-        CrashMarkerStorage.store(strdup(path))
+        let cString = strdup(path)
+        if cString == nil {
+            logger.warning("strdup returned nil (OOM) — signal handler fallback will be disabled")
+        }
+        CrashMarkerStorage.store(cString)
 
         let signals: [Int32] = [SIGSEGV, SIGABRT, SIGBUS, SIGFPE, SIGILL, SIGTRAP]
 
@@ -228,7 +232,7 @@ final class CrashReportingManager: NSObject, MXMetricManagerSubscriber {
 
 /// Strictly async-signal-safe signal handler.
 /// Uses ONLY POSIX APIs: open(), write(), close(), _exit(), signal(), raise().
-/// No Swift runtime (no guard/let/Optional unwrap), no Foundation, no malloc, no ObjC messaging.
+/// No Foundation, no malloc, no ObjC messaging. Minimal Swift (guard let on raw pointer is safe).
 ///
 /// The crash marker path is pre-computed in `installSignalHandlers()` and stored
 /// in `CrashMarkerStorage`. This function reads via trylock (async-signal-safe).
