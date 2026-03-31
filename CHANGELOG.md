@@ -1,5 +1,29 @@
 # Changelog
 
+## [1.16.1](https://github.com/batonogov/pine/compare/v1.16.0...v1.16.1) (2026-03-31)
+
+
+### Bug Fixes
+
+* resolve ConfigValidator SIGTRAP crash ([#700](https://github.com/batonogov/pine/issues/700)) ([018e6cc](https://github.com/batonogov/pine/commit/018e6cc0e0f8297fba7f85e0e42b0a199623b499))
+
+## [1.16.0](https://github.com/batonogov/pine/compare/v1.15.0...v1.16.0) (2026-03-31)
+
+
+### Features
+
+* enable Swift 6 language mode for Pine app target ([#657](https://github.com/batonogov/pine/issues/657)) ([3d5d26d](https://github.com/batonogov/pine/commit/3d5d26d955674dc7e6ece3257ce07523c4f6534d))
+
+
+### Bug Fixes
+
+* allow docs-only PRs to pass required CI checks ([#656](https://github.com/batonogov/pine/issues/656)) ([#682](https://github.com/batonogov/pine/issues/682)) ([87beb8c](https://github.com/batonogov/pine/commit/87beb8ca66b17cd195764671185e52ac6bdcec73))
+* improve inline diff rendering — remove strikethrough, yellow markers ([#678](https://github.com/batonogov/pine/issues/678)) ([#681](https://github.com/batonogov/pine/issues/681)) ([6e94088](https://github.com/batonogov/pine/commit/6e94088c99faf76fd7653eab7e14fbbb8dba6b0a))
+* move git fetch operations to non-MainActor GitFetcher enum ([#613](https://github.com/batonogov/pine/issues/613)) ([#683](https://github.com/batonogov/pine/issues/683)) ([2e2feaa](https://github.com/batonogov/pine/commit/2e2feaa687f5f28daf3c79f2bf23385005b0c1da))
+* remove broken accept/revert buttons from gutter ([#690](https://github.com/batonogov/pine/issues/690)) ([2e6b87e](https://github.com/batonogov/pine/commit/2e6b87ed1b8d523ecb4ff1d79fd28a21accb3af5))
+* remove phantom overlay for modified lines ([#681](https://github.com/batonogov/pine/issues/681)) ([#685](https://github.com/batonogov/pine/issues/685)) ([4a674d3](https://github.com/batonogov/pine/commit/4a674d39e5ffd86101fbba6bc2cc5c4868cf64a9))
+* stabilize gutter width and add diagnostic tooltips ([#677](https://github.com/batonogov/pine/issues/677), [#679](https://github.com/batonogov/pine/issues/679)) ([#680](https://github.com/batonogov/pine/issues/680)) ([6f8e74e](https://github.com/batonogov/pine/commit/6f8e74e953c26162506a2df43251d8acf399210c))
+
 ## [1.15.0](https://github.com/batonogov/pine/compare/v1.14.0...v1.15.0) (2026-03-30)
 
 

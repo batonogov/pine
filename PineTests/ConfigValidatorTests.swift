@@ -666,9 +666,9 @@ struct ConfigValidatorTests {
         #expect(results.filter { $0.message.contains("backtick") }.isEmpty)
     }
 
-    // MARK: - ConfigValidator generation lock
+    // MARK: - ConfigValidator generation token
 
-    @Test func validator_generationLock_initialState() {
+    @Test func validator_generationToken_initialState() {
         let validator = ConfigValidator()
         #expect(validator.diagnostics.isEmpty)
         #expect(validator.isValidating == false)
@@ -676,11 +676,86 @@ struct ConfigValidatorTests {
         #expect(validator.toolAvailable == false)
     }
 
-    @Test func validator_clear_resetsAll() {
+    @Test func validator_clear_resetsAll_synchronously() {
         let validator = ConfigValidator()
         validator.clear()
-        // After clear, diagnostics should be empty (async)
-        #expect(validator.activeValidator == nil || true) // async, can't assert timing
+        // clear() is now synchronous on @MainActor — state is immediately reset
+        #expect(validator.diagnostics.isEmpty)
+        #expect(validator.activeValidator == nil)
+        #expect(validator.toolAvailable == false)
+        #expect(validator.isValidating == false)
+    }
+
+    // MARK: - ConfigValidationWorker (nonisolated)
+
+    @Test func worker_builtinYAML_tabIndentation() {
+        let url = URL(fileURLWithPath: "/tmp/test.yml")
+        let content = "key: value\n\tindented: bad\n"
+        let result = ConfigValidationWorker.runValidation(url: url, content: content, kind: .yamllint)
+        if result.toolAvailable {
+            // External yamllint handles validation — result depends on host config
+            // Just verify no crash (the core fix being tested)
+        } else {
+            // Built-in validator catches tab indentation
+            let tabErrors = result.diagnostics.filter { $0.message.contains("tab") }
+            #expect(!tabErrors.isEmpty)
+        }
+    }
+
+    @Test func worker_builtinDockerfile_missingFrom() {
+        let url = URL(fileURLWithPath: "/tmp/Dockerfile")
+        let content = "RUN echo hello\n"
+        let result = ConfigValidationWorker.runValidation(url: url, content: content, kind: .hadolint)
+        // Built-in validator should report missing FROM (if hadolint not installed)
+        if !result.toolAvailable {
+            let fromErrors = result.diagnostics.filter { $0.message.contains("FROM") }
+            #expect(!fromErrors.isEmpty)
+        }
+    }
+
+    @Test func worker_builtinShell_backticks() {
+        let url = URL(fileURLWithPath: "/tmp/test.sh")
+        let content = "result=`date`\n"
+        let result = ConfigValidationWorker.runValidation(url: url, content: content, kind: .shellcheck)
+        if !result.toolAvailable {
+            let backtickInfo = result.diagnostics.filter { $0.severity == .info }
+            #expect(!backtickInfo.isEmpty)
+        }
+    }
+
+    @Test func worker_terraform_noBuiltinFallback() {
+        let url = URL(fileURLWithPath: "/tmp/main.tf")
+        let content = "resource \"null_resource\" \"test\" {}\n"
+        let result = ConfigValidationWorker.runValidation(url: url, content: content, kind: .terraform)
+        if !result.toolAvailable {
+            // No built-in terraform validation — empty diagnostics expected
+            #expect(result.diagnostics.isEmpty)
+        }
+    }
+
+    @Test func worker_validYAML_noDiagnostics() {
+        let url = URL(fileURLWithPath: "/tmp/valid.yml")
+        let content = "key: value\nlist:\n  - item1\n  - item2\n"
+        let result = ConfigValidationWorker.runValidation(url: url, content: content, kind: .yamllint)
+        if !result.toolAvailable {
+            #expect(result.diagnostics.isEmpty)
+        }
+    }
+
+    @Test func worker_canBeCalledFromBackgroundThread() async {
+        // This test verifies that ConfigValidationWorker can be called from
+        // any isolation domain without crashing — the core fix for the SIGTRAP.
+        let url = URL(fileURLWithPath: "/tmp/test.yml")
+        let content = "key: value\n\tindented: bad\n"
+
+        let result = await Task.detached {
+            ConfigValidationWorker.runValidation(url: url, content: content, kind: .yamllint)
+        }.value
+
+        if !result.toolAvailable {
+            let tabErrors = result.diagnostics.filter { $0.message.contains("tab") }
+            #expect(!tabErrors.isEmpty)
+        }
     }
 
     // MARK: - BuiltinValidator Dockerfile edge cases
