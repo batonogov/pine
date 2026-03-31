@@ -157,6 +157,8 @@ struct EditorTabBar: View {
                                         tabID: tab.id,
                                         fileURL: tab.url
                                     )
+                                    // Store in shared state for synchronous access by drop delegates
+                                    paneManager.activeDrag = info
                                     let provider = NSItemProvider()
                                     provider.registerDataRepresentation(
                                         forTypeIdentifier: UTType.paneTabDrag.identifier,

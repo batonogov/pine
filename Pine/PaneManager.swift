@@ -7,7 +7,6 @@
 //
 
 import SwiftUI
-
 /// Manages the split pane layout for the editor area.
 /// Each leaf node in the PaneNode tree has its own `TabManager`.
 @MainActor
@@ -22,6 +21,11 @@ final class PaneManager {
 
     /// The currently focused pane.
     var activePaneID: PaneID
+
+    /// Shared drag state for synchronous tab drag between panes.
+    /// Set by EditorTabBar.onDrag, read by drop delegates.
+    /// Using shared state avoids unreliable async NSItemProvider loading.
+    var activeDrag: TabDragInfo?
 
     /// Creates a PaneManager with a single editor pane.
     init() {
@@ -162,7 +166,9 @@ final class PaneManager {
     // MARK: - Private helpers
 
     private func moveTab(url: URL, from source: TabManager, to destination: TabManager) {
-        guard let srcIdx = source.tabs.firstIndex(where: { $0.url == url }) else { return }
+        guard let srcIdx = source.tabs.firstIndex(where: { $0.url == url }) ?? source.tabs.firstIndex(where: {
+            $0.url.standardizedFileURL == url.standardizedFileURL
+        }) else { return }
         // Take a copy of the full tab with all state
         let tab = source.tabs[srcIdx]
         // Re-mint identity so the tab is fresh in the destination

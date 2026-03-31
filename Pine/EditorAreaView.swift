@@ -270,37 +270,30 @@ struct EditorAreaUnifiedDropDelegate: DropDelegate {
         guard let zone = dropZone else { return false }
         dropZone = nil
 
-        let providers = info.itemProviders(for: [.paneTabDrag])
-        guard let provider = providers.first else { return false }
+        // Use synchronous shared drag state instead of async NSItemProvider
+        guard let dragInfo = paneManager.activeDrag else { return false }
+        paneManager.activeDrag = nil
 
-        provider.loadItem(forTypeIdentifier: UTType.paneTabDrag.identifier, options: nil) { data, _ in
-            guard let data = data as? Data,
-                  let string = String(data: data, encoding: .utf8),
-                  let dragInfo = TabDragInfo.decode(from: string) else { return }
+        guard let firstLeafID = paneManager.root.firstLeafID else { return false }
+        let sourcePaneID = PaneID(id: dragInfo.paneID)
 
-            DispatchQueue.main.async {
-                guard let firstLeafID = paneManager.root.firstLeafID else { return }
-                let sourcePaneID = PaneID(id: dragInfo.paneID)
-
-                switch zone {
-                case .right:
-                    paneManager.splitPane(
-                        firstLeafID,
-                        axis: .horizontal,
-                        tabURL: dragInfo.fileURL,
-                        sourcePane: sourcePaneID
-                    )
-                case .bottom:
-                    paneManager.splitPane(
-                        firstLeafID,
-                        axis: .vertical,
-                        tabURL: dragInfo.fileURL,
-                        sourcePane: sourcePaneID
-                    )
-                case .center:
-                    break // No split needed for center drop on single pane
-                }
-            }
+        switch zone {
+        case .right:
+            paneManager.splitPane(
+                firstLeafID,
+                axis: .horizontal,
+                tabURL: dragInfo.fileURL,
+                sourcePane: sourcePaneID
+            )
+        case .bottom:
+            paneManager.splitPane(
+                firstLeafID,
+                axis: .vertical,
+                tabURL: dragInfo.fileURL,
+                sourcePane: sourcePaneID
+            )
+        case .center:
+            break
         }
         return true
     }

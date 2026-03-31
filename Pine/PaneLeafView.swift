@@ -115,12 +115,7 @@ struct PaneLeafView: View {
                 .accessibilityIdentifier(AccessibilityID.editorPlaceholder)
             }
 
-            StatusBarView(
-                gitProvider: workspace.gitProvider,
-                terminal: terminal,
-                tabManager: tabManager,
-                progress: projectManager.progress
-            )
+            // StatusBar is rendered once in ContentView, not per-pane
         }
     }
 

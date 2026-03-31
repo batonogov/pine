@@ -111,43 +111,34 @@ struct PaneSplitDropDelegate: DropDelegate {
         guard let zone = dropZone else { return false }
         dropZone = nil
 
-        // Extract the drag data
-        let providers = info.itemProviders(for: [.paneTabDrag])
-        guard let provider = providers.first else { return false }
+        // Use synchronous shared drag state instead of async NSItemProvider
+        guard let dragInfo = paneManager.activeDrag else { return false }
+        paneManager.activeDrag = nil
 
-        provider.loadItem(forTypeIdentifier: UTType.paneTabDrag.identifier, options: nil) { data, _ in
-            guard let data = data as? Data,
-                  let string = String(data: data, encoding: .utf8),
-                  let dragInfo = TabDragInfo.decode(from: string) else { return }
+        let sourcePaneID = PaneID(id: dragInfo.paneID)
 
-            DispatchQueue.main.async {
-                let sourcePaneID = PaneID(id: dragInfo.paneID)
-
-                switch zone {
-                case .right:
-                    paneManager.splitPane(
-                        paneID,
-                        axis: .horizontal,
-                        tabURL: dragInfo.fileURL,
-                        sourcePane: sourcePaneID
-                    )
-                case .bottom:
-                    paneManager.splitPane(
-                        paneID,
-                        axis: .vertical,
-                        tabURL: dragInfo.fileURL,
-                        sourcePane: sourcePaneID
-                    )
-                case .center:
-                    // Move tab to this existing pane
-                    if sourcePaneID != paneID {
-                        paneManager.moveTabBetweenPanes(
-                            tabURL: dragInfo.fileURL,
-                            from: sourcePaneID,
-                            to: paneID
-                        )
-                    }
-                }
+        switch zone {
+        case .right:
+            paneManager.splitPane(
+                paneID,
+                axis: .horizontal,
+                tabURL: dragInfo.fileURL,
+                sourcePane: sourcePaneID
+            )
+        case .bottom:
+            paneManager.splitPane(
+                paneID,
+                axis: .vertical,
+                tabURL: dragInfo.fileURL,
+                sourcePane: sourcePaneID
+            )
+        case .center:
+            if sourcePaneID != paneID {
+                paneManager.moveTabBetweenPanes(
+                    tabURL: dragInfo.fileURL,
+                    from: sourcePaneID,
+                    to: paneID
+                )
             }
         }
         return true
