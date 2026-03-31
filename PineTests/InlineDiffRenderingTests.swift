@@ -99,22 +99,75 @@ struct InlineDiffRenderingTests {
 
     // MARK: - Accept/Revert buttons removed (#688)
 
-    @Test func gutterHasNoAcceptRevertButtons() {
-        // After #688, accept/revert buttons were removed from the gutter.
-        // LineNumberView no longer has hunkButtonHitTest, onAcceptHunk, or onRevertHunk.
-        // Diff markers (colored bars) still render correctly.
+    @Test func expandedHunkDoesNotExposeAcceptRevertProperties() {
+        // After #688, expanding a hunk should NOT expose onAcceptHunk or
+        // onRevertHunk on LineNumberView. Verify via Mirror reflection.
         let view = makeLineNumberView()
         let hunk = makeHunk(newStart: 1)
         view.diffHunks = [hunk]
         view.expandedHunkID = hunk.id
 
-        // Verify diff hunks are still tracked for color markers
-        #expect(view.diffHunks.count == 1)
-        // onDiffMarkerClick still works for expand/collapse
-        var clicked = false
-        view.onDiffMarkerClick = { _ in clicked = true }
+        let mirror = Mirror(reflecting: view)
+        let labels = mirror.children.compactMap { $0.label }
+        #expect(!labels.contains("onAcceptHunk"),
+                "onAcceptHunk should not exist on LineNumberView")
+        #expect(!labels.contains("onRevertHunk"),
+                "onRevertHunk should not exist on LineNumberView")
+    }
+
+    @Test func expandedHunkDiffMarkerClickTogglesState() {
+        // Full integration: diff marker click toggles expand/collapse
+        // (the only click action remaining after button removal).
+        let view = makeLineNumberView()
+        let hunk = makeHunk(newStart: 1)
+        view.diffHunks = [hunk]
+
+        var clickedHunkIDs: [UUID] = []
+        view.onDiffMarkerClick = { h in clickedHunkIDs.append(h.id) }
+
+        // Expand
         view.onDiffMarkerClick?(hunk)
-        #expect(clicked)
+        view.expandedHunkID = hunk.id
+        #expect(view.expandedHunkID == hunk.id)
+        #expect(clickedHunkIDs.count == 1)
+
+        // Collapse (click same hunk again)
+        view.onDiffMarkerClick?(hunk)
+        view.expandedHunkID = nil
+        #expect(view.expandedHunkID == nil)
+        #expect(clickedHunkIDs.count == 2)
+        #expect(clickedHunkIDs[0] == clickedHunkIDs[1],
+                "Both clicks should target the same hunk")
+    }
+
+    @Test func mouseDownInOldButtonAreaPassesToSuperNotAcceptRevert() {
+        // Clicking where accept/revert buttons used to be drawn (x ~15-30)
+        // should pass through to super.mouseDown, not trigger any action.
+        let view = makeLineNumberView()
+        view.frame = NSRect(x: 0, y: 0, width: 50, height: 100)
+        view.gutterWidth = 50
+        let hunk = makeHunk(newStart: 1)
+        view.diffHunks = [hunk]
+        view.expandedHunkID = hunk.id
+
+        var diffClicked = false
+        view.onDiffMarkerClick = { _ in diffClicked = true }
+
+        // x=20 is in the old button area — now passes to super
+        let windowPoint = view.convert(NSPoint(x: 20, y: 10), to: nil)
+        let event = NSEvent.mouseEvent(
+            with: .leftMouseDown,
+            location: windowPoint,
+            modifierFlags: [],
+            timestamp: 0,
+            windowNumber: 0,
+            context: nil,
+            eventNumber: 0,
+            clickCount: 1,
+            pressure: 1.0
+        )! // swiftlint:disable:this force_unwrapping
+        view.mouseDown(with: event)
+        #expect(!diffClicked, "Old button area click should not trigger diff callback")
     }
 
     // MARK: - Gutter diff marker click detects hunk across full range

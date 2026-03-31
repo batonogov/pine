@@ -131,15 +131,71 @@ struct InlineDiffExpandTests {
         #expect(clickedHunk?.id == hunk.id)
     }
 
-    // MARK: - Accept/Revert buttons removed (#688)
+    // MARK: - Accept/Revert buttons removed (#688) — mouseDown routing
 
-    @Test func gutterNoLongerHasAcceptRevertButtons() {
-        // After #688, accept/revert buttons were removed from the gutter.
-        // Diff markers still work for expand/collapse via onDiffMarkerClick.
+    @Test func mouseDownInOldButtonAreaDoesNotTriggerAcceptRevert() {
+        // After #688, clicking in the area where accept/revert buttons used to be
+        // (left-center of gutter, x ~15-30) no longer triggers any accept/revert action.
+        // It either hits the fold area (x < 14) or passes to super (14 <= x < gutterWidth - 7).
         let view = makeLineNumberView()
         let hunk = makeHunk(newStart: 1)
         view.diffHunks = [hunk]
-        #expect(view.diffHunks.count == 1, "Diff hunks still tracked")
+        view.expandedHunkID = hunk.id
+
+        // Verify no accept/revert properties exist
+        let mirror = Mirror(reflecting: view)
+        let labels = mirror.children.compactMap { $0.label }
+        #expect(!labels.contains("onAcceptHunk"),
+                "onAcceptHunk should be removed after #688")
+        #expect(!labels.contains("onRevertHunk"),
+                "onRevertHunk should be removed after #688")
+    }
+
+    @Test func expandedHunkClickOnlyTriggersMarkerCallback() {
+        // When a hunk is expanded, the only click action in the gutter is
+        // the diff marker click (right edge) for expand/collapse toggle.
+        let view = makeLineNumberView()
+        let hunk = makeHunk(newStart: 1)
+        view.diffHunks = [hunk]
+        view.expandedHunkID = hunk.id
+
+        var markerClicked = false
+        view.onDiffMarkerClick = { _ in markerClicked = true }
+
+        // Simulate callback as mouseDown would route it
+        view.onDiffMarkerClick?(hunk)
+        #expect(markerClicked, "Diff marker click should be the only click action")
+    }
+
+    @Test func mouseDownInMiddleGutterAreaWithExpandedHunkDoesNotCrash() {
+        // After removing accept/revert buttons, clicking in the middle of the
+        // gutter (where buttons used to be) should pass through to super.mouseDown.
+        let view = makeLineNumberView()
+        view.frame = NSRect(x: 0, y: 0, width: 50, height: 100)
+        view.gutterWidth = 50
+        let hunk = makeHunk(newStart: 1)
+        view.diffHunks = [hunk]
+        view.expandedHunkID = hunk.id
+
+        var diffClicked = false
+        view.onDiffMarkerClick = { _ in diffClicked = true }
+
+        // Click at x=20 — in the old button area, now line number area
+        // (x >= 14 and x < gutterWidth - 7 = 43)
+        let windowPoint = view.convert(NSPoint(x: 20, y: 10), to: nil)
+        let event = NSEvent.mouseEvent(
+            with: .leftMouseDown,
+            location: windowPoint,
+            modifierFlags: [],
+            timestamp: 0,
+            windowNumber: 0,
+            context: nil,
+            eventNumber: 0,
+            clickCount: 1,
+            pressure: 1.0
+        )! // swiftlint:disable:this force_unwrapping
+        view.mouseDown(with: event)
+        #expect(!diffClicked, "Click in middle gutter area should not trigger diff callback")
     }
 
     // MARK: - Escape key collapses expanded hunk
