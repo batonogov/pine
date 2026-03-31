@@ -9,6 +9,7 @@ import Testing
 @testable import Pine
 
 @Suite("String trailing whitespace stripping")
+@MainActor
 struct TrailingWhitespaceTests {
 
     @Test("Strips trailing spaces from lines")

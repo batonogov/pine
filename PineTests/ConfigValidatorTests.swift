@@ -7,6 +7,7 @@ import Foundation
 import Testing
 @testable import Pine
 
+@MainActor
 struct ConfigValidatorTests {
 
     // MARK: - ValidatorDetector

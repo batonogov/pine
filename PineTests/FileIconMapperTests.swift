@@ -7,6 +7,7 @@ import SwiftUI
 import Testing
 @testable import Pine
 
+@MainActor
 struct FileIconMapperTests {
 
     // MARK: - iconForFile — exact filename matches

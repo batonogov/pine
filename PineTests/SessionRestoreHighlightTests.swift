@@ -12,6 +12,7 @@ import Testing
 @testable import Pine
 
 @Suite("Session Restore Highlight Tests")
+@MainActor
 struct SessionRestoreHighlightTests {
 
     // MARK: - Helpers

@@ -9,6 +9,7 @@ import Testing
 
 /// Tests that SF Symbol icons render correctly in flipped coordinate contexts
 /// (like GutterTextView which has isFlipped = true).
+@MainActor
 struct BlameIconFlipTests {
 
     /// NSView subclass with isFlipped = true, like GutterTextView.

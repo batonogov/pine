@@ -11,6 +11,7 @@ import Testing
 @testable import Pine
 
 @Suite("TabManager Tests")
+@MainActor
 struct TabManagerTests {
 
     /// Creates a temporary file URL for testing.

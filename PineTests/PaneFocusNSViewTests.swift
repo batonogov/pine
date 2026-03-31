@@ -11,9 +11,10 @@ import AppKit
 @testable import Pine
 
 @Suite("PaneFocusNSView Tests")
+@MainActor
 struct PaneFocusNSViewTests {
 
-    @MainActor @Test func paneManagerPropertyIsDeclaredWeak() {
+    @Test func paneManagerPropertyIsDeclaredWeak() {
         // Verify that PaneFocusNSView.paneManager is a weak optional property
         // by checking that assigning nil is accepted and the property can be nil.
         let paneID = PaneID()
@@ -27,7 +28,7 @@ struct PaneFocusNSViewTests {
         #expect(view.paneManager == nil)
     }
 
-    @MainActor @Test func paneIDUpdatable() {
+    @Test func paneIDUpdatable() {
         let paneManager = PaneManager()
         let paneID1 = PaneID()
         let paneID2 = PaneID()

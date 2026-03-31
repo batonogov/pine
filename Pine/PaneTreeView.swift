@@ -302,8 +302,6 @@ struct PaneLeafView: View {
             fileName: tab.fileName,
             lineDiffs: lineDiffs,
             diffHunks: diffHunks,
-            onAcceptHunk: { hunk in handleGutterAccept(hunk, tabManager: tabManager) },
-            onRevertHunk: { hunk in handleGutterRevert(hunk, tabManager: tabManager) },
             isBlameVisible: isBlameVisible,
             blameLines: blameLines,
             foldState: Binding(
@@ -683,7 +681,8 @@ private struct PaneFocusDetector: NSViewRepresentable {
 final class PaneFocusNSView: NSView {
     var paneID: PaneID
     weak var paneManager: PaneManager?
-    private var monitor: Any?
+    /// nonisolated(unsafe): accessed from deinit (nonisolated) to remove event monitor.
+    nonisolated(unsafe) private var monitor: Any?
 
     init(paneID: PaneID, paneManager: PaneManager) {
         self.paneID = paneID

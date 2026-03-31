@@ -14,12 +14,12 @@ import Foundation
 // swiftlint:disable type_body_length
 
 @Suite("PaneLeaf Close Logic Tests")
+@MainActor
 struct PaneLeafCloseTests {
 
     // MARK: - Helpers
 
     /// Finds a tab ID by URL, recording a test issue if not found.
-    @MainActor
     private func tabID(for url: URL, in tabManager: TabManager) -> UUID? {
         guard let id = tabManager.tabs.first(where: { $0.url == url })?.id else {
             Issue.record("Tab not found for \(url.lastPathComponent)")
@@ -30,7 +30,7 @@ struct PaneLeafCloseTests {
 
     // MARK: - Close tab removes pane when empty
 
-    @MainActor @Test func closingLastTab_removesPane() {
+    @Test func closingLastTab_removesPane() {
         let manager = PaneManager()
         let firstPane = manager.activePaneID
         let url = URL(fileURLWithPath: "/tmp/test.swift")
@@ -59,7 +59,7 @@ struct PaneLeafCloseTests {
 
     // MARK: - Close other tabs
 
-    @MainActor @Test func closeOtherTabs_keepingOne_closesRest() {
+    @Test func closeOtherTabs_keepingOne_closesRest() {
         let manager = PaneManager()
         let pane = manager.activePaneID
         guard let tm = manager.tabManager(for: pane) else {
@@ -81,7 +81,7 @@ struct PaneLeafCloseTests {
         #expect(tm.tabs.first?.url == url2)
     }
 
-    @MainActor @Test func closeOtherTabs_skipsDirtyWhenNotForced() {
+    @Test func closeOtherTabs_skipsDirtyWhenNotForced() {
         let manager = PaneManager()
         let pane = manager.activePaneID
         guard let tm = manager.tabManager(for: pane) else {
@@ -107,7 +107,7 @@ struct PaneLeafCloseTests {
 
     // MARK: - Close tabs to the right
 
-    @MainActor @Test func closeTabsToTheRight_closesOnlyRight() {
+    @Test func closeTabsToTheRight_closesOnlyRight() {
         let manager = PaneManager()
         let pane = manager.activePaneID
         guard let tm = manager.tabManager(for: pane) else {
@@ -129,7 +129,7 @@ struct PaneLeafCloseTests {
         #expect(tm.tabs.first?.url == url1)
     }
 
-    @MainActor @Test func closeTabsToTheRight_skipsDirtyWhenNotForced() {
+    @Test func closeTabsToTheRight_skipsDirtyWhenNotForced() {
         let manager = PaneManager()
         let pane = manager.activePaneID
         guard let tm = manager.tabManager(for: pane) else {
@@ -159,7 +159,7 @@ struct PaneLeafCloseTests {
 
     // MARK: - Close all tabs
 
-    @MainActor @Test func closeAllTabs_forced_closesEverything() {
+    @Test func closeAllTabs_forced_closesEverything() {
         let manager = PaneManager()
         let pane = manager.activePaneID
         guard let tm = manager.tabManager(for: pane) else {
@@ -176,7 +176,7 @@ struct PaneLeafCloseTests {
         #expect(tm.tabs.isEmpty)
     }
 
-    @MainActor @Test func closeAllTabs_notForced_skipsDirty() {
+    @Test func closeAllTabs_notForced_skipsDirty() {
         let manager = PaneManager()
         let pane = manager.activePaneID
         guard let tm = manager.tabManager(for: pane) else {
@@ -202,7 +202,7 @@ struct PaneLeafCloseTests {
 
     // MARK: - Dirty tab tracking for bulk close
 
-    @MainActor @Test func dirtyTabsForCloseOthers_returnsDirtyOnly() {
+    @Test func dirtyTabsForCloseOthers_returnsDirtyOnly() {
         let manager = PaneManager()
         let pane = manager.activePaneID
         guard let tm = manager.tabManager(for: pane) else {
@@ -228,7 +228,7 @@ struct PaneLeafCloseTests {
         #expect(dirty.first?.url == url2)
     }
 
-    @MainActor @Test func dirtyTabsForCloseRight_returnsDirtyToTheRight() {
+    @Test func dirtyTabsForCloseRight_returnsDirtyToTheRight() {
         let manager = PaneManager()
         let pane = manager.activePaneID
         guard let tm = manager.tabManager(for: pane) else {
@@ -254,7 +254,7 @@ struct PaneLeafCloseTests {
         #expect(dirty.first?.url == url3)
     }
 
-    @MainActor @Test func dirtyTabsForCloseAll_returnsAllDirty() {
+    @Test func dirtyTabsForCloseAll_returnsAllDirty() {
         let manager = PaneManager()
         let pane = manager.activePaneID
         guard let tm = manager.tabManager(for: pane) else {
@@ -294,7 +294,7 @@ struct PaneLeafCloseTests {
 
     // MARK: - Close all then remove pane
 
-    @MainActor @Test func closeAllTabs_thenRemovePane_works() {
+    @Test func closeAllTabs_thenRemovePane_works() {
         let manager = PaneManager()
         let firstPane = manager.activePaneID
         let url = URL(fileURLWithPath: "/tmp/test.swift")

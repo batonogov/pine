@@ -8,6 +8,7 @@ import Testing
 import Foundation
 @testable import Pine
 
+@MainActor
 struct GrammarModelTests {
 
     // MARK: - Grammar Decoding

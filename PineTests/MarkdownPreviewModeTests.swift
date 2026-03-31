@@ -9,6 +9,7 @@ import Testing
 @testable import Pine
 
 @Suite("MarkdownPreviewMode")
+@MainActor
 struct MarkdownPreviewModeTests {
 
     @Test func defaultIsSource() {

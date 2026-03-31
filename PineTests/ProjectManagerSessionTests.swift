@@ -9,6 +9,7 @@ import Testing
 @testable import Pine
 
 @Suite("ProjectManager Session Tests")
+@MainActor
 struct ProjectManagerSessionTests {
 
     private func makeTempProject() throws -> (dir: URL, files: [URL]) {

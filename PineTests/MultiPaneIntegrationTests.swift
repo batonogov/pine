@@ -13,6 +13,7 @@ import Testing
 @testable import Pine
 
 @Suite("Multi-Pane Integration Tests")
+@MainActor
 struct MultiPaneIntegrationTests {
 
     // MARK: - Helpers
@@ -37,12 +38,12 @@ struct MultiPaneIntegrationTests {
 
     // MARK: - activeTabManager tracks focus
 
-    @MainActor @Test func activeTabManager_singlePane_returnsPrimaryTabManager() {
+    @Test func activeTabManager_singlePane_returnsPrimaryTabManager() {
         let pm = ProjectManager()
         #expect(pm.activeTabManager === pm.tabManager)
     }
 
-    @MainActor @Test func activeTabManager_switchesBetweenPanes() {
+    @Test func activeTabManager_switchesBetweenPanes() {
         let pm = ProjectManager()
         let firstPaneID = pm.paneManager.activePaneID
         let firstTM = pm.paneManager.tabManager(for: firstPaneID)
@@ -63,7 +64,7 @@ struct MultiPaneIntegrationTests {
 
     // MARK: - allTabs collects from all panes
 
-    @MainActor @Test func allTabs_collectsFromAllPanes() {
+    @Test func allTabs_collectsFromAllPanes() {
         let pm = ProjectManager()
         let url1 = URL(fileURLWithPath: "/tmp/test-all-tabs-1.swift")
         let url2 = URL(fileURLWithPath: "/tmp/test-all-tabs-2.swift")
@@ -85,7 +86,7 @@ struct MultiPaneIntegrationTests {
 
     // MARK: - hasUnsavedChanges across panes
 
-    @MainActor @Test func hasUnsavedChanges_detectsDirtyInSecondPane() throws {
+    @Test func hasUnsavedChanges_detectsDirtyInSecondPane() throws {
         let (dir, files) = try makeTempProject()
         defer { cleanup(dir) }
 
@@ -97,7 +98,10 @@ struct MultiPaneIntegrationTests {
             Issue.record("Split failed")
             return
         }
-        let secondTM = pm.paneManager.tabManager(for: secondPaneID)!
+        guard let secondTM = pm.paneManager.tabManager(for: secondPaneID) else {
+            Issue.record("tabManager not found for second pane")
+            return
+        }
         secondTM.openTab(url: files[1])
         secondTM.updateContent("modified content")
 
@@ -106,7 +110,7 @@ struct MultiPaneIntegrationTests {
         #expect(pm.allDirtyTabs.first?.url == files[1])
     }
 
-    @MainActor @Test func hasUnsavedChanges_falseWhenAllClean() throws {
+    @Test func hasUnsavedChanges_falseWhenAllClean() throws {
         let (dir, files) = try makeTempProject()
         defer { cleanup(dir) }
 
@@ -119,7 +123,7 @@ struct MultiPaneIntegrationTests {
 
     // MARK: - saveAllPaneTabs
 
-    @MainActor @Test func saveAllPaneTabs_savesAcrossPanes() throws {
+    @Test func saveAllPaneTabs_savesAcrossPanes() throws {
         let (dir, files) = try makeTempProject()
         defer { cleanup(dir) }
 
@@ -132,7 +136,10 @@ struct MultiPaneIntegrationTests {
             Issue.record("Split failed")
             return
         }
-        let secondTM = pm.paneManager.tabManager(for: secondPaneID)!
+        guard let secondTM = pm.paneManager.tabManager(for: secondPaneID) else {
+            Issue.record("tabManager not found for second pane")
+            return
+        }
         secondTM.openTab(url: files[1])
         secondTM.updateContent("// modified b.swift")
 
@@ -151,7 +158,7 @@ struct MultiPaneIntegrationTests {
 
     // MARK: - Session persistence collects all pane tabs
 
-    @MainActor @Test func saveSession_includesTabsFromAllPanes() throws {
+    @Test func saveSession_includesTabsFromAllPanes() throws {
         let (dir, files) = try makeTempProject()
         defer {
             cleanup(dir)
@@ -184,7 +191,7 @@ struct MultiPaneIntegrationTests {
 
     // MARK: - moveTab safe ordering (add first, then remove)
 
-    @MainActor @Test func moveTab_addsToDestBeforeRemovingFromSource() {
+    @Test func moveTab_addsToDestBeforeRemovingFromSource() {
         let manager = PaneManager()
         let firstPane = manager.activePaneID
 
@@ -209,7 +216,7 @@ struct MultiPaneIntegrationTests {
 
     // MARK: - allTabManagers
 
-    @MainActor @Test func allTabManagers_returnsAllPaneTabManagers() {
+    @Test func allTabManagers_returnsAllPaneTabManagers() {
         let manager = PaneManager()
         let firstPane = manager.activePaneID
 
@@ -221,7 +228,7 @@ struct MultiPaneIntegrationTests {
 
     // MARK: - activeTabManager after pane removal
 
-    @MainActor @Test func activeTabManager_afterRemoval_switchesToRemaining() {
+    @Test func activeTabManager_afterRemoval_switchesToRemaining() {
         let pm = ProjectManager()
         let firstPaneID = pm.paneManager.activePaneID
 

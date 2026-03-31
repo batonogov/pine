@@ -11,20 +11,20 @@ import os
 // MARK: - Модели грамматики
 
 /// Одно правило подсветки из JSON.
-struct GrammarRule: Codable, Sendable {
+nonisolated struct GrammarRule: Codable, Sendable {
     let pattern: String      // Regex-паттерн
     let scope: String        // Семантический scope: "keyword", "string", "comment" и т.д.
     var options: [String]?   // Опции regex: ["anchorsMatchLines"]
 }
 
 /// Block comment delimiters (e.g. `/* */`, `<!-- -->`).
-struct BlockCommentDelimiters: Codable, Sendable {
+nonisolated struct BlockCommentDelimiters: Codable, Sendable {
     let open: String
     let close: String
 }
 
 /// Грамматика языка, загружаемая из JSON-файла.
-struct Grammar: Codable, Sendable {
+nonisolated struct Grammar: Codable, Sendable {
     let name: String             // "Swift", "Python" и т.д.
     let extensions: [String]     // ["swift"], ["py", "pyw"]
     let rules: [GrammarRule]     // Правила подсветки
@@ -38,7 +38,7 @@ struct Grammar: Codable, Sendable {
 
 /// Тема определяет цвета для каждого scope.
 /// Отделена от грамматик — можно менять тему, не трогая правила.
-struct Theme {
+nonisolated struct Theme {
     let colors: [String: NSColor]
 
     /// Тема по умолчанию — адаптируется к light/dark mode.
@@ -76,7 +76,7 @@ struct Theme {
 /// Загружает грамматики из JSON-файлов в папке Grammars/ в бандле приложения.
 /// При подсветке выбирает грамматику по расширению файла и применяет правила.
 /// Thread-safe generation counter for cancelling stale highlight requests.
-final class HighlightGeneration: @unchecked Sendable {
+nonisolated final class HighlightGeneration: @unchecked Sendable {
     private let lock = NSLock()
     private var value: Int = 0
 
@@ -94,20 +94,20 @@ final class HighlightGeneration: @unchecked Sendable {
 }
 
 /// A single match found by regex computation (value type, safe to pass between threads).
-struct HighlightMatch: Sendable {
+nonisolated struct HighlightMatch: Sendable {
     let range: NSRange
     let scope: String
     let priority: Int
 }
 
 /// Result of background match computation.
-struct HighlightMatchResult: Sendable {
+nonisolated struct HighlightMatchResult: Sendable {
     let matches: [HighlightMatch]
     let repaintRange: NSRange
     let multilineFingerprint: [Int]
 }
 
-final class SyntaxHighlighter: @unchecked Sendable {
+nonisolated final class SyntaxHighlighter: @unchecked Sendable {
     /// Singleton — один экземпляр на всё приложение (грамматики загружаются один раз).
     static let shared = SyntaxHighlighter()
 

@@ -10,6 +10,7 @@ import Testing
 @testable import Pine
 
 @Suite("Dock Menu Tests")
+@MainActor
 struct DockMenuTests {
 
     private func makeTempDirectory() throws -> URL {

@@ -8,18 +8,19 @@ import Foundation
 @testable import Pine
 
 @Suite("PaneManager Tests")
+@MainActor
 struct PaneManagerTests {
 
     // MARK: - Initialization
 
-    @MainActor @Test func init_createsOnePaneWithTabManager() {
+    @Test func init_createsOnePaneWithTabManager() {
         let manager = PaneManager()
         #expect(manager.root.leafCount == 1)
         #expect(manager.activeTabManager != nil)
         #expect(manager.tabManagers.count == 1)
     }
 
-    @MainActor @Test func initWithExistingTabManager_preservesTabManager() {
+    @Test func initWithExistingTabManager_preservesTabManager() {
         let existingTM = TabManager()
         let testURL = URL(fileURLWithPath: "/tmp/test.swift")
         existingTM.openTab(url: testURL)
@@ -30,7 +31,7 @@ struct PaneManagerTests {
 
     // MARK: - Split operations
 
-    @MainActor @Test func splitPane_horizontal_createsNewPane() {
+    @Test func splitPane_horizontal_createsNewPane() {
         let manager = PaneManager()
         let originalPaneID = manager.activePaneID
 
@@ -43,7 +44,7 @@ struct PaneManagerTests {
         }
     }
 
-    @MainActor @Test func splitPane_vertical_createsNewPane() {
+    @Test func splitPane_vertical_createsNewPane() {
         let manager = PaneManager()
         let originalPaneID = manager.activePaneID
 
@@ -59,7 +60,7 @@ struct PaneManagerTests {
         }
     }
 
-    @MainActor @Test func splitPane_newPaneHasOwnTabManager() {
+    @Test func splitPane_newPaneHasOwnTabManager() {
         let manager = PaneManager()
         let originalPaneID = manager.activePaneID
         let originalTM = manager.tabManager(for: originalPaneID)
@@ -75,7 +76,7 @@ struct PaneManagerTests {
         #expect(newTM !== originalTM)
     }
 
-    @MainActor @Test func splitPane_invalidTarget_returnsNil() {
+    @Test func splitPane_invalidTarget_returnsNil() {
         let manager = PaneManager()
         let fakePaneID = PaneID()
 
@@ -84,7 +85,7 @@ struct PaneManagerTests {
         #expect(manager.root.leafCount == 1)
     }
 
-    @MainActor @Test func multipleSplits_createDeepTree() {
+    @Test func multipleSplits_createDeepTree() {
         let manager = PaneManager()
         let firstPane = manager.activePaneID
 
@@ -102,7 +103,7 @@ struct PaneManagerTests {
 
     // MARK: - Remove pane
 
-    @MainActor @Test func removePane_collapsesTree() {
+    @Test func removePane_collapsesTree() {
         let manager = PaneManager()
         let firstPane = manager.activePaneID
 
@@ -117,7 +118,7 @@ struct PaneManagerTests {
         #expect(manager.activePaneID == firstPane)
     }
 
-    @MainActor @Test func removePane_singlePane_doesNothing() {
+    @Test func removePane_singlePane_doesNothing() {
         let manager = PaneManager()
         let onlyPane = manager.activePaneID
 
@@ -126,7 +127,7 @@ struct PaneManagerTests {
         #expect(manager.tabManagers.count == 1)
     }
 
-    @MainActor @Test func removeActivePane_switchesToRemainingPane() {
+    @Test func removeActivePane_switchesToRemainingPane() {
         let manager = PaneManager()
         let firstPane = manager.activePaneID
 
@@ -144,7 +145,7 @@ struct PaneManagerTests {
 
     // MARK: - Tab movement
 
-    @MainActor @Test func moveTabBetweenPanes_movesTab() {
+    @Test func moveTabBetweenPanes_movesTab() {
         let manager = PaneManager()
         let firstPane = manager.activePaneID
 
@@ -171,7 +172,7 @@ struct PaneManagerTests {
         #expect(secondTabs.first?.url == testURL)
     }
 
-    @MainActor @Test func moveTabBetweenPanes_emptySource_removesPane() {
+    @Test func moveTabBetweenPanes_emptySource_removesPane() {
         let manager = PaneManager()
         let firstPane = manager.activePaneID
 
@@ -193,7 +194,7 @@ struct PaneManagerTests {
 
     // MARK: - Ratio updates
 
-    @MainActor @Test func updateRatio_changesTreeRatio() {
+    @Test func updateRatio_changesTreeRatio() {
         let manager = PaneManager()
         let firstPane = manager.activePaneID
 
@@ -211,7 +212,7 @@ struct PaneManagerTests {
         }
     }
 
-    @MainActor @Test func updateRatio_clampsToRange() {
+    @Test func updateRatio_clampsToRange() {
         let manager = PaneManager()
         let firstPane = manager.activePaneID
 
@@ -231,13 +232,13 @@ struct PaneManagerTests {
 
     // MARK: - Tab manager lookup
 
-    @MainActor @Test func tabManager_forInvalidPaneID_returnsNil() {
+    @Test func tabManager_forInvalidPaneID_returnsNil() {
         let manager = PaneManager()
         let fakePaneID = PaneID()
         #expect(manager.tabManager(for: fakePaneID) == nil)
     }
 
-    @MainActor @Test func activeTabManager_matchesActivePaneID() {
+    @Test func activeTabManager_matchesActivePaneID() {
         let manager = PaneManager()
         let firstPane = manager.activePaneID
 
@@ -254,7 +255,7 @@ struct PaneManagerTests {
 
     // MARK: - Split with tab movement
 
-    @MainActor @Test func splitPane_withTabURL_movesTabToNewPane() {
+    @Test func splitPane_withTabURL_movesTabToNewPane() {
         let manager = PaneManager()
         let firstPane = manager.activePaneID
 
@@ -285,7 +286,7 @@ struct PaneManagerTests {
 
     // MARK: - Focus cycle
 
-    @MainActor @Test func focusCycle_threePanes_cyclesThroughAll() {
+    @Test func focusCycle_threePanes_cyclesThroughAll() {
         let manager = PaneManager()
         let firstPane = manager.activePaneID
 
@@ -315,7 +316,7 @@ struct PaneManagerTests {
 
     // MARK: - updateSplitRatio
 
-    @MainActor @Test func updateSplitRatio_changesParentOfNestedPane() {
+    @Test func updateSplitRatio_changesParentOfNestedPane() {
         let manager = PaneManager()
         let firstPane = manager.activePaneID
 
@@ -335,7 +336,7 @@ struct PaneManagerTests {
 
     // MARK: - Move tab edge cases
 
-    @MainActor @Test func moveTabBetweenPanes_invalidSourcePane_doesNothing() {
+    @Test func moveTabBetweenPanes_invalidSourcePane_doesNothing() {
         let manager = PaneManager()
         let firstPane = manager.activePaneID
         let testURL = URL(fileURLWithPath: "/tmp/test.swift")
@@ -351,7 +352,7 @@ struct PaneManagerTests {
         #expect(manager.tabManager(for: firstPane)?.tabs.count == 1)
     }
 
-    @MainActor @Test func moveTabBetweenPanes_nonExistentTab_doesNothing() {
+    @Test func moveTabBetweenPanes_nonExistentTab_doesNothing() {
         let manager = PaneManager()
         let firstPane = manager.activePaneID
         let testURL = URL(fileURLWithPath: "/tmp/test.swift")
@@ -368,7 +369,7 @@ struct PaneManagerTests {
         #expect(manager.tabManager(for: secondPane)?.tabs.isEmpty == true)
     }
 
-    @MainActor @Test func moveTabBetweenPanes_preservesAllTabState() {
+    @Test func moveTabBetweenPanes_preservesAllTabState() {
         let manager = PaneManager()
         let firstPane = manager.activePaneID
         let testURL = URL(fileURLWithPath: "/tmp/test.swift")
@@ -414,7 +415,7 @@ struct PaneManagerTests {
 
     // MARK: - Remove pane edge cases
 
-    @MainActor @Test func removePane_fromThreePanes_keepsTwo() {
+    @Test func removePane_fromThreePanes_keepsTwo() {
         let manager = PaneManager()
         let firstPane = manager.activePaneID
 
@@ -434,7 +435,7 @@ struct PaneManagerTests {
         #expect(manager.tabManagers[thirdPane] != nil)
     }
 
-    @MainActor @Test func removePane_invalidPaneID_doesNothing() {
+    @Test func removePane_invalidPaneID_doesNothing() {
         let manager = PaneManager()
         let firstPane = manager.activePaneID
         _ = manager.splitPane(firstPane, axis: .horizontal)
@@ -446,7 +447,7 @@ struct PaneManagerTests {
 
     // MARK: - Split with nil tabURL
 
-    @MainActor @Test func splitPane_withNilTabURL_createsEmptyPane() {
+    @Test func splitPane_withNilTabURL_createsEmptyPane() {
         let manager = PaneManager()
         let firstPane = manager.activePaneID
         manager.tabManager(for: firstPane)?.openTab(url: URL(fileURLWithPath: "/tmp/test.swift"))
@@ -463,7 +464,7 @@ struct PaneManagerTests {
 
     // MARK: - Multiple rapid splits
 
-    @MainActor @Test func rapidSplits_allPanesHaveTabManagers() {
+    @Test func rapidSplits_allPanesHaveTabManagers() {
         let manager = PaneManager()
         var lastPaneID = manager.activePaneID
 
@@ -486,7 +487,7 @@ struct PaneManagerTests {
 
     // MARK: - updateRatio edge cases
 
-    @MainActor @Test func updateRatio_onSinglePane_noChange() {
+    @Test func updateRatio_onSinglePane_noChange() {
         let manager = PaneManager()
         let onlyPane = manager.activePaneID
         manager.updateRatio(for: onlyPane, ratio: 0.7)

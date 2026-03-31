@@ -9,6 +9,7 @@ import AppKit
 
 /// Tests for CloseDelegate (PineApp.swift) — window close handling.
 @Suite("CloseDelegate Tests")
+@MainActor
 struct CloseDelegateTests {
 
     private func makeTempDir() throws -> URL {

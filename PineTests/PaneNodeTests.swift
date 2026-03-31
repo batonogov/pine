@@ -10,6 +10,7 @@ import Foundation
 // swiftlint:disable type_body_length file_length
 
 @Suite("PaneNode Tests")
+@MainActor
 struct PaneNodeTests {
 
     // MARK: - Basic construction

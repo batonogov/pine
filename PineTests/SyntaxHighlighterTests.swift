@@ -11,6 +11,7 @@ import SwiftUI
 /// Serialized: все тесты мутируют singleton SyntaxHighlighter.shared
 /// (регистрируют грамматики, меняют кэш), поэтому параллельный запуск небезопасен.
 @Suite(.serialized)
+@MainActor
 struct SyntaxHighlighterTests {
 
     nonisolated(unsafe) private let font = NSFont.monospacedSystemFont(ofSize: 13, weight: .regular)

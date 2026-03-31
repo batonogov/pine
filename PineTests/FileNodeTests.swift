@@ -7,6 +7,7 @@ import Testing
 import Foundation
 @testable import Pine
 
+@MainActor
 struct FileNodeTests {
 
     private func makeTempDirectory() throws -> URL {

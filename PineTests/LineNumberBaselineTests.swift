@@ -8,6 +8,7 @@ import AppKit
 @testable import Pine
 
 /// Tests that line number baseline aligns with editor text baseline (issue #250).
+@MainActor
 struct LineNumberBaselineTests {
 
     private func makeView() -> LineNumberView {
