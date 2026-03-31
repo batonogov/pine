@@ -9,7 +9,11 @@ import Foundation
 import os
 
 /// Один узел дерева файлов — файл или папка.
-final class FileNode: Identifiable, Hashable, @unchecked Sendable {
+/// Explicitly `nonisolated` — created and traversed on background threads
+/// (WorkspaceManager.loadDirectoryContentsAsync, loadTopLevelInParallel).
+/// Without this, SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor would make it implicitly @MainActor,
+/// causing dispatch_assert_queue_fail when constructed off the main thread (#693).
+nonisolated final class FileNode: Identifiable, Hashable, @unchecked Sendable {
     let id: URL               // Уникальный идентификатор = полный путь к файлу
     let name: String           // Имя файла/папки (отображается в UI)
     let url: URL               // Полный путь
@@ -208,7 +212,8 @@ final class FileNode: Identifiable, Hashable, @unchecked Sendable {
 /// Separated into a dedicated class so that `LoadContext` itself can be a value type,
 /// eliminating the use-after-free crash caused by ARC deallocation ordering issues
 /// with the previous class-based `LoadContext` (see #405).
-private final class LoadState {
+/// Explicitly `nonisolated` — created inside FileNode init which runs on background threads (#693).
+nonisolated private final class LoadState {
     var visitedRealPaths: Set<String> = []
     var reachedDepthLimit = false
     var symlinkCache: [URL: String] = [:]

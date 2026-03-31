@@ -148,14 +148,18 @@ final class WorkspaceManager {
         // (inside DispatchQueue.main.async), but Swift 6 cannot prove this statically.
         nonisolated(unsafe) let completion = completion
         DispatchQueue.global(qos: .userInitiated).async {
-            // Run git setup first so we know which paths are ignored
-            let bgGit = GitStatusProvider()
-            bgGit.setup(repositoryURL: url)
+            // Run git detection and fetch on background thread using GitFetcher
+            // (not GitStatusProvider which is @MainActor and cannot be created here — #693).
+            let revParseResult = GitStatusProvider.runGit(["rev-parse", "--show-toplevel"], at: url)
+            let isRepo = revParseResult.exitCode == 0
+            let gitRootPath = isRepo ? revParseResult.output.trimmingCharacters(in: .whitespacesAndNewlines) : nil
+            let fetched = isRepo ? GitFetcher.fetchAllInParallel(at: url) : (branch: "", statuses: [:], ignored: Set<String>(), branches: [String]())
+            let ignoredPaths = fetched.ignored
 
             // Phase 1: shallow tree for fast initial render
             let shallowResult = FileNode.loadTree(
                 url: url, projectRoot: url,
-                ignoredPaths: bgGit.ignoredPaths,
+                ignoredPaths: ignoredPaths,
                 maxDepth: Self.shallowDepth
             )
             let shallowChildren = shallowResult.root.children ?? []
@@ -167,13 +171,13 @@ final class WorkspaceManager {
                 }
                 self.rootNodes = shallowChildren
                 self.notifyRootNodesChanged(shallowChildren)
-                self.gitProvider.repositoryURL = bgGit.repositoryURL
-                self.gitProvider.gitRootPath = bgGit.gitRootPath
-                self.gitProvider.isGitRepository = bgGit.isGitRepository
-                self.gitProvider.currentBranch = bgGit.currentBranch
-                self.gitProvider.fileStatuses = bgGit.fileStatuses
-                self.gitProvider.ignoredPaths = bgGit.ignoredPaths
-                self.gitProvider.branches = bgGit.branches
+                self.gitProvider.repositoryURL = url
+                self.gitProvider.gitRootPath = gitRootPath
+                self.gitProvider.isGitRepository = isRepo
+                self.gitProvider.currentBranch = fetched.branch
+                self.gitProvider.fileStatuses = fetched.statuses
+                self.gitProvider.ignoredPaths = ignoredPaths
+                self.gitProvider.branches = fetched.branches
 
                 // For shallow projects, loading is done — no Phase 2 needed.
                 if !shallowResult.wasDepthLimited {
@@ -188,7 +192,7 @@ final class WorkspaceManager {
             guard shallowResult.wasDepthLimited else { return }
 
             let fullChildren = Self.loadTopLevelInParallel(
-                url: url, ignoredPaths: bgGit.ignoredPaths
+                url: url, ignoredPaths: ignoredPaths
             )
 
             // Safe ordering: main queue is FIFO, so Phase 2 always runs after Phase 1.

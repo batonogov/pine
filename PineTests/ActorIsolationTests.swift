@@ -144,4 +144,117 @@ struct ActorIsolationTests {
         #expect(result != nil, "highlightAsync should complete without crash")
         #expect(!result!.matches.isEmpty)
     }
+
+    // MARK: - FileNode on background thread
+
+    /// Creating FileNode from a background thread must not crash.
+    /// Before the fix, SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor made FileNode
+    /// implicitly @MainActor, causing dispatch_assert_queue_fail when constructed
+    /// in WorkspaceManager.loadDirectoryContentsAsync (#693).
+    @Test func fileNodeCreationOnBackgroundThread() async {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("pine-isolation-test-\(UUID().uuidString)")
+        try? FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        // Create a test file
+        let testFile = tempDir.appendingPathComponent("test.swift")
+        FileManager.default.createFile(atPath: testFile.path, contents: Data("func hello()".utf8))
+
+        let node: FileNode = await withCheckedContinuation { continuation in
+            DispatchQueue.global(qos: .userInitiated).async {
+                let n = FileNode(url: tempDir, projectRoot: tempDir)
+                continuation.resume(returning: n)
+            }
+        }
+
+        #expect(node.isDirectory, "Should be a directory")
+        #expect(node.children != nil, "Directory should have children")
+        #expect(node.children?.count == 1, "Should have one child (test.swift)")
+        #expect(node.children?.first?.name == "test.swift")
+    }
+
+    /// FileNode.loadTree from a background thread must not crash.
+    /// This mimics the exact call path in WorkspaceManager.loadDirectoryContentsAsync.
+    @Test func fileNodeLoadTreeOnBackgroundThread() async {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("pine-isolation-loadtree-\(UUID().uuidString)")
+        try? FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        let subDir = tempDir.appendingPathComponent("src")
+        try? FileManager.default.createDirectory(at: subDir, withIntermediateDirectories: true)
+        let testFile = subDir.appendingPathComponent("main.swift")
+        FileManager.default.createFile(atPath: testFile.path, contents: Data("import Foundation".utf8))
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let result: FileNode.LoadResult = await withCheckedContinuation { continuation in
+            DispatchQueue.global(qos: .userInitiated).async {
+                let r = FileNode.loadTree(
+                    url: tempDir, projectRoot: tempDir,
+                    ignoredPaths: [], maxDepth: 10
+                )
+                continuation.resume(returning: r)
+            }
+        }
+
+        #expect(!result.wasDepthLimited, "Small tree should not hit depth limit")
+        #expect(result.root.isDirectory)
+        #expect(result.root.children?.first?.name == "src")
+        #expect(result.root.children?.first?.children?.first?.name == "main.swift")
+    }
+
+    /// Concurrent FileNode creation from multiple background threads must not crash.
+    @Test func concurrentFileNodeCreation() async {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("pine-isolation-concurrent-\(UUID().uuidString)")
+        try? FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        for i in 0..<5 {
+            let f = tempDir.appendingPathComponent("file\(i).txt")
+            FileManager.default.createFile(atPath: f.path, contents: Data("content \(i)".utf8))
+        }
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        await withTaskGroup(of: FileNode.self) { group in
+            for _ in 0..<20 {
+                group.addTask {
+                    await withCheckedContinuation { continuation in
+                        DispatchQueue.global(qos: .userInitiated).async {
+                            let n = FileNode(url: tempDir, projectRoot: tempDir)
+                            continuation.resume(returning: n)
+                        }
+                    }
+                }
+            }
+            for await node in group {
+                #expect(node.isDirectory)
+                #expect(node.children?.count == 5, "Each concurrent FileNode should see all 5 files")
+            }
+        }
+    }
+
+    // MARK: - GitFetcher on background thread (replaces GitStatusProvider background init)
+
+    /// GitFetcher.fetchAllInParallel from a background thread must not crash.
+    /// WorkspaceManager.loadDirectoryContentsAsync now uses GitFetcher directly
+    /// instead of creating @MainActor GitStatusProvider on background (#693).
+    @Test func gitFetcherOnBackgroundThread() async {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("pine-isolation-gitfetcher-\(UUID().uuidString)")
+        try? FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        // Not a git repo — should return empty results without crashing
+        typealias GitResult = (
+            branch: String, statuses: [String: GitFileStatus],
+            ignored: Set<String>, branches: [String]
+        )
+        let result: GitResult = await withCheckedContinuation { continuation in
+            DispatchQueue.global(qos: .userInitiated).async {
+                let r = GitFetcher.fetchAllInParallel(at: tempDir)
+                continuation.resume(returning: r)
+            }
+        }
+
+        #expect(result.branch.isEmpty, "Non-git directory should have empty branch")
+        #expect(result.statuses.isEmpty, "Non-git directory should have no statuses")
+    }
 }
