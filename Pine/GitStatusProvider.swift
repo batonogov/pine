@@ -111,7 +111,8 @@ struct GitLineDiff: Equatable, Sendable {
 /// Deliberately **not** `@MainActor` so closures inside `DispatchQueue.global().async`
 /// do not inherit MainActor isolation — prevents `dispatch_assert_queue_fail`
 /// crash under Swift 6 strict concurrency (issue #613).
-enum GitFetcher {
+/// Marked `nonisolated` to opt out of `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor`.
+nonisolated enum GitFetcher {
 
     /// Runs branch, status+ignored, and branch-list fetches in parallel.
     /// Safe to call from any thread (all work happens on background queues).
