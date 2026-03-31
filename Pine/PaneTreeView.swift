@@ -179,10 +179,14 @@ struct PaneLeafView: View {
     @Environment(PaneManager.self) private var paneManager
     @Environment(WorkspaceManager.self) private var workspace
     @Environment(ProjectManager.self) private var projectManager
+    @Environment(TerminalManager.self) private var terminal
     @Environment(ProjectRegistry.self) private var registry
     @Environment(\.openWindow) private var openWindow
 
     @State private var lineDiffs: [GitLineDiff] = []
+    @State private var diffHunks: [DiffHunk] = []
+    @State private var blameLines: [GitBlameLine] = []
+    @State private var blameTask: Task<Void, Never>?
     @State private var isDragTargeted = false
     @State private var goToLineOffset: GoToRequest?
     @State private var dropZone: PaneDropZone?
@@ -224,6 +228,14 @@ struct PaneLeafView: View {
                         : Color.clear,
                     width: 1
                 )
+                .onChange(of: tabManager.activeTabID) { _, _ in
+                    refreshLineDiffs(tabManager: tabManager)
+                    refreshBlame(tabManager: tabManager)
+                }
+                .modifier(BlameObserver(
+                    isBlameVisible: isBlameVisible,
+                    onRefresh: { refreshBlame(tabManager: tabManager) }
+                ))
                 .accessibilityIdentifier(AccessibilityID.paneLeaf(paneID.id.uuidString))
         }
     }
@@ -235,10 +247,16 @@ struct PaneLeafView: View {
                 EditorTabBar(
                     tabManager: tabManager,
                     onCloseTab: { tab in
-                        tabManager.closeTab(id: tab.id, force: false)
-                        if tabManager.tabs.isEmpty {
-                            paneManager.removePane(paneID)
-                        }
+                        closeTabWithConfirmation(tab, tabManager: tabManager)
+                    },
+                    onCloseOtherTabs: { tabID in
+                        closeOtherTabsWithConfirmation(keeping: tabID, tabManager: tabManager)
+                    },
+                    onCloseTabsToTheRight: { tabID in
+                        closeTabsToTheRightWithConfirmation(of: tabID, tabManager: tabManager)
+                    },
+                    onCloseAllTabs: {
+                        closeAllTabsWithConfirmation(tabManager: tabManager)
                     },
                     overridePaneID: paneID
                 )
@@ -262,6 +280,13 @@ struct PaneLeafView: View {
                 }
                 .accessibilityIdentifier(AccessibilityID.editorPlaceholder)
             }
+
+            StatusBarView(
+                gitProvider: workspace.gitProvider,
+                terminal: terminal,
+                tabManager: tabManager,
+                progress: projectManager.progress
+            )
         }
     }
 
@@ -276,8 +301,11 @@ struct PaneLeafView: View {
             language: tab.language,
             fileName: tab.fileName,
             lineDiffs: lineDiffs,
+            diffHunks: diffHunks,
+            onAcceptHunk: { hunk in handleGutterAccept(hunk, tabManager: tabManager) },
+            onRevertHunk: { hunk in handleGutterRevert(hunk, tabManager: tabManager) },
             isBlameVisible: isBlameVisible,
-            blameLines: [],
+            blameLines: blameLines,
             foldState: Binding(
                 get: { tab.foldState },
                 set: { tabManager.updateFoldState($0) }
@@ -301,6 +329,183 @@ struct PaneLeafView: View {
         .id(tab.id)
         .accessibilityIdentifier(AccessibilityID.codeEditor)
         .onAppear { goToLineOffset = nil }
+    }
+
+    // MARK: - Git diff & blame
+
+    /// Refreshes cached line diffs and diff hunks for the active tab.
+    private func refreshLineDiffs(tabManager: TabManager) {
+        guard let tab = tabManager.activeTab else {
+            lineDiffs = []
+            diffHunks = []
+            return
+        }
+        let fileURL = tab.url
+        let provider = workspace.gitProvider
+        guard provider.isGitRepository, let repoURL = workspace.rootURL else {
+            lineDiffs = []
+            diffHunks = []
+            return
+        }
+        Task {
+            async let diffs = provider.diffForFileAsync(at: fileURL)
+            async let hunks = InlineDiffProvider.fetchHunks(for: fileURL, repoURL: repoURL)
+            let (resolvedDiffs, resolvedHunks) = await (diffs, hunks)
+            if tabManager.activeTab?.url == fileURL {
+                lineDiffs = resolvedDiffs
+                diffHunks = resolvedHunks
+            }
+        }
+    }
+
+    /// Refreshes cached blame data for the active tab.
+    private func refreshBlame(tabManager: TabManager) {
+        blameTask?.cancel()
+        guard isBlameVisible else {
+            blameLines = []
+            return
+        }
+        guard let tab = tabManager.activeTab else {
+            blameLines = []
+            return
+        }
+        let fileURL = tab.url
+        let provider = workspace.gitProvider
+        guard provider.isGitRepository, let repoURL = provider.repositoryURL else {
+            blameLines = []
+            return
+        }
+        let filePath = fileURL.path
+        blameTask = Task.detached {
+            let result = GitStatusProvider.runGit(
+                ["blame", "--porcelain", "--", filePath], at: repoURL
+            )
+            guard !Task.isCancelled else { return }
+            let lines: [GitBlameLine]
+            if result.exitCode == 0, !result.output.isEmpty {
+                lines = GitStatusProvider.parseBlame(result.output)
+            } else {
+                lines = []
+            }
+            guard !Task.isCancelled else { return }
+            await MainActor.run {
+                if tabManager.activeTab?.url == fileURL {
+                    blameLines = lines
+                }
+            }
+        }
+    }
+
+    // MARK: - Gutter accept/revert
+
+    private func handleGutterAccept(_ hunk: DiffHunk, tabManager: TabManager) {
+        guard let tab = tabManager.activeTab,
+              let repoURL = workspace.rootURL else { return }
+        Task {
+            await InlineDiffProvider.acceptHunk(hunk, fileURL: tab.url, repoURL: repoURL)
+            await workspace.gitProvider.refreshAsync()
+            refreshLineDiffs(tabManager: tabManager)
+        }
+    }
+
+    private func handleGutterRevert(_ hunk: DiffHunk, tabManager: TabManager) {
+        guard let tab = tabManager.activeTab,
+              let repoURL = workspace.rootURL else { return }
+        Task {
+            if let newContent = await InlineDiffProvider.revertHunk(
+                hunk, fileURL: tab.url, repoURL: repoURL
+            ) {
+                tabManager.updateContent(newContent)
+                tabManager.reloadTab(url: tab.url)
+                await workspace.gitProvider.refreshAsync()
+                refreshLineDiffs(tabManager: tabManager)
+            }
+        }
+    }
+
+    // MARK: - Tab close with dirty confirmation
+
+    /// Closes a tab with unsaved-changes protection.
+    private func closeTabWithConfirmation(_ tab: EditorTab, tabManager: TabManager) {
+        if tab.isDirty {
+            let alert = NSAlert()
+            alert.messageText = Strings.unsavedChangesTitle
+            alert.informativeText = Strings.unsavedChangesMessage
+            alert.addButton(withTitle: Strings.dialogSave)
+            alert.addButton(withTitle: Strings.dialogDontSave)
+            alert.addButton(withTitle: Strings.dialogCancel)
+            alert.alertStyle = .warning
+
+            let response = alert.runModal()
+            switch response {
+            case .alertFirstButtonReturn:
+                guard let index = tabManager.tabs.firstIndex(where: { $0.id == tab.id }) else { return }
+                guard tabManager.saveTab(at: index) else { return }
+                Task { await workspace.gitProvider.refreshAsync() }
+                tabManager.closeTab(id: tab.id)
+            case .alertSecondButtonReturn:
+                tabManager.closeTab(id: tab.id)
+            default:
+                return
+            }
+        } else {
+            tabManager.closeTab(id: tab.id)
+        }
+
+        if tabManager.tabs.isEmpty {
+            paneManager.removePane(paneID)
+        }
+    }
+
+    /// Confirms and closes all tabs except the one with the given ID.
+    private func closeOtherTabsWithConfirmation(keeping tabID: UUID, tabManager: TabManager) {
+        let dirty = tabManager.dirtyTabsForCloseOthers(keeping: tabID)
+        guard confirmBulkClose(dirtyTabs: dirty, tabManager: tabManager) else { return }
+        tabManager.closeOtherTabs(keeping: tabID, force: true)
+    }
+
+    /// Confirms and closes all tabs to the right of the given tab.
+    private func closeTabsToTheRightWithConfirmation(of tabID: UUID, tabManager: TabManager) {
+        let dirty = tabManager.dirtyTabsForCloseRight(of: tabID)
+        guard confirmBulkClose(dirtyTabs: dirty, tabManager: tabManager) else { return }
+        tabManager.closeTabsToTheRight(of: tabID, force: true)
+    }
+
+    /// Confirms and closes all tabs.
+    private func closeAllTabsWithConfirmation(tabManager: TabManager) {
+        let dirty = tabManager.dirtyTabsForCloseAll()
+        guard confirmBulkClose(dirtyTabs: dirty, tabManager: tabManager) else { return }
+        tabManager.closeAllTabs(force: true)
+        paneManager.removePane(paneID)
+    }
+
+    /// Prompts the user when dirty tabs would be closed in a bulk operation.
+    private func confirmBulkClose(dirtyTabs: [EditorTab], tabManager: TabManager) -> Bool {
+        guard !dirtyTabs.isEmpty else { return true }
+
+        let fileList = dirtyTabs.map { "  \u{2022} \($0.fileName)" }.joined(separator: "\n")
+        let alert = NSAlert()
+        alert.messageText = Strings.unsavedChangesTitle
+        alert.informativeText = Strings.unsavedChangesListMessage(fileList)
+        alert.addButton(withTitle: Strings.dialogSaveAll)
+        alert.addButton(withTitle: Strings.dialogDontSave)
+        alert.addButton(withTitle: Strings.dialogCancel)
+        alert.alertStyle = .warning
+
+        let response = alert.runModal()
+        switch response {
+        case .alertFirstButtonReturn:
+            for tab in dirtyTabs {
+                guard let index = tabManager.tabs.firstIndex(where: { $0.id == tab.id }) else { continue }
+                guard tabManager.saveTab(at: index) else { return false }
+            }
+            Task { await workspace.gitProvider.refreshAsync() }
+            return true
+        case .alertSecondButtonReturn:
+            return true
+        default:
+            return false
+        }
     }
 }
 
