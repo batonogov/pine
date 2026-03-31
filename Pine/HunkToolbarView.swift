@@ -1,0 +1,221 @@
+//
+//  HunkToolbarView.swift
+//  Pine
+//
+//  A compact AppKit toolbar overlay for expanded diff hunks (#689).
+//  Shows: ← Prev | ↑ summary (2/5) ↓ | Restore | ✕
+//  Positioned above the first line of the expanded hunk, right-aligned.
+//
+
+import AppKit
+
+/// A compact, pill-shaped toolbar shown above an expanded inline diff hunk.
+/// Contains navigation arrows, hunk summary, restore button, and dismiss button.
+final class HunkToolbarView: NSView {
+
+    // MARK: - State
+
+    /// Descriptive text like "2/5 +3 -1".
+    var summaryText: String = "" {
+        didSet { summaryLabel.stringValue = summaryText }
+    }
+
+    /// Callback for toolbar actions.
+    var onAction: ((HunkToolbarAction) -> Void)?
+
+    // MARK: - Subviews
+
+    private let prevButton = NSButton()
+    private let nextButton = NSButton()
+    private let summaryLabel = NSTextField(labelWithString: "")
+    private let restoreButton = NSButton()
+    private let dismissButton = NSButton()
+    private let stackView = NSStackView()
+
+    // MARK: - Constants
+
+    static let toolbarHeight: CGFloat = 24
+    private static let cornerRadius: CGFloat = 6
+    private static let horizontalPadding: CGFloat = 4
+    private static let buttonFontSize: CGFloat = 11
+
+    override var isFlipped: Bool { true }
+
+    // MARK: - Init
+
+    init() {
+        super.init(frame: .zero)
+        setupViews()
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    // MARK: - Setup
+
+    private func setupViews() {
+        wantsLayer = true
+        layer?.cornerRadius = Self.cornerRadius
+        layer?.masksToBounds = true
+
+        // Background: system material (vibrancy)
+        let bgColor = NSColor(name: nil) { appearance in
+            if appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua {
+                return NSColor.controlBackgroundColor.withAlphaComponent(0.95)
+            } else {
+                return NSColor.controlBackgroundColor.withAlphaComponent(0.92)
+            }
+        }
+        layer?.backgroundColor = bgColor.cgColor
+
+        // Border
+        let borderColor = NSColor(name: nil) { appearance in
+            if appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua {
+                return NSColor.separatorColor.withAlphaComponent(0.5)
+            } else {
+                return NSColor.separatorColor.withAlphaComponent(0.3)
+            }
+        }
+        layer?.borderColor = borderColor.cgColor
+        layer?.borderWidth = 0.5
+
+        // Shadow
+        shadow = NSShadow()
+        layer?.shadowColor = NSColor.black.withAlphaComponent(0.15).cgColor
+        layer?.shadowOffset = CGSize(width: 0, height: 1)
+        layer?.shadowRadius = 3
+        layer?.shadowOpacity = 1
+
+        // Configure buttons
+        configureButton(
+            prevButton,
+            symbolName: "chevron.up",
+            tooltip: "Previous Change",
+            accessibilityID: HunkToolbarAction.previousHunk.accessibilityID,
+            action: #selector(prevClicked)
+        )
+        configureButton(
+            nextButton,
+            symbolName: "chevron.down",
+            tooltip: "Next Change",
+            accessibilityID: HunkToolbarAction.nextHunk.accessibilityID,
+            action: #selector(nextClicked)
+        )
+        configureButton(
+            restoreButton,
+            symbolName: "arrow.uturn.backward",
+            tooltip: "Restore",
+            accessibilityID: HunkToolbarAction.restore.accessibilityID,
+            action: #selector(restoreClicked)
+        )
+        configureButton(
+            dismissButton,
+            symbolName: "xmark",
+            tooltip: "Dismiss",
+            accessibilityID: HunkToolbarAction.dismiss.accessibilityID,
+            action: #selector(dismissClicked)
+        )
+
+        // Summary label
+        summaryLabel.font = NSFont.monospacedSystemFont(ofSize: Self.buttonFontSize, weight: .medium)
+        summaryLabel.textColor = .secondaryLabelColor
+        summaryLabel.setContentHuggingPriority(.defaultHigh, for: .horizontal)
+        summaryLabel.setAccessibilityIdentifier("hunk-toolbar-summary")
+
+        // Separator views
+        let sep1 = makeSeparator()
+        let sep2 = makeSeparator()
+
+        // Stack
+        stackView.orientation = .horizontal
+        stackView.spacing = 2
+        stackView.alignment = .centerY
+        stackView.edgeInsets = NSEdgeInsets(
+            top: 0,
+            left: Self.horizontalPadding,
+            bottom: 0,
+            right: Self.horizontalPadding
+        )
+        stackView.setViews(
+            [prevButton, nextButton, sep1, summaryLabel, sep2, restoreButton, dismissButton],
+            in: .center
+        )
+
+        addSubview(stackView)
+        stackView.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            stackView.leadingAnchor.constraint(equalTo: leadingAnchor),
+            stackView.trailingAnchor.constraint(equalTo: trailingAnchor),
+            stackView.topAnchor.constraint(equalTo: topAnchor),
+            stackView.bottomAnchor.constraint(equalTo: bottomAnchor)
+        ])
+
+        setAccessibilityIdentifier("hunk-toolbar")
+    }
+
+    private func configureButton(
+        _ button: NSButton,
+        symbolName: String,
+        tooltip: String,
+        accessibilityID: String,
+        action: Selector
+    ) {
+        let config = NSImage.SymbolConfiguration(pointSize: Self.buttonFontSize, weight: .medium)
+        if let image = NSImage(systemSymbolName: symbolName, accessibilityDescription: tooltip)?
+            .withSymbolConfiguration(config) {
+            button.image = image
+        }
+        button.isBordered = false
+        button.bezelStyle = .accessoryBarAction
+        button.toolTip = tooltip
+        button.target = self
+        button.action = action
+        button.setAccessibilityIdentifier(accessibilityID)
+        button.setContentHuggingPriority(.defaultHigh, for: .horizontal)
+        button.setContentHuggingPriority(.defaultHigh, for: .vertical)
+    }
+
+    private func makeSeparator() -> NSView {
+        let sep = NSView()
+        sep.wantsLayer = true
+        sep.layer?.backgroundColor = NSColor.separatorColor.withAlphaComponent(0.3).cgColor
+        sep.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            sep.widthAnchor.constraint(equalToConstant: 1),
+            sep.heightAnchor.constraint(equalToConstant: 14)
+        ])
+        return sep
+    }
+
+    // MARK: - Actions
+
+    @objc private func prevClicked() {
+        onAction?(.previousHunk)
+    }
+
+    @objc private func nextClicked() {
+        onAction?(.nextHunk)
+    }
+
+    @objc private func restoreClicked() {
+        onAction?(.restore)
+    }
+
+    @objc private func dismissClicked() {
+        onAction?(.dismiss)
+    }
+
+    // MARK: - Sizing
+
+    /// Calculates the ideal width for the toolbar based on its contents.
+    func idealSize() -> NSSize {
+        stackView.layoutSubtreeIfNeeded()
+        let fittingSize = stackView.fittingSize
+        return NSSize(
+            width: fittingSize.width + Self.horizontalPadding * 2,
+            height: Self.toolbarHeight
+        )
+    }
+}

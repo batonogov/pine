@@ -224,6 +224,56 @@ enum InlineDiffProvider {
         case next, previous
     }
 
+    // MARK: - Hunk navigation (toolbar)
+
+    /// Returns the next hunk after the given one, wrapping around to the first.
+    /// Returns nil if the hunks array is empty.
+    /// If the current hunk is not found (stale), returns the first hunk.
+    static func nextHunk(after current: DiffHunk, in hunks: [DiffHunk]) -> DiffHunk? {
+        guard !hunks.isEmpty else { return nil }
+        guard let index = hunks.firstIndex(where: { $0.id == current.id }) else {
+            return hunks.first
+        }
+        return hunks[(index + 1) % hunks.count]
+    }
+
+    /// Returns the previous hunk before the given one, wrapping around to the last.
+    /// Returns nil if the hunks array is empty.
+    /// If the current hunk is not found (stale), returns the last hunk.
+    static func previousHunk(before current: DiffHunk, in hunks: [DiffHunk]) -> DiffHunk? {
+        guard !hunks.isEmpty else { return nil }
+        guard let index = hunks.firstIndex(where: { $0.id == current.id }) else {
+            return hunks.last
+        }
+        return hunks[(index - 1 + hunks.count) % hunks.count]
+    }
+
+    /// Returns the 1-based position and total count for a hunk in the list.
+    /// Returns nil if the hunk is not found.
+    static func hunkPositionInfo(for hunk: DiffHunk, in hunks: [DiffHunk]) -> (index: Int, total: Int)? {
+        guard let idx = hunks.firstIndex(where: { $0.id == hunk.id }) else { return nil }
+        return (idx + 1, hunks.count)
+    }
+
+    /// Returns a short summary string for a hunk (e.g. "+3 -2" or "+1").
+    static func hunkSummary(_ hunk: DiffHunk) -> String {
+        let added = hunk.addedLines.count
+        let deleted = hunk.deletedLines.count
+        var parts: [String] = []
+        if added > 0 { parts.append("+\(added)") }
+        if deleted > 0 { parts.append("-\(deleted)") }
+        return parts.joined(separator: " ")
+    }
+
+    /// Returns the line range covered by a hunk in the editor (1-based, inclusive).
+    /// For pure deletion hunks (newCount == 0), returns just the anchor line.
+    static func expandedLineRange(for hunk: DiffHunk) -> ClosedRange<Int> {
+        if hunk.newCount == 0 {
+            return hunk.newStart...hunk.newStart
+        }
+        return hunk.newStart...hunk.newEndLine
+    }
+
     // MARK: - Hunk classification
 
     /// Returns `true` when the hunk represents a modification (has both deleted and added lines).

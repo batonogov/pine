@@ -51,8 +51,16 @@ final class GutterTextView: NSTextView {
 
     /// The ID of the currently expanded hunk (shows inline diff). Nil = all collapsed.
     var expandedHunkID: UUID? {
-        didSet { needsDisplay = true }
+        didSet {
+            needsDisplay = true
+            if expandedHunkID == nil {
+                onHunkDismissed?()
+            }
+        }
     }
+
+    /// Callback invoked when the expanded hunk is dismissed (for toolbar cleanup).
+    var onHunkDismissed: (() -> Void)?
 
     /// Subtle green tint for added lines.
     private static let addedLineColor = NSColor(name: nil) { appearance in
@@ -501,24 +509,74 @@ final class GutterTextView: NSTextView {
         insertText("\n\(indent)", replacementRange: selectedRange())
     }
 
+    // MARK: - Click outside hunk dismisses expanded hunk
+
+    override func mouseDown(with event: NSEvent) {
+        if expandedHunkID != nil {
+            // Check if click is outside the expanded hunk range
+            let point = convert(event.locationInWindow, from: nil)
+            let clickedLine = lineNumberAtPoint(point)
+            if let line = clickedLine, shouldDismissHunkOnClick(atLine: line) {
+                dismissExpandedHunk()
+            }
+        }
+        super.mouseDown(with: event)
+    }
+
+    /// Returns the 1-based line number at the given point in text view coordinates.
+    private func lineNumberAtPoint(_ point: NSPoint) -> Int? {
+        guard let layoutManager = layoutManager,
+              let textContainer = textContainer else { return nil }
+        let textPoint = NSPoint(
+            x: point.x - textContainerOrigin.x,
+            y: point.y - textContainerOrigin.y
+        )
+        let glyphIndex = layoutManager.glyphIndex(for: textPoint, in: textContainer)
+        let charIndex = layoutManager.characterIndexForGlyph(at: glyphIndex)
+        let source = string as NSString
+        guard charIndex <= source.length else { return nil }
+        var line = 1
+        for i in 0..<min(charIndex, source.length) where source.character(at: i) == ASCII.newline {
+            line += 1
+        }
+        return line
+    }
+
     // MARK: - Escape key collapses expanded inline diff
 
     override func keyDown(with event: NSEvent) {
         if event.keyCode == 53, expandedHunkID != nil {
             // Escape key (keyCode 53) collapses expanded inline diff
-            expandedHunkID = nil
-            // Also collapse in the sibling LineNumberView
-            if let container = enclosingScrollView?.superview as? EditorContainerView {
-                for subview in container.subviews {
-                    if let lineNumberView = subview as? LineNumberView {
-                        lineNumberView.expandedHunkID = nil
-                        break
-                    }
-                }
-            }
+            dismissExpandedHunk()
             return
         }
         super.keyDown(with: event)
+    }
+
+    // MARK: - Click outside hunk dismisses expanded inline diff
+
+    /// Returns `true` if clicking at the given editor line should dismiss the expanded hunk.
+    /// Returns `false` if no hunk is expanded or the click is inside the expanded hunk's range.
+    func shouldDismissHunkOnClick(atLine line: Int) -> Bool {
+        guard let expandedID = expandedHunkID,
+              let hunk = diffHunksForHighlight.first(where: { $0.id == expandedID }) else {
+            return false
+        }
+        let range = InlineDiffProvider.expandedLineRange(for: hunk)
+        return !range.contains(line)
+    }
+
+    /// Dismisses the currently expanded hunk, syncing both GutterTextView and LineNumberView.
+    func dismissExpandedHunk() {
+        expandedHunkID = nil
+        if let container = enclosingScrollView?.superview as? EditorContainerView {
+            for subview in container.subviews {
+                if let lineNumberView = subview as? LineNumberView {
+                    lineNumberView.expandedHunkID = nil
+                    break
+                }
+            }
+        }
     }
 }
 
@@ -789,6 +847,11 @@ struct CodeEditorView: NSViewRepresentable {
         context.coordinator.minimapView = minimapView
         context.coordinator.lastFontSize = editorFont.pointSize
         context.coordinator.syncContentVersion()
+
+        // Wire up hunk dismiss callback so toolbar hides when hunk collapses from any source
+        textView.onHunkDismissed = { [weak coordinator] in
+            coordinator?.hideHunkToolbar()
+        }
 
         textView.string = text
         if useViewportHighlighting {
@@ -1065,6 +1128,9 @@ struct CodeEditorView: NSViewRepresentable {
         var onAcceptHunk: ((DiffHunk) -> Void)?
         /// Callback for reverting a hunk via gutter button click.
         var onRevertHunk: ((DiffHunk) -> Void)?
+
+        /// The floating toolbar overlay shown above the expanded hunk.
+        private var hunkToolbar: HunkToolbarView?
 
         /// Generation counter for cancelling stale async highlight requests.
         let highlightGeneration = HighlightGeneration()
@@ -1610,6 +1676,17 @@ struct CodeEditorView: NSViewRepresentable {
         @objc func scrollViewDidScroll(_ notification: Notification) {
             reportStateChange()
             highlightOnScrollIfNeeded()
+            repositionHunkToolbarIfNeeded()
+        }
+
+        /// Repositions the hunk toolbar after scroll so it stays aligned to the expanded hunk.
+        private func repositionHunkToolbarIfNeeded() {
+            guard let toolbar = hunkToolbar, !toolbar.isHidden,
+                  let sv = scrollView,
+                  let gutterView = sv.documentView as? GutterTextView,
+                  let expandedID = gutterView.expandedHunkID,
+                  let hunk = parent.diffHunks.first(where: { $0.id == expandedID }) else { return }
+            positionToolbar(toolbar, for: hunk, in: gutterView)
         }
 
         /// Подсвечивает видимую область при скролле (для больших файлов).
@@ -1823,6 +1900,152 @@ struct CodeEditorView: NSViewRepresentable {
             let newID: UUID? = (gutterView.expandedHunkID == hunk.id) ? nil : hunk.id
             gutterView.expandedHunkID = newID
             lineNumberView?.expandedHunkID = newID
+
+            if newID != nil {
+                showHunkToolbar(for: hunk, in: gutterView)
+            } else {
+                hideHunkToolbar()
+            }
+        }
+
+        /// Shows the hunk toolbar overlay above the expanded hunk's first line.
+        func showHunkToolbar(for hunk: DiffHunk, in textView: GutterTextView) {
+            let toolbar: HunkToolbarView
+            if let existing = hunkToolbar {
+                toolbar = existing
+            } else {
+                toolbar = HunkToolbarView()
+                toolbar.onAction = { [weak self] action in
+                    self?.handleHunkToolbarAction(action)
+                }
+                hunkToolbar = toolbar
+            }
+
+            // Update summary text
+            let hunks = parent.diffHunks
+            let posInfo = InlineDiffProvider.hunkPositionInfo(for: hunk, in: hunks)
+            let summary = InlineDiffProvider.hunkSummary(hunk)
+            let position = posInfo.map { "\($0.index)/\($0.total)" } ?? ""
+            toolbar.summaryText = [position, summary].filter { !$0.isEmpty }.joined(separator: " ")
+
+            // Position toolbar above the hunk's first line
+            positionToolbar(toolbar, for: hunk, in: textView)
+
+            // Add to the container view (not the scroll view — so it stays fixed relative to scroll)
+            if toolbar.superview == nil,
+               let container = textView.enclosingScrollView?.superview {
+                container.addSubview(toolbar)
+            }
+            toolbar.isHidden = false
+        }
+
+        /// Positions the toolbar at the right edge of the editor, just above the expanded hunk.
+        private func positionToolbar(_ toolbar: HunkToolbarView, for hunk: DiffHunk, in textView: GutterTextView) {
+            guard let layoutManager = textView.layoutManager,
+                  let scrollView = textView.enclosingScrollView else { return }
+
+            let source = textView.string as NSString
+            guard source.length > 0 else { return }
+
+            // Find the character offset for the hunk's start line
+            let targetLine = hunk.newStart
+            var charOffset = 0
+            var currentLine = 1
+            while currentLine < targetLine && charOffset < source.length {
+                if source.character(at: charOffset) == ASCII.newline {
+                    currentLine += 1
+                }
+                charOffset += 1
+            }
+
+            let glyphIndex = layoutManager.glyphIndexForCharacter(at: min(charOffset, source.length - 1))
+            let lineRect = layoutManager.lineFragmentRect(forGlyphAt: glyphIndex, effectiveRange: nil)
+            let visibleRect = scrollView.contentView.bounds
+            let originY = textView.textContainerOrigin.y
+
+            // Y position: above the first line of the hunk, in container coordinates
+            let lineY = lineRect.origin.y + originY - visibleRect.origin.y
+            let toolbarSize = toolbar.idealSize()
+            let gutterWidth = textView.gutterInset
+
+            // Right-align within the editor area (leaving space for minimap)
+            let containerWidth = scrollView.frame.width
+            let toolbarX = max(gutterWidth, containerWidth - toolbarSize.width - 8)
+            let toolbarY = max(0, lineY - toolbarSize.height - 2)
+
+            toolbar.frame = NSRect(
+                x: toolbarX,
+                y: toolbarY,
+                width: toolbarSize.width,
+                height: toolbarSize.height
+            )
+        }
+
+        /// Hides and removes the hunk toolbar overlay.
+        func hideHunkToolbar() {
+            hunkToolbar?.isHidden = true
+            hunkToolbar?.removeFromSuperview()
+        }
+
+        /// Handles actions from the hunk toolbar (navigation, restore, dismiss).
+        private func handleHunkToolbarAction(_ action: HunkToolbarAction) {
+            guard let sv = scrollView,
+                  let gutterView = sv.documentView as? GutterTextView else { return }
+
+            let hunks = parent.diffHunks
+
+            switch action {
+            case .previousHunk:
+                guard let expandedID = gutterView.expandedHunkID,
+                      let current = hunks.first(where: { $0.id == expandedID }),
+                      let prev = InlineDiffProvider.previousHunk(before: current, in: hunks) else { return }
+                gutterView.expandedHunkID = prev.id
+                lineNumberView?.expandedHunkID = prev.id
+                showHunkToolbar(for: prev, in: gutterView)
+                scrollToHunk(prev, in: gutterView)
+
+            case .nextHunk:
+                guard let expandedID = gutterView.expandedHunkID,
+                      let current = hunks.first(where: { $0.id == expandedID }),
+                      let next = InlineDiffProvider.nextHunk(after: current, in: hunks) else { return }
+                gutterView.expandedHunkID = next.id
+                lineNumberView?.expandedHunkID = next.id
+                showHunkToolbar(for: next, in: gutterView)
+                scrollToHunk(next, in: gutterView)
+
+            case .restore:
+                guard let expandedID = gutterView.expandedHunkID,
+                      let hunk = hunks.first(where: { $0.id == expandedID }) else { return }
+                // Dismiss toolbar before revert to avoid stale state
+                gutterView.expandedHunkID = nil
+                lineNumberView?.expandedHunkID = nil
+                hideHunkToolbar()
+                onRevertHunk?(hunk)
+
+            case .dismiss:
+                gutterView.dismissExpandedHunk()
+                hideHunkToolbar()
+            }
+        }
+
+        /// Scrolls the editor to make the given hunk visible.
+        private func scrollToHunk(_ hunk: DiffHunk, in textView: GutterTextView) {
+            let source = textView.string as NSString
+            guard source.length > 0,
+                  let layoutManager = textView.layoutManager else { return }
+
+            var charOffset = 0
+            var currentLine = 1
+            while currentLine < hunk.newStart && charOffset < source.length {
+                if source.character(at: charOffset) == ASCII.newline {
+                    currentLine += 1
+                }
+                charOffset += 1
+            }
+
+            let glyphIndex = layoutManager.glyphIndexForCharacter(at: min(charOffset, source.length - 1))
+            let lineRect = layoutManager.lineFragmentRect(forGlyphAt: glyphIndex, effectiveRange: nil)
+            textView.scrollToVisible(lineRect)
         }
 
         /// Handles fold code notifications from menu/keyboard shortcuts.
