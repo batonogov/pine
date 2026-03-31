@@ -462,10 +462,24 @@ final class LineNumberView: NSView {
                 // Y: позиция фрагмента в textContainer + сдвиг контейнера − скролл
                 let y = lineRect.origin.y + originY - visibleRect.origin.y
 
-                let numStr = "\(lineNumber)" as NSString
-                let size = numStr.size(withAttributes: attrs)
-                let x = self.gutterWidth - size.width - 8
-                numStr.draw(at: NSPoint(x: x, y: y + self.baselineOffset), withAttributes: attrs)
+                // Check if this line should show hunk action buttons instead of line number
+                let isHunkActionLine: Bool
+                if let hunk = self.hunkStartMap[lineNumber],
+                   self.expandedHunkID == hunk.id {
+                    isHunkActionLine = true
+                } else {
+                    isHunkActionLine = false
+                }
+
+                if isHunkActionLine {
+                    // ── Accept/Revert buttons replace the line number on hunk start lines ──
+                    self.drawHunkActionButtons(at: y, lineHeight: lineRect.height)
+                } else {
+                    let numStr = "\(lineNumber)" as NSString
+                    let size = numStr.size(withAttributes: attrs)
+                    let x = self.gutterWidth - size.width - 8
+                    numStr.draw(at: NSPoint(x: x, y: y + self.baselineOffset), withAttributes: attrs)
+                }
 
                 // ── Fold disclosure triangle ──
                 if showFoldIndicators || self.foldState.foldedRanges.contains(where: { $0.startLine == lineNumber }) {
@@ -518,12 +532,6 @@ final class LineNumberView: NSView {
                         at: y, lineHeight: lineRect.height,
                         severity: diag.severity
                     )
-                }
-
-                // ── Accept/Revert buttons on hunk start lines (visible when hunk is expanded) ──
-                if let hunk = self.hunkStartMap[lineNumber],
-                   self.expandedHunkID == hunk.id {
-                    self.drawHunkActionButtons(at: y, lineHeight: lineRect.height)
                 }
 
                 lineNumber += 1

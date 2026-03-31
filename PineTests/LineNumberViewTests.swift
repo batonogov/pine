@@ -111,4 +111,26 @@ struct LineNumberViewTests {
         #expect(toggledRange?.startLine == 1)
         #expect(toggledRange?.endLine == 5)
     }
+
+    // MARK: - Expanded hunk replaces line number (#697)
+
+    @Test func expandedHunkSetsStateOnLineNumberView() {
+        let (view, _) = makeView()
+        let hunk = DiffHunk(
+            newStart: 2, newCount: 3, oldStart: 2, oldCount: 1,
+            rawText: "@@ -2,1 +2,3 @@\n context\n+added\n+added2\n"
+        )
+        view.diffHunks = [hunk]
+        view.expandedHunkID = hunk.id
+
+        // When a hunk is expanded, the LineNumberView should know about it
+        #expect(view.expandedHunkID == hunk.id)
+        #expect(view.diffHunks.count == 1)
+        #expect(view.diffHunks.first?.newStart == 2)
+    }
+
+    @Test func expandedHunkIDNilByDefault() {
+        let (view, _) = makeView()
+        #expect(view.expandedHunkID == nil)
+    }
 }

@@ -665,7 +665,7 @@ final class EditorContainerView: NSView {
                     width: bounds.width - minimapWidth,
                     height: bounds.height
                 )
-            } else {
+            } else if sub is LineNumberView {
                 // LineNumberView — offset below the find bar when Cmd+F is open.
                 sub.frame = NSRect(
                     x: 0, y: findBarOffset,
@@ -673,6 +673,7 @@ final class EditorContainerView: NSView {
                     height: bounds.height - findBarOffset
                 )
             }
+            // HunkToolbarView and other overlays manage their own frames — skip them.
         }
     }
 }
