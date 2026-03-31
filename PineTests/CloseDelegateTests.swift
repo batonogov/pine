@@ -97,6 +97,76 @@ struct CloseDelegateTests {
         delegate.windowWillClose(notification)
     }
 
+    // MARK: - closeActiveTab removes empty pane
+
+    @Test func closeActiveTabRemovesEmptyPane() throws {
+        let dir = try makeTempDir()
+        defer { cleanup(dir) }
+        let (delegate, pm, _) = makeCloseDelegate(projectURL: dir)
+
+        let pane = pm.paneManager
+        let firstPaneID = pane.activePaneID
+
+        // Open a tab in the first pane so it stays alive
+        let url1 = dir.appendingPathComponent("keep.swift")
+        try "keep".write(to: url1, atomically: true, encoding: .utf8)
+        pane.tabManager(for: firstPaneID)?.openTab(url: url1)
+
+        // Split to create a second pane
+        guard let secondPaneID = pane.splitPane(firstPaneID, axis: .horizontal) else {
+            Issue.record("Split failed")
+            return
+        }
+        let url2 = dir.appendingPathComponent("remove.swift")
+        try "remove".write(to: url2, atomically: true, encoding: .utf8)
+        pane.tabManager(for: secondPaneID)?.openTab(url: url2)
+        pane.activePaneID = secondPaneID
+
+        #expect(pane.root.leafCount == 2)
+
+        // Close the only tab in the active (second) pane via CloseDelegate
+        delegate.closeActiveTab()
+
+        // The empty pane should have been removed
+        #expect(pane.root.leafCount == 1)
+        #expect(pane.tabManagers[secondPaneID] == nil)
+    }
+
+    @Test func closeActiveTabDoesNotRemovePaneWithRemainingTabs() throws {
+        let dir = try makeTempDir()
+        defer { cleanup(dir) }
+        let (delegate, pm, _) = makeCloseDelegate(projectURL: dir)
+
+        let pane = pm.paneManager
+        let firstPaneID = pane.activePaneID
+
+        // Open a tab in the first pane
+        let url1 = dir.appendingPathComponent("keep1.swift")
+        try "keep1".write(to: url1, atomically: true, encoding: .utf8)
+        pane.tabManager(for: firstPaneID)?.openTab(url: url1)
+
+        // Split to create a second pane with two tabs
+        guard let secondPaneID = pane.splitPane(firstPaneID, axis: .horizontal) else {
+            Issue.record("Split failed")
+            return
+        }
+        let url2 = dir.appendingPathComponent("stay.swift")
+        try "stay".write(to: url2, atomically: true, encoding: .utf8)
+        let url3 = dir.appendingPathComponent("close.swift")
+        try "close".write(to: url3, atomically: true, encoding: .utf8)
+        pane.tabManager(for: secondPaneID)?.openTab(url: url2)
+        pane.tabManager(for: secondPaneID)?.openTab(url: url3)
+        pane.activePaneID = secondPaneID
+
+        #expect(pane.root.leafCount == 2)
+
+        // Close one tab — pane should remain since it still has a tab
+        delegate.closeActiveTab()
+
+        #expect(pane.root.leafCount == 2)
+        #expect(pane.tabManagers[secondPaneID] != nil)
+    }
+
     // MARK: - observeWindowClose
 
     @Test func observeWindowCloseRegistersNotification() throws {

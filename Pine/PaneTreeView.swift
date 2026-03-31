@@ -682,7 +682,7 @@ private struct PaneFocusDetector: NSViewRepresentable {
 /// within this view's frame and set the corresponding pane as active.
 final class PaneFocusNSView: NSView {
     var paneID: PaneID
-    var paneManager: PaneManager?
+    weak var paneManager: PaneManager?
     private var monitor: Any?
 
     init(paneID: PaneID, paneManager: PaneManager) {

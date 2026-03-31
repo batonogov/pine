@@ -717,6 +717,8 @@ class CloseDelegate: NSObject, NSWindowDelegate {
 
     /// Closes the active tab with unsaved-changes dialog. Called by the Cmd+W event monitor.
     func closeActiveTab() {
+        let pane = projectManager.paneManager
+        let activePaneID = pane.activePaneID
         let activeTM = projectManager.activeTabManager
         guard let tab = activeTM.activeTab else { return }
         if tab.isDirty {
@@ -741,6 +743,11 @@ class CloseDelegate: NSObject, NSWindowDelegate {
             }
         } else {
             activeTM.closeTab(id: tab.id)
+        }
+
+        // Remove empty pane after closing the last tab (mirrors PaneLeafView behavior)
+        if activeTM.tabs.isEmpty {
+            pane.removePane(activePaneID)
         }
     }
 
