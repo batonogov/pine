@@ -36,6 +36,24 @@ struct FileIconMapperTests {
         ("yarn.lock", "shippingbox"),
         ("requirements.txt", "doc.plaintext"),
         ("setup.py", "terminal"),
+
+        // Infrastructure / DevOps
+        ("Vagrantfile", "desktopcomputer"),
+        ("Jenkinsfile", "gearshape.2"),
+        (".helmignore", "arrow.triangle.branch"),
+        ("Chart.yaml", "square.stack.3d.up"),
+        ("values.yaml", "square.stack.3d.up"),
+        ("kustomization.yaml", "square.stack.3d.up"),
+
+        // Linting / Quality
+        (".pylintrc", "checkmark.circle"),
+        (".flake8", "checkmark.circle"),
+        (".pre-commit-config.yaml", "checkmark.shield"),
+        (".editorconfig", "gearshape"),
+        (".eslintrc", "checkmark.circle"),
+        (".prettierrc", "checkmark.circle"),
+        (".stylelintrc", "checkmark.circle"),
+        (".secrets.baseline", "lock.shield"),
     ])
     func fileExactName(name: String, expected: String) {
         #expect(FileIconMapper.iconForFile(name) == expected)
@@ -82,6 +100,14 @@ struct FileIconMapperTests {
         ("icon.svg", "chevron.left.forwardslash.chevron.right"),
         ("schema.graphql", "point.3.connected.trianglepath.dotted"),
         ("query.gql", "point.3.connected.trianglepath.dotted"),
+
+        // Infrastructure / DevOps
+        ("main.tf", "server.rack"),
+        ("terraform.tfvars", "server.rack"),
+        ("config.hcl", "gearshape"),
+
+        // Diagrams
+        ("infra.drawio", "square.and.pencil"),
 
         // Scripting / Systems
         ("main.py", "terminal"),
@@ -291,6 +317,55 @@ struct FileIconMapperTests {
         #expect(FileIconMapper.colorForFile("clip.mp4") == .pink)
         #expect(FileIconMapper.colorForFile("archive.zip") == .brown)
         #expect(FileIconMapper.colorForFile("font.ttf") == .red)
+    }
+
+    // MARK: - colorForFile — Infrastructure / DevOps
+
+    @Test func fileColorTerraform() {
+        #expect(FileIconMapper.colorForFile("main.tf") == .purple)
+        #expect(FileIconMapper.colorForFile("terraform.tfvars") == .purple)
+        #expect(FileIconMapper.colorForFile("config.hcl") == .purple)
+    }
+
+    @Test func fileColorDevOpsFilenames() {
+        #expect(FileIconMapper.colorForFile("Vagrantfile") == .blue)
+        #expect(FileIconMapper.colorForFile("Jenkinsfile") == .blue)
+        #expect(FileIconMapper.colorForFile(".helmignore") == .secondary)
+        #expect(FileIconMapper.colorForFile("Chart.yaml") == .blue)
+        #expect(FileIconMapper.colorForFile("values.yaml") == .blue)
+        #expect(FileIconMapper.colorForFile("kustomization.yaml") == .blue)
+    }
+
+    // MARK: - colorForFile — Linting / Quality
+
+    @Test func fileColorLinting() {
+        #expect(FileIconMapper.colorForFile(".pylintrc") == .secondary)
+        #expect(FileIconMapper.colorForFile(".flake8") == .secondary)
+        #expect(FileIconMapper.colorForFile(".pre-commit-config.yaml") == .orange)
+        #expect(FileIconMapper.colorForFile(".editorconfig") == .secondary)
+        #expect(FileIconMapper.colorForFile(".eslintrc") == .secondary)
+        #expect(FileIconMapper.colorForFile(".prettierrc") == .secondary)
+        #expect(FileIconMapper.colorForFile(".stylelintrc") == .secondary)
+        #expect(FileIconMapper.colorForFile(".secrets.baseline") == .red)
+    }
+
+    // MARK: - colorForFile — Diagrams
+
+    @Test func fileColorDrawio() {
+        #expect(FileIconMapper.colorForFile("infra.drawio") == .green)
+    }
+
+    // MARK: - Case insensitivity for new types
+
+    @Test func terraformCaseInsensitive() {
+        #expect(FileIconMapper.iconForFile("MAIN.TF") == "server.rack")
+        #expect(FileIconMapper.colorForFile("MAIN.TF") == .purple)
+    }
+
+    @Test func devOpsFilenamesCaseInsensitive() {
+        #expect(FileIconMapper.iconForFile("VAGRANTFILE") == "desktopcomputer")
+        #expect(FileIconMapper.iconForFile("JENKINSFILE") == "gearshape.2")
+        #expect(FileIconMapper.iconForFile("CHART.YAML") == "square.stack.3d.up")
     }
 
     // MARK: - colorForFile — unknown extension falls back to .secondary
