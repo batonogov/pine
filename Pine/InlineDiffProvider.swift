@@ -47,6 +47,47 @@ struct DiffHunk: Equatable, Sendable, Identifiable {
     var newEndLine: Int {
         newCount > 0 ? newStart + newCount - 1 : newStart
     }
+
+    /// Extracts deleted lines (prefixed with `-`) from rawText, stripping the prefix.
+    var deletedLines: [String] {
+        rawText.components(separatedBy: "\n")
+            .filter { $0.hasPrefix("-") && !$0.hasPrefix("---") }
+            .map { String($0.dropFirst()) }
+    }
+
+    /// Extracts added lines (prefixed with `+`) from rawText, stripping the prefix.
+    var addedLines: [String] {
+        rawText.components(separatedBy: "\n")
+            .filter { $0.hasPrefix("+") && !$0.hasPrefix("+++") }
+            .map { String($0.dropFirst()) }
+    }
+}
+
+// MARK: - Inline diff highlight models
+
+/// Describes the kind of highlight for a line in the inline diff view.
+enum DiffLineKind: Equatable, Sendable {
+    /// A line that was added (exists in the editor) — shown with green background.
+    case added
+    /// A line that was deleted (phantom, not in the editor) — shown with red background.
+    case deleted
+}
+
+/// A single line to highlight in the inline diff view.
+struct DiffHighlightLine: Equatable, Sendable {
+    /// The kind of diff highlight.
+    let kind: DiffLineKind
+    /// For `.added`: the 1-based editor line number.
+    /// For `.deleted`: not used directly (deleted lines are grouped by hunk).
+    let editorLine: Int
+}
+
+/// A group of deleted lines that should be rendered as phantom text above a given editor line.
+struct DeletedLinesBlock: Equatable, Sendable {
+    /// The 1-based editor line above which (or at which) these deleted lines should be drawn.
+    let anchorLine: Int
+    /// The deleted line contents (without the `-` prefix).
+    let lines: [String]
 }
 
 // MARK: - InlineDiffProvider
@@ -112,10 +153,14 @@ enum InlineDiffProvider {
     static func parseHunkHeader(_ header: String) -> (oldStart: Int, oldCount: Int, newStart: Int, newCount: Int)? {
         // Format: @@ -old[,count] +new[,count] @@
         // Example: @@ -10,5 +12,7 @@ func foo()
-        guard let atRange = header.range(of: "@@", range: header.index(header.startIndex, offsetBy: 2)..<header.endIndex) else {
+        guard header.count > 4 else { return nil }
+        let searchStart = header.index(header.startIndex, offsetBy: 2)
+        guard let atRange = header.range(of: "@@", range: searchStart..<header.endIndex) else {
             return nil
         }
-        let inner = String(header[header.index(header.startIndex, offsetBy: 3)..<atRange.lowerBound]).trimmingCharacters(in: .whitespaces)
+        let innerStart = header.index(header.startIndex, offsetBy: 3)
+        guard innerStart < atRange.lowerBound else { return nil }
+        let inner = String(header[innerStart..<atRange.lowerBound]).trimmingCharacters(in: .whitespaces)
         let parts = inner.split(separator: " ")
         guard parts.count >= 2 else { return nil }
 
@@ -132,11 +177,15 @@ enum InlineDiffProvider {
     }
 
     /// Parses "start,count" or "start" into (start, count).
+    /// Returns nil if either component is not a valid integer.
     private static func parseSidePart(_ str: String) -> (start: Int, count: Int)? {
         let comps = str.split(separator: ",")
         guard let start = Int(comps[0]) else { return nil }
-        let count = comps.count > 1 ? (Int(comps[1]) ?? 1) : 1
-        return (start, count)
+        if comps.count > 1 {
+            guard let count = Int(comps[1]) else { return nil }
+            return (start, count)
+        }
+        return (start, 1)
     }
 
     // MARK: - Hunk lookup
@@ -173,6 +222,59 @@ enum InlineDiffProvider {
 
     enum NavigationDirection {
         case next, previous
+    }
+
+    // MARK: - Hunk classification
+
+    /// Returns `true` when the hunk represents a modification (has both deleted and added lines).
+    /// Modified hunks should NOT render phantom overlay — only green background on added lines
+    /// and a yellow gutter marker. The old content is not shown as overlay text (#681).
+    static func isModifiedHunk(_ hunk: DiffHunk) -> Bool {
+        !hunk.deletedLines.isEmpty && !hunk.addedLines.isEmpty
+    }
+
+    // MARK: - Highlight computation
+
+    /// Computes which editor lines should have added (green) backgrounds based on diff hunks.
+    /// Returns a set of 1-based line numbers that are added lines.
+    static func addedLineNumbers(from hunks: [DiffHunk]) -> Set<Int> {
+        var result = Set<Int>()
+        for hunk in hunks {
+            let lines = hunk.rawText.components(separatedBy: "\n")
+            // Track the current new-side line number
+            var newLine = hunk.newStart
+            for line in lines where !line.hasPrefix("@@") {
+                if line.hasPrefix("+") && !line.hasPrefix("+++") {
+                    result.insert(newLine)
+                    newLine += 1
+                } else if line.hasPrefix("-") && !line.hasPrefix("---") {
+                    // Deleted lines don't increment the new-side counter
+                    continue
+                } else {
+                    // Context line
+                    newLine += 1
+                }
+            }
+        }
+        return result
+    }
+
+    /// Computes blocks of deleted lines from hunks, each anchored to an editor line.
+    /// The anchor line is the first added/context line after the deletion, or the hunk's newStart
+    /// for pure deletion hunks.
+    /// Modified hunks (with both deleted and added lines) are skipped — they use only
+    /// yellow gutter markers and green added-line backgrounds, no phantom overlay (#681).
+    static func deletedLineBlocks(from hunks: [DiffHunk]) -> [DeletedLinesBlock] {
+        var blocks: [DeletedLinesBlock] = []
+        for hunk in hunks {
+            // Skip modified hunks — no phantom overlay for modifications (#681)
+            guard !isModifiedHunk(hunk) else { continue }
+            let deleted = hunk.deletedLines
+            guard !deleted.isEmpty else { continue }
+            // Anchor: the hunk's newStart line in the editor
+            blocks.append(DeletedLinesBlock(anchorLine: hunk.newStart, lines: deleted))
+        }
+        return blocks
     }
 
     // MARK: - Fetch hunks for file

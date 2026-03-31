@@ -586,6 +586,7 @@ final class SyntaxHighlighter: @unchecked Sendable {
 
     /// Сбрасывает атрибуты на базовый стиль (без грамматики).
     /// Clamps range to textStorage.length to avoid crash if text changed.
+    /// Skips if undo/redo is in progress to prevent EXC_BAD_ACCESS (#650).
     private func resetAttributes(textStorage: NSTextStorage, range: NSRange, font: NSFont) {
         let currentLength = textStorage.length
         guard currentLength > 0 else { return }
@@ -596,6 +597,12 @@ final class SyntaxHighlighter: @unchecked Sendable {
         guard safeRange.length > 0 else { return }
 
         let undoManager = textStorage.layoutManagers.first?.firstTextView?.undoManager
+
+        // Bail out if undo/redo is in progress (#650).
+        if undoManager?.isUndoing == true || undoManager?.isRedoing == true {
+            return
+        }
+
         undoManager?.disableUndoRegistration()
         defer { undoManager?.enableUndoRegistration() }
         textStorage.beginEditing()
@@ -732,6 +739,8 @@ final class SyntaxHighlighter: @unchecked Sendable {
     /// Applies pre-computed matches to NSTextStorage. Must be called on main thread.
     /// Validates that ranges are still valid — text may have changed between
     /// computation and application.
+    /// Skips application if the undo manager is currently undoing/redoing to
+    /// prevent EXC_BAD_ACCESS from concurrent NSTextStorage mutations (#650).
     func applyMatches(
         _ result: HighlightMatchResult,
         to textStorage: NSTextStorage,
@@ -744,6 +753,13 @@ final class SyntaxHighlighter: @unchecked Sendable {
         }
 
         let undoManager = textStorage.layoutManagers.first?.firstTextView?.undoManager
+
+        // Bail out if undo/redo is in progress — modifying textStorage attributes
+        // during an undo group causes EXC_BAD_ACCESS (#650).
+        if undoManager?.isUndoing == true || undoManager?.isRedoing == true {
+            return
+        }
+
         undoManager?.disableUndoRegistration()
         defer { undoManager?.enableUndoRegistration() }
 

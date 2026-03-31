@@ -84,6 +84,11 @@ struct TerminalContentView: NSViewRepresentable {
 /// With internal editor tabs there is only one window,
 /// so no multi-window reclaim logic is needed.
 class TerminalContainerView: NSView {
+    /// Default frame used when the container has zero bounds (e.g. before the first
+    /// SwiftUI layout pass). Gives SwiftTerm a reasonable cols/rows so the terminal
+    /// is not blank when it first appears. The real size replaces this in `layout()`.
+    static let defaultTerminalFrame = NSRect(x: 0, y: 0, width: 800, height: 300)
+
     var terminal: TerminalManager?
     private var currentTabID: UUID?
     private let scrollInterceptor = TerminalScrollInterceptor()
@@ -101,11 +106,13 @@ class TerminalContainerView: NSView {
         if tabChanged {
             subviews.forEach { $0.removeFromSuperview() }
             currentTabID = tab.id
-            tab.terminalView.frame = bounds
+            let effectiveBounds = bounds.size.width > 0 && bounds.size.height > 0
+                ? bounds : Self.defaultTerminalFrame
+            tab.terminalView.frame = effectiveBounds
             addSubview(tab.terminalView)
 
             // Place click interceptor on top of the terminal view
-            scrollInterceptor.frame = bounds
+            scrollInterceptor.frame = effectiveBounds
             scrollInterceptor.terminalView = tab.terminalView
             addSubview(scrollInterceptor)
         }
@@ -226,14 +233,32 @@ class TerminalContainerView: NSView {
     override func layout() {
         super.layout()
         guard let terminal, let tab = terminal.activeTerminalTab else { return }
+        // Do not start the process or update frames until the container has a real size.
+        // SwiftTerm derives cols/rows from the frame; a zero-size frame produces a 0×0
+        // terminal which renders as a blank screen (issue #661).
+        guard bounds.size.width > 0, bounds.size.height > 0 else { return }
         if tab.terminalView.superview === self {
+            // Terminal view is already in the hierarchy — just update its frame.
+            // Only set needsDisplay when the size actually changed to avoid
+            // redundant redraws on no-op layout passes.
+            let sizeChanged = tab.terminalView.frame.size != bounds.size
             tab.terminalView.frame = bounds
             tab.terminalView.needsLayout = true
             scrollInterceptor.frame = bounds
+            if sizeChanged {
+                // Force SwiftTerm to recalculate cols/rows and re-render.
+                // This handles the transition from a placeholder frame to the
+                // real container size, ensuring the PTY gets the correct window size.
+                tab.terminalView.needsDisplay = true
+            }
             tab.startIfNeeded()
         } else {
+            // Terminal view was removed (e.g. tab switch race) — re-add it.
+            // Always set needsDisplay here because showTab just inserted a fresh
+            // subview that has never been drawn at this container's size.
             showTab(tab)
             tab.terminalView.needsLayout = true
+            tab.terminalView.needsDisplay = true
             tab.startIfNeeded()
         }
     }
@@ -279,7 +304,7 @@ final class TerminalTab: Identifiable, Hashable {
     init(name: String, shellSettings: ShellSettings = .shared) {
         self.name = name
         self.shellSettings = shellSettings
-        self.terminalView = LocalProcessTerminalView(frame: NSRect(x: 0, y: 0, width: 800, height: 300))
+        self.terminalView = LocalProcessTerminalView(frame: TerminalContainerView.defaultTerminalFrame)
         self.delegate = TerminalTabDelegate()
         self.delegate.tab = self
         self.terminalView.processDelegate = self.delegate
@@ -347,9 +372,14 @@ final class TerminalTab: Identifiable, Hashable {
         workingDirectory?.path ?? (ProcessInfo.processInfo.environment["HOME"] ?? "/")
     }
 
-    /// Запускает процесс если ещё не запущен и view добавлен в иерархию
+    /// Запускает процесс если ещё не запущен и view добавлен в иерархию.
+    /// The terminal view must have a non-zero frame so SwiftTerm can calculate
+    /// the correct column/row count for the PTY. Starting with a zero frame
+    /// causes a blank terminal (issue #661).
     func startIfNeeded() {
         guard !processStarted else { return }
+        guard terminalView.frame.size.width > 0,
+              terminalView.frame.size.height > 0 else { return }
         processStarted = true
 
         let env = buildEnvironment()

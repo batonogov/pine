@@ -33,6 +33,8 @@ struct EditorAreaView: View {
 
     @Environment(\.openWindow) private var openWindow
 
+    @State private var configValidator = ConfigValidator()
+
     private var activeTab: EditorTab? { tabManager.activeTab }
 
     var body: some View {
@@ -122,6 +124,7 @@ struct EditorAreaView: View {
             fileName: tab.fileName,
             lineDiffs: lineDiffs,
             diffHunks: diffHunks,
+            validationDiagnostics: configValidator.diagnostics,
             onAcceptHunk: onAcceptHunk,
             onRevertHunk: onRevertHunk,
             isBlameVisible: isBlameVisible,
@@ -148,7 +151,16 @@ struct EditorAreaView: View {
         )
         .id(tab.id)
         .accessibilityIdentifier(AccessibilityID.codeEditor)
-        .onAppear { goToLineOffset = nil }
+        .onAppear {
+            goToLineOffset = nil
+            configValidator.validate(url: tab.url, content: tab.content)
+        }
+        .onDisappear {
+            configValidator.clear()
+        }
+        .onChange(of: tab.content) { _, newValue in
+            configValidator.validate(url: tab.url, content: newValue)
+        }
     }
 
     // MARK: - Drag & Drop

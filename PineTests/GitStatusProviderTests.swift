@@ -857,4 +857,122 @@ struct GitStatusProviderTests {
 
         #expect(provider.hasUncommittedChanges == true)
     }
+
+    // MARK: - Thread safety (Issue #613)
+
+    @Test("fetchBranches is safe to call from background thread")
+    func fetchBranchesSafeFromBackground() async throws {
+        let dir = try makeGitRepo()
+        defer { cleanup(dir) }
+
+        try runShell("git branch feature-1", at: dir)
+        try runShell("git branch feature-2", at: dir)
+
+        // Call fetchBranches from a background thread — must not crash
+        // with dispatch_assert_queue_fail
+        let branches = await withCheckedContinuation { continuation in
+            DispatchQueue.global(qos: .userInitiated).async {
+                let result = GitStatusProvider.fetchBranches(at: dir)
+                continuation.resume(returning: result)
+            }
+        }
+
+        #expect(branches.count >= 3)
+        #expect(branches.contains("feature-1"))
+        #expect(branches.contains("feature-2"))
+    }
+
+    @Test("fetchAllInParallel is safe to call from background thread")
+    func fetchAllInParallelSafeFromBackground() async throws {
+        let dir = try makeGitRepo()
+        defer { cleanup(dir) }
+
+        try "modified".write(
+            to: dir.appendingPathComponent("README.md"),
+            atomically: true,
+            encoding: .utf8
+        )
+        try runShell("git branch bg-branch", at: dir)
+
+        // Call fetchAllInParallel from background — must not crash
+        let result = await withCheckedContinuation { continuation in
+            DispatchQueue.global(qos: .userInitiated).async {
+                let fetched = GitStatusProvider.fetchAllInParallel(at: dir)
+                continuation.resume(returning: fetched)
+            }
+        }
+
+        #expect(!result.branch.isEmpty)
+        #expect(result.statuses["README.md"] == .modified)
+        #expect(result.branches.contains("bg-branch"))
+    }
+
+    @Test("fetchBranches filters empty lines correctly")
+    func fetchBranchesFiltersEmptyLines() throws {
+        let dir = try makeGitRepo()
+        defer { cleanup(dir) }
+
+        let branches = GitStatusProvider.fetchBranches(at: dir)
+        // No empty strings should be in the result
+        for branch in branches {
+            #expect(!branch.isEmpty)
+        }
+    }
+
+    @Test("fetchAllInParallel concurrent calls do not crash")
+    func fetchAllInParallelConcurrent() async throws {
+        let dir = try makeGitRepo()
+        defer { cleanup(dir) }
+
+        // Run multiple parallel fetchAllInParallel calls — stress test
+        await withTaskGroup(of: Void.self) { group in
+            for _ in 0..<5 {
+                group.addTask {
+                    let result = await withCheckedContinuation { continuation in
+                        DispatchQueue.global(qos: .userInitiated).async {
+                            let fetched = GitStatusProvider.fetchAllInParallel(at: dir)
+                            continuation.resume(returning: fetched)
+                        }
+                    }
+                    _ = result
+                }
+            }
+        }
+        // If we get here without crashing, the test passes
+    }
+
+    @Test("setup does not block main thread with synchronous refresh")
+    func setupUsesAsyncRefresh() async throws {
+        let dir = try makeGitRepo()
+        defer { cleanup(dir) }
+
+        try "new".write(
+            to: dir.appendingPathComponent("test.txt"),
+            atomically: true,
+            encoding: .utf8
+        )
+
+        let provider = GitStatusProvider()
+        await provider.setupAsync(repositoryURL: dir)
+
+        #expect(provider.isGitRepository == true)
+        #expect(!provider.currentBranch.isEmpty)
+        #expect(provider.fileStatuses["test.txt"] == .untracked)
+    }
+
+    @Test("checkoutBranchAsync refreshes all fields after switch")
+    func checkoutBranchAsyncRefreshesAll() async throws {
+        let dir = try makeGitRepo()
+        defer { cleanup(dir) }
+
+        try runShell("git branch switch-target", at: dir)
+
+        let provider = GitStatusProvider()
+        await provider.setupAsync(repositoryURL: dir)
+
+        let result = await provider.checkoutBranchAsync("switch-target")
+        #expect(result.success == true)
+        #expect(provider.currentBranch == "switch-target")
+        #expect(provider.branches.contains("switch-target"))
+    }
 }
