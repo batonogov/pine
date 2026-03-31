@@ -455,6 +455,7 @@ struct PineApp: App {
                     Label(Strings.menuCrashReporting, systemImage: MenuIcons.crashReporting)
                 }
                 .onChange(of: crashReportingEnabled) { _, newValue in
+                    CrashReportingSettings.hasShownPrompt = true
                     if newValue {
                         CrashReportingManager.shared.startIfEnabled()
                     } else {
