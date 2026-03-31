@@ -1564,61 +1564,61 @@
       }
     },
     "crashReporting.optIn.message" : {
-      "comment" : "Explanatory message in the crash reporting opt-in dialog.",
+      "comment" : "Explanatory message in the crash reporting opt-in dialog. Data is stored locally only — not sent anywhere.",
       "extractionState" : "manual",
       "localizations" : {
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Pine kann anonyme Absturzberichte senden, um die App-Stabilität zu verbessern. Es werden nur technische Daten gesendet — keine Dateiinhalte oder Pfade."
+            "value" : "Pine kann anonyme Absturzberichte lokal sammeln, um die App-Stabilität zu verbessern. Nur technische Daten werden erfasst — keine Dateiinhalte oder Pfade."
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Pine can send anonymous crash reports to help improve app stability. Only technical data is sent — no file contents or paths."
+            "value" : "Pine can collect anonymous crash reports locally to help improve app stability. Only technical data is stored — no file contents or paths."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Pine puede enviar informes de error anónimos para mejorar la estabilidad. Solo se envían datos técnicos, sin contenido ni rutas de archivos."
+            "value" : "Pine puede recopilar informes de error anónimos localmente para mejorar la estabilidad. Solo se almacenan datos técnicos, sin contenido ni rutas de archivos."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Pine peut envoyer des rapports de plantage anonymes pour améliorer la stabilité. Seules des données techniques sont envoyées — aucun contenu ni chemin de fichier."
+            "value" : "Pine peut collecter localement des rapports de plantage anonymes pour améliorer la stabilité. Seules des données techniques sont stockées — aucun contenu ni chemin de fichier."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Pineはアプリの安定性向上のため匿名のクラッシュレポートを送信できます。技術データのみが送信され、ファイルの内容やパスは含まれません。"
+            "value" : "Pineはアプリの安定性向上のため匿名のクラッシュレポートをローカルに収集できます。技術データのみが保存され、ファイルの内容やパスは含まれません。"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Pine은 앱 안정성 향상을 위해 익명 충돌 보고서를 보낼 수 있습니다. 기술 데이터만 전송되며 파일 내용이나 경로는 포함되지 않습니다."
+            "value" : "Pine은 앱 안정성 향상을 위해 익명 충돌 보고서를 로컬에 수집할 수 있습니다. 기술 데이터만 저장되며 파일 내용이나 경로는 포함되지 않습니다."
           }
         },
         "pt-BR" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Pine pode enviar relatórios de falhas anônimos para melhorar a estabilidade. Apenas dados técnicos são enviados — sem conteúdo ou caminhos de arquivos."
+            "value" : "Pine pode coletar relatórios de falhas anônimos localmente para melhorar a estabilidade. Apenas dados técnicos são armazenados — sem conteúdo ou caminhos de arquivos."
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Pine может отправлять анонимные отчёты об ошибках для улучшения стабильности. Передаются только технические данные — без содержимого файлов и путей."
+            "value" : "Pine может локально собирать анонимные отчёты об ошибках для улучшения стабильности. Сохраняются только технические данные — без содержимого файлов и путей."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Pine 可以发送匿名崩溃报告以帮助改进应用稳定性。仅发送技术数据，不包含文件内容或路径。"
+            "value" : "Pine 可以在本地收集匿名崩溃报告以帮助改进应用稳定性。仅存储技术数据，不包含文件内容或路径。"
           }
         }
       }
@@ -1630,55 +1630,55 @@
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Gesammelt: Stack-Trace, OS-Version, App-Version, Anzahl offener Tabs. Sie können dies jederzeit im Menü Datei ändern."
+            "value" : "Lokal gespeichert: Stack-Trace, OS-Version, App-Version, Anzahl offener Tabs. Sie können Berichte über das Menü Datei exportieren oder diese Einstellung jederzeit ändern."
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Collected: stack trace, OS version, app version, open tab count. You can change this anytime in the File menu."
+            "value" : "Stored locally: stack trace, OS version, app version, open tab count. You can export reports from the File menu or change this setting anytime."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Recopilado: traza de pila, versión del SO, versión de la app, cantidad de pestañas abiertas. Puedes cambiarlo en cualquier momento en el menú Archivo."
+            "value" : "Almacenado localmente: traza de pila, versión del SO, versión de la app, cantidad de pestañas abiertas. Puedes exportar informes desde el menú Archivo o cambiar esta opción en cualquier momento."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Collecté : trace de pile, version du SE, version de l'app, nombre d'onglets ouverts. Vous pouvez modifier ce choix à tout moment dans le menu Fichier."
+            "value" : "Stocké localement : trace de pile, version du SE, version de l'app, nombre d'onglets ouverts. Vous pouvez exporter les rapports depuis le menu Fichier ou modifier ce choix à tout moment."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "収集データ：スタックトレース、OS バージョン、アプリバージョン、開いているタブ数。「ファイル」メニューからいつでも変更できます。"
+            "value" : "ローカルに保存：スタックトレース、OS バージョン、アプリバージョン、開いているタブ数。「ファイル」メニューからレポートをエクスポートしたり、設定をいつでも変更できます。"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "수집 항목: 스택 추적, OS 버전, 앱 버전, 열린 탭 수. 파일 메뉴에서 언제든지 변경할 수 있습니다."
+            "value" : "로컬 저장 항목: 스택 추적, OS 버전, 앱 버전, 열린 탭 수. 파일 메뉴에서 보고서를 내보내거나 언제든지 설정을 변경할 수 있습니다."
           }
         },
         "pt-BR" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Coletado: rastreamento de pilha, versão do SO, versão do app, quantidade de abas abertas. Você pode alterar a qualquer momento no menu Arquivo."
+            "value" : "Armazenado localmente: rastreamento de pilha, versão do SO, versão do app, quantidade de abas abertas. Você pode exportar relatórios pelo menu Arquivo ou alterar esta configuração a qualquer momento."
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Собирается: стек вызовов, версия ОС, версия приложения, количество открытых вкладок. Вы можете изменить это в любое время в меню «Файл»."
+            "value" : "Хранится локально: стек вызовов, версия ОС, версия приложения, количество открытых вкладок. Вы можете экспортировать отчёты из меню «Файл» или изменить настройку в любое время."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "收集内容：堆栈跟踪、操作系统版本、应用版本、打开的标签页数量。您可以随时在「文件」菜单中更改此设置。"
+            "value" : "本地存储内容：堆栈跟踪、操作系统版本、应用版本、打开的标签页数量。您可以从「文件」菜单导出报告或随时更改此设置。"
           }
         }
       }

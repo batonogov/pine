@@ -100,9 +100,23 @@ final class CrashReportingManager: NSObject, MXMetricManagerSubscriber {
         }
     }
 
-    /// Stops crash reporting (unsubscribes from MetricKit).
+    /// Stops crash reporting: unsubscribes from MetricKit and restores default signal handlers.
+    /// Frees the pre-computed crash marker C string to avoid memory leaks on toggle cycles.
     func stop() {
         MXMetricManager.shared.remove(self)
+
+        // Restore default signal handlers
+        let signals: [Int32] = [SIGSEGV, SIGABRT, SIGBUS, SIGFPE, SIGILL, SIGTRAP]
+        for sig in signals {
+            signal(sig, SIG_DFL)
+        }
+
+        // Free the strdup'd path to prevent memory leak on repeated start/stop cycles
+        if let ptr = crashMarkerCString {
+            free(ptr)
+            crashMarkerCString = nil
+        }
+
         logger.info("Crash reporting stopped")
     }
 
@@ -144,6 +158,11 @@ final class CrashReportingManager: NSObject, MXMetricManagerSubscriber {
     private func installSignalHandlers() {
         // Pre-compute the path as a C string BEFORE installing handlers.
         // This is the ONLY place we allocate — the handler only reads this pointer.
+        // Free any previously allocated string to prevent leaks on repeated start() calls.
+        if let previous = crashMarkerCString {
+            free(previous)
+            crashMarkerCString = nil
+        }
         let path = Self.crashMarkerPath
         let cString = strdup(path)
         crashMarkerCString = cString

@@ -521,6 +521,288 @@ struct ExtractCallStackFramesTests {
     }
 }
 
+// MARK: - CrashReportStore Thread Safety Tests
+
+struct CrashReportStoreThreadSafetyTests {
+
+    private func makeTempStore() -> CrashReportStore {
+        let tmpDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("PineTests-CrashStore-Thread-\(UUID().uuidString)")
+        return CrashReportStore(storageDirectory: tmpDir)
+    }
+
+    private func cleanup(_ store: CrashReportStore) {
+        try? FileManager.default.removeItem(at: store.storageDirectory)
+    }
+
+    @Test func concurrentSaves_doNotCrash() {
+        let store = makeTempStore()
+        defer { cleanup(store) }
+
+        let group = DispatchGroup()
+        let concurrentQueue = DispatchQueue(label: "test.concurrent", attributes: .concurrent)
+
+        for i in 0..<20 {
+            group.enter()
+            concurrentQueue.async {
+                let report = CrashReport(signal: "SIG\(i)")
+                store.save(report)
+                group.leave()
+            }
+        }
+
+        group.wait()
+        #expect(store.count == 20)
+    }
+
+    @Test func concurrentSaveAndLoad_doNotCrash() {
+        let store = makeTempStore()
+        defer { cleanup(store) }
+
+        let group = DispatchGroup()
+        let concurrentQueue = DispatchQueue(label: "test.concurrent.rw", attributes: .concurrent)
+
+        // Pre-populate with some reports
+        for i in 0..<5 {
+            store.save(CrashReport(signal: "PRE\(i)"))
+        }
+
+        // Concurrent reads and writes
+        for i in 0..<10 {
+            group.enter()
+            concurrentQueue.async {
+                store.save(CrashReport(signal: "WRITE\(i)"))
+                group.leave()
+            }
+
+            group.enter()
+            concurrentQueue.async {
+                _ = store.loadAll()
+                group.leave()
+            }
+
+            group.enter()
+            concurrentQueue.async {
+                _ = store.count
+                group.leave()
+            }
+        }
+
+        group.wait()
+        #expect(store.count == 15) // 5 pre + 10 writes
+    }
+
+    @Test func concurrentRemoveAll_doNotCrash() {
+        let store = makeTempStore()
+        defer { cleanup(store) }
+
+        for i in 0..<10 {
+            store.save(CrashReport(signal: "SIG\(i)"))
+        }
+
+        let group = DispatchGroup()
+        let concurrentQueue = DispatchQueue(label: "test.concurrent.remove", attributes: .concurrent)
+
+        // Concurrent removeAll and loadAll should not crash
+        for _ in 0..<5 {
+            group.enter()
+            concurrentQueue.async {
+                store.removeAll()
+                group.leave()
+            }
+
+            group.enter()
+            concurrentQueue.async {
+                _ = store.loadAll()
+                group.leave()
+            }
+        }
+
+        group.wait()
+        // After removeAll, store should be empty
+        #expect(store.loadAll().isEmpty)
+    }
+}
+
+// MARK: - CrashReportStore Export Tests
+
+struct CrashReportStoreExportTests {
+
+    private func makeTempStore() -> CrashReportStore {
+        let tmpDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("PineTests-CrashStore-Export-\(UUID().uuidString)")
+        return CrashReportStore(storageDirectory: tmpDir)
+    }
+
+    private func cleanup(_ store: CrashReportStore) {
+        try? FileManager.default.removeItem(at: store.storageDirectory)
+    }
+
+    @Test func copyAllToClipboard_emptyStore_returnsZero() {
+        let store = makeTempStore()
+        defer { cleanup(store) }
+
+        let count = store.copyAllToClipboard()
+        #expect(count == 0)
+    }
+
+    @Test func copyAllToClipboard_withReports_returnsCopiedCount() {
+        let store = makeTempStore()
+        defer { cleanup(store) }
+
+        store.save(CrashReport(signal: "SIGSEGV"))
+        store.save(CrashReport(signal: "SIGABRT"))
+
+        let count = store.copyAllToClipboard()
+        #expect(count == 2)
+    }
+
+    @Test func copyAllToClipboard_writesValidJSON() {
+        let store = makeTempStore()
+        defer { cleanup(store) }
+
+        let report = CrashReport(signal: "SIGSEGV", exceptionType: "EXC_BAD_ACCESS")
+        store.save(report)
+
+        store.copyAllToClipboard()
+
+        let pasteboard = NSPasteboard.general
+        guard let json = pasteboard.string(forType: .string) else {
+            #expect(Bool(false), "Clipboard should contain a string")
+            return
+        }
+
+        // Verify it's valid JSON (uses iso8601 date encoding)
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        guard let data = json.data(using: .utf8),
+              let decoded = try? decoder.decode([CrashReport].self, from: data) else {
+            #expect(Bool(false), "Clipboard content should be valid JSON decodable to [CrashReport]")
+            return
+        }
+
+        #expect(decoded.count == 1)
+        #expect(decoded[0].signal == "SIGSEGV")
+        #expect(decoded[0].exceptionType == "EXC_BAD_ACCESS")
+    }
+
+    @Test func storageDirectory_isAccessible() {
+        let store = makeTempStore()
+        defer { cleanup(store) }
+
+        // The storage directory should exist after init
+        var isDir: ObjCBool = false
+        let exists = FileManager.default.fileExists(atPath: store.storageDirectory.path, isDirectory: &isDir)
+        #expect(exists)
+        #expect(isDir.boolValue)
+    }
+}
+
+// MARK: - CrashReportingSettings Opt-In Race Tests
+
+struct CrashReportingSettingsRaceTests {
+
+    private func withCleanDefaults(_ body: () -> Void) {
+        let enabledKey = CrashReportingSettings.enabledKey
+        let promptKey = CrashReportingSettings.promptShownKey
+        let savedEnabled = UserDefaults.standard.object(forKey: enabledKey)
+        let savedPrompt = UserDefaults.standard.object(forKey: promptKey)
+
+        UserDefaults.standard.removeObject(forKey: enabledKey)
+        UserDefaults.standard.removeObject(forKey: promptKey)
+
+        body()
+
+        if let val = savedEnabled {
+            UserDefaults.standard.set(val, forKey: enabledKey)
+        } else {
+            UserDefaults.standard.removeObject(forKey: enabledKey)
+        }
+        if let val = savedPrompt {
+            UserDefaults.standard.set(val, forKey: promptKey)
+        } else {
+            UserDefaults.standard.removeObject(forKey: promptKey)
+        }
+    }
+
+    @Test func hasShownPrompt_setBeforeDisplay_preventsRace() {
+        withCleanDefaults {
+            // Simulate what showCrashReportingOptInIfNeeded now does:
+            // set hasShownPrompt BEFORE the async delay
+            #expect(CrashReportingSettings.needsPrompt)
+
+            // First "window" marks prompt as shown
+            CrashReportingSettings.hasShownPrompt = true
+
+            // Second "window" should see prompt already shown
+            #expect(!CrashReportingSettings.needsPrompt)
+        }
+    }
+
+    @Test func recordChoice_afterHasShownPrompt_worksCorrectly() {
+        withCleanDefaults {
+            // Mark as shown (as the fix does)
+            CrashReportingSettings.hasShownPrompt = true
+            #expect(!CrashReportingSettings.needsPrompt)
+            #expect(!CrashReportingSettings.isEnabled) // Not yet enabled
+
+            // User clicks Enable
+            CrashReportingSettings.recordChoice(enabled: true)
+            #expect(CrashReportingSettings.isEnabled)
+            #expect(CrashReportingSettings.hasShownPrompt) // Still true
+        }
+    }
+
+    @Test func recordChoice_afterHasShownPrompt_disable() {
+        withCleanDefaults {
+            CrashReportingSettings.hasShownPrompt = true
+            CrashReportingSettings.recordChoice(enabled: false)
+            #expect(!CrashReportingSettings.isEnabled)
+            #expect(CrashReportingSettings.hasShownPrompt)
+        }
+    }
+}
+
+// MARK: - CrashReportingManager Stop Tests
+
+struct CrashReportingManagerStopTests {
+
+    @Test func stop_canBeCalledMultipleTimes() {
+        let store = CrashReportStore(
+            storageDirectory: FileManager.default.temporaryDirectory
+                .appendingPathComponent("PineTests-Manager-\(UUID().uuidString)")
+        )
+        defer { try? FileManager.default.removeItem(at: store.storageDirectory) }
+
+        let manager = CrashReportingManager(store: store)
+        // Multiple stop() calls should not crash
+        manager.stop()
+        manager.stop()
+        manager.stop()
+    }
+
+    @Test func crashMarkerPath_isNotEmpty() {
+        let path = CrashReportingManager.crashMarkerPath
+        #expect(!path.isEmpty)
+        #expect(path.contains("Pine"))
+    }
+}
+
+// MARK: - Strings Constants Tests
+
+struct CrashReportingStringsTests {
+
+    @Test func optInEnable_string_isNotEmpty() {
+        let value = Strings.crashReportingOptInEnable
+        #expect(!value.isEmpty)
+    }
+
+    @Test func optInDisable_string_isNotEmpty() {
+        let value = Strings.crashReportingOptInDisable
+        #expect(!value.isEmpty)
+    }
+}
+
 // MARK: - MenuIcons Tests
 
 struct CrashReportingMenuIconTests {

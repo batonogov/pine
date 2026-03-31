@@ -35,14 +35,14 @@ struct CrashReportingOptInView: View {
                 .fixedSize(horizontal: false, vertical: true)
 
             HStack(spacing: 12) {
-                Button(String(localized: "crashReporting.optIn.disable")) {
+                Button(Strings.crashReportingOptInDisable) {
                     CrashReportingSettings.recordChoice(enabled: false)
                     onChoice(false)
                     isPresented = false
                 }
                 .keyboardShortcut(.cancelAction)
 
-                Button(String(localized: "crashReporting.optIn.enable")) {
+                Button(Strings.crashReportingOptInEnable) {
                     CrashReportingSettings.recordChoice(enabled: true)
                     onChoice(true)
                     isPresented = false

@@ -509,8 +509,11 @@ extension ContentView {
 
 extension ContentView {
     /// Shows the crash reporting opt-in dialog on first launch.
+    /// Sets `hasShownPrompt` immediately to prevent duplicate dialogs across multiple windows.
     func showCrashReportingOptInIfNeeded() {
         guard CrashReportingSettings.needsPrompt else { return }
+        // Mark as shown BEFORE the async delay to prevent race with other windows
+        CrashReportingSettings.hasShownPrompt = true
         // Slight delay to avoid showing during initial window setup
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
             showCrashReportingOptIn = true

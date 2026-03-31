@@ -431,6 +431,12 @@ enum Strings {
     static let crashReportingOptInTitle: LocalizedStringKey = "crashReporting.optIn.title"
     static let crashReportingOptInMessage: LocalizedStringKey = "crashReporting.optIn.message"
     static let crashReportingOptInPrivacy: LocalizedStringKey = "crashReporting.optIn.privacy"
+    static var crashReportingOptInEnable: String {
+        String(localized: "crashReporting.optIn.enable")
+    }
+    static var crashReportingOptInDisable: String {
+        String(localized: "crashReporting.optIn.disable")
+    }
 
     // MARK: - Progress Indicators
 
