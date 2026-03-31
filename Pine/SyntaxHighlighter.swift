@@ -76,7 +76,10 @@ struct Theme {
 /// Загружает грамматики из JSON-файлов в папке Grammars/ в бандле приложения.
 /// При подсветке выбирает грамматику по расширению файла и применяет правила.
 /// Thread-safe generation counter for cancelling stale highlight requests.
-final class HighlightGeneration: @unchecked Sendable {
+/// Explicitly `nonisolated` — accessed from background OperationQueue and DispatchQueue.global.
+/// Without this, SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor would make it implicitly @MainActor,
+/// causing dispatch_assert_queue_fail when accessed off the main thread (#693).
+nonisolated final class HighlightGeneration: @unchecked Sendable {
     private let lock = NSLock()
     private var value: Int = 0
 
@@ -107,7 +110,11 @@ struct HighlightMatchResult: Sendable {
     let multilineFingerprint: [Int]
 }
 
-final class SyntaxHighlighter: @unchecked Sendable {
+/// Explicitly `nonisolated` — manages its own thread safety via NSLock + serial OperationQueue.
+/// Without this, SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor would make it implicitly @MainActor,
+/// causing dispatch_assert_queue_fail → SIGTRAP when resolveGrammar / computeMatches are called
+/// from the background highlight queue (#693).
+nonisolated final class SyntaxHighlighter: @unchecked Sendable {
     /// Singleton — один экземпляр на всё приложение (грамматики загружаются один раз).
     static let shared = SyntaxHighlighter()
 
