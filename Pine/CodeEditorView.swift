@@ -562,8 +562,6 @@ final class GutterTextView: NSTextView {
         super.keyDown(with: event)
     }
 
-    // MARK: - Click outside hunk dismisses expanded inline diff
-
     /// Returns `true` if clicking at the given editor line should dismiss the expanded hunk.
     /// Returns `false` if no hunk is expanded or the click is inside the expanded hunk's range.
     func shouldDismissHunkOnClick(atLine line: Int) -> Bool {

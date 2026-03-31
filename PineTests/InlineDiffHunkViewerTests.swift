@@ -356,6 +356,20 @@ struct InlineDiffHunkViewerTests {
         #expect(toolbar.layer?.borderWidth == 0.5)
     }
 
+    @Test func hunkToolbarSeparatorsUpdateWithAppearance() {
+        let toolbar = HunkToolbarView()
+        // Separator views should be created and have background color
+        #expect(toolbar.separatorViews.count == 2)
+        for sep in toolbar.separatorViews {
+            #expect(sep.layer?.backgroundColor != nil)
+        }
+        // Trigger appearance update — separator colors should still be set
+        toolbar.viewDidChangeEffectiveAppearance()
+        for sep in toolbar.separatorViews {
+            #expect(sep.layer?.backgroundColor != nil)
+        }
+    }
+
     @Test func hunkToolbarViewSummaryText() {
         let toolbar = HunkToolbarView()
         toolbar.summaryText = "2/5 +3 -1"

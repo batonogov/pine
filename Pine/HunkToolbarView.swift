@@ -31,6 +31,7 @@ final class HunkToolbarView: NSView {
     private let restoreButton = NSButton()
     private let dismissButton = NSButton()
     private let stackView = NSStackView()
+    private(set) var separatorViews: [NSView] = []
 
     // MARK: - Constants
 
@@ -108,6 +109,7 @@ final class HunkToolbarView: NSView {
         // Separator views
         let sep1 = makeSeparator()
         let sep2 = makeSeparator()
+        separatorViews = [sep1, sep2]
 
         // Stack
         stackView.orientation = .horizontal
@@ -208,6 +210,11 @@ final class HunkToolbarView: NSView {
             : NSColor.separatorColor.withAlphaComponent(0.3)
         layer?.borderColor = border.cgColor
         layer?.borderWidth = 0.5
+
+        let separatorColor = NSColor.separatorColor.withAlphaComponent(0.3).cgColor
+        for sep in separatorViews {
+            sep.layer?.backgroundColor = separatorColor
+        }
     }
 
     // MARK: - Sizing
