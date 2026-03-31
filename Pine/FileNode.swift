@@ -9,7 +9,7 @@ import Foundation
 import os
 
 /// Один узел дерева файлов — файл или папка.
-final class FileNode: Identifiable, Hashable, @unchecked Sendable {
+nonisolated final class FileNode: Identifiable, Hashable, @unchecked Sendable {
     let id: URL               // Уникальный идентификатор = полный путь к файлу
     let name: String           // Имя файла/папки (отображается в UI)
     let url: URL               // Полный путь
@@ -208,7 +208,7 @@ final class FileNode: Identifiable, Hashable, @unchecked Sendable {
 /// Separated into a dedicated class so that `LoadContext` itself can be a value type,
 /// eliminating the use-after-free crash caused by ARC deallocation ordering issues
 /// with the previous class-based `LoadContext` (see #405).
-private final class LoadState {
+nonisolated private final class LoadState {
     var visitedRealPaths: Set<String> = []
     var reachedDepthLimit = false
     var symlinkCache: [URL: String] = [:]
@@ -220,7 +220,7 @@ private final class LoadState {
 /// Value type by design: the struct is cheap to copy (only immutable config +
 /// a single reference to shared `LoadState`), and being a struct avoids the
 /// ARC deallocation crash that occurred with the previous class-based approach.
-private struct LoadContext {
+nonisolated private struct LoadContext {
     let rootRealPath: String
     let ignoredPaths: Set<String>
     let maxDepth: Int

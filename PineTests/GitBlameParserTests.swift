@@ -7,6 +7,7 @@ import Foundation
 import Testing
 @testable import Pine
 
+@MainActor
 struct GitBlameParserTests {
 
     /// Helper to build porcelain blame output from line arrays.

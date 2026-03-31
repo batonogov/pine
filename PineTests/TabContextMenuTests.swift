@@ -11,6 +11,7 @@ import Testing
 @testable import Pine
 
 @Suite("Tab Context Menu Tests")
+@MainActor
 struct TabContextMenuTests {
 
     /// Creates a temporary file URL for testing.

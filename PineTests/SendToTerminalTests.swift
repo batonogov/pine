@@ -10,6 +10,7 @@ import SwiftUI
 
 /// Tests for the "Send to Terminal" feature (issue #311).
 @Suite("Send to Terminal Tests")
+@MainActor
 struct SendToTerminalTests {
 
     // MARK: - Helpers

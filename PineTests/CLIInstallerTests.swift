@@ -8,6 +8,7 @@ import Testing
 
 @testable import Pine
 
+@MainActor
 struct CLIInstallerTests {
     @Test func defaultInstallPathIsUsrLocalBin() {
         #expect(CLIInstaller.defaultInstallPath == "/usr/local/bin/pine")

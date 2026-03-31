@@ -9,6 +9,7 @@ import AppKit
 
 /// Tests for GutterTextView (CodeEditorView.swift) — blame data, auto-indent.
 @Suite("GutterTextView Tests")
+@MainActor
 struct GutterTextViewTests {
 
     private func makeTextView(text: String = "") -> GutterTextView {

@@ -6,6 +6,7 @@
 import Testing
 @testable import Pine
 
+@MainActor
 struct BranchSubtitleTests {
 
     // MARK: - Git repository cases

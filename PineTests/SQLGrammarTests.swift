@@ -7,6 +7,7 @@ import Testing
 import Foundation
 @testable import Pine
 
+@MainActor
 struct SQLGrammarTests {
 
     let grammar: Grammar

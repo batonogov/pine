@@ -10,6 +10,7 @@ import Foundation
 import Testing
 
 @Suite("Search Localization Tests")
+@MainActor
 struct SearchLocalizationTests {
 
     /// All languages the app supports.

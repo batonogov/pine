@@ -11,6 +11,7 @@ import Testing
 @testable import Pine
 
 @Suite("ProjectSearchProvider Tests")
+@MainActor
 struct ProjectSearchProviderTests {
 
     /// Creates a temporary directory with test files.

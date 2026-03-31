@@ -11,6 +11,7 @@ import SwiftUI
 /// Extended tests for CodeEditorView.Coordinator — font changes, text changes,
 /// bracket highlight, fold state, viewport highlighting, selection changes.
 @Suite("CodeEditorView.Coordinator Extended Tests")
+@MainActor
 struct CoordinatorExtendedTests {
 
     private let font13 = NSFont.monospacedSystemFont(ofSize: 13, weight: .regular)

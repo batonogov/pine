@@ -16,6 +16,7 @@ import Testing
 @testable import Pine
 
 @Suite("Tab Navigation Tests")
+@MainActor
 struct TabNavigationTests {
 
     // MARK: - Helpers

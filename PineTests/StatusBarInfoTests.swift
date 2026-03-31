@@ -11,6 +11,7 @@ import Testing
 @testable import Pine
 
 @Suite("StatusBarInfo Tests")
+@MainActor
 struct StatusBarInfoTests {
 
     // MARK: - CursorLocation from position

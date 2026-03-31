@@ -13,6 +13,7 @@ import SwiftUI
 @testable import Pine
 
 @Suite("Undo Highlight Safety")
+@MainActor
 struct UndoHighlightSafetyTests {
 
     private let font = NSFont.monospacedSystemFont(ofSize: 13, weight: .regular)

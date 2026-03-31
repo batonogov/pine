@@ -12,6 +12,7 @@ import SwiftUI
 @testable import Pine
 
 @Suite("NotificationCenter Observer Scoping")
+@MainActor
 struct NotificationObserverScopingTests {
 
     // MARK: - Helpers

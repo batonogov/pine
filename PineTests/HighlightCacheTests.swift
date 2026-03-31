@@ -10,6 +10,7 @@ import AppKit
 @testable import Pine
 
 @Suite(.serialized)
+@MainActor
 struct HighlightCacheTests {
 
     nonisolated(unsafe) private let font = NSFont.monospacedSystemFont(ofSize: 13, weight: .regular)
