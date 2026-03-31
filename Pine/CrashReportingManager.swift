@@ -192,7 +192,9 @@ final class CrashReportingManager: NSObject, MXMetricManagerSubscriber {
         let signals: [Int32] = [SIGSEGV, SIGABRT, SIGBUS, SIGFPE, SIGILL, SIGTRAP]
 
         for sig in signals {
-            signal(sig, signalHandler)
+            signal(sig) { caughtSignal in
+                signalHandler(caughtSignal)
+            }
         }
     }
 
