@@ -11,6 +11,7 @@ import Testing
 @testable import Pine
 
 @Suite("EditorTab Tests")
+@MainActor
 struct EditorTabTests {
 
     // MARK: - contentVersion

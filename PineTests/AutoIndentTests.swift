@@ -8,6 +8,7 @@ import AppKit
 @testable import Pine
 
 /// Tests for GutterTextView auto-indent logic (insertNewline override).
+@MainActor
 struct AutoIndentTests {
 
     private func makeGutterTextView(text: String) -> GutterTextView {

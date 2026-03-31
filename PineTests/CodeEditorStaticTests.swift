@@ -10,6 +10,7 @@ import SwiftUI
 
 /// Tests for CodeEditorView static helpers, value types, and Coordinator basics.
 @Suite("CodeEditorView Static Tests")
+@MainActor
 struct CodeEditorStaticTests {
 
     // MARK: - GoToRequest

@@ -9,6 +9,7 @@ import Testing
 @testable import Pine
 
 @Suite("MarkdownRenderer")
+@MainActor
 struct MarkdownRendererTests {
 
     private let renderer = MarkdownRenderer()

@@ -9,6 +9,7 @@ import Testing
 @testable import Pine
 
 @Suite("SupportedFileTypes")
+@MainActor
 struct SupportedFileTypesTests {
 
     // MARK: - Document Type Coverage

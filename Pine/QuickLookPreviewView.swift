@@ -79,7 +79,7 @@ struct QuickLookPreviewView: NSViewRepresentable {
 }
 
 /// Simple QLPreviewItem wrapper for a file URL.
-class PreviewItem: NSObject, QLPreviewItem {
+nonisolated class PreviewItem: NSObject, QLPreviewItem {
     let url: URL
 
     init(url: URL) {

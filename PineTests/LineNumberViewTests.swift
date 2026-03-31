@@ -9,6 +9,7 @@ import AppKit
 
 /// Tests for LineNumberView (LineNumberGutter.swift) — properties and data management.
 @Suite("LineNumberView Tests")
+@MainActor
 struct LineNumberViewTests {
 
     private func makeView(text: String = "line1\nline2\nline3") -> (LineNumberView, NSTextView) {

@@ -9,6 +9,7 @@ import AppKit
 
 /// Tests for validation diagnostic icons in the line number gutter.
 @Suite("Validation Gutter Tests")
+@MainActor
 struct ValidationGutterTests {
 
     private func makeLineNumberView() -> LineNumberView {

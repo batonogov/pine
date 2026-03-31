@@ -16,6 +16,7 @@ import AppKit
 /// - Escape key: collapses
 /// - Diff data change: collapses
 @Suite("Inline Diff Expand Tests")
+@MainActor
 struct InlineDiffExpandTests {
 
     // MARK: - Helpers

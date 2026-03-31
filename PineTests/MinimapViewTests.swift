@@ -11,6 +11,7 @@ import Testing
 @testable import Pine
 
 @Suite("MinimapView Tests")
+@MainActor
 struct MinimapViewTests {
 
     // MARK: - UserDefaults persistence

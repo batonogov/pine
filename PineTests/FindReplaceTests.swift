@@ -12,6 +12,7 @@ import SwiftUI
 private class FakeFindBarView: NSView {}
 
 /// Tests for Find & Replace functionality (issue #275) and find bar overlap regression (issue #387).
+@MainActor
 struct FindReplaceTests {
 
     private func makeGutterTextView(text: String = "hello world") -> GutterTextView {

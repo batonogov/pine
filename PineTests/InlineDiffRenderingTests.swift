@@ -15,6 +15,7 @@ import AppKit
 @testable import Pine
 
 @Suite("Inline Diff Rendering Tests")
+@MainActor
 struct InlineDiffRenderingTests {
 
     // MARK: - Helpers

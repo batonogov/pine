@@ -7,6 +7,7 @@ import Testing
 import Foundation
 @testable import Pine
 
+@MainActor
 struct FoldStateTests {
 
     private func makeFoldable(start: Int, end: Int, startChar: Int = 0, endChar: Int = 0) -> FoldableRange {

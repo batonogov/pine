@@ -9,6 +9,7 @@ import Testing
 @testable import Pine
 
 @Suite("SymbolParser Tests")
+@MainActor
 struct SymbolParserTests {
 
     // MARK: - Swift

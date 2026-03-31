@@ -9,6 +9,7 @@ import Testing
 @testable import Pine
 
 @Suite("ProjectRegistry Tests")
+@MainActor
 struct ProjectRegistryTests {
 
     private func makeTempDirectory() throws -> URL {

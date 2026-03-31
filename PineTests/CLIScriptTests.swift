@@ -11,6 +11,7 @@ import Testing
 
 @testable import Pine
 
+@MainActor
 struct CLIScriptTests {
     /// Path to the bundled pine script in the test host's resources.
     private var scriptPath: String? {

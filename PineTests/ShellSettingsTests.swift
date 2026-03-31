@@ -8,6 +8,7 @@ import Foundation
 @testable import Pine
 
 @Suite("ShellSettings Tests")
+@MainActor
 struct ShellSettingsTests {
 
     private let suiteName = "PineTests.Shell.\(UUID().uuidString)"
