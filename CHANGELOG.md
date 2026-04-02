@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.17.0](https://github.com/batonogov/pine/compare/v1.16.1...v1.17.0) (2026-03-31)
+
+
+### Features
+
+* add file icons for Terraform, Helm, Vagrant, and DevOps tooling ([#702](https://github.com/batonogov/pine/issues/702)) ([44fb658](https://github.com/batonogov/pine/commit/44fb658734f7ab3c81966027ddb2e1d330d99e73))
+
 ## [1.16.1](https://github.com/batonogov/pine/compare/v1.16.0...v1.16.1) (2026-03-31)
 
 
