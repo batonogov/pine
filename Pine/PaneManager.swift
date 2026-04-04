@@ -19,6 +19,18 @@ final class PaneManager {
     /// Per-pane tab managers, keyed by PaneID.
     private(set) var tabManagers: [PaneID: TabManager] = [:]
 
+    /// Per-pane terminal states, keyed by PaneID.
+    private(set) var terminalStates: [PaneID: TerminalPaneState] = [:]
+
+    /// Saved root before maximize, for restore.
+    private var savedRootBeforeMaximize: PaneNode?
+
+    /// ID of the currently maximized pane, if any.
+    private(set) var maximizedPaneID: PaneID?
+
+    /// Whether a pane is currently maximized.
+    var isMaximized: Bool { maximizedPaneID != nil }
+
     /// The currently focused pane.
     var activePaneID: PaneID
 
@@ -110,6 +122,7 @@ final class PaneManager {
               let newRoot = root.removing(paneID) else { return }
 
         tabManagers[paneID] = nil
+        terminalStates[paneID] = nil
         root = newRoot
 
         // If active pane was removed, switch to first available
@@ -132,6 +145,73 @@ final class PaneManager {
         }
     }
 
+    // MARK: - Terminal pane operations
+
+    func terminalState(for paneID: PaneID) -> TerminalPaneState? {
+        terminalStates[paneID]
+    }
+
+    var terminalPaneIDs: [PaneID] {
+        root.leafIDs.filter { root.content(for: $0) == .terminal }
+    }
+
+    var allTerminalTabs: [TerminalTab] {
+        terminalStates.values.flatMap(\.terminalTabs)
+    }
+
+    @discardableResult
+    func createTerminalPane(
+        relativeTo targetID: PaneID,
+        axis: SplitAxis,
+        workingDirectory: URL?
+    ) -> PaneID? {
+        let newID = PaneID()
+        guard let newRoot = root.splitting(
+            targetID, axis: axis, newPaneID: newID, newContent: .terminal
+        ) else { return nil }
+
+        root = newRoot
+        let state = TerminalPaneState()
+        state.addTab(workingDirectory: workingDirectory)
+        terminalStates[newID] = state
+        activePaneID = newID
+        return newID
+    }
+
+    func moveTerminalTab(_ tabID: UUID, from sourceID: PaneID, to targetID: PaneID) {
+        guard let srcState = terminalStates[sourceID],
+              let dstState = terminalStates[targetID],
+              let tab = srcState.terminalTabs.first(where: { $0.id == tabID }) else { return }
+
+        dstState.terminalTabs.append(tab)
+        dstState.activeTerminalID = tab.id
+        srcState.terminalTabs.removeAll { $0.id == tabID }
+        if srcState.activeTerminalID == tabID {
+            srcState.activeTerminalID = srcState.terminalTabs.last?.id
+        }
+        activePaneID = targetID
+        if srcState.terminalTabs.isEmpty {
+            removePane(sourceID)
+        }
+    }
+
+    // MARK: - Maximize
+
+    func maximize(paneID: PaneID) {
+        guard maximizedPaneID == nil else { return }
+        guard let content = root.content(for: paneID) else { return }
+        savedRootBeforeMaximize = root
+        root = .leaf(paneID, content)
+        maximizedPaneID = paneID
+    }
+
+    func restoreFromMaximize() {
+        guard let saved = savedRootBeforeMaximize else { return }
+        root = saved
+        savedRootBeforeMaximize = nil
+        maximizedPaneID = nil
+    }
+
     // MARK: - Session restore
 
     /// Restores a previously saved pane layout.
@@ -144,15 +224,23 @@ final class PaneManager {
         // Collect all leaf IDs from the restored tree
         let leafIDs = node.leafIDs
 
-        // Create TabManagers for each leaf
         var newTabManagers: [PaneID: TabManager] = [:]
+        var newTerminalStates: [PaneID: TerminalPaneState] = [:]
         for leafID in leafIDs {
-            newTabManagers[leafID] = TabManager()
+            switch node.content(for: leafID) {
+            case .editor:
+                newTabManagers[leafID] = TabManager()
+            case .terminal:
+                newTerminalStates[leafID] = TerminalPaneState()
+            case nil:
+                break
+            }
         }
 
         // Replace root and tab managers atomically
         root = node
         tabManagers = newTabManagers
+        terminalStates = newTerminalStates
 
         // Restore active pane
         if let uuid = activePaneUUID,

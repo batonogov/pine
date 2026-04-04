@@ -493,4 +493,134 @@ struct PaneManagerTests {
         manager.updateRatio(for: onlyPane, ratio: 0.7)
         #expect(manager.root.leafCount == 1)
     }
+
+    // MARK: - Terminal pane operations
+
+    @Test func createTerminalPane_splitsBelowEditor() {
+        let manager = PaneManager()
+        let editorPane = manager.activePaneID
+        let terminalPaneID = manager.createTerminalPane(
+            relativeTo: editorPane, axis: .vertical, workingDirectory: nil
+        )
+        #expect(terminalPaneID != nil)
+        #expect(manager.root.leafCount == 2)
+        #expect(manager.root.content(for: terminalPaneID!) == .terminal)
+        #expect(manager.terminalStates[terminalPaneID!] != nil)
+    }
+
+    @Test func createTerminalPane_hasOneTab() {
+        let manager = PaneManager()
+        let editorPane = manager.activePaneID
+        guard let terminalPaneID = manager.createTerminalPane(
+            relativeTo: editorPane, axis: .vertical, workingDirectory: nil
+        ) else {
+            Issue.record("createTerminalPane failed")
+            return
+        }
+        #expect(manager.terminalState(for: terminalPaneID)?.tabCount == 1)
+    }
+
+    @Test func removeTerminalPane_cleansUpState() {
+        let manager = PaneManager()
+        let editorPane = manager.activePaneID
+        guard let terminalPaneID = manager.createTerminalPane(
+            relativeTo: editorPane, axis: .vertical, workingDirectory: nil
+        ) else {
+            Issue.record("createTerminalPane failed")
+            return
+        }
+        manager.removePane(terminalPaneID)
+        #expect(manager.terminalStates[terminalPaneID] == nil)
+        #expect(manager.root.leafCount == 1)
+    }
+
+    @Test func terminalPaneIDs_returnsOnlyTerminalLeaves() {
+        let manager = PaneManager()
+        let editorPane = manager.activePaneID
+        _ = manager.createTerminalPane(relativeTo: editorPane, axis: .vertical, workingDirectory: nil)
+        #expect(manager.terminalPaneIDs.count == 1)
+        #expect(manager.root.leafCount == 2)
+    }
+
+    @Test func allTerminalTabs_collectsFromAllPanes() {
+        let manager = PaneManager()
+        let editorPane = manager.activePaneID
+        guard let tp1 = manager.createTerminalPane(
+            relativeTo: editorPane, axis: .vertical, workingDirectory: nil
+        ) else {
+            Issue.record("failed")
+            return
+        }
+        _ = manager.createTerminalPane(relativeTo: tp1, axis: .horizontal, workingDirectory: nil)
+        #expect(manager.allTerminalTabs.count == 2)
+    }
+
+    @Test func maximize_hidesOtherPanes() {
+        let manager = PaneManager()
+        let editorPane = manager.activePaneID
+        guard let terminalPane = manager.createTerminalPane(
+            relativeTo: editorPane, axis: .vertical, workingDirectory: nil
+        ) else {
+            Issue.record("failed")
+            return
+        }
+        manager.maximize(paneID: terminalPane)
+        #expect(manager.isMaximized)
+        #expect(manager.root.leafCount == 1)
+        #expect(manager.root.content(for: terminalPane) == .terminal)
+    }
+
+    @Test func restoreFromMaximize_restoresLayout() {
+        let manager = PaneManager()
+        let editorPane = manager.activePaneID
+        guard let terminalPane = manager.createTerminalPane(
+            relativeTo: editorPane, axis: .vertical, workingDirectory: nil
+        ) else {
+            Issue.record("failed")
+            return
+        }
+        manager.maximize(paneID: terminalPane)
+        manager.restoreFromMaximize()
+        #expect(!manager.isMaximized)
+        #expect(manager.root.leafCount == 2)
+    }
+
+    @Test func maximize_alreadyMaximized_doesNothing() {
+        let manager = PaneManager()
+        let editorPane = manager.activePaneID
+        guard let terminalPane = manager.createTerminalPane(
+            relativeTo: editorPane, axis: .vertical, workingDirectory: nil
+        ) else {
+            Issue.record("failed")
+            return
+        }
+        manager.maximize(paneID: terminalPane)
+        let rootAfterFirst = manager.root
+        manager.maximize(paneID: terminalPane)
+        #expect(manager.root == rootAfterFirst)
+    }
+
+    @Test func moveTerminalTab_betweenTerminalPanes() {
+        let manager = PaneManager()
+        let editorPane = manager.activePaneID
+        guard let tp1 = manager.createTerminalPane(
+            relativeTo: editorPane, axis: .vertical, workingDirectory: nil
+        ) else {
+            Issue.record("failed")
+            return
+        }
+        let state1 = manager.terminalState(for: tp1)!
+        _ = state1.addTab(workingDirectory: nil)
+        #expect(state1.tabCount == 2)
+        guard let tp2 = manager.createTerminalPane(
+            relativeTo: tp1, axis: .horizontal, workingDirectory: nil
+        ) else {
+            Issue.record("failed")
+            return
+        }
+        let tabToMove = state1.terminalTabs.first!
+        manager.moveTerminalTab(tabToMove.id, from: tp1, to: tp2)
+        #expect(manager.terminalState(for: tp1)?.tabCount == 1)
+        #expect(manager.terminalState(for: tp2)?.tabCount == 2)
+    }
 }

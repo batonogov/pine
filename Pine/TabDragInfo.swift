@@ -20,6 +20,8 @@ struct TabDragInfo: Codable, Sendable {
     let paneID: UUID
     let tabID: UUID
     let fileURL: URL
+    /// "editor" or "terminal". Defaults to "editor" for backwards compatibility.
+    var contentType: String = "editor"
 
     /// JSON-encodes to a string for drag transfer.
     var encoded: String {
@@ -34,5 +36,20 @@ struct TabDragInfo: Codable, Sendable {
     static func decode(from string: String) -> TabDragInfo? {
         guard let data = string.data(using: .utf8) else { return nil }
         return try? JSONDecoder().decode(TabDragInfo.self, from: data)
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case paneID
+        case tabID
+        case fileURL
+        case contentType
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        paneID = try container.decode(UUID.self, forKey: .paneID)
+        tabID = try container.decode(UUID.self, forKey: .tabID)
+        fileURL = try container.decode(URL.self, forKey: .fileURL)
+        contentType = try container.decodeIfPresent(String.self, forKey: .contentType) ?? "editor"
     }
 }

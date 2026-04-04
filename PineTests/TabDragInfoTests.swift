@@ -138,6 +138,39 @@ struct TabDragInfoTests {
         let encoded = info.encoded
         #expect(encoded.contains(paneUUID.uuidString.uppercased()) || encoded.contains(paneUUID.uuidString.lowercased()))
     }
+
+    @Test func encode_includesContentType() {
+        let info = TabDragInfo(
+            paneID: UUID(),
+            tabID: UUID(),
+            fileURL: URL(fileURLWithPath: "/tmp/test.swift"),
+            contentType: "editor"
+        )
+        let encoded = info.encoded
+        #expect(encoded.contains("contentType"))
+        #expect(encoded.contains("editor"))
+    }
+
+    @Test func decode_terminalContentType() {
+        let info = TabDragInfo(
+            paneID: UUID(),
+            tabID: UUID(),
+            fileURL: URL(fileURLWithPath: "/tmp/test"),
+            contentType: "terminal"
+        )
+        let decoded = TabDragInfo.decode(from: info.encoded)
+        #expect(decoded?.contentType == "terminal")
+    }
+
+    @Test func contentType_defaultsToEditor() {
+        let paneUUID = UUID()
+        let tabUUID = UUID()
+        let json = """
+        {"paneID":"\(paneUUID.uuidString)","tabID":"\(tabUUID.uuidString)","fileURL":"file:///tmp/test.swift"}
+        """
+        let decoded = TabDragInfo.decode(from: json)
+        #expect(decoded?.contentType == "editor")
+    }
 }
 
 @Suite("PaneDropZone Tests")
