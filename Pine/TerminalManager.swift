@@ -2,82 +2,84 @@
 //  TerminalManager.swift
 //  Pine
 //
-//  Created by Claude on 11.03.2026.
+//  Coordinator for terminal panes. Routes Cmd+T and Cmd+` to the
+//  appropriate terminal pane via PaneManager.
 //
 
 import SwiftUI
 
-/// Manages terminal tabs, sessions, and visibility state.
 @MainActor
 @Observable
 final class TerminalManager {
-    var isTerminalVisible = false
-    var isTerminalMaximized = false
-    var terminalTabs: [TerminalTab] = [TerminalTab(name: Strings.terminalDefaultName)]
-    var activeTerminalID: UUID?
+    /// Reference to the pane manager for creating/finding terminal panes.
+    weak var paneManager: PaneManager?
 
-    // MARK: - Focus
+    /// ID of the last-focused terminal pane (for Cmd+T routing).
+    var lastActiveTerminalPaneID: PaneID?
 
-    /// When non-nil, the terminal view for this tab should become first responder.
-    /// Set on new tab creation and tab switch; consumed by TerminalContainerView.
-    var pendingFocusTabID: UUID?
+    // MARK: - Tab creation
 
-    // MARK: - Search state (Cmd+F in terminal)
+    /// Creates a terminal tab in the last-used terminal pane.
+    /// If no terminal pane exists, creates one below the given editor pane.
+    func createTerminalTab(relativeTo editorPaneID: PaneID, workingDirectory: URL?) {
+        guard let pm = paneManager else { return }
 
-    /// Whether the terminal search bar is currently visible.
-    var isSearchVisible = false
-    /// The current search query typed in the terminal search bar.
-    var terminalSearchQuery = ""
-    /// Whether terminal search is case-sensitive.
-    var isSearchCaseSensitive = false
+        if let tpID = lastActiveTerminalPaneID,
+           pm.terminalState(for: tpID) != nil {
+            pm.terminalState(for: tpID)?.addTab(workingDirectory: workingDirectory)
+            pm.activePaneID = tpID
+        } else {
+            if let newID = pm.createTerminalPane(
+                relativeTo: editorPaneID,
+                axis: .vertical,
+                workingDirectory: workingDirectory
+            ) {
+                lastActiveTerminalPaneID = newID
+            }
+        }
+    }
 
-    var activeTerminalTab: TerminalTab? {
-        guard let id = activeTerminalID else { return nil }
-        return terminalTabs.first { $0.id == id }
+    /// Focuses the nearest terminal pane, or creates one.
+    func focusOrCreateTerminal(relativeTo editorPaneID: PaneID, workingDirectory: URL?) {
+        guard let pm = paneManager else { return }
+
+        if let tpID = lastActiveTerminalPaneID,
+           pm.terminalState(for: tpID) != nil {
+            pm.activePaneID = tpID
+        } else {
+            if let firstTP = pm.terminalPaneIDs.first {
+                pm.activePaneID = firstTP
+                lastActiveTerminalPaneID = firstTP
+            } else {
+                createTerminalTab(relativeTo: editorPaneID, workingDirectory: workingDirectory)
+            }
+        }
+    }
+
+    // MARK: - Queries (delegate to PaneManager)
+
+    var allTerminalTabs: [TerminalTab] {
+        paneManager?.allTerminalTabs ?? []
+    }
+
+    var hasActiveProcesses: Bool {
+        allTerminalTabs.contains { $0.hasForegroundProcess }
+    }
+
+    var tabsWithForegroundProcesses: [TerminalTab] {
+        allTerminalTabs.filter { $0.hasForegroundProcess }
+    }
+
+    func terminateAll() {
+        for tab in allTerminalTabs {
+            tab.stop()
+        }
     }
 
     func startTerminals(workingDirectory: URL?) {
-        for tab in terminalTabs {
-            tab.configure(workingDirectory: workingDirectory)
-        }
-        if activeTerminalID == nil {
-            activeTerminalID = terminalTabs.first?.id
-        }
-    }
-
-    func addTerminalTab(workingDirectory: URL?) {
-        let number = terminalTabs.count + 1
-        let tab = TerminalTab(name: Strings.terminalNumberedName(number))
-        tab.configure(workingDirectory: workingDirectory)
-        terminalTabs.append(tab)
-        activeTerminalID = tab.id
-        pendingFocusTabID = tab.id
-    }
-
-    func closeTerminalTab(_ tab: TerminalTab) {
-        tab.stop()
-        terminalTabs.removeAll { $0.id == tab.id }
-        if activeTerminalID == tab.id {
-            activeTerminalID = terminalTabs.last?.id
-        }
-    }
-
-    // MARK: - Process management
-
-    /// Whether any terminal tab has a foreground child process running.
-    var hasActiveProcesses: Bool {
-        terminalTabs.contains { $0.hasForegroundProcess }
-    }
-
-    /// Terminal tabs that currently have a foreground child process.
-    var tabsWithForegroundProcesses: [TerminalTab] {
-        terminalTabs.filter { $0.hasForegroundProcess }
-    }
-
-    /// Terminates all terminal processes.
-    func terminateAll() {
-        for tab in terminalTabs {
-            tab.stop()
+        guard let pm = paneManager else { return }
+        for state in pm.terminalStates.values {
+            state.startTabs(workingDirectory: workingDirectory)
         }
     }
 }
