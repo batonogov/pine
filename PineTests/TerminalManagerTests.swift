@@ -15,179 +15,124 @@ import Testing
 @Suite("TerminalManager Tests")
 struct TerminalManagerTests {
 
-    @Test("Initial state has one tab and no active terminal")
+    @Test("Initial state has no paneManager and empty tabs")
     func initialState() {
         let manager = TerminalManager()
-        #expect(manager.terminalTabs.count == 1)
-        #expect(manager.activeTerminalID == nil)
-        #expect(manager.activeTerminalTab == nil)
-        #expect(manager.isTerminalVisible == false)
-        #expect(manager.isTerminalMaximized == false)
+        #expect(manager.paneManager == nil)
+        #expect(manager.allTerminalTabs.isEmpty)
+        #expect(manager.lastActiveTerminalPaneID == nil)
     }
 
-    @Test("startTerminals sets activeTerminalID to first tab")
-    func startTerminalsSetsActive() {
+    @Test("createTerminalTab creates pane when no terminal pane exists")
+    func createTerminalTabCreatesPane() {
+        let pm = PaneManager()
         let manager = TerminalManager()
-        manager.startTerminals(workingDirectory: nil)
-        #expect(manager.activeTerminalID == manager.terminalTabs.first?.id)
-        #expect(manager.activeTerminalTab != nil)
+        manager.paneManager = pm
+
+        let editorPaneID = pm.activePaneID
+        manager.createTerminalTab(relativeTo: editorPaneID, workingDirectory: nil)
+
+        #expect(pm.terminalPaneIDs.count == 1)
+        #expect(manager.lastActiveTerminalPaneID != nil)
+        #expect(manager.allTerminalTabs.count == 1)
     }
 
-    @Test("startTerminals does not overwrite existing activeTerminalID")
-    func startTerminalsPreservesActive() throws {
+    @Test("createTerminalTab adds to existing terminal pane")
+    func createTerminalTabAddsToExisting() {
+        let pm = PaneManager()
         let manager = TerminalManager()
-        let firstTab = try #require(manager.terminalTabs.first)
-        manager.activeTerminalID = firstTab.id
-        manager.startTerminals(workingDirectory: nil)
-        #expect(manager.activeTerminalID == firstTab.id)
+        manager.paneManager = pm
+
+        let editorPaneID = pm.activePaneID
+        manager.createTerminalTab(relativeTo: editorPaneID, workingDirectory: nil)
+        manager.createTerminalTab(relativeTo: editorPaneID, workingDirectory: nil)
+
+        #expect(pm.terminalPaneIDs.count == 1)
+        #expect(manager.allTerminalTabs.count == 2)
     }
 
-    @Test("addTerminalTab appends and activates new tab")
-    func addTerminalTab() throws {
+    @Test("focusOrCreateTerminal focuses existing terminal pane")
+    func focusOrCreateTerminalFocuses() throws {
+        let pm = PaneManager()
         let manager = TerminalManager()
-        let initialCount = manager.terminalTabs.count
-        manager.addTerminalTab(workingDirectory: nil)
-        #expect(manager.terminalTabs.count == initialCount + 1)
-        let newTab = try #require(manager.terminalTabs.last)
-        #expect(manager.activeTerminalID == newTab.id)
+        manager.paneManager = pm
+
+        let editorPaneID = pm.activePaneID
+        manager.createTerminalTab(relativeTo: editorPaneID, workingDirectory: nil)
+        let terminalPaneID = try #require(manager.lastActiveTerminalPaneID)
+
+        // Switch back to editor pane
+        pm.activePaneID = editorPaneID
+
+        manager.focusOrCreateTerminal(relativeTo: editorPaneID, workingDirectory: nil)
+        #expect(pm.activePaneID == terminalPaneID)
     }
 
-    @Test("addTerminalTab assigns numbered name")
-    func addTerminalTabName() throws {
+    @Test("focusOrCreateTerminal creates pane when none exist")
+    func focusOrCreateTerminalCreates() {
+        let pm = PaneManager()
         let manager = TerminalManager()
-        manager.addTerminalTab(workingDirectory: nil)
-        let newTab = try #require(manager.terminalTabs.last)
-        #expect(newTab.name.contains("2"))
-    }
+        manager.paneManager = pm
 
-    @Test("closeTerminalTab removes tab and selects last remaining")
-    func closeTerminalTab() throws {
-        let manager = TerminalManager()
-        manager.addTerminalTab(workingDirectory: nil)
-        #expect(manager.terminalTabs.count == 2)
+        let editorPaneID = pm.activePaneID
+        manager.focusOrCreateTerminal(relativeTo: editorPaneID, workingDirectory: nil)
 
-        let tabToClose = try #require(manager.terminalTabs.last)
-        manager.closeTerminalTab(tabToClose)
-
-        #expect(manager.terminalTabs.count == 1)
-        #expect(manager.activeTerminalID == manager.terminalTabs.last?.id)
-    }
-
-    @Test("closeTerminalTab when closing active selects last remaining")
-    func closeActiveTab() throws {
-        let manager = TerminalManager()
-        manager.startTerminals(workingDirectory: nil)
-        manager.addTerminalTab(workingDirectory: nil)
-        let activeTab = try #require(manager.activeTerminalTab)
-
-        manager.closeTerminalTab(activeTab)
-
-        #expect(manager.activeTerminalID == manager.terminalTabs.last?.id)
-    }
-
-    @Test("closeTerminalTab when closing non-active preserves active")
-    func closeNonActiveTab() throws {
-        let manager = TerminalManager()
-        manager.startTerminals(workingDirectory: nil)
-        manager.addTerminalTab(workingDirectory: nil)
-        let activeID = manager.activeTerminalID
-        let firstTab = try #require(manager.terminalTabs.first)
-
-        manager.closeTerminalTab(firstTab)
-
-        #expect(manager.activeTerminalID == activeID)
-    }
-
-    @Test("closing all tabs results in nil activeTerminalTab")
-    func closeAllTabs() throws {
-        let manager = TerminalManager()
-        let tab = try #require(manager.terminalTabs.first)
-        manager.closeTerminalTab(tab)
-
-        #expect(manager.terminalTabs.isEmpty)
-        #expect(manager.activeTerminalID == nil)
-        #expect(manager.activeTerminalTab == nil)
-    }
-
-    @Test("activeTerminalTab returns correct tab by ID")
-    func activeTerminalTabLookup() throws {
-        let manager = TerminalManager()
-        manager.addTerminalTab(workingDirectory: nil)
-        let secondTab = try #require(manager.terminalTabs.last)
-        manager.activeTerminalID = secondTab.id
-
-        #expect(manager.activeTerminalTab?.id == secondTab.id)
-    }
-
-    @Test("activeTerminalTab returns nil for unknown ID")
-    func activeTerminalTabUnknownID() {
-        let manager = TerminalManager()
-        manager.activeTerminalID = UUID()
-        #expect(manager.activeTerminalTab == nil)
-    }
-
-    @Test("visibility and maximize state toggling")
-    func visibilityState() {
-        let manager = TerminalManager()
-        #expect(manager.isTerminalVisible == false)
-        #expect(manager.isTerminalMaximized == false)
-
-        manager.isTerminalVisible = true
-        #expect(manager.isTerminalVisible == true)
-
-        manager.isTerminalMaximized = true
-        #expect(manager.isTerminalMaximized == true)
-    }
-
-    @Test("multiple addTerminalTab calls increment correctly")
-    func multipleAdds() {
-        let manager = TerminalManager()
-        manager.addTerminalTab(workingDirectory: nil)
-        manager.addTerminalTab(workingDirectory: nil)
-        manager.addTerminalTab(workingDirectory: nil)
-
-        #expect(manager.terminalTabs.count == 4) // 1 initial + 3 added
-        #expect(manager.activeTerminalID == manager.terminalTabs.last?.id)
-    }
-
-    @Test("terminateAll stops all tabs")
-    func terminateAll() {
-        let manager = TerminalManager()
-        manager.addTerminalTab(workingDirectory: nil)
-        manager.addTerminalTab(workingDirectory: nil)
-        #expect(manager.terminalTabs.count == 3)
-
-        manager.terminateAll()
-
-        for tab in manager.terminalTabs {
-            #expect(tab.isTerminated)
-        }
+        #expect(pm.terminalPaneIDs.count == 1)
+        #expect(manager.allTerminalTabs.count == 1)
     }
 
     @Test("hasActiveProcesses returns false when no processes started")
     func hasActiveProcessesNoProcesses() {
+        let pm = PaneManager()
         let manager = TerminalManager()
+        manager.paneManager = pm
+
+        let editorPaneID = pm.activePaneID
+        manager.createTerminalTab(relativeTo: editorPaneID, workingDirectory: nil)
+
         #expect(!manager.hasActiveProcesses)
         #expect(manager.tabsWithForegroundProcesses.isEmpty)
     }
 
-    // MARK: - Search state tests
-
-    @Test("initial search state is hidden with empty query and case-insensitive")
-    func initialSearchState() {
+    @Test("terminateAll stops all tabs across panes")
+    func terminateAll() {
+        let pm = PaneManager()
         let manager = TerminalManager()
-        #expect(manager.isSearchVisible == false)
-        #expect(manager.terminalSearchQuery == "")
-        #expect(manager.isSearchCaseSensitive == false)
+        manager.paneManager = pm
+
+        let editorPaneID = pm.activePaneID
+        manager.createTerminalTab(relativeTo: editorPaneID, workingDirectory: nil)
+        manager.createTerminalTab(relativeTo: editorPaneID, workingDirectory: nil)
+        #expect(manager.allTerminalTabs.count == 2)
+
+        manager.terminateAll()
+
+        for tab in manager.allTerminalTabs {
+            #expect(tab.isTerminated)
+        }
     }
 
-    @Test("isSearchCaseSensitive toggles independently")
-    func caseSensitiveToggle() {
+    @Test("allTerminalTabs collects from all panes")
+    func allTerminalTabsMultiplePanes() {
+        let pm = PaneManager()
         let manager = TerminalManager()
-        #expect(manager.isSearchCaseSensitive == false)
-        manager.isSearchCaseSensitive = true
-        #expect(manager.isSearchCaseSensitive == true)
+        manager.paneManager = pm
+
+        let editorPaneID = pm.activePaneID
+        manager.createTerminalTab(relativeTo: editorPaneID, workingDirectory: nil)
+
+        // Force creating a second terminal pane by clearing lastActiveTerminalPaneID
+        manager.lastActiveTerminalPaneID = nil
+        // Split the editor pane first to get a second editor pane
+        if let newEditorID = pm.splitPane(editorPaneID, axis: .horizontal) {
+            manager.createTerminalTab(relativeTo: newEditorID, workingDirectory: nil)
+        }
+
+        #expect(pm.terminalPaneIDs.count == 2)
+        #expect(manager.allTerminalTabs.count == 2)
     }
+
+    // MARK: - Search state tests (moved to TerminalTab which still has search)
 
     @Test("search with empty query clears matches")
     @MainActor
@@ -501,15 +446,11 @@ struct TerminalManagerTests {
     @Test("search with ANSI escape sequences in buffer")
     @MainActor
     func searchWithAnsiEscapes() async {
-        // Regression #308: ANSI color codes should not interfere with text search
         let tab = TerminalTab(name: "Test")
         let terminal = tab.terminalView.getTerminal()
-        // Simulate colored output: ESC[31m = red, ESC[0m = reset
         terminal.feed(text: "\u{1B}[31merror\u{1B}[0m: something failed\r\n")
 
         await tab.search(for: "error")
-        // SwiftTerm processes escape sequences, so buffer text should contain "error"
-        // without the raw escape codes
         #expect(tab.searchMatches.count >= 1, "ANSI escapes must not prevent finding text")
     }
 
@@ -518,7 +459,6 @@ struct TerminalManagerTests {
     func searchWithFormattingAnsi() async {
         let tab = TerminalTab(name: "Test")
         let terminal = tab.terminalView.getTerminal()
-        // ESC[1m = bold, ESC[4m = underline
         terminal.feed(text: "\u{1B}[1mbold text\u{1B}[0m and \u{1B}[4munderlined\u{1B}[0m\r\n")
 
         await tab.search(for: "bold text")
@@ -533,9 +473,6 @@ struct TerminalManagerTests {
     func searchManyRows() async {
         let tab = TerminalTab(name: "Test")
         let terminal = tab.terminalView.getTerminal()
-        // Generate 100 lines with "match" on every 10th line.
-        // Note: SwiftTerm default scroll-back is large enough for 100 lines;
-        // if scroll-back shrinks, older lines may be evicted and this count will drop.
         for i in 0..<100 {
             if i % 10 == 0 {
                 terminal.feed(text: "match line \(i)\r\n")
@@ -615,7 +552,6 @@ struct TerminalManagerTests {
         let count = tab.searchMatches.count
         #expect(count == 5)
 
-        // Walk forward through all matches + wrap
         for i in 1..<count {
             tab.nextMatch()
             #expect(tab.currentMatchIndex == i)
@@ -650,87 +586,6 @@ struct TerminalManagerTests {
         await tab.search(for: "indented")
         #expect(tab.searchMatches.count == 1)
         #expect(tab.searchMatches[0].col == 4, "Match should account for leading spaces")
-    }
-
-    // MARK: - Focus tests (issue #558)
-
-    @Test("pendingFocusTabID is nil initially")
-    func pendingFocusInitiallyNil() {
-        let manager = TerminalManager()
-        #expect(manager.pendingFocusTabID == nil)
-    }
-
-    @Test("addTerminalTab sets pendingFocusTabID to new tab")
-    func addTerminalTabSetsPendingFocus() throws {
-        let manager = TerminalManager()
-        manager.addTerminalTab(workingDirectory: nil)
-        let newTab = try #require(manager.terminalTabs.last)
-        #expect(manager.pendingFocusTabID == newTab.id)
-    }
-
-    @Test("pendingFocusTabID matches activeTerminalID after addTerminalTab")
-    func pendingFocusMatchesActiveAfterAdd() {
-        let manager = TerminalManager()
-        manager.addTerminalTab(workingDirectory: nil)
-        #expect(manager.pendingFocusTabID == manager.activeTerminalID)
-    }
-
-    @Test("pendingFocusTabID can be cleared externally")
-    func pendingFocusCanBeCleared() {
-        let manager = TerminalManager()
-        manager.addTerminalTab(workingDirectory: nil)
-        #expect(manager.pendingFocusTabID != nil)
-        manager.pendingFocusTabID = nil
-        #expect(manager.pendingFocusTabID == nil)
-    }
-
-    @Test("multiple addTerminalTab calls update pendingFocusTabID to latest")
-    func multiplePendingFocusUpdates() throws {
-        let manager = TerminalManager()
-        manager.addTerminalTab(workingDirectory: nil)
-        let firstNewID = manager.pendingFocusTabID
-
-        manager.addTerminalTab(workingDirectory: nil)
-        let secondNewTab = try #require(manager.terminalTabs.last)
-        #expect(manager.pendingFocusTabID == secondNewTab.id)
-        #expect(manager.pendingFocusTabID != firstNewID)
-    }
-
-    @Test("closeTerminalTab does not set pendingFocusTabID")
-    func closeDoesNotSetPendingFocus() throws {
-        let manager = TerminalManager()
-        manager.startTerminals(workingDirectory: nil)
-        manager.addTerminalTab(workingDirectory: nil)
-        manager.pendingFocusTabID = nil
-
-        let tabToClose = try #require(manager.terminalTabs.last)
-        manager.closeTerminalTab(tabToClose)
-        #expect(manager.pendingFocusTabID == nil)
-    }
-
-    @Test("addTerminalTab sets pendingFocusTabID but startTerminals does not")
-    func focusOnlyOnExplicitTabCreation() {
-        let manager = TerminalManager()
-        // startTerminals (app launch path) — no focus steal
-        manager.startTerminals(workingDirectory: nil)
-        #expect(manager.pendingFocusTabID == nil)
-        #expect(manager.activeTerminalID != nil)
-
-        // Explicit new tab — focus is requested
-        manager.addTerminalTab(workingDirectory: nil)
-        #expect(manager.pendingFocusTabID == manager.activeTerminalID)
-        #expect(manager.pendingFocusTabID == manager.terminalTabs.last?.id)
-    }
-
-    @Test("first tab has no auto-focus by default")
-    func firstTabNoAutoFocus() {
-        let manager = TerminalManager()
-        // New manager has a default tab but no pending focus
-        #expect(manager.terminalTabs.count == 1)
-        #expect(manager.pendingFocusTabID == nil)
-        // Even after startTerminals, still no pending focus
-        manager.startTerminals(workingDirectory: nil)
-        #expect(manager.pendingFocusTabID == nil)
     }
 
     // MARK: - Environment construction tests (#551)
@@ -792,7 +647,6 @@ struct TerminalManagerTests {
     @Test("resolveWorkingDirectory falls back to HOME when nil")
     func resolveWorkingDirectoryFallback() {
         let tab = TerminalTab(name: "test")
-        // No configure() called, so workingDirectory is nil
         let dir = tab.resolveWorkingDirectory()
         let expectedHome = ProcessInfo.processInfo.environment["HOME"] ?? "/"
         #expect(dir == expectedHome,
@@ -828,7 +682,6 @@ struct TerminalManagerTests {
         tab.configure(workingDirectory: url)
         #expect(!tab.isTerminated)
         #expect(!tab.isProcessRunning)
-        // Working directory should be set via resolveWorkingDirectory
         #expect(tab.resolveWorkingDirectory() == "/tmp")
     }
 }

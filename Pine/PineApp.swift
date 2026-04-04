@@ -102,10 +102,10 @@ struct PineApp: App {
 
                 Button {
                     guard let pm = focusedProject else { return }
-                    pm.terminal.isTerminalVisible.toggle()
-                    if pm.terminal.isTerminalVisible, let activeID = pm.terminal.activeTerminalID {
-                        pm.terminal.pendingFocusTabID = activeID
-                    }
+                    pm.terminal.focusOrCreateTerminal(
+                        relativeTo: pm.paneManager.activePaneID,
+                        workingDirectory: pm.workspace.rootURL
+                    )
                 } label: {
                     Label(Strings.toggleTerminal, systemImage: MenuIcons.toggleTerminal)
                 }
@@ -168,10 +168,10 @@ struct PineApp: App {
             CommandMenu(Strings.menuTerminal) {
                 Button {
                     guard let pm = focusedProject else { return }
-                    if !pm.terminal.isTerminalVisible {
-                        pm.terminal.isTerminalVisible = true
-                    }
-                    pm.addTerminalTab()
+                    pm.terminal.createTerminalTab(
+                        relativeTo: pm.paneManager.activePaneID,
+                        workingDirectory: pm.workspace.rootURL
+                    )
                 } label: {
                     Label(Strings.menuNewTerminalTab, systemImage: MenuIcons.newTerminalTab)
                 }
@@ -184,7 +184,7 @@ struct PineApp: App {
                 } label: {
                     Label(Strings.menuFindInTerminal, systemImage: MenuIcons.find)
                 }
-                .disabled(focusedProject?.terminal.isTerminalVisible != true)
+                .disabled(focusedProject?.hasTerminalPanes != true)
 
                 Divider()
 

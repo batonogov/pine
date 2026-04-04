@@ -10,6 +10,7 @@ import SwiftUI
 /// A single leaf pane showing the editor area with its own tab bar.
 struct PaneLeafView: View {
     let paneID: PaneID
+    let content: PaneContent
     @Environment(PaneManager.self) private var paneManager
     @Environment(WorkspaceManager.self) private var workspace
     @Environment(ProjectManager.self) private var projectManager
@@ -31,37 +32,62 @@ struct PaneLeafView: View {
     @AppStorage("wordWrapEnabled") private var isWordWrapEnabled = true
 
     private var tabManager: TabManager? { paneManager.tabManager(for: paneID) }
+    private var terminalState: TerminalPaneState? { paneManager.terminalState(for: paneID) }
     private var isActive: Bool { paneManager.activePaneID == paneID }
 
     var body: some View {
+        Group {
+            switch content {
+            case .editor:
+                editorLeafBody
+            case .terminal:
+                terminalLeafBody
+            }
+        }
+        .background {
+            PaneFocusDetector(paneID: paneID, paneManager: paneManager)
+        }
+        .overlay {
+            GeometryReader { geometry in
+                Color.clear
+                    .preference(key: PaneSizePreferenceKey.self, value: geometry.size)
+            }
+        }
+        .onPreferenceChange(PaneSizePreferenceKey.self) { paneSize = $0 }
+        .overlay {
+            PaneDropOverlay(dropZone: dropZone)
+        }
+        .onDrop(of: [.paneTabDrag], delegate: PaneSplitDropDelegate(
+            paneID: paneID,
+            paneManager: paneManager,
+            paneSize: paneSize,
+            dropZone: $dropZone
+        ))
+        .border(
+            isActive && paneManager.root.leafCount > 1
+                ? Color.accentColor.opacity(0.5)
+                : Color.clear,
+            width: 1
+        )
+        .accessibilityIdentifier(AccessibilityID.paneLeaf(paneID.id.uuidString))
+    }
+
+    // MARK: - Terminal leaf
+
+    @ViewBuilder
+    private var terminalLeafBody: some View {
+        if let terminalState {
+            TerminalPaneContent(paneID: paneID, terminalState: terminalState)
+        }
+    }
+
+    // MARK: - Editor leaf
+
+    @ViewBuilder
+    private var editorLeafBody: some View {
         if let tabManager {
-            paneContent(tabManager: tabManager)
+            editorPaneContent(tabManager: tabManager)
                 .environment(tabManager)
-                .background {
-                    PaneFocusDetector(paneID: paneID, paneManager: paneManager)
-                }
-                .overlay {
-                    GeometryReader { geometry in
-                        Color.clear
-                            .preference(key: PaneSizePreferenceKey.self, value: geometry.size)
-                    }
-                }
-                .onPreferenceChange(PaneSizePreferenceKey.self) { paneSize = $0 }
-                .overlay {
-                    PaneDropOverlay(dropZone: dropZone)
-                }
-                .onDrop(of: [.paneTabDrag], delegate: PaneSplitDropDelegate(
-                    paneID: paneID,
-                    paneManager: paneManager,
-                    paneSize: paneSize,
-                    dropZone: $dropZone
-                ))
-                .border(
-                    isActive && paneManager.root.leafCount > 1
-                        ? Color.accentColor.opacity(0.5)
-                        : Color.clear,
-                    width: 1
-                )
                 .onChange(of: tabManager.activeTabID) { _, _ in
                     refreshLineDiffs(tabManager: tabManager)
                     refreshBlame(tabManager: tabManager)
@@ -70,12 +96,11 @@ struct PaneLeafView: View {
                     isBlameVisible: isBlameVisible,
                     onRefresh: { refreshBlame(tabManager: tabManager) }
                 ))
-                .accessibilityIdentifier(AccessibilityID.paneLeaf(paneID.id.uuidString))
         }
     }
 
     @ViewBuilder
-    private func paneContent(tabManager: TabManager) -> some View {
+    private func editorPaneContent(tabManager: TabManager) -> some View {
         VStack(spacing: 0) {
             if !tabManager.tabs.isEmpty {
                 EditorTabBar(

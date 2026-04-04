@@ -9,96 +9,7 @@ import SwiftUI
 
 // MARK: - Terminal native tab bar (macOS window tab style)
 
-struct TerminalNativeTabBar: View {
-    var terminal: TerminalManager
-    var workingDirectory: URL?
-
-    private func closeTerminalTabWithConfirmation(_ tab: TerminalTab) {
-        if tab.hasForegroundProcess {
-            let alert = NSAlert()
-            alert.messageText = Strings.terminalTabCloseWarningTitle
-            alert.informativeText = Strings.terminalTabCloseWarningMessage
-            alert.addButton(withTitle: Strings.terminalTabCloseWarningClose)
-            alert.addButton(withTitle: Strings.dialogCancel)
-            alert.alertStyle = .warning
-
-            guard alert.runModal() == .alertFirstButtonReturn else { return }
-        }
-        terminal.closeTerminalTab(tab)
-    }
-
-    var body: some View {
-        HStack(spacing: 0) {
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 2) {
-                    ForEach(terminal.terminalTabs) { tab in
-                        TerminalNativeTabItem(
-                            tab: tab,
-                            isActive: tab.id == terminal.activeTerminalID,
-                            canClose: terminal.terminalTabs.count > 1,
-                            onSelect: {
-                                terminal.activeTerminalID = tab.id
-                                terminal.pendingFocusTabID = tab.id
-                            },
-                            onClose: { closeTerminalTabWithConfirmation(tab) }
-                        )
-                    }
-                }
-                .padding(.horizontal, 4)
-            }
-
-            // New terminal button
-            Button {
-                terminal.addTerminalTab(workingDirectory: workingDirectory)
-            } label: {
-                Image(systemName: "plus")
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(.secondary)
-                    .frame(width: 24, height: 24)
-            }
-            .buttonStyle(.plain)
-            .help(Strings.newTerminal)
-            .accessibilityIdentifier(AccessibilityID.newTerminalButton)
-            .accessibilityAddTraits(.isButton)
-
-            Spacer()
-
-            // Maximize / restore terminal
-            Button {
-                withAnimation(PineAnimation.quick) { terminal.isTerminalMaximized.toggle() }
-            } label: {
-                Image(systemName: terminal.isTerminalMaximized
-                      ? "arrow.down.right.and.arrow.up.left"
-                      : "arrow.up.left.and.arrow.down.right")
-                    .font(.system(size: 10, weight: .semibold))
-                    .foregroundStyle(.secondary)
-                    .frame(width: 24, height: 24)
-            }
-            .buttonStyle(.plain)
-            .help(terminal.isTerminalMaximized ? Strings.restoreTerminal : Strings.maximizeTerminal)
-            .accessibilityIdentifier(AccessibilityID.maximizeTerminalButton)
-
-            // Hide terminal button
-            Button {
-                withAnimation(PineAnimation.quick) {
-                    terminal.isTerminalVisible = false
-                    terminal.isTerminalMaximized = false
-                }
-            } label: {
-                Image(systemName: "chevron.down")
-                    .font(.system(size: 10, weight: .semibold))
-                    .foregroundStyle(.secondary)
-                    .frame(width: 24, height: 24)
-            }
-            .buttonStyle(.plain)
-            .padding(.trailing, 4)
-            .help(Strings.hideTerminal)
-            .accessibilityIdentifier(AccessibilityID.hideTerminalButton)
-        }
-        .frame(height: 30)
-        .background(.bar)
-    }
-}
+// Legacy terminal tab bar removed — terminal panes use TerminalPaneTabBar instead.
 
 // MARK: - Terminal tab item (capsule style)
 
@@ -155,25 +66,25 @@ struct TerminalNativeTabItem: View {
 
 /// Isolated view to keep TerminalSearchBar's closures out of ContentView's type-checking scope.
 struct TerminalSearchBarContainer: View {
-    var terminal: TerminalManager
+    var terminalState: TerminalPaneState
 
     var body: some View {
-        if terminal.isSearchVisible {
+        if terminalState.isSearchVisible {
             TerminalSearchBar(
-                query: Bindable(terminal).terminalSearchQuery,
-                caseSensitive: Bindable(terminal).isSearchCaseSensitive,
-                matchCount: terminal.activeTerminalTab?.searchMatches.count ?? 0,
-                currentMatch: terminal.activeTerminalTab?.currentMatchIndex ?? -1,
+                query: Bindable(terminalState).terminalSearchQuery,
+                caseSensitive: Bindable(terminalState).isSearchCaseSensitive,
+                matchCount: terminalState.activeTab?.searchMatches.count ?? 0,
+                currentMatch: terminalState.activeTab?.currentMatchIndex ?? -1,
                 onNext: {
-                    terminal.activeTerminalTab?.nextMatch()
+                    terminalState.activeTab?.nextMatch()
                 },
                 onPrevious: {
-                    terminal.activeTerminalTab?.previousMatch()
+                    terminalState.activeTab?.previousMatch()
                 },
                 onDismiss: {
-                    terminal.isSearchVisible = false
-                    terminal.terminalSearchQuery = ""
-                    terminal.activeTerminalTab?.clearSearch()
+                    terminalState.isSearchVisible = false
+                    terminalState.terminalSearchQuery = ""
+                    terminalState.activeTab?.clearSearch()
                 }
             )
         }
@@ -185,44 +96,46 @@ struct TerminalSearchBarContainer: View {
 /// Extracted modifier to reduce body complexity for the type-checker.
 /// Handles debounced search, case-sensitivity changes, and tab switching.
 struct TerminalSearchObserver: ViewModifier {
-    var terminal: TerminalManager
+    var terminalState: TerminalPaneState
     @Environment(\.controlActiveState) private var controlActiveState
     @State private var searchTask: Task<Void, Never>?
 
     func body(content: Content) -> some View {
         content
             .onReceive(NotificationCenter.default.publisher(for: .findInTerminal)) { _ in
-                guard controlActiveState == .key, terminal.isTerminalVisible else { return }
-                terminal.isSearchVisible = true
+                guard controlActiveState == .key else { return }
+                terminalState.isSearchVisible = true
             }
-            .onChange(of: terminal.terminalSearchQuery) { _, newQuery in
+            .onChange(of: terminalState.terminalSearchQuery) { _, newQuery in
                 searchTask?.cancel()
                 searchTask = Task {
                     try? await Task.sleep(for: .milliseconds(150))
                     guard !Task.isCancelled else { return }
-                    await terminal.activeTerminalTab?.search(
+                    await terminalState.activeTab?.search(
                         for: newQuery,
-                        caseSensitive: terminal.isSearchCaseSensitive
+                        caseSensitive: terminalState.isSearchCaseSensitive
                     )
                 }
             }
-            .onChange(of: terminal.isSearchCaseSensitive) { _, _ in
-                guard terminal.isSearchVisible, !terminal.terminalSearchQuery.isEmpty else { return }
+            .onChange(of: terminalState.isSearchCaseSensitive) { _, _ in
+                guard terminalState.isSearchVisible,
+                      !terminalState.terminalSearchQuery.isEmpty else { return }
                 searchTask?.cancel()
                 searchTask = Task {
-                    await terminal.activeTerminalTab?.search(
-                        for: terminal.terminalSearchQuery,
-                        caseSensitive: terminal.isSearchCaseSensitive
+                    await terminalState.activeTab?.search(
+                        for: terminalState.terminalSearchQuery,
+                        caseSensitive: terminalState.isSearchCaseSensitive
                     )
                 }
             }
-            .onChange(of: terminal.activeTerminalID) { _, _ in
-                guard terminal.isSearchVisible, !terminal.terminalSearchQuery.isEmpty else { return }
+            .onChange(of: terminalState.activeTerminalID) { _, _ in
+                guard terminalState.isSearchVisible,
+                      !terminalState.terminalSearchQuery.isEmpty else { return }
                 searchTask?.cancel()
                 searchTask = Task {
-                    await terminal.activeTerminalTab?.search(
-                        for: terminal.terminalSearchQuery,
-                        caseSensitive: terminal.isSearchCaseSensitive
+                    await terminalState.activeTab?.search(
+                        for: terminalState.terminalSearchQuery,
+                        caseSensitive: terminalState.isSearchCaseSensitive
                     )
                 }
             }

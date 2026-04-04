@@ -69,6 +69,8 @@ final class ProjectManager {
         tabManager.onEditorContextChanged = { [weak self] in
             self?.updateEditorContext()
         }
+        // Wire TerminalManager to PaneManager (lazy wiring)
+        terminal.paneManager = paneManager
     }
 
     deinit {
@@ -151,28 +153,36 @@ final class ProjectManager {
             ? nil
             : pinnedTabs.map(\.url.path)
 
-        // Terminal state
-        let terminalTabCount = terminal.terminalTabs.count
-        let activeTerminalIndex: Int? = terminal.activeTerminalID.flatMap { id in
-            terminal.terminalTabs.firstIndex { $0.id == id }
-        }
-
-        // Pane layout — only persist when there are multiple panes
+        // Pane layout — always persist (terminal panes need it even with a single editor pane)
         var paneLayoutData: Data?
         var paneTabAssignments: [String: [String]]?
         var activePaneIDString: String?
-        if paneManager.root.leafCount > 1 {
-            paneLayoutData = try? JSONEncoder().encode(paneManager.root)
-            var assignments: [String: [String]] = [:]
-            for (paneID, tm) in paneManager.tabManagers {
-                let paths = tm.tabs.map(\.url.path).filter { $0.hasPrefix(rootPath) }
-                if !paths.isEmpty {
-                    assignments[paneID.id.uuidString] = paths
-                }
+        var terminalPaneTabCounts: [String: Int]?
+        var terminalPaneActiveIndices: [String: Int]?
+
+        paneLayoutData = try? JSONEncoder().encode(paneManager.root)
+        var assignments: [String: [String]] = [:]
+        for (paneID, tm) in paneManager.tabManagers {
+            let paths = tm.tabs.map(\.url.path).filter { $0.hasPrefix(rootPath) }
+            if !paths.isEmpty {
+                assignments[paneID.id.uuidString] = paths
             }
-            paneTabAssignments = assignments.isEmpty ? nil : assignments
-            activePaneIDString = paneManager.activePaneID.id.uuidString
         }
+        paneTabAssignments = assignments.isEmpty ? nil : assignments
+        activePaneIDString = paneManager.activePaneID.id.uuidString
+
+        // Terminal pane state
+        var tpCounts: [String: Int] = [:]
+        var tpActiveIndices: [String: Int] = [:]
+        for (paneID, state) in paneManager.terminalStates {
+            tpCounts[paneID.id.uuidString] = state.tabCount
+            if let activeID = state.activeTerminalID,
+               let idx = state.terminalTabs.firstIndex(where: { $0.id == activeID }) {
+                tpActiveIndices[paneID.id.uuidString] = idx
+            }
+        }
+        terminalPaneTabCounts = tpCounts.isEmpty ? nil : tpCounts
+        terminalPaneActiveIndices = tpActiveIndices.isEmpty ? nil : tpActiveIndices
 
         SessionState.save(
             projectURL: rootURL,
@@ -182,10 +192,8 @@ final class ProjectManager {
             highlightingDisabledPaths: highlightingDisabledPaths,
             editorStates: editorStates,
             pinnedPaths: pinnedPaths,
-            terminalTabCount: terminalTabCount,
-            activeTerminalIndex: activeTerminalIndex,
-            isTerminalVisible: terminal.isTerminalVisible,
-            isTerminalMaximized: terminal.isTerminalMaximized,
+            terminalPaneTabCounts: terminalPaneTabCounts,
+            terminalPaneActiveIndices: terminalPaneActiveIndices,
             paneLayoutData: paneLayoutData,
             paneTabAssignments: paneTabAssignments,
             activePaneID: activePaneIDString
@@ -208,26 +216,21 @@ final class ProjectManager {
 
     // MARK: - Convenience accessors (terminal)
 
-    var isTerminalVisible: Bool {
-        get { terminal.isTerminalVisible }
-        set { terminal.isTerminalVisible = newValue }
-    }
+    /// All terminal tabs across all terminal panes.
+    var allTerminalTabs: [TerminalTab] { terminal.allTerminalTabs }
 
-    var isTerminalMaximized: Bool {
-        get { terminal.isTerminalMaximized }
-        set { terminal.isTerminalMaximized = newValue }
-    }
-
-    var terminalTabs: [TerminalTab] { terminal.terminalTabs }
-    var activeTerminalID: UUID? {
-        get { terminal.activeTerminalID }
-        set { terminal.activeTerminalID = newValue }
-    }
-    var activeTerminalTab: TerminalTab? { terminal.activeTerminalTab }
+    /// Whether any terminal pane exists in the layout.
+    var hasTerminalPanes: Bool { !paneManager.terminalPaneIDs.isEmpty }
 
     func startTerminals() { terminal.startTerminals(workingDirectory: workspace.rootURL) }
-    func addTerminalTab() { terminal.addTerminalTab(workingDirectory: workspace.rootURL) }
-    func closeTerminalTab(_ tab: TerminalTab) { terminal.closeTerminalTab(tab) }
+
+    /// Creates a new terminal tab in the last-used terminal pane, or creates a new pane.
+    func addTerminalTab() {
+        terminal.createTerminalTab(
+            relativeTo: paneManager.activePaneID,
+            workingDirectory: workspace.rootURL
+        )
+    }
 
     // MARK: - Editor context for terminal
 

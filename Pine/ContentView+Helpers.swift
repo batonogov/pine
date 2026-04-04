@@ -73,24 +73,44 @@ extension ContentView {
             didRestoreTabs = !projectManager.allTabs.isEmpty
         }
 
-        // Restore terminal state
-        if let visible = session.isTerminalVisible {
-            terminal.isTerminalVisible = visible
-        }
-        if let maximized = session.isTerminalMaximized {
-            terminal.isTerminalMaximized = maximized
-        }
-
-        // Create terminal tabs only if PM has a single default (unused) tab
-        if let count = session.terminalTabCount, count > 1,
-           terminal.terminalTabs.count == 1 {
-            for _ in 1..<count {
-                terminal.addTerminalTab(workingDirectory: rootURL)
+        // Restore terminal tabs for terminal pane leaves
+        if let tpCounts = session.terminalPaneTabCounts {
+            for (paneIDStr, count) in tpCounts {
+                guard let uuid = UUID(uuidString: paneIDStr),
+                      let paneID = paneManager.root.leafIDs.first(where: { $0.id == uuid }),
+                      let state = paneManager.terminalState(for: paneID) else { continue }
+                // State was created with no tabs by restoreLayout; add the saved count
+                let needed = max(0, count - state.tabCount)
+                for _ in 0..<needed {
+                    state.addTab(workingDirectory: rootURL)
+                }
+                if let activeIndices = session.terminalPaneActiveIndices,
+                   let activeIdx = activeIndices[paneIDStr],
+                   activeIdx < state.terminalTabs.count {
+                    state.activeTerminalID = state.terminalTabs[activeIdx].id
+                }
             }
         }
-        if let activeIndex = session.activeTerminalIndex,
-           activeIndex < terminal.terminalTabs.count {
-            terminal.activeTerminalID = terminal.terminalTabs[activeIndex].id
+
+        // Legacy: migrate old single-terminal sessions to pane-based
+        if session.terminalPaneTabCounts == nil,
+           let visible = session.isTerminalVisible, visible,
+           let count = session.terminalTabCount, count > 0 {
+            // Create a terminal pane with the right number of tabs
+            terminal.createTerminalTab(
+                relativeTo: paneManager.activePaneID,
+                workingDirectory: rootURL
+            )
+            if count > 1, let tpID = terminal.lastActiveTerminalPaneID,
+               let state = paneManager.terminalState(for: tpID) {
+                for _ in 1..<count {
+                    state.addTab(workingDirectory: rootURL)
+                }
+                if let activeIdx = session.activeTerminalIndex,
+                   activeIdx < state.terminalTabs.count {
+                    state.activeTerminalID = state.terminalTabs[activeIdx].id
+                }
+            }
         }
 
         return didRestoreTabs
@@ -508,20 +528,19 @@ extension ContentView {
     // MARK: - Send to Terminal (issue #311)
 
     /// Sends text to the active terminal tab.
-    /// If the terminal is hidden, shows it first. If no terminal tabs exist, creates one.
+    /// If no terminal pane exists, creates one. Focuses the terminal pane.
     func sendTextToTerminal(_ text: String) {
-        // Ensure terminal is visible
-        if !terminal.isTerminalVisible {
-            terminal.isTerminalVisible = true
-        }
-
-        // Ensure there is an active terminal tab
-        if terminal.activeTerminalTab == nil {
+        // Ensure there is a terminal pane
+        if paneManager.terminalPaneIDs.isEmpty {
             projectManager.addTerminalTab()
         }
 
+        // Find the active terminal pane's state
+        guard let tpID = terminal.lastActiveTerminalPaneID ?? paneManager.terminalPaneIDs.first,
+              let state = paneManager.terminalState(for: tpID),
+              let activeTab = state.activeTab else { return }
+
         // Send text followed by newline to execute
-        guard let activeTab = terminal.activeTerminalTab else { return }
         activeTab.sendText(text + "\n")
     }
 }

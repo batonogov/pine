@@ -245,6 +245,8 @@ jobs:
               'StatusBarView.swift',
               'PaneTreeView.swift',
               'TerminalBarView.swift',
+              'TerminalPaneContent.swift',
+              'TerminalPaneTabBar.swift',
               'TerminalSearchBar.swift',
               'WelcomeView.swift',
           }
@@ -292,6 +294,8 @@ jobs:
               'SidebarView.swift',
               'StatusBarView.swift',
               'TerminalBarView.swift',
+              'TerminalPaneContent.swift',
+              'TerminalPaneTabBar.swift',
               'TerminalSearchBar.swift',
               'WelcomeView.swift',
           }

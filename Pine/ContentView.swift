@@ -64,26 +64,11 @@ struct ContentView: View {
             }
         } detail: {
             VStack(spacing: 0) {
-                if terminal.isTerminalVisible {
-                    if terminal.isTerminalMaximized {
-                        terminalArea
-                            .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    } else {
-                        VSplitView {
-                            editorArea
-                                .frame(maxWidth: .infinity, minHeight: 200, maxHeight: .infinity)
-                            terminalArea
-                                .frame(maxWidth: .infinity, minHeight: 100, idealHeight: 150, maxHeight: .infinity)
-                        }
-                        .frame(maxHeight: .infinity)
-                    }
-                } else {
-                    editorArea
-                        .frame(maxHeight: .infinity)
-                }
+                editorArea
+                    .frame(maxHeight: .infinity)
                 StatusBarView(
                     gitProvider: workspace.gitProvider,
-                    terminal: terminal,
+                    paneManager: paneManager,
                     tabManager: tabManager,
                     progress: projectManager.progress
                 )
@@ -185,10 +170,6 @@ struct ContentView: View {
         .onChange(of: tabManager.tabs.count) { _, _ in
             projectManager.saveSession()
         }
-        .modifier(TerminalSessionObserver(
-            terminal: terminal,
-            onSave: { projectManager.saveSession() }
-        ))
         .modifier(GitAndNotificationObserver(
             lineDiffs: $lineDiffs,
             columnVisibility: $columnVisibility,
@@ -244,38 +225,9 @@ struct ContentView: View {
 
     @ViewBuilder
     var editorArea: some View {
-        if paneManager.root.leafCount > 1 {
-            PaneTreeView(node: paneManager.root)
-        } else {
-            EditorAreaView(
-                lineDiffs: $lineDiffs,
-                isDragTargeted: $isDragTargeted,
-                goToLineOffset: $goToLineOffset,
-                isBlameVisible: isBlameVisible,
-                blameLines: blameLines,
-                isMinimapVisible: isMinimapVisible,
-                isWordWrapEnabled: isWordWrapEnabled,
-                diffHunks: diffHunks,
-                onCloseTab: { closeTabWithConfirmation($0) },
-                onCloseOtherTabs: { closeOtherTabsWithConfirmation(keeping: $0) },
-                onCloseTabsToTheRight: { closeTabsToTheRightWithConfirmation(of: $0) },
-                onCloseAllTabs: { closeAllTabsWithConfirmation() },
-                onSaveSession: { projectManager.saveSession() }
-            )
-        }
+        PaneTreeView(node: paneManager.root)
     }
 
-    @ViewBuilder
-    var terminalArea: some View {
-        VStack(spacing: 0) {
-            TerminalNativeTabBar(terminal: terminal, workingDirectory: workspace.rootURL)
-            TerminalSearchBarContainer(terminal: terminal)
-            TerminalContentView(terminal: terminal)
-        }
-        .background(Color(nsColor: .textBackgroundColor))
-        .onAppear { terminal.startTerminals(workingDirectory: workspace.rootURL) }
-        .modifier(TerminalSearchObserver(terminal: terminal))
-    }
 }
 
 // MARK: - Preview

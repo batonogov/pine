@@ -63,17 +63,17 @@ class TerminalScrollInterceptor: NSView {
 /// Создаётся один раз и никогда не пересоздаётся SwiftUI.
 /// Переключение терминальных табов происходит на уровне AppKit.
 struct TerminalContentView: NSViewRepresentable {
-    let terminal: TerminalManager
+    let terminalPaneState: TerminalPaneState
 
     func makeNSView(context: Context) -> TerminalContainerView {
         let container = TerminalContainerView()
-        container.terminal = terminal
-        container.showTab(terminal.activeTerminalTab)
+        container.terminalPaneState = terminalPaneState
+        container.showTab(terminalPaneState.activeTab)
         return container
     }
 
     func updateNSView(_ container: TerminalContainerView, context: Context) {
-        container.showTab(terminal.activeTerminalTab)
+        container.showTab(terminalPaneState.activeTab)
     }
 }
 
@@ -89,7 +89,7 @@ class TerminalContainerView: NSView {
     /// is not blank when it first appears. The real size replaces this in `layout()`.
     static let defaultTerminalFrame = NSRect(x: 0, y: 0, width: 800, height: 300)
 
-    var terminal: TerminalManager?
+    var terminalPaneState: TerminalPaneState?
     private var currentTabID: UUID?
     private let scrollInterceptor = TerminalScrollInterceptor()
     private var scrollMonitor: Any?
@@ -119,9 +119,9 @@ class TerminalContainerView: NSView {
 
         installScrollMonitor()
 
-        // Focus the terminal view when requested by TerminalManager
-        if let pending = terminal?.pendingFocusTabID, pending == tab.id {
-            terminal?.pendingFocusTabID = nil
+        // Focus the terminal view when requested by TerminalPaneState
+        if let pending = terminalPaneState?.pendingFocusTabID, pending == tab.id {
+            terminalPaneState?.pendingFocusTabID = nil
             focusTerminalView(tab.terminalView)
         }
     }
@@ -137,8 +137,8 @@ class TerminalContainerView: NSView {
     private func installScrollMonitor() {
         guard scrollMonitor == nil else { return }
         scrollMonitor = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { [weak self] event in
-            guard let self, let terminal = self.terminal else { return event }
-            guard let tab = terminal.activeTerminalTab else { return event }
+            guard let self, let paneState = self.terminalPaneState else { return event }
+            guard let tab = paneState.activeTab else { return event }
             let terminalView = tab.terminalView
 
             // Only intercept if event is in our window and over the terminal
@@ -232,7 +232,7 @@ class TerminalContainerView: NSView {
 
     override func layout() {
         super.layout()
-        guard let terminal, let tab = terminal.activeTerminalTab else { return }
+        guard let terminalPaneState, let tab = terminalPaneState.activeTab else { return }
         // Do not start the process or update frames until the container has a real size.
         // SwiftTerm derives cols/rows from the frame; a zero-size frame produces a 0×0
         // terminal which renders as a blank screen (issue #661).

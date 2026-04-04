@@ -346,14 +346,15 @@ struct TerminalTabTests {
     }
 
     @Test @MainActor func clickToFocusFirstTab() throws {
-        let manager = TerminalManager()
-        manager.startTerminals(workingDirectory: nil)
-        // After startTerminals, pendingFocusTabID is nil — this is the bug scenario
-        #expect(manager.pendingFocusTabID == nil)
+        let state = TerminalPaneState()
+        state.addTab(workingDirectory: nil)
+        state.startTabs(workingDirectory: nil)
+        // After startTabs, pendingFocusTabID was set by addTab
+        state.pendingFocusTabID = nil
 
         let container = TerminalContainerView(frame: NSRect(x: 0, y: 0, width: 800, height: 600))
-        container.terminal = manager
-        container.showTab(manager.activeTerminalTab)
+        container.terminalPaneState = state
+        container.showTab(state.activeTab)
 
         let window = makeWindow(contentView: container)
 
@@ -365,33 +366,33 @@ struct TerminalTabTests {
         let event = try makeMouseDownEvent(in: window)
         interceptor.mouseDown(with: event)
 
-        // The terminal view should become first responder via click — not via pendingFocusTabID
-        let activeTab = try #require(manager.activeTerminalTab)
+        // The terminal view should become first responder via click
+        let activeTab = try #require(state.activeTab)
         #expect(window.firstResponder === activeTab.terminalView)
     }
 
     @Test @MainActor func focusAfterTabSwitchViaClick() throws {
-        let manager = TerminalManager()
-        manager.startTerminals(workingDirectory: nil)
+        let state = TerminalPaneState()
+        let tab1 = state.addTab(workingDirectory: nil)
+        state.startTabs(workingDirectory: nil)
 
         let container = TerminalContainerView(frame: NSRect(x: 0, y: 0, width: 800, height: 600))
-        container.terminal = manager
+        container.terminalPaneState = state
 
         // Show tab1
-        container.showTab(manager.activeTerminalTab)
+        container.showTab(state.activeTab)
         let window = makeWindow(contentView: container)
 
         // Add tab2 and consume pendingFocus
-        manager.addTerminalTab(workingDirectory: nil)
-        container.showTab(manager.activeTerminalTab)
+        let tab2 = state.addTab(workingDirectory: nil)
+        container.showTab(state.activeTab)
         // pendingFocusTabID was consumed by showTab
-        #expect(manager.pendingFocusTabID == nil)
+        #expect(state.pendingFocusTabID == nil)
 
         // Now switch back to tab1 via activeTerminalID (simulating tab bar click)
-        let tab1 = manager.terminalTabs[0]
-        manager.activeTerminalID = tab1.id
+        state.activeTerminalID = tab1.id
         // No pendingFocusTabID set — simulates clicking the terminal area to focus
-        container.showTab(manager.activeTerminalTab)
+        container.showTab(state.activeTab)
 
         // Click on the interceptor to focus
         let interceptor = try #require(
@@ -401,52 +402,53 @@ struct TerminalTabTests {
         let event = try makeMouseDownEvent(in: window)
         interceptor.mouseDown(with: event)
 
+        _ = tab2 // suppress unused warning
         #expect(window.firstResponder === tab1.terminalView)
     }
 
     // MARK: - pendingFocusTabID consumption
 
     @Test @MainActor func showTabConsumesPendingFocus() throws {
-        let manager = TerminalManager()
-        manager.startTerminals(workingDirectory: nil)
-        manager.addTerminalTab(workingDirectory: nil)
-        let newTab = try #require(manager.terminalTabs.last)
-        #expect(manager.pendingFocusTabID == newTab.id)
+        let state = TerminalPaneState()
+        state.addTab(workingDirectory: nil)
+        state.startTabs(workingDirectory: nil)
+        let newTab = state.addTab(workingDirectory: nil)
+        #expect(state.pendingFocusTabID == newTab.id)
 
         let container = TerminalContainerView(frame: NSRect(x: 0, y: 0, width: 800, height: 600))
-        container.terminal = manager
+        container.terminalPaneState = state
         container.showTab(newTab)
 
-        #expect(manager.pendingFocusTabID == nil)
+        #expect(state.pendingFocusTabID == nil)
     }
 
     @Test @MainActor func showTabDoesNotConsumeMismatchedPendingFocus() throws {
-        let manager = TerminalManager()
-        manager.startTerminals(workingDirectory: nil)
-        manager.addTerminalTab(workingDirectory: nil)
-        let newTab = try #require(manager.terminalTabs.last)
-        let firstTab = try #require(manager.terminalTabs.first)
-        #expect(manager.pendingFocusTabID == newTab.id)
+        let state = TerminalPaneState()
+        let firstTab = state.addTab(workingDirectory: nil)
+        state.startTabs(workingDirectory: nil)
+        let newTab = state.addTab(workingDirectory: nil)
+        #expect(state.pendingFocusTabID == newTab.id)
 
         let container = TerminalContainerView(frame: NSRect(x: 0, y: 0, width: 800, height: 600))
-        container.terminal = manager
+        container.terminalPaneState = state
         // Show the first tab, not the one with pending focus
         container.showTab(firstTab)
 
         // pendingFocusTabID should still be set to the new tab
-        #expect(manager.pendingFocusTabID == newTab.id)
+        #expect(state.pendingFocusTabID == newTab.id)
     }
 
     @Test @MainActor func showTabWithoutPendingFocusNoCrash() {
-        let manager = TerminalManager()
-        manager.startTerminals(workingDirectory: nil)
-        #expect(manager.pendingFocusTabID == nil)
+        let state = TerminalPaneState()
+        state.addTab(workingDirectory: nil)
+        state.startTabs(workingDirectory: nil)
+        state.pendingFocusTabID = nil
 
         let container = TerminalContainerView(frame: NSRect(x: 0, y: 0, width: 800, height: 600))
-        container.terminal = manager
+        container.terminalPaneState = state
         // Should not crash
-        container.showTab(manager.activeTerminalTab)
-        #expect(manager.pendingFocusTabID == nil)
+        container.showTab(state.activeTab)
+        #expect(state.pendingFocusTabID == nil)
     }
 
     // MARK: - Blank terminal fix (issue #661)
@@ -513,14 +515,14 @@ struct TerminalTabTests {
     }
 
     @Test @MainActor func layoutZeroBoundsDoesNotStart() throws {
-        let manager = TerminalManager()
-        manager.startTerminals(workingDirectory: nil)
-        let tab = try #require(manager.activeTerminalTab)
+        let state = TerminalPaneState()
+        let tab = state.addTab(workingDirectory: nil)
+        state.startTabs(workingDirectory: nil)
         // Give terminal view a zero frame to simulate the issue
         tab.terminalView.frame = .zero
 
         let container = TerminalContainerView(frame: .zero)
-        container.terminal = manager
+        container.terminalPaneState = state
         container.showTab(tab)
 
         // Trigger layout with zero bounds
@@ -531,34 +533,34 @@ struct TerminalTabTests {
     }
 
     @Test @MainActor func layoutNonZeroBoundsStartsProcess() throws {
-        let manager = TerminalManager()
-        manager.startTerminals(workingDirectory: nil)
+        let state = TerminalPaneState()
+        let tab = state.addTab(workingDirectory: nil)
+        state.startTabs(workingDirectory: nil)
 
         let container = TerminalContainerView(frame: NSRect(x: 0, y: 0, width: 800, height: 300))
-        container.terminal = manager
-        container.showTab(manager.activeTerminalTab)
+        container.terminalPaneState = state
+        container.showTab(state.activeTab)
 
         // Trigger layout with valid bounds
         container.layout()
 
-        let tab = try #require(manager.activeTerminalTab)
         #expect(tab.isProcessRunning)
     }
 
     @Test @MainActor func layoutUpdatesFrame() throws {
-        let manager = TerminalManager()
-        manager.startTerminals(workingDirectory: nil)
+        let state = TerminalPaneState()
+        let tab = state.addTab(workingDirectory: nil)
+        state.startTabs(workingDirectory: nil)
 
         let container = TerminalContainerView(frame: NSRect(x: 0, y: 0, width: 800, height: 300))
-        container.terminal = manager
-        container.showTab(manager.activeTerminalTab)
+        container.terminalPaneState = state
+        container.showTab(state.activeTab)
         container.layout()
 
         // Now resize container
         container.frame = NSRect(x: 0, y: 0, width: 1200, height: 600)
         container.layout()
 
-        let tab = try #require(manager.activeTerminalTab)
         #expect(tab.terminalView.frame.size.width == 1200)
         #expect(tab.terminalView.frame.size.height == 600)
     }
@@ -566,13 +568,13 @@ struct TerminalTabTests {
     @Test @MainActor func processStartsWithFallbackFrameAfterShowTabOnZeroContainer() throws {
         // Integration test: showTab on a zero-bounds container uses the fallback
         // frame, and a subsequent layout with real bounds starts the process.
-        let manager = TerminalManager()
-        manager.startTerminals(workingDirectory: nil)
-        let tab = try #require(manager.activeTerminalTab)
+        let state = TerminalPaneState()
+        let tab = state.addTab(workingDirectory: nil)
+        state.startTabs(workingDirectory: nil)
 
         // Container starts with zero bounds (simulates first SwiftUI layout pass)
         let container = TerminalContainerView(frame: .zero)
-        container.terminal = manager
+        container.terminalPaneState = state
         container.showTab(tab)
 
         // showTab should have used the fallback frame

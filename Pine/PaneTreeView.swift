@@ -17,8 +17,8 @@ struct PaneTreeView: View {
 
     var body: some View {
         switch node {
-        case .leaf(let paneID, _):
-            PaneLeafView(paneID: paneID)
+        case .leaf(let paneID, let content):
+            PaneLeafView(paneID: paneID, content: content)
 
         case .split(let axis, let first, let second, let ratio):
             PaneSplitView(

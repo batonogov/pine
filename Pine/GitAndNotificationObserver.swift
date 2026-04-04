@@ -22,19 +22,8 @@ struct BlameObserver: ViewModifier {
 
 // MARK: - Terminal session state observer
 
-/// Saves terminal state to session when visibility, tab count, or active tab changes.
-struct TerminalSessionObserver: ViewModifier {
-    let terminal: TerminalManager
-    let onSave: () -> Void
-
-    func body(content: Content) -> some View {
-        content
-            .onChange(of: terminal.isTerminalVisible) { _, _ in onSave() }
-            .onChange(of: terminal.isTerminalMaximized) { _, _ in onSave() }
-            .onChange(of: terminal.terminalTabs.count) { _, _ in onSave() }
-            .onChange(of: terminal.activeTerminalID) { _, _ in onSave() }
-    }
-}
+// Terminal session state is now tracked per-pane (TerminalPaneState).
+// The old TerminalSessionObserver has been removed.
 
 // MARK: - Git and notification observer
 

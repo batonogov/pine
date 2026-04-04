@@ -39,10 +39,16 @@ struct SessionState: Codable, Sendable {
 
     // MARK: - Terminal state (optional for backwards compatibility)
 
+    /// Legacy single-terminal-panel fields (kept for migration from older sessions).
     var terminalTabCount: Int?
     var activeTerminalIndex: Int?
     var isTerminalVisible: Bool?
     var isTerminalMaximized: Bool?
+
+    /// Per-terminal-pane tab counts. Key is pane UUID string.
+    var terminalPaneTabCounts: [String: Int]?
+    /// Per-terminal-pane active tab indices. Key is pane UUID string.
+    var terminalPaneActiveIndices: [String: Int]?
 
     // MARK: - UserDefaults keys
 
@@ -81,10 +87,8 @@ struct SessionState: Codable, Sendable {
         highlightingDisabledPaths: [String]? = nil,
         editorStates: [String: PerTabEditorState]? = nil,
         pinnedPaths: [String]? = nil,
-        terminalTabCount: Int? = nil,
-        activeTerminalIndex: Int? = nil,
-        isTerminalVisible: Bool? = nil,
-        isTerminalMaximized: Bool? = nil,
+        terminalPaneTabCounts: [String: Int]? = nil,
+        terminalPaneActiveIndices: [String: Int]? = nil,
         paneLayoutData: Data? = nil,
         paneTabAssignments: [String: [String]]? = nil,
         activePaneID: String? = nil,
@@ -101,10 +105,8 @@ struct SessionState: Codable, Sendable {
             paneLayoutData: paneLayoutData,
             paneTabAssignments: paneTabAssignments,
             activePaneID: activePaneID,
-            terminalTabCount: terminalTabCount,
-            activeTerminalIndex: activeTerminalIndex,
-            isTerminalVisible: isTerminalVisible,
-            isTerminalMaximized: isTerminalMaximized
+            terminalPaneTabCounts: terminalPaneTabCounts,
+            terminalPaneActiveIndices: terminalPaneActiveIndices
         )
         do {
             let data = try JSONEncoder().encode(state)
