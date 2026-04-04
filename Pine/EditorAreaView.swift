@@ -14,6 +14,7 @@ struct EditorAreaView: View {
     @Environment(TabManager.self) private var tabManager
     @Environment(WorkspaceManager.self) private var workspace
     @Environment(ProjectManager.self) private var projectManager
+    @Environment(PaneManager.self) private var paneManager
     @Environment(ProjectRegistry.self) private var registry
     @Binding var lineDiffs: [GitLineDiff]
     @Binding var isDragTargeted: Bool
@@ -30,6 +31,8 @@ struct EditorAreaView: View {
     var onSaveSession: () -> Void
 
     @Environment(\.openWindow) private var openWindow
+    @State private var dropZone: PaneDropZone?
+    @State private var viewSize: CGSize = .zero
 
     @State private var configValidator = ConfigValidator()
 
@@ -97,10 +100,6 @@ struct EditorAreaView: View {
                 .accessibilityIdentifier(AccessibilityID.editorPlaceholder)
             }
         }
-        .onDrop(of: [.fileURL], isTargeted: $isDragTargeted) { providers in
-            handleFileDrop(providers: providers)
-            return true
-        }
         .overlay {
             if isDragTargeted {
                 RoundedRectangle(cornerRadius: 8)
@@ -108,6 +107,23 @@ struct EditorAreaView: View {
                     .allowsHitTesting(false)
             }
         }
+        .overlay {
+            GeometryReader { geometry in
+                Color.clear
+                    .preference(key: EditorAreaSizeKey.self, value: geometry.size)
+            }
+        }
+        .onPreferenceChange(EditorAreaSizeKey.self) { viewSize = $0 }
+        .overlay {
+            PaneDropOverlay(dropZone: dropZone)
+        }
+        .onDrop(of: [.fileURL, .paneTabDrag], delegate: EditorAreaUnifiedDropDelegate(
+            paneManager: paneManager,
+            dropZone: $dropZone,
+            isDragTargeted: $isDragTargeted,
+            viewSize: viewSize,
+            onFileDrop: { providers in handleFileDrop(providers: providers) }
+        ))
     }
 
     @ViewBuilder
@@ -184,5 +200,105 @@ struct EditorAreaView: View {
                 }
             }
         }
+    }
+}
+
+// MARK: - Single Pane Split Drop Delegate
+
+/// Preference key for tracking the editor area size.
+private struct EditorAreaSizeKey: PreferenceKey {
+    static var defaultValue: CGSize = .zero
+    static func reduce(value: inout CGSize, nextValue: () -> CGSize) {
+        value = nextValue()
+    }
+}
+
+/// Unified drop delegate for the single-pane editor area.
+/// Handles both file drops from Finder (.fileURL) and pane tab drags (.paneTabDrag)
+/// in a single handler to avoid two `.onDrop` modifiers conflicting.
+struct EditorAreaUnifiedDropDelegate: DropDelegate {
+    let paneManager: PaneManager
+    @Binding var dropZone: PaneDropZone?
+    @Binding var isDragTargeted: Bool
+    let viewSize: CGSize
+    let onFileDrop: ([NSItemProvider]) -> Void
+
+    func validateDrop(info: DropInfo) -> Bool {
+        info.hasItemsConforming(to: [.paneTabDrag]) || info.hasItemsConforming(to: [.fileURL])
+    }
+
+    func dropEntered(info: DropInfo) {
+        if info.hasItemsConforming(to: [.paneTabDrag]) {
+            updateDropZone(info: info)
+        } else {
+            isDragTargeted = true
+        }
+    }
+
+    func dropUpdated(info: DropInfo) -> DropProposal? {
+        if info.hasItemsConforming(to: [.paneTabDrag]) {
+            updateDropZone(info: info)
+        }
+        return DropProposal(operation: info.hasItemsConforming(to: [.paneTabDrag]) ? .move : .copy)
+    }
+
+    func dropExited(info: DropInfo) {
+        dropZone = nil
+        isDragTargeted = false
+    }
+
+    func performDrop(info: DropInfo) -> Bool {
+        isDragTargeted = false
+
+        // Pane tab drag takes priority
+        if info.hasItemsConforming(to: [.paneTabDrag]) {
+            return handlePaneTabDrop(info: info)
+        }
+
+        // File drop from Finder
+        if info.hasItemsConforming(to: [.fileURL]) {
+            onFileDrop(info.itemProviders(for: [.fileURL]))
+            return true
+        }
+
+        return false
+    }
+
+    // MARK: - Pane tab drop
+
+    private func handlePaneTabDrop(info: DropInfo) -> Bool {
+        guard let zone = dropZone else { return false }
+        dropZone = nil
+
+        // Use synchronous shared drag state instead of async NSItemProvider
+        guard let dragInfo = paneManager.activeDrag else { return false }
+        paneManager.activeDrag = nil
+
+        guard let firstLeafID = paneManager.root.firstLeafID else { return false }
+        let sourcePaneID = PaneID(id: dragInfo.paneID)
+
+        switch zone {
+        case .right:
+            paneManager.splitPane(
+                firstLeafID,
+                axis: .horizontal,
+                tabURL: dragInfo.fileURL,
+                sourcePane: sourcePaneID
+            )
+        case .bottom:
+            paneManager.splitPane(
+                firstLeafID,
+                axis: .vertical,
+                tabURL: dragInfo.fileURL,
+                sourcePane: sourcePaneID
+            )
+        case .center:
+            break
+        }
+        return true
+    }
+
+    private func updateDropZone(info: DropInfo) {
+        dropZone = PaneDropZone.zone(for: info.location, in: viewSize)
     }
 }

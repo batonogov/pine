@@ -32,6 +32,8 @@ struct EditorTabBar: View {
     var isAutoSaving: Bool = false
     /// Project root URL for computing relative paths.
     var projectRootURL: URL?
+    /// Optional pane ID override for drag operations. When nil, uses the active pane.
+    var overridePaneID: PaneID?
 
     /// Computes the relative path of a file URL relative to a project root URL.
     /// Normalizes both paths via `standardizedFileURL` to handle trailing slashes
@@ -47,6 +49,8 @@ struct EditorTabBar: View {
         }
         return fileURL.path
     }
+
+    @Environment(PaneManager.self) private var paneManager
 
     @State private var draggingTabID: UUID?
     @State private var hoverTargetTabID: UUID?
@@ -147,9 +151,26 @@ struct EditorTabBar: View {
                                 .id(tab.id)
                                 .onDrag {
                                     draggingTabID = tab.id
-                                    return NSItemProvider(object: tab.id.uuidString as NSString)
+                                    let paneID = overridePaneID ?? paneManager.activePaneID
+                                    let info = TabDragInfo(
+                                        paneID: paneID.id,
+                                        tabID: tab.id,
+                                        fileURL: tab.url
+                                    )
+                                    // Store in shared state for synchronous access by drop delegates
+                                    paneManager.activeDrag = info
+                                    let provider = NSItemProvider()
+                                    provider.registerDataRepresentation(
+                                        forTypeIdentifier: UTType.paneTabDrag.identifier,
+                                        visibility: .ownProcess
+                                    ) { completion in
+                                        let data = info.encoded.data(using: .utf8) ?? Data()
+                                        completion(data, nil)
+                                        return nil
+                                    }
+                                    return provider
                                 }
-                                .onDrop(of: [.text], delegate: TabDropDelegate(
+                                .onDrop(of: [.paneTabDrag], delegate: TabDropDelegate(
                                     tabManager: tabManager,
                                     targetTabID: tab.id,
                                     draggingTabID: $draggingTabID,

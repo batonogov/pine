@@ -28,6 +28,15 @@ struct SessionState: Codable, Sendable {
     /// File paths of pinned tabs. Optional for backwards compatibility.
     var pinnedPaths: [String]?
 
+    // MARK: - Pane layout (optional for backwards compatibility)
+
+    /// JSON-encoded PaneNode tree representing the split pane layout.
+    var paneLayoutData: Data?
+    /// Maps pane leaf ID (UUID string) to ordered list of file paths in that pane.
+    var paneTabAssignments: [String: [String]]?
+    /// The active pane leaf ID (UUID string).
+    var activePaneID: String?
+
     // MARK: - Terminal state (optional for backwards compatibility)
 
     var terminalTabCount: Int?
@@ -76,6 +85,9 @@ struct SessionState: Codable, Sendable {
         activeTerminalIndex: Int? = nil,
         isTerminalVisible: Bool? = nil,
         isTerminalMaximized: Bool? = nil,
+        paneLayoutData: Data? = nil,
+        paneTabAssignments: [String: [String]]? = nil,
+        activePaneID: String? = nil,
         defaults: UserDefaults = .standard
     ) {
         let state = SessionState(
@@ -86,6 +98,9 @@ struct SessionState: Codable, Sendable {
             highlightingDisabledPaths: highlightingDisabledPaths,
             editorStates: editorStates,
             pinnedPaths: pinnedPaths,
+            paneLayoutData: paneLayoutData,
+            paneTabAssignments: paneTabAssignments,
+            activePaneID: activePaneID,
             terminalTabCount: terminalTabCount,
             activeTerminalIndex: activeTerminalIndex,
             isTerminalVisible: isTerminalVisible,

@@ -25,7 +25,7 @@ struct PaneNodeTests {
         let node = PaneNode.split(
             .horizontal,
             first: .leaf(PaneID(), .editor),
-            second: .leaf(PaneID(), .terminal),
+            second: .leaf(PaneID(), .editor),
             ratio: 0.5
         )
         #expect(node.leafCount == 2)
@@ -42,7 +42,7 @@ struct PaneNodeTests {
         let outer = PaneNode.split(
             .horizontal,
             first: inner,
-            second: .leaf(PaneID(), .terminal),
+            second: .leaf(PaneID(), .editor),
             ratio: 0.6
         )
         #expect(outer.leafCount == 3)
@@ -60,7 +60,7 @@ struct PaneNodeTests {
             first: .leaf(id1, .editor),
             second: .split(
                 .vertical,
-                first: .leaf(id2, .terminal),
+                first: .leaf(id2, .editor),
                 second: .leaf(id3, .editor),
                 ratio: 0.5
             ),
@@ -79,7 +79,7 @@ struct PaneNodeTests {
         let tree = PaneNode.split(
             .horizontal,
             first: .leaf(id1, .editor),
-            second: .leaf(id2, .terminal),
+            second: .leaf(id2, .editor),
             ratio: 0.5
         )
         #expect(tree.firstLeafID == id1)
@@ -96,7 +96,7 @@ struct PaneNodeTests {
         let tree = PaneNode.split(
             .horizontal,
             first: .leaf(PaneID(), .editor),
-            second: .leaf(id, .terminal),
+            second: .leaf(id, .editor),
             ratio: 0.5
         )
         #expect(tree.contains(id))
@@ -106,7 +106,7 @@ struct PaneNodeTests {
         let tree = PaneNode.split(
             .horizontal,
             first: .leaf(PaneID(), .editor),
-            second: .leaf(PaneID(), .terminal),
+            second: .leaf(PaneID(), .editor),
             ratio: 0.5
         )
         #expect(!tree.contains(PaneID()))
@@ -118,11 +118,11 @@ struct PaneNodeTests {
         let tree = PaneNode.split(
             .horizontal,
             first: .leaf(editorID, .editor),
-            second: .leaf(terminalID, .terminal),
+            second: .leaf(terminalID, .editor),
             ratio: 0.5
         )
         #expect(tree.content(for: editorID) == .editor)
-        #expect(tree.content(for: terminalID) == .terminal)
+        #expect(tree.content(for: terminalID) == .editor)
     }
 
     @Test func content_returnsNilForUnknownID() {
@@ -137,7 +137,7 @@ struct PaneNodeTests {
         let tree = PaneNode.split(
             .horizontal,
             first: .leaf(id1, .editor),
-            second: .split(.vertical, first: .leaf(id2, .terminal), second: .leaf(id3, .editor), ratio: 0.5),
+            second: .split(.vertical, first: .leaf(id2, .editor), second: .leaf(id3, .editor), ratio: 0.5),
             ratio: 0.5
         )
         let ids = tree.allIDs
@@ -154,7 +154,7 @@ struct PaneNodeTests {
         let newID = PaneID()
         let leaf = PaneNode.leaf(id, .editor)
 
-        let result = leaf.splitting(id, axis: .horizontal, newPaneID: newID, newContent: .terminal)
+        let result = leaf.splitting(id, axis: .horizontal, newPaneID: newID, newContent: .editor)
         #expect(result != nil)
         #expect(result?.leafCount == 2)
         #expect(result?.contains(id) == true)
@@ -166,14 +166,14 @@ struct PaneNodeTests {
         let newID = PaneID()
         let leaf = PaneNode.leaf(id, .editor)
 
-        let result = leaf.splitting(id, axis: .vertical, newPaneID: newID, newContent: .terminal)
+        let result = leaf.splitting(id, axis: .vertical, newPaneID: newID, newContent: .editor)
         #expect(result?.content(for: id) == .editor)
-        #expect(result?.content(for: newID) == .terminal)
+        #expect(result?.content(for: newID) == .editor)
     }
 
     @Test func splitting_unknownID_returnsNil() {
         let leaf = PaneNode.leaf(PaneID(), .editor)
-        let result = leaf.splitting(PaneID(), axis: .horizontal, newPaneID: PaneID(), newContent: .terminal)
+        let result = leaf.splitting(PaneID(), axis: .horizontal, newPaneID: PaneID(), newContent: .editor)
         #expect(result == nil)
     }
 
@@ -187,12 +187,12 @@ struct PaneNodeTests {
                 second: .leaf(targetID, .editor),
                 ratio: 0.5
             ),
-            second: .leaf(PaneID(), .terminal),
+            second: .leaf(PaneID(), .editor),
             ratio: 0.5
         )
 
         let newID = PaneID()
-        let result = tree.splitting(targetID, axis: .horizontal, newPaneID: newID, newContent: .terminal)
+        let result = tree.splitting(targetID, axis: .horizontal, newPaneID: newID, newContent: .editor)
         #expect(result != nil)
         #expect(result?.leafCount == 4)
         #expect(result?.contains(targetID) == true)
@@ -202,7 +202,7 @@ struct PaneNodeTests {
     @Test func splitting_customRatio() {
         let id = PaneID()
         let leaf = PaneNode.leaf(id, .editor)
-        let result = leaf.splitting(id, axis: .horizontal, newPaneID: PaneID(), newContent: .terminal, ratio: 0.7)
+        let result = leaf.splitting(id, axis: .horizontal, newPaneID: PaneID(), newContent: .editor, ratio: 0.7)
         if case .split(_, _, _, let ratio) = result {
             #expect(ratio == 0.7)
         } else {
@@ -215,7 +215,7 @@ struct PaneNodeTests {
     @Test func splitting_duplicateID_returnsNil() {
         let id = PaneID()
         let leaf = PaneNode.leaf(id, .editor)
-        let result = leaf.splitting(id, axis: .horizontal, newPaneID: id, newContent: .terminal)
+        let result = leaf.splitting(id, axis: .horizontal, newPaneID: id, newContent: .editor)
         #expect(result == nil)
     }
 
@@ -225,7 +225,7 @@ struct PaneNodeTests {
         let tree = PaneNode.split(
             .horizontal,
             first: .leaf(existingID, .editor),
-            second: .leaf(targetID, .terminal),
+            second: .leaf(targetID, .editor),
             ratio: 0.5
         )
         // Try to split targetID using existingID as newPaneID — should fail
@@ -248,7 +248,7 @@ struct PaneNodeTests {
             Issue.record("Expected at least one leaf")
             return
         }
-        let result = node.splitting(deepLeaf, axis: .vertical, newPaneID: PaneID(), newContent: .terminal)
+        let result = node.splitting(deepLeaf, axis: .vertical, newPaneID: PaneID(), newContent: .editor)
         #expect(result == nil)
     }
 
@@ -264,7 +264,7 @@ struct PaneNodeTests {
             Issue.record("Expected at least one leaf")
             return
         }
-        let result = node.splitting(shallowLeaf, axis: .vertical, newPaneID: PaneID(), newContent: .terminal)
+        let result = node.splitting(shallowLeaf, axis: .vertical, newPaneID: PaneID(), newContent: .editor)
         #expect(result != nil)
     }
 
@@ -276,7 +276,7 @@ struct PaneNodeTests {
         let tree = PaneNode.split(
             .horizontal,
             first: .leaf(keep, .editor),
-            second: .leaf(remove, .terminal),
+            second: .leaf(remove, .editor),
             ratio: 0.5
         )
 
@@ -305,7 +305,7 @@ struct PaneNodeTests {
                 second: .leaf(removeID, .editor),
                 ratio: 0.5
             ),
-            second: .leaf(otherID, .terminal),
+            second: .leaf(otherID, .editor),
             ratio: 0.5
         )
 
@@ -321,7 +321,7 @@ struct PaneNodeTests {
         let tree = PaneNode.split(
             .horizontal,
             first: .leaf(PaneID(), .editor),
-            second: .leaf(PaneID(), .terminal),
+            second: .leaf(PaneID(), .editor),
             ratio: 0.5
         )
         #expect(tree.removing(PaneID()) == nil)
@@ -333,7 +333,7 @@ struct PaneNodeTests {
         let tree = PaneNode.split(
             .horizontal,
             first: .leaf(keep, .editor),
-            second: .leaf(remove, .terminal),
+            second: .leaf(remove, .editor),
             ratio: 0.5
         )
         let result = tree.removing(remove)
@@ -353,7 +353,7 @@ struct PaneNodeTests {
         let tree = PaneNode.split(
             .horizontal,
             first: .leaf(id1, .editor),
-            second: .leaf(id2, .terminal),
+            second: .leaf(id2, .editor),
             ratio: 0.5
         )
 
@@ -369,7 +369,7 @@ struct PaneNodeTests {
         let tree = PaneNode.split(
             .horizontal,
             first: .leaf(PaneID(), .editor),
-            second: .leaf(PaneID(), .terminal),
+            second: .leaf(PaneID(), .editor),
             ratio: 0.5
         )
         #expect(tree.updatingRatio(for: PaneID(), ratio: 0.7) == nil)
@@ -385,7 +385,7 @@ struct PaneNodeTests {
         let tree = PaneNode.split(
             .horizontal,
             first: .leaf(id, .editor),
-            second: .leaf(PaneID(), .terminal),
+            second: .leaf(PaneID(), .editor),
             ratio: 0.5
         )
         let result = tree.updatingRatio(for: id, ratio: 0.0)
@@ -401,7 +401,7 @@ struct PaneNodeTests {
         let tree = PaneNode.split(
             .horizontal,
             first: .leaf(id, .editor),
-            second: .leaf(PaneID(), .terminal),
+            second: .leaf(PaneID(), .editor),
             ratio: 0.5
         )
         let result = tree.updatingRatio(for: id, ratio: 1.0)
@@ -422,7 +422,7 @@ struct PaneNodeTests {
         let tree = PaneNode.split(
             .horizontal,
             first: .split(.vertical, first: .leaf(idA, .editor), second: .leaf(idB, .editor), ratio: 0.5),
-            second: .split(.vertical, first: .leaf(idC, .terminal), second: .leaf(idD, .terminal), ratio: 0.5),
+            second: .split(.vertical, first: .leaf(idC, .editor), second: .leaf(idD, .editor), ratio: 0.5),
             ratio: 0.5
         )
 
@@ -454,7 +454,7 @@ struct PaneNodeTests {
         let tree = PaneNode.split(
             .horizontal,
             first: .split(.vertical, first: .leaf(idA, .editor), second: .leaf(idB, .editor), ratio: 0.5),
-            second: .split(.vertical, first: .leaf(idC, .terminal), second: .leaf(idD, .terminal), ratio: 0.5),
+            second: .split(.vertical, first: .leaf(idC, .editor), second: .leaf(idD, .editor), ratio: 0.5),
             ratio: 0.5
         )
 
@@ -473,7 +473,7 @@ struct PaneNodeTests {
         let tree = PaneNode.split(
             .horizontal,
             first: .leaf(id, .editor),
-            second: .leaf(PaneID(), .terminal),
+            second: .leaf(PaneID(), .editor),
             ratio: 0.5
         )
         // Direct leaf children should return nil — use updatingRatio instead
@@ -484,7 +484,7 @@ struct PaneNodeTests {
         let tree = PaneNode.split(
             .horizontal,
             first: .split(.vertical, first: .leaf(PaneID(), .editor), second: .leaf(PaneID(), .editor), ratio: 0.5),
-            second: .leaf(PaneID(), .terminal),
+            second: .leaf(PaneID(), .editor),
             ratio: 0.5
         )
         #expect(tree.updatingRatioOfSplit(containing: PaneID(), ratio: 0.7) == nil)
@@ -495,7 +495,7 @@ struct PaneNodeTests {
         let tree = PaneNode.split(
             .horizontal,
             first: .split(.vertical, first: .leaf(id, .editor), second: .leaf(PaneID(), .editor), ratio: 0.5),
-            second: .leaf(PaneID(), .terminal),
+            second: .leaf(PaneID(), .editor),
             ratio: 0.5
         )
         let result = tree.updatingRatioOfSplit(containing: id, ratio: 0.0)
@@ -516,7 +516,7 @@ struct PaneNodeTests {
         let leafC = PaneID()
         let leafR = PaneID()
         let innerSplit = PaneNode.split(.horizontal, first: .leaf(leafA, .editor), second: .leaf(leafC, .editor), ratio: 0.5)
-        let leftSplit = PaneNode.split(.vertical, first: innerSplit, second: .leaf(leafB, .terminal), ratio: 0.4)
+        let leftSplit = PaneNode.split(.vertical, first: innerSplit, second: .leaf(leafB, .editor), ratio: 0.4)
         let root = PaneNode.split(.horizontal, first: leftSplit, second: .leaf(leafR, .editor), ratio: 0.6)
 
         let result = root.updatingRatioOfSplit(containing: leafA, ratio: 0.8)
@@ -544,14 +544,14 @@ struct PaneNodeTests {
         let tree = PaneNode.split(
             .horizontal,
             first: .leaf(id, .editor),
-            second: .leaf(PaneID(), .terminal),
+            second: .leaf(PaneID(), .editor),
             ratio: 0.5
         )
-        let result = tree.replacing(id, with: .leaf(newID, .terminal))
+        let result = tree.replacing(id, with: .leaf(newID, .editor))
         #expect(result != nil)
         #expect(result?.contains(newID) == true)
         #expect(result?.contains(id) == false)
-        #expect(result?.content(for: newID) == .terminal)
+        #expect(result?.content(for: newID) == .editor)
     }
 
     @Test func replacing_leafWithSplit() {
@@ -559,7 +559,7 @@ struct PaneNodeTests {
         let newA = PaneID()
         let newB = PaneID()
         let leaf = PaneNode.leaf(id, .editor)
-        let replacement = PaneNode.split(.vertical, first: .leaf(newA, .editor), second: .leaf(newB, .terminal), ratio: 0.5)
+        let replacement = PaneNode.split(.vertical, first: .leaf(newA, .editor), second: .leaf(newB, .editor), ratio: 0.5)
         let result = leaf.replacing(id, with: replacement)
         #expect(result != nil)
         #expect(result?.leafCount == 2)
@@ -569,7 +569,7 @@ struct PaneNodeTests {
 
     @Test func replacing_unknownID_returnsNil() {
         let tree = PaneNode.leaf(PaneID(), .editor)
-        #expect(tree.replacing(PaneID(), with: .leaf(PaneID(), .terminal)) == nil)
+        #expect(tree.replacing(PaneID(), with: .leaf(PaneID(), .editor)) == nil)
     }
 
     @Test func replacing_deepInTree() {
@@ -578,10 +578,10 @@ struct PaneNodeTests {
         let tree = PaneNode.split(
             .horizontal,
             first: .split(.vertical, first: .leaf(targetID, .editor), second: .leaf(PaneID(), .editor), ratio: 0.5),
-            second: .leaf(PaneID(), .terminal),
+            second: .leaf(PaneID(), .editor),
             ratio: 0.5
         )
-        let result = tree.replacing(targetID, with: .leaf(newID, .terminal))
+        let result = tree.replacing(targetID, with: .leaf(newID, .editor))
         #expect(result != nil)
         #expect(result?.contains(newID) == true)
         #expect(result?.contains(targetID) == false)
@@ -595,13 +595,13 @@ struct PaneNodeTests {
         let tree = PaneNode.split(
             .horizontal,
             first: .leaf(idA, .editor),
-            second: .leaf(idB, .terminal),
+            second: .leaf(idB, .editor),
             ratio: 0.5
         )
         let result = tree.swapping(idA, with: idB)
         #expect(result != nil)
         // Content should be swapped, IDs stay in place
-        #expect(result?.content(for: idA) == .terminal)
+        #expect(result?.content(for: idA) == .editor)
         #expect(result?.content(for: idB) == .editor)
     }
 
@@ -632,12 +632,12 @@ struct PaneNodeTests {
         let tree = PaneNode.split(
             .horizontal,
             first: .split(.vertical, first: .leaf(idA, .editor), second: .leaf(PaneID(), .editor), ratio: 0.5),
-            second: .split(.vertical, first: .leaf(idB, .terminal), second: .leaf(PaneID(), .terminal), ratio: 0.5),
+            second: .split(.vertical, first: .leaf(idB, .editor), second: .leaf(PaneID(), .editor), ratio: 0.5),
             ratio: 0.5
         )
         let result = tree.swapping(idA, with: idB)
         #expect(result != nil)
-        #expect(result?.content(for: idA) == .terminal)
+        #expect(result?.content(for: idA) == .editor)
         #expect(result?.content(for: idB) == .editor)
     }
 
@@ -655,7 +655,7 @@ struct PaneNodeTests {
         let node = PaneNode.split(
             .horizontal,
             first: .leaf(PaneID(), .editor),
-            second: .leaf(PaneID(), .terminal),
+            second: .leaf(PaneID(), .editor),
             ratio: 0.6
         )
         let data = try JSONEncoder().encode(node)
@@ -671,13 +671,13 @@ struct PaneNodeTests {
                 first: .leaf(PaneID(), .editor),
                 second: .split(
                     .horizontal,
-                    first: .leaf(PaneID(), .terminal),
+                    first: .leaf(PaneID(), .editor),
                     second: .leaf(PaneID(), .editor),
                     ratio: 0.3
                 ),
                 ratio: 0.5
             ),
-            second: .leaf(PaneID(), .terminal),
+            second: .leaf(PaneID(), .editor),
             ratio: 0.7
         )
         let data = try JSONEncoder().encode(node)
@@ -690,7 +690,7 @@ struct PaneNodeTests {
         let id2 = PaneID()
         let original = PaneNode.split(
             .vertical,
-            first: .leaf(id1, .terminal),
+            first: .leaf(id1, .editor),
             second: .leaf(id2, .editor),
             ratio: 0.4
         )
@@ -709,13 +709,13 @@ struct PaneNodeTests {
         let nodeA = PaneNode.split(
             .horizontal,
             first: .leaf(PaneID(id: uuid1), .editor),
-            second: .leaf(PaneID(id: uuid2), .terminal),
+            second: .leaf(PaneID(id: uuid2), .editor),
             ratio: 0.5
         )
         let nodeB = PaneNode.split(
             .horizontal,
             first: .leaf(PaneID(id: uuid1), .editor),
-            second: .leaf(PaneID(id: uuid2), .terminal),
+            second: .leaf(PaneID(id: uuid2), .editor),
             ratio: 0.5 + 1e-10  // within epsilon
         )
         #expect(nodeA == nodeB)
@@ -727,13 +727,13 @@ struct PaneNodeTests {
         let nodeA = PaneNode.split(
             .horizontal,
             first: .leaf(PaneID(id: uuid1), .editor),
-            second: .leaf(PaneID(id: uuid2), .terminal),
+            second: .leaf(PaneID(id: uuid2), .editor),
             ratio: 0.5
         )
         let nodeB = PaneNode.split(
             .horizontal,
             first: .leaf(PaneID(id: uuid1), .editor),
-            second: .leaf(PaneID(id: uuid2), .terminal),
+            second: .leaf(PaneID(id: uuid2), .editor),
             ratio: 0.500_002  // beyond epsilon
         )
         #expect(nodeA != nodeB)
@@ -745,13 +745,13 @@ struct PaneNodeTests {
         let nodeA = PaneNode.split(
             .horizontal,
             first: .leaf(PaneID(id: uuid1), .editor),
-            second: .leaf(PaneID(id: uuid2), .terminal),
+            second: .leaf(PaneID(id: uuid2), .editor),
             ratio: 0.999_999
         )
         let nodeB = PaneNode.split(
             .horizontal,
             first: .leaf(PaneID(id: uuid1), .editor),
-            second: .leaf(PaneID(id: uuid2), .terminal),
+            second: .leaf(PaneID(id: uuid2), .editor),
             ratio: 1.0
         )
         #expect(nodeA != nodeB)
@@ -763,7 +763,7 @@ struct PaneNodeTests {
         let node = PaneNode.split(
             .horizontal,
             first: .leaf(PaneID(), .editor),
-            second: .leaf(PaneID(), .terminal),
+            second: .leaf(PaneID(), .editor),
             ratio: 0.0
         )
         #expect(node.leafCount == 2)
@@ -773,7 +773,7 @@ struct PaneNodeTests {
         let node = PaneNode.split(
             .horizontal,
             first: .leaf(PaneID(), .editor),
-            second: .leaf(PaneID(), .terminal),
+            second: .leaf(PaneID(), .editor),
             ratio: 1.0
         )
         #expect(node.leafCount == 2)
@@ -821,17 +821,18 @@ struct PaneNodeTests {
         #expect(allEditor)
     }
 
-    @Test func mixedEditorAndTerminalLeaves() {
-        let editorID = PaneID()
-        let terminalID = PaneID()
+    @Test func twoEditorLeaves_contentLookup() {
+        let leftID = PaneID()
+        let rightID = PaneID()
         let tree = PaneNode.split(
             .horizontal,
-            first: .leaf(editorID, .editor),
-            second: .leaf(terminalID, .terminal),
+            first: .leaf(leftID, .editor),
+            second: .leaf(rightID, .editor),
             ratio: 0.5
         )
-        #expect(tree.content(for: editorID) == .editor)
-        #expect(tree.content(for: terminalID) == .terminal)
+        #expect(tree.content(for: leftID) == .editor)
+        #expect(tree.content(for: rightID) == .editor)
+        #expect(tree.leafCount == 2)
     }
 
     @Test func paneID_equalityAndHashing() {
@@ -854,7 +855,7 @@ struct PaneNodeTests {
         let tree = PaneNode.split(
             .horizontal,
             first: .leaf(PaneID(), .editor),
-            second: .leaf(PaneID(), .terminal),
+            second: .leaf(PaneID(), .editor),
             ratio: 0.5
         )
         #expect(tree.splitting(PaneID(), axis: .vertical, newPaneID: PaneID(), newContent: .editor) == nil)
@@ -864,7 +865,7 @@ struct PaneNodeTests {
         let tree = PaneNode.split(
             .horizontal,
             first: .leaf(PaneID(), .editor),
-            second: .leaf(PaneID(), .terminal),
+            second: .leaf(PaneID(), .editor),
             ratio: 0.5
         )
         #expect(tree.removing(PaneID()) == nil)
@@ -890,13 +891,13 @@ struct PaneNodeTests {
         let tree = PaneNode.split(
             .horizontal,
             first: .leaf(remove, .editor),
-            second: .leaf(keep, .terminal),
+            second: .leaf(keep, .editor),
             ratio: 0.5
         )
         let result = tree.removing(remove)
         if case .leaf(let id, let content) = result {
             #expect(id == keep)
-            #expect(content == .terminal)
+            #expect(content == .editor)
         } else {
             Issue.record("Expected leaf node after removing first child")
         }
@@ -907,7 +908,7 @@ struct PaneNodeTests {
         let tree = PaneNode.split(
             .horizontal,
             first: .leaf(id, .editor),
-            second: .leaf(PaneID(), .terminal),
+            second: .leaf(PaneID(), .editor),
             ratio: 0.5
         )
         let result = tree.updatingRatio(for: id, ratio: -0.5)
@@ -941,13 +942,6 @@ struct PaneNodeTests {
         #expect(nodeA == nodeB)
     }
 
-    @Test func equatable_differentContent_areNotEqual() {
-        let uuid = UUID()
-        let nodeA = PaneNode.leaf(PaneID(id: uuid), .editor)
-        let nodeB = PaneNode.leaf(PaneID(id: uuid), .terminal)
-        #expect(nodeA != nodeB)
-    }
-
     @Test func equatable_differentIDs_areNotEqual() {
         let nodeA = PaneNode.leaf(PaneID(), .editor)
         let nodeB = PaneNode.leaf(PaneID(), .editor)
@@ -960,13 +954,13 @@ struct PaneNodeTests {
         let nodeA = PaneNode.split(
             .horizontal,
             first: .leaf(PaneID(id: uuid1), .editor),
-            second: .leaf(PaneID(id: uuid2), .terminal),
+            second: .leaf(PaneID(id: uuid2), .editor),
             ratio: 0.5
         )
         let nodeB = PaneNode.split(
             .horizontal,
             first: .leaf(PaneID(id: uuid1), .editor),
-            second: .leaf(PaneID(id: uuid2), .terminal),
+            second: .leaf(PaneID(id: uuid2), .editor),
             ratio: 0.5
         )
         #expect(nodeA == nodeB)
@@ -978,13 +972,13 @@ struct PaneNodeTests {
         let nodeA = PaneNode.split(
             .horizontal,
             first: .leaf(PaneID(id: uuid1), .editor),
-            second: .leaf(PaneID(id: uuid2), .terminal),
+            second: .leaf(PaneID(id: uuid2), .editor),
             ratio: 0.3
         )
         let nodeB = PaneNode.split(
             .horizontal,
             first: .leaf(PaneID(id: uuid1), .editor),
-            second: .leaf(PaneID(id: uuid2), .terminal),
+            second: .leaf(PaneID(id: uuid2), .editor),
             ratio: 0.7
         )
         #expect(nodeA != nodeB)
@@ -995,7 +989,7 @@ struct PaneNodeTests {
     @Test func splitting_preservesHorizontalAxis() {
         let id = PaneID()
         let leaf = PaneNode.leaf(id, .editor)
-        let result = leaf.splitting(id, axis: .horizontal, newPaneID: PaneID(), newContent: .terminal)
+        let result = leaf.splitting(id, axis: .horizontal, newPaneID: PaneID(), newContent: .editor)
         if case .split(let axis, _, _, _) = result {
             #expect(axis == .horizontal)
         } else {
@@ -1006,7 +1000,7 @@ struct PaneNodeTests {
     @Test func splitting_preservesVerticalAxis() {
         let id = PaneID()
         let leaf = PaneNode.leaf(id, .editor)
-        let result = leaf.splitting(id, axis: .vertical, newPaneID: PaneID(), newContent: .terminal)
+        let result = leaf.splitting(id, axis: .vertical, newPaneID: PaneID(), newContent: .editor)
         if case .split(let axis, _, _, _) = result {
             #expect(axis == .vertical)
         } else {
@@ -1023,7 +1017,7 @@ struct PaneNodeTests {
         let innerSplit = PaneNode.split(
             .vertical,
             first: .leaf(innerID1, .editor),
-            second: .leaf(innerID2, .terminal),
+            second: .leaf(innerID2, .editor),
             ratio: 0.4
         )
         let tree = PaneNode.split(
@@ -1059,7 +1053,7 @@ struct PaneNodeTests {
         let tree = PaneNode.split(
             .vertical,
             first: innerSplit,
-            second: .leaf(removeID, .terminal),
+            second: .leaf(removeID, .editor),
             ratio: 0.5
         )
 
@@ -1072,7 +1066,7 @@ struct PaneNodeTests {
     @Test func splitting_ratioZero_clampsToMinimum() {
         let id = PaneID()
         let leaf = PaneNode.leaf(id, .editor)
-        let result = leaf.splitting(id, axis: .horizontal, newPaneID: PaneID(), newContent: .terminal, ratio: 0.0)
+        let result = leaf.splitting(id, axis: .horizontal, newPaneID: PaneID(), newContent: .editor, ratio: 0.0)
         if case .split(_, _, _, let ratio) = result {
             #expect(ratio == 0.1)
         } else {
@@ -1083,7 +1077,7 @@ struct PaneNodeTests {
     @Test func splitting_ratioOne_clampsToMaximum() {
         let id = PaneID()
         let leaf = PaneNode.leaf(id, .editor)
-        let result = leaf.splitting(id, axis: .horizontal, newPaneID: PaneID(), newContent: .terminal, ratio: 1.0)
+        let result = leaf.splitting(id, axis: .horizontal, newPaneID: PaneID(), newContent: .editor, ratio: 1.0)
         if case .split(_, _, _, let ratio) = result {
             #expect(ratio == 0.9)
         } else {
@@ -1094,7 +1088,7 @@ struct PaneNodeTests {
     @Test func splitting_negativeRatio_clampsToMinimum() {
         let id = PaneID()
         let leaf = PaneNode.leaf(id, .editor)
-        let result = leaf.splitting(id, axis: .horizontal, newPaneID: PaneID(), newContent: .terminal, ratio: -0.5)
+        let result = leaf.splitting(id, axis: .horizontal, newPaneID: PaneID(), newContent: .editor, ratio: -0.5)
         if case .split(_, _, _, let ratio) = result {
             #expect(ratio == 0.1)
         } else {
@@ -1105,7 +1099,7 @@ struct PaneNodeTests {
     @Test func splitting_ratioGreaterThanOne_clampsToMaximum() {
         let id = PaneID()
         let leaf = PaneNode.leaf(id, .editor)
-        let result = leaf.splitting(id, axis: .horizontal, newPaneID: PaneID(), newContent: .terminal, ratio: 2.5)
+        let result = leaf.splitting(id, axis: .horizontal, newPaneID: PaneID(), newContent: .editor, ratio: 2.5)
         if case .split(_, _, _, let ratio) = result {
             #expect(ratio == 0.9)
         } else {
@@ -1120,7 +1114,7 @@ struct PaneNodeTests {
         let tree = PaneNode.split(
             .horizontal,
             first: .leaf(targetID, .editor),
-            second: .leaf(PaneID(), .terminal),
+            second: .leaf(PaneID(), .editor),
             ratio: 0.5
         )
         // Split with extreme ratio deep in tree
@@ -1142,7 +1136,7 @@ struct PaneNodeTests {
 
     @Test func replacing_onSingleLeaf_unknownID_returnsNil() {
         let leaf = PaneNode.leaf(PaneID(), .editor)
-        #expect(leaf.replacing(PaneID(), with: .leaf(PaneID(), .terminal)) == nil)
+        #expect(leaf.replacing(PaneID(), with: .leaf(PaneID(), .editor)) == nil)
     }
 
     @Test func swapping_bothUnknown_returnsNil() {
@@ -1161,7 +1155,7 @@ struct PaneNodeTests {
         let tree = PaneNode.split(
             .horizontal,
             first: .leaf(id, .editor),
-            second: .leaf(PaneID(), .terminal),
+            second: .leaf(PaneID(), .editor),
             ratio: 0.5
         )
         let result = tree.swapping(id, with: id)

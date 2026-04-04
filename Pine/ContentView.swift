@@ -14,6 +14,7 @@ struct ContentView: View {
     @Environment(WorkspaceManager.self) var workspace
     @Environment(TerminalManager.self) var terminal
     @Environment(TabManager.self) var tabManager
+    @Environment(PaneManager.self) var paneManager
     @Environment(ProjectRegistry.self) var registry
     @Environment(\.openWindow) var openWindow
 
@@ -103,7 +104,7 @@ struct ContentView: View {
                 gitProvider: workspace.gitProvider,
                 isGitRepository: workspace.gitProvider.isGitRepository
             )
-            DocumentEditedTracker(isEdited: tabManager.hasUnsavedChanges)
+            DocumentEditedTracker(isEdited: projectManager.hasUnsavedChanges)
             RepresentedFileTracker(url: activeTab?.url ?? workspace.rootURL)
         }
         .task {
@@ -243,21 +244,25 @@ struct ContentView: View {
 
     @ViewBuilder
     var editorArea: some View {
-        EditorAreaView(
-            lineDiffs: $lineDiffs,
-            isDragTargeted: $isDragTargeted,
-            goToLineOffset: $goToLineOffset,
-            isBlameVisible: isBlameVisible,
-            blameLines: blameLines,
-            isMinimapVisible: isMinimapVisible,
-            isWordWrapEnabled: isWordWrapEnabled,
-            diffHunks: diffHunks,
-            onCloseTab: { closeTabWithConfirmation($0) },
-            onCloseOtherTabs: { closeOtherTabsWithConfirmation(keeping: $0) },
-            onCloseTabsToTheRight: { closeTabsToTheRightWithConfirmation(of: $0) },
-            onCloseAllTabs: { closeAllTabsWithConfirmation() },
-            onSaveSession: { projectManager.saveSession() }
-        )
+        if paneManager.root.leafCount > 1 {
+            PaneTreeView(node: paneManager.root)
+        } else {
+            EditorAreaView(
+                lineDiffs: $lineDiffs,
+                isDragTargeted: $isDragTargeted,
+                goToLineOffset: $goToLineOffset,
+                isBlameVisible: isBlameVisible,
+                blameLines: blameLines,
+                isMinimapVisible: isMinimapVisible,
+                isWordWrapEnabled: isWordWrapEnabled,
+                diffHunks: diffHunks,
+                onCloseTab: { closeTabWithConfirmation($0) },
+                onCloseOtherTabs: { closeOtherTabsWithConfirmation(keeping: $0) },
+                onCloseTabsToTheRight: { closeTabsToTheRightWithConfirmation(of: $0) },
+                onCloseAllTabs: { closeAllTabsWithConfirmation() },
+                onSaveSession: { projectManager.saveSession() }
+            )
+        }
     }
 
     @ViewBuilder
@@ -283,6 +288,7 @@ struct ContentView: View {
         .environment(projectManager.workspace)
         .environment(projectManager.terminal)
         .environment(projectManager.tabManager)
+        .environment(projectManager.paneManager)
         .environment(projectManager.toastManager)
         .environment(registry)
 }

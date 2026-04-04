@@ -97,6 +97,32 @@ struct EditorTab: Identifiable, Hashable {
         self.kind = kind
     }
 
+    /// Creates a copy of a tab with a fresh UUID, preserving all content and editor state.
+    /// Used when moving tabs between panes to avoid identity collisions.
+    static func reidentified(from source: EditorTab) -> EditorTab {
+        var copy = EditorTab(
+            url: source.url,
+            content: source.content,
+            savedContent: source.savedContent,
+            kind: source.kind
+        )
+        copy.cursorPosition = source.cursorPosition
+        copy.scrollOffset = source.scrollOffset
+        copy.cursorLine = source.cursorLine
+        copy.cursorColumn = source.cursorColumn
+        copy.fileSizeBytes = source.fileSizeBytes
+        copy.lastModDate = source.lastModDate
+        copy.foldState = source.foldState
+        copy.previewMode = source.previewMode
+        copy.syntaxHighlightingDisabled = source.syntaxHighlightingDisabled
+        copy.isTruncated = source.isTruncated
+        copy.isPinned = source.isPinned
+        copy.cachedHighlightResult = source.cachedHighlightResult
+        copy.encoding = source.encoding
+        copy.recomputeContentCaches()
+        return copy
+    }
+
     // Hashable by id only — content/state changes shouldn't affect identity.
     static func == (lhs: EditorTab, rhs: EditorTab) -> Bool { lhs.id == rhs.id }
     func hash(into hasher: inout Hasher) { hasher.combine(id) }

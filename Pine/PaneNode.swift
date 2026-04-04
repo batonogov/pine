@@ -19,17 +19,9 @@ struct PaneID: Hashable, Codable, Identifiable, Sendable {
 }
 
 /// The type of content a leaf pane displays.
-///
-/// In Phase 2, each `PaneContent` case will be associated with a `TabManager` instance
-/// that manages the tabs within that pane. The planned integration:
-/// - `.editor` panes will own a `TabManager` for editor tabs (files)
-/// - `.terminal` panes will own a `TabManager` for terminal sessions
-///
-/// A `PaneState` wrapper (to be introduced in Phase 2) will pair `PaneContent`
-/// with its `TabManager`, keyed by `PaneID` in a flat dictionary for O(1) lookup.
+/// Each pane owns a `TabManager` for editor tabs, keyed by `PaneID`.
 enum PaneContent: String, Hashable, Codable, Sendable {
     case editor
-    case terminal
 }
 
 /// Split direction for a non-leaf pane.
