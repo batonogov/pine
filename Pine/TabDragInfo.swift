@@ -38,6 +38,13 @@ struct TabDragInfo: Codable, Sendable {
         return try? JSONDecoder().decode(TabDragInfo.self, from: data)
     }
 
+    init(paneID: UUID, tabID: UUID, fileURL: URL, contentType: String = "editor") {
+        self.paneID = paneID
+        self.tabID = tabID
+        self.fileURL = fileURL
+        self.contentType = contentType
+    }
+
     enum CodingKeys: String, CodingKey {
         case paneID
         case tabID
