@@ -1162,6 +1162,28 @@ struct PaneNodeTests {
         #expect(result != nil)
         #expect(result?.content(for: id) == .editor)
     }
+
+    @Test func terminalContentType_encodeDecode() throws {
+        let id = PaneID()
+        let node = PaneNode.leaf(id, .terminal)
+        let data = try JSONEncoder().encode(node)
+        let decoded = try JSONDecoder().decode(PaneNode.self, from: data)
+        #expect(decoded.content(for: id) == .terminal)
+    }
+
+    @Test func splitEditorAndTerminal_leafCount() {
+        let editorID = PaneID()
+        let terminalID = PaneID()
+        let tree = PaneNode.split(
+            .vertical,
+            first: .leaf(editorID, .editor),
+            second: .leaf(terminalID, .terminal),
+            ratio: 0.7
+        )
+        #expect(tree.leafCount == 2)
+        #expect(tree.content(for: editorID) == .editor)
+        #expect(tree.content(for: terminalID) == .terminal)
+    }
 }
 
 // swiftlint:enable type_body_length file_length

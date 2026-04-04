@@ -22,6 +22,7 @@ struct PaneID: Hashable, Codable, Identifiable, Sendable {
 /// Each pane owns a `TabManager` for editor tabs, keyed by `PaneID`.
 enum PaneContent: String, Hashable, Codable, Sendable {
     case editor
+    case terminal
 }
 
 /// Split direction for a non-leaf pane.
