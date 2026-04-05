@@ -54,7 +54,9 @@ final class TerminalTests: PineUITestCase {
     }
 
     private var editorPlaceholder: XCUIElement {
-        app.descendants(matching: .any)["editorPlaceholder"].firstMatch
+        // ContentUnavailableView doesn't reliably propagate accessibilityIdentifier,
+        // so we find the placeholder by its static text content instead.
+        app.staticTexts["No File Selected"].firstMatch
     }
 
     private var paneDividers: XCUIElementQuery {
@@ -230,6 +232,7 @@ final class TerminalTests: PineUITestCase {
             terminalTab("Terminal 1").exists,
             "Terminal tab should be visible after restore"
         )
+        // Both terminal and editor should be visible after restore
         XCTAssertTrue(
             editorPlaceholder.exists || editorTabBar.exists,
             "Editor area should be visible after restore"
@@ -284,28 +287,18 @@ final class TerminalTests: PineUITestCase {
             "Terminal 2 should appear"
         )
 
-        // The close button (xmark) is inside the tab — find the first button descendant
-        // within the Terminal 1 tab element
+        // Click on tab1 to make it active (close button is visible on active tabs)
         let tab1 = terminalTab("Terminal 1")
-        // Click on tab1 first to make it active (close button is visible on hover/active)
         tab1.click()
         Thread.sleep(forTimeInterval: 0.3)
 
-        // Find the xmark button inside tab1
-        let closeBtn = tab1.buttons.firstMatch
-        if closeBtn.exists && closeBtn.isHittable {
-            closeBtn.click()
-        } else {
-            // Hover to reveal the close button then click
-            tab1.hover()
-            Thread.sleep(forTimeInterval: 0.3)
-            if closeBtn.exists && closeBtn.isHittable {
-                closeBtn.click()
-            } else {
-                XCTFail("Close button on Terminal 1 tab is not accessible")
-                return
-            }
-        }
+        // Find the close button via its accessibility identifier
+        let closeBtn = app.descendants(matching: .any)["closeTerminalTab_Terminal 1"].firstMatch
+        XCTAssertTrue(
+            waitForExistence(closeBtn, timeout: 5),
+            "Close button on Terminal 1 tab should be accessible"
+        )
+        closeBtn.click()
 
         // Terminal 1 should disappear
         let deadline = Date().addingTimeInterval(5)

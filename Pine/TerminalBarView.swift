@@ -37,6 +37,7 @@ struct TerminalNativeTabItem: View {
                 }
                 .buttonStyle(.plain)
                 .opacity(isHovering || isActive ? 1 : 0)
+                .accessibilityIdentifier("closeTerminalTab_\(tab.stableLabel)")
             }
 
             Image(systemName: "terminal")
@@ -58,7 +59,8 @@ struct TerminalNativeTabItem: View {
         .contentShape(Capsule())
         .onTapGesture(perform: onSelect)
         .onHover { isHovering = $0 }
-        .accessibilityIdentifier(AccessibilityID.terminalTab(tab.name))
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier(AccessibilityID.terminalTab(tab.stableLabel))
     }
 }
 

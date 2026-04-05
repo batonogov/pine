@@ -118,6 +118,12 @@ final class PaneManager {
 
     /// Removes a pane and promotes its sibling.
     func removePane(_ paneID: PaneID) {
+        // If the pane being removed is the maximized pane, restore first
+        // so the saved layout is available for removal.
+        if maximizedPaneID == paneID {
+            restoreFromMaximize()
+        }
+
         guard root.leafCount > 1,
               let newRoot = root.removing(paneID) else { return }
 

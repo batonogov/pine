@@ -110,5 +110,7 @@ struct TerminalPaneTabBar: View {
         }
         .frame(height: 30)
         .background(.bar)
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier(AccessibilityID.terminalTabBar)
     }
 }

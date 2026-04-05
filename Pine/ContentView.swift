@@ -70,7 +70,23 @@ struct ContentView: View {
                     gitProvider: workspace.gitProvider,
                     paneManager: paneManager,
                     tabManager: tabManager,
-                    progress: projectManager.progress
+                    progress: projectManager.progress,
+                    onToggleTerminal: {
+                        if paneManager.terminalPaneIDs.isEmpty {
+                            terminal.focusOrCreateTerminal(
+                                relativeTo: paneManager.activePaneID,
+                                workingDirectory: workspace.rootURL
+                            )
+                        } else {
+                            // Hide all terminal panes
+                            for paneID in paneManager.terminalPaneIDs {
+                                if let state = paneManager.terminalState(for: paneID) {
+                                    for tab in state.terminalTabs { tab.stop() }
+                                }
+                                paneManager.removePane(paneID)
+                            }
+                        }
+                    }
                 )
             }
         }

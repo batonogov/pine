@@ -14,6 +14,7 @@ struct StatusBarView: View {
     var paneManager: PaneManager
     var tabManager: TabManager
     var progress: ProgressTracker?
+    var onToggleTerminal: (() -> Void)?
 
     var body: some View {
         HStack(spacing: LayoutMetrics.statusBarItemSpacing) {
@@ -142,14 +143,19 @@ struct StatusBarView: View {
                 }
             }
 
-            // Terminal indicator
-            HStack(spacing: 3) {
-                Image(systemName: "terminal")
-                    .font(.system(size: LayoutMetrics.captionFontSize))
-                Text(Strings.terminalLabel)
-                    .font(.system(size: LayoutMetrics.bodySmallFontSize))
+            // Terminal toggle button
+            Button {
+                onToggleTerminal?()
+            } label: {
+                HStack(spacing: 3) {
+                    Image(systemName: "terminal")
+                        .font(.system(size: LayoutMetrics.captionFontSize))
+                    Text(Strings.terminalLabel)
+                        .font(.system(size: LayoutMetrics.bodySmallFontSize))
+                }
+                .foregroundStyle(paneManager.terminalPaneIDs.isEmpty ? .secondary : .primary)
             }
-            .foregroundStyle(paneManager.terminalPaneIDs.isEmpty ? .secondary : .primary)
+            .buttonStyle(.plain)
             .accessibilityIdentifier(AccessibilityID.terminalToggleButton)
         }
         .padding(.horizontal, LayoutMetrics.statusBarHorizontalPadding)

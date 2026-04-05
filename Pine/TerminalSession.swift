@@ -283,7 +283,13 @@ struct TerminalSearchMatch {
 @Observable
 final class TerminalTab: Identifiable, Hashable {
     let id = UUID()
+    /// Display name shown in the tab. Updated by the shell when it
+    /// reports a new terminal title via escape sequences.
     var name: String
+    /// Stable label assigned at creation (e.g. "Terminal 1").
+    /// Used for accessibility identifiers so UI tests can find tabs reliably
+    /// regardless of what the shell sets as the dynamic title.
+    let stableLabel: String
     let terminalView: LocalProcessTerminalView
     fileprivate(set) var isTerminated = false
 
@@ -303,6 +309,7 @@ final class TerminalTab: Identifiable, Hashable {
 
     init(name: String, shellSettings: ShellSettings = .shared) {
         self.name = name
+        self.stableLabel = name
         self.shellSettings = shellSettings
         self.terminalView = LocalProcessTerminalView(frame: TerminalContainerView.defaultTerminalFrame)
         self.delegate = TerminalTabDelegate()
