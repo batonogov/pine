@@ -20,8 +20,8 @@ struct TabDragInfo: Codable, Sendable {
     let paneID: UUID
     let tabID: UUID
     let fileURL: URL
-    /// "editor" or "terminal". Defaults to "editor" for backwards compatibility.
-    var contentType: String = "editor"
+    /// The pane content type. Defaults to `.editor` for backwards compatibility.
+    var contentType: PaneContent = .editor
 
     /// JSON-encodes to a string for drag transfer.
     var encoded: String {
@@ -38,7 +38,7 @@ struct TabDragInfo: Codable, Sendable {
         return try? JSONDecoder().decode(TabDragInfo.self, from: data)
     }
 
-    init(paneID: UUID, tabID: UUID, fileURL: URL, contentType: String = "editor") {
+    init(paneID: UUID, tabID: UUID, fileURL: URL, contentType: PaneContent = .editor) {
         self.paneID = paneID
         self.tabID = tabID
         self.fileURL = fileURL
@@ -57,6 +57,6 @@ struct TabDragInfo: Codable, Sendable {
         paneID = try container.decode(UUID.self, forKey: .paneID)
         tabID = try container.decode(UUID.self, forKey: .tabID)
         fileURL = try container.decode(URL.self, forKey: .fileURL)
-        contentType = try container.decodeIfPresent(String.self, forKey: .contentType) ?? "editor"
+        contentType = try container.decodeIfPresent(PaneContent.self, forKey: .contentType) ?? .editor
     }
 }

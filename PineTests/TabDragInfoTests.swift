@@ -144,7 +144,7 @@ struct TabDragInfoTests {
             paneID: UUID(),
             tabID: UUID(),
             fileURL: URL(fileURLWithPath: "/tmp/test.swift"),
-            contentType: "editor"
+            contentType: .editor
         )
         let encoded = info.encoded
         #expect(encoded.contains("contentType"))
@@ -156,10 +156,10 @@ struct TabDragInfoTests {
             paneID: UUID(),
             tabID: UUID(),
             fileURL: URL(fileURLWithPath: "/tmp/test"),
-            contentType: "terminal"
+            contentType: .terminal
         )
         let decoded = TabDragInfo.decode(from: info.encoded)
-        #expect(decoded?.contentType == "terminal")
+        #expect(decoded?.contentType == .terminal)
     }
 
     @Test func contentType_defaultsToEditor() {
@@ -169,7 +169,7 @@ struct TabDragInfoTests {
         {"paneID":"\(paneUUID.uuidString)","tabID":"\(tabUUID.uuidString)","fileURL":"file:///tmp/test.swift"}
         """
         let decoded = TabDragInfo.decode(from: json)
-        #expect(decoded?.contentType == "editor")
+        #expect(decoded?.contentType == .editor)
     }
 }
 
