@@ -95,7 +95,7 @@ extension ContentView {
         // Legacy: migrate old single-terminal sessions to pane-based
         if session.terminalPaneTabCounts == nil,
            let visible = session.isTerminalVisible, visible,
-           let count = session.terminalTabCount, count > 0 {
+           let count = session.terminalTabCount, count >= 1 {
             // Create a terminal pane with the right number of tabs
             terminal.createTerminalTab(
                 relativeTo: paneManager.activePaneID,
