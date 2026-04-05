@@ -29,13 +29,9 @@ final class TerminalManager {
             pm.terminalState(for: tpID)?.addTab(workingDirectory: workingDirectory)
             pm.activePaneID = tpID
         } else {
-            if let newID = pm.createTerminalPane(
-                relativeTo: editorPaneID,
-                axis: .vertical,
-                workingDirectory: workingDirectory
-            ) {
-                lastActiveTerminalPaneID = newID
-            }
+            // Create terminal pane spanning full width at bottom
+            let newID = pm.createTerminalPaneAtBottom(workingDirectory: workingDirectory)
+            lastActiveTerminalPaneID = newID
         }
     }
 

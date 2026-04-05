@@ -206,6 +206,21 @@ final class PaneManager {
         return newID
     }
 
+    /// Creates a terminal pane spanning the full width at the bottom of the editor area.
+    /// Wraps the entire current root in a vertical split with the terminal below.
+    @discardableResult
+    func createTerminalPaneAtBottom(workingDirectory: URL?) -> PaneID {
+        let newID = PaneID()
+        let terminalLeaf = PaneNode.leaf(newID, .terminal)
+        root = .split(.vertical, first: root, second: terminalLeaf, ratio: 0.7)
+
+        let state = TerminalPaneState()
+        state.addTab(workingDirectory: workingDirectory)
+        terminalStates[newID] = state
+        activePaneID = newID
+        return newID
+    }
+
     func moveTerminalTab(_ tabID: UUID, from sourceID: PaneID, to targetID: PaneID) {
         guard let srcState = terminalStates[sourceID],
               let dstState = terminalStates[targetID],
