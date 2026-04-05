@@ -41,7 +41,7 @@ Pine is a minimal native macOS code editor built with SwiftUI + AppKit. Targets 
 
 **Pattern:** MVVM with SwiftUI views backed by AppKit via `NSViewRepresentable`.
 
-**State management:** `ProjectManager` (@Observable) is the central state object managing file tree, editor tabs, terminal tabs, and git status. It communicates with views via SwiftUI observation and with menu commands via NotificationCenter.
+**State management:** `ProjectManager` (@Observable) is the central state object managing file tree, editor tabs, terminal tabs, and git status. It owns `PaneManager` (split pane tree), `TabManager` (primary editor tabs), `TerminalManager` (terminal coordinator), and `WorkspaceManager` (file tree + git). It communicates with views via SwiftUI observation and with menu commands via NotificationCenter.
 
 **AppKit bridges:**
 - `CodeEditorView` — wraps NSScrollView + custom `GutterTextView` (NSTextView subclass) + `LineNumberView` for the code editor
@@ -49,7 +49,9 @@ Pine is a minimal native macOS code editor built with SwiftUI + AppKit. Targets 
 
 **Text system stack:** NSTextStorage → NSLayoutManager → NSTextContainer → GutterTextView (shifts text right for line number gutter)
 
-**Terminal:** Uses [SwiftTerm](https://github.com/migueldeicaza/SwiftTerm) — a full VT100/xterm terminal emulator in pure Swift. `TerminalTab` wraps `LocalProcessTerminalView` which handles PTY creation, escape sequence parsing, keyboard input, and rendering. Supports colors, cursor positioning, TUI apps (vim, htop), oh-my-zsh, and all standard terminal features. Terminal tabs use a custom tab bar with shared state across editor windows.
+**Split panes:** `PaneNode` is a recursive enum (`.leaf` or `.split`) forming a binary tree of editor/terminal panes. `PaneManager` (@Observable) manages the tree, per-pane TabManagers (for editor leaves), and per-pane `TerminalPaneState` (for terminal leaves). `PaneTreeView` recursively renders the tree; `PaneLeafView` switches on `PaneContent` (.editor/.terminal) to render the appropriate content. `PaneDividerView` handles resize. Drag-and-drop between panes uses `TabDragInfo` with `contentType` field for type validation (editor tabs can only drop on editor panes, terminal tabs on terminal panes). `PaneSplitDropDelegate` detects drop zones (right/bottom/center) based on cursor position. `TabCloseHelper` provides shared close-with-confirmation dialogs used by both ContentView and PaneLeafView.
+
+**Terminal:** Uses [SwiftTerm](https://github.com/migueldeicaza/SwiftTerm) — a full VT100/xterm terminal emulator in pure Swift. Terminal tabs live inside the split pane tree as `.terminal` leaf panes — there is no separate bottom panel. `TerminalPaneState` (@Observable) manages per-pane terminal tabs (array of `TerminalTab`, active tab, search state). `TerminalManager` is a coordinator that routes Cmd+T and Cmd+\` to the appropriate terminal pane via `PaneManager`. When creating a new terminal pane, it wraps the entire editor tree in a vertical split (terminal at bottom, full width). `TerminalPaneTabBar` provides the tab bar with drag-and-drop, maximize/restore, and close buttons. `TerminalContainerView` (AppKit) handles SwiftTerm view lifecycle. Supports colors, cursor positioning, TUI apps (vim, htop), oh-my-zsh, and all standard terminal features.
 
 **Git integration:** `GitStatusProvider` runs `git status` and `git diff` to show file status indicators in the sidebar and diff markers (added/modified/deleted) in the editor gutter. Branch switching is available via clickable subtitle in the title bar (shows NSMenu with all branches) and via Cmd+Shift+B (opens `BranchSwitcherView` sheet with search). The subtitle click is implemented via AppKit (`BranchSubtitleClickHandler`) because SwiftUI's `toolbarTitleMenu` does not work on macOS 26 with Liquid Glass. Git blame display shows per-line commit info (hash, author, timestamp, message) alongside code; toggled via menu. `GitBlameInfo` holds the parsed blame data structures.
 
@@ -79,7 +81,7 @@ Pine is a minimal native macOS code editor built with SwiftUI + AppKit. Targets 
 
 **Quick Open:** `QuickOpenProvider` builds a file index from the `FileNode` tree and performs fuzzy subsequence matching with scoring (filename exact/prefix/substring bonuses, recent files boost). `QuickOpenView` is a sheet overlay with live search, arrow key navigation, and file icons. Triggered via Cmd+P.
 
-**Session persistence:** `SessionState` (Codable struct) saves project path + open file paths to UserDefaults. `AppDelegate` triggers save on app termination for all open projects. `ContentView.restoreSessionIfNeeded()` restores tabs on first load if the saved session matches the current project.
+**Session persistence:** `SessionState` (Codable struct) saves project path, open file paths, pane layout tree (PaneNode), per-pane terminal tab counts, and editor state to UserDefaults. `AppDelegate` triggers save on app termination for all open projects. `ContentView.restoreSessionIfNeeded()` restores tabs and pane layout on first load if the saved session matches the current project. Terminal pane positions are preserved; terminal processes are recreated (scrollback lost).
 
 ## Concurrency Model
 
@@ -109,9 +111,9 @@ Pine uses GCD for background work, bridged to async/await via `withCheckedContin
 ## Key Files
 
 - `PineApp.swift` — @main entry point, AppDelegate (window tabbing config, session save on terminate, Cmd+W event monitor), keyboard shortcuts (Cmd+S, Cmd+Option+S, Cmd+Shift+S, Cmd+Shift+D, Cmd+Shift+O, Cmd+W, Cmd+`), project WindowGroup + Welcome Window scenes, `CloseDelegate` (top-level class for testability) handles window close with dirty-tabs dialog
-- `ContentView.swift` — NavigationSplitView layout: sidebar (file tree) + detail (editor tabs + terminal), session restoration
-- `SessionState.swift` — Codable session persistence (project path + open file paths) via UserDefaults
-- `ProjectManager.swift` — Central state: file tree, terminal tabs, git provider, project I/O, saveSession()
+- `ContentView.swift` — NavigationSplitView layout: sidebar (file tree) + detail (PaneTreeView for split panes), session restoration
+- `SessionState.swift` — Codable session persistence (project path + open file paths + pane layout + terminal state) via UserDefaults
+- `ProjectManager.swift` — Central state: file tree, pane manager, terminal coordinator, git provider, project I/O, saveSession()
 - `WorkspaceManager.swift` — Async file tree loading with two-phase progressive rendering (shallow then full), git integration, file watching; generation tokens prevent stale async results
 - `FileNode.swift` — Recursive tree model for filesystem
 - `FileSystemWatcher.swift` — FSEvents-based directory watcher with debounced main-thread callback and generation tokens to prevent stale callbacks after stop()
@@ -129,7 +131,20 @@ Pine uses GCD for background work, bridged to async/await via `withCheckedContin
 - `CommentToggler.swift` — Toggles line and block comments for the active selection
 - `ProjectSearchProvider.swift` — Async full-project text search with debounce, .gitignore support, binary file detection, and 1 MB per-file limit
 - `SearchResultsView.swift` — Search results UI grouped by file with match highlighting and case-sensitivity toggle
-- `TerminalSession.swift` — SwiftTerm integration: TerminalTab, TerminalContentView (NSViewRepresentable), TerminalTabDelegate
+- `TerminalSession.swift` — SwiftTerm integration: TerminalTab, TerminalContainerView (AppKit), TerminalContentView (NSViewRepresentable), TerminalTabDelegate
+- `TerminalManager.swift` — Coordinator routing Cmd+T/Cmd+\` to terminal panes via PaneManager
+- `TerminalPaneState.swift` — Per-pane terminal state: tab array, active tab, search state
+- `TerminalPaneContent.swift` — SwiftUI view for terminal pane leaf (tab bar + search + terminal)
+- `TerminalPaneTabBar.swift` — Terminal tab bar with DnD, maximize/restore, close buttons
+- `PaneManager.swift` — Split pane tree management: TabManagers for editor leaves, TerminalPaneStates for terminal leaves, split/remove/maximize operations
+- `PaneNode.swift` — Recursive enum (leaf/split) for pane layout tree, Codable for session persistence
+- `PaneTreeView.swift` — Recursive SwiftUI view rendering PaneNode tree
+- `PaneLeafView.swift` — Single pane leaf: switches on PaneContent (.editor/.terminal)
+- `PaneDividerView.swift` — Draggable divider between panes with cursor change
+- `PaneDropZone.swift` — Drop zone detection and overlay for pane splitting via DnD
+- `PaneFocusDetector.swift` — NSView that detects mouse-down to set active pane
+- `TabCloseHelper.swift` — Shared tab close confirmation dialogs for editor tabs
+- `TabDragInfo.swift` — Drag data for moving tabs between panes (paneID, tabID, fileURL, contentType)
 - `GitStatusProvider.swift` — Git status/diff parsing for sidebar indicators and gutter markers, branch listing and checkout
 - `BranchSubtitleClickHandler.swift` — NSViewRepresentable that makes the window subtitle clickable for branch switching (AppKit workaround for broken `toolbarTitleMenu`)
 - `BranchSwitcherView.swift` — SwiftUI sheet with search field for branch switching (opened via Cmd+Shift+B)
@@ -164,7 +179,7 @@ Pine uses GCD for background work, bridged to async/await via `withCheckedContin
 - Uses `@Observable` macro (Swift 5.9+), not ObservableObject/Published
 - Models are either structs (EditorTab) or @Observable classes (FileNode, TerminalTab) depending on identity semantics
 - Grammar files are JSON in `Pine/Grammars/` — add new languages by adding a new JSON file following the existing format
-- Keyboard shortcuts: Save (Cmd+S), Save All (Cmd+Option+S), Save As (Cmd+Shift+S), Duplicate (Cmd+Shift+D), Open Folder (Cmd+Shift+O), Close Tab (Cmd+W), Toggle Terminal (Cmd+`), New Terminal Tab (Cmd+T), Switch Branch (Cmd+Shift+B), Go to Line (Cmd+L), Quick Open (Cmd+P), Next Change (Ctrl+Opt+↓), Previous Change (Ctrl+Opt+↑), Find (Cmd+F), Find & Replace (Cmd+Option+F), Find Next (Cmd+G), Find Previous (Cmd+Shift+G), Use Selection for Find (Cmd+E). Menu commands flow through `@FocusedValue(\.projectManager)` to `TabManager`. Cmd+W is intercepted via `NSEvent.addLocalMonitorForEvents` in AppDelegate (not a SwiftUI menu command) to close the active tab; the window close button goes through `CloseDelegate.windowShouldClose` to close the entire window
+- Keyboard shortcuts: Save (Cmd+S), Save All (Cmd+Option+S), Save As (Cmd+Shift+S), Duplicate (Cmd+Shift+D), Open Folder (Cmd+Shift+O), Close Tab (Cmd+W), Focus/Create Terminal (Cmd+\`), New Terminal Tab (Cmd+T), Switch Branch (Cmd+Shift+B), Go to Line (Cmd+L), Quick Open (Cmd+P), Next Change (Ctrl+Opt+↓), Previous Change (Ctrl+Opt+↑), Find (Cmd+F), Find & Replace (Cmd+Option+F), Find Next (Cmd+G), Find Previous (Cmd+Shift+G), Use Selection for Find (Cmd+E). Menu commands flow through `@FocusedValue(\.projectManager)` to `TabManager`. Cmd+W is intercepted via `NSEvent.addLocalMonitorForEvents` in AppDelegate (not a SwiftUI menu command) to close the active tab (editor or terminal); the window close button goes through `CloseDelegate.windowShouldClose` to close the entire window. Cmd+\` focuses the terminal pane or creates one if none exists. Cmd+T creates a new terminal tab in the last-used terminal pane or creates a full-width terminal pane at the bottom
 - UI uses semantic system colors (migrated from hardcoded dark theme values)
 - macOS 26 SDK renamed `NSColor(sRGBRed:)` → `NSColor(srgbRed:)` (lowercase)
 - Editor features: auto-indent on newline, current line highlight, git diff gutter markers, minimap, code folding, git blame, find & replace, status bar (line/col, indentation, encoding, line endings, file size), auto-save, async syntax highlighting, bracket matching, comment toggling, markdown preview, strip trailing whitespace on save, Quick Open (Cmd+P), Go to Line (Cmd+L), partial load for 10MB+ files
