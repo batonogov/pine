@@ -280,20 +280,40 @@ struct SidebarDragDropTests {
         #expect(zone == .center)
     }
 
+    @Test("PaneDropZone.zone returns left for left edge")
+    func dropZoneLeftForLeftEdge() {
+        let size = CGSize(width: 400, height: 300)
+        let location = CGPoint(x: 30, y: 150)
+
+        let zone = PaneDropZone.zone(for: location, in: size)
+
+        #expect(zone == .left)
+    }
+
     @Test("PaneDropZone.zone returns right for right edge")
     func dropZoneRightForRightEdge() {
         let size = CGSize(width: 400, height: 300)
-        let location = CGPoint(x: 350, y: 150)
+        let location = CGPoint(x: 370, y: 150)
 
         let zone = PaneDropZone.zone(for: location, in: size)
 
         #expect(zone == .right)
     }
 
+    @Test("PaneDropZone.zone returns top for top edge")
+    func dropZoneTopForTopEdge() {
+        let size = CGSize(width: 400, height: 300)
+        let location = CGPoint(x: 200, y: 20)
+
+        let zone = PaneDropZone.zone(for: location, in: size)
+
+        #expect(zone == .top)
+    }
+
     @Test("PaneDropZone.zone returns bottom for bottom edge")
     func dropZoneBottomForBottomEdge() {
         let size = CGSize(width: 400, height: 300)
-        let location = CGPoint(x: 150, y: 280)
+        let location = CGPoint(x: 200, y: 280)
 
         let zone = PaneDropZone.zone(for: location, in: size)
 

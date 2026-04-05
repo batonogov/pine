@@ -163,6 +163,7 @@ struct PaneLeafView: View {
                 } description: {
                     Text(Strings.selectFilePrompt)
                 }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .accessibilityIdentifier(AccessibilityID.editorPlaceholder)
             }
 

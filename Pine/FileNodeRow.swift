@@ -63,11 +63,11 @@ struct FileNodeRow: View {
                 } icon: {
                     Image(systemName: iconName)
                         .foregroundStyle(iconColor)
-                        .onDrag {
-                            sidebarDragProvider()
-                        }
                 }
                 .opacity(isGitIgnored ? 0.5 : 1.0)
+                .draggable(sidebarDragPayload()) {
+                    sidebarDragPreview()
+                }
             }
         }
         .tag(node)
@@ -77,22 +77,24 @@ struct FileNodeRow: View {
 
     // MARK: - Drag support
 
-    /// Creates an NSItemProvider for dragging this file node to an editor pane.
-    /// Directories return an empty provider (no-op drag).
-    private func sidebarDragProvider() -> NSItemProvider {
-        guard !node.isDirectory else { return NSItemProvider() }
+    /// Returns the drag payload for `.draggable()`.
+    /// Directories use an empty placeholder so no meaningful drag starts.
+    private func sidebarDragPayload() -> SidebarFileDragInfo {
         let info = SidebarFileDragInfo(fileURL: node.url)
-        paneManager.activeSidebarDrag = info
-        let provider = NSItemProvider()
-        provider.registerDataRepresentation(
-            forTypeIdentifier: UTType.sidebarFileDrag.identifier,
-            visibility: .ownProcess
-        ) { completion in
-            let data = info.encoded.data(using: .utf8) ?? Data()
-            completion(data, nil)
-            return nil
+        if !node.isDirectory {
+            paneManager.activeSidebarDrag = info
         }
-        return provider
+        return info
+    }
+
+    /// Drag preview label shown while dragging.
+    @ViewBuilder
+    private func sidebarDragPreview() -> some View {
+        Label(node.name, systemImage: iconName)
+            .font(.body)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8))
     }
 
     // MARK: - Inline editor

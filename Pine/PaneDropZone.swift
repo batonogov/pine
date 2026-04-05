@@ -12,26 +12,41 @@ import UniformTypeIdentifiers
 
 /// Represents where a tab can be dropped relative to a pane.
 enum PaneDropZone: Equatable, Sendable {
+    case left
     case right
+    case top
     case bottom
     case center
 
-    /// Fraction of pane width/height that triggers edge drop zones (right/bottom).
-    static let edgeThreshold: CGFloat = 0.7
+    /// Fraction of pane width/height that triggers edge drop zones.
+    /// The outer 25% on each edge triggers a split.
+    static let edgeThreshold: CGFloat = 0.25
 
     /// Determines the drop zone based on cursor location within a container of the given size.
-    /// Uses percentage-based thresholds: right 30% = split right, bottom 30% = split down,
-    /// center = move to pane.
     static func zone(for location: CGPoint, in size: CGSize) -> PaneDropZone {
         let width = size.width
         let height = size.height
+        guard width > 0, height > 0 else { return .center }
 
-        let inRightZone = width > 0 && location.x > width * edgeThreshold
-        let inBottomZone = height > 0 && location.y > height * edgeThreshold
+        let relX = location.x / width
+        let relY = location.y / height
 
-        if inRightZone && (!inBottomZone || location.x / width > location.y / height) {
+        let inLeft = relX < edgeThreshold
+        let inRight = relX > (1 - edgeThreshold)
+        let inTop = relY < edgeThreshold
+        let inBottom = relY > (1 - edgeThreshold)
+
+        // If in a corner, pick the axis where the cursor is closer to the edge
+        let distToEdgeX = min(relX, 1 - relX)
+        let distToEdgeY = min(relY, 1 - relY)
+
+        if inLeft && (!inTop && !inBottom || distToEdgeX <= distToEdgeY) {
+            return .left
+        } else if inRight && (!inTop && !inBottom || distToEdgeX <= distToEdgeY) {
             return .right
-        } else if inBottomZone {
+        } else if inTop {
+            return .top
+        } else if inBottom {
             return .bottom
         } else {
             return .center
@@ -60,8 +75,12 @@ struct PaneDropOverlay: View {
 
     private func dropRect(zone: PaneDropZone, size: CGSize) -> CGRect {
         switch zone {
+        case .left:
+            return CGRect(x: 0, y: 0, width: size.width / 2, height: size.height)
         case .right:
             return CGRect(x: size.width / 2, y: 0, width: size.width / 2, height: size.height)
+        case .top:
+            return CGRect(x: 0, y: 0, width: size.width, height: size.height / 2)
         case .bottom:
             return CGRect(x: 0, y: size.height / 2, width: size.width, height: size.height / 2)
         case .center:
@@ -109,12 +128,11 @@ struct PaneSplitDropDelegate: DropDelegate {
 
     func dropExited(info: DropInfo) {
         dropZone = nil
-        // Clear stale drag state when drag leaves all valid drop targets
-        // (e.g., user cancels drag by dropping outside any pane).
-        paneManager.clearStaleDragState()
     }
 
     func performDrop(info: DropInfo) -> Bool {
+        defer { dropZone = nil }
+
         // Pane tab drag takes priority
         if info.hasItemsConforming(to: [.paneTabDrag]) {
             return handlePaneTabDrop()
@@ -127,7 +145,6 @@ struct PaneSplitDropDelegate: DropDelegate {
 
         // File drop from Finder — open as tab in this pane
         if info.hasItemsConforming(to: [.fileURL]) {
-            dropZone = nil
             handleFileDrop(providers: info.itemProviders(for: [.fileURL]))
             return true
         }
@@ -137,18 +154,18 @@ struct PaneSplitDropDelegate: DropDelegate {
 
     private func handleSidebarFileDrop() -> Bool {
         guard let zone = dropZone else { return false }
-        dropZone = nil
-
         guard let dragInfo = paneManager.activeSidebarDrag else { return false }
         paneManager.activeSidebarDrag = nil
 
         switch zone {
-        case .right, .bottom:
-            let axis: SplitAxis = zone == .right ? .horizontal : .vertical
+        case .left, .right, .top, .bottom:
+            let axis: SplitAxis = (zone == .left || zone == .right) ? .horizontal : .vertical
+            let before = (zone == .left || zone == .top)
             paneManager.splitAndOpenFile(
                 url: dragInfo.fileURL,
                 relativeTo: paneID,
-                axis: axis
+                axis: axis,
+                insertBefore: before
             )
         case .center:
             paneManager.openFileInPane(url: dragInfo.fileURL, paneID: paneID)
@@ -158,7 +175,6 @@ struct PaneSplitDropDelegate: DropDelegate {
 
     private func handlePaneTabDrop() -> Bool {
         guard let zone = dropZone else { return false }
-        dropZone = nil
 
         // Use synchronous shared drag state instead of async NSItemProvider
         guard let dragInfo = paneManager.activeDrag else { return false }
@@ -168,9 +184,10 @@ struct PaneSplitDropDelegate: DropDelegate {
         let targetContent = paneManager.root.content(for: paneID)
 
         switch zone {
-        case .right, .bottom:
+        case .left, .right, .top, .bottom:
             // Edge drop always creates a new pane of matching type
-            let axis: SplitAxis = zone == .right ? .horizontal : .vertical
+            let axis: SplitAxis = (zone == .left || zone == .right) ? .horizontal : .vertical
+            let before = (zone == .left || zone == .top)
             if dragInfo.contentType == .terminal {
                 paneManager.createTerminalPane(
                     relativeTo: paneID, axis: axis, workingDirectory: nil
@@ -180,7 +197,8 @@ struct PaneSplitDropDelegate: DropDelegate {
                     paneID,
                     axis: axis,
                     tabURL: dragInfo.fileURL,
-                    sourcePane: sourcePaneID
+                    sourcePane: sourcePaneID,
+                    insertBefore: before
                 )
             }
         case .center:

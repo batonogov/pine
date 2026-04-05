@@ -94,19 +94,22 @@ final class PaneManager {
 
     /// Splits a pane by placing a new pane alongside it.
     /// The tab at the given URL is moved from the source pane to the new one.
+    /// If `insertBefore` is true, the new pane is placed before (left/top of) the target.
     @discardableResult
     func splitPane(
         _ targetID: PaneID,
         axis: SplitAxis,
         tabURL: URL? = nil,
-        sourcePane: PaneID? = nil
+        sourcePane: PaneID? = nil,
+        insertBefore: Bool = false
     ) -> PaneID? {
         let newID = PaneID()
         guard let newRoot = root.splitting(
             targetID,
             axis: axis,
             newPaneID: newID,
-            newContent: .editor
+            newContent: .editor,
+            insertBefore: insertBefore
         ) else { return nil }
 
         root = newRoot
@@ -325,9 +328,10 @@ final class PaneManager {
     func splitAndOpenFile(
         url: URL,
         relativeTo targetID: PaneID,
-        axis: SplitAxis
+        axis: SplitAxis,
+        insertBefore: Bool = false
     ) -> PaneID? {
-        guard let newPaneID = splitPane(targetID, axis: axis) else { return nil }
+        guard let newPaneID = splitPane(targetID, axis: axis, insertBefore: insertBefore) else { return nil }
         guard let newTabManager = tabManagers[newPaneID] else { return nil }
         newTabManager.openTab(url: url)
         return newPaneID
