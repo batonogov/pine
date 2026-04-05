@@ -43,6 +43,10 @@ final class PaneManager {
     /// Using shared state avoids unreliable async NSItemProvider loading.
     var activeDrag: TabDragInfo?
 
+    /// Shared drag state for sidebar file drags.
+    /// Set by FileNodeRow.onDrag, read by PaneSplitDropDelegate.
+    var activeSidebarDrag: SidebarFileDragInfo?
+
     /// Creates a PaneManager with a single editor pane.
     init() {
         let initialID = PaneID()
@@ -296,6 +300,46 @@ final class PaneManager {
         } else if let firstLeaf = root.firstLeafID {
             activePaneID = firstLeaf
         }
+    }
+
+    // MARK: - Sidebar file drop operations
+
+    /// Opens a file as a new tab in the specified editor pane.
+    /// Does nothing if the pane has no TabManager (e.g., terminal pane)
+    /// or if the URL is a directory.
+    func openFileInPane(url: URL, paneID: PaneID) {
+        guard let tabManager = tabManagers[paneID] else { return }
+        // Skip directories — they should not open as editor tabs
+        var isDir: ObjCBool = false
+        if FileManager.default.fileExists(atPath: url.path, isDirectory: &isDir), isDir.boolValue {
+            return
+        }
+        tabManager.openTab(url: url)
+        activePaneID = paneID
+    }
+
+    /// Splits a pane and opens a file in the new pane.
+    /// Returns the new pane's ID, or nil if the split failed.
+    @discardableResult
+    func splitAndOpenFile(
+        url: URL,
+        relativeTo targetID: PaneID,
+        axis: SplitAxis
+    ) -> PaneID? {
+        let newID = PaneID()
+        guard let newRoot = root.splitting(
+            targetID,
+            axis: axis,
+            newPaneID: newID,
+            newContent: .editor
+        ) else { return nil }
+
+        root = newRoot
+        let newTabManager = TabManager()
+        tabManagers[newID] = newTabManager
+        newTabManager.openTab(url: url)
+        activePaneID = newID
+        return newID
     }
 
     // MARK: - Private helpers

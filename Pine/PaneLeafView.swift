@@ -59,7 +59,7 @@ struct PaneLeafView: View {
         .overlay {
             PaneDropOverlay(dropZone: dropZone)
         }
-        .onDrop(of: [.paneTabDrag, .fileURL], delegate: PaneSplitDropDelegate(
+        .onDrop(of: [.paneTabDrag, .sidebarFileDrag, .fileURL], delegate: PaneSplitDropDelegate(
             paneID: paneID,
             paneManager: paneManager,
             paneSize: paneSize,

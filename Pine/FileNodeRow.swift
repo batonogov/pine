@@ -7,6 +7,7 @@
 
 import os
 import SwiftUI
+import UniformTypeIdentifiers
 
 // MARK: - File/folder row in the sidebar tree
 
@@ -15,6 +16,7 @@ struct FileNodeRow: View {
     var node: FileNode
     @Environment(WorkspaceManager.self) var workspace
     @Environment(TabManager.self) var tabManager
+    @Environment(PaneManager.self) var paneManager
     @Environment(SidebarEditState.self) var editState
     @Environment(\.undoManager) private var undoManager
     @FocusState private var isTextFieldFocused: Bool
@@ -67,7 +69,30 @@ struct FileNodeRow: View {
         }
         .tag(node)
         .accessibilityIdentifier(AccessibilityID.fileNode(node.name))
+        .onDrag {
+            sidebarDragProvider()
+        }
         .contextMenu { fileNodeContextMenu }
+    }
+
+    // MARK: - Drag support
+
+    /// Creates an NSItemProvider for dragging this file node to an editor pane.
+    /// Directories return an empty provider (no-op drag).
+    private func sidebarDragProvider() -> NSItemProvider {
+        guard !node.isDirectory else { return NSItemProvider() }
+        let info = SidebarFileDragInfo(fileURL: node.url)
+        paneManager.activeSidebarDrag = info
+        let provider = NSItemProvider()
+        provider.registerDataRepresentation(
+            forTypeIdentifier: UTType.sidebarFileDrag.identifier,
+            visibility: .ownProcess
+        ) { completion in
+            let data = info.encoded.data(using: .utf8) ?? Data()
+            completion(data, nil)
+            return nil
+        }
+        return provider
     }
 
     // MARK: - Inline editor

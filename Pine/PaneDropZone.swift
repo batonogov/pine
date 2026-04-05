@@ -91,7 +91,9 @@ struct PaneSplitDropDelegate: DropDelegate {
     @Binding var dropZone: PaneDropZone?
 
     func validateDrop(info: DropInfo) -> Bool {
-        info.hasItemsConforming(to: [.paneTabDrag]) || info.hasItemsConforming(to: [.fileURL])
+        info.hasItemsConforming(to: [.paneTabDrag])
+            || info.hasItemsConforming(to: [.sidebarFileDrag])
+            || info.hasItemsConforming(to: [.fileURL])
     }
 
     func dropEntered(info: DropInfo) {
@@ -100,7 +102,8 @@ struct PaneSplitDropDelegate: DropDelegate {
 
     func dropUpdated(info: DropInfo) -> DropProposal? {
         updateDropZone(info: info)
-        let operation: DropOperation = info.hasItemsConforming(to: [.paneTabDrag]) ? .move : .copy
+        let operation: DropOperation = info.hasItemsConforming(to: [.paneTabDrag])
+            ? .move : .copy
         return DropProposal(operation: operation)
     }
 
@@ -114,6 +117,11 @@ struct PaneSplitDropDelegate: DropDelegate {
             return handlePaneTabDrop()
         }
 
+        // Sidebar file drag — uses synchronous shared state
+        if info.hasItemsConforming(to: [.sidebarFileDrag]) {
+            return handleSidebarFileDrop()
+        }
+
         // File drop from Finder — open as tab in this pane
         if info.hasItemsConforming(to: [.fileURL]) {
             dropZone = nil
@@ -122,6 +130,27 @@ struct PaneSplitDropDelegate: DropDelegate {
         }
 
         return false
+    }
+
+    private func handleSidebarFileDrop() -> Bool {
+        guard let zone = dropZone else { return false }
+        dropZone = nil
+
+        guard let dragInfo = paneManager.activeSidebarDrag else { return false }
+        paneManager.activeSidebarDrag = nil
+
+        switch zone {
+        case .right, .bottom:
+            let axis: SplitAxis = zone == .right ? .horizontal : .vertical
+            paneManager.splitAndOpenFile(
+                url: dragInfo.fileURL,
+                relativeTo: paneID,
+                axis: axis
+            )
+        case .center:
+            paneManager.openFileInPane(url: dragInfo.fileURL, paneID: paneID)
+        }
+        return true
     }
 
     private func handlePaneTabDrop() -> Bool {
