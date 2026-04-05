@@ -588,6 +588,36 @@ struct PaneManagerTests {
         #expect(manager.root.leafCount == 2)
     }
 
+    @Test func persistableRoot_returnsFullLayoutDuringMaximize() {
+        let manager = PaneManager()
+        let editorPane = manager.activePaneID
+        guard let terminalPane = manager.createTerminalPane(
+            relativeTo: editorPane, axis: .vertical, workingDirectory: nil
+        ) else {
+            Issue.record("failed")
+            return
+        }
+        #expect(manager.persistableRoot.leafCount == 2)
+
+        manager.maximize(paneID: terminalPane)
+        // root is single leaf, but persistableRoot returns full layout
+        #expect(manager.root.leafCount == 1)
+        #expect(manager.persistableRoot.leafCount == 2)
+        #expect(manager.persistableRoot.contains(editorPane))
+        #expect(manager.persistableRoot.contains(terminalPane))
+    }
+
+    @Test func persistableRoot_equalsRootWhenNotMaximized() {
+        let manager = PaneManager()
+        #expect(manager.persistableRoot == manager.root)
+
+        let editorPane = manager.activePaneID
+        _ = manager.createTerminalPane(
+            relativeTo: editorPane, axis: .vertical, workingDirectory: nil
+        )
+        #expect(manager.persistableRoot == manager.root)
+    }
+
     @Test func maximize_alreadyMaximized_doesNothing() {
         let manager = PaneManager()
         let editorPane = manager.activePaneID

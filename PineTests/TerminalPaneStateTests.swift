@@ -74,4 +74,14 @@ struct TerminalPaneStateTests {
         _ = state.addTab(workingDirectory: nil)
         #expect(state.tabCount == 2)
     }
+
+    @Test func tabNaming_monotonicAfterClose() {
+        let state = TerminalPaneState()
+        let tab1 = state.addTab(workingDirectory: nil)
+        let tab2 = state.addTab(workingDirectory: nil)
+        // Close tab 1, add new — should be "Terminal 3", not "Terminal 2"
+        state.removeTab(id: tab1.id)
+        let tab3 = state.addTab(workingDirectory: nil)
+        #expect(tab2.name != tab3.name)
+    }
 }
