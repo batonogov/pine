@@ -23,13 +23,17 @@ final class PaneManager {
     private(set) var terminalStates: [PaneID: TerminalPaneState] = [:]
 
     /// Saved root before maximize, for restore.
-    private var savedRootBeforeMaximize: PaneNode?
+    private(set) var savedRootBeforeMaximize: PaneNode?
 
     /// ID of the currently maximized pane, if any.
     private(set) var maximizedPaneID: PaneID?
 
     /// Whether a pane is currently maximized.
     var isMaximized: Bool { maximizedPaneID != nil }
+
+    /// The root to use when persisting session state.
+    /// Returns the full layout even when a single pane is maximized.
+    var persistableRoot: PaneNode { savedRootBeforeMaximize ?? root }
 
     /// The currently focused pane.
     var activePaneID: PaneID

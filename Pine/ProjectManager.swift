@@ -160,7 +160,7 @@ final class ProjectManager {
         var terminalPaneTabCounts: [String: Int]?
         var terminalPaneActiveIndices: [String: Int]?
 
-        paneLayoutData = try? JSONEncoder().encode(paneManager.root)
+        paneLayoutData = try? JSONEncoder().encode(paneManager.persistableRoot)
         var assignments: [String: [String]] = [:]
         for (paneID, tm) in paneManager.tabManagers {
             let paths = tm.tabs.map(\.url.path).filter { $0.hasPrefix(rootPath) }
