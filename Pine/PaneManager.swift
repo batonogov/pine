@@ -212,7 +212,7 @@ final class PaneManager {
     func createTerminalPaneAtBottom(workingDirectory: URL?) -> PaneID {
         let newID = PaneID()
         let terminalLeaf = PaneNode.leaf(newID, .terminal)
-        root = .split(.vertical, first: root, second: terminalLeaf, ratio: 0.7)
+        root = .split(.vertical, first: root, second: terminalLeaf, ratio: 0.6)
 
         let state = TerminalPaneState()
         state.addTab(workingDirectory: workingDirectory)
