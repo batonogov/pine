@@ -523,6 +523,62 @@ final class TerminalTests: PineUITestCase {
     }
 
     /// Maximize then hide should cleanly remove the terminal pane.
+    // MARK: - Regression: sidebar works after closing all panes (#706)
+
+    func testSidebarOpensFileAfterClosingAllPanes() throws {
+        launchAndWaitForLoad()
+
+        // Open a file via sidebar
+        let mainFile = app.staticTexts["fileNode_main.swift"]
+        guard waitForExistence(mainFile, timeout: 10) else {
+            XCTFail("main.swift should appear in the sidebar")
+            return
+        }
+        mainFile.click()
+
+        let editorTab = app.descendants(matching: .any)["editorTab_main.swift"].firstMatch
+        XCTAssertTrue(
+            waitForExistence(editorTab, timeout: 5),
+            "Editor tab should appear after clicking file"
+        )
+
+        // Create terminal
+        createTerminalViaMenu()
+        XCTAssertTrue(
+            waitForExistence(terminalTab("Terminal 1"), timeout: 10),
+            "Terminal should appear"
+        )
+
+        // Close terminal pane via hide button
+        hideButton.click()
+        let t1 = terminalTab("Terminal 1")
+        let deadline1 = Date().addingTimeInterval(5)
+        while t1.exists && Date() < deadline1 {
+            Thread.sleep(forTimeInterval: 0.1)
+        }
+
+        // Close editor tab — editor pane should stay with "No File Selected"
+        let closeButton = app.descendants(matching: .any)["editorTabClose_main.swift"].firstMatch
+        if waitForExistence(closeButton, timeout: 5) {
+            closeButton.click()
+        }
+
+        // Wait for placeholder to appear
+        XCTAssertTrue(
+            waitForExistence(editorPlaceholder, timeout: 5),
+            "Editor placeholder should appear after closing all tabs"
+        )
+
+        // Now click a file in sidebar again — it should open
+        mainFile.click()
+
+        let editorTabAfter = app.descendants(matching: .any)["editorTab_main.swift"].firstMatch
+        XCTAssertTrue(
+            waitForExistence(editorTabAfter, timeout: 5),
+            "Clicking sidebar file should open tab after all panes were closed (#706)"
+        )
+    }
+
     func testMaximizeThenHide() throws {
         launchAndWaitForLoad()
 
