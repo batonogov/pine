@@ -19,7 +19,7 @@ extension UTType {
 struct TabDragInfo: Codable, Sendable {
     let paneID: UUID
     let tabID: UUID
-    let fileURL: URL
+    let fileURL: URL?
     /// The pane content type. Defaults to `.editor` for backwards compatibility.
     var contentType: PaneContent = .editor
 
@@ -38,7 +38,7 @@ struct TabDragInfo: Codable, Sendable {
         return try? JSONDecoder().decode(TabDragInfo.self, from: data)
     }
 
-    init(paneID: UUID, tabID: UUID, fileURL: URL, contentType: PaneContent = .editor) {
+    init(paneID: UUID, tabID: UUID, fileURL: URL? = nil, contentType: PaneContent = .editor) {
         self.paneID = paneID
         self.tabID = tabID
         self.fileURL = fileURL
@@ -56,7 +56,7 @@ struct TabDragInfo: Codable, Sendable {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         paneID = try container.decode(UUID.self, forKey: .paneID)
         tabID = try container.decode(UUID.self, forKey: .tabID)
-        fileURL = try container.decode(URL.self, forKey: .fileURL)
+        fileURL = try container.decodeIfPresent(URL.self, forKey: .fileURL)
         contentType = try container.decodeIfPresent(PaneContent.self, forKey: .contentType) ?? .editor
     }
 }

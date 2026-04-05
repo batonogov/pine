@@ -54,12 +54,10 @@ final class TerminalPaneState {
         guard draggedID != targetID,
               let fromIndex = terminalTabs.firstIndex(where: { $0.id == draggedID }),
               let toIndex = terminalTabs.firstIndex(where: { $0.id == targetID }) else { return }
-        let tab = terminalTabs.remove(at: fromIndex)
-        // After removal, find target's new position and insert at that index
-        // (before the target for backward moves, after it for forward moves)
-        guard let destIndex = terminalTabs.firstIndex(where: { $0.id == targetID }) else { return }
-        let insertAt = fromIndex < toIndex ? destIndex + 1 : destIndex
-        terminalTabs.insert(tab, at: insertAt)
+        terminalTabs.move(
+            fromOffsets: IndexSet(integer: fromIndex),
+            toOffset: toIndex > fromIndex ? toIndex + 1 : toIndex
+        )
     }
 
     func startTabs(workingDirectory: URL?) {

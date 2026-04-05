@@ -210,11 +210,11 @@ struct PaneSplitDropDelegate: DropDelegate {
                     axis: axis,
                     insertBefore: before
                 )
-            } else {
+            } else if let fileURL = dragInfo.fileURL {
                 paneManager.splitPane(
                     paneID,
                     axis: axis,
-                    tabURL: dragInfo.fileURL,
+                    tabURL: fileURL,
                     sourcePane: sourcePaneID,
                     insertBefore: before
                 )
@@ -227,9 +227,9 @@ struct PaneSplitDropDelegate: DropDelegate {
                 paneManager.moveTerminalTab(
                     dragInfo.tabID, from: sourcePaneID, to: paneID
                 )
-            } else {
+            } else if let fileURL = dragInfo.fileURL {
                 paneManager.moveTabBetweenPanes(
-                    tabURL: dragInfo.fileURL,
+                    tabURL: fileURL,
                     from: sourcePaneID,
                     to: paneID
                 )

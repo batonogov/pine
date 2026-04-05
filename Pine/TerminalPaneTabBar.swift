@@ -15,7 +15,6 @@ struct TerminalPaneTabBar: View {
     var workingDirectory: URL?
     @Environment(PaneManager.self) private var paneManager
     @State private var draggingTabID: UUID?
-    @State private var hoverTargetTabID: UUID?
 
     private func closeTerminalTabWithConfirmation(_ tab: TerminalTab) {
         if tab.hasForegroundProcess {
@@ -60,7 +59,7 @@ struct TerminalPaneTabBar: View {
                             let info = TabDragInfo(
                                 paneID: paneID.id,
                                 tabID: tab.id,
-                                fileURL: URL(filePath: "/terminal-placeholder"),
+                                fileURL: nil,
                                 contentType: .terminal
                             )
                             paneManager.activeDrag = info
@@ -78,8 +77,7 @@ struct TerminalPaneTabBar: View {
                         .onDrop(of: [.paneTabDrag], delegate: TerminalTabDropDelegate(
                             terminalState: terminalState,
                             targetTabID: tab.id,
-                            draggingTabID: $draggingTabID,
-                            hoverTargetTabID: $hoverTargetTabID
+                            draggingTabID: $draggingTabID
                         ))
                     }
                 }
@@ -164,13 +162,11 @@ struct TerminalTabDropDelegate: DropDelegate {
     let terminalState: TerminalPaneState
     let targetTabID: UUID
     @Binding var draggingTabID: UUID?
-    @Binding var hoverTargetTabID: UUID?
 
     private static let reorderAnimation: Animation = .spring(response: 0.3, dampingFraction: 0.8)
 
     func performDrop(info: DropInfo) -> Bool {
         withAnimation(Self.reorderAnimation) {
-            hoverTargetTabID = nil
             draggingTabID = nil
         }
         return true
@@ -178,14 +174,9 @@ struct TerminalTabDropDelegate: DropDelegate {
 
     func dropEntered(info: DropInfo) {
         guard let dragging = draggingTabID, dragging != targetTabID else { return }
-        hoverTargetTabID = targetTabID
         withAnimation(Self.reorderAnimation) {
             terminalState.reorderTab(draggedID: dragging, targetID: targetTabID)
         }
-    }
-
-    func dropExited(info: DropInfo) {
-        hoverTargetTabID = nil
     }
 
     func dropUpdated(info: DropInfo) -> DropProposal? {
