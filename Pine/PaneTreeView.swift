@@ -3,7 +3,7 @@
 //  Pine
 //
 //  Recursive SwiftUI view that renders a PaneNode tree as split editor panes.
-//  Each leaf renders its own EditorAreaView with its own TabManager.
+//  Each leaf renders its own PaneLeafView with its own TabManager.
 //
 
 import SwiftUI
