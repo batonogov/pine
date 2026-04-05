@@ -147,7 +147,9 @@ final class EditorWindowTests: PineUITestCase {
     func testEditorPlaceholderShownWithNoTabs() throws {
         launchWithProject(projectURL)
 
-        let placeholder = app.staticTexts["editorPlaceholder"].firstMatch
+        // ContentUnavailableView doesn't reliably propagate accessibilityIdentifier as staticText,
+        // so we find the placeholder by its text content instead.
+        let placeholder = app.staticTexts["No File Selected"].firstMatch
         XCTAssertTrue(waitForExistence(placeholder, timeout: 10), "Editor placeholder should be visible when no tabs are open")
     }
 
