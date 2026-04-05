@@ -203,8 +203,12 @@ struct PaneSplitDropDelegate: DropDelegate {
             let axis: SplitAxis = (zone == .left || zone == .right) ? .horizontal : .vertical
             let before = (zone == .left || zone == .top)
             if dragInfo.contentType == .terminal {
-                paneManager.createTerminalPane(
-                    relativeTo: paneID, axis: axis, workingDirectory: nil
+                paneManager.splitAndMoveTerminalTab(
+                    tabID: dragInfo.tabID,
+                    from: sourcePaneID,
+                    relativeTo: paneID,
+                    axis: axis,
+                    insertBefore: before
                 )
             } else {
                 paneManager.splitPane(

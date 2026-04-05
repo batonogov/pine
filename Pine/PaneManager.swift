@@ -279,6 +279,43 @@ final class PaneManager {
         }
     }
 
+    /// Splits a pane, creates a new terminal pane, and moves an existing terminal tab into it.
+    @discardableResult
+    func splitAndMoveTerminalTab(
+        tabID: UUID,
+        from sourceID: PaneID,
+        relativeTo targetID: PaneID,
+        axis: SplitAxis,
+        insertBefore: Bool = false
+    ) -> PaneID? {
+        guard let srcState = terminalStates[sourceID],
+              let tab = srcState.terminalTabs.first(where: { $0.id == tabID }) else { return nil }
+
+        let newID = PaneID()
+        guard let newRoot = root.splitting(
+            targetID, axis: axis, newPaneID: newID, newContent: .terminal, insertBefore: insertBefore
+        ) else { return nil }
+
+        root = newRoot
+        let newState = TerminalPaneState()
+        terminalStates[newID] = newState
+
+        newState.terminalTabs.append(tab)
+        newState.activeTerminalID = tab.id
+        srcState.terminalTabs.removeAll { $0.id == tabID }
+        if srcState.activeTerminalID == tabID {
+            srcState.activeTerminalID = srcState.terminalTabs.last?.id
+        }
+
+        activePaneID = newID
+
+        if srcState.terminalTabs.isEmpty {
+            removePane(sourceID)
+        }
+
+        return newID
+    }
+
     // MARK: - Maximize
 
     func maximize(paneID: PaneID) {
