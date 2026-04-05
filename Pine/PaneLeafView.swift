@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import UniformTypeIdentifiers
 
 /// A single leaf pane showing the editor area with its own tab bar.
 struct PaneLeafView: View {
@@ -22,6 +23,7 @@ struct PaneLeafView: View {
     @State private var diffHunks: [DiffHunk] = []
     @State private var blameLines: [GitBlameLine] = []
     @State private var blameTask: Task<Void, Never>?
+    @State private var configValidator = ConfigValidator()
     @State private var isDragTargeted = false
     @State private var goToLineOffset: GoToRequest?
     @State private var dropZone: PaneDropZone?
@@ -57,7 +59,7 @@ struct PaneLeafView: View {
         .overlay {
             PaneDropOverlay(dropZone: dropZone)
         }
-        .onDrop(of: [.paneTabDrag], delegate: PaneSplitDropDelegate(
+        .onDrop(of: [.paneTabDrag, .fileURL], delegate: PaneSplitDropDelegate(
             paneID: paneID,
             paneManager: paneManager,
             paneSize: paneSize,
@@ -130,7 +132,31 @@ struct PaneLeafView: View {
             }
 
             if let tab = tabManager.activeTab {
-                codeEditorView(for: tab, tabManager: tabManager)
+                Group {
+                    if tab.kind == .preview {
+                        QuickLookPreviewView(url: tab.url)
+                            .accessibilityIdentifier(AccessibilityID.quickLookPreview)
+                    } else if tab.isMarkdownFile {
+                        switch tab.previewMode {
+                        case .source:
+                            codeEditorView(for: tab, tabManager: tabManager)
+                        case .preview:
+                            MarkdownPreviewView(content: tab.content)
+                                .accessibilityIdentifier(AccessibilityID.markdownPreviewView)
+                        case .split:
+                            HSplitView {
+                                codeEditorView(for: tab, tabManager: tabManager)
+                                    .frame(minWidth: 200)
+                                MarkdownPreviewView(content: tab.content)
+                                    .accessibilityIdentifier(AccessibilityID.markdownPreviewView)
+                                    .frame(minWidth: 200)
+                            }
+                        }
+                    } else {
+                        codeEditorView(for: tab, tabManager: tabManager)
+                    }
+                }
+                .contentTransition(.identity)
             } else {
                 ContentUnavailableView {
                     Label(Strings.noFileSelected, systemImage: "doc.text")
@@ -156,6 +182,7 @@ struct PaneLeafView: View {
             fileName: tab.fileName,
             lineDiffs: lineDiffs,
             diffHunks: diffHunks,
+            validationDiagnostics: configValidator.diagnostics,
             isBlameVisible: isBlameVisible,
             blameLines: blameLines,
             foldState: Binding(
@@ -180,7 +207,16 @@ struct PaneLeafView: View {
         )
         .id(tab.id)
         .accessibilityIdentifier(AccessibilityID.codeEditor)
-        .onAppear { goToLineOffset = nil }
+        .onAppear {
+            goToLineOffset = nil
+            configValidator.validate(url: tab.url, content: tab.content)
+        }
+        .onDisappear {
+            configValidator.clear()
+        }
+        .onChange(of: tab.content) { _, newValue in
+            configValidator.validate(url: tab.url, content: newValue)
+        }
     }
 
     // MARK: - Git diff & blame
