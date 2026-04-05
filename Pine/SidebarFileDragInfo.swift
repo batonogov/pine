@@ -6,19 +6,25 @@
 //  Separate from TabDragInfo to distinguish sidebar file drags from tab drags.
 //
 
+import CoreTransferable
 import Foundation
 import UniformTypeIdentifiers
 
 /// Custom UTType for sidebar file drag operations.
 /// Distinct from `.paneTabDrag` so drop delegates can distinguish sidebar drags from tab reorders.
-extension UTType {
+nonisolated extension UTType {
     static let sidebarFileDrag = UTType(exportedAs: "com.pine.sidebar-file-drag")
 }
 
 /// Information about a file being dragged from the sidebar.
-/// JSON-encoded for NSItemProvider transport via custom UTType.
-struct SidebarFileDragInfo: Codable, Sendable {
+/// Conforms to Transferable for use with `.draggable()` modifier,
+/// which works correctly with SwiftUI List selection (unlike `.onDrag`).
+struct SidebarFileDragInfo: Codable, Sendable, Transferable {
     let fileURL: URL
+
+    nonisolated static var transferRepresentation: some TransferRepresentation {
+        CodableRepresentation(contentType: .sidebarFileDrag)
+    }
 
     /// JSON-encodes to a string for drag transfer.
     var encoded: String {

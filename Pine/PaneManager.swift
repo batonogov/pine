@@ -43,10 +43,6 @@ final class PaneManager {
     /// Using shared state avoids unreliable async NSItemProvider loading.
     var activeDrag: TabDragInfo?
 
-    /// Shared drag state for sidebar file drags.
-    /// Set by FileNodeRow.onDrag, read by PaneSplitDropDelegate.
-    var activeSidebarDrag: SidebarFileDragInfo?
-
     /// Active drop zone per pane — centralized to avoid stale @State/@Binding issues.
     var dropZones: [PaneID: PaneDropZone] = [:]
 
@@ -375,7 +371,6 @@ final class PaneManager {
     /// Called when a drag exits all valid drop targets (e.g., user cancels drag).
     func clearStaleDragState() {
         activeDrag = nil
-        activeSidebarDrag = nil
     }
 
     // MARK: - Private helpers

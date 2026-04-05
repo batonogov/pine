@@ -139,9 +139,11 @@ struct PaneSplitDropDelegate: DropDelegate {
             return handlePaneTabDrop(zone: savedZone)
         }
 
-        // Sidebar file drag — uses synchronous shared state
+        // Sidebar file drag — decode from item providers async
         if info.hasItemsConforming(to: [.sidebarFileDrag]) {
-            return handleSidebarFileDrop(zone: savedZone)
+            let providers = info.itemProviders(for: [.sidebarFileDrag])
+            handleSidebarFileDrop(zone: savedZone, providers: providers)
+            return true
         }
 
         // File drop from Finder — open as tab in this pane
@@ -153,25 +155,36 @@ struct PaneSplitDropDelegate: DropDelegate {
         return false
     }
 
-    private func handleSidebarFileDrop(zone: PaneDropZone?) -> Bool {
-        guard let zone else { return false }
-        guard let dragInfo = paneManager.activeSidebarDrag else { return false }
-        paneManager.activeSidebarDrag = nil
+    private func handleSidebarFileDrop(zone: PaneDropZone?, providers: [NSItemProvider]) {
+        guard let zone else { return }
+        let capturedPaneID = paneID
+        let capturedPaneManager = paneManager
 
-        switch zone {
-        case .left, .right, .top, .bottom:
-            let axis: SplitAxis = (zone == .left || zone == .right) ? .horizontal : .vertical
-            let before = (zone == .left || zone == .top)
-            paneManager.splitAndOpenFile(
-                url: dragInfo.fileURL,
-                relativeTo: paneID,
-                axis: axis,
-                insertBefore: before
-            )
-        case .center:
-            paneManager.openFileInPane(url: dragInfo.fileURL, paneID: paneID)
+        Task {
+            guard let provider = providers.first,
+                  let data = try? await provider.loadItem(
+                      forTypeIdentifier: UTType.sidebarFileDrag.identifier
+                  ) as? Data,
+                  let dragInfo = try? JSONDecoder().decode(SidebarFileDragInfo.self, from: data) else {
+                return
+            }
+
+            await MainActor.run {
+                switch zone {
+                case .left, .right, .top, .bottom:
+                    let axis: SplitAxis = (zone == .left || zone == .right) ? .horizontal : .vertical
+                    let before = (zone == .left || zone == .top)
+                    capturedPaneManager.splitAndOpenFile(
+                        url: dragInfo.fileURL,
+                        relativeTo: capturedPaneID,
+                        axis: axis,
+                        insertBefore: before
+                    )
+                case .center:
+                    capturedPaneManager.openFileInPane(url: dragInfo.fileURL, paneID: capturedPaneID)
+                }
+            }
         }
-        return true
     }
 
     private func handlePaneTabDrop(zone: PaneDropZone?) -> Bool {

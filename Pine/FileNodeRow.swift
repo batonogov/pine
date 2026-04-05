@@ -7,7 +7,6 @@
 
 import os
 import SwiftUI
-import UniformTypeIdentifiers
 
 // MARK: - File/folder row in the sidebar tree
 
@@ -70,32 +69,12 @@ struct FileNodeRow: View {
         .tag(node)
         .accessibilityIdentifier(AccessibilityID.fileNode(node.name))
         .contextMenu { fileNodeContextMenu }
-        .onDrag {
-            sidebarDragProvider()
-        } preview: {
+        .draggable(SidebarFileDragInfo(fileURL: node.url)) {
             sidebarDragPreview()
         }
     }
 
     // MARK: - Drag support
-
-    /// Creates an NSItemProvider for dragging this file node to an editor pane.
-    /// Directories return an empty provider (no-op drag).
-    private func sidebarDragProvider() -> NSItemProvider {
-        guard !node.isDirectory else { return NSItemProvider() }
-        let info = SidebarFileDragInfo(fileURL: node.url)
-        paneManager.activeSidebarDrag = info
-        let provider = NSItemProvider()
-        provider.registerDataRepresentation(
-            forTypeIdentifier: UTType.sidebarFileDrag.identifier,
-            visibility: .ownProcess
-        ) { completion in
-            let data = info.encoded.data(using: .utf8) ?? Data()
-            completion(data, nil)
-            return nil
-        }
-        return provider
-    }
 
     /// Drag preview label shown while dragging.
     @ViewBuilder

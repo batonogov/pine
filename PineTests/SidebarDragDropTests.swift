@@ -237,35 +237,15 @@ struct SidebarDragDropTests {
         #expect(result == nil)
     }
 
-    // MARK: - PaneManager.activeSidebarDrag
+    // MARK: - SidebarFileDragInfo Transferable
 
-    @Test("activeSidebarDrag is nil by default")
-    func activeSidebarDragDefault() {
-        let pm = PaneManager()
-        #expect(pm.activeSidebarDrag == nil)
-    }
-
-    @Test("activeSidebarDrag can be set and read")
-    func activeSidebarDragSetAndRead() {
-        let pm = PaneManager()
+    @Test("SidebarFileDragInfo conforms to Transferable via CodableRepresentation")
+    func sidebarDragInfoTransferable() {
         let url = URL(fileURLWithPath: "/tmp/test.swift")
         let info = SidebarFileDragInfo(fileURL: url)
-
-        pm.activeSidebarDrag = info
-
-        #expect(pm.activeSidebarDrag?.fileURL == url)
-    }
-
-    @Test("activeSidebarDrag can be cleared")
-    func activeSidebarDragClear() {
-        let pm = PaneManager()
-        pm.activeSidebarDrag = SidebarFileDragInfo(
-            fileURL: URL(fileURLWithPath: "/tmp/test.swift")
-        )
-
-        pm.activeSidebarDrag = nil
-
-        #expect(pm.activeSidebarDrag == nil)
+        let encoded = info.encoded
+        let decoded = SidebarFileDragInfo.decode(from: encoded)
+        #expect(decoded?.fileURL == url)
     }
 
     // MARK: - Drop zone + sidebar interaction
@@ -381,18 +361,6 @@ struct SidebarDragDropTests {
 
     // MARK: - clearStaleDragState
 
-    @Test("clearStaleDragState clears activeSidebarDrag")
-    func clearStaleDragStateClearsSidebar() {
-        let pm = PaneManager()
-        pm.activeSidebarDrag = SidebarFileDragInfo(
-            fileURL: URL(fileURLWithPath: "/tmp/test.swift")
-        )
-
-        pm.clearStaleDragState()
-
-        #expect(pm.activeSidebarDrag == nil)
-    }
-
     @Test("clearStaleDragState clears activeDrag")
     func clearStaleDragStateClearsTab() {
         let pm = PaneManager()
@@ -407,31 +375,12 @@ struct SidebarDragDropTests {
         #expect(pm.activeDrag == nil)
     }
 
-    @Test("clearStaleDragState clears both drag states simultaneously")
-    func clearStaleDragStateClearsBoth() {
-        let pm = PaneManager()
-        pm.activeSidebarDrag = SidebarFileDragInfo(
-            fileURL: URL(fileURLWithPath: "/tmp/sidebar.swift")
-        )
-        pm.activeDrag = TabDragInfo(
-            paneID: pm.activePaneID.id,
-            tabID: UUID(),
-            fileURL: URL(fileURLWithPath: "/tmp/tab.swift")
-        )
-
-        pm.clearStaleDragState()
-
-        #expect(pm.activeSidebarDrag == nil)
-        #expect(pm.activeDrag == nil)
-    }
-
-    @Test("clearStaleDragState is safe when both are already nil")
+    @Test("clearStaleDragState is safe when already nil")
     func clearStaleDragStateWhenAlreadyNil() {
         let pm = PaneManager()
 
         pm.clearStaleDragState()
 
-        #expect(pm.activeSidebarDrag == nil)
         #expect(pm.activeDrag == nil)
     }
 
