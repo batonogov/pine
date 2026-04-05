@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.18.0](https://github.com/batonogov/pine/compare/v1.17.0...v1.18.0) (2026-04-05)
+
+
+### Features
+
+* split panes with terminal integration ([#543](https://github.com/batonogov/pine/issues/543)) ([#707](https://github.com/batonogov/pine/issues/707)) ([d04be74](https://github.com/batonogov/pine/commit/d04be74be3d07aec444a8f95d7dbb6447574390d))
+
 ## [1.17.0](https://github.com/batonogov/pine/compare/v1.16.1...v1.17.0) (2026-03-31)
 
 
