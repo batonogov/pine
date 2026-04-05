@@ -65,16 +65,16 @@ struct FileNodeRow: View {
                         .foregroundStyle(iconColor)
                 }
                 .opacity(isGitIgnored ? 0.5 : 1.0)
-                .onDrag {
-                    sidebarDragProvider()
-                } preview: {
-                    sidebarDragPreview()
-                }
             }
         }
         .tag(node)
         .accessibilityIdentifier(AccessibilityID.fileNode(node.name))
         .contextMenu { fileNodeContextMenu }
+        .onDrag {
+            sidebarDragProvider()
+        } preview: {
+            sidebarDragPreview()
+        }
     }
 
     // MARK: - Drag support
