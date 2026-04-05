@@ -220,72 +220,22 @@ extension ContentView {
     }
 }
 
-// MARK: - Git blame & diff
+// MARK: - Git blame & diff (stubs)
 
 extension ContentView {
 
-    /// Refreshes cached blame data for the active tab.
-    func refreshBlame() {
-        blameTask?.cancel()
-        guard isBlameVisible else {
-            blameLines = []
-            return
-        }
-        guard let tab = tabManager.activeTab else {
-            blameLines = []
-            return
-        }
-        let fileURL = tab.url
-        let provider = workspace.gitProvider
-        guard provider.isGitRepository, let repoURL = provider.repositoryURL else {
-            blameLines = []
-            return
-        }
-        let filePath = fileURL.path
-        blameTask = Task.detached {
-            let result = GitStatusProvider.runGit(
-                ["blame", "--porcelain", "--", filePath], at: repoURL
-            )
-            guard !Task.isCancelled else { return }
-            let lines: [GitBlameLine]
-            if result.exitCode == 0, !result.output.isEmpty {
-                lines = GitStatusProvider.parseBlame(result.output)
-            } else {
-                lines = []
-            }
-            guard !Task.isCancelled else { return }
-            await MainActor.run {
-                if tabManager.activeTab?.url == fileURL {
-                    blameLines = lines
-                }
-            }
-        }
-    }
+    /// No-op — each PaneLeafView manages its own blame data.
+    /// Kept as a stub because GitAndNotificationObserver calls it.
+    func refreshBlame() {}
 
-    /// Refreshes cached line diffs and diff hunks for the active tab.
-    func refreshLineDiffs() {
-        guard let tab = tabManager.activeTab else {
-            lineDiffs = []
-            diffHunks = []
-            return
-        }
-        let fileURL = tab.url
-        let provider = workspace.gitProvider
-        guard provider.isGitRepository, let repoURL = workspace.rootURL else {
-            lineDiffs = []
-            diffHunks = []
-            return
-        }
-        Task {
-            async let diffs = provider.diffForFileAsync(at: fileURL)
-            async let hunks = InlineDiffProvider.fetchHunks(for: fileURL, repoURL: repoURL)
-            let (resolvedDiffs, resolvedHunks) = await (diffs, hunks)
-            if tabManager.activeTab?.url == fileURL {
-                lineDiffs = resolvedDiffs
-                diffHunks = resolvedHunks
-            }
-        }
-    }
+    /// No-op — each PaneLeafView manages its own line diffs.
+    /// Kept as a stub because GitAndNotificationObserver calls it.
+    func refreshLineDiffs() {}
+}
+
+// MARK: - Git change navigation & inline diff
+
+extension ContentView {
 
     /// Used by GitAndNotificationObserver — internal visibility required for cross-struct access.
     enum ChangeDirection { case next, previous }

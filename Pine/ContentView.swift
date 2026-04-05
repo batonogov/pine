@@ -25,9 +25,6 @@ struct ContentView: View {
     @State var selectedNode: FileNode?
     @State var columnVisibility: NavigationSplitViewVisibility = .all
     @State var lineDiffs: [GitLineDiff] = []
-    @State var diffHunks: [DiffHunk] = []
-    @State var blameLines: [GitBlameLine] = []
-    @State var blameTask: Task<Void, Never>?
     @State var didRestoreSession = false
     @State var isSearchPresented = false
     @State var goToLineOffset: GoToRequest?
@@ -161,7 +158,6 @@ struct ContentView: View {
         }
         .onChange(of: workspace.rootURL) { _, _ in
             lineDiffs = []
-            diffHunks = []
             projectManager.quickOpenProvider.invalidateIndex()
             projectManager.saveSession()
             applySearchQueryFromEnvironment()
