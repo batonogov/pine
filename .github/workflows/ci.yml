@@ -62,14 +62,14 @@ jobs:
     if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     env:
-      SWIFTLINT_VERSION: "0.58.2"
-      SWIFTLINT_SHA256: "f1e4cb061609bea53ac442a0db0a07422822c34080d4a9ac9780f53e98602b77"
+      SWIFTLINT_VERSION: "0.63.2"
+      SWIFTLINT_SHA256: "dd1017cfd20a1457f264590bcb5875a6ee06cd75b9a9d4f77cd43a552499143b"
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
 
       - name: Install SwiftLint
         run: |
-          curl -fSL "https://github.com/realm/SwiftLint/releases/download/${SWIFTLINT_VERSION}/swiftlint_linux.zip" -o swiftlint.zip
+          curl -fSL "https://github.com/realm/SwiftLint/releases/download/${SWIFTLINT_VERSION}/swiftlint_linux_amd64.zip" -o swiftlint.zip
           echo "${SWIFTLINT_SHA256}  swiftlint.zip" | sha256sum -c -
           unzip -o swiftlint.zip
           chmod +x swiftlint
