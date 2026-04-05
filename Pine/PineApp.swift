@@ -721,32 +721,14 @@ class CloseDelegate: NSObject, NSWindowDelegate {
         let activePaneID = pane.activePaneID
         let activeTM = projectManager.activeTabManager
         guard let tab = activeTM.activeTab else { return }
-        if tab.isDirty {
-            let alert = NSAlert()
-            alert.messageText = Strings.unsavedChangesTitle
-            alert.informativeText = Strings.unsavedChangesMessage
-            alert.addButton(withTitle: Strings.dialogSave)
-            alert.addButton(withTitle: Strings.dialogDontSave)
-            alert.addButton(withTitle: Strings.dialogCancel)
-            alert.alertStyle = .warning
-            let response = alert.runModal()
-            switch response {
-            case .alertFirstButtonReturn:
-                if let idx = activeTM.tabs.firstIndex(where: { $0.id == tab.id }) {
-                    guard activeTM.saveTab(at: idx) else { return }
-                }
-                activeTM.closeTab(id: tab.id)
-            case .alertSecondButtonReturn:
-                activeTM.closeTab(id: tab.id)
-            default:
-                break
-            }
-        } else {
-            activeTM.closeTab(id: tab.id)
-        }
+
+        let closed = TabCloseHelper.closeTab(
+            tab, in: activeTM,
+            gitProvider: projectManager.workspace.gitProvider
+        )
 
         // Remove empty pane after closing the last tab (mirrors PaneLeafView behavior)
-        if activeTM.tabs.isEmpty {
+        if closed && activeTM.tabs.isEmpty {
             pane.removePane(activePaneID)
         }
     }
