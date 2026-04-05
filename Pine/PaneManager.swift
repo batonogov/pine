@@ -311,7 +311,8 @@ final class PaneManager {
         guard let tabManager = tabManagers[paneID] else { return }
         // Skip directories — they should not open as editor tabs
         var isDir: ObjCBool = false
-        if FileManager.default.fileExists(atPath: url.path, isDirectory: &isDir), isDir.boolValue {
+        let filePath = url.path(percentEncoded: false)
+        if FileManager.default.fileExists(atPath: filePath, isDirectory: &isDir), isDir.boolValue {
             return
         }
         tabManager.openTab(url: url)
@@ -326,20 +327,17 @@ final class PaneManager {
         relativeTo targetID: PaneID,
         axis: SplitAxis
     ) -> PaneID? {
-        let newID = PaneID()
-        guard let newRoot = root.splitting(
-            targetID,
-            axis: axis,
-            newPaneID: newID,
-            newContent: .editor
-        ) else { return nil }
-
-        root = newRoot
-        let newTabManager = TabManager()
-        tabManagers[newID] = newTabManager
+        guard let newPaneID = splitPane(targetID, axis: axis) else { return nil }
+        guard let newTabManager = tabManagers[newPaneID] else { return nil }
         newTabManager.openTab(url: url)
-        activePaneID = newID
-        return newID
+        return newPaneID
+    }
+
+    /// Clears stale drag state for both tab drags and sidebar file drags.
+    /// Called when a drag exits all valid drop targets (e.g., user cancels drag).
+    func clearStaleDragState() {
+        activeDrag = nil
+        activeSidebarDrag = nil
     }
 
     // MARK: - Private helpers

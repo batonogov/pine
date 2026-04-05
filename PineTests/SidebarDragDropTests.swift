@@ -359,6 +359,117 @@ struct SidebarDragDropTests {
         #expect(tm?.tabs.isEmpty == true)
     }
 
+    // MARK: - clearStaleDragState
+
+    @Test("clearStaleDragState clears activeSidebarDrag")
+    func clearStaleDragStateClearsSidebar() {
+        let pm = PaneManager()
+        pm.activeSidebarDrag = SidebarFileDragInfo(
+            fileURL: URL(fileURLWithPath: "/tmp/test.swift")
+        )
+
+        pm.clearStaleDragState()
+
+        #expect(pm.activeSidebarDrag == nil)
+    }
+
+    @Test("clearStaleDragState clears activeDrag")
+    func clearStaleDragStateClearsTab() {
+        let pm = PaneManager()
+        pm.activeDrag = TabDragInfo(
+            paneID: pm.activePaneID.id,
+            tabID: UUID(),
+            fileURL: URL(fileURLWithPath: "/tmp/test.swift")
+        )
+
+        pm.clearStaleDragState()
+
+        #expect(pm.activeDrag == nil)
+    }
+
+    @Test("clearStaleDragState clears both drag states simultaneously")
+    func clearStaleDragStateClearsBoth() {
+        let pm = PaneManager()
+        pm.activeSidebarDrag = SidebarFileDragInfo(
+            fileURL: URL(fileURLWithPath: "/tmp/sidebar.swift")
+        )
+        pm.activeDrag = TabDragInfo(
+            paneID: pm.activePaneID.id,
+            tabID: UUID(),
+            fileURL: URL(fileURLWithPath: "/tmp/tab.swift")
+        )
+
+        pm.clearStaleDragState()
+
+        #expect(pm.activeSidebarDrag == nil)
+        #expect(pm.activeDrag == nil)
+    }
+
+    @Test("clearStaleDragState is safe when both are already nil")
+    func clearStaleDragStateWhenAlreadyNil() {
+        let pm = PaneManager()
+
+        pm.clearStaleDragState()
+
+        #expect(pm.activeSidebarDrag == nil)
+        #expect(pm.activeDrag == nil)
+    }
+
+    // MARK: - openFileInPane with percent-encoded URLs
+
+    @Test("openFileInPane handles files with spaces in path")
+    func openFileWithSpacesInPath() {
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString)
+            .appendingPathComponent("my project")
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let file = dir.appendingPathComponent("my file.swift")
+        try? "let x = 1".write(to: file, atomically: true, encoding: .utf8)
+
+        let pm = PaneManager()
+        let paneID = pm.activePaneID
+
+        pm.openFileInPane(url: file, paneID: paneID)
+
+        let tm = pm.tabManager(for: paneID)
+        #expect(tm?.tabs.count == 1)
+        #expect(tm?.activeTab?.url == file)
+    }
+
+    @Test("openFileInPane skips directory with spaces in path")
+    func openDirectoryWithSpacesDoesNothing() {
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString)
+            .appendingPathComponent("my directory")
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+
+        let pm = PaneManager()
+        let paneID = pm.activePaneID
+
+        pm.openFileInPane(url: dir, paneID: paneID)
+
+        let tm = pm.tabManager(for: paneID)
+        #expect(tm?.tabs.isEmpty == true)
+    }
+
+    // MARK: - splitAndOpenFile reuses splitPane
+
+    @Test("splitAndOpenFile sets activePaneID to the new pane (via splitPane)")
+    func splitAndOpenFileActivePaneViaDelegate() throws {
+        let file = tempFile(name: "delegate.swift")
+        let pm = PaneManager()
+        let originalPaneID = pm.activePaneID
+
+        let newPaneID = pm.splitAndOpenFile(
+            url: file, relativeTo: originalPaneID, axis: .horizontal
+        )
+
+        let newID = try #require(newPaneID)
+        #expect(pm.activePaneID == newID)
+        // Verify the new pane has a registered TabManager (created by splitPane)
+        #expect(pm.tabManager(for: newID) != nil)
+    }
+
     // MARK: - Multiple files sequentially
 
     @Test("Opening multiple files in same pane creates multiple tabs")

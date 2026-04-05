@@ -109,6 +109,9 @@ struct PaneSplitDropDelegate: DropDelegate {
 
     func dropExited(info: DropInfo) {
         dropZone = nil
+        // Clear stale drag state when drag leaves all valid drop targets
+        // (e.g., user cancels drag by dropping outside any pane).
+        paneManager.clearStaleDragState()
     }
 
     func performDrop(info: DropInfo) -> Bool {
