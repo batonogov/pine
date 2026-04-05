@@ -133,24 +133,33 @@ struct PaneSplitDropDelegate: DropDelegate {
         paneManager.activeDrag = nil
 
         let sourcePaneID = PaneID(id: dragInfo.paneID)
+        let targetContent = paneManager.root.content(for: paneID)
 
         switch zone {
-        case .right:
-            paneManager.splitPane(
-                paneID,
-                axis: .horizontal,
-                tabURL: dragInfo.fileURL,
-                sourcePane: sourcePaneID
-            )
-        case .bottom:
-            paneManager.splitPane(
-                paneID,
-                axis: .vertical,
-                tabURL: dragInfo.fileURL,
-                sourcePane: sourcePaneID
-            )
+        case .right, .bottom:
+            // Edge drop always creates a new pane of matching type
+            let axis: SplitAxis = zone == .right ? .horizontal : .vertical
+            if dragInfo.contentType == .terminal {
+                paneManager.createTerminalPane(
+                    relativeTo: paneID, axis: axis, workingDirectory: nil
+                )
+            } else {
+                paneManager.splitPane(
+                    paneID,
+                    axis: axis,
+                    tabURL: dragInfo.fileURL,
+                    sourcePane: sourcePaneID
+                )
+            }
         case .center:
-            if sourcePaneID != paneID {
+            // Center drop: only allow same-type moves
+            guard sourcePaneID != paneID,
+                  dragInfo.contentType == targetContent else { break }
+            if dragInfo.contentType == .terminal {
+                paneManager.moveTerminalTab(
+                    dragInfo.tabID, from: sourcePaneID, to: paneID
+                )
+            } else {
                 paneManager.moveTabBetweenPanes(
                     tabURL: dragInfo.fileURL,
                     from: sourcePaneID,

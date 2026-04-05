@@ -719,17 +719,36 @@ class CloseDelegate: NSObject, NSWindowDelegate {
     func closeActiveTab() {
         let pane = projectManager.paneManager
         let activePaneID = pane.activePaneID
-        let activeTM = projectManager.activeTabManager
-        guard let tab = activeTM.activeTab else { return }
+        let content = pane.root.content(for: activePaneID)
 
-        let closed = TabCloseHelper.closeTab(
-            tab, in: activeTM,
-            gitProvider: projectManager.workspace.gitProvider
-        )
+        switch content {
+        case .terminal:
+            guard let state = pane.terminalState(for: activePaneID),
+                  let tab = state.activeTab else { return }
+            if tab.hasForegroundProcess {
+                let alert = NSAlert()
+                alert.messageText = Strings.terminalTabCloseWarningTitle
+                alert.informativeText = Strings.terminalTabCloseWarningMessage
+                alert.addButton(withTitle: Strings.terminalTabCloseWarningClose)
+                alert.addButton(withTitle: Strings.dialogCancel)
+                alert.alertStyle = .warning
+                guard alert.runModal() == .alertFirstButtonReturn else { return }
+            }
+            state.removeTab(id: tab.id)
+            if state.terminalTabs.isEmpty {
+                pane.removePane(activePaneID)
+            }
 
-        // Remove empty pane after closing the last tab (mirrors PaneLeafView behavior)
-        if closed && activeTM.tabs.isEmpty {
-            pane.removePane(activePaneID)
+        case .editor, nil:
+            let activeTM = projectManager.activeTabManager
+            guard let tab = activeTM.activeTab else { return }
+            let closed = TabCloseHelper.closeTab(
+                tab, in: activeTM,
+                gitProvider: projectManager.workspace.gitProvider
+            )
+            if closed && activeTM.tabs.isEmpty {
+                pane.removePane(activePaneID)
+            }
         }
     }
 
