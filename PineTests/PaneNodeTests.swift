@@ -1184,6 +1184,46 @@ struct PaneNodeTests {
         #expect(tree.content(for: editorID) == .editor)
         #expect(tree.content(for: terminalID) == .terminal)
     }
+
+    // MARK: - leafCount(ofType:)
+
+    @Test func leafCountOfType_singleEditor() {
+        let node = PaneNode.leaf(PaneID(), .editor)
+        #expect(node.leafCount(ofType: .editor) == 1)
+        #expect(node.leafCount(ofType: .terminal) == 0)
+    }
+
+    @Test func leafCountOfType_singleTerminal() {
+        let node = PaneNode.leaf(PaneID(), .terminal)
+        #expect(node.leafCount(ofType: .editor) == 0)
+        #expect(node.leafCount(ofType: .terminal) == 1)
+    }
+
+    @Test func leafCountOfType_mixedTree() {
+        let e1 = PaneID()
+        let e2 = PaneID()
+        let t1 = PaneID()
+        let t2 = PaneID()
+        let tree = PaneNode.split(
+            .horizontal,
+            first: .split(
+                .vertical,
+                first: .leaf(e1, .editor),
+                second: .leaf(t1, .terminal),
+                ratio: 0.5
+            ),
+            second: .split(
+                .vertical,
+                first: .leaf(e2, .editor),
+                second: .leaf(t2, .terminal),
+                ratio: 0.5
+            ),
+            ratio: 0.5
+        )
+        #expect(tree.leafCount(ofType: .editor) == 2)
+        #expect(tree.leafCount(ofType: .terminal) == 2)
+        #expect(tree.leafCount == 4)
+    }
 }
 
 // swiftlint:enable type_body_length file_length

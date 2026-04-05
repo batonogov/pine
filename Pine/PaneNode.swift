@@ -83,6 +83,16 @@ indirect enum PaneNode: Sendable {
         content(for: id) != nil
     }
 
+    /// Returns the number of leaves with the given content type.
+    func leafCount(ofType type: PaneContent) -> Int {
+        switch self {
+        case .leaf(_, let content):
+            return content == type ? 1 : 0
+        case .split(_, let first, let second, _):
+            return first.leafCount(ofType: type) + second.leafCount(ofType: type)
+        }
+    }
+
     /// Returns the total number of leaves.
     var leafCount: Int {
         switch self {

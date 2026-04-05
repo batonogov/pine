@@ -623,4 +623,137 @@ struct PaneManagerTests {
         #expect(manager.terminalState(for: tp1)?.tabCount == 1)
         #expect(manager.terminalState(for: tp2)?.tabCount == 2)
     }
+
+    // MARK: - Last editor pane protection
+
+    @Test func removePane_lastEditorPane_clearsTabsInsteadOfRemoving() {
+        let manager = PaneManager()
+        let editorPane = manager.activePaneID
+        let testURL = URL(fileURLWithPath: "/tmp/test.swift")
+        manager.tabManager(for: editorPane)?.openTab(url: testURL)
+
+        // Add a terminal pane so there are 2 leaves total
+        guard let terminalPane = manager.createTerminalPane(
+            relativeTo: editorPane, axis: .vertical, workingDirectory: nil
+        ) else {
+            Issue.record("createTerminalPane failed")
+            return
+        }
+        #expect(manager.root.leafCount == 2)
+
+        // Try to remove the only editor pane — should NOT remove it
+        manager.removePane(editorPane)
+
+        // Editor pane still exists, but its tabs are cleared
+        #expect(manager.root.leafCount == 2)
+        #expect(manager.root.content(for: editorPane) == .editor)
+        #expect(manager.tabManager(for: editorPane)?.tabs.isEmpty == true)
+        // Terminal pane still exists
+        #expect(manager.root.content(for: terminalPane) == .terminal)
+    }
+
+    @Test func removePane_nonLastEditorPane_removesNormally() {
+        let manager = PaneManager()
+        let firstEditor = manager.activePaneID
+
+        // Create a second editor pane
+        guard let secondEditor = manager.splitPane(firstEditor, axis: .horizontal) else {
+            Issue.record("Split failed")
+            return
+        }
+        #expect(manager.root.leafCount(ofType: .editor) == 2)
+
+        // Removing one of two editor panes should work normally
+        manager.removePane(secondEditor)
+        #expect(manager.root.leafCount == 1)
+        #expect(manager.tabManagers[secondEditor] == nil)
+    }
+
+    @Test func removePane_terminalPane_whenOnlyOneEditor_removesTerminal() {
+        let manager = PaneManager()
+        let editorPane = manager.activePaneID
+
+        guard let terminalPane = manager.createTerminalPane(
+            relativeTo: editorPane, axis: .vertical, workingDirectory: nil
+        ) else {
+            Issue.record("createTerminalPane failed")
+            return
+        }
+
+        // Removing terminal pane should work even if only 1 editor pane remains
+        manager.removePane(terminalPane)
+        #expect(manager.root.leafCount == 1)
+        #expect(manager.root.content(for: editorPane) == .editor)
+        #expect(manager.terminalStates[terminalPane] == nil)
+    }
+
+    @Test func moveTabBetweenPanes_lastTabInLastEditorPane_keepsPane() {
+        let manager = PaneManager()
+        let editorPane = manager.activePaneID
+        let testURL = URL(fileURLWithPath: "/tmp/test.swift")
+        manager.tabManager(for: editorPane)?.openTab(url: testURL)
+
+        // Add terminal pane
+        guard let terminalPane = manager.createTerminalPane(
+            relativeTo: editorPane, axis: .vertical, workingDirectory: nil
+        ) else {
+            Issue.record("createTerminalPane failed")
+            return
+        }
+
+        // Create a second editor pane via split and move the tab there
+        guard let secondEditor = manager.splitPane(editorPane, axis: .horizontal) else {
+            Issue.record("Split failed")
+            return
+        }
+
+        // Now move the only tab from editorPane to secondEditor
+        // This should try to removePane(editorPane) because it becomes empty,
+        // but since that would leave secondEditor as the only editor, it works fine
+        // (there are 2 editor panes, so removing one is OK)
+        manager.moveTabBetweenPanes(tabURL: testURL, from: editorPane, to: secondEditor)
+        #expect(manager.tabManager(for: secondEditor)?.tabs.count == 1)
+    }
+
+    @Test func leafCountOfType_countsCorrectly() {
+        let manager = PaneManager()
+        let editorPane = manager.activePaneID
+        #expect(manager.root.leafCount(ofType: .editor) == 1)
+        #expect(manager.root.leafCount(ofType: .terminal) == 0)
+
+        _ = manager.createTerminalPane(
+            relativeTo: editorPane, axis: .vertical, workingDirectory: nil
+        )
+        #expect(manager.root.leafCount(ofType: .editor) == 1)
+        #expect(manager.root.leafCount(ofType: .terminal) == 1)
+
+        _ = manager.splitPane(editorPane, axis: .horizontal)
+        #expect(manager.root.leafCount(ofType: .editor) == 2)
+        #expect(manager.root.leafCount(ofType: .terminal) == 1)
+    }
+
+    @Test func removePane_lastEditorWithMultipleTerminals_keepsEditor() {
+        let manager = PaneManager()
+        let editorPane = manager.activePaneID
+
+        // Create two terminal panes
+        guard let tp1 = manager.createTerminalPane(
+            relativeTo: editorPane, axis: .vertical, workingDirectory: nil
+        ) else {
+            Issue.record("failed")
+            return
+        }
+        _ = manager.createTerminalPane(
+            relativeTo: tp1, axis: .horizontal, workingDirectory: nil
+        )
+
+        #expect(manager.root.leafCount == 3)
+        #expect(manager.root.leafCount(ofType: .editor) == 1)
+        #expect(manager.root.leafCount(ofType: .terminal) == 2)
+
+        // Try to remove the only editor pane — should be prevented
+        manager.removePane(editorPane)
+        #expect(manager.root.leafCount(ofType: .editor) == 1)
+        #expect(manager.root.content(for: editorPane) == .editor)
+    }
 }

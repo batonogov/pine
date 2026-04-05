@@ -117,6 +117,8 @@ final class PaneManager {
     }
 
     /// Removes a pane and promotes its sibling.
+    /// If removing this pane would leave zero editor panes, the pane is kept
+    /// but its tabs are closed instead — ensuring the editor area is always available.
     func removePane(_ paneID: PaneID) {
         // If the pane being removed is the maximized pane, restore first
         // so the saved layout is available for removal.
@@ -126,6 +128,15 @@ final class PaneManager {
 
         guard root.leafCount > 1,
               let newRoot = root.removing(paneID) else { return }
+
+        // Prevent removing the last editor pane — clear its tabs instead.
+        if root.content(for: paneID) == .editor,
+           root.leafCount(ofType: .editor) <= 1 {
+            if let tm = tabManagers[paneID] {
+                tm.closeAllTabs(force: true)
+            }
+            return
+        }
 
         tabManagers[paneID] = nil
         terminalStates[paneID] = nil
