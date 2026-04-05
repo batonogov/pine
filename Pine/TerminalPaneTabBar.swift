@@ -7,12 +7,14 @@
 //
 
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct TerminalPaneTabBar: View {
     let paneID: PaneID
     let terminalState: TerminalPaneState
     var workingDirectory: URL?
     @Environment(PaneManager.self) private var paneManager
+    @State private var draggingTabID: UUID?
 
     private func closeTerminalTabWithConfirmation(_ tab: TerminalTab) {
         if tab.hasForegroundProcess {
@@ -37,9 +39,11 @@ struct TerminalPaneTabBar: View {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 2) {
                     ForEach(terminalState.terminalTabs) { tab in
+                        let isActive = tab.id == terminalState.activeTerminalID
+                        let isDragged = tab.id == draggingTabID
                         TerminalNativeTabItem(
                             tab: tab,
-                            isActive: tab.id == terminalState.activeTerminalID,
+                            isActive: isActive,
                             canClose: true,
                             onSelect: {
                                 terminalState.activeTerminalID = tab.id
@@ -47,6 +51,34 @@ struct TerminalPaneTabBar: View {
                             },
                             onClose: { closeTerminalTabWithConfirmation(tab) }
                         )
+                        .opacity(isDragged ? 0.4 : 1.0)
+                        .scaleEffect(isDragged ? 0.95 : 1.0)
+                        .transaction { $0.animation = nil }
+                        .onDrag {
+                            draggingTabID = tab.id
+                            let info = TabDragInfo(
+                                paneID: paneID.id,
+                                tabID: tab.id,
+                                fileURL: nil,
+                                contentType: .terminal
+                            )
+                            paneManager.activeDrag = info
+                            let provider = NSItemProvider()
+                            provider.registerDataRepresentation(
+                                forTypeIdentifier: UTType.paneTabDrag.identifier,
+                                visibility: .ownProcess
+                            ) { completion in
+                                let data = info.encoded.data(using: .utf8) ?? Data()
+                                completion(data, nil)
+                                return nil
+                            }
+                            return provider
+                        }
+                        .onDrop(of: [.paneTabDrag], delegate: TerminalTabDropDelegate(
+                            terminalState: terminalState,
+                            targetTabID: tab.id,
+                            draggingTabID: $draggingTabID
+                        ))
                     }
                 }
                 .padding(.horizontal, 4)
@@ -122,5 +154,32 @@ struct TerminalPaneTabBar: View {
         .background(.bar)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier(AccessibilityID.terminalTabBar)
+    }
+}
+
+/// Handles drag-to-reorder for terminal tabs within a pane.
+struct TerminalTabDropDelegate: DropDelegate {
+    let terminalState: TerminalPaneState
+    let targetTabID: UUID
+    @Binding var draggingTabID: UUID?
+
+    private static let reorderAnimation: Animation = .spring(response: 0.3, dampingFraction: 0.8)
+
+    func performDrop(info: DropInfo) -> Bool {
+        withAnimation(Self.reorderAnimation) {
+            draggingTabID = nil
+        }
+        return true
+    }
+
+    func dropEntered(info: DropInfo) {
+        guard let dragging = draggingTabID, dragging != targetTabID else { return }
+        withAnimation(Self.reorderAnimation) {
+            terminalState.reorderTab(draggedID: dragging, targetID: targetTabID)
+        }
+    }
+
+    func dropUpdated(info: DropInfo) -> DropProposal? {
+        DropProposal(operation: .move)
     }
 }

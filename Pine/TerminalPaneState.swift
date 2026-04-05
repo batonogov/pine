@@ -50,6 +50,16 @@ final class TerminalPaneState {
         }
     }
 
+    func reorderTab(draggedID: UUID, targetID: UUID) {
+        guard draggedID != targetID,
+              let fromIndex = terminalTabs.firstIndex(where: { $0.id == draggedID }),
+              let toIndex = terminalTabs.firstIndex(where: { $0.id == targetID }) else { return }
+        terminalTabs.move(
+            fromOffsets: IndexSet(integer: fromIndex),
+            toOffset: toIndex > fromIndex ? toIndex + 1 : toIndex
+        )
+    }
+
     func startTabs(workingDirectory: URL?) {
         for tab in terminalTabs {
             tab.configure(workingDirectory: workingDirectory)

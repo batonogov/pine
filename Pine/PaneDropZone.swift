@@ -203,14 +203,18 @@ struct PaneSplitDropDelegate: DropDelegate {
             let axis: SplitAxis = (zone == .left || zone == .right) ? .horizontal : .vertical
             let before = (zone == .left || zone == .top)
             if dragInfo.contentType == .terminal {
-                paneManager.createTerminalPane(
-                    relativeTo: paneID, axis: axis, workingDirectory: nil
+                paneManager.splitAndMoveTerminalTab(
+                    tabID: dragInfo.tabID,
+                    from: sourcePaneID,
+                    relativeTo: paneID,
+                    axis: axis,
+                    insertBefore: before
                 )
-            } else {
+            } else if let fileURL = dragInfo.fileURL {
                 paneManager.splitPane(
                     paneID,
                     axis: axis,
-                    tabURL: dragInfo.fileURL,
+                    tabURL: fileURL,
                     sourcePane: sourcePaneID,
                     insertBefore: before
                 )
@@ -223,9 +227,9 @@ struct PaneSplitDropDelegate: DropDelegate {
                 paneManager.moveTerminalTab(
                     dragInfo.tabID, from: sourcePaneID, to: paneID
                 )
-            } else {
+            } else if let fileURL = dragInfo.fileURL {
                 paneManager.moveTabBetweenPanes(
-                    tabURL: dragInfo.fileURL,
+                    tabURL: fileURL,
                     from: sourcePaneID,
                     to: paneID
                 )
