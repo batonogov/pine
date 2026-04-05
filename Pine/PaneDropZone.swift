@@ -91,7 +91,7 @@ struct PaneSplitDropDelegate: DropDelegate {
     @Binding var dropZone: PaneDropZone?
 
     func validateDrop(info: DropInfo) -> Bool {
-        info.hasItemsConforming(to: [.paneTabDrag])
+        info.hasItemsConforming(to: [.paneTabDrag]) || info.hasItemsConforming(to: [.fileURL])
     }
 
     func dropEntered(info: DropInfo) {
@@ -100,7 +100,8 @@ struct PaneSplitDropDelegate: DropDelegate {
 
     func dropUpdated(info: DropInfo) -> DropProposal? {
         updateDropZone(info: info)
-        return DropProposal(operation: .move)
+        let operation: DropOperation = info.hasItemsConforming(to: [.paneTabDrag]) ? .move : .copy
+        return DropProposal(operation: operation)
     }
 
     func dropExited(info: DropInfo) {
@@ -108,6 +109,22 @@ struct PaneSplitDropDelegate: DropDelegate {
     }
 
     func performDrop(info: DropInfo) -> Bool {
+        // Pane tab drag takes priority
+        if info.hasItemsConforming(to: [.paneTabDrag]) {
+            return handlePaneTabDrop()
+        }
+
+        // File drop from Finder — open as tab in this pane
+        if info.hasItemsConforming(to: [.fileURL]) {
+            dropZone = nil
+            handleFileDrop(providers: info.itemProviders(for: [.fileURL]))
+            return true
+        }
+
+        return false
+    }
+
+    private func handlePaneTabDrop() -> Bool {
         guard let zone = dropZone else { return false }
         dropZone = nil
 
@@ -142,6 +159,20 @@ struct PaneSplitDropDelegate: DropDelegate {
             }
         }
         return true
+    }
+
+    private func handleFileDrop(providers: [NSItemProvider]) {
+        guard let tabManager = paneManager.tabManager(for: paneID) else { return }
+        for provider in providers {
+            Task {
+                guard let url = try? await provider.loadItem(
+                    forTypeIdentifier: UTType.fileURL.identifier
+                ) as? URL else { return }
+                await MainActor.run {
+                    DropHandler.openFilesAsTabs([url], in: tabManager)
+                }
+            }
+        }
     }
 
     private func updateDropZone(info: DropInfo) {
