@@ -27,7 +27,7 @@ final class ProjectManager {
     /// Returns the TabManager for the currently focused pane.
     /// Falls back to the primary ``tabManager`` when paneManager has a single pane.
     var activeTabManager: TabManager {
-        paneManager.activeTabManager ?? tabManager
+        paneManager.activeEditorTabManager ?? tabManager
     }
 
     /// Collects all tabs from every pane (for session save, dirty-tab checks, etc.).

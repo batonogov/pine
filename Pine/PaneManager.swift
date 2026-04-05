@@ -66,6 +66,17 @@ final class PaneManager {
         tabManagers[activePaneID]
     }
 
+    /// Returns the TabManager for the active editor pane.
+    /// If the active pane is a terminal, returns the first available editor pane's TabManager.
+    var activeEditorTabManager: TabManager? {
+        if let tm = tabManagers[activePaneID] { return tm }
+        // Active pane is terminal — find nearest editor pane
+        for leafID in root.leafIDs where root.content(for: leafID) == .editor {
+            if let tm = tabManagers[leafID] { return tm }
+        }
+        return nil
+    }
+
     /// Returns all TabManagers across all panes.
     var allTabManagers: [TabManager] {
         Array(tabManagers.values)

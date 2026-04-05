@@ -191,7 +191,10 @@ extension ContentView {
     }
 
     func handleFileSelection(_ node: FileNode) {
-        tabManager.openTab(url: node.url)
+        // Use the active editor pane's TabManager so files open in the
+        // visible editor pane, even when focus is on a terminal pane.
+        let tm = paneManager.activeEditorTabManager ?? tabManager
+        tm.openTab(url: node.url)
     }
 
     /// Syncs sidebar selection to match the active editor tab.
