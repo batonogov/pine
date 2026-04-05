@@ -128,12 +128,14 @@ indirect enum PaneNode: Sendable {
     /// Replaces a leaf with a split, putting the original leaf and a new leaf side by side.
     /// Returns nil if `targetID` is not found, if `newPaneID` already exists in the tree,
     /// or if the resulting tree would exceed `paneMaxDepth`.
+    /// - Parameter insertBefore: If true, the new pane is placed before (left/top of) the target.
     func splitting(
         _ targetID: PaneID,
         axis: SplitAxis,
         newPaneID: PaneID,
         newContent: PaneContent,
-        ratio: CGFloat = 0.5
+        ratio: CGFloat = 0.5,
+        insertBefore: Bool = false
     ) -> PaneNode? {
         let clamped = min(max(ratio, 0.1), 0.9)
 
@@ -143,32 +145,37 @@ indirect enum PaneNode: Sendable {
         // Validate: resulting depth must not exceed maxDepth
         guard depth < paneMaxDepth else { return nil }
 
-        return splittingInternal(targetID, axis: axis, newPaneID: newPaneID, newContent: newContent, ratio: clamped)
+        return splittingInternal(targetID, params: SplitParams(
+            axis: axis, newPaneID: newPaneID,
+            newContent: newContent, ratio: clamped, insertBefore: insertBefore
+        ))
+    }
+
+    /// Parameters for an internal split operation, bundled to stay within the 5-parameter limit.
+    private struct SplitParams {
+        let axis: SplitAxis
+        let newPaneID: PaneID
+        let newContent: PaneContent
+        let ratio: CGFloat
+        let insertBefore: Bool
     }
 
     /// Internal recursive splitting without re-validating constraints.
-    private func splittingInternal(
-        _ targetID: PaneID,
-        axis: SplitAxis,
-        newPaneID: PaneID,
-        newContent: PaneContent,
-        ratio: CGFloat
-    ) -> PaneNode? {
+    private func splittingInternal(_ targetID: PaneID, params: SplitParams) -> PaneNode? {
         switch self {
         case .leaf(let id, let content):
             guard id == targetID else { return nil }
-            let newLeaf = PaneNode.leaf(newPaneID, newContent)
-            return .split(axis, first: .leaf(id, content), second: newLeaf, ratio: ratio)
+            let newLeaf = PaneNode.leaf(params.newPaneID, params.newContent)
+            if params.insertBefore {
+                return .split(params.axis, first: newLeaf, second: .leaf(id, content), ratio: params.ratio)
+            }
+            return .split(params.axis, first: .leaf(id, content), second: newLeaf, ratio: params.ratio)
 
         case .split(let ax, let first, let second, let currentRatio):
-            if let newFirst = first.splittingInternal(
-                targetID, axis: axis, newPaneID: newPaneID, newContent: newContent, ratio: ratio
-            ) {
+            if let newFirst = first.splittingInternal(targetID, params: params) {
                 return .split(ax, first: newFirst, second: second, ratio: currentRatio)
             }
-            if let newSecond = second.splittingInternal(
-                targetID, axis: axis, newPaneID: newPaneID, newContent: newContent, ratio: ratio
-            ) {
+            if let newSecond = second.splittingInternal(targetID, params: params) {
                 return .split(ax, first: first, second: newSecond, ratio: currentRatio)
             }
             return nil

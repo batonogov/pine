@@ -704,6 +704,17 @@
 				<string>public.data</string>
 			</array>
 		</dict>
+		<!-- Sidebar file drag (internal DnD) -->
+		<dict>
+			<key>UTTypeIdentifier</key>
+			<string>com.pine.sidebar-file-drag</string>
+			<key>UTTypeDescription</key>
+			<string>Pine Sidebar File Drag</string>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.data</string>
+			</array>
+		</dict>
 	</array>
 	<key>UTImportedTypeDeclarations</key>
 	<array>

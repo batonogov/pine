@@ -15,6 +15,7 @@ struct FileNodeRow: View {
     var node: FileNode
     @Environment(WorkspaceManager.self) var workspace
     @Environment(TabManager.self) var tabManager
+    @Environment(PaneManager.self) var paneManager
     @Environment(SidebarEditState.self) var editState
     @Environment(\.undoManager) private var undoManager
     @FocusState private var isTextFieldFocused: Bool
@@ -68,6 +69,21 @@ struct FileNodeRow: View {
         .tag(node)
         .accessibilityIdentifier(AccessibilityID.fileNode(node.name))
         .contextMenu { fileNodeContextMenu }
+        .draggable(SidebarFileDragInfo(fileURL: node.url)) {
+            sidebarDragPreview()
+        }
+    }
+
+    // MARK: - Drag support
+
+    /// Drag preview label shown while dragging.
+    @ViewBuilder
+    private func sidebarDragPreview() -> some View {
+        Label(node.name, systemImage: iconName)
+            .font(.body)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8))
     }
 
     // MARK: - Inline editor

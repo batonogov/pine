@@ -201,42 +201,107 @@ struct PaneDropZoneTests {
 struct PaneDropZoneZoneTests {
     private let size = CGSize(width: 1000, height: 800)
 
+    // MARK: - Threshold
+
+    @Test func edgeThreshold_isTwentyFivePercent() {
+        #expect(PaneDropZone.edgeThreshold == 0.25)
+    }
+
+    // MARK: - Center zone
+
     @Test func centerZone_inMiddleOfView() {
-        let location = CGPoint(x: 300, y: 300)
+        let location = CGPoint(x: 500, y: 400)
         #expect(PaneDropZone.zone(for: location, in: size) == .center)
     }
 
-    @Test func rightZone_inRightEdge() {
-        // x > 1000 * 0.7 = 700 → right zone
-        let location = CGPoint(x: 800, y: 200)
-        #expect(PaneDropZone.zone(for: location, in: size) == .right)
-    }
-
-    @Test func bottomZone_inBottomEdge() {
-        // y > 800 * 0.7 = 560 → bottom zone
-        let location = CGPoint(x: 200, y: 700)
-        #expect(PaneDropZone.zone(for: location, in: size) == .bottom)
-    }
-
-    @Test func rightZone_winsWhenBothEdges_rightDominant() {
-        // Both in right and bottom zone, but x/width > y/height → right wins
-        let location = CGPoint(x: 900, y: 600)
-        // 900/1000 = 0.9, 600/800 = 0.75 → right
-        #expect(PaneDropZone.zone(for: location, in: size) == .right)
-    }
-
-    @Test func bottomZone_winsWhenBothEdges_bottomDominant() {
-        // Both in right and bottom zone, but y/height > x/width → bottom wins
-        let location = CGPoint(x: 750, y: 780)
-        // 750/1000 = 0.75, 780/800 = 0.975 → bottom
-        #expect(PaneDropZone.zone(for: location, in: size) == .bottom)
-    }
-
-    @Test func centerZone_atExactThresholdBoundary() {
-        // x = 700 exactly (not > 700) → center
-        let location = CGPoint(x: 700, y: 400)
+    @Test func centerZone_justInsideAllEdges() {
+        // relX = 0.26, relY = 0.26 — inside all thresholds
+        let location = CGPoint(x: 260, y: 210)
         #expect(PaneDropZone.zone(for: location, in: size) == .center)
     }
+
+    // MARK: - Left zone
+
+    @Test func leftZone_leftEdge() {
+        // relX = 0.1 < 0.25, relY = 0.5 (center vertically) → left
+        let location = CGPoint(x: 100, y: 400)
+        #expect(PaneDropZone.zone(for: location, in: size) == .left)
+    }
+
+    @Test func leftZone_topLeftCorner_closerToLeft() {
+        // relX = 0.05, relY = 0.05 — both in left and top, distToEdgeX (0.05) <= distToEdgeY (0.05) → left
+        let location = CGPoint(x: 50, y: 40)
+        #expect(PaneDropZone.zone(for: location, in: size) == .left)
+    }
+
+    @Test func leftZone_atOrigin() {
+        // relX = 0, relY = 0 — both left and top, distToEdgeX (0) <= distToEdgeY (0) → left
+        let location = CGPoint(x: 0, y: 0)
+        #expect(PaneDropZone.zone(for: location, in: size) == .left)
+    }
+
+    // MARK: - Right zone
+
+    @Test func rightZone_rightEdge() {
+        // relX = 0.9 > 0.75, relY = 0.5 → right
+        let location = CGPoint(x: 900, y: 400)
+        #expect(PaneDropZone.zone(for: location, in: size) == .right)
+    }
+
+    @Test func rightZone_bottomRightCorner_closerToRight() {
+        // relX = 0.95, relY = 0.9 — both right and bottom
+        // distToEdgeX = 0.05, distToEdgeY = 0.1 → right wins (closer to edge)
+        let location = CGPoint(x: 950, y: 720)
+        #expect(PaneDropZone.zone(for: location, in: size) == .right)
+    }
+
+    // MARK: - Top zone
+
+    @Test func topZone_topEdge() {
+        // relX = 0.5, relY = 0.1 < 0.25 → top
+        let location = CGPoint(x: 500, y: 80)
+        #expect(PaneDropZone.zone(for: location, in: size) == .top)
+    }
+
+    @Test func topZone_topLeftCorner_closerToTop() {
+        // relX = 0.15, relY = 0.02 — both left and top
+        // distToEdgeX = 0.15, distToEdgeY = 0.02 → top wins (distToEdgeY < distToEdgeX)
+        let location = CGPoint(x: 150, y: 16)
+        #expect(PaneDropZone.zone(for: location, in: size) == .top)
+    }
+
+    // MARK: - Bottom zone
+
+    @Test func bottomZone_bottomEdge() {
+        // relX = 0.5, relY = 0.95 > 0.75 → bottom
+        let location = CGPoint(x: 500, y: 760)
+        #expect(PaneDropZone.zone(for: location, in: size) == .bottom)
+    }
+
+    @Test func bottomZone_bottomLeftCorner_closerToBottom() {
+        // relX = 0.15, relY = 0.98 — both left and bottom
+        // distToEdgeX = 0.15, distToEdgeY = 0.02 → bottom wins (distToEdgeY < distToEdgeX)
+        let location = CGPoint(x: 150, y: 784)
+        #expect(PaneDropZone.zone(for: location, in: size) == .bottom)
+    }
+
+    // MARK: - Corner disambiguation
+
+    @Test func rightZone_winsInCorner_whenCloserToRight() {
+        // relX = 0.95, relY = 0.9 — both right and bottom
+        // distToEdgeX = 0.05, distToEdgeY = 0.1 → right (distToEdgeX <= distToEdgeY)
+        let location = CGPoint(x: 950, y: 720)
+        #expect(PaneDropZone.zone(for: location, in: size) == .right)
+    }
+
+    @Test func bottomZone_winsInCorner_whenCloserToBottom() {
+        // relX = 0.8, relY = 0.98 — both right and bottom
+        // distToEdgeX = 0.2, distToEdgeY = 0.02 → bottom
+        let location = CGPoint(x: 800, y: 784)
+        #expect(PaneDropZone.zone(for: location, in: size) == .bottom)
+    }
+
+    // MARK: - Edge cases: zero/degenerate sizes
 
     @Test func centerZone_zeroSize() {
         let location = CGPoint(x: 100, y: 100)
@@ -249,38 +314,80 @@ struct PaneDropZoneZoneTests {
         #expect(PaneDropZone.zone(for: location, in: zeroWidthSize) == .center)
     }
 
-    @Test func bottomZone_zeroWidth_butYInBottom() {
-        let zeroWidthSize = CGSize(width: 0, height: 800)
-        let location = CGPoint(x: 0, y: 700)
-        #expect(PaneDropZone.zone(for: location, in: zeroWidthSize) == .bottom)
-    }
-
-    @Test func rightZone_zeroHeight_butXInRight() {
+    @Test func centerZone_zeroHeight() {
         let zeroHeightSize = CGSize(width: 1000, height: 0)
         let location = CGPoint(x: 800, y: 0)
-        #expect(PaneDropZone.zone(for: location, in: zeroHeightSize) == .right)
+        #expect(PaneDropZone.zone(for: location, in: zeroHeightSize) == .center)
     }
 
-    @Test func centerZone_topLeftCorner() {
-        let location = CGPoint(x: 0, y: 0)
+    @Test func centerZone_zeroWidth_evenIfYInBottom() {
+        // guard width > 0 fails → center
+        let zeroWidthSize = CGSize(width: 0, height: 800)
+        let location = CGPoint(x: 0, y: 700)
+        #expect(PaneDropZone.zone(for: location, in: zeroWidthSize) == .center)
+    }
+
+    @Test func centerZone_zeroHeight_evenIfXInRight() {
+        // guard height > 0 fails → center
+        let zeroHeightSize = CGSize(width: 1000, height: 0)
+        let location = CGPoint(x: 900, y: 0)
+        #expect(PaneDropZone.zone(for: location, in: zeroHeightSize) == .center)
+    }
+
+    // MARK: - Boundary: exactly at threshold
+
+    @Test func leftZone_atExactLeftThreshold() {
+        // relX = 0.249 < 0.25 → left
+        let location = CGPoint(x: 249, y: 400)
+        #expect(PaneDropZone.zone(for: location, in: size) == .left)
+    }
+
+    @Test func centerZone_justPastLeftThreshold() {
+        // relX = 0.25 (not < 0.25) → center
+        let location = CGPoint(x: 250, y: 400)
         #expect(PaneDropZone.zone(for: location, in: size) == .center)
     }
 
+    @Test func rightZone_justPastRightThreshold() {
+        // relX = 0.751 > 0.75 → right
+        let location = CGPoint(x: 751, y: 400)
+        #expect(PaneDropZone.zone(for: location, in: size) == .right)
+    }
+
+    @Test func centerZone_atExactRightThreshold() {
+        // relX = 0.75 (not > 0.75) → center
+        let location = CGPoint(x: 750, y: 400)
+        #expect(PaneDropZone.zone(for: location, in: size) == .center)
+    }
+
+    // MARK: - Small view
+
     @Test func rightZone_smallView() {
-        // Small view: 100x100, threshold at 70
+        // 100x100, threshold at 25. relX = 0.8 > 0.75 → right
         let smallSize = CGSize(width: 100, height: 100)
-        let location = CGPoint(x: 80, y: 30)
+        let location = CGPoint(x: 80, y: 50)
         #expect(PaneDropZone.zone(for: location, in: smallSize) == .right)
     }
 
     @Test func bottomZone_smallView() {
+        // 100x100, threshold at 25. relY = 0.8 > 0.75 → bottom
         let smallSize = CGSize(width: 100, height: 100)
-        let location = CGPoint(x: 30, y: 80)
+        let location = CGPoint(x: 50, y: 80)
         #expect(PaneDropZone.zone(for: location, in: smallSize) == .bottom)
     }
 
-    @Test func edgeThreshold_isSeventyPercent() {
-        #expect(PaneDropZone.edgeThreshold == 0.7)
+    @Test func leftZone_smallView() {
+        // 100x100, relX = 0.1 < 0.25 → left
+        let smallSize = CGSize(width: 100, height: 100)
+        let location = CGPoint(x: 10, y: 50)
+        #expect(PaneDropZone.zone(for: location, in: smallSize) == .left)
+    }
+
+    @Test func topZone_smallView() {
+        // 100x100, relY = 0.1 < 0.25 → top
+        let smallSize = CGSize(width: 100, height: 100)
+        let location = CGPoint(x: 50, y: 10)
+        #expect(PaneDropZone.zone(for: location, in: smallSize) == .top)
     }
 }
 

@@ -26,7 +26,6 @@ struct PaneLeafView: View {
     @State private var configValidator = ConfigValidator()
     @State private var isDragTargeted = false
     @State private var goToLineOffset: GoToRequest?
-    @State private var dropZone: PaneDropZone?
     @State private var paneSize: CGSize = .zero
 
     @AppStorage("minimapVisible") private var isMinimapVisible = true
@@ -57,13 +56,12 @@ struct PaneLeafView: View {
         }
         .onPreferenceChange(PaneSizePreferenceKey.self) { paneSize = $0 }
         .overlay {
-            PaneDropOverlay(dropZone: dropZone)
+            PaneDropOverlay(dropZone: paneManager.dropZones[paneID])
         }
-        .onDrop(of: [.paneTabDrag, .fileURL], delegate: PaneSplitDropDelegate(
+        .onDrop(of: [.paneTabDrag, .sidebarFileDrag, .fileURL], delegate: PaneSplitDropDelegate(
             paneID: paneID,
             paneManager: paneManager,
-            paneSize: paneSize,
-            dropZone: $dropZone
+            paneSize: paneSize
         ))
         .border(
             isActive && paneManager.root.leafCount > 1
@@ -163,6 +161,7 @@ struct PaneLeafView: View {
                 } description: {
                     Text(Strings.selectFilePrompt)
                 }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .accessibilityIdentifier(AccessibilityID.editorPlaceholder)
             }
 

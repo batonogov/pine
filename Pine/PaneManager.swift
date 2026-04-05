@@ -43,6 +43,17 @@ final class PaneManager {
     /// Using shared state avoids unreliable async NSItemProvider loading.
     var activeDrag: TabDragInfo?
 
+    /// Active drop zone per pane — centralized to avoid stale @State/@Binding issues.
+    var dropZones: [PaneID: PaneDropZone] = [:]
+
+    /// NSEvent monitor for mouse-up cleanup of drop overlays.
+    nonisolated(unsafe) private var mouseUpMonitor: Any?
+
+    /// Clears all drop zone overlays across all panes.
+    func clearAllDropZones() {
+        dropZones.removeAll()
+    }
+
     /// Creates a PaneManager with a single editor pane.
     init() {
         let initialID = PaneID()
@@ -50,6 +61,7 @@ final class PaneManager {
         self.activePaneID = initialID
         let tm = TabManager()
         self.tabManagers[initialID] = tm
+        installMouseUpMonitor()
     }
 
     /// Creates a PaneManager with an existing TabManager (for migration from single-pane).
@@ -58,6 +70,28 @@ final class PaneManager {
         self.root = .leaf(initialID, .editor)
         self.activePaneID = initialID
         self.tabManagers[initialID] = existingTabManager
+        installMouseUpMonitor()
+    }
+
+    deinit {
+        if let monitor = mouseUpMonitor {
+            NSEvent.removeMonitor(monitor)
+        }
+    }
+
+    /// Installs a local NSEvent monitor that clears drop overlays on mouse-up.
+    /// SwiftUI DropDelegate does not reliably call dropExited/performDrop when
+    /// a drag is cancelled inside a pane, leaving stale overlays.
+    private func installMouseUpMonitor() {
+        mouseUpMonitor = NSEvent.addLocalMonitorForEvents(matching: .leftMouseUp) { [weak self] event in
+            if self?.dropZones.isEmpty == false {
+                // Small delay to let performDrop fire first (it also clears)
+                DispatchQueue.main.async {
+                    self?.clearAllDropZones()
+                }
+            }
+            return event
+        }
     }
 
     /// Returns the TabManager for a given pane.
@@ -90,19 +124,22 @@ final class PaneManager {
 
     /// Splits a pane by placing a new pane alongside it.
     /// The tab at the given URL is moved from the source pane to the new one.
+    /// If `insertBefore` is true, the new pane is placed before (left/top of) the target.
     @discardableResult
     func splitPane(
         _ targetID: PaneID,
         axis: SplitAxis,
         tabURL: URL? = nil,
-        sourcePane: PaneID? = nil
+        sourcePane: PaneID? = nil,
+        insertBefore: Bool = false
     ) -> PaneID? {
         let newID = PaneID()
         guard let newRoot = root.splitting(
             targetID,
             axis: axis,
             newPaneID: newID,
-            newContent: .editor
+            newContent: .editor,
+            insertBefore: insertBefore
         ) else { return nil }
 
         root = newRoot
@@ -296,6 +333,44 @@ final class PaneManager {
         } else if let firstLeaf = root.firstLeafID {
             activePaneID = firstLeaf
         }
+    }
+
+    // MARK: - Sidebar file drop operations
+
+    /// Opens a file as a new tab in the specified editor pane.
+    /// Does nothing if the pane has no TabManager (e.g., terminal pane)
+    /// or if the URL is a directory.
+    func openFileInPane(url: URL, paneID: PaneID) {
+        guard let tabManager = tabManagers[paneID] else { return }
+        // Skip directories — they should not open as editor tabs
+        var isDir: ObjCBool = false
+        let filePath = url.path(percentEncoded: false)
+        if FileManager.default.fileExists(atPath: filePath, isDirectory: &isDir), isDir.boolValue {
+            return
+        }
+        tabManager.openTab(url: url)
+        activePaneID = paneID
+    }
+
+    /// Splits a pane and opens a file in the new pane.
+    /// Returns the new pane's ID, or nil if the split failed.
+    @discardableResult
+    func splitAndOpenFile(
+        url: URL,
+        relativeTo targetID: PaneID,
+        axis: SplitAxis,
+        insertBefore: Bool = false
+    ) -> PaneID? {
+        guard let newPaneID = splitPane(targetID, axis: axis, insertBefore: insertBefore) else { return nil }
+        guard let newTabManager = tabManagers[newPaneID] else { return nil }
+        newTabManager.openTab(url: url)
+        return newPaneID
+    }
+
+    /// Clears stale drag state for both tab drags and sidebar file drags.
+    /// Called when a drag exits all valid drop targets (e.g., user cancels drag).
+    func clearStaleDragState() {
+        activeDrag = nil
     }
 
     // MARK: - Private helpers
