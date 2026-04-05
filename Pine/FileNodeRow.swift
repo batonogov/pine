@@ -63,15 +63,15 @@ struct FileNodeRow: View {
                 } icon: {
                     Image(systemName: iconName)
                         .foregroundStyle(iconColor)
+                        .onDrag {
+                            sidebarDragProvider()
+                        }
                 }
                 .opacity(isGitIgnored ? 0.5 : 1.0)
             }
         }
         .tag(node)
         .accessibilityIdentifier(AccessibilityID.fileNode(node.name))
-        .onDrag {
-            sidebarDragProvider()
-        }
         .contextMenu { fileNodeContextMenu }
     }
 
