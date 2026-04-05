@@ -14,6 +14,7 @@ struct ContentView: View {
     @Environment(WorkspaceManager.self) var workspace
     @Environment(TerminalManager.self) var terminal
     @Environment(TabManager.self) var tabManager
+    @Environment(PaneManager.self) var paneManager
     @Environment(ProjectRegistry.self) var registry
     @Environment(\.openWindow) var openWindow
 
@@ -24,9 +25,6 @@ struct ContentView: View {
     @State var selectedNode: FileNode?
     @State var columnVisibility: NavigationSplitViewVisibility = .all
     @State var lineDiffs: [GitLineDiff] = []
-    @State var diffHunks: [DiffHunk] = []
-    @State var blameLines: [GitBlameLine] = []
-    @State var blameTask: Task<Void, Never>?
     @State var didRestoreSession = false
     @State var isSearchPresented = false
     @State var goToLineOffset: GoToRequest?
@@ -63,28 +61,29 @@ struct ContentView: View {
             }
         } detail: {
             VStack(spacing: 0) {
-                if terminal.isTerminalVisible {
-                    if terminal.isTerminalMaximized {
-                        terminalArea
-                            .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    } else {
-                        VSplitView {
-                            editorArea
-                                .frame(maxWidth: .infinity, minHeight: 200, maxHeight: .infinity)
-                            terminalArea
-                                .frame(maxWidth: .infinity, minHeight: 100, idealHeight: 150, maxHeight: .infinity)
-                        }
-                        .frame(maxHeight: .infinity)
-                    }
-                } else {
-                    editorArea
-                        .frame(maxHeight: .infinity)
-                }
+                editorArea
+                    .frame(maxHeight: .infinity)
                 StatusBarView(
                     gitProvider: workspace.gitProvider,
-                    terminal: terminal,
+                    paneManager: paneManager,
                     tabManager: tabManager,
-                    progress: projectManager.progress
+                    progress: projectManager.progress,
+                    onToggleTerminal: {
+                        if paneManager.terminalPaneIDs.isEmpty {
+                            terminal.focusOrCreateTerminal(
+                                relativeTo: paneManager.activePaneID,
+                                workingDirectory: workspace.rootURL
+                            )
+                        } else {
+                            // Hide all terminal panes
+                            for paneID in paneManager.terminalPaneIDs {
+                                if let state = paneManager.terminalState(for: paneID) {
+                                    for tab in state.terminalTabs { tab.stop() }
+                                }
+                                paneManager.removePane(paneID)
+                            }
+                        }
+                    }
                 )
             }
         }
@@ -103,7 +102,7 @@ struct ContentView: View {
                 gitProvider: workspace.gitProvider,
                 isGitRepository: workspace.gitProvider.isGitRepository
             )
-            DocumentEditedTracker(isEdited: tabManager.hasUnsavedChanges)
+            DocumentEditedTracker(isEdited: projectManager.hasUnsavedChanges)
             RepresentedFileTracker(url: activeTab?.url ?? workspace.rootURL)
         }
         .task {
@@ -159,7 +158,6 @@ struct ContentView: View {
         }
         .onChange(of: workspace.rootURL) { _, _ in
             lineDiffs = []
-            diffHunks = []
             projectManager.quickOpenProvider.invalidateIndex()
             projectManager.saveSession()
             applySearchQueryFromEnvironment()
@@ -184,10 +182,6 @@ struct ContentView: View {
         .onChange(of: tabManager.tabs.count) { _, _ in
             projectManager.saveSession()
         }
-        .modifier(TerminalSessionObserver(
-            terminal: terminal,
-            onSave: { projectManager.saveSession() }
-        ))
         .modifier(GitAndNotificationObserver(
             lineDiffs: $lineDiffs,
             columnVisibility: $columnVisibility,
@@ -243,34 +237,9 @@ struct ContentView: View {
 
     @ViewBuilder
     var editorArea: some View {
-        EditorAreaView(
-            lineDiffs: $lineDiffs,
-            isDragTargeted: $isDragTargeted,
-            goToLineOffset: $goToLineOffset,
-            isBlameVisible: isBlameVisible,
-            blameLines: blameLines,
-            isMinimapVisible: isMinimapVisible,
-            isWordWrapEnabled: isWordWrapEnabled,
-            diffHunks: diffHunks,
-            onCloseTab: { closeTabWithConfirmation($0) },
-            onCloseOtherTabs: { closeOtherTabsWithConfirmation(keeping: $0) },
-            onCloseTabsToTheRight: { closeTabsToTheRightWithConfirmation(of: $0) },
-            onCloseAllTabs: { closeAllTabsWithConfirmation() },
-            onSaveSession: { projectManager.saveSession() }
-        )
+        PaneTreeView(node: paneManager.root)
     }
 
-    @ViewBuilder
-    var terminalArea: some View {
-        VStack(spacing: 0) {
-            TerminalNativeTabBar(terminal: terminal, workingDirectory: workspace.rootURL)
-            TerminalSearchBarContainer(terminal: terminal)
-            TerminalContentView(terminal: terminal)
-        }
-        .background(Color(nsColor: .textBackgroundColor))
-        .onAppear { terminal.startTerminals(workingDirectory: workspace.rootURL) }
-        .modifier(TerminalSearchObserver(terminal: terminal))
-    }
 }
 
 // MARK: - Preview
@@ -283,6 +252,7 @@ struct ContentView: View {
         .environment(projectManager.workspace)
         .environment(projectManager.terminal)
         .environment(projectManager.tabManager)
+        .environment(projectManager.paneManager)
         .environment(projectManager.toastManager)
         .environment(registry)
 }

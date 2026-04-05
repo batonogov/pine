@@ -31,30 +31,38 @@ extension ContentView {
         // Restore editor tabs only if PM has no tabs (fresh or after restart)
         if tabManager.tabs.isEmpty {
             let disabledSet = Set(session.existingHighlightingDisabledPaths ?? [])
-            for url in session.existingFileURLs {
-                let disabled = disabledSet.contains(url.path)
-                tabManager.openTab(url: url, syntaxHighlightingDisabled: disabled)
-            }
+            let previewModes = session.existingPreviewModes
+            let editorStates = session.existingEditorStates
+            let pinnedSet = session.existingPinnedPaths
 
-            // Restore preview modes for markdown tabs
-            if let previewModes = session.existingPreviewModes {
-                for index in tabManager.tabs.indices {
-                    let path = tabManager.tabs[index].url.path
-                    if let rawMode = previewModes[path],
-                       let mode = MarkdownPreviewMode(rawValue: rawMode) {
-                        tabManager.tabs[index].previewMode = mode
-                    }
-                }
-            }
+            // Try to restore pane layout if available
+            if let layoutData = session.paneLayoutData,
+               let restoredNode = try? JSONDecoder().decode(PaneNode.self, from: layoutData),
+               let assignments = session.paneTabAssignments,
+               restoredNode.leafCount > 1 {
+                let activePaneUUID = session.activePaneID.flatMap { UUID(uuidString: $0) }
+                paneManager.restoreLayout(from: restoredNode, activePaneUUID: activePaneUUID)
 
-            // Restore per-tab editor state (cursor, scroll, folds)
-            if let editorStates = session.existingEditorStates {
-                for index in tabManager.tabs.indices {
-                    let path = tabManager.tabs[index].url.path
-                    if let state = editorStates[path] {
-                        state.apply(to: &tabManager.tabs[index])
+                // Populate tabs into each pane's TabManager
+                for (paneID, tm) in paneManager.tabManagers {
+                    guard let paths = assignments[paneID.id.uuidString] else { continue }
+                    for path in paths {
+                        let url = URL(fileURLWithPath: path)
+                        guard FileManager.default.fileExists(atPath: path) else { continue }
+                        let disabled = disabledSet.contains(path)
+                        tm.openTab(url: url, syntaxHighlightingDisabled: disabled)
                     }
+                    Self.applyTabState(to: tm, previewModes: previewModes,
+                                       editorStates: editorStates, pinnedPaths: pinnedSet)
                 }
+            } else {
+                // Single-pane restore (backwards compatible)
+                for url in session.existingFileURLs {
+                    let disabled = disabledSet.contains(url.path)
+                    tabManager.openTab(url: url, syntaxHighlightingDisabled: disabled)
+                }
+                Self.applyTabState(to: tabManager, previewModes: previewModes,
+                                   editorStates: editorStates, pinnedPaths: pinnedSet)
             }
 
             if let activeURL = session.activeFileURL,
@@ -62,30 +70,72 @@ extension ContentView {
                 tabManager.activeTabID = tab.id
             }
 
-            didRestoreTabs = !tabManager.tabs.isEmpty
+            didRestoreTabs = !projectManager.allTabs.isEmpty
         }
 
-        // Restore terminal state
-        if let visible = session.isTerminalVisible {
-            terminal.isTerminalVisible = visible
-        }
-        if let maximized = session.isTerminalMaximized {
-            terminal.isTerminalMaximized = maximized
-        }
-
-        // Create terminal tabs only if PM has a single default (unused) tab
-        if let count = session.terminalTabCount, count > 1,
-           terminal.terminalTabs.count == 1 {
-            for _ in 1..<count {
-                terminal.addTerminalTab(workingDirectory: rootURL)
+        // Restore terminal tabs for terminal pane leaves
+        if let tpCounts = session.terminalPaneTabCounts {
+            for (paneIDStr, count) in tpCounts {
+                guard let uuid = UUID(uuidString: paneIDStr),
+                      let paneID = paneManager.root.leafIDs.first(where: { $0.id == uuid }),
+                      let state = paneManager.terminalState(for: paneID) else { continue }
+                // State was created with no tabs by restoreLayout; add the saved count
+                let needed = max(0, count - state.tabCount)
+                for _ in 0..<needed {
+                    state.addTab(workingDirectory: rootURL)
+                }
+                if let activeIndices = session.terminalPaneActiveIndices,
+                   let activeIdx = activeIndices[paneIDStr],
+                   activeIdx < state.terminalTabs.count {
+                    state.activeTerminalID = state.terminalTabs[activeIdx].id
+                }
             }
         }
-        if let activeIndex = session.activeTerminalIndex,
-           activeIndex < terminal.terminalTabs.count {
-            terminal.activeTerminalID = terminal.terminalTabs[activeIndex].id
+
+        // Legacy: migrate old single-terminal sessions to pane-based
+        if session.terminalPaneTabCounts == nil,
+           let visible = session.isTerminalVisible, visible,
+           let count = session.terminalTabCount, count >= 1 {
+            // Create a terminal pane with the right number of tabs
+            terminal.createTerminalTab(
+                relativeTo: paneManager.activePaneID,
+                workingDirectory: rootURL
+            )
+            if count > 1, let tpID = terminal.lastActiveTerminalPaneID,
+               let state = paneManager.terminalState(for: tpID) {
+                for _ in 1..<count {
+                    state.addTab(workingDirectory: rootURL)
+                }
+                if let activeIdx = session.activeTerminalIndex,
+                   activeIdx < state.terminalTabs.count {
+                    state.activeTerminalID = state.terminalTabs[activeIdx].id
+                }
+            }
         }
 
         return didRestoreTabs
+    }
+
+    /// Applies preview modes, editor states, and pinned status to a TabManager's tabs.
+    private static func applyTabState(
+        to tm: TabManager,
+        previewModes: [String: String]?,
+        editorStates: [String: PerTabEditorState]?,
+        pinnedPaths: Set<String>?
+    ) {
+        for index in tm.tabs.indices {
+            let path = tm.tabs[index].url.path
+            if let rawMode = previewModes?[path],
+               let mode = MarkdownPreviewMode(rawValue: rawMode) {
+                tm.tabs[index].previewMode = mode
+            }
+            if let state = editorStates?[path] {
+                state.apply(to: &tm.tabs[index])
+            }
+            if pinnedPaths?.contains(path) == true {
+                tm.tabs[index].isPinned = true
+            }
+        }
     }
 
     func checkForRecovery() {
@@ -141,7 +191,10 @@ extension ContentView {
     }
 
     func handleFileSelection(_ node: FileNode) {
-        tabManager.openTab(url: node.url)
+        // Use the active editor pane's TabManager so files open in the
+        // visible editor pane, even when focus is on a terminal pane.
+        let tm = paneManager.activeEditorTabManager ?? tabManager
+        tm.openTab(url: node.url)
     }
 
     /// Syncs sidebar selection to match the active editor tab.
@@ -167,72 +220,22 @@ extension ContentView {
     }
 }
 
-// MARK: - Git blame & diff
+// MARK: - Git blame & diff (stubs)
 
 extension ContentView {
 
-    /// Refreshes cached blame data for the active tab.
-    func refreshBlame() {
-        blameTask?.cancel()
-        guard isBlameVisible else {
-            blameLines = []
-            return
-        }
-        guard let tab = tabManager.activeTab else {
-            blameLines = []
-            return
-        }
-        let fileURL = tab.url
-        let provider = workspace.gitProvider
-        guard provider.isGitRepository, let repoURL = provider.repositoryURL else {
-            blameLines = []
-            return
-        }
-        let filePath = fileURL.path
-        blameTask = Task.detached {
-            let result = GitStatusProvider.runGit(
-                ["blame", "--porcelain", "--", filePath], at: repoURL
-            )
-            guard !Task.isCancelled else { return }
-            let lines: [GitBlameLine]
-            if result.exitCode == 0, !result.output.isEmpty {
-                lines = GitStatusProvider.parseBlame(result.output)
-            } else {
-                lines = []
-            }
-            guard !Task.isCancelled else { return }
-            await MainActor.run {
-                if tabManager.activeTab?.url == fileURL {
-                    blameLines = lines
-                }
-            }
-        }
-    }
+    /// No-op — each PaneLeafView manages its own blame data.
+    /// Kept as a stub because GitAndNotificationObserver calls it.
+    func refreshBlame() {}
 
-    /// Refreshes cached line diffs and diff hunks for the active tab.
-    func refreshLineDiffs() {
-        guard let tab = tabManager.activeTab else {
-            lineDiffs = []
-            diffHunks = []
-            return
-        }
-        let fileURL = tab.url
-        let provider = workspace.gitProvider
-        guard provider.isGitRepository, let repoURL = workspace.rootURL else {
-            lineDiffs = []
-            diffHunks = []
-            return
-        }
-        Task {
-            async let diffs = provider.diffForFileAsync(at: fileURL)
-            async let hunks = InlineDiffProvider.fetchHunks(for: fileURL, repoURL: repoURL)
-            let (resolvedDiffs, resolvedHunks) = await (diffs, hunks)
-            if tabManager.activeTab?.url == fileURL {
-                lineDiffs = resolvedDiffs
-                diffHunks = resolvedHunks
-            }
-        }
-    }
+    /// No-op — each PaneLeafView manages its own line diffs.
+    /// Kept as a stub because GitAndNotificationObserver calls it.
+    func refreshLineDiffs() {}
+}
+
+// MARK: - Git change navigation & inline diff
+
+extension ContentView {
 
     /// Used by GitAndNotificationObserver — internal visibility required for cross-struct access.
     enum ChangeDirection { case next, previous }
@@ -326,85 +329,20 @@ extension ContentView {
 
 extension ContentView {
 
-    /// Shows a confirmation dialog for bulk close operations when there are dirty tabs.
-    /// Returns `true` if the operation should proceed (user chose Save All or Don't Save),
-    /// `false` if cancelled. When the user chooses Save All, all dirty tabs are saved first.
-    private func confirmBulkClose(dirtyTabs: [EditorTab]) -> Bool {
-        guard !dirtyTabs.isEmpty else { return true }
-
-        let fileList = dirtyTabs.map { "  \u{2022} \($0.fileName)" }.joined(separator: "\n")
-        let alert = NSAlert()
-        alert.messageText = Strings.unsavedChangesTitle
-        alert.informativeText = Strings.unsavedChangesListMessage(fileList)
-        alert.addButton(withTitle: Strings.dialogSaveAll)
-        alert.addButton(withTitle: Strings.dialogDontSave)
-        alert.addButton(withTitle: Strings.dialogCancel)
-        alert.alertStyle = .warning
-
-        let response = alert.runModal()
-        switch response {
-        case .alertFirstButtonReturn:
-            // Save all dirty tabs; abort if any save fails
-            for tab in dirtyTabs {
-                guard let index = tabManager.tabs.firstIndex(where: { $0.id == tab.id }) else { continue }
-                guard tabManager.saveTab(at: index) else { return false }
-            }
-            Task { await workspace.gitProvider.refreshAsync() }
-            return true
-        case .alertSecondButtonReturn:
-            return true
-        default:
-            return false
-        }
-    }
-
-    /// Closes all tabs except the one with the given ID, with unsaved-changes protection.
     func closeOtherTabsWithConfirmation(keeping tabID: UUID) {
-        let dirty = tabManager.dirtyTabsForCloseOthers(keeping: tabID)
-        guard confirmBulkClose(dirtyTabs: dirty) else { return }
-        tabManager.closeOtherTabs(keeping: tabID, force: true)
+        TabCloseHelper.closeOtherTabs(keeping: tabID, in: tabManager, gitProvider: workspace.gitProvider)
     }
 
-    /// Closes all tabs to the right of the given tab, with unsaved-changes protection.
     func closeTabsToTheRightWithConfirmation(of tabID: UUID) {
-        let dirty = tabManager.dirtyTabsForCloseRight(of: tabID)
-        guard confirmBulkClose(dirtyTabs: dirty) else { return }
-        tabManager.closeTabsToTheRight(of: tabID, force: true)
+        TabCloseHelper.closeTabsToTheRight(of: tabID, in: tabManager, gitProvider: workspace.gitProvider)
     }
 
-    /// Closes all tabs with unsaved-changes protection.
     func closeAllTabsWithConfirmation() {
-        let dirty = tabManager.dirtyTabsForCloseAll()
-        guard confirmBulkClose(dirtyTabs: dirty) else { return }
-        tabManager.closeAllTabs(force: true)
+        TabCloseHelper.closeAllTabs(in: tabManager, gitProvider: workspace.gitProvider)
     }
 
-    /// Closes a tab with unsaved-changes protection.
     func closeTabWithConfirmation(_ tab: EditorTab) {
-        if tab.isDirty {
-            let alert = NSAlert()
-            alert.messageText = Strings.unsavedChangesTitle
-            alert.informativeText = Strings.unsavedChangesMessage
-            alert.addButton(withTitle: Strings.dialogSave)
-            alert.addButton(withTitle: Strings.dialogDontSave)
-            alert.addButton(withTitle: Strings.dialogCancel)
-            alert.alertStyle = .warning
-
-            let response = alert.runModal()
-            switch response {
-            case .alertFirstButtonReturn:
-                guard let index = tabManager.tabs.firstIndex(where: { $0.id == tab.id }) else { return }
-                guard tabManager.saveTab(at: index) else { return }
-                Task { await workspace.gitProvider.refreshAsync() }
-                tabManager.closeTab(id: tab.id)
-            case .alertSecondButtonReturn:
-                tabManager.closeTab(id: tab.id)
-            default:
-                return
-            }
-        } else {
-            tabManager.closeTab(id: tab.id)
-        }
+        TabCloseHelper.closeTab(tab, in: tabManager, gitProvider: workspace.gitProvider)
     }
 
     func handleExternalChanges(_ result: TabManager.ExternalChangeResult) {
@@ -543,20 +481,19 @@ extension ContentView {
     // MARK: - Send to Terminal (issue #311)
 
     /// Sends text to the active terminal tab.
-    /// If the terminal is hidden, shows it first. If no terminal tabs exist, creates one.
+    /// If no terminal pane exists, creates one. Focuses the terminal pane.
     func sendTextToTerminal(_ text: String) {
-        // Ensure terminal is visible
-        if !terminal.isTerminalVisible {
-            terminal.isTerminalVisible = true
-        }
-
-        // Ensure there is an active terminal tab
-        if terminal.activeTerminalTab == nil {
+        // Ensure there is a terminal pane
+        if paneManager.terminalPaneIDs.isEmpty {
             projectManager.addTerminalTab()
         }
 
+        // Find the active terminal pane's state
+        guard let tpID = terminal.lastActiveTerminalPaneID ?? paneManager.terminalPaneIDs.first,
+              let state = paneManager.terminalState(for: tpID),
+              let activeTab = state.activeTab else { return }
+
         // Send text followed by newline to execute
-        guard let activeTab = terminal.activeTerminalTab else { return }
         activeTab.sendText(text + "\n")
     }
 }

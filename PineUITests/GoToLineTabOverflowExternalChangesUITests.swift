@@ -266,9 +266,10 @@ final class GoToLineTabOverflowExternalChangesUITests: PineUITestCase {
         openFile("main.swift")
         XCTAssertTrue(waitForExistence(editorTab("main.swift"), timeout: 5))
 
-        // With a single tab, the tab bar should exist but there should be only one tab
-        let tabBar = app.descendants(matching: .any)["editorTabBar"].firstMatch
-        XCTAssertTrue(waitForExistence(tabBar, timeout: 5), "Tab bar should exist")
+        // Tab bar is implicitly present since we found the tab above.
+        // With a single tab, the overflow menu should not be shown.
+        let overflowMenu = app.descendants(matching: .any)["editorTabOverflowMenu"].firstMatch
+        XCTAssertFalse(overflowMenu.exists, "Overflow menu should not appear with a single tab")
 
         // Verify only one editor tab button exists
         let utilsTab = editorTab("utils.swift")

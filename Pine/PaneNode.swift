@@ -19,14 +19,7 @@ struct PaneID: Hashable, Codable, Identifiable, Sendable {
 }
 
 /// The type of content a leaf pane displays.
-///
-/// In Phase 2, each `PaneContent` case will be associated with a `TabManager` instance
-/// that manages the tabs within that pane. The planned integration:
-/// - `.editor` panes will own a `TabManager` for editor tabs (files)
-/// - `.terminal` panes will own a `TabManager` for terminal sessions
-///
-/// A `PaneState` wrapper (to be introduced in Phase 2) will pair `PaneContent`
-/// with its `TabManager`, keyed by `PaneID` in a flat dictionary for O(1) lookup.
+/// Each pane owns a `TabManager` for editor tabs, keyed by `PaneID`.
 enum PaneContent: String, Hashable, Codable, Sendable {
     case editor
     case terminal
@@ -88,6 +81,16 @@ indirect enum PaneNode: Sendable {
     /// Returns true if the tree contains the given PaneID.
     func contains(_ id: PaneID) -> Bool {
         content(for: id) != nil
+    }
+
+    /// Returns the number of leaves with the given content type.
+    func leafCount(ofType type: PaneContent) -> Int {
+        switch self {
+        case .leaf(_, let content):
+            return content == type ? 1 : 0
+        case .split(_, let first, let second, _):
+            return first.leafCount(ofType: type) + second.leafCount(ofType: type)
+        }
     }
 
     /// Returns the total number of leaves.

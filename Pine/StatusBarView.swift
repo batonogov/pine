@@ -11,9 +11,10 @@ import SwiftUI
 
 struct StatusBarView: View {
     var gitProvider: GitStatusProvider
-    var terminal: TerminalManager
+    var paneManager: PaneManager
     var tabManager: TabManager
     var progress: ProgressTracker?
+    var onToggleTerminal: (() -> Void)?
 
     var body: some View {
         HStack(spacing: LayoutMetrics.statusBarItemSpacing) {
@@ -144,23 +145,18 @@ struct StatusBarView: View {
 
             // Terminal toggle button
             Button {
-                withAnimation(PineAnimation.quick) { terminal.isTerminalVisible.toggle() }
+                onToggleTerminal?()
             } label: {
                 HStack(spacing: 3) {
-                    Image(systemName: terminal.isTerminalVisible
-                          ? "chevron.down" : "chevron.up")
-                        .font(.system(size: LayoutMetrics.iconSmallFontSize, weight: .semibold))
                     Image(systemName: "terminal")
                         .font(.system(size: LayoutMetrics.captionFontSize))
                     Text(Strings.terminalLabel)
                         .font(.system(size: LayoutMetrics.bodySmallFontSize))
                 }
-                .foregroundStyle(terminal.isTerminalVisible ? .primary : .secondary)
+                .foregroundStyle(paneManager.terminalPaneIDs.isEmpty ? .secondary : .primary)
             }
             .buttonStyle(.plain)
-            .help(terminal.isTerminalVisible ? Strings.hideTerminalShortcut : Strings.showTerminalShortcut)
             .accessibilityIdentifier(AccessibilityID.terminalToggleButton)
-            .accessibilityAddTraits(.isButton)
         }
         .padding(.horizontal, LayoutMetrics.statusBarHorizontalPadding)
         .frame(height: LayoutMetrics.statusBarHeight)

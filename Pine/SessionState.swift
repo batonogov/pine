@@ -28,12 +28,27 @@ struct SessionState: Codable, Sendable {
     /// File paths of pinned tabs. Optional for backwards compatibility.
     var pinnedPaths: [String]?
 
+    // MARK: - Pane layout (optional for backwards compatibility)
+
+    /// JSON-encoded PaneNode tree representing the split pane layout.
+    var paneLayoutData: Data?
+    /// Maps pane leaf ID (UUID string) to ordered list of file paths in that pane.
+    var paneTabAssignments: [String: [String]]?
+    /// The active pane leaf ID (UUID string).
+    var activePaneID: String?
+
     // MARK: - Terminal state (optional for backwards compatibility)
 
+    /// Legacy single-terminal-panel fields (kept for migration from older sessions).
     var terminalTabCount: Int?
     var activeTerminalIndex: Int?
     var isTerminalVisible: Bool?
     var isTerminalMaximized: Bool?
+
+    /// Per-terminal-pane tab counts. Key is pane UUID string.
+    var terminalPaneTabCounts: [String: Int]?
+    /// Per-terminal-pane active tab indices. Key is pane UUID string.
+    var terminalPaneActiveIndices: [String: Int]?
 
     // MARK: - UserDefaults keys
 
@@ -72,10 +87,11 @@ struct SessionState: Codable, Sendable {
         highlightingDisabledPaths: [String]? = nil,
         editorStates: [String: PerTabEditorState]? = nil,
         pinnedPaths: [String]? = nil,
-        terminalTabCount: Int? = nil,
-        activeTerminalIndex: Int? = nil,
-        isTerminalVisible: Bool? = nil,
-        isTerminalMaximized: Bool? = nil,
+        terminalPaneTabCounts: [String: Int]? = nil,
+        terminalPaneActiveIndices: [String: Int]? = nil,
+        paneLayoutData: Data? = nil,
+        paneTabAssignments: [String: [String]]? = nil,
+        activePaneID: String? = nil,
         defaults: UserDefaults = .standard
     ) {
         let state = SessionState(
@@ -86,10 +102,11 @@ struct SessionState: Codable, Sendable {
             highlightingDisabledPaths: highlightingDisabledPaths,
             editorStates: editorStates,
             pinnedPaths: pinnedPaths,
-            terminalTabCount: terminalTabCount,
-            activeTerminalIndex: activeTerminalIndex,
-            isTerminalVisible: isTerminalVisible,
-            isTerminalMaximized: isTerminalMaximized
+            paneLayoutData: paneLayoutData,
+            paneTabAssignments: paneTabAssignments,
+            activePaneID: activePaneID,
+            terminalPaneTabCounts: terminalPaneTabCounts,
+            terminalPaneActiveIndices: terminalPaneActiveIndices
         )
         do {
             let data = try JSONEncoder().encode(state)

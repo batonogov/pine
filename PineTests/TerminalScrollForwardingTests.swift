@@ -266,9 +266,9 @@ struct TerminalScrollForwardingTests {
         container.frame = NSRect(x: 0, y: 0, width: 800, height: 300)
         let tab = TerminalTab(name: "test")
 
-        // Need to set up terminal manager for showTab to work
-        let manager = TerminalManager()
-        container.terminal = manager
+        // Need to set up terminal pane state for showTab to work
+        let state = TerminalPaneState()
+        container.terminalPaneState = state
 
         container.showTab(tab)
 

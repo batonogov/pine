@@ -298,29 +298,26 @@ struct SessionStateTests {
 
     // MARK: - Terminal state
 
-    @Test func terminalStateRoundTrip() throws {
+    @Test func terminalPaneStateRoundTrip() throws {
         let tempDir = try makeTempDirectory()
         defer { cleanup(tempDir) }
 
         let defaults = try makeDefaults()
         defer { cleanupDefaults(defaults) }
 
+        let paneUUID = UUID().uuidString
         SessionState.save(
             projectURL: tempDir,
             openFileURLs: [],
-            terminalTabCount: 3,
-            activeTerminalIndex: 1,
-            isTerminalVisible: true,
-            isTerminalMaximized: false,
+            terminalPaneTabCounts: [paneUUID: 3],
+            terminalPaneActiveIndices: [paneUUID: 1],
             defaults: defaults
         )
 
         let loaded = SessionState.load(for: tempDir, defaults: defaults)
         #expect(loaded != nil)
-        #expect(loaded?.terminalTabCount == 3)
-        #expect(loaded?.activeTerminalIndex == 1)
-        #expect(loaded?.isTerminalVisible == true)
-        #expect(loaded?.isTerminalMaximized == false)
+        #expect(loaded?.terminalPaneTabCounts?[paneUUID] == 3)
+        #expect(loaded?.terminalPaneActiveIndices?[paneUUID] == 1)
     }
 
     @Test func legacySessionWithoutTerminalStateLoads() throws {
@@ -335,10 +332,8 @@ struct SessionStateTests {
 
         let loaded = SessionState.load(for: tempDir, defaults: defaults)
         #expect(loaded != nil)
-        #expect(loaded?.terminalTabCount == nil)
-        #expect(loaded?.activeTerminalIndex == nil)
-        #expect(loaded?.isTerminalVisible == nil)
-        #expect(loaded?.isTerminalMaximized == nil)
+        #expect(loaded?.terminalPaneTabCounts == nil)
+        #expect(loaded?.terminalPaneActiveIndices == nil)
     }
 
     // MARK: - Corrupt data

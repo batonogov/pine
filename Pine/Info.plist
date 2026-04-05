@@ -691,6 +691,20 @@
 			<string>Alternate</string>
 		</dict>
 	</array>
+	<key>UTExportedTypeDeclarations</key>
+	<array>
+		<!-- Pane tab drag (internal DnD) -->
+		<dict>
+			<key>UTTypeIdentifier</key>
+			<string>com.pine.pane-tab-drag</string>
+			<key>UTTypeDescription</key>
+			<string>Pine Pane Tab Drag</string>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.data</string>
+			</array>
+		</dict>
+	</array>
 	<key>UTImportedTypeDeclarations</key>
 	<array>
 		<!-- Go -->

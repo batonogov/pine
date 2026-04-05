@@ -2,7 +2,7 @@
 //  TerminalTests.swift
 //  PineUITests
 //
-//  P3: Terminal toggle, tab creation.
+//  Comprehensive UI tests for terminal-in-split-panes feature.
 //
 
 import XCTest
@@ -23,96 +23,594 @@ final class TerminalTests: PineUITestCase {
         try super.tearDownWithError()
     }
 
-    // MARK: - New Terminal Tab via menu
+    // MARK: - Helpers
 
+    private func terminalTab(_ name: String) -> XCUIElement {
+        app.descendants(matching: .any)["terminalTab_\(name)"].firstMatch
+    }
+
+    private var terminalTabBar: XCUIElement {
+        app.descendants(matching: .any)["terminalTabBar"].firstMatch
+    }
+
+    private var newTerminalButton: XCUIElement {
+        app.descendants(matching: .any)["newTerminalButton"].firstMatch
+    }
+
+    private var maximizeButton: XCUIElement {
+        app.descendants(matching: .any)["maximizeTerminalButton"].firstMatch
+    }
+
+    private var hideButton: XCUIElement {
+        app.descendants(matching: .any)["hideTerminalButton"].firstMatch
+    }
+
+    private var terminalToggle: XCUIElement {
+        app.descendants(matching: .any)["terminalToggleButton"].firstMatch
+    }
+
+    private var editorTabBar: XCUIElement {
+        app.descendants(matching: .any)["editorTabBar"].firstMatch
+    }
+
+    private var editorPlaceholder: XCUIElement {
+        // ContentUnavailableView doesn't reliably propagate accessibilityIdentifier,
+        // so we find the placeholder by its static text content instead.
+        app.staticTexts["No File Selected"].firstMatch
+    }
+
+    private var paneDividers: XCUIElementQuery {
+        app.descendants(matching: .any).matching(identifier: "paneDivider")
+    }
+
+    private func createTerminalViaMenu() {
+        clickMenuBarItem("Terminal")
+        app.menuItems["New Tab"].click()
+    }
+
+    private func launchAndWaitForLoad() {
+        launchWithProject(projectURL)
+        guard waitForExistence(terminalToggle, timeout: 10) else {
+            XCTFail("Window failed to load — terminal toggle not found in status bar")
+            return
+        }
+    }
+
+    // MARK: - Basic Terminal Creation
+
+    /// Terminal -> New Tab creates a terminal pane with "Terminal 1" tab.
     func testNewTerminalTabViaMenu() throws {
-        launchWithProject(projectURL)
+        launchAndWaitForLoad()
 
-        // Wait for window to fully load
-        let toggle = app.descendants(matching: .any)["terminalToggleButton"].firstMatch
-        guard waitForExistence(toggle, timeout: 10) else {
-            XCTFail("Terminal toggle should exist in status bar")
-            return
-        }
+        createTerminalViaMenu()
 
-        // Create first terminal tab via menu — this also shows the terminal
-        clickMenuBarItem("Terminal")
-        app.menuItems["New Tab"].click()
-
-        // Wait for terminal to become visible
-        let newTerminalButton = app.descendants(matching: .any)["newTerminalButton"].firstMatch
-        guard waitForExistence(newTerminalButton, timeout: 10) else {
-            XCTFail("Terminal should become visible after New Tab")
-            return
-        }
-
-        // Create second terminal tab via menu
-        clickMenuBarItem("Terminal")
-        app.menuItems["New Tab"].click()
-
-        // Verify second terminal tab appeared — tab bar should have "Terminal 2"
-        let secondTab = app.descendants(matching: .any)["terminalTab_Terminal 2"].firstMatch
+        let tab1 = terminalTab("Terminal 1")
         XCTAssertTrue(
-            waitForExistence(secondTab, timeout: 10),
-            "Second terminal tab should appear after Terminal → New Tab"
+            waitForExistence(tab1, timeout: 10),
+            "Terminal 1 tab should appear after Terminal -> New Tab"
+        )
+
+        XCTAssertTrue(
+            waitForExistence(newTerminalButton, timeout: 5),
+            "Terminal tab bar buttons should be visible"
         )
     }
 
-    func testNewTerminalTabShowsTerminalIfHidden() throws {
-        launchWithProject(projectURL)
+    /// Two Terminal -> New Tab creates "Terminal 1" and "Terminal 2" in the same pane.
+    func testSecondTerminalTabViaMenu() throws {
+        launchAndWaitForLoad()
 
-        // Wait for window to load
-        let toggle = app.descendants(matching: .any)["terminalToggleButton"].firstMatch
-        guard waitForExistence(toggle, timeout: 10) else {
-            XCTFail("Terminal toggle should exist in status bar")
-            return
-        }
+        createTerminalViaMenu()
 
-        // Terminal should be hidden by default — new terminal button should not be hittable
-        let newTerminalButton = app.descendants(matching: .any)["newTerminalButton"].firstMatch
-        XCTAssertFalse(newTerminalButton.isHittable, "Terminal should be hidden initially")
-
-        // Create new terminal tab via menu — should make terminal visible
-        clickMenuBarItem("Terminal")
-        app.menuItems["New Tab"].click()
-
-        // Terminal should now be visible
+        let tab1 = terminalTab("Terminal 1")
         XCTAssertTrue(
-            waitForExistence(newTerminalButton, timeout: 10) && newTerminalButton.isHittable,
-            "Terminal should become visible after New Tab command"
+            waitForExistence(tab1, timeout: 10),
+            "Terminal 1 tab should appear"
+        )
+
+        createTerminalViaMenu()
+
+        let tab2 = terminalTab("Terminal 2")
+        XCTAssertTrue(
+            waitForExistence(tab2, timeout: 10),
+            "Terminal 2 tab should appear after second New Tab"
+        )
+
+        // Both tabs should coexist
+        XCTAssertTrue(tab1.exists, "Terminal 1 should still exist alongside Terminal 2")
+    }
+
+    /// After creating a terminal, a pane divider appears indicating split layout.
+    func testTerminalPaneAppearsInSplitLayout() throws {
+        launchAndWaitForLoad()
+
+        // No divider before terminal
+        XCTAssertEqual(paneDividers.count, 0, "No pane divider should exist initially")
+
+        createTerminalViaMenu()
+
+        // Wait for the terminal tab to confirm it was created
+        XCTAssertTrue(
+            waitForExistence(terminalTab("Terminal 1"), timeout: 10),
+            "Terminal tab should appear"
+        )
+
+        // A divider should now separate editor from terminal
+        let divider = app.descendants(matching: .any)["paneDivider"].firstMatch
+        XCTAssertTrue(
+            waitForExistence(divider, timeout: 5),
+            "Pane divider should appear between editor and terminal"
         )
     }
 
-    // MARK: - P3: Terminal toggle via status bar
+    // MARK: - Terminal Tab Bar Buttons
 
-    func testTerminalToggleViaStatusBarButton() throws {
-        launchWithProject(projectURL)
+    /// Click plus button adds a new terminal tab.
+    func testNewTerminalButtonAddsTab() throws {
+        launchAndWaitForLoad()
 
-        // Find terminal toggle — plain buttonStyle may render as .other
-        let toggle = app.descendants(matching: .any)["terminalToggleButton"].firstMatch
-        guard waitForExistence(toggle, timeout: 10) else {
-            XCTFail("Terminal toggle should exist in status bar")
-            return
-        }
-
-        // Click to show terminal
-        toggle.click()
-
-        // New terminal button also uses plain buttonStyle — search in all descendants
-        let newTerminalButton = app.descendants(matching: .any)["newTerminalButton"].firstMatch
+        createTerminalViaMenu()
         XCTAssertTrue(
             waitForExistence(newTerminalButton, timeout: 10),
-            "New terminal button should appear after showing terminal"
+            "Plus button should be visible"
+        )
+
+        // Click plus to add second tab
+        newTerminalButton.click()
+
+        let tab2 = terminalTab("Terminal 2")
+        XCTAssertTrue(
+            waitForExistence(tab2, timeout: 5),
+            "Terminal 2 should appear after clicking plus button"
+        )
+    }
+
+    /// Click maximize button hides the editor, only terminal visible.
+    func testMaximizeTerminalPane() throws {
+        launchAndWaitForLoad()
+
+        createTerminalViaMenu()
+        XCTAssertTrue(
+            waitForExistence(maximizeButton, timeout: 10),
+            "Maximize button should be visible"
+        )
+
+        maximizeButton.click()
+
+        // After maximize, pane divider should disappear (single pane fills area)
+        let divider = app.descendants(matching: .any)["paneDivider"].firstMatch
+        let deadline = Date().addingTimeInterval(5)
+        while divider.exists && Date() < deadline {
+            Thread.sleep(forTimeInterval: 0.1)
+        }
+        XCTAssertFalse(divider.exists, "Pane divider should disappear when terminal is maximized")
+
+        // Terminal tab should still be visible
+        XCTAssertTrue(
+            terminalTab("Terminal 1").exists,
+            "Terminal tab should remain visible when maximized"
+        )
+
+        // Editor placeholder or tab bar should not be hittable
+        XCTAssertFalse(
+            editorPlaceholder.isHittable,
+            "Editor placeholder should not be hittable when terminal is maximized"
+        )
+    }
+
+    /// Maximize then restore brings back both panes.
+    func testRestoreFromMaximize() throws {
+        launchAndWaitForLoad()
+
+        createTerminalViaMenu()
+        XCTAssertTrue(
+            waitForExistence(maximizeButton, timeout: 10),
+            "Maximize button should exist"
+        )
+
+        // Maximize
+        maximizeButton.click()
+
+        // Wait for divider to disappear
+        let divider = app.descendants(matching: .any)["paneDivider"].firstMatch
+        let disappearDeadline = Date().addingTimeInterval(5)
+        while divider.exists && Date() < disappearDeadline {
+            Thread.sleep(forTimeInterval: 0.1)
+        }
+
+        // Restore — the button toggles between maximize and restore
+        maximizeButton.click()
+
+        // Pane divider should reappear
+        XCTAssertTrue(
+            waitForExistence(divider, timeout: 5),
+            "Pane divider should reappear after restoring from maximize"
+        )
+
+        // Both terminal and editor should be visible
+        XCTAssertTrue(
+            terminalTab("Terminal 1").exists,
+            "Terminal tab should be visible after restore"
+        )
+        // Both terminal and editor should be visible after restore
+        XCTAssertTrue(
+            editorPlaceholder.exists || editorTabBar.exists,
+            "Editor area should be visible after restore"
+        )
+    }
+
+    /// Click hide/close button removes the terminal pane entirely.
+    func testHideTerminalPane() throws {
+        launchAndWaitForLoad()
+
+        createTerminalViaMenu()
+        XCTAssertTrue(
+            waitForExistence(hideButton, timeout: 10),
+            "Hide button should be visible"
+        )
+
+        hideButton.click()
+
+        // Terminal tab bar should disappear
+        let tabBar = terminalTabBar
+        let deadline = Date().addingTimeInterval(5)
+        while tabBar.isHittable && Date() < deadline {
+            Thread.sleep(forTimeInterval: 0.1)
+        }
+        XCTAssertFalse(
+            tabBar.isHittable,
+            "Terminal tab bar should not be hittable after hiding"
+        )
+
+        // Pane divider should also disappear
+        let divider = app.descendants(matching: .any)["paneDivider"].firstMatch
+        XCTAssertFalse(divider.exists, "Pane divider should disappear after hiding terminal")
+    }
+
+    // MARK: - Tab Management
+
+    /// Close a terminal tab using the X button on the tab itself.
+    func testCloseTerminalTabViaCloseButton() throws {
+        launchAndWaitForLoad()
+
+        createTerminalViaMenu()
+        XCTAssertTrue(
+            waitForExistence(newTerminalButton, timeout: 10),
+            "Terminal should appear"
+        )
+
+        // Add a second tab so closing one doesn't remove the pane
+        newTerminalButton.click()
+        let tab2 = terminalTab("Terminal 2")
+        XCTAssertTrue(
+            waitForExistence(tab2, timeout: 5),
+            "Terminal 2 should appear"
+        )
+
+        // Click on tab1 to make it active (close button is visible on active tabs)
+        let tab1 = terminalTab("Terminal 1")
+        tab1.click()
+        Thread.sleep(forTimeInterval: 0.3)
+
+        // Find the close button via its accessibility identifier
+        let closeBtn = app.descendants(matching: .any)["closeTerminalTab_Terminal 1"].firstMatch
+        XCTAssertTrue(
+            waitForExistence(closeBtn, timeout: 5),
+            "Close button on Terminal 1 tab should be accessible"
+        )
+        closeBtn.click()
+
+        // Terminal 1 should disappear
+        let deadline = Date().addingTimeInterval(5)
+        while tab1.exists && Date() < deadline {
+            Thread.sleep(forTimeInterval: 0.1)
+        }
+        XCTAssertFalse(tab1.exists, "Terminal 1 tab should be removed after closing")
+
+        // Terminal 2 should remain
+        XCTAssertTrue(tab2.exists, "Terminal 2 should still exist")
+    }
+
+    /// Closing the only terminal tab removes the entire terminal pane.
+    func testCloseLastTabRemovesPane() throws {
+        launchAndWaitForLoad()
+
+        createTerminalViaMenu()
+        let tab1 = terminalTab("Terminal 1")
+        XCTAssertTrue(
+            waitForExistence(tab1, timeout: 10),
+            "Terminal 1 should appear"
+        )
+
+        // Use hide button to close the pane (closes all tabs)
+        hideButton.click()
+
+        // Pane divider should disappear
+        let divider = app.descendants(matching: .any)["paneDivider"].firstMatch
+        let deadline = Date().addingTimeInterval(5)
+        while divider.exists && Date() < deadline {
+            Thread.sleep(forTimeInterval: 0.1)
+        }
+        XCTAssertFalse(divider.exists, "Pane divider should disappear when last tab is closed")
+
+        // Terminal tab should no longer exist
+        XCTAssertFalse(tab1.exists, "Terminal 1 tab should be gone")
+    }
+
+    /// Click different terminal tabs to switch between them.
+    func testSwitchBetweenTerminalTabs() throws {
+        launchAndWaitForLoad()
+
+        createTerminalViaMenu()
+        XCTAssertTrue(
+            waitForExistence(newTerminalButton, timeout: 10),
+            "Terminal should appear"
+        )
+
+        // Add second tab
+        newTerminalButton.click()
+        let tab2 = terminalTab("Terminal 2")
+        XCTAssertTrue(
+            waitForExistence(tab2, timeout: 5),
+            "Terminal 2 should appear"
+        )
+
+        // Terminal 2 should be active (just created)
+        // Click Terminal 1 to switch
+        let tab1 = terminalTab("Terminal 1")
+        tab1.click()
+        Thread.sleep(forTimeInterval: 0.3)
+
+        // Click Terminal 2 again
+        tab2.click()
+        Thread.sleep(forTimeInterval: 0.3)
+
+        // Both tabs should still exist after switching
+        XCTAssertTrue(tab1.exists, "Terminal 1 should still exist after switching")
+        XCTAssertTrue(tab2.exists, "Terminal 2 should still exist after switching")
+    }
+
+    // MARK: - Multiple Terminal Panes
+
+    /// Create terminal, close it, create another — verify it works correctly.
+    func testMultipleTerminalPanesViaMenu() throws {
+        launchAndWaitForLoad()
+
+        // Create first terminal
+        createTerminalViaMenu()
+        let tab1 = terminalTab("Terminal 1")
+        XCTAssertTrue(
+            waitForExistence(tab1, timeout: 10),
+            "First Terminal 1 should appear"
+        )
+
+        // Close terminal pane
+        hideButton.click()
+        let deadline = Date().addingTimeInterval(5)
+        while tab1.exists && Date() < deadline {
+            Thread.sleep(forTimeInterval: 0.1)
+        }
+        XCTAssertFalse(tab1.exists, "Terminal should be gone after hide")
+
+        // Create terminal again
+        createTerminalViaMenu()
+        let newTab1 = terminalTab("Terminal 1")
+        XCTAssertTrue(
+            waitForExistence(newTab1, timeout: 10),
+            "New Terminal 1 should appear after re-creating terminal"
+        )
+
+        // Verify pane divider exists again
+        let divider = app.descendants(matching: .any)["paneDivider"].firstMatch
+        XCTAssertTrue(
+            waitForExistence(divider, timeout: 5),
+            "Pane divider should reappear with new terminal"
+        )
+    }
+
+    // MARK: - Edge Cases
+
+    /// Status bar shows terminal toggle button, and it is present when terminal pane exists.
+    func testTerminalIndicatorInStatusBar() throws {
+        launchAndWaitForLoad()
+
+        // Terminal toggle should exist in status bar even before terminal is created
+        XCTAssertTrue(
+            terminalToggle.exists,
+            "Terminal toggle should exist in status bar"
+        )
+
+        // Create terminal
+        createTerminalViaMenu()
+        XCTAssertTrue(
+            waitForExistence(terminalTab("Terminal 1"), timeout: 10),
+            "Terminal should be created"
+        )
+
+        // Status bar toggle should still exist
+        XCTAssertTrue(
+            terminalToggle.exists,
+            "Terminal toggle should remain in status bar when terminal pane is open"
+        )
+    }
+
+    /// Terminal pane persists after interacting with the editor area.
+    func testTerminalPersistsAfterEditorInteraction() throws {
+        launchAndWaitForLoad()
+
+        createTerminalViaMenu()
+        let tab1 = terminalTab("Terminal 1")
+        XCTAssertTrue(
+            waitForExistence(tab1, timeout: 10),
+            "Terminal 1 should appear"
+        )
+
+        // Click on the editor placeholder (or editor area) to move focus away
+        let placeholder = editorPlaceholder
+        if placeholder.exists && placeholder.isHittable {
+            placeholder.click()
+            Thread.sleep(forTimeInterval: 0.5)
+        }
+
+        // Terminal should still exist
+        XCTAssertTrue(
+            tab1.exists,
+            "Terminal 1 should persist after clicking in editor area"
+        )
+
+        // Pane divider should still exist
+        let divider = app.descendants(matching: .any)["paneDivider"].firstMatch
+        XCTAssertTrue(
+            divider.exists,
+            "Pane divider should persist after editor interaction"
+        )
+    }
+
+    /// Creating multiple terminal tabs via plus button works incrementally.
+    func testMultipleTabsViaNewButton() throws {
+        launchAndWaitForLoad()
+
+        createTerminalViaMenu()
+        XCTAssertTrue(
+            waitForExistence(newTerminalButton, timeout: 10),
+            "Terminal should appear"
+        )
+
+        // Add tab 2 and tab 3 via plus button
+        newTerminalButton.click()
+        let tab2 = terminalTab("Terminal 2")
+        XCTAssertTrue(
+            waitForExistence(tab2, timeout: 5),
+            "Terminal 2 should appear"
+        )
+
+        newTerminalButton.click()
+        let tab3 = terminalTab("Terminal 3")
+        XCTAssertTrue(
+            waitForExistence(tab3, timeout: 5),
+            "Terminal 3 should appear"
+        )
+
+        // All three tabs should coexist
+        XCTAssertTrue(terminalTab("Terminal 1").exists, "Terminal 1 should exist")
+        XCTAssertTrue(tab2.exists, "Terminal 2 should exist")
+        XCTAssertTrue(tab3.exists, "Terminal 3 should exist")
+    }
+
+    /// Terminal toggle in status bar can show and hide the terminal pane.
+    func testTerminalToggleViaStatusBarButton() throws {
+        launchAndWaitForLoad()
+
+        // Click toggle to show terminal
+        terminalToggle.click()
+
+        XCTAssertTrue(
+            waitForExistence(newTerminalButton, timeout: 10),
+            "Terminal should become visible after toggle click"
         )
 
         // Click toggle again to hide
-        toggle.click()
+        terminalToggle.click()
 
-        // Wait for terminal to become hidden (button no longer hittable)
-        let deadline = Date().addingTimeInterval(10)
+        let deadline = Date().addingTimeInterval(5)
         while newTerminalButton.isHittable && Date() < deadline {
             Thread.sleep(forTimeInterval: 0.1)
         }
-        XCTAssertFalse(newTerminalButton.isHittable, "Terminal should be hidden after toggling off")
+        XCTAssertFalse(
+            newTerminalButton.isHittable,
+            "Terminal should be hidden after toggling off"
+        )
+    }
+
+    // MARK: - Regression: sidebar works after closing all panes (#706)
+
+    func testSidebarOpensFileAfterClosingAllPanes() throws {
+        launchAndWaitForLoad()
+
+        // Open a file via sidebar
+        let mainFile = app.staticTexts["fileNode_main.swift"]
+        guard waitForExistence(mainFile, timeout: 10) else {
+            XCTFail("main.swift should appear in the sidebar")
+            return
+        }
+        mainFile.click()
+
+        let editorTab = app.descendants(matching: .any)["editorTab_main.swift"].firstMatch
+        XCTAssertTrue(
+            waitForExistence(editorTab, timeout: 5),
+            "Editor tab should appear after clicking file"
+        )
+
+        // Create terminal
+        createTerminalViaMenu()
+        XCTAssertTrue(
+            waitForExistence(terminalTab("Terminal 1"), timeout: 10),
+            "Terminal should appear"
+        )
+
+        // Close terminal pane via hide button
+        hideButton.click()
+        let t1 = terminalTab("Terminal 1")
+        let deadline1 = Date().addingTimeInterval(5)
+        while t1.exists && Date() < deadline1 {
+            Thread.sleep(forTimeInterval: 0.1)
+        }
+
+        // Close editor tab — editor pane should stay with "No File Selected"
+        let closeButton = app.descendants(matching: .any)["editorTabClose_main.swift"].firstMatch
+        if waitForExistence(closeButton, timeout: 5) {
+            closeButton.click()
+        }
+
+        // Wait for placeholder to appear
+        XCTAssertTrue(
+            waitForExistence(editorPlaceholder, timeout: 5),
+            "Editor placeholder should appear after closing all tabs"
+        )
+
+        // Now click a file in sidebar again — it should open
+        mainFile.click()
+
+        let editorTabAfter = app.descendants(matching: .any)["editorTab_main.swift"].firstMatch
+        XCTAssertTrue(
+            waitForExistence(editorTabAfter, timeout: 5),
+            "Clicking sidebar file should open tab after all panes were closed (#706)"
+        )
+    }
+
+    func testMaximizeThenHide() throws {
+        launchAndWaitForLoad()
+
+        createTerminalViaMenu()
+        XCTAssertTrue(
+            waitForExistence(maximizeButton, timeout: 10),
+            "Maximize button should be visible"
+        )
+
+        // Maximize
+        maximizeButton.click()
+        Thread.sleep(forTimeInterval: 0.5)
+
+        // Hide while maximized
+        hideButton.click()
+
+        // Terminal should be fully gone
+        let tab1 = terminalTab("Terminal 1")
+        let deadline = Date().addingTimeInterval(5)
+        while tab1.exists && Date() < deadline {
+            Thread.sleep(forTimeInterval: 0.1)
+        }
+        XCTAssertFalse(tab1.exists, "Terminal should be removed after hide while maximized")
+
+        // Editor should be back
+        let placeholderOrEditor = editorPlaceholder.exists || editorTabBar.exists
+        // Give editor a moment to appear
+        if !placeholderOrEditor {
+            Thread.sleep(forTimeInterval: 1)
+        }
+        XCTAssertTrue(
+            editorPlaceholder.exists || editorTabBar.exists,
+            "Editor area should be restored after hiding maximized terminal"
+        )
     }
 }

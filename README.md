@@ -18,7 +18,8 @@ Pine is a code editor for developers who want a fast, native Mac app without the
 
 - **Native macOS** — SwiftUI + AppKit, Liquid Glass UI, system text handling. No browser engine, no runtime
 - **Syntax highlighting** — 37 languages including Swift, TypeScript, Python, Go, Rust, Java, Kotlin, Ruby, C/C++, and more
-- **Built-in terminal** — Full VT100/xterm emulator via [SwiftTerm](https://github.com/migueldeicaza/SwiftTerm). Multiple tabs, colors, TUI apps, oh-my-zsh
+- **Split panes** — Drag tabs to edges to split horizontally or vertically. Drag between panes to move. Resize with divider
+- **Built-in terminal** — Full VT100/xterm emulator via [SwiftTerm](https://github.com/migueldeicaza/SwiftTerm). Terminal panes live in the split layout alongside code. Multiple tabs, maximize, colors, TUI apps, oh-my-zsh
 - **Git integration** — File status in sidebar, diff markers in gutter, blame view, branch switching from title bar or search sheet
 - **Symbol navigation** — Jump to functions and classes with Cmd+R
 - **Code folding** — Fold/unfold blocks from the gutter or via menu
