@@ -20,7 +20,10 @@ struct TerminalManagerCoordinatorTests {
         terminal.createTerminalTab(relativeTo: editorPane, workingDirectory: nil)
 
         #expect(paneManager.terminalPaneIDs.count == 1)
-        let tpID = paneManager.terminalPaneIDs.first!
+        guard let tpID = paneManager.terminalPaneIDs.first else {
+            Issue.record("no terminal pane")
+            return
+        }
         #expect(paneManager.terminalState(for: tpID)?.tabCount == 1)
     }
 

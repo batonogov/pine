@@ -522,7 +522,6 @@ final class TerminalTests: PineUITestCase {
         )
     }
 
-    /// Maximize then hide should cleanly remove the terminal pane.
     // MARK: - Regression: sidebar works after closing all panes (#706)
 
     func testSidebarOpensFileAfterClosingAllPanes() throws {

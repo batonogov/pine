@@ -502,10 +502,13 @@ struct PaneManagerTests {
         let terminalPaneID = manager.createTerminalPane(
             relativeTo: editorPane, axis: .vertical, workingDirectory: nil
         )
-        #expect(terminalPaneID != nil)
+        guard let tpID = terminalPaneID else {
+            Issue.record("createTerminalPane returned nil")
+            return
+        }
         #expect(manager.root.leafCount == 2)
-        #expect(manager.root.content(for: terminalPaneID!) == .terminal)
-        #expect(manager.terminalStates[terminalPaneID!] != nil)
+        #expect(manager.root.content(for: tpID) == .terminal)
+        #expect(manager.terminalStates[tpID] != nil)
     }
 
     @Test func createTerminalPane_hasOneTab() {
@@ -609,7 +612,10 @@ struct PaneManagerTests {
             Issue.record("failed")
             return
         }
-        let state1 = manager.terminalState(for: tp1)!
+        guard let state1 = manager.terminalState(for: tp1) else {
+            Issue.record("terminalState not found")
+            return
+        }
         _ = state1.addTab(workingDirectory: nil)
         #expect(state1.tabCount == 2)
         guard let tp2 = manager.createTerminalPane(
@@ -618,7 +624,10 @@ struct PaneManagerTests {
             Issue.record("failed")
             return
         }
-        let tabToMove = state1.terminalTabs.first!
+        guard let tabToMove = state1.terminalTabs.first else {
+            Issue.record("no tabs")
+            return
+        }
         manager.moveTerminalTab(tabToMove.id, from: tp1, to: tp2)
         #expect(manager.terminalState(for: tp1)?.tabCount == 1)
         #expect(manager.terminalState(for: tp2)?.tabCount == 2)
