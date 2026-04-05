@@ -15,6 +15,9 @@ final class TerminalPaneState {
     var activeTerminalID: UUID?
     var pendingFocusTabID: UUID?
 
+    /// Monotonically increasing counter for unique terminal tab names.
+    private var nextTabNumber = 1
+
     var isSearchVisible = false
     var terminalSearchQuery = ""
     var isSearchCaseSensitive = false
@@ -28,7 +31,8 @@ final class TerminalPaneState {
 
     @discardableResult
     func addTab(workingDirectory: URL?) -> TerminalTab {
-        let number = terminalTabs.count + 1
+        let number = nextTabNumber
+        nextTabNumber += 1
         let tab = TerminalTab(name: Strings.terminalNumberedName(number))
         tab.configure(workingDirectory: workingDirectory)
         terminalTabs.append(tab)
