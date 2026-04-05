@@ -92,6 +92,16 @@ struct TerminalPaneTabBar: View {
 
             // Close terminal pane
             Button {
+                // Warn if any tab has a foreground process
+                if terminalState.terminalTabs.contains(where: { $0.hasForegroundProcess }) {
+                    let alert = NSAlert()
+                    alert.messageText = Strings.terminalTabCloseWarningTitle
+                    alert.informativeText = Strings.terminalTabCloseWarningMessage
+                    alert.addButton(withTitle: Strings.terminalTabCloseWarningClose)
+                    alert.addButton(withTitle: Strings.dialogCancel)
+                    alert.alertStyle = .warning
+                    guard alert.runModal() == .alertFirstButtonReturn else { return }
+                }
                 // Stop all tabs and remove pane
                 for tab in terminalState.terminalTabs {
                     tab.stop()
