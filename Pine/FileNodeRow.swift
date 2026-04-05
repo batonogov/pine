@@ -65,7 +65,9 @@ struct FileNodeRow: View {
                         .foregroundStyle(iconColor)
                 }
                 .opacity(isGitIgnored ? 0.5 : 1.0)
-                .draggable(sidebarDragPayload()) {
+                .onDrag {
+                    sidebarDragProvider()
+                } preview: {
                     sidebarDragPreview()
                 }
             }
@@ -77,14 +79,22 @@ struct FileNodeRow: View {
 
     // MARK: - Drag support
 
-    /// Returns the drag payload for `.draggable()`.
-    /// Directories use an empty placeholder so no meaningful drag starts.
-    private func sidebarDragPayload() -> SidebarFileDragInfo {
+    /// Creates an NSItemProvider for dragging this file node to an editor pane.
+    /// Directories return an empty provider (no-op drag).
+    private func sidebarDragProvider() -> NSItemProvider {
+        guard !node.isDirectory else { return NSItemProvider() }
         let info = SidebarFileDragInfo(fileURL: node.url)
-        if !node.isDirectory {
-            paneManager.activeSidebarDrag = info
+        paneManager.activeSidebarDrag = info
+        let provider = NSItemProvider()
+        provider.registerDataRepresentation(
+            forTypeIdentifier: UTType.sidebarFileDrag.identifier,
+            visibility: .ownProcess
+        ) { completion in
+            let data = info.encoded.data(using: .utf8) ?? Data()
+            completion(data, nil)
+            return nil
         }
-        return info
+        return provider
     }
 
     /// Drag preview label shown while dragging.

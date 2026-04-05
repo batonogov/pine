@@ -47,6 +47,17 @@ final class PaneManager {
     /// Set by FileNodeRow.onDrag, read by PaneSplitDropDelegate.
     var activeSidebarDrag: SidebarFileDragInfo?
 
+    /// Active drop zone per pane — centralized to avoid stale @State/@Binding issues.
+    var dropZones: [PaneID: PaneDropZone] = [:]
+
+    /// NSEvent monitor for mouse-up cleanup of drop overlays.
+    nonisolated(unsafe) private var mouseUpMonitor: Any?
+
+    /// Clears all drop zone overlays across all panes.
+    func clearAllDropZones() {
+        dropZones.removeAll()
+    }
+
     /// Creates a PaneManager with a single editor pane.
     init() {
         let initialID = PaneID()
@@ -54,6 +65,7 @@ final class PaneManager {
         self.activePaneID = initialID
         let tm = TabManager()
         self.tabManagers[initialID] = tm
+        installMouseUpMonitor()
     }
 
     /// Creates a PaneManager with an existing TabManager (for migration from single-pane).
@@ -62,6 +74,28 @@ final class PaneManager {
         self.root = .leaf(initialID, .editor)
         self.activePaneID = initialID
         self.tabManagers[initialID] = existingTabManager
+        installMouseUpMonitor()
+    }
+
+    deinit {
+        if let monitor = mouseUpMonitor {
+            NSEvent.removeMonitor(monitor)
+        }
+    }
+
+    /// Installs a local NSEvent monitor that clears drop overlays on mouse-up.
+    /// SwiftUI DropDelegate does not reliably call dropExited/performDrop when
+    /// a drag is cancelled inside a pane, leaving stale overlays.
+    private func installMouseUpMonitor() {
+        mouseUpMonitor = NSEvent.addLocalMonitorForEvents(matching: .leftMouseUp) { [weak self] event in
+            if self?.dropZones.isEmpty == false {
+                // Small delay to let performDrop fire first (it also clears)
+                DispatchQueue.main.async {
+                    self?.clearAllDropZones()
+                }
+            }
+            return event
+        }
     }
 
     /// Returns the TabManager for a given pane.

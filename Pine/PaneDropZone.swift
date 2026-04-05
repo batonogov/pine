@@ -107,7 +107,6 @@ struct PaneSplitDropDelegate: DropDelegate {
     let paneManager: PaneManager
     /// Actual pane size from GeometryReader, used for percentage-based drop zone detection.
     let paneSize: CGSize
-    @Binding var dropZone: PaneDropZone?
 
     func validateDrop(info: DropInfo) -> Bool {
         info.hasItemsConforming(to: [.paneTabDrag])
@@ -127,20 +126,22 @@ struct PaneSplitDropDelegate: DropDelegate {
     }
 
     func dropExited(info: DropInfo) {
-        dropZone = nil
+        paneManager.dropZones[paneID] = nil
     }
 
     func performDrop(info: DropInfo) -> Bool {
-        defer { dropZone = nil }
+        // Snapshot zone and clear ALL overlays before tree mutations.
+        let savedZone = paneManager.dropZones[paneID]
+        paneManager.clearAllDropZones()
 
         // Pane tab drag takes priority
         if info.hasItemsConforming(to: [.paneTabDrag]) {
-            return handlePaneTabDrop()
+            return handlePaneTabDrop(zone: savedZone)
         }
 
         // Sidebar file drag — uses synchronous shared state
         if info.hasItemsConforming(to: [.sidebarFileDrag]) {
-            return handleSidebarFileDrop()
+            return handleSidebarFileDrop(zone: savedZone)
         }
 
         // File drop from Finder — open as tab in this pane
@@ -152,8 +153,8 @@ struct PaneSplitDropDelegate: DropDelegate {
         return false
     }
 
-    private func handleSidebarFileDrop() -> Bool {
-        guard let zone = dropZone else { return false }
+    private func handleSidebarFileDrop(zone: PaneDropZone?) -> Bool {
+        guard let zone else { return false }
         guard let dragInfo = paneManager.activeSidebarDrag else { return false }
         paneManager.activeSidebarDrag = nil
 
@@ -173,8 +174,8 @@ struct PaneSplitDropDelegate: DropDelegate {
         return true
     }
 
-    private func handlePaneTabDrop() -> Bool {
-        guard let zone = dropZone else { return false }
+    private func handlePaneTabDrop(zone: PaneDropZone?) -> Bool {
+        guard let zone else { return false }
 
         // Use synchronous shared drag state instead of async NSItemProvider
         guard let dragInfo = paneManager.activeDrag else { return false }
@@ -235,6 +236,6 @@ struct PaneSplitDropDelegate: DropDelegate {
     }
 
     private func updateDropZone(info: DropInfo) {
-        dropZone = PaneDropZone.zone(for: info.location, in: paneSize)
+        paneManager.dropZones[paneID] = PaneDropZone.zone(for: info.location, in: paneSize)
     }
 }
