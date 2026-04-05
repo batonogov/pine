@@ -26,41 +26,30 @@ struct PaneFocusDetector: NSViewRepresentable {
     }
 }
 
-/// NSView subclass that uses a local event monitor to detect mouse-down events
-/// within this view's frame and set the corresponding pane as active.
+/// NSView subclass that overrides `mouseDown` to detect clicks within this
+/// pane and set it as active. Using `mouseDown` instead of a local event
+/// monitor means only one handler fires per pane (not N monitors for N panes).
 final class PaneFocusNSView: NSView {
     var paneID: PaneID
     weak var paneManager: PaneManager?
-    /// nonisolated(unsafe): accessed from deinit (nonisolated) to remove event monitor.
-    nonisolated(unsafe) private var monitor: Any?
 
     init(paneID: PaneID, paneManager: PaneManager) {
         self.paneID = paneID
         self.paneManager = paneManager
         super.init(frame: .zero)
-        installMonitor()
     }
 
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError() }
 
-    private func installMonitor() {
-        monitor = NSEvent.addLocalMonitorForEvents(matching: .leftMouseDown) { [weak self] event in
-            self?.handleMouseDown(event)
-            return event // Always pass through — never consume
-        }
-    }
-
-    private func handleMouseDown(_ event: NSEvent) {
-        guard let window = self.window, event.window === window else { return }
-        let locationInView = convert(event.locationInWindow, from: nil)
-        guard bounds.contains(locationInView) else { return }
+    override func mouseDown(with event: NSEvent) {
         MainActor.assumeIsolated {
             paneManager?.activePaneID = paneID
         }
+        super.mouseDown(with: event)
     }
 
-    deinit {
-        if let monitor { NSEvent.removeMonitor(monitor) }
-    }
+    /// Accept first mouse so clicks activate the pane even when the window
+    /// is in the background (consistent with Xcode split pane behavior).
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 }
