@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.18.1](https://github.com/batonogov/pine/compare/v1.18.0...v1.18.1) (2026-04-06)
+
+
+### Bug Fixes
+
+* prune empty editor leaf when surrounded by terminals ([#725](https://github.com/batonogov/pine/issues/725)) ([856a7c8](https://github.com/batonogov/pine/commit/856a7c8091faa3e95fdd36a34f02fb1e8d816241))
+
 ## [1.18.0](https://github.com/batonogov/pine/compare/v1.17.0...v1.18.0) (2026-04-06)
 
 
