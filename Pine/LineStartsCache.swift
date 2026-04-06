@@ -50,6 +50,14 @@ struct LineStartsCache {
         lineIndex(containing: charIndex) + 1
     }
 
+    /// Возвращает UTF-16 смещение начала строки (1-based номер).
+    /// Возвращает nil, если строка вне диапазона.
+    func charIndexForLineStart(_ line: Int) -> Int? {
+        let idx = line - 1
+        guard idx >= 0 && idx < lineStarts.count else { return nil }
+        return lineStarts[idx]
+    }
+
     /// Инкрементально обновляет кэш после редактирования текста.
     /// - Parameters:
     ///   - editedRange: Диапазон в новом тексте, покрывающий вставленный/изменённый контент.

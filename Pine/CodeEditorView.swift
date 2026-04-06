@@ -55,12 +55,22 @@ final class GutterTextView: NSTextView {
     var expandedHunkID: UUID? {
         didSet {
             guard oldValue != expandedHunkID else { return }
-            if let layoutManager = layoutManager {
-                let fullRange = NSRange(location: 0, length: (string as NSString).length)
-                layoutManager.invalidateLayout(forCharacterRange: fullRange, actualCharacterRange: nil)
-            }
+            // Notify the layout manager delegate (Coordinator) so it can refresh
+            // its cached phantom state and run a targeted layout invalidation
+            // around the affected anchor lines (#697, #698).
+            (layoutManager?.delegate as? CodeEditorView.Coordinator)?
+                .phantomStateDidChange(previousAnchorLine: phantomAnchorLine(forHunkID: oldValue))
             needsDisplay = true
         }
+    }
+
+    /// Resolves the anchor (1-based) line for a given hunk ID, or nil if it's
+    /// not a pure deletion hunk currently in `diffHunksForHighlight`.
+    fileprivate func phantomAnchorLine(forHunkID hunkID: UUID?) -> Int? {
+        InlineDiffProvider.phantomAnchorLine(
+            in: diffHunksForHighlight,
+            expandedHunkID: hunkID
+        )
     }
 
     /// Subtle green tint for added lines.
@@ -762,6 +772,10 @@ struct CodeEditorView: NSViewRepresentable {
 
         // ── NSLayoutManager delegate for code folding ──
         layoutManager.delegate = context.coordinator
+        // Seed cached phantom state so the layout manager delegate doesn't
+        // hop to the document view on every line fragment (#723 review).
+        context.coordinator.cachedPhantomHunks = diffHunks
+        context.coordinator.cachedExpandedHunkID = nil
 
         // ── Номера строк — поверх scroll view, как отдельный сиблинг ──
         let lineNumberView = LineNumberView(textView: textView, clipView: scrollView.contentView)
@@ -981,6 +995,9 @@ struct CodeEditorView: NSViewRepresentable {
                     gutterView.expandedHunkID = nil
                     context.coordinator.lineNumberView?.expandedHunkID = nil
                 }
+                // Refresh cached phantom state used by the layout manager
+                // delegate (#723 review).
+                context.coordinator.phantomStateDidChange(previousAnchorLine: nil)
                 gutterView.needsDisplay = true
             }
         }
@@ -1969,8 +1986,8 @@ struct CodeEditorView: NSViewRepresentable {
             //     (#697, #698). Without this the phantom is drawn over real text
             //     and line numbers desync.
             let hasFolds = !parent.foldState.foldedRanges.isEmpty
-            let phantomHunks = expandedPhantomHunks
-            let expandedID = expandedPhantomHunkID
+            let phantomHunks = cachedPhantomHunks
+            let expandedID = cachedExpandedHunkID
             guard hasFolds || (expandedID != nil && !phantomHunks.isEmpty) else { return false }
 
             guard let cache = lineStartsCache else { return false }
@@ -2005,14 +2022,61 @@ struct CodeEditorView: NSViewRepresentable {
             return false
         }
 
-        /// Diff hunks driving phantom expansion (mirrors gutterView state).
-        var expandedPhantomHunks: [DiffHunk] {
-            (scrollView?.documentView as? GutterTextView)?.diffHunksForHighlight ?? []
-        }
+        /// Cached diff hunks driving phantom expansion (refreshed via
+        /// `phantomStateDidChange` instead of hopping to the document view on
+        /// every layout-fragment callback — see #723 review).
+        var cachedPhantomHunks: [DiffHunk] = []
 
-        /// ID of the currently expanded hunk, if any.
-        var expandedPhantomHunkID: UUID? {
-            (scrollView?.documentView as? GutterTextView)?.expandedHunkID
+        /// Cached expanded hunk ID — kept in sync with GutterTextView.
+        var cachedExpandedHunkID: UUID?
+
+        /// Called by GutterTextView when expandedHunkID or diffHunksForHighlight
+        /// changes. Refreshes cached phantom state and runs a targeted layout
+        /// invalidation around the affected anchor lines (#697, #698, #723).
+        func phantomStateDidChange(previousAnchorLine: Int?) {
+            guard let gutterView = scrollView?.documentView as? GutterTextView,
+                  let layoutManager = gutterView.layoutManager else {
+                cachedPhantomHunks = []
+                cachedExpandedHunkID = nil
+                return
+            }
+            cachedPhantomHunks = gutterView.diffHunksForHighlight
+            cachedExpandedHunkID = gutterView.expandedHunkID
+
+            let newAnchorLine = InlineDiffProvider.phantomAnchorLine(
+                in: cachedPhantomHunks,
+                expandedHunkID: cachedExpandedHunkID
+            )
+
+            // Build a sorted, deduplicated list of anchor lines whose layout
+            // must be invalidated (current and previous, if any).
+            var anchors: [Int] = []
+            if let prev = previousAnchorLine { anchors.append(prev) }
+            if let cur = newAnchorLine, cur != previousAnchorLine { anchors.append(cur) }
+
+            let textStorageLength = gutterView.textStorage?.length ?? 0
+            if anchors.isEmpty {
+                // Nothing to invalidate locally — fall back to full-document
+                // invalidation only when we actually have no anchor info at all.
+                let fullRange = NSRange(location: 0, length: textStorageLength)
+                layoutManager.invalidateLayout(forCharacterRange: fullRange, actualCharacterRange: nil)
+                return
+            }
+
+            for anchor in anchors {
+                guard let cache = lineStartsCache,
+                      let start = cache.charIndexForLineStart(anchor) else {
+                    // Cache miss — invalidate everything as a safety net.
+                    let fullRange = NSRange(location: 0, length: textStorageLength)
+                    layoutManager.invalidateLayout(forCharacterRange: fullRange, actualCharacterRange: nil)
+                    return
+                }
+                // End of the anchor line: start of the next line, or end of doc.
+                let end = cache.charIndexForLineStart(anchor + 1) ?? textStorageLength
+                let length = max(0, min(end, textStorageLength) - start)
+                let range = NSRange(location: start, length: length)
+                layoutManager.invalidateLayout(forCharacterRange: range, actualCharacterRange: nil)
+            }
         }
 
         private func reportStateChange() {
