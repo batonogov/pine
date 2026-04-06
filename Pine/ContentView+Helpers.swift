@@ -70,6 +70,10 @@ extension ContentView {
                 tabManager.activeTabID = tab.id
             }
 
+            // Collapse any restored editor leaves that ended up with no tabs
+            // (e.g., persisted empty placeholders next to terminal panes).
+            paneManager.pruneEmptyEditorLeaves()
+
             didRestoreTabs = !projectManager.allTabs.isEmpty
         }
 

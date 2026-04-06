@@ -365,8 +365,13 @@ struct PaneManagerTests {
         }
 
         manager.moveTabBetweenPanes(tabURL: ghostURL, from: firstPane, to: secondPane)
+        // Source pane retains its tab — ghost URL was a no-op move.
         #expect(manager.tabManager(for: firstPane)?.tabs.count == 1)
-        #expect(manager.tabManager(for: secondPane)?.tabs.isEmpty == true)
+        // The empty destination pane is now collapsed by `pruneEmptyEditorLeaves`,
+        // since `firstPane` still holds a tab and the invariant (≥1 editor leaf
+        // in the tree) is preserved.
+        #expect(manager.tabManager(for: secondPane) == nil)
+        #expect(manager.root.leafCount == 1)
     }
 
     @Test func moveTabBetweenPanes_preservesAllTabState() {

@@ -279,9 +279,52 @@ final class PaneManager {
         moveTab(url: tabURL, from: srcTM, to: dstTM)
         activePaneID = targetID
 
-        // Clean up empty panes
-        if srcTM.tabs.isEmpty {
-            removePane(sourceID)
+        // Clean up empty editor panes (centralized hook).
+        pruneEmptyEditorLeaves()
+    }
+
+    // MARK: - Empty editor leaf pruning
+
+    /// Removes editor leaves whose TabManager has no tabs, as long as the
+    /// resulting tree still contains at least one editor leaf. This collapses
+    /// the empty "No File Selected" placeholder when the user has another
+    /// editor pane to work with — fixing the UX issue where a stale editor
+    /// leaf would dominate the layout next to other panes.
+    ///
+    /// Invariants:
+    ///   - The tree must always contain at least one editor leaf so that
+    ///     opening files from the sidebar always has a destination, and so
+    ///     `ProjectManager.tabManager` (primary) keeps a stable home.
+    ///   - The single root leaf is never removed (valid empty-state).
+    ///   - A maximized pane is never removed; restore first if needed.
+    ///
+    /// Idempotent and safe to call after any structural mutation.
+    func pruneEmptyEditorLeaves() {
+        // Iterate until no more removals happen. Each pass collects victims
+        // up-front to keep iteration independent of mutations.
+        while true {
+            let editorLeafCount = root.leafCount(ofType: .editor)
+            // Need at least 2 editor leaves to be allowed to remove one.
+            guard editorLeafCount > 1 else { return }
+            // Cannot prune the only leaf in the tree.
+            guard root.leafCount > 1 else { return }
+
+            let victim = root.leafIDs.first { id in
+                guard root.content(for: id) == .editor else { return false }
+                guard id != maximizedPaneID else { return false }
+                guard let tm = tabManagers[id] else { return false }
+                return tm.tabs.isEmpty
+            }
+            guard let paneID = victim else { return }
+            guard let newRoot = root.removing(paneID) else { return }
+
+            tabManagers[paneID] = nil
+            terminalStates[paneID] = nil
+            root = newRoot
+
+            if activePaneID == paneID {
+                activePaneID = root.firstLeafID ?? activePaneID
+            }
         }
     }
 
