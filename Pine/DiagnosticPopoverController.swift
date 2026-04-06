@@ -38,10 +38,17 @@ struct DiagnosticPopoverView: View {
 
     private var severityLabel: String {
         switch diagnostic.severity {
-        case .error: return "Error"
-        case .warning: return "Warning"
-        case .info: return "Info"
+        case .error: return Strings.diagnosticSeverityError
+        case .warning: return Strings.diagnosticSeverityWarning
+        case .info: return Strings.diagnosticSeverityInfo
         }
+    }
+
+    private var lineLabel: String {
+        if let column = diagnostic.column {
+            return Strings.diagnosticLineColumnLabel(line: diagnostic.line, column: column)
+        }
+        return Strings.diagnosticLineLabel(line: diagnostic.line)
     }
 
     private var severityColor: Color {
@@ -77,7 +84,7 @@ struct DiagnosticPopoverView: View {
                 .foregroundStyle(.primary)
                 .fixedSize(horizontal: false, vertical: true)
             HStack {
-                Text("Line \(diagnostic.line)" + (diagnostic.column.map { ", column \($0)" } ?? ""))
+                Text(lineLabel)
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 Spacer()

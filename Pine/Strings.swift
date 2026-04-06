@@ -442,4 +442,31 @@ enum Strings {
     static var progressLoadingFile: String {
         String(localized: "progress.loadingFile")
     }
+
+    // MARK: - Diagnostics (#679)
+
+    static var diagnosticSeverityError: String {
+        String(localized: "diagnostic.severity.error", defaultValue: "Error")
+    }
+
+    static var diagnosticSeverityWarning: String {
+        String(localized: "diagnostic.severity.warning", defaultValue: "Warning")
+    }
+
+    static var diagnosticSeverityInfo: String {
+        String(localized: "diagnostic.severity.info", defaultValue: "Info")
+    }
+
+    static func diagnosticLineLabel(line: Int) -> String {
+        let format = String(localized: "diagnostic.line", defaultValue: "Line %lld")
+        return String(format: format, locale: .current, line)
+    }
+
+    static func diagnosticLineColumnLabel(line: Int, column: Int) -> String {
+        let format = String(
+            localized: "diagnostic.lineColumn",
+            defaultValue: "Line %1$lld, column %2$lld"
+        )
+        return String(format: format, locale: .current, line, column)
+    }
 }

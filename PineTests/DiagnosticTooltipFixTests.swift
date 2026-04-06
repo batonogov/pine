@@ -74,7 +74,7 @@ struct DiagnosticTooltipFixTests {
         #expect(view.toolTip == "missing colon")
     }
 
-    @Test func mouseExited_clearsToolTipString() {
+    @Test func mouseExited_clearsToolTipString() throws {
         let view = makeGutter()
         let diag = ValidationDiagnostic(
             line: 1, column: nil, message: "err", severity: .error, source: "test"
@@ -82,10 +82,22 @@ struct DiagnosticTooltipFixTests {
         view.validationDiagnostics = [diag]
         view.toolTip = "stale"
 
-        // Simulate exit by invoking the override directly with a synthetic event.
-        // (We can't easily fabricate an NSEvent that mouseExited uses, so test the
-        // contract: after the gutter clears its tooltip, the property is nil.)
-        view.toolTip = nil
+        // Build a real synthetic NSEvent and invoke the override under test —
+        // not just poking `toolTip = nil`. This actually exercises the override.
+        let event = try #require(
+            NSEvent.enterExitEvent(
+                with: .mouseExited,
+                location: NSPoint(x: 100, y: 100),
+                modifierFlags: [],
+                timestamp: 0,
+                windowNumber: 0,
+                context: nil,
+                eventNumber: 0,
+                trackingNumber: 0,
+                userData: nil
+            )
+        )
+        view.mouseExited(with: event)
         #expect(view.toolTip == nil)
     }
 
@@ -127,7 +139,7 @@ struct DiagnosticTooltipFixTests {
 
     // MARK: - showDiagnosticPopover does not crash and creates a popover
 
-    @Test func showDiagnosticPopover_createsPopover() {
+    @Test func showDiagnosticPopover_createsPopover() throws {
         let view = makeGutter()
         // Add to a window so popover anchoring is well-defined
         let window = NSWindow(
@@ -139,13 +151,98 @@ struct DiagnosticTooltipFixTests {
         window.contentView?.addSubview(view)
 
         let diag = ValidationDiagnostic(
-            line: 1, column: nil, message: "boom", severity: .error, source: "test"
+            line: 1, column: 5, message: "boom", severity: .error, source: "test"
         )
         view.validationDiagnostics = [diag]
         view.showDiagnosticPopover(for: diag, at: NSPoint(x: 6, y: 6))
-        // No assertion on popover state — AppKit may defer showing during tests.
-        // The contract here is "does not crash and accepts call".
-        #expect(true)
+
+        // The gutter must retain a popover wired to a DiagnosticPopoverController
+        // holding the exact diagnostic we asked to show.
+        let popover = try #require(view.diagnosticPopoverForTesting)
+        let controller = try #require(popover.contentViewController as? DiagnosticPopoverController)
+        #expect(controller.diagnostic.message == "boom")
+        #expect(controller.diagnostic.severity == .error)
+        #expect(controller.diagnostic.line == 1)
+        #expect(controller.diagnostic.column == 5)
+        #expect(popover.behavior == .transient)
+    }
+
+    // MARK: - Popover is dismissed when diagnostics are replaced (memory hygiene)
+
+    @Test func diagnosticPopover_clearedWhenDiagnosticsReplaced() throws {
+        let view = makeGutter()
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 600, height: 400),
+            styleMask: [.titled],
+            backing: .buffered,
+            defer: false
+        )
+        window.contentView?.addSubview(view)
+
+        let diag = ValidationDiagnostic(
+            line: 1, column: nil, message: "x", severity: .error, source: "t"
+        )
+        view.validationDiagnostics = [diag]
+        view.showDiagnosticPopover(for: diag, at: NSPoint(x: 6, y: 6))
+        #expect(view.diagnosticPopoverForTesting != nil)
+
+        // Replacing diagnostics must drop the retained popover.
+        view.validationDiagnostics = []
+        #expect(view.diagnosticPopoverForTesting == nil)
+    }
+
+    // MARK: - Cursor handling (#679 critical fix)
+
+    @Test func mouseMoved_outsideIconZone_doesNotLeavePointingCursor() {
+        let view = makeGutter()
+        let diag = ValidationDiagnostic(
+            line: 1, column: nil, message: "m", severity: .error, source: "t"
+        )
+        view.validationDiagnostics = [diag]
+
+        // First: hover the icon zone (point.x < 14) — should set pointing-hand.
+        view.simulateMouseMovedForTesting(at: NSPoint(x: 5, y: 5))
+        #expect(view.didSetPointingCursorForTesting == true)
+
+        // Then: move out of the icon zone (point.x >= 14) — must reset.
+        view.simulateMouseMovedForTesting(at: NSPoint(x: 30, y: 5))
+        #expect(view.didSetPointingCursorForTesting == false)
+    }
+
+    @Test func mouseExited_resetsPointingCursorFlag() throws {
+        let view = makeGutter()
+        let diag = ValidationDiagnostic(
+            line: 1, column: nil, message: "m", severity: .error, source: "t"
+        )
+        view.validationDiagnostics = [diag]
+        view.simulateMouseMovedForTesting(at: NSPoint(x: 5, y: 5))
+        #expect(view.didSetPointingCursorForTesting == true)
+
+        let event = try #require(
+            NSEvent.enterExitEvent(
+                with: .mouseExited,
+                location: NSPoint(x: 100, y: 100),
+                modifierFlags: [],
+                timestamp: 0,
+                windowNumber: 0,
+                context: nil,
+                eventNumber: 0,
+                trackingNumber: 0,
+                userData: nil
+            )
+        )
+        view.mouseExited(with: event)
+        #expect(view.didSetPointingCursorForTesting == false)
+    }
+
+    // MARK: - Diagnostic icon hit zone fits inside the gutter (#677 compat)
+
+    @Test func diagnosticIconHitZone_fitsInsideGutter() {
+        let view = makeGutter()
+        // Hit zone must not overflow the gutter bounds (#677 fixed-width gutter).
+        #expect(LineNumberView.diagnosticIconHitZoneWidth <= view.gutterWidth)
+        // Drawn icon must fit inside the hit zone.
+        #expect(1 + LineNumberView.diagnosticIconDrawSize <= LineNumberView.diagnosticIconHitZoneWidth)
     }
 
     // MARK: - Popover view renders all diagnostic fields
