@@ -93,7 +93,12 @@ struct DeletedLinesBlock: Equatable, Sendable {
 // MARK: - InlineDiffProvider
 
 /// Provides diff hunk parsing and accept/revert operations for editor files.
-enum InlineDiffProvider {
+/// Marked `nonisolated` to opt out of `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor`.
+/// All static helpers run on background `DispatchQueue.global()` queues; if the
+/// enum inherited MainActor isolation, the dispatched closures would assert
+/// against the queue's executor and crash with `dispatch_assert_queue_fail`
+/// (issue #693).
+nonisolated enum InlineDiffProvider {
 
     // MARK: - Hunk parsing
 
