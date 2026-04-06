@@ -205,6 +205,9 @@ struct PaneLeafView: View {
             fontSize: FontSizeSettings.shared.fontSize,
             onRestoreHunk: { hunk in
                 handleGutterRevert(hunk, tabManager: tabManager)
+            },
+            onStageHunk: { hunk in
+                handleGutterAccept(hunk, tabManager: tabManager)
             }
         )
         .id(tab.id)

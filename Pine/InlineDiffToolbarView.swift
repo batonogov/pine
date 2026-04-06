@@ -15,6 +15,8 @@ final class InlineDiffToolbarView: NSView {
 
     // MARK: - Callbacks
 
+    /// Invoked when the user clicks the Stage button (#687).
+    var onStage: (() -> Void)?
     /// Invoked when the user clicks the Restore button.
     var onRestore: (() -> Void)?
     /// Invoked when the user clicks the next-hunk button.
@@ -26,6 +28,7 @@ final class InlineDiffToolbarView: NSView {
 
     // MARK: - Buttons
 
+    let stageButton: NSButton
     let restoreButton: NSButton
     let nextButton: NSButton
     let previousButton: NSButton
@@ -40,6 +43,11 @@ final class InlineDiffToolbarView: NSView {
     // MARK: - Init
 
     init() {
+        self.stageButton = Self.makeTextButton(
+            title: NSLocalizedString("Stage", comment: "Inline diff Stage button"),
+            symbol: "plus.square",
+            id: AccessibilityID.inlineDiffStageButton
+        )
         self.restoreButton = Self.makeTextButton(
             title: NSLocalizedString("Restore", comment: "Inline diff Restore button"),
             symbol: "arrow.uturn.backward",
@@ -70,6 +78,8 @@ final class InlineDiffToolbarView: NSView {
 
         setAccessibilityIdentifier(AccessibilityID.inlineDiffToolbar)
 
+        stageButton.target = self
+        stageButton.action = #selector(stageClicked(_:))
         restoreButton.target = self
         restoreButton.action = #selector(restoreClicked(_:))
         nextButton.target = self
@@ -79,6 +89,7 @@ final class InlineDiffToolbarView: NSView {
 
         addSubview(previousButton)
         addSubview(nextButton)
+        addSubview(stageButton)
         addSubview(restoreButton)
 
         layoutButtons()
@@ -102,8 +113,8 @@ final class InlineDiffToolbarView: NSView {
     }
 
     private func layoutButtons() {
-        // Order (left → right): Previous, Next, Restore
-        let buttons: [NSButton] = [previousButton, nextButton, restoreButton]
+        // Order (left → right): Previous, Next, Stage, Restore
+        let buttons: [NSButton] = [previousButton, nextButton, stageButton, restoreButton]
         var x = Self.horizontalPadding
         let y = Self.verticalPadding
         for btn in buttons {
@@ -130,6 +141,10 @@ final class InlineDiffToolbarView: NSView {
     }
 
     // MARK: - Actions
+
+    @objc private func stageClicked(_ sender: Any?) {
+        onStage?()
+    }
 
     @objc private func restoreClicked(_ sender: Any?) {
         onRestore?()

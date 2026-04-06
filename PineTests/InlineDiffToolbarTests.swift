@@ -165,16 +165,7 @@ struct InlineDiffToolbarTests {
         #expect(toolbar.previousButton.identifier?.rawValue == AccessibilityID.inlineDiffPreviousButton)
     }
 
-    @Test func toolbarDoesNotHaveStageButtonInPR1() {
-        // PR1 (#689) ships without Stage. Stage is added in PR2 (#687).
-        let toolbar = InlineDiffToolbarView()
-        let mirror = Mirror(reflecting: toolbar)
-        let labels = mirror.children.compactMap { $0.label }
-        #expect(!labels.contains("stageButton"),
-                "Stage button should not exist in PR1 (#689)")
-    }
-
-    @Test func restoreCallbackIsInvokedOnButtonClick() {
+@Test func restoreCallbackIsInvokedOnButtonClick() {
         let toolbar = InlineDiffToolbarView()
         var called = false
         toolbar.onRestore = { called = true }

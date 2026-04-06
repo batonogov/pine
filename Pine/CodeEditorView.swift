@@ -676,6 +676,9 @@ struct CodeEditorView: NSViewRepresentable {
     /// Called when the user clicks Restore on the inline diff toolbar (#689).
     /// The receiver is expected to perform `git apply --reverse` and reload the buffer.
     var onRestoreHunk: ((DiffHunk) -> Void)?
+    /// Called when the user clicks Stage on the inline diff toolbar (#687).
+    /// The receiver is expected to perform `git apply --cached` and refresh diff data.
+    var onStageHunk: ((DiffHunk) -> Void)?
 
     private var editorFont: NSFont {
         NSFont.monospacedSystemFont(ofSize: fontSize, weight: .regular)
@@ -1863,6 +1866,13 @@ struct CodeEditorView: NSViewRepresentable {
                 self?.parent.onRestoreHunk?(hunk)
                 // The buffer reload will refresh diffHunks and updateNSView will
                 // collapse the expanded hunk; we also dismiss eagerly.
+                self?.dismissInlineDiffToolbar()
+            }
+            toolbar.onStage = { [weak self] in
+                self?.parent.onStageHunk?(hunk)
+                // After staging, the diff data refresh causes updateNSView to
+                // collapse the expanded hunk; dismiss the toolbar eagerly so the
+                // UI feels responsive while git runs.
                 self?.dismissInlineDiffToolbar()
             }
             toolbar.onNext = { [weak self] in
