@@ -279,15 +279,88 @@ final class PaneManager {
         moveTab(url: tabURL, from: srcTM, to: dstTM)
         activePaneID = targetID
 
-        // Clean up empty panes
-        if srcTM.tabs.isEmpty {
-            removePane(sourceID)
+        // Clean up empty editor panes (centralized hook).
+        pruneEmptyEditorLeaves()
+    }
+
+    // MARK: - Empty editor leaf pruning
+
+    /// Removes any editor leaf whose TabManager has no tabs, collapsing the
+    /// empty "No File Selected" placeholder so it never occupies layout space
+    /// when the user has other panes to work with. Pruning is unconditional
+    /// when other content (editor or terminal) remains in the tree; if a file
+    /// is later opened from the sidebar / Quick Open / Recent, callers use
+    /// ``ensureEditorPane()`` to recreate an editor leaf on demand.
+    ///
+    /// Invariants:
+    ///   - The single root leaf is never removed (valid empty-state on a
+    ///     freshly opened project).
+    ///   - A maximized pane is never removed; restore first if needed.
+    ///
+    /// Idempotent and safe to call after any structural mutation.
+    func pruneEmptyEditorLeaves() {
+        while true {
+            // Cannot prune the only leaf in the tree.
+            guard root.leafCount > 1 else { return }
+
+            let victim = root.leafIDs.first { id in
+                guard root.content(for: id) == .editor else { return false }
+                guard id != maximizedPaneID else { return false }
+                guard let tm = tabManagers[id] else { return false }
+                return tm.tabs.isEmpty
+            }
+            guard let paneID = victim else { return }
+            guard let newRoot = root.removing(paneID) else { return }
+
+            tabManagers[paneID] = nil
+            terminalStates[paneID] = nil
+            root = newRoot
+
+            if activePaneID == paneID {
+                activePaneID = root.firstLeafID ?? activePaneID
+            }
         }
     }
 
-    /// Removes a pane and promotes its sibling.
-    /// If removing this pane would leave zero editor panes, the pane is kept
-    /// but its tabs are closed instead — ensuring the editor area is always available.
+    /// Returns the TabManager of an editor leaf suitable for receiving a
+    /// newly opened file. If an editor leaf already exists, returns its
+    /// TabManager (preferring the active one). Otherwise creates a new
+    /// editor leaf next to the first terminal pane, splitting it vertically
+    /// so the new editor sits above the terminal — matching the behavior
+    /// users expect when opening files into a terminals-only layout.
+    ///
+    /// Always returns non-nil; the only failure mode (entire tree gone) is
+    /// guarded by re-using the existing root leaf as a last resort.
+    @discardableResult
+    func ensureEditorPane() -> TabManager {
+        if let tm = activeEditorTabManager { return tm }
+
+        // No editor leaf exists — create one by splitting the first terminal
+        // pane (insertBefore = true puts the new editor above the terminal).
+        if let terminalLeafID = root.leafIDs.first(where: { root.content(for: $0) == .terminal }),
+           let newID = splitPane(terminalLeafID, axis: .vertical, insertBefore: true),
+           let tm = tabManagers[newID] {
+            activePaneID = newID
+            return tm
+        }
+
+        // Theoretical fallback: tree contains neither editor nor terminal
+        // leaves (impossible in practice). Fall back to whatever TabManager
+        // we still have, or create a fresh one bound to the existing root.
+        if let firstID = root.firstLeafID, let tm = tabManagers[firstID] {
+            return tm
+        }
+        let fresh = TabManager()
+        let newID = PaneID()
+        tabManagers[newID] = fresh
+        root = .leaf(newID, .editor)
+        activePaneID = newID
+        return fresh
+    }
+
+    /// Removes a pane and promotes its sibling. When the very last leaf in
+    /// the tree is removed, a fresh empty editor leaf is created in its
+    /// place so the window never ends up with no content at all.
     func removePane(_ paneID: PaneID) {
         // If the pane being removed is the maximized pane, restore first
         // so the saved layout is available for removal.
@@ -295,17 +368,20 @@ final class PaneManager {
             restoreFromMaximize()
         }
 
-        guard root.leafCount > 1,
-              let newRoot = root.removing(paneID) else { return }
-
-        // Prevent removing the last editor pane — clear its tabs instead.
-        if root.content(for: paneID) == .editor,
-           root.leafCount(ofType: .editor) <= 1 {
-            if let tm = tabManagers[paneID] {
-                tm.closeAllTabs(force: true)
-            }
+        // Special case: removing the only leaf in the tree → replace it with
+        // a fresh empty editor leaf so the user always has a destination.
+        if root.leafCount == 1, root.firstLeafID == paneID {
+            tabManagers[paneID] = nil
+            terminalStates[paneID] = nil
+            let newID = PaneID()
+            tabManagers[newID] = TabManager()
+            root = .leaf(newID, .editor)
+            activePaneID = newID
             return
         }
+
+        guard root.leafCount > 1,
+              let newRoot = root.removing(paneID) else { return }
 
         tabManagers[paneID] = nil
         terminalStates[paneID] = nil

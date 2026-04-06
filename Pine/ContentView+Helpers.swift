@@ -70,6 +70,10 @@ extension ContentView {
                 tabManager.activeTabID = tab.id
             }
 
+            // Collapse any restored editor leaves that ended up with no tabs
+            // (e.g., persisted empty placeholders next to terminal panes).
+            paneManager.pruneEmptyEditorLeaves()
+
             didRestoreTabs = !projectManager.allTabs.isEmpty
         }
 
@@ -191,10 +195,9 @@ extension ContentView {
     }
 
     func handleFileSelection(_ node: FileNode) {
-        // Use the active editor pane's TabManager so files open in the
-        // visible editor pane, even when focus is on a terminal pane.
-        let tm = paneManager.activeEditorTabManager ?? tabManager
-        tm.openTab(url: node.url)
+        // Open into the active editor pane, creating one on demand if the
+        // user has pruned all editor panes (e.g. terminals-only layout).
+        paneManager.ensureEditorPane().openTab(url: node.url)
     }
 
     /// Syncs sidebar selection to match the active editor tab.

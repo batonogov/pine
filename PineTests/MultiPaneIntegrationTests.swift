@@ -40,7 +40,7 @@ struct MultiPaneIntegrationTests {
 
     @Test func activeTabManager_singlePane_returnsPrimaryTabManager() {
         let pm = ProjectManager()
-        #expect(pm.activeTabManager === pm.tabManager)
+        #expect(pm.activeTabManager === pm.primaryTabManager)
     }
 
     @Test func activeTabManager_switchesBetweenPanes() {
@@ -62,6 +62,24 @@ struct MultiPaneIntegrationTests {
         #expect(pm.activeTabManager === firstTM)
     }
 
+    @Test func activeTabManager_returnsPrimary_whenFocusIsOnTerminalPane() {
+        let pm = ProjectManager()
+        let editorPaneID = pm.paneManager.activePaneID
+
+        // Create a terminal pane and focus it
+        guard let terminalPaneID = pm.paneManager.createTerminalPane(
+            relativeTo: editorPaneID, axis: .vertical, workingDirectory: nil
+        ) else {
+            Issue.record("Terminal split failed")
+            return
+        }
+        pm.paneManager.activePaneID = terminalPaneID
+
+        // With only one editor leaf, the nearest-editor lookup must resolve
+        // to the primary TabManager — never nil, never the terminal pane.
+        #expect(pm.activeTabManager === pm.primaryTabManager)
+    }
+
     // MARK: - allTabs collects from all panes
 
     @Test func allTabs_collectsFromAllPanes() {
@@ -70,7 +88,7 @@ struct MultiPaneIntegrationTests {
         let url2 = URL(fileURLWithPath: "/tmp/test-all-tabs-2.swift")
 
         let firstPaneID = pm.paneManager.activePaneID
-        pm.tabManager.openTab(url: url1)
+        pm.primaryTabManager.openTab(url: url1)
 
         guard let secondPaneID = pm.paneManager.splitPane(firstPaneID, axis: .horizontal) else {
             Issue.record("Split failed")
@@ -92,7 +110,7 @@ struct MultiPaneIntegrationTests {
 
         let pm = ProjectManager()
         let firstPaneID = pm.paneManager.activePaneID
-        pm.tabManager.openTab(url: files[0])
+        pm.primaryTabManager.openTab(url: files[0])
 
         guard let secondPaneID = pm.paneManager.splitPane(firstPaneID, axis: .horizontal) else {
             Issue.record("Split failed")
@@ -115,7 +133,7 @@ struct MultiPaneIntegrationTests {
         defer { cleanup(dir) }
 
         let pm = ProjectManager()
-        pm.tabManager.openTab(url: files[0])
+        pm.primaryTabManager.openTab(url: files[0])
 
         #expect(pm.hasUnsavedChanges == false)
         #expect(pm.allDirtyTabs.isEmpty)
@@ -129,8 +147,8 @@ struct MultiPaneIntegrationTests {
 
         let pm = ProjectManager()
         let firstPaneID = pm.paneManager.activePaneID
-        pm.tabManager.openTab(url: files[0])
-        pm.tabManager.updateContent("// modified a.swift")
+        pm.primaryTabManager.openTab(url: files[0])
+        pm.primaryTabManager.updateContent("// modified a.swift")
 
         guard let secondPaneID = pm.paneManager.splitPane(firstPaneID, axis: .horizontal) else {
             Issue.record("Split failed")
@@ -169,7 +187,7 @@ struct MultiPaneIntegrationTests {
         pm.workspace.loadDirectory(url: dir)
 
         let firstPaneID = pm.paneManager.activePaneID
-        pm.tabManager.openTab(url: files[0])
+        pm.primaryTabManager.openTab(url: files[0])
 
         guard let secondPaneID = pm.paneManager.splitPane(firstPaneID, axis: .horizontal) else {
             Issue.record("Split failed")
@@ -243,6 +261,6 @@ struct MultiPaneIntegrationTests {
         pm.paneManager.removePane(secondPaneID)
 
         // Should fall back to first pane
-        #expect(pm.activeTabManager === pm.tabManager)
+        #expect(pm.activeTabManager === pm.primaryTabManager)
     }
 }

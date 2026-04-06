@@ -44,9 +44,9 @@ struct SessionRestoreHighlightTests {
         // Phase 1: save session with 3 tabs, middle one active
         let pm1 = ProjectManager()
         pm1.workspace.loadDirectory(url: dir)
-        for file in files { pm1.tabManager.openTab(url: file) }
-        if let middleTab = pm1.tabManager.tab(for: files[1]) {
-            pm1.tabManager.activeTabID = middleTab.id
+        for file in files { pm1.primaryTabManager.openTab(url: file) }
+        if let middleTab = pm1.primaryTabManager.tab(for: files[1]) {
+            pm1.primaryTabManager.activeTabID = middleTab.id
         }
         pm1.saveSession()
 
@@ -58,18 +58,18 @@ struct SessionRestoreHighlightTests {
 
         let disabledSet = Set(session.existingHighlightingDisabledPaths ?? [])
         for url in session.existingFileURLs {
-            pm2.tabManager.openTab(url: url, syntaxHighlightingDisabled: disabledSet.contains(url.path))
+            pm2.primaryTabManager.openTab(url: url, syntaxHighlightingDisabled: disabledSet.contains(url.path))
         }
         if let activeURL = session.activeFileURL,
-           let tab = pm2.tabManager.tab(for: activeURL) {
-            pm2.tabManager.activeTabID = tab.id
+           let tab = pm2.primaryTabManager.tab(for: activeURL) {
+            pm2.primaryTabManager.activeTabID = tab.id
         }
 
         // The active tab must exist and match the saved one
-        #expect(pm2.tabManager.activeTab != nil)
-        #expect(pm2.tabManager.activeTab?.url == files[1])
+        #expect(pm2.primaryTabManager.activeTab != nil)
+        #expect(pm2.primaryTabManager.activeTab?.url == files[1])
         // Verify content was loaded (precondition for syntax highlighting)
-        #expect(pm2.tabManager.activeTab?.content.isEmpty == false)
+        #expect(pm2.primaryTabManager.activeTab?.content.isEmpty == false)
     }
 
     @Test func restoredSingleTabIsActive() throws {
@@ -79,7 +79,7 @@ struct SessionRestoreHighlightTests {
         // Save with one tab
         let pm1 = ProjectManager()
         pm1.workspace.loadDirectory(url: dir)
-        pm1.tabManager.openTab(url: files[0])
+        pm1.primaryTabManager.openTab(url: files[0])
         pm1.saveSession()
 
         // Restore
@@ -89,17 +89,17 @@ struct SessionRestoreHighlightTests {
         let session = try #require(SessionState.load(for: canonical))
 
         for url in session.existingFileURLs {
-            pm2.tabManager.openTab(url: url)
+            pm2.primaryTabManager.openTab(url: url)
         }
         if let activeURL = session.activeFileURL,
-           let tab = pm2.tabManager.tab(for: activeURL) {
-            pm2.tabManager.activeTabID = tab.id
+           let tab = pm2.primaryTabManager.tab(for: activeURL) {
+            pm2.primaryTabManager.activeTabID = tab.id
         }
 
         // Single tab must be active — this is the case where onChange(activeTabID)
         // might not fire if the value was already set by openTab.
-        #expect(pm2.tabManager.activeTab != nil)
-        #expect(pm2.tabManager.activeTab?.url == files[0])
+        #expect(pm2.primaryTabManager.activeTab != nil)
+        #expect(pm2.primaryTabManager.activeTab?.url == files[0])
     }
 
     @Test func restoredLastTabAsActiveDoesNotChangeID() throws {
@@ -109,7 +109,7 @@ struct SessionRestoreHighlightTests {
         // Save with last tab active (which is the default after opening)
         let pm1 = ProjectManager()
         pm1.workspace.loadDirectory(url: dir)
-        for file in files { pm1.tabManager.openTab(url: file) }
+        for file in files { pm1.primaryTabManager.openTab(url: file) }
         // Last tab (files[2]) is already active — don't explicitly set it
         pm1.saveSession()
 
@@ -120,22 +120,22 @@ struct SessionRestoreHighlightTests {
         let session = try #require(SessionState.load(for: canonical))
 
         for url in session.existingFileURLs {
-            pm2.tabManager.openTab(url: url)
+            pm2.primaryTabManager.openTab(url: url)
         }
 
         // Track the activeTabID before the explicit set
-        let idBeforeExplicitSet = pm2.tabManager.activeTabID
+        let idBeforeExplicitSet = pm2.primaryTabManager.activeTabID
 
         if let activeURL = session.activeFileURL,
-           let tab = pm2.tabManager.tab(for: activeURL) {
-            pm2.tabManager.activeTabID = tab.id
+           let tab = pm2.primaryTabManager.tab(for: activeURL) {
+            pm2.primaryTabManager.activeTabID = tab.id
         }
 
         // The explicit set should be a no-op because last tab was already active.
         // This is the edge case where onChange(activeTabID) would NOT fire,
         // so the caller must explicitly trigger refreshLineDiffs.
-        #expect(pm2.tabManager.activeTabID == idBeforeExplicitSet)
-        #expect(pm2.tabManager.activeTab?.url == files[2])
+        #expect(pm2.primaryTabManager.activeTabID == idBeforeExplicitSet)
+        #expect(pm2.primaryTabManager.activeTab?.url == files[2])
     }
 
     @Test func restoredTabsHaveContentForHighlighting() throws {
@@ -150,7 +150,7 @@ struct SessionRestoreHighlightTests {
         // Save and restore
         let pm1 = ProjectManager()
         pm1.workspace.loadDirectory(url: dir)
-        for file in files { pm1.tabManager.openTab(url: file) }
+        for file in files { pm1.primaryTabManager.openTab(url: file) }
         pm1.saveSession()
 
         let pm2 = ProjectManager()
@@ -160,11 +160,11 @@ struct SessionRestoreHighlightTests {
 
         let disabledSet = Set(session.existingHighlightingDisabledPaths ?? [])
         for url in session.existingFileURLs {
-            pm2.tabManager.openTab(url: url, syntaxHighlightingDisabled: disabledSet.contains(url.path))
+            pm2.primaryTabManager.openTab(url: url, syntaxHighlightingDisabled: disabledSet.contains(url.path))
         }
 
         // All tabs must have content loaded from disk
-        for (i, tab) in pm2.tabManager.tabs.enumerated() {
+        for (i, tab) in pm2.primaryTabManager.tabs.enumerated() {
             #expect(!tab.content.isEmpty, "Tab \(i) (\(tab.fileName)) has empty content")
             #expect(tab.content.contains("example\(i)"),
                     "Tab \(i) content should match file content")
@@ -188,7 +188,7 @@ struct SessionRestoreHighlightTests {
         pm.workspace.loadDirectory(url: dir)
 
         for url in [swiftFile, jsFile, pyFile] {
-            pm.tabManager.openTab(url: url)
+            pm.primaryTabManager.openTab(url: url)
         }
         pm.saveSession()
 
@@ -199,11 +199,11 @@ struct SessionRestoreHighlightTests {
         let session = try #require(SessionState.load(for: canonical))
 
         for url in session.existingFileURLs {
-            pm2.tabManager.openTab(url: url)
+            pm2.primaryTabManager.openTab(url: url)
         }
 
         // Language extension must be preserved for syntax highlighting grammar selection
-        let languages = pm2.tabManager.tabs.map(\.language)
+        let languages = pm2.primaryTabManager.tabs.map(\.language)
         #expect(languages.contains("swift"))
         #expect(languages.contains("js"))
         #expect(languages.contains("py"))
@@ -215,7 +215,7 @@ struct SessionRestoreHighlightTests {
 
         let pm = ProjectManager()
         pm.workspace.loadDirectory(url: dir)
-        for file in files { pm.tabManager.openTab(url: file) }
+        for file in files { pm.primaryTabManager.openTab(url: file) }
         pm.saveSession()
 
         // Restore
@@ -226,11 +226,11 @@ struct SessionRestoreHighlightTests {
 
         let disabledSet = Set(session.existingHighlightingDisabledPaths ?? [])
         for url in session.existingFileURLs {
-            pm2.tabManager.openTab(url: url, syntaxHighlightingDisabled: disabledSet.contains(url.path))
+            pm2.primaryTabManager.openTab(url: url, syntaxHighlightingDisabled: disabledSet.contains(url.path))
         }
 
         // No tabs should have highlighting disabled for normal-sized files
-        for tab in pm2.tabManager.tabs {
+        for tab in pm2.primaryTabManager.tabs {
             #expect(tab.syntaxHighlightingDisabled == false,
                     "\(tab.fileName) should not have highlighting disabled")
         }
@@ -243,8 +243,8 @@ struct SessionRestoreHighlightTests {
         // Save with one tab having highlighting disabled
         let pm = ProjectManager()
         pm.workspace.loadDirectory(url: dir)
-        for file in files { pm.tabManager.openTab(url: file) }
-        pm.tabManager.tabs[1].syntaxHighlightingDisabled = true
+        for file in files { pm.primaryTabManager.openTab(url: file) }
+        pm.primaryTabManager.tabs[1].syntaxHighlightingDisabled = true
         pm.saveSession()
 
         // Restore
@@ -255,12 +255,12 @@ struct SessionRestoreHighlightTests {
 
         let disabledSet = Set(session.existingHighlightingDisabledPaths ?? [])
         for url in session.existingFileURLs {
-            pm2.tabManager.openTab(url: url, syntaxHighlightingDisabled: disabledSet.contains(url.path))
+            pm2.primaryTabManager.openTab(url: url, syntaxHighlightingDisabled: disabledSet.contains(url.path))
         }
 
-        #expect(pm2.tabManager.tabs[0].syntaxHighlightingDisabled == false)
-        #expect(pm2.tabManager.tabs[1].syntaxHighlightingDisabled == true)
-        #expect(pm2.tabManager.tabs[2].syntaxHighlightingDisabled == false)
+        #expect(pm2.primaryTabManager.tabs[0].syntaxHighlightingDisabled == false)
+        #expect(pm2.primaryTabManager.tabs[1].syntaxHighlightingDisabled == true)
+        #expect(pm2.primaryTabManager.tabs[2].syntaxHighlightingDisabled == false)
     }
 
     @Test func restoreEmptySessionDoesNotSetActiveTab() throws {
@@ -281,13 +281,13 @@ struct SessionRestoreHighlightTests {
         // Session exists but has no files
         if let session {
             for url in session.existingFileURLs {
-                pm2.tabManager.openTab(url: url)
+                pm2.primaryTabManager.openTab(url: url)
             }
         }
 
         // No tabs, no active tab — refreshLineDiffs should be a no-op
-        #expect(pm2.tabManager.tabs.isEmpty)
-        #expect(pm2.tabManager.activeTabID == nil)
+        #expect(pm2.primaryTabManager.tabs.isEmpty)
+        #expect(pm2.primaryTabManager.activeTabID == nil)
     }
 
     @Test func deletedFilesSkippedDuringRestore() throws {
@@ -297,9 +297,9 @@ struct SessionRestoreHighlightTests {
         // Save session
         let pm = ProjectManager()
         pm.workspace.loadDirectory(url: dir)
-        for file in files { pm.tabManager.openTab(url: file) }
-        if let middleTab = pm.tabManager.tab(for: files[1]) {
-            pm.tabManager.activeTabID = middleTab.id
+        for file in files { pm.primaryTabManager.openTab(url: file) }
+        if let middleTab = pm.primaryTabManager.tab(for: files[1]) {
+            pm.primaryTabManager.activeTabID = middleTab.id
         }
         pm.saveSession()
 
@@ -314,17 +314,17 @@ struct SessionRestoreHighlightTests {
 
         let disabledSet = Set(session.existingHighlightingDisabledPaths ?? [])
         for url in session.existingFileURLs {
-            pm2.tabManager.openTab(url: url, syntaxHighlightingDisabled: disabledSet.contains(url.path))
+            pm2.primaryTabManager.openTab(url: url, syntaxHighlightingDisabled: disabledSet.contains(url.path))
         }
         // Active file was deleted, so activeFileURL returns nil
         if let activeURL = session.activeFileURL,
-           let tab = pm2.tabManager.tab(for: activeURL) {
-            pm2.tabManager.activeTabID = tab.id
+           let tab = pm2.primaryTabManager.tab(for: activeURL) {
+            pm2.primaryTabManager.activeTabID = tab.id
         }
 
         // Only 2 tabs restored (deleted file skipped by existingFileURLs)
-        #expect(pm2.tabManager.tabs.count == 2)
+        #expect(pm2.primaryTabManager.tabs.count == 2)
         // activeTab should still be set (fallback to last opened)
-        #expect(pm2.tabManager.activeTab != nil)
+        #expect(pm2.primaryTabManager.activeTab != nil)
     }
 }

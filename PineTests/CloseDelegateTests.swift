@@ -66,9 +66,9 @@ struct CloseDelegateTests {
         defer { cleanup(dir) }
         let (delegate, pm, _) = makeCloseDelegate(projectURL: dir)
 
-        #expect(pm.tabManager.tabs.isEmpty)
+        #expect(pm.primaryTabManager.tabs.isEmpty)
         delegate.closeActiveTab()
-        #expect(pm.tabManager.tabs.isEmpty)
+        #expect(pm.primaryTabManager.tabs.isEmpty)
     }
 
     @Test func closeActiveTabClosesCleanTab() throws {
@@ -78,11 +78,11 @@ struct CloseDelegateTests {
 
         let fileURL = dir.appendingPathComponent("clean.swift")
         try "clean content".write(to: fileURL, atomically: true, encoding: .utf8)
-        pm.tabManager.openTab(url: fileURL)
+        pm.primaryTabManager.openTab(url: fileURL)
 
-        #expect(pm.tabManager.tabs.count == 1)
+        #expect(pm.primaryTabManager.tabs.count == 1)
         delegate.closeActiveTab()
-        #expect(pm.tabManager.tabs.isEmpty)
+        #expect(pm.primaryTabManager.tabs.isEmpty)
     }
 
     // MARK: - windowWillClose idempotency

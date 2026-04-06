@@ -26,12 +26,20 @@ final class TerminalManager {
 
         if let tpID = lastActiveTerminalPaneID,
            pm.terminalState(for: tpID) != nil {
+            // Adding a tab to an existing terminal pane is not a structural
+            // mutation — the layout already includes a terminal, so any
+            // adjacent empty editor was already pruned (or kept on purpose).
+            // No prune needed here.
             pm.terminalState(for: tpID)?.addTab(workingDirectory: workingDirectory)
             pm.activePaneID = tpID
         } else {
             // Create terminal pane spanning full width at bottom
             let newID = pm.createTerminalPaneAtBottom(workingDirectory: workingDirectory)
             lastActiveTerminalPaneID = newID
+            // Collapse any empty editor placeholder that was sitting next to
+            // the new terminal — the user clearly wants the screen real estate
+            // for terminals, not for "No File Selected".
+            pm.pruneEmptyEditorLeaves()
         }
     }
 

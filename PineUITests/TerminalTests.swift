@@ -68,6 +68,19 @@ final class TerminalTests: PineUITestCase {
         app.menuItems["New Tab"].click()
     }
 
+    /// Opens main.swift from the sidebar so the editor leaf has a tab and
+    /// won't be auto-pruned when a terminal pane is created next to it.
+    private func openMainSwiftFromSidebar() {
+        let mainFile = app.staticTexts["fileNode_main.swift"]
+        XCTAssertTrue(
+            waitForExistence(mainFile, timeout: 10),
+            "main.swift should appear in the sidebar"
+        )
+        mainFile.click()
+        let tab = app.descendants(matching: .any)["editorTab_main.swift"].firstMatch
+        XCTAssertTrue(waitForExistence(tab, timeout: 5), "main.swift tab should appear")
+    }
+
     private func launchAndWaitForLoad() {
         launchWithProject(projectURL)
         guard waitForExistence(terminalToggle, timeout: 10) else {
@@ -123,6 +136,8 @@ final class TerminalTests: PineUITestCase {
     /// After creating a terminal, a pane divider appears indicating split layout.
     func testTerminalPaneAppearsInSplitLayout() throws {
         launchAndWaitForLoad()
+        // Open a file so the editor pane has content and won't be auto-pruned.
+        openMainSwiftFromSidebar()
 
         // No divider before terminal
         XCTAssertEqual(paneDividers.count, 0, "No pane divider should exist initially")
@@ -201,6 +216,7 @@ final class TerminalTests: PineUITestCase {
     /// Maximize then restore brings back both panes.
     func testRestoreFromMaximize() throws {
         launchAndWaitForLoad()
+        openMainSwiftFromSidebar()
 
         createTerminalViaMenu()
         XCTAssertTrue(
@@ -232,10 +248,13 @@ final class TerminalTests: PineUITestCase {
             terminalTab("Terminal 1").exists,
             "Terminal tab should be visible after restore"
         )
-        // Both terminal and editor should be visible after restore
+        // After restore the editor pane comes back; the previously-opened
+        // main.swift tab should be visible again. Re-query freshly because
+        // SwiftUI tears down and recreates the editor view on restore.
+        let restoredTab = app.descendants(matching: .any)["editorTab_main.swift"].firstMatch
         XCTAssertTrue(
-            editorPlaceholder.exists || editorTabBar.exists,
-            "Editor area should be visible after restore"
+            waitForExistence(restoredTab, timeout: 5),
+            "Editor area (with main.swift tab) should be visible after restore"
         )
     }
 
@@ -314,6 +333,7 @@ final class TerminalTests: PineUITestCase {
     /// Closing the only terminal tab removes the entire terminal pane.
     func testCloseLastTabRemovesPane() throws {
         launchAndWaitForLoad()
+        openMainSwiftFromSidebar()
 
         createTerminalViaMenu()
         let tab1 = terminalTab("Terminal 1")
@@ -375,6 +395,7 @@ final class TerminalTests: PineUITestCase {
     /// Create terminal, close it, create another — verify it works correctly.
     func testMultipleTerminalPanesViaMenu() throws {
         launchAndWaitForLoad()
+        openMainSwiftFromSidebar()
 
         // Create first terminal
         createTerminalViaMenu()
@@ -437,6 +458,7 @@ final class TerminalTests: PineUITestCase {
     /// Terminal pane persists after interacting with the editor area.
     func testTerminalPersistsAfterEditorInteraction() throws {
         launchAndWaitForLoad()
+        openMainSwiftFromSidebar()
 
         createTerminalViaMenu()
         let tab1 = terminalTab("Terminal 1")
@@ -500,6 +522,7 @@ final class TerminalTests: PineUITestCase {
     /// Terminal toggle in status bar can show and hide the terminal pane.
     func testTerminalToggleViaStatusBarButton() throws {
         launchAndWaitForLoad()
+        openMainSwiftFromSidebar()
 
         // Click toggle to show terminal
         terminalToggle.click()
@@ -580,6 +603,7 @@ final class TerminalTests: PineUITestCase {
 
     func testMaximizeThenHide() throws {
         launchAndWaitForLoad()
+        openMainSwiftFromSidebar()
 
         createTerminalViaMenu()
         XCTAssertTrue(
@@ -602,15 +626,86 @@ final class TerminalTests: PineUITestCase {
         }
         XCTAssertFalse(tab1.exists, "Terminal should be removed after hide while maximized")
 
-        // Editor should be back
-        let placeholderOrEditor = editorPlaceholder.exists || editorTabBar.exists
-        // Give editor a moment to appear
-        if !placeholderOrEditor {
-            Thread.sleep(forTimeInterval: 1)
-        }
+        // After hiding the (maximized) terminal, the editor pane is the only
+        // remaining content; main.swift opened earlier should still be there.
+        let restoredTab = app.descendants(matching: .any)["editorTab_main.swift"].firstMatch
         XCTAssertTrue(
-            editorPlaceholder.exists || editorTabBar.exists,
-            "Editor area should be restored after hiding maximized terminal"
+            waitForExistence(restoredTab, timeout: 5),
+            "Editor area (with main.swift tab) should be restored after hiding maximized terminal"
+        )
+    }
+
+    // MARK: - Empty editor leaf pruning (issue: empty "No File Selected" next to terminals)
+
+    /// Reproduces the user's reported scenario: open a project, never select
+    /// a file, create a terminal pane — the empty "No File Selected"
+    /// placeholder must disappear so terminals get the full layout. Clicking
+    /// a file in the sidebar afterwards must transparently recreate an
+    /// editor pane on demand and open the file in it.
+    func testEmptyEditorPrunedNextToTerminal_andRecreatedOnFileClick() throws {
+        launchAndWaitForLoad()
+
+        // Initially the editor pane shows the placeholder.
+        XCTAssertTrue(
+            waitForExistence(editorPlaceholder, timeout: 5),
+            "Editor placeholder should be visible on a freshly opened project"
+        )
+
+        // Create a terminal — the empty editor pane should be auto-pruned.
+        createTerminalViaMenu()
+        XCTAssertTrue(
+            waitForExistence(terminalTab("Terminal 1"), timeout: 10),
+            "Terminal 1 tab should appear after Terminal -> New Tab"
+        )
+
+        // The placeholder must be gone — terminals own the full screen now.
+        let disappearDeadline = Date().addingTimeInterval(5)
+        while editorPlaceholder.exists && Date() < disappearDeadline {
+            Thread.sleep(forTimeInterval: 0.1)
+        }
+        XCTAssertFalse(
+            editorPlaceholder.exists,
+            "Empty 'No File Selected' placeholder should be pruned next to a terminal"
+        )
+        XCTAssertEqual(
+            paneDividers.count, 0,
+            "No pane divider should remain when only the terminal pane exists"
+        )
+
+        // Click a file in the sidebar — a new editor pane should be created
+        // on demand above the terminal and open the file inside it.
+        let mainFile = app.staticTexts["fileNode_main.swift"]
+        XCTAssertTrue(
+            waitForExistence(mainFile, timeout: 10),
+            "main.swift should be visible in the sidebar"
+        )
+        mainFile.click()
+
+        let editorTab = app.descendants(matching: .any)["editorTab_main.swift"].firstMatch
+        XCTAssertTrue(
+            waitForExistence(editorTab, timeout: 5),
+            "Editor pane should be recreated and main.swift opened after sidebar click"
+        )
+        // Both editor and terminal coexist — divider must reappear.
+        let divider = app.descendants(matching: .any)["paneDivider"].firstMatch
+        XCTAssertTrue(
+            waitForExistence(divider, timeout: 5),
+            "Pane divider should reappear once an editor pane is recreated"
+        )
+        // Terminal must still be there.
+        XCTAssertTrue(
+            terminalTab("Terminal 1").exists,
+            "Terminal pane must persist when a new editor pane is created next to it"
+        )
+
+        // The recreated editor must sit ABOVE the terminal (vertical split,
+        // editor on top) — verify by comparing y-coordinates of the two
+        // tab bars. The editor tab's frame must start above the terminal tab.
+        let editorTabFrame = editorTab.frame
+        let terminalTabFrame = terminalTab("Terminal 1").frame
+        XCTAssertLessThan(
+            editorTabFrame.minY, terminalTabFrame.minY,
+            "Recreated editor pane must be positioned above the terminal pane"
         )
     }
 }

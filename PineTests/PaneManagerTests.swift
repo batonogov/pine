@@ -365,8 +365,13 @@ struct PaneManagerTests {
         }
 
         manager.moveTabBetweenPanes(tabURL: ghostURL, from: firstPane, to: secondPane)
+        // Source pane retains its tab — ghost URL was a no-op move.
         #expect(manager.tabManager(for: firstPane)?.tabs.count == 1)
-        #expect(manager.tabManager(for: secondPane)?.tabs.isEmpty == true)
+        // The empty destination pane is now collapsed by `pruneEmptyEditorLeaves`,
+        // since `firstPane` still holds a tab and the invariant (≥1 editor leaf
+        // in the tree) is preserved.
+        #expect(manager.tabManager(for: secondPane) == nil)
+        #expect(manager.root.leafCount == 1)
     }
 
     @Test func moveTabBetweenPanes_preservesAllTabState() {
@@ -665,7 +670,7 @@ struct PaneManagerTests {
 
     // MARK: - Last editor pane protection
 
-    @Test func removePane_lastEditorPane_clearsTabsInsteadOfRemoving() {
+    @Test func removePane_lastEditorPane_isRemovedLeavingTerminalsOnly() {
         let manager = PaneManager()
         let editorPane = manager.activePaneID
         let testURL = URL(fileURLWithPath: "/tmp/test.swift")
@@ -680,15 +685,15 @@ struct PaneManagerTests {
         }
         #expect(manager.root.leafCount == 2)
 
-        // Try to remove the only editor pane — should NOT remove it
+        // Removing the only editor pane is now allowed: layout becomes
+        // terminals-only and a new editor can be created on demand via
+        // `ensureEditorPane()` when the user opens a file again.
         manager.removePane(editorPane)
 
-        // Editor pane still exists, but its tabs are cleared
-        #expect(manager.root.leafCount == 2)
-        #expect(manager.root.content(for: editorPane) == .editor)
-        #expect(manager.tabManager(for: editorPane)?.tabs.isEmpty == true)
-        // Terminal pane still exists
-        #expect(manager.root.content(for: terminalPane) == .terminal)
+        #expect(manager.root.leafCount == 1)
+        #expect(manager.root.leafCount(ofType: .editor) == 0)
+        #expect(manager.tabManagers[editorPane] == nil)
+        #expect(manager.root.firstLeafID == terminalPane)
     }
 
     @Test func removePane_nonLastEditorPane_removesNormally() {
@@ -771,7 +776,7 @@ struct PaneManagerTests {
         #expect(manager.root.leafCount(ofType: .terminal) == 1)
     }
 
-    @Test func removePane_lastEditorWithMultipleTerminals_keepsEditor() {
+    @Test func removePane_lastEditorWithMultipleTerminals_isRemoved() {
         let manager = PaneManager()
         let editorPane = manager.activePaneID
 
@@ -790,9 +795,12 @@ struct PaneManagerTests {
         #expect(manager.root.leafCount(ofType: .editor) == 1)
         #expect(manager.root.leafCount(ofType: .terminal) == 2)
 
-        // Try to remove the only editor pane — should be prevented
+        // Removing the only editor pane is now allowed; the layout becomes
+        // terminals-only.
         manager.removePane(editorPane)
-        #expect(manager.root.leafCount(ofType: .editor) == 1)
-        #expect(manager.root.content(for: editorPane) == .editor)
+        #expect(manager.root.leafCount == 2)
+        #expect(manager.root.leafCount(ofType: .editor) == 0)
+        #expect(manager.root.leafCount(ofType: .terminal) == 2)
+        #expect(manager.tabManagers[editorPane] == nil)
     }
 }

@@ -14,20 +14,31 @@ import SwiftUI
 final class ProjectManager {
     let workspace = WorkspaceManager()
     let terminal = TerminalManager()
-    /// The primary TabManager (first pane). For the *focused* pane's TabManager,
-    /// use ``activeTabManager`` which delegates to ``PaneManager/activeTabManager``.
-    let tabManager = TabManager()
+    /// The primary TabManager (root editor pane). Owns the recovery wiring and
+    /// editor-context subscription. For the *focused* pane's TabManager, use
+    /// ``activeTabManager`` which delegates to ``PaneManager/activeEditorTabManager``.
+    ///
+    /// Note: this instance can become an *orphan* — i.e. no pane in the
+    /// `PaneManager` tree references it — after `pruneEmptyEditorLeaves`
+    /// removes the root editor pane (terminals-only layout) or after a
+    /// session restore that does not bind it to any leaf. In that state it
+    /// is harmless: it holds no tabs, contributes nothing to `allTabs`, and
+    /// is recreated as a leaf-bound TabManager via `ensureEditorPane()`
+    /// when the user opens a file again. The reference is kept solely so
+    /// the recovery wiring and editor-context subscription survive across
+    /// such transitions.
+    let primaryTabManager = TabManager()
     let searchProvider = ProjectSearchProvider()
     let quickOpenProvider = QuickOpenProvider()
     let progress = ProgressTracker()
     let contextFileWriter = ContextFileWriter()
     @ObservationIgnored
-    private(set) lazy var paneManager = PaneManager(existingTabManager: tabManager)
+    private(set) lazy var paneManager = PaneManager(existingTabManager: primaryTabManager)
 
     /// Returns the TabManager for the currently focused pane.
-    /// Falls back to the primary ``tabManager`` when paneManager has a single pane.
+    /// Falls back to the primary ``primaryTabManager`` when no editor pane is active.
     var activeTabManager: TabManager {
-        paneManager.activeEditorTabManager ?? tabManager
+        paneManager.activeEditorTabManager ?? primaryTabManager
     }
 
     /// Collects all tabs from every pane (for session save, dirty-tab checks, etc.).
@@ -66,7 +77,7 @@ final class ProjectManager {
         }
         workspace.progressTracker = progress
         workspace.gitProvider.progressTracker = progress
-        tabManager.onEditorContextChanged = { [weak self] in
+        primaryTabManager.onEditorContextChanged = { [weak self] in
             self?.updateEditorContext()
         }
         // Wire TerminalManager to PaneManager (lazy wiring)
@@ -90,7 +101,7 @@ final class ProjectManager {
         manager.tabsProvider = { [weak self] in
             self?.allTabs ?? []
         }
-        tabManager.recoveryManager = manager
+        primaryTabManager.recoveryManager = manager
         manager.startPeriodicSnapshots()
         recoveryManager = manager
     }
