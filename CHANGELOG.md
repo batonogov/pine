@@ -1,5 +1,26 @@
 # Changelog
 
+## [1.18.0](https://github.com/batonogov/pine/compare/v1.17.0...v1.18.0) (2026-04-06)
+
+
+### Features
+
+* cross-type center drop creates auto-split pane ([#714](https://github.com/batonogov/pine/issues/714)) ([#715](https://github.com/batonogov/pine/issues/715)) ([32b254b](https://github.com/batonogov/pine/commit/32b254bee22c394cb9bb3a3748526db1bfad0040))
+* drag files from sidebar to open in specific editor pane ([#709](https://github.com/batonogov/pine/issues/709)) ([48a5cf3](https://github.com/batonogov/pine/commit/48a5cf376af5e81980701ba30233add476aa5007))
+* root-level drop zones for full-width/height pane splits ([#713](https://github.com/batonogov/pine/issues/713)) ([9ff1755](https://github.com/batonogov/pine/commit/9ff17559c356ce36ac44de9e133a301999af9b56))
+* split panes with terminal integration ([#543](https://github.com/batonogov/pine/issues/543)) ([#707](https://github.com/batonogov/pine/issues/707)) ([d04be74](https://github.com/batonogov/pine/commit/d04be74be3d07aec444a8f95d7dbb6447574390d))
+* terminal tab drag-and-drop reorder and cross-pane move ([#711](https://github.com/batonogov/pine/issues/711)) ([859a813](https://github.com/batonogov/pine/commit/859a8137df8f24e6c0c027d0aa9c48c98ec15558))
+
+
+### Bug Fixes
+
+* clear stale pane drop-zone overlays after sidebar drag ([#710](https://github.com/batonogov/pine/issues/710)) ([#716](https://github.com/batonogov/pine/issues/716)) ([00409ac](https://github.com/batonogov/pine/commit/00409acab1f64cef2c740dcf7856e95a6adfa49c))
+
+
+### Miscellaneous
+
+* update SwiftTerm to fix windowCommand crash ([#717](https://github.com/batonogov/pine/issues/717)) ([08323c4](https://github.com/batonogov/pine/commit/08323c4086b65d17f962c3d7ff1371bae1e1797d))
+
 ## [1.17.0](https://github.com/batonogov/pine/compare/v1.16.1...v1.17.0) (2026-03-31)
 
 
