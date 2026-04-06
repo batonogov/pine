@@ -453,6 +453,68 @@ final class PaneManager {
         return newPaneID
     }
 
+    // MARK: - Center drop
+
+    /// Handles a center-zone tab drop on `targetPaneID`.
+    ///
+    /// - Same-type drop: moves the tab into the target pane (existing behaviour).
+    /// - Cross-type drop: auto-splits the target pane vertically and places the
+    ///   moved tab in a new pane of matching type below the target. This is
+    ///   issue #714 — previously cross-type center drops were silently rejected.
+    ///
+    /// Returns `true` if the drop caused a state change.
+    @discardableResult
+    func performCenterDrop(dragInfo: TabDragInfo, targetPaneID: PaneID) -> Bool {
+        let sourcePaneID = PaneID(id: dragInfo.paneID)
+        guard let targetContent = root.content(for: targetPaneID) else { return false }
+        // Same-pane center drop is a no-op.
+        guard sourcePaneID != targetPaneID else { return false }
+
+        if dragInfo.contentType == targetContent {
+            // Same-type: plain move.
+            if dragInfo.contentType == .terminal {
+                guard terminalStates[sourcePaneID]?.terminalTabs
+                    .contains(where: { $0.id == dragInfo.tabID }) == true else { return false }
+                moveTerminalTab(dragInfo.tabID, from: sourcePaneID, to: targetPaneID)
+                return true
+            } else if let fileURL = dragInfo.fileURL {
+                guard tabManagers[sourcePaneID]?.tabs
+                    .contains(where: { $0.url == fileURL }) == true else { return false }
+                moveTabBetweenPanes(tabURL: fileURL, from: sourcePaneID, to: targetPaneID)
+                return true
+            }
+            return false
+        }
+
+        // Cross-type: auto-split target vertically, new pane below holds the moved tab.
+        if dragInfo.contentType == .terminal {
+            // Moving a terminal tab into (or near) an editor pane.
+            guard terminalStates[sourcePaneID]?.terminalTabs
+                .contains(where: { $0.id == dragInfo.tabID }) == true else { return false }
+            let newID = splitAndMoveTerminalTab(
+                tabID: dragInfo.tabID,
+                from: sourcePaneID,
+                relativeTo: targetPaneID,
+                axis: .vertical,
+                insertBefore: false
+            )
+            return newID != nil
+        } else if let fileURL = dragInfo.fileURL {
+            // Moving an editor tab into (or near) a terminal pane.
+            guard tabManagers[sourcePaneID]?.tabs
+                .contains(where: { $0.url == fileURL }) == true else { return false }
+            let newID = splitPane(
+                targetPaneID,
+                axis: .vertical,
+                tabURL: fileURL,
+                sourcePane: sourcePaneID,
+                insertBefore: false
+            )
+            return newID != nil
+        }
+        return false
+    }
+
     /// Clears stale drag state for both tab drags and sidebar file drags.
     /// Called when a drag exits all valid drop targets (e.g., user cancels drag).
     func clearStaleDragState() {
