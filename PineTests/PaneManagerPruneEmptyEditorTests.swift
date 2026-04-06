@@ -63,23 +63,74 @@ struct PaneManagerPruneEmptyEditorTests {
         #expect(manager.activePaneID == newID)
     }
 
-    // MARK: - Empty editor next to terminal: NOT pruned (invariant)
+    // MARK: - Empty editor next to terminal: pruned (no inhabitant invariant)
 
-    @Test func emptyEditorNextToTerminal_isPreserved_invariantOneEditor() {
+    @Test func emptyEditorNextToTerminal_isPruned() {
         let manager = PaneManager()
         let editorID = manager.activePaneID
-        _ = manager.createTerminalPane(
+        let terminalID = manager.createTerminalPane(
             relativeTo: editorID, axis: .horizontal, workingDirectory: nil
         )
         #expect(manager.root.leafCount == 2)
 
         manager.pruneEmptyEditorLeaves()
 
-        // Editor must remain — invariant: the tree must always contain
-        // at least one editor leaf so the sidebar always has a destination.
-        #expect(manager.root.leafCount == 2)
+        // Editor must be removed — terminals-only layout is now valid.
+        #expect(manager.root.leafCount == 1)
+        #expect(manager.root.leafCount(ofType: .editor) == 0)
+        #expect(manager.tabManagers[editorID] == nil)
+        #expect(manager.root.firstLeafID == terminalID)
+    }
+
+    // MARK: - ensureEditorPane: re-creates editor when only terminals remain
+
+    @Test func ensureEditorPane_createsNewEditorWhenOnlyTerminalsExist() {
+        let manager = PaneManager()
+        let editorID = manager.activePaneID
+        _ = manager.createTerminalPane(
+            relativeTo: editorID, axis: .horizontal, workingDirectory: nil
+        )
+        manager.pruneEmptyEditorLeaves()
+        #expect(manager.root.leafCount(ofType: .editor) == 0)
+
+        let tm = manager.ensureEditorPane()
+
+        // A fresh editor leaf is created and active.
         #expect(manager.root.leafCount(ofType: .editor) == 1)
-        #expect(manager.tabManagers[editorID] != nil)
+        #expect(manager.root.leafCount == 2)
+        #expect(tm.tabs.isEmpty)
+        // The newly-created editor pane is now the active pane.
+        #expect(manager.tabManagers[manager.activePaneID] === tm)
+    }
+
+    @Test func ensureEditorPane_returnsExistingEditorWhenOneAlreadyExists() {
+        let manager = PaneManager()
+        let editorID = manager.activePaneID
+        let originalTM = manager.tabManager(for: editorID)
+
+        let tm = manager.ensureEditorPane()
+
+        #expect(tm === originalTM)
+        #expect(manager.root.leafCount(ofType: .editor) == 1)
+    }
+
+    @Test func ensureEditorPane_thenOpenFile_endToEnd() {
+        let manager = PaneManager()
+        let editorID = manager.activePaneID
+        _ = manager.createTerminalPane(
+            relativeTo: editorID, axis: .horizontal, workingDirectory: nil
+        )
+        manager.pruneEmptyEditorLeaves()
+        #expect(manager.root.leafCount(ofType: .editor) == 0)
+
+        // Simulate opening a file from the sidebar after pruning.
+        let url = URL(fileURLWithPath: "/tmp/ensure-end-to-end.swift")
+        manager.ensureEditorPane().openTab(url: url)
+
+        #expect(manager.root.leafCount(ofType: .editor) == 1)
+        let activeTM = manager.tabManagers[manager.activePaneID]
+        #expect(activeTM?.tabs.count == 1)
+        #expect(activeTM?.tabs.first?.url == url)
     }
 
     // MARK: - DnD: moving last tab away collapses empty source
