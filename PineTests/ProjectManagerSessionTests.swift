@@ -39,8 +39,8 @@ struct ProjectManagerSessionTests {
         let pm = ProjectManager()
         pm.workspace.loadDirectory(url: dir)
 
-        pm.tabManager.openTab(url: files[0])
-        pm.tabManager.openTab(url: files[1])
+        pm.primaryTabManager.openTab(url: files[0])
+        pm.primaryTabManager.openTab(url: files[1])
         pm.saveSession()
 
         let canonical = dir.resolvingSymlinksInPath()
@@ -58,8 +58,8 @@ struct ProjectManagerSessionTests {
         let pm = ProjectManager()
         pm.workspace.loadDirectory(url: dir)
 
-        pm.tabManager.openTab(url: files[0])
-        pm.tabManager.openTab(url: files[1])
+        pm.primaryTabManager.openTab(url: files[0])
+        pm.primaryTabManager.openTab(url: files[1])
         // files[1] is active (last opened)
         pm.saveSession()
 
@@ -83,8 +83,8 @@ struct ProjectManagerSessionTests {
         let pm = ProjectManager()
         pm.workspace.loadDirectory(url: dir)
 
-        pm.tabManager.openTab(url: files[0])
-        pm.tabManager.openTab(url: outsideFile)
+        pm.primaryTabManager.openTab(url: files[0])
+        pm.primaryTabManager.openTab(url: outsideFile)
         pm.saveSession()
 
         let canonical = dir.resolvingSymlinksInPath()
@@ -99,7 +99,7 @@ struct ProjectManagerSessionTests {
 
         let pm = ProjectManager()
         // Do NOT call loadDirectory — rootURL stays nil
-        pm.tabManager.openTab(url: files[0])
+        pm.primaryTabManager.openTab(url: files[0])
         pm.saveSession()
 
         let canonical = dir.resolvingSymlinksInPath()
@@ -115,12 +115,12 @@ struct ProjectManagerSessionTests {
         pm.workspace.loadDirectory(url: dir)
 
         // First save with 2 tabs
-        pm.tabManager.openTab(url: files[0])
-        pm.tabManager.openTab(url: files[1])
+        pm.primaryTabManager.openTab(url: files[0])
+        pm.primaryTabManager.openTab(url: files[1])
         pm.saveSession()
 
         // Open a third tab and save again
-        pm.tabManager.openTab(url: files[2])
+        pm.primaryTabManager.openTab(url: files[2])
         pm.saveSession()
 
         let canonical = dir.resolvingSymlinksInPath()
@@ -137,12 +137,12 @@ struct ProjectManagerSessionTests {
         // Phase 1: open tabs and save
         let pm1 = ProjectManager()
         pm1.workspace.loadDirectory(url: dir)
-        pm1.tabManager.openTab(url: files[0])
-        pm1.tabManager.openTab(url: files[1])
-        pm1.tabManager.openTab(url: files[2])
+        pm1.primaryTabManager.openTab(url: files[0])
+        pm1.primaryTabManager.openTab(url: files[1])
+        pm1.primaryTabManager.openTab(url: files[2])
         // Switch active to middle tab
-        if let middleTab = pm1.tabManager.tab(for: files[1]) {
-            pm1.tabManager.activeTabID = middleTab.id
+        if let middleTab = pm1.primaryTabManager.tab(for: files[1]) {
+            pm1.primaryTabManager.activeTabID = middleTab.id
         }
         pm1.saveSession()
 
@@ -154,17 +154,17 @@ struct ProjectManagerSessionTests {
         let session = try #require(SessionState.load(for: canonical))
 
         for url in session.existingFileURLs {
-            pm2.tabManager.openTab(url: url)
+            pm2.primaryTabManager.openTab(url: url)
         }
         if let activeURL = session.activeFileURL,
-           let tab = pm2.tabManager.tab(for: activeURL) {
-            pm2.tabManager.activeTabID = tab.id
+           let tab = pm2.primaryTabManager.tab(for: activeURL) {
+            pm2.primaryTabManager.activeTabID = tab.id
         }
 
         // Verify restoration
-        #expect(pm2.tabManager.tabs.count == 3)
-        #expect(pm2.tabManager.activeTab?.url == files[1])
-        #expect(pm2.tabManager.tabs.map(\.url) == files)
+        #expect(pm2.primaryTabManager.tabs.count == 3)
+        #expect(pm2.primaryTabManager.activeTab?.url == files[1])
+        #expect(pm2.primaryTabManager.tabs.map(\.url) == files)
     }
 
     // MARK: - Outside-root filtering (issue #170)
@@ -183,8 +183,8 @@ struct ProjectManagerSessionTests {
         let pm = ProjectManager()
         pm.workspace.loadDirectory(url: dir)
 
-        pm.tabManager.openTab(url: files[0])
-        pm.tabManager.openTab(url: outsideFile)
+        pm.primaryTabManager.openTab(url: files[0])
+        pm.primaryTabManager.openTab(url: outsideFile)
         // outsideFile is now active (last opened)
         pm.saveSession()
 
@@ -211,11 +211,11 @@ struct ProjectManagerSessionTests {
         let pm = ProjectManager()
         pm.workspace.loadDirectory(url: dir)
 
-        pm.tabManager.openTab(url: insideMd)
-        pm.tabManager.openTab(url: outsideMd)
+        pm.primaryTabManager.openTab(url: insideMd)
+        pm.primaryTabManager.openTab(url: outsideMd)
         // Set non-default preview mode on both
-        for index in pm.tabManager.tabs.indices where pm.tabManager.tabs[index].isMarkdownFile {
-            pm.tabManager.tabs[index].previewMode = .split
+        for index in pm.primaryTabManager.tabs.indices where pm.primaryTabManager.tabs[index].isMarkdownFile {
+            pm.primaryTabManager.tabs[index].previewMode = .split
         }
         pm.saveSession()
 
@@ -241,11 +241,11 @@ struct ProjectManagerSessionTests {
         let pm = ProjectManager()
         pm.workspace.loadDirectory(url: dir)
 
-        pm.tabManager.openTab(url: files[0])
-        pm.tabManager.openTab(url: outsideFile)
+        pm.primaryTabManager.openTab(url: files[0])
+        pm.primaryTabManager.openTab(url: outsideFile)
         // Disable highlighting on both
-        pm.tabManager.tabs[0].syntaxHighlightingDisabled = true
-        pm.tabManager.tabs[1].syntaxHighlightingDisabled = true
+        pm.primaryTabManager.tabs[0].syntaxHighlightingDisabled = true
+        pm.primaryTabManager.tabs[1].syntaxHighlightingDisabled = true
         pm.saveSession()
 
         let canonical = dir.resolvingSymlinksInPath()
@@ -262,10 +262,10 @@ struct ProjectManagerSessionTests {
         let pm = ProjectManager()
         pm.workspace.loadDirectory(url: dir)
 
-        pm.tabManager.openTab(url: files[0])
-        pm.tabManager.openTab(url: files[1])
+        pm.primaryTabManager.openTab(url: files[0])
+        pm.primaryTabManager.openTab(url: files[1])
         // Simulate opening files[1] without highlighting (large file)
-        pm.tabManager.tabs[1].syntaxHighlightingDisabled = true
+        pm.primaryTabManager.tabs[1].syntaxHighlightingDisabled = true
         pm.saveSession()
 
         let canonical = dir.resolvingSymlinksInPath()
@@ -279,11 +279,11 @@ struct ProjectManagerSessionTests {
         pm2.workspace.loadDirectory(url: dir)
         let disabledSet = Set(session.highlightingDisabledPaths ?? [])
         for url in session.existingFileURLs {
-            pm2.tabManager.openTab(url: url, syntaxHighlightingDisabled: disabledSet.contains(url.path))
+            pm2.primaryTabManager.openTab(url: url, syntaxHighlightingDisabled: disabledSet.contains(url.path))
         }
 
-        #expect(pm2.tabManager.tabs[0].syntaxHighlightingDisabled == false)
-        #expect(pm2.tabManager.tabs[1].syntaxHighlightingDisabled == true)
+        #expect(pm2.primaryTabManager.tabs[0].syntaxHighlightingDisabled == false)
+        #expect(pm2.primaryTabManager.tabs[1].syntaxHighlightingDisabled == true)
     }
 
     @Test func sessionSurvivedWindowClose() throws {
@@ -293,8 +293,8 @@ struct ProjectManagerSessionTests {
         let registry = ProjectRegistry()
         let pm = try #require(registry.projectManager(for: dir))
 
-        pm.tabManager.openTab(url: files[0])
-        pm.tabManager.openTab(url: files[1])
+        pm.primaryTabManager.openTab(url: files[0])
+        pm.primaryTabManager.openTab(url: files[1])
 
         // Simulate PR #98 onDisappear behavior: save THEN close
         let canonical = dir.resolvingSymlinksInPath()
@@ -310,8 +310,8 @@ struct ProjectManagerSessionTests {
         let pm2 = try #require(registry.projectManager(for: dir))
         let restoredSession = try #require(SessionState.load(for: canonical))
         for url in restoredSession.existingFileURLs {
-            pm2.tabManager.openTab(url: url)
+            pm2.primaryTabManager.openTab(url: url)
         }
-        #expect(pm2.tabManager.tabs.count == 2)
+        #expect(pm2.primaryTabManager.tabs.count == 2)
     }
 }

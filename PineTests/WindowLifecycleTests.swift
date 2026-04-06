@@ -85,7 +85,7 @@ struct WindowLifecycleTests {
 
         let registry = ProjectRegistry()
         let pm = try #require(registry.projectManager(for: dir))
-        pm.tabManager.openTab(url: file)
+        pm.primaryTabManager.openTab(url: file)
 
         let delegate = AppDelegate()
         delegate.openNamedWindow = { _ in }
@@ -115,8 +115,8 @@ struct WindowLifecycleTests {
         let registry = ProjectRegistry()
         let pm1 = try #require(registry.projectManager(for: dir1))
         let pm2 = try #require(registry.projectManager(for: dir2))
-        pm1.tabManager.openTab(url: file1)
-        pm2.tabManager.openTab(url: file2)
+        pm1.primaryTabManager.openTab(url: file1)
+        pm2.primaryTabManager.openTab(url: file2)
 
         let delegate = AppDelegate()
         delegate.registry = registry
@@ -161,7 +161,7 @@ struct WindowLifecycleTests {
 
         let registry = ProjectRegistry()
         let pm = try #require(registry.projectManager(for: dir))
-        pm.tabManager.openTab(url: file)
+        pm.primaryTabManager.openTab(url: file)
 
         let delegate = AppDelegate()
         let window = NSWindow()
@@ -177,7 +177,7 @@ struct WindowLifecycleTests {
         // Clean tabs — window should close (not close tab one by one)
         #expect(closeDelegate.windowShouldClose(window))
         // Tabs should NOT have been closed individually
-        #expect(pm.tabManager.tabs.count == 1)
+        #expect(pm.primaryTabManager.tabs.count == 1)
     }
 
     @Test func windowShouldCloseDoesNotCloseIndividualCleanTab() throws {
@@ -188,8 +188,8 @@ struct WindowLifecycleTests {
 
         let registry = ProjectRegistry()
         let pm = try #require(registry.projectManager(for: dir))
-        pm.tabManager.openTab(url: file1)
-        pm.tabManager.openTab(url: file2)
+        pm.primaryTabManager.openTab(url: file1)
+        pm.primaryTabManager.openTab(url: file2)
 
         let delegate = AppDelegate()
         let window = NSWindow()
@@ -205,7 +205,7 @@ struct WindowLifecycleTests {
         // With multiple clean tabs, should close window (return true)
         // and NOT close tabs one by one
         #expect(closeDelegate.windowShouldClose(window))
-        #expect(pm.tabManager.tabs.count == 2)
+        #expect(pm.primaryTabManager.tabs.count == 2)
     }
 
     // MARK: - showWelcome

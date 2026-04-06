@@ -154,7 +154,7 @@ struct QuickOpenView: View {
 
     private func openFile(_ url: URL) {
         provider.recordOpened(url: url)
-        projectManager.tabManager.openTab(url: url)
+        projectManager.primaryTabManager.openTab(url: url)
         isPresented = false
     }
 }

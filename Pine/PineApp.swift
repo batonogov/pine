@@ -546,7 +546,7 @@ private struct ProjectWindowView: View {
                     .environment(pm)
                     .environment(pm.workspace)
                     .environment(pm.terminal)
-                    .environment(pm.tabManager)
+                    .environment(pm.primaryTabManager)
                     .environment(pm.paneManager)
                     .environment(pm.toastManager)
                     .environment(registry)

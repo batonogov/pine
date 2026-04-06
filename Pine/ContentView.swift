@@ -251,7 +251,7 @@ struct ContentView: View {
         .environment(projectManager)
         .environment(projectManager.workspace)
         .environment(projectManager.terminal)
-        .environment(projectManager.tabManager)
+        .environment(projectManager.primaryTabManager)
         .environment(projectManager.paneManager)
         .environment(projectManager.toastManager)
         .environment(registry)
