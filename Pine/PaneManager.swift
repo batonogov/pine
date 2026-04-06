@@ -49,8 +49,26 @@ final class PaneManager {
     /// Active root-level drop zone — set by RootPaneSplitDropDelegate.
     var rootDropZone: RootDropZone?
 
-    /// NSEvent monitor for mouse-up cleanup of drop overlays.
+    // The four properties below are marked `nonisolated(unsafe)` solely so
+    // they can be touched from `deinit`, which is nonisolated even on a
+    // @MainActor class. All real reads/writes happen on the main thread.
+
+    /// NSEvent monitor for mouse-up cleanup of drop overlays (in-app).
     nonisolated(unsafe) private var mouseUpMonitor: Any?
+
+    /// NSEvent monitor for mouse-up cleanup that fires even when the cursor
+    /// is released outside the app window.
+    nonisolated(unsafe) private var globalMouseUpMonitor: Any?
+
+    /// Notification observers for window/app deactivation cleanup.
+    nonisolated(unsafe) private var deactivationObservers: [NSObjectProtocol] = []
+
+    /// Provider that returns `true` when the user is currently holding any
+    /// mouse button down (i.e. a drag is potentially in progress).
+    /// Defaults to `NSEvent.pressedMouseButtons`. Injectable for tests.
+    var isMouseButtonPressed: () -> Bool = {
+        NSEvent.pressedMouseButtons != 0
+    }
 
     /// Clears all drop zone overlays across all panes.
     func clearAllDropZones() {
@@ -61,6 +79,47 @@ final class PaneManager {
     /// Clears leaf-level drop zone overlays without touching rootDropZone.
     func clearLeafDropZones() {
         dropZones.removeAll()
+    }
+
+    /// Returns true if any drop zone overlay is currently visible.
+    var hasActiveDropZones: Bool {
+        !dropZones.isEmpty || rootDropZone != nil
+    }
+
+    /// Clears any visible drop zone overlays if the system reports that no
+    /// mouse button is pressed (i.e. there cannot be an active drag session).
+    /// This is a defensive cleanup hook used by polling and notification
+    /// observers in case SwiftUI's `DropDelegate` fails to call `dropExited`
+    /// or `performDrop` (issue #710).
+    func clearStaleDropZonesIfNoDragActive() {
+        guard hasActiveDropZones else { return }
+        if !isMouseButtonPressed() {
+            clearAllDropZones()
+        }
+    }
+
+    /// Polling timer that periodically checks whether stale overlays should
+    /// be cleared. Started lazily when an overlay first appears, stopped when
+    /// none remain. ~120ms cadence keeps overhead negligible.
+    nonisolated(unsafe) private var staleDropPollTimer: Timer?
+
+    /// Starts the stale-overlay polling timer if not already running.
+    /// Called by drop delegates whenever they set a drop zone.
+    func startStaleDropPollingIfNeeded() {
+        guard staleDropPollTimer == nil else { return }
+        // Timer scheduled on the main run loop fires on the main thread, and
+        // PaneManager is @MainActor, so no extra DispatchQueue.main.async hop
+        // is needed inside the callback.
+        let timer = Timer.scheduledTimer(withTimeInterval: 0.12, repeats: true) { [weak self] t in
+            guard let self else { t.invalidate(); return }
+            if !self.hasActiveDropZones {
+                t.invalidate()
+                self.staleDropPollTimer = nil
+                return
+            }
+            self.clearStaleDropZonesIfNoDragActive()
+        }
+        staleDropPollTimer = timer
     }
 
     /// Creates a PaneManager with a single editor pane.
@@ -86,20 +145,69 @@ final class PaneManager {
         if let monitor = mouseUpMonitor {
             NSEvent.removeMonitor(monitor)
         }
+        if let monitor = globalMouseUpMonitor {
+            NSEvent.removeMonitor(monitor)
+        }
+        for observer in deactivationObservers {
+            NotificationCenter.default.removeObserver(observer)
+        }
+        staleDropPollTimer?.invalidate()
     }
 
-    /// Installs a local NSEvent monitor that clears drop overlays on mouse-up.
-    /// SwiftUI DropDelegate does not reliably call dropExited/performDrop when
-    /// a drag is cancelled inside a pane, leaving stale overlays.
+    /// Installs an NSEvent monitor (local + global) and notification observers
+    /// that clear drop overlays whenever a drag could possibly have ended.
+    ///
+    /// SwiftUI's `DropDelegate` does not reliably call `dropExited` or
+    /// `performDrop` in all scenarios — e.g. when the drag is cancelled while
+    /// the cursor is inside a pane, when the cursor moves between panes very
+    /// quickly, or after the pane tree is mutated by `performDrop`.
+    /// See issue #710.
+    ///
+    /// We defend against stale overlays by combining several signals:
+    ///   1. Local mouse-up — drag released while the app is foreground
+    ///   2. Global mouse-up — drag released while another app is foreground
+    ///   3. Window/app deactivation — focus moved away mid-drag
     private func installMouseUpMonitor() {
-        mouseUpMonitor = NSEvent.addLocalMonitorForEvents(matching: .leftMouseUp) { [weak self] event in
-            if self?.dropZones.isEmpty == false {
-                // Small delay to let performDrop fire first (it also clears)
-                DispatchQueue.main.async {
-                    self?.clearAllDropZones()
+        // Local closure invoked only from main-thread NSEvent monitor
+        // callbacks, so it does not need to be @Sendable.
+        let cleanup: () -> Void = { [weak self] in
+            DispatchQueue.main.async {
+                guard let self else { return }
+                if self.hasActiveDropZones {
+                    self.clearAllDropZones()
                 }
             }
+        }
+
+        mouseUpMonitor = NSEvent.addLocalMonitorForEvents(matching: .leftMouseUp) { event in
+            cleanup()
             return event
+        }
+
+        globalMouseUpMonitor = NSEvent.addGlobalMonitorForEvents(matching: .leftMouseUp) { _ in
+            cleanup()
+        }
+
+        // Note: `didResignKeyNotification` is intentionally aggressive — it
+        // fires whenever the window loses key status. This is acceptable
+        // because during an active drag session AppKit cannot present a sheet
+        // or popover that would steal key, so we will not clear an overlay
+        // out from under a real in-progress drag.
+        let center = NotificationCenter.default
+        let names: [Notification.Name] = [
+            NSWindow.didResignKeyNotification,
+            NSApplication.didResignActiveNotification,
+            NSApplication.didHideNotification
+        ]
+        for name in names {
+            let observer = center.addObserver(
+                forName: name,
+                object: nil,
+                queue: .main
+            ) { [weak self] _ in
+                self?.clearAllDropZones()
+            }
+            deactivationObservers.append(observer)
         }
     }
 
