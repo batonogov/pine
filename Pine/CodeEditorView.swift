@@ -47,11 +47,70 @@ final class GutterTextView: NSTextView {
     var deletedLineBlocks: [DeletedLinesBlock] = []
 
     /// The diff hunks for the current file — used to filter highlights to the expanded hunk only.
-    var diffHunksForHighlight: [DiffHunk] = []
+    var diffHunksForHighlight: [DiffHunk] = [] {
+        didSet { recomputePhantomBlockHeights() }
+    }
 
     /// The ID of the currently expanded hunk (shows inline diff). Nil = all collapsed.
     var expandedHunkID: UUID? {
-        didSet { needsDisplay = true }
+        didSet {
+            recomputePhantomBlockHeights()
+            needsDisplay = true
+        }
+    }
+
+    /// Map of anchor line number → reserved vertical space (in points) for the
+    /// phantom deleted-lines block above that line. Used by the layout manager
+    /// delegate (`paragraphSpacingBeforeGlyphAt`) to reserve real layout space
+    /// so the phantom block does not overlap real code (#697 / #698).
+    private(set) var phantomBlockHeights: [Int: CGFloat] = [:]
+
+    /// Estimated line height for phantom block height calculation.
+    /// Uses the editor's font; falls back to 16pt if no font is set.
+    private var estimatedLineHeight: CGFloat {
+        guard let font = font else { return 16 }
+        // Approximate single-line height (NSLayoutManager line spacing is ~font.ascender + |descender| + leading).
+        return ceil(font.ascender + abs(font.descender) + font.leading)
+    }
+
+    /// Rebuilds `phantomBlockHeights` from the currently expanded hunk and
+    /// invalidates layout for affected character ranges so the layout manager
+    /// re-asks the delegate for `paragraphSpacingBeforeGlyphAt`.
+    private func recomputePhantomBlockHeights() {
+        let oldHeights = phantomBlockHeights
+        var newHeights: [Int: CGFloat] = [:]
+        if let expandedID = expandedHunkID,
+           let hunk = diffHunksForHighlight.first(where: { $0.id == expandedID }) {
+            let blocks = InlineDiffProvider.deletedLineBlocks(from: [hunk])
+            let lh = estimatedLineHeight
+            for block in blocks where !block.lines.isEmpty {
+                newHeights[block.anchorLine, default: 0] += CGFloat(block.lines.count) * lh
+            }
+        }
+        guard newHeights != oldHeights else { return }
+        phantomBlockHeights = newHeights
+        invalidateLayoutForPhantomChange()
+    }
+
+    /// Invalidates layout for the entire document so the layout manager
+    /// re-queries `paragraphSpacingBeforeGlyphAt` for affected lines.
+    /// We invalidate the whole document because the set of affected anchor
+    /// lines is small and full invalidation is simple and reliable.
+    private func invalidateLayoutForPhantomChange() {
+        guard let layoutManager = layoutManager else { return }
+        let length = (string as NSString).length
+        guard length > 0 else { return }
+        layoutManager.invalidateLayout(
+            forCharacterRange: NSRange(location: 0, length: length),
+            actualCharacterRange: nil
+        )
+        needsDisplay = true
+    }
+
+    /// Returns the phantom block height (in points) reserved before the given
+    /// 1-based line number, or 0 if none.
+    func phantomBlockHeight(forLine line: Int) -> CGFloat {
+        phantomBlockHeights[line] ?? 0
     }
 
     /// Subtle green tint for added lines.
@@ -235,7 +294,7 @@ final class GutterTextView: NSTextView {
 
         layoutManager.enumerateLineFragments(
             forGlyphRange: visibleGlyphRange
-        ) { [self] lineRect, _, _, glyphRange, _ in
+        ) { [self] lineRect, usedRect, _, glyphRange, _ in
             let charIndex = layoutManager.characterIndexForGlyph(at: glyphRange.location)
 
             // Determine if this is a new logical line
@@ -251,30 +310,37 @@ final class GutterTextView: NSTextView {
             }
 
             if isNewLogicalLine {
-                let y = lineRect.origin.y + originY - visibleRect.origin.y
+                // Phantom space reserved by the layout manager delegate
+                // (`paragraphSpacingBeforeGlyphAt`) sits in the top portion of
+                // lineRect: between lineRect.minY and usedRect.minY.
+                let phantomTopY = lineRect.origin.y + originY - visibleRect.origin.y
+                let usedY = usedRect.origin.y + originY - visibleRect.origin.y
+                let lineGlyphLineHeight = usedRect.height > 0 ? usedRect.height : lineRect.height
 
-                // Draw deleted phantom blocks above this line if it's an anchor
+                // Draw deleted phantom blocks in the reserved space above this line
                 if deletedAnchorSet.contains(lineNumber), let blocks = deletedAnchorMap[lineNumber] {
-                    var currentY = y
+                    var drawY = phantomTopY
                     for block in blocks {
-                        let blockHeight = CGFloat(block.lines.count) * lineRect.height
-                        currentY -= blockHeight
-                    }
-                    // Draw blocks top-down so they stack correctly
-                    var drawY = currentY
-                    for block in blocks {
-                        let blockHeight = CGFloat(block.lines.count) * lineRect.height
-                        self.drawDeletedPhantomBlock(block, at: drawY + blockHeight, lineHeight: lineRect.height)
+                        let blockHeight = CGFloat(block.lines.count) * lineGlyphLineHeight
+                        self.drawDeletedPhantomBlock(
+                            block,
+                            at: drawY + blockHeight,
+                            lineHeight: lineGlyphLineHeight
+                        )
                         drawY += blockHeight
                     }
                 }
 
                 // Draw green background on added lines (only for expanded hunk)
+                // Constrained to text area (after the gutter) so it does not overlap the gutter (#698).
                 if hunkAddedLines.contains(lineNumber) {
-                    var highlightRect = lineRect
-                    highlightRect.origin.x = 0
-                    highlightRect.size.width = self.bounds.width
-                    highlightRect.origin.y = y
+                    let textX = self.textContainerOrigin.x
+                    let highlightRect = NSRect(
+                        x: textX,
+                        y: usedY,
+                        width: max(0, self.bounds.width - textX),
+                        height: lineGlyphLineHeight
+                    )
                     Self.addedLineColor.setFill()
                     highlightRect.fill()
                 }
@@ -298,8 +364,16 @@ final class GutterTextView: NSTextView {
         let blockHeight = lineCount * lineHeight
         let blockY = anchorY - blockHeight
 
-        // Draw background for the entire deleted block
-        let bgRect = NSRect(x: 0, y: blockY, width: bounds.width, height: blockHeight)
+        // Draw background for the entire deleted block.
+        // Constrained to the text area (right of the gutter) so the phantom
+        // background does not overlap the gutter / line numbers (#698).
+        let textX = textContainerOrigin.x
+        let bgRect = NSRect(
+            x: textX,
+            y: blockY,
+            width: max(0, bounds.width - textX),
+            height: blockHeight
+        )
         bgColor.setFill()
         bgRect.fill()
 
@@ -319,7 +393,7 @@ final class GutterTextView: NSTextView {
         // Draw a subtle separator line between deleted block and editor content
         let separatorY = anchorY
         let separatorPath = NSBezierPath()
-        separatorPath.move(to: NSPoint(x: 0, y: separatorY))
+        separatorPath.move(to: NSPoint(x: textX, y: separatorY))
         separatorPath.line(to: NSPoint(x: bounds.width, y: separatorY))
         separatorPath.lineWidth = 0.5
         Self.deletedSeparatorColor.setStroke()
@@ -1965,6 +2039,49 @@ struct CodeEditorView: NSViewRepresentable {
             }
 
             return false
+        }
+
+        /// Reserves vertical space above the anchor line of an expanded inline
+        /// diff hunk so the phantom deleted-lines block can render without
+        /// overlapping real code or the gutter (#697 / #698).
+        ///
+        /// The space is requested only for the FIRST glyph of the anchor
+        /// line — `paragraphSpacingBeforeGlyphAt` is queried for every glyph,
+        /// but only the first one in a paragraph contributes to the layout
+        /// (subsequent glyphs in the same paragraph must return 0).
+        func layoutManager(
+            _ layoutManager: NSLayoutManager,
+            paragraphSpacingBeforeGlyphAt glyphIndex: Int,
+            withProposedLineFragmentRect rect: NSRect
+        ) -> CGFloat {
+            guard let sv = scrollView,
+                  let textView = sv.documentView as? GutterTextView,
+                  !textView.phantomBlockHeights.isEmpty else { return 0 }
+
+            let charIndex = layoutManager.characterIndexForGlyph(at: glyphIndex)
+            let source = textView.string as NSString
+            guard charIndex <= source.length else { return 0 }
+
+            // Only the first glyph of a logical line should contribute spacing.
+            // The first glyph of a line is at charIndex 0 or directly after a newline.
+            if charIndex > 0 {
+                let prev = source.character(at: charIndex - 1)
+                guard prev == ASCII.newline else { return 0 }
+            }
+
+            // Compute 1-based line number.
+            let line: Int
+            if let cache = lineStartsCache {
+                line = cache.lineNumber(at: charIndex)
+            } else {
+                var count = 1
+                for i in 0..<charIndex where source.character(at: i) == ASCII.newline {
+                    count += 1
+                }
+                line = count
+            }
+
+            return textView.phantomBlockHeight(forLine: line)
         }
 
         private func reportStateChange() {

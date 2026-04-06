@@ -412,7 +412,12 @@ final class LineNumberView: NSView {
 
         layoutManager.enumerateLineFragments(
             forGlyphRange: visibleGlyphRange
-        ) { lineRect, _, _, glyphRange, _ in
+        ) { lineRect, usedRect, _, glyphRange, _ in
+            // Use usedRect for line-number Y so paragraph spacing reserved for
+            // inline-diff phantom blocks (#697 / #698) does not push the line
+            // number up into the phantom area.
+            let textY = usedRect.height > 0 ? usedRect.origin.y : lineRect.origin.y
+            let textHeight = usedRect.height > 0 ? usedRect.height : lineRect.height
             let charIndex = layoutManager.characterIndexForGlyph(at: glyphRange.location)
 
             // Определяем: новая логическая строка или soft-wrap (перенос длинной строки)?
@@ -437,8 +442,11 @@ final class LineNumberView: NSView {
                     return
                 }
 
-                // Y: позиция фрагмента в textContainer + сдвиг контейнера − скролл
-                let y = lineRect.origin.y + originY - visibleRect.origin.y
+                // Y: позиция текста (usedRect) + сдвиг контейнера − скролл.
+                // Используем usedRect, чтобы paragraph spacing, зарезервированный
+                // для phantom-блока inline diff (#697 / #698), не сдвигал номер
+                // строки в верх phantom area.
+                let y = textY + originY - visibleRect.origin.y
 
                 let numStr = "\(lineNumber)" as NSString
                 let size = numStr.size(withAttributes: attrs)
@@ -450,7 +458,7 @@ final class LineNumberView: NSView {
                     if let foldable = self.foldStartMap[lineNumber] {
                         let isFolded = self.foldState.isFolded(foldable)
                         self.drawFoldIndicator(
-                            at: y, lineHeight: lineRect.height,
+                            at: y, lineHeight: textHeight,
                             isFolded: isFolded
                         )
                     }
@@ -483,7 +491,7 @@ final class LineNumberView: NSView {
                             x: self.gutterWidth - diffBarWidth,
                             y: y,
                             width: diffBarWidth,
-                            height: lineRect.height
+                            height: textHeight
                         )
                         markerColor.setFill()
                         barRect.fill()
@@ -493,7 +501,7 @@ final class LineNumberView: NSView {
                 // ── Validation diagnostic icon ──
                 if let diag = self.diagnosticMap[lineNumber] {
                     self.drawDiagnosticIcon(
-                        at: y, lineHeight: lineRect.height,
+                        at: y, lineHeight: textHeight,
                         severity: diag.severity
                     )
                 }
