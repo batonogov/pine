@@ -30,6 +30,28 @@ final class ProjectManager {
         paneManager.activeEditorTabManager ?? tabManager
     }
 
+    /// Opens a file URL in the currently focused editor pane.
+    ///
+    /// This is the canonical entry point for "open file" actions originating from
+    /// sidebar clicks, Quick Open, project search results, file rename auto-open,
+    /// drag-and-drop onto the window, and recent-file picks. It always routes
+    /// through ``activeTabManager`` so that with split panes the file lands in
+    /// the visible / focused pane instead of the primary tab manager. Regression
+    /// guard for #695.
+    ///
+    /// - Parameters:
+    ///   - url: File URL to open.
+    ///   - line: Optional 1-based line number to scroll to after opening
+    ///     (used by project search to jump to the match line).
+    func openFileInActivePane(url: URL, line: Int? = nil) {
+        let tm = activeTabManager
+        if let line {
+            tm.openTabAndGoToLine(url: url, line: line)
+        } else {
+            tm.openTab(url: url)
+        }
+    }
+
     /// Collects all tabs from every pane (for session save, dirty-tab checks, etc.).
     var allTabs: [EditorTab] {
         paneManager.tabManagers.values.flatMap(\.tabs)

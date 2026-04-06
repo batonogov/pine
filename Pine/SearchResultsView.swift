@@ -9,7 +9,6 @@ import SwiftUI
 
 struct SearchResultsView: View {
     @Environment(ProjectManager.self) var projectManager
-    @Environment(TabManager.self) var tabManager
 
     var body: some View {
         let search = projectManager.searchProvider
@@ -86,7 +85,7 @@ struct SearchResultsView: View {
                 MatchRowView(
                     match: match,
                     fileURL: group.url,
-                    tabManager: tabManager
+                    projectManager: projectManager
                 )
             }
         }
@@ -98,13 +97,13 @@ struct SearchResultsView: View {
 private struct MatchRowView: View {
     let match: SearchMatch
     let fileURL: URL
-    let tabManager: TabManager
+    let projectManager: ProjectManager
 
     @State private var isHovered = false
 
     var body: some View {
         Button {
-            tabManager.openTabAndGoToLine(url: fileURL, line: match.lineNumber)
+            projectManager.openFileInActivePane(url: fileURL, line: match.lineNumber)
         } label: {
             HStack(spacing: 6) {
                 Text("\(match.lineNumber)")

@@ -14,6 +14,7 @@ struct FileNodeRow: View {
     private static let logger = Logger.editor
     var node: FileNode
     @Environment(WorkspaceManager.self) var workspace
+    @Environment(ProjectManager.self) var projectManager
     @Environment(TabManager.self) var tabManager
     @Environment(PaneManager.self) var paneManager
     @Environment(SidebarEditState.self) var editState
@@ -176,7 +177,7 @@ struct FileNodeRow: View {
             at: node.url,
             isDirectory: node.isDirectory,
             workspace: workspace,
-            tabManager: tabManager
+            tabManager: projectManager.activeTabManager
         )
     }
 
@@ -209,7 +210,7 @@ struct FileNodeRow: View {
                 try? FileOperationUndoManager.finalizeNewItem(from: oldURL, to: oldURL, undoManager: undoManager)
             }
             if wasNewlyCreated && !node.isDirectory {
-                tabManager.openTab(url: oldURL)
+                projectManager.openFileInActivePane(url: oldURL)
             }
             return
         }
@@ -237,7 +238,7 @@ struct FileNodeRow: View {
             )
             // Auto-open newly created files in an editor tab
             if wasNewlyCreated && !node.isDirectory {
-                tabManager.openTab(url: newURL)
+                projectManager.openFileInActivePane(url: newURL)
             }
         } catch {
             // Keep editing so the user can try a different name

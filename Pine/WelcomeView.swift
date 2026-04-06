@@ -240,7 +240,7 @@ struct WelcomeView: View {
                         // Give the project window time to initialize, then open the file
                         DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
                             let canonical = projectDir.resolvingSymlinksInPath()
-                            registry.openProjects[canonical]?.tabManager.openTab(url: file)
+                            registry.openProjects[canonical]?.openFileInActivePane(url: file)
                         }
                     }
                 }
