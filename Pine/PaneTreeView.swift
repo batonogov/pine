@@ -14,8 +14,28 @@ import SwiftUI
 struct PaneTreeView: View {
     let node: PaneNode
     @Environment(PaneManager.self) private var paneManager
+    @State private var containerSize: CGSize = .zero
 
     var body: some View {
+        nodeContent
+            .overlay {
+                GeometryReader { geometry in
+                    Color.clear
+                        .preference(key: RootContainerSizeKey.self, value: geometry.size)
+                }
+            }
+            .onPreferenceChange(RootContainerSizeKey.self) { containerSize = $0 }
+            .overlay {
+                RootDropOverlay(dropZone: paneManager.rootDropZone)
+            }
+            .onDrop(of: [.paneTabDrag], delegate: RootPaneSplitDropDelegate(
+                paneManager: paneManager,
+                containerSize: containerSize
+            ))
+    }
+
+    @ViewBuilder
+    private var nodeContent: some View {
         switch node {
         case .leaf(let paneID, let content):
             PaneLeafView(paneID: paneID, content: content)

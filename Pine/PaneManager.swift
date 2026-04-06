@@ -46,11 +46,20 @@ final class PaneManager {
     /// Active drop zone per pane — centralized to avoid stale @State/@Binding issues.
     var dropZones: [PaneID: PaneDropZone] = [:]
 
+    /// Active root-level drop zone — set by RootPaneSplitDropDelegate.
+    var rootDropZone: RootDropZone?
+
     /// NSEvent monitor for mouse-up cleanup of drop overlays.
     nonisolated(unsafe) private var mouseUpMonitor: Any?
 
     /// Clears all drop zone overlays across all panes.
     func clearAllDropZones() {
+        dropZones.removeAll()
+        rootDropZone = nil
+    }
+
+    /// Clears leaf-level drop zone overlays without touching rootDropZone.
+    func clearLeafDropZones() {
         dropZones.removeAll()
     }
 
@@ -314,6 +323,46 @@ final class PaneManager {
         }
 
         return newID
+    }
+
+    /// Wraps the entire root in a new split, creating a full-width/height terminal pane.
+    /// Moves the specified terminal tab from the source pane to the new pane.
+    /// Removes the source pane if it becomes empty.
+    func wrapRootWithTerminal(at zone: RootDropZone, from sourcePaneID: PaneID, tabID: UUID) {
+        guard let srcState = terminalStates[sourcePaneID],
+              let tab = srcState.terminalTabs.first(where: { $0.id == tabID }) else { return }
+
+        // Remove tab from source BEFORE modifying the tree
+        srcState.terminalTabs.removeAll { $0.id == tabID }
+        if srcState.activeTerminalID == tabID {
+            srcState.activeTerminalID = srcState.terminalTabs.last?.id
+        }
+
+        // Remove source pane if empty (this modifies root)
+        if srcState.terminalTabs.isEmpty {
+            removePane(sourcePaneID)
+        }
+
+        // Create new terminal pane and wrap root
+        let newID = PaneID()
+        let terminalLeaf = PaneNode.leaf(newID, .terminal)
+
+        switch zone {
+        case .bottom:
+            root = .split(.vertical, first: root, second: terminalLeaf, ratio: 0.7)
+        case .top:
+            root = .split(.vertical, first: terminalLeaf, second: root, ratio: 0.3)
+        case .right:
+            root = .split(.horizontal, first: root, second: terminalLeaf, ratio: 0.7)
+        case .left:
+            root = .split(.horizontal, first: terminalLeaf, second: root, ratio: 0.3)
+        }
+
+        let newState = TerminalPaneState()
+        newState.terminalTabs.append(tab)
+        newState.activeTerminalID = tab.id
+        terminalStates[newID] = newState
+        activePaneID = newID
     }
 
     // MARK: - Maximize
