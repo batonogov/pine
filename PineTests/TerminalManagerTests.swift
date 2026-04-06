@@ -119,12 +119,20 @@ struct TerminalManagerTests {
         manager.paneManager = pm
 
         let editorPaneID = pm.activePaneID
+        // Open a tab so the editor leaf survives the auto-prune that runs
+        // when a terminal pane is created next to an empty editor.
+        pm.tabManager(for: editorPaneID)?.openTab(
+            url: URL(fileURLWithPath: "/tmp/all-term-tabs.swift")
+        )
         manager.createTerminalTab(relativeTo: editorPaneID, workingDirectory: nil)
 
         // Force creating a second terminal pane by clearing lastActiveTerminalPaneID
         manager.lastActiveTerminalPaneID = nil
         // Split the editor pane first to get a second editor pane
         if let newEditorID = pm.splitPane(editorPaneID, axis: .horizontal) {
+            pm.tabManager(for: newEditorID)?.openTab(
+                url: URL(fileURLWithPath: "/tmp/all-term-tabs-2.swift")
+            )
             manager.createTerminalTab(relativeTo: newEditorID, workingDirectory: nil)
         }
 

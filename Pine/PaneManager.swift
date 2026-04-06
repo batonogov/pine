@@ -358,14 +358,26 @@ final class PaneManager {
         return fresh
     }
 
-    /// Removes a pane and promotes its sibling. The single root leaf cannot
-    /// be removed (valid empty-state). When the last editor pane is removed,
-    /// callers can use ``ensureEditorPane()`` to recreate one on demand.
+    /// Removes a pane and promotes its sibling. When the very last leaf in
+    /// the tree is removed, a fresh empty editor leaf is created in its
+    /// place so the window never ends up with no content at all.
     func removePane(_ paneID: PaneID) {
         // If the pane being removed is the maximized pane, restore first
         // so the saved layout is available for removal.
         if maximizedPaneID == paneID {
             restoreFromMaximize()
+        }
+
+        // Special case: removing the only leaf in the tree → replace it with
+        // a fresh empty editor leaf so the user always has a destination.
+        if root.leafCount == 1, root.firstLeafID == paneID {
+            tabManagers[paneID] = nil
+            terminalStates[paneID] = nil
+            let newID = PaneID()
+            tabManagers[newID] = TabManager()
+            root = .leaf(newID, .editor)
+            activePaneID = newID
+            return
         }
 
         guard root.leafCount > 1,

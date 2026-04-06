@@ -32,6 +32,10 @@ final class TerminalManager {
             // Create terminal pane spanning full width at bottom
             let newID = pm.createTerminalPaneAtBottom(workingDirectory: workingDirectory)
             lastActiveTerminalPaneID = newID
+            // Collapse any empty editor placeholder that was sitting next to
+            // the new terminal — the user clearly wants the screen real estate
+            // for terminals, not for "No File Selected".
+            pm.pruneEmptyEditorLeaves()
         }
     }
 
