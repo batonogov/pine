@@ -78,18 +78,48 @@ struct OpenFileInActivePaneTests {
 
     @Test func openFile_terminalPaneActive_fallsBackToEditorPane() {
         let pm = ProjectManager()
-        let firstPaneID = pm.paneManager.activePaneID
+        let editorPaneID = pm.paneManager.activePaneID
+        let editorTM = pm.paneManager.tabManager(for: editorPaneID)
+        #expect(editorTM != nil)
 
         // Create a terminal pane and make it active.
-        pm.terminal.createTerminalTab(relativeTo: firstPaneID, workingDirectory: nil)
+        pm.terminal.createTerminalTab(relativeTo: editorPaneID, workingDirectory: nil)
+        // Sanity: active pane is now a terminal pane (no tabManager registered).
+        #expect(pm.paneManager.tabManager(for: pm.paneManager.activePaneID) == nil)
 
-        // Open a file — must land in an editor pane (not crash, not lost).
+        // Open a file — must fall back to the editor pane (not the terminal pane).
         let url = tmpFile("d.swift")
         pm.openFileInActivePane(url: url)
 
-        // Some editor TabManager somewhere has the tab.
-        let total = pm.allTabs.filter { $0.url == url }.count
-        #expect(total >= 1)
+        // The fallback should land in the editor pane's TabManager (which is also `pm.tabManager`,
+        // the only editor TabManager in this layout).
+        #expect(editorTM?.tabs.contains { $0.url == url } == true)
+        #expect(pm.tabManager.tabs.contains { $0.url == url })
+        // No duplicates across the project.
+        #expect(pm.allTabs.filter { $0.url == url }.count == 1)
+    }
+
+    // MARK: - Regression: single-pane behavior unchanged
+
+    @Test func openFile_singlePane_doesNotRegress() {
+        let pm = ProjectManager()
+        // In a single-pane layout, the active TabManager must be the primary one.
+        #expect(pm.activeTabManager === pm.tabManager)
+        // And there must be exactly one tabManager registered in the pane manager.
+        #expect(pm.paneManager.tabManagers.count == 1)
+
+        let urlA = tmpFile("regression-a.swift")
+        let urlB = tmpFile("regression-b.swift")
+        pm.openFileInActivePane(url: urlA)
+        pm.openFileInActivePane(url: urlB)
+
+        // Both files land in the primary TabManager.
+        #expect(pm.tabManager.tabs.contains { $0.url == urlA })
+        #expect(pm.tabManager.tabs.contains { $0.url == urlB })
+        // Active tab is the most recently opened one.
+        #expect(pm.tabManager.activeTab?.url == urlB)
+        // No extra TabManagers were spawned.
+        #expect(pm.paneManager.tabManagers.count == 1)
     }
 
     // MARK: - Open same file twice: no duplicate in active pane
