@@ -202,7 +202,10 @@ struct PaneLeafView: View {
             cachedHighlightResult: tab.cachedHighlightResult,
             goToOffset: goToLineOffset,
             indentStyle: tab.cachedIndentation,
-            fontSize: FontSizeSettings.shared.fontSize
+            fontSize: FontSizeSettings.shared.fontSize,
+            onRestoreHunk: { hunk in
+                handleGutterRevert(hunk, tabManager: tabManager)
+            }
         )
         .id(tab.id)
         .accessibilityIdentifier(AccessibilityID.codeEditor)

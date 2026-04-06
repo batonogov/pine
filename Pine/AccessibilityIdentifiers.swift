@@ -46,6 +46,13 @@ nonisolated enum AccessibilityID {
     static let editorTabOverflowMenu = "editorTabOverflowMenu"
     static let quickLookPreview = "quickLookPreview"
 
+    // MARK: - Inline diff toolbar (#689 / #687)
+    static let inlineDiffToolbar = "inlineDiffToolbar"
+    static let inlineDiffRestoreButton = "inlineDiffRestoreButton"
+    static let inlineDiffStageButton = "inlineDiffStageButton"
+    static let inlineDiffNextButton = "inlineDiffNextButton"
+    static let inlineDiffPreviousButton = "inlineDiffPreviousButton"
+
     // MARK: - Breadcrumb
     static let breadcrumbBar = "breadcrumbBar"
     static func breadcrumbSegment(_ name: String) -> String { "breadcrumbSegment_\(name)" }

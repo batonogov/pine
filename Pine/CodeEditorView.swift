@@ -503,6 +503,10 @@ final class GutterTextView: NSTextView {
 
     // MARK: - Escape key collapses expanded inline diff
 
+    /// Called when the inline diff should collapse (Escape, edit, click outside).
+    /// Wired by the Coordinator so it can also tear down the floating toolbar.
+    var onCollapseInlineDiff: (() -> Void)?
+
     override func keyDown(with event: NSEvent) {
         if event.keyCode == 53, expandedHunkID != nil {
             // Escape key (keyCode 53) collapses expanded inline diff
@@ -516,6 +520,7 @@ final class GutterTextView: NSTextView {
                     }
                 }
             }
+            onCollapseInlineDiff?()
             return
         }
         super.keyDown(with: event)
@@ -668,6 +673,9 @@ struct CodeEditorView: NSViewRepresentable {
     }
 
     var fontSize: CGFloat = FontSizeSettings.shared.fontSize
+    /// Called when the user clicks Restore on the inline diff toolbar (#689).
+    /// The receiver is expected to perform `git apply --reverse` and reload the buffer.
+    var onRestoreHunk: ((DiffHunk) -> Void)?
 
     private var editorFont: NSFont {
         NSFont.monospacedSystemFont(ofSize: fontSize, weight: .regular)
@@ -742,6 +750,9 @@ struct CodeEditorView: NSViewRepresentable {
         textView.addedLineNumbers = InlineDiffProvider.addedLineNumbers(from: diffHunks)
         textView.deletedLineBlocks = InlineDiffProvider.deletedLineBlocks(from: diffHunks)
         textView.diffHunksForHighlight = diffHunks
+        textView.onCollapseInlineDiff = { [weak coordinator = context.coordinator] in
+            coordinator?.dismissInlineDiffToolbar()
+        }
         // Delegate set AFTER text/highlight setup to prevent textDidChange from firing
         // during makeNSView and causing a spurious updateContent → cachedHighlightResult = nil
         // → contentVersion bump → updateNSView re-sets text → stripping highlight attributes.
@@ -969,6 +980,7 @@ struct CodeEditorView: NSViewRepresentable {
                 if gutterView.expandedHunkID != nil {
                     gutterView.expandedHunkID = nil
                     context.coordinator.lineNumberView?.expandedHunkID = nil
+                    context.coordinator.dismissInlineDiffToolbar()
                 }
                 gutterView.needsDisplay = true
             }
@@ -1320,6 +1332,15 @@ struct CodeEditorView: NSViewRepresentable {
             didChangeFromTextView = true
             parent.text = textView.string
 
+            // Any user edit dismisses the floating inline diff toolbar (#689) and
+            // collapses the expanded hunk — diff offsets become invalid as soon as
+            // the buffer changes.
+            if let gutterView = textView as? GutterTextView, gutterView.expandedHunkID != nil {
+                gutterView.expandedHunkID = nil
+                lineNumberView?.expandedHunkID = nil
+                dismissInlineDiffToolbar()
+            }
+
             // Подсветка синтаксиса сбросит backgroundColor —
             // считаем bracket highlight невалидным
             previousBracketRanges = []
@@ -1593,6 +1614,14 @@ struct CodeEditorView: NSViewRepresentable {
         @objc func scrollViewDidScroll(_ notification: Notification) {
             reportStateChange()
             highlightOnScrollIfNeeded()
+            // Track the expanded hunk so the toolbar follows it during scroll (#689)
+            if let toolbar = inlineDiffToolbar,
+               let textView = scrollView?.documentView as? GutterTextView,
+               let id = textView.expandedHunkID,
+               let hunk = parent.diffHunks.first(where: { $0.id == id }) {
+                _ = toolbar
+                repositionInlineDiffToolbar(for: hunk)
+            }
         }
 
         /// Подсвечивает видимую область при скролле (для больших файлов).
@@ -1806,6 +1835,148 @@ struct CodeEditorView: NSViewRepresentable {
             let newID: UUID? = (gutterView.expandedHunkID == hunk.id) ? nil : hunk.id
             gutterView.expandedHunkID = newID
             lineNumberView?.expandedHunkID = newID
+
+            if newID != nil {
+                presentInlineDiffToolbar(for: hunk)
+            } else {
+                dismissInlineDiffToolbar()
+            }
+        }
+
+        // MARK: - Inline diff toolbar (#689)
+
+        /// The currently displayed floating toolbar, if any.
+        var inlineDiffToolbar: InlineDiffToolbarView?
+
+        /// Presents the floating inline diff toolbar for the given hunk.
+        func presentInlineDiffToolbar(for hunk: DiffHunk) {
+            guard let sv = scrollView,
+                  let container = sv.superview else { return }
+
+            // Replace any existing toolbar — accordion behavior.
+            dismissInlineDiffToolbar()
+
+            let toolbar = InlineDiffToolbarView()
+            inlineDiffToolbar = toolbar
+
+            toolbar.onRestore = { [weak self] in
+                self?.parent.onRestoreHunk?(hunk)
+                // The buffer reload will refresh diffHunks and updateNSView will
+                // collapse the expanded hunk; we also dismiss eagerly.
+                self?.dismissInlineDiffToolbar()
+            }
+            toolbar.onNext = { [weak self] in
+                self?.navigateInlineDiff(direction: .next)
+            }
+            toolbar.onPrevious = { [weak self] in
+                self?.navigateInlineDiff(direction: .previous)
+            }
+            toolbar.onDismiss = { [weak self] in
+                self?.dismissInlineDiffToolbar()
+            }
+
+            container.addSubview(toolbar)
+            updateInlineDiffToolbarNavigationState(currentHunkID: hunk.id)
+            repositionInlineDiffToolbar(for: hunk)
+        }
+
+        /// Removes the toolbar from its superview.
+        func dismissInlineDiffToolbar() {
+            inlineDiffToolbar?.removeFromSuperview()
+            inlineDiffToolbar = nil
+        }
+
+        /// Updates next/previous button enabled state for the given hunk.
+        func updateInlineDiffToolbarNavigationState(currentHunkID: UUID?) {
+            guard let toolbar = inlineDiffToolbar else { return }
+            let hunks = parent.diffHunks
+            toolbar.updateNavigationState(
+                canGoNext: InlineDiffNavigator.canGoNext(from: currentHunkID, in: hunks),
+                canGoPrevious: InlineDiffNavigator.canGoPrevious(from: currentHunkID, in: hunks)
+            )
+        }
+
+        /// Computes the toolbar's screen position relative to the expanded hunk.
+        /// Anchors the toolbar to the right edge of the editor, just above the
+        /// hunk's first line.
+        func repositionInlineDiffToolbar(for hunk: DiffHunk) {
+            guard let toolbar = inlineDiffToolbar,
+                  let sv = scrollView,
+                  let textView = sv.documentView as? GutterTextView,
+                  let layoutManager = textView.layoutManager,
+                  let textContainer = textView.textContainer else { return }
+
+            let source = textView.string as NSString
+            // Resolve the character index of the hunk's first new-side line.
+            var charIndex = 0
+            var line = 1
+            while line < hunk.newStart && charIndex < source.length {
+                if source.character(at: charIndex) == ASCII.newline {
+                    line += 1
+                }
+                charIndex += 1
+            }
+            let glyphIndex = layoutManager.glyphIndexForCharacter(at: charIndex)
+            let lineRect = layoutManager.lineFragmentRect(forGlyphAt: glyphIndex, effectiveRange: nil)
+
+            // Convert to scroll view content view coordinates.
+            let contentBounds = sv.contentView.bounds
+            let originY = textView.textContainerOrigin.y
+            let yInTextView = lineRect.origin.y + originY
+            let yInContent = yInTextView - contentBounds.origin.y
+
+            // Anchor: place above the hunk if there's room, otherwise below.
+            let toolbarSize = toolbar.intrinsicContentSize
+            let above = yInContent - toolbarSize.height - 4
+            let below = yInContent + lineRect.height + 4
+            let y = above >= 0 ? above : below
+
+            // Right-aligned with small inset (account for vertical scroller width).
+            let scrollerWidth: CGFloat = sv.verticalScroller?.frame.width ?? 0
+            let svFrame = sv.frame
+            let x = svFrame.origin.x + svFrame.width - toolbarSize.width - scrollerWidth - 8
+            let svOriginY = svFrame.origin.y
+
+            toolbar.frame = NSRect(
+                x: x,
+                y: svOriginY + y,
+                width: toolbarSize.width,
+                height: toolbarSize.height
+            )
+        }
+
+        /// Navigates to the next/previous hunk by the user pressing the toolbar arrows.
+        func navigateInlineDiff(direction: InlineDiffProvider.NavigationDirection) {
+            guard let sv = scrollView,
+                  let textView = sv.documentView as? GutterTextView else { return }
+            let hunks = parent.diffHunks
+            let currentID = textView.expandedHunkID
+            let target: DiffHunk?
+            switch direction {
+            case .next:
+                target = InlineDiffNavigator.nextHunk(after: currentID, in: hunks)
+            case .previous:
+                target = InlineDiffNavigator.previousHunk(before: currentID, in: hunks)
+            }
+            guard let next = target else { return }
+
+            textView.expandedHunkID = next.id
+            lineNumberView?.expandedHunkID = next.id
+
+            // Scroll the new hunk into view (1-based newStart → char index).
+            let source = textView.string as NSString
+            var charIndex = 0
+            var line = 1
+            while line < next.newStart && charIndex < source.length {
+                if source.character(at: charIndex) == ASCII.newline {
+                    line += 1
+                }
+                charIndex += 1
+            }
+            textView.scrollRangeToVisible(NSRange(location: charIndex, length: 0))
+
+            // Re-present toolbar so it tracks the new hunk position.
+            presentInlineDiffToolbar(for: next)
         }
 
         /// Handles fold code notifications from menu/keyboard shortcuts.
