@@ -78,6 +78,13 @@ jobs:
       - name: Run SwiftLint
         run: swiftlint --strict
 
+      - name: Check nonisolated on background-queue types (issues #693/#699)
+        run: python3 .github/scripts/check_nonisolated.py Pine
+
+      - name: Unit tests for nonisolated check script
+        working-directory: .github/scripts
+        run: python3 -m unittest test_check_nonisolated.py -v
+
   build:
     name: Build for Testing
     needs: changes

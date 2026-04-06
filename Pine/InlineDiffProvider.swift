@@ -21,7 +21,7 @@ enum InlineDiffAction: String, Sendable {
 // MARK: - Models
 
 /// A single diff hunk with enough context to stage or revert it.
-struct DiffHunk: Equatable, Sendable, Identifiable {
+nonisolated struct DiffHunk: Equatable, Sendable, Identifiable {
     let id: UUID
     /// 1-based start line in the new file (what the editor shows).
     let newStart: Int
@@ -66,7 +66,7 @@ struct DiffHunk: Equatable, Sendable, Identifiable {
 // MARK: - Inline diff highlight models
 
 /// Describes the kind of highlight for a line in the inline diff view.
-enum DiffLineKind: Equatable, Sendable {
+nonisolated enum DiffLineKind: Equatable, Sendable {
     /// A line that was added (exists in the editor) — shown with green background.
     case added
     /// A line that was deleted (phantom, not in the editor) — shown with red background.
@@ -74,7 +74,7 @@ enum DiffLineKind: Equatable, Sendable {
 }
 
 /// A single line to highlight in the inline diff view.
-struct DiffHighlightLine: Equatable, Sendable {
+nonisolated struct DiffHighlightLine: Equatable, Sendable {
     /// The kind of diff highlight.
     let kind: DiffLineKind
     /// For `.added`: the 1-based editor line number.
@@ -83,7 +83,7 @@ struct DiffHighlightLine: Equatable, Sendable {
 }
 
 /// A group of deleted lines that should be rendered as phantom text above a given editor line.
-struct DeletedLinesBlock: Equatable, Sendable {
+nonisolated struct DeletedLinesBlock: Equatable, Sendable {
     /// The 1-based editor line above which (or at which) these deleted lines should be drawn.
     let anchorLine: Int
     /// The deleted line contents (without the `-` prefix).
@@ -93,7 +93,12 @@ struct DeletedLinesBlock: Equatable, Sendable {
 // MARK: - InlineDiffProvider
 
 /// Provides diff hunk parsing and accept/revert operations for editor files.
-enum InlineDiffProvider {
+/// Marked `nonisolated` to opt out of `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor`.
+/// All static helpers run on background `DispatchQueue.global()` queues; if the
+/// enum inherited MainActor isolation, the dispatched closures would assert
+/// against the queue's executor and crash with `dispatch_assert_queue_fail`
+/// (issue #693).
+nonisolated enum InlineDiffProvider {
 
     // MARK: - Hunk parsing
 
