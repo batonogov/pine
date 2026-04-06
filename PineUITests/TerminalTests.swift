@@ -697,5 +697,15 @@ final class TerminalTests: PineUITestCase {
             terminalTab("Terminal 1").exists,
             "Terminal pane must persist when a new editor pane is created next to it"
         )
+
+        // The recreated editor must sit ABOVE the terminal (vertical split,
+        // editor on top) — verify by comparing y-coordinates of the two
+        // tab bars. The editor tab's frame must start above the terminal tab.
+        let editorTabFrame = editorTab.frame
+        let terminalTabFrame = terminalTab("Terminal 1").frame
+        XCTAssertLessThan(
+            editorTabFrame.minY, terminalTabFrame.minY,
+            "Recreated editor pane must be positioned above the terminal pane"
+        )
     }
 }

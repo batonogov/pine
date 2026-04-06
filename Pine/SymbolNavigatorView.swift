@@ -120,7 +120,7 @@ struct SymbolNavigatorView: View {
     // MARK: - Actions
 
     private func loadSymbols() {
-        guard let tab = projectManager.primaryTabManager.activeTab else { return }
+        guard let tab = projectManager.activeTabManager.activeTab else { return }
         let ext = tab.url.pathExtension
         allSymbols = SymbolParser.parse(content: tab.content, fileExtension: ext)
         filteredSymbols = allSymbols
@@ -147,7 +147,7 @@ struct SymbolNavigatorView: View {
     }
 
     private func navigateToSymbol(_ symbol: PineSymbol) {
-        guard let tab = projectManager.primaryTabManager.activeTab else { return }
+        guard let tab = projectManager.activeTabManager.activeTab else { return }
         let offset = ContentView.cursorOffset(forLine: symbol.line, in: tab.content)
         NotificationCenter.default.post(
             name: .symbolNavigate,

@@ -17,6 +17,16 @@ final class ProjectManager {
     /// The primary TabManager (root editor pane). Owns the recovery wiring and
     /// editor-context subscription. For the *focused* pane's TabManager, use
     /// ``activeTabManager`` which delegates to ``PaneManager/activeEditorTabManager``.
+    ///
+    /// Note: this instance can become an *orphan* — i.e. no pane in the
+    /// `PaneManager` tree references it — after `pruneEmptyEditorLeaves`
+    /// removes the root editor pane (terminals-only layout) or after a
+    /// session restore that does not bind it to any leaf. In that state it
+    /// is harmless: it holds no tabs, contributes nothing to `allTabs`, and
+    /// is recreated as a leaf-bound TabManager via `ensureEditorPane()`
+    /// when the user opens a file again. The reference is kept solely so
+    /// the recovery wiring and editor-context subscription survive across
+    /// such transitions.
     let primaryTabManager = TabManager()
     let searchProvider = ProjectSearchProvider()
     let quickOpenProvider = QuickOpenProvider()

@@ -317,9 +317,6 @@ struct PaneLeafView: View {
         if tabManager.tabs.isEmpty {
             paneManager.removePane(paneID)
         }
-        // Defensive: also collapse any other now-empty editor leaves so the
-        // layout doesn't keep stale placeholders around.
-        paneManager.pruneEmptyEditorLeaves()
     }
 
     private func closeOtherTabsWithConfirmation(keeping tabID: UUID, tabManager: TabManager) {
@@ -333,6 +330,5 @@ struct PaneLeafView: View {
     private func closeAllTabsWithConfirmation(tabManager: TabManager) {
         TabCloseHelper.closeAllTabs(in: tabManager, gitProvider: workspace.gitProvider)
         paneManager.removePane(paneID)
-        paneManager.pruneEmptyEditorLeaves()
     }
 }

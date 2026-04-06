@@ -16,18 +16,19 @@ import Foundation
 @MainActor
 struct PaneManagerPruneEmptyEditorTests {
 
-    private func makeURL(_ name: String) -> URL {
-        URL(fileURLWithPath: "/tmp/pine-prune-tests/\(name)")
-    }
-
-    private func openDummyTab(in tm: TabManager, name: String) {
-        // Use openTab variant that does not hit disk: simulate a tab append
-        // by reusing TabManager's internal append via a tiny shim. To avoid
-        // touching disk, we directly mutate `tabs` (TabManager exposes it).
-        let url = makeURL(name)
-        let tab = EditorTab(url: url, content: "", savedContent: "")
-        tm.tabs.append(tab)
-        tm.activeTabID = tab.id
+    /// Creates a real file in a unique temp directory and opens it via
+    /// `TabManager.openTab(url:)` so all tab invariants (highlight cache,
+    /// dirty tracking, observers) are exercised exactly like in production.
+    /// Returns the file URL so callers can reference it later (e.g. DnD).
+    @discardableResult
+    private func openDummyTab(in tm: TabManager, name: String) -> URL {
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("pine-prune-tests-\(UUID().uuidString)")
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let url = dir.appendingPathComponent(name)
+        try? "// \(name)".write(to: url, atomically: true, encoding: .utf8)
+        tm.openTab(url: url)
+        return url
     }
 
     // MARK: - Single pane (root) is never pruned
@@ -114,6 +115,33 @@ struct PaneManagerPruneEmptyEditorTests {
         #expect(manager.root.leafCount(ofType: .editor) == 1)
     }
 
+    /// Quick Open path: simulates `QuickOpenView.openFile` against a
+    /// terminals-only layout — must transparently recreate an editor leaf
+    /// and open the file in it. Mirrors the production code path
+    /// `paneManager.ensureEditorPane().openTab(url:)`.
+    @Test func quickOpen_inTerminalsOnlyLayout_recreatesEditorAndOpensFile() {
+        let manager = PaneManager()
+        let editorID = manager.activePaneID
+        _ = manager.createTerminalPane(
+            relativeTo: editorID, axis: .horizontal, workingDirectory: nil
+        )
+        manager.pruneEmptyEditorLeaves()
+        #expect(manager.root.leafCount(ofType: .editor) == 0)
+
+        // Simulate Quick Open's openFile flow.
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("pine-quick-open-\(UUID().uuidString)")
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let url = dir.appendingPathComponent("opened-via-quick-open.swift")
+        try? "// quick open".write(to: url, atomically: true, encoding: .utf8)
+        manager.ensureEditorPane().openTab(url: url)
+
+        #expect(manager.root.leafCount(ofType: .editor) == 1)
+        let activeTM = manager.tabManagers[manager.activePaneID]
+        #expect(activeTM?.tabs.count == 1)
+        #expect(activeTM?.tabs.first?.url == url)
+    }
+
     @Test func ensureEditorPane_thenOpenFile_endToEnd() {
         let manager = PaneManager()
         let editorID = manager.activePaneID
@@ -141,7 +169,7 @@ struct PaneManagerPruneEmptyEditorTests {
         guard let sourceTM = manager.tabManager(for: sourceID) else {
             Issue.record("missing TM"); return
         }
-        openDummyTab(in: sourceTM, name: "moved.swift")
+        let movedURL = openDummyTab(in: sourceTM, name: "moved.swift")
 
         guard let destID = manager.splitPane(sourceID, axis: .horizontal) else {
             Issue.record("split failed"); return
@@ -153,7 +181,7 @@ struct PaneManagerPruneEmptyEditorTests {
         openDummyTab(in: destTM, name: "keep.swift")
 
         manager.moveTabBetweenPanes(
-            tabURL: makeURL("moved.swift"),
+            tabURL: movedURL,
             from: sourceID,
             to: destID
         )

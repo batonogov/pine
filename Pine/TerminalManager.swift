@@ -26,6 +26,10 @@ final class TerminalManager {
 
         if let tpID = lastActiveTerminalPaneID,
            pm.terminalState(for: tpID) != nil {
+            // Adding a tab to an existing terminal pane is not a structural
+            // mutation — the layout already includes a terminal, so any
+            // adjacent empty editor was already pruned (or kept on purpose).
+            // No prune needed here.
             pm.terminalState(for: tpID)?.addTab(workingDirectory: workingDirectory)
             pm.activePaneID = tpID
         } else {

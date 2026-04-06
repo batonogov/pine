@@ -314,4 +314,49 @@ struct ProjectManagerSessionTests {
         }
         #expect(pm2.primaryTabManager.tabs.count == 2)
     }
+
+    // MARK: - Empty editor + terminal layout round-trip
+
+    /// Persist a layout where the editor pane sits empty next to a terminal
+    /// pane, then reload it: after restore, `pruneEmptyEditorLeaves` must
+    /// collapse the empty editor so the user does not face the same UX bug
+    /// twice across app launches.
+    @Test func roundTrip_emptyEditorNextToTerminal_isPrunedAfterRestore() throws {
+        let (dir, _) = try makeTempProject()
+        defer { cleanup(dir) }
+
+        // Phase 1: build "empty editor + terminal" layout and save the session.
+        let pm1 = ProjectManager()
+        pm1.workspace.loadDirectory(url: dir)
+        let editorPaneID = pm1.paneManager.activePaneID
+        _ = pm1.paneManager.createTerminalPane(
+            relativeTo: editorPaneID, axis: .vertical, workingDirectory: dir
+        )
+        // Editor pane is intentionally left empty.
+        #expect(pm1.paneManager.root.leafCount(ofType: .editor) == 1)
+        #expect(pm1.paneManager.root.leafCount(ofType: .terminal) == 1)
+        pm1.saveSession()
+
+        // Phase 2: reload session into a fresh ProjectManager and apply the
+        // same restore steps that ContentView+Helpers.restoreSessionIfNeeded
+        // performs (restoreLayout → populate → pruneEmptyEditorLeaves).
+        let pm2 = ProjectManager()
+        pm2.workspace.loadDirectory(url: dir)
+
+        let canonical = dir.resolvingSymlinksInPath()
+        let session = try #require(SessionState.load(for: canonical))
+        let layoutData = try #require(session.paneLayoutData)
+        let restoredNode = try #require(try? JSONDecoder().decode(PaneNode.self, from: layoutData))
+        pm2.paneManager.restoreLayout(
+            from: restoredNode,
+            activePaneUUID: session.activePaneID.flatMap { UUID(uuidString: $0) }
+        )
+        // No tabs to populate — the editor leaf was empty when persisted.
+        pm2.paneManager.pruneEmptyEditorLeaves()
+
+        // After prune the empty editor must be gone — only the terminal remains.
+        #expect(pm2.paneManager.root.leafCount == 1)
+        #expect(pm2.paneManager.root.leafCount(ofType: .editor) == 0)
+        #expect(pm2.paneManager.root.leafCount(ofType: .terminal) == 1)
+    }
 }
