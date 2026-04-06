@@ -226,9 +226,12 @@ final class LineNumberView: NSView {
         for area in trackingAreas {
             removeTrackingArea(area)
         }
+        // .mouseMoved is required so we can update the dynamic `toolTip` string
+        // as the cursor moves between diagnostic icons (#679). Without it, AppKit
+        // never asks us for a per-line tooltip and the user sees nothing.
         let area = NSTrackingArea(
             rect: bounds,
-            options: [.mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect],
+            options: [.mouseEnteredAndExited, .mouseMoved, .activeInKeyWindow, .inVisibleRect],
             owner: self,
             userInfo: nil
         )
@@ -245,6 +248,29 @@ final class LineNumberView: NSView {
     override func mouseExited(with event: NSEvent) {
         isMouseInside = false
         needsDisplay = true
+        // Clear dynamic tooltip when leaving the gutter so a stale message
+        // doesn't linger after the cursor moves into the editor.
+        toolTip = nil
+    }
+
+    /// Updates the dynamic `toolTip` property based on the cursor position.
+    ///
+    /// We can't rely on the `addToolTip(_:owner:userData:)` rect mechanism alone
+    /// because AppKit only asks the owner for tooltip text after a fixed hover
+    /// delay AND only when the rect was registered with non-zero bounds at the
+    /// right time. Setting `toolTip` directly on every mouse move guarantees that
+    /// the standard NSView tooltip surface always reflects the current line.
+    /// (#679)
+    override func mouseMoved(with event: NSEvent) {
+        let point = convert(event.locationInWindow, from: nil)
+        let message = resolveTooltip(at: point)
+        if toolTip != message {
+            toolTip = message
+        }
+        // Show pointing-hand cursor when hovering over a clickable diagnostic icon.
+        if message != nil && point.x < 14 {
+            NSCursor.pointingHand.set()
+        }
     }
 
     override func mouseDown(with event: NSEvent) {
@@ -267,11 +293,46 @@ final class LineNumberView: NSView {
             return
         }
 
-        // Find which line was clicked
+        // Diagnostic icon click → show popover with full message (#679).
+        // Diagnostic icons are drawn at x=1..1+diagnosticIconDrawSize.
+        if let lineNum = lineNumber(at: point),
+           let diag = diagnosticMap[lineNum] {
+            showDiagnosticPopover(for: diag, at: point)
+            return
+        }
+
+        // Find which line was clicked for fold toggle
         if let lineNumber = lineNumber(at: point),
            let foldable = foldStartMap[lineNumber] {
             onFoldToggle?(foldable)
         }
+    }
+
+    /// Currently displayed diagnostic popover, if any. Kept as a property so we can
+    /// dismiss it on subsequent clicks and prevent multiple popovers.
+    private var diagnosticPopover: NSPopover?
+
+    /// Shows an NSPopover anchored to the diagnostic icon for the given diagnostic.
+    /// The popover lists the severity, source, and full message — providing the
+    /// "click to see what is wrong" affordance requested in #679.
+    func showDiagnosticPopover(for diag: ValidationDiagnostic, at point: NSPoint) {
+        // Dismiss any existing popover first
+        diagnosticPopover?.close()
+
+        let popover = NSPopover()
+        popover.behavior = .transient
+        popover.contentViewController = DiagnosticPopoverController(diagnostic: diag)
+
+        // Anchor the popover to a small rect around the click point so it points
+        // at the icon, not at the entire gutter.
+        let anchorRect = NSRect(
+            x: max(0, point.x - 4),
+            y: max(0, point.y - 4),
+            width: 8,
+            height: 8
+        )
+        popover.show(relativeTo: anchorRect, of: self, preferredEdge: .maxX)
+        diagnosticPopover = popover
     }
 
     /// Returns the hunk that covers the given line number, if any.
@@ -550,10 +611,10 @@ final class LineNumberView: NSView {
         .info: .systemBlue
     ]
 
-    /// Fixed draw size for diagnostic icons — small enough to fit inside the fold indicator area
-    /// without overlapping line numbers. Kept at 8px so the right edge (x=1 + 8 = 9px) stays
-    /// well clear of two-digit line numbers that start around x≈18.
-    static let diagnosticIconDrawSize: CGFloat = 8
+    /// Fixed draw size for diagnostic icons — sized so the right edge (x=1 + 12 = 13px)
+    /// stays clear of two-digit line numbers that start around x≈18 (#679).
+    /// Increased from 8px to improve readability of error/warning glyphs.
+    static let diagnosticIconDrawSize: CGFloat = 12
 
     /// Draws an SF Symbol icon for a validation diagnostic at the given line position.
     /// The icon is drawn inside the fold indicator area (leftmost ~14px of the gutter),

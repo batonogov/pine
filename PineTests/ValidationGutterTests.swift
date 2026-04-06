@@ -145,8 +145,10 @@ struct ValidationGutterTests {
         #expect(LineNumberView.diagnosticIconDrawSize <= 14)
     }
 
-    @Test func diagnosticIconDrawSize_isExactly8() {
-        #expect(LineNumberView.diagnosticIconDrawSize == 8)
+    @Test func diagnosticIconDrawSize_isExactly12() {
+        // Bumped from 8 → 12 in #679 to improve readability while still
+        // fitting inside the fold area without overlapping line numbers.
+        #expect(LineNumberView.diagnosticIconDrawSize == 12)
     }
 
     // MARK: - Fixed gutter width (issue #677)
