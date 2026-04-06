@@ -50,8 +50,17 @@ final class GutterTextView: NSTextView {
     var diffHunksForHighlight: [DiffHunk] = []
 
     /// The ID of the currently expanded hunk (shows inline diff). Nil = all collapsed.
+    /// Setting this triggers a layout invalidation so that the layout manager
+    /// reserves space for the phantom block on the anchor line (#697, #698).
     var expandedHunkID: UUID? {
-        didSet { needsDisplay = true }
+        didSet {
+            guard oldValue != expandedHunkID else { return }
+            if let layoutManager = layoutManager {
+                let fullRange = NSRange(location: 0, length: (string as NSString).length)
+                layoutManager.invalidateLayout(forCharacterRange: fullRange, actualCharacterRange: nil)
+            }
+            needsDisplay = true
+        }
     }
 
     /// Subtle green tint for added lines.
@@ -235,7 +244,7 @@ final class GutterTextView: NSTextView {
 
         layoutManager.enumerateLineFragments(
             forGlyphRange: visibleGlyphRange
-        ) { [self] lineRect, _, _, glyphRange, _ in
+        ) { [self] _, usedRect, _, glyphRange, _ in
             let charIndex = layoutManager.characterIndexForGlyph(at: glyphRange.location)
 
             // Determine if this is a new logical line
@@ -251,30 +260,32 @@ final class GutterTextView: NSTextView {
             }
 
             if isNewLogicalLine {
-                let y = lineRect.origin.y + originY - visibleRect.origin.y
+                // usedRect tracks the actual glyph row; on the anchor line of an
+                // expanded phantom block, the layout manager delegate has shifted
+                // usedRect down inside an inflated lineRect — so the area from
+                // lineRect.origin.y up to usedRect.origin.y is the reserved
+                // phantom space (#697, #698).
+                let glyphRowY = usedRect.origin.y + originY - visibleRect.origin.y
+                let glyphRowHeight = usedRect.height
 
-                // Draw deleted phantom blocks above this line if it's an anchor
+                // Draw deleted phantom blocks in the reserved area above the glyph row.
                 if deletedAnchorSet.contains(lineNumber), let blocks = deletedAnchorMap[lineNumber] {
-                    var currentY = y
+                    var drawTop = glyphRowY - CGFloat(blocks.reduce(0) { $0 + $1.lines.count }) * glyphRowHeight
                     for block in blocks {
-                        let blockHeight = CGFloat(block.lines.count) * lineRect.height
-                        currentY -= blockHeight
-                    }
-                    // Draw blocks top-down so they stack correctly
-                    var drawY = currentY
-                    for block in blocks {
-                        let blockHeight = CGFloat(block.lines.count) * lineRect.height
-                        self.drawDeletedPhantomBlock(block, at: drawY + blockHeight, lineHeight: lineRect.height)
-                        drawY += blockHeight
+                        let blockHeight = CGFloat(block.lines.count) * glyphRowHeight
+                        self.drawDeletedPhantomBlock(block, at: drawTop + blockHeight, lineHeight: glyphRowHeight)
+                        drawTop += blockHeight
                     }
                 }
 
                 // Draw green background on added lines (only for expanded hunk)
                 if hunkAddedLines.contains(lineNumber) {
-                    var highlightRect = lineRect
-                    highlightRect.origin.x = 0
-                    highlightRect.size.width = self.bounds.width
-                    highlightRect.origin.y = y
+                    let highlightRect = NSRect(
+                        x: 0,
+                        y: glyphRowY,
+                        width: self.bounds.width,
+                        height: glyphRowHeight
+                    )
                     Self.addedLineColor.setFill()
                     highlightRect.fill()
                 }
@@ -1806,6 +1817,8 @@ struct CodeEditorView: NSViewRepresentable {
             let newID: UUID? = (gutterView.expandedHunkID == hunk.id) ? nil : hunk.id
             gutterView.expandedHunkID = newID
             lineNumberView?.expandedHunkID = newID
+            // expandedHunkID didSet invalidates layout so the phantom block
+            // anchor line is re-inflated by the layout manager delegate.
         }
 
         /// Handles fold code notifications from menu/keyboard shortcuts.
@@ -1949,22 +1962,57 @@ struct CodeEditorView: NSViewRepresentable {
             in textContainer: NSTextContainer,
             forGlyphRange glyphRange: NSRange
         ) -> Bool {
-            guard !parent.foldState.foldedRanges.isEmpty else { return false }
-            let charRange = layoutManager.characterRange(forGlyphRange: glyphRange, actualGlyphRange: nil)
+            // We use this hook for two things:
+            //  1. Code folding — collapse hidden lines to zero height.
+            //  2. Inline diff phantom block — inflate the anchor line of the
+            //     expanded hunk so the deleted-lines block has real layout space
+            //     (#697, #698). Without this the phantom is drawn over real text
+            //     and line numbers desync.
+            let hasFolds = !parent.foldState.foldedRanges.isEmpty
+            let phantomHunks = expandedPhantomHunks
+            let expandedID = expandedPhantomHunkID
+            guard hasFolds || (expandedID != nil && !phantomHunks.isEmpty) else { return false }
 
-            // Use cached line starts for O(log n) lookup
             guard let cache = lineStartsCache else { return false }
+            let charRange = layoutManager.characterRange(forGlyphRange: glyphRange, actualGlyphRange: nil)
             let line = cache.lineNumber(at: charRange.location)
 
             // If this line is hidden (inside a folded region), collapse it to zero height
-            if parent.foldState.isLineHidden(line) {
+            if hasFolds && parent.foldState.isLineHidden(line) {
                 lineFragmentRect.pointee.size.height = 0
                 lineFragmentUsedRect.pointee.size.height = 0
                 baselineOffset.pointee = 0
                 return true
             }
 
+            // Inflate the anchor line of the expanded hunk to reserve space for phantoms.
+            let phantomCount = InlineDiffProvider.phantomLineCount(
+                forLine: line,
+                in: phantomHunks,
+                expandedHunkID: expandedID
+            )
+            if phantomCount > 0 {
+                let baseHeight = lineFragmentRect.pointee.size.height
+                let extra = baseHeight * CGFloat(phantomCount)
+                lineFragmentRect.pointee.size.height = baseHeight + extra
+                // Push the glyph row to the bottom of the inflated fragment so the
+                // top portion is the reserved phantom area.
+                lineFragmentUsedRect.pointee.origin.y += extra
+                baselineOffset.pointee += extra
+                return true
+            }
+
             return false
+        }
+
+        /// Diff hunks driving phantom expansion (mirrors gutterView state).
+        var expandedPhantomHunks: [DiffHunk] {
+            (scrollView?.documentView as? GutterTextView)?.diffHunksForHighlight ?? []
+        }
+
+        /// ID of the currently expanded hunk, if any.
+        var expandedPhantomHunkID: UUID? {
+            (scrollView?.documentView as? GutterTextView)?.expandedHunkID
         }
 
         private func reportStateChange() {

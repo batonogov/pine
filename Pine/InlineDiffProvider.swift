@@ -277,6 +277,45 @@ enum InlineDiffProvider {
         return blocks
     }
 
+    // MARK: - Phantom layout reservation (#697, #698)
+
+    /// Returns the number of deleted phantom lines that should be reserved
+    /// above the given editor line, when the given hunk is expanded.
+    ///
+    /// Used by the layout manager delegate to inflate the line fragment rect
+    /// of the anchor line so that subsequent code lines shift down — the phantom
+    /// block then has real layout space and does not overlap real text.
+    /// Returns 0 for non-anchor lines, modified hunks, unexpanded hunks, or empty input.
+    static func phantomLineCount(
+        forLine line: Int,
+        in hunks: [DiffHunk],
+        expandedHunkID: UUID?
+    ) -> Int {
+        guard let expandedID = expandedHunkID,
+              let hunk = hunks.first(where: { $0.id == expandedID }) else {
+            return 0
+        }
+        guard !isModifiedHunk(hunk) else { return 0 }
+        let deleted = hunk.deletedLines
+        guard !deleted.isEmpty else { return 0 }
+        guard hunk.newStart == line else { return 0 }
+        return deleted.count
+    }
+
+    /// Returns the anchor (1-based) line of the expanded hunk's phantom block, or nil.
+    static func phantomAnchorLine(
+        in hunks: [DiffHunk],
+        expandedHunkID: UUID?
+    ) -> Int? {
+        guard let expandedID = expandedHunkID,
+              let hunk = hunks.first(where: { $0.id == expandedID }),
+              !isModifiedHunk(hunk),
+              !hunk.deletedLines.isEmpty else {
+            return nil
+        }
+        return hunk.newStart
+    }
+
     // MARK: - Fetch hunks for file
 
     /// Fetches diff hunks for a file asynchronously.
