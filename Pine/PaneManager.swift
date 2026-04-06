@@ -488,7 +488,7 @@ final class PaneManager {
 
         // Cross-type: auto-split target vertically, new pane below holds the moved tab.
         if dragInfo.contentType == .terminal {
-            // Moving a terminal tab into (or near) an editor pane.
+            // Moving a terminal tab into an editor pane.
             guard terminalStates[sourcePaneID]?.terminalTabs
                 .contains(where: { $0.id == dragInfo.tabID }) == true else { return false }
             let newID = splitAndMoveTerminalTab(
@@ -500,7 +500,7 @@ final class PaneManager {
             )
             return newID != nil
         } else if let fileURL = dragInfo.fileURL {
-            // Moving an editor tab into (or near) a terminal pane.
+            // Moving an editor tab into a terminal pane.
             guard tabManagers[sourcePaneID]?.tabs
                 .contains(where: { $0.url == fileURL }) == true else { return false }
             let newID = splitPane(

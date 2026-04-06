@@ -144,9 +144,115 @@ struct CrossTypeCenterDropTests {
         let ok = manager.performCenterDrop(dragInfo: drag, targetPaneID: termPaneID)
 
         #expect(ok)
-        // Invariant: there is always at least one editor pane
+        // Invariant: there is always at least one editor pane.
         let editorLeafCount = manager.root.leafCount(ofType: .editor)
         #expect(editorLeafCount >= 1)
+        // The auto-split actually happened: a new editor pane was created
+        // (so we now have 2 editor leaves — the original and the new one).
+        let editorLeaves = manager.root.leafIDs.filter { manager.root.content(for: $0) == .editor }
+        #expect(editorLeaves.count == 2)
+        // The original editor pane still exists (invariant: never destroy
+        // the last editor pane, even if its last tab was moved out).
+        #expect(editorLeaves.contains(editorPaneID))
+        // fileA lives in the new editor pane (not the source).
+        let newEditor = try #require(editorLeaves.first { $0 != editorPaneID })
+        let newTM = try #require(manager.tabManager(for: newEditor))
+        #expect(newTM.tabs.count == 1)
+        #expect(newTM.tabs[0].url == fileA)
+        // Source editor pane has been emptied (its only tab was moved).
+        #expect(editorTM.tabs.isEmpty)
+        // Terminal pane is still alive.
+        #expect(manager.terminalState(for: termPaneID) != nil)
+        #expect(manager.root.leafCount(ofType: .terminal) == 1)
+    }
+
+    // MARK: - Deeply nested pane trees
+
+    @Test("cross-type center drop into deeply nested pane preserves tree consistency")
+    func crossTypeCenter_deeplyNestedTarget_preservesTree() throws {
+        // Build a 3-level deep editor tree:
+        //   root split (horizontal)
+        //     ├─ paneA (editor, fileA)
+        //     └─ child split (vertical)
+        //         ├─ paneB (editor, fileB)
+        //         └─ grandchild split (horizontal)
+        //             ├─ paneC (editor, fileC)
+        //             └─ paneD (editor, fileD)  <-- target for cross-type drop
+        let manager = PaneManager()
+        let paneA = manager.activePaneID
+        let tmA = try #require(manager.tabManager(for: paneA))
+        let fileA = URL(fileURLWithPath: "/tmp/a.swift")
+        tmA.openTab(url: fileA)
+
+        let paneB = try #require(manager.splitPane(paneA, axis: .horizontal))
+        let tmB = try #require(manager.tabManager(for: paneB))
+        let fileB = URL(fileURLWithPath: "/tmp/b.swift")
+        tmB.openTab(url: fileB)
+
+        let paneC = try #require(manager.splitPane(paneB, axis: .vertical))
+        let tmC = try #require(manager.tabManager(for: paneC))
+        let fileC = URL(fileURLWithPath: "/tmp/c.swift")
+        tmC.openTab(url: fileC)
+
+        let paneD = try #require(manager.splitPane(paneC, axis: .horizontal))
+        let tmD = try #require(manager.tabManager(for: paneD))
+        let fileD = URL(fileURLWithPath: "/tmp/d.swift")
+        tmD.openTab(url: fileD)
+
+        // Create a terminal pane (wraps the whole editor tree at the bottom)
+        // and add a second tab so the source survives after the move.
+        let termPaneID = manager.createTerminalPaneAtBottom(workingDirectory: nil)
+        let termState = try #require(manager.terminalState(for: termPaneID))
+        termState.addTab(workingDirectory: nil)
+        #expect(termState.terminalTabs.count == 2)
+        let movedTermTabID = termState.terminalTabs[0].id
+
+        let beforeEditorCount = manager.root.leafCount(ofType: .editor)
+        let beforeTerminalCount = manager.root.leafCount(ofType: .terminal)
+        #expect(beforeEditorCount == 4)
+        #expect(beforeTerminalCount == 1)
+
+        // Drop the terminal tab into the deeply nested editor pane (paneD).
+        let drag = TabDragInfo(
+            paneID: termPaneID.id,
+            tabID: movedTermTabID,
+            fileURL: nil,
+            contentType: .terminal
+        )
+        let ok = manager.performCenterDrop(dragInfo: drag, targetPaneID: paneD)
+        #expect(ok)
+
+        // Tree consistency: editor leaf count unchanged, terminal grew by one.
+        #expect(manager.root.leafCount(ofType: .editor) == beforeEditorCount)
+        #expect(manager.root.leafCount(ofType: .terminal) == beforeTerminalCount + 1)
+
+        // All original editor panes still exist with their original tabs intact.
+        let allLeaves = manager.root.leafIDs
+        #expect(allLeaves.contains(paneA))
+        #expect(allLeaves.contains(paneB))
+        #expect(allLeaves.contains(paneC))
+        #expect(allLeaves.contains(paneD))
+        #expect(try #require(manager.tabManager(for: paneA)).tabs.first?.url == fileA)
+        #expect(try #require(manager.tabManager(for: paneB)).tabs.first?.url == fileB)
+        #expect(try #require(manager.tabManager(for: paneC)).tabs.first?.url == fileC)
+        #expect(try #require(manager.tabManager(for: paneD)).tabs.first?.url == fileD)
+
+        // The new terminal pane sits adjacent to paneD (the deeply nested target)
+        // and holds the moved tab. The original terminal pane still has its second tab.
+        let terminalPanes = manager.terminalPaneIDs
+        #expect(terminalPanes.count == 2)
+        let newTermPane = try #require(terminalPanes.first { $0 != termPaneID })
+        let newState = try #require(manager.terminalState(for: newTermPane))
+        #expect(newState.terminalTabs.contains { $0.id == movedTermTabID })
+        #expect(termState.terminalTabs.count == 1)
+        #expect(!termState.terminalTabs.contains { $0.id == movedTermTabID })
+
+        // Tree is still well-formed: every leaf is reachable via content(for:).
+        for leaf in allLeaves {
+            #expect(manager.root.content(for: leaf) != nil)
+        }
+        // And total leaf count matches the sum of editor + terminal leaves.
+        #expect(manager.root.leafCount == beforeEditorCount + beforeTerminalCount + 1)
     }
 
     // MARK: - Same-type center drop (unchanged behaviour)
