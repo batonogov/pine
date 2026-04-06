@@ -67,12 +67,13 @@ class TestFindTypeDeclarations(unittest.TestCase):
         self.assertIn("final", decls[0].attrs)
 
     def test_main_actor_attribute_on_previous_line(self):
+        # @MainActor is the *cause* of the bug — it must NOT count as isolated.
         src = "@MainActor\n@Observable\nfinal class Foo {\n}\n"
         decls = find_type_declarations(src, Path("Foo.swift"))
         self.assertEqual(len(decls), 1)
         self.assertIn("@MainActor", decls[0].attrs)
         self.assertIn("@Observable", decls[0].attrs)
-        self.assertTrue(is_explicitly_isolated(decls[0]))
+        self.assertFalse(is_explicitly_isolated(decls[0]))
 
     def test_nonisolated_attribute_on_previous_line(self):
         src = "nonisolated\nfinal class Foo {\n}\n"
@@ -81,14 +82,14 @@ class TestFindTypeDeclarations(unittest.TestCase):
         self.assertTrue(is_explicitly_isolated(decls[0]))
 
     def test_attribute_with_args_on_previous_line(self):
-        src = "@available(macOS 26, *)\n@MainActor\nfinal class Foo {\n}\n"
+        src = "@available(macOS 26, *)\nnonisolated\nfinal class Foo {\n}\n"
         decls = find_type_declarations(src, Path("Foo.swift"))
         self.assertEqual(len(decls), 1)
         self.assertTrue(is_explicitly_isolated(decls[0]))
 
     def test_doc_comment_between_attribute_and_decl(self):
         src = (
-            "@MainActor\n"
+            "nonisolated\n"
             "/// Doc line\n"
             "final class Foo {\n"
             "}\n"
@@ -99,7 +100,7 @@ class TestFindTypeDeclarations(unittest.TestCase):
 
     def test_blank_line_separates_unrelated_attribute(self):
         src = (
-            "@MainActor\n"
+            "nonisolated\n"
             "func unrelated() { }\n"
             "\n"
             "final class Foo {\n"
@@ -109,12 +110,13 @@ class TestFindTypeDeclarations(unittest.TestCase):
         self.assertEqual(len(decls), 1)
         self.assertFalse(is_explicitly_isolated(decls[0]))
 
-    def test_inline_main_actor(self):
+    def test_inline_main_actor_is_not_accepted(self):
+        # @MainActor is the bug, not the fix — must not satisfy the check.
         src = "@MainActor final class Foo { }\n"
         decls = find_type_declarations(src, Path("Foo.swift"))
         self.assertEqual(len(decls), 1)
         self.assertIn("@MainActor", decls[0].attrs)
-        self.assertTrue(is_explicitly_isolated(decls[0]))
+        self.assertFalse(is_explicitly_isolated(decls[0]))
 
     def test_inline_nonisolated(self):
         src = "nonisolated final class Foo { }\n"
@@ -154,21 +156,40 @@ class TestFindTypeDeclarations(unittest.TestCase):
         self.assertEqual(decls[0].body_start, 0)
         self.assertEqual(decls[0].body_end, 4)
 
-    def test_struct_and_actor(self):
-        src = "struct A { }\nactor B { }\nenum C { }\n"
+    def test_struct_enum_and_extension(self):
+        # `actor` is intentionally NOT returned by find_type_declarations
+        # (handled separately so its body is skipped, not flagged).
+        src = "struct A { }\nactor B { }\nenum C { }\nextension D { }\n"
         decls = find_type_declarations(src, Path("X.swift"))
         kinds = sorted(d.kind for d in decls)
-        self.assertEqual(kinds, ["actor", "enum", "struct"])
+        self.assertEqual(kinds, ["enum", "extension", "struct"])
 
     def test_protocol_not_matched(self):
         src = "protocol P { }\n"
         decls = find_type_declarations(src, Path("X.swift"))
         self.assertEqual(decls, [])
 
-    def test_extension_not_matched(self):
-        src = "extension Foo { }\n"
+    def test_extension_with_body_is_matched(self):
+        src = "extension Foo {\n    var x: Int { 1 }\n}\n"
         decls = find_type_declarations(src, Path("X.swift"))
-        self.assertEqual(decls, [])
+        self.assertEqual(len(decls), 1)
+        self.assertEqual(decls[0].kind, "extension")
+        self.assertEqual(decls[0].name, "Foo")
+
+    def test_generic_class_with_constraints(self):
+        src = "final class Foo<T: Sendable> {\n    var x: T?\n}\n"
+        decls = find_type_declarations(src, Path("X.swift"))
+        self.assertEqual(len(decls), 1)
+        self.assertEqual(decls[0].name, "Foo")
+        self.assertEqual(decls[0].kind, "class")
+
+    def test_two_leading_attributes_on_same_line(self):
+        src = "@MainActor @Observable final class Foo { }\n"
+        decls = find_type_declarations(src, Path("X.swift"))
+        self.assertEqual(len(decls), 1)
+        self.assertIn("@MainActor", decls[0].attrs)
+        self.assertIn("@Observable", decls[0].attrs)
+        self.assertFalse(is_explicitly_isolated(decls[0]))
 
     def test_string_with_class_keyword_is_ignored(self):
         # `class` appears after the start of line, so the anchored regex won't
@@ -236,7 +257,9 @@ class TestScanFile(unittest.TestCase):
         f = _write(self.tmp, "Foo.swift", body)
         self.assertEqual(scan_file(f), [])
 
-    def test_main_actor_class_passes(self):
+    def test_main_actor_class_now_violates(self):
+        # @MainActor + DispatchQueue.global() is the exact crash pattern.
+        # The script must flag it, not silence it.
         body = (
             "@MainActor final class Foo {\n"
             "    func go() {\n"
@@ -245,7 +268,9 @@ class TestScanFile(unittest.TestCase):
             "}\n"
         )
         f = _write(self.tmp, "Foo.swift", body)
-        self.assertEqual(scan_file(f), [])
+        v = scan_file(f)
+        self.assertEqual(len(v), 1)
+        self.assertEqual(v[0].type_name, "Foo")
 
     def test_unmarked_enum_namespace_violates(self):
         body = (
@@ -360,6 +385,134 @@ class TestScanFile(unittest.TestCase):
         v = scan_file(f)
         self.assertEqual(len(v), 2)
         self.assertEqual({x.type_name for x in v}, {"A", "B"})
+
+
+class TestExtensionsAndActors(unittest.TestCase):
+    """Coverage for M1 (extensions) and M5 (actor exclusion)."""
+
+    def setUp(self):
+        self._tmp_ctx = tempfile.TemporaryDirectory()
+        self.tmp = Path(self._tmp_ctx.name)
+
+    def tearDown(self):
+        self._tmp_ctx.cleanup()
+
+    def test_extension_with_background_queue_violates(self):
+        body = (
+            "extension Foo {\n"
+            "    func go() {\n"
+            "        DispatchQueue.global().async { print(1) }\n"
+            "    }\n"
+            "}\n"
+        )
+        f = _write(self.tmp, "Foo+Ext.swift", body)
+        v = scan_file(f)
+        self.assertEqual(len(v), 1)
+        self.assertEqual(v[0].type_name, "Foo")
+        self.assertEqual(v[0].type_kind, "extension")
+
+    def test_nonisolated_extension_passes(self):
+        body = (
+            "nonisolated extension Foo {\n"
+            "    func go() {\n"
+            "        DispatchQueue.global().async { print(1) }\n"
+            "    }\n"
+            "}\n"
+        )
+        f = _write(self.tmp, "Foo+Ext.swift", body)
+        self.assertEqual(scan_file(f), [])
+
+    def test_actor_with_background_queue_does_not_violate(self):
+        # Closures handed to DispatchQueue.global().async do NOT inherit
+        # actor isolation, so the MainActor crash pattern is unreachable.
+        body = (
+            "actor Worker {\n"
+            "    nonisolated func go() {\n"
+            "        DispatchQueue.global().async { print(1) }\n"
+            "    }\n"
+            "}\n"
+        )
+        f = _write(self.tmp, "Worker.swift", body)
+        self.assertEqual(scan_file(f), [])
+
+    def test_unmarked_actor_with_labeled_queue_does_not_violate(self):
+        body = (
+            "actor Worker {\n"
+            '    private let q = DispatchQueue(label: "com.pine.worker")\n'
+            "}\n"
+        )
+        f = _write(self.tmp, "Worker.swift", body)
+        self.assertEqual(scan_file(f), [])
+
+    def test_generic_class_with_sendable_constraint_violates(self):
+        body = (
+            "final class Foo<T: Sendable> {\n"
+            "    func go() { DispatchQueue.global().async { } }\n"
+            "}\n"
+        )
+        f = _write(self.tmp, "Foo.swift", body)
+        v = scan_file(f)
+        self.assertEqual(len(v), 1)
+        self.assertEqual(v[0].type_name, "Foo")
+
+    def test_nonisolated_generic_class_passes(self):
+        body = (
+            "nonisolated final class Foo<T: Sendable> {\n"
+            "    func go() { DispatchQueue.global().async { } }\n"
+            "}\n"
+        )
+        f = _write(self.tmp, "Foo.swift", body)
+        self.assertEqual(scan_file(f), [])
+
+
+class TestIgnoreDirective(unittest.TestCase):
+    """`// nonisolated-check:ignore` opt-out for known/tracked sites."""
+
+    def setUp(self):
+        self._tmp_ctx = tempfile.TemporaryDirectory()
+        self.tmp = Path(self._tmp_ctx.name)
+
+    def tearDown(self):
+        self._tmp_ctx.cleanup()
+
+    def test_ignore_on_same_line_suppresses(self):
+        body = (
+            "final class Foo {\n"
+            "    func go() {\n"
+            "        DispatchQueue.global().async { } // nonisolated-check:ignore\n"
+            "    }\n"
+            "}\n"
+        )
+        f = _write(self.tmp, "Foo.swift", body)
+        self.assertEqual(scan_file(f), [])
+
+    def test_ignore_on_previous_line_suppresses(self):
+        body = (
+            "final class Foo {\n"
+            "    func go() {\n"
+            "        // nonisolated-check:ignore — tracked in #999\n"
+            "        DispatchQueue.global().async { }\n"
+            "    }\n"
+            "}\n"
+        )
+        f = _write(self.tmp, "Foo.swift", body)
+        self.assertEqual(scan_file(f), [])
+
+    def test_ignore_does_not_leak_to_next_unrelated_site(self):
+        body = (
+            "final class Foo {\n"
+            "    func a() {\n"
+            "        // nonisolated-check:ignore\n"
+            "        DispatchQueue.global().async { }\n"
+            "    }\n"
+            "    func b() {\n"
+            "        DispatchQueue.global().async { }\n"
+            "    }\n"
+            "}\n"
+        )
+        f = _write(self.tmp, "Foo.swift", body)
+        v = scan_file(f)
+        self.assertEqual(len(v), 1)
 
 
 class TestScanPaths(unittest.TestCase):

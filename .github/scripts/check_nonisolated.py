@@ -11,12 +11,33 @@ crashes with `dispatch_assert_queue_fail` (SIGTRAP).
 
 Several historical crashes (#613, #693, ConfigValidator, FileNode, PreviewItem,
 SyntaxHighlighter) had this exact root cause. This script enforces that any
-Swift type containing background queue work declares its isolation explicitly:
+Swift class/struct/enum/extension containing background queue work declares
+its isolation explicitly with `nonisolated`. `@MainActor` is rejected: it is
+the *cause* of these crashes, not a fix — a `@MainActor` type that schedules
+work on `DispatchQueue.global()` is exactly the bug pattern that crashed
+InlineDiffProvider, SyntaxHighlighter, and FileNode. The only accepted opt-out
+is explicit `nonisolated`.
 
-  - `nonisolated` — opt out of MainActor entirely (preferred for pure workers)
-  - `@MainActor`  — keep MainActor but accept responsibility for closures
+`actor` types are excluded from this check: actors have their own serial
+executor, and closures handed to `DispatchQueue.global().async` do NOT inherit
+actor isolation, so the MainActor-mismatch crash does not apply.
 
-Unmarked types are rejected.
+Unmarked class/struct/enum/extension declarations are rejected.
+
+Known limitations (NOT detected — false negatives possible):
+
+  - `DispatchWorkItem { ... }` constructed without `.global()` on the same
+    line. The script only matches the queue construction site, not work-item
+    captures.
+  - `Thread { ... }.start()` and other manual thread-spawning APIs.
+  - Queues injected via dependency injection (`init(queue: DispatchQueue)`)
+    where the queue identity is not visible at the call site.
+  - Background queue references inside Swift multi-line string literals
+    (triple-quoted strings) — the comment/string stripper is single-line only.
+  - Background queue references inside `/* ... */` block comments — only
+    `//` line comments are stripped.
+  - Background queue references inside top-level free functions. Free
+    functions have no enclosing type owner and are intentionally out of scope.
 
 Usage:
     python3 check_nonisolated.py [path ...]
@@ -46,15 +67,35 @@ BG_QUEUE_PATTERNS = [
 ]
 
 # Type-declaration regex. Captures any combination of attributes preceding the
-# `class | struct | enum | actor` keyword on the same line.
+# `class | struct | enum | extension` keyword on the same line. `actor` types
+# are intentionally excluded — see module docstring for why.
+#
+# Generic parameter clauses (`class Foo<T: Sendable>`) and qualified extension
+# names (`extension Foo.Bar`) are tolerated by the `name` group, which accepts
+# dotted identifiers; anything after the name (generics, inheritance list,
+# where clause, opening brace) is left for the body-range scanner.
 TYPE_DECL_RE = re.compile(
     r"""^
     (?P<indent>\s*)
     (?P<attrs>(?:@[\w()]+\s+|public\s+|internal\s+|private\s+|fileprivate\s+|
                  final\s+|nonisolated\s+|open\s+|@unchecked\s+|@Observable\s+
               )*)
-    (?P<kind>class|struct|enum|actor)\s+
-    (?P<name>[A-Za-z_][A-Za-z0-9_]*)
+    (?P<kind>class|struct|enum|extension)\s+
+    (?P<name>[A-Za-z_][A-Za-z0-9_.]*)
+    """,
+    re.VERBOSE,
+)
+
+# Separate matcher for `actor` declarations. Used solely so the body-range
+# scanner can recognise an actor and skip flagging background queues inside
+# it (closures handed to `DispatchQueue.global().async` do not inherit actor
+# isolation, so the MainActor crash pattern is not reachable).
+ACTOR_DECL_RE = re.compile(
+    r"""^\s*
+    (?:@[\w()]+\s+|public\s+|internal\s+|private\s+|fileprivate\s+|
+       final\s+|nonisolated\s+|open\s+|@unchecked\s+
+    )*
+    actor\s+[A-Za-z_][A-Za-z0-9_]*
     """,
     re.VERBOSE,
 )
@@ -86,8 +127,8 @@ class Violation:
         return (
             f"{self.file}:{self.queue_line}: "
             f"{self.type_kind} '{self.type_name}' (declared at line "
-            f"{self.type_line}) uses background queue but is neither "
-            f"`nonisolated` nor `@MainActor`. "
+            f"{self.type_line}) uses background queue but is not "
+            f"`nonisolated`. "
             f"Snippet: {self.queue_snippet.strip()}"
         )
 
@@ -225,17 +266,15 @@ def _find_body_range(lines: list[str], decl_idx: int) -> tuple[int, int]:
 
 
 def is_explicitly_isolated(decl: TypeDecl) -> bool:
-    """Return True iff the declaration carries an explicit isolation attribute.
+    """Return True iff the declaration carries an explicit `nonisolated` opt-out.
 
-    Accepts either `nonisolated` (preferred for pure background workers) or
-    `@MainActor` (sentinel that the author understood the implication).
+    `@MainActor` is intentionally NOT accepted: it is the *cause* of the
+    crashes this script exists to prevent. A `@MainActor` class that schedules
+    work on `DispatchQueue.global()` is exactly the bug pattern. The only
+    accepted opt-out is `nonisolated`, which detaches the type from MainActor
+    so its background closures do not inherit a main-queue executor.
     """
-    attrs = decl.attrs
-    if "nonisolated" in attrs:
-        return True
-    if "@MainActor" in attrs:
-        return True
-    return False
+    return "nonisolated" in decl.attrs
 
 
 def find_background_queues(lines: list[str], start: int, end: int) -> list[tuple[int, str]]:
@@ -251,6 +290,27 @@ def find_background_queues(lines: list[str], start: int, end: int) -> list[tuple
     return hits
 
 
+def _find_actor_body_ranges(lines: list[str]) -> list[tuple[int, int]]:
+    """Return [(body_start, body_end)] for every `actor` declaration in the
+    source. Closures inside an actor never inherit MainActor isolation, so the
+    scan must skip background queues that fall inside one of these ranges."""
+    ranges: list[tuple[int, int]] = []
+    for idx, line in enumerate(lines):
+        code = _strip_line_comment(line)
+        if ACTOR_DECL_RE.match(code):
+            body_start, body_end = _find_body_range(lines, idx)
+            if body_start != -1:
+                ranges.append((body_start, body_end))
+    return ranges
+
+
+def _line_in_any_range(line_idx: int, ranges: list[tuple[int, int]]) -> bool:
+    for start, end in ranges:
+        if start <= line_idx <= end:
+            return True
+    return False
+
+
 def scan_file(path: Path) -> list[Violation]:
     try:
         source = path.read_text(encoding="utf-8")
@@ -258,6 +318,7 @@ def scan_file(path: Path) -> list[Violation]:
         return []
     lines = source.splitlines()
     decls = find_type_declarations(source, path)
+    actor_ranges = _find_actor_body_ranges(lines)
 
     violations: list[Violation] = []
     # Sort by body_start descending so nested declarations win attribution
@@ -265,6 +326,9 @@ def scan_file(path: Path) -> list[Violation]:
     decls_by_inner_first = sorted(decls, key=lambda d: -d.body_start)
 
     for line_no, snippet in _all_background_lines(lines):
+        if _line_in_any_range(line_no - 1, actor_ranges):
+            # Inside an `actor` body — closures do not inherit MainActor.
+            continue
         owner = _owning_decl(decls_by_inner_first, line_no - 1)
         if owner is None:
             # Top-level free function or extension closure — out of scope.
@@ -284,8 +348,23 @@ def scan_file(path: Path) -> list[Violation]:
     return violations
 
 
+IGNORE_DIRECTIVE = "nonisolated-check:ignore"
+
+
 def _all_background_lines(lines: list[str]) -> Iterable[tuple[int, str]]:
+    """Yield (line_number_1based, raw_line) for every background queue use.
+
+    Lines carrying the `// nonisolated-check:ignore` directive are skipped.
+    Use sparingly — each ignore is a known bug-pattern site that should be
+    tracked in an issue and refactored to use a `nonisolated` worker.
+    """
     for i, line in enumerate(lines):
+        # Accept the directive either on the same line (trailing comment) or
+        # on the immediately preceding line (header comment).
+        if IGNORE_DIRECTIVE in line:
+            continue
+        if i > 0 and IGNORE_DIRECTIVE in lines[i - 1]:
+            continue
         code = _strip_line_comment(line)
         for pat in BG_QUEUE_PATTERNS:
             if pat.search(code):
@@ -332,8 +411,9 @@ def main(argv: list[str]) -> int:
     for v in violations:
         print("  - " + v.format(), file=sys.stderr)
     print(
-        "\nFix: add `nonisolated` (preferred) or `@MainActor` to the type "
-        "declaration. See issue #693 for context.",
+        "\nFix: add `nonisolated` to the type declaration. `@MainActor` is "
+        "NOT accepted — it is the cause of the crash, not the fix. See "
+        "issue #693 for context.",
         file=sys.stderr,
     )
     return 1
