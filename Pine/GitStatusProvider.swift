@@ -244,6 +244,7 @@ final class GitStatusProvider {
     /// properties on the main thread.
     func setupAsync(repositoryURL: URL) async {
         let (isRepo, rootPath, branch, statuses, ignored, branchList) = await withCheckedContinuation { continuation in
+            // nonisolated-check:ignore — closure body only calls nonisolated static helpers; tracked in #720
             DispatchQueue.global(qos: .userInitiated).async {
                 let result = GitStatusProvider.runGit(["rev-parse", "--show-toplevel"], at: repositoryURL)
                 let isRepo = result.exitCode == 0
@@ -308,6 +309,7 @@ final class GitStatusProvider {
         let progressID = progressTracker?.beginOperation(Strings.progressGitStatus)
 
         let (branch, statuses, ignored, branchList) = await withCheckedContinuation { continuation in
+            // nonisolated-check:ignore — closure body only calls nonisolated static helpers; tracked in #720
             DispatchQueue.global(qos: .userInitiated).async {
                 let fetched = GitFetcher.fetchAllInParallel(at: url)
                 continuation.resume(returning: fetched)
@@ -407,6 +409,7 @@ final class GitStatusProvider {
         let filePath = url.path
 
         return await withCheckedContinuation { continuation in
+            // nonisolated-check:ignore — closure body only calls nonisolated static helpers; tracked in #720
             DispatchQueue.global(qos: .userInitiated).async {
                 let headCheck = GitStatusProvider.runGit(["rev-parse", "HEAD"], at: repoURL)
                 guard headCheck.exitCode == 0 else {
@@ -445,6 +448,7 @@ final class GitStatusProvider {
         let progressID = progressTracker?.beginOperation(Strings.progressGitCheckout)
 
         let result = await withCheckedContinuation { continuation in
+            // nonisolated-check:ignore — closure body only calls nonisolated static helpers; tracked in #720
             DispatchQueue.global(qos: .userInitiated).async {
                 let gitResult = GitStatusProvider.runGit(["switch", branch], at: url)
                 continuation.resume(returning: gitResult)

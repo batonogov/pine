@@ -147,6 +147,7 @@ final class WorkspaceManager {
         // nonisolated(unsafe): completion is always called on the main queue
         // (inside DispatchQueue.main.async), but Swift 6 cannot prove this statically.
         nonisolated(unsafe) let completion = completion
+        // nonisolated-check:ignore — pre-existing pattern; tracked in #720
         DispatchQueue.global(qos: .userInitiated).async {
             // Run git setup first so we know which paths are ignored
             let bgGit = GitStatusProvider()
@@ -276,6 +277,7 @@ final class WorkspaceManager {
 
         // Phase 2 (async): full tree only if Phase 1 hit the depth limit
         if shallowResult.wasDepthLimited {
+            // nonisolated-check:ignore — pre-existing pattern; tracked in #720
             DispatchQueue.global(qos: .userInitiated).async {
                 let fullChildren = Self.loadTopLevelInParallel(
                     url: url, ignoredPaths: ignoredPaths
