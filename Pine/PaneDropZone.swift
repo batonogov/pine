@@ -242,5 +242,6 @@ struct PaneSplitDropDelegate: DropDelegate {
 
     private func updateDropZone(info: DropInfo) {
         paneManager.dropZones[paneID] = PaneDropZone.zone(for: info.location, in: paneSize)
+        paneManager.startStaleDropPollingIfNeeded()
     }
 }

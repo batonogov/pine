@@ -145,6 +145,7 @@ struct RootPaneSplitDropDelegate: DropDelegate {
 
     private func updateZone(info: DropInfo) {
         paneManager.rootDropZone = RootDropZone.detect(location: info.location, in: containerSize)
+        paneManager.startStaleDropPollingIfNeeded()
     }
 }
 
