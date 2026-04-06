@@ -104,6 +104,25 @@ struct PaneManagerStaleDropZoneTests {
         #expect(manager.hasActiveDropZones == true)
     }
 
+    /// Real timer-driven polling: schedules the timer, waits for it to fire,
+    /// and verifies the overlay is cleared once the mouse is no longer down.
+    /// Regression coverage for issue #710 — exercises the actual RunLoop tick
+    /// rather than just the synchronous helper.
+    @Test func startStaleDropPolling_clearsOverlayOnTimerTick() async {
+        let manager = PaneManager()
+        manager.dropZones[manager.activePaneID] = .center
+        manager.isMouseButtonPressed = { false }
+        #expect(manager.hasActiveDropZones == true)
+
+        manager.startStaleDropPollingIfNeeded()
+
+        // Timer cadence is 0.12s; wait ~250ms to allow at least one fire and
+        // the subsequent self-invalidation pass.
+        try? await Task.sleep(nanoseconds: 250_000_000)
+
+        #expect(manager.hasActiveDropZones == false)
+    }
+
     // MARK: - Edge cases
 
     @Test func clearStale_handlesMultipleLeafPanes() {

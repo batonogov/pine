@@ -49,6 +49,10 @@ final class PaneManager {
     /// Active root-level drop zone — set by RootPaneSplitDropDelegate.
     var rootDropZone: RootDropZone?
 
+    // The four properties below are marked `nonisolated(unsafe)` solely so
+    // they can be touched from `deinit`, which is nonisolated even on a
+    // @MainActor class. All real reads/writes happen on the main thread.
+
     /// NSEvent monitor for mouse-up cleanup of drop overlays (in-app).
     nonisolated(unsafe) private var mouseUpMonitor: Any?
 
@@ -103,16 +107,17 @@ final class PaneManager {
     /// Called by drop delegates whenever they set a drop zone.
     func startStaleDropPollingIfNeeded() {
         guard staleDropPollTimer == nil else { return }
-        let timer = Timer.scheduledTimer(withTimeInterval: 0.12, repeats: true) { [weak self] _ in
-            DispatchQueue.main.async {
-                guard let self else { return }
-                if !self.hasActiveDropZones {
-                    self.staleDropPollTimer?.invalidate()
-                    self.staleDropPollTimer = nil
-                    return
-                }
-                self.clearStaleDropZonesIfNoDragActive()
+        // Timer scheduled on the main run loop fires on the main thread, and
+        // PaneManager is @MainActor, so no extra DispatchQueue.main.async hop
+        // is needed inside the callback.
+        let timer = Timer.scheduledTimer(withTimeInterval: 0.12, repeats: true) { [weak self] t in
+            guard let self else { t.invalidate(); return }
+            if !self.hasActiveDropZones {
+                t.invalidate()
+                self.staleDropPollTimer = nil
+                return
             }
+            self.clearStaleDropZonesIfNoDragActive()
         }
         staleDropPollTimer = timer
     }
@@ -163,7 +168,9 @@ final class PaneManager {
     ///   2. Global mouse-up — drag released while another app is foreground
     ///   3. Window/app deactivation — focus moved away mid-drag
     private func installMouseUpMonitor() {
-        let cleanup: @Sendable () -> Void = { [weak self] in
+        // Local closure invoked only from main-thread NSEvent monitor
+        // callbacks, so it does not need to be @Sendable.
+        let cleanup: () -> Void = { [weak self] in
             DispatchQueue.main.async {
                 guard let self else { return }
                 if self.hasActiveDropZones {
@@ -181,6 +188,11 @@ final class PaneManager {
             cleanup()
         }
 
+        // Note: `didResignKeyNotification` is intentionally aggressive — it
+        // fires whenever the window loses key status. This is acceptable
+        // because during an active drag session AppKit cannot present a sheet
+        // or popover that would steal key, so we will not clear an overlay
+        // out from under a real in-progress drag.
         let center = NotificationCenter.default
         let names: [Notification.Name] = [
             NSWindow.didResignKeyNotification,
