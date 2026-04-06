@@ -55,6 +55,10 @@ final class LineNumberView: NSView {
     var validationDiagnostics: [ValidationDiagnostic] = [] {
         didSet {
             rebuildDiagnosticMap()
+            // Dismiss any open diagnostic popover when the diagnostics change —
+            // its diagnostic may be stale or the line may no longer have an icon.
+            diagnosticPopover?.close()
+            diagnosticPopover = nil
             needsDisplay = true
         }
     }
@@ -96,6 +100,21 @@ final class LineNumberView: NSView {
 
     /// Active tooltip rect tag — non-nil when diagnostics are present and tooltip rect is registered.
     private(set) var toolTipTag: NSView.ToolTipTag?
+
+    /// Cached last-resolved line number used by `mouseMoved` to skip redundant
+    /// `resolveTooltip` work when the cursor is still hovering over the same line.
+    /// Reset to `nil` whenever the cursor leaves the gutter.
+    private var lastHoveredLine: Int?
+
+    /// Whether `mouseMoved` last set the pointing-hand cursor. Used so we only reset
+    /// the cursor back to the default when leaving the icon zone, avoiding fighting
+    /// other cursor sources (e.g. NSTextView's iBeam).
+    private var didSetPointingCursor = false
+
+    /// Diagnostic icon hit-test zone (x range): `[0, diagnosticIconHitZoneWidth)`.
+    /// Sized to match the fold-indicator area so the icon (drawn at x=1..1+iconSize)
+    /// is fully covered.
+    static let diagnosticIconHitZoneWidth: CGFloat = 14
 
     private func rebuildDiffMap() {
         diffMap = Dictionary(lineDiffs.map { ($0.line, $0.kind) }, uniquingKeysWith: { _, last in last })
@@ -217,6 +236,11 @@ final class LineNumberView: NSView {
 
     deinit {
         NotificationCenter.default.removeObserver(self)
+        // NOTE: We cannot touch `diagnosticPopover` here because it is MainActor-isolated
+        // and `deinit` is non-isolated in Swift 6. Cleanup happens in the
+        // `validationDiagnostics.didSet` hook (popover is dismissed when diagnostics
+        // are cleared) and via the `.transient` popover behavior, which causes the
+        // popover to dismiss itself on any outside event.
     }
 
     // MARK: - Mouse tracking for fold indicators
@@ -226,9 +250,12 @@ final class LineNumberView: NSView {
         for area in trackingAreas {
             removeTrackingArea(area)
         }
+        // .mouseMoved is required so we can update the dynamic `toolTip` string
+        // as the cursor moves between diagnostic icons (#679). Without it, AppKit
+        // never asks us for a per-line tooltip and the user sees nothing.
         let area = NSTrackingArea(
             rect: bounds,
-            options: [.mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect],
+            options: [.mouseEnteredAndExited, .mouseMoved, .activeInKeyWindow, .inVisibleRect],
             owner: self,
             userInfo: nil
         )
@@ -245,6 +272,55 @@ final class LineNumberView: NSView {
     override func mouseExited(with event: NSEvent) {
         isMouseInside = false
         needsDisplay = true
+        // Clear dynamic tooltip when leaving the gutter so a stale message
+        // doesn't linger after the cursor moves into the editor.
+        toolTip = nil
+        lastHoveredLine = nil
+        // Restore the default cursor when leaving the gutter so the
+        // pointing-hand we set in `mouseMoved` does not stick (#679 regression).
+        if didSetPointingCursor {
+            NSCursor.arrow.set()
+            didSetPointingCursor = false
+        }
+    }
+
+    /// Updates the dynamic `toolTip` property based on the cursor position.
+    ///
+    /// We can't rely on the `addToolTip(_:owner:userData:)` rect mechanism alone
+    /// because AppKit only asks the owner for tooltip text after a fixed hover
+    /// delay AND only when the rect was registered with non-zero bounds at the
+    /// right time. Setting `toolTip` directly on every mouse move guarantees that
+    /// the standard NSView tooltip surface always reflects the current line.
+    /// (#679)
+    override func mouseMoved(with event: NSEvent) {
+        let point = convert(event.locationInWindow, from: nil)
+
+        // Throttle: skip the (relatively expensive) resolveTooltip + diagnostic
+        // lookup when the cursor is still hovering over the same line as the
+        // previous mouseMoved call. Mouse-moved events fire many times per pixel.
+        let line = lineNumber(at: point)
+        if line != lastHoveredLine {
+            lastHoveredLine = line
+            let message = resolveTooltip(at: point)
+            if toolTip != message {
+                toolTip = message
+            }
+        }
+
+        // Cursor handling: pointing-hand only inside the icon hit zone AND only when
+        // there is actually a diagnostic on this line. Reset to arrow as soon as the
+        // cursor leaves the icon zone, otherwise the pointing-hand sticks (#679).
+        let inIconZone = point.x < Self.diagnosticIconHitZoneWidth
+        let hasDiagnostic = (line.flatMap { diagnosticMap[$0] }) != nil
+        if inIconZone && hasDiagnostic {
+            if !didSetPointingCursor {
+                NSCursor.pointingHand.set()
+                didSetPointingCursor = true
+            }
+        } else if didSetPointingCursor {
+            NSCursor.arrow.set()
+            didSetPointingCursor = false
+        }
     }
 
     override func mouseDown(with event: NSEvent) {
@@ -267,11 +343,79 @@ final class LineNumberView: NSView {
             return
         }
 
-        // Find which line was clicked
+        // Diagnostic icon click → show popover with full message (#679).
+        // Diagnostic icons are drawn at x=1..1+diagnosticIconDrawSize.
+        if let lineNum = lineNumber(at: point),
+           let diag = diagnosticMap[lineNum] {
+            showDiagnosticPopover(for: diag, at: point)
+            return
+        }
+
+        // Find which line was clicked for fold toggle
         if let lineNumber = lineNumber(at: point),
            let foldable = foldStartMap[lineNumber] {
             onFoldToggle?(foldable)
         }
+    }
+
+    /// Currently displayed diagnostic popover, if any. Kept as a property so we can
+    /// dismiss it on subsequent clicks and prevent multiple popovers.
+    private var diagnosticPopover: NSPopover?
+
+    /// Test-only accessor for the retained diagnostic popover. Allows the test
+    /// suite to verify that the popover is created with the expected controller
+    /// and torn down when diagnostics are replaced.
+    var diagnosticPopoverForTesting: NSPopover? { diagnosticPopover }
+
+    /// Test-only accessor for the cursor-state flag tracked in `mouseMoved`/`mouseExited`.
+    var didSetPointingCursorForTesting: Bool { didSetPointingCursor }
+
+    /// Test-only entry point that performs the same line/cursor logic as
+    /// `mouseMoved(with:)` but without needing to fabricate a full NSEvent.
+    /// Mirrors the production path so tests cover the real cursor state machine.
+    func simulateMouseMovedForTesting(at point: NSPoint) {
+        let line = lineNumber(at: point)
+        if line != lastHoveredLine {
+            lastHoveredLine = line
+            let message = resolveTooltip(at: point)
+            if toolTip != message {
+                toolTip = message
+            }
+        }
+        let inIconZone = point.x < Self.diagnosticIconHitZoneWidth
+        let hasDiagnostic = (line.flatMap { diagnosticMap[$0] }) != nil
+        if inIconZone && hasDiagnostic {
+            if !didSetPointingCursor {
+                NSCursor.pointingHand.set()
+                didSetPointingCursor = true
+            }
+        } else if didSetPointingCursor {
+            NSCursor.arrow.set()
+            didSetPointingCursor = false
+        }
+    }
+
+    /// Shows an NSPopover anchored to the diagnostic icon for the given diagnostic.
+    /// The popover lists the severity, source, and full message — providing the
+    /// "click to see what is wrong" affordance requested in #679.
+    func showDiagnosticPopover(for diag: ValidationDiagnostic, at point: NSPoint) {
+        // Dismiss any existing popover first
+        diagnosticPopover?.close()
+
+        let popover = NSPopover()
+        popover.behavior = .transient
+        popover.contentViewController = DiagnosticPopoverController(diagnostic: diag)
+
+        // Anchor the popover to a small rect around the click point so it points
+        // at the icon, not at the entire gutter.
+        let anchorRect = NSRect(
+            x: max(0, point.x - 4),
+            y: max(0, point.y - 4),
+            width: 8,
+            height: 8
+        )
+        popover.show(relativeTo: anchorRect, of: self, preferredEdge: .maxX)
+        diagnosticPopover = popover
     }
 
     /// Returns the hunk that covers the given line number, if any.
@@ -285,7 +429,7 @@ final class LineNumberView: NSView {
     var lineStartsCache: LineStartsCache?
 
     /// Returns the line number (1-based) at the given point in view coordinates.
-    private func lineNumber(at point: NSPoint) -> Int? {
+    func lineNumber(at point: NSPoint) -> Int? {
         guard let textView = textView,
               let layoutManager = textView.layoutManager,
               let textContainer = textView.textContainer,
@@ -550,10 +694,10 @@ final class LineNumberView: NSView {
         .info: .systemBlue
     ]
 
-    /// Fixed draw size for diagnostic icons — small enough to fit inside the fold indicator area
-    /// without overlapping line numbers. Kept at 8px so the right edge (x=1 + 8 = 9px) stays
-    /// well clear of two-digit line numbers that start around x≈18.
-    static let diagnosticIconDrawSize: CGFloat = 8
+    /// Fixed draw size for diagnostic icons — sized so the right edge (x=1 + 12 = 13px)
+    /// stays clear of two-digit line numbers that start around x≈18 (#679).
+    /// Increased from 8px to improve readability of error/warning glyphs.
+    static let diagnosticIconDrawSize: CGFloat = 12
 
     /// Draws an SF Symbol icon for a validation diagnostic at the given line position.
     /// The icon is drawn inside the fold indicator area (leftmost ~14px of the gutter),
