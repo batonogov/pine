@@ -195,7 +195,6 @@ struct PaneSplitDropDelegate: DropDelegate {
         paneManager.activeDrag = nil
 
         let sourcePaneID = PaneID(id: dragInfo.paneID)
-        let targetContent = paneManager.root.content(for: paneID)
 
         switch zone {
         case .left, .right, .top, .bottom:
@@ -220,20 +219,9 @@ struct PaneSplitDropDelegate: DropDelegate {
                 )
             }
         case .center:
-            // Center drop: only allow same-type moves
-            guard sourcePaneID != paneID,
-                  dragInfo.contentType == targetContent else { break }
-            if dragInfo.contentType == .terminal {
-                paneManager.moveTerminalTab(
-                    dragInfo.tabID, from: sourcePaneID, to: paneID
-                )
-            } else if let fileURL = dragInfo.fileURL {
-                paneManager.moveTabBetweenPanes(
-                    tabURL: fileURL,
-                    from: sourcePaneID,
-                    to: paneID
-                )
-            }
+            // Center drop: same-type moves into the pane;
+            // cross-type triggers an auto-split (issue #714).
+            paneManager.performCenterDrop(dragInfo: dragInfo, targetPaneID: paneID)
         }
         return true
     }
