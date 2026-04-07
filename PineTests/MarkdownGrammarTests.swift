@@ -280,9 +280,16 @@ struct MarkdownGrammarTests {
     }
 
     @Test func quoteContainingListMarker() throws {
-        // Quote rule wins for the line — list marker inside is acceptable as quote color.
+        // List regex требует list marker в начале строки (после опционального whitespace);
+        // строка "> - item" начинается с ">", поэтому list не срабатывает, и quote получает всю строку.
         let storage = try highlight("> - item in quote")
         #expect(color(in: storage, at: 0) == quoteColor)
+    }
+
+    @Test func fencedCodeColorDiffersFromInlineCodeColor() {
+        // Fenced code blocks должны визуально отличаться от inline code,
+        // иначе scope markdown.code.fenced не несёт смысла.
+        #expect(fencedColor != codeColor)
     }
 
     @Test func headingDoesNotBleedIntoNextLine() throws {
