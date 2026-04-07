@@ -503,6 +503,7 @@ jobs:
               -only-testing:PineUITests/DeleteTests
               -only-testing:PineUITests/BranchSwitcherTests
               -only-testing:PineUITests/DiffNavigationUITests
+              -only-testing:PineUITests/InlineRenameAlignmentTests
           # Shard 4 — Search & Duplicate (15 tests)
           - shard-name: "Search & Duplicate"
             test-classes: >-
