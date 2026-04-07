@@ -94,6 +94,12 @@ extract_with_export_attachments() {
     while IFS=$'\t' read -r att_name suggested; do
       [ -z "$att_name" ] && continue
       [ -z "$suggested" ] && continue
+      # Path-traversal guard: only accept well-formed screenshot names.
+      # Rejects "../", slashes, and any other shell-meaningful characters.
+      if [[ ! "$att_name" =~ ^screenshot-[a-zA-Z0-9_-]+$ ]]; then
+        echo "  Skipping attachment with invalid name: $att_name" >&2
+        continue
+      fi
       local src="$export_dir/$suggested"
       [ -f "$src" ] || continue
       cp "$src" "$ASSETS_DIR/${att_name}.png"
@@ -135,12 +141,12 @@ PY
 }
 
 # --- Strategy 2: Raw filesystem walk -----------------------------------------
-# As a last resort, scan the bundle for PNG payloads. Each xcresult attachment
-# is stored as an opaque hash file; we use the manifest from strategy 1 to
-# resolve names where possible. If neither manifest nor names are available
-# we just emit numbered fallbacks so the workflow can still notice
-# "something" was extracted (and the guardrail will warn that names are
-# missing).
+# As a last resort, scan the bundle for any PNG payloads. Each xcresult
+# attachment is stored as an opaque hash file with no name metadata at this
+# layer, so we cannot recover the original screenshot names here. We simply
+# number the PNGs sequentially (`screenshot-unknown-N.png`) so the workflow
+# notices that "something" was extracted; the required-names guardrail below
+# will then fail loudly because the expected names are still missing.
 extract_with_filesystem() {
   local found_any=false
   local idx=0
