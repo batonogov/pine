@@ -97,6 +97,7 @@ struct FileNodeRow: View {
         Label {
             TextField("", text: $state.editingText)
                 .textFieldStyle(.plain)
+                .accessibilityIdentifier(AccessibilityID.inlineRenameTextField)
                 .onSubmit { commitRename() }
                 .onExitCommand { cancelRename() }
                 .focused($isTextFieldFocused)
