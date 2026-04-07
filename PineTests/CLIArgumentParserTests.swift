@@ -23,7 +23,7 @@ struct CLIArgumentParserTests {
     }
 
     @Test func parsesRelativeDirectory() {
-        let result = CLIArgumentParser.parse(["pine", "src"])
+        _ = CLIArgumentParser.parse(["pine", "src"])
         // When path exists and is directory -> openDirectory
         // When path doesn't exist -> error
         // For unit testing, we test the classification logic separately
