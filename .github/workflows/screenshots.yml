@@ -13,12 +13,27 @@ jobs:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
 
       - name: Run screenshot tests and extract
+        # The script soft-fails xcodebuild but hard-fails if extraction
+        # produces no usable PNGs. Do NOT add continue-on-error here.
         run: bash scripts/update-screenshots.sh
+
+      - name: Upload xcresult on failure
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: screenshots-xcresult
+          path: build/screenshots.xcresult
+          if-no-files-found: ignore
+          retention-days: 7
 
       - name: Commit screenshots
         run: |
           git config user.name "github-actions"
           git config user.email "actions@github.com"
           git add assets/screenshot-*.png
-          git diff --staged --quiet || git commit -m "chore: update screenshots"
+          if git diff --staged --quiet; then
+            echo "No screenshot changes to commit."
+            exit 0
+          fi
+          git commit -m "chore: update screenshots"
           git push

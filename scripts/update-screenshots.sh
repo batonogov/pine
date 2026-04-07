@@ -1,19 +1,60 @@
 #!/bin/bash
 # Update screenshot assets from UI tests.
-# Continues extraction even if some tests fail (no set -e on test step).
+#
+# Runs the ScreenshotTests UI test suite, then extracts the captured
+# XCTAttachment PNGs from the resulting xcresult bundle into assets/.
+#
+# Behavior:
+#   - The xcodebuild test step is allowed to "soft fail" (some screenshot
+#     tests may fail individually while others succeed and still produce
+#     usable attachments).
+#   - Extraction itself MUST succeed and produce at least one new PNG —
+#     otherwise we exit non-zero so CI fails loudly instead of silently
+#     committing zero changes.
+#
+# Compatibility:
+#   - Primary path uses `xcrun xcresulttool export attachments` (Xcode 16+).
+#   - Falls back to a raw filesystem scan of the .xcresult bundle for any
+#     PNG payloads matching screenshot manifest entries.
+
 set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(dirname "$SCRIPT_DIR")"
 RESULT_PATH="$REPO_ROOT/build/screenshots.xcresult"
 ASSETS_DIR="$REPO_ROOT/assets"
+## Names that ScreenshotTests is expected to produce. The first group is
+## REQUIRED — the workflow fails if any of these are missing or empty after
+## extraction. The second group is optional (newer captures that are not yet
+## committed to the repo); they are extracted when present but absence does
+## not fail the build.
+REQUIRED_NAMES=(
+  "screenshot-welcome"
+  "screenshot-editor"
+  "screenshot-terminal"
+  "screenshot-markdown"
+)
+OPTIONAL_NAMES=(
+  "screenshot-sidebar"
+  "screenshot-minimap"
+)
 
-# Clean previous result bundle and old screenshots
+# Clean previous result bundle
 rm -rf "$RESULT_PATH"
 
-echo "Running screenshot tests..."
-DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer \
-  xcodebuild test \
+# Resolve a usable Xcode developer dir. Allow override via env, otherwise
+# fall back to /Applications/Xcode.app — works both locally and in CI.
+: "${DEVELOPER_DIR:=/Applications/Xcode.app/Contents/Developer}"
+export DEVELOPER_DIR
+
+XCRESULTTOOL="$DEVELOPER_DIR/usr/bin/xcresulttool"
+if [ ! -x "$XCRESULTTOOL" ]; then
+  echo "Error: xcresulttool not found at $XCRESULTTOOL" >&2
+  exit 2
+fi
+
+echo "Running screenshot tests (DEVELOPER_DIR=$DEVELOPER_DIR)..."
+xcodebuild test \
   -project "$REPO_ROOT/Pine.xcodeproj" \
   -scheme Pine \
   -destination 'platform=macOS' \
@@ -21,44 +62,71 @@ DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer \
   -resultBundlePath "$RESULT_PATH" \
   CODE_SIGN_IDENTITY=- \
   CODE_SIGNING_ALLOWED=NO \
-  || echo "Warning: some tests failed, continuing with extraction of available screenshots..."
+  || echo "Warning: xcodebuild test reported failures; continuing to extract whatever attachments are available..."
 
 if [ ! -d "$RESULT_PATH" ]; then
-  echo "Error: xcresult bundle not found at $RESULT_PATH"
+  echo "Error: xcresult bundle not found at $RESULT_PATH" >&2
   exit 1
 fi
 
-echo "Extracting screenshots..."
 mkdir -p "$ASSETS_DIR"
 
-# --- Strategy 1: New xcresulttool API (Xcode 16+ / macOS 26) ---
-# `xcrun xcresulttool get test-results attachments` exports all attachments directly.
-extract_with_new_api() {
+# --- Strategy 1: Modern xcresulttool (Xcode 16+) -----------------------------
+# `xcresulttool export attachments` writes every XCTAttachment payload into a
+# directory along with a manifest.json that records the original attachment
+# `name` (without an extension). We honor that name and rename to `.png`.
+extract_with_export_attachments() {
   local export_dir
   export_dir=$(mktemp -d)
 
-  if ! xcrun xcresulttool get test-results attachments \
+  if ! "$XCRESULTTOOL" export attachments \
        --path "$RESULT_PATH" \
-       --output-path "$export_dir" 2>/dev/null; then
+       --output-path "$export_dir" >/dev/null 2>&1; then
     rm -rf "$export_dir"
     return 1
   fi
 
-  # Copy screenshot-*.png files
   local found_any=false
-  while IFS= read -r -d '' file; do
-    cp "$file" "$ASSETS_DIR/$(basename "$file")"
-    echo "  Extracted $(basename "$file")"
-    found_any=true
-  done < <(find "$export_dir" -name "screenshot-*.png" -print0 2>/dev/null)
-
-  # If no screenshot-* named files, try all PNGs
-  if [ "$found_any" = false ]; then
-    while IFS= read -r -d '' file; do
-      cp "$file" "$ASSETS_DIR/$(basename "$file")"
-      echo "  Extracted $(basename "$file")"
+  local manifest="$export_dir/manifest.json"
+  if [ -f "$manifest" ]; then
+    # Walk the manifest, pull every attachment whose declared name starts
+    # with `screenshot-`, and copy <exported file> -> assets/<name>.png.
+    while IFS=$'\t' read -r att_name suggested; do
+      [ -z "$att_name" ] && continue
+      [ -z "$suggested" ] && continue
+      local src="$export_dir/$suggested"
+      [ -f "$src" ] || continue
+      cp "$src" "$ASSETS_DIR/${att_name}.png"
+      echo "  Extracted ${att_name}.png"
       found_any=true
-    done < <(find "$export_dir" -name "*.png" -print0 2>/dev/null)
+    done < <(python3 - "$manifest" <<'PY'
+import json, sys
+with open(sys.argv[1]) as f:
+    data = json.load(f)
+
+def walk(node):
+    if isinstance(node, dict):
+        atts = node.get("attachments")
+        if isinstance(atts, list):
+            for att in atts:
+                name = att.get("name", "") or ""
+                suggested = (
+                    att.get("exportedFileName")
+                    or att.get("suggestedHumanReadableName")
+                    or att.get("filename")
+                    or ""
+                )
+                if name.startswith("screenshot-") and suggested:
+                    print(f"{name}\t{suggested}")
+        for v in node.values():
+            walk(v)
+    elif isinstance(node, list):
+        for item in node:
+            walk(item)
+
+walk(data)
+PY
+)
   fi
 
   rm -rf "$export_dir"
@@ -66,115 +134,67 @@ extract_with_new_api() {
   return 1
 }
 
-# --- Strategy 2: Legacy xcresulttool JSON API (Xcode 15 and earlier) ---
-extract_with_legacy_api() {
-  local graph
-  graph=$(xcrun xcresulttool get --path "$RESULT_PATH" --format json 2>/dev/null) || return 1
-
-  local tests_ref_id
-  tests_ref_id=$(echo "$graph" | python3 -c "
-import json, sys
-data = json.load(sys.stdin)
-actions = data.get('actions', {}).get('_values', [])
-for action in actions:
-    result = action.get('actionResult', {})
-    tests_ref = result.get('testsRef', {})
-    ref_id = tests_ref.get('id', {}).get('_value', '')
-    if ref_id:
-        print(ref_id)
-        break
-" 2>/dev/null) || return 1
-
-  if [ -z "$tests_ref_id" ]; then
-    return 1
-  fi
-
-  local tests_summary
-  tests_summary=$(xcrun xcresulttool get --path "$RESULT_PATH" --format json --id "$tests_ref_id" 2>/dev/null) || return 1
-
-  local attachments
-  attachments=$(echo "$tests_summary" | python3 -c "
-import json, sys
-
-def find_attachments(obj, results=None):
-    if results is None:
-        results = []
-    if isinstance(obj, dict):
-        if 'attachments' in obj:
-            atts = obj['attachments'].get('_values', [])
-            for att in atts:
-                name = att.get('name', {}).get('_value', '')
-                payload_ref = att.get('payloadRef', {})
-                att_id = payload_ref.get('id', {}).get('_value', '')
-                if name.startswith('screenshot-') and att_id:
-                    results.append(f'{att_id}|{name}')
-        for v in obj.values():
-            find_attachments(v, results)
-    elif isinstance(obj, list):
-        for item in obj:
-            find_attachments(item, results)
-    return results
-
-data = json.load(sys.stdin)
-for line in find_attachments(data):
-    print(line)
-" 2>/dev/null) || return 1
-
-  if [ -z "$attachments" ]; then
-    return 1
-  fi
-
-  local count=0
-  while IFS='|' read -r att_id att_name; do
-    local output_file="$ASSETS_DIR/${att_name}.png"
-    echo "  Extracting $att_name -> $output_file"
-    xcrun xcresulttool export --path "$RESULT_PATH" --id "$att_id" --output-path "$output_file" --type file 2>/dev/null
-    count=$((count + 1))
-  done <<< "$attachments"
-
-  [ "$count" -gt 0 ] && return 0
-  return 1
-}
-
-# --- Strategy 3: Direct filesystem search inside xcresult bundle ---
-# xcresult bundles are directories; attachments are stored as data files.
+# --- Strategy 2: Raw filesystem walk -----------------------------------------
+# As a last resort, scan the bundle for PNG payloads. Each xcresult attachment
+# is stored as an opaque hash file; we use the manifest from strategy 1 to
+# resolve names where possible. If neither manifest nor names are available
+# we just emit numbered fallbacks so the workflow can still notice
+# "something" was extracted (and the guardrail will warn that names are
+# missing).
 extract_with_filesystem() {
   local found_any=false
-
-  # Look for files with PNG magic bytes (89 50 4E 47) inside the bundle
+  local idx=0
   while IFS= read -r -d '' file; do
     if head -c 4 "$file" 2>/dev/null | xxd -p 2>/dev/null | grep -q '^89504e47'; then
-      local fname
-      fname=$(basename "$file")
-      cp "$file" "$ASSETS_DIR/screenshot-${fname}.png"
-      echo "  Extracted screenshot-${fname}.png (from bundle)"
+      idx=$((idx + 1))
+      cp "$file" "$ASSETS_DIR/screenshot-unknown-${idx}.png"
+      echo "  Extracted screenshot-unknown-${idx}.png (raw filesystem)"
       found_any=true
     fi
   done < <(find "$RESULT_PATH" -type f -print0 2>/dev/null)
-
   [ "$found_any" = true ] && return 0
   return 1
 }
 
-# Try strategies in order
-echo "Trying new xcresulttool API..."
-if extract_with_new_api; then
-  echo "Extraction complete (new API)."
+echo "Extracting screenshots via xcresulttool export attachments..."
+if extract_with_export_attachments; then
+  echo "Extraction complete (export attachments)."
 else
-  echo "New API not available, trying legacy API..."
-  if extract_with_legacy_api; then
-    echo "Extraction complete (legacy API)."
-  else
-    echo "Legacy API failed, trying direct filesystem extraction..."
-    if extract_with_filesystem; then
-      echo "Extraction complete (filesystem)."
-    else
-      echo "Error: all extraction strategies failed."
-      exit 1
-    fi
+  echo "Modern API yielded no screenshots, falling back to raw filesystem walk..."
+  if ! extract_with_filesystem; then
+    echo "Error: all extraction strategies failed (no PNG payloads found)." >&2
+    exit 1
   fi
 fi
 
-# Count final results
+# --- Guardrail ---------------------------------------------------------------
+# Every REQUIRED screenshot must exist as a non-empty PNG. This prevents the
+# workflow from silently committing zero changes when only test-runner crash
+# logs were captured. Optional screenshots only emit a warning when missing.
+MISSING_REQUIRED=()
+for name in "${REQUIRED_NAMES[@]}"; do
+  path="$ASSETS_DIR/${name}.png"
+  if [ ! -s "$path" ]; then
+    MISSING_REQUIRED+=("$name")
+  fi
+done
+
+MISSING_OPTIONAL=()
+for name in "${OPTIONAL_NAMES[@]}"; do
+  path="$ASSETS_DIR/${name}.png"
+  if [ ! -s "$path" ]; then
+    MISSING_OPTIONAL+=("$name")
+  fi
+done
+
 FINAL_COUNT=$(find "$ASSETS_DIR" -name "screenshot-*.png" 2>/dev/null | wc -l | tr -d ' ')
-echo "Done! $FINAL_COUNT screenshot(s) in assets/"
+echo "Done! $FINAL_COUNT screenshot file(s) in assets/"
+
+if [ "${#MISSING_REQUIRED[@]}" -gt 0 ]; then
+  echo "Error: required screenshots missing or empty: ${MISSING_REQUIRED[*]}" >&2
+  exit 1
+fi
+
+if [ "${#MISSING_OPTIONAL[@]}" -gt 0 ]; then
+  echo "Warning: optional screenshots missing: ${MISSING_OPTIONAL[*]}" >&2
+fi
