@@ -135,12 +135,12 @@ struct SidebarRefreshTests {
             encoding: .utf8
         )
 
-        // Wait for watcher + refresh
-        // FSEvents can take 20-30s on CI runners, so poll generously
-        for _ in 0..<100 {
-            try await Task.sleep(for: .milliseconds(200))
-            if manager.rootNodes.count >= 2 { break }
-        }
+        // Trigger refresh directly instead of relying on FSEvents.
+        // FSEvents latency is unreliable on CI runners (observed 20-30s),
+        // so this test exercises WorkspaceManager.refreshFileTree() directly.
+        // The watcher → refresh wiring is covered separately by
+        // workspaceManagerRefreshesOnWatcherEvent and externalChangeTokenIncrements.
+        manager.refreshFileTree()
 
         let names = manager.rootNodes.map(\.name)
         #expect(names.contains("alpha.swift"), "alpha.swift should appear in tree")
@@ -170,12 +170,12 @@ struct SidebarRefreshTests {
             encoding: .utf8
         )
 
-        // Wait for watcher + refresh
-        // FSEvents can take 20-30s on CI runners, so poll generously
-        for _ in 0..<100 {
-            try await Task.sleep(for: .milliseconds(200))
-            if manager.rootNodes.contains(where: { $0.name == "Sources" }) { break }
-        }
+        // Trigger refresh directly instead of relying on FSEvents.
+        // FSEvents latency is unreliable on CI runners (observed 20-30s),
+        // so this test exercises WorkspaceManager.refreshFileTree() directly.
+        // The watcher → refresh wiring is covered separately by
+        // workspaceManagerRefreshesOnWatcherEvent and externalChangeTokenIncrements.
+        manager.refreshFileTree()
 
         let sourcesNode = manager.rootNodes.first { $0.name == "Sources" }
         #expect(sourcesNode != nil, "Sources directory should appear in tree")
