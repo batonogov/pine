@@ -145,7 +145,6 @@ final class SidebarRenameTests: PineUITestCase {
         XCTAssertTrue(waitForExistence(renamedRow, timeout: 10),
                       "Renamed file row should appear in the sidebar")
 
-        let renamedPath = projectURL.appendingPathComponent("renamed.swift").path
         let oldPath = projectURL.appendingPathComponent("hello.swift").path
         XCTAssertTrue(
             FileManager.default.fileExists(atPath: renamedPath),
