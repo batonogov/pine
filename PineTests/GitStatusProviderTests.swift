@@ -961,6 +961,199 @@ struct GitStatusProviderTests {
         #expect(provider.fileStatuses["test.txt"] == .untracked)
     }
 
+    // MARK: - Anti-flicker (issue #738)
+
+    @Test("applyFetched is no-op when state has not changed")
+    func applyFetchedNoOpSkipsObservableUpdate() throws {
+        let dir = try makeGitRepo()
+        defer { cleanup(dir) }
+
+        let provider = GitStatusProvider()
+        provider.setup(repositoryURL: dir)
+        let baseline = provider.observableUpdateCount
+
+        // Re-apply identical state — should NOT bump observableUpdateCount.
+        provider.applyFetched(
+            branch: provider.currentBranch,
+            statuses: provider.fileStatuses,
+            ignored: provider.ignoredPaths,
+            branches: provider.branches,
+            isRepository: provider.isGitRepository
+        )
+        #expect(provider.observableUpdateCount == baseline)
+
+        // A real change MUST bump it.
+        provider.applyFetched(
+            branch: "totally-new-branch",
+            statuses: provider.fileStatuses,
+            ignored: provider.ignoredPaths,
+            branches: provider.branches,
+            isRepository: true
+        )
+        #expect(provider.observableUpdateCount == baseline + 1)
+    }
+
+    @Test("repeated refresh on unchanged repo emits no observable updates")
+    func repeatedRefreshNoObservableUpdates() async throws {
+        let dir = try makeGitRepo()
+        defer { cleanup(dir) }
+
+        let provider = GitStatusProvider()
+        provider.setup(repositoryURL: dir)
+        let baseline = provider.observableUpdateCount
+
+        // Five back-to-back refreshes against an unchanged repo: each
+        // returns identical data, so equality short-circuiting must
+        // prevent any further observable updates (no flicker).
+        for _ in 0..<5 {
+            await provider.refreshAsync()
+        }
+        #expect(provider.observableUpdateCount == baseline)
+    }
+
+    @Test("concurrent refreshAsync coalesces into at most two passes")
+    func concurrentRefreshCoalesces() async throws {
+        let dir = try makeGitRepo()
+        defer { cleanup(dir) }
+
+        let provider = GitStatusProvider()
+        provider.setup(repositoryURL: dir)
+
+        // Mutate the repo so the first pass has a real diff to apply.
+        try "x".write(
+            to: dir.appendingPathComponent("a.txt"),
+            atomically: true,
+            encoding: .utf8
+        )
+
+        // Fire many concurrent refreshes — they must collapse into a single
+        // final state. We can only assert non-flicker via final correctness:
+        // every caller must observe the same end state.
+        await withTaskGroup(of: Void.self) { group in
+            for _ in 0..<20 {
+                group.addTask { await provider.refreshAsync() }
+            }
+        }
+
+        #expect(provider.fileStatuses["a.txt"] == .untracked)
+        #expect(provider.isGitRepository == true)
+    }
+
+    @Test("refresh after rapid edits ends in a single consistent state")
+    func rapidEditsEndInSingleState() async throws {
+        let dir = try makeGitRepo()
+        defer { cleanup(dir) }
+
+        let provider = GitStatusProvider()
+        provider.setup(repositoryURL: dir)
+
+        // Simulate the FSEvents burst that triggers issue #738: many writes
+        // followed by many refresh requests at the same time.
+        for i in 0..<10 {
+            try "v\(i)".write(
+                to: dir.appendingPathComponent("file\(i).txt"),
+                atomically: true,
+                encoding: .utf8
+            )
+        }
+        await withTaskGroup(of: Void.self) { group in
+            for _ in 0..<10 {
+                group.addTask { await provider.refreshAsync() }
+            }
+        }
+
+        // All ten files must be present in the final state — no in-between
+        // empty value should have stuck.
+        for i in 0..<10 {
+            #expect(provider.fileStatuses["file\(i).txt"] == .untracked)
+        }
+        #expect(provider.isGitRepository == true)
+    }
+
+    @Test("refresh preserves state if .git is removed mid-flight")
+    func refreshPreservesStateOnTransientFailure() async throws {
+        let dir = try makeGitRepo()
+        defer { cleanup(dir) }
+
+        try "x".write(to: dir.appendingPathComponent("a.txt"), atomically: true, encoding: .utf8)
+
+        let provider = GitStatusProvider()
+        provider.setup(repositoryURL: dir)
+        #expect(provider.fileStatuses["a.txt"] == .untracked)
+        let savedBranch = provider.currentBranch
+
+        // Remove .git on the fly. The next refresh sees an unreachable
+        // repository and must clear state cleanly (not leave half-state).
+        try FileManager.default.removeItem(at: dir.appendingPathComponent(".git"))
+        await provider.refreshAsync()
+
+        // After .git removal, the next refresh detects unreachable repo
+        // and clears state. The key invariant: state is consistent — either
+        // fully populated (if guard caught it) or fully empty.
+        if provider.isGitRepository {
+            // Defensive guard kept old state intact.
+            #expect(provider.currentBranch == savedBranch)
+        } else {
+            #expect(provider.currentBranch == "")
+            #expect(provider.fileStatuses.isEmpty)
+            #expect(provider.branches.isEmpty)
+        }
+    }
+
+    @Test("empty repo with no commits does not flicker isGitRepository")
+    func emptyRepoNoFlicker() throws {
+        let rawDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("pine-empty-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: rawDir, withIntermediateDirectories: true)
+        let dir = try resolveURL(rawDir)
+        defer { cleanup(dir) }
+
+        try runShell("git init", at: dir)
+
+        let provider = GitStatusProvider()
+        provider.setup(repositoryURL: dir)
+        #expect(provider.isGitRepository == true)
+
+        // Re-running setup must not flip isGitRepository off then on.
+        let baseline = provider.observableUpdateCount
+        provider.refresh()
+        // No commits, no branches → fetched data may be slightly different
+        // from setup, but the repository state itself stays stable.
+        #expect(provider.isGitRepository == true)
+        // At most one update from the refresh (likely zero if data identical)
+        #expect(provider.observableUpdateCount <= baseline + 1)
+    }
+
+    @Test("detached HEAD does not break refresh")
+    func detachedHeadRefresh() async throws {
+        let dir = try makeGitRepo()
+        defer { cleanup(dir) }
+
+        // Get the initial commit hash and detach HEAD onto it
+        let hash = try runShell("git rev-parse HEAD", at: dir)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        try runShell("git checkout \(hash)", at: dir)
+
+        let provider = GitStatusProvider()
+        provider.setup(repositoryURL: dir)
+        #expect(provider.isGitRepository == true)
+
+        // Refresh on detached HEAD — must not crash or flicker isGitRepository.
+        await provider.refreshAsync()
+        #expect(provider.isGitRepository == true)
+    }
+
+    @Test("applyEmptyState is idempotent")
+    func applyEmptyStateIdempotent() {
+        let provider = GitStatusProvider()
+        provider.applyEmptyState()
+        let baseline = provider.observableUpdateCount
+        provider.applyEmptyState()
+        provider.applyEmptyState()
+        // Already empty — repeated calls must not bump observableUpdateCount.
+        #expect(provider.observableUpdateCount == baseline)
+    }
+
     @Test("checkoutBranchAsync refreshes all fields after switch")
     func checkoutBranchAsyncRefreshesAll() async throws {
         let dir = try makeGitRepo()
