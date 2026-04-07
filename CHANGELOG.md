@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.18.2](https://github.com/batonogov/pine/compare/v1.18.1...v1.18.2) (2026-04-06)
+
+
+### Bug Fixes
+
+* **concurrency:** nonisolated InlineDiffProvider + CI guard for background queues ([#719](https://github.com/batonogov/pine/issues/719)) ([576e150](https://github.com/batonogov/pine/commit/576e15066b7838f041af6a20b94fc2f0d7d5d9ed))
+* diagnostic icons show explanation via tooltip and popover ([#679](https://github.com/batonogov/pine/issues/679)) ([#720](https://github.com/batonogov/pine/issues/720)) ([3a22964](https://github.com/batonogov/pine/commit/3a229647068d7097246cf7c3661e0b71f6ee1827))
+
 ## [1.18.1](https://github.com/batonogov/pine/compare/v1.18.0...v1.18.1) (2026-04-06)
 
 
