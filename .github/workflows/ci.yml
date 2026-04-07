@@ -273,6 +273,7 @@ jobs:
               'RepresentedFileTracker.swift',
               'SearchResultsView.swift',
               'SidebarView.swift',
+              'SidebarFileTree.swift',
               'StatusBarView.swift',
               'PaneTreeView.swift',
               'TerminalBarView.swift',
@@ -323,6 +324,7 @@ jobs:
               'PaneTreeView.swift',
               'SearchResultsView.swift',
               'SidebarView.swift',
+              'SidebarFileTree.swift',
               'StatusBarView.swift',
               'TerminalBarView.swift',
               'TerminalPaneContent.swift',
@@ -518,12 +520,13 @@ jobs:
               -only-testing:PineUITests/MultiWindowTests
               -only-testing:PineUITests/TerminalTests
               -only-testing:PineUITests/ToggleCommentTests
-          # Shard 6 — Git & Font (14 tests)
+          # Shard 6 — Git & Font (18 tests)
           - shard-name: "Git & Font"
             test-classes: >-
               -only-testing:PineUITests/GitignoreFilterTests
               -only-testing:PineUITests/FontSizeTests
               -only-testing:PineUITests/CheckForUpdatesTests
+              -only-testing:PineUITests/SidebarFolderClickTests
           # Shard 7 — Navigation (18 tests)
           - shard-name: "Navigation"
             test-classes: >-

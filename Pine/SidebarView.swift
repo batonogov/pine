@@ -134,6 +134,7 @@ struct SidebarView: View {
     @Environment(\.openWindow) var openWindow
     @Environment(\.undoManager) private var undoManager
     @State private var editState = SidebarEditState()
+    @State private var expansion = SidebarExpansionState()
 
     var body: some View {
         Group {
@@ -163,12 +164,25 @@ struct SidebarView: View {
                 .navigationTitle(workspace.projectName)
             } else {
                 ScrollViewReader { scrollProxy in
-                    List(workspace.rootNodes, children: \.optionalChildren, selection: $selectedFile) { node in
-                        FileNodeRow(node: node)
-                            .id(node.id)
+                    // `List(selection:)` is required for the row to pick up
+                    // the AppKit `selected` accessibility trait that
+                    // `XCUIElement.isSelected` reads (plain
+                    // `.accessibilityAddTraits(.isSelected)` only applies
+                    // to the inner label, not the enclosing NSOutlineView
+                    // cell that tests query for). Clicks still work
+                    // because each row's `.onTapGesture` fires alongside
+                    // `List`'s own row selection handling.
+                    List(selection: $selectedFile) {
+                        SidebarFileTree(nodes: workspace.rootNodes, selection: $selectedFile)
                     }
-                    .contentTransition(.identity)
+                    .listStyle(.sidebar)
                     .environment(editState)
+                    .environment(expansion)
+                    .onChange(of: workspace.rootNodes) { _, newNodes in
+                        // Drop expanded entries for folders that disappeared
+                        // (e.g. after delete) so the set stays bounded.
+                        expansion.prune(toMatch: newNodes)
+                    }
                     .contextMenu {
                         if let rootURL = workspace.rootURL {
                             Button {
