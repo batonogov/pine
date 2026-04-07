@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.19.0](https://github.com/batonogov/pine/compare/v1.18.3...v1.19.0) (2026-04-07)
+
+
+### Features
+
+* **sidebar:** expand folder on row click ([#747](https://github.com/batonogov/pine/issues/747)) ([6fb42fe](https://github.com/batonogov/pine/commit/6fb42fec0c43a44944a27f1baba9eff07a2923df))
+
+
+### Bug Fixes
+
+* **grammars:** unify dict key scope across Python, Ruby, JSON, YAML ([#745](https://github.com/batonogov/pine/issues/745)) ([2f96059](https://github.com/batonogov/pine/commit/2f96059cce40ba4281aeafb2594e1bb5df00b783))
+* **sidebar:** align inline rename row with siblings ([#748](https://github.com/batonogov/pine/issues/748)) ([8733b36](https://github.com/batonogov/pine/commit/8733b3649ac231a325fa134e52aeb3188b18984e))
+* **terminal:** restore readable bright-black for zsh autosuggestions ([#754](https://github.com/batonogov/pine/issues/754)) ([748ddc5](https://github.com/batonogov/pine/commit/748ddc5352191ba8482aa5305fe0dc35e037f39e))
+
 ## [1.18.3](https://github.com/batonogov/pine/compare/v1.18.2...v1.18.3) (2026-04-07)
 
 
