@@ -1,5 +1,22 @@
 # Changelog
 
+## [1.18.3](https://github.com/batonogov/pine/compare/v1.18.2...v1.18.3) (2026-04-07)
+
+
+### Bug Fixes
+
+* **ci:** make Detect Changes fail-safe on unreachable base SHA ([#752](https://github.com/batonogov/pine/issues/752)) ([3e38e3a](https://github.com/batonogov/pine/commit/3e38e3a9d52b107a58ad40f4f3e6a48851bb3d6c)), closes [#751](https://github.com/batonogov/pine/issues/751)
+* **ci:** repair screenshots workflow (Swift 6 race + xcresult extraction) ([#746](https://github.com/batonogov/pine/issues/746)) ([b6f29e1](https://github.com/batonogov/pine/commit/b6f29e1b53620fdaeddb52a16593863f2aeb1c49))
+* **git:** stop status indicator flicker on rapid updates ([#744](https://github.com/batonogov/pine/issues/744)) ([f150928](https://github.com/batonogov/pine/commit/f150928478d09159f3d1fce3cba4306d4636b1e3)), closes [#738](https://github.com/batonogov/pine/issues/738)
+* **grammar:** markdown syntax highlighting hierarchy ([#735](https://github.com/batonogov/pine/issues/735)) ([79a2959](https://github.com/batonogov/pine/commit/79a29590580e148a52f0e448815de9deef6430db))
+* reload editor content on external file change ([#734](https://github.com/batonogov/pine/issues/734)) ([#743](https://github.com/batonogov/pine/issues/743)) ([a6afebf](https://github.com/batonogov/pine/commit/a6afebf0029b46cff9cca5d00b8df294783ca1cb))
+* **terminal:** align SwiftTerm ANSI palette with macOS system colors ([#741](https://github.com/batonogov/pine/issues/741)) ([e2faef3](https://github.com/batonogov/pine/commit/e2faef3d22a11d6f9b8ac84f7f0381a8564e4408)), closes [#733](https://github.com/batonogov/pine/issues/733)
+
+
+### Code Refactoring
+
+* **tests:** migrate PineTests to Swift 6 mode ([#729](https://github.com/batonogov/pine/issues/729)) ([ba54411](https://github.com/batonogov/pine/commit/ba544110d322f6b65758ff09ad8b9c687833209b)), closes [#579](https://github.com/batonogov/pine/issues/579)
+
 ## [1.18.2](https://github.com/batonogov/pine/compare/v1.18.1...v1.18.2) (2026-04-06)
 
 
