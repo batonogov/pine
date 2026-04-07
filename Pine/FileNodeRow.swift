@@ -64,10 +64,15 @@ struct FileNodeRow: View {
                         .foregroundStyle(iconColor)
                 }
                 .opacity(isGitIgnored ? 0.5 : 1.0)
+                // Apply the row identifier only on the non-editing branch.
+                // Applying it on the outer Group would cascade onto the
+                // inline rename TextField and shadow its own
+                // `inlineRenameTextField` identifier in the accessibility
+                // tree, breaking UI tests that look up the editor by id.
+                .accessibilityIdentifier(AccessibilityID.fileNode(node.name))
             }
         }
         .tag(node)
-        .accessibilityIdentifier(AccessibilityID.fileNode(node.name))
         .contextMenu { fileNodeContextMenu }
         .draggable(SidebarFileDragInfo(fileURL: node.url)) {
             sidebarDragPreview()
