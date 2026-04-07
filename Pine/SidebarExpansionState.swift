@@ -26,6 +26,20 @@ final class SidebarExpansionState {
     /// trade-off when checking rename state.
     private(set) var expandedPaths: Set<String> = []
 
+    /// Per-folder timestamp of the last accepted toggle, used to debounce a
+    /// real macOS double-click into a single expand action so synthesised
+    /// `XCUIElement.doubleClick()` (used by some UI tests as an expansion
+    /// shortcut) does not immediately collapse the folder it just opened.
+    ///
+    /// Stored on the @Observable state object (not in a row's `@State`) so
+    /// that view re-renders triggered by async git status / file watcher
+    /// updates do not reset the debounce window mid double-click.
+    private var lastToggleTimestamps: [String: TimeInterval] = [:]
+
+    /// Window during which a second tap on the same folder is treated as the
+    /// trailing click of a double-click and ignored.
+    private static let doubleClickDebounce: TimeInterval = 0.4
+
     /// Convenience accessor for tests/debugging that prefer URLs.
     var expandedURLs: Set<URL> {
         Set(expandedPaths.map { URL(fileURLWithPath: $0) })
@@ -62,6 +76,21 @@ final class SidebarExpansionState {
         }
         expandedPaths.insert(key)
         return true
+    }
+
+    /// Toggles expansion for `url` while ignoring the trailing click of a
+    /// double-click within `doubleClickDebounce`. Returns the new expanded
+    /// state (or the unchanged state if the call was debounced).
+    @discardableResult
+    func toggleDebounced(_ url: URL) -> Bool {
+        let key = Self.key(for: url)
+        let now = Date().timeIntervalSinceReferenceDate
+        if let last = lastToggleTimestamps[key], now - last < Self.doubleClickDebounce {
+            // Treat as the trailing edge of a double-click; keep current state.
+            return expandedPaths.contains(key)
+        }
+        lastToggleTimestamps[key] = now
+        return toggle(url)
     }
 
     func collapseAll() {

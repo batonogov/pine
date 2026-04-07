@@ -164,7 +164,15 @@ struct SidebarView: View {
                 .navigationTitle(workspace.projectName)
             } else {
                 ScrollViewReader { scrollProxy in
-                    List {
+                    // `List(selection:)` is required for the row to pick up
+                    // the AppKit `selected` accessibility trait that
+                    // `XCUIElement.isSelected` reads (plain
+                    // `.accessibilityAddTraits(.isSelected)` only applies
+                    // to the inner label, not the enclosing NSOutlineView
+                    // cell that tests query for). Clicks still work
+                    // because each row's `.onTapGesture` fires alongside
+                    // `List`'s own row selection handling.
+                    List(selection: $selectedFile) {
                         SidebarFileTree(nodes: workspace.rootNodes, selection: $selectedFile)
                     }
                     .listStyle(.sidebar)

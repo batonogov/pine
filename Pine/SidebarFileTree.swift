@@ -8,6 +8,38 @@
 
 import SwiftUI
 
+/// Custom `DisclosureGroup` style that draws its own SwiftUI chevron and
+/// hides the AppKit-native `NSOutlineViewDisclosureButton`.
+///
+/// Why: the promoted `NSOutlineView` inside `List` installs a native
+/// disclosure button whose click state is independent from our SwiftUI
+/// `isExpanded` binding. XCUITest helpers that locate disclosure triangles
+/// by type would then click the native button and put the SwiftUI model
+/// out of sync with the visible state. Drawing our own chevron keeps the
+/// single source of truth in `SidebarExpansionState`.
+private struct SidebarDisclosureGroupStyle: DisclosureGroupStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 2) {
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 9, weight: .semibold))
+                    .foregroundStyle(.secondary)
+                    .rotationEffect(.degrees(configuration.isExpanded ? 90 : 0))
+                    .frame(width: 10)
+                    .contentShape(Rectangle())
+                    .onTapGesture {
+                        configuration.isExpanded.toggle()
+                    }
+                configuration.label
+            }
+            if configuration.isExpanded {
+                configuration.content
+                    .padding(.leading, 14)
+            }
+        }
+    }
+}
+
 /// Recursive sidebar file tree built on top of `DisclosureGroup` so that the
 /// expansion state is bindable. Tap on a folder row toggles expansion; tap on
 /// a file row selects it (which the parent translates into "open tab").
@@ -33,16 +65,18 @@ private struct SidebarFileTreeNode: View {
     @Environment(SidebarExpansionState.self) private var expansion
     @Environment(SidebarEditState.self) private var editState
     @State private var fontSettings = FontSizeSettings.shared
-    /// Timestamp of the last accepted tap on this folder. Used to debounce a
-    /// real double-click into a single expand action so synthesised
-    /// `XCUIElement.doubleClick()` (used by some UI tests as a reliable
-    /// expansion shortcut) does not immediately collapse the folder again.
-    @State private var lastTapTimestamp: TimeInterval = 0
 
     var body: some View {
         if node.isDirectory, let children = node.optionalChildren {
+            // IMPORTANT: read `expansion.isExpanded(...)` directly in the
+            // view body so SwiftUI's @Observable tracker registers the
+            // dependency. Accessing it only from inside the Binding's
+            // `get` closure below is NOT enough — the closure runs later,
+            // outside of body evaluation, so the view never re-renders
+            // when `expandedPaths` mutates.
+            let isExpanded = expansion.isExpanded(node.url)
             let bindingExpanded = Binding<Bool>(
-                get: { expansion.isExpanded(node.url) },
+                get: { isExpanded },
                 set: { expansion.setExpanded(node.url, $0) }
             )
             DisclosureGroup(isExpanded: bindingExpanded) {
@@ -52,6 +86,7 @@ private struct SidebarFileTreeNode: View {
             } label: {
                 row(isFolder: true)
             }
+            .disclosureGroupStyle(SidebarDisclosureGroupStyle())
         } else {
             row(isFolder: false)
         }
@@ -85,20 +120,18 @@ private struct SidebarFileTreeNode: View {
 
     /// Single tap handler for both files and folders. Sets selection and
     /// (for folders) toggles expansion. Skipped while in inline rename mode
-    /// so the rename text field keeps focus. A short debounce prevents
-    /// `doubleClick()` from immediately collapsing a freshly expanded folder.
+    /// so the rename text field keeps focus. The folder toggle uses a
+    /// shared per-folder debounce on `SidebarExpansionState` so a real
+    /// double-click expands once instead of expand-then-collapse — and
+    /// because the debounce lives on the @Observable state object it
+    /// survives view re-renders triggered by async git status / file
+    /// watcher updates that previously reset a row-local `@State`.
     private func handleTap(isFolder: Bool) {
         guard !isRenamingThisNode else { return }
-        let now = Date().timeIntervalSinceReferenceDate
-        if isFolder, now - lastTapTimestamp < 0.4 {
-            // Treat the second click of a double-click as a no-op so that
-            // expanding a folder via double-click leaves it expanded.
-            return
-        }
-        lastTapTimestamp = now
         selection = node
         if isFolder {
-            expansion.toggle(node.url)
+            expansion.toggleDebounced(node.url)
         }
     }
+
 }

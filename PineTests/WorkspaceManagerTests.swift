@@ -565,4 +565,58 @@ struct WorkspaceManagerTests {
         #expect(names.contains("from_dir2.txt"))
         #expect(!names.contains("from_dir1.txt"))
     }
+
+    @Test("refreshFileTree shallow load preserves gitignored dir children")
+    @MainActor
+    func refreshFileTreeKeepsGitignoredChildren() throws {
+        let tempDir = try makeTempDirectory()
+        defer { cleanup(tempDir) }
+
+        try "// hello".write(
+            to: tempDir.appendingPathComponent("main.swift"),
+            atomically: true, encoding: .utf8)
+        try ".claude/\nnode_modules/\n".write(
+            to: tempDir.appendingPathComponent(".gitignore"),
+            atomically: true, encoding: .utf8)
+        let claude = tempDir.appendingPathComponent(".claude")
+        try FileManager.default.createDirectory(at: claude, withIntermediateDirectories: true)
+        try "{}".write(
+            to: claude.appendingPathComponent("settings.json"),
+            atomically: true, encoding: .utf8)
+        let nodeModules = tempDir.appendingPathComponent("node_modules/express")
+        try FileManager.default.createDirectory(at: nodeModules, withIntermediateDirectories: true)
+        try "{}".write(
+            to: nodeModules.appendingPathComponent("index.js"),
+            atomically: true, encoding: .utf8)
+
+        try runShell(
+            "git init && git add . && git -c user.email=t@t -c user.name=t commit -m init",
+            at: tempDir
+        )
+
+        let manager = WorkspaceManager()
+        manager.loadDirectory(url: tempDir)
+        // loadDirectory dispatches heavy work to a background queue.
+        // Use the synchronous refreshFileTree to populate rootNodes
+        // deterministically, mirroring what the file watcher does at runtime.
+        manager.refreshFileTree()
+
+        let claudeNode = manager.rootNodes.first { $0.name == ".claude" }
+        #expect(claudeNode != nil, "`.claude` should appear in rootNodes")
+        #expect(claudeNode?.isDirectory == true)
+        // SwiftUI sidebar relies on `optionalChildren` to decide whether
+        // to render a DisclosureGroup with a chevron — must be non-nil so
+        // gitignored folders remain expandable.
+        #expect(
+            claudeNode?.optionalChildren != nil,
+            "`.claude.optionalChildren` should be non-nil so the row renders a chevron"
+        )
+        #expect(
+            claudeNode?.optionalChildren?.contains(where: { $0.name == "settings.json" }) == true,
+            "settings.json should be present after shallow load"
+        )
+
+        let nmNode = manager.rootNodes.first { $0.name == "node_modules" }
+        #expect(nmNode?.optionalChildren?.contains(where: { $0.name == "express" }) == true)
+    }
 }
