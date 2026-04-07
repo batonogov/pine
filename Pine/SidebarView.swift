@@ -164,14 +164,10 @@ struct SidebarView: View {
                 .navigationTitle(workspace.projectName)
             } else {
                 ScrollViewReader { scrollProxy in
-                    ScrollView {
-                        LazyVStack(alignment: .leading, spacing: 0) {
-                            SidebarFileTree(nodes: workspace.rootNodes, selection: $selectedFile)
-                        }
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.vertical, 4)
+                    List {
+                        SidebarFileTree(nodes: workspace.rootNodes, selection: $selectedFile)
                     }
-                    .contentTransition(.identity)
+                    .listStyle(.sidebar)
                     .environment(editState)
                     .environment(expansion)
                     .onChange(of: workspace.rootNodes) { _, newNodes in
