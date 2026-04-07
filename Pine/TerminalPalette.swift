@@ -71,7 +71,15 @@ enum TerminalPalette {
         .init(red: 0xB2, green: 0x94, blue: 0xBB), // 5  magenta
         .init(red: 0x8A, green: 0xBE, blue: 0xB7), // 6  cyan
         .init(red: 0xC5, green: 0xC8, blue: 0xC6), // 7  white
-        .init(red: 0x66, green: 0x66, blue: 0x66), // 8  bright black (dim — autosuggestions)
+        // 8 bright black — used by zsh-autosuggestions / fish ghost text
+        // (default `fg=8`). Must remain readable against the dark terminal
+        // background (`NSColor.textBackgroundColor` ≈ #1E1E1E in dark mode).
+        // The original Tomorrow Night value (#969896) gives ≈5.4:1 contrast
+        // vs. dark bg, which keeps suggestions clearly legible while still
+        // visibly dimmer than regular foreground (#C5C8C6). The previous
+        // #666666 produced only ≈2.9:1 and made suggestions disappear into
+        // the background — see fix/terminal-autosuggestion-contrast.
+        .init(red: 0x96, green: 0x98, blue: 0x96), // 8  bright black
         .init(red: 0xD5, green: 0x4E, blue: 0x53), // 9  bright red
         .init(red: 0xB9, green: 0xCA, blue: 0x4A), // 10 bright green
         .init(red: 0xE7, green: 0xC5, blue: 0x47), // 11 bright yellow

@@ -8,6 +8,7 @@
 
 import Testing
 import AppKit
+import Foundation
 import SwiftTerm
 @testable import Pine
 
@@ -43,7 +44,7 @@ struct TerminalPaletteTests {
             (0xB2, 0x94, 0xBB), // 5  magenta
             (0x8A, 0xBE, 0xB7), // 6  cyan
             (0xC5, 0xC8, 0xC6), // 7  white
-            (0x66, 0x66, 0x66), // 8  bright black
+            (0x96, 0x98, 0x96), // 8  bright black (Tomorrow Night canonical)
             (0xD5, 0x4E, 0x53), // 9  bright red
             (0xB9, 0xCA, 0x4A), // 10 bright green
             (0xE7, 0xC5, 0x47), // 11 bright yellow
@@ -154,6 +155,107 @@ struct TerminalPaletteTests {
         // verified by the pure-Swift tests above.
         let tab = TerminalTab(name: "palette-test")
         _ = tab.terminalView.getTerminal()
+    }
+
+    // MARK: - Readability vs. terminal background
+    //
+    // Regression guard for fix/terminal-autosuggestion-contrast:
+    // SwiftTerm's terminal background in Pine is `NSColor.textBackgroundColor`,
+    // which in dark mode resolves to roughly #1E1E1E. zsh-autosuggestions and
+    // fish ghost-text default to ANSI 8 (bright black) — if that color is too
+    // close to the background, suggestions become invisible. These tests pin
+    // a minimum contrast ratio so the regression cannot recur.
+
+    /// WCAG relative luminance for an 8-bit sRGB triple.
+    private func relativeLuminance(_ entry: TerminalPaletteEntry) -> Double {
+        func channel(_ raw: UInt8) -> Double {
+            let v = Double(raw) / 255.0
+            return v <= 0.03928 ? v / 12.92 : pow((v + 0.055) / 1.055, 2.4)
+        }
+        let r = channel(entry.red)
+        let g = channel(entry.green)
+        let b = channel(entry.blue)
+        return 0.2126 * r + 0.7152 * g + 0.0722 * b
+    }
+
+    private func contrastRatio(_ a: TerminalPaletteEntry, _ b: TerminalPaletteEntry) -> Double {
+        let la = relativeLuminance(a)
+        let lb = relativeLuminance(b)
+        let lighter = max(la, lb)
+        let darker = min(la, lb)
+        return (lighter + 0.05) / (darker + 0.05)
+    }
+
+    /// Approximation of `NSColor.textBackgroundColor` in dark mode. We hard-code
+    /// the value here because the unit-test target should not depend on the
+    /// host appearance, but the dark-mode value is what users actually see in
+    /// the terminal at night and is the worst case for bright-black contrast.
+    private static let darkModeBackground = TerminalPaletteEntry(red: 0x1E, green: 0x1E, blue: 0x1E)
+
+    @Test func brightBlackIsNotEqualToDarkBackground() {
+        let brightBlack = TerminalPalette.macOSAligned[8]
+        #expect(brightBlack != Self.darkModeBackground)
+    }
+
+    @Test func brightBlackHasReadableContrastAgainstDarkBackground() {
+        // zsh-autosuggestions / fish ghost text uses ANSI 8. We require at
+        // least 4.5:1 (WCAG AA for normal text). The previous #666666 only
+        // hit ~2.9 and was unreadable.
+        let brightBlack = TerminalPalette.macOSAligned[8]
+        let ratio = contrastRatio(brightBlack, Self.darkModeBackground)
+        #expect(ratio >= 4.5, "bright black contrast \(ratio) below WCAG AA")
+    }
+
+    @Test func brightBlackIsDimmerThanRegularForeground() {
+        // It must still *look* dim — i.e. clearly less luminous than ANSI 7
+        // (the regular foreground used by most prompts). Otherwise the
+        // "ghost text" affordance is lost.
+        let brightBlack = TerminalPalette.macOSAligned[8]
+        let white = TerminalPalette.macOSAligned[7]
+        #expect(relativeLuminance(brightBlack) < relativeLuminance(white))
+    }
+
+    @Test func whiteIsReadableAgainstDarkBackground() {
+        // ANSI 7 is the default foreground for most prompts. Anything below
+        // 7:1 (WCAG AAA for body text) would be a regression for everyday
+        // terminal use.
+        let white = TerminalPalette.macOSAligned[7]
+        let ratio = contrastRatio(white, Self.darkModeBackground)
+        #expect(ratio >= 7.0, "white contrast \(ratio) below WCAG AAA")
+    }
+
+    @Test func brightWhiteIsReadableAgainstDarkBackground() {
+        let brightWhite = TerminalPalette.macOSAligned[15]
+        let ratio = contrastRatio(brightWhite, Self.darkModeBackground)
+        #expect(ratio >= 7.0)
+    }
+
+    @Test func allColoredAnsiSlotsAreReadableAgainstDarkBackground() {
+        // Every saturated color slot (red/green/yellow/blue/magenta/cyan and
+        // their bright variants) must clear at least 3:1 against the dark
+        // background — anything below that and the prompt becomes unusable.
+        // Indices 0 (black) and 8 (bright black) are excluded: 0 is intended
+        // to be near-bg (true black) and 8 is exercised by its dedicated
+        // stricter test above.
+        let bg = Self.darkModeBackground
+        let coloredIndices: [Int] = [1, 2, 3, 4, 5, 6, 7, 9, 10, 11, 12, 13, 14, 15]
+        for index in coloredIndices {
+            let entry = TerminalPalette.macOSAligned[index]
+            let ratio = contrastRatio(entry, bg)
+            #expect(ratio >= 3.0, "ANSI \(index) contrast \(ratio) below 3:1")
+        }
+    }
+
+    @Test func brightBlackContrastBeatsRegressionBaseline() {
+        // Direct regression assertion: the previous #666666 produced ~2.9.
+        // Make sure we are comfortably above that.
+        let brightBlack = TerminalPalette.macOSAligned[8]
+        let ratio = contrastRatio(brightBlack, Self.darkModeBackground)
+        let regression = contrastRatio(
+            TerminalPaletteEntry(red: 0x66, green: 0x66, blue: 0x66),
+            Self.darkModeBackground
+        )
+        #expect(ratio > regression + 1.0)
     }
 
     @Test @MainActor func newTerminalTabDisablesUseBrightColors() {
