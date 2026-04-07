@@ -104,6 +104,14 @@ struct FileNodeRow: View {
                 .onAppear {
                     DispatchQueue.main.async {
                         isTextFieldFocused = true
+                        // Finder-style stem selection: select only the part of the
+                        // name before the extension so the user can retype the stem
+                        // without re-typing the extension. Folders and dot-files
+                        // (e.g. .gitignore) get full-name selection.
+                        // Defer one more runloop tick so the field editor exists.
+                        DispatchQueue.main.async {
+                            applyStemSelection()
+                        }
                     }
                 }
                 .onChange(of: isTextFieldFocused) { _, focused in
@@ -185,16 +193,45 @@ struct FileNodeRow: View {
         )
     }
 
+    /// Selects the stem (name without extension) in the rename text field, Finder-style.
+    private func applyStemSelection() {
+        // Locate the field editor for the focused NSTextField in the active window.
+        guard let window = NSApp.keyWindow ?? NSApp.mainWindow,
+              let editor = window.firstResponder as? NSTextView else { return }
+        let range = SidebarRenameStem.stemRange(for: editState.editingText, isDirectory: node.isDirectory)
+        editor.selectedRange = range
+    }
+
+    /// Returns the set of sibling names in the parent directory (excluding `oldURL` itself).
+    private func siblingNames(of oldURL: URL) -> Set<String> {
+        let parent = oldURL.deletingLastPathComponent()
+        let contents = (try? FileManager.default.contentsOfDirectory(atPath: parent.path)) ?? []
+        var names = Set(contents)
+        names.remove(oldURL.lastPathComponent)
+        return names
+    }
+
     private func commitRename() {
         guard editState.renamingURL?.path == node.url.path else { return }
 
-        let newName = editState.editingText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !newName.isEmpty else {
+        let oldURL = node.url
+        let rawName = editState.editingText
+        let newName = rawName.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        // Validate before touching disk. Empty name = cancel (Finder behavior).
+        if newName.isEmpty {
             cancelRename()
             return
         }
+        if let validationError = SidebarRenameStem.validationError(
+            for: newName,
+            oldURL: oldURL,
+            existingNames: siblingNames(of: oldURL)
+        ) {
+            SidebarEditState.showFileError(validationError)
+            return
+        }
 
-        let oldURL = node.url
         let newURL = oldURL.deletingLastPathComponent().appendingPathComponent(newName)
 
         if let root = workspace.rootURL,
