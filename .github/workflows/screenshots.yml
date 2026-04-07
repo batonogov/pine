@@ -28,9 +28,41 @@ jobs:
 
       - name: Commit screenshots
         run: |
+          set -euo pipefail
           git config user.name "github-actions"
           git config user.email "actions@github.com"
-          git add assets/screenshot-*.png
+
+          # Remove diagnostic fallback artifacts (screenshot-unknown-*.png)
+          # so they never accidentally end up in a commit. They are also
+          # gitignored, but be explicit and defensive.
+          rm -f assets/screenshot-unknown-*.png
+
+          # Stage only the canonical, named screenshots. We explicitly
+          # enumerate them (rather than `assets/screenshot-*.png`) so a
+          # stray ignored path can never make `git add` exit non-zero
+          # under `bash -e` — that exact failure mode is what historically
+          # blocked this workflow on every release tag.
+          shopt -s nullglob
+          NAMED=(
+            assets/screenshot-welcome.png
+            assets/screenshot-editor.png
+            assets/screenshot-terminal.png
+            assets/screenshot-markdown.png
+            assets/screenshot-sidebar.png
+            assets/screenshot-minimap.png
+          )
+          EXISTING=()
+          for f in "${NAMED[@]}"; do
+            [ -f "$f" ] && EXISTING+=("$f")
+          done
+          if [ "${#EXISTING[@]}" -eq 0 ]; then
+            echo "Error: no canonical screenshots found in assets/." >&2
+            exit 1
+          fi
+          # --force: if any of these paths is ever (re-)added to .gitignore
+          # by mistake, we still want the workflow to succeed.
+          git add --force "${EXISTING[@]}"
+
           if git diff --staged --quiet; then
             echo "No screenshot changes to commit."
             exit 0
