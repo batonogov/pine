@@ -91,9 +91,10 @@ struct FileNodeRow: View {
     @ViewBuilder
     private var inlineEditor: some View {
         @Bindable var state = editState
-        HStack(spacing: 4) {
-            Image(systemName: iconName)
-                .foregroundStyle(.secondary)
+        // Use Label (same structure as the non-editing branch) so SwiftUI's
+        // List/OutlineGroup applies identical leading insets and the row does
+        // not visually jump on commit. See #736.
+        Label {
             TextField("", text: $state.editingText)
                 .textFieldStyle(.plain)
                 .onSubmit { commitRename() }
@@ -110,6 +111,9 @@ struct FileNodeRow: View {
                     guard !focused, editState.renamingURL?.path == node.url.path else { return }
                     commitRename()
                 }
+        } icon: {
+            Image(systemName: iconName)
+                .foregroundStyle(iconColor)
         }
     }
 
