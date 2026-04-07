@@ -141,12 +141,9 @@ final class WorkspaceManager {
     private func loadDirectoryContentsAsync(
         url: URL,
         generation: Int,
-        completion: (() -> Void)? = nil
+        completion: (@MainActor @Sendable () -> Void)? = nil
     ) {
         let progressID = progressTracker?.beginOperation(Strings.progressLoadingProject)
-        // nonisolated(unsafe): completion is always called on the main queue
-        // (inside DispatchQueue.main.async), but Swift 6 cannot prove this statically.
-        nonisolated(unsafe) let completion = completion
         // nonisolated-check:ignore — pre-existing pattern; tracked in #720
         DispatchQueue.global(qos: .userInitiated).async {
             // Run git setup first so we know which paths are ignored
@@ -180,7 +177,9 @@ final class WorkspaceManager {
                 if !shallowResult.wasDepthLimited {
                     self.isLoading = false
                     if let progressID { self.progressTracker?.endOperation(progressID) }
-                    completion?()
+                    if let completion {
+                        MainActor.assumeIsolated { completion() }
+                    }
                 }
             }
 
@@ -204,7 +203,9 @@ final class WorkspaceManager {
                 self.notifyRootNodesChanged(fullChildren)
                 self.isLoading = false
                 if let progressID { self.progressTracker?.endOperation(progressID) }
-                completion?()
+                if let completion {
+                    MainActor.assumeIsolated { completion() }
+                }
             }
         }
     }
