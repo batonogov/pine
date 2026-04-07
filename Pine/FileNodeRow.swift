@@ -106,12 +106,11 @@ struct FileNodeRow: View {
                         isTextFieldFocused = true
                         // Finder-style stem selection: select only the part of the
                         // name before the extension so the user can retype the stem
-                        // without re-typing the extension. Folders and dot-files
-                        // (e.g. .gitignore) get full-name selection.
-                        // Defer one more runloop tick so the field editor exists.
-                        DispatchQueue.main.async {
-                            applyStemSelection()
-                        }
+                        // without re-typing the extension. The field editor (NSTextView)
+                        // is created asynchronously by AppKit after focus is set, so
+                        // we retry up to 3 runloop ticks until firstResponder becomes
+                        // a NSTextView.
+                        applyStemSelectionWithRetry(remaining: 3)
                     }
                 }
                 .onChange(of: isTextFieldFocused) { _, focused in
@@ -194,12 +193,22 @@ struct FileNodeRow: View {
     }
 
     /// Selects the stem (name without extension) in the rename text field, Finder-style.
-    private func applyStemSelection() {
-        // Locate the field editor for the focused NSTextField in the active window.
-        guard let window = NSApp.keyWindow ?? NSApp.mainWindow,
-              let editor = window.firstResponder as? NSTextView else { return }
-        let range = SidebarRenameStem.stemRange(for: editState.editingText, isDirectory: node.isDirectory)
-        editor.selectedRange = range
+    /// Retries up to `remaining` runloop ticks because AppKit creates the field
+    /// editor asynchronously after focus is set, so the first attempt may not yet
+    /// see an NSTextView as firstResponder.
+    private func applyStemSelectionWithRetry(remaining: Int) {
+        if let window = NSApp.keyWindow ?? NSApp.mainWindow,
+           let editor = window.firstResponder as? NSTextView {
+            let range = SidebarRenameStem.stemRange(
+                for: editState.editingText, isDirectory: node.isDirectory
+            )
+            editor.selectedRange = range
+            return
+        }
+        guard remaining > 0 else { return }
+        DispatchQueue.main.async {
+            applyStemSelectionWithRetry(remaining: remaining - 1)
+        }
     }
 
     /// Returns the set of sibling names in the parent directory (excluding `oldURL` itself).

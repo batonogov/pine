@@ -73,8 +73,13 @@ enum SidebarRenameStem {
             return Strings.renameErrorEmpty
         }
 
-        // POSIX path separator and macOS HFS-style colon are forbidden in filenames.
-        if trimmed.contains("/") || trimmed.contains(":") {
+        // POSIX path separator, macOS HFS-style colon, and NUL byte are forbidden in filenames.
+        if trimmed.contains("/") || trimmed.contains(":") || trimmed.contains("\0") {
+            return Strings.renameErrorInvalidCharacters
+        }
+
+        // "." and ".." are reserved POSIX directory entries — never valid filenames.
+        if trimmed == "." || trimmed == ".." {
             return Strings.renameErrorInvalidCharacters
         }
 

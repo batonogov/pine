@@ -173,6 +173,43 @@ struct SidebarRenameStemTests {
         )
         #expect(result == nil)
     }
+
+    @Test("Single dot \".\" is reserved → invalid")
+    func validationSingleDot() {
+        let oldURL = URL(fileURLWithPath: "/tmp/foo.txt")
+        #expect(
+            SidebarRenameStem.validationError(for: ".", oldURL: oldURL, existingNames: [])
+                == Strings.renameErrorInvalidCharacters
+        )
+    }
+
+    @Test("Double dot \"..\" is reserved → invalid")
+    func validationDoubleDot() {
+        let oldURL = URL(fileURLWithPath: "/tmp/foo.txt")
+        #expect(
+            SidebarRenameStem.validationError(for: "..", oldURL: oldURL, existingNames: [])
+                == Strings.renameErrorInvalidCharacters
+        )
+    }
+
+    @Test("Name containing NUL byte → invalid")
+    func validationNulByte() {
+        let oldURL = URL(fileURLWithPath: "/tmp/foo.txt")
+        #expect(
+            SidebarRenameStem.validationError(for: "bad\0name", oldURL: oldURL, existingNames: [])
+                == Strings.renameErrorInvalidCharacters
+        )
+    }
+
+    @Test("Hidden file name (.envrc) is valid — leading dot allowed")
+    func validationHiddenFileLeadingDotValid() {
+        let oldURL = URL(fileURLWithPath: "/tmp/foo.txt")
+        #expect(
+            SidebarRenameStem.validationError(
+                for: ".envrc", oldURL: oldURL, existingNames: []
+            ) == nil
+        )
+    }
 }
 
 // MARK: - TabManager rename URL update integration
