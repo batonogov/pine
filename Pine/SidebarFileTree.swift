@@ -28,62 +28,71 @@ private struct SidebarFileTreeNode: View {
     @Binding var selection: FileNode?
     @Environment(SidebarExpansionState.self) private var expansion
     @Environment(SidebarEditState.self) private var editState
+    @State private var fontSettings = FontSizeSettings.shared
 
     var body: some View {
         if node.isDirectory, let children = node.optionalChildren {
-            DisclosureGroup(
-                isExpanded: Binding(
-                    get: { expansion.isExpanded(node.url) },
-                    set: { expansion.setExpanded(node.url, $0) }
-                )
-            ) {
+            let isExpanded = expansion.isExpanded(node.url)
+            row(isFolder: true, isExpanded: isExpanded)
+            if isExpanded {
                 ForEach(children) { child in
                     SidebarFileTreeNode(node: child, selection: $selection)
+                        .padding(.leading, fontSettings.fontSize)
                 }
-            } label: {
-                folderLabel
             }
-            .id(node.id)
         } else {
-            FileNodeRow(node: node)
-                .id(node.id)
-                .contentShape(Rectangle())
-                .onTapGesture {
-                    handleFileTap()
-                }
+            row(isFolder: false, isExpanded: false)
         }
     }
 
-    /// Folder row body — shows the standard FileNodeRow content but expands
-    /// the hit area to the full row width and toggles expansion on tap.
+    /// Single clickable row. Renders chevron for folders, then `FileNodeRow`.
+    /// The whole row is hit-tested via `contentShape` and handles its own
+    /// selection + folder expansion via a tap gesture. We do not rely on
+    /// `List(selection:)` because the parent view uses `ScrollView` +
+    /// `LazyVStack` to own click handling end-to-end (#739).
     @ViewBuilder
-    private var folderLabel: some View {
-        FileNodeRow(node: node)
-            .contentShape(Rectangle())
-            .onTapGesture {
-                handleFolderTap()
+    private func row(isFolder: Bool, isExpanded: Bool) -> some View {
+        let isSelected = selection?.url == node.url
+        let fontSize = fontSettings.fontSize
+        HStack(spacing: 4) {
+            if isFolder {
+                Image(systemName: "chevron.right")
+                    .font(.system(size: max(fontSize - 3, 8), weight: .medium))
+                    .foregroundStyle(.secondary)
+                    .rotationEffect(.degrees(isExpanded ? 90 : 0))
+                    .frame(width: fontSize)
+            } else {
+                Spacer().frame(width: fontSize)
             }
+            FileNodeRow(node: node)
+                .font(.system(size: fontSize))
+            Spacer(minLength: 0)
+        }
+        .padding(.vertical, max(fontSize * 0.15, 2))
+        .padding(.horizontal, 8)
+        .background(
+            RoundedRectangle(cornerRadius: 4)
+                .fill(isSelected ? Color.accentColor.opacity(0.2) : Color.clear)
+        )
+        .contentShape(Rectangle())
+        .onTapGesture {
+            handleTap(isFolder: isFolder)
+        }
+        .id(node.id)
     }
 
     private var isRenamingThisNode: Bool {
         editState.renamingURL?.path == node.url.path
     }
 
-    /// Tap handling for a folder row: toggle expansion unless we're in inline
-    /// rename mode for this node (then the tap should be absorbed by the text
-    /// field and not collapse the folder).
-    private func handleFolderTap() {
-        guard !isRenamingThisNode else { return }
-        // Update selection to the folder so the row highlights, matching
-        // what native sidebar List does on click.
-        selection = node
-        expansion.toggle(node.url)
-    }
-
-    /// Tap handling for a file row: just update selection. ContentView's
-    /// onChange(of: selectedNode) opens the tab when a file is selected.
-    private func handleFileTap() {
+    /// Single tap handler for both files and folders. Sets selection and
+    /// (for folders) toggles expansion. Skipped while in inline rename mode
+    /// so the rename text field keeps focus.
+    private func handleTap(isFolder: Bool) {
         guard !isRenamingThisNode else { return }
         selection = node
+        if isFolder {
+            expansion.toggle(node.url)
+        }
     }
 }

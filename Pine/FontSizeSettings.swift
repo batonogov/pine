@@ -10,9 +10,9 @@ import AppKit
 final class FontSizeSettings {
     static let shared = FontSizeSettings()
 
-    nonisolated static let defaultSize: CGFloat = 13
+    nonisolated static let defaultSize: CGFloat = 12
     nonisolated static let minSize: CGFloat = 8
-    nonisolated static let maxSize: CGFloat = 32
+    nonisolated static let maxSize: CGFloat = 18
 
     private static let userDefaultsKey = "editorFontSize"
     private let defaults: UserDefaults

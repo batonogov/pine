@@ -25,12 +25,12 @@ struct FontSizeSettingsTests {
 
     // MARK: - Default values
 
-    @Test func defaultFontSizeIs13() throws {
+    @Test func defaultFontSizeIs12() throws {
         let defaults = try makeDefaults()
         defer { cleanupDefaults(defaults) }
 
         let settings = FontSizeSettings(defaults: defaults)
-        #expect(settings.fontSize == 13)
+        #expect(settings.fontSize == 12)
     }
 
     // MARK: - Increase
@@ -41,7 +41,7 @@ struct FontSizeSettingsTests {
 
         let settings = FontSizeSettings(defaults: defaults)
         settings.increase()
-        #expect(settings.fontSize == 14)
+        #expect(settings.fontSize == 13)
     }
 
     @Test func increaseCannotExceedMax() throws {
@@ -53,11 +53,11 @@ struct FontSizeSettingsTests {
         for _ in 0..<50 {
             settings.increase()
         }
-        #expect(settings.fontSize == 32)
+        #expect(settings.fontSize == 18)
 
         // One more should stay at max
         settings.increase()
-        #expect(settings.fontSize == 32)
+        #expect(settings.fontSize == 18)
     }
 
     // MARK: - Decrease
@@ -68,7 +68,7 @@ struct FontSizeSettingsTests {
 
         let settings = FontSizeSettings(defaults: defaults)
         settings.decrease()
-        #expect(settings.fontSize == 12)
+        #expect(settings.fontSize == 11)
     }
 
     @Test func decreaseCannotGoBelowMin() throws {
@@ -97,10 +97,10 @@ struct FontSizeSettingsTests {
         settings.increase()
         settings.increase()
         settings.increase()
-        #expect(settings.fontSize == 16)
+        #expect(settings.fontSize == 15)
 
         settings.reset()
-        #expect(settings.fontSize == 13)
+        #expect(settings.fontSize == 12)
     }
 
     // MARK: - Persistence
@@ -113,17 +113,17 @@ struct FontSizeSettingsTests {
         settings.increase()
         settings.increase()
 
-        #expect(defaults.double(forKey: "editorFontSize") == 15)
+        #expect(defaults.double(forKey: "editorFontSize") == 14)
     }
 
     @Test func fontSizeLoadsFromUserDefaults() throws {
         let defaults = try makeDefaults()
         defer { cleanupDefaults(defaults) }
 
-        defaults.set(Double(20), forKey: "editorFontSize")
+        defaults.set(Double(15), forKey: "editorFontSize")
 
         let settings = FontSizeSettings(defaults: defaults)
-        #expect(settings.fontSize == 20)
+        #expect(settings.fontSize == 15)
     }
 
     @Test func invalidPersistedValueClampsToRange() throws {
@@ -132,7 +132,7 @@ struct FontSizeSettingsTests {
 
         defaults.set(Double(100), forKey: "editorFontSize")
         let settings1 = FontSizeSettings(defaults: defaults)
-        #expect(settings1.fontSize == 32)
+        #expect(settings1.fontSize == 18)
 
         defaults.set(Double(2), forKey: "editorFontSize")
         let settings2 = FontSizeSettings(defaults: defaults)
@@ -147,7 +147,7 @@ struct FontSizeSettingsTests {
         // so 0 should be treated as "not set" → use default
         defaults.set(Double(0), forKey: "editorFontSize")
         let settings = FontSizeSettings(defaults: defaults)
-        #expect(settings.fontSize == 13)
+        #expect(settings.fontSize == 12)
     }
 
     // MARK: - Fonts
@@ -157,10 +157,10 @@ struct FontSizeSettingsTests {
         defer { cleanupDefaults(defaults) }
 
         let settings = FontSizeSettings(defaults: defaults)
-        #expect(settings.editorFont.pointSize == 13)
+        #expect(settings.editorFont.pointSize == 12)
 
         settings.increase()
-        #expect(settings.editorFont.pointSize == 14)
+        #expect(settings.editorFont.pointSize == 13)
     }
 
     @Test func gutterFontIsSmallerThanEditor() throws {
@@ -168,9 +168,9 @@ struct FontSizeSettingsTests {
         defer { cleanupDefaults(defaults) }
 
         let settings = FontSizeSettings(defaults: defaults)
-        #expect(settings.gutterFont.pointSize == 11)
+        #expect(settings.gutterFont.pointSize == 10)
 
         settings.increase()
-        #expect(settings.gutterFont.pointSize == 12)
+        #expect(settings.gutterFont.pointSize == 11)
     }
 }
