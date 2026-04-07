@@ -1270,4 +1270,12 @@ extension Notification.Name {
     static let revealInSidebar = Notification.Name("revealInSidebar")
     /// userInfo: ["action": InlineDiffAction]
     static let inlineDiffAction = Notification.Name("inlineDiffAction")
+    /// Posted by `TabManager` after a tab's content was reloaded from disk
+    /// (e.g., file changed externally and was clean). The CodeEditorView
+    /// coordinator listens to forcibly resync NSTextView contents — this
+    /// guarantees the editor reflects disk state even if SwiftUI's
+    /// observation/binding chain fails to trigger `updateNSView` for the
+    /// inner property mutation (issue #734).
+    /// userInfo: ["url": URL, "text": String]
+    static let tabReloadedFromDisk = Notification.Name("tabReloadedFromDisk")
 }

@@ -50,6 +50,23 @@ nonisolated struct Theme {
         "type": dynamicColor(light: (0.22, 0.55, 0.60), dark: (0.40, 0.78, 0.82)),
         "attribute": dynamicColor(light: (0.52, 0.35, 0.70), dark: (0.68, 0.51, 0.85)),
         "function": dynamicColor(light: (0.25, 0.42, 0.75), dark: (0.40, 0.60, 0.90)),
+        // Markdown-specific scopes — distinct hues for visual hierarchy.
+        // Headings step through the spectrum from warm (H1) to cool (H6) so each level is
+        // immediately distinguishable; matches the Xcode Quick Help / Zed feel.
+        "markdown.heading.1": dynamicColor(light: (0.82, 0.18, 0.22), dark: (0.95, 0.42, 0.45)),
+        "markdown.heading.2": dynamicColor(light: (0.78, 0.36, 0.10), dark: (0.96, 0.58, 0.26)),
+        "markdown.heading.3": dynamicColor(light: (0.62, 0.46, 0.05), dark: (0.92, 0.78, 0.30)),
+        "markdown.heading.4": dynamicColor(light: (0.20, 0.55, 0.30), dark: (0.42, 0.82, 0.52)),
+        "markdown.heading.5": dynamicColor(light: (0.18, 0.45, 0.70), dark: (0.42, 0.70, 0.95)),
+        "markdown.heading.6": dynamicColor(light: (0.42, 0.32, 0.72), dark: (0.66, 0.58, 0.92)),
+        "markdown.bold": dynamicColor(light: (0.72, 0.20, 0.45), dark: (0.92, 0.46, 0.66)),
+        "markdown.italic": dynamicColor(light: (0.52, 0.35, 0.70), dark: (0.78, 0.62, 0.92)),
+        "markdown.code": dynamicColor(light: (0.76, 0.32, 0.18), dark: (0.95, 0.58, 0.40)),
+        "markdown.code.fenced": dynamicColor(light: (0.58, 0.22, 0.10), dark: (0.99, 0.72, 0.52)),
+        "markdown.link": dynamicColor(light: (0.10, 0.45, 0.78), dark: (0.36, 0.68, 0.98)),
+        "markdown.list": dynamicColor(light: (0.22, 0.55, 0.60), dark: (0.46, 0.82, 0.86)),
+        "markdown.quote": dynamicColor(light: (0.40, 0.50, 0.42), dark: (0.58, 0.72, 0.60)),
+        "markdown.rule": dynamicColor(light: (0.50, 0.50, 0.50), dark: (0.62, 0.62, 0.62)),
     ])
 
     private static func dynamicColor(
@@ -318,7 +335,23 @@ nonisolated final class SyntaxHighlighter: @unchecked Sendable {
     /// Приоритеты scopes: comment и string перекрывают остальные
     private let scopePriority: [String: Int] = [
         "comment": 100,
-        "string": 90
+        "string": 90,
+        // Markdown: fenced/inline code must beat headings, headings beat emphasis,
+        // emphasis beats links/lists/quotes so contained markup doesn't bleed through.
+        "markdown.code.fenced": 95,
+        "markdown.code": 92,
+        "markdown.heading.1": 80,
+        "markdown.heading.2": 80,
+        "markdown.heading.3": 80,
+        "markdown.heading.4": 80,
+        "markdown.heading.5": 80,
+        "markdown.heading.6": 80,
+        "markdown.bold": 60,
+        "markdown.italic": 55,
+        "markdown.link": 50,
+        "markdown.list": 40,
+        "markdown.quote": 30,
+        "markdown.rule": 20
     ]
 
     /// Применяет подсветку ко всему NSTextStorage и обновляет кэш многострочных матчей.

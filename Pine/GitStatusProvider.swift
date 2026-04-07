@@ -205,38 +205,112 @@ final class GitStatusProvider {
     /// True when the working tree has any uncommitted changes (modified, staged, untracked, etc.).
     var hasUncommittedChanges: Bool { !fileStatuses.isEmpty }
 
+    // MARK: - Refresh Coalescing (issue #738)
+    //
+    // Multiple sources can request a refresh in rapid succession:
+    // FileSystemWatcher events, file saves, branch switches, manual refresh.
+    // Without coalescing, each request races to overwrite `fileStatuses` and
+    // friends — and because `@Observable` triggers an observer event for
+    // every property write, the bottom-left git indicator visibly flickers
+    // (issue #738). To stop the flicker we:
+    //   1. Coalesce concurrent refreshAsync calls into a single in-flight
+    //      task. Subsequent callers either piggy-back on the running task or
+    //      schedule exactly one follow-up if work is already in flight.
+    //   2. Skip property writes whose new value equals the current value,
+    //      so SwiftUI never observes a no-op change.
+    //   3. Discard results on cancellation / generation mismatch instead of
+    //      blanking out state with empty values.
+    //
+    // `pendingRefreshCount` tracks "do another pass after the current one",
+    // collapsing N concurrent refreshes into at most two git invocations.
+    private var inFlightRefreshTask: Task<Void, Never>?
+    private var pendingRefreshCount: Int = 0
+
+    /// Test hook: increments every time `applyFetchedResults` actually writes
+    /// at least one observable property. A no-op apply leaves it unchanged.
+    /// Lets unit tests verify equality short-circuiting.
+    private(set) var observableUpdateCount: Int = 0
+
     // MARK: - Setup & Refresh
 
     func setup(repositoryURL: URL) {
         self.repositoryURL = repositoryURL
         let result = Self.runGit(["rev-parse", "--show-toplevel"], at: repositoryURL)
-        isGitRepository = result.exitCode == 0
-        if isGitRepository {
+        let detected = result.exitCode == 0
+        if detected {
+            // Assign root path before fetching so observers see a consistent
+            // (root, statuses) pair when isGitRepository flips to true.
             gitRootPath = result.output.trimmingCharacters(in: .whitespacesAndNewlines)
-            applyFetchedResults(Self.fetchAllInParallel(at: repositoryURL))
+            let fetched = Self.fetchAllInParallel(at: repositoryURL)
+            applyFetchedResults(fetched, isRepository: true)
         } else {
-            currentBranch = ""
-            fileStatuses = [:]
-            ignoredPaths = []
-            branches = []
+            applyEmptyState()
         }
     }
 
     func refresh() {
         guard isGitRepository, let url = repositoryURL else { return }
-        applyFetchedResults(Self.fetchAllInParallel(at: url))
+        applyFetchedResults(Self.fetchAllInParallel(at: url), isRepository: true)
     }
 
-    /// Applies pre-fetched git results to observable properties.
-    /// Extracted to avoid calling `fetchAllInParallel` (which uses `group.wait()`)
-    /// from closures that may inherit `@MainActor` isolation in Swift 6.
+    /// Atomically applies pre-fetched git results to observable properties.
+    ///
+    /// Critical: each property is checked for equality before assignment so
+    /// `@Observable` does not emit a change event when nothing actually
+    /// changed. This is the core of the anti-flicker fix — without it,
+    /// every FSEvents burst would re-trigger StatusBarView even though the
+    /// data is identical.
+    ///
+    /// `isRepository` is written last so observers that key off
+    /// `isGitRepository` see fully populated state.
     private func applyFetchedResults(
-        _ result: (branch: String, statuses: [String: GitFileStatus], ignored: Set<String>, branches: [String])
+        _ result: (branch: String, statuses: [String: GitFileStatus], ignored: Set<String>, branches: [String]),
+        isRepository: Bool
     ) {
-        currentBranch = result.branch
-        fileStatuses = result.statuses
-        ignoredPaths = result.ignored
-        branches = result.branches
+        var changed = false
+        if currentBranch != result.branch {
+            currentBranch = result.branch
+            changed = true
+        }
+        if fileStatuses != result.statuses {
+            fileStatuses = result.statuses
+            changed = true
+        }
+        if ignoredPaths != result.ignored {
+            ignoredPaths = result.ignored
+            changed = true
+        }
+        if branches != result.branches {
+            branches = result.branches
+            changed = true
+        }
+        if isGitRepository != isRepository {
+            isGitRepository = isRepository
+            changed = true
+        }
+        if changed { observableUpdateCount &+= 1 }
+    }
+
+    /// Resets all observable git state to the empty/non-repository values.
+    /// Uses equality checks so a no-op call does not trigger SwiftUI updates.
+    func applyEmptyState() {
+        applyFetchedResults((branch: "", statuses: [:], ignored: [], branches: []), isRepository: false)
+    }
+
+    /// Public atomic apply used by `WorkspaceManager` after a background
+    /// fetch (so observers see one consistent state, not five staggered
+    /// individual property updates). Issue #738.
+    func applyFetched(
+        branch: String,
+        statuses: [String: GitFileStatus],
+        ignored: Set<String>,
+        branches: [String],
+        isRepository: Bool
+    ) {
+        applyFetchedResults(
+            (branch: branch, statuses: statuses, ignored: ignored, branches: branches),
+            isRepository: isRepository
+        )
     }
 
     /// Async version of setup — runs git detection and initial refresh
@@ -259,19 +333,11 @@ final class GitStatusProvider {
         }
 
         self.repositoryURL = repositoryURL
-        self.isGitRepository = isRepo
         self.gitRootPath = rootPath
-        if isRepo {
-            self.currentBranch = branch
-            self.fileStatuses = statuses
-            self.ignoredPaths = ignored
-            self.branches = branchList
-        } else {
-            self.currentBranch = ""
-            self.fileStatuses = [:]
-            self.ignoredPaths = []
-            self.branches = []
-        }
+        applyFetchedResults(
+            (branch: branch, statuses: statuses, ignored: ignored, branches: branchList),
+            isRepository: isRepo
+        )
     }
 
     // MARK: - Static Fetch Methods
@@ -302,32 +368,83 @@ final class GitStatusProvider {
     /// Runs git refresh on a background queue and updates properties on the main thread.
     /// Safe to call from the main thread — does not block.
     /// Uses `DispatchGroup` for parallel git operations (branch, status, branches).
-    /// Supports cooperative cancellation — if the Task is cancelled before
-    /// the background work completes, stale results are discarded.
+    ///
+    /// Coalesces concurrent callers (issue #738): if a refresh is already
+    /// running, additional callers wait for the current pass and trigger at
+    /// most one follow-up. This collapses bursts of FSEvents / save / git
+    /// operations into a single final state update, eliminating indicator
+    /// flicker. Stale results are discarded via the in-flight task identity.
     func refreshAsync() async {
-        guard isGitRepository, let url = repositoryURL else { return }
-        let progressID = progressTracker?.beginOperation(Strings.progressGitStatus)
+        guard isGitRepository, repositoryURL != nil else { return }
 
-        let (branch, statuses, ignored, branchList) = await withCheckedContinuation { continuation in
-            // nonisolated-check:ignore — closure body only calls nonisolated static helpers; tracked in #720
-            DispatchQueue.global(qos: .userInitiated).async {
-                let fetched = GitFetcher.fetchAllInParallel(at: url)
-                continuation.resume(returning: fetched)
+        // If a refresh is already running, request a follow-up pass and wait
+        // for the in-flight task to finish. The follow-up will pick up any
+        // changes that arrived after the running task started its git fetch.
+        if let existing = inFlightRefreshTask {
+            pendingRefreshCount = min(pendingRefreshCount + 1, 1)
+            await existing.value
+            // The follow-up (if any) will run inside `existing`'s loop below.
+            // Re-await to make sure the caller observes the latest state.
+            if let next = inFlightRefreshTask {
+                await next.value
             }
-        }
-
-        // If the Task was cancelled (e.g. a newer refresh started),
-        // discard stale results to avoid overwriting newer data.
-        guard !Task.isCancelled else {
-            if let progressID { self.progressTracker?.endOperation(progressID) }
             return
         }
 
-        self.currentBranch = branch
-        self.fileStatuses = statuses
-        self.ignoredPaths = ignored
-        self.branches = branchList
-        if let progressID { self.progressTracker?.endOperation(progressID) }
+        let task: Task<Void, Never> = Task { [weak self] in
+            await self?.runRefreshLoop()
+        }
+        inFlightRefreshTask = task
+        await task.value
+    }
+
+    /// Runs git refresh in a loop until no more refreshes are pending.
+    /// At most one refresh is in flight at a time, and at most one
+    /// follow-up is queued — additional requests collapse onto the queued
+    /// follow-up so that N concurrent callers cause at most 2 git fetches.
+    private func runRefreshLoop() async {
+        defer { inFlightRefreshTask = nil }
+        repeat {
+            pendingRefreshCount = 0
+            await runSingleRefresh()
+        } while pendingRefreshCount > 0
+    }
+
+    private func runSingleRefresh() async {
+        guard isGitRepository, let url = repositoryURL else { return }
+        let progressID = progressTracker?.beginOperation(Strings.progressGitStatus)
+        defer {
+            if let progressID { self.progressTracker?.endOperation(progressID) }
+        }
+
+        let fetched = await withCheckedContinuation { continuation in
+            // nonisolated-check:ignore — closure body only calls nonisolated static helpers; tracked in #720
+            DispatchQueue.global(qos: .userInitiated).async {
+                continuation.resume(returning: GitFetcher.fetchAllInParallel(at: url))
+            }
+        }
+
+        // Repository may have been torn down (e.g. .git deleted on the fly)
+        // while the background fetch was running. If git now reports an empty
+        // branch *and* zero changes *and* zero branches, treat that as the
+        // repository being unreachable rather than blanking out our state —
+        // unless this matches the truly clean baseline. We err on the side
+        // of preserving the previous state to avoid the indicator flicker
+        // that issue #738 describes.
+        let looksUnreachable = fetched.branch.isEmpty
+            && fetched.statuses.isEmpty
+            && fetched.branches.isEmpty
+            && (!self.currentBranch.isEmpty || !self.branches.isEmpty)
+        if looksUnreachable {
+            // Verify the repository is actually gone before clearing state.
+            let stillRepo = Self.runGit(["rev-parse", "--show-toplevel"], at: url).exitCode == 0
+            if !stillRepo {
+                applyEmptyState()
+            }
+            return
+        }
+
+        applyFetchedResults(fetched, isRepository: true)
     }
 
     // MARK: - Status Queries
