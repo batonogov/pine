@@ -33,9 +33,8 @@ final class InlineRenameAlignmentTests: PineUITestCase {
 
     // MARK: - Helpers
 
-    /// Maximum allowed horizontal delta (in points) between the rename TextField
-    /// and a sibling row's static text. Anything bigger is a visible jump.
-    private let maxLeadingDelta: CGFloat = 2.0
+    // Max pixel delta between inline rename TextField and sibling row — anything bigger is visible row jump (see issue #736)
+    private static let maxLeadingDelta: CGFloat = 2.0
 
     private func siblingMinX(_ name: String = "fileNode_inside.swift") -> CGFloat {
         let sibling = app.staticTexts[name]
@@ -92,7 +91,7 @@ final class InlineRenameAlignmentTests: PineUITestCase {
         // right (icon spacing differs by <= 2pt across SwiftUI list styles), but
         // it must NEVER be left of the sibling — that's the bug from #736.
         XCTAssertGreaterThanOrEqual(
-            renameMinX, baseline - maxLeadingDelta,
+            renameMinX, baseline - Self.maxLeadingDelta,
             "Rename TextField (minX=\(renameMinX)) must not be left of sibling row (minX=\(baseline)) — see #736",
             file: file, line: line
         )
@@ -112,7 +111,7 @@ final class InlineRenameAlignmentTests: PineUITestCase {
         // After commit, the row's leading edge should match siblings (no jump).
         let committedMinX = committed.frame.minX
         XCTAssertEqual(
-            committedMinX, baseline, accuracy: maxLeadingDelta,
+            committedMinX, baseline, accuracy: Self.maxLeadingDelta,
             "After Enter, row \(committedName) (minX=\(committedMinX)) jumped vs sibling (minX=\(baseline))",
             file: file, line: line
         )
@@ -162,7 +161,7 @@ final class InlineRenameAlignmentTests: PineUITestCase {
         XCTAssertTrue(waitForExistence(textField, timeout: 5))
         let renameMinX = textField.frame.minX
         XCTAssertGreaterThanOrEqual(
-            renameMinX, originalMinX - maxLeadingDelta,
+            renameMinX, originalMinX - Self.maxLeadingDelta,
             "Rename of existing file must not shift left of original row"
         )
 
@@ -174,15 +173,45 @@ final class InlineRenameAlignmentTests: PineUITestCase {
         let renamed = app.staticTexts["fileNode_renamed-beta.swift"]
         XCTAssertTrue(waitForExistence(renamed, timeout: 5))
         XCTAssertEqual(
-            renamed.frame.minX, originalMinX, accuracy: maxLeadingDelta,
+            renamed.frame.minX, originalMinX, accuracy: Self.maxLeadingDelta,
             "Renamed row must keep the same leading inset as before"
         )
     }
 
-    // NOTE: A dedicated rename-existing-folder test is intentionally omitted.
-    // The `inlineEditor` view in `FileNodeRow` is the same code path for files
-    // and folders, so the four passing tests above (new file inside a folder,
-    // new folder inside a folder, rename existing file) already cover every
-    // alignment branch from #736. The folder-rename context-menu interaction
-    // hits unrelated focus/timing flake tracked under #737 (Enter-to-rename).
+    // MARK: - Rename existing folder
+
+    func testRenameExistingFolderMatchesSiblingIndent() throws {
+        launchWithProject(projectURL)
+        let target = app.staticTexts["fileNode_nested"]
+        XCTAssertTrue(waitForExistence(target, timeout: 5))
+        let originalMinX = target.frame.minX
+        target.rightClick()
+        clickContextItem("pencil")
+
+        // Folder-rename hits a focus/timing flake on macOS 26 where the
+        // TextField is laid out but never becomes first responder in
+        // XCUITest's synthetic event queue. Allow a longer timeout and
+        // skip (instead of failing) if the field truly never appears.
+        let textField = renameTextField()
+        guard textField.waitForExistence(timeout: 10) else {
+            throw XCTSkip("focus flake, see #737")
+        }
+
+        let renameMinX = textField.frame.minX
+        XCTAssertGreaterThanOrEqual(
+            renameMinX, originalMinX - Self.maxLeadingDelta,
+            "Rename of existing folder must not shift left of original row"
+        )
+
+        app.typeKey("a", modifierFlags: .command)
+        textField.typeText("nested-renamed")
+        app.typeKey(.return, modifierFlags: [])
+
+        let renamed = app.staticTexts["fileNode_nested-renamed"]
+        XCTAssertTrue(waitForExistence(renamed, timeout: 5))
+        XCTAssertEqual(
+            renamed.frame.minX, originalMinX, accuracy: Self.maxLeadingDelta,
+            "Renamed folder row must keep the same leading inset as before"
+        )
+    }
 }
