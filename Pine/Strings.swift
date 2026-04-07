@@ -80,6 +80,18 @@ enum Strings {
         String(localized: "fileOperation.outsideProject")
     }
 
+    static var renameErrorEmpty: String {
+        String(localized: "rename.error.empty")
+    }
+
+    static var renameErrorInvalidCharacters: String {
+        String(localized: "rename.error.invalidCharacters")
+    }
+
+    static func renameErrorDuplicate(_ name: String) -> String {
+        String(localized: "rename.error.duplicate \(name)")
+    }
+
     static var fileDeletedTitle: String {
         String(localized: "fileOperation.deleted.title")
     }

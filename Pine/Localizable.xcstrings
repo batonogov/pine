@@ -2463,6 +2463,42 @@
         }
       }
     },
+    "rename.error.empty" : {
+      "comment" : "Inline rename error: name cannot be empty.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Name cannot be empty."
+          }
+        }
+      }
+    },
+    "rename.error.invalidCharacters" : {
+      "comment" : "Inline rename error: name contains forbidden characters such as / or :.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Name cannot contain “/” or “:”."
+          }
+        }
+      }
+    },
+    "rename.error.duplicate" : {
+      "comment" : "Inline rename error: a file or folder with this name already exists.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "An item named “%@” already exists."
+          }
+        }
+      }
+    },
     "largeFile.openWithHighlighting" : {
       "comment" : "Button: open a large file with syntax highlighting enabled.",
       "extractionState" : "manual",

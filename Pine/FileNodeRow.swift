@@ -64,10 +64,15 @@ struct FileNodeRow: View {
                         .foregroundStyle(iconColor)
                 }
                 .opacity(isGitIgnored ? 0.5 : 1.0)
+                // Apply the row identifier only on the non-editing branch.
+                // Applying it on the outer Group would cascade onto the
+                // inline rename TextField and shadow its own
+                // `inlineRenameTextField` identifier in the accessibility
+                // tree, breaking UI tests that look up the editor by id.
+                .accessibilityIdentifier(AccessibilityID.fileNode(node.name))
             }
         }
         .tag(node)
-        .accessibilityIdentifier(AccessibilityID.fileNode(node.name))
         .contextMenu { fileNodeContextMenu }
         .draggable(SidebarFileDragInfo(fileURL: node.url)) {
             sidebarDragPreview()
@@ -104,6 +109,13 @@ struct FileNodeRow: View {
                 .onAppear {
                     DispatchQueue.main.async {
                         isTextFieldFocused = true
+                        // Finder-style stem selection: select only the part of the
+                        // name before the extension so the user can retype the stem
+                        // without re-typing the extension. The field editor (NSTextView)
+                        // is created asynchronously by AppKit after focus is set, so
+                        // we retry up to 3 runloop ticks until firstResponder becomes
+                        // a NSTextView.
+                        applyStemSelectionWithRetry(remaining: 3)
                     }
                 }
                 .onChange(of: isTextFieldFocused) { _, focused in
@@ -185,16 +197,55 @@ struct FileNodeRow: View {
         )
     }
 
+    /// Selects the stem (name without extension) in the rename text field, Finder-style.
+    /// Retries up to `remaining` runloop ticks because AppKit creates the field
+    /// editor asynchronously after focus is set, so the first attempt may not yet
+    /// see an NSTextView as firstResponder.
+    private func applyStemSelectionWithRetry(remaining: Int) {
+        if let window = NSApp.keyWindow ?? NSApp.mainWindow,
+           let editor = window.firstResponder as? NSTextView {
+            let range = SidebarRenameStem.stemRange(
+                for: editState.editingText, isDirectory: node.isDirectory
+            )
+            editor.selectedRange = range
+            return
+        }
+        guard remaining > 0 else { return }
+        DispatchQueue.main.async {
+            applyStemSelectionWithRetry(remaining: remaining - 1)
+        }
+    }
+
+    /// Returns the set of sibling names in the parent directory (excluding `oldURL` itself).
+    private func siblingNames(of oldURL: URL) -> Set<String> {
+        let parent = oldURL.deletingLastPathComponent()
+        let contents = (try? FileManager.default.contentsOfDirectory(atPath: parent.path)) ?? []
+        var names = Set(contents)
+        names.remove(oldURL.lastPathComponent)
+        return names
+    }
+
     private func commitRename() {
         guard editState.renamingURL?.path == node.url.path else { return }
 
-        let newName = editState.editingText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !newName.isEmpty else {
+        let oldURL = node.url
+        let rawName = editState.editingText
+        let newName = rawName.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        // Validate before touching disk. Empty name = cancel (Finder behavior).
+        if newName.isEmpty {
             cancelRename()
             return
         }
+        if let validationError = SidebarRenameStem.validationError(
+            for: newName,
+            oldURL: oldURL,
+            existingNames: siblingNames(of: oldURL)
+        ) {
+            SidebarEditState.showFileError(validationError)
+            return
+        }
 
-        let oldURL = node.url
         let newURL = oldURL.deletingLastPathComponent().appendingPathComponent(newName)
 
         if let root = workspace.rootURL,

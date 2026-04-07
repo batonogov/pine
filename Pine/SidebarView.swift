@@ -183,6 +183,15 @@ struct SidebarView: View {
                         // (e.g. after delete) so the set stays bounded.
                         expansion.prune(toMatch: newNodes)
                     }
+                    .onKeyPress(.return) {
+                        // Finder-style: Enter on a selected sidebar item starts inline rename.
+                        // No-op (and pass through) if nothing is selected or rename is already in progress.
+                        guard editState.renamingURL == nil, let selected = selectedFile else {
+                            return .ignored
+                        }
+                        editState.startRename(for: selected)
+                        return .handled
+                    }
                     .contextMenu {
                         if let rootURL = workspace.rootURL {
                             Button {
