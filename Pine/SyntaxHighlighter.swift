@@ -335,6 +335,9 @@ nonisolated final class SyntaxHighlighter: @unchecked Sendable {
     /// Приоритеты scopes: comment и string перекрывают остальные
     private let scopePriority: [String: Int] = [
         "comment": 100,
+        // attribute (dict keys, HTML/YAML/TOML keys) must beat string so dict
+        // keys don't get re-coloured by the catch-all string rule. See #732.
+        "attribute": 95,
         "string": 90,
         // Markdown: fenced/inline code must beat headings, headings beat emphasis,
         // emphasis beats links/lists/quotes so contained markup doesn't bleed through.
