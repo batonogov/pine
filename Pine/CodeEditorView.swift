@@ -625,6 +625,9 @@ struct CodeEditorView: NSViewRepresentable {
     var contentVersion: UInt64 = 0
     var language: String
     var fileName: String?
+    /// Full file URL — used by the coordinator to match notifications targeting
+    /// this specific tab (e.g., external file reloads).
+    var fileURL: URL?
     var lineDiffs: [GitLineDiff] = []
     /// Diff hunks for inline diff expansion in the gutter.
     var diffHunks: [DiffHunk] = []
@@ -1087,6 +1090,101 @@ struct CodeEditorView: NSViewRepresentable {
             // updateNSView call (issue #556).
             self.lastLanguage = parent.language
             self.lastFileName = parent.fileName
+            super.init()
+            // Listen for external file reload notifications. SwiftUI's
+            // @Observable + Binding pipeline does not always reliably
+            // re-render an NSViewRepresentable when an array element's
+            // inner property mutates (issue #734) — this notification is
+            // a robust fallback that directly forces the NSTextView to
+            // resync from disk.
+            NotificationCenter.default.addObserver(
+                self,
+                selector: #selector(handleTabReloadedFromDisk(_:)),
+                name: .tabReloadedFromDisk,
+                object: nil
+            )
+        }
+
+        /// Handles `.tabReloadedFromDisk` notification — if the URL matches
+        /// this editor's file, forcibly replaces the NSTextView contents with
+        /// the new text from disk and re-applies syntax highlighting.
+        ///
+        /// Cursor position and scroll offset are preserved on a best-effort
+        /// basis (clamped if the new content is shorter).
+        @objc func handleTabReloadedFromDisk(_ note: Notification) {
+            guard let url = note.userInfo?["url"] as? URL,
+                  let newText = note.userInfo?["text"] as? String,
+                  let parentURL = parent.fileURL,
+                  url == parentURL else { return }
+            applyExternalReload(text: newText)
+        }
+
+        /// Forcibly replaces NSTextView contents with externally-loaded text.
+        /// Preserves cursor and scroll offset (clamped to new bounds).
+        /// Re-runs syntax highlighting and fold recalculation.
+        func applyExternalReload(text newText: String) {
+            guard let sv = scrollView,
+                  let textView = sv.documentView as? NSTextView else { return }
+
+            // Skip if content already matches (idempotent against rapid reloads)
+            if textView.string == newText { return }
+
+            // Capture cursor and scroll for best-effort restore
+            let oldRange = textView.selectedRange()
+            let oldVisibleRect = sv.contentView.documentVisibleRect
+
+            cancelPendingHighlight()
+            if let storage = textView.textStorage {
+                SyntaxHighlighter.shared.invalidateCache(for: storage)
+            }
+            previousBracketRanges = []
+
+            isProgrammaticTextChange = true
+            pendingEditedRange = nil
+            pendingChangeInLength = 0
+            textView.string = newText
+            isProgrammaticTextChange = false
+
+            // Bump version counter so the next updateNSView from SwiftUI
+            // (which may carry a stale `text` value) does not re-trigger
+            // a redundant replacement.
+            lastContentVersion = parent.contentVersion
+
+            // Restore cursor (clamped) and scroll
+            let newLength = (newText as NSString).length
+            let clampedLoc = min(oldRange.location, newLength)
+            let clampedLen = min(oldRange.length, newLength - clampedLoc)
+            textView.setSelectedRange(NSRange(location: clampedLoc, length: clampedLen))
+            textView.scroll(oldVisibleRect.origin)
+
+            // Re-run syntax highlighting and fold calculation
+            if !parent.syntaxHighlightingDisabled, let storage = textView.textStorage {
+                if storage.length > CodeEditorView.viewportHighlightThreshold {
+                    scheduleViewportHighlightingPublic(textView: textView)
+                } else {
+                    let result = SyntaxHighlighter.shared.highlight(
+                        textStorage: storage,
+                        language: parent.language,
+                        fileName: parent.fileName,
+                        font: NSFont.monospacedSystemFont(
+                            ofSize: parent.fontSize, weight: .regular
+                        )
+                    )
+                    if let result {
+                        parent.onHighlightCacheUpdate?(result)
+                    }
+                }
+            }
+
+            lineStartsCache = LineStartsCache(text: newText)
+            scheduleFoldRecalculation()
+            reportStateChange()
+        }
+
+        /// Public wrapper around `scheduleViewportHighlighting` for use from
+        /// `applyExternalReload`. Internal access for testability.
+        func scheduleViewportHighlightingPublic(textView: NSTextView) {
+            scheduleViewportHighlighting(textView: textView)
         }
 
         deinit {

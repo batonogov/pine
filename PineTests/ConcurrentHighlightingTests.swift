@@ -7,6 +7,64 @@ import Testing
 import AppKit
 @testable import Pine
 
+/// Sendable hand-off wrapper for non-`Sendable` AppKit types used in
+/// concurrent-highlighting tests.
+///
+/// Each `HighlightWorkItem` is created on the main actor and then sent into
+/// exactly one detached task via `TaskGroup.addTask`. After the task finishes
+/// the main actor reads the storage attributes again. Because:
+///
+/// 1. `NSFont` (`monospacedSystemFont`) is immutable, and
+/// 2. each `NSTextStorage` instance is exclusively owned by one task during
+///    highlighting (no two tasks share the same storage),
+///
+/// this wrapper is safe to mark `@unchecked Sendable` — the unsafety is
+/// centralized here and documented, instead of scattered `nonisolated(unsafe)`
+/// locals.
+private struct HighlightWorkItem: @unchecked Sendable {
+    let storage: NSTextStorage
+    let font: NSFont
+    let language: String
+
+    /// Run a full async highlight on this item's storage. Marked `nonisolated`
+    /// so it can be invoked from a `TaskGroup.addTask` closure without
+    /// transferring its non-`Sendable` fields across an isolation boundary
+    /// at the call site.
+    func runFullHighlight(using highlighter: SyntaxHighlighter) async {
+        await highlighter.highlightAsync(
+            textStorage: storage,
+            language: language,
+            font: font
+        )
+    }
+
+    /// Run an async incremental edit highlight on this item's storage.
+    func runEditedHighlight(
+        using highlighter: SyntaxHighlighter,
+        editedRange: NSRange
+    ) async {
+        await highlighter.highlightEditedAsync(
+            textStorage: storage,
+            editedRange: editedRange,
+            language: language,
+            font: font
+        )
+    }
+
+    /// Run an async viewport highlight on this item's storage.
+    func runViewportHighlight(
+        using highlighter: SyntaxHighlighter,
+        visibleCharRange: NSRange
+    ) async {
+        await highlighter.highlightVisibleRangeAsync(
+            textStorage: storage,
+            visibleCharRange: visibleCharRange,
+            language: language,
+            font: font
+        )
+    }
+}
+
 /// Tests for concurrent syntax highlighting across multiple tabs.
 /// Verifies that multiple tabs highlight in parallel and that
 /// generation tokens prevent stale results.
@@ -56,21 +114,21 @@ struct ConcurrentHighlightingTests {
         let keywordColor = hl.theme.color(for: "keyword")
         let tabCount = 10
 
-        // Create storages for multiple "tabs" with different content
-        let storages: [(NSTextStorage, String)] = (0..<tabCount).map { index in
+        // Create work items for multiple "tabs" with different content
+        let items: [HighlightWorkItem] = (0..<tabCount).map { index in
             let text = "func tab\(index)() { /* comment */ }"
-            return (NSTextStorage(string: text), "conctestswift")
+            return HighlightWorkItem(
+                storage: NSTextStorage(string: text),
+                font: font,
+                language: "conctestswift"
+            )
         }
 
-        // Highlight all tabs concurrently
+        // Highlight all tabs concurrently. Each task owns one work item.
         await withTaskGroup(of: Int.self) { group in
-            for (index, (storage, lang)) in storages.enumerated() {
+            for (index, item) in items.enumerated() {
                 group.addTask {
-                    await hl.highlightAsync(
-                        textStorage: storage,
-                        language: lang,
-                        font: self.font
-                    )
+                    await item.runFullHighlight(using: hl)
                     return index
                 }
             }
@@ -85,8 +143,8 @@ struct ConcurrentHighlightingTests {
         }
 
         // Verify each tab was highlighted correctly
-        for (storage, _) in storages {
-            #expect(foregroundColor(in: storage, at: 0) == keywordColor,
+        for item in items {
+            #expect(foregroundColor(in: item.storage, at: 0) == keywordColor,
                     "Each tab must have keyword color at 'func'")
         }
     }
@@ -154,7 +212,7 @@ struct ConcurrentHighlightingTests {
         try await Task.sleep(for: .milliseconds(1))
         gen.increment() // 2 — stale
 
-        await task.value
+        _ = await task.value
 
         // Result must be discarded — check a line deep in the file
         let checkPos = lineOffset(10_000, in: bigText)
@@ -213,28 +271,30 @@ struct ConcurrentHighlightingTests {
         let hl = SyntaxHighlighter.shared
         let tabCount = 8
 
-        let storages: [NSTextStorage] = (0..<tabCount).map { i in
-            NSTextStorage(string: "func tab\(i)() { /* comment */ }\nfunc second\(i)()")
-        }
-
-        // First do full highlight for each to populate caches
-        for storage in storages {
-            await hl.highlightAsync(
-                textStorage: storage,
-                language: "conctestswift",
-                font: font
+        let items: [HighlightWorkItem] = (0..<tabCount).map { i in
+            HighlightWorkItem(
+                storage: NSTextStorage(string: "func tab\(i)() { /* comment */ }\nfunc second\(i)()"),
+                font: font,
+                language: "conctestswift"
             )
         }
 
-        // Now simulate concurrent edits across tabs
+        // First do full highlight for each to populate caches
+        for item in items {
+            await hl.highlightAsync(
+                textStorage: item.storage,
+                language: item.language,
+                font: item.font
+            )
+        }
+
+        // Now simulate concurrent edits across tabs.
         await withTaskGroup(of: Void.self) { group in
-            for storage in storages {
+            for item in items {
                 group.addTask {
-                    await hl.highlightEditedAsync(
-                        textStorage: storage,
-                        editedRange: NSRange(location: 0, length: 4),
-                        language: "conctestswift",
-                        font: self.font
+                    await item.runEditedHighlight(
+                        using: hl,
+                        editedRange: NSRange(location: 0, length: 4)
                     )
                 }
             }
@@ -242,8 +302,8 @@ struct ConcurrentHighlightingTests {
 
         // No crash = success. Also verify highlighting is intact.
         let keywordColor = hl.theme.color(for: "keyword")
-        for storage in storages {
-            #expect(foregroundColor(in: storage, at: 0) == keywordColor,
+        for item in items {
+            #expect(foregroundColor(in: item.storage, at: 0) == keywordColor,
                     "Keyword highlighting must be intact after concurrent edits")
         }
     }
@@ -256,27 +316,30 @@ struct ConcurrentHighlightingTests {
         let hl = SyntaxHighlighter.shared
         let tabCount = 6
 
-        let storages: [NSTextStorage] = (0..<tabCount).map { i in
+        let items: [HighlightWorkItem] = (0..<tabCount).map { i in
             let lines = (0..<200).map { "func tab\(i)_line\($0)()" }
-            return NSTextStorage(string: lines.joined(separator: "\n"))
+            return HighlightWorkItem(
+                storage: NSTextStorage(string: lines.joined(separator: "\n")),
+                font: font,
+                language: "conctestswift"
+            )
         }
 
         await withTaskGroup(of: Void.self) { group in
-            for storage in storages {
+            for item in items {
+                let visibleLength = min(500, item.storage.length)
                 group.addTask {
-                    await hl.highlightVisibleRangeAsync(
-                        textStorage: storage,
-                        visibleCharRange: NSRange(location: 0, length: min(500, storage.length)),
-                        language: "conctestswift",
-                        font: self.font
+                    await item.runViewportHighlight(
+                        using: hl,
+                        visibleCharRange: NSRange(location: 0, length: visibleLength)
                     )
                 }
             }
         }
 
         let keywordColor = hl.theme.color(for: "keyword")
-        for storage in storages {
-            #expect(foregroundColor(in: storage, at: 0) == keywordColor,
+        for item in items {
+            #expect(foregroundColor(in: item.storage, at: 0) == keywordColor,
                     "Viewport highlighting must apply keyword colors")
         }
     }
@@ -291,26 +354,26 @@ struct ConcurrentHighlightingTests {
         let tabCount = 20
 
         // Generate tabs with non-trivial content
-        let storages: [NSTextStorage] = (0..<tabCount).map { i in
+        let items: [HighlightWorkItem] = (0..<tabCount).map { i in
             let lines = (0..<100).map { "func tab\(i)_line\($0)() { /* comment */ }" }
-            return NSTextStorage(string: lines.joined(separator: "\n"))
+            return HighlightWorkItem(
+                storage: NSTextStorage(string: lines.joined(separator: "\n")),
+                font: font,
+                language: "conctestswift"
+            )
         }
 
         await withTaskGroup(of: Void.self) { group in
-            for storage in storages {
+            for item in items {
                 group.addTask {
-                    await hl.highlightAsync(
-                        textStorage: storage,
-                        language: "conctestswift",
-                        font: self.font
-                    )
+                    await item.runFullHighlight(using: hl)
                 }
             }
         }
 
         // All must complete and be highlighted
-        for storage in storages {
-            #expect(foregroundColor(in: storage, at: 0) == keywordColor,
+        for item in items {
+            #expect(foregroundColor(in: item.storage, at: 0) == keywordColor,
                     "All 20 tabs must be highlighted")
         }
     }

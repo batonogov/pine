@@ -179,6 +179,7 @@ struct PaneLeafView: View {
             contentVersion: tab.contentVersion,
             language: tab.language,
             fileName: tab.fileName,
+            fileURL: tab.url,
             lineDiffs: lineDiffs,
             diffHunks: diffHunks,
             validationDiagnostics: configValidator.diagnostics,

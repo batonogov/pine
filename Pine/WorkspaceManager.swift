@@ -99,21 +99,23 @@ final class WorkspaceManager {
         fileWatcher?.stop()
         fileWatcher = nil
 
+        let isSameProject = (rootURL == url)
         rootURL = url
         projectName = url.lastPathComponent
         isLoading = true
         loadGeneration += 1
         let generation = loadGeneration
 
-        // Clear stale git state immediately so the UI doesn't show
-        // the previous project's branch/status while the async load runs.
+        // When switching to a *different* project, clear stale git state
+        // immediately so the UI doesn't show the previous project's branch.
+        // When re-loading the same project we keep the existing state to
+        // avoid the bottom-left indicator flickering between empty and
+        // populated (issue #738).
         // rootNodes are intentionally preserved to avoid sidebar flash —
         // the shallow phase replaces them within milliseconds.
-        gitProvider.isGitRepository = false
-        gitProvider.currentBranch = ""
-        gitProvider.fileStatuses = [:]
-        gitProvider.ignoredPaths = []
-        gitProvider.branches = []
+        if !isSameProject {
+            gitProvider.applyEmptyState()
+        }
 
         loadDirectoryContentsAsync(url: url, generation: generation) { [weak self] in
             self?.startWatching(url: url)
@@ -141,12 +143,9 @@ final class WorkspaceManager {
     private func loadDirectoryContentsAsync(
         url: URL,
         generation: Int,
-        completion: (() -> Void)? = nil
+        completion: (@MainActor @Sendable () -> Void)? = nil
     ) {
         let progressID = progressTracker?.beginOperation(Strings.progressLoadingProject)
-        // nonisolated(unsafe): completion is always called on the main queue
-        // (inside DispatchQueue.main.async), but Swift 6 cannot prove this statically.
-        nonisolated(unsafe) let completion = completion
         // nonisolated-check:ignore — pre-existing pattern; tracked in #720
         DispatchQueue.global(qos: .userInitiated).async {
             // Run git setup first so we know which paths are ignored
@@ -170,17 +169,24 @@ final class WorkspaceManager {
                 self.notifyRootNodesChanged(shallowChildren)
                 self.gitProvider.repositoryURL = bgGit.repositoryURL
                 self.gitProvider.gitRootPath = bgGit.gitRootPath
-                self.gitProvider.isGitRepository = bgGit.isGitRepository
-                self.gitProvider.currentBranch = bgGit.currentBranch
-                self.gitProvider.fileStatuses = bgGit.fileStatuses
-                self.gitProvider.ignoredPaths = bgGit.ignoredPaths
-                self.gitProvider.branches = bgGit.branches
+                // Atomically apply git state in a single equality-checked
+                // pass so SwiftUI does not observe transient empty values
+                // between individual property writes (issue #738).
+                self.gitProvider.applyFetched(
+                    branch: bgGit.currentBranch,
+                    statuses: bgGit.fileStatuses,
+                    ignored: bgGit.ignoredPaths,
+                    branches: bgGit.branches,
+                    isRepository: bgGit.isGitRepository
+                )
 
                 // For shallow projects, loading is done — no Phase 2 needed.
                 if !shallowResult.wasDepthLimited {
                     self.isLoading = false
                     if let progressID { self.progressTracker?.endOperation(progressID) }
-                    completion?()
+                    if let completion {
+                        MainActor.assumeIsolated { completion() }
+                    }
                 }
             }
 
@@ -204,7 +210,9 @@ final class WorkspaceManager {
                 self.notifyRootNodesChanged(fullChildren)
                 self.isLoading = false
                 if let progressID { self.progressTracker?.endOperation(progressID) }
-                completion?()
+                if let completion {
+                    MainActor.assumeIsolated { completion() }
+                }
             }
         }
     }

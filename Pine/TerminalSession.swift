@@ -321,29 +321,18 @@ final class TerminalTab: Identifiable, Hashable {
         terminalView.nativeForegroundColor = .textColor
         terminalView.nativeBackgroundColor = .textBackgroundColor
 
-        // Terminal.app color palette — color 8 (bright black) is a subdued gray
-        // so zsh-autosuggestions (fg=8) appear dimmed, not bright.
-        func c(_ r: UInt16, _ g: UInt16, _ b: UInt16) -> SwiftTerm.Color {
-            SwiftTerm.Color(red: r * 257, green: g * 257, blue: b * 257)
-        }
-        terminalView.installColors([
-            c(0, 0, 0),         // 0: black
-            c(194, 54, 33),     // 1: red
-            c(37, 188, 36),     // 2: green
-            c(173, 173, 39),    // 3: yellow
-            c(73, 46, 225),     // 4: blue
-            c(211, 56, 211),    // 5: magenta
-            c(51, 187, 200),    // 6: cyan
-            c(203, 204, 205),   // 7: white
-            c(80, 80, 80),       // 8: bright black (dim gray — for autosuggestions)
-            c(252, 57, 31),     // 9: bright red
-            c(49, 231, 34),     // 10: bright green
-            c(234, 236, 35),    // 11: bright yellow
-            c(88, 51, 255),     // 12: bright blue
-            c(249, 53, 248),    // 13: bright magenta
-            c(20, 240, 240),    // 14: bright cyan
-            c(233, 235, 235),   // 15: bright white
-        ])
+        // Match Ghostty / modern terminal behaviour: do NOT auto-promote bold
+        // text to the bright color variant. SwiftTerm's default of `true`
+        // doubles up the brightness of any bold ANSI segment, which was a
+        // major contributor to Pine's terminal looking visibly louder than
+        // native macOS terminals (issue #733).
+        terminalView.useBrightColors = false
+
+        // Apply Pine's macOS-aligned ANSI 16-color palette. Centralised in
+        // `TerminalPalette` so it can be unit-tested independently of the
+        // SwiftTerm view, and so the palette has a single source of truth.
+        // See `TerminalPalette.swift` for rationale (issue #733).
+        TerminalPalette.install(on: terminalView)
     }
 
     /// Сохраняет рабочую директорию для отложенного запуска

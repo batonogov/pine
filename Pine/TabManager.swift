@@ -763,7 +763,15 @@ final class TabManager {
                     tabs[index].content = content
                     tabs[index].savedContent = content
                     tabs[index].lastModDate = diskMod
+                    tabs[index].fileSizeBytes = fileSize(url: tab.url)
+                    tabs[index].cachedHighlightResult = nil
+                    tabs[index].recomputeContentCaches()
                     reloadedNames.append(tab.url.lastPathComponent)
+                    NotificationCenter.default.post(
+                        name: .tabReloadedFromDisk,
+                        object: nil,
+                        userInfo: ["url": tab.url, "text": content]
+                    )
                 } catch {
                     Self.logger.error("Failed to reload tab \(tab.url.lastPathComponent): \(error)")
                 }
@@ -778,6 +786,7 @@ final class TabManager {
     }
 
     /// Reloads a tab's content from disk (used after user chooses "reload" in conflict dialog).
+    /// Posts `.tabReloadedFromDisk` so the editor view can forcibly resync NSTextView.
     func reloadTab(url: URL) {
         guard let index = tabs.firstIndex(where: { $0.url == url }) else { return }
         do {
@@ -785,6 +794,14 @@ final class TabManager {
             tabs[index].content = content
             tabs[index].savedContent = content
             tabs[index].lastModDate = modDate(for: url)
+            tabs[index].fileSizeBytes = fileSize(url: url)
+            tabs[index].cachedHighlightResult = nil
+            tabs[index].recomputeContentCaches()
+            NotificationCenter.default.post(
+                name: .tabReloadedFromDisk,
+                object: nil,
+                userInfo: ["url": url, "text": content]
+            )
         } catch {
             Self.logger.error("Failed to reload tab from disk \(url.lastPathComponent): \(error)")
         }

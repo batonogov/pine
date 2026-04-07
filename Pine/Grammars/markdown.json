@@ -5,57 +5,82 @@
     "rules": [
         {
             "pattern": "```[\\s\\S]*?```",
-            "scope": "string"
+            "scope": "markdown.code.fenced"
         },
         {
             "pattern": "`[^`\\n]+`",
-            "scope": "string"
+            "scope": "markdown.code"
         },
         {
-            "pattern": "^#{1,6}\\s+.*$",
-            "scope": "keyword",
+            "pattern": "^#\\s+.*$",
+            "scope": "markdown.heading.1",
+            "options": ["anchorsMatchLines"]
+        },
+        {
+            "pattern": "^##\\s+.*$",
+            "scope": "markdown.heading.2",
+            "options": ["anchorsMatchLines"]
+        },
+        {
+            "pattern": "^###\\s+.*$",
+            "scope": "markdown.heading.3",
+            "options": ["anchorsMatchLines"]
+        },
+        {
+            "pattern": "^####\\s+.*$",
+            "scope": "markdown.heading.4",
+            "options": ["anchorsMatchLines"]
+        },
+        {
+            "pattern": "^#####\\s+.*$",
+            "scope": "markdown.heading.5",
+            "options": ["anchorsMatchLines"]
+        },
+        {
+            "pattern": "^######\\s+.*$",
+            "scope": "markdown.heading.6",
             "options": ["anchorsMatchLines"]
         },
         {
             "pattern": "\\*\\*[^*\\n]+\\*\\*",
-            "scope": "keyword"
+            "scope": "markdown.bold"
         },
         {
             "pattern": "__[^_\\n]+__",
-            "scope": "keyword"
+            "scope": "markdown.bold"
         },
         {
             "pattern": "(?<=\\s|^)\\*[^*\\n]+\\*(?=\\s|$|[.,;:!?])",
-            "scope": "attribute",
+            "scope": "markdown.italic",
             "options": ["anchorsMatchLines"]
         },
         {
             "pattern": "(?<=\\s|^)_[^_\\n]+_(?=\\s|$|[.,;:!?])",
-            "scope": "attribute",
+            "scope": "markdown.italic",
             "options": ["anchorsMatchLines"]
         },
         {
             "pattern": "\\[[^\\]]+\\]\\([^)]+\\)",
-            "scope": "function"
+            "scope": "markdown.link"
         },
         {
             "pattern": "^\\s*[-*+]\\s",
-            "scope": "number",
+            "scope": "markdown.list",
             "options": ["anchorsMatchLines"]
         },
         {
             "pattern": "^\\s*\\d+\\.\\s",
-            "scope": "number",
+            "scope": "markdown.list",
             "options": ["anchorsMatchLines"]
         },
         {
             "pattern": "^>\\s.*$",
-            "scope": "comment",
+            "scope": "markdown.quote",
             "options": ["anchorsMatchLines"]
         },
         {
             "pattern": "^---+$",
-            "scope": "comment",
+            "scope": "markdown.rule",
             "options": ["anchorsMatchLines"]
         }
     ]

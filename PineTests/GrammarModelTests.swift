@@ -303,7 +303,12 @@ struct GrammarModelTests {
 
     @Test func allBundledGrammarRulesUseKnownScopes() throws {
         let knownScopes: Set<String> = [
-            "comment", "string", "keyword", "number", "type", "attribute", "function"
+            "comment", "string", "keyword", "number", "type", "attribute", "function",
+            // Markdown-specific scopes for visual hierarchy (see Theme.default).
+            "markdown.heading.1", "markdown.heading.2", "markdown.heading.3",
+            "markdown.heading.4", "markdown.heading.5", "markdown.heading.6",
+            "markdown.bold", "markdown.italic", "markdown.code", "markdown.code.fenced",
+            "markdown.link", "markdown.list", "markdown.quote", "markdown.rule"
         ]
 
         let grammarDir = URL(fileURLWithPath: #filePath)

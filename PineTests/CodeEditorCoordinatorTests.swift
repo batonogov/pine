@@ -129,7 +129,7 @@ struct CodeEditorCoordinatorTests {
     @Test func updateContentIfNeeded_reHighlights_whenLanguageChanges_evenFromTextView() {
         let text = "func hello()"
 
-        let (scrollView, textView) = makeTextStack(text: text)
+        let (scrollView, _) = makeTextStack(text: text)
 
         let editorView = CodeEditorView(
             text: .constant(text),
