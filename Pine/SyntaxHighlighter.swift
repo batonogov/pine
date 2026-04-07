@@ -318,6 +318,7 @@ nonisolated final class SyntaxHighlighter: @unchecked Sendable {
     /// Приоритеты scopes: comment и string перекрывают остальные
     private let scopePriority: [String: Int] = [
         "comment": 100,
+        "attribute": 95,
         "string": 90
     ]
 

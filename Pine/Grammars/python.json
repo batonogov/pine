@@ -17,12 +17,20 @@
             "scope": "string"
         },
         {
-            "pattern": "\"(?:[^\"\\\\]|\\\\.)*\"",
+            "pattern": "\"(?:[^\"\\\\]|\\\\.)*\"(?!\\s*:)",
             "scope": "string"
         },
         {
-            "pattern": "'(?:[^'\\\\]|\\\\.)*'",
+            "pattern": "'(?:[^'\\\\]|\\\\.)*'(?!\\s*:)",
             "scope": "string"
+        },
+        {
+            "pattern": "\"(?:[^\"\\\\]|\\\\.)*\"(?=\\s*:)",
+            "scope": "attribute"
+        },
+        {
+            "pattern": "'(?:[^'\\\\]|\\\\.)*'(?=\\s*:)",
+            "scope": "attribute"
         },
         {
             "pattern": "\\b(def|class|if|elif|else|for|while|return|import|from|as|try|except|finally|with|raise|pass|break|continue|in|not|and|or|is|lambda|yield|global|nonlocal|assert|del|async|await|match|case)\\b",
