@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.20.0](https://github.com/batonogov/pine/compare/v1.19.0...v1.20.0) (2026-04-07)
+
+
+### Features
+
+* **sidebar:** rename files and folders with Enter key ([#742](https://github.com/batonogov/pine/issues/742)) ([97bfc98](https://github.com/batonogov/pine/commit/97bfc980929836d14cbc06d4515d5b52032fc942))
+
+
+### Bug Fixes
+
+* **ci:** unblock screenshots workflow blocked by gitignored asset paths ([#760](https://github.com/batonogov/pine/issues/760)) ([3e96b96](https://github.com/batonogov/pine/commit/3e96b96d3f689f8339d7dea19655903bc5f65466))
+
 ## [1.19.0](https://github.com/batonogov/pine/compare/v1.18.3...v1.19.0) (2026-04-07)
 
 
