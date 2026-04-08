@@ -19,16 +19,27 @@ struct FileNodeRow: View {
     // all rows regardless of the SF Symbol glyph width (folder, shield, lock,
     // book.closed, list.bullet, doc, …). Without this, `Label` renders the
     // text flush with the icon trailing edge and every row jumps horizontally.
-    // See #763. The width (22 pt) fits every SF Symbol referenced by
-    // `FileIconMapper` at default SwiftUI font size, including wide glyphs
-    // like `fish` (~22 pt), `chevron.left.forwardslash.chevron.right` (~21 pt),
-    // and badge-composed glyphs like `folder.badge.gearshape` (~20 pt). The
-    // `FileNodeRowLayoutTests` suite enforces this invariant against the
-    // entire mapper source file. `iconTextSpacing` matches the default Label
-    // spacing so visual density is preserved.
-    static let iconSlotWidth: CGFloat = 22
+    // See #763.
+    //
+    // The slot width must scale with the user's chosen font size
+    // (`FontSizeSettings.shared.fontSize`); a hard-coded constant clipped wide
+    // glyphs at large fonts. Empirically the widest SF Symbols rendered by
+    // `FileIconMapper` (`fish`, badge-composed glyphs like
+    // `folder.badge.gearshape`, `chevron.left.forwardslash.chevron.right`)
+    // top out at roughly 1.7× the font point size. We round up to keep the
+    // slot integer-pixel-aligned. The `FileNodeRowLayoutTests` suite enforces
+    // this invariant against the entire mapper source file across a range of
+    // font sizes. `iconTextSpacing` matches the default Label spacing so
+    // visual density is preserved.
+    static func iconSlotWidth(forFontSize fontSize: CGFloat) -> CGFloat {
+        ceil(fontSize * 1.7)
+    }
     static let iconTextSpacing: CGFloat = 6
     var node: FileNode
+    /// Current sidebar font size, propagated from `SidebarFileTreeNode` so the
+    /// icon slot can scale alongside the user's chosen font size. Must match
+    /// the `.font(.system(size:))` value applied by the parent row.
+    var fontSize: CGFloat
     @Environment(WorkspaceManager.self) var workspace
     @Environment(TabManager.self) var tabManager
     @Environment(PaneManager.self) var paneManager
@@ -74,11 +85,13 @@ struct FileNodeRow: View {
             } else {
                 HStack(spacing: FileNodeRow.iconTextSpacing) {
                     Image(systemName: iconName)
+                        .font(.system(size: fontSize))
                         .foregroundStyle(iconColor)
-                        .frame(width: FileNodeRow.iconSlotWidth, alignment: .center)
+                        .frame(width: FileNodeRow.iconSlotWidth(forFontSize: fontSize), alignment: .center)
                     Text(node.name)
                         .foregroundStyle(gitStatus?.color ?? .primary)
                 }
+                .accessibilityElement(children: .combine)
                 .opacity(isGitIgnored ? 0.5 : 1.0)
                 // Apply the row identifier only on the non-editing branch.
                 // Applying it on the outer Group would cascade onto the
@@ -119,8 +132,9 @@ struct FileNodeRow: View {
         // (see #763).
         HStack(spacing: FileNodeRow.iconTextSpacing) {
             Image(systemName: iconName)
+                .font(.system(size: fontSize))
                 .foregroundStyle(iconColor)
-                .frame(width: FileNodeRow.iconSlotWidth, alignment: .center)
+                .frame(width: FileNodeRow.iconSlotWidth(forFontSize: fontSize), alignment: .center)
             TextField("", text: $state.editingText)
                 .textFieldStyle(.plain)
                 .accessibilityIdentifier(AccessibilityID.inlineRenameTextField)
@@ -146,6 +160,7 @@ struct FileNodeRow: View {
                     commitRename()
                 }
         }
+        .accessibilityElement(children: .combine)
     }
 
     // MARK: - Context menu

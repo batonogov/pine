@@ -20,14 +20,25 @@ struct FileNodeRowLayoutTests {
 
     // MARK: - Layout constants
 
-    @Test("Icon slot width is positive and non-trivial")
+    /// Font sizes the sidebar may render at — covers `FontSizeSettings`
+    /// min/default/max plus a few common in-between values. Every layout
+    /// invariant must hold for the full range, not just the system default.
+    private static let fontSizesUnderTest: [CGFloat] = [11, 12, 13, 14, 16, 18, 20, 24, 32]
+
+    @Test("Icon slot width is positive and non-trivial across all font sizes")
     func iconSlotWidthIsReasonable() {
-        #expect(FileNodeRow.iconSlotWidth > 0)
-        // Must be wide enough to fit the widest SF Symbol we render
-        // (badge-composed glyphs like `folder.badge.gearshape` are ~20 pt).
-        #expect(FileNodeRow.iconSlotWidth >= 22)
-        // But not so wide that it creates an awkward gap.
-        #expect(FileNodeRow.iconSlotWidth <= 30)
+        for fontSize in Self.fontSizesUnderTest {
+            let slot = FileNodeRow.iconSlotWidth(forFontSize: fontSize)
+            #expect(slot > 0)
+            // Must scale with font size — at least the font size itself,
+            // because SF Symbol glyphs render at ~font cap height + descenders.
+            #expect(slot >= fontSize)
+            // But not so wide that it creates an awkward gap (≤ 2× font size).
+            #expect(slot <= fontSize * 2)
+        }
+        // At the system default font size the slot must still satisfy the
+        // historical >= 22 pt floor that fits badge-composed glyphs.
+        #expect(FileNodeRow.iconSlotWidth(forFontSize: NSFont.systemFontSize) >= 22)
     }
 
     @Test("Icon-text spacing is non-negative and compact")
@@ -42,7 +53,7 @@ struct FileNodeRowLayoutTests {
     // the sidebar ever renders; otherwise glyphs get clipped and the point of
     // the fix is lost. We measure intrinsic size via NSImage and assert.
 
-    @Test("Fixed slot width fits every SF Symbol used by FileIconMapper")
+    @Test("Slot width fits every SF Symbol used by FileIconMapper across font sizes")
     func slotFitsAllUsedSymbols() {
         // Collect a comprehensive set of icons that the sidebar may display.
         // We deliberately probe FileIconMapper across many representative
@@ -70,20 +81,23 @@ struct FileNodeRowLayoutTests {
         // Sanity: we actually gathered a variety of symbols.
         #expect(symbolSet.count >= 3)
 
-        let config = NSImage.SymbolConfiguration(pointSize: NSFont.systemFontSize, weight: .regular)
-        for symbol in symbolSet {
-            guard let image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)?
-                .withSymbolConfiguration(config) else {
-                // If a symbol fails to load, fail loudly — the sidebar would
-                // render a blank icon which is strictly worse than alignment.
-                Issue.record("SF Symbol \(symbol) could not be loaded")
-                continue
+        for fontSize in Self.fontSizesUnderTest {
+            let slot = FileNodeRow.iconSlotWidth(forFontSize: fontSize)
+            let config = NSImage.SymbolConfiguration(pointSize: fontSize, weight: .regular)
+            for symbol in symbolSet {
+                guard let image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)?
+                    .withSymbolConfiguration(config) else {
+                    // If a symbol fails to load, fail loudly — the sidebar would
+                    // render a blank icon which is strictly worse than alignment.
+                    Issue.record("SF Symbol \(symbol) could not be loaded at font size \(fontSize)")
+                    continue
+                }
+                let width = image.size.width
+                #expect(
+                    width <= slot,
+                    "SF Symbol \(symbol) intrinsic width \(width) exceeds slot \(slot) at font size \(fontSize)"
+                )
             }
-            let width = image.size.width
-            #expect(
-                width <= FileNodeRow.iconSlotWidth,
-                "SF Symbol \(symbol) intrinsic width \(width) exceeds slot \(FileNodeRow.iconSlotWidth)"
-            )
         }
     }
 
@@ -97,14 +111,29 @@ struct FileNodeRowLayoutTests {
     // having only these two static constants and referencing them from both
     // branches in FileNodeRow.swift. This test documents the invariant.
 
-    @Test("Both branches use the same icon slot width (no divergence)")
+    @Test("Both branches reference iconSlotWidth (regression guard for #736)")
     func bothBranchesShareSlotWidth() {
-        // Shared constants — if anything changes the inline-rename branch to
-        // use a different width, this value must be updated here too, which
-        // surfaces the divergence in code review.
-        let expected: CGFloat = 22
-        #expect(FileNodeRow.iconSlotWidth == expected)
-        #expect(FileNodeRow.iconTextSpacing == 6)
+        // Real regression guard: parse FileNodeRow.swift and assert that
+        // `iconSlotWidth` is referenced in BOTH the non-editing branch and
+        // the inline rename branch. If a refactor accidentally drops the
+        // call from one branch (re-introducing #736), this fails.
+        guard let source = readPineSource(named: "FileNodeRow.swift") else {
+            Issue.record("Could not read FileNodeRow.swift")
+            return
+        }
+        // Count call-site references (exclude the declaration `static func iconSlotWidth`).
+        let callOccurrences = source.components(separatedBy: "iconSlotWidth(forFontSize:").count - 1
+        #expect(
+            callOccurrences >= 2,
+            "Expected iconSlotWidth(forFontSize:) to be called from both row branches, found \(callOccurrences)"
+        )
+        // Same invariant for the icon-text spacing constant.
+        let spacingOccurrences = source.components(separatedBy: "iconTextSpacing").count - 1
+        // Declaration + 2 call sites = 3 minimum.
+        #expect(
+            spacingOccurrences >= 3,
+            "Expected iconTextSpacing to be referenced from both row branches, found \(spacingOccurrences)"
+        )
     }
 
     // MARK: - Edge cases
@@ -117,24 +146,20 @@ struct FileNodeRowLayoutTests {
         let longName = String(repeating: "a", count: 500) + ".swift"
         let icon = FileIconMapper.iconForFile(longName)
         #expect(!icon.isEmpty)
-        #expect(FileNodeRow.iconSlotWidth == 22)
+        // The slot is a pure function of font size — name length cannot affect it.
+        let slotA = FileNodeRow.iconSlotWidth(forFontSize: 13)
+        let slotB = FileNodeRow.iconSlotWidth(forFontSize: 13)
+        #expect(slotA == slotB)
+        // And it scales monotonically with font size.
+        #expect(FileNodeRow.iconSlotWidth(forFontSize: 24) > FileNodeRow.iconSlotWidth(forFontSize: 12))
     }
 
-    @Test("Every string literal in FileIconMapper.swift fits the icon slot")
+    @Test("Every string literal in FileIconMapper.swift fits the icon slot across font sizes")
     func allMapperLiteralsFitSlot() {
-        // Locate the source file relative to the test bundle's project path.
-        // The test bundle lives under DerivedData, so we walk up from #filePath
-        // (this test file) to find FileIconMapper.swift.
-        let testFilePath = URL(fileURLWithPath: #filePath)
-        let projectRoot = testFilePath
-            .deletingLastPathComponent() // PineTests/
-            .deletingLastPathComponent() // repo root
-        let mapperURL = projectRoot
-            .appendingPathComponent("Pine")
-            .appendingPathComponent("FileIconMapper.swift")
-
-        guard let source = try? String(contentsOf: mapperURL, encoding: .utf8) else {
-            Issue.record("Could not read FileIconMapper.swift at \(mapperURL.path)")
+        guard let source = readPineSource(named: "FileIconMapper.swift") else {
+            // Fail-fast: without the source file the rest of the test is meaningless.
+            Issue.record("Could not read FileIconMapper.swift via #filePath traversal")
+            #expect(Bool(false), "FileIconMapper.swift source unavailable; test cannot run")
             return
         }
 
@@ -164,21 +189,40 @@ struct FileNodeRowLayoutTests {
 
         #expect(symbols.count >= 20, "Expected to extract many symbols, got \(symbols.count)")
 
-        let config = NSImage.SymbolConfiguration(pointSize: NSFont.systemFontSize, weight: .regular)
-        var tested = 0
-        for symbol in symbols {
-            guard let image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)?
-                .withSymbolConfiguration(config) else {
-                continue  // Not an SF Symbol — skip (e.g. file extensions, regex)
+        var totalTested = 0
+        for fontSize in Self.fontSizesUnderTest {
+            let slot = FileNodeRow.iconSlotWidth(forFontSize: fontSize)
+            let config = NSImage.SymbolConfiguration(pointSize: fontSize, weight: .regular)
+            var tested = 0
+            for symbol in symbols {
+                guard let image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)?
+                    .withSymbolConfiguration(config) else {
+                    continue  // Not an SF Symbol — skip (e.g. file extensions, regex)
+                }
+                tested += 1
+                let width = image.size.width
+                #expect(
+                    width <= slot,
+                    "SF Symbol \(symbol) intrinsic width \(width) exceeds slot \(slot) at font size \(fontSize)"
+                )
             }
-            tested += 1
-            let width = image.size.width
-            #expect(
-                width <= FileNodeRow.iconSlotWidth,
-                "SF Symbol \(symbol) intrinsic width \(width) exceeds slot \(FileNodeRow.iconSlotWidth)"
-            )
+            #expect(tested >= 10, "Expected ≥10 SF Symbols at font size \(fontSize), validated \(tested)")
+            totalTested += tested
         }
-        #expect(tested >= 10, "Expected to validate at least 10 real SF Symbols, validated \(tested)")
+        #expect(totalTested > 0)
+    }
+
+    // MARK: - Source helpers
+
+    /// Reads a file from `Pine/` relative to this test file's `#filePath`.
+    /// Returns `nil` if the file cannot be located, so callers can fail-fast.
+    private func readPineSource(named name: String) -> String? {
+        let testFilePath = URL(fileURLWithPath: #filePath)
+        let projectRoot = testFilePath
+            .deletingLastPathComponent() // PineTests/
+            .deletingLastPathComponent() // repo root
+        let url = projectRoot.appendingPathComponent("Pine").appendingPathComponent(name)
+        return try? String(contentsOf: url, encoding: .utf8)
     }
 
     private func isPlausibleSymbol(_ s: String) -> Bool {
@@ -187,17 +231,20 @@ struct FileNodeRowLayoutTests {
         return s.allSatisfy { $0.isLetter || $0.isNumber || $0 == "." } && s.contains { $0.isLetter }
     }
 
-    @Test("Hidden (dotfile) names map to a valid icon that fits the slot")
+    @Test("Hidden (dotfile) names map to a valid icon that fits the slot at every font size")
     func hiddenFilesFitSlot() {
         let hidden = [".env", ".gitignore", ".DS_Store", ".hidden"]
-        let config = NSImage.SymbolConfiguration(pointSize: NSFont.systemFontSize, weight: .regular)
-        for name in hidden {
-            let symbol = FileIconMapper.iconForFile(name)
-            let image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)?
-                .withSymbolConfiguration(config)
-            #expect(image != nil, "Hidden file \(name) icon \(symbol) should load")
-            if let width = image?.size.width {
-                #expect(width <= FileNodeRow.iconSlotWidth)
+        for fontSize in Self.fontSizesUnderTest {
+            let slot = FileNodeRow.iconSlotWidth(forFontSize: fontSize)
+            let config = NSImage.SymbolConfiguration(pointSize: fontSize, weight: .regular)
+            for name in hidden {
+                let symbol = FileIconMapper.iconForFile(name)
+                let image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)?
+                    .withSymbolConfiguration(config)
+                #expect(image != nil, "Hidden file \(name) icon \(symbol) should load at \(fontSize)pt")
+                if let width = image?.size.width {
+                    #expect(width <= slot, "\(symbol) width \(width) > slot \(slot) at \(fontSize)pt")
+                }
             }
         }
     }
