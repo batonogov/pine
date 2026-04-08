@@ -34,11 +34,20 @@ struct TerminalPaletteTests {
         #expect(uniqueCount == entries.count)
     }
 
-    @Test func defaultPaletteIsTerminalAppBasic() {
-        // The currently-shipped default must point at Terminal.app Basic,
-        // not any of the alternative profiles declared for the follow-up
-        // theme picker.
-        #expect(TerminalPalette.macOSAligned == TerminalPalette.terminalAppBasic)
+    @Test func defaultPaletteEqualsBasicExceptForBrightBlackOverride() {
+        // The shipped default is Terminal.app Basic for every slot EXCEPT
+        // slot 8 (bright black), which is overridden with Tomorrow Night
+        // `#969896` to keep zsh-autosuggestions / fish ghost text readable
+        // on the dark-mode background. This is the deliberate compromise
+        // between #765 (TUI parity) and #733 (ghost text contrast).
+        #expect(TerminalPalette.macOSAligned != TerminalPalette.terminalAppBasic)
+        #expect(TerminalPalette.macOSAligned[8] == TerminalPalette.ghostTextBrightBlack)
+        for index in 0..<TerminalPalette.colorCount where index != 8 {
+            #expect(
+                TerminalPalette.macOSAligned[index] == TerminalPalette.terminalAppBasic[index],
+                "slot \(index) drifted from Terminal.app Basic"
+            )
+        }
     }
 
     // MARK: - Reference values (Terminal.app Basic — exact RGB)
@@ -66,7 +75,10 @@ struct TerminalPaletteTests {
             (0x00, 0xE5, 0xE5), // 14 bright cyan
             (0xE5, 0xE5, 0xE5), // 15 bright white
         ]
-        let entries = TerminalPalette.macOSAligned
+        // Tested against the unmodified `terminalAppBasic` reference array
+        // — `macOSAligned` overrides slot 8 (see
+        // `defaultPaletteEqualsBasicExceptForBrightBlackOverride`).
+        let entries = TerminalPalette.terminalAppBasic
         #expect(entries.count == expected.count)
         for (index, exp) in expected.enumerated() {
             let entry = entries[index]
@@ -74,16 +86,6 @@ struct TerminalPaletteTests {
             #expect(entry.green == exp.1, "ANSI \(index) green mismatch")
             #expect(entry.blue == exp.2, "ANSI \(index) blue mismatch")
         }
-    }
-
-    @Test func basicNonAnsiSlotsMatchTerminalApp() {
-        // Background, foreground, cursor and selection colors must also
-        // match Basic.terminal so the whole terminal is consistent — not
-        // just the 16 ANSI foregrounds.
-        #expect(TerminalPalette.basicBackground == TerminalPaletteEntry(red: 0x00, green: 0x00, blue: 0x00))
-        #expect(TerminalPalette.basicForeground == TerminalPaletteEntry(red: 0xBF, green: 0xBF, blue: 0xBF))
-        #expect(TerminalPalette.basicCursor == TerminalPaletteEntry(red: 0xBF, green: 0xBF, blue: 0xBF))
-        #expect(TerminalPalette.basicSelection == TerminalPaletteEntry(red: 0x41, green: 0x41, blue: 0x41))
     }
 
     @Test func alternativeProfilesAreWellFormed() {
@@ -202,22 +204,29 @@ struct TerminalPaletteTests {
         _ = view.getTerminal()
     }
 
-    @Test @MainActor func installSetsBasicBackgroundForegroundCursorSelection() {
+    @Test @MainActor func installDoesNotOverrideSemanticBackgroundForeground() {
+        // Light/dark adaptive bg/fg are managed by `TerminalSession` via
+        // `NSColor.textBackgroundColor` / `NSColor.textColor`. The palette
+        // installer must NOT touch those slots — otherwise users in light
+        // mode get a black terminal in the middle of a light UI (Apple HIG
+        // violation). This test pins that contract.
         let view = LocalProcessTerminalView(frame: .init(x: 0, y: 0, width: 400, height: 200))
+        view.nativeBackgroundColor = .textBackgroundColor
+        view.nativeForegroundColor = .textColor
+        let bgBefore = view.nativeBackgroundColor
+        let fgBefore = view.nativeForegroundColor
+        let caretBefore = view.caretColor
+        let selectionBefore = view.selectedTextBackgroundColor
+
         TerminalPalette.install(on: view)
 
-        func sameSRGB(_ lhs: NSColor, _ rhs: NSColor) -> Bool {
-            guard let a = lhs.usingColorSpace(.sRGB),
-                  let b = rhs.usingColorSpace(.sRGB) else { return false }
-            return abs(a.redComponent - b.redComponent) < 0.001
-                && abs(a.greenComponent - b.greenComponent) < 0.001
-                && abs(a.blueComponent - b.blueComponent) < 0.001
-        }
-
-        #expect(sameSRGB(view.nativeBackgroundColor, TerminalPalette.basicBackground.makeNSColor()))
-        #expect(sameSRGB(view.nativeForegroundColor, TerminalPalette.basicForeground.makeNSColor()))
-        #expect(sameSRGB(view.caretColor, TerminalPalette.basicCursor.makeNSColor()))
-        #expect(sameSRGB(view.selectedTextBackgroundColor, TerminalPalette.basicSelection.makeNSColor()))
+        #expect(view.nativeBackgroundColor === bgBefore || view.nativeBackgroundColor == bgBefore)
+        #expect(view.nativeForegroundColor === fgBefore || view.nativeForegroundColor == fgBefore)
+        #expect(view.caretColor === caretBefore || view.caretColor == caretBefore)
+        #expect(
+            view.selectedTextBackgroundColor === selectionBefore
+            || view.selectedTextBackgroundColor == selectionBefore
+        )
     }
 
     @Test @MainActor func installIsIdempotent() {
@@ -236,15 +245,18 @@ struct TerminalPaletteTests {
         _ = tab.terminalView.getTerminal()
     }
 
-    // MARK: - Readability vs. Terminal.app Basic background (#000000)
+    // MARK: - Readability vs. dark-mode background
     //
-    // These assertions pin the contrast characteristics that users rely on
-    // every day: the regular foreground and bright variants have to remain
-    // comfortably readable. We do NOT assert that every ANSI slot clears
-    // WCAG AA — Terminal.app Basic's deep-red (#990000) and deep-blue
-    // (#0000B2) genuinely have ~2.4 / ~1.7 ratios against black; matching
-    // Terminal.app exactly is the whole point of issue #765 and forcing a
-    // higher bar would move us back off-profile.
+    // These assertions pin the contrast characteristics users rely on every
+    // day. The reference background is `darkModeBackgroundReference`
+    // (`#1E1E1E`), the worst case approximation of
+    // `NSColor.textBackgroundColor` in dark mode.
+    //
+    // Slot 8 (bright black) is held to WCAG AA (≥4.5:1) because that is the
+    // ghost-text affordance regression #733 fixed. Other colored slots are
+    // only required to clear 3:1 — Terminal.app Basic's deep red (#990000)
+    // and deep blue (#0000B2) cannot clear AA against any dark background
+    // and forcing them higher would move Pine back off-profile (#765).
 
     /// WCAG relative luminance for an 8-bit sRGB triple.
     private func relativeLuminance(_ entry: TerminalPaletteEntry) -> Double {
@@ -264,26 +276,64 @@ struct TerminalPaletteTests {
         return (max(la, lb) + 0.05) / (min(la, lb) + 0.05)
     }
 
-    @Test func whiteIsReadableAgainstBasicBackground() {
-        // ANSI 7 (#BFBFBF) vs. Basic background (#000000) — the default
-        // prompt foreground. Must clear WCAG AAA (7:1) so shells remain
-        // comfortable for long sessions.
-        let ratio = contrastRatio(TerminalPalette.macOSAligned[7], TerminalPalette.basicBackground)
+    @Test func whiteIsReadableAgainstDarkBackground() {
+        // ANSI 7 (#BFBFBF) — the default prompt foreground. Must clear
+        // WCAG AAA (7:1) so shells remain comfortable for long sessions.
+        let ratio = contrastRatio(
+            TerminalPalette.macOSAligned[7],
+            TerminalPalette.darkModeBackgroundReference
+        )
         #expect(ratio >= 7.0, "white contrast \(ratio) below WCAG AAA")
     }
 
-    @Test func brightWhiteIsReadableAgainstBasicBackground() {
-        let ratio = contrastRatio(TerminalPalette.macOSAligned[15], TerminalPalette.basicBackground)
+    @Test func brightWhiteIsReadableAgainstDarkBackground() {
+        let ratio = contrastRatio(
+            TerminalPalette.macOSAligned[15],
+            TerminalPalette.darkModeBackgroundReference
+        )
         #expect(ratio >= 7.0)
     }
 
-    @Test func brightBlackIsDistinctFromBackground() {
-        // bright black (#666666) must not collapse into the background
-        // (#000000), otherwise zsh-autosuggestions and fish ghost text
-        // become invisible. Terminal.app's Basic profile itself yields a
-        // ~3.7:1 ratio here, so we lock that as the floor.
-        let ratio = contrastRatio(TerminalPalette.macOSAligned[8], TerminalPalette.basicBackground)
-        #expect(ratio >= 3.0, "bright black contrast \(ratio) too close to background")
+    /// Restored regression test from #733. Bright black is the ghost-text
+    /// color used by zsh-autosuggestions / fish; the previous #666666 hit
+    /// only ~2.9 against `#1E1E1E` and was effectively invisible. Pine's
+    /// override (#969896) clears WCAG AA.
+    @Test func brightBlackHasReadableContrastAgainstDarkBackground() {
+        let brightBlack = TerminalPalette.macOSAligned[8]
+        let ratio = contrastRatio(brightBlack, TerminalPalette.darkModeBackgroundReference)
+        #expect(ratio >= 4.5, "bright black contrast \(ratio) below WCAG AA")
+    }
+
+    /// Restored regression test from #733. Direct comparison against the
+    /// previous unreadable baseline `#666666` to make absolutely sure
+    /// nobody re-introduces it without the override.
+    @Test func brightBlackContrastBeatsRegressionBaseline() {
+        let brightBlack = TerminalPalette.macOSAligned[8]
+        let ratio = contrastRatio(brightBlack, TerminalPalette.darkModeBackgroundReference)
+        let regression = contrastRatio(
+            TerminalPaletteEntry(red: 0x66, green: 0x66, blue: 0x66),
+            TerminalPalette.darkModeBackgroundReference
+        )
+        #expect(ratio > regression + 1.0)
+    }
+
+    /// Restored regression test from #733, scoped to the slots Pine
+    /// controls. Slots 1 (red #990000), 4 (blue #0000B2), 5 (magenta
+    /// #B200B2) and 12 (bright blue #0000FF) are intrinsic to Terminal.app
+    /// Basic and genuinely cannot clear 3:1 against `#1E1E1E` — matching
+    /// Terminal.app exactly is the whole point of #765 and forcing them
+    /// brighter would move Pine off-profile. Their bright variants
+    /// (9 bright red, 13 bright magenta) DO clear the threshold and are
+    /// what shells normally use for prompt accents.
+    @Test func allReadableAnsiSlotsClearThreeToOneAgainstDarkBackground() {
+        let bg = TerminalPalette.darkModeBackgroundReference
+        // Deep-saturation Basic slots intentionally excluded — see comment.
+        let coloredIndices: [Int] = [2, 3, 6, 7, 9, 10, 11, 13, 14, 15]
+        for index in coloredIndices {
+            let entry = TerminalPalette.macOSAligned[index]
+            let ratio = contrastRatio(entry, bg)
+            #expect(ratio >= 3.0, "ANSI \(index) contrast \(ratio) below 3:1")
+        }
     }
 
     @Test func brightBlackIsDimmerThanRegularForeground() {
@@ -310,15 +360,15 @@ struct TerminalPaletteTests {
     }
 
     @Test func backgroundIsDarkerThanEveryForeground() {
-        // Basic.terminal uses pure black as the background; every other
-        // slot should be strictly lighter, otherwise that color would be
-        // invisible on the default profile.
-        let bgL = relativeLuminance(TerminalPalette.basicBackground)
+        // Every non-black slot must be strictly lighter than the dark-mode
+        // reference background, otherwise that color would be invisible
+        // for users on the default appearance.
+        let bgL = relativeLuminance(TerminalPalette.darkModeBackgroundReference)
         for (index, entry) in TerminalPalette.macOSAligned.enumerated() {
             if index == 0 { continue } // ANSI 0 is black-on-black by convention
             #expect(
                 relativeLuminance(entry) > bgL,
-                "ANSI \(index) not lighter than Basic background"
+                "ANSI \(index) not lighter than dark-mode background"
             )
         }
     }

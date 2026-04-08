@@ -5,12 +5,12 @@
 //  Centralised ANSI 16-color palette for Pine's embedded SwiftTerm terminal.
 //
 //  Goal (issue #765): make Pine's terminal visually indistinguishable from
-//  the system `Terminal.app` "Basic" profile. TUI apps such as k9s, htop,
-//  lazygit, btop and vim drive the 16 base ANSI colors directly via
-//  `\e[3xm` / `tput setaf`; if those 16 slots disagree with Terminal.app
+//  the system `Terminal.app` "Basic" profile for the 16 ANSI slots that TUI
+//  apps such as k9s, htop, lazygit, btop and vim drive directly via
+//  `\e[3xm` / `tput setaf`. If those 16 slots disagree with Terminal.app
 //  the familiar TUIs look "off" and users bail out to iTerm2.
 //
-//  The default palette is therefore the exact sRGB values that ship in
+//  The reference palette is the exact sRGB values that ship in
 //  `/System/Applications/Utilities/Terminal.app/Contents/Resources/Basic.terminal`:
 //
 //      black   #000000   red     #990000   green   #00A600   yellow  #999900
@@ -18,13 +18,23 @@
 //      brBlack #666666   brRed   #E50000   brGreen #00D900   brYlw   #E5E500
 //      brBlue  #0000FF   brMag   #E500E5   brCyan  #00E5E5   brWht   #E5E5E5
 //
-//  Together with Basic's background (#000000), foreground (#BFBFBF),
-//  cursor (#BFBFBF) and selection (#414141) this gives the same look as
-//  a fresh Terminal.app window — which is what #765 asks for.
+//  Scope of `install(on:)`:
+//  ONLY the 16 ANSI palette slots are touched here. Background / foreground
+//  / cursor / selection are deliberately NOT set — `TerminalSession` keeps
+//  them on semantic `NSColor.textBackgroundColor` / `NSColor.textColor` so
+//  the terminal stays adaptive to light/dark mode and respects the system
+//  appearance the way every other native macOS app does. TUI apps paint
+//  their own background through ANSI sequences anyway, which is what #765
+//  is actually about.
 //
-//  Background / foreground / cursor / selection are all installed by
-//  `install(on:)` so the palette has a single source of truth and cannot
-//  drift from the ANSI slots it is tuned for.
+//  Compromise on slot 8 (bright black):
+//  Terminal.app Basic uses #666666 for bright black, which yields only
+//  ~2.9:1 against `NSColor.textBackgroundColor` in dark mode and makes
+//  zsh-autosuggestions / fish ghost text effectively invisible (the bug
+//  fixed by issue #733). Pine intentionally diverges from Basic on slot 8
+//  only and uses Tomorrow Night's `#969896` (~5.4:1, WCAG AA) instead.
+//  Every other slot is bit-for-bit Basic. This is a deliberate compromise
+//  between #765 (TUI parity) and #733 (ghost text readability).
 //
 //  Additional palettes (Terminal.app "Pro", Solarized Dark/Light) are
 //  declared below but intentionally not wired up yet — a theme picker is
@@ -85,11 +95,13 @@ enum TerminalPalette {
     /// Number of ANSI colors expected by SwiftTerm's `installColors`.
     static let colorCount = 16
 
-    // MARK: - Terminal.app "Basic" (default)
+    // MARK: - Terminal.app "Basic" (reference, unmodified)
 
-    /// Exact sRGB values from `Basic.terminal` shipped with macOS.
-    /// This is what TUI apps compare against when users report "colors are
-    /// wrong in Pine's terminal" (issue #765).
+    /// Exact sRGB values from `Basic.terminal` shipped with macOS — kept
+    /// bit-for-bit so the unit tests can pin against the canonical profile.
+    /// Note: this is NOT the palette Pine actually installs. The shipped
+    /// palette is `macOSAligned` below, which equals Basic except for slot
+    /// 8 (bright black) — see the file header for the rationale.
     static let terminalAppBasic: [TerminalPaletteEntry] = [
         .init(red: 0x00, green: 0x00, blue: 0x00), // 0  black
         .init(red: 0x99, green: 0x00, blue: 0x00), // 1  red
@@ -109,19 +121,15 @@ enum TerminalPalette {
         .init(red: 0xE5, green: 0xE5, blue: 0xE5), // 15 bright white
     ]
 
-    /// Background color from the Basic profile — solid black, matching
-    /// Terminal.app. Also used as the reference background in the contrast
-    /// unit tests.
-    static let basicBackground = TerminalPaletteEntry(red: 0x00, green: 0x00, blue: 0x00)
+    /// Tomorrow Night value used to override slot 8 (bright black) so
+    /// zsh-autosuggestions / fish ghost text remains readable on the
+    /// dark-mode background — the regression fixed by issue #733.
+    static let ghostTextBrightBlack = TerminalPaletteEntry(red: 0x96, green: 0x98, blue: 0x96)
 
-    /// Default foreground color in Basic — the same #BFBFBF as ANSI white.
-    static let basicForeground = TerminalPaletteEntry(red: 0xBF, green: 0xBF, blue: 0xBF)
-
-    /// Cursor color in Basic matches the foreground.
-    static let basicCursor = TerminalPaletteEntry(red: 0xBF, green: 0xBF, blue: 0xBF)
-
-    /// Selection highlight color in Basic (dark grey).
-    static let basicSelection = TerminalPaletteEntry(red: 0x41, green: 0x41, blue: 0x41)
+    /// Reference background used by the contrast assertions for the
+    /// dark-mode `NSColor.textBackgroundColor` worst case. Hard-coded so
+    /// the test target does not depend on host appearance.
+    static let darkModeBackgroundReference = TerminalPaletteEntry(red: 0x1E, green: 0x1E, blue: 0x1E)
 
     // MARK: - Alternative profiles (not wired up yet — follow-up PR)
 
@@ -167,10 +175,21 @@ enum TerminalPalette {
         .init(red: 0xFD, green: 0xF6, blue: 0xE3), // 15 base3
     ]
 
-    /// Default palette used by Pine today. Points at the Terminal.app Basic
-    /// values above. When the theme picker lands (TODO #765-followup) this
-    /// is the only reference callers need to change.
-    static let macOSAligned: [TerminalPaletteEntry] = terminalAppBasic
+    /// Default palette Pine actually installs today.
+    ///
+    /// Equals `terminalAppBasic` for every slot EXCEPT slot 8 (bright black),
+    /// which is replaced with `ghostTextBrightBlack` (Tomorrow Night
+    /// `#969896`) to keep zsh-autosuggestions / fish ghost text readable on
+    /// the dark-mode `NSColor.textBackgroundColor`. This is the deliberate
+    /// compromise between #765 (TUI parity with Terminal.app) and #733
+    /// (ghost text contrast). When the theme picker lands the alternative
+    /// profiles will be exposed unmodified — only the default carries this
+    /// override.
+    static let macOSAligned: [TerminalPaletteEntry] = {
+        var entries = terminalAppBasic
+        entries[8] = ghostTextBrightBlack
+        return entries
+    }()
 
     // MARK: - Build / install helpers
 
@@ -185,9 +204,14 @@ enum TerminalPalette {
         return entries.map { $0.makeSwiftTermColor() }
     }
 
-    /// Installs the Terminal.app Basic palette — ANSI 16 colors plus the
-    /// non-ANSI background / foreground / cursor / selection — on a
-    /// `LocalProcessTerminalView`.
+    /// Installs Pine's ANSI 16-color palette on a `LocalProcessTerminalView`.
+    ///
+    /// Scope is intentionally limited to the 16 ANSI slots. Background,
+    /// foreground, cursor and selection are managed by `TerminalSession`
+    /// via semantic `NSColor` values so the terminal remains light/dark
+    /// adaptive (Apple HIG). Hard-coding `#000000` here would give light
+    /// mode users a black terminal in the middle of a light UI, which is
+    /// the bug this comment exists to prevent.
     ///
     /// Wrapped in a `guard` so that an unexpected SwiftTerm API change (the
     /// palette failing to build) leaves the terminal usable on whatever
@@ -197,15 +221,5 @@ enum TerminalPalette {
     static func install(on terminalView: LocalProcessTerminalView) {
         guard let colors = swiftTermColors() else { return }
         terminalView.installColors(colors)
-
-        // Sync the non-ANSI slots so the whole terminal matches the Basic
-        // profile, not just the SGR foreground colors. Without this step
-        // bright-black text (e.g. zsh-autosuggestions) would be judged
-        // against the wrong background and look subtly different from
-        // Terminal.app.
-        terminalView.nativeBackgroundColor = basicBackground.makeNSColor()
-        terminalView.nativeForegroundColor = basicForeground.makeNSColor()
-        terminalView.caretColor = basicCursor.makeNSColor()
-        terminalView.selectedTextBackgroundColor = basicSelection.makeNSColor()
     }
 }
