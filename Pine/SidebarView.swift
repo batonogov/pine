@@ -175,6 +175,15 @@ struct SidebarView: View {
                     List(selection: $selectedFile) {
                         SidebarFileTree(nodes: workspace.rootNodes, selection: $selectedFile)
                             .listRowInsets(SidebarRowMetrics.listRowInsets)
+                            // On macOS 26 with Liquid Glass, `List`'s
+                            // `.sidebar` style draws a hairline separator
+                            // between top-level rows but not between nested
+                            // rows that live inside our custom
+                            // `SidebarDisclosureGroupStyle` VStack — so
+                            // top-level rows visually carry an extra rule
+                            // that nested ones do not, breaking the uniform
+                            // rhythm fixed in #764. Hide separators here so
+                            // every nesting level looks identical.
                             .listRowSeparator(.hidden)
                     }
                     .listStyle(.sidebar)

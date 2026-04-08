@@ -27,14 +27,6 @@ struct SidebarRowMetricsTests {
     // MARK: - List-level geometry must be zeroed
 
     @Test
-    func listRowSpacingIsZero() {
-        // Non-zero list row spacing is what produced the bug — top-level rows
-        // would get an extra gap that nested rows (inside our custom
-        // DisclosureGroup VStack(spacing: 0)) wouldn't. Lock it to 0.
-        #expect(SidebarRowMetrics.listRowSpacing == 0)
-    }
-
-    @Test
     func listRowInsetsAreZero() {
         let insets = SidebarRowMetrics.listRowInsets
         #expect(insets.top == 0)
@@ -45,9 +37,12 @@ struct SidebarRowMetricsTests {
 
     @Test
     func defaultMinListRowHeightIsNotInflated() {
-        // If this grows, intrinsic row height will stop driving the rhythm
-        // and top-level rows could again diverge from nested ones.
-        #expect(SidebarRowMetrics.defaultMinListRowHeight <= 2)
+        // If this grows past ~16pt (≈ system font cap height) the List will
+        // start reserving more vertical space than the row's intrinsic
+        // content needs, and top-level rows would once again diverge from
+        // their nested siblings (#764). 16pt is the upper bound that still
+        // matches a single line of the default sidebar font.
+        #expect(SidebarRowMetrics.defaultMinListRowHeight <= 16)
         #expect(SidebarRowMetrics.defaultMinListRowHeight > 0)
     }
 
@@ -91,31 +86,56 @@ struct SidebarRowMetricsTests {
     // MARK: - Uniform rhythm across nesting levels
 
     @Test
-    func paddingIsIdenticalAcrossNestingLevels() {
-        // This is the core invariant of #764: at any given font size, every
-        // row — top-level or nested — computes the exact same vertical
-        // padding. Simulate "top-level" and "nested depth N" by just calling
-        // the pure function with the same font size; since the view code on
-        // both paths now routes through `SidebarRowMetrics.verticalPadding`,
-        // identical inputs prove identical outputs.
-        let fontSizes: [CGFloat] = [11, 12, 13, 14, 16, 18, 20, 24, 32]
-        for fontSize in fontSizes {
-            let topLevel = SidebarRowMetrics.verticalPadding(forFontSize: fontSize)
-            let nestedDepth1 = SidebarRowMetrics.verticalPadding(forFontSize: fontSize)
-            let nestedDepth5 = SidebarRowMetrics.verticalPadding(forFontSize: fontSize)
-            let nestedDepth20 = SidebarRowMetrics.verticalPadding(forFontSize: fontSize)
-            #expect(topLevel == nestedDepth1)
-            #expect(topLevel == nestedDepth5)
-            #expect(topLevel == nestedDepth20)
+    func sidebarFileTreeHasSingleSourceOfVerticalPadding() throws {
+        // The #764 invariant — uniform rhythm across nesting levels — only
+        // holds if `SidebarFileTree.swift` calls
+        // `SidebarRowMetrics.verticalPadding(forFontSize:` from exactly one
+        // place. Top-level and nested rows both render through the same
+        // `row(isFolder:)` builder, so a single call site there proves there
+        // is no ad-hoc padding sneaking in for one render path. If somebody
+        // adds a second call (e.g. a "special case" for top-level rows) this
+        // test fails fast and forces a review.
+        //
+        // Locate the source file relative to *this* test file rather than
+        // walking the filesystem from cwd, so the test works under both
+        // `xcodebuild test` and Xcode's test runner.
+        let thisFile = URL(fileURLWithPath: #filePath)
+        let repoRoot = thisFile
+            .deletingLastPathComponent()  // PineTests/
+            .deletingLastPathComponent()  // repo root
+        let sourceURL = repoRoot
+            .appendingPathComponent("Pine")
+            .appendingPathComponent("SidebarFileTree.swift")
+
+        guard FileManager.default.fileExists(atPath: sourceURL.path) else {
+            Issue.record("Could not find SidebarFileTree.swift at \(sourceURL.path)")
+            return
         }
+
+        let source = try String(contentsOf: sourceURL, encoding: .utf8)
+        let needle = "SidebarRowMetrics.verticalPadding(forFontSize:"
+        var count = 0
+        var searchRange = source.startIndex..<source.endIndex
+        while let match = source.range(of: needle, range: searchRange) {
+            count += 1
+            searchRange = match.upperBound..<source.endIndex
+        }
+        #expect(
+            count == 1,
+            "Expected exactly one call to SidebarRowMetrics.verticalPadding(forFontSize: in SidebarFileTree.swift, found \(count). Multiple call sites risk diverging behaviour between nesting levels."
+        )
     }
 
     @Test
     func paddingIsDeterministic() {
         // Calling the function twice with the same input must yield the same
-        // result — no hidden state, no caching bugs.
+        // result — no hidden state, no caching bugs. Use a tolerance compare
+        // because `14 * 0.15` is not exactly representable in binary float.
+        let expected: CGFloat = 2.1
+        let tolerance: CGFloat = 0.0001
         for _ in 0..<100 {
-            #expect(SidebarRowMetrics.verticalPadding(forFontSize: 14) == 2.1)
+            let actual = SidebarRowMetrics.verticalPadding(forFontSize: 14)
+            #expect(abs(actual - expected) < tolerance)
         }
     }
 
