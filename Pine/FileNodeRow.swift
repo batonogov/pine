@@ -160,7 +160,12 @@ struct FileNodeRow: View {
                     commitRename()
                 }
         }
-        .accessibilityElement(children: .combine)
+        // NB: do NOT apply `.accessibilityElement(children: .combine)` here.
+        // Doing so flattens the inline rename TextField into a single
+        // accessibility element and hides its `inlineRenameTextField`
+        // identifier — which breaks both XCUITest queries and the live
+        // Enter-to-rename feature shipped in #742. Combine accessibility
+        // ONLY on the non-editing display branch above.
     }
 
     // MARK: - Context menu
