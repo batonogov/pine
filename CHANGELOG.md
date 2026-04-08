@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.20.1](https://github.com/batonogov/pine/compare/v1.20.0...v1.20.1) (2026-04-08)
+
+
+### Bug Fixes
+
+* **sidebar:** align file-leaf icons with folder icons via chevron-width spacer ([#770](https://github.com/batonogov/pine/issues/770)) ([770fe2f](https://github.com/batonogov/pine/commit/770fe2fb9355ee689fce2b14e14a1b0b25cc7537))
+* **sidebar:** unify vertical rhythm across nesting levels ([#766](https://github.com/batonogov/pine/issues/766)) ([e69c5d6](https://github.com/batonogov/pine/commit/e69c5d62e2521d69b9be6ddcb7a6fe7598806001))
+* **terminal:** match Terminal.app Basic palette for TUI parity ([#768](https://github.com/batonogov/pine/issues/768)) ([7b091bc](https://github.com/batonogov/pine/commit/7b091bc57581933b0564fd56786763f39c2caf87))
+
 ## [1.20.0](https://github.com/batonogov/pine/compare/v1.19.0...v1.20.0) (2026-04-07)
 
 
