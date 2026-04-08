@@ -122,7 +122,11 @@ struct SidebarRowMetricsTests {
         }
         #expect(
             count == 1,
-            "Expected exactly one call to SidebarRowMetrics.verticalPadding(forFontSize: in SidebarFileTree.swift, found \(count). Multiple call sites risk diverging behaviour between nesting levels."
+            """
+            Expected exactly one call to SidebarRowMetrics.verticalPadding(forFontSize: \
+            in SidebarFileTree.swift, found \(count). Multiple call sites risk diverging \
+            behaviour between nesting levels.
+            """
         )
     }
 
