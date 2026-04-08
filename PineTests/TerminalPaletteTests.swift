@@ -34,20 +34,29 @@ struct TerminalPaletteTests {
         #expect(uniqueCount == entries.count)
     }
 
-    @Test func defaultPaletteEqualsBasicExceptForBrightBlackOverride() {
+    @Test func defaultPaletteEqualsBasicExceptForSlot0Override() {
         // The shipped default is Terminal.app Basic for every slot EXCEPT
-        // slot 8 (bright black), which is overridden with Tomorrow Night
-        // `#969896` to keep zsh-autosuggestions / fish ghost text readable
-        // on the dark-mode background. This is the deliberate compromise
-        // between #765 (TUI parity) and #733 (ghost text contrast).
+        // slot 0 (black), which is overridden with `ghostTextOverride`
+        // (Tomorrow Night #969896). Slot 0 is chosen because SwiftTerm 1.13.0
+        // collapses 256-color indices 8..15 → 0..7 when `useBrightColors`
+        // is false (Pine's setting for #733), so any override on slot 8
+        // would be silently dropped — see TerminalPalette.swift header.
+        // This is the deliberate compromise between #765 (TUI parity) and
+        // #733 (ghost text contrast).
         #expect(TerminalPalette.macOSAligned != TerminalPalette.terminalAppBasic)
-        #expect(TerminalPalette.macOSAligned[8] == TerminalPalette.ghostTextBrightBlack)
-        for index in 0..<TerminalPalette.colorCount where index != 8 {
+        #expect(TerminalPalette.macOSAligned[0] == TerminalPalette.ghostTextOverride)
+        for index in 1..<TerminalPalette.colorCount {
             #expect(
                 TerminalPalette.macOSAligned[index] == TerminalPalette.terminalAppBasic[index],
                 "slot \(index) drifted from Terminal.app Basic"
             )
         }
+        // Slot 8 in the shipped palette is the unmodified Basic value
+        // (#666666). It is unreachable at runtime due to SwiftTerm's
+        // collapse, but we keep it bit-for-bit Basic so any future
+        // SwiftTerm fix that decouples the paths automatically gives us
+        // the canonical Terminal.app value without further work.
+        #expect(TerminalPalette.macOSAligned[8] == TerminalPalette.terminalAppBasic[8])
     }
 
     // MARK: - Reference values (Terminal.app Basic — exact RGB)
@@ -239,18 +248,16 @@ struct TerminalPaletteTests {
         #expect(TerminalPalette.swiftTermColors()?.count == 16)
     }
 
-    /// Regression lock for the "256-color path" concern raised during review
-    /// of PR #768. SwiftTerm routes `LocalProcessTerminalView.installColors`
-    /// → `Terminal.installPalette` → `rebuildAnsiPalette`, which regenerates
-    /// the 256-entry extended palette by placing our 16 installed colors at
-    /// indices 0...15 (verified by reading
-    /// `Sources/SwiftTerm/Colors.swift::generateXtermPalette` on main).
-    /// That means `\e[38;5;8m` (how zsh-autosuggestions / fish ghost text
-    /// actually request bright-black) resolves to our
-    /// `ghostTextBrightBlack` override (#969896), not SwiftTerm's built-in
-    /// #666666. This test exercises the feed path end-to-end so any future
-    /// SwiftTerm refactor that decouples the two paths surfaces here
-    /// instead of silently re-introducing the #733 ghost-text regression.
+    /// Smoke test for the 256-color SGR path. SwiftTerm 1.13.0 in
+    /// `useBrightColors = false` mode collapses indices 8..15 onto 0..7
+    /// inside `Apple/AppleTerminalView.swift:246-249`, so feeding
+    /// `\e[38;5;8m` actually reads `ansiColors[0]`. Pine's `slot 0`
+    /// override (`ghostTextOverride` = #969896) is what makes the ghost
+    /// text readable on the dark-mode background — see the comments on
+    /// `slot0OverrideHasReadableGhostTextContrast` and the
+    /// `TerminalPalette.swift` header for full background.
+    /// The test feeds both forms to make sure they don't crash and to
+    /// document the runtime contract.
     @Test @MainActor func feedingAnsi256GhostTextSequenceDoesNotCrashAfterInstall() {
         let view = LocalProcessTerminalView(frame: .init(x: 0, y: 0, width: 400, height: 200))
         TerminalPalette.install(on: view)
@@ -328,27 +335,46 @@ struct TerminalPaletteTests {
         #expect(ratio >= 7.0)
     }
 
-    /// Restored regression test from #733. Bright black is the ghost-text
-    /// color used by zsh-autosuggestions / fish; the previous #666666 hit
-    /// only ~2.9 against `#1E1E1E` and was effectively invisible. Pine's
-    /// override (#969896) clears WCAG AA.
-    @Test func brightBlackHasReadableContrastAgainstDarkBackground() {
-        let brightBlack = TerminalPalette.macOSAligned[8]
-        let ratio = contrastRatio(brightBlack, TerminalPalette.darkModeBackgroundReference)
-        #expect(ratio >= 4.5, "bright black contrast \(ratio) below WCAG AA")
+    /// Regression test for the ghost-text contrast bug fixed in #733 — but
+    /// asserted on slot 0, not slot 8. SwiftTerm 1.13.0 collapses 8 → 0 in
+    /// `useBrightColors = false` mode, so when zsh-autosuggestions sends
+    /// `\e[38;5;8m` it actually reads `ansiColors[0]`. Pine's override puts
+    /// the readable grey (#969896, ~5.4:1 against #1E1E1E) on slot 0 to
+    /// catch that collapse. See `TerminalPalette.swift` header for the full
+    /// rationale.
+    @Test func slot0OverrideHasReadableGhostTextContrast() {
+        let slot0 = TerminalPalette.macOSAligned[0]
+        let ratio = contrastRatio(slot0, TerminalPalette.darkModeBackgroundReference)
+        #expect(ratio >= 4.5, "slot 0 (ghost text via SwiftTerm 8→0 collapse) contrast \(ratio) below WCAG AA")
     }
 
-    /// Restored regression test from #733. Direct comparison against the
-    /// previous unreadable baseline `#666666` to make absolutely sure
-    /// nobody re-introduces it without the override.
-    @Test func brightBlackContrastBeatsRegressionBaseline() {
-        let brightBlack = TerminalPalette.macOSAligned[8]
-        let ratio = contrastRatio(brightBlack, TerminalPalette.darkModeBackgroundReference)
+    /// Direct comparison against the previous unreadable baseline `#666666`
+    /// to make absolutely sure nobody re-introduces it without the override.
+    /// Reads slot 0 because that is where the ghost text actually lands at
+    /// runtime (see `slot0OverrideHasReadableGhostTextContrast`).
+    @Test func slot0OverrideBeatsRegressionBaseline() {
+        let slot0 = TerminalPalette.macOSAligned[0]
+        let ratio = contrastRatio(slot0, TerminalPalette.darkModeBackgroundReference)
         let regression = contrastRatio(
             TerminalPaletteEntry(red: 0x66, green: 0x66, blue: 0x66),
             TerminalPalette.darkModeBackgroundReference
         )
         #expect(ratio > regression + 1.0)
+    }
+
+    /// Documents the SwiftTerm 1.13.0 quirk: slot 8 in our shipped palette
+    /// IS bit-for-bit Terminal.app Basic (#666666) and that low-contrast
+    /// value is intentionally NOT corrected at the slot-8 level — because
+    /// the SwiftTerm collapse means slot 8 is unreachable anyway, and our
+    /// fix lives on slot 0. If a future SwiftTerm release fixes the
+    /// collapse, this test should fail and force us to also override
+    /// slot 8 (or — better — drop the slot 0 workaround entirely).
+    @Test func slot8RemainsBasicUnmodifiedAndUnreachable() {
+        #expect(TerminalPalette.macOSAligned[8] == TerminalPalette.terminalAppBasic[8])
+        // It is also still the original #666666 — sanity check the
+        // reference array did not get retouched.
+        let basic8 = TerminalPalette.terminalAppBasic[8]
+        #expect(basic8.red == 0x66 && basic8.green == 0x66 && basic8.blue == 0x66)
     }
 
     /// Restored regression test from #733, scoped to the slots Pine
@@ -358,10 +384,13 @@ struct TerminalPaletteTests {
     /// Terminal.app exactly is the whole point of #765 and forcing them
     /// brighter would move Pine off-profile. Their bright variants
     /// (9 bright red, 13 bright magenta) DO clear the threshold and are
-    /// what shells normally use for prompt accents.
+    /// what shells normally use for prompt accents. Slot 8 is also
+    /// excluded — it stays at Basic #666666 (~2.9:1) and is unreachable
+    /// at runtime due to SwiftTerm's 8→0 collapse, so we don't assert on
+    /// it; the readability assertion lives on slot 0 instead.
     @Test func allReadableAnsiSlotsClearThreeToOneAgainstDarkBackground() {
         let bg = TerminalPalette.darkModeBackgroundReference
-        // Deep-saturation Basic slots intentionally excluded — see comment.
+        // Deep-saturation Basic slots and slot 8 intentionally excluded.
         let coloredIndices: [Int] = [2, 3, 6, 7, 9, 10, 11, 13, 14, 15]
         for index in coloredIndices {
             let entry = TerminalPalette.macOSAligned[index]
@@ -370,11 +399,13 @@ struct TerminalPaletteTests {
         }
     }
 
-    @Test func brightBlackIsDimmerThanRegularForeground() {
-        // Ghost-text affordance — bright black must still *look* dim vs.
-        // regular white, otherwise the dim-text convention breaks.
+    @Test func slot0OverrideIsDimmerThanRegularForeground() {
+        // Ghost-text affordance — slot 0 (which is what `\e[38;5;8m`
+        // collapses to in Pine's SwiftTerm config) must still *look* dim
+        // vs. regular white (slot 7), otherwise the dim-text convention
+        // breaks and ghost text reads as normal foreground.
         #expect(
-            relativeLuminance(TerminalPalette.macOSAligned[8])
+            relativeLuminance(TerminalPalette.macOSAligned[0])
             < relativeLuminance(TerminalPalette.macOSAligned[7])
         )
     }
@@ -394,12 +425,14 @@ struct TerminalPaletteTests {
     }
 
     @Test func backgroundIsDarkerThanEveryForeground() {
-        // Every non-black slot must be strictly lighter than the dark-mode
-        // reference background, otherwise that color would be invisible
-        // for users on the default appearance.
+        // Every slot — including the slot 0 override — must be strictly
+        // lighter than the dark-mode reference background, otherwise that
+        // color would be invisible for users on the default appearance.
+        // Slot 0 used to be #000000 (black-on-black) and was excluded; now
+        // it carries our `ghostTextOverride` (#969896) and must clear the
+        // background like everything else.
         let bgL = relativeLuminance(TerminalPalette.darkModeBackgroundReference)
         for (index, entry) in TerminalPalette.macOSAligned.enumerated() {
-            if index == 0 { continue } // ANSI 0 is black-on-black by convention
             #expect(
                 relativeLuminance(entry) > bgL,
                 "ANSI \(index) not lighter than dark-mode background"

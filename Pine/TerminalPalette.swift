@@ -27,33 +27,42 @@
 //  their own background through ANSI sequences anyway, which is what #765
 //  is actually about.
 //
-//  Coverage across SGR forms (verified against SwiftTerm source, main@2025):
-//    * Basic SGR \e[30m..\e[37m / \e[90m..\e[97m — YES, via
-//      `LocalProcessTerminalView.installColors(_:)` which writes to
-//      `Terminal.installedColors`.
-//    * 256-color SGR \e[38;5;Nm for N in 0...15 — YES. Under the hood,
-//      `LocalProcessTerminalView.installColors(_:)` calls
-//      `Terminal.installPalette(colors:)` which in turn calls
-//      `rebuildAnsiPalette()`. That function regenerates the 256-entry
-//      `ansiColors` array by placing our 16 installed colors at indices
-//      0...15 (the other 240 entries are the xterm cube + greys). This
-//      means `\e[38;5;8m` for zsh-autosuggestions / fish ghost text ends
-//      up rendering our `ghostTextBrightBlack` override (#969896) just
-//      like `\e[90m` does. If a future SwiftTerm release changes this
-//      behaviour (e.g. decouples the SGR path from the 256-color path),
-//      `terminal256SlotsMatchInstalledPaletteAfterInstall` in
-//      `TerminalPaletteTests` will fail and force us to revisit.
+//  Coverage across SGR forms — and the SwiftTerm 1.13.0 collapse quirk:
+//
+//    * Basic SGR \e[30m..\e[37m and \e[90m..\e[97m, plus the 256-color
+//      form \e[38;5;Nm for N in 0...15 — both go through the SAME code
+//      path in `Apple/AppleTerminalView.swift` (`case .ansi256(let ansi):`,
+//      ~line 241). There is no separate handler for the basic 16. The
+//      relevant snippet is:
+//
+//          if useBrightColors {
+//              midx = ansi < 7 ? (Int (ansi) + (isBold ? 8 : 0)) : Int (ansi)
+//          } else {
+//              midx = ansi > 7 ? (Int (ansi) - 8) : Int(ansi)   // <- collapse!
+//          }
+//
+//      Pine sets `useBrightColors = false` in `TerminalSession.swift` so
+//      that bold text does NOT auto-promote to bright (issue #733 / Ghostty
+//      parity). The unfortunate side effect is the second branch above:
+//      it collapses every ANSI index 8..15 onto 0..7 BEFORE looking up
+//      `terminal.ansiColors[midx]`. So `\e[38;5;8m` (which is what
+//      zsh-autosuggestions / fish use for ghost text via `fg=8`) actually
+//      reads `ansiColors[0]` — slot 8 is unreachable and any override on
+//      it is silently ignored.
+//
+//      The workaround: override slot 0 instead (see `ghostTextOverride`).
+//      That makes the 8 → 0 collapse land on the readable grey, which is
+//      what users actually need. ANSI 0 ("black") on a dark terminal
+//      background was already invisible, so making it grey is strictly
+//      better, not worse. On light backgrounds it becomes mid-grey instead
+//      of pure black — slightly off-spec but still legible.
+//
 //    * True color \e[38;2;R;G;Bm — not affected by palettes, passes
 //      through unchanged (by design).
 //
-//  Compromise on slot 8 (bright black):
-//  Terminal.app Basic uses #666666 for bright black, which yields only
-//  ~2.9:1 against `NSColor.textBackgroundColor` in dark mode and makes
-//  zsh-autosuggestions / fish ghost text effectively invisible (the bug
-//  fixed by issue #733). Pine intentionally diverges from Basic on slot 8
-//  only and uses Tomorrow Night's `#969896` (~5.4:1, WCAG AA) instead.
-//  Every other slot is bit-for-bit Basic. This is a deliberate compromise
-//  between #765 (TUI parity) and #733 (ghost text readability).
+//  Long-term fix is upstream in SwiftTerm: separate the bold-as-bright
+//  rendering decision from the 256-color index collapse so `useBrightColors`
+//  only affects the former. Tracked as a follow-up issue.
 //
 //  Additional palettes (Terminal.app "Pro", Solarized Dark/Light) are
 //  declared below but intentionally not wired up yet — a theme picker is
@@ -140,10 +149,35 @@ enum TerminalPalette {
         .init(red: 0xE5, green: 0xE5, blue: 0xE5), // 15 bright white
     ]
 
-    /// Tomorrow Night value used to override slot 8 (bright black) so
+    /// Tomorrow Night value (#969896) used to override slot 0 so that
     /// zsh-autosuggestions / fish ghost text remains readable on the
     /// dark-mode background — the regression fixed by issue #733.
-    static let ghostTextBrightBlack = TerminalPaletteEntry(red: 0x96, green: 0x98, blue: 0x96)
+    ///
+    /// Why slot 0 and not slot 8? SwiftTerm 1.13.0 in `useBrightColors = false`
+    /// mode (which Pine sets in `TerminalSession.swift` for #733 / Ghostty
+    /// parity) collapses ANSI 256-color indices 8..15 → 0..7 inside
+    /// `Apple/AppleTerminalView.swift:246-249`:
+    ///
+    ///     // useBrightColors = false branch
+    ///     midx = ansi > 7 ? (Int (ansi) - 8) : Int(ansi)
+    ///
+    /// This means any `\e[38;5;8m` (which is what zsh-autosuggestions sends
+    /// for `fg=8`) actually reads `terminal.ansiColors[0]` — slot 8 is
+    /// physically unreachable. We work around it by overriding slot 0 with
+    /// the readable grey, so the ghost text comes out at #969896 via the
+    /// 8 → 0 collapse. ANSI 0 ("black") on a dark terminal background was
+    /// already invisible by definition, so making it grey is strictly an
+    /// improvement, not a loss.
+    ///
+    /// On a light background "black" text becomes mid-grey instead of pure
+    /// black — slightly off-spec but still readable, and the only common
+    /// place that matters is shells whose default config uses the matching
+    /// `NSColor.textColor` foreground anyway.
+    ///
+    /// Long-term fix is upstream in SwiftTerm: separate the bold-as-bright
+    /// rendering path from the 256-color index collapse so `useBrightColors`
+    /// only affects the former. Track that as a follow-up.
+    static let ghostTextOverride = TerminalPaletteEntry(red: 0x96, green: 0x98, blue: 0x96)
 
     /// Reference background used by the contrast assertions for the
     /// dark-mode `NSColor.textBackgroundColor` worst case. Hard-coded so
@@ -196,17 +230,21 @@ enum TerminalPalette {
 
     /// Default palette Pine actually installs today.
     ///
-    /// Equals `terminalAppBasic` for every slot EXCEPT slot 8 (bright black),
-    /// which is replaced with `ghostTextBrightBlack` (Tomorrow Night
-    /// `#969896`) to keep zsh-autosuggestions / fish ghost text readable on
-    /// the dark-mode `NSColor.textBackgroundColor`. This is the deliberate
-    /// compromise between #765 (TUI parity with Terminal.app) and #733
-    /// (ghost text contrast). When the theme picker lands the alternative
-    /// profiles will be exposed unmodified — only the default carries this
-    /// override.
+    /// Equals `terminalAppBasic` for every slot EXCEPT slot 0 (black), which
+    /// is replaced with `ghostTextOverride` (Tomorrow Night `#969896`).
+    /// See the doc on `ghostTextOverride` for *why* slot 0 and not slot 8 —
+    /// SwiftTerm 1.13.0 collapses 256-color 8 → 0 in `useBrightColors = false`
+    /// mode so slot 8 is physically unreachable, and the ghost-text fix has to
+    /// land on slot 0 to actually take effect at runtime.
+    ///
+    /// All other slots (1..15) are bit-for-bit Terminal.app Basic — that is
+    /// what #765 asks for. The slot-0 override is the deliberate compromise
+    /// between #765 (TUI parity) and #733 (ghost text contrast). When the
+    /// theme picker lands the alternative profiles will be exposed unmodified
+    /// — only the default carries this override.
     static let macOSAligned: [TerminalPaletteEntry] = {
         var entries = terminalAppBasic
-        entries[8] = ghostTextBrightBlack
+        entries[0] = ghostTextOverride
         return entries
     }()
 
