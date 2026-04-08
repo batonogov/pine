@@ -29,6 +29,7 @@ final class ShellSettings {
 
     private static let shellPathKey = "terminalShellPath"
     private static let shellArgsKey = "terminalShellArgs"
+    private static let autosuggestionsEnabledKey = "terminalAutosuggestionsEnabled"
 
     /// Reads the user's login shell from the POSIX account database.
     /// Works reliably inside Xcode sandbox and App Sandbox where `$SHELL` may be absent or wrong.
@@ -64,6 +65,25 @@ final class ShellSettings {
         }
     }
 
+    /// Whether to enable opt-in ghost-text autosuggestions via a bundled
+    /// ZDOTDIR (see `ShellAutosuggestionsProvider`). Defaults to `false`
+    /// because Pine should never touch the user's shell environment without
+    /// explicit consent (Apple HIG: be a good guest on the user's machine).
+    ///
+    /// Only takes effect when the selected shell is zsh — bash/fish/nushell
+    /// users keep their native setup untouched.
+    var autosuggestionsEnabled: Bool {
+        didSet {
+            defaults.set(autosuggestionsEnabled, forKey: Self.autosuggestionsEnabledKey)
+        }
+    }
+
+    /// Whether the active shell is zsh (the only shell we inject ZDOTDIR for).
+    var isZshShell: Bool {
+        let name = (resolvedShellPath as NSString).lastPathComponent.lowercased()
+        return name == "zsh"
+    }
+
     /// Validated shell path — falls back to system shell (via `getpwuid`), then `$SHELL`, then `/bin/zsh`.
     var resolvedShellPath: String {
         if isExecutableFile(shellPath) { return shellPath }
@@ -97,10 +117,19 @@ final class ShellSettings {
         } else {
             self.shellArgs = Self.defaultShellArgs
         }
+
+        // Default OFF. `object(forKey:)` lets us distinguish "never set" from
+        // "explicitly set to false" in case we ever need to migrate.
+        if defaults.object(forKey: Self.autosuggestionsEnabledKey) != nil {
+            self.autosuggestionsEnabled = defaults.bool(forKey: Self.autosuggestionsEnabledKey)
+        } else {
+            self.autosuggestionsEnabled = false
+        }
     }
 
     func reset() {
         shellPath = Self.defaultShellPath
         shellArgs = Self.commonShells.first { $0.path == shellPath }?.defaultArgs ?? Self.defaultShellArgs
+        autosuggestionsEnabled = false
     }
 }

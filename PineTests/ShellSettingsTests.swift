@@ -312,6 +312,69 @@ struct ShellSettingsTests {
         }
     }
 
+    // MARK: - Autosuggestions flag (#762)
+
+    @Test func autosuggestionsDefaultIsOff() throws {
+        let defaults = try makeDefaults()
+        defer { cleanupDefaults(defaults) }
+        let settings = ShellSettings(defaults: defaults)
+        #expect(settings.autosuggestionsEnabled == false,
+                "Default must be OFF — Pine never touches shell env without consent")
+    }
+
+    @Test func autosuggestionsEnabledPersists() throws {
+        let defaults = try makeDefaults()
+        defer { cleanupDefaults(defaults) }
+        let s1 = ShellSettings(defaults: defaults)
+        s1.autosuggestionsEnabled = true
+        #expect(defaults.bool(forKey: "terminalAutosuggestionsEnabled") == true)
+        let s2 = ShellSettings(defaults: defaults)
+        #expect(s2.autosuggestionsEnabled == true)
+    }
+
+    @Test func autosuggestionsEnabledRoundTripsFalseExplicitly() throws {
+        let defaults = try makeDefaults()
+        defer { cleanupDefaults(defaults) }
+        let s1 = ShellSettings(defaults: defaults)
+        s1.autosuggestionsEnabled = true
+        s1.autosuggestionsEnabled = false
+        let s2 = ShellSettings(defaults: defaults)
+        #expect(s2.autosuggestionsEnabled == false)
+    }
+
+    @Test func resetTurnsAutosuggestionsOff() throws {
+        let defaults = try makeDefaults()
+        defer { cleanupDefaults(defaults) }
+        let settings = ShellSettings(defaults: defaults)
+        settings.autosuggestionsEnabled = true
+        settings.reset()
+        #expect(settings.autosuggestionsEnabled == false)
+    }
+
+    @Test func isZshShellTrueForBinZsh() throws {
+        let defaults = try makeDefaults()
+        defer { cleanupDefaults(defaults) }
+        let settings = ShellSettings(defaults: defaults)
+        settings.shellPath = "/bin/zsh"
+        #expect(settings.isZshShell == true)
+    }
+
+    @Test func isZshShellFalseForBinBash() throws {
+        let defaults = try makeDefaults()
+        defer { cleanupDefaults(defaults) }
+        let settings = ShellSettings(defaults: defaults)
+        settings.shellPath = "/bin/bash"
+        #expect(settings.isZshShell == false)
+    }
+
+    @Test func isZshShellFalseForShPath() throws {
+        let defaults = try makeDefaults()
+        defer { cleanupDefaults(defaults) }
+        let settings = ShellSettings(defaults: defaults)
+        settings.shellPath = "/bin/sh"
+        #expect(settings.isZshShell == false)
+    }
+
     @Test func shellOptionHashableAndEquatable() {
         let opt1 = ShellSettings.ShellOption(name: "zsh", path: "/bin/zsh", defaultArgs: ["--login"])
         let opt2 = ShellSettings.ShellOption(name: "zsh", path: "/bin/zsh", defaultArgs: ["--login"])

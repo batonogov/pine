@@ -4899,6 +4899,24 @@
         }
       }
     },
+    "menu.shellAutosuggestions" : {
+      "comment" : "Menu toggle: enable ghost-text autosuggestions in the terminal via bundled ZDOTDIR (zsh only).",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Shell Autosuggestions"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Автоподсказки shell"
+          }
+        }
+      }
+    },
     "menu.openFolder" : {
       "comment" : "Menu command: open a folder picker dialog (⌘⇧O).",
       "extractionState" : "manual",

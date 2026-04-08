@@ -13,6 +13,7 @@ struct PineApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
     @FocusedValue(\.projectManager) private var focusedProject: ProjectManager?
     @AppStorage(TabManager.autoSaveKey) private var autoSaveEnabled = false
+    @AppStorage("terminalAutosuggestionsEnabled") private var shellAutosuggestionsEnabled = false
 
     private var registry: ProjectRegistry { appDelegate.registry }
 
@@ -195,6 +196,14 @@ struct PineApp: App {
                 }
                 .keyboardShortcut(.return, modifiers: [.command, .shift])
                 .disabled(focusedProject?.activeTabManager.activeTab == nil)
+
+                Divider()
+
+                // Opt-in ghost-text autosuggestions from shell history (#762).
+                // Only affects zsh — bash/fish/nushell users keep their setup.
+                Toggle(isOn: $shellAutosuggestionsEnabled) {
+                    Label(Strings.menuShellAutosuggestions, systemImage: MenuIcons.shellAutosuggestions)
+                }
             }
             // Edit menu: Toggle Comment, Find & Replace, Find in Project
             CommandGroup(after: .pasteboard) {

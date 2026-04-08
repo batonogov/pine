@@ -61,6 +61,19 @@ brew install --cask pine-editor
 
 **Direct download:** grab the latest `.dmg` from [Releases](https://github.com/batonogov/pine/releases/latest).
 
+### Shell autosuggestions (optional)
+
+Pine's built-in terminal can show inline ghost-text suggestions from your shell history — type `g`, and see `it pull` appear greyed-out for one-press completion. This is an opt-in feature because Pine never touches your shell environment without permission.
+
+1. Install [zsh-autosuggestions](https://github.com/zsh-users/zsh-autosuggestions) once:
+   ```bash
+   brew install zsh-autosuggestions
+   ```
+   (oh-my-zsh's `custom/plugins/zsh-autosuggestions` and MacPorts are also auto-detected.)
+2. In Pine, enable **Terminal → Shell Autosuggestions**.
+
+Under the hood, Pine writes a small bootstrap `.zshrc` under `~/Library/Application Support/Pine/shell/` and launches the terminal with `ZDOTDIR` pointing at it. The bootstrap sources your real `~/.zshrc` first (so your prompt, plugins, aliases and TUI setups like vim/htop keep working untouched) and only then loads zsh-autosuggestions. Only applies to zsh — bash, fish and nushell users are unaffected.
+
 ## Build from Source
 
 Requires macOS 26+ and Xcode 26+.

@@ -140,6 +140,7 @@ enum Strings {
     static let menuResetFontSize: LocalizedStringKey = "menu.resetFontSize"
     static let menuTerminal: LocalizedStringKey = "menu.terminal"
     static let menuNewTerminalTab: LocalizedStringKey = "menu.newTerminalTab"
+    static let menuShellAutosuggestions: LocalizedStringKey = "menu.shellAutosuggestions"
     static let menuTogglePreview: LocalizedStringKey = "menu.togglePreview"
     static let menuView: LocalizedStringKey = "menu.view"
     static let menuGit: LocalizedStringKey = "menu.git"

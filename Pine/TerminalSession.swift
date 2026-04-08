@@ -355,6 +355,15 @@ final class TerminalTab: Identifiable, Hashable {
         var env = ProcessInfo.processInfo.environment
         env["PINE_TERMINAL"] = "1"
         env["TERM"] = "xterm-256color"
+        // Opt-in: inject bundled ZDOTDIR for zsh autosuggestions (#762).
+        // Only applies to zsh so we never surprise bash/fish/nushell users.
+        if shellSettings.autosuggestionsEnabled && shellSettings.isZshShell {
+            let provider = ShellAutosuggestionsProvider.defaultProvider()
+            if let zdotdir = try? provider.install() {
+                env["ZDOTDIR"] = zdotdir.path
+                env["PINE_SHELL_AUTOSUGGESTIONS"] = "1"
+            }
+        }
         if let wd = workingDirectory {
             env["PINE_PROJECT_ROOT"] = wd.path
             let hash = ContextFileWriter.hashedFileName(for: wd)
