@@ -101,7 +101,7 @@ private struct SidebarFileTreeNode: View {
         FileNodeRow(node: node)
             .font(.system(size: fontSize))
             .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.vertical, SidebarRowMetrics.verticalPadding(forFontSize: fontSize))
+            .padding(.vertical, max(fontSize * 0.15, 2))
             .padding(.horizontal, 4)
             .background(
                 RoundedRectangle(cornerRadius: 4)
