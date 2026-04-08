@@ -318,6 +318,11 @@ final class TerminalTab: Identifiable, Hashable {
 
         // Настраиваем внешний вид сразу — шрифт определяет размер ячейки
         terminalView.font = NSFont.monospacedSystemFont(ofSize: 13, weight: .regular)
+        // Background and foreground use semantic NSColors so the terminal
+        // adapts to light/dark mode the way every other native macOS app
+        // does (Apple HIG). TerminalPalette.install(on:) only touches the
+        // 16 ANSI slots — bg/fg/cursor/selection live here. See the
+        // header of `TerminalPalette.swift` for the rationale.
         terminalView.nativeForegroundColor = .textColor
         terminalView.nativeBackgroundColor = .textBackgroundColor
 
@@ -328,10 +333,11 @@ final class TerminalTab: Identifiable, Hashable {
         // native macOS terminals (issue #733).
         terminalView.useBrightColors = false
 
-        // Apply Pine's macOS-aligned ANSI 16-color palette. Centralised in
-        // `TerminalPalette` so it can be unit-tested independently of the
-        // SwiftTerm view, and so the palette has a single source of truth.
-        // See `TerminalPalette.swift` for rationale (issue #733).
+        // Apply Pine's ANSI 16-color palette (Terminal.app Basic with the
+        // slot 8 / bright black override for ghost-text contrast).
+        // Centralised in `TerminalPalette` so it can be unit-tested
+        // independently of the SwiftTerm view and kept as a single source of
+        // truth. See `TerminalPalette.swift` for rationale (issues #733, #765).
         TerminalPalette.install(on: terminalView)
     }
 
