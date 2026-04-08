@@ -102,15 +102,20 @@ private struct SidebarFileTreeNode: View {
             }
             .disclosureGroupStyle(SidebarDisclosureGroupStyle())
         } else {
-            // Insert a chevron-shaped transparent spacer so the file-leaf
-            // icon lines up with sibling folder icons (which are pushed
-            // right by the chevron drawn in `SidebarDisclosureGroupStyle`).
-            // Both dimensions come from `SidebarDisclosureMetrics` so the
-            // two call sites can never drift again. See #769.
-            HStack(spacing: SidebarDisclosureMetrics.chevronSpacing) {
-                Color.clear.frame(width: SidebarDisclosureMetrics.chevronWidth)
-                row(isFolder: false)
-            }
+            // Push the file-leaf icon right by the same amount that the
+            // chevron (drawn in `SidebarDisclosureGroupStyle`) pushes sibling
+            // folder icons, so files and folders share a single vertical
+            // column. We apply leading padding directly on the row instead
+            // of wrapping it in an HStack + `Color.clear` spacer — that
+            // wrapper broke the `List`/`OutlineGroup` row hierarchy, which
+            // XCUITest relies on to discover rows by identifier and which
+            // SwiftUI's `selection:` binding uses to highlight the active
+            // row. Both dimensions come from `SidebarDisclosureMetrics` so
+            // the two call sites can never drift again. See #769.
+            row(isFolder: false)
+                .padding(.leading,
+                         SidebarDisclosureMetrics.chevronWidth
+                         + SidebarDisclosureMetrics.chevronSpacing)
         }
     }
 

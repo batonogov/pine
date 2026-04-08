@@ -113,16 +113,26 @@ struct SidebarFileLeafAlignmentTests {
     }
 
     @Test
-    func fileLeafBranchWrapsRowInHStackWithSpacer() throws {
+    func fileLeafBranchAppliesLeadingPaddingFromMetrics() throws {
         let source = try loadSidebarFileTreeSource()
-        // The else-branch of `SidebarFileTreeNode.body` must wrap
-        // `row(isFolder: false)` in an HStack containing a `Color.clear`
-        // spacer of `SidebarDisclosureMetrics.chevronWidth`. We assert all
-        // three markers appear in the source.
+        // The else-branch of `SidebarFileTreeNode.body` must render
+        // `row(isFolder: false)` with a leading padding derived from
+        // `SidebarDisclosureMetrics.chevronWidth + chevronSpacing`.
+        //
+        // We deliberately do NOT wrap the row in an HStack / `Color.clear`
+        // spacer — that wrapper breaks the `List`/`OutlineGroup` row
+        // hierarchy and causes XCUITest to miss the row and selection
+        // highlighting to fail. Instead the padding is applied directly on
+        // the row modifier chain.
         #expect(source.contains("row(isFolder: false)"))
-        #expect(source.contains("Color.clear.frame(width: SidebarDisclosureMetrics.chevronWidth)"))
-        // And the HStack uses the spacing constant — sanity check.
-        #expect(source.contains("HStack(spacing: SidebarDisclosureMetrics.chevronSpacing)"))
+        #expect(source.contains(".padding(.leading,"),
+                "File-leaf row must use .padding(.leading, …) for chevron-aligned inset")
+        #expect(source.contains("SidebarDisclosureMetrics.chevronWidth"))
+        #expect(source.contains("SidebarDisclosureMetrics.chevronSpacing"))
+        // Regression guard: the HStack + Color.clear spacer wrapper must
+        // not come back — it silently breaks outline row discovery.
+        #expect(!source.contains("Color.clear.frame(width: SidebarDisclosureMetrics.chevronWidth)"),
+                "Do not re-introduce the HStack/Color.clear wrapper — it breaks outline row selection")
     }
 
     // MARK: - Edge cases
