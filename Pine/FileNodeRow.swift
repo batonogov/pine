@@ -12,6 +12,22 @@ import SwiftUI
 
 struct FileNodeRow: View {
     private static let logger = Logger.editor
+
+    // MARK: - Layout constants
+    //
+    // Fixed-width icon slot keeps the text start x-coordinate identical across
+    // all rows regardless of the SF Symbol glyph width (folder, shield, lock,
+    // book.closed, list.bullet, doc, …). Without this, `Label` renders the
+    // text flush with the icon trailing edge and every row jumps horizontally.
+    // See #763. The width (22 pt) fits every SF Symbol referenced by
+    // `FileIconMapper` at default SwiftUI font size, including wide glyphs
+    // like `fish` (~22 pt), `chevron.left.forwardslash.chevron.right` (~21 pt),
+    // and badge-composed glyphs like `folder.badge.gearshape` (~20 pt). The
+    // `FileNodeRowLayoutTests` suite enforces this invariant against the
+    // entire mapper source file. `iconTextSpacing` matches the default Label
+    // spacing so visual density is preserved.
+    static let iconSlotWidth: CGFloat = 22
+    static let iconTextSpacing: CGFloat = 6
     var node: FileNode
     @Environment(WorkspaceManager.self) var workspace
     @Environment(TabManager.self) var tabManager
@@ -56,12 +72,12 @@ struct FileNodeRow: View {
             if isEditing {
                 inlineEditor
             } else {
-                Label {
-                    Text(node.name)
-                        .foregroundStyle(gitStatus?.color ?? .primary)
-                } icon: {
+                HStack(spacing: FileNodeRow.iconTextSpacing) {
                     Image(systemName: iconName)
                         .foregroundStyle(iconColor)
+                        .frame(width: FileNodeRow.iconSlotWidth, alignment: .center)
+                    Text(node.name)
+                        .foregroundStyle(gitStatus?.color ?? .primary)
                 }
                 .opacity(isGitIgnored ? 0.5 : 1.0)
                 // Apply the row identifier only on the non-editing branch.
@@ -96,10 +112,15 @@ struct FileNodeRow: View {
     @ViewBuilder
     private var inlineEditor: some View {
         @Bindable var state = editState
-        // Use Label (same structure as the non-editing branch) so SwiftUI's
-        // List/OutlineGroup applies identical leading insets and the row does
-        // not visually jump on commit. See #736.
-        Label {
+        // Use the same HStack layout (fixed-width icon slot) as the non-editing
+        // branch so SwiftUI's List/OutlineGroup applies identical leading insets
+        // and the row does not visually jump on commit (see #736) and the text
+        // start x stays aligned across all rows regardless of icon glyph width
+        // (see #763).
+        HStack(spacing: FileNodeRow.iconTextSpacing) {
+            Image(systemName: iconName)
+                .foregroundStyle(iconColor)
+                .frame(width: FileNodeRow.iconSlotWidth, alignment: .center)
             TextField("", text: $state.editingText)
                 .textFieldStyle(.plain)
                 .accessibilityIdentifier(AccessibilityID.inlineRenameTextField)
@@ -124,9 +145,6 @@ struct FileNodeRow: View {
                     guard !focused, editState.renamingURL?.path == node.url.path else { return }
                     commitRename()
                 }
-        } icon: {
-            Image(systemName: iconName)
-                .foregroundStyle(iconColor)
         }
     }
 
