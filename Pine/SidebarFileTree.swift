@@ -8,20 +8,6 @@
 
 import SwiftUI
 
-/// Shared geometry for the sidebar disclosure chevron. This is the single
-/// source of truth used by both `SidebarDisclosureGroupStyle` (which draws
-/// the chevron in front of folder rows) and `SidebarFileTreeNode`'s
-/// file-leaf branch (which inserts a transparent spacer of the same size
-/// so file-leaf icons line up with folder icons at the same depth). See
-/// issue #769 — before extracting these constants the two call sites drifted
-/// and file rows rendered ~12pt to the left of sibling folder rows.
-enum SidebarDisclosureMetrics {
-    /// Width reserved for the chevron glyph itself.
-    static let chevronWidth: CGFloat = 10
-    /// Horizontal spacing between the chevron (or its spacer) and the row label.
-    static let chevronSpacing: CGFloat = 2
-}
-
 /// Custom `DisclosureGroup` style that draws its own SwiftUI chevron and
 /// hides the AppKit-native `NSOutlineViewDisclosureButton`.
 ///
@@ -34,12 +20,12 @@ enum SidebarDisclosureMetrics {
 private struct SidebarDisclosureGroupStyle: DisclosureGroupStyle {
     func makeBody(configuration: Configuration) -> some View {
         VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: SidebarDisclosureMetrics.chevronSpacing) {
+            HStack(spacing: 2) {
                 Image(systemName: "chevron.right")
                     .font(.system(size: 9, weight: .semibold))
                     .foregroundStyle(.secondary)
                     .rotationEffect(.degrees(configuration.isExpanded ? 90 : 0))
-                    .frame(width: SidebarDisclosureMetrics.chevronWidth)
+                    .frame(width: 10)
                     .contentShape(Rectangle())
                     .onTapGesture {
                         configuration.isExpanded.toggle()
@@ -102,20 +88,7 @@ private struct SidebarFileTreeNode: View {
             }
             .disclosureGroupStyle(SidebarDisclosureGroupStyle())
         } else {
-            // Push the file-leaf icon right by the same amount that the
-            // chevron (drawn in `SidebarDisclosureGroupStyle`) pushes sibling
-            // folder icons, so files and folders share a single vertical
-            // column. We apply leading padding directly on the row instead
-            // of wrapping it in an HStack + `Color.clear` spacer — that
-            // wrapper broke the `List`/`OutlineGroup` row hierarchy, which
-            // XCUITest relies on to discover rows by identifier and which
-            // SwiftUI's `selection:` binding uses to highlight the active
-            // row. Both dimensions come from `SidebarDisclosureMetrics` so
-            // the two call sites can never drift again. See #769.
             row(isFolder: false)
-                .padding(.leading,
-                         SidebarDisclosureMetrics.chevronWidth
-                         + SidebarDisclosureMetrics.chevronSpacing)
         }
     }
 
