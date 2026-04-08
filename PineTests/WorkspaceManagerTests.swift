@@ -340,6 +340,51 @@ struct WorkspaceManagerTests {
         #expect(aNode?.children?.first?.name == "b")
     }
 
+    @Test("refreshFileTree suppresses watcher echoes within the suppression window")
+    @MainActor
+    func refreshFileTreeSuppressesEchoWithinWindow() async throws {
+        let dir = try makeTempDirectory()
+        defer { cleanup(dir) }
+
+        let initialURL = dir.appendingPathComponent("initial.txt")
+        try "initial".write(to: initialURL, atomically: true, encoding: .utf8)
+
+        let manager = WorkspaceManager()
+        manager.loadDirectory(url: dir)
+
+        // Wait for initial load
+        for _ in 0..<150 {
+            try await Task.sleep(for: .milliseconds(200))
+            if manager.rootNodes.contains(where: { $0.name == "initial.txt" }) { break }
+        }
+        #expect(manager.rootNodes.contains { $0.name == "initial.txt" })
+
+        // Simulate an in-app refresh — this opens the suppression window
+        // (WorkspaceManager.watcherDebounce). Watcher callbacks that fire
+        // inside the window are redundant echoes of this refresh and must
+        // be dropped so rapid interactive edits don't fight the reload pipeline.
+        manager.refreshFileTree()
+
+        // Mutate the filesystem so that, IF `refreshFileTreeAsync()` were to
+        // actually run, we would observe a difference in `rootNodes`.
+        try FileManager.default.removeItem(at: initialURL)
+
+        // Drive the watcher code path directly (we cannot rely on FSEvents
+        // timing on CI). `refreshFileTreeAsync` is exposed as `internal`
+        // specifically so tests can exercise the suppression branch.
+        manager.refreshFileTreeAsync()
+
+        // Well inside the 150ms suppression window.
+        try await Task.sleep(for: .milliseconds(80))
+
+        // Suppression must have caused `refreshFileTreeAsync` to early-return,
+        // so the cached `rootNodes` still reflects the pre-removal snapshot.
+        #expect(
+            manager.rootNodes.contains { $0.name == "initial.txt" },
+            "Watcher echoes within the suppression window must not reload the tree"
+        )
+    }
+
     @Test("refreshFileTree does not permanently block watcher events (issue #774)")
     @MainActor
     func refreshFileTreeDoesNotBlockLaterEvents() async throws {

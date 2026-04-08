@@ -66,7 +66,11 @@ final class WorkspaceManager {
     /// 1s, which was long enough to swallow rapid terminal-driven changes
     /// following any sidebar edit.
     private var suppressWatcherUntil: Date?
-    private static let watcherSuppressWindow: TimeInterval = 0.15
+    /// Shared timing constant: used both as the `FileSystemWatcher` debounce
+    /// interval and as the watcher-echo suppression window after an in-app
+    /// `refreshFileTree()`. Keeping them equal guarantees that a refresh only
+    /// swallows its own immediate echo and never a subsequent external change.
+    static let watcherDebounce: TimeInterval = 0.15
 
     /// Schedules a debounced `onRootNodesChanged` notification.
     /// Cancels any pending notification so rapid updates coalesce into one.
@@ -137,7 +141,7 @@ final class WorkspaceManager {
         // (or any external process) appear in the sidebar almost immediately.
         // The previous default (500ms) combined with the watcher's own event
         // coalescing made the sidebar feel unresponsive to shell commands.
-        let watcher = FileSystemWatcher(debounceInterval: 0.15) { [weak self] in
+        let watcher = FileSystemWatcher(debounceInterval: Self.watcherDebounce) { [weak self] in
             // This closure runs on main (guaranteed by FileSystemWatcher).
             self?.externalChangeToken += 1
             self?.refreshFileTreeAsync()
@@ -310,13 +314,15 @@ final class WorkspaceManager {
         gitRefreshTask = Task { await gitProvider.refreshAsync() }
         // Suppress watcher echoes — we just refreshed, so any watcher event
         // within the next second is redundant and could break inline editing.
-        suppressWatcherUntil = Date().addingTimeInterval(Self.watcherSuppressWindow)
+        suppressWatcherUntil = Date().addingTimeInterval(Self.watcherDebounce)
     }
 
     /// Background variant called by the file watcher.
     /// Runs on main (watcher dispatches here) so loadGeneration
     /// access is safe; heavy I/O is dispatched to a background queue.
-    private func refreshFileTreeAsync() {
+    /// `internal` (not `private`) so tests can drive it directly and
+    /// verify suppression behaviour without depending on FSEvents timing.
+    func refreshFileTreeAsync() {
         if let until = suppressWatcherUntil, Date() < until {
             return
         }

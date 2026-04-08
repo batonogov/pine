@@ -27,6 +27,22 @@ struct SidebarRefreshTests {
         try? FileManager.default.removeItem(at: url)
     }
 
+    /// Polls `condition` every 200ms up to `maxAttempts` times (default: 150,
+    /// ~30s total). FSEvents latency on CI runners has been observed at
+    /// 23-31s, so the generous ceiling is deliberate — it keeps these tests
+    /// reliable without meaningfully slowing the happy path, which returns
+    /// as soon as the condition flips to true.
+    @MainActor
+    private func waitFor(
+        _ condition: () -> Bool,
+        maxAttempts: Int = 150
+    ) async {
+        for _ in 0..<maxAttempts {
+            if condition() { return }
+            try? await Task.sleep(for: .milliseconds(200))
+        }
+    }
+
     // MARK: - FileSystemWatcher callback fires for new file
 
     @Test("FileSystemWatcher fires callback when a new file is created")
@@ -308,13 +324,7 @@ struct SidebarRefreshTests {
         // SwiftTerm's LocalProcessTerminalView executes shell commands.
         try runShell("mkdir silarc-dev-callserver", at: dir)
 
-        // FSEvents can be slow on CI — poll generously
-        for _ in 0..<100 {
-            try await Task.sleep(for: .milliseconds(200))
-            if manager.rootNodes.contains(where: { $0.name == "silarc-dev-callserver" }) {
-                break
-            }
-        }
+        await waitFor { manager.rootNodes.contains { $0.name == "silarc-dev-callserver" } }
 
         #expect(
             manager.rootNodes.contains { $0.name == "silarc-dev-callserver" },
@@ -334,10 +344,7 @@ struct SidebarRefreshTests {
 
         try runShell("touch bar.txt", at: dir)
 
-        for _ in 0..<100 {
-            try await Task.sleep(for: .milliseconds(200))
-            if manager.rootNodes.contains(where: { $0.name == "bar.txt" }) { break }
-        }
+        await waitFor { manager.rootNodes.contains { $0.name == "bar.txt" } }
 
         #expect(manager.rootNodes.contains { $0.name == "bar.txt" })
     }
@@ -354,18 +361,12 @@ struct SidebarRefreshTests {
         let manager = WorkspaceManager()
         manager.loadDirectory(url: dir)
 
-        for _ in 0..<100 {
-            try await Task.sleep(for: .milliseconds(200))
-            if manager.rootNodes.contains(where: { $0.name == "to_remove" }) { break }
-        }
+        await waitFor { manager.rootNodes.contains { $0.name == "to_remove" } }
         #expect(manager.rootNodes.contains { $0.name == "to_remove" })
 
         try runShell("rm -rf to_remove", at: dir)
 
-        for _ in 0..<100 {
-            try await Task.sleep(for: .milliseconds(200))
-            if !manager.rootNodes.contains(where: { $0.name == "to_remove" }) { break }
-        }
+        await waitFor { !manager.rootNodes.contains { $0.name == "to_remove" } }
 
         #expect(!manager.rootNodes.contains { $0.name == "to_remove" })
     }
@@ -385,21 +386,16 @@ struct SidebarRefreshTests {
         let manager = WorkspaceManager()
         manager.loadDirectory(url: dir)
 
-        for _ in 0..<100 {
-            try await Task.sleep(for: .milliseconds(200))
-            if manager.rootNodes.contains(where: { $0.name == "foo.txt" }) { break }
-        }
+        await waitFor { manager.rootNodes.contains { $0.name == "foo.txt" } }
 
         try runShell("mv foo.txt baz.txt", at: dir)
 
-        var sawBaz = false
-        var noFoo = false
-        for _ in 0..<100 {
-            try await Task.sleep(for: .milliseconds(200))
-            sawBaz = manager.rootNodes.contains { $0.name == "baz.txt" }
-            noFoo = !manager.rootNodes.contains { $0.name == "foo.txt" }
-            if sawBaz && noFoo { break }
+        await waitFor {
+            manager.rootNodes.contains { $0.name == "baz.txt" }
+                && !manager.rootNodes.contains { $0.name == "foo.txt" }
         }
+        let sawBaz = manager.rootNodes.contains { $0.name == "baz.txt" }
+        let noFoo = !manager.rootNodes.contains { $0.name == "foo.txt" }
 
         #expect(sawBaz, "baz.txt should appear after mv")
         #expect(noFoo, "foo.txt should disappear after mv")
