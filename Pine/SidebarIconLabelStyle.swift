@@ -4,57 +4,53 @@
 //
 //  Fixes issue #763: file/folder names in the sidebar were not vertically
 //  aligned because SF Symbols used by `FileIconMapper` have variable
-//  intrinsic widths (e.g. `shield`, `book.closed`, `list.bullet`, `doc`,
-//  `folder`). SwiftUI's default `Label` puts the text flush against the
-//  icon, so each row's text started at a different x-coordinate.
+//  intrinsic glyph widths (e.g. `shield`, `book.closed`, `list.bullet`,
+//  `doc`, `folder`). SwiftUI's default `Label` puts the text flush against
+//  whatever the icon view actually measures, so each row's text started at
+//  a different x-coordinate.
 //
-//  This `LabelStyle` reserves a fixed-width slot for the icon so every row
-//  starts its text on the same baseline — matching Finder/Xcode behaviour.
+//  Approach (after PRs #766/#770/#775v1 were reverted):
 //
-//  Apple-way notes:
-//    * Implemented as a `LabelStyle`, not an HStack wrapper. This keeps the
-//      `Label` as the root view of the row so SwiftUI's `List` / `OutlineGroup`
-//      selection highlighting and XCUITest accessibility lookups continue to
-//      work. PR #770 was reverted precisely because an HStack wrapper broke
-//      both of those.
-//    * Uses `.frame(width:)` with `.center` alignment so asymmetric glyphs
-//      (e.g. `list.bullet`) are optically centred inside the slot.
-//    * Spacing between icon and title is explicit (6pt) — matches the default
-//      `Label` visual rhythm and Finder's list view.
+//    * Do NOT introduce a custom `LabelStyle` that reserves an icon slot
+//      via an HStack — SwiftUI's default `Label` already provides the
+//      correct icon→text spacing and `List`/`OutlineGroup` selection
+//      highlighting. Replacing the body with a custom HStack changes the
+//      leading inset and inflates vertical rhythm (this is exactly what
+//      Federico saw with #775v1: top-level rows visually drifted right and
+//      grew taller).
+//
+//    * Instead, only constrain the *icon view itself* to a fixed width via
+//      `Image(systemName:).frame(width:, alignment: .center)`. The icon is
+//      still rendered by the default `Label` body, so spacing/insets stay
+//      identical to a stock SwiftUI Label. The frame guarantees that every
+//      row reports the same icon width to `Label`, which makes the text
+//      column line up no matter which SF Symbol the row uses.
+//
+//    * 21pt is the empirical width of the widest SF Symbol used by
+//      `FileIconMapper` (`chevron.left.forwardslash.chevron.right`, used
+//      for xml/svg/go). `hammer` and `wrench.and.screwdriver` rasterise
+//      to ~19pt; `terminal`/`photo`/`film` to 18pt; most others to 13–16pt.
+//      Measured via `ImageRenderer` in
+//      `SidebarIconMetricsTests.sfSymbolsFitInsideSlot`. The previous
+//      value 22pt looked the same numerically but was applied via a
+//      custom `LabelStyle` HStack body that replaced the native Label
+//      layout — that inflated vertical rhythm and broke top-level
+//      alignment. Here, the frame is applied directly on the `Image`
+//      *inside* the icon closure, so the surrounding `Label` keeps its
+//      native horizontal spacing and inset behaviour.
 //
 
+import Foundation
 import SwiftUI
 
-/// A `LabelStyle` that gives the icon a fixed-width slot so titles across
-/// rows line up on the same vertical baseline regardless of which SF Symbol
-/// the row uses.
-struct SidebarIconLabelStyle: LabelStyle {
-    /// Width of the icon slot in points. 20pt comfortably fits the widest
-    /// SF Symbols used by `FileIconMapper` (`list.bullet.rectangle`,
-    /// `folder.badge.gearshape`, `point.3.connected.trianglepath.dotted`,
-    /// `chevron.left.forwardslash.chevron.right`) at the default sidebar
-    /// font size without clipping, while staying tight enough to not look
-    /// sparse. The exact value is regression-guarded by
-    /// `SidebarIconLabelStyleTests.iconSlotWidthCoversWidestSymbol`, which
-    /// measures the real rendered NSImage width of every wide glyph used by
-    /// `FileIconMapper` via `NSImage(systemSymbolName:)` and asserts the
-    /// slot is wide enough with a buffer.
-    static let iconSlotWidth: CGFloat = 22
-
-    /// Horizontal spacing between the icon slot and the title, in points.
-    /// Mirrors SwiftUI's default `Label` spacing.
-    static let iconTitleSpacing: CGFloat = 6
-
-    func makeBody(configuration: Configuration) -> some View {
-        HStack(spacing: Self.iconTitleSpacing) {
-            configuration.icon
-                .frame(width: Self.iconSlotWidth, alignment: .center)
-            configuration.title
-        }
-    }
-}
-
-extension LabelStyle where Self == SidebarIconLabelStyle {
-    /// Sugar so call sites read `.labelStyle(.sidebarIcon)`.
-    static var sidebarIcon: SidebarIconLabelStyle { SidebarIconLabelStyle() }
+/// Geometry constants for sidebar file/folder icons.
+///
+/// Centralised so the value referenced by `FileNodeRow` and the regression
+/// test stay in sync.
+enum SidebarIconMetrics {
+    /// Width of the icon view in points. Applied via
+    /// `Image(systemName:).frame(width:)` so every row's icon reports the
+    /// same width to its surrounding `Label`, producing a single x-coordinate
+    /// for the text column.
+    static let iconSlotWidth: CGFloat = 21
 }
