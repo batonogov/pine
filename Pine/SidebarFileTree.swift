@@ -8,6 +8,20 @@
 
 import SwiftUI
 
+/// Shared geometry for the sidebar disclosure chevron. This is the single
+/// source of truth used by both `SidebarDisclosureGroupStyle` (which draws
+/// the chevron in front of folder rows) and `SidebarFileTreeNode`'s
+/// file-leaf branch (which inserts a transparent spacer of the same size
+/// so file-leaf icons line up with folder icons at the same depth). See
+/// issue #769 — before extracting these constants the two call sites drifted
+/// and file rows rendered ~12pt to the left of sibling folder rows.
+enum SidebarDisclosureMetrics {
+    /// Width reserved for the chevron glyph itself.
+    static let chevronWidth: CGFloat = 10
+    /// Horizontal spacing between the chevron (or its spacer) and the row label.
+    static let chevronSpacing: CGFloat = 2
+}
+
 /// Custom `DisclosureGroup` style that draws its own SwiftUI chevron and
 /// hides the AppKit-native `NSOutlineViewDisclosureButton`.
 ///
@@ -20,12 +34,12 @@ import SwiftUI
 private struct SidebarDisclosureGroupStyle: DisclosureGroupStyle {
     func makeBody(configuration: Configuration) -> some View {
         VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: 2) {
+            HStack(spacing: SidebarDisclosureMetrics.chevronSpacing) {
                 Image(systemName: "chevron.right")
                     .font(.system(size: 9, weight: .semibold))
                     .foregroundStyle(.secondary)
                     .rotationEffect(.degrees(configuration.isExpanded ? 90 : 0))
-                    .frame(width: 10)
+                    .frame(width: SidebarDisclosureMetrics.chevronWidth)
                     .contentShape(Rectangle())
                     .onTapGesture {
                         configuration.isExpanded.toggle()
@@ -88,7 +102,15 @@ private struct SidebarFileTreeNode: View {
             }
             .disclosureGroupStyle(SidebarDisclosureGroupStyle())
         } else {
-            row(isFolder: false)
+            // Insert a chevron-shaped transparent spacer so the file-leaf
+            // icon lines up with sibling folder icons (which are pushed
+            // right by the chevron drawn in `SidebarDisclosureGroupStyle`).
+            // Both dimensions come from `SidebarDisclosureMetrics` so the
+            // two call sites can never drift again. See #769.
+            HStack(spacing: SidebarDisclosureMetrics.chevronSpacing) {
+                Color.clear.frame(width: SidebarDisclosureMetrics.chevronWidth)
+                row(isFolder: false)
+            }
         }
     }
 
