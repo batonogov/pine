@@ -63,6 +63,7 @@ struct FileNodeRow: View {
                     Image(systemName: iconName)
                         .foregroundStyle(iconColor)
                 }
+                .labelStyle(.sidebarIcon)
                 .opacity(isGitIgnored ? 0.5 : 1.0)
                 // Apply the row identifier only on the non-editing branch.
                 // Applying it on the outer Group would cascade onto the
@@ -128,6 +129,7 @@ struct FileNodeRow: View {
             Image(systemName: iconName)
                 .foregroundStyle(iconColor)
         }
+        .labelStyle(.sidebarIcon)
     }
 
     // MARK: - Context menu
