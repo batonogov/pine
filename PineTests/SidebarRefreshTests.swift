@@ -257,6 +257,154 @@ struct SidebarRefreshTests {
         )
     }
 
+    // MARK: - Issue #774: external shell processes (e.g. built-in terminal)
+
+    /// Runs a shell command as a child process, exactly like SwiftTerm's
+    /// `LocalProcessTerminalView` does when the user types in the built-in
+    /// terminal. This is the repro path for issue #774.
+    @discardableResult
+    private func runShell(_ command: String, at dir: URL) throws -> String {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/bin/sh")
+        process.arguments = ["-c", command]
+        process.currentDirectoryURL = dir
+        let outPipe = Pipe()
+        let errPipe = Pipe()
+        process.standardOutput = outPipe
+        process.standardError = errPipe
+        try process.run()
+        process.waitUntilExit()
+        if process.terminationStatus != 0 {
+            let stderr = String(
+                data: errPipe.fileHandleForReading.readDataToEndOfFile(),
+                encoding: .utf8
+            ) ?? ""
+            throw NSError(
+                domain: "ShellError",
+                code: Int(process.terminationStatus),
+                userInfo: [NSLocalizedDescriptionKey: "'\(command)' failed: \(stderr)"]
+            )
+        }
+        return String(
+            data: outPipe.fileHandleForReading.readDataToEndOfFile(),
+            encoding: .utf8
+        ) ?? ""
+    }
+
+    @Test("Issue #774: mkdir via shell child process appears in sidebar")
+    @MainActor
+    func mkdirViaShellAppearsInSidebar() async throws {
+        let dir = try makeTempDirectory()
+        defer { cleanup(dir) }
+
+        let manager = WorkspaceManager()
+        manager.loadDirectory(url: dir)
+
+        // Wait for initial load + watcher start
+        try await Task.sleep(for: .milliseconds(500))
+        #expect(manager.rootNodes.isEmpty)
+
+        // Reproduce the exact issue: run `mkdir` via /bin/sh, same as
+        // SwiftTerm's LocalProcessTerminalView executes shell commands.
+        try runShell("mkdir silarc-dev-callserver", at: dir)
+
+        // FSEvents can be slow on CI — poll generously
+        for _ in 0..<100 {
+            try await Task.sleep(for: .milliseconds(200))
+            if manager.rootNodes.contains(where: { $0.name == "silarc-dev-callserver" }) {
+                break
+            }
+        }
+
+        #expect(
+            manager.rootNodes.contains { $0.name == "silarc-dev-callserver" },
+            "Directory created via shell child process should appear in sidebar"
+        )
+    }
+
+    @Test("Issue #774: touch file via shell appears in sidebar")
+    @MainActor
+    func touchFileViaShellAppearsInSidebar() async throws {
+        let dir = try makeTempDirectory()
+        defer { cleanup(dir) }
+
+        let manager = WorkspaceManager()
+        manager.loadDirectory(url: dir)
+        try await Task.sleep(for: .milliseconds(500))
+
+        try runShell("touch bar.txt", at: dir)
+
+        for _ in 0..<100 {
+            try await Task.sleep(for: .milliseconds(200))
+            if manager.rootNodes.contains(where: { $0.name == "bar.txt" }) { break }
+        }
+
+        #expect(manager.rootNodes.contains { $0.name == "bar.txt" })
+    }
+
+    @Test("Issue #774: rm -rf via shell removes from sidebar")
+    @MainActor
+    func rmViaShellRemovesFromSidebar() async throws {
+        let dir = try makeTempDirectory()
+        defer { cleanup(dir) }
+
+        let subdir = dir.appendingPathComponent("to_remove")
+        try FileManager.default.createDirectory(at: subdir, withIntermediateDirectories: true)
+
+        let manager = WorkspaceManager()
+        manager.loadDirectory(url: dir)
+
+        for _ in 0..<100 {
+            try await Task.sleep(for: .milliseconds(200))
+            if manager.rootNodes.contains(where: { $0.name == "to_remove" }) { break }
+        }
+        #expect(manager.rootNodes.contains { $0.name == "to_remove" })
+
+        try runShell("rm -rf to_remove", at: dir)
+
+        for _ in 0..<100 {
+            try await Task.sleep(for: .milliseconds(200))
+            if !manager.rootNodes.contains(where: { $0.name == "to_remove" }) { break }
+        }
+
+        #expect(!manager.rootNodes.contains { $0.name == "to_remove" })
+    }
+
+    @Test("Issue #774: mv via shell updates sidebar")
+    @MainActor
+    func mvViaShellUpdatesSidebar() async throws {
+        let dir = try makeTempDirectory()
+        defer { cleanup(dir) }
+
+        try "content".write(
+            to: dir.appendingPathComponent("foo.txt"),
+            atomically: true,
+            encoding: .utf8
+        )
+
+        let manager = WorkspaceManager()
+        manager.loadDirectory(url: dir)
+
+        for _ in 0..<100 {
+            try await Task.sleep(for: .milliseconds(200))
+            if manager.rootNodes.contains(where: { $0.name == "foo.txt" }) { break }
+        }
+
+        try runShell("mv foo.txt baz.txt", at: dir)
+
+        var sawBaz = false
+        var noFoo = false
+        for _ in 0..<100 {
+            try await Task.sleep(for: .milliseconds(200))
+            sawBaz = manager.rootNodes.contains { $0.name == "baz.txt" }
+            noFoo = !manager.rootNodes.contains { $0.name == "foo.txt" }
+            if sawBaz && noFoo { break }
+        }
+
+        #expect(sawBaz, "baz.txt should appear after mv")
+        #expect(noFoo, "foo.txt should disappear after mv")
+    }
+
     // MARK: - No double debounce in FileSystemWatcher
 
     // FSEvents latency is unpredictable on CI runners (23-31s observed vs <0.5s locally),

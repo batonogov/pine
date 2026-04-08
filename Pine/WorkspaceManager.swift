@@ -61,7 +61,12 @@ final class WorkspaceManager {
 
     /// After a synchronous refreshFileTree(), watcher events within this
     /// window are suppressed because they echo the action we just handled.
+    /// Kept short (150ms) so external changes (e.g. `mkdir` in the built-in
+    /// terminal) are not silently dropped — issue #774. Previously this was
+    /// 1s, which was long enough to swallow rapid terminal-driven changes
+    /// following any sidebar edit.
     private var suppressWatcherUntil: Date?
+    private static let watcherSuppressWindow: TimeInterval = 0.15
 
     /// Schedules a debounced `onRootNodesChanged` notification.
     /// Cancels any pending notification so rapid updates coalesce into one.
@@ -117,13 +122,22 @@ final class WorkspaceManager {
             gitProvider.applyEmptyState()
         }
 
-        loadDirectoryContentsAsync(url: url, generation: generation) { [weak self] in
-            self?.startWatching(url: url)
-        }
+        // Start watching *before* the async load begins so that any FS
+        // activity during the initial load (e.g. user opens Cmd+` and types
+        // `mkdir foo` immediately) is not lost. FSEvents buffers events so
+        // there is no race between watcher start and the first callback.
+        // Fixes issue #774.
+        startWatching(url: url)
+
+        loadDirectoryContentsAsync(url: url, generation: generation)
     }
 
     private func startWatching(url: URL) {
-        let watcher = FileSystemWatcher { [weak self] in
+        // Short debounce (150ms) so changes made in the built-in terminal
+        // (or any external process) appear in the sidebar almost immediately.
+        // The previous default (500ms) combined with the watcher's own event
+        // coalescing made the sidebar feel unresponsive to shell commands.
+        let watcher = FileSystemWatcher(debounceInterval: 0.15) { [weak self] in
             // This closure runs on main (guaranteed by FileSystemWatcher).
             self?.externalChangeToken += 1
             self?.refreshFileTreeAsync()
@@ -142,8 +156,7 @@ final class WorkspaceManager {
     /// then the full tree replaces it once ready.
     private func loadDirectoryContentsAsync(
         url: URL,
-        generation: Int,
-        completion: (@MainActor @Sendable () -> Void)? = nil
+        generation: Int
     ) {
         let progressID = progressTracker?.beginOperation(Strings.progressLoadingProject)
         // nonisolated-check:ignore — pre-existing pattern; tracked in #720
@@ -184,9 +197,6 @@ final class WorkspaceManager {
                 if !shallowResult.wasDepthLimited {
                     self.isLoading = false
                     if let progressID { self.progressTracker?.endOperation(progressID) }
-                    if let completion {
-                        MainActor.assumeIsolated { completion() }
-                    }
                 }
             }
 
@@ -210,9 +220,6 @@ final class WorkspaceManager {
                 self.notifyRootNodesChanged(fullChildren)
                 self.isLoading = false
                 if let progressID { self.progressTracker?.endOperation(progressID) }
-                if let completion {
-                    MainActor.assumeIsolated { completion() }
-                }
             }
         }
     }
@@ -303,7 +310,7 @@ final class WorkspaceManager {
         gitRefreshTask = Task { await gitProvider.refreshAsync() }
         // Suppress watcher echoes — we just refreshed, so any watcher event
         // within the next second is redundant and could break inline editing.
-        suppressWatcherUntil = Date().addingTimeInterval(1.0)
+        suppressWatcherUntil = Date().addingTimeInterval(Self.watcherSuppressWindow)
     }
 
     /// Background variant called by the file watcher.
