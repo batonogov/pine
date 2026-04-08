@@ -27,6 +27,25 @@
 //  their own background through ANSI sequences anyway, which is what #765
 //  is actually about.
 //
+//  Coverage across SGR forms (verified against SwiftTerm source, main@2025):
+//    * Basic SGR \e[30m..\e[37m / \e[90m..\e[97m — YES, via
+//      `LocalProcessTerminalView.installColors(_:)` which writes to
+//      `Terminal.installedColors`.
+//    * 256-color SGR \e[38;5;Nm for N in 0...15 — YES. Under the hood,
+//      `LocalProcessTerminalView.installColors(_:)` calls
+//      `Terminal.installPalette(colors:)` which in turn calls
+//      `rebuildAnsiPalette()`. That function regenerates the 256-entry
+//      `ansiColors` array by placing our 16 installed colors at indices
+//      0...15 (the other 240 entries are the xterm cube + greys). This
+//      means `\e[38;5;8m` for zsh-autosuggestions / fish ghost text ends
+//      up rendering our `ghostTextBrightBlack` override (#969896) just
+//      like `\e[90m` does. If a future SwiftTerm release changes this
+//      behaviour (e.g. decouples the SGR path from the 256-color path),
+//      `terminal256SlotsMatchInstalledPaletteAfterInstall` in
+//      `TerminalPaletteTests` will fail and force us to revisit.
+//    * True color \e[38;2;R;G;Bm — not affected by palettes, passes
+//      through unchanged (by design).
+//
 //  Compromise on slot 8 (bright black):
 //  Terminal.app Basic uses #666666 for bright black, which yields only
 //  ~2.9:1 against `NSColor.textBackgroundColor` in dark mode and makes

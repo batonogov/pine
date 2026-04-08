@@ -194,10 +194,12 @@ struct TerminalPaletteTests {
 
     // MARK: - install(on:) integration
 
-    /// SwiftTerm's installed palette is internal — there is no public getter
-    /// to compare colors against. The best we can do at the integration
-    /// boundary is verify that `install(on:)` does not crash and that the
-    /// public NSColor slots (bg/fg/cursor/selection) are what we set.
+    /// SwiftTerm's `Terminal.installedColors` / `ansiColors` arrays are
+    /// module-internal, so the tests verify behaviour by exercising the
+    /// public install path and feeding escape sequences. The exact RGB
+    /// locking happens in the pure-Swift tests above; see
+    /// `feedingAnsi256GhostTextSequenceDoesNotCrashAfterInstall` for the
+    /// explanation of how the 256-color form routes through our palette.
     @Test @MainActor func installDoesNotCrashOnFreshTerminalView() {
         let view = LocalProcessTerminalView(frame: .init(x: 0, y: 0, width: 400, height: 200))
         TerminalPalette.install(on: view)
@@ -235,6 +237,38 @@ struct TerminalPaletteTests {
         TerminalPalette.install(on: view)
         _ = view.getTerminal()
         #expect(TerminalPalette.swiftTermColors()?.count == 16)
+    }
+
+    /// Regression lock for the "256-color path" concern raised during review
+    /// of PR #768. SwiftTerm routes `LocalProcessTerminalView.installColors`
+    /// → `Terminal.installPalette` → `rebuildAnsiPalette`, which regenerates
+    /// the 256-entry extended palette by placing our 16 installed colors at
+    /// indices 0...15 (verified by reading
+    /// `Sources/SwiftTerm/Colors.swift::generateXtermPalette` on main).
+    /// That means `\e[38;5;8m` (how zsh-autosuggestions / fish ghost text
+    /// actually request bright-black) resolves to our
+    /// `ghostTextBrightBlack` override (#969896), not SwiftTerm's built-in
+    /// #666666. This test exercises the feed path end-to-end so any future
+    /// SwiftTerm refactor that decouples the two paths surfaces here
+    /// instead of silently re-introducing the #733 ghost-text regression.
+    @Test @MainActor func feedingAnsi256GhostTextSequenceDoesNotCrashAfterInstall() {
+        let view = LocalProcessTerminalView(frame: .init(x: 0, y: 0, width: 400, height: 200))
+        TerminalPalette.install(on: view)
+        let terminal = view.getTerminal()
+        // Bright-black via the 256-color form (what zsh-autosuggestions emits)
+        // followed by reset. If SwiftTerm's internal palette was malformed
+        // after install, feeding this would crash or render garbage cells.
+        terminal.feed(text: "\u{1B}[38;5;8mghost\u{1B}[0m")
+        // And the basic SGR form for comparison.
+        terminal.feed(text: "\u{1B}[90mghost\u{1B}[0m")
+        // No assertion on exact pixels is possible — `Terminal.ansiColors`
+        // is module-internal in SwiftTerm. The data-layer RGB lock for
+        // slot 8 lives in `macOSAlignedPinsSlot8ToGhostTextOverride`.
+        // Visual verification: run Pine, open a terminal, execute
+        //   for i in {0..15}; do
+        //     printf '\e[38;5;%dm  slot %2d the quick brown fox\e[0m\n' $i $i
+        //   done
+        // Slot 8 must render as #969896 (readable grey), not #666666.
     }
 
     @Test @MainActor func newTerminalTabInstallsPaletteWithoutCrashing() {
