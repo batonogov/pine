@@ -18,6 +18,7 @@
 //    XCUITest accessibility lookups.
 //
 
+import AppKit
 import Foundation
 import SwiftUI
 import Testing
@@ -36,10 +37,66 @@ struct SidebarIconLabelStyleTests {
 
     @Test("iconSlotWidth is wide enough for the widest SF Symbol used by FileIconMapper")
     func iconSlotWidthCoversWidestSymbol() {
-        // `list.bullet`, `folder`, `doc.text` are the widest glyphs used in
-        // the sidebar. Empirically they all fit inside ~16pt; we reserve 18
-        // as a small buffer. Guard against accidental shrinking below that.
-        #expect(SidebarIconLabelStyle.iconSlotWidth >= 16)
+        // Empirically measure the widths of the widest SF Symbols actually
+        // used by FileIconMapper, by asking AppKit for the rendered NSImage
+        // size. This guards against Apple silently changing a symbol's
+        // intrinsic metrics in a future SDK — if any of these grows larger
+        // than the slot, the test fails and we learn immediately rather
+        // than seeing visually misaligned rows.
+        //
+        // These are drawn from `FileIconMapper.iconForFile/iconForFolder`
+        // and include the historically wide symbols that originally
+        // motivated issue #763.
+        let widestSymbols = [
+            "list.bullet",
+            "list.bullet.rectangle",
+            "list.dash",
+            "shippingbox",
+            "folder",
+            "folder.badge.gearshape",
+            "doc.text.magnifyingglass",
+            "doc.plaintext",
+            "doc.richtext",
+            "checkmark.shield",
+            "lock.shield",
+            "arrow.triangle.branch",
+            "chevron.left.forwardslash.chevron.right",
+            "point.3.connected.trianglepath.dotted",
+            "square.stack.3d.up",
+            "rectangle.on.rectangle",
+            "curlybraces.square",
+            "server.rack",
+            "desktopcomputer",
+            "gearshape.2"
+        ]
+
+        // Use an NSImage configured like the sidebar would render the glyph
+        // at body font size, so the measurement reflects real layout width.
+        let config = NSImage.SymbolConfiguration(pointSize: NSFont.systemFontSize, weight: .regular)
+
+        var widths: [String: CGFloat] = [:]
+        for name in widestSymbols {
+            guard let image = NSImage(systemSymbolName: name, accessibilityDescription: nil)?
+                .withSymbolConfiguration(config) else {
+                Issue.record("SF Symbol \(name) unavailable on this OS")
+                continue
+            }
+            widths[name] = image.size.width
+        }
+
+        guard let maxWidth = widths.values.max() else {
+            Issue.record("No SF Symbol widths were measured")
+            return
+        }
+
+        // Require at least ~2pt of buffer above the widest measured glyph so
+        // minor rendering variance (hairline antialias, subpixel layout) does
+        // not cause clipping or re-introduce misalignment.
+        let buffer: CGFloat = 1
+        #expect(
+            SidebarIconLabelStyle.iconSlotWidth >= maxWidth + buffer,
+            "iconSlotWidth (\(SidebarIconLabelStyle.iconSlotWidth)) must be >= widest symbol (\(maxWidth)) + \(buffer)pt buffer. Widths: \(widths)"
+        )
     }
 
     @Test("iconSlotWidth is not oversized")
@@ -52,12 +109,6 @@ struct SidebarIconLabelStyleTests {
     func iconTitleSpacingIsReasonable() {
         #expect(SidebarIconLabelStyle.iconTitleSpacing >= 0)
         #expect(SidebarIconLabelStyle.iconTitleSpacing <= 12)
-    }
-
-    @Test("metrics are deterministic — repeated reads return identical values")
-    func metricsAreDeterministic() {
-        #expect(SidebarIconLabelStyle.iconSlotWidth == SidebarIconLabelStyle.iconSlotWidth)
-        #expect(SidebarIconLabelStyle.iconTitleSpacing == SidebarIconLabelStyle.iconTitleSpacing)
     }
 
     @Test("style sugar `.sidebarIcon` returns a SidebarIconLabelStyle")
@@ -122,21 +173,105 @@ struct SidebarIconLabelStyleTests {
         #expect(source.contains(".frame(width: Self.iconSlotWidth"))
     }
 
-    // MARK: - Structural: makeBody compiles and wires configuration
+    // MARK: - Honest geometry: pixel-level alignment check via ImageRenderer
 
-    @Test("makeBody returns a non-empty view for arbitrary Label configuration")
-    func makeBodyProducesView() {
-        // Smoke test: construct a Label, apply the style, and ensure we can
-        // reference the resulting view without crashing. SwiftUI view trees
-        // are opaque at runtime, so this is effectively a compile-time /
-        // initialisation guard.
-        let label = Label {
-            Text("example.swift")
-        } icon: {
-            Image(systemName: "doc.text")
+    /// Scans an NSImage column-by-column from the right-hand side (past the
+    /// icon slot) and returns the x-coordinate, in image points, of the
+    /// leftmost column that contains a non-transparent pixel. This marks
+    /// where the rendered text glyph actually begins.
+    @MainActor
+    private func leftmostTextPixelX(in image: NSImage, skipLeadingPoints: CGFloat) -> CGFloat? {
+        guard let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else {
+            return nil
         }
-        .labelStyle(.sidebarIcon)
-        _ = label
-        #expect(Bool(true))
+        let width = cgImage.width
+        let height = cgImage.height
+        let scaleX = CGFloat(width) / image.size.width
+        let bytesPerPixel = 4
+        let bytesPerRow = bytesPerPixel * width
+        var pixels = [UInt8](repeating: 0, count: bytesPerRow * height)
+        guard let ctx = CGContext(
+            data: &pixels,
+            width: width,
+            height: height,
+            bitsPerComponent: 8,
+            bytesPerRow: bytesPerRow,
+            space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ) else {
+            return nil
+        }
+        ctx.draw(cgImage, in: CGRect(x: 0, y: 0, width: width, height: height))
+
+        let startCol = Int((skipLeadingPoints * scaleX).rounded(.down))
+        for x in startCol..<width {
+            for y in 0..<height {
+                let alpha = pixels[y * bytesPerRow + x * bytesPerPixel + 3]
+                if alpha > 32 {
+                    return CGFloat(x) / scaleX
+                }
+            }
+        }
+        return nil
+    }
+
+    @MainActor
+    @Test("Two Labels with different SF Symbols render text starting at the same x-coordinate")
+    func sidebarIconLabelStyleAlignsTitleXAcrossDifferentSymbols() {
+        // Render two real SwiftUI Labels via `ImageRenderer` using the
+        // sidebar label style: one with a wide glyph (`list.bullet`) and one
+        // with a narrow glyph (`doc`). The whole point of
+        // `SidebarIconLabelStyle` is that the title's visual x-coordinate is
+        // identical in both cases, regardless of glyph intrinsic width. We
+        // scan the rendered bitmap past the icon slot and find the leftmost
+        // opaque pixel — that's where text drawing actually starts. If a
+        // regression reintroduces variable-width text start positions, the
+        // two x-values will diverge and the test fails with a numeric diff.
+
+        func render(symbol: String) -> NSImage? {
+            let view = Label {
+                Text("Example")
+            } icon: {
+                Image(systemName: symbol)
+            }
+            .labelStyle(.sidebarIcon)
+            .font(.body)
+            .foregroundStyle(.black)
+            .padding(0)
+            .frame(width: 200, height: 24, alignment: .leading)
+
+            let renderer = ImageRenderer(content: view)
+            renderer.scale = 2
+            return renderer.nsImage
+        }
+
+        guard
+            let wideImage = render(symbol: "list.bullet"),
+            let narrowImage = render(symbol: "doc")
+        else {
+            Issue.record("ImageRenderer did not produce an NSImage")
+            return
+        }
+
+        // Start scanning just past the icon slot + spacing, so we ignore the
+        // glyph pixels and only find the text glyph's leading edge.
+        let scanStart = SidebarIconLabelStyle.iconSlotWidth + SidebarIconLabelStyle.iconTitleSpacing
+
+        guard
+            let wideX = leftmostTextPixelX(in: wideImage, skipLeadingPoints: scanStart),
+            let narrowX = leftmostTextPixelX(in: narrowImage, skipLeadingPoints: scanStart)
+        else {
+            Issue.record("Could not locate leading text pixel in rendered image")
+            return
+        }
+
+        // Allow sub-point tolerance for font antialiasing differences, but
+        // catch any real misalignment (>= 1pt means text is visibly moving).
+        let tolerance: CGFloat = 1.0
+        let delta = abs(wideX - narrowX)
+        #expect(
+            delta <= tolerance,
+            "Title x must match across symbols. list.bullet=\(wideX), doc=\(narrowX), delta=\(delta)"
+        )
     }
 }

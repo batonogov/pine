@@ -29,11 +29,17 @@ import SwiftUI
 /// rows line up on the same vertical baseline regardless of which SF Symbol
 /// the row uses.
 struct SidebarIconLabelStyle: LabelStyle {
-    /// Width of the icon slot in points. 18pt comfortably fits the widest
-    /// SF Symbol used by `FileIconMapper` (`list.bullet`, `folder`,
-    /// `doc.text`) at the default sidebar font size without clipping, while
-    /// staying tight enough to not look sparse.
-    static let iconSlotWidth: CGFloat = 18
+    /// Width of the icon slot in points. 20pt comfortably fits the widest
+    /// SF Symbols used by `FileIconMapper` (`list.bullet.rectangle`,
+    /// `folder.badge.gearshape`, `point.3.connected.trianglepath.dotted`,
+    /// `chevron.left.forwardslash.chevron.right`) at the default sidebar
+    /// font size without clipping, while staying tight enough to not look
+    /// sparse. The exact value is regression-guarded by
+    /// `SidebarIconLabelStyleTests.iconSlotWidthCoversWidestSymbol`, which
+    /// measures the real rendered NSImage width of every wide glyph used by
+    /// `FileIconMapper` via `NSImage(systemSymbolName:)` and asserts the
+    /// slot is wide enough with a buffer.
+    static let iconSlotWidth: CGFloat = 22
 
     /// Horizontal spacing between the icon slot and the title, in points.
     /// Mirrors SwiftUI's default `Label` spacing.
