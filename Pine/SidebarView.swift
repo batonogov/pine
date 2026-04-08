@@ -174,8 +174,27 @@ struct SidebarView: View {
                     // `List`'s own row selection handling.
                     List(selection: $selectedFile) {
                         SidebarFileTree(nodes: workspace.rootNodes, selection: $selectedFile)
+                            .listRowInsets(SidebarRowMetrics.listRowInsets)
+                            .listRowSeparator(.hidden)
                     }
                     .listStyle(.sidebar)
+                    // Collapse the default `.sidebar` row insets/min-height
+                    // contribution so the single source of vertical rhythm is
+                    // the per-row `padding(.vertical, …)` in
+                    // `SidebarFileTreeNode.row(isFolder:)`. Without this,
+                    // top-level rows (direct `List` children) pick up extra
+                    // padding from the sidebar style while nested children
+                    // (inside our custom `SidebarDisclosureGroupStyle`'s
+                    // `VStack(spacing: 0)`) do not, producing an uneven
+                    // vertical rhythm (#764).
+                    //
+                    // Note: SwiftUI's `.listRowSpacing(_:)` is iOS-only, so on
+                    // macOS we zero out the per-row insets via
+                    // `.listRowInsets(...)` applied on the `SidebarFileTree`
+                    // itself (it propagates to every row) and clamp
+                    // `defaultMinListRowHeight` so rows shrink to their
+                    // intrinsic content size.
+                    .environment(\.defaultMinListRowHeight, SidebarRowMetrics.defaultMinListRowHeight)
                     .environment(editState)
                     .environment(expansion)
                     .onChange(of: workspace.rootNodes) { _, newNodes in
