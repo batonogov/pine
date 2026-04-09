@@ -41,6 +41,26 @@ final class TabManager {
     /// Called when active tab or cursor position changes. Set by ProjectManager.
     var onEditorContextChanged: (() -> Void)?
 
+    /// Editor save-time formatting preferences. Injectable for tests.
+    var editorSettings: EditorSettings = .shared
+
+    /// Applies all enabled save-time transformations in the canonical order:
+    /// strip trailing whitespace, then ensure a final newline. Pure function so it can be
+    /// unit-tested without a `TabManager` instance.
+    static func contentPreparedForSave(
+        _ content: String,
+        settings: EditorSettings
+    ) -> String {
+        var result = content
+        if settings.stripTrailingWhitespace {
+            result = result.trailingWhitespaceStripped()
+        }
+        if settings.insertFinalNewline {
+            result = result.ensuringTrailingNewline()
+        }
+        return result
+    }
+
     var activeTab: EditorTab? {
         guard let id = activeTabID else { return nil }
         return tabs.first { $0.id == id }
@@ -312,7 +332,7 @@ final class TabManager {
                 NSLocalizedDescriptionKey: "Cannot save: file was partially loaded (truncated). Saving would corrupt the original file."
             ])
         }
-        let trimmed = tab.content.trailingWhitespaceStripped()
+        let trimmed = Self.contentPreparedForSave(tab.content, settings: editorSettings)
         try trimmed.write(to: tab.url, atomically: true, encoding: tab.encoding)
         tabs[index].content = trimmed
         tabs[index].savedContent = trimmed
@@ -540,7 +560,7 @@ final class TabManager {
     func saveActiveTabAs(to newURL: URL) throws -> Bool {
         guard let index = activeTabIndex else { return false }
         let tab = tabs[index]
-        let trimmed = tab.content.trailingWhitespaceStripped()
+        let trimmed = Self.contentPreparedForSave(tab.content, settings: editorSettings)
         try trimmed.write(to: newURL, atomically: true, encoding: tab.encoding)
         tabs[index].content = trimmed
         tabs[index].url = newURL
@@ -565,7 +585,7 @@ final class TabManager {
 
         guard let duplicateURL = finderCopyURL(for: originalURL) else { return false }
 
-        let trimmed = tab.content.trailingWhitespaceStripped()
+        let trimmed = Self.contentPreparedForSave(tab.content, settings: editorSettings)
         try trimmed.write(to: duplicateURL, atomically: true, encoding: tab.encoding)
 
         var newTab = EditorTab(
