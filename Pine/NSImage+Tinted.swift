@@ -10,7 +10,10 @@ import AppKit
 // MARK: - NSImage tinting
 
 extension NSImage {
-    func tinted(with color: NSColor) -> NSImage {
+    /// Returns a copy of the receiver tinted with the given color using a
+    /// source-atop blend. Prefixed with `pine_` to avoid collision with
+    /// potential future Apple APIs on `NSImage`.
+    func pine_tinted(with color: NSColor) -> NSImage {
         let tinted = NSImage(size: size, flipped: false) { rect in
             self.draw(in: rect)
             color.set()

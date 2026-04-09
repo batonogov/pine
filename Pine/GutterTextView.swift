@@ -153,7 +153,7 @@ final class GutterTextView: NSTextView {
         let config = NSImage.SymbolConfiguration(pointSize: 11, weight: .light)
         return NSImage(systemSymbolName: "arrow.triangle.branch", accessibilityDescription: nil)?
             .withSymbolConfiguration(config)?
-            .tinted(with: blameColor)
+            .pine_tinted(with: blameColor)
     }()
 
     private static let relativeDateFormatter: RelativeDateTimeFormatter = {

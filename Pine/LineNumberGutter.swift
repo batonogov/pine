@@ -711,7 +711,7 @@ final class LineNumberView: NSView {
         guard let image = NSImage(systemSymbolName: symbolName, accessibilityDescription: nil)?
             .withSymbolConfiguration(config) else { return }
 
-        let tintedImage = image.tinted(with: color)
+        let tintedImage = image.pine_tinted(with: color)
         let imageSize = tintedImage.size
         let centerY = y + (lineHeight - imageSize.height) / 2
         // Position at the left edge of the gutter, within the fold indicator area (0–14px).
