@@ -718,22 +718,30 @@ jobs:
   performance-tests:
     name: Performance Tests (on-demand)
     runs-on: macos-26
+    timeout-minutes: 60
+    concurrency:
+      group: perf-${{ github.ref }}
+      cancel-in-progress: false
     if: >-
-      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'workflow_dispatch' &&
+       github.event.inputs.run_performance_tests == 'true') ||
       (github.event_name == 'pull_request' &&
        contains(github.event.pull_request.labels.*.name, 'perf'))
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
 
       - name: Select Xcode
+        shell: bash
         run: |
-          XCODE_PATH=$(ls -d /Applications/Xcode*.app 2>/dev/null | sort -V | tail -1)
+          set -euo pipefail
+          XCODE_PATH=$(ls -d /Applications/Xcode*.app | grep -v beta | sort -V | tail -1)
+          if [ -z "$XCODE_PATH" ]; then
+            echo "::error::No non-beta Xcode.app found under /Applications"
+            exit 1
+          fi
           echo "Using Xcode at: $XCODE_PATH"
           sudo xcode-select -s "$XCODE_PATH/Contents/Developer"
           xcodebuild -version
-
-      - name: Download Metal Toolchain
-        run: xcodebuild -downloadComponent MetalToolchain
 
       - name: Cache SPM Dependencies
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
