@@ -1,0 +1,12 @@
+name: Select Xcode
+description: Select the newest installed Xcode via xcode-select.
+runs:
+  using: composite
+  steps:
+    - name: Select Xcode
+      shell: bash
+      run: |
+        XCODE_PATH=$(ls -d /Applications/Xcode*.app 2>/dev/null | sort -V | tail -1)
+        echo "Using Xcode at: $XCODE_PATH"
+        sudo xcode-select -s "$XCODE_PATH/Contents/Developer"
+        xcodebuild -version
