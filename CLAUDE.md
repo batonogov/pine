@@ -189,6 +189,18 @@ Pine uses GCD for background work, bridged to async/await via `withCheckedContin
 - **Test coverage** — every new feature or bug fix must include unit tests (and UI tests where applicable). Aim for comprehensive coverage: test public API, edge cases, error paths, boundary conditions, and integration between components. Cover the maximum number of cases — not just the happy path. Do not merge code without corresponding tests
 - **Localizable.xcstrings** — never use `json.dump` or standard JSON serializers to write this file. Xcode uses non-standard formatting (`"key" : "value"` with a space before the colon). Reserializing the entire file creates thousands of lines of whitespace noise in diffs. Instead, insert new translations by reading the file as text and making targeted insertions preserving the existing format
 
+## Snapshot Testing
+
+Pine uses a minimal zero-dependency visual snapshot harness for SwiftUI views. Reference PNGs live under `PineTests/SnapshotTests/__Snapshots__/`. No third-party packages, no pbxproj edits.
+
+- **Harness:** `PineTests/SnapshotTests/SnapshotHarness.swift` — renders a SwiftUI view via `NSHostingView` into an `NSBitmapImageRep` under a given `NSAppearance` (`.light` / `.dark`), encodes to PNG, and compares against the reference using a mean-absolute per-pixel RGBA diff normalized to `[0, 1]`. Default tolerance is `0.01` to absorb trivial anti-aliasing noise.
+- **Writing a test:** import the harness (it lives in the `PineTests` target) and call `try assertSnapshot(of: MyView(), size: NSSize(width: W, height: H), appearance: .light, named: "MyView.light")`. Cover both `.light` and `.dark` for every view. Use local `Harness` wrapper views for SwiftUI bindings.
+- **Stability:** stub out any data source that can vary between machines (e.g. populate `ProjectRegistry.recentProjects` and `GitStatusProvider.branches` manually). Never snapshot a view that depends on real git state, real filesystem contents, or network.
+- **Running:** `DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer xcodebuild test -project Pine.xcodeproj -scheme Pine -destination 'platform=macOS' -only-testing:PineTests/WelcomeViewSnapshotTests` (one suite at a time).
+- **Updating snapshots:** run tests with `PINE_RECORD_SNAPSHOTS=1` in the test environment (set it via the Pine scheme's Test action, or pass as the final positional `KEY=VALUE` arg to `xcodebuild test`). In record mode the harness always overwrites the reference PNG and passes. Review the PNG diff in the PR before merging.
+- **First run:** if no reference exists the harness writes a baseline and fails the test so new baselines can never sneak in silently. A failing test also writes an `<name>.actual.png` alongside the reference for visual inspection.
+- **Current coverage:** `WelcomeView`, `BranchSwitcherView`, `GoToLineView` (each in light + dark). Remaining scope from issue #796 (editor gutter, sidebar file tree, minimap, diagnostic popover, inline diff, tab bar) is tracked as follow-ups.
+
 ## GitHub Issues
 
 When creating issues, always:
