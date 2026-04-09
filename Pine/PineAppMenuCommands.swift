@@ -12,6 +12,10 @@
 //  live in PineAppNotifications.swift; strings in Strings.swift; icons
 //  in MenuIcons.swift.
 //
+//  Declaration order mirrors the macOS menu bar left-to-right:
+//  App (about/CLI) → File (open/save) → Edit (find/fold/diff) →
+//  View (font/minimap/reveal) → Terminal.
+//
 
 import AppKit
 import SwiftUI
@@ -30,6 +34,7 @@ struct PineAppMenuCommands: Commands {
     @AppStorage(TabManager.autoSaveKey) private var autoSaveEnabled = false
 
     var body: some Commands {
+        // MARK: - App menu (About / CLI install)
         CommandGroup(replacing: .appInfo) {
             Button("About Pine") {
                 AboutInfo.showAboutPanel()
@@ -51,9 +56,11 @@ struct PineAppMenuCommands: Commands {
                      : "Install Command Line Tool...")
             }
         }
+
+        // MARK: - File menu
         // Убираем стандартный "New Window" (Cmd+N) — табы создаются кликом по файлу
         CommandGroup(replacing: .newItem) { }
-        // Cmd+Shift+O — открыть папку
+        // Cmd+Shift+O — Open Folder, Cmd+P — Quick Open, Cmd+R — Symbol Navigator
         CommandGroup(after: .newItem) {
             Button {
                 NotificationCenter.default.post(name: .openFolder, object: nil)
@@ -78,130 +85,82 @@ struct PineAppMenuCommands: Commands {
             .keyboardShortcut("r", modifiers: .command)
             .disabled(focusedProject?.activeTabManager.activeTab == nil)
         }
-        // View menu — add items to the existing system View menu
-        CommandGroup(after: .toolbar) {
-            Divider()
+        // Save, Save All, Save As, Duplicate, Auto-save toggle
+        CommandGroup(replacing: .saveItem) {
+            Button {
+                guard let pm = focusedProject else { return }
+                if pm.activeTabManager.saveActiveTab() {
+                    Task {
+                        await pm.workspace.gitProvider.refreshAsync()
+                        NotificationCenter.default.post(name: .refreshLineDiffs, object: nil)
+                    }
+                }
+            } label: {
+                Label(Strings.menuSave, systemImage: MenuIcons.save)
+            }
+            .keyboardShortcut("s", modifiers: .command)
 
             Button {
-                FontSizeSettings.shared.increase()
+                guard let pm = focusedProject else { return }
+                if pm.saveAllPaneTabs() {
+                    Task {
+                        await pm.workspace.gitProvider.refreshAsync()
+                        NotificationCenter.default.post(name: .refreshLineDiffs, object: nil)
+                    }
+                }
             } label: {
-                Label(Strings.menuIncreaseFontSize, systemImage: MenuIcons.increaseFontSize)
+                Label(Strings.menuSaveAll, systemImage: MenuIcons.saveAll)
             }
-            .keyboardShortcut("+", modifiers: .command)
-
-            Button {
-                FontSizeSettings.shared.decrease()
-            } label: {
-                Label(Strings.menuDecreaseFontSize, systemImage: MenuIcons.decreaseFontSize)
-            }
-            .keyboardShortcut("-", modifiers: .command)
-
-            Button {
-                FontSizeSettings.shared.reset()
-            } label: {
-                Label(Strings.menuResetFontSize, systemImage: MenuIcons.resetFontSize)
-            }
-            .keyboardShortcut("0", modifiers: .command)
+            .keyboardShortcut("s", modifiers: [.command, .option])
 
             Divider()
 
             Button {
                 guard let pm = focusedProject else { return }
-                pm.terminal.focusOrCreateTerminal(
-                    relativeTo: pm.paneManager.activePaneID,
-                    workingDirectory: pm.workspace.rootURL
-                )
+                guard pm.activeTabManager.activeTab != nil else { return }
+                let panel = NSSavePanel()
+                panel.title = Strings.saveAsPanelTitle
+                panel.nameFieldStringValue = pm.activeTabManager.activeTab?.fileName ?? ""
+                if let dir = pm.activeTabManager.activeTab?.url.deletingLastPathComponent() {
+                    panel.directoryURL = dir
+                }
+                guard panel.runModal() == .OK, let url = panel.url else { return }
+                do {
+                    try pm.activeTabManager.saveActiveTabAs(to: url)
+                    Task {
+                        await pm.workspace.gitProvider.refreshAsync()
+                        NotificationCenter.default.post(name: .refreshLineDiffs, object: nil)
+                    }
+                } catch {
+                    let alert = NSAlert()
+                    alert.messageText = Strings.fileOperationErrorTitle
+                    alert.informativeText = error.localizedDescription
+                    alert.alertStyle = .critical
+                    alert.runModal()
+                }
             } label: {
-                Label(Strings.toggleTerminal, systemImage: MenuIcons.toggleTerminal)
+                Label(Strings.menuSaveAs, systemImage: MenuIcons.saveAs)
             }
-            .keyboardShortcut("`", modifiers: .command)
+            .keyboardShortcut("s", modifiers: [.command, .shift])
 
             Button {
                 guard let pm = focusedProject else { return }
-                pm.activeTabManager.togglePreviewMode()
+                pm.activeTabManager.duplicateActiveTab(projectRoot: pm.workspace.rootURL)
             } label: {
-                Label(Strings.menuTogglePreview, systemImage: MenuIcons.togglePreview)
+                Label(Strings.menuDuplicate, systemImage: MenuIcons.duplicate)
             }
-            .keyboardShortcut("p", modifiers: [.command, .shift])
+            .keyboardShortcut("d", modifiers: [.command, .shift])
 
             Divider()
 
-            Button {
-                MinimapSettings.toggle()
-            } label: {
-                Label(Strings.menuToggleMinimap, systemImage: MenuIcons.toggleMinimap)
+            Toggle(isOn: $autoSaveEnabled) {
+                Label(Strings.menuAutoSave, systemImage: MenuIcons.autoSave)
             }
-            .keyboardShortcut("m", modifiers: [.command, .shift])
-
-            Button {
-                let key = BlameConstants.storageKey
-                UserDefaults.standard.set(!UserDefaults.standard.bool(forKey: key), forKey: key)
-            } label: {
-                Label(Strings.menuToggleBlame, systemImage: MenuIcons.toggleBlame)
-            }
-            .keyboardShortcut("b", modifiers: [.command, .control])
-
-            Button {
-                NotificationCenter.default.post(name: .toggleWordWrap, object: nil)
-            } label: {
-                Label(Strings.menuToggleWordWrap, systemImage: MenuIcons.toggleWordWrap)
-            }
-            .keyboardShortcut("z", modifiers: .option)
-
-            Divider()
-
-            Button {
-                guard let pm = focusedProject,
-                      let url = pm.activeTabManager.activeTab?.url else { return }
-                NSWorkspace.shared.activateFileViewerSelecting([url])
-            } label: {
-                Label(Strings.menuRevealFileInFinder, systemImage: MenuIcons.revealFileInFinder)
-            }
-            .keyboardShortcut("r", modifiers: [.command, .shift])
-            .disabled(focusedProject?.activeTabManager.activeTab == nil)
-
-            Button {
-                guard let pm = focusedProject,
-                      let rootURL = pm.workspace.rootURL else { return }
-                NSWorkspace.shared.activateFileViewerSelecting([rootURL])
-            } label: {
-                Label(Strings.menuRevealProjectInFinder, systemImage: MenuIcons.revealProjectInFinder)
-            }
-            .disabled(focusedProject?.workspace.rootURL == nil)
         }
-        // Terminal menu: New Tab (Cmd+T), Find in Terminal (Cmd+F when terminal focused)
-        CommandMenu(Strings.menuTerminal) {
-            Button {
-                guard let pm = focusedProject else { return }
-                pm.terminal.createTerminalTab(
-                    relativeTo: pm.paneManager.activePaneID,
-                    workingDirectory: pm.workspace.rootURL
-                )
-            } label: {
-                Label(Strings.menuNewTerminalTab, systemImage: MenuIcons.newTerminalTab)
-            }
-            .keyboardShortcut("t", modifiers: .command)
 
-            Divider()
-
-            Button {
-                NotificationCenter.default.post(name: .findInTerminal, object: nil)
-            } label: {
-                Label(Strings.menuFindInTerminal, systemImage: MenuIcons.find)
-            }
-            .disabled(focusedProject?.hasTerminalPanes != true)
-
-            Divider()
-
-            Button {
-                NotificationCenter.default.post(name: .sendToTerminal, object: nil)
-            } label: {
-                Label(Strings.menuSendToTerminal, systemImage: MenuIcons.sendToTerminal)
-            }
-            .keyboardShortcut(.return, modifiers: [.command, .shift])
-            .disabled(focusedProject?.activeTabManager.activeTab == nil)
-        }
-        // Edit menu: Toggle Comment, Find & Replace, Find in Project
+        // MARK: - Edit menu
+        // Toggle Comment, Find & Replace, Find in Project, Go to Line,
+        // inline diff navigation/accept/revert, code folding
         CommandGroup(after: .pasteboard) {
             Button {
                 NotificationCenter.default.post(name: .toggleComment, object: nil)
@@ -383,78 +342,134 @@ struct PineAppMenuCommands: Commands {
             .keyboardShortcut(.rightArrow, modifiers: [.command, .option, .shift])
             .disabled(focusedProject?.activeTabManager.activeTab == nil)
         }
-        // File menu: Save, Save All, Save As, Duplicate
-        CommandGroup(replacing: .saveItem) {
-            Button {
-                guard let pm = focusedProject else { return }
-                if pm.activeTabManager.saveActiveTab() {
-                    Task {
-                        await pm.workspace.gitProvider.refreshAsync()
-                        NotificationCenter.default.post(name: .refreshLineDiffs, object: nil)
-                    }
-                }
-            } label: {
-                Label(Strings.menuSave, systemImage: MenuIcons.save)
-            }
-            .keyboardShortcut("s", modifiers: .command)
+
+        // MARK: - View menu
+        // Font size, terminal toggle, preview, minimap, blame, word wrap, reveal
+        CommandGroup(after: .toolbar) {
+            Divider()
 
             Button {
-                guard let pm = focusedProject else { return }
-                if pm.saveAllPaneTabs() {
-                    Task {
-                        await pm.workspace.gitProvider.refreshAsync()
-                        NotificationCenter.default.post(name: .refreshLineDiffs, object: nil)
-                    }
-                }
+                FontSizeSettings.shared.increase()
             } label: {
-                Label(Strings.menuSaveAll, systemImage: MenuIcons.saveAll)
+                Label(Strings.menuIncreaseFontSize, systemImage: MenuIcons.increaseFontSize)
             }
-            .keyboardShortcut("s", modifiers: [.command, .option])
+            .keyboardShortcut("+", modifiers: .command)
+
+            Button {
+                FontSizeSettings.shared.decrease()
+            } label: {
+                Label(Strings.menuDecreaseFontSize, systemImage: MenuIcons.decreaseFontSize)
+            }
+            .keyboardShortcut("-", modifiers: .command)
+
+            Button {
+                FontSizeSettings.shared.reset()
+            } label: {
+                Label(Strings.menuResetFontSize, systemImage: MenuIcons.resetFontSize)
+            }
+            .keyboardShortcut("0", modifiers: .command)
 
             Divider()
 
             Button {
                 guard let pm = focusedProject else { return }
-                guard pm.activeTabManager.activeTab != nil else { return }
-                let panel = NSSavePanel()
-                panel.title = Strings.saveAsPanelTitle
-                panel.nameFieldStringValue = pm.activeTabManager.activeTab?.fileName ?? ""
-                if let dir = pm.activeTabManager.activeTab?.url.deletingLastPathComponent() {
-                    panel.directoryURL = dir
-                }
-                guard panel.runModal() == .OK, let url = panel.url else { return }
-                do {
-                    try pm.activeTabManager.saveActiveTabAs(to: url)
-                    Task {
-                        await pm.workspace.gitProvider.refreshAsync()
-                        NotificationCenter.default.post(name: .refreshLineDiffs, object: nil)
-                    }
-                } catch {
-                    let alert = NSAlert()
-                    alert.messageText = Strings.fileOperationErrorTitle
-                    alert.informativeText = error.localizedDescription
-                    alert.alertStyle = .critical
-                    alert.runModal()
-                }
+                pm.terminal.focusOrCreateTerminal(
+                    relativeTo: pm.paneManager.activePaneID,
+                    workingDirectory: pm.workspace.rootURL
+                )
             } label: {
-                Label(Strings.menuSaveAs, systemImage: MenuIcons.saveAs)
+                Label(Strings.toggleTerminal, systemImage: MenuIcons.toggleTerminal)
             }
-            .keyboardShortcut("s", modifiers: [.command, .shift])
+            .keyboardShortcut("`", modifiers: .command)
 
             Button {
                 guard let pm = focusedProject else { return }
-                pm.activeTabManager.duplicateActiveTab(projectRoot: pm.workspace.rootURL)
+                pm.activeTabManager.togglePreviewMode()
             } label: {
-                Label(Strings.menuDuplicate, systemImage: MenuIcons.duplicate)
+                Label(Strings.menuTogglePreview, systemImage: MenuIcons.togglePreview)
             }
-            .keyboardShortcut("d", modifiers: [.command, .shift])
+            .keyboardShortcut("p", modifiers: [.command, .shift])
 
             Divider()
 
-            Toggle(isOn: $autoSaveEnabled) {
-                Label(Strings.menuAutoSave, systemImage: MenuIcons.autoSave)
+            Button {
+                MinimapSettings.toggle()
+            } label: {
+                Label(Strings.menuToggleMinimap, systemImage: MenuIcons.toggleMinimap)
             }
+            .keyboardShortcut("m", modifiers: [.command, .shift])
+
+            Button {
+                let key = BlameConstants.storageKey
+                UserDefaults.standard.set(!UserDefaults.standard.bool(forKey: key), forKey: key)
+            } label: {
+                Label(Strings.menuToggleBlame, systemImage: MenuIcons.toggleBlame)
+            }
+            .keyboardShortcut("b", modifiers: [.command, .control])
+
+            Button {
+                NotificationCenter.default.post(name: .toggleWordWrap, object: nil)
+            } label: {
+                Label(Strings.menuToggleWordWrap, systemImage: MenuIcons.toggleWordWrap)
+            }
+            .keyboardShortcut("z", modifiers: .option)
+
+            Divider()
+
+            Button {
+                guard let pm = focusedProject,
+                      let url = pm.activeTabManager.activeTab?.url else { return }
+                NSWorkspace.shared.activateFileViewerSelecting([url])
+            } label: {
+                Label(Strings.menuRevealFileInFinder, systemImage: MenuIcons.revealFileInFinder)
+            }
+            .keyboardShortcut("r", modifiers: [.command, .shift])
+            .disabled(focusedProject?.activeTabManager.activeTab == nil)
+
+            Button {
+                guard let pm = focusedProject,
+                      let rootURL = pm.workspace.rootURL else { return }
+                NSWorkspace.shared.activateFileViewerSelecting([rootURL])
+            } label: {
+                Label(Strings.menuRevealProjectInFinder, systemImage: MenuIcons.revealProjectInFinder)
+            }
+            .disabled(focusedProject?.workspace.rootURL == nil)
         }
+
+        // MARK: - Terminal menu
+        // New Tab (Cmd+T), Find in Terminal (Cmd+F when terminal focused)
+        CommandMenu(Strings.menuTerminal) {
+            Button {
+                guard let pm = focusedProject else { return }
+                pm.terminal.createTerminalTab(
+                    relativeTo: pm.paneManager.activePaneID,
+                    workingDirectory: pm.workspace.rootURL
+                )
+            } label: {
+                Label(Strings.menuNewTerminalTab, systemImage: MenuIcons.newTerminalTab)
+            }
+            .keyboardShortcut("t", modifiers: .command)
+
+            Divider()
+
+            Button {
+                NotificationCenter.default.post(name: .findInTerminal, object: nil)
+            } label: {
+                Label(Strings.menuFindInTerminal, systemImage: MenuIcons.find)
+            }
+            .disabled(focusedProject?.hasTerminalPanes != true)
+
+            Divider()
+
+            Button {
+                NotificationCenter.default.post(name: .sendToTerminal, object: nil)
+            } label: {
+                Label(Strings.menuSendToTerminal, systemImage: MenuIcons.sendToTerminal)
+            }
+            .keyboardShortcut(.return, modifiers: [.command, .shift])
+            .disabled(focusedProject?.activeTabManager.activeTab == nil)
+        }
+
         // Cmd+W is intercepted by AppDelegate's local event monitor
         // to close the active tab. The close button goes through
         // windowShouldClose which closes the entire window.
