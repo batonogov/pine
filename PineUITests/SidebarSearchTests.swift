@@ -30,7 +30,7 @@ final class SidebarSearchTests: PineUITestCase {
     func testSearchFieldVisibleInSidebar() throws {
         launchWithProject(projectURL)
 
-        let sidebar = app.outlines["sidebar"]
+        let sidebar = app.scrollViews["sidebar"]
         XCTAssertTrue(waitForExistence(sidebar, timeout: 10), "Sidebar should appear")
 
         let searchField = app.searchFields.firstMatch
@@ -78,7 +78,7 @@ final class SidebarSearchTests: PineUITestCase {
     func testMagnifyingGlassButtonExists() throws {
         launchWithProject(projectURL)
 
-        let sidebar = app.outlines["sidebar"]
+        let sidebar = app.scrollViews["sidebar"]
         XCTAssertTrue(waitForExistence(sidebar, timeout: 10))
 
         let toolbarButton = app.toolbars.buttons.matching(
@@ -95,7 +95,7 @@ final class SidebarSearchTests: PineUITestCase {
     func testCmdShiftFOpensSearch() throws {
         launchWithProject(projectURL)
 
-        let sidebar = app.outlines["sidebar"]
+        let sidebar = app.scrollViews["sidebar"]
         XCTAssertTrue(waitForExistence(sidebar, timeout: 10))
 
         // Find in Project is in the Edit menu
@@ -157,7 +157,7 @@ final class SidebarSearchTests: PineUITestCase {
         sleep(2)
 
         // File tree (Outline) should be visible again
-        let fileTree = app.outlines["sidebar"]
+        let fileTree = app.scrollViews["sidebar"]
         XCTAssertTrue(
             waitForExistence(fileTree, timeout: 10),
             "Sidebar should return to file tree after clearing search"

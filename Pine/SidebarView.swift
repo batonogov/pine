@@ -172,10 +172,13 @@ struct SidebarView: View {
                     // cell that tests query for). Clicks still work
                     // because each row's `.onTapGesture` fires alongside
                     // `List`'s own row selection handling.
-                    List(selection: $selectedFile) {
-                        SidebarFileTree(nodes: workspace.rootNodes, selection: $selectedFile)
+                    ScrollView {
+                        LazyVStack(alignment: .leading, spacing: 0) {
+                            SidebarFileTree(nodes: workspace.rootNodes, selection: $selectedFile)
+                        }
+                        .padding(.vertical, 4)
                     }
-                    .listStyle(.sidebar)
+                    .accessibilityIdentifier("sidebar")
                     .environment(editState)
                     .environment(expansion)
                     .onChange(of: workspace.rootNodes) { _, newNodes in

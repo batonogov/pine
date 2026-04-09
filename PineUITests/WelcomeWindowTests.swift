@@ -76,7 +76,7 @@ final class WelcomeWindowTests: PineUITestCase {
         projectURLs.append(url)
         launchWithProject(url)
 
-        let sidebar = app.outlines["sidebar"]
+        let sidebar = app.scrollViews["sidebar"]
         XCTAssertTrue(waitForExistence(sidebar, timeout: 10), "Project should open")
 
         // Step 2: Terminate and relaunch with --reset-state (clears sessions, preserves recent projects)
@@ -104,7 +104,7 @@ final class WelcomeWindowTests: PineUITestCase {
         recentItem.click()
 
         // Project window should open with sidebar
-        let sidebarAfter = app.outlines["sidebar"]
+        let sidebarAfter = app.scrollViews["sidebar"]
         XCTAssertTrue(waitForExistence(sidebarAfter, timeout: 10), "Project should open from recent click")
     }
 
@@ -116,7 +116,7 @@ final class WelcomeWindowTests: PineUITestCase {
         projectURLs.append(url)
         launchWithProject(url)
 
-        let sidebar = app.outlines["sidebar"]
+        let sidebar = app.scrollViews["sidebar"]
         XCTAssertTrue(waitForExistence(sidebar, timeout: 10), "Project should open")
 
         // Step 2: Terminate and relaunch clean
@@ -161,7 +161,7 @@ final class WelcomeWindowTests: PineUITestCase {
 
         launchWithProject(projectDir)
 
-        let sidebar = app.outlines["sidebar"]
+        let sidebar = app.scrollViews["sidebar"]
         XCTAssertTrue(waitForExistence(sidebar, timeout: 10), "Project should open")
 
         app.terminate()
@@ -204,7 +204,7 @@ final class WelcomeWindowTests: PineUITestCase {
         projectURLs.append(url)
         launchWithProject(url)
 
-        let sidebar = app.outlines["sidebar"]
+        let sidebar = app.scrollViews["sidebar"]
         XCTAssertTrue(waitForExistence(sidebar, timeout: 10), "Project should open")
 
         // Step 2: Terminate and relaunch to see Welcome with recent projects
@@ -247,7 +247,7 @@ final class WelcomeWindowTests: PineUITestCase {
         // --- Cycle 1: open project via env var, open files, close ---
         launchWithProject(url)
 
-        let sidebar = app.outlines["sidebar"]
+        let sidebar = app.scrollViews["sidebar"]
         XCTAssertTrue(waitForExistence(sidebar, timeout: 10), "Project should open")
 
         let mainFile = app.staticTexts["fileNode_main.swift"]
@@ -317,7 +317,7 @@ final class WelcomeWindowTests: PineUITestCase {
         projectURLs.append(url)
         launchWithProject(url)
 
-        let sidebar = app.outlines["sidebar"]
+        let sidebar = app.scrollViews["sidebar"]
         XCTAssertTrue(waitForExistence(sidebar, timeout: 10))
 
         app.terminate()
@@ -366,7 +366,7 @@ final class WelcomeWindowTests: PineUITestCase {
             ]
             launchWithProject(url)
 
-            let sidebar = app.outlines["sidebar"]
+            let sidebar = app.scrollViews["sidebar"]
             XCTAssertTrue(waitForExistence(sidebar, timeout: 10))
             app.terminate()
         }
@@ -431,7 +431,7 @@ final class WelcomeWindowTests: PineUITestCase {
             ]
             launchWithProject(url)
 
-            let sidebar = app.outlines["sidebar"]
+            let sidebar = app.scrollViews["sidebar"]
             XCTAssertTrue(waitForExistence(sidebar, timeout: 10))
             app.terminate()
         }
@@ -472,7 +472,7 @@ final class WelcomeWindowTests: PineUITestCase {
         projectURLs.append(url)
         launchWithProject(url)
 
-        let sidebar = app.outlines["sidebar"]
+        let sidebar = app.scrollViews["sidebar"]
         XCTAssertTrue(waitForExistence(sidebar, timeout: 10), "Project should open")
 
         // Step 2: Terminate the app
@@ -492,7 +492,7 @@ final class WelcomeWindowTests: PineUITestCase {
         )
 
         // Sidebar should NOT be present (no project window)
-        let sidebarGone = app.outlines["sidebar"]
+        let sidebarGone = app.scrollViews["sidebar"]
         XCTAssertFalse(sidebarGone.exists, "Previous project should not auto-restore on restart")
     }
 }

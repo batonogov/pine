@@ -71,7 +71,7 @@ final class DiffNavigationUITests: PineUITestCase {
     func testNextChangeMenuItemExists() throws {
         launchWithProject(projectURL)
 
-        let sidebar = app.outlines["sidebar"]
+        let sidebar = app.scrollViews["sidebar"]
         XCTAssertTrue(waitForExistence(sidebar, timeout: 10))
 
         // Open the file
@@ -97,7 +97,7 @@ final class DiffNavigationUITests: PineUITestCase {
     func testMenuItemsDisabledWithNoActiveTab() throws {
         launchWithProject(projectURL)
 
-        let sidebar = app.outlines["sidebar"]
+        let sidebar = app.scrollViews["sidebar"]
         XCTAssertTrue(waitForExistence(sidebar, timeout: 10))
 
         // Don't open any file — menu items should be disabled
@@ -117,7 +117,7 @@ final class DiffNavigationUITests: PineUITestCase {
 
         launchWithProject(projectURL)
 
-        let sidebar = app.outlines["sidebar"]
+        let sidebar = app.scrollViews["sidebar"]
         XCTAssertTrue(waitForExistence(sidebar, timeout: 10))
 
         let fileRow = app.staticTexts["fileNode_test.swift"]

@@ -34,7 +34,7 @@ final class SidebarFolderClickTests: PineUITestCase {
     func testClickFolderRowExpandsAndCollapses() throws {
         launchWithProject(projectURL)
 
-        let sidebar = app.outlines["sidebar"]
+        let sidebar = app.scrollViews["sidebar"]
         XCTAssertTrue(waitForExistence(sidebar, timeout: 10))
 
         let alphaFolder = app.staticTexts["fileNode_alpha"]
@@ -62,7 +62,7 @@ final class SidebarFolderClickTests: PineUITestCase {
     func testClickEmptyFolderDoesNotCrash() throws {
         launchWithProject(projectURL)
 
-        let sidebar = app.outlines["sidebar"]
+        let sidebar = app.scrollViews["sidebar"]
         XCTAssertTrue(waitForExistence(sidebar, timeout: 10))
 
         let emptyFolder = app.staticTexts["fileNode_empty-folder"]
@@ -82,7 +82,7 @@ final class SidebarFolderClickTests: PineUITestCase {
     func testClickFileRowOpensTab() throws {
         launchWithProject(projectURL)
 
-        let sidebar = app.outlines["sidebar"]
+        let sidebar = app.scrollViews["sidebar"]
         XCTAssertTrue(waitForExistence(sidebar, timeout: 10))
 
         let rootFile = app.staticTexts["fileNode_root-file.swift"]
@@ -101,7 +101,7 @@ final class SidebarFolderClickTests: PineUITestCase {
     func testRightClickFolderShowsContextMenuWithoutToggling() throws {
         launchWithProject(projectURL)
 
-        let sidebar = app.outlines["sidebar"]
+        let sidebar = app.scrollViews["sidebar"]
         XCTAssertTrue(waitForExistence(sidebar, timeout: 10))
 
         let betaFolder = app.staticTexts["fileNode_beta"]

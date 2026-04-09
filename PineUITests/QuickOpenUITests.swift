@@ -75,7 +75,7 @@ final class QuickOpenUITests: PineUITestCase {
         XCTAssertTrue(window.waitForExistence(timeout: 10))
 
         // Wait for sidebar to load files
-        let sidebar = window.outlines.firstMatch
+        let sidebar = window.scrollViews["sidebar"]
         XCTAssertTrue(sidebar.waitForExistence(timeout: 10))
 
         // Open Quick Open
@@ -101,7 +101,7 @@ final class QuickOpenUITests: PineUITestCase {
         XCTAssertTrue(window.waitForExistence(timeout: 10))
 
         // Wait for sidebar
-        let sidebar = window.outlines.firstMatch
+        let sidebar = window.scrollViews["sidebar"]
         XCTAssertTrue(sidebar.waitForExistence(timeout: 10))
 
         // Open Quick Open

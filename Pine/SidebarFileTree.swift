@@ -63,23 +63,19 @@ private struct SidebarFileTreeNode: View {
         if node.isDirectory, let children = node.optionalChildren {
             // IMPORTANT: read `expansion.isExpanded(...)` directly in the
             // view body so SwiftUI's @Observable tracker registers the
-            // dependency. Accessing it only from inside the Binding's
-            // `get` closure below is NOT enough — the closure runs later,
-            // outside of body evaluation, so the view never re-renders
-            // when `expandedPaths` mutates.
+            // dependency.
             let isExpanded = expansion.isExpanded(node.url)
-            let bindingExpanded = Binding<Bool>(
-                get: { isExpanded },
-                set: { expansion.setExpanded(node.url, $0) }
-            )
-            DisclosureGroup(isExpanded: bindingExpanded) {
-                ForEach(children) { child in
-                    SidebarFileTreeNode(node: child, selection: $selection)
-                }
-            } label: {
+            VStack(alignment: .leading, spacing: 0) {
                 row(isFolder: true)
+                if isExpanded {
+                    VStack(alignment: .leading, spacing: 0) {
+                        ForEach(children) { child in
+                            SidebarFileTreeNode(node: child, selection: $selection)
+                        }
+                    }
+                    .padding(.leading, 14)
+                }
             }
-            .disclosureGroupStyle(SidebarDisclosureGroupStyle())
         } else {
             row(isFolder: false)
         }
@@ -90,10 +86,17 @@ private struct SidebarFileTreeNode: View {
     @ViewBuilder
     private func row(isFolder: Bool) -> some View {
         let fontSize = fontSettings.fontSize
+        let isSelected = selection?.id == node.id
         FileNodeRow(node: node, isLeaf: !isFolder)
             .font(.system(size: fontSize))
             .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.vertical, 1)
+            .frame(height: 20)
+            .padding(.horizontal, 6)
+            .background(
+                RoundedRectangle(cornerRadius: 5, style: .continuous)
+                    .fill(Color.accentColor.opacity(isSelected ? 0.25 : 0))
+                    .padding(.horizontal, 4)
+            )
             .contentShape(Rectangle())
             .onTapGesture {
                 handleTap(isFolder: isFolder)
