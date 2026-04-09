@@ -20,18 +20,11 @@ import SwiftUI
 private struct SidebarDisclosureGroupStyle: DisclosureGroupStyle {
     func makeBody(configuration: Configuration) -> some View {
         VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: 2) {
-                Image(systemName: "chevron.right")
-                    .font(.system(size: 9, weight: .semibold))
-                    .foregroundStyle(.secondary)
-                    .rotationEffect(.degrees(configuration.isExpanded ? 90 : 0))
-                    .frame(width: 10)
-                    .contentShape(Rectangle())
-                    .onTapGesture {
-                        configuration.isExpanded.toggle()
-                    }
-                configuration.label
-            }
+            configuration.label
+                .contentShape(Rectangle())
+                .onTapGesture {
+                    configuration.isExpanded.toggle()
+                }
             if configuration.isExpanded {
                 configuration.content
                     .padding(.leading, 14)
@@ -87,8 +80,10 @@ private struct SidebarFileTreeNode: View {
                 row(isFolder: true)
             }
             .disclosureGroupStyle(SidebarDisclosureGroupStyle())
+            .listRowBackground(Color.clear)
         } else {
             row(isFolder: false)
+                .listRowBackground(Color.clear)
         }
     }
 
@@ -98,14 +93,14 @@ private struct SidebarFileTreeNode: View {
     private func row(isFolder: Bool) -> some View {
         let isSelected = selection?.url == node.url
         let fontSize = fontSettings.fontSize
-        FileNodeRow(node: node)
+        FileNodeRow(node: node, isLeaf: !isFolder)
             .font(.system(size: fontSize))
             .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.vertical, max(fontSize * 0.15, 2))
+            .padding(.vertical, 1)
             .padding(.horizontal, 4)
             .background(
                 RoundedRectangle(cornerRadius: 4)
-                    .fill(isSelected ? Color.accentColor.opacity(0.2) : Color.clear)
+                    .fill(isSelected ? Color.accentColor.opacity(0.25) : Color.clear)
             )
             .contentShape(Rectangle())
             .onTapGesture {
