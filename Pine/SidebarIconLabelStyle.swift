@@ -53,4 +53,28 @@ enum SidebarIconMetrics {
     /// same width to its surrounding `Label`, producing a single x-coordinate
     /// for the text column.
     static let iconSlotWidth: CGFloat = 21
+
+    /// Leading inset (in points) applied to *file-leaf* rows so their icon
+    /// lines up horizontally with the icon of a sibling folder row.
+    ///
+    /// Folder rows are rendered as the label of a `DisclosureGroup` inside
+    /// `SidebarDisclosureGroupStyle`, which prepends a custom chevron of
+    /// `width: 10` followed by `HStack(spacing: 2)` before the label — so
+    /// a folder's icon starts 12pt to the right of the row's leading edge.
+    /// File-leaf rows have no chevron, so without compensation their icon
+    /// sits at x = 0 and visually drifts left of every folder icon (#763,
+    /// reported after PR #775 only equalised icons *between themselves*).
+    ///
+    /// Keep this in sync with `SidebarDisclosureGroupStyle` in
+    /// `SidebarFileTree.swift` — if the chevron width or HStack spacing
+    /// changes there, update this value too. A dedicated regression test
+    /// in `SidebarIconLabelStyleTests` asserts the math stays consistent.
+    ///
+    /// Implementation note: the inset is applied as a
+    /// `.padding(.leading, …)` *on the icon Image inside the Label's icon
+    /// closure*, not as an HStack wrapper around the entire row. Wrapping
+    /// the row in an HStack (as PR #770 did) moved `Label` out of the row
+    /// root and broke XCUITest `outline.cells[...]` lookups plus SwiftUI
+    /// `List` selection highlighting — both were reverted in #772/#773.
+    static let fileLeafLeadingInset: CGFloat = 12
 }

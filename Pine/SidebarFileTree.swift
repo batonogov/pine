@@ -98,7 +98,7 @@ private struct SidebarFileTreeNode: View {
     private func row(isFolder: Bool) -> some View {
         let isSelected = selection?.url == node.url
         let fontSize = fontSettings.fontSize
-        FileNodeRow(node: node)
+        FileNodeRow(node: node, isLeaf: !isFolder)
             .font(.system(size: fontSize))
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.vertical, max(fontSize * 0.15, 2))

@@ -13,6 +13,13 @@ import SwiftUI
 struct FileNodeRow: View {
     private static let logger = Logger.editor
     var node: FileNode
+    /// When `true`, the row is rendered as a file-leaf (no disclosure
+    /// chevron in front of it) and receives a leading inset on its icon
+    /// so the icon lines up horizontally with a sibling folder's icon.
+    /// Folder rows live inside a `DisclosureGroup` label which already
+    /// prepends a chevron, so they pass `isLeaf: false` and get no inset.
+    /// See `SidebarIconMetrics.fileLeafLeadingInset` for the math. (#763)
+    var isLeaf: Bool = false
     @Environment(WorkspaceManager.self) var workspace
     @Environment(TabManager.self) var tabManager
     @Environment(PaneManager.self) var paneManager
@@ -63,6 +70,7 @@ struct FileNodeRow: View {
                     Image(systemName: iconName)
                         .foregroundStyle(iconColor)
                         .frame(width: SidebarIconMetrics.iconSlotWidth, alignment: .center)
+                        .padding(.leading, isLeaf ? SidebarIconMetrics.fileLeafLeadingInset : 0)
                 }
                 .opacity(isGitIgnored ? 0.5 : 1.0)
                 // Apply the row identifier only on the non-editing branch.
@@ -129,6 +137,7 @@ struct FileNodeRow: View {
             Image(systemName: iconName)
                 .foregroundStyle(iconColor)
                 .frame(width: SidebarIconMetrics.iconSlotWidth, alignment: .center)
+                .padding(.leading, isLeaf ? SidebarIconMetrics.fileLeafLeadingInset : 0)
         }
     }
 

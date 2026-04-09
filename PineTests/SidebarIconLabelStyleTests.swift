@@ -145,4 +145,126 @@ struct SidebarIconMetricsTests {
             """
         )
     }
+
+    // MARK: - File-leaf leading inset (alignment with folder icons)
+
+    @Test("fileLeafLeadingInset is strictly positive")
+    func fileLeafLeadingInsetIsPositive() {
+        #expect(SidebarIconMetrics.fileLeafLeadingInset > 0)
+    }
+
+    @Test("fileLeafLeadingInset matches chevron width + HStack spacing")
+    func fileLeafLeadingInsetMatchesChevronGeometry() {
+        // SidebarDisclosureGroupStyle prepends:
+        //   Image("chevron.right").frame(width: 10)
+        //   HStack(spacing: 2) { chevron ; label }
+        // So a folder label starts 10 + 2 = 12pt to the right of the row.
+        // File-leaf rows must compensate by exactly that much so their icon
+        // lines up with the folder icon on the same x-coordinate.
+        #expect(SidebarIconMetrics.fileLeafLeadingInset == 12)
+    }
+
+    @Test("fileLeafLeadingInset stays in a sane 8...20 range")
+    func fileLeafLeadingInsetIsRealistic() {
+        // Anything less than 8 would leave a visible left-drift of file
+        // icons; anything more than 20 would push file rows past the folder
+        // icon slot. The value is empirically 12pt on macOS 26.
+        #expect(SidebarIconMetrics.fileLeafLeadingInset >= 8)
+        #expect(SidebarIconMetrics.fileLeafLeadingInset <= 20)
+    }
+
+    @Test("fileLeafLeadingInset is deterministic across reads")
+    func fileLeafLeadingInsetIsDeterministic() {
+        let first = SidebarIconMetrics.fileLeafLeadingInset
+        let second = SidebarIconMetrics.fileLeafLeadingInset
+        let third = SidebarIconMetrics.fileLeafLeadingInset
+        #expect(first == second)
+        #expect(second == third)
+    }
+
+    @Test("FileNodeRow applies the leaf inset in BOTH the normal and rename branches")
+    func fileNodeRowAppliesLeafInsetToBothBranches() throws {
+        let src = try fileNodeRowSource()
+        let occurrences = src.components(
+            separatedBy: "SidebarIconMetrics.fileLeafLeadingInset"
+        ).count - 1
+        #expect(
+            occurrences >= 2,
+            """
+            Expected SidebarIconMetrics.fileLeafLeadingInset to be used in \
+            BOTH the normal Label branch and the inlineEditor rename branch \
+            of FileNodeRow so entering rename does not visually jump \
+            (#736 + #763). Found \(occurrences) usage(s).
+            """
+        )
+    }
+
+    @Test("FileNodeRow exposes an isLeaf parameter (not a hard-coded constant)")
+    func fileNodeRowExposesIsLeafParameter() throws {
+        let src = try fileNodeRowSource()
+        #expect(
+            src.contains("var isLeaf: Bool"),
+            """
+            FileNodeRow must expose `isLeaf: Bool` so SidebarFileTree can \
+            pass false for folder rows (which already have a chevron in \
+            front of them) and true for file-leaf rows (which need the \
+            compensating leading inset). A hard-coded inset would push \
+            folder labels too far right.
+            """
+        )
+    }
+
+    @Test("FileNodeRow guards the inset behind isLeaf (folder rows get zero inset)")
+    func fileNodeRowGuardsInsetWithIsLeaf() throws {
+        let src = try fileNodeRowSource()
+        // The inset must be conditional on isLeaf so folder rows (which
+        // already have a chevron prefix from SidebarDisclosureGroupStyle)
+        // do not receive a second compensating inset and drift right.
+        #expect(
+            src.contains("isLeaf ? SidebarIconMetrics.fileLeafLeadingInset"),
+            """
+            The leading inset must be guarded by `isLeaf ? … : 0` so folder \
+            rows (which already carry a chevron prefix) receive zero inset \
+            and keep their existing x-coordinate. Unconditionally padding \
+            would push folders past their chevron and break top-level \
+            alignment.
+            """
+        )
+    }
+
+    @Test("FileNodeRow does not wrap the row in an HStack spacer")
+    func fileNodeRowDoesNotWrapInHStack() throws {
+        let src = try fileNodeRowSource()
+        // PR #770 wrapped the row in `HStack { Color.clear.frame(width:) ; row }`
+        // which moved Label out of the row root and broke XCUITest
+        // outline.cells lookups + SwiftUI selection highlight. The fix
+        // must live inside the Label's icon closure, not as an outer
+        // HStack wrapper.
+        #expect(
+            !src.contains("Color.clear.frame"),
+            """
+            FileNodeRow must not re-introduce the `HStack { Color.clear.frame … ; row }` \
+            wrapper pattern from the reverted PR #770. Apply the leading \
+            inset as `.padding(.leading, …)` on the Image INSIDE the \
+            Label's icon closure so Label stays the row's root view.
+            """
+        )
+    }
+
+    @Test("SidebarFileTree passes isLeaf based on folder flag")
+    func sidebarFileTreePassesIsLeafFlag() throws {
+        let url = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .appendingPathComponent("Pine/SidebarFileTree.swift")
+        let src = try String(contentsOf: url, encoding: .utf8)
+        #expect(
+            src.contains("FileNodeRow(node: node, isLeaf: !isFolder)"),
+            """
+            SidebarFileTree.row(isFolder:) must forward the inverse of its \
+            `isFolder` argument to FileNodeRow.isLeaf so file rows get the \
+            compensating leading inset and folder rows do not.
+            """
+        )
+    }
 }
