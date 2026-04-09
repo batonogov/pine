@@ -52,7 +52,7 @@ final class DuplicateTests: PineUITestCase {
     func testDuplicateFileViaSidebarCreatesFileCopy() throws {
         launchWithProject(projectURL)
 
-        let sidebar = app.outlines["sidebar"]
+        let sidebar = app.scrollViews["sidebar"]
         XCTAssertTrue(waitForExistence(sidebar, timeout: 10))
 
         duplicateViaSidebar("hello.swift")
@@ -88,7 +88,7 @@ final class DuplicateTests: PineUITestCase {
     func testDuplicateDirectoryViaSidebarCreatesFolderCopy() throws {
         launchWithProject(projectURL)
 
-        let sidebar = app.outlines["sidebar"]
+        let sidebar = app.scrollViews["sidebar"]
         XCTAssertTrue(waitForExistence(sidebar, timeout: 10))
 
         duplicateViaSidebar("docs")
@@ -127,7 +127,7 @@ final class DuplicateTests: PineUITestCase {
 
         launchWithProject(projectURL)
 
-        let sidebar = app.outlines["sidebar"]
+        let sidebar = app.scrollViews["sidebar"]
         XCTAssertTrue(waitForExistence(sidebar, timeout: 10))
 
         duplicateViaSidebar("hello.swift")
@@ -155,7 +155,7 @@ final class DuplicateTests: PineUITestCase {
     func testDuplicateMenuItemAppearsForFile() throws {
         launchWithProject(projectURL)
 
-        let sidebar = app.outlines["sidebar"]
+        let sidebar = app.scrollViews["sidebar"]
         XCTAssertTrue(waitForExistence(sidebar, timeout: 10))
 
         let fileNode = app.staticTexts["fileNode_hello.swift"]
@@ -174,7 +174,7 @@ final class DuplicateTests: PineUITestCase {
     func testDuplicateMenuItemAppearsForDirectory() throws {
         launchWithProject(projectURL)
 
-        let sidebar = app.outlines["sidebar"]
+        let sidebar = app.scrollViews["sidebar"]
         XCTAssertTrue(waitForExistence(sidebar, timeout: 10))
 
         let dirNode = app.staticTexts["fileNode_docs"]

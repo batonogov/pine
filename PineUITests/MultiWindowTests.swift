@@ -34,7 +34,7 @@ final class MultiWindowTests: PineUITestCase {
             "Project window should appear"
         )
 
-        let sidebar = app.outlines["sidebar"]
+        let sidebar = app.scrollViews["sidebar"]
         XCTAssertTrue(waitForExistence(sidebar, timeout: 5), "Sidebar should be present")
     }
 
@@ -43,7 +43,7 @@ final class MultiWindowTests: PineUITestCase {
     func testSidebarShowsProjectFiles() throws {
         launchWithProject(projectURL)
 
-        let sidebar = app.outlines["sidebar"]
+        let sidebar = app.scrollViews["sidebar"]
         XCTAssertTrue(waitForExistence(sidebar, timeout: 10))
 
         let fileNode = app.staticTexts["fileNode_a.swift"]
@@ -55,7 +55,7 @@ final class MultiWindowTests: PineUITestCase {
     func testCloseLastProjectShowsWelcome() throws {
         launchWithProject(projectURL)
 
-        let sidebar = app.outlines["sidebar"]
+        let sidebar = app.scrollViews["sidebar"]
         XCTAssertTrue(waitForExistence(sidebar, timeout: 10), "Project should open")
 
         // Close the project window via the close button
@@ -76,7 +76,7 @@ final class MultiWindowTests: PineUITestCase {
     func testCloseButtonClosesWindowWithOpenTab() throws {
         launchWithProject(projectURL)
 
-        let sidebar = app.outlines["sidebar"]
+        let sidebar = app.scrollViews["sidebar"]
         XCTAssertTrue(waitForExistence(sidebar, timeout: 10))
 
         // Open a file to create a tab
@@ -104,7 +104,7 @@ final class MultiWindowTests: PineUITestCase {
     func testTabCloseButtonClosesTabNotWindow() throws {
         launchWithProject(projectURL)
 
-        let sidebar = app.outlines["sidebar"]
+        let sidebar = app.scrollViews["sidebar"]
         XCTAssertTrue(waitForExistence(sidebar, timeout: 10))
 
         // Open a file to create a tab

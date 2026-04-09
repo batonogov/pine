@@ -55,7 +55,7 @@ final class FontSizeTests: PineUITestCase {
     func testViewMenuContainsFontSizeItems() throws {
         launchWithProject(projectURL)
 
-        let sidebar = app.outlines["sidebar"]
+        let sidebar = app.scrollViews["sidebar"]
         XCTAssertTrue(waitForExistence(sidebar, timeout: 10), "Sidebar should appear")
 
         app.activate()
@@ -77,7 +77,7 @@ final class FontSizeTests: PineUITestCase {
     func testIncreaseFontSizeViaMenu() throws {
         launchWithProject(projectURL)
 
-        let sidebar = app.outlines["sidebar"]
+        let sidebar = app.scrollViews["sidebar"]
         XCTAssertTrue(waitForExistence(sidebar, timeout: 10))
         openFileInEditor()
 
@@ -95,7 +95,7 @@ final class FontSizeTests: PineUITestCase {
     func testDecreaseFontSizeViaMenu() throws {
         launchWithProject(projectURL)
 
-        let sidebar = app.outlines["sidebar"]
+        let sidebar = app.scrollViews["sidebar"]
         XCTAssertTrue(waitForExistence(sidebar, timeout: 10))
         openFileInEditor()
 
@@ -113,7 +113,7 @@ final class FontSizeTests: PineUITestCase {
     func testResetFontSizeViaMenu() throws {
         launchWithProject(projectURL)
 
-        let sidebar = app.outlines["sidebar"]
+        let sidebar = app.scrollViews["sidebar"]
         XCTAssertTrue(waitForExistence(sidebar, timeout: 10))
         openFileInEditor()
 
@@ -138,7 +138,7 @@ final class FontSizeTests: PineUITestCase {
         app.launchArguments.removeAll { $0 == "--reset-state" }
         launchWithProject(projectURL)
 
-        let sidebar = app.outlines["sidebar"]
+        let sidebar = app.scrollViews["sidebar"]
         XCTAssertTrue(waitForExistence(sidebar, timeout: 10))
         openFileInEditor()
 
@@ -154,7 +154,7 @@ final class FontSizeTests: PineUITestCase {
         app.launchArguments.removeAll { $0 == "--reset-state" }
         launchWithProject(projectURL)
 
-        let sidebar2 = app.outlines["sidebar"]
+        let sidebar2 = app.scrollViews["sidebar"]
         XCTAssertTrue(waitForExistence(sidebar2, timeout: 10))
         openFileInEditor()
 
@@ -180,7 +180,7 @@ final class FontSizeTests: PineUITestCase {
     func testIncreaseDecreaseCycle() throws {
         launchWithProject(projectURL)
 
-        let sidebar = app.outlines["sidebar"]
+        let sidebar = app.scrollViews["sidebar"]
         XCTAssertTrue(waitForExistence(sidebar, timeout: 10))
         openFileInEditor()
 

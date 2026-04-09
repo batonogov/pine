@@ -70,7 +70,7 @@ final class GitignoreFilterTests: PineUITestCase {
     func testGitignoredDirectoryVisibleInSidebar() throws {
         launchWithProject(projectURL)
 
-        let sidebar = app.outlines["sidebar"]
+        let sidebar = app.scrollViews["sidebar"]
         XCTAssertTrue(waitForExistence(sidebar, timeout: 10), "Sidebar should appear")
 
         // main.swift should be visible
@@ -91,7 +91,7 @@ final class GitignoreFilterTests: PineUITestCase {
     func testGitignoredDotDirectoryVisibleInSidebar() throws {
         launchWithProject(projectURL)
 
-        let sidebar = app.outlines["sidebar"]
+        let sidebar = app.scrollViews["sidebar"]
         XCTAssertTrue(waitForExistence(sidebar, timeout: 10), "Sidebar should appear")
 
         // .claude directory should be visible (gitignored but shown dimmed)
@@ -105,7 +105,7 @@ final class GitignoreFilterTests: PineUITestCase {
     func testGitignoredFileRemainsInSidebar() throws {
         launchWithProject(projectURL)
 
-        let sidebar = app.outlines["sidebar"]
+        let sidebar = app.scrollViews["sidebar"]
         XCTAssertTrue(waitForExistence(sidebar, timeout: 10), "Sidebar should appear")
 
         // .env should be visible (gitignored file, not directory)
@@ -119,7 +119,7 @@ final class GitignoreFilterTests: PineUITestCase {
     func testGitignoredDirectoryCanBeExpanded() throws {
         launchWithProject(projectURL)
 
-        let sidebar = app.outlines["sidebar"]
+        let sidebar = app.scrollViews["sidebar"]
         XCTAssertTrue(waitForExistence(sidebar, timeout: 10), "Sidebar should appear")
 
         // node_modules should be visible
@@ -144,7 +144,7 @@ final class GitignoreFilterTests: PineUITestCase {
     func testGitignoredDotDirectoryCanBeExpanded() throws {
         launchWithProject(projectURL)
 
-        let sidebar = app.outlines["sidebar"]
+        let sidebar = app.scrollViews["sidebar"]
         XCTAssertTrue(waitForExistence(sidebar, timeout: 10), "Sidebar should appear")
 
         // .claude should be visible
@@ -164,36 +164,18 @@ final class GitignoreFilterTests: PineUITestCase {
         )
     }
 
-    /// Tries to expand a folder row in the sidebar outline.
-    /// Uses multiple strategies because SwiftUI List disclosure behavior
-    /// is unreliable with XCUITest synthetic events on macOS 26.
+    /// Tries to expand a folder row in the sidebar.
+    /// The new ScrollView-based sidebar uses a single-tap gesture on the
+    /// row to toggle expansion (see `SidebarDisclosureGroupStyle`).
     private func expandFolder(_ row: XCUIElement, in sidebar: XCUIElement) {
-        // Strategy 1: double-click the row text
-        row.doubleClick()
+        row.click()
         sleep(1)
-
-        // Strategy 2: click the disclosure triangle near the row
-        // The outline's disclosureTriangles are indexed by position.
-        // Find the one closest to our row by iterating.
-        let triangles = sidebar.disclosureTriangles
-        for index in 0..<triangles.count {
-            let triangle = triangles.element(boundBy: index)
-            guard triangle.exists else { continue }
-            // Check if this triangle is vertically aligned with our row
-            let rowFrame = row.frame
-            let triFrame = triangle.frame
-            if abs(triFrame.midY - rowFrame.midY) < 10 {
-                triangle.click()
-                sleep(1)
-                return
-            }
-        }
     }
 
     func testNonIgnoredDirectoryRemainsInSidebar() throws {
         launchWithProject(projectURL)
 
-        let sidebar = app.outlines["sidebar"]
+        let sidebar = app.scrollViews["sidebar"]
         XCTAssertTrue(waitForExistence(sidebar, timeout: 10), "Sidebar should appear")
 
         // .gitignore should be visible

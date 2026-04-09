@@ -22,7 +22,7 @@ final class SidebarRenameTests: PineUITestCase {
         if byID.waitForExistence(timeout: 5) {
             return byID
         }
-        let scoped = app.outlines["sidebar"].textFields.firstMatch
+        let scoped = app.scrollViews["sidebar"].textFields.firstMatch
         if scoped.waitForExistence(timeout: 5) {
             return scoped
         }
@@ -121,7 +121,7 @@ final class SidebarRenameTests: PineUITestCase {
     func testEnterOnSelectedFileStartsAndCommitsRename() throws {
         launchWithProject(projectURL)
 
-        let sidebar = app.outlines["sidebar"]
+        let sidebar = app.scrollViews["sidebar"]
         XCTAssertTrue(waitForExistence(sidebar, timeout: 10))
 
         openRenameViaContextMenu(on: "fileNode_hello.swift")
@@ -161,7 +161,7 @@ final class SidebarRenameTests: PineUITestCase {
     func testEscapeCancelsRename() throws {
         launchWithProject(projectURL)
 
-        let sidebar = app.outlines["sidebar"]
+        let sidebar = app.scrollViews["sidebar"]
         XCTAssertTrue(waitForExistence(sidebar, timeout: 10))
 
         openRenameViaContextMenu(on: "fileNode_notes.txt")
@@ -199,7 +199,7 @@ final class SidebarRenameTests: PineUITestCase {
     func testEnterRenamesFolder() throws {
         launchWithProject(projectURL)
 
-        let sidebar = app.outlines["sidebar"]
+        let sidebar = app.scrollViews["sidebar"]
         XCTAssertTrue(waitForExistence(sidebar, timeout: 10))
 
         openRenameViaContextMenu(on: "fileNode_docs")
@@ -246,7 +246,7 @@ final class SidebarRenameTests: PineUITestCase {
     func testEnterTriggersRename() throws {
         launchWithProject(projectURL)
 
-        let sidebar = app.outlines["sidebar"]
+        let sidebar = app.scrollViews["sidebar"]
         XCTAssertTrue(waitForExistence(sidebar, timeout: 10))
 
         let fileNode = app.staticTexts["fileNode_hello.swift"]
@@ -270,7 +270,7 @@ final class SidebarRenameTests: PineUITestCase {
     func testEnterWithNothingSelectedIsNoOp() throws {
         launchWithProject(projectURL)
 
-        let sidebar = app.outlines["sidebar"]
+        let sidebar = app.scrollViews["sidebar"]
         XCTAssertTrue(waitForExistence(sidebar, timeout: 10))
 
         // Click sidebar header area then Enter — should not crash, no rename starts.

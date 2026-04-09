@@ -76,7 +76,7 @@ final class ScreenshotTests: PineUITestCase {
         ])
         launchWithProject(try XCTUnwrap(projectURL))
 
-        let sidebar = app.outlines["sidebar"]
+        let sidebar = app.scrollViews["sidebar"]
         XCTAssertTrue(waitForExistence(sidebar, timeout: 10), "Sidebar should appear")
 
         // Open the main file
@@ -99,7 +99,7 @@ final class ScreenshotTests: PineUITestCase {
         ])
         launchWithProject(try XCTUnwrap(projectURL))
 
-        let sidebar = app.outlines["sidebar"]
+        let sidebar = app.scrollViews["sidebar"]
         XCTAssertTrue(waitForExistence(sidebar, timeout: 10), "Sidebar should appear")
 
         // Open a file first
@@ -146,7 +146,7 @@ final class ScreenshotTests: PineUITestCase {
         )
         launchWithProject(try XCTUnwrap(projectURL))
 
-        let sidebar = app.outlines["sidebar"]
+        let sidebar = app.scrollViews["sidebar"]
         XCTAssertTrue(waitForExistence(sidebar, timeout: 10), "Sidebar should appear")
 
         // Wait for file tree to fully load
@@ -167,25 +167,11 @@ final class ScreenshotTests: PineUITestCase {
         attachScreenshot(screenshot, name: "screenshot-sidebar")
     }
 
-    /// Tries to expand a folder row in the sidebar outline.
+    /// Tries to expand a folder row in the sidebar.
+    /// The new ScrollView-based sidebar toggles expansion on a single tap.
     private func expandFolder(_ row: XCUIElement, in sidebar: XCUIElement) {
-        // Strategy 1: double-click the row text
-        row.doubleClick()
+        row.click()
         sleep(1)
-
-        // Strategy 2: click the disclosure triangle near the row
-        let triangles = sidebar.disclosureTriangles
-        for index in 0..<triangles.count {
-            let triangle = triangles.element(boundBy: index)
-            guard triangle.exists else { continue }
-            let rowFrame = row.frame
-            let triFrame = triangle.frame
-            if abs(triFrame.midY - rowFrame.midY) < 10 {
-                triangle.click()
-                sleep(1)
-                return
-            }
-        }
     }
 
     // MARK: - Minimap
@@ -210,7 +196,7 @@ final class ScreenshotTests: PineUITestCase {
         ])
         launchWithProject(try XCTUnwrap(projectURL))
 
-        let sidebar = app.outlines["sidebar"]
+        let sidebar = app.scrollViews["sidebar"]
         XCTAssertTrue(waitForExistence(sidebar, timeout: 10), "Sidebar should appear")
 
         // Open the file
@@ -260,7 +246,7 @@ final class ScreenshotTests: PineUITestCase {
         ])
         launchWithProject(try XCTUnwrap(projectURL))
 
-        let sidebar = app.outlines["sidebar"]
+        let sidebar = app.scrollViews["sidebar"]
         XCTAssertTrue(waitForExistence(sidebar, timeout: 10), "Sidebar should appear")
 
         let fileRow = app.staticTexts["fileNode_README.md"]

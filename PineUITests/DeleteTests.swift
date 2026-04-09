@@ -48,7 +48,7 @@ final class DeleteTests: PineUITestCase {
     func testDeleteFileViaSidebarRemovesFromSidebar() throws {
         launchWithProject(projectURL)
 
-        let sidebar = app.outlines["sidebar"]
+        let sidebar = app.scrollViews["sidebar"]
         XCTAssertTrue(waitForExistence(sidebar, timeout: 10))
 
         // Verify file exists before deletion
@@ -79,7 +79,7 @@ final class DeleteTests: PineUITestCase {
     func testDeleteFolderViaSidebarDoesNotCrash() throws {
         launchWithProject(projectURL)
 
-        let sidebar = app.outlines["sidebar"]
+        let sidebar = app.scrollViews["sidebar"]
         XCTAssertTrue(waitForExistence(sidebar, timeout: 10))
 
         let folderNode = app.staticTexts["fileNode_subfolder"]
@@ -112,7 +112,7 @@ final class DeleteTests: PineUITestCase {
     func testDeleteOpenFileClosesTab() throws {
         launchWithProject(projectURL)
 
-        let sidebar = app.outlines["sidebar"]
+        let sidebar = app.scrollViews["sidebar"]
         XCTAssertTrue(waitForExistence(sidebar, timeout: 10))
 
         // Open file in editor
@@ -141,28 +141,19 @@ final class DeleteTests: PineUITestCase {
     func testDeleteFolderWithOpenNestedFileClosesTab() throws {
         launchWithProject(projectURL)
 
-        let sidebar = app.outlines["sidebar"]
+        let sidebar = app.scrollViews["sidebar"]
         XCTAssertTrue(waitForExistence(sidebar, timeout: 10))
 
         // Expand subfolder by clicking the disclosure triangle, then open nested file
         let folderNode = app.staticTexts["fileNode_subfolder"]
         XCTAssertTrue(waitForExistence(folderNode, timeout: 5))
 
-        // In SwiftUI List with children, the disclosure triangle is a
-        // disclosureTriangle element near the folder row. Double-click
-        // the folder row to toggle expansion as a reliable alternative.
-        folderNode.doubleClick()
+        // The ScrollView-based sidebar toggles folder expansion on a single tap.
+        folderNode.click()
         sleep(1)
 
         let nestedFile = app.staticTexts["fileNode_nested.txt"]
-        guard waitForExistence(nestedFile, timeout: 5) else {
-            // If double-click didn't expand, try clicking the disclosure triangle
-            let disclosure = sidebar.disclosureTriangles.firstMatch
-            if disclosure.exists { disclosure.click() }
-            XCTAssertTrue(waitForExistence(nestedFile, timeout: 5), "nested.txt should appear after expanding subfolder")
-            nestedFile.click()
-            return // early return — we can't reliably continue
-        }
+        XCTAssertTrue(waitForExistence(nestedFile, timeout: 5), "nested.txt should appear after expanding subfolder")
         nestedFile.click()
 
         let tab = app.buttons["editorTab_nested.txt"].firstMatch
@@ -198,7 +189,7 @@ final class DeleteTests: PineUITestCase {
 
         launchWithProject(manyFilesURL)
 
-        let sidebar = app.outlines["sidebar"]
+        let sidebar = app.scrollViews["sidebar"]
         XCTAssertTrue(waitForExistence(sidebar, timeout: 10))
 
         // Delete three files rapidly — each triggers refreshFileTree() with async git
@@ -229,7 +220,7 @@ final class DeleteTests: PineUITestCase {
     func testRenameMenuItemAppearsForFile() throws {
         launchWithProject(projectURL)
 
-        let sidebar = app.outlines["sidebar"]
+        let sidebar = app.scrollViews["sidebar"]
         XCTAssertTrue(waitForExistence(sidebar, timeout: 10))
 
         let fileNode = app.staticTexts["fileNode_keep.swift"]
@@ -249,7 +240,7 @@ final class DeleteTests: PineUITestCase {
     func testDeleteMenuItemAppearsForFile() throws {
         launchWithProject(projectURL)
 
-        let sidebar = app.outlines["sidebar"]
+        let sidebar = app.scrollViews["sidebar"]
         XCTAssertTrue(waitForExistence(sidebar, timeout: 10))
 
         let fileNode = app.staticTexts["fileNode_keep.swift"]
@@ -267,7 +258,7 @@ final class DeleteTests: PineUITestCase {
     func testDeleteMenuItemAppearsForDirectory() throws {
         launchWithProject(projectURL)
 
-        let sidebar = app.outlines["sidebar"]
+        let sidebar = app.scrollViews["sidebar"]
         XCTAssertTrue(waitForExistence(sidebar, timeout: 10))
 
         let dirNode = app.staticTexts["fileNode_subfolder"]

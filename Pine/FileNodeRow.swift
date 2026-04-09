@@ -59,17 +59,15 @@ struct FileNodeRow: View {
                 Label {
                     Text(node.name)
                         .foregroundStyle(gitStatus?.color ?? .primary)
+                        .accessibilityIdentifier(AccessibilityID.fileNode(node.name))
                 } icon: {
                     Image(systemName: iconName)
                         .foregroundStyle(iconColor)
+                        .frame(width: SidebarIconMetrics.iconSlotWidth, alignment: .center)
                 }
                 .opacity(isGitIgnored ? 0.5 : 1.0)
-                // Apply the row identifier only on the non-editing branch.
-                // Applying it on the outer Group would cascade onto the
-                // inline rename TextField and shadow its own
-                // `inlineRenameTextField` identifier in the accessibility
-                // tree, breaking UI tests that look up the editor by id.
-                .accessibilityIdentifier(AccessibilityID.fileNode(node.name))
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
             }
         }
         .tag(node)
@@ -127,6 +125,7 @@ struct FileNodeRow: View {
         } icon: {
             Image(systemName: iconName)
                 .foregroundStyle(iconColor)
+                .frame(width: SidebarIconMetrics.iconSlotWidth, alignment: .center)
         }
     }
 
