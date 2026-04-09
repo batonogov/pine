@@ -76,5 +76,5 @@ enum SidebarIconMetrics {
     /// the row in an HStack (as PR #770 did) moved `Label` out of the row
     /// root and broke XCUITest `outline.cells[...]` lookups plus SwiftUI
     /// `List` selection highlighting — both were reverted in #772/#773.
-    static let fileLeafLeadingInset: CGFloat = 12
+    static let fileLeafLeadingInset: CGFloat = 0
 }

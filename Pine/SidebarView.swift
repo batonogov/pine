@@ -172,7 +172,7 @@ struct SidebarView: View {
                     // cell that tests query for). Clicks still work
                     // because each row's `.onTapGesture` fires alongside
                     // `List`'s own row selection handling.
-                    List(selection: $selectedFile) {
+                    List {
                         SidebarFileTree(nodes: workspace.rootNodes, selection: $selectedFile)
                     }
                     .listStyle(.sidebar)

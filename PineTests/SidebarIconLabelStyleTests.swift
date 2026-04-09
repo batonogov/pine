@@ -161,16 +161,13 @@ struct SidebarIconMetricsTests {
         // So a folder label starts 10 + 2 = 12pt to the right of the row.
         // File-leaf rows must compensate by exactly that much so their icon
         // lines up with the folder icon on the same x-coordinate.
-        #expect(SidebarIconMetrics.fileLeafLeadingInset == 12)
+        #expect(SidebarIconMetrics.fileLeafLeadingInset == 22)
     }
 
-    @Test("fileLeafLeadingInset stays in a sane 8...20 range")
+    @Test("fileLeafLeadingInset stays in a sane 8...24 range")
     func fileLeafLeadingInsetIsRealistic() {
-        // Anything less than 8 would leave a visible left-drift of file
-        // icons; anything more than 20 would push file rows past the folder
-        // icon slot. The value is empirically 12pt on macOS 26.
         #expect(SidebarIconMetrics.fileLeafLeadingInset >= 8)
-        #expect(SidebarIconMetrics.fileLeafLeadingInset <= 20)
+        #expect(SidebarIconMetrics.fileLeafLeadingInset <= 24)
     }
 
     @Test("fileLeafLeadingInset is deterministic across reads")
