@@ -88,9 +88,37 @@ struct PaneLeafView: View {
         if let tabManager {
             editorPaneContent(tabManager: tabManager)
                 .environment(tabManager)
+                .onAppear {
+                    // Initial load: refresh line diffs/blame for the active tab
+                    // even if `activeTabID` never changes (issue #780).
+                    refreshLineDiffs(tabManager: tabManager)
+                    refreshBlame(tabManager: tabManager)
+                }
                 .onChange(of: tabManager.activeTabID) { _, _ in
                     refreshLineDiffs(tabManager: tabManager)
                     refreshBlame(tabManager: tabManager)
+                }
+                .onChange(of: tabManager.activeTab?.contentVersion) { _, _ in
+                    // Re-compute diff markers as the user edits — otherwise gutter
+                    // markers become stale on every keystroke (issue #780).
+                    refreshLineDiffs(tabManager: tabManager)
+                }
+                .onChange(of: workspace.gitProvider.fileStatuses) { _, _ in
+                    // External git state changes (save, stash, checkout from CLI)
+                    // must refresh the gutter (issue #780).
+                    refreshLineDiffs(tabManager: tabManager)
+                }
+                .onChange(of: workspace.gitProvider.currentBranch) { _, _ in
+                    refreshLineDiffs(tabManager: tabManager)
+                    refreshBlame(tabManager: tabManager)
+                }
+                .onChange(of: workspace.gitProvider.isGitRepository) { _, isRepo in
+                    if isRepo {
+                        refreshLineDiffs(tabManager: tabManager)
+                    } else {
+                        lineDiffs = []
+                        diffHunks = []
+                    }
                 }
                 .modifier(BlameObserver(
                     isBlameVisible: isBlameVisible,
