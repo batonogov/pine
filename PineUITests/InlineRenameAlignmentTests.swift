@@ -61,7 +61,7 @@ final class InlineRenameAlignmentTests: PineUITestCase {
         if byID.waitForExistence(timeout: 5) {
             return byID
         }
-        let scoped = app.outlines["sidebar"].textFields.firstMatch
+        let scoped = app.scrollViews["sidebar"].textFields.firstMatch
         if scoped.waitForExistence(timeout: 5) {
             return scoped
         }
@@ -71,7 +71,7 @@ final class InlineRenameAlignmentTests: PineUITestCase {
     /// Right-click on the `nested` folder so the context menu exposes
     /// New File / New Folder (only directory rows show those entries).
     private func openContextMenuOnNestedFolder() {
-        let sidebar = app.outlines["sidebar"]
+        let sidebar = app.scrollViews["sidebar"]
         XCTAssertTrue(waitForExistence(sidebar, timeout: 10))
         let anchor = app.staticTexts["fileNode_nested"]
         XCTAssertTrue(waitForExistence(anchor, timeout: 10))

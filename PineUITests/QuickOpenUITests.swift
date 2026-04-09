@@ -75,7 +75,7 @@ final class QuickOpenUITests: PineUITestCase {
         XCTAssertTrue(window.waitForExistence(timeout: 10))
 
         // Wait for sidebar to load files
-        let sidebar = window.outlines.firstMatch
+        let sidebar = window.scrollViews["sidebar"]
         XCTAssertTrue(sidebar.waitForExistence(timeout: 10))
 
         // Open Quick Open
@@ -101,7 +101,7 @@ final class QuickOpenUITests: PineUITestCase {
         XCTAssertTrue(window.waitForExistence(timeout: 10))
 
         // Wait for sidebar
-        let sidebar = window.outlines.firstMatch
+        let sidebar = window.scrollViews["sidebar"]
         XCTAssertTrue(sidebar.waitForExistence(timeout: 10))
 
         // Open Quick Open
@@ -118,8 +118,9 @@ final class QuickOpenUITests: PineUITestCase {
 
         sleep(1)
 
-        // Click on the result
-        let result = overlay.staticTexts["utils.swift"]
+        // Click on the result. The overlay may expose "utils.swift" in both
+        // the filename and path-hint labels; `firstMatch` picks the first.
+        let result = overlay.staticTexts["utils.swift"].firstMatch
         if result.waitForExistence(timeout: 3) {
             result.click()
 
@@ -127,7 +128,7 @@ final class QuickOpenUITests: PineUITestCase {
             XCTAssertTrue(overlay.waitForNonExistence(timeout: 5))
 
             // Verify the file tab is opened
-            let tab = window.staticTexts["utils.swift"]
+            let tab = window.buttons["editorTab_utils.swift"]
             XCTAssertTrue(tab.waitForExistence(timeout: 5))
         }
     }

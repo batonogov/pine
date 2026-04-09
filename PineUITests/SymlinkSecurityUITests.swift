@@ -54,7 +54,7 @@ final class SymlinkSecurityUITests: PineUITestCase {
     func testSymlinkOutsideRootVisibleButNotExpanded() throws {
         launchWithProject(projectURL)
 
-        let sidebar = app.outlines["sidebar"]
+        let sidebar = app.scrollViews["sidebar"]
         XCTAssertTrue(waitForExistence(sidebar, timeout: 10))
 
         // The symlink node should appear in the sidebar
@@ -77,7 +77,7 @@ final class SymlinkSecurityUITests: PineUITestCase {
     func testSymlinkCycleDoesNotCrashApp() throws {
         launchWithProject(projectURL)
 
-        let sidebar = app.outlines["sidebar"]
+        let sidebar = app.scrollViews["sidebar"]
         XCTAssertTrue(waitForExistence(sidebar, timeout: 10))
 
         // The cycle symlink should appear
@@ -100,7 +100,7 @@ final class SymlinkSecurityUITests: PineUITestCase {
     func testDeleteOnOutsideSymlinkIsBlocked() throws {
         launchWithProject(projectURL)
 
-        let sidebar = app.outlines["sidebar"]
+        let sidebar = app.scrollViews["sidebar"]
         XCTAssertTrue(waitForExistence(sidebar, timeout: 10))
 
         let externalNode = app.staticTexts["fileNode_external"]
@@ -126,7 +126,7 @@ final class SymlinkSecurityUITests: PineUITestCase {
     func testNewFileInsideOutsideSymlinkIsBlocked() throws {
         launchWithProject(projectURL)
 
-        let sidebar = app.outlines["sidebar"]
+        let sidebar = app.scrollViews["sidebar"]
         XCTAssertTrue(waitForExistence(sidebar, timeout: 10))
 
         // The outside symlink is a directory node — its context menu should have New File
@@ -152,7 +152,7 @@ final class SymlinkSecurityUITests: PineUITestCase {
     func testRenameOnOutsideSymlinkIsBlocked() throws {
         launchWithProject(projectURL)
 
-        let sidebar = app.outlines["sidebar"]
+        let sidebar = app.scrollViews["sidebar"]
         XCTAssertTrue(waitForExistence(sidebar, timeout: 10))
 
         let externalNode = app.staticTexts["fileNode_external"]
@@ -178,7 +178,7 @@ final class SymlinkSecurityUITests: PineUITestCase {
     func testDuplicateOnOutsideSymlinkIsBlocked() throws {
         launchWithProject(projectURL)
 
-        let sidebar = app.outlines["sidebar"]
+        let sidebar = app.scrollViews["sidebar"]
         XCTAssertTrue(waitForExistence(sidebar, timeout: 10))
 
         let externalNode = app.staticTexts["fileNode_external"]

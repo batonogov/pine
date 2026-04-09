@@ -63,7 +63,7 @@ final class GoToLineTabOverflowExternalChangesUITests: PineUITestCase {
     func testGoToLineOpensViaEditMenu() throws {
         launchWithProject(projectURL)
 
-        let sidebar = app.outlines["sidebar"]
+        let sidebar = app.scrollViews["sidebar"]
         XCTAssertTrue(waitForExistence(sidebar, timeout: 10))
 
         openFile("main.swift")
@@ -77,7 +77,7 @@ final class GoToLineTabOverflowExternalChangesUITests: PineUITestCase {
     func testGoToLineMenuItemExistsInEditMenu() throws {
         launchWithProject(projectURL)
 
-        let sidebar = app.outlines["sidebar"]
+        let sidebar = app.scrollViews["sidebar"]
         XCTAssertTrue(waitForExistence(sidebar, timeout: 10))
 
         openFile("main.swift")
@@ -99,7 +99,7 @@ final class GoToLineTabOverflowExternalChangesUITests: PineUITestCase {
     func testGoToLineDismissesOnEscape() throws {
         launchWithProject(projectURL)
 
-        let sidebar = app.outlines["sidebar"]
+        let sidebar = app.scrollViews["sidebar"]
         XCTAssertTrue(waitForExistence(sidebar, timeout: 10))
 
         openFile("main.swift")
@@ -121,7 +121,7 @@ final class GoToLineTabOverflowExternalChangesUITests: PineUITestCase {
     func testGoToLineShowsLineRangeHint() throws {
         launchWithProject(projectURL)
 
-        let sidebar = app.outlines["sidebar"]
+        let sidebar = app.scrollViews["sidebar"]
         XCTAssertTrue(waitForExistence(sidebar, timeout: 10))
 
         openFile("main.swift")
@@ -144,7 +144,7 @@ final class GoToLineTabOverflowExternalChangesUITests: PineUITestCase {
     func testGoToLineAcceptsValidInput() throws {
         launchWithProject(projectURL)
 
-        let sidebar = app.outlines["sidebar"]
+        let sidebar = app.scrollViews["sidebar"]
         XCTAssertTrue(waitForExistence(sidebar, timeout: 10))
 
         openFile("main.swift")
@@ -175,7 +175,7 @@ final class GoToLineTabOverflowExternalChangesUITests: PineUITestCase {
     func testGoToLineRejectsInvalidInput() throws {
         launchWithProject(projectURL)
 
-        let sidebar = app.outlines["sidebar"]
+        let sidebar = app.scrollViews["sidebar"]
         XCTAssertTrue(waitForExistence(sidebar, timeout: 10))
 
         openFile("main.swift")
@@ -205,7 +205,7 @@ final class GoToLineTabOverflowExternalChangesUITests: PineUITestCase {
     func testManyTabsRemainAccessible() throws {
         launchWithProject(projectURL)
 
-        let sidebar = app.outlines["sidebar"]
+        let sidebar = app.scrollViews["sidebar"]
         XCTAssertTrue(waitForExistence(sidebar, timeout: 10))
 
         // Open all five files
@@ -232,7 +232,7 @@ final class GoToLineTabOverflowExternalChangesUITests: PineUITestCase {
     func testClickingTabSwitchesActivation() throws {
         launchWithProject(projectURL)
 
-        let sidebar = app.outlines["sidebar"]
+        let sidebar = app.scrollViews["sidebar"]
         XCTAssertTrue(waitForExistence(sidebar, timeout: 10))
 
         // Open multiple files
@@ -259,7 +259,7 @@ final class GoToLineTabOverflowExternalChangesUITests: PineUITestCase {
     func testSingleTabNoOverflowIndicator() throws {
         launchWithProject(projectURL)
 
-        let sidebar = app.outlines["sidebar"]
+        let sidebar = app.scrollViews["sidebar"]
         XCTAssertTrue(waitForExistence(sidebar, timeout: 10))
 
         // Open only one file
@@ -281,7 +281,7 @@ final class GoToLineTabOverflowExternalChangesUITests: PineUITestCase {
     func testClosingTabLeavesNeighborActive() throws {
         launchWithProject(projectURL)
 
-        let sidebar = app.outlines["sidebar"]
+        let sidebar = app.scrollViews["sidebar"]
         XCTAssertTrue(waitForExistence(sidebar, timeout: 10))
 
         // Open two files
@@ -313,7 +313,7 @@ final class GoToLineTabOverflowExternalChangesUITests: PineUITestCase {
     func testExternalChangeReloadsCleanTab() throws {
         launchWithProject(projectURL)
 
-        let sidebar = app.outlines["sidebar"]
+        let sidebar = app.scrollViews["sidebar"]
         XCTAssertTrue(waitForExistence(sidebar, timeout: 10))
 
         // Open a file
@@ -341,7 +341,7 @@ final class GoToLineTabOverflowExternalChangesUITests: PineUITestCase {
     func testNewExternalFileAppearsInSidebar() throws {
         launchWithProject(projectURL)
 
-        let sidebar = app.outlines["sidebar"]
+        let sidebar = app.scrollViews["sidebar"]
         XCTAssertTrue(waitForExistence(sidebar, timeout: 10))
 
         // Create a new file externally
@@ -361,7 +361,7 @@ final class GoToLineTabOverflowExternalChangesUITests: PineUITestCase {
     func testDeletedExternalFileDisappearsFromSidebar() throws {
         launchWithProject(projectURL)
 
-        let sidebar = app.outlines["sidebar"]
+        let sidebar = app.scrollViews["sidebar"]
         XCTAssertTrue(waitForExistence(sidebar, timeout: 10))
 
         // Verify the file is in the sidebar first
