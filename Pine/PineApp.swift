@@ -28,7 +28,7 @@ struct PineApp: App {
         .defaultSize(width: 1280, height: 800)
         .defaultLaunchBehavior(.suppressed)
         .commands {
-            PineAppCommands(appDelegate: appDelegate)
+            PineAppMenuCommands(appDelegate: appDelegate)
         }
 
         Window(Strings.welcomeTitle, id: "welcome") {

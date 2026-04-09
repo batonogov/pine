@@ -2,6 +2,8 @@
 //  PineAppMenuCommands.swift
 //  Pine
 //
+//  Created by Федор Батоногов on 09.04.2026.
+//
 //  Menu command definitions (CommandGroup / CommandMenu) for the main Scene.
 //  Extracted from PineApp.swift as part of refactor #756.
 //
@@ -18,7 +20,11 @@ import SwiftUI
 /// that PineApp attaches to its main `WindowGroup`. Keeping this in its own
 /// file isolates the high-churn menu definitions from the small
 /// `@main` + Scene wiring in `PineApp.swift`.
-struct PineAppCommands: Commands {
+struct PineAppMenuCommands: Commands {
+    /// Needed for `CheckForUpdatesView(viewModel:)` which requires access to
+    /// the Sparkle updater view model owned by `AppDelegate`. Strong reference
+    /// is safe: `AppDelegate` does not retain this value-type `Commands` struct,
+    /// and the struct lives inside `Scene.body` for the app's lifetime.
     let appDelegate: AppDelegate
     @FocusedValue(\.projectManager) private var focusedProject: ProjectManager?
     @AppStorage(TabManager.autoSaveKey) private var autoSaveEnabled = false
