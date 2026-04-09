@@ -148,25 +148,17 @@ struct SidebarIconMetricsTests {
 
     // MARK: - File-leaf leading inset (alignment with folder icons)
 
-    @Test("fileLeafLeadingInset is strictly positive")
-    func fileLeafLeadingInsetIsPositive() {
-        #expect(SidebarIconMetrics.fileLeafLeadingInset > 0)
+    @Test("fileLeafLeadingInset is zero now that the chevron was removed")
+    func fileLeafLeadingInsetIsZero() {
+        // After removing the disclosure chevron in SidebarDisclosureGroupStyle,
+        // folder rows no longer have a chevron prefix, so file-leaf rows do
+        // not need to compensate. All rows start at x = 0.
+        #expect(SidebarIconMetrics.fileLeafLeadingInset == 0)
     }
 
-    @Test("fileLeafLeadingInset matches chevron width + HStack spacing")
-    func fileLeafLeadingInsetMatchesChevronGeometry() {
-        // SidebarDisclosureGroupStyle prepends:
-        //   Image("chevron.right").frame(width: 10)
-        //   HStack(spacing: 2) { chevron ; label }
-        // So a folder label starts 10 + 2 = 12pt to the right of the row.
-        // File-leaf rows must compensate by exactly that much so their icon
-        // lines up with the folder icon on the same x-coordinate.
-        #expect(SidebarIconMetrics.fileLeafLeadingInset == 22)
-    }
-
-    @Test("fileLeafLeadingInset stays in a sane 8...24 range")
+    @Test("fileLeafLeadingInset stays in a sane 0...24 range")
     func fileLeafLeadingInsetIsRealistic() {
-        #expect(SidebarIconMetrics.fileLeafLeadingInset >= 8)
+        #expect(SidebarIconMetrics.fileLeafLeadingInset >= 0)
         #expect(SidebarIconMetrics.fileLeafLeadingInset <= 24)
     }
 
