@@ -383,10 +383,6 @@ nonisolated final class SyntaxHighlighter: @unchecked Sendable {
 
     /// Количество строк контекста для viewport-based подсветки (больше, чем для edit).
     private let viewportContextLines = 50
-    /// Extra context lines for multiline rules (block comments, multiline strings).
-    /// 200 lines in each direction is enough to catch most multiline constructs
-    /// without scanning the entire file.
-    private let multilineContextLines = 200
 
     /// Подсветка только видимой области + буфер.
     /// Используется для больших файлов вместо полного `highlight()`.
@@ -725,12 +721,15 @@ nonisolated final class SyntaxHighlighter: @unchecked Sendable {
         let totalLength = source.length
         let fullRange = NSRange(location: 0, length: totalLength)
 
-        // Expanded range for multiline rules: ±500 lines around searchRange,
-        // clamped to the full text. Catches block comments/strings that start
-        // above the viewport without scanning the entire file.
-        let multilineRange = expandToContext(
-            searchRange, in: source, totalLength: totalLength, lines: multilineContextLines
-        )
+        // Multiline rules (block comments, fenced code blocks, multiline strings)
+        // must scan the full text: a match can start arbitrarily far above the
+        // viewport, and a bounded context window (even ±200 lines) cannot see
+        // the opening delimiter of a very long construct. The cost is bounded
+        // because only a handful of rules per grammar are multiline. See #750 —
+        // fenced markdown blocks larger than the context window left the
+        // interior lines uncolored because the fence markers were outside the
+        // scan range.
+        let multilineRange = fullRange
 
         var matches: [HighlightMatch] = []
         var highlightedRanges: [(range: NSRange, priority: Int)] = []
