@@ -164,16 +164,15 @@ struct SidebarView: View {
                 .navigationTitle(workspace.projectName)
             } else {
                 ScrollViewReader { scrollProxy in
-                    // `List(selection:)` is required for the row to pick up
-                    // the AppKit `selected` accessibility trait that
-                    // `XCUIElement.isSelected` reads (plain
-                    // `.accessibilityAddTraits(.isSelected)` only applies
-                    // to the inner label, not the enclosing NSOutlineView
-                    // cell that tests query for). Clicks still work
-                    // because each row's `.onTapGesture` fires alongside
-                    // `List`'s own row selection handling.
+                    // Plain `ScrollView + VStack` instead of `List(.sidebar)`:
+                    // SwiftUI's sidebar List enforces a minimum row height
+                    // via NSOutlineView that could not be overridden to
+                    // reach Xcode/Zed-style compact density (#778). Rows
+                    // are content-sized and handle their own selection,
+                    // tap, and context-menu via `FileNodeRow` +
+                    // `SidebarFileTree.row`.
                     ScrollView {
-                        LazyVStack(alignment: .leading, spacing: 0) {
+                        VStack(alignment: .leading, spacing: 0) {
                             SidebarFileTree(nodes: workspace.rootNodes, selection: $selectedFile)
                         }
                         .padding(.vertical, 4)

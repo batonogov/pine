@@ -2,44 +2,38 @@
 //  SidebarFileTree.swift
 //  Pine
 //
-//  Recursive sidebar tree where a click on the folder row toggles
-//  expansion (in addition to clicking the disclosure chevron). See #739.
+//  Recursive sidebar tree rendered as a plain SwiftUI VStack. A click on
+//  a folder row toggles expansion; a click on a file row selects it
+//  (which the parent translates into "open tab"). See #739, #763, #778.
 //
 
 import SwiftUI
 
-/// Custom `DisclosureGroup` style that draws its own SwiftUI chevron and
-/// hides the AppKit-native `NSOutlineViewDisclosureButton`.
+/// Sidebar row layout constants.
 ///
-/// Why: the promoted `NSOutlineView` inside `List` installs a native
-/// disclosure button whose click state is independent from our SwiftUI
-/// `isExpanded` binding. XCUITest helpers that locate disclosure triangles
-/// by type would then click the native button and put the SwiftUI model
-/// out of sync with the visible state. Drawing our own chevron keeps the
-/// single source of truth in `SidebarExpansionState`.
-private struct SidebarDisclosureGroupStyle: DisclosureGroupStyle {
-    func makeBody(configuration: Configuration) -> some View {
-        VStack(alignment: .leading, spacing: 0) {
-            configuration.label
-                .contentShape(Rectangle())
-                .onTapGesture {
-                    configuration.isExpanded.toggle()
-                }
-            if configuration.isExpanded {
-                configuration.content
-                    .padding(.leading, 14)
-            }
-        }
-    }
+/// Centralised so row metrics stay consistent across file-leaf and folder
+/// rows. Tuned to match Xcode/Zed-style compact density (#778).
+enum SidebarRowMetrics {
+    /// Horizontal indent applied to child rows when their parent folder is
+    /// expanded. Matches the visual rhythm of a single disclosure level.
+    static let childIndent: CGFloat = 14
+    /// Horizontal padding around the row's background highlight.
+    static let rowHorizontalPadding: CGFloat = 6
+    /// Horizontal inset of the selection background relative to the row
+    /// bounds so the highlight does not touch the sidebar edge.
+    static let selectionHorizontalInset: CGFloat = 4
+    /// Selection background corner radius.
+    static let selectionCornerRadius: CGFloat = 5
+    /// Selection background opacity over the accent color.
+    static let selectionOpacity: Double = 0.25
+    /// Minimum row height. Actual height scales with font size so larger
+    /// fonts do not clip descenders.
+    static let minRowHeight: CGFloat = 20
+    /// Extra vertical padding added on top of the font's ascender/descender
+    /// so rows stay comfortable without inflating beyond Xcode-style density.
+    static let rowVerticalPadding: CGFloat = 6
 }
 
-/// Recursive sidebar file tree built on top of `DisclosureGroup` so that the
-/// expansion state is bindable. Tap on a folder row toggles expansion; tap on
-/// a file row selects it (which the parent translates into "open tab").
-///
-/// Rendered inside a `List` so that AppKit promotes the host `NSTableView` to
-/// `NSOutlineView` (any `DisclosureGroup` inside a `List` triggers this), which
-/// makes the sidebar discoverable as `app.outlines["sidebar"]` in UI tests.
 struct SidebarFileTree: View {
     let nodes: [FileNode]
     @Binding var selection: FileNode?
@@ -73,7 +67,7 @@ private struct SidebarFileTreeNode: View {
                             SidebarFileTreeNode(node: child, selection: $selection)
                         }
                     }
-                    .padding(.leading, 14)
+                    .padding(.leading, SidebarRowMetrics.childIndent)
                 }
             }
         } else {
@@ -87,20 +81,22 @@ private struct SidebarFileTreeNode: View {
     private func row(isFolder: Bool) -> some View {
         let fontSize = fontSettings.fontSize
         let isSelected = selection?.id == node.id
-        FileNodeRow(node: node, isLeaf: !isFolder)
+        let rowHeight = max(SidebarRowMetrics.minRowHeight, fontSize + SidebarRowMetrics.rowVerticalPadding)
+        FileNodeRow(node: node)
             .font(.system(size: fontSize))
             .frame(maxWidth: .infinity, alignment: .leading)
-            .frame(height: 20)
-            .padding(.horizontal, 6)
+            .frame(height: rowHeight)
+            .padding(.horizontal, SidebarRowMetrics.rowHorizontalPadding)
             .background(
-                RoundedRectangle(cornerRadius: 5, style: .continuous)
-                    .fill(Color.accentColor.opacity(isSelected ? 0.25 : 0))
-                    .padding(.horizontal, 4)
+                RoundedRectangle(cornerRadius: SidebarRowMetrics.selectionCornerRadius, style: .continuous)
+                    .fill(Color.accentColor.opacity(isSelected ? SidebarRowMetrics.selectionOpacity : 0))
+                    .padding(.horizontal, SidebarRowMetrics.selectionHorizontalInset)
             )
             .contentShape(Rectangle())
             .onTapGesture {
                 handleTap(isFolder: isFolder)
             }
+            .accessibilityAddTraits(isSelected ? .isSelected : [])
             .id(node.id)
     }
 
@@ -123,5 +119,4 @@ private struct SidebarFileTreeNode: View {
             expansion.toggleDebounced(node.url)
         }
     }
-
 }
