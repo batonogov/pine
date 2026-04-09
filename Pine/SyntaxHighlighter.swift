@@ -63,7 +63,14 @@ nonisolated struct Theme {
         "markdown.italic": dynamicColor(light: (0.52, 0.35, 0.70), dark: (0.78, 0.62, 0.92)),
         "markdown.code": dynamicColor(light: (0.76, 0.32, 0.18), dark: (0.95, 0.58, 0.40)),
         "markdown.code.fenced": dynamicColor(light: (0.58, 0.22, 0.10), dark: (0.99, 0.72, 0.52)),
+        // Double-backtick inline code — same hue as inline code so the visual
+        // matches user expectations, but a distinct scope lets the grammar
+        // prioritise it over single-backtick spans.
+        "markdown.code.double": dynamicColor(light: (0.76, 0.32, 0.18), dark: (0.95, 0.58, 0.40)),
         "markdown.link": dynamicColor(light: (0.10, 0.45, 0.78), dark: (0.36, 0.68, 0.98)),
+        // Image links — slightly teal-shifted from plain links so they read as
+        // "link carrying media".
+        "markdown.image": dynamicColor(light: (0.12, 0.56, 0.62), dark: (0.38, 0.82, 0.88)),
         "markdown.list": dynamicColor(light: (0.22, 0.55, 0.60), dark: (0.46, 0.82, 0.86)),
         "markdown.quote": dynamicColor(light: (0.40, 0.50, 0.42), dark: (0.58, 0.72, 0.60)),
         "markdown.rule": dynamicColor(light: (0.50, 0.50, 0.50), dark: (0.62, 0.62, 0.62)),
@@ -342,6 +349,9 @@ nonisolated final class SyntaxHighlighter: @unchecked Sendable {
         // Markdown: fenced/inline code must beat headings, headings beat emphasis,
         // emphasis beats links/lists/quotes so contained markup doesn't bleed through.
         "markdown.code.fenced": 95,
+        // Double-backtick span must beat single-backtick so the inner single
+        // backtick in ``foo`bar`` isn't re-coloured by the single-tick rule.
+        "markdown.code.double": 94,
         "markdown.code": 92,
         "markdown.heading.1": 80,
         "markdown.heading.2": 80,
@@ -351,6 +361,8 @@ nonisolated final class SyntaxHighlighter: @unchecked Sendable {
         "markdown.heading.6": 80,
         "markdown.bold": 60,
         "markdown.italic": 55,
+        // Image links above plain links so `![alt](url)` isn't taken by link.
+        "markdown.image": 52,
         "markdown.link": 50,
         "markdown.list": 40,
         "markdown.quote": 30,

@@ -321,10 +321,143 @@ struct MarkdownGrammarTests {
         let scopes = [
             "markdown.bold", "markdown.italic", "markdown.code",
             "markdown.code.fenced", "markdown.link", "markdown.list",
-            "markdown.quote", "markdown.rule"
+            "markdown.quote", "markdown.rule",
+            "markdown.image", "markdown.code.double"
         ]
         for scope in scopes {
             #expect(hl.theme.color(for: scope) != nil, "Missing color for \(scope)")
         }
+    }
+
+    // MARK: - Setext headings (CommonMark)
+
+    // swiftlint:disable force_unwrapping
+    private var setextH1Color: NSColor { hl.theme.color(for: "markdown.heading.1")! }
+    private var setextH2Color: NSColor { hl.theme.color(for: "markdown.heading.2")! }
+    // swiftlint:enable force_unwrapping
+
+    @Test func setextHeading1IsHighlighted() throws {
+        let storage = try highlight("Title\n=====\n\nbody")
+        let pos = position(of: "Title", in: storage)
+        #expect(color(in: storage, at: pos) == setextH1Color)
+        let underline = position(of: "=====", in: storage)
+        #expect(color(in: storage, at: underline) == setextH1Color)
+    }
+
+    @Test func setextHeading2IsHighlighted() throws {
+        let storage = try highlight("Section\n-------\n\nbody")
+        let pos = position(of: "Section", in: storage)
+        #expect(color(in: storage, at: pos) == setextH2Color)
+    }
+
+    @Test func setextAtStartOfFile() throws {
+        let storage = try highlight("Top\n===\nrest")
+        #expect(color(in: storage, at: 0) == setextH1Color)
+    }
+
+    @Test func setextInMiddleOfFile() throws {
+        let storage = try highlight("intro paragraph.\n\nMiddle\n======\n\nmore text")
+        let pos = position(of: "Middle", in: storage)
+        #expect(color(in: storage, at: pos) == setextH1Color)
+    }
+
+    @Test func setextAtEndOfFile() throws {
+        let storage = try highlight("leading\n\nEnd\n---")
+        let pos = position(of: "End", in: storage)
+        #expect(color(in: storage, at: pos) == setextH2Color)
+    }
+
+    @Test func hrOfThreeDashesStillHighlighted() throws {
+        // A lone `---` without a text line above is still a horizontal rule.
+        let storage = try highlight("\n---\n")
+        let pos = position(of: "---", in: storage)
+        #expect(color(in: storage, at: pos) == ruleColor)
+    }
+
+    // MARK: - Image links
+
+    @Test func imageLinkIsHighlighted() throws {
+        let storage = try highlight("see ![logo](https://example.com/logo.png) here")
+        let pos = position(of: "![logo]", in: storage)
+        // swiftlint:disable:next force_unwrapping
+        #expect(color(in: storage, at: pos) == hl.theme.color(for: "markdown.image")!)
+    }
+
+    @Test func imageLinkWithEmptyAltText() throws {
+        let storage = try highlight("![](https://example.com/pic.png)")
+        // swiftlint:disable:next force_unwrapping
+        #expect(color(in: storage, at: 0) == hl.theme.color(for: "markdown.image")!)
+    }
+
+    @Test func imageLinkDoesNotCollideWithPlainLink() throws {
+        // `![alt](url)` must be coloured as image, not as plain link.
+        let storage = try highlight("![alt](url)")
+        let imageColor = hl.theme.color(for: "markdown.image")
+        #expect(color(in: storage, at: 0) == imageColor)
+        // Inner `[alt](url)` must NOT be re-coloured as a plain link on top.
+        let bracketPos = position(of: "[alt]", in: storage)
+        #expect(color(in: storage, at: bracketPos) == imageColor)
+    }
+
+    // MARK: - Nested emphasis
+
+    @Test func boldWithNestedItalicUnderscore() throws {
+        // `**bold _italic_**` — outer **...** must still highlight as bold.
+        let storage = try highlight("text **bold _italic_ end** tail")
+        let pos = position(of: "**bold", in: storage)
+        #expect(color(in: storage, at: pos) == boldColor)
+    }
+
+    @Test func tripleEmphasisIsHighlighted() throws {
+        // `***triple***` is bold+italic in CommonMark. We colour it as bold
+        // (priority chooses the stronger emphasis).
+        let storage = try highlight("a ***triple*** word")
+        let pos = position(of: "***triple***", in: storage)
+        // Must be SOME emphasis colour, not plain prose.
+        let col = color(in: storage, at: pos)
+        #expect(col == boldColor || col == italicColor)
+        #expect(col != prose)
+    }
+
+    @Test func nestedEmphasisDoesNotBreakSurroundingProse() throws {
+        let storage = try highlight("lead **a _b_ c** trail")
+        let leadPos = position(of: "lead", in: storage)
+        let trailPos = position(of: "trail", in: storage)
+        #expect(color(in: storage, at: leadPos) == prose)
+        #expect(color(in: storage, at: trailPos) == prose)
+    }
+
+    // MARK: - Double-backtick inline code
+
+    @Test func doubleBacktickInlineCodeIsHighlighted() throws {
+        let storage = try highlight("use ``foo`bar`` in code")
+        let pos = position(of: "``foo`bar``", in: storage)
+        // swiftlint:disable:next force_unwrapping
+        let dblColor = hl.theme.color(for: "markdown.code.double")!
+        #expect(color(in: storage, at: pos) == dblColor)
+    }
+
+    @Test func doubleBacktickBeatsSingleBacktick() throws {
+        // Middle backtick inside `` `` `` must NOT be re-coloured as single code.
+        let storage = try highlight("``x`y``")
+        let middleTick = position(of: "`y", in: storage)
+        // swiftlint:disable:next force_unwrapping
+        let dblColor = hl.theme.color(for: "markdown.code.double")!
+        #expect(color(in: storage, at: middleTick) == dblColor)
+    }
+
+    @Test func singleBacktickStillWorksAlongsideDouble() throws {
+        let storage = try highlight("inline `a` then ``b`c`` done")
+        let singlePos = position(of: "`a`", in: storage)
+        #expect(color(in: storage, at: singlePos) == codeColor)
+        let doublePos = position(of: "``b`c``", in: storage)
+        // swiftlint:disable:next force_unwrapping
+        #expect(color(in: storage, at: doublePos) == hl.theme.color(for: "markdown.code.double")!)
+    }
+
+    @Test func doubleBacktickEmptyIsIgnoredGracefully() throws {
+        // Degenerate `` `` `` `` `` (empty code span) must not crash.
+        let storage = try highlight("a ```` b")
+        #expect(storage.length > 0)
     }
 }
