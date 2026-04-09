@@ -67,6 +67,11 @@ final class LineNumberView: NSView {
             // have an icon.
             diagnosticPopover?.close()
             diagnosticPopover = nil
+            // #781: gutter width depends on whether diagnostics are present
+            // (we reserve a dedicated icon zone when they are). Recompute
+            // synchronously so callers — including unit tests — observe the
+            // updated width immediately, without having to wait for a draw().
+            recomputeGutterWidth()
             needsDisplay = true
         }
     }
@@ -139,6 +144,49 @@ final class LineNumberView: NSView {
     /// Sized to match the fold-indicator area so the icon (drawn at x=1..1+iconSize)
     /// is fully covered.
     static let diagnosticIconHitZoneWidth: CGFloat = 14
+
+    /// Horizontal space reserved on the left edge of the gutter for the
+    /// diagnostic icon when diagnostics are present. Line numbers never enter
+    /// this zone — this guarantees the icon and line number never overlap,
+    /// regardless of how many digits the line number has (#781).
+    static let diagnosticReservedWidth: CGFloat = 14
+
+    /// Right-side padding between the line number and the diff bar / gutter
+    /// edge. Exposed so tests can reproduce the draw-path math exactly.
+    static let lineNumberRightPadding: CGFloat = 8
+
+    /// Test-only snapshot of the x-coordinates used when drawing a line number.
+    /// Returned by `lineNumberDrawLayout(forDigits:)` so tests can verify the
+    /// icon zone and the line number zone never overlap.
+    struct LineNumberDrawLayout: Equatable {
+        /// Left edge of the drawn line number (x of the first digit).
+        let lineNumberX: CGFloat
+        /// Right edge of the drawn line number string.
+        let lineNumberRightEdge: CGFloat
+        /// Right edge of the reserved diagnostic icon zone (i.e. the first x
+        /// coordinate that line numbers are allowed to touch).
+        let diagnosticZoneRightEdge: CGFloat
+        /// Current gutter width when the layout was computed.
+        let gutterWidth: CGFloat
+    }
+
+    /// Computes the exact draw coordinates the paint path would use for a line
+    /// number with the given digit count. Mirrors the formula inside
+    /// `draw(_:)` so tests can assert non-overlap without touching drawing.
+    func lineNumberDrawLayout(forDigits digits: Int) -> LineNumberDrawLayout {
+        let attrs: [NSAttributedString.Key: Any] = [.font: gutterFont]
+        let digitString = String(repeating: "0", count: max(digits, 1)) as NSString
+        let textWidth = digitString.size(withAttributes: attrs).width
+        let rightEdge = gutterWidth - Self.lineNumberRightPadding
+        let leftEdge = rightEdge - textWidth
+        let diagnosticZoneEnd: CGFloat = diagnosticMap.isEmpty ? 0 : Self.diagnosticReservedWidth
+        return LineNumberDrawLayout(
+            lineNumberX: leftEdge,
+            lineNumberRightEdge: rightEdge,
+            diagnosticZoneRightEdge: diagnosticZoneEnd,
+            gutterWidth: gutterWidth
+        )
+    }
 
     private func rebuildDiffMap() {
         diffMap = Dictionary(lineDiffs.map { ($0.line, $0.kind) }, uniquingKeysWith: { _, last in last })
@@ -467,7 +515,7 @@ final class LineNumberView: NSView {
         needsDisplay = true
     }
 
-    private func recountTotalLines() {
+    func recountTotalLines() {
         if let cache = lineStartsCache {
             cachedTotalLines = cache.lineCount
             return
@@ -658,12 +706,26 @@ final class LineNumberView: NSView {
         }
 
         // ── Обновляем ширину гуттера если изменилось количество цифр ──
+        recomputeGutterWidth()
+    }
+
+    /// Recomputes `gutterWidth` based on the current digit count and whether
+    /// diagnostics are present. Splits the gutter into three zones, left→right:
+    ///
+    ///   [0, diagnosticReservedWidth)  — diagnostic icon (when diagnostics present)
+    ///   [diagnosticReservedWidth + ε, gutterWidth - rightPadding) — line numbers
+    ///   [gutterWidth - diffBarWidth, gutterWidth) — git diff bar
+    ///
+    /// The icon zone and the line-number zone can never overlap regardless of
+    /// how many digits the line number has (#781).
+    func recomputeGutterWidth() {
         let digits = max(String(cachedTotalLines).count, 2)
         if cachedDigitWidthFont != gutterFont {
             cachedDigitWidth = "0".size(withAttributes: [.font: gutterFont]).width
             cachedDigitWidthFont = gutterFont
         }
-        let newWidth = CGFloat(digits) * cachedDigitWidth + 20
+        let diagnosticReserved: CGFloat = diagnosticMap.isEmpty ? 0 : Self.diagnosticReservedWidth
+        let newWidth = diagnosticReserved + CGFloat(digits) * cachedDigitWidth + 20
         if abs(gutterWidth - newWidth) > 1 {
             gutterWidth = newWidth
             frame.size.width = newWidth

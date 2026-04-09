@@ -12,6 +12,29 @@ import AppKit
 @MainActor
 struct ValidationGutterTests {
 
+    /// Creates a LineNumberView backed by a text storage containing `lineCount` lines.
+    /// Used to exercise the gutter-width math for different digit counts (1, 2, 3, 4+).
+    private func makeLineNumberView(lineCount: Int) -> LineNumberView {
+        let body = (1...lineCount).map { "line \($0)" }.joined(separator: "\n") + "\n"
+        let textStorage = NSTextStorage(string: body)
+        let layoutManager = NSLayoutManager()
+        textStorage.addLayoutManager(layoutManager)
+        let textContainer = NSTextContainer(
+            containerSize: NSSize(width: 500, height: CGFloat.greatestFiniteMagnitude)
+        )
+        layoutManager.addTextContainer(textContainer)
+        let textView = NSTextView(
+            frame: NSRect(x: 0, y: 0, width: 500, height: 500),
+            textContainer: textContainer
+        )
+        let view = LineNumberView(textView: textView)
+        // Force line-count recount + width recompute so the initial state is
+        // consistent with what draw() would produce.
+        view.recountTotalLines()
+        view.recomputeGutterWidth()
+        return view
+    }
+
     private func makeLineNumberView() -> LineNumberView {
         let textStorage = NSTextStorage(string: "line1\nline2\nline3\nline4\nline5\n")
         let layoutManager = NSLayoutManager()
@@ -151,47 +174,93 @@ struct ValidationGutterTests {
         #expect(LineNumberView.diagnosticIconDrawSize == 12)
     }
 
-    // MARK: - Fixed gutter width (issue #677)
+    // MARK: - Gutter width reserves diagnostic icon zone (#781)
 
-    @Test func gutterWidth_remainsStableWhenDiagnosticsAdded() {
-        let view = makeLineNumberView()
-        let baseWidth = view.gutterWidth
-
-        let diag = ValidationDiagnostic(
-            line: 1, column: nil, message: "error", severity: .error, source: "test"
-        )
-        view.validationDiagnostics = [diag]
-
-        // Gutter width must NOT change when diagnostics appear — icons fit within existing space.
-        #expect(view.gutterWidth == baseWidth)
+    @Test func gutterWidth_noReservationWhenNoDiagnostics() {
+        // Without diagnostics, the icon zone is NOT reserved — gutter stays compact.
+        let view = makeLineNumberView(lineCount: 5)
+        let layout = view.lineNumberDrawLayout(forDigits: 2)
+        #expect(layout.diagnosticZoneRightEdge == 0)
     }
 
-    @Test func gutterWidth_remainsStableWhenDiagnosticsCleared() {
-        let view = makeLineNumberView()
-        let baseWidth = view.gutterWidth
-
-        let diag = ValidationDiagnostic(
-            line: 1, column: nil, message: "error", severity: .error, source: "test"
-        )
-        view.validationDiagnostics = [diag]
-        view.validationDiagnostics = []
-
-        // Gutter width must stay the same after diagnostics are cleared.
-        #expect(view.gutterWidth == baseWidth)
-    }
-
-    @Test func gutterWidth_noDiagnosticExtraInCalculation() {
-        // The gutter width formula should NOT include diagnosticExtra.
-        // Icons are drawn within the existing gutter space (fold indicator area).
-        let view = makeLineNumberView()
+    @Test func gutterWidth_widensWhenDiagnosticsAdded() {
+        // With diagnostics, the gutter must widen to reserve the icon zone.
+        let view = makeLineNumberView(lineCount: 5)
         let widthWithout = view.gutterWidth
-
         view.validationDiagnostics = [
-            ValidationDiagnostic(line: 1, column: nil, message: "err", severity: .error, source: "t")
+            ValidationDiagnostic(line: 1, column: nil, message: "e", severity: .error, source: "t")
         ]
         let widthWith = view.gutterWidth
+        #expect(widthWith == widthWithout + LineNumberView.diagnosticReservedWidth)
+    }
 
-        #expect(widthWith == widthWithout, "Gutter width must be fixed regardless of diagnostics")
+    @Test func gutterWidth_shrinksBackWhenDiagnosticsCleared() {
+        let view = makeLineNumberView(lineCount: 5)
+        let baseWidth = view.gutterWidth
+        view.validationDiagnostics = [
+            ValidationDiagnostic(line: 1, column: nil, message: "e", severity: .error, source: "t")
+        ]
+        view.validationDiagnostics = []
+        #expect(view.gutterWidth == baseWidth)
+    }
+
+    // MARK: - Line number never overlaps the diagnostic icon zone (#781)
+
+    /// Parameterized check: for any digit count that matters in practice,
+    /// the left edge of the rendered line number must sit strictly to the
+    /// right of the reserved diagnostic icon zone when diagnostics are present.
+    private func assertNoOverlap(lineCount: Int, digits: Int) {
+        let view = makeLineNumberView(lineCount: lineCount)
+        view.validationDiagnostics = [
+            ValidationDiagnostic(
+                line: 1, column: nil, message: "err", severity: .error, source: "t"
+            )
+        ]
+        let layout = view.lineNumberDrawLayout(forDigits: digits)
+        #expect(layout.lineNumberX >= layout.diagnosticZoneRightEdge)
+        #expect(layout.diagnosticZoneRightEdge == LineNumberView.diagnosticReservedWidth)
+    }
+
+    @Test func noOverlap_singleDigitLines() {
+        assertNoOverlap(lineCount: 5, digits: 1)
+    }
+
+    @Test func noOverlap_twoDigitLines() {
+        assertNoOverlap(lineCount: 42, digits: 2)
+    }
+
+    @Test func noOverlap_threeDigitLines() {
+        assertNoOverlap(lineCount: 500, digits: 3)
+    }
+
+    @Test func noOverlap_fourDigitLines() {
+        assertNoOverlap(lineCount: 5000, digits: 4)
+    }
+
+    @Test func noOverlap_fiveDigitLines() {
+        // Stress the formula at the high end.
+        assertNoOverlap(lineCount: 50_000, digits: 5)
+    }
+
+    @Test func lineNumberRightEdge_respectsRightPadding() {
+        let view = makeLineNumberView(lineCount: 10)
+        view.validationDiagnostics = [
+            ValidationDiagnostic(
+                line: 1, column: nil, message: "e", severity: .error, source: "t"
+            )
+        ]
+        let layout = view.lineNumberDrawLayout(forDigits: 2)
+        #expect(
+            layout.lineNumberRightEdge == layout.gutterWidth - LineNumberView.lineNumberRightPadding
+        )
+    }
+
+    @Test func iconZone_coversIconDrawPath() {
+        // Icon is drawn at x=1 with width = diagnosticIconDrawSize.
+        // The reserved zone must fully contain the drawn icon.
+        let iconLeft: CGFloat = 1
+        let iconRight = iconLeft + LineNumberView.diagnosticIconDrawSize
+        #expect(iconRight <= LineNumberView.diagnosticReservedWidth)
     }
 
     // MARK: - drawDiagnosticIcon does not crash
@@ -231,21 +300,20 @@ struct ValidationGutterTests {
     }
 
     @Test func diagnosticIcon_doesNotOverlapLineNumbers() {
-        // Icon: x=1, size=8 → right edge = 9.
-        // Line numbers for 2-digit case: gutterWidth(40) - textWidth(~14) - padding(8) = 18.
-        // 9 < 18, so no overlap.
+        // #781: when diagnostics are present, the gutter reserves a dedicated
+        // icon zone on the left so the icon (drawn at x=1..1+iconSize) never
+        // touches the line number glyphs regardless of digit count.
+        let view = makeLineNumberView(lineCount: 42)
+        view.validationDiagnostics = [
+            ValidationDiagnostic(
+                line: 1, column: nil, message: "e", severity: .error, source: "t"
+            )
+        ]
         let iconX: CGFloat = 1
         let iconRightEdge = iconX + LineNumberView.diagnosticIconDrawSize
-        let view = makeLineNumberView()
-        let digitWidth = "0".size(withAttributes: [
-            .font: NSFont.monospacedSystemFont(ofSize: 11, weight: .regular)
-        ]).width
-        let twoDigitWidth = digitWidth * 2
-        let lineNumberStartX = view.gutterWidth - twoDigitWidth - 8
-        #expect(
-            iconRightEdge < lineNumberStartX,
-            "Icon right edge (\(iconRightEdge)) must not overlap line number start (\(lineNumberStartX))"
-        )
+        let layout = view.lineNumberDrawLayout(forDigits: 2)
+        #expect(iconRightEdge <= layout.diagnosticZoneRightEdge)
+        #expect(layout.lineNumberX >= layout.diagnosticZoneRightEdge)
     }
 
     // MARK: - Multiple lines with diagnostics
