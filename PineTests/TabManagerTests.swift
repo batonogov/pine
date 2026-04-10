@@ -24,7 +24,9 @@ struct TabManagerTests {
         format: Bool = false
     ) -> TabManager {
         let suite = "TabManagerTests-\(UUID().uuidString)"
-        let defaults = UserDefaults(suiteName: suite)!
+        guard let defaults = UserDefaults(suiteName: suite) else {
+            fatalError("Failed to create UserDefaults for suite \(suite)")
+        }
         defaults.removePersistentDomain(forName: suite)
         let settings = EditorSettings(defaults: defaults)
         settings.insertFinalNewline = newline
