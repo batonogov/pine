@@ -41,10 +41,14 @@ struct MarkdownGrammarTests {
     // MARK: - Helpers
 
     private func loadMarkdownGrammar() throws -> Grammar {
+        try loadGrammar(named: "markdown")
+    }
+
+    private func loadGrammar(named name: String) throws -> Grammar {
         let grammarURL = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()
             .deletingLastPathComponent()
-            .appendingPathComponent("Pine/Grammars/markdown.json")
+            .appendingPathComponent("Pine/Grammars/\(name).json")
         let data = try Data(contentsOf: grammarURL)
         return try JSONDecoder().decode(Grammar.self, from: data)
     }
@@ -161,6 +165,201 @@ struct MarkdownGrammarTests {
         #expect(color(in: storage, at: inner) == fencedColor)
     }
 
+    // MARK: - Fenced code block — comprehensive coverage for #750
+
+    @Test func fencedCodeBlockFromRealReadme() throws {
+        // Read the actual project README and verify fenced blocks are highlighted.
+        let readmeURL = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .appendingPathComponent("README.md")
+        let data = try #require(
+            try? Data(contentsOf: readmeURL),
+            "README.md must exist at project root — skip is not acceptable"
+        )
+        let content = try #require(
+            String(data: data, encoding: .utf8),
+            "README.md must be valid UTF-8"
+        )
+        let grammar = try loadMarkdownGrammar()
+        hl.registerGrammar(grammar)
+        let storage = NSTextStorage(string: content)
+        hl.highlight(textStorage: storage, language: "markdown", font: font)
+
+        // README contains `brew tap batonogov/tap` inside a ```bash block.
+        let ns = content as NSString
+        let brewRange = ns.range(of: "brew tap batonogov/tap")
+        if brewRange.location != NSNotFound {
+            #expect(color(in: storage, at: brewRange.location) == fencedColor,
+                    "brew tap line inside fenced block must be fenced-colored")
+        }
+    }
+
+    @Test func fencedCodeBlockWithLanguageTag() throws {
+        // Regression for #750 — ```bash ... ``` must color interior lines.
+        let storage = try highlight("""
+        intro paragraph.
+
+        ```bash
+        brew tap batonogov/tap
+        brew install --cask pine-editor
+        ```
+
+        after paragraph.
+        """)
+        let openFence = position(of: "```bash", in: storage)
+        #expect(color(in: storage, at: openFence) == fencedColor)
+        let line1 = position(of: "brew tap", in: storage)
+        #expect(color(in: storage, at: line1) == fencedColor)
+        let line2 = position(of: "brew install", in: storage)
+        #expect(color(in: storage, at: line2) == fencedColor)
+        // Prose after the block stays neutral.
+        let afterPos = position(of: "after paragraph", in: storage)
+        #expect(color(in: storage, at: afterPos) == prose)
+    }
+
+    @Test func fencedCodeBlockThreeLines() throws {
+        let storage = try highlight("""
+        ```
+        a
+        b
+        c
+        ```
+        """)
+        #expect(color(in: storage, at: position(of: "a", in: storage)) == fencedColor)
+        #expect(color(in: storage, at: position(of: "b", in: storage)) == fencedColor)
+        #expect(color(in: storage, at: position(of: "c", in: storage)) == fencedColor)
+    }
+
+    @Test func fencedCodeBlockFiftyLines() throws {
+        var lines = ["```swift"]
+        for i in 0..<50 {
+            lines.append("let var\(i) = \(i)")
+        }
+        lines.append("```")
+        let storage = try highlight(lines.joined(separator: "\n"))
+        for i in 0..<50 {
+            let needle = "let var\(i)"
+            let pos = position(of: needle, in: storage)
+            #expect(color(in: storage, at: pos) == fencedColor, "line \(i) not fenced-colored")
+        }
+    }
+
+    @Test func fencedCodeBlockAtStartOfFile() throws {
+        let storage = try highlight("""
+        ```
+        first line
+        second line
+        ```
+        after
+        """)
+        #expect(color(in: storage, at: 0) == fencedColor)
+        #expect(color(in: storage, at: position(of: "first line", in: storage)) == fencedColor)
+        #expect(color(in: storage, at: position(of: "second line", in: storage)) == fencedColor)
+    }
+
+    @Test func fencedCodeBlockAtEndOfFile() throws {
+        let storage = try highlight("""
+        intro
+
+        ```
+        last block
+        ```
+        """)
+        #expect(color(in: storage, at: position(of: "last block", in: storage)) == fencedColor)
+    }
+
+    @Test func twoFencedBlocksBackToBack() throws {
+        let storage = try highlight("""
+        ```
+        first
+        ```
+
+        prose between
+
+        ```
+        second
+        ```
+        """)
+        #expect(color(in: storage, at: position(of: "first", in: storage)) == fencedColor)
+        #expect(color(in: storage, at: position(of: "second", in: storage)) == fencedColor)
+        #expect(color(in: storage, at: position(of: "prose between", in: storage)) == prose)
+    }
+
+    @Test func singleBacktickOnItsOwnLineIsNotFenced() throws {
+        // Negative: a lonely single backtick must not trigger fenced coloring.
+        let storage = try highlight("""
+        text line
+        `
+        more text
+        """)
+        #expect(color(in: storage, at: position(of: "more text", in: storage)) == prose)
+    }
+
+    @Test func fencedCodeBlockSpanningBeyondViewport() throws {
+        // Edge: a fenced block larger than the viewport+context window.
+        // The user is scrolled into the middle of it — fence markers are
+        // far above and below. Highlighter must still color the visible
+        // interior lines as fenced.
+        let grammar = try loadMarkdownGrammar()
+        hl.registerGrammar(grammar)
+
+        var lines = ["# Title", "", "```swift"]
+        for i in 0..<1000 {
+            lines.append("let huge\(i) = \(i) // inside fence")
+        }
+        lines.append("```")
+        lines.append("after the block")
+        let text = lines.joined(separator: "\n")
+        let storage = NSTextStorage(string: text)
+
+        // Place the visible range around line 500, far from either fence.
+        let ns = text as NSString
+        let targetRange = ns.range(of: "let huge500 = 500")
+        let visible = NSRange(location: targetRange.location, length: 200)
+        hl.highlightVisibleRange(
+            textStorage: storage, visibleCharRange: visible,
+            language: "markdown", font: font
+        )
+
+        // The inner line must be fenced-colored even though fence markers
+        // are ~500 lines away in both directions.
+        #expect(color(in: storage, at: targetRange.location) == fencedColor,
+                "deep interior of long fenced block must be fenced-colored")
+    }
+
+    @Test func fencedCodeBlockInLargeFile_highlightVisibleRange() throws {
+        // Edge: file > 60KB — the editor switches to `highlightVisibleRange`.
+        // A fenced block inside the visible window must still color its
+        // interior lines correctly, even though the full-text multiline scan
+        // is more expensive here. This is NOT a direct test of
+        // `viewportHighlightThreshold` (which lives in `CodeEditorView`),
+        // but of the `highlightVisibleRange` path in SyntaxHighlighter.
+        let grammar = try loadMarkdownGrammar()
+        hl.registerGrammar(grammar)
+
+        var padding = ""
+        while padding.count < 60_000 {
+            padding += "regular markdown prose line.\n"
+        }
+        let block = "\n```swift\nlet inner = 42\nlet another = 7\n```\n"
+        let text = padding + block + padding
+        let storage = NSTextStorage(string: text)
+
+        let blockStart = (text as NSString).range(of: "```swift").location
+        // Visible range = just the block + a few lines around it.
+        let visible = NSRange(location: blockStart, length: block.count)
+        hl.highlightVisibleRange(
+            textStorage: storage, visibleCharRange: visible,
+            language: "markdown", font: font
+        )
+
+        let innerPos = (text as NSString).range(of: "let inner = 42").location
+        #expect(color(in: storage, at: innerPos) == fencedColor)
+        let anotherPos = (text as NSString).range(of: "let another = 7").location
+        #expect(color(in: storage, at: anotherPos) == fencedColor)
+    }
+
     @Test func headingInsideFencedCodeIsNotHeading() throws {
         // Critical: # inside a code fence must remain code-colored, not heading.
         let storage = try highlight("""
@@ -180,6 +379,60 @@ struct MarkdownGrammarTests {
         """)
         let pos = position(of: "**not bold**", in: storage)
         #expect(color(in: storage, at: pos) == fencedColor)
+    }
+
+    @Test func unclosedFencedCodeBlock_noCrashOrHang() throws {
+        // Edge: an opening ``` without a matching closing ``` — the nonisolated
+        // `[\s\S]*?` is non-greedy so it technically matches zero characters.
+        // We verify no hang and no crash, and that content after the orphan
+        // fence stays prose-colored.
+        let grammar = try loadMarkdownGrammar()
+        hl.registerGrammar(grammar)
+        let text = "prose before\n```\nstill going\nmore lines\n"
+        let storage = NSTextStorage(string: text)
+        hl.highlight(textStorage: storage, language: "markdown", font: font)
+        // "prose before" should NOT be fenced-colored
+        let prosePos = (text as NSString).range(of: "prose before").location
+        #expect(color(in: storage, at: prosePos) != fencedColor)
+    }
+
+    // MARK: - Multiline regression for non-markdown grammars
+
+    @Test func swiftBlockCommentIsMultiline() throws {
+        // Swift grammar has `/* ... */` as multiline. Interior lines must be
+        // comment-colored even in the viewport-highlight path.
+        let grammar = try loadGrammar(named: "swift")
+        hl.registerGrammar(grammar)
+        let text = "let x = 1\n/* first\nsecond\nthird */\nlet y = 2\n"
+        let storage = NSTextStorage(string: text)
+        hl.highlight(textStorage: storage, language: "swift", font: font)
+        let commentColor = hl.theme.color(for: "comment")
+        let secondPos = (text as NSString).range(of: "second").location
+        #expect(color(in: storage, at: secondPos) == commentColor,
+                "Interior line of Swift block comment must be comment-colored")
+    }
+
+    @Test func pythonDocstringIsMultiline() throws {
+        let grammar = try loadGrammar(named: "python")
+        hl.registerGrammar(grammar)
+        let text = "x = 1\n\"\"\"\nLine one\nLine two\n\"\"\"\ny = 2\n"
+        let storage = NSTextStorage(string: text)
+        hl.highlight(textStorage: storage, language: "py", font: font)
+        let stringColor = hl.theme.color(for: "string")
+        let lineOnePos = (text as NSString).range(of: "Line one").location
+        #expect(color(in: storage, at: lineOnePos) == stringColor,
+                "Interior of Python docstring must be string-colored")
+    }
+
+    @Test func cBlockCommentIsMultiline() throws {
+        let grammar = try loadGrammar(named: "c")
+        hl.registerGrammar(grammar)
+        let text = "int a;\n/* comment\n   spans */\nint b;\n"
+        let storage = NSTextStorage(string: text)
+        hl.highlight(textStorage: storage, language: "c", font: font)
+        let commentColor = hl.theme.color(for: "comment")
+        let spansPos = (text as NSString).range(of: "spans").location
+        #expect(color(in: storage, at: spansPos) == commentColor)
     }
 
     // MARK: - Bold and italic
