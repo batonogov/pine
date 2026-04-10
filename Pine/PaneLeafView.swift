@@ -111,6 +111,18 @@ struct PaneLeafView: View {
                     // must refresh the gutter (issue #780).
                     refreshLineDiffs(tabManager: tabManager)
                 }
+                .onChange(of: tabManager.activeTab?.isDirty) { _, isDirty in
+                    // When a tab transitions dirty → clean (save completed),
+                    // the on-disk content now matches HEAD and diff markers
+                    // must be refreshed. Without this, markers become stale
+                    // after undo-all + save because no other observer fires:
+                    // contentVersion didn't change (undo restores original),
+                    // and fileStatuses may not differ if the provider drops
+                    // clean entries from the dict. Issue #809.
+                    if isDirty == false {
+                        refreshLineDiffs(tabManager: tabManager)
+                    }
+                }
                 .onChange(of: workspace.gitProvider.currentBranch) { _, _ in
                     // Branch switch: `fileStatuses` will also change around the
                     // same time, but `diffTask` cancellation coalesces the two
