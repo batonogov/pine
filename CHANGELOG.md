@@ -1,5 +1,28 @@
 # Changelog
 
+## [1.21.0](https://github.com/batonogov/pine/compare/v1.20.1...v1.21.0) (2026-04-10)
+
+
+### Features
+
+* **editor:** add SmartListContinuation pure logic ([#803](https://github.com/batonogov/pine/issues/803)) ([c74bf85](https://github.com/batonogov/pine/commit/c74bf8540c834e57cde571c380ef374998a87a83))
+* **grammar:** add setext headings, image links, nested emphasis to markdown ([#786](https://github.com/batonogov/pine/issues/786)) ([8a71f7c](https://github.com/batonogov/pine/commit/8a71f7c36240721eed6b3b28a71a877d02701215))
+
+
+### Bug Fixes
+
+* **editor:** diagnostic gutter icon hover/click regression ([#784](https://github.com/batonogov/pine/issues/784)) ([87840cb](https://github.com/batonogov/pine/commit/87840cbd95d037de1c2cc25273b9a03004bdb6cd))
+* **editor:** guard SyntaxHighlighter against nil attribute values and concurrent access ([#801](https://github.com/batonogov/pine/issues/801)) ([fb46272](https://github.com/batonogov/pine/commit/fb4627283748acadf38afd22a9327a21465de2c4)), closes [#790](https://github.com/batonogov/pine/issues/790)
+* **editor:** restore git diff gutter updates in split panes ([#782](https://github.com/batonogov/pine/issues/782)) ([609773b](https://github.com/batonogov/pine/commit/609773b0c94b3f4eb9633771d3b3f425c0d7ffe6))
+* **grammar:** scan full text for multiline rules (fenced code interiors) ([#789](https://github.com/batonogov/pine/issues/789)) ([5584225](https://github.com/batonogov/pine/commit/5584225863b1016638306dcfb4c0743512861850))
+* **sidebar:** refresh tree promptly for changes from built-in terminal ([#774](https://github.com/batonogov/pine/issues/774)) ([#777](https://github.com/batonogov/pine/issues/777)) ([0485df3](https://github.com/batonogov/pine/commit/0485df32116e6161e03afb570fbe5173c9acf917))
+
+
+### Code Refactoring
+
+* **app:** split PineApp.swift into menu commands and notifications ([#785](https://github.com/batonogov/pine/issues/785)) ([2ea3bc3](https://github.com/batonogov/pine/commit/2ea3bc3b3969097244e6dfe797c332982d491899))
+* **editor:** split CodeEditorView.swift into focused files ([#797](https://github.com/batonogov/pine/issues/797)) ([370c91c](https://github.com/batonogov/pine/commit/370c91cbc895886b7c5273639221778146b6a66a))
+
 ## [1.20.1](https://github.com/batonogov/pine/compare/v1.20.0...v1.20.1) (2026-04-09)
 
 
