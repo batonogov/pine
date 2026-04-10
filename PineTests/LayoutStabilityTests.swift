@@ -59,8 +59,9 @@ struct LayoutStabilityTests {
         #expect(workspace.isLoading)
     }
 
-    @Test("isLoading becomes false after shallow load completes for empty directory")
-    func isLoadingFalseAfterEmptyDir() async {
+    @Test("isLoading becomes false after shallow load completes for empty directory",
+          .timeLimit(.minutes(1)))
+    func isLoadingFalseAfterEmptyDir() async throws {
         let workspace = WorkspaceManager()
         let tmpDir = FileManager.default.temporaryDirectory
             .appendingPathComponent("pine-test-\(UUID().uuidString)")
