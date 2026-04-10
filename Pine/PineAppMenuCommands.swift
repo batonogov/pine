@@ -156,6 +156,12 @@ struct PineAppMenuCommands: Commands {
             Toggle(isOn: $autoSaveEnabled) {
                 Label(Strings.menuAutoSave, systemImage: MenuIcons.autoSave)
             }
+
+            Toggle(
+                isOn: Bindable(EditorSettings.shared).formatOnSave
+            ) {
+                Label(Strings.menuFormatOnSave, systemImage: MenuIcons.formatOnSave)
+            }
         }
 
         // MARK: - Edit menu
