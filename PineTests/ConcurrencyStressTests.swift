@@ -79,17 +79,17 @@ nonisolated private func runShell(_ command: String, at dir: URL) throws -> Stri
 
 nonisolated private func makeGitRepo(label: String) throws -> URL {
     let dir = try makeTempDir(label)
-    try runShell("git init -q", at: dir)
-    try runShell("git config user.email 'stress@test.com'", at: dir)
-    try runShell("git config user.name 'Stress'", at: dir)
-    try runShell("git config commit.gpgsign false", at: dir)
+    try runShell("/usr/bin/git init -q", at: dir)
+    try runShell("/usr/bin/git config user.email 'stress@test.com'", at: dir)
+    try runShell("/usr/bin/git config user.name 'Stress'", at: dir)
+    try runShell("/usr/bin/git config commit.gpgsign false", at: dir)
     try "initial\n".write(
         to: dir.appendingPathComponent("README.md"),
         atomically: true,
         encoding: .utf8
     )
-    try runShell("git add .", at: dir)
-    try runShell("git commit -qm initial", at: dir)
+    try runShell("/usr/bin/git add .", at: dir)
+    try runShell("/usr/bin/git commit -qm initial", at: dir)
     return dir
 }
 
@@ -229,8 +229,8 @@ struct GitStatusProviderStressTests {
                 try "line1\nline2\nline3\n".write(to: f, atomically: true, encoding: .utf8)
                 files.append(f)
             }
-            try runShell("git add .", at: repo)
-            try runShell("git commit -qm files", at: repo)
+            try runShell("/usr/bin/git add .", at: repo)
+            try runShell("/usr/bin/git commit -qm files", at: repo)
             for (i, f) in files.enumerated() {
                 try "line1\nmodified\(i)\nline3\n".write(to: f, atomically: true, encoding: .utf8)
             }
