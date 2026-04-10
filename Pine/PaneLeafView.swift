@@ -21,6 +21,10 @@ struct PaneLeafView: View {
 
     @State private var lineDiffs: [GitLineDiff] = []
     @State private var diffHunks: [DiffHunk] = []
+    /// Monotonic counter bumped after every diff refresh to force SwiftUI
+    /// to call `CodeEditorView.updateNSView` even when `@State lineDiffs`
+    /// changes inside a `Task` are optimized away (issue #809).
+    @State private var diffVersion: UInt64 = 0
     @State private var blameLines: [GitBlameLine] = []
     @State private var blameTask: Task<Void, Never>?
     /// Handle for the most recently scheduled diff refresh so new triggers
@@ -110,6 +114,18 @@ struct PaneLeafView: View {
                     // External git state changes (save, stash, checkout from CLI)
                     // must refresh the gutter (issue #780).
                     refreshLineDiffs(tabManager: tabManager)
+                }
+                .onChange(of: tabManager.activeTab?.isDirty) { _, isDirty in
+                    // When a tab transitions dirty → clean (save completed),
+                    // the on-disk content now matches HEAD and diff markers
+                    // must be refreshed. Without this, markers become stale
+                    // after undo-all + save because no other observer fires:
+                    // contentVersion didn't change (undo restores original),
+                    // and fileStatuses may not differ if the provider drops
+                    // clean entries from the dict. Issue #809.
+                    if isDirty == false {
+                        refreshLineDiffs(tabManager: tabManager)
+                    }
                 }
                 .onChange(of: workspace.gitProvider.currentBranch) { _, _ in
                     // Branch switch: `fileStatuses` will also change around the
@@ -226,6 +242,7 @@ struct PaneLeafView: View {
             fileName: tab.fileName,
             fileURL: tab.url,
             lineDiffs: lineDiffs,
+            diffVersion: diffVersion,
             diffHunks: diffHunks,
             validationDiagnostics: configValidator.diagnostics,
             isBlameVisible: isBlameVisible,
@@ -305,6 +322,7 @@ struct PaneLeafView: View {
             guard tabManager.activeTab?.url == fileURL else { return }
             lineDiffs = resolvedDiffs
             diffHunks = resolvedHunks
+            diffVersion &+= 1
         }
     }
 

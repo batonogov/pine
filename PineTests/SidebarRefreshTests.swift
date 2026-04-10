@@ -401,51 +401,15 @@ struct SidebarRefreshTests {
         #expect(noFoo, "foo.txt should disappear after mv")
     }
 
-    // MARK: - No double debounce in FileSystemWatcher
-
-    // FSEvents latency is unpredictable on CI runners (23-31s observed vs <0.5s locally),
-    // making sub-second timing assertions fundamentally unreliable.
-    @Test("FileSystemWatcher responds within reasonable time (no double debounce)",
-          .disabled("FSEvents timing is unreliable on CI runners — latency varies from <0.5s to 30s+"))
-    @MainActor
-    func noDoubleDebounceTiming() async throws {
-        let dir = try makeTempDirectory()
-        defer { cleanup(dir) }
-
-        var callbackTime: Date?
-        let watcher = FileSystemWatcher(debounceInterval: 0.2) {
-            if callbackTime == nil {
-                callbackTime = Date()
-            }
-        }
-        watcher.watch(directory: dir)
-
-        // Small delay to let FSEvents stream fully start
-        try await Task.sleep(for: .milliseconds(100))
-
-        let createTime = Date()
-        try "test".write(
-            to: dir.appendingPathComponent("timing_test.txt"),
-            atomically: true,
-            encoding: .utf8
-        )
-
-        // Wait for callback
-        for _ in 0..<20 {
-            try await Task.sleep(for: .milliseconds(100))
-            if callbackTime != nil { break }
-        }
-
-        watcher.stop()
-
-        guard let received = callbackTime else {
-            Issue.record("Callback never fired")
-            return
-        }
-
-        let elapsed = received.timeIntervalSince(createTime)
-        // With proper single debounce: should respond within ~0.5s
-        // With double debounce bug: would take ~0.8s+
-        #expect(elapsed < 0.6, "Callback should fire within 0.6s, got \(elapsed)s — double debounce suspected")
-    }
+    // Note: a previous "no double debounce" timing test (added in #493,
+    // disabled in #566) was removed in #758/#788. It asserted that the
+    // watcher callback fired within 0.6 s of a file write, but FSEvents
+    // latency on CI runners ranges from <0.5 s to 30 s+ — the assertion
+    // is fundamentally incompatible with the environment it ran in. The
+    // `externalChangeToken` test above already covers the "watcher fires
+    // after file creation" invariant with a generous poll timeout, and
+    // the #774 tests above cover the shell-child-process variant. Future
+    // protection against a double-debounce regression should be a direct
+    // unit test of the debouncer, not an end-to-end FSEvents test — see
+    // follow-up issue #805.
 }

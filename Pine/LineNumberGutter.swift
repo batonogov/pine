@@ -754,15 +754,16 @@ final class LineNumberView: NSView {
             .withSymbolConfiguration(config) else { return }
 
         let tintedImage = image.pine_tinted(with: color)
-        let imageSize = tintedImage.size
-        let centerY = y + (lineHeight - imageSize.height) / 2
-        // Position at the left edge of the gutter, within the fold indicator area (0–14px).
-        // x=1 + iconSize=8 → right edge at 9px, well clear of two-digit line numbers (~18px).
+        let centerY = y + (lineHeight - iconSize) / 2
+        // Draw in a fixed rect — SF Symbols render larger than their
+        // pointSize (e.g. pointSize 12 → ~16px image), so using the
+        // natural imageSize would overflow the reserved icon zone and
+        // overlap line numbers. Constraining to iconSize keeps the
+        // glyph within [1, 1+diagnosticIconDrawSize] = [1, 13].
         let x: CGFloat = 1
-
         tintedImage.draw(in: NSRect(
             x: x, y: centerY,
-            width: imageSize.width, height: imageSize.height
+            width: iconSize, height: iconSize
         ))
     }
 

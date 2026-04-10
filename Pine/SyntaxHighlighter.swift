@@ -63,7 +63,14 @@ nonisolated struct Theme {
         "markdown.italic": dynamicColor(light: (0.52, 0.35, 0.70), dark: (0.78, 0.62, 0.92)),
         "markdown.code": dynamicColor(light: (0.76, 0.32, 0.18), dark: (0.95, 0.58, 0.40)),
         "markdown.code.fenced": dynamicColor(light: (0.58, 0.22, 0.10), dark: (0.99, 0.72, 0.52)),
+        // Double-backtick inline code — same hue as inline code so the visual
+        // matches user expectations, but a distinct scope lets the grammar
+        // prioritise it over single-backtick spans.
+        "markdown.code.double": dynamicColor(light: (0.76, 0.32, 0.18), dark: (0.95, 0.58, 0.40)),
         "markdown.link": dynamicColor(light: (0.10, 0.45, 0.78), dark: (0.36, 0.68, 0.98)),
+        // Image links — slightly teal-shifted from plain links so they read as
+        // "link carrying media".
+        "markdown.image": dynamicColor(light: (0.12, 0.56, 0.62), dark: (0.38, 0.82, 0.88)),
         "markdown.list": dynamicColor(light: (0.22, 0.55, 0.60), dark: (0.46, 0.82, 0.86)),
         "markdown.quote": dynamicColor(light: (0.40, 0.50, 0.42), dark: (0.58, 0.72, 0.60)),
         "markdown.rule": dynamicColor(light: (0.50, 0.50, 0.50), dark: (0.62, 0.62, 0.62)),
@@ -342,6 +349,9 @@ nonisolated final class SyntaxHighlighter: @unchecked Sendable {
         // Markdown: fenced/inline code must beat headings, headings beat emphasis,
         // emphasis beats links/lists/quotes so contained markup doesn't bleed through.
         "markdown.code.fenced": 95,
+        // Double-backtick span must beat single-backtick so the inner single
+        // backtick in ``foo`bar`` isn't re-coloured by the single-tick rule.
+        "markdown.code.double": 94,
         "markdown.code": 92,
         "markdown.heading.1": 80,
         "markdown.heading.2": 80,
@@ -351,6 +361,8 @@ nonisolated final class SyntaxHighlighter: @unchecked Sendable {
         "markdown.heading.6": 80,
         "markdown.bold": 60,
         "markdown.italic": 55,
+        // Image links above plain links so `![alt](url)` isn't taken by link.
+        "markdown.image": 52,
         "markdown.link": 50,
         "markdown.list": 40,
         "markdown.quote": 30,
@@ -384,10 +396,6 @@ nonisolated final class SyntaxHighlighter: @unchecked Sendable {
 
     /// Количество строк контекста для viewport-based подсветки (больше, чем для edit).
     private let viewportContextLines = 50
-    /// Extra context lines for multiline rules (block comments, multiline strings).
-    /// 200 lines in each direction is enough to catch most multiline constructs
-    /// without scanning the entire file.
-    private let multilineContextLines = 200
 
     /// Подсветка только видимой области + буфер.
     /// Используется для больших файлов вместо полного `highlight()`.
@@ -415,9 +423,12 @@ nonisolated final class SyntaxHighlighter: @unchecked Sendable {
             visibleCharRange, in: source, totalLength: totalLength, lines: viewportContextLines
         )
 
-        // Multiline rules (block comments, multiline strings) use an expanded range
-        // (±500 lines) instead of the full text, so they catch constructs starting
-        // above the viewport without scanning the entire file.
+        // Multiline rules (block comments, fenced code blocks, multiline
+        // strings) always scan the full text rather than a bounded context
+        // window: a match can start arbitrarily far above the viewport and
+        // any window — even ±200 lines — will miss the opening delimiter of
+        // a very long construct (#750). The cost is bounded because only a
+        // handful of rules per grammar are multiline.
         let result = applyRules(
             rules, to: textStorage, repaintRange: expanded, searchRange: expanded, font: font,
             grammarName: grammar.name
@@ -850,7 +861,21 @@ nonisolated final class SyntaxHighlighter: @unchecked Sendable {
     }
 
     /// Core match computation — used by both `computeMatches` and `applyRules`.
-    /// Thread-safe: only reads immutable compiled rules and the provided text snapshot.
+    ///
+    /// **Thread safety.** Safe to call from any thread (including concurrent
+    /// callers on the background `highlightQueue`) as long as each invocation
+    /// passes its own `text` snapshot. This method:
+    /// - only reads immutable compiled rules via `rules` and the scope
+    ///   priority map (both immutable after registration),
+    /// - reads `theme.color(for:)` which is a pure dictionary lookup on an
+    ///   immutable `[String: NSColor]`,
+    /// - operates on local `matches`/`highlightedRanges` buffers that never
+    ///   escape this call,
+    /// - does NOT touch any `NSTextStorage` — that happens only in
+    ///   `applyMatches` on the main thread.
+    ///
+    /// Scopes without a registered theme color are skipped early so that no
+    /// nil color can later be written into an attribute dictionary.
     private func computeMatchesWithRules(
         _ rules: [CompiledRule],
         text: String,
@@ -862,24 +887,44 @@ nonisolated final class SyntaxHighlighter: @unchecked Sendable {
         let totalLength = source.length
         let fullRange = NSRange(location: 0, length: totalLength)
 
-        // Expanded range for multiline rules: ±500 lines around searchRange,
-        // clamped to the full text. Catches block comments/strings that start
-        // above the viewport without scanning the entire file.
-        let multilineRange = expandToContext(
-            searchRange, in: source, totalLength: totalLength, lines: multilineContextLines
-        )
+        // Multiline rules (block comments, fenced code blocks, multiline strings)
+        // must scan the full text: a match can start arbitrarily far above the
+        // viewport, and a bounded context window (even ±200 lines) cannot see
+        // the opening delimiter of a very long construct. The cost is bounded
+        // because only a handful of rules per grammar are multiline. See #750 —
+        // fenced markdown blocks larger than the context window left the
+        // interior lines uncolored because the fence markers were outside the
+        // scan range.
+        let multilineRange = fullRange
 
         var matches: [HighlightMatch] = []
         var highlightedRanges: [(range: NSRange, priority: Int)] = []
+        // Fingerprint is collected inline during the main iteration to avoid
+        // a redundant second full-text scan of multiline rules (see #789 review).
+        var multilineFingerprint: [Int] = []
 
         for rule in rules {
             let priority = scopePriority[rule.scope] ?? 0
-            guard theme.color(for: rule.scope) != nil else { continue }
+            let hasColor = theme.color(for: rule.scope) != nil
+
+            // Multiline rules are always scanned for fingerprint collection
+            // (structural change detection), even when they have no color in
+            // the current theme. Single-line rules without color are skipped.
+            if !hasColor && !rule.isMultiline { continue }
 
             let scanRange = rule.isMultiline ? multilineRange : searchRange
 
             rule.regex.enumerateMatches(in: text, range: scanRange) { match, _, _ in
                 guard let matchRange = match?.range else { return }
+
+                // Record fingerprint for all multiline matches (regardless
+                // of whether we apply color) — the cache is used only for
+                // structural change detection in `highlightEdited`.
+                if rule.isMultiline {
+                    multilineFingerprint.append(matchRange.length)
+                }
+
+                guard hasColor else { return }
 
                 let clipped = NSIntersectionRange(matchRange, repaintRange)
                 guard clipped.length > 0 else { return }
@@ -915,7 +960,24 @@ nonisolated final class SyntaxHighlighter: @unchecked Sendable {
         )
     }
 
-    /// Applies pre-computed matches to NSTextStorage. Must be called on main thread.
+    /// Applies pre-computed matches to NSTextStorage.
+    ///
+    /// **Thread safety — MUST be called on the main thread.**
+    /// `NSTextStorage`/`NSMutableAttributedString` are not thread-safe. Calling
+    /// `addAttributes`/`addAttribute` from a background thread — or concurrently
+    /// with another thread (including the main thread via a synchronous
+    /// `highlightVisibleRange` call) — corrupts the internal
+    /// `NSMutableDictionary` backing store, surfacing as
+    /// `NSInvalidArgumentException: object cannot be nil` inside
+    /// `-[__NSDictionaryM setObject:forKey:]` even though every value passed in
+    /// is non-nil. See issue #790.
+    ///
+    /// Async entry points (`highlightAsync`, `highlightEditedAsync`,
+    /// `highlightVisibleRangeAsync`) hop to `@MainActor` before invoking this
+    /// method. Synchronous entry points (`highlightVisibleRange`,
+    /// `highlightEdited`) are documented main-thread-only and inherit the
+    /// caller's main-thread guarantee.
+    ///
     /// Validates that ranges are still valid — text may have changed between
     /// computation and application.
     /// Skips application if the undo manager is currently undoing/redoing to
@@ -957,6 +1019,72 @@ nonisolated final class SyntaxHighlighter: @unchecked Sendable {
         textStorage.endEditing()
     }
 
+    /// Hops to the main thread (synchronously) to call `applyMatches`.
+    ///
+    /// Used by the async entry points. `NSTextStorage` and `NSFont` are not
+    /// `Sendable`, so we avoid `MainActor.run { }` (which requires Sendable
+    /// captures under strict concurrency) and instead route through
+    /// `DispatchQueue.main.sync` — classic Apple pattern for bridging
+    /// background GCD work to the main-thread UI. This also preserves ordering
+    /// with respect to the caller's `await`.
+    ///
+    /// Safe to call from any non-main thread; falls through directly when
+    /// already on main to avoid a redundant hop (and to prevent the deadlock
+    /// that `DispatchQueue.main.sync` causes when called from main).
+    nonisolated private func applyMatchesOnMain(
+        _ result: HighlightMatchResult,
+        to textStorage: NSTextStorage,
+        font: NSFont
+    ) {
+        let box = MainHopBox(textStorage: textStorage, font: font, highlighter: self)
+        if Thread.isMainThread {
+            box.highlighter.applyMatches(result, to: box.textStorage, font: box.font)
+        } else {
+            DispatchQueue.main.sync {
+                box.highlighter.applyMatches(result, to: box.textStorage, font: box.font)
+            }
+        }
+    }
+
+    /// Hops to the main thread (synchronously) to call `resetAttributes`.
+    /// See `applyMatchesOnMain` for rationale.
+    nonisolated private func resetAttributesOnMain(
+        textStorage: NSTextStorage,
+        range: NSRange,
+        font: NSFont
+    ) {
+        let box = MainHopBox(textStorage: textStorage, font: font, highlighter: self)
+        if Thread.isMainThread {
+            box.highlighter.resetAttributes(textStorage: box.textStorage, range: range, font: box.font)
+        } else {
+            DispatchQueue.main.sync {
+                box.highlighter.resetAttributes(
+                    textStorage: box.textStorage, range: range, font: box.font
+                )
+            }
+        }
+    }
+
+    /// `@unchecked Sendable` container for the non-Sendable captures needed to
+    /// hop `applyMatches`/`resetAttributes` to the main thread.
+    ///
+    /// `NSTextStorage` and `NSFont` are AppKit types without `Sendable`
+    /// conformance. Capturing them directly in a `DispatchQueue.main.sync {}`
+    /// closure trips Swift 6 strict concurrency. Safety invariants:
+    ///
+    /// - `textStorage` is exclusively mutated on the main thread (enforced by
+    ///   `applyMatches`/`resetAttributes` preconditions and the sync hop).
+    /// - `NSFont` is immutable.
+    /// - `SyntaxHighlighter` itself is already `@unchecked Sendable`.
+    /// - The box is stack-local: it never escapes beyond a single synchronous
+    ///   main-thread call, and the caller blocks on `sync` until the closure
+    ///   returns, so there is no cross-thread lifetime extension.
+    private struct MainHopBox: @unchecked Sendable {
+        let textStorage: NSTextStorage
+        let font: NSFont
+        let highlighter: SyntaxHighlighter
+    }
+
     /// Async full highlight: computes on background queue, applies on main thread.
     /// Returns the applied match result (for caching on tab switch), or nil if generation was stale.
     @discardableResult
@@ -992,16 +1120,16 @@ nonisolated final class SyntaxHighlighter: @unchecked Sendable {
         // Check generation — if bumped, discard stale results
         if let generation, generation.current != gen { return nil }
 
+        // Mutating NSTextStorage attributes from a background thread races with
+        // any other highlight (sync or async) on the same storage and with
+        // main-thread consumers (layout manager, drawing). Hop to the main
+        // actor before calling applyMatches/resetAttributes — see #790.
         if let result {
-            applyMatches(result, to: textStorage, font: font)
+            self.applyMatchesOnMain(result, to: textStorage, font: font)
             updateMultilineCache(key: ObjectIdentifier(textStorage), fingerprint: result.multilineFingerprint)
             return result
         } else {
-            resetAttributes(
-                textStorage: textStorage,
-                range: fullRange,
-                font: font
-            )
+            self.resetAttributesOnMain(textStorage: textStorage, range: fullRange, font: font)
             return nil
         }
     }
@@ -1063,11 +1191,12 @@ nonisolated final class SyntaxHighlighter: @unchecked Sendable {
         if let generation, generation.current != gen { return }
 
         let (result, _) = bgResult
+        // Hop to main before touching NSTextStorage — see #790.
         if let result {
-            applyMatches(result, to: textStorage, font: font)
+            self.applyMatchesOnMain(result, to: textStorage, font: font)
             updateMultilineCache(key: key, fingerprint: result.multilineFingerprint)
         } else {
-            resetAttributes(textStorage: textStorage, range: fullRange, font: font)
+            self.resetAttributesOnMain(textStorage: textStorage, range: fullRange, font: font)
         }
     }
 
@@ -1108,15 +1237,12 @@ nonisolated final class SyntaxHighlighter: @unchecked Sendable {
 
         if let generation, generation.current != gen { return }
 
+        // Hop to main before touching NSTextStorage — see #790.
         if let result {
-            applyMatches(result, to: textStorage, font: font)
+            self.applyMatchesOnMain(result, to: textStorage, font: font)
             setMultilineCacheIfNil(key: key, fingerprint: result.multilineFingerprint)
         } else {
-            resetAttributes(
-                textStorage: textStorage,
-                range: visibleCharRange,
-                font: font
-            )
+            self.resetAttributesOnMain(textStorage: textStorage, range: visibleCharRange, font: font)
         }
     }
 }
