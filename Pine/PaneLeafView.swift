@@ -23,6 +23,9 @@ struct PaneLeafView: View {
     @State private var diffHunks: [DiffHunk] = []
     @State private var blameLines: [GitBlameLine] = []
     @State private var blameTask: Task<Void, Never>?
+    /// Handle for the most recently scheduled diff refresh so new triggers
+    /// can cancel a stale run (e.g. rapid typing or overlapping observers).
+    @State private var diffTask: Task<Void, Never>?
     @State private var configValidator = ConfigValidator()
     @State private var isDragTargeted = false
     @State private var goToLineOffset: GoToRequest?
@@ -88,9 +91,51 @@ struct PaneLeafView: View {
         if let tabManager {
             editorPaneContent(tabManager: tabManager)
                 .environment(tabManager)
+                .onAppear {
+                    // Initial load: refresh line diffs/blame for the active tab
+                    // even if `activeTabID` never changes (issue #780).
+                    refreshLineDiffs(tabManager: tabManager)
+                    refreshBlame(tabManager: tabManager)
+                }
                 .onChange(of: tabManager.activeTabID) { _, _ in
                     refreshLineDiffs(tabManager: tabManager)
                     refreshBlame(tabManager: tabManager)
+                }
+                .onChange(of: tabManager.activeTab?.contentVersion) { _, _ in
+                    // Re-compute diff markers as the user edits. Debounced so
+                    // `git diff` does not run on every keystroke (issue #780).
+                    refreshLineDiffs(tabManager: tabManager, debounce: true)
+                }
+                .onChange(of: workspace.gitProvider.fileStatuses) { _, _ in
+                    // External git state changes (save, stash, checkout from CLI)
+                    // must refresh the gutter (issue #780).
+                    refreshLineDiffs(tabManager: tabManager)
+                }
+                .onChange(of: workspace.gitProvider.currentBranch) { _, _ in
+                    // Branch switch: `fileStatuses` will also change around the
+                    // same time, but `diffTask` cancellation coalesces the two
+                    // observers into a single refresh.
+                    refreshLineDiffs(tabManager: tabManager)
+                    refreshBlame(tabManager: tabManager)
+                }
+                .onChange(of: workspace.gitProvider.isGitRepository) { _, isRepo in
+                    if isRepo {
+                        refreshLineDiffs(tabManager: tabManager)
+                    } else {
+                        // Repo removed — clear every cached git-derived state,
+                        // including blame (previous fix only cleared diffs).
+                        diffTask?.cancel()
+                        diffTask = nil
+                        blameTask?.cancel()
+                        blameTask = nil
+                        lineDiffs = []
+                        diffHunks = []
+                        blameLines = []
+                    }
+                }
+                .onDisappear {
+                    diffTask?.cancel()
+                    diffTask = nil
                 }
                 .modifier(BlameObserver(
                     isBlameVisible: isBlameVisible,
@@ -221,8 +266,21 @@ struct PaneLeafView: View {
 
     // MARK: - Git diff & blame
 
+    /// Debounce applied to content-edit triggered refreshes (keystrokes).
+    /// Matches the ~150ms used by other git-derived work in Pine.
+    private static let diffDebounce: Duration = .milliseconds(150)
+
     /// Refreshes cached line diffs and diff hunks for the active tab.
-    private func refreshLineDiffs(tabManager: TabManager) {
+    /// - Parameter debounce: when `true`, waits `diffDebounce` before running
+    ///   the diff so rapid typing coalesces into a single git invocation.
+    ///   Immediate (`false`) refreshes are used by tab switches, save,
+    ///   branch switch, and repo init — those already fire at human pace.
+    ///
+    /// The most recent invocation cancels any previously scheduled work
+    /// via `diffTask`, so overlapping observers (e.g. `fileStatuses` +
+    /// `currentBranch` firing in the same runloop tick) run only once.
+    private func refreshLineDiffs(tabManager: TabManager, debounce: Bool = false) {
+        diffTask?.cancel()
         guard let tab = tabManager.activeTab else {
             lineDiffs = []
             diffHunks = []
@@ -235,14 +293,18 @@ struct PaneLeafView: View {
             diffHunks = []
             return
         }
-        Task {
+        diffTask = Task { @MainActor in
+            if debounce {
+                try? await Task.sleep(for: Self.diffDebounce)
+                if Task.isCancelled { return }
+            }
             async let diffs = provider.diffForFileAsync(at: fileURL)
             async let hunks = InlineDiffProvider.fetchHunks(for: fileURL, repoURL: repoURL)
             let (resolvedDiffs, resolvedHunks) = await (diffs, hunks)
-            if tabManager.activeTab?.url == fileURL {
-                lineDiffs = resolvedDiffs
-                diffHunks = resolvedHunks
-            }
+            if Task.isCancelled { return }
+            guard tabManager.activeTab?.url == fileURL else { return }
+            lineDiffs = resolvedDiffs
+            diffHunks = resolvedHunks
         }
     }
 
