@@ -410,9 +410,12 @@ nonisolated final class SyntaxHighlighter: @unchecked Sendable {
             visibleCharRange, in: source, totalLength: totalLength, lines: viewportContextLines
         )
 
-        // Multiline rules (block comments, multiline strings) use an expanded range
-        // (±500 lines) instead of the full text, so they catch constructs starting
-        // above the viewport without scanning the entire file.
+        // Multiline rules (block comments, fenced code blocks, multiline
+        // strings) always scan the full text rather than a bounded context
+        // window: a match can start arbitrarily far above the viewport and
+        // any window — even ±200 lines — will miss the opening delimiter of
+        // a very long construct (#750). The cost is bounded because only a
+        // handful of rules per grammar are multiline.
         let result = applyRules(
             rules, to: textStorage, repaintRange: expanded, searchRange: expanded, font: font
         )
@@ -733,15 +736,32 @@ nonisolated final class SyntaxHighlighter: @unchecked Sendable {
 
         var matches: [HighlightMatch] = []
         var highlightedRanges: [(range: NSRange, priority: Int)] = []
+        // Fingerprint is collected inline during the main iteration to avoid
+        // a redundant second full-text scan of multiline rules (see #789 review).
+        var multilineFingerprint: [Int] = []
 
         for rule in rules {
             let priority = scopePriority[rule.scope] ?? 0
-            guard theme.color(for: rule.scope) != nil else { continue }
+            let hasColor = theme.color(for: rule.scope) != nil
+
+            // Multiline rules are always scanned for fingerprint collection
+            // (structural change detection), even when they have no color in
+            // the current theme. Single-line rules without color are skipped.
+            if !hasColor && !rule.isMultiline { continue }
 
             let scanRange = rule.isMultiline ? multilineRange : searchRange
 
             rule.regex.enumerateMatches(in: text, range: scanRange) { match, _, _ in
                 guard let matchRange = match?.range else { return }
+
+                // Record fingerprint for all multiline matches (regardless
+                // of whether we apply color) — the cache is used only for
+                // structural change detection in `highlightEdited`.
+                if rule.isMultiline {
+                    multilineFingerprint.append(matchRange.length)
+                }
+
+                guard hasColor else { return }
 
                 let clipped = NSIntersectionRange(matchRange, repaintRange)
                 guard clipped.length > 0 else { return }
@@ -760,14 +780,10 @@ nonisolated final class SyntaxHighlighter: @unchecked Sendable {
             }
         }
 
-        let fingerprint = collectMultilineFingerprint(
-            rules: rules, source: text, searchRange: fullRange
-        )
-
         return HighlightMatchResult(
             matches: matches,
             repaintRange: repaintRange,
-            multilineFingerprint: fingerprint
+            multilineFingerprint: multilineFingerprint
         )
     }
 

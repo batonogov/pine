@@ -41,10 +41,14 @@ struct MarkdownGrammarTests {
     // MARK: - Helpers
 
     private func loadMarkdownGrammar() throws -> Grammar {
+        try loadGrammar(named: "markdown")
+    }
+
+    private func loadGrammar(named name: String) throws -> Grammar {
         let grammarURL = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()
             .deletingLastPathComponent()
-            .appendingPathComponent("Pine/Grammars/markdown.json")
+            .appendingPathComponent("Pine/Grammars/\(name).json")
         let data = try Data(contentsOf: grammarURL)
         return try JSONDecoder().decode(Grammar.self, from: data)
     }
@@ -169,10 +173,14 @@ struct MarkdownGrammarTests {
             .deletingLastPathComponent()
             .deletingLastPathComponent()
             .appendingPathComponent("README.md")
-        guard let data = try? Data(contentsOf: readmeURL),
-              let content = String(data: data, encoding: .utf8) else {
-            return
-        }
+        let data = try #require(
+            try? Data(contentsOf: readmeURL),
+            "README.md must exist at project root — skip is not acceptable"
+        )
+        let content = try #require(
+            String(data: data, encoding: .utf8),
+            "README.md must be valid UTF-8"
+        )
         let grammar = try loadMarkdownGrammar()
         hl.registerGrammar(grammar)
         let storage = NSTextStorage(string: content)
@@ -320,10 +328,13 @@ struct MarkdownGrammarTests {
                 "deep interior of long fenced block must be fenced-colored")
     }
 
-    @Test func fencedCodeBlockLargeFileViewportPath() throws {
-        // Edge: file > viewportHighlightThreshold (50_000 chars) — the editor
-        // switches to `highlightVisibleRange`. A fenced block inside the
-        // visible window must still color its interior lines correctly.
+    @Test func fencedCodeBlockInLargeFile_highlightVisibleRange() throws {
+        // Edge: file > 60KB — the editor switches to `highlightVisibleRange`.
+        // A fenced block inside the visible window must still color its
+        // interior lines correctly, even though the full-text multiline scan
+        // is more expensive here. This is NOT a direct test of
+        // `viewportHighlightThreshold` (which lives in `CodeEditorView`),
+        // but of the `highlightVisibleRange` path in SyntaxHighlighter.
         let grammar = try loadMarkdownGrammar()
         hl.registerGrammar(grammar)
 
@@ -368,6 +379,60 @@ struct MarkdownGrammarTests {
         """)
         let pos = position(of: "**not bold**", in: storage)
         #expect(color(in: storage, at: pos) == fencedColor)
+    }
+
+    @Test func unclosedFencedCodeBlock_noCrashOrHang() throws {
+        // Edge: an opening ``` without a matching closing ``` — the nonisolated
+        // `[\s\S]*?` is non-greedy so it technically matches zero characters.
+        // We verify no hang and no crash, and that content after the orphan
+        // fence stays prose-colored.
+        let grammar = try loadMarkdownGrammar()
+        hl.registerGrammar(grammar)
+        let text = "prose before\n```\nstill going\nmore lines\n"
+        let storage = NSTextStorage(string: text)
+        hl.highlight(textStorage: storage, language: "markdown", font: font)
+        // "prose before" should NOT be fenced-colored
+        let prosePos = (text as NSString).range(of: "prose before").location
+        #expect(color(in: storage, at: prosePos) != fencedColor)
+    }
+
+    // MARK: - Multiline regression for non-markdown grammars
+
+    @Test func swiftBlockCommentIsMultiline() throws {
+        // Swift grammar has `/* ... */` as multiline. Interior lines must be
+        // comment-colored even in the viewport-highlight path.
+        let grammar = try loadGrammar(named: "swift")
+        hl.registerGrammar(grammar)
+        let text = "let x = 1\n/* first\nsecond\nthird */\nlet y = 2\n"
+        let storage = NSTextStorage(string: text)
+        hl.highlight(textStorage: storage, language: "swift", font: font)
+        let commentColor = hl.theme.color(for: "comment")
+        let secondPos = (text as NSString).range(of: "second").location
+        #expect(color(in: storage, at: secondPos) == commentColor,
+                "Interior line of Swift block comment must be comment-colored")
+    }
+
+    @Test func pythonDocstringIsMultiline() throws {
+        let grammar = try loadGrammar(named: "python")
+        hl.registerGrammar(grammar)
+        let text = "x = 1\n\"\"\"\nLine one\nLine two\n\"\"\"\ny = 2\n"
+        let storage = NSTextStorage(string: text)
+        hl.highlight(textStorage: storage, language: "py", font: font)
+        let stringColor = hl.theme.color(for: "string")
+        let lineOnePos = (text as NSString).range(of: "Line one").location
+        #expect(color(in: storage, at: lineOnePos) == stringColor,
+                "Interior of Python docstring must be string-colored")
+    }
+
+    @Test func cBlockCommentIsMultiline() throws {
+        let grammar = try loadGrammar(named: "c")
+        hl.registerGrammar(grammar)
+        let text = "int a;\n/* comment\n   spans */\nint b;\n"
+        let storage = NSTextStorage(string: text)
+        hl.highlight(textStorage: storage, language: "c", font: font)
+        let commentColor = hl.theme.color(for: "comment")
+        let spansPos = (text as NSString).range(of: "spans").location
+        #expect(color(in: storage, at: spansPos) == commentColor)
     }
 
     // MARK: - Bold and italic
