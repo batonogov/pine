@@ -157,7 +157,7 @@ Pine uses GCD for background work, bridged to async/await via `withCheckedContin
 - `QuickOpenView.swift` — Sheet overlay with live search, arrow key navigation, file icons
 - `PineTests/` — Unit tests (50+ files, Swift Testing framework)
 - `PineUITests/` — XCUITest suite (18+ files), base class `PineUITestCase`
-- `PinePerformanceTests/` — XCTest `measure {}` benchmarks for FoldRange, SyntaxHighlighter, ProjectSearch, GitStatus (skipped in CI by default, run on demand)
+- `PinePerformanceTests/` — XCTest `measure {}` benchmarks for FoldRange, SyntaxHighlighter, ProjectSearch, GitStatus. Skipped from the default Pine scheme because `measure {}` blocks are flaky on shared GitHub Actions runners. Wired into CI as an opt-in `performance-tests` job triggered two ways: (1) `workflow_dispatch` from the Actions tab, or (2) adding the `perf` label to a pull request. Results upload as a `PerformanceResults.xcresult` artifact (14-day retention) for inspection in Xcode's Test Navigator. Run locally with `xcodebuild test -only-testing:PinePerformanceTests ...`
 
 ## Release & CI
 
