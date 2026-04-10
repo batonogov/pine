@@ -132,10 +132,12 @@ enum SnapshotHarness {
         ProcessInfo.processInfo.environment["PINE_RECORD_SNAPSHOTS"] == "1"
     }
 
-    /// Returns `true` when running on a headless CI runner (no window server / GPU).
+    /// Returns `true` when running on a CI runner.
+    /// Snapshot tests rely on stable GPU rendering and font metrics that vary
+    /// between machines, so they only run locally where developers can inspect
+    /// and re-record baselines.
     static var isHeadless: Bool {
         ProcessInfo.processInfo.environment["CI"] != nil
-            && NSScreen.main == nil
     }
 
     /// Renders `view` into an `NSBitmapImageRep` at the given size/appearance.
@@ -145,10 +147,6 @@ enum SnapshotHarness {
         size: NSSize,
         appearance: SnapshotAppearance
     ) throws -> NSBitmapImageRep {
-        if isHeadless {
-            throw SnapshotError.headlessEnvironment
-        }
-
         let hosting = NSHostingView(rootView: view)
         hosting.appearance = appearance.nsAppearance
         hosting.frame = NSRect(origin: .zero, size: size)
@@ -251,5 +249,4 @@ enum SnapshotHarness {
 enum SnapshotError: Error {
     case bitmapCreationFailed
     case decodeFailed
-    case headlessEnvironment
 }
