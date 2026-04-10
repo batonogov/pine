@@ -113,17 +113,10 @@ struct DiagnosticTooltipFixTests {
 
     // MARK: - resolveTooltip works for clicks at icon x range
 
-    @Test func resolveTooltip_atIconColumn_returnsMessage() {
-        let view = makeGutter()
-        let diag = ValidationDiagnostic(
-            line: 1, column: nil, message: "bad indent", severity: .warning, source: "yamllint"
-        )
-        view.validationDiagnostics = [diag]
-
-        // x in icon range (1..13)
-        let result = view.resolveTooltip(at: NSPoint(x: 5, y: 5))
-        #expect(result == "bad indent")
-    }
+    // The `resolveTooltip(at:)` method was removed in #781 — diagnostics now
+    // surface only via the click-to-show popover, not hover. The diagnostic
+    // lookup itself is still exercised through `diagnosticTooltip(forLine:)`
+    // by other tests in this file.
 
     // MARK: - Diagnostic popover controller
 
@@ -309,78 +302,10 @@ struct DiagnosticTooltipFixTests {
         #expect(view.diagnosticPopoverForTesting == nil)
     }
 
-    @Test func diagnosticsSemanticallyEqual_ignoresIdentity() {
-        let left = [
-            ValidationDiagnostic(line: 1, column: 2, message: "a", severity: .error, source: "s"),
-            ValidationDiagnostic(line: 3, column: nil, message: "b", severity: .warning, source: "s")
-        ]
-        let right = [
-            ValidationDiagnostic(line: 1, column: 2, message: "a", severity: .error, source: "s"),
-            ValidationDiagnostic(line: 3, column: nil, message: "b", severity: .warning, source: "s")
-        ]
-        #expect(LineNumberView.diagnosticsSemanticallyEqual(left, right))
-    }
-
-    @Test func diagnosticsSemanticallyEqual_detectsMessageChange() {
-        let left = [ValidationDiagnostic(
-            line: 1, column: nil, message: "a", severity: .error, source: "s"
-        )]
-        let right = [ValidationDiagnostic(
-            line: 1, column: nil, message: "b", severity: .error, source: "s"
-        )]
-        #expect(LineNumberView.diagnosticsSemanticallyEqual(left, right) == false)
-    }
-
-    @Test func diagnosticsSemanticallyEqual_detectsSeverityChange() {
-        let left = [ValidationDiagnostic(
-            line: 1, column: nil, message: "x", severity: .error, source: "s"
-        )]
-        let right = [ValidationDiagnostic(
-            line: 1, column: nil, message: "x", severity: .warning, source: "s"
-        )]
-        #expect(LineNumberView.diagnosticsSemanticallyEqual(left, right) == false)
-    }
-
-    @Test func diagnosticsSemanticallyEqual_detectsCountChange() {
-        let one = [ValidationDiagnostic(
-            line: 1, column: nil, message: "x", severity: .error, source: "s"
-        )]
-        #expect(LineNumberView.diagnosticsSemanticallyEqual(one, []) == false)
-    }
-
-    @Test func diagnosticsSemanticallyEqual_detectsLineChange() {
-        let left = [ValidationDiagnostic(
-            line: 1, column: nil, message: "x", severity: .error, source: "s"
-        )]
-        let right = [ValidationDiagnostic(
-            line: 2, column: nil, message: "x", severity: .error, source: "s"
-        )]
-        #expect(LineNumberView.diagnosticsSemanticallyEqual(left, right) == false)
-    }
-
-    @Test func diagnosticsSemanticallyEqual_detectsColumnChange() {
-        let left = [ValidationDiagnostic(
-            line: 1, column: 3, message: "x", severity: .error, source: "s"
-        )]
-        let right = [ValidationDiagnostic(
-            line: 1, column: 4, message: "x", severity: .error, source: "s"
-        )]
-        #expect(LineNumberView.diagnosticsSemanticallyEqual(left, right) == false)
-    }
-
-    @Test func diagnosticsSemanticallyEqual_detectsSourceChange() {
-        let left = [ValidationDiagnostic(
-            line: 1, column: nil, message: "x", severity: .error, source: "a"
-        )]
-        let right = [ValidationDiagnostic(
-            line: 1, column: nil, message: "x", severity: .error, source: "b"
-        )]
-        #expect(LineNumberView.diagnosticsSemanticallyEqual(left, right) == false)
-    }
-
-    @Test func diagnosticsSemanticallyEqual_emptyArrays() {
-        #expect(LineNumberView.diagnosticsSemanticallyEqual([], []))
-    }
+    // Semantic-equality coverage lives on `ValidationDiagnostic` itself in
+    // `ValidationDiagnosticEquatableTests` — the gutter no longer has its
+    // own helper, it delegates to the type's manual `Equatable` which
+    // excludes the synthesized `id` UUID. See `ConfigValidator.swift`.
 
     // MARK: - Popover view renders all diagnostic fields
 

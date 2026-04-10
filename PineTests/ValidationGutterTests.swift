@@ -174,34 +174,40 @@ struct ValidationGutterTests {
         #expect(LineNumberView.diagnosticIconDrawSize == 12)
     }
 
-    // MARK: - Gutter width reserves diagnostic icon zone (#781)
+    // MARK: - Gutter width is stable regardless of diagnostics (#781)
+    //
+    // The icon zone is always reserved, even when there are no diagnostics.
+    // This trades ~14pt of gutter space for a stable layout — previously the
+    // editor would visibly jump whenever the first error appeared during an
+    // edit → validate cycle. These tests guard that behavior.
 
-    @Test func gutterWidth_noReservationWhenNoDiagnostics() {
-        // Without diagnostics, the icon zone is NOT reserved — gutter stays compact.
+    @Test func gutterWidth_alwaysReservesDiagnosticZone() {
+        // The draw layout reports the full reserved width whether or not any
+        // diagnostic is actually present on this line.
         let view = makeLineNumberView(lineCount: 5)
         let layout = view.lineNumberDrawLayout(forDigits: 2)
-        #expect(layout.diagnosticZoneRightEdge == 0)
+        #expect(layout.diagnosticZoneRightEdge == LineNumberView.diagnosticReservedWidth)
     }
 
-    @Test func gutterWidth_widensWhenDiagnosticsAdded() {
-        // With diagnostics, the gutter must widen to reserve the icon zone.
+    @Test func gutterWidth_doesNotChangeWhenDiagnosticsAdded() {
+        // No jump in width when the first diagnostic arrives.
         let view = makeLineNumberView(lineCount: 5)
-        let widthWithout = view.gutterWidth
+        let baseWidth = view.gutterWidth
         view.validationDiagnostics = [
             ValidationDiagnostic(line: 1, column: nil, message: "e", severity: .error, source: "t")
         ]
-        let widthWith = view.gutterWidth
-        #expect(widthWith == widthWithout + LineNumberView.diagnosticReservedWidth)
+        #expect(abs(view.gutterWidth - baseWidth) < 1.0)
     }
 
-    @Test func gutterWidth_shrinksBackWhenDiagnosticsCleared() {
+    @Test func gutterWidth_doesNotChangeWhenDiagnosticsCleared() {
+        // And no jump back when they disappear.
         let view = makeLineNumberView(lineCount: 5)
         let baseWidth = view.gutterWidth
         view.validationDiagnostics = [
             ValidationDiagnostic(line: 1, column: nil, message: "e", severity: .error, source: "t")
         ]
         view.validationDiagnostics = []
-        #expect(view.gutterWidth == baseWidth)
+        #expect(abs(view.gutterWidth - baseWidth) < 1.0)
     }
 
     // MARK: - Line number never overlaps the diagnostic icon zone (#781)
@@ -389,100 +395,11 @@ struct ValidationGutterTests {
         #expect(view.diagnosticTooltip(forLine: 3) == "warning on line 3")
     }
 
-    // MARK: - resolveTooltip(at:) — extracted tooltip logic
-
-    @Test func resolveTooltip_outsideBounds_returnsNil() {
-        let view = makeLineNumberView()
-        view.frame = NSRect(x: 0, y: 0, width: 40, height: 500)
-        let diag = ValidationDiagnostic(
-            line: 1, column: nil, message: "error msg", severity: .error, source: "test"
-        )
-        view.validationDiagnostics = [diag]
-        // Point outside bounds (negative x) — resolveTooltip must return nil
-        let result = view.resolveTooltip(at: NSPoint(x: -10, y: 50))
-        #expect(result == nil)
-    }
-
-    @Test func resolveTooltip_insideBoundsNoScrollView_returnsNil() {
-        let view = makeLineNumberView()
-        view.frame = NSRect(x: 0, y: 0, width: 40, height: 500)
-        let diag = ValidationDiagnostic(
-            line: 1, column: nil, message: "error msg", severity: .error, source: "test"
-        )
-        view.validationDiagnostics = [diag]
-        // Point inside bounds but lineNumber(at:) returns nil without a real scroll view
-        let result = view.resolveTooltip(at: NSPoint(x: 20, y: 50))
-        #expect(result == nil)
-    }
-
-    // MARK: - NSView tooltip owner (dynamic tooltips via addToolTip rect)
-
-    @Test func tooltipOwner_returnsMessageForDiagnosticLine() {
-        // Create a LineNumberView embedded in a real scroll view so lineNumber(at:) works
-        let scrollView = NSScrollView(frame: NSRect(x: 0, y: 0, width: 600, height: 400))
-        let textStorage = NSTextStorage(string: "line1\nline2\nline3\nline4\nline5\n")
-        let layoutManager = NSLayoutManager()
-        textStorage.addLayoutManager(layoutManager)
-        let textContainer = NSTextContainer(
-            containerSize: NSSize(width: 500, height: CGFloat.greatestFiniteMagnitude)
-        )
-        textContainer.widthTracksTextView = true
-        layoutManager.addTextContainer(textContainer)
-        let textView = NSTextView(
-            frame: NSRect(x: 0, y: 0, width: 500, height: 400),
-            textContainer: textContainer
-        )
-        scrollView.documentView = textView
-        // Force layout so line fragments exist
-        layoutManager.ensureLayout(forCharacterRange: NSRange(location: 0, length: textStorage.length))
-
-        let gutterView = LineNumberView(textView: textView, clipView: scrollView.contentView)
-        gutterView.frame = NSRect(x: 0, y: 0, width: 40, height: 400)
-
-        let diag = ValidationDiagnostic(
-            line: 1, column: nil, message: "syntax error", severity: .error, source: "yamllint"
-        )
-        gutterView.validationDiagnostics = [diag]
-
-        // The tooltip owner method should resolve tooltip based on point
-        // Point near top of view (line 1 area)
-        let topPoint = NSPoint(x: 10, y: 5)
-        let tooltip = gutterView.resolveTooltip(at: topPoint)
-        #expect(tooltip == "syntax error")
-    }
-
-    @Test func tooltipOwner_returnsNilForLineWithoutDiagnostic() {
-        let scrollView = NSScrollView(frame: NSRect(x: 0, y: 0, width: 600, height: 400))
-        let textStorage = NSTextStorage(string: "line1\nline2\nline3\n")
-        let layoutManager = NSLayoutManager()
-        textStorage.addLayoutManager(layoutManager)
-        let textContainer = NSTextContainer(
-            containerSize: NSSize(width: 500, height: CGFloat.greatestFiniteMagnitude)
-        )
-        textContainer.widthTracksTextView = true
-        layoutManager.addTextContainer(textContainer)
-        let textView = NSTextView(
-            frame: NSRect(x: 0, y: 0, width: 500, height: 400),
-            textContainer: textContainer
-        )
-        scrollView.documentView = textView
-        layoutManager.ensureLayout(forCharacterRange: NSRange(location: 0, length: textStorage.length))
-
-        let gutterView = LineNumberView(textView: textView, clipView: scrollView.contentView)
-        gutterView.frame = NSRect(x: 0, y: 0, width: 40, height: 400)
-
-        // Diagnostic on line 1 only
-        let diag = ValidationDiagnostic(
-            line: 1, column: nil, message: "err", severity: .error, source: "test"
-        )
-        gutterView.validationDiagnostics = [diag]
-
-        // Point at a y that maps to line 3 — well below line 1
-        // With default font ~14px line height, line 3 starts around y=28
-        let lineThreePoint = NSPoint(x: 10, y: 35)
-        let tooltip = gutterView.resolveTooltip(at: lineThreePoint)
-        #expect(tooltip == nil, "Line 3 should not show line 1's tooltip")
-    }
+    // NOTE: the `resolveTooltip(at:)` method and the `addToolTip` rect owner
+    // path were removed in #781 — diagnostic text now surfaces only via the
+    // click-to-show popover, never via hover. The tests that exercised the
+    // removed hover path have been deleted; the tests that still assert
+    // "hover does not set `toolTip`" live right below.
 
     @Test func tooltipOwner_hasTooltipRectRegistered() {
         // Verify that after diagnostics are set, a tooltip rect is added to the view
