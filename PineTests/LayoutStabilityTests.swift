@@ -69,8 +69,12 @@ struct LayoutStabilityTests {
 
         workspace.loadDirectory(url: tmpDir)
 
-        // Wait for async loading to complete
-        try? await Task.sleep(for: .milliseconds(500))
+        // Wait for async loading to complete — shallow load dispatches to
+        // a background queue then back to main, so allow generous time on CI.
+        let deadline = ContinuousClock.now + .seconds(5)
+        while workspace.isLoading, ContinuousClock.now < deadline {
+            try? await Task.sleep(for: .milliseconds(50))
+        }
         #expect(!workspace.isLoading)
     }
 

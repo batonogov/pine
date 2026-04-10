@@ -33,25 +33,35 @@ struct DiffMarkerIntegrationTests {
         try? FileManager.default.removeItem(at: dir)
     }
 
-    private func git(_ args: [String], at dir: URL) throws {
+    @discardableResult
+    private func runShell(_ command: String, at dir: URL) throws -> String {
         let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
-        process.arguments = args
+        process.executableURL = URL(fileURLWithPath: "/bin/sh")
+        process.arguments = ["-c", command]
         process.currentDirectoryURL = dir
-        process.environment = ProcessInfo.processInfo.environment.merging(
-            ["DEVELOPER_DIR": "/Applications/Xcode.app/Contents/Developer"],
-            uniquingKeysWith: { _, new in new }
-        )
-        let pipe = Pipe()
-        process.standardOutput = pipe
-        process.standardError = pipe
+        let outPipe = Pipe()
+        let errPipe = Pipe()
+        process.standardOutput = outPipe
+        process.standardError = errPipe
         try process.run()
         process.waitUntilExit()
+        let outData = outPipe.fileHandleForReading.readDataToEndOfFile()
+        let errData = errPipe.fileHandleForReading.readDataToEndOfFile()
         guard process.terminationStatus == 0 else {
-            let output = String(data: pipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
-            throw NSError(domain: "git", code: Int(process.terminationStatus),
-                          userInfo: [NSLocalizedDescriptionKey: "git \(args.joined(separator: " ")) failed: \(output)"])
+            let stderr = String(data: errData, encoding: .utf8) ?? ""
+            throw NSError(
+                domain: "ShellError",
+                code: Int(process.terminationStatus),
+                userInfo: [NSLocalizedDescriptionKey: "'\(command)' failed: \(stderr)"]
+            )
         }
+        return String(data: outData, encoding: .utf8) ?? ""
+    }
+
+    private func gitInit(at dir: URL) throws {
+        try runShell("git init", at: dir)
+        try runShell("git config user.email 'test@test.com'", at: dir)
+        try runShell("git config user.name 'Test'", at: dir)
     }
 
     // MARK: - diffForFileAsync returns diffs after modification
@@ -64,9 +74,9 @@ struct DiffMarkerIntegrationTests {
         let fileURL = dir.appendingPathComponent("test.txt")
         try "line1\nline2\nline3\n".write(to: fileURL, atomically: true, encoding: .utf8)
 
-        try git(["init"], at: dir)
-        try git(["add", "test.txt"], at: dir)
-        try git(["commit", "-m", "initial"], at: dir)
+        try gitInit(at: dir)
+        try runShell("git add test.txt", at: dir)
+        try runShell("git -c commit.gpgsign=false commit -m 'initial'", at: dir)
 
         // Modify: add a line between line2 and line3
         try "line1\nline2\nnew line\nline3\n".write(to: fileURL, atomically: true, encoding: .utf8)
@@ -90,9 +100,9 @@ struct DiffMarkerIntegrationTests {
         let original = "line1\nline2\n"
         try original.write(to: fileURL, atomically: true, encoding: .utf8)
 
-        try git(["init"], at: dir)
-        try git(["add", "test.txt"], at: dir)
-        try git(["commit", "-m", "initial"], at: dir)
+        try gitInit(at: dir)
+        try runShell("git add test.txt", at: dir)
+        try runShell("git -c commit.gpgsign=false commit -m 'initial'", at: dir)
 
         // Modify then revert
         try "line1\nline2\nline3\n".write(to: fileURL, atomically: true, encoding: .utf8)
@@ -115,9 +125,9 @@ struct DiffMarkerIntegrationTests {
         let fileURL = dir.appendingPathComponent("test.swift")
         try "import Foundation\nclass Foo {}\n".write(to: fileURL, atomically: true, encoding: .utf8)
 
-        try git(["init"], at: dir)
-        try git(["add", "."], at: dir)
-        try git(["commit", "-m", "init"], at: dir)
+        try gitInit(at: dir)
+        try runShell("git add .", at: dir)
+        try runShell("git -c commit.gpgsign=false commit -m 'init'", at: dir)
 
         // Add two lines
         try "import Foundation\n\nclass Foo {\n    var x = 1\n}\n".write(to: fileURL, atomically: true, encoding: .utf8)
@@ -173,9 +183,9 @@ struct DiffMarkerIntegrationTests {
         let original = "aaa\nbbb\nccc\n"
         try original.write(to: fileURL, atomically: true, encoding: .utf8)
 
-        try git(["init"], at: dir)
-        try git(["add", "."], at: dir)
-        try git(["commit", "-m", "init"], at: dir)
+        try gitInit(at: dir)
+        try runShell("git add .", at: dir)
+        try runShell("git -c commit.gpgsign=false commit -m 'init'", at: dir)
 
         let provider = GitStatusProvider()
         provider.setup(repositoryURL: dir)
@@ -201,9 +211,9 @@ struct DiffMarkerIntegrationTests {
         let fileURL = dir.appendingPathComponent("test.txt")
         try "alpha\nbeta\ngamma\n".write(to: fileURL, atomically: true, encoding: .utf8)
 
-        try git(["init"], at: dir)
-        try git(["add", "."], at: dir)
-        try git(["commit", "-m", "init"], at: dir)
+        try gitInit(at: dir)
+        try runShell("git add .", at: dir)
+        try runShell("git -c commit.gpgsign=false commit -m 'init'", at: dir)
 
         // Change middle line
         try "alpha\nBETA\ngamma\n".write(to: fileURL, atomically: true, encoding: .utf8)
@@ -226,9 +236,9 @@ struct DiffMarkerIntegrationTests {
         let fileURL = dir.appendingPathComponent("test.txt")
         try "one\ntwo\nthree\nfour\n".write(to: fileURL, atomically: true, encoding: .utf8)
 
-        try git(["init"], at: dir)
-        try git(["add", "."], at: dir)
-        try git(["commit", "-m", "init"], at: dir)
+        try gitInit(at: dir)
+        try runShell("git add .", at: dir)
+        try runShell("git -c commit.gpgsign=false commit -m 'init'", at: dir)
 
         // Delete "two"
         try "one\nthree\nfour\n".write(to: fileURL, atomically: true, encoding: .utf8)
