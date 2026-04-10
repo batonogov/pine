@@ -1,12 +1,57 @@
 name: Select Xcode
-description: Select the newest installed Xcode via xcode-select.
+description: >-
+  Activate an installed Xcode via `sudo xcode-select` on macOS runners.
+  By default selects the newest stable `/Applications/Xcode*.app` (beta
+  builds are filtered out because `sort -V` is unreliable on them). Pass
+  `xcode-version` to pin a specific installation, e.g. `Xcode_26.0`.
+  Requires a macOS runner. Also prints the selected `xcodebuild -version`
+  for diagnostics.
+inputs:
+  xcode-version:
+    description: >-
+      Optional exact Xcode app name (without the `.app` suffix) to select,
+      e.g. `Xcode_26.0`. When omitted, the newest stable Xcode under
+      `/Applications` is used.
+    required: false
+    default: ""
 runs:
   using: composite
   steps:
-    - name: Select Xcode
-      shell: bash
+    - shell: bash
+      env:
+        REQUESTED_VERSION: ${{ inputs.xcode-version }}
       run: |
-        XCODE_PATH=$(ls -d /Applications/Xcode*.app 2>/dev/null | sort -V | tail -1)
+        set -euo pipefail
+        shopt -s nullglob
+
+        if [ -n "$REQUESTED_VERSION" ]; then
+          XCODE_PATH="/Applications/${REQUESTED_VERSION}.app"
+          if [ ! -d "$XCODE_PATH" ]; then
+            echo "::error::Requested Xcode not found at $XCODE_PATH"
+            echo "Available Xcode installations:" >&2
+            ls -d /Applications/Xcode*.app >&2 || true
+            exit 1
+          fi
+        else
+          # Filter out beta builds — sort -V does not order them reliably
+          # against stable releases, so picking "newest" could pick a beta
+          # on a runner that happens to have both.
+          candidates=(/Applications/Xcode*.app)
+          stable=()
+          for app in "${candidates[@]}"; do
+            case "$(basename "$app")" in
+              *beta*|*Beta*) continue ;;
+              *) stable+=("$app") ;;
+            esac
+          done
+          if [ ${#stable[@]} -eq 0 ]; then
+            echo "::error::No stable Xcode.app found under /Applications"
+            ls -d /Applications/Xcode*.app >&2 || true
+            exit 1
+          fi
+          XCODE_PATH=$(printf '%s\n' "${stable[@]}" | sort -V | tail -1)
+        fi
+
         echo "Using Xcode at: $XCODE_PATH"
         sudo xcode-select -s "$XCODE_PATH/Contents/Developer"
         xcodebuild -version
