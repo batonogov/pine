@@ -308,7 +308,11 @@ struct GrammarModelTests {
             "markdown.heading.1", "markdown.heading.2", "markdown.heading.3",
             "markdown.heading.4", "markdown.heading.5", "markdown.heading.6",
             "markdown.bold", "markdown.italic", "markdown.code", "markdown.code.fenced",
-            "markdown.link", "markdown.list", "markdown.quote", "markdown.rule"
+            // `markdown.code.double` is double-backtick inline code; distinct
+            // priority from single-backtick so nested backticks survive.
+            "markdown.code.double",
+            "markdown.link", "markdown.image", "markdown.list",
+            "markdown.quote", "markdown.rule"
         ]
 
         let grammarDir = URL(fileURLWithPath: #filePath)

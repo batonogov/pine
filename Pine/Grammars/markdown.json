@@ -8,8 +8,22 @@
             "scope": "markdown.code.fenced"
         },
         {
+            "pattern": "``[^`\\n]*(?:`[^`\\n]+)*``",
+            "scope": "markdown.code.double"
+        },
+        {
             "pattern": "`[^`\\n]+`",
             "scope": "markdown.code"
+        },
+        {
+            "pattern": "^[^\\n=#>\\-*+`][^\\n]*\\n=+[ \\t]*$",
+            "scope": "markdown.heading.1",
+            "options": ["anchorsMatchLines", "dotMatchesLineSeparators"]
+        },
+        {
+            "pattern": "^[^\\n=#>\\-*+`][^\\n]*\\n-+[ \\t]*$",
+            "scope": "markdown.heading.2",
+            "options": ["anchorsMatchLines", "dotMatchesLineSeparators"]
         },
         {
             "pattern": "^#\\s+.*$",
@@ -42,6 +56,10 @@
             "options": ["anchorsMatchLines"]
         },
         {
+            "pattern": "\\*\\*\\*[^*\\n]+\\*\\*\\*",
+            "scope": "markdown.bold"
+        },
+        {
             "pattern": "\\*\\*[^*\\n]+\\*\\*",
             "scope": "markdown.bold"
         },
@@ -58,6 +76,10 @@
             "pattern": "(?<=\\s|^)_[^_\\n]+_(?=\\s|$|[.,;:!?])",
             "scope": "markdown.italic",
             "options": ["anchorsMatchLines"]
+        },
+        {
+            "pattern": "!\\[[^\\]]*\\]\\([^)]+\\)",
+            "scope": "markdown.image"
         },
         {
             "pattern": "\\[[^\\]]+\\]\\([^)]+\\)",
