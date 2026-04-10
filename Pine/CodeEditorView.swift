@@ -32,6 +32,10 @@ struct CodeEditorView: NSViewRepresentable {
     /// this specific tab (e.g., external file reloads).
     var fileURL: URL?
     var lineDiffs: [GitLineDiff] = []
+    /// Monotonic counter bumped after every `refreshLineDiffs` completion.
+    /// Forces SwiftUI to call `updateNSView` even when the `[GitLineDiff]`
+    /// array comparison is optimized away (issue #809).
+    var diffVersion: UInt64 = 0
     /// Diff hunks for inline diff expansion in the gutter.
     var diffHunks: [DiffHunk] = []
     /// Validation diagnostics for gutter icons (error/warning/info).
