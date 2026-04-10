@@ -14,6 +14,27 @@ import Testing
 @MainActor
 struct TabManagerTests {
 
+    /// Creates a TabManager with save-time transformations disabled so
+    /// existing tests that compare on-disk content to raw input don't
+    /// break. Tests that explicitly exercise the save pipeline should
+    /// create their own EditorSettings with flags enabled.
+    private func makeTabManager(
+        strip: Bool = false,
+        newline: Bool = false,
+        format: Bool = false
+    ) -> TabManager {
+        let suite = "TabManagerTests-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defaults.removePersistentDomain(forName: suite)
+        let settings = EditorSettings(defaults: defaults)
+        settings.insertFinalNewline = newline
+        settings.stripTrailingWhitespace = strip
+        settings.formatOnSave = format
+        let manager = TabManager()
+        manager.editorSettings = settings
+        return manager
+    }
+
     /// Creates a temporary file URL for testing.
     private func tempFileURL(name: String = "test.swift", content: String = "hello") -> URL {
         let dir = FileManager.default.temporaryDirectory
@@ -26,7 +47,7 @@ struct TabManagerTests {
 
     @Test("Open tab loads content and activates it")
     func openTab() {
-        let manager = TabManager()
+        let manager = makeTabManager()
         let url = tempFileURL(content: "let x = 1")
 
         manager.openTab(url: url)
@@ -39,7 +60,7 @@ struct TabManagerTests {
 
     @Test("Open duplicate tab activates existing tab")
     func openDuplicateTab() {
-        let manager = TabManager()
+        let manager = makeTabManager()
         let url = tempFileURL()
 
         manager.openTab(url: url)
@@ -53,7 +74,7 @@ struct TabManagerTests {
 
     @Test("Close tab selects adjacent tab")
     func closeTabSelectsAdjacent() {
-        let manager = TabManager()
+        let manager = makeTabManager()
         let url1 = tempFileURL(name: "a.swift")
         let url2 = tempFileURL(name: "b.swift")
         let url3 = tempFileURL(name: "c.swift")
@@ -76,7 +97,7 @@ struct TabManagerTests {
 
     @Test("Close last remaining tab clears activeTabID")
     func closeLastTab() {
-        let manager = TabManager()
+        let manager = makeTabManager()
         let url = tempFileURL()
 
         manager.openTab(url: url)
@@ -92,7 +113,7 @@ struct TabManagerTests {
 
     @Test("Update content marks tab as dirty")
     func updateContentMarksDirty() {
-        let manager = TabManager()
+        let manager = makeTabManager()
         let url = tempFileURL(content: "original")
 
         manager.openTab(url: url)
@@ -105,7 +126,7 @@ struct TabManagerTests {
 
     @Test("Save tab writes to disk and clears dirty state")
     func saveTab() {
-        let manager = TabManager()
+        let manager = makeTabManager()
         let url = tempFileURL(content: "original")
 
         manager.openTab(url: url)
@@ -123,7 +144,7 @@ struct TabManagerTests {
 
     @Test("trySaveTab throws for non-writable path and leaves tab dirty")
     func saveTabFailsForBadPath() {
-        let manager = TabManager()
+        let manager = makeTabManager()
         let badURL = URL(fileURLWithPath: "/nonexistent_dir_\(UUID().uuidString)/file.txt")
 
         let tab = EditorTab(url: badURL, content: "data", savedContent: "")
@@ -140,7 +161,7 @@ struct TabManagerTests {
 
     @Test("Handle file renamed updates tab URL preserving identity")
     func handleFileRenamed() {
-        let manager = TabManager()
+        let manager = makeTabManager()
         let dir = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString)
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
@@ -162,7 +183,7 @@ struct TabManagerTests {
 
     @Test("Rename updates inactive tab without changing activeTabID target")
     func renameInactiveTab() {
-        let manager = TabManager()
+        let manager = makeTabManager()
         let dir = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString)
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
@@ -187,7 +208,7 @@ struct TabManagerTests {
 
     @Test("Tabs affected by deletion")
     func tabsAffectedByDeletion() {
-        let manager = TabManager()
+        let manager = makeTabManager()
         let dir = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString)
         let subdir = dir.appendingPathComponent("sub")
@@ -212,7 +233,7 @@ struct TabManagerTests {
 
     @Test("Close tabs for deleted file removes affected tabs")
     func closeTabsForDeletedFile() {
-        let manager = TabManager()
+        let manager = makeTabManager()
         let dir = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString)
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
@@ -233,7 +254,7 @@ struct TabManagerTests {
 
     @Test("hasUnsavedChanges reflects dirty state")
     func hasUnsavedChanges() {
-        let manager = TabManager()
+        let manager = makeTabManager()
         let url = tempFileURL(content: "clean")
 
         manager.openTab(url: url)
@@ -245,7 +266,7 @@ struct TabManagerTests {
 
     @Test("Move tab reorders correctly")
     func moveTab() {
-        let manager = TabManager()
+        let manager = makeTabManager()
         let url1 = tempFileURL(name: "a.swift")
         let url2 = tempFileURL(name: "b.swift")
         let url3 = tempFileURL(name: "c.swift")
@@ -264,7 +285,7 @@ struct TabManagerTests {
 
     @Test("Close non-active tab preserves activeTabID")
     func closeNonActiveTabPreservesActive() {
-        let manager = TabManager()
+        let manager = makeTabManager()
         let url1 = tempFileURL(name: "a.swift")
         let url2 = tempFileURL(name: "b.swift")
         let url3 = tempFileURL(name: "c.swift")
@@ -283,7 +304,7 @@ struct TabManagerTests {
 
     @Test("Tab for URL returns correct tab")
     func tabForURL() {
-        let manager = TabManager()
+        let manager = makeTabManager()
         let url = tempFileURL()
         manager.openTab(url: url)
 
@@ -293,7 +314,7 @@ struct TabManagerTests {
 
     @Test("Update editor state persists cursor and scroll")
     func updateEditorState() {
-        let manager = TabManager()
+        let manager = makeTabManager()
         let url = tempFileURL()
         manager.openTab(url: url)
 
@@ -308,7 +329,7 @@ struct TabManagerTests {
 
     @Test("Cursor position uses UTF-16 semantics consistent with NSRange")
     func cursorPositionUTF16Semantics() {
-        let manager = TabManager()
+        let manager = makeTabManager()
         // 🎉 is a single Swift Character but 2 UTF-16 code units
         let emojiContent = "🎉 hello"
         let url = tempFileURL(content: emojiContent)
@@ -343,7 +364,7 @@ struct TabManagerTests {
 
     @Test("Save all tabs saves every dirty tab")
     func saveAllTabs() throws {
-        let manager = TabManager()
+        let manager = makeTabManager()
         let url1 = tempFileURL(name: "a.swift", content: "original1")
         let url2 = tempFileURL(name: "b.swift", content: "original2")
         let url3 = tempFileURL(name: "c.swift", content: "original3")
@@ -374,7 +395,7 @@ struct TabManagerTests {
 
     @Test("Save all tabs throws on first failure")
     func saveAllTabsStopsOnFailure() {
-        let manager = TabManager()
+        let manager = makeTabManager()
         let goodURL = tempFileURL(name: "good.swift", content: "original")
         let badURL = URL(fileURLWithPath: "/nonexistent_dir_\(UUID().uuidString)/bad.swift")
 
@@ -398,7 +419,7 @@ struct TabManagerTests {
 
     @Test("Save all tabs succeeds when no dirty tabs")
     func saveAllTabsNoDirtyTabs() throws {
-        let manager = TabManager()
+        let manager = makeTabManager()
         let url = tempFileURL(content: "clean")
         manager.openTab(url: url)
 
@@ -410,7 +431,7 @@ struct TabManagerTests {
 
     @Test("dirtyTabs returns only modified tabs")
     func dirtyTabsFiltering() {
-        let manager = TabManager()
+        let manager = makeTabManager()
         let url1 = tempFileURL(name: "clean.swift", content: "clean")
         let url2 = tempFileURL(name: "dirty.swift", content: "original")
 
@@ -430,7 +451,7 @@ struct TabManagerTests {
 
     @Test("Save tab as writes to new URL and updates tab")
     func saveTabAs() throws {
-        let manager = TabManager()
+        let manager = makeTabManager()
         let url = tempFileURL(name: "original.swift", content: "hello")
         manager.openTab(url: url)
         manager.updateContent("modified content")
@@ -456,7 +477,7 @@ struct TabManagerTests {
 
     @Test("Save tab as preserves tab identity (UUID)")
     func saveTabAsPreservesIdentity() throws {
-        let manager = TabManager()
+        let manager = makeTabManager()
         let url = tempFileURL(content: "data")
         manager.openTab(url: url)
         let originalID = manager.activeTabID
@@ -473,7 +494,7 @@ struct TabManagerTests {
 
     @Test("Save tab as throws for non-writable path")
     func saveTabAsFailsForBadPath() {
-        let manager = TabManager()
+        let manager = makeTabManager()
         let url = tempFileURL(content: "data")
         manager.openTab(url: url)
 
@@ -490,7 +511,7 @@ struct TabManagerTests {
 
     @Test("Duplicate active tab creates copy with Finder naming")
     func duplicateActiveTab() throws {
-        let manager = TabManager()
+        let manager = makeTabManager()
         let dir = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
@@ -523,7 +544,7 @@ struct TabManagerTests {
 
     @Test("Duplicate uses incremented name when copy exists")
     func duplicateActiveTabIncrementsName() throws {
-        let manager = TabManager()
+        let manager = makeTabManager()
         let dir = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
@@ -541,7 +562,7 @@ struct TabManagerTests {
 
     @Test("Duplicate file without extension uses Finder naming")
     func duplicateFileWithoutExtension() throws {
-        let manager = TabManager()
+        let manager = makeTabManager()
         let dir = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
@@ -556,14 +577,14 @@ struct TabManagerTests {
 
     @Test("Duplicate returns false when no active tab")
     func duplicateNoActiveTab() {
-        let manager = TabManager()
+        let manager = makeTabManager()
         let result = manager.duplicateActiveTab()
         #expect(result == false)
     }
 
     @Test("tryDuplicateActiveTab succeeds and creates copy")
     func tryDuplicateActiveTabSuccess() throws {
-        let manager = TabManager()
+        let manager = makeTabManager()
         let dir = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
@@ -583,7 +604,7 @@ struct TabManagerTests {
 
     @Test("tryDuplicateActiveTab throws for non-writable path")
     func duplicateActiveTabThrowsForBadPath() {
-        let manager = TabManager()
+        let manager = makeTabManager()
         let badDir = URL(fileURLWithPath: "/nonexistent_dir_\(UUID().uuidString)")
         let badURL = badDir.appendingPathComponent("file.swift")
 
@@ -615,7 +636,7 @@ struct TabManagerTests {
         let outsideFile = outsideDir.appendingPathComponent("secret.txt")
         try "secret".write(to: outsideFile, atomically: true, encoding: .utf8)
 
-        let manager = TabManager()
+        let manager = makeTabManager()
         manager.openTab(url: outsideFile)
 
         #expect(throws: (any Error).self) {
@@ -630,7 +651,7 @@ struct TabManagerTests {
 
     @Test("isPreviewFile returns true for images")
     func isPreviewFileImages() {
-        let manager = TabManager()
+        let manager = makeTabManager()
         let dir = FileManager.default.temporaryDirectory
         #expect(manager.isPreviewFile(url: dir.appendingPathComponent("photo.png")) == true)
         #expect(manager.isPreviewFile(url: dir.appendingPathComponent("image.jpg")) == true)
@@ -640,7 +661,7 @@ struct TabManagerTests {
 
     @Test("isPreviewFile returns true for PDF and fonts")
     func isPreviewFilePDFAndFonts() {
-        let manager = TabManager()
+        let manager = makeTabManager()
         let dir = FileManager.default.temporaryDirectory
         #expect(manager.isPreviewFile(url: dir.appendingPathComponent("doc.pdf")) == true)
         #expect(manager.isPreviewFile(url: dir.appendingPathComponent("font.ttf")) == true)
@@ -649,7 +670,7 @@ struct TabManagerTests {
 
     @Test("isPreviewFile returns true for audio and video")
     func isPreviewFileAudioVideo() {
-        let manager = TabManager()
+        let manager = makeTabManager()
         let dir = FileManager.default.temporaryDirectory
         #expect(manager.isPreviewFile(url: dir.appendingPathComponent("song.mp3")) == true)
         #expect(manager.isPreviewFile(url: dir.appendingPathComponent("video.mp4")) == true)
@@ -658,7 +679,7 @@ struct TabManagerTests {
 
     @Test("isPreviewFile returns false for text and source code")
     func isPreviewFileTextFiles() {
-        let manager = TabManager()
+        let manager = makeTabManager()
         let dir = FileManager.default.temporaryDirectory
         #expect(manager.isPreviewFile(url: dir.appendingPathComponent("main.swift")) == false)
         #expect(manager.isPreviewFile(url: dir.appendingPathComponent("readme.txt")) == false)
@@ -670,14 +691,14 @@ struct TabManagerTests {
 
     @Test("isPreviewFile returns false for files with no extension")
     func isPreviewFileNoExtension() {
-        let manager = TabManager()
+        let manager = makeTabManager()
         let dir = FileManager.default.temporaryDirectory
         #expect(manager.isPreviewFile(url: dir.appendingPathComponent("Makefile")) == false)
     }
 
     @Test("isPreviewFile returns false for unrecognized plain-text extensions")
     func isPreviewFileUnrecognizedExtensions() {
-        let manager = TabManager()
+        let manager = makeTabManager()
         let dir = FileManager.default.temporaryDirectory
         #expect(manager.isPreviewFile(url: dir.appendingPathComponent("main.go")) == false)
         #expect(manager.isPreviewFile(url: dir.appendingPathComponent("go.mod")) == false)
@@ -691,7 +712,7 @@ struct TabManagerTests {
 
     @Test("openTab for image creates preview tab")
     func openTabPreviewFile() {
-        let manager = TabManager()
+        let manager = makeTabManager()
         let dir = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString)
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
@@ -728,7 +749,7 @@ struct TabManagerTests {
 
     @Test("Toggle preview mode cycles for markdown file")
     func togglePreviewModeCyclesForMarkdown() {
-        let manager = TabManager()
+        let manager = makeTabManager()
         let url = tempFileURL(name: "readme.md", content: "# Hello")
 
         manager.openTab(url: url)
@@ -746,7 +767,7 @@ struct TabManagerTests {
 
     @Test("Toggle preview mode ignores non-markdown file")
     func togglePreviewModeIgnoresNonMarkdown() {
-        let manager = TabManager()
+        let manager = makeTabManager()
         let url = tempFileURL(name: "main.swift", content: "let x = 1")
 
         manager.openTab(url: url)
@@ -758,7 +779,7 @@ struct TabManagerTests {
 
     @Test("Preview mode preserved across tab switch")
     func previewModePreservedAcrossTabSwitch() {
-        let manager = TabManager()
+        let manager = makeTabManager()
         let mdURL = tempFileURL(name: "readme.md", content: "# Hello")
         let swiftURL = tempFileURL(name: "main.swift", content: "let x = 1")
 
@@ -778,7 +799,7 @@ struct TabManagerTests {
 
     @Test("isLargeFile returns true for files >= 1 MB")
     func isLargeFileAboveThreshold() throws {
-        let manager = TabManager()
+        let manager = makeTabManager()
         let dir = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
@@ -792,7 +813,7 @@ struct TabManagerTests {
 
     @Test("isLargeFile returns false for files < 1 MB")
     func isLargeFileBelowThreshold() throws {
-        let manager = TabManager()
+        let manager = makeTabManager()
         let dir = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
@@ -805,14 +826,14 @@ struct TabManagerTests {
 
     @Test("isLargeFile returns false for nonexistent file")
     func isLargeFileNonexistent() {
-        let manager = TabManager()
+        let manager = makeTabManager()
         let url = URL(fileURLWithPath: "/nonexistent_\(UUID().uuidString)/file.txt")
         #expect(manager.isLargeFile(url: url) == false)
     }
 
     @Test("Open small file has syntaxHighlightingDisabled == false")
     func openSmallFileHasHighlighting() {
-        let manager = TabManager()
+        let manager = makeTabManager()
         let url = tempFileURL(content: "let x = 1")
 
         manager.openTab(url: url)
@@ -831,7 +852,7 @@ struct TabManagerTests {
 
     @Test("Rename preserves editor state")
     func renamePreservesEditorState() {
-        let manager = TabManager()
+        let manager = makeTabManager()
         let dir = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString)
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
@@ -851,7 +872,7 @@ struct TabManagerTests {
 
     @Test("openTabAndGoToLine opens tab and sets pending line")
     func openTabAndGoToLine() {
-        let manager = TabManager()
+        let manager = makeTabManager()
         let url = tempFileURL(content: "line 1\nline 2\nline 3")
 
         manager.openTabAndGoToLine(url: url, line: 3)
@@ -863,7 +884,7 @@ struct TabManagerTests {
 
     @Test("openTabAndGoToLine on already open tab sets pending line")
     func openTabAndGoToLineExistingTab() {
-        let manager = TabManager()
+        let manager = makeTabManager()
         let url = tempFileURL(content: "line 1\nline 2")
 
         manager.openTab(url: url)
@@ -878,7 +899,7 @@ struct TabManagerTests {
 
     @Test("scheduleAutoSave saves dirty tab after delay")
     func autoSaveSavesDirtyTabAfterDelay() async throws {
-        let manager = TabManager()
+        let manager = makeTabManager()
         manager.setAutoSaveDelay(0.1)
         let url = tempFileURL(content: "original")
 
@@ -898,7 +919,7 @@ struct TabManagerTests {
 
     @Test("scheduleAutoSave skips read-only file")
     func autoSaveSkipsReadOnlyFile() async throws {
-        let manager = TabManager()
+        let manager = makeTabManager()
         manager.setAutoSaveDelay(0.1)
         let url = tempFileURL(content: "original")
 
@@ -926,7 +947,7 @@ struct TabManagerTests {
 
     @Test("scheduleAutoSave debounces multiple rapid changes")
     func autoSaveDebounces() async throws {
-        let manager = TabManager()
+        let manager = makeTabManager()
         manager.setAutoSaveDelay(0.2)
         let url = tempFileURL(content: "original")
 
@@ -953,7 +974,7 @@ struct TabManagerTests {
 
     @Test("cancelAutoSave prevents pending save")
     func cancelAutoSavePreventsPlannedSave() async throws {
-        let manager = TabManager()
+        let manager = makeTabManager()
         manager.setAutoSaveDelay(0.2)
         let url = tempFileURL(content: "original")
 
@@ -973,7 +994,7 @@ struct TabManagerTests {
 
     @Test("Auto-save handles tab switch — saves correct tab")
     func autoSaveHandlesTabSwitch() async throws {
-        let manager = TabManager()
+        let manager = makeTabManager()
         manager.setAutoSaveDelay(0.1)
         let url1 = tempFileURL(name: "a.swift", content: "original1")
         let url2 = tempFileURL(name: "b.swift", content: "original2")
@@ -1000,7 +1021,7 @@ struct TabManagerTests {
 
     @Test("Manual save cancels pending auto-save")
     func manualSaveCancelsAutoSave() async throws {
-        let manager = TabManager()
+        let manager = makeTabManager()
         manager.setAutoSaveDelay(0.3)
         let url = tempFileURL(content: "original")
 
@@ -1017,7 +1038,7 @@ struct TabManagerTests {
 
     @Test("closeTab cancels pending auto-save for that tab")
     func closeTabCancelsAutoSave() async throws {
-        let manager = TabManager()
+        let manager = makeTabManager()
         manager.setAutoSaveDelay(0.3)
         let url = tempFileURL(content: "original")
 
@@ -1038,7 +1059,7 @@ struct TabManagerTests {
 
     @Test("Save strips trailing whitespace from all lines")
     func saveStripsTrailingWhitespace() {
-        let manager = TabManager()
+        let manager = makeTabManager(strip: true)
         let url = tempFileURL(content: "hello")
 
         manager.openTab(url: url)
@@ -1055,7 +1076,7 @@ struct TabManagerTests {
 
     @Test("Save preserves content with no trailing whitespace")
     func savePreservesCleanContent() {
-        let manager = TabManager()
+        let manager = makeTabManager(strip: true)
         let url = tempFileURL(content: "clean")
 
         manager.openTab(url: url)
@@ -1070,7 +1091,7 @@ struct TabManagerTests {
 
     @Test("Save strips trailing whitespace but preserves empty lines")
     func savePreservesEmptyLines() {
-        let manager = TabManager()
+        let manager = makeTabManager(strip: true)
         let url = tempFileURL(content: "hello")
 
         manager.openTab(url: url)
@@ -1085,7 +1106,7 @@ struct TabManagerTests {
 
     @Test("Save strips trailing whitespace with CRLF line endings")
     func saveStripsCRLF() {
-        let manager = TabManager()
+        let manager = makeTabManager(strip: true)
         let url = tempFileURL(content: "hello")
 
         manager.openTab(url: url)
@@ -1100,7 +1121,7 @@ struct TabManagerTests {
 
     @Test("Save strips trailing whitespace — tabs and mixed spaces")
     func saveStripsMixedWhitespace() {
-        let manager = TabManager()
+        let manager = makeTabManager(strip: true)
         let url = tempFileURL(content: "hello")
 
         manager.openTab(url: url)
@@ -1115,7 +1136,7 @@ struct TabManagerTests {
 
     @Test("trySaveTab also strips trailing whitespace")
     func trySaveTabStripsWhitespace() throws {
-        let manager = TabManager()
+        let manager = makeTabManager(strip: true)
         let url = tempFileURL(content: "hello")
 
         manager.openTab(url: url)
@@ -1130,7 +1151,7 @@ struct TabManagerTests {
 
     @Test("saveAllTabs strips trailing whitespace from all dirty tabs")
     func saveAllTabsStripsWhitespace() {
-        let manager = TabManager()
+        let manager = makeTabManager(strip: true)
         let url1 = tempFileURL(name: "a.swift", content: "original1")
         let url2 = tempFileURL(name: "b.swift", content: "original2")
 
@@ -1150,7 +1171,7 @@ struct TabManagerTests {
 
     @Test("Failed save preserves original content with trailing whitespace")
     func failedSavePreservesContent() {
-        let manager = TabManager()
+        let manager = makeTabManager(strip: true)
         let badURL = URL(fileURLWithPath: "/nonexistent_dir_\(UUID().uuidString)/file.txt")
 
         let tab = EditorTab(url: badURL, content: "hello   \nworld\t\n", savedContent: "")
@@ -1167,7 +1188,7 @@ struct TabManagerTests {
 
     @Test("Save As strips trailing whitespace")
     func saveAsStripsTrailingWhitespace() throws {
-        let manager = TabManager()
+        let manager = makeTabManager(strip: true)
         let url = tempFileURL(content: "hello")
         let dir = url.deletingLastPathComponent()
         let newURL = dir.appendingPathComponent("saved_as.swift")
@@ -1186,7 +1207,7 @@ struct TabManagerTests {
 
     @Test("Duplicate tab strips trailing whitespace")
     func duplicateStripsTrailingWhitespace() throws {
-        let manager = TabManager()
+        let manager = makeTabManager(strip: true)
         let dir = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
@@ -1216,7 +1237,7 @@ struct TabManagerTests {
 
     @Test("Strip trailing whitespace with mixed LF and CRLF")
     func stripMixedLineEndings() {
-        let manager = TabManager()
+        let manager = makeTabManager(strip: true)
         let url = tempFileURL(content: "hello")
 
         manager.openTab(url: url)
@@ -1231,7 +1252,7 @@ struct TabManagerTests {
 
     @Test("Save file with no trailing newline strips whitespace")
     func saveNoTrailingNewline() {
-        let manager = TabManager()
+        let manager = makeTabManager(strip: true)
         let url = tempFileURL(content: "hello")
 
         manager.openTab(url: url)
@@ -1246,7 +1267,7 @@ struct TabManagerTests {
 
     @Test("Save whitespace-only file produces empty lines")
     func saveWhitespaceOnlyFile() {
-        let manager = TabManager()
+        let manager = makeTabManager(strip: true)
         let url = tempFileURL(content: "hello")
 
         manager.openTab(url: url)
@@ -1261,7 +1282,7 @@ struct TabManagerTests {
 
     @Test("Auto-save strips trailing whitespace")
     func autoSaveStripsTrailingWhitespace() async throws {
-        let manager = TabManager()
+        let manager = makeTabManager(strip: true)
         manager.setAutoSaveDelay(0.1)
         let url = tempFileURL(content: "original")
 
@@ -1304,7 +1325,7 @@ struct TabManagerTests {
 
     @Test("Huge file is opened with partial load and truncation flag")
     func hugeFilePartialLoad() throws {
-        let manager = TabManager()
+        let manager = makeTabManager()
         let size = TabManager.hugeFileThreshold + 1000
         let url = try tempHugeFileURL(size: size)
 
@@ -1325,7 +1346,7 @@ struct TabManagerTests {
 
     @Test("Huge file tab is not dirty")
     func hugeFileNotDirty() throws {
-        let manager = TabManager()
+        let manager = makeTabManager()
         let url = try tempHugeFileURL(size: TabManager.hugeFileThreshold + 1000)
 
         manager.openTab(url: url)
@@ -1335,7 +1356,7 @@ struct TabManagerTests {
 
     @Test("trySaveTab throws for truncated tab")
     func trySaveTruncatedTabThrows() throws {
-        let manager = TabManager()
+        let manager = makeTabManager()
         let url = try tempHugeFileURL(size: TabManager.hugeFileThreshold + 1000)
 
         manager.openTab(url: url)
@@ -1347,7 +1368,7 @@ struct TabManagerTests {
 
     @Test("trySaveTab error message mentions truncation")
     func trySaveTruncatedTabErrorMessage() throws {
-        let manager = TabManager()
+        let manager = makeTabManager()
         let url = try tempHugeFileURL(size: TabManager.hugeFileThreshold + 1000)
 
         manager.openTab(url: url)
@@ -1362,7 +1383,7 @@ struct TabManagerTests {
 
     @Test("File just below huge threshold opens normally with large file path")
     func fileBelowHugeThresholdNotTruncated() {
-        let manager = TabManager()
+        let manager = makeTabManager()
         // Create a file just below the huge threshold but above the large threshold
         // We use openTab(url:syntaxHighlightingDisabled:) to skip the alert dialog
         let dir = FileManager.default.temporaryDirectory
@@ -1380,7 +1401,7 @@ struct TabManagerTests {
 
     @Test("Session restore of huge file does partial load")
     func sessionRestoreHugeFilePartialLoad() throws {
-        let manager = TabManager()
+        let manager = makeTabManager()
         let url = try tempHugeFileURL(size: TabManager.hugeFileThreshold + 1000)
 
         // Simulate session restore path
@@ -1392,7 +1413,7 @@ struct TabManagerTests {
 
     @Test("Duplicate open of huge file activates existing tab")
     func hugeFileDeduplicate() throws {
-        let manager = TabManager()
+        let manager = makeTabManager()
         let url = try tempHugeFileURL(size: TabManager.hugeFileThreshold + 1000)
 
         manager.openTab(url: url)
@@ -1406,7 +1427,7 @@ struct TabManagerTests {
 
     @Test("File exactly at huge threshold triggers partial load")
     func fileExactlyAtHugeThreshold() throws {
-        let manager = TabManager()
+        let manager = makeTabManager()
         let url = try tempHugeFileURL(size: TabManager.hugeFileThreshold)
 
         manager.openTab(url: url)
@@ -1416,7 +1437,7 @@ struct TabManagerTests {
 
     @Test("Truncated tab content does not exceed partial load size significantly")
     func truncatedContentSizeBounded() throws {
-        let manager = TabManager()
+        let manager = makeTabManager()
         let url = try tempHugeFileURL(size: TabManager.hugeFileThreshold * 5)
 
         manager.openTab(url: url)
@@ -1428,7 +1449,7 @@ struct TabManagerTests {
 
     @Test("isAutoSaving resets after auto-save completes")
     func isAutoSavingResetsAfterSave() async throws {
-        let manager = TabManager()
+        let manager = makeTabManager()
         manager.setAutoSaveDelay(0.05)
         let url = tempFileURL(content: "original")
 
@@ -1449,7 +1470,7 @@ struct TabManagerTests {
 
     @Test("checkExternalChanges silently reloads clean tab when file changes on disk")
     func checkExternalChangesReloadsCleanTab() throws {
-        let manager = TabManager()
+        let manager = makeTabManager()
         let url = tempFileURL(content: "original content")
 
         manager.openTab(url: url)
@@ -1477,7 +1498,7 @@ struct TabManagerTests {
 
     @Test("checkExternalChanges returns conflict for dirty tab")
     func checkExternalChangesConflictForDirtyTab() throws {
-        let manager = TabManager()
+        let manager = makeTabManager()
         let url = tempFileURL(content: "original")
 
         manager.openTab(url: url)
@@ -1501,7 +1522,7 @@ struct TabManagerTests {
 
     @Test("reloadTab updates content and increments contentVersion")
     func reloadTabUpdatesContentVersion() throws {
-        let manager = TabManager()
+        let manager = makeTabManager()
         let url = tempFileURL(content: "v1")
 
         manager.openTab(url: url)
@@ -1518,7 +1539,7 @@ struct TabManagerTests {
 
     @Test("Opening huge file closes FileHandle via defer and produces truncated tab")
     func openHugeFileClosesHandleSafely() throws {
-        let manager = TabManager()
+        let manager = makeTabManager()
         let dir = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
