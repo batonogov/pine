@@ -48,6 +48,8 @@ final class EditorSettings {
         // "explicitly false" and default unset flags to `true`.
         self.insertFinalNewline = (defaults.object(forKey: Keys.insertFinalNewline) as? Bool) ?? true
         self.stripTrailingWhitespace = (defaults.object(forKey: Keys.stripTrailingWhitespace) as? Bool) ?? true
-        self.formatOnSave = (defaults.object(forKey: Keys.formatOnSave) as? Bool) ?? true
+        // Off by default — JSON formatting via JSONSerialization is lossy for
+        // numbers and reorders keys. Users opt in explicitly via menu toggle.
+        self.formatOnSave = (defaults.object(forKey: Keys.formatOnSave) as? Bool) ?? false
     }
 }
