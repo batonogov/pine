@@ -57,6 +57,11 @@ func assertSnapshot<V: View>(
     sourceLocation: SourceLocation = #_sourceLocation,
     file: StaticString = #filePath
 ) throws {
+    // Skip gracefully on headless CI runners where AppKit rendering is unavailable.
+    if SnapshotHarness.isHeadless {
+        return
+    }
+
     let bitmap = try SnapshotHarness.render(view: view, size: size, appearance: appearance)
     guard let actualPNG = bitmap.representation(using: .png, properties: [:]) else {
         let message = "Failed to encode snapshot '\(named)' to PNG"
@@ -127,6 +132,12 @@ enum SnapshotHarness {
         ProcessInfo.processInfo.environment["PINE_RECORD_SNAPSHOTS"] == "1"
     }
 
+    /// Returns `true` when running on a headless CI runner (no window server / GPU).
+    static var isHeadless: Bool {
+        ProcessInfo.processInfo.environment["CI"] != nil
+            && NSScreen.main == nil
+    }
+
     /// Renders `view` into an `NSBitmapImageRep` at the given size/appearance.
     @MainActor
     static func render<V: View>(
@@ -134,6 +145,10 @@ enum SnapshotHarness {
         size: NSSize,
         appearance: SnapshotAppearance
     ) throws -> NSBitmapImageRep {
+        if isHeadless {
+            throw SnapshotError.headlessEnvironment
+        }
+
         let hosting = NSHostingView(rootView: view)
         hosting.appearance = appearance.nsAppearance
         hosting.frame = NSRect(origin: .zero, size: size)
@@ -236,4 +251,5 @@ enum SnapshotHarness {
 enum SnapshotError: Error {
     case bitmapCreationFailed
     case decodeFailed
+    case headlessEnvironment
 }
