@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.21.1](https://github.com/batonogov/pine/compare/v1.21.0...v1.21.1) (2026-04-10)
+
+
+### Bug Fixes
+
+* **editor:** constrain diagnostic icon to fixed rect to prevent overlap ([#811](https://github.com/batonogov/pine/issues/811)) ([528997d](https://github.com/batonogov/pine/commit/528997dca462eb3fb6b7d1c509b3068f7928f5e4))
+* **editor:** force diff gutter refresh via diffVersion counter ([#810](https://github.com/batonogov/pine/issues/810)) ([39df7ab](https://github.com/batonogov/pine/commit/39df7abfba77f293d352521a558dd566331f592b))
+
 ## [1.21.0](https://github.com/batonogov/pine/compare/v1.20.1...v1.21.0) (2026-04-10)
 
 
