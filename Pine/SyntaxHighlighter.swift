@@ -725,7 +725,21 @@ nonisolated final class SyntaxHighlighter: @unchecked Sendable {
     }
 
     /// Core match computation — used by both `computeMatches` and `applyRules`.
-    /// Thread-safe: only reads immutable compiled rules and the provided text snapshot.
+    ///
+    /// **Thread safety.** Safe to call from any thread (including concurrent
+    /// callers on the background `highlightQueue`) as long as each invocation
+    /// passes its own `text` snapshot. This method:
+    /// - only reads immutable compiled rules via `rules` and the scope
+    ///   priority map (both immutable after registration),
+    /// - reads `theme.color(for:)` which is a pure dictionary lookup on an
+    ///   immutable `[String: NSColor]`,
+    /// - operates on local `matches`/`highlightedRanges` buffers that never
+    ///   escape this call,
+    /// - does NOT touch any `NSTextStorage` — that happens only in
+    ///   `applyMatches` on the main thread.
+    ///
+    /// Scopes without a registered theme color are skipped early so that no
+    /// nil color can later be written into an attribute dictionary.
     private func computeMatchesWithRules(
         _ rules: [CompiledRule],
         text: String,
@@ -799,7 +813,24 @@ nonisolated final class SyntaxHighlighter: @unchecked Sendable {
         )
     }
 
-    /// Applies pre-computed matches to NSTextStorage. Must be called on main thread.
+    /// Applies pre-computed matches to NSTextStorage.
+    ///
+    /// **Thread safety — MUST be called on the main thread.**
+    /// `NSTextStorage`/`NSMutableAttributedString` are not thread-safe. Calling
+    /// `addAttributes`/`addAttribute` from a background thread — or concurrently
+    /// with another thread (including the main thread via a synchronous
+    /// `highlightVisibleRange` call) — corrupts the internal
+    /// `NSMutableDictionary` backing store, surfacing as
+    /// `NSInvalidArgumentException: object cannot be nil` inside
+    /// `-[__NSDictionaryM setObject:forKey:]` even though every value passed in
+    /// is non-nil. See issue #790.
+    ///
+    /// Async entry points (`highlightAsync`, `highlightEditedAsync`,
+    /// `highlightVisibleRangeAsync`) hop to `@MainActor` before invoking this
+    /// method. Synchronous entry points (`highlightVisibleRange`,
+    /// `highlightEdited`) are documented main-thread-only and inherit the
+    /// caller's main-thread guarantee.
+    ///
     /// Validates that ranges are still valid — text may have changed between
     /// computation and application.
     /// Skips application if the undo manager is currently undoing/redoing to
@@ -841,6 +872,72 @@ nonisolated final class SyntaxHighlighter: @unchecked Sendable {
         textStorage.endEditing()
     }
 
+    /// Hops to the main thread (synchronously) to call `applyMatches`.
+    ///
+    /// Used by the async entry points. `NSTextStorage` and `NSFont` are not
+    /// `Sendable`, so we avoid `MainActor.run { }` (which requires Sendable
+    /// captures under strict concurrency) and instead route through
+    /// `DispatchQueue.main.sync` — classic Apple pattern for bridging
+    /// background GCD work to the main-thread UI. This also preserves ordering
+    /// with respect to the caller's `await`.
+    ///
+    /// Safe to call from any non-main thread; falls through directly when
+    /// already on main to avoid a redundant hop (and to prevent the deadlock
+    /// that `DispatchQueue.main.sync` causes when called from main).
+    nonisolated private func applyMatchesOnMain(
+        _ result: HighlightMatchResult,
+        to textStorage: NSTextStorage,
+        font: NSFont
+    ) {
+        let box = MainHopBox(textStorage: textStorage, font: font, highlighter: self)
+        if Thread.isMainThread {
+            box.highlighter.applyMatches(result, to: box.textStorage, font: box.font)
+        } else {
+            DispatchQueue.main.sync {
+                box.highlighter.applyMatches(result, to: box.textStorage, font: box.font)
+            }
+        }
+    }
+
+    /// Hops to the main thread (synchronously) to call `resetAttributes`.
+    /// See `applyMatchesOnMain` for rationale.
+    nonisolated private func resetAttributesOnMain(
+        textStorage: NSTextStorage,
+        range: NSRange,
+        font: NSFont
+    ) {
+        let box = MainHopBox(textStorage: textStorage, font: font, highlighter: self)
+        if Thread.isMainThread {
+            box.highlighter.resetAttributes(textStorage: box.textStorage, range: range, font: box.font)
+        } else {
+            DispatchQueue.main.sync {
+                box.highlighter.resetAttributes(
+                    textStorage: box.textStorage, range: range, font: box.font
+                )
+            }
+        }
+    }
+
+    /// `@unchecked Sendable` container for the non-Sendable captures needed to
+    /// hop `applyMatches`/`resetAttributes` to the main thread.
+    ///
+    /// `NSTextStorage` and `NSFont` are AppKit types without `Sendable`
+    /// conformance. Capturing them directly in a `DispatchQueue.main.sync {}`
+    /// closure trips Swift 6 strict concurrency. Safety invariants:
+    ///
+    /// - `textStorage` is exclusively mutated on the main thread (enforced by
+    ///   `applyMatches`/`resetAttributes` preconditions and the sync hop).
+    /// - `NSFont` is immutable.
+    /// - `SyntaxHighlighter` itself is already `@unchecked Sendable`.
+    /// - The box is stack-local: it never escapes beyond a single synchronous
+    ///   main-thread call, and the caller blocks on `sync` until the closure
+    ///   returns, so there is no cross-thread lifetime extension.
+    private struct MainHopBox: @unchecked Sendable {
+        let textStorage: NSTextStorage
+        let font: NSFont
+        let highlighter: SyntaxHighlighter
+    }
+
     /// Async full highlight: computes on background queue, applies on main thread.
     /// Returns the applied match result (for caching on tab switch), or nil if generation was stale.
     @discardableResult
@@ -876,16 +973,16 @@ nonisolated final class SyntaxHighlighter: @unchecked Sendable {
         // Check generation — if bumped, discard stale results
         if let generation, generation.current != gen { return nil }
 
+        // Mutating NSTextStorage attributes from a background thread races with
+        // any other highlight (sync or async) on the same storage and with
+        // main-thread consumers (layout manager, drawing). Hop to the main
+        // actor before calling applyMatches/resetAttributes — see #790.
         if let result {
-            applyMatches(result, to: textStorage, font: font)
+            self.applyMatchesOnMain(result, to: textStorage, font: font)
             updateMultilineCache(key: ObjectIdentifier(textStorage), fingerprint: result.multilineFingerprint)
             return result
         } else {
-            resetAttributes(
-                textStorage: textStorage,
-                range: fullRange,
-                font: font
-            )
+            self.resetAttributesOnMain(textStorage: textStorage, range: fullRange, font: font)
             return nil
         }
     }
@@ -947,11 +1044,12 @@ nonisolated final class SyntaxHighlighter: @unchecked Sendable {
         if let generation, generation.current != gen { return }
 
         let (result, _) = bgResult
+        // Hop to main before touching NSTextStorage — see #790.
         if let result {
-            applyMatches(result, to: textStorage, font: font)
+            self.applyMatchesOnMain(result, to: textStorage, font: font)
             updateMultilineCache(key: key, fingerprint: result.multilineFingerprint)
         } else {
-            resetAttributes(textStorage: textStorage, range: fullRange, font: font)
+            self.resetAttributesOnMain(textStorage: textStorage, range: fullRange, font: font)
         }
     }
 
@@ -992,15 +1090,12 @@ nonisolated final class SyntaxHighlighter: @unchecked Sendable {
 
         if let generation, generation.current != gen { return }
 
+        // Hop to main before touching NSTextStorage — see #790.
         if let result {
-            applyMatches(result, to: textStorage, font: font)
+            self.applyMatchesOnMain(result, to: textStorage, font: font)
             setMultilineCacheIfNil(key: key, fingerprint: result.multilineFingerprint)
         } else {
-            resetAttributes(
-                textStorage: textStorage,
-                range: visibleCharRange,
-                font: font
-            )
+            self.resetAttributesOnMain(textStorage: textStorage, range: visibleCharRange, font: font)
         }
     }
 }
