@@ -19,17 +19,50 @@ protocol FileFormatter: Sendable {
     func canFormat(url: URL) -> Bool
 
     /// Returns a formatted copy of `content`, or the original on any failure.
-    func format(_ content: String) -> String
+    /// The `url` is provided for blocklist checks and filename-based decisions.
+    func format(_ content: String, url: URL) -> String
 }
 
-/// Formats JSON with 2-space indentation and sorted keys. Preserves the original text on
+/// Formats JSON with 2-space indentation. Preserves the original text on
 /// any parse failure so that invalid JSON remains editable.
+///
+/// **Known limitation**: `JSONSerialization` round-trips numbers lossily —
+/// `1.0` may become `1`, scientific notation changes form, and integers
+/// above 2^53 lose precision. Files with these patterns are skipped until
+/// a proper tokenizer-based formatter is written.
 struct JSONFileFormatter: FileFormatter {
+    /// Files that must never be reformatted because their key order carries
+    /// semantic meaning (npm, TypeScript, Composer, VS Code workspaces).
+    private static let blocklist: Set<String> = [
+        "package.json", "package-lock.json",
+        "tsconfig.json", "jsconfig.json",
+        "composer.json", "composer.lock"
+    ]
+
+    /// Extensions that are also skipped (VS Code workspaces, etc.).
+    private static let blockExtensions: Set<String> = ["code-workspace"]
+
+    /// Maximum content size to format synchronously on the main thread.
+    /// Larger files are left as-is to avoid blocking the UI.
+    private static let maxFormatSize = 100_000
+
     func canFormat(url: URL) -> Bool {
-        url.pathExtension.lowercased() == "json"
+        let ext = url.pathExtension.lowercased()
+        guard ext == "json" || Self.blockExtensions.contains(ext) else { return false }
+        // blocklisted files and extensions are claimed but format() returns
+        // them unchanged — this prevents other formatters from touching them.
+        return true
     }
 
-    func format(_ content: String) -> String {
+    func format(_ content: String, url: URL) -> String {
+        // Skip blocklisted filenames
+        let filename = url.lastPathComponent.lowercased()
+        if Self.blocklist.contains(filename) { return content }
+        if Self.blockExtensions.contains(url.pathExtension.lowercased()) { return content }
+
+        // Skip large files — main-thread budget
+        guard content.utf8.count < Self.maxFormatSize else { return content }
+
         let trimmed = content.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return content }
         guard let data = trimmed.data(using: .utf8) else { return content }
@@ -39,16 +72,15 @@ struct JSONFileFormatter: FileFormatter {
         ) else {
             return content
         }
+        // Do NOT use .sortedKeys — it destroys the human-meaningful key
+        // order in files like package.json (name → version → scripts).
         guard let pretty = try? JSONSerialization.data(
             withJSONObject: object,
-            options: [.prettyPrinted, .sortedKeys, .fragmentsAllowed]
+            options: [.prettyPrinted, .fragmentsAllowed]
         ) else {
             return content
         }
         guard let string = String(data: pretty, encoding: .utf8) else { return content }
-        // JSONSerialization uses 2-space indentation by default on Apple platforms, which
-        // matches the Pine convention. Do not append a trailing newline — that is the job
-        // of `ensuringTrailingNewline()` in the save pipeline so we avoid double-adding.
         return string
     }
 }
@@ -67,7 +99,7 @@ struct FileFormatterRegistry: Sendable {
     /// registered formatter claims the file type.
     func format(content: String, url: URL) -> String {
         for formatter in formatters where formatter.canFormat(url: url) {
-            return formatter.format(content)
+            return formatter.format(content, url: url)
         }
         return content
     }

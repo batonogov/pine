@@ -12,6 +12,7 @@ import Testing
 @MainActor
 struct JSONFileFormatterTests {
     private let formatter = JSONFileFormatter()
+    private let url = URL(fileURLWithPath: "/tmp/test.json")
 
     @Test("Claims .json files and rejects others")
     func canFormatGating() {
@@ -25,50 +26,43 @@ struct JSONFileFormatterTests {
     @Test("Pretty-prints a compact object")
     func prettyPrintObject() {
         let input = #"{"b":1,"a":2}"#
-        let output = formatter.format(input)
-        // Sorted keys: "a" before "b", 2-space indent, no trailing newline.
-        #expect(output == "{\n  \"a\" : 2,\n  \"b\" : 1\n}")
-    }
-
-    @Test("Sorted keys are deterministic")
-    func sortedKeysAreDeterministic() {
-        let a = formatter.format(#"{"z":1,"a":2,"m":3}"#)
-        let b = formatter.format(#"{"a":2,"m":3,"z":1}"#)
-        #expect(a == b)
+        let output = formatter.format(input, url: url)
+        // Pretty-printed with 2-space indent. Key order is NOT sorted
+        // (sortedKeys removed to avoid destroying package.json).
+        #expect(output.contains("\"b\" : 1"))
+        #expect(output.contains("\"a\" : 2"))
     }
 
     @Test("Is idempotent — format(format(x)) == format(x)")
     func idempotent() {
-        let once = formatter.format(#"{"b":1,"a":[1,2,3]}"#)
-        let twice = formatter.format(once)
+        let once = formatter.format(#"{"b":1,"a":[1,2,3]}"#, url: url)
+        let twice = formatter.format(once, url: url)
         #expect(once == twice)
     }
 
     @Test("Preserves invalid JSON unchanged")
     func preservesInvalid() {
         let broken = "{ not json"
-        #expect(formatter.format(broken) == broken)
+        #expect(formatter.format(broken, url: url) == broken)
     }
 
     @Test("Preserves empty content")
     func preservesEmpty() {
-        #expect(formatter.format("") == "")
-        #expect(formatter.format("   \n  ") == "   \n  ")
+        #expect(formatter.format("", url: url) == "")
+        #expect(formatter.format("   \n  ", url: url) == "   \n  ")
     }
 
     @Test("Accepts top-level fragments (numbers, strings, arrays)")
     func topLevelFragments() {
-        #expect(formatter.format("42") == "42")
-        // String fragments may be reformatted but must still round-trip back to the
-        // same JSON value.
-        let stringFrag = formatter.format("\"hello\"")
+        #expect(formatter.format("42", url: url) == "42")
+        let stringFrag = formatter.format("\"hello\"", url: url)
         #expect(stringFrag.contains("hello"))
     }
 
-    @Test("Formats arrays with sorted keys in nested objects")
+    @Test("Formats arrays with nested objects")
     func nestedArray() {
         let input = #"[{"z":1,"a":2},{"b":3}]"#
-        let output = formatter.format(input)
+        let output = formatter.format(input, url: url)
         #expect(output.contains("\"a\" : 2"))
         #expect(output.contains("\"z\" : 1"))
         #expect(output.contains("\"b\" : 3"))
@@ -76,8 +70,30 @@ struct JSONFileFormatterTests {
 
     @Test("Trailing newline is NOT added by the formatter (left to save pipeline)")
     func noTrailingNewlineFromFormatter() {
-        let output = formatter.format(#"{"a":1}"#)
+        let output = formatter.format(#"{"a":1}"#, url: url)
         #expect(!output.hasSuffix("\n"))
+    }
+
+    // MARK: - Blocklist (#800 review fix)
+
+    @Test("package.json is never reformatted")
+    func packageJsonBlocklisted() {
+        let pkgURL = URL(fileURLWithPath: "/tmp/package.json")
+        let input = #"{"name":"x","version":"1.0"}"#
+        #expect(formatter.format(input, url: pkgURL) == input)
+    }
+
+    @Test("tsconfig.json is never reformatted")
+    func tsconfigBlocklisted() {
+        let tsURL = URL(fileURLWithPath: "/tmp/tsconfig.json")
+        let input = #"{"compilerOptions":{}}"#
+        #expect(formatter.format(input, url: tsURL) == input)
+    }
+
+    @Test("Large JSON (>100KB) is skipped")
+    func largeFileSkipped() {
+        let big = "{" + String(repeating: "\"k\":1,", count: 20_000) + "\"z\":1}"
+        #expect(formatter.format(big, url: url) == big)
     }
 }
 
@@ -89,7 +105,7 @@ struct FileFormatterRegistryTests {
         let ext: String
         let reply: String
         func canFormat(url: URL) -> Bool { url.pathExtension == ext }
-        func format(_ content: String) -> String { reply }
+        func format(_ content: String, url: URL) -> String { reply }
     }
 
     @Test("Empty registry is a no-op")
@@ -153,10 +169,10 @@ struct ContentPreparedForSaveTests {
             settings: settings,
             formatters: .default
         )
-        // Pretty-printed, sorted, with a trailing newline.
+        // Pretty-printed (not sorted) with a trailing newline.
         #expect(output.hasSuffix("\n"))
-        #expect(output.contains("\"a\" : 2"))
         #expect(output.contains("\"b\" : 1"))
+        #expect(output.contains("\"a\" : 2"))
     }
 
     @Test("JSON: formatOnSave=false skips formatter but still strips/newlines")
