@@ -26,6 +26,9 @@ jobs:
           sudo xcode-select -s "$XCODE_PATH/Contents/Developer"
           xcodebuild -version
 
+      - name: Download Metal Toolchain
+        run: xcodebuild -downloadComponent MetalToolchain
+
       - name: Install certificate
         env:
           CERTIFICATE_P12: ${{ secrets.CERTIFICATE_P12 }}
