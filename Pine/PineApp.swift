@@ -449,6 +449,12 @@ struct PineApp: App {
                 Toggle(isOn: $autoSaveEnabled) {
                     Label(Strings.menuAutoSave, systemImage: MenuIcons.autoSave)
                 }
+
+                Toggle(
+                    isOn: Bindable(EditorSettings.shared).formatOnSave
+                ) {
+                    Label(Strings.menuFormatOnSave, systemImage: MenuIcons.formatOnSave)
+                }
             }
             // Cmd+W is intercepted by AppDelegate's local event monitor
             // to close the active tab. The close button goes through
