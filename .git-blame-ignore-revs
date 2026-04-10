@@ -1,0 +1,13 @@
+# Mechanical refactoring commits — ignored by `git blame` to preserve authorship
+# history of the actual code changes. Configure locally with:
+#   git config blame.ignoreRevsFile .git-blame-ignore-revs
+#
+# Add a commit SHA below when it only moves code between files without
+# modifying behavior. Keep them full 40-character SHAs and append after
+# merging the corresponding PR.
+
+# refactor(app): split PineApp.swift into menu commands and notifications (#785)
+# TODO: append merge commit SHA after merge
+
+# refactor(editor): split CodeEditorView.swift into focused files (#797)
+# TODO: append merge commit SHA after merge
