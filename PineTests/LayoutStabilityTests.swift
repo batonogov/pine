@@ -59,8 +59,9 @@ struct LayoutStabilityTests {
         #expect(workspace.isLoading)
     }
 
-    @Test("isLoading becomes false after shallow load completes for empty directory")
-    func isLoadingFalseAfterEmptyDir() async {
+    @Test("isLoading becomes false after shallow load completes for empty directory",
+          .timeLimit(.minutes(1)))
+    func isLoadingFalseAfterEmptyDir() async throws {
         let workspace = WorkspaceManager()
         let tmpDir = FileManager.default.temporaryDirectory
             .appendingPathComponent("pine-test-\(UUID().uuidString)")
@@ -69,8 +70,12 @@ struct LayoutStabilityTests {
 
         workspace.loadDirectory(url: tmpDir)
 
-        // Wait for async loading to complete
-        try? await Task.sleep(for: .milliseconds(500))
+        // Poll until isLoading settles — on busy CI runners the background
+        // git setup + shallow load can take longer than a fixed sleep.
+        for _ in 0..<100 {
+            if !workspace.isLoading { break }
+            try await Task.sleep(for: .milliseconds(100))
+        }
         #expect(!workspace.isLoading)
     }
 
