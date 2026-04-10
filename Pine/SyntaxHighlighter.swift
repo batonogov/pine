@@ -378,7 +378,7 @@ nonisolated final class SyntaxHighlighter: @unchecked Sendable {
         fileName: String? = nil,
         font: NSFont
     ) -> HighlightMatchResult? {
-        guard let (_, rules) = resolveGrammar(language: language, fileName: fileName) else {
+        guard let (grammar, rules) = resolveGrammar(language: language, fileName: fileName) else {
             resetAttributes(textStorage: textStorage,
                             range: NSRange(location: 0, length: textStorage.length),
                             font: font)
@@ -387,7 +387,8 @@ nonisolated final class SyntaxHighlighter: @unchecked Sendable {
 
         let fullRange = NSRange(location: 0, length: textStorage.length)
         let result = applyRules(
-            rules, to: textStorage, repaintRange: fullRange, searchRange: fullRange, font: font
+            rules, to: textStorage, repaintRange: fullRange, searchRange: fullRange, font: font,
+            grammarName: grammar.name
         )
         lock.withLock { multilineMatchCache[ObjectIdentifier(textStorage)] = result.multilineFingerprint }
         return result
@@ -408,7 +409,7 @@ nonisolated final class SyntaxHighlighter: @unchecked Sendable {
         let totalLength = textStorage.length
         guard totalLength > 0 else { return }
 
-        guard let (_, rules) = resolveGrammar(language: language, fileName: fileName) else {
+        guard let (grammar, rules) = resolveGrammar(language: language, fileName: fileName) else {
             resetAttributes(textStorage: textStorage,
                             range: visibleCharRange,
                             font: font)
@@ -429,7 +430,8 @@ nonisolated final class SyntaxHighlighter: @unchecked Sendable {
         // a very long construct (#750). The cost is bounded because only a
         // handful of rules per grammar are multiline.
         let result = applyRules(
-            rules, to: textStorage, repaintRange: expanded, searchRange: expanded, font: font
+            rules, to: textStorage, repaintRange: expanded, searchRange: expanded, font: font,
+            grammarName: grammar.name
         )
 
         // Build multiline match cache (needed for subsequent highlightEdited calls)
@@ -460,7 +462,7 @@ nonisolated final class SyntaxHighlighter: @unchecked Sendable {
         let totalLength = textStorage.length
         guard totalLength > 0 else { return }
 
-        guard let (_, rules) = resolveGrammar(language: language, fileName: fileName) else {
+        guard let (grammar, rules) = resolveGrammar(language: language, fileName: fileName) else {
             resetAttributes(textStorage: textStorage,
                             range: NSRange(location: 0, length: totalLength),
                             font: font)
@@ -481,7 +483,8 @@ nonisolated final class SyntaxHighlighter: @unchecked Sendable {
         // Если структура многострочных токенов изменилась — полная перекраска
         if cachedFingerprint != currentFingerprint {
             let result = applyRules(
-                rules, to: textStorage, repaintRange: fullRange, searchRange: fullRange, font: font
+                rules, to: textStorage, repaintRange: fullRange, searchRange: fullRange, font: font,
+                grammarName: grammar.name
             )
             lock.withLock { multilineMatchCache[key] = result.multilineFingerprint }
             return
@@ -489,7 +492,10 @@ nonisolated final class SyntaxHighlighter: @unchecked Sendable {
 
         // Границы не изменились — инкрементальная подсветка
         let repaintRange = expandToContext(editedRange, in: source as NSString, totalLength: totalLength)
-        applyRules(rules, to: textStorage, repaintRange: repaintRange, searchRange: repaintRange, font: font)
+        applyRules(
+            rules, to: textStorage, repaintRange: repaintRange, searchRange: repaintRange, font: font,
+            grammarName: grammar.name
+        )
     }
 
     /// Удаляет кэш для textStorage (вызывать при смене файла).
@@ -561,6 +567,131 @@ nonisolated final class SyntaxHighlighter: @unchecked Sendable {
             guard let grammar, let rules = compiledRules[grammar.name] else { return nil }
             return (grammar, rules)
         }
+    }
+
+    // MARK: - Language tag resolution for fenced code blocks
+
+    /// Common language aliases used in fenced code blocks.
+    /// Maps alias → file extension recognized by `grammarsByExtension`.
+    private let languageAliases: [String: String] = [
+        "bash": "bash",
+        "sh": "sh",
+        "zsh": "zsh",
+        "shell": "sh",
+        "javascript": "js",
+        "typescript": "ts",
+        "python": "py",
+        "ruby": "rb",
+        "rust": "rs",
+        "golang": "go",
+        "csharp": "cs",
+        "c++": "cpp",
+        "objective-c": "m",
+        "yml": "yaml",
+        "dockerfile": "dockerfile",
+        "makefile": "mk",
+        "hcl": "hcl",
+        "terraform": "tf",
+    ]
+
+    /// Resolves a fenced code block language tag to compiled grammar rules.
+    /// Tries tag as-is first (works for `swift`, `py`, `go`, `html`, etc.),
+    /// then falls back to the alias map.
+    func resolveGrammarByTag(_ tag: String) -> (Grammar, [CompiledRule])? {
+        let lowered = tag.lowercased()
+        // Try direct extension lookup first
+        if let result = resolveGrammar(language: lowered, fileName: nil) {
+            return result
+        }
+        // Try alias map
+        if let mapped = languageAliases[lowered] {
+            return resolveGrammar(language: mapped, fileName: nil)
+        }
+        return nil
+    }
+
+    // MARK: - Nested fenced code block highlighting
+
+    /// Regex to match fenced code blocks with an optional language tag.
+    /// Group 1 captures the language tag (e.g. "swift", "python").
+    /// Uses dotMatchesLineSeparators equivalent via [\s\S].
+    private static let fencedBlockRegex: NSRegularExpression? = {
+        try? NSRegularExpression(pattern: "```(\\w+)?[^\\n]*\\n([\\s\\S]*?)```")
+    }()
+
+    /// Computes nested highlight matches for fenced code blocks in markdown.
+    /// For each fenced block with a recognized language tag, runs the inner
+    /// grammar on the block content and returns additional matches.
+    ///
+    /// - Parameters:
+    ///   - text: the full markdown text
+    ///   - repaintRange: range to clip matches to
+    /// - Returns: additional matches from inner grammars
+    func computeNestedFencedMatches(
+        text: String,
+        repaintRange: NSRange
+    ) -> [HighlightMatch] {
+        guard let regex = Self.fencedBlockRegex else { return [] }
+        let source = text as NSString
+        let fullRange = NSRange(location: 0, length: source.length)
+
+        var nestedMatches: [HighlightMatch] = []
+
+        regex.enumerateMatches(in: text, range: fullRange) { match, _, _ in
+            guard let match else { return }
+
+            // Extract language tag (group 1)
+            let tagRange = match.range(at: 1)
+            guard tagRange.location != NSNotFound, tagRange.length > 0 else { return }
+            let tag = source.substring(with: tagRange)
+
+            // Resolve grammar for this language
+            guard let (_, innerRules) = self.resolveGrammarByTag(tag) else { return }
+
+            // Extract interior range (group 2 — content between fences)
+            let contentRange = match.range(at: 2)
+            guard contentRange.location != NSNotFound, contentRange.length > 0 else { return }
+
+            // Check if content intersects repaint range
+            let clipped = NSIntersectionRange(contentRange, repaintRange)
+            guard clipped.length > 0 else { return }
+
+            // Extract the content substring for inner grammar matching
+            let content = source.substring(with: contentRange)
+
+            // Run inner grammar rules on the content
+            for rule in innerRules {
+                let priority = self.scopePriority[rule.scope] ?? 0
+                guard self.theme.color(for: rule.scope) != nil else { continue }
+
+                let contentNS = content as NSString
+                let innerRange = NSRange(location: 0, length: contentNS.length)
+
+                rule.regex.enumerateMatches(in: content, range: innerRange) { innerMatch, _, _ in
+                    guard let innerMatchRange = innerMatch?.range else { return }
+
+                    // Offset to absolute position in the full text
+                    let absoluteRange = NSRange(
+                        location: innerMatchRange.location + contentRange.location,
+                        length: innerMatchRange.length
+                    )
+
+                    // Clip to repaint range
+                    let absoluteClipped = NSIntersectionRange(absoluteRange, repaintRange)
+                    guard absoluteClipped.length > 0 else { return }
+
+                    // Inner matches override the fenced color — use high priority
+                    // but below comment/string within the inner grammar's own hierarchy
+                    nestedMatches.append(HighlightMatch(
+                        range: absoluteClipped,
+                        scope: rule.scope,
+                        priority: max(priority, 96)
+                    ))
+                }
+            }
+        }
+
+        return nestedMatches
     }
 
     /// Проверяет имя файла по glob-паттернам. `*` матчит любые символы.
@@ -673,10 +804,12 @@ nonisolated final class SyntaxHighlighter: @unchecked Sendable {
         to textStorage: NSTextStorage,
         repaintRange: NSRange,
         searchRange: NSRange,
-        font: NSFont
+        font: NSFont,
+        grammarName: String? = nil
     ) -> HighlightMatchResult {
         let result = computeMatchesWithRules(
-            rules, text: textStorage.string, repaintRange: repaintRange, searchRange: searchRange
+            rules, text: textStorage.string, repaintRange: repaintRange, searchRange: searchRange,
+            grammarName: grammarName
         )
         applyMatches(result, to: textStorage, font: font)
         return result
@@ -718,10 +851,13 @@ nonisolated final class SyntaxHighlighter: @unchecked Sendable {
         repaintRange: NSRange,
         searchRange: NSRange
     ) -> HighlightMatchResult? {
-        guard let (_, rules) = resolveGrammar(language: language, fileName: fileName) else {
+        guard let (grammar, rules) = resolveGrammar(language: language, fileName: fileName) else {
             return nil
         }
-        return computeMatchesWithRules(rules, text: text, repaintRange: repaintRange, searchRange: searchRange)
+        return computeMatchesWithRules(
+            rules, text: text, repaintRange: repaintRange, searchRange: searchRange,
+            grammarName: grammar.name
+        )
     }
 
     /// Core match computation — used by both `computeMatches` and `applyRules`.
@@ -744,7 +880,8 @@ nonisolated final class SyntaxHighlighter: @unchecked Sendable {
         _ rules: [CompiledRule],
         text: String,
         repaintRange: NSRange,
-        searchRange: NSRange
+        searchRange: NSRange,
+        grammarName: String? = nil
     ) -> HighlightMatchResult {
         let source = text as NSString
         let totalLength = source.length
@@ -806,10 +943,20 @@ nonisolated final class SyntaxHighlighter: @unchecked Sendable {
             }
         }
 
+        // Post-pass: nested highlighting inside fenced code blocks for Markdown
+        if grammarName == "Markdown" {
+            let nestedMatches = computeNestedFencedMatches(text: text, repaintRange: repaintRange)
+            matches.append(contentsOf: nestedMatches)
+        }
+
+        let fingerprint = collectMultilineFingerprint(
+            rules: rules, source: text, searchRange: fullRange
+        )
+
         return HighlightMatchResult(
             matches: matches,
             repaintRange: repaintRange,
-            multilineFingerprint: multilineFingerprint
+            multilineFingerprint: fingerprint
         )
     }
 
