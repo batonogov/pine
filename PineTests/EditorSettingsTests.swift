@@ -27,7 +27,7 @@ struct EditorSettingsTests {
         let settings = EditorSettings(defaults: defaults)
         #expect(settings.insertFinalNewline == true)
         #expect(settings.stripTrailingWhitespace == true)
-        #expect(settings.formatOnSave == true)
+        #expect(settings.formatOnSave == false)
     }
 
     @Test("Respects explicitly stored false")

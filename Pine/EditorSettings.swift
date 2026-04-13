@@ -7,9 +7,11 @@ import Foundation
 
 /// Centralised editor save-time formatting preferences.
 ///
-/// Each flag defaults to `true` to match common editor behaviour (VS Code, Xcode, vim
-/// with `fixendofline`). Settings are persisted in `UserDefaults` and may be toggled via
-/// the Editor menu. `UserDefaults` injection enables isolated unit testing.
+/// `insertFinalNewline` and `stripTrailingWhitespace` default to `true` to match common
+/// editor behaviour (VS Code, Xcode, vim with `fixendofline`); `formatOnSave` defaults to
+/// `false` because the JSON formatter is lossy. Settings are persisted in `UserDefaults`
+/// and may be toggled via the Editor menu. `UserDefaults` injection enables isolated unit
+/// testing.
 @MainActor
 @Observable
 final class EditorSettings {
@@ -37,7 +39,7 @@ final class EditorSettings {
     }
 
     /// When `true`, a language-aware `FileFormatter` is applied on save (when available).
-    /// Default `true`; safe because formatters are no-ops for unknown file types.
+    /// Default `false`; JSON formatting via `JSONSerialization` is lossy and reorders keys.
     var formatOnSave: Bool {
         didSet { defaults.set(formatOnSave, forKey: Keys.formatOnSave) }
     }
