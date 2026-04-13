@@ -95,10 +95,16 @@ final class WorkspaceManager {
 
     /// Suspends until the current load completes (`isLoading` becomes `false`).
     /// Returns immediately if no load is in progress.
+    /// The check is inside the continuation closure (which runs synchronously
+    /// before the suspend point) to avoid a race where `isLoading` flips
+    /// between the guard and the append.
     func waitForLoadingComplete() async {
-        guard isLoading else { return }
         await withCheckedContinuation { continuation in
-            loadingContinuations.append(continuation)
+            if isLoading {
+                loadingContinuations.append(continuation)
+            } else {
+                continuation.resume()
+            }
         }
     }
 
@@ -128,6 +134,11 @@ final class WorkspaceManager {
         // that would bump loadGeneration and race with the new load.
         fileWatcher?.stop()
         fileWatcher = nil
+
+        // Resume any continuations from a previous load so they don't
+        // hang forever when the old generation's guard-return skips
+        // resumeLoadingContinuations().
+        resumeLoadingContinuations()
 
         let isSameProject = (rootURL == url)
         rootURL = url
