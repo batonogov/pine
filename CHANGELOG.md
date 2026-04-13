@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.23.0](https://github.com/batonogov/pine/compare/v1.22.0...v1.23.0) (2026-04-13)
+
+
+### Features
+
+* **editor:** nested syntax highlighting inside fenced code blocks ([#813](https://github.com/batonogov/pine/issues/813)) ([e2f80ac](https://github.com/batonogov/pine/commit/e2f80ac61453766e8b523b3f63ad98348b2e8e4e))
+
+
+### Bug Fixes
+
+* **terminal:** use One Dark background for proper TUI contrast ([#819](https://github.com/batonogov/pine/issues/819)) ([4c640e4](https://github.com/batonogov/pine/commit/4c640e4fde1a8248741ad91232b89bb2ef17b2e8))
+* **test:** increase LayoutStabilityTests timeout to 60s for CI ([#821](https://github.com/batonogov/pine/issues/821)) ([#822](https://github.com/batonogov/pine/issues/822)) ([78e307a](https://github.com/batonogov/pine/commit/78e307a0bd53782d981391fc15fc48c36dae7a61))
+
 ## [1.22.0](https://github.com/batonogov/pine/compare/v1.21.0...v1.22.0) (2026-04-13)
 
 
