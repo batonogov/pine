@@ -61,8 +61,6 @@ extension Notification.Name {
     static let sendToTerminal = Notification.Name("sendToTerminal")
     /// userInfo: ["text": String]
     static let sendTextToTerminal = Notification.Name("sendTextToTerminal")
-    /// Terminal theme changed (issue #816)
-    static let terminalThemeChanged = Notification.Name("terminalThemeChanged")
 
     // MARK: - Git
     static let refreshLineDiffs = Notification.Name("refreshLineDiffs")

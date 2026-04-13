@@ -333,18 +333,11 @@ final class TerminalTab: Identifiable, Hashable {
         // native macOS terminals (issue #733).
         terminalView.useBrightColors = false
 
-        // Apply the user's selected terminal theme (issue #816).
+        // Apply Pine's One Dark terminal palette (issue #816).
         // Centralised in `TerminalPalette` so it can be unit-tested
         // independently of the SwiftTerm view and kept as a single source of
         // truth. See `TerminalPalette.swift` for rationale (issues #733, #765).
-        TerminalPalette.install(on: terminalView, theme: TerminalThemeSettings.shared.selectedTheme)
-    }
-
-    /// Re-applies the current terminal theme palette to this tab's view.
-    /// Called when the user switches themes via the Terminal > Theme menu.
-    func applyTheme() {
-        TerminalPalette.install(on: terminalView, theme: TerminalThemeSettings.shared.selectedTheme)
-        terminalView.setNeedsDisplay(terminalView.bounds)
+        TerminalPalette.install(on: terminalView)
     }
 
     /// Сохраняет рабочую директорию для отложенного запуска

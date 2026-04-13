@@ -69,10 +69,4 @@ final class TerminalPaneState {
         }
     }
 
-    /// Re-applies the current terminal theme to every tab in this pane.
-    func applyThemeToAllTabs() {
-        for tab in terminalTabs {
-            tab.applyTheme()
-        }
-    }
 }

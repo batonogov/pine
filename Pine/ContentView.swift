@@ -212,11 +212,6 @@ struct ContentView: View {
                   !text.isEmpty else { return }
             sendTextToTerminal(text)
         }
-        .onReceive(NotificationCenter.default.publisher(for: .terminalThemeChanged)) { _ in
-            for state in projectManager.paneManager.terminalStates.values {
-                state.applyThemeToAllTabs()
-            }
-        }
         .onChange(of: tabManager.pendingGoToLine) { _, newLine in
             guard let line = newLine, let tab = tabManager.activeTab else { return }
             tabManager.pendingGoToLine = nil

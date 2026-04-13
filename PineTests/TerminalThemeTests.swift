@@ -2,303 +2,166 @@
 //  TerminalThemeTests.swift
 //  PineTests
 //
-//  Tests for TerminalThemeID, TerminalThemeSettings, and the theme-aware
-//  palette installation path (issue #816).
+//  Tests for Pine's One Dark terminal palette — verifies the 16-entry palette,
+//  correct hex values, and ghost text override application.
 //
 
 import Foundation
 import Testing
 @testable import Pine
 
-// MARK: - TerminalThemeID tests
+// MARK: - One Dark palette shape
 
-@Suite("TerminalThemeID")
-struct TerminalThemeIDTests {
+@Suite("One Dark palette")
+struct OneDarkPaletteTests {
 
-    @Test("All themes have exactly 16 palette entries")
-    func allThemesHave16Entries() {
-        for theme in TerminalThemeID.allCases {
-            #expect(theme.palette.count == 16, "Theme \(theme.rawValue) has \(theme.palette.count) entries")
+    @Test("One Dark palette has exactly 16 entries")
+    func oneDarkHas16Entries() {
+        #expect(TerminalPalette.oneDark.count == 16)
+    }
+
+    @Test("macOSAligned uses One Dark as base")
+    func macOSAlignedIsOneDarkBased() {
+        // Slots 1..15 must match One Dark exactly
+        for idx in 1..<16 {
+            #expect(
+                TerminalPalette.macOSAligned[idx] == TerminalPalette.oneDark[idx],
+                "slot \(idx) drifted from One Dark"
+            )
         }
     }
 
-    @Test("Display names are non-empty")
-    func displayNamesNonEmpty() {
-        for theme in TerminalThemeID.allCases {
-            #expect(!theme.displayName.isEmpty, "Theme \(theme.rawValue) has an empty display name")
-        }
+    @Test("macOSAligned slot 0 is ghost text override, not One Dark black")
+    func slot0IsGhostTextOverride() {
+        #expect(TerminalPalette.macOSAligned[0] == TerminalPalette.ghostTextOverride)
+        #expect(TerminalPalette.macOSAligned[0] != TerminalPalette.oneDark[0])
     }
 
-    @Test("Display names are unique")
-    func displayNamesUnique() {
-        let names = TerminalThemeID.allCases.map(\.displayName)
-        #expect(Set(names).count == names.count, "Duplicate display names found")
-    }
-
-    @Test("Raw values are unique and stable")
-    func rawValuesUnique() {
-        let rawValues = TerminalThemeID.allCases.map(\.rawValue)
-        #expect(Set(rawValues).count == rawValues.count)
-    }
-
-    @Test("Identifiable id matches rawValue")
-    func identifiableId() {
-        for theme in TerminalThemeID.allCases {
-            #expect(theme.id == theme.rawValue)
-        }
-    }
-
-    @Test("CaseIterable covers all expected themes")
-    func allCasesCovered() {
-        let expected: Set<String> = ["basic", "pro", "solarizedDark", "dracula", "oneDark", "nord"]
-        let actual = Set(TerminalThemeID.allCases.map(\.rawValue))
-        #expect(actual == expected)
-    }
-
-    @Test("ghostTextColor — solarizedDark returns nil")
-    func solarizedDarkNoGhostColor() {
-        #expect(TerminalThemeID.solarizedDark.ghostTextColor == nil)
-    }
-
-    @Test("ghostTextColor — themes with dark slot 0 return per-theme color")
-    func darkThemesHaveGhostColor() {
-        let expectedColors: [(TerminalThemeID, TerminalPaletteEntry)] = [
-            (.basic, TerminalPaletteEntry(red: 0x96, green: 0x98, blue: 0x96)),
-            (.pro, TerminalPaletteEntry(red: 0x96, green: 0x98, blue: 0x96)),
-            (.dracula, TerminalPaletteEntry(red: 0x62, green: 0x72, blue: 0xA4)),
-            (.oneDark, TerminalPaletteEntry(red: 0x5C, green: 0x63, blue: 0x70)),
-            (.nord, TerminalPaletteEntry(red: 0x4C, green: 0x56, blue: 0x6A)),
-        ]
-        for (theme, expected) in expectedColors {
-            #expect(theme.ghostTextColor == expected,
-                    "\(theme.rawValue) ghostTextColor should be \(expected)")
-        }
-    }
-
-    @Test("Init from invalid raw value returns nil")
-    func invalidRawValue() {
-        #expect(TerminalThemeID(rawValue: "nonexistent") == nil)
-        #expect(TerminalThemeID(rawValue: "") == nil)
-        #expect(TerminalThemeID(rawValue: "Basic") == nil) // case-sensitive
+    @Test("Ghost text override is One Dark's slot 8 value (#5C6370)")
+    func ghostTextOverrideIsOneDarkBrightBlack() {
+        let ghost = TerminalPalette.ghostTextOverride
+        #expect(ghost.red == 0x5C)
+        #expect(ghost.green == 0x63)
+        #expect(ghost.blue == 0x70)
+        // Must match One Dark slot 8 exactly
+        #expect(ghost == TerminalPalette.oneDark[8])
     }
 }
 
-// MARK: - TerminalThemeSettings tests
+// MARK: - One Dark canonical hex values
 
-@Suite("TerminalThemeSettings")
-struct TerminalThemeSettingsTests {
+@Suite("One Dark hex values")
+struct OneDarkHexValueTests {
 
-    @Test("Default theme is basic")
-    @MainActor func defaultIsBasic() throws {
-        let suiteName = "TerminalThemeSettingsTests-default-\(UUID())"
-        let defaults = try #require(UserDefaults(suiteName: suiteName))
-        defaults.removePersistentDomain(forName: suiteName)
-        let settings = TerminalThemeSettings(defaults: defaults)
-        #expect(settings.selectedTheme == .basic)
-    }
-
-    @Test("Persists selected theme to UserDefaults")
-    @MainActor func persistsTheme() throws {
-        let suiteName = "TerminalThemeSettingsTests-persist-\(UUID())"
-        let defaults = try #require(UserDefaults(suiteName: suiteName))
-        defaults.removePersistentDomain(forName: suiteName)
-        let settings = TerminalThemeSettings(defaults: defaults)
-        settings.selectedTheme = .dracula
-        #expect(defaults.string(forKey: TerminalThemeSettings.userDefaultsKey) == "dracula")
-    }
-
-    @Test("Reads persisted theme on init")
-    @MainActor func readsPersistedTheme() throws {
-        let suiteName = "TerminalThemeSettingsTests-read-\(UUID())"
-        let defaults = try #require(UserDefaults(suiteName: suiteName))
-        defaults.removePersistentDomain(forName: suiteName)
-        defaults.set("nord", forKey: TerminalThemeSettings.userDefaultsKey)
-        let settings = TerminalThemeSettings(defaults: defaults)
-        #expect(settings.selectedTheme == .nord)
-    }
-
-    @Test("Falls back to basic for unknown stored value")
-    @MainActor func fallbackForUnknownValue() throws {
-        let suiteName = "TerminalThemeSettingsTests-fallback-\(UUID())"
-        let defaults = try #require(UserDefaults(suiteName: suiteName))
-        defaults.removePersistentDomain(forName: suiteName)
-        defaults.set("unknown_theme_xyz", forKey: TerminalThemeSettings.userDefaultsKey)
-        let settings = TerminalThemeSettings(defaults: defaults)
-        #expect(settings.selectedTheme == .basic)
-    }
-
-    @Test("Falls back to basic when key is absent")
-    @MainActor func fallbackWhenKeyAbsent() throws {
-        let suiteName = "TerminalThemeSettingsTests-absent-\(UUID())"
-        let defaults = try #require(UserDefaults(suiteName: suiteName))
-        defaults.removePersistentDomain(forName: suiteName)
-        let settings = TerminalThemeSettings(defaults: defaults)
-        #expect(settings.selectedTheme == .basic)
-    }
-
-    @Test("Roundtrip: write then read each theme")
-    @MainActor func roundtripAllThemes() throws {
-        let suiteName = "TerminalThemeSettingsTests-roundtrip-\(UUID())"
-        let defaults = try #require(UserDefaults(suiteName: suiteName))
-        defaults.removePersistentDomain(forName: suiteName)
-        let settings = TerminalThemeSettings(defaults: defaults)
-        for theme in TerminalThemeID.allCases {
-            settings.selectedTheme = theme
-            let reloaded = TerminalThemeSettings(defaults: defaults)
-            #expect(reloaded.selectedTheme == theme, "Roundtrip failed for \(theme.rawValue)")
-        }
-    }
-}
-
-// MARK: - Palette resolution tests
-
-@Suite("TerminalPalette theme resolution")
-struct TerminalPaletteThemeTests {
-
-    @Test("resolvedPalette applies per-theme ghost text color when set")
-    func ghostTextColorApplied() {
-        for theme in TerminalThemeID.allCases {
-            let resolved = TerminalPalette.resolvedPalette(for: theme)
-            if let ghostColor = theme.ghostTextColor {
-                #expect(
-                    resolved[0] == ghostColor,
-                    "\(theme.rawValue) slot 0 should be ghostTextColor"
-                )
-            } else {
-                #expect(
-                    resolved[0] == theme.palette[0],
-                    "\(theme.rawValue) slot 0 should be unmodified"
-                )
-            }
-        }
-    }
-
-    @Test("resolvedPalette always has 16 entries")
-    func resolvedPaletteSize() {
-        for theme in TerminalThemeID.allCases {
-            let resolved = TerminalPalette.resolvedPalette(for: theme)
-            #expect(resolved.count == 16)
-        }
-    }
-
-    @Test("swiftTermColors succeeds for all resolved palettes")
-    func swiftTermColorsForAllThemes() {
-        for theme in TerminalThemeID.allCases {
-            let resolved = TerminalPalette.resolvedPalette(for: theme)
-            let colors = TerminalPalette.swiftTermColors(from: resolved)
-            #expect(colors != nil, "swiftTermColors returned nil for \(theme.rawValue)")
-            #expect(colors?.count == 16)
-        }
-    }
-
-    @Test("resolvedPalette does not modify non-zero slots")
-    func nonZeroSlotsPreserved() {
-        for theme in TerminalThemeID.allCases {
-            let resolved = TerminalPalette.resolvedPalette(for: theme)
-            let original = theme.palette
-            for idx in 1..<16 {
-                #expect(resolved[idx] == original[idx],
-                        "\(theme.rawValue) slot \(idx) should be unmodified")
-            }
-        }
-    }
-
-    @Test("macOSAligned matches basic with ghost override")
-    func macOSAlignedMatchesBasicResolved() {
-        let basicResolved = TerminalPalette.resolvedPalette(for: .basic)
-        #expect(basicResolved == TerminalPalette.macOSAligned)
-    }
-}
-
-// MARK: - Specific palette value tests
-
-@Suite("Palette hex values")
-struct PaletteHexValueTests {
-
-    @Test("Dracula palette slot 0 is #21222C")
-    func draculaBlack() {
-        let entry = TerminalPalette.dracula[0]
-        #expect(entry.red == 0x21)
-        #expect(entry.green == 0x22)
-        #expect(entry.blue == 0x2C)
-    }
-
-    @Test("One Dark palette slot 0 is #282C34")
-    func oneDarkBlack() {
+    @Test("Slot 0 (black) is #282C34")
+    func black() {
         let entry = TerminalPalette.oneDark[0]
         #expect(entry.red == 0x28)
         #expect(entry.green == 0x2C)
         #expect(entry.blue == 0x34)
     }
 
-    @Test("Nord palette slot 0 is #3B4252")
-    func nordBlack() {
-        let entry = TerminalPalette.nord[0]
-        #expect(entry.red == 0x3B)
-        #expect(entry.green == 0x42)
-        #expect(entry.blue == 0x52)
+    @Test("Slot 1 (red) is #E06C75")
+    func red() {
+        let entry = TerminalPalette.oneDark[1]
+        #expect(entry.red == 0xE0)
+        #expect(entry.green == 0x6C)
+        #expect(entry.blue == 0x75)
     }
 
-    @Test("Dracula bright white is #FFFFFF")
-    func draculaBrightWhite() {
-        let entry = TerminalPalette.dracula[15]
-        #expect(entry.red == 0xFF)
-        #expect(entry.green == 0xFF)
-        #expect(entry.blue == 0xFF)
+    @Test("Slot 2 (green) is #98C379")
+    func green() {
+        let entry = TerminalPalette.oneDark[2]
+        #expect(entry.red == 0x98)
+        #expect(entry.green == 0xC3)
+        #expect(entry.blue == 0x79)
     }
 
-    @Test("Nord white is #E5E9F0")
-    func nordWhite() {
-        let entry = TerminalPalette.nord[7]
+    @Test("Slot 3 (yellow) is #E5C07B")
+    func yellow() {
+        let entry = TerminalPalette.oneDark[3]
         #expect(entry.red == 0xE5)
-        #expect(entry.green == 0xE9)
-        #expect(entry.blue == 0xF0)
+        #expect(entry.green == 0xC0)
+        #expect(entry.blue == 0x7B)
     }
 
-    @Test("One Dark cyan is #56B6C2")
-    func oneDarkCyan() {
+    @Test("Slot 4 (blue) is #61AFEF")
+    func blue() {
+        let entry = TerminalPalette.oneDark[4]
+        #expect(entry.red == 0x61)
+        #expect(entry.green == 0xAF)
+        #expect(entry.blue == 0xEF)
+    }
+
+    @Test("Slot 5 (magenta) is #C678DD")
+    func magenta() {
+        let entry = TerminalPalette.oneDark[5]
+        #expect(entry.red == 0xC6)
+        #expect(entry.green == 0x78)
+        #expect(entry.blue == 0xDD)
+    }
+
+    @Test("Slot 6 (cyan) is #56B6C2")
+    func cyan() {
         let entry = TerminalPalette.oneDark[6]
         #expect(entry.red == 0x56)
         #expect(entry.green == 0xB6)
         #expect(entry.blue == 0xC2)
     }
-}
 
-// MARK: - Notification tests
-
-@Suite("TerminalThemeSettings notifications")
-struct TerminalThemeNotificationTests {
-
-    @Test("Posts terminalThemeChanged notification on theme change")
-    @MainActor func postsNotificationOnChange() throws {
-        let suiteName = "com.pine.test.themeNotification.\(UUID().uuidString)"
-        let defaults = try #require(UserDefaults(suiteName: suiteName))
-        defer { defaults.removePersistentDomain(forName: suiteName) }
-        let settings = TerminalThemeSettings(defaults: defaults)
-
-        var received = false
-        let token = NotificationCenter.default.addObserver(
-            forName: .terminalThemeChanged, object: nil, queue: .main
-        ) { _ in received = true }
-        defer { NotificationCenter.default.removeObserver(token) }
-
-        settings.selectedTheme = .nord
-        #expect(received)
+    @Test("Slot 7 (white) is #ABB2BF")
+    func white() {
+        let entry = TerminalPalette.oneDark[7]
+        #expect(entry.red == 0xAB)
+        #expect(entry.green == 0xB2)
+        #expect(entry.blue == 0xBF)
     }
 
-    @Test("Does NOT post notification during init")
-    @MainActor func noNotificationOnInit() throws {
-        let suiteName = "com.pine.test.themeInitNotif.\(UUID().uuidString)"
-        let defaults = try #require(UserDefaults(suiteName: suiteName))
-        defer { defaults.removePersistentDomain(forName: suiteName) }
+    @Test("Slot 8 (bright black) is #5C6370")
+    func brightBlack() {
+        let entry = TerminalPalette.oneDark[8]
+        #expect(entry.red == 0x5C)
+        #expect(entry.green == 0x63)
+        #expect(entry.blue == 0x70)
+    }
 
-        var received = false
-        let token = NotificationCenter.default.addObserver(
-            forName: .terminalThemeChanged, object: nil, queue: .main
-        ) { _ in received = true }
-        defer { NotificationCenter.default.removeObserver(token) }
+    @Test("Bright colors 9-14 match their normal counterparts (canonical One Dark)")
+    func brightColorsMatchNormal() {
+        // One Dark intentionally uses the same values for normal and bright
+        // (except slot 15 bright white which is #FFFFFF).
+        for idx in 1...6 {
+            #expect(
+                TerminalPalette.oneDark[idx + 8] == TerminalPalette.oneDark[idx],
+                "bright slot \(idx + 8) should equal normal slot \(idx)"
+            )
+        }
+    }
 
-        _ = TerminalThemeSettings(defaults: defaults)
-        #expect(!received)
+    @Test("Slot 15 (bright white) is #FFFFFF")
+    func brightWhite() {
+        let entry = TerminalPalette.oneDark[15]
+        #expect(entry.red == 0xFF)
+        #expect(entry.green == 0xFF)
+        #expect(entry.blue == 0xFF)
+    }
+}
+
+// MARK: - SwiftTerm color conversion for One Dark palette
+
+@Suite("One Dark swiftTermColors")
+struct OneDarkSwiftTermColorsTests {
+
+    @Test("swiftTermColors succeeds for macOSAligned (One Dark based)")
+    func swiftTermColorsSucceeds() {
+        let colors = TerminalPalette.swiftTermColors()
+        #expect(colors != nil)
+        #expect(colors?.count == 16)
+    }
+
+    @Test("swiftTermColors succeeds for raw One Dark palette")
+    func swiftTermColorsForRawOneDark() {
+        let colors = TerminalPalette.swiftTermColors(from: TerminalPalette.oneDark)
+        #expect(colors != nil)
+        #expect(colors?.count == 16)
     }
 }
