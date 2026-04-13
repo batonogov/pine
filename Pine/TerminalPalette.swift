@@ -4,19 +4,11 @@
 //
 //  Centralised ANSI 16-color palette for Pine's embedded SwiftTerm terminal.
 //
-//  Goal (issue #765): make Pine's terminal visually indistinguishable from
-//  the system `Terminal.app` "Basic" profile for the 16 ANSI slots that TUI
-//  apps such as k9s, htop, lazygit, btop and vim drive directly via
-//  `\e[3xm` / `tput setaf`. If those 16 slots disagree with Terminal.app
-//  the familiar TUIs look "off" and users bail out to iTerm2.
-//
-//  The reference palette is the exact sRGB values that ship in
-//  `/System/Applications/Utilities/Terminal.app/Contents/Resources/Basic.terminal`:
-//
-//      black   #000000   red     #990000   green   #00A600   yellow  #999900
-//      blue    #0000B2   magenta #B200B2   cyan    #00A6B2   white   #BFBFBF
-//      brBlack #666666   brRed   #E50000   brGreen #00D900   brYlw   #E5E500
-//      brBlue  #0000FF   brMag   #E500E5   brCyan  #00E5E5   brWht   #E5E5E5
+//  Pine uses the Atom One Dark palette for the 16 ANSI slots that TUI apps
+//  such as k9s, htop, lazygit, btop and vim drive directly via `\e[3xm` /
+//  `tput setaf`. One Dark provides excellent readability across all 16 slots
+//  on a dark background — unlike Terminal.app Basic whose deep reds and blues
+//  are nearly invisible on dark-mode backgrounds.
 //
 //  Scope of `install(on:)`:
 //  ONLY the 16 ANSI palette slots are touched here. Background / foreground
@@ -24,8 +16,7 @@
 //  them on semantic `NSColor.textBackgroundColor` / `NSColor.textColor` so
 //  the terminal stays adaptive to light/dark mode and respects the system
 //  appearance the way every other native macOS app does. TUI apps paint
-//  their own background through ANSI sequences anyway, which is what #765
-//  is actually about.
+//  their own background through ANSI sequences anyway.
 //
 //  Coverage across SGR forms — and the SwiftTerm 1.13.0 collapse quirk:
 //
@@ -64,10 +55,6 @@
 //  rendering decision from the 256-color index collapse so `useBrightColors`
 //  only affects the former. Tracked as a follow-up issue.
 //
-//  Additional palettes (Terminal.app "Pro", Solarized Dark/Light) are
-//  declared below but intentionally not wired up yet — a theme picker is
-//  out of scope for #765 and will land in a follow-up PR.
-//
 
 import Foundation
 import SwiftTerm
@@ -81,7 +68,7 @@ struct TerminalPaletteEntry: Equatable {
     let blue: UInt8
 
     /// Promotes 8-bit components to SwiftTerm's 16-bit color space using the
-    /// standard `× 257` formula (so 0xFF → 0xFFFF, preserving full intensity).
+    /// standard `x 257` formula (so 0xFF -> 0xFFFF, preserving full intensity).
     func makeSwiftTermColor() -> SwiftTerm.Color {
         SwiftTerm.Color(
             red: UInt16(red) * 257,
@@ -123,13 +110,10 @@ enum TerminalPalette {
     /// Number of ANSI colors expected by SwiftTerm's `installColors`.
     static let colorCount = 16
 
-    // MARK: - Terminal.app "Basic" (reference, unmodified)
+    // MARK: - Terminal.app "Basic" (reference for tests)
 
     /// Exact sRGB values from `Basic.terminal` shipped with macOS — kept
     /// bit-for-bit so the unit tests can pin against the canonical profile.
-    /// Note: this is NOT the palette Pine actually installs. The shipped
-    /// palette is `macOSAligned` below, which equals Basic except for slot
-    /// 8 (bright black) — see the file header for the rationale.
     static let terminalAppBasic: [TerminalPaletteEntry] = [
         .init(red: 0x00, green: 0x00, blue: 0x00), // 0  black
         .init(red: 0x99, green: 0x00, blue: 0x00), // 1  red
@@ -149,13 +133,37 @@ enum TerminalPalette {
         .init(red: 0xE5, green: 0xE5, blue: 0xE5), // 15 bright white
     ]
 
-    /// Tomorrow Night value (#969896) used to override slot 0 so that
-    /// zsh-autosuggestions / fish ghost text remains readable on the
-    /// dark-mode background — the regression fixed by issue #733.
+    // MARK: - One Dark palette
+
+    /// One Dark (Atom editor) palette — the palette Pine installs.
+    /// Note: bright colors (slots 9-14) intentionally equal their normal
+    /// counterparts — this is canonical for One Dark, not a copy-paste error.
+    static let oneDark: [TerminalPaletteEntry] = [
+        .init(red: 0x28, green: 0x2C, blue: 0x34), // 0  black
+        .init(red: 0xE0, green: 0x6C, blue: 0x75), // 1  red
+        .init(red: 0x98, green: 0xC3, blue: 0x79), // 2  green
+        .init(red: 0xE5, green: 0xC0, blue: 0x7B), // 3  yellow
+        .init(red: 0x61, green: 0xAF, blue: 0xEF), // 4  blue
+        .init(red: 0xC6, green: 0x78, blue: 0xDD), // 5  magenta
+        .init(red: 0x56, green: 0xB6, blue: 0xC2), // 6  cyan
+        .init(red: 0xAB, green: 0xB2, blue: 0xBF), // 7  white
+        .init(red: 0x5C, green: 0x63, blue: 0x70), // 8  bright black
+        .init(red: 0xE0, green: 0x6C, blue: 0x75), // 9  bright red
+        .init(red: 0x98, green: 0xC3, blue: 0x79), // 10 bright green
+        .init(red: 0xE5, green: 0xC0, blue: 0x7B), // 11 bright yellow
+        .init(red: 0x61, green: 0xAF, blue: 0xEF), // 12 bright blue
+        .init(red: 0xC6, green: 0x78, blue: 0xDD), // 13 bright magenta
+        .init(red: 0x56, green: 0xB6, blue: 0xC2), // 14 bright cyan
+        .init(red: 0xFF, green: 0xFF, blue: 0xFF), // 15 bright white
+    ]
+
+    /// One Dark's slot 8 value (#5C6370 — bright black / readable grey for
+    /// zsh-autosuggestions ghost text). Used to override slot 0 so that
+    /// ghost text remains readable on the dark-mode background.
     ///
     /// Why slot 0 and not slot 8? SwiftTerm 1.13.0 in `useBrightColors = false`
     /// mode (which Pine sets in `TerminalSession.swift` for #733 / Ghostty
-    /// parity) collapses ANSI 256-color indices 8..15 → 0..7 inside
+    /// parity) collapses ANSI 256-color indices 8..15 -> 0..7 inside
     /// `Apple/AppleTerminalView.swift:246-249`:
     ///
     ///     // useBrightColors = false branch
@@ -164,86 +172,28 @@ enum TerminalPalette {
     /// This means any `\e[38;5;8m` (which is what zsh-autosuggestions sends
     /// for `fg=8`) actually reads `terminal.ansiColors[0]` — slot 8 is
     /// physically unreachable. We work around it by overriding slot 0 with
-    /// the readable grey, so the ghost text comes out at #969896 via the
-    /// 8 → 0 collapse. ANSI 0 ("black") on a dark terminal background was
-    /// already invisible by definition, so making it grey is strictly an
-    /// improvement, not a loss.
-    ///
-    /// On a light background "black" text becomes mid-grey instead of pure
-    /// black — slightly off-spec but still readable, and the only common
-    /// place that matters is shells whose default config uses the matching
-    /// `NSColor.textColor` foreground anyway.
-    ///
-    /// Long-term fix is upstream in SwiftTerm: separate the bold-as-bright
-    /// rendering path from the 256-color index collapse so `useBrightColors`
-    /// only affects the former. Track that as a follow-up.
-    static let ghostTextOverride = TerminalPaletteEntry(red: 0x96, green: 0x98, blue: 0x96)
+    /// the readable grey, so the ghost text comes out at #5C6370 via the
+    /// 8 -> 0 collapse.
+    static let ghostTextOverride = TerminalPaletteEntry(red: 0x5C, green: 0x63, blue: 0x70)
 
     /// Reference background used by the contrast assertions for the
     /// dark-mode `NSColor.textBackgroundColor` worst case. Hard-coded so
     /// the test target does not depend on host appearance.
-    static let darkModeBackgroundReference = TerminalPaletteEntry(red: 0x1E, green: 0x1E, blue: 0x1E)
+    /// One Dark canonical background (#282C34) — matches the hardcoded
+    /// background in `TerminalSession.swift`.
+    static let darkModeBackgroundReference = TerminalPaletteEntry(red: 0x28, green: 0x2C, blue: 0x34)
 
-    // MARK: - Alternative profiles (not wired up yet — follow-up PR)
-
-    // Terminal.app "Pro" profile — darker red, teal/green bias.
-    // TODO(#765-followup): expose a theme picker and let users opt in.
-    static let terminalAppPro: [TerminalPaletteEntry] = [
-        .init(red: 0x00, green: 0x00, blue: 0x00), // 0  black
-        .init(red: 0xBB, green: 0x00, blue: 0x00), // 1  red
-        .init(red: 0x00, green: 0xBB, blue: 0x00), // 2  green
-        .init(red: 0xBB, green: 0xBB, blue: 0x00), // 3  yellow
-        .init(red: 0x00, green: 0x00, blue: 0xBB), // 4  blue
-        .init(red: 0xBB, green: 0x00, blue: 0xBB), // 5  magenta
-        .init(red: 0x00, green: 0xBB, blue: 0xBB), // 6  cyan
-        .init(red: 0xBB, green: 0xBB, blue: 0xBB), // 7  white
-        .init(red: 0x55, green: 0x55, blue: 0x55), // 8  bright black
-        .init(red: 0xFF, green: 0x55, blue: 0x55), // 9  bright red
-        .init(red: 0x55, green: 0xFF, blue: 0x55), // 10 bright green
-        .init(red: 0xFF, green: 0xFF, blue: 0x55), // 11 bright yellow
-        .init(red: 0x55, green: 0x55, blue: 0xFF), // 12 bright blue
-        .init(red: 0xFF, green: 0x55, blue: 0xFF), // 13 bright magenta
-        .init(red: 0x55, green: 0xFF, blue: 0xFF), // 14 bright cyan
-        .init(red: 0xFF, green: 0xFF, blue: 0xFF), // 15 bright white
-    ]
-
-    // Ethan Schoonover's Solarized Dark — reference values for the
-    // follow-up theme picker. Intentionally unused for now.
-    static let solarizedDark: [TerminalPaletteEntry] = [
-        .init(red: 0x07, green: 0x36, blue: 0x42), // 0  base02
-        .init(red: 0xDC, green: 0x32, blue: 0x2F), // 1  red
-        .init(red: 0x85, green: 0x99, blue: 0x00), // 2  green
-        .init(red: 0xB5, green: 0x89, blue: 0x00), // 3  yellow
-        .init(red: 0x26, green: 0x8B, blue: 0xD2), // 4  blue
-        .init(red: 0xD3, green: 0x36, blue: 0x82), // 5  magenta
-        .init(red: 0x2A, green: 0xA1, blue: 0x98), // 6  cyan
-        .init(red: 0xEE, green: 0xE8, blue: 0xD5), // 7  base2
-        .init(red: 0x00, green: 0x2B, blue: 0x36), // 8  base03
-        .init(red: 0xCB, green: 0x4B, blue: 0x16), // 9  orange
-        .init(red: 0x58, green: 0x6E, blue: 0x75), // 10 base01
-        .init(red: 0x65, green: 0x7B, blue: 0x83), // 11 base00
-        .init(red: 0x83, green: 0x94, blue: 0x96), // 12 base0
-        .init(red: 0x6C, green: 0x71, blue: 0xC4), // 13 violet
-        .init(red: 0x93, green: 0xA1, blue: 0xA1), // 14 base1
-        .init(red: 0xFD, green: 0xF6, blue: 0xE3), // 15 base3
-    ]
-
-    /// Default palette Pine actually installs today.
+    /// Default palette Pine actually installs.
     ///
-    /// Equals `terminalAppBasic` for every slot EXCEPT slot 0 (black), which
-    /// is replaced with `ghostTextOverride` (Tomorrow Night `#969896`).
-    /// See the doc on `ghostTextOverride` for *why* slot 0 and not slot 8 —
-    /// SwiftTerm 1.13.0 collapses 256-color 8 → 0 in `useBrightColors = false`
-    /// mode so slot 8 is physically unreachable, and the ghost-text fix has to
-    /// land on slot 0 to actually take effect at runtime.
-    ///
-    /// All other slots (1..15) are bit-for-bit Terminal.app Basic — that is
-    /// what #765 asks for. The slot-0 override is the deliberate compromise
-    /// between #765 (TUI parity) and #733 (ghost text contrast). When the
-    /// theme picker lands the alternative profiles will be exposed unmodified
-    /// — only the default carries this override.
+    /// Equals `oneDark` for every slot EXCEPT slot 0 (black), which
+    /// is replaced with `ghostTextOverride` (#5C6370 — One Dark's bright
+    /// black). See the doc on `ghostTextOverride` for *why* slot 0 and not
+    /// slot 8 — SwiftTerm 1.13.0 collapses 256-color 8 -> 0 in
+    /// `useBrightColors = false` mode so slot 8 is physically unreachable,
+    /// and the ghost-text fix has to land on slot 0 to actually take effect
+    /// at runtime.
     static let macOSAligned: [TerminalPaletteEntry] = {
-        var entries = terminalAppBasic
+        var entries = oneDark
         entries[0] = ghostTextOverride
         return entries
     }()
@@ -261,19 +211,16 @@ enum TerminalPalette {
         return entries.map { $0.makeSwiftTermColor() }
     }
 
-    /// Installs Pine's ANSI 16-color palette on a `LocalProcessTerminalView`.
+    /// Installs an ANSI 16-color palette on a `LocalProcessTerminalView`.
     ///
     /// Scope is intentionally limited to the 16 ANSI slots. Background,
     /// foreground, cursor and selection are managed by `TerminalSession`
     /// via semantic `NSColor` values so the terminal remains light/dark
-    /// adaptive (Apple HIG). Hard-coding `#000000` here would give light
-    /// mode users a black terminal in the middle of a light UI, which is
-    /// the bug this comment exists to prevent.
+    /// adaptive (Apple HIG).
     ///
     /// Wrapped in a `guard` so that an unexpected SwiftTerm API change (the
     /// palette failing to build) leaves the terminal usable on whatever
-    /// SwiftTerm provides by default — colors might look off, but the
-    /// terminal will not crash or render blank.
+    /// SwiftTerm provides by default.
     @MainActor
     static func install(on terminalView: LocalProcessTerminalView) {
         guard let colors = swiftTermColors() else { return }

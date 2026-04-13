@@ -68,4 +68,5 @@ final class TerminalPaneState {
             activeTerminalID = terminalTabs.first?.id
         }
     }
+
 }
