@@ -132,12 +132,19 @@ enum SnapshotHarness {
         ProcessInfo.processInfo.environment["PINE_RECORD_SNAPSHOTS"] == "1"
     }
 
-    /// Returns `true` when running on a CI runner.
+    /// Returns `true` when running on a headless CI runner.
     /// Snapshot tests rely on stable GPU rendering and font metrics that vary
     /// between machines, so they only run locally where developers can inspect
     /// and re-record baselines.
+    ///
+    /// The `CI` env var may not propagate to the xcodebuild test host process,
+    /// so we also check for the absence of a main display (headless runner)
+    /// and an explicit `PINE_SKIP_SNAPSHOTS` flag.
     static var isHeadless: Bool {
-        ProcessInfo.processInfo.environment["CI"] != nil
+        if ProcessInfo.processInfo.environment["CI"] != nil { return true }
+        if ProcessInfo.processInfo.environment["PINE_SKIP_SNAPSHOTS"] != nil { return true }
+        if NSScreen.main == nil { return true }
+        return false
     }
 
     /// Renders `view` into an `NSBitmapImageRep` at the given size/appearance.
@@ -162,6 +169,7 @@ enum SnapshotHarness {
         )
         window.appearance = appearance.nsAppearance
         window.contentView = hosting
+        defer { window.orderOut(nil) }
         hosting.layoutSubtreeIfNeeded()
 
         guard let bitmap = hosting.bitmapImageRepForCachingDisplay(in: hosting.bounds) else {
@@ -228,7 +236,7 @@ enum SnapshotHarness {
         let bytesPerPixel = 4
         let bytesPerRow = width * bytesPerPixel
         var pixels = [UInt8](repeating: 0, count: width * height * bytesPerPixel)
-        let colorSpace = CGColorSpaceCreateDeviceRGB()
+        guard let colorSpace = CGColorSpace(name: CGColorSpace.sRGB) else { return nil }
         let bitmapInfo = CGImageAlphaInfo.premultipliedLast.rawValue
         guard let context = CGContext(
             data: &pixels,
