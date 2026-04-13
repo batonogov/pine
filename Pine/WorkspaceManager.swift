@@ -47,6 +47,9 @@ final class WorkspaceManager {
     /// Pending debounced notification work item.
     private var rootNodesChangedWorkItem: DispatchWorkItem?
 
+    /// Continuations waiting for `isLoading` to become `false`.
+    private var loadingContinuations: [CheckedContinuation<Void, Never>] = []
+
     /// Debounce interval for `onRootNodesChanged` notifications.
     private static let rootNodesChangedDebounce: TimeInterval = 0.2
 
@@ -90,6 +93,30 @@ final class WorkspaceManager {
         fileWatcher?.stop()
     }
 
+    /// Suspends until the current load completes (`isLoading` becomes `false`).
+    /// Returns immediately if no load is in progress.
+    /// The check is inside the continuation closure (which runs synchronously
+    /// before the suspend point) to avoid a race where `isLoading` flips
+    /// between the guard and the append.
+    func waitForLoadingComplete() async {
+        await withCheckedContinuation { continuation in
+            if isLoading {
+                loadingContinuations.append(continuation)
+            } else {
+                continuation.resume()
+            }
+        }
+    }
+
+    /// Resumes all continuations waiting for load completion.
+    private func resumeLoadingContinuations() {
+        let continuations = loadingContinuations
+        loadingContinuations.removeAll()
+        for continuation in continuations {
+            continuation.resume()
+        }
+    }
+
     func openFolder() {
         let panel = NSOpenPanel()
         panel.canChooseFiles = false
@@ -107,6 +134,11 @@ final class WorkspaceManager {
         // that would bump loadGeneration and race with the new load.
         fileWatcher?.stop()
         fileWatcher = nil
+
+        // Resume any continuations from a previous load so they don't
+        // hang forever when the old generation's guard-return skips
+        // resumeLoadingContinuations().
+        resumeLoadingContinuations()
 
         let isSameProject = (rootURL == url)
         rootURL = url
@@ -200,6 +232,7 @@ final class WorkspaceManager {
                 // For shallow projects, loading is done — no Phase 2 needed.
                 if !shallowResult.wasDepthLimited {
                     self.isLoading = false
+                    self.resumeLoadingContinuations()
                     if let progressID { self.progressTracker?.endOperation(progressID) }
                 }
             }
@@ -223,6 +256,7 @@ final class WorkspaceManager {
                 self.rootNodes = fullChildren
                 self.notifyRootNodesChanged(fullChildren)
                 self.isLoading = false
+                self.resumeLoadingContinuations()
                 if let progressID { self.progressTracker?.endOperation(progressID) }
             }
         }
