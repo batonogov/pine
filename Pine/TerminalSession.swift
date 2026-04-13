@@ -333,8 +333,7 @@ final class TerminalTab: Identifiable, Hashable {
         // native macOS terminals (issue #733).
         terminalView.useBrightColors = false
 
-        // Apply Pine's ANSI 16-color palette (Terminal.app Basic with the
-        // slot 8 / bright black override for ghost-text contrast).
+        // Apply Pine's One Dark terminal palette (issue #816).
         // Centralised in `TerminalPalette` so it can be unit-tested
         // independently of the SwiftTerm view and kept as a single source of
         // truth. See `TerminalPalette.swift` for rationale (issues #733, #765).
