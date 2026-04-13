@@ -57,7 +57,15 @@ func assertSnapshot<V: View>(
     sourceLocation: SourceLocation = #_sourceLocation,
     file: StaticString = #filePath
 ) throws {
-    // Skip gracefully on headless CI runners where AppKit rendering is unavailable.
+    // CI runners: smoke-only — verify the view renders without crashing,
+    // skip pixel comparison (font metrics and GPU output differ across machines).
+    if SnapshotHarness.isCI {
+        try SnapshotHarness.smokeRender(view: view, size: size, appearance: appearance,
+                                        named: named, sourceLocation: sourceLocation)
+        return
+    }
+
+    // Truly headless (no display at all, e.g. SSH): skip entirely.
     if SnapshotHarness.isHeadless {
         return
     }
@@ -132,19 +140,22 @@ enum SnapshotHarness {
         ProcessInfo.processInfo.environment["PINE_RECORD_SNAPSHOTS"] == "1"
     }
 
-    /// Returns `true` when running on a headless CI runner.
-    /// Snapshot tests rely on stable GPU rendering and font metrics that vary
-    /// between machines, so they only run locally where developers can inspect
-    /// and re-record baselines.
+    /// Returns `true` when running on a CI runner (GitHub Actions, etc.).
+    /// On CI we run smoke-only tests (verify rendering doesn't crash) because
+    /// pixel output differs across machines due to GPU, font metrics, and
+    /// display scaling differences.
     ///
-    /// The `CI` env var may not propagate to the xcodebuild test host process,
-    /// so we also check for the absence of a main display (headless runner)
-    /// and an explicit `PINE_SKIP_SNAPSHOTS` flag.
+    /// Checks the standard `CI` env var (always set by GitHub Actions) and
+    /// an explicit `PINE_SKIP_SNAPSHOTS` flag for manual overrides.
+    static var isCI: Bool {
+        ProcessInfo.processInfo.environment["CI"] != nil
+            || ProcessInfo.processInfo.environment["PINE_SKIP_SNAPSHOTS"] != nil
+    }
+
+    /// Returns `true` when there is no display attached at all (e.g. SSH session).
+    /// In this case AppKit rendering is completely unavailable.
     static var isHeadless: Bool {
-        if ProcessInfo.processInfo.environment["CI"] != nil { return true }
-        if ProcessInfo.processInfo.environment["PINE_SKIP_SNAPSHOTS"] != nil { return true }
-        if NSScreen.main == nil { return true }
-        return false
+        NSScreen.main == nil
     }
 
     /// Renders `view` into an `NSBitmapImageRep` at the given size/appearance.
@@ -178,6 +189,46 @@ enum SnapshotHarness {
         bitmap.size = hosting.bounds.size
         hosting.cacheDisplay(in: hosting.bounds, to: bitmap)
         return bitmap
+    }
+
+    /// Smoke-only rendering for CI: instantiate the view inside an NSHostingView,
+    /// lay it out, and verify a non-empty bitmap can be produced. No pixel comparison.
+    @MainActor
+    static func smokeRender<V: View>(
+        view: V,
+        size: NSSize,
+        appearance: SnapshotAppearance,
+        named: String,
+        sourceLocation: SourceLocation
+    ) throws {
+        let hosting = NSHostingView(rootView: view)
+        hosting.appearance = appearance.nsAppearance
+        hosting.frame = NSRect(origin: .zero, size: size)
+        hosting.layoutSubtreeIfNeeded()
+
+        let window = NSWindow(
+            contentRect: NSRect(origin: .zero, size: size),
+            styleMask: [.borderless],
+            backing: .buffered,
+            defer: false
+        )
+        window.appearance = appearance.nsAppearance
+        window.contentView = hosting
+        defer { window.orderOut(nil) }
+        hosting.layoutSubtreeIfNeeded()
+
+        // Verify the view produced a valid bitmap (non-nil, non-zero dimensions).
+        guard let bitmap = hosting.bitmapImageRepForCachingDisplay(in: hosting.bounds) else {
+            let message = "Smoke test failed for '\(named)': could not create bitmap"
+            Issue.record(Comment(rawValue: message), sourceLocation: sourceLocation)
+            return
+        }
+        guard bitmap.pixelsWide > 0, bitmap.pixelsHigh > 0 else {
+            let message = "Smoke test failed for '\(named)': bitmap has zero dimensions"
+            Issue.record(Comment(rawValue: message), sourceLocation: sourceLocation)
+            return
+        }
+        // Smoke test passed — view renders without crashing and produces a valid bitmap.
     }
 
     static func referenceURL(for name: String, testFile: StaticString) -> URL {
