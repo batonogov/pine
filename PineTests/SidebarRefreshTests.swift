@@ -27,6 +27,22 @@ struct SidebarRefreshTests {
         try? FileManager.default.removeItem(at: url)
     }
 
+    /// Polls `condition` every 200ms up to `maxAttempts` times (default: 150,
+    /// ~30s total). FSEvents latency on CI runners has been observed at
+    /// 23-31s, so the generous ceiling is deliberate — it keeps these tests
+    /// reliable without meaningfully slowing the happy path, which returns
+    /// as soon as the condition flips to true.
+    @MainActor
+    private func waitFor(
+        _ condition: () -> Bool,
+        maxAttempts: Int = 150
+    ) async {
+        for _ in 0..<maxAttempts {
+            if condition() { return }
+            try? await Task.sleep(for: .milliseconds(200))
+        }
+    }
+
     // MARK: - FileSystemWatcher callback fires for new file
 
     @Test("FileSystemWatcher fires callback when a new file is created")
@@ -257,51 +273,143 @@ struct SidebarRefreshTests {
         )
     }
 
-    // MARK: - No double debounce in FileSystemWatcher
+    // MARK: - Issue #774: external shell processes (e.g. built-in terminal)
 
-    // FSEvents latency is unpredictable on CI runners (23-31s observed vs <0.5s locally),
-    // making sub-second timing assertions fundamentally unreliable.
-    @Test("FileSystemWatcher responds within reasonable time (no double debounce)",
-          .disabled("FSEvents timing is unreliable on CI runners — latency varies from <0.5s to 30s+"))
+    /// Runs a shell command as a child process, exactly like SwiftTerm's
+    /// `LocalProcessTerminalView` does when the user types in the built-in
+    /// terminal. This is the repro path for issue #774.
+    @discardableResult
+    private func runShell(_ command: String, at dir: URL) throws -> String {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/bin/sh")
+        process.arguments = ["-c", command]
+        process.currentDirectoryURL = dir
+        let outPipe = Pipe()
+        let errPipe = Pipe()
+        process.standardOutput = outPipe
+        process.standardError = errPipe
+        try process.run()
+        process.waitUntilExit()
+        if process.terminationStatus != 0 {
+            let stderr = String(
+                data: errPipe.fileHandleForReading.readDataToEndOfFile(),
+                encoding: .utf8
+            ) ?? ""
+            throw NSError(
+                domain: "ShellError",
+                code: Int(process.terminationStatus),
+                userInfo: [NSLocalizedDescriptionKey: "'\(command)' failed: \(stderr)"]
+            )
+        }
+        return String(
+            data: outPipe.fileHandleForReading.readDataToEndOfFile(),
+            encoding: .utf8
+        ) ?? ""
+    }
+
+    @Test("Issue #774: mkdir via shell child process appears in sidebar")
     @MainActor
-    func noDoubleDebounceTiming() async throws {
+    func mkdirViaShellAppearsInSidebar() async throws {
         let dir = try makeTempDirectory()
         defer { cleanup(dir) }
 
-        var callbackTime: Date?
-        let watcher = FileSystemWatcher(debounceInterval: 0.2) {
-            if callbackTime == nil {
-                callbackTime = Date()
-            }
-        }
-        watcher.watch(directory: dir)
+        let manager = WorkspaceManager()
+        manager.loadDirectory(url: dir)
 
-        // Small delay to let FSEvents stream fully start
-        try await Task.sleep(for: .milliseconds(100))
+        // Wait for initial load + watcher start
+        try await Task.sleep(for: .milliseconds(500))
+        #expect(manager.rootNodes.isEmpty)
 
-        let createTime = Date()
-        try "test".write(
-            to: dir.appendingPathComponent("timing_test.txt"),
+        // Reproduce the exact issue: run `mkdir` via /bin/sh, same as
+        // SwiftTerm's LocalProcessTerminalView executes shell commands.
+        try runShell("mkdir silarc-dev-callserver", at: dir)
+
+        await waitFor { manager.rootNodes.contains { $0.name == "silarc-dev-callserver" } }
+
+        #expect(
+            manager.rootNodes.contains { $0.name == "silarc-dev-callserver" },
+            "Directory created via shell child process should appear in sidebar"
+        )
+    }
+
+    @Test("Issue #774: touch file via shell appears in sidebar")
+    @MainActor
+    func touchFileViaShellAppearsInSidebar() async throws {
+        let dir = try makeTempDirectory()
+        defer { cleanup(dir) }
+
+        let manager = WorkspaceManager()
+        manager.loadDirectory(url: dir)
+        try await Task.sleep(for: .milliseconds(500))
+
+        try runShell("touch bar.txt", at: dir)
+
+        await waitFor { manager.rootNodes.contains { $0.name == "bar.txt" } }
+
+        #expect(manager.rootNodes.contains { $0.name == "bar.txt" })
+    }
+
+    @Test("Issue #774: rm -rf via shell removes from sidebar")
+    @MainActor
+    func rmViaShellRemovesFromSidebar() async throws {
+        let dir = try makeTempDirectory()
+        defer { cleanup(dir) }
+
+        let subdir = dir.appendingPathComponent("to_remove")
+        try FileManager.default.createDirectory(at: subdir, withIntermediateDirectories: true)
+
+        let manager = WorkspaceManager()
+        manager.loadDirectory(url: dir)
+
+        await waitFor { manager.rootNodes.contains { $0.name == "to_remove" } }
+        #expect(manager.rootNodes.contains { $0.name == "to_remove" })
+
+        try runShell("rm -rf to_remove", at: dir)
+
+        await waitFor { !manager.rootNodes.contains { $0.name == "to_remove" } }
+
+        #expect(!manager.rootNodes.contains { $0.name == "to_remove" })
+    }
+
+    @Test("Issue #774: mv via shell updates sidebar")
+    @MainActor
+    func mvViaShellUpdatesSidebar() async throws {
+        let dir = try makeTempDirectory()
+        defer { cleanup(dir) }
+
+        try "content".write(
+            to: dir.appendingPathComponent("foo.txt"),
             atomically: true,
             encoding: .utf8
         )
 
-        // Wait for callback
-        for _ in 0..<20 {
-            try await Task.sleep(for: .milliseconds(100))
-            if callbackTime != nil { break }
+        let manager = WorkspaceManager()
+        manager.loadDirectory(url: dir)
+
+        await waitFor { manager.rootNodes.contains { $0.name == "foo.txt" } }
+
+        try runShell("mv foo.txt baz.txt", at: dir)
+
+        await waitFor {
+            manager.rootNodes.contains { $0.name == "baz.txt" }
+                && !manager.rootNodes.contains { $0.name == "foo.txt" }
         }
+        let sawBaz = manager.rootNodes.contains { $0.name == "baz.txt" }
+        let noFoo = !manager.rootNodes.contains { $0.name == "foo.txt" }
 
-        watcher.stop()
-
-        guard let received = callbackTime else {
-            Issue.record("Callback never fired")
-            return
-        }
-
-        let elapsed = received.timeIntervalSince(createTime)
-        // With proper single debounce: should respond within ~0.5s
-        // With double debounce bug: would take ~0.8s+
-        #expect(elapsed < 0.6, "Callback should fire within 0.6s, got \(elapsed)s — double debounce suspected")
+        #expect(sawBaz, "baz.txt should appear after mv")
+        #expect(noFoo, "foo.txt should disappear after mv")
     }
+
+    // Note: a previous "no double debounce" timing test (added in #493,
+    // disabled in #566) was removed in #758/#788. It asserted that the
+    // watcher callback fired within 0.6 s of a file write, but FSEvents
+    // latency on CI runners ranges from <0.5 s to 30 s+ — the assertion
+    // is fundamentally incompatible with the environment it ran in. The
+    // `externalChangeToken` test above already covers the "watcher fires
+    // after file creation" invariant with a generous poll timeout, and
+    // the #774 tests above cover the shell-child-process variant. Future
+    // protection against a double-debounce regression should be a direct
+    // unit test of the debouncer, not an end-to-end FSEvents test — see
+    // follow-up issue #805.
 }

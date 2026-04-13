@@ -59,19 +59,29 @@ struct DiagnosticTooltipFixTests {
         #expect(iconRightEdge < lineNumberStartX)
     }
 
-    // MARK: - mouseMoved updates toolTip dynamically
+    // MARK: - Hover does NOT show a tooltip on diagnostic icons (#781)
 
-    @Test func mouseMoved_overDiagnosticLine_setsTooltipString() {
+    @Test func mouseMoved_overDiagnosticIcon_doesNotSetToolTip() {
         let view = makeGutter()
         let diag = ValidationDiagnostic(
             line: 1, column: nil, message: "missing colon", severity: .error, source: "yamllint"
         )
         view.validationDiagnostics = [diag]
 
-        // Simulate the resolved tooltip path that mouseMoved performs.
-        let resolved = view.resolveTooltip(at: NSPoint(x: 6, y: 5))
-        view.toolTip = resolved
-        #expect(view.toolTip == "missing colon")
+        view.simulateMouseMovedForTesting(at: NSPoint(x: 6, y: 5))
+        #expect(view.toolTip == nil)
+    }
+
+    @Test func mouseMoved_doesNotSetToolTip_withStaleValue() {
+        let view = makeGutter()
+        let diag = ValidationDiagnostic(
+            line: 1, column: nil, message: "boom", severity: .error, source: "yamllint"
+        )
+        view.validationDiagnostics = [diag]
+        // Something else might have set a stale tooltip — hovering must not revive it.
+        view.toolTip = nil
+        view.simulateMouseMovedForTesting(at: NSPoint(x: 6, y: 5))
+        #expect(view.toolTip == nil)
     }
 
     @Test func mouseExited_clearsToolTipString() throws {
@@ -103,17 +113,10 @@ struct DiagnosticTooltipFixTests {
 
     // MARK: - resolveTooltip works for clicks at icon x range
 
-    @Test func resolveTooltip_atIconColumn_returnsMessage() {
-        let view = makeGutter()
-        let diag = ValidationDiagnostic(
-            line: 1, column: nil, message: "bad indent", severity: .warning, source: "yamllint"
-        )
-        view.validationDiagnostics = [diag]
-
-        // x in icon range (1..13)
-        let result = view.resolveTooltip(at: NSPoint(x: 5, y: 5))
-        #expect(result == "bad indent")
-    }
+    // The `resolveTooltip(at:)` method was removed in #781 — diagnostics now
+    // surface only via the click-to-show popover, not hover. The diagnostic
+    // lookup itself is still exercised through `diagnosticTooltip(forLine:)`
+    // by other tests in this file.
 
     // MARK: - Diagnostic popover controller
 
@@ -244,6 +247,65 @@ struct DiagnosticTooltipFixTests {
         // Drawn icon must fit inside the hit zone.
         #expect(1 + LineNumberView.diagnosticIconDrawSize <= LineNumberView.diagnosticIconHitZoneWidth)
     }
+
+    // MARK: - Reassigning equivalent diagnostics does NOT dismiss an open popover (#781)
+
+    @Test func popover_survivesReassignmentOfEquivalentDiagnostics() throws {
+        let view = makeGutter()
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 600, height: 400),
+            styleMask: [.titled],
+            backing: .buffered,
+            defer: false
+        )
+        window.contentView?.addSubview(view)
+
+        let first = ValidationDiagnostic(
+            line: 1, column: 5, message: "boom", severity: .error, source: "t"
+        )
+        view.validationDiagnostics = [first]
+        view.showDiagnosticPopover(for: first, at: NSPoint(x: 6, y: 6))
+        #expect(view.diagnosticPopoverForTesting != nil)
+
+        // Re-assigning an equal-content diagnostic (but with a fresh UUID) must
+        // NOT dismiss the popover — this is exactly what SwiftUI's updateNSView
+        // does on every state change and was the root cause of #781.
+        let same = ValidationDiagnostic(
+            line: 1, column: 5, message: "boom", severity: .error, source: "t"
+        )
+        view.validationDiagnostics = [same]
+        #expect(view.diagnosticPopoverForTesting != nil)
+    }
+
+    @Test func popover_dismissedWhenDiagnosticsActuallyChange() throws {
+        let view = makeGutter()
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 600, height: 400),
+            styleMask: [.titled],
+            backing: .buffered,
+            defer: false
+        )
+        window.contentView?.addSubview(view)
+
+        let diag = ValidationDiagnostic(
+            line: 1, column: 5, message: "boom", severity: .error, source: "t"
+        )
+        view.validationDiagnostics = [diag]
+        view.showDiagnosticPopover(for: diag, at: NSPoint(x: 6, y: 6))
+        #expect(view.diagnosticPopoverForTesting != nil)
+
+        // A genuinely different message must dismiss the popover.
+        let changed = ValidationDiagnostic(
+            line: 1, column: 5, message: "different", severity: .error, source: "t"
+        )
+        view.validationDiagnostics = [changed]
+        #expect(view.diagnosticPopoverForTesting == nil)
+    }
+
+    // Semantic-equality coverage lives on `ValidationDiagnostic` itself in
+    // `ValidationDiagnosticEquatableTests` — the gutter no longer has its
+    // own helper, it delegates to the type's manual `Equatable` which
+    // excludes the synthesized `id` UUID. See `ConfigValidator.swift`.
 
     // MARK: - Popover view renders all diagnostic fields
 

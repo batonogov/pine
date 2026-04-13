@@ -41,6 +41,54 @@ final class TabManager {
     /// Called when active tab or cursor position changes. Set by ProjectManager.
     var onEditorContextChanged: (() -> Void)?
 
+    /// Editor save-time formatting preferences. Injectable for tests.
+    var editorSettings: EditorSettings = .shared
+
+    /// Registry of language-aware formatters applied on save. Injectable for tests.
+    var fileFormatters: FileFormatterRegistry = .default
+
+    /// Applies all enabled save-time transformations in the canonical order:
+    /// 1. Language-aware formatter (e.g. JSON pretty-print), when `formatOnSave` is on
+    ///    and a formatter claims this file type.
+    /// 2. Strip trailing whitespace from every line.
+    /// 3. Ensure a single final newline.
+    ///
+    /// Order matters: formatters run first because they may rewrite the whole file,
+    /// after which the whitespace/newline rules normalise the result. Pure function so
+    /// it can be unit-tested without a `TabManager` instance.
+    static func contentPreparedForSave(
+        _ content: String,
+        url: URL,
+        settings: EditorSettings,
+        formatters: FileFormatterRegistry
+    ) -> String {
+        var result = content
+        if settings.formatOnSave {
+            result = formatters.format(content: result, url: url)
+        }
+        if settings.stripTrailingWhitespace {
+            result = result.trailingWhitespaceStripped()
+        }
+        if settings.insertFinalNewline {
+            result = result.ensuringTrailingNewline()
+        }
+        return result
+    }
+
+    /// Back-compat overload used by tests that were written before the formatter
+    /// registry existed. Delegates to the canonical signature with an empty registry.
+    static func contentPreparedForSave(
+        _ content: String,
+        settings: EditorSettings
+    ) -> String {
+        contentPreparedForSave(
+            content,
+            url: URL(fileURLWithPath: "/dev/null"),
+            settings: settings,
+            formatters: FileFormatterRegistry(formatters: [])
+        )
+    }
+
     var activeTab: EditorTab? {
         guard let id = activeTabID else { return nil }
         return tabs.first { $0.id == id }
@@ -312,7 +360,12 @@ final class TabManager {
                 NSLocalizedDescriptionKey: "Cannot save: file was partially loaded (truncated). Saving would corrupt the original file."
             ])
         }
-        let trimmed = tab.content.trailingWhitespaceStripped()
+        let trimmed = Self.contentPreparedForSave(
+            tab.content,
+            url: tab.url,
+            settings: editorSettings,
+            formatters: fileFormatters
+        )
         try trimmed.write(to: tab.url, atomically: true, encoding: tab.encoding)
         tabs[index].content = trimmed
         tabs[index].savedContent = trimmed
@@ -540,7 +593,12 @@ final class TabManager {
     func saveActiveTabAs(to newURL: URL) throws -> Bool {
         guard let index = activeTabIndex else { return false }
         let tab = tabs[index]
-        let trimmed = tab.content.trailingWhitespaceStripped()
+        let trimmed = Self.contentPreparedForSave(
+            tab.content,
+            url: newURL,
+            settings: editorSettings,
+            formatters: fileFormatters
+        )
         try trimmed.write(to: newURL, atomically: true, encoding: tab.encoding)
         tabs[index].content = trimmed
         tabs[index].url = newURL
@@ -565,7 +623,12 @@ final class TabManager {
 
         guard let duplicateURL = finderCopyURL(for: originalURL) else { return false }
 
-        let trimmed = tab.content.trailingWhitespaceStripped()
+        let trimmed = Self.contentPreparedForSave(
+            tab.content,
+            url: duplicateURL,
+            settings: editorSettings,
+            formatters: fileFormatters
+        )
         try trimmed.write(to: duplicateURL, atomically: true, encoding: tab.encoding)
 
         var newTab = EditorTab(

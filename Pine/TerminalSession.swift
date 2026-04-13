@@ -318,13 +318,15 @@ final class TerminalTab: Identifiable, Hashable {
 
         // Настраиваем внешний вид сразу — шрифт определяет размер ячейки
         terminalView.font = NSFont.monospacedSystemFont(ofSize: 13, weight: .regular)
-        // Background and foreground use semantic NSColors so the terminal
-        // adapts to light/dark mode the way every other native macOS app
-        // does (Apple HIG). TerminalPalette.install(on:) only touches the
-        // 16 ANSI slots — bg/fg/cursor/selection live here. See the
-        // header of `TerminalPalette.swift` for the rationale.
+        // One Dark canonical background (#282C34) gives proper contrast
+        // for the ANSI palette. The system `textBackgroundColor` (~#1E1E1E
+        // in dark mode) is too grey and washes out TUI colors.
+        // Foreground stays semantic so it adapts to light/dark appearance.
         terminalView.nativeForegroundColor = .textColor
-        terminalView.nativeBackgroundColor = .textBackgroundColor
+        terminalView.nativeBackgroundColor = NSColor(srgbRed: 0x28 / 255.0,
+                                                      green: 0x2C / 255.0,
+                                                       blue: 0x34 / 255.0,
+                                                      alpha: 1.0)
 
         // Match Ghostty / modern terminal behaviour: do NOT auto-promote bold
         // text to the bright color variant. SwiftTerm's default of `true`
@@ -333,8 +335,7 @@ final class TerminalTab: Identifiable, Hashable {
         // native macOS terminals (issue #733).
         terminalView.useBrightColors = false
 
-        // Apply Pine's ANSI 16-color palette (Terminal.app Basic with the
-        // slot 8 / bright black override for ghost-text contrast).
+        // Apply Pine's One Dark terminal palette (issue #816).
         // Centralised in `TerminalPalette` so it can be unit-tested
         // independently of the SwiftTerm view and kept as a single source of
         // truth. See `TerminalPalette.swift` for rationale (issues #733, #765).

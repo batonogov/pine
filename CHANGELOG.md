@@ -1,5 +1,43 @@
 # Changelog
 
+## [1.22.0](https://github.com/batonogov/pine/compare/v1.21.0...v1.22.0) (2026-04-13)
+
+
+### Features
+
+* **editor:** insert final newline on save ([#799](https://github.com/batonogov/pine/issues/799)) ([5cc2f5d](https://github.com/batonogov/pine/commit/5cc2f5d4d1eb0be9540618683e28e1faed0761a4))
+* **terminal:** add terminal theme picker with 6 built-in palettes ([#817](https://github.com/batonogov/pine/issues/817)) ([b165ae2](https://github.com/batonogov/pine/commit/b165ae253e9b6a7b34376bc96211f5ba34bc1e12))
+
+
+### Bug Fixes
+
+* **editor:** constrain diagnostic icon to fixed rect to prevent overlap ([#811](https://github.com/batonogov/pine/issues/811)) ([528997d](https://github.com/batonogov/pine/commit/528997dca462eb3fb6b7d1c509b3068f7928f5e4))
+* **editor:** force diff gutter refresh via diffVersion counter ([#810](https://github.com/batonogov/pine/issues/810)) ([39df7ab](https://github.com/batonogov/pine/commit/39df7abfba77f293d352521a558dd566331f592b))
+* **test:** resolve flaky LayoutStabilityTests on CI ([#818](https://github.com/batonogov/pine/issues/818)) ([7996d3f](https://github.com/batonogov/pine/commit/7996d3ffe95adcf88adb770cdb3fbb89b48b4df6))
+
+## [1.21.0](https://github.com/batonogov/pine/compare/v1.20.1...v1.21.0) (2026-04-10)
+
+
+### Features
+
+* **editor:** add SmartListContinuation pure logic ([#803](https://github.com/batonogov/pine/issues/803)) ([c74bf85](https://github.com/batonogov/pine/commit/c74bf8540c834e57cde571c380ef374998a87a83))
+* **grammar:** add setext headings, image links, nested emphasis to markdown ([#786](https://github.com/batonogov/pine/issues/786)) ([8a71f7c](https://github.com/batonogov/pine/commit/8a71f7c36240721eed6b3b28a71a877d02701215))
+
+
+### Bug Fixes
+
+* **editor:** diagnostic gutter icon hover/click regression ([#784](https://github.com/batonogov/pine/issues/784)) ([87840cb](https://github.com/batonogov/pine/commit/87840cbd95d037de1c2cc25273b9a03004bdb6cd))
+* **editor:** guard SyntaxHighlighter against nil attribute values and concurrent access ([#801](https://github.com/batonogov/pine/issues/801)) ([fb46272](https://github.com/batonogov/pine/commit/fb4627283748acadf38afd22a9327a21465de2c4)), closes [#790](https://github.com/batonogov/pine/issues/790)
+* **editor:** restore git diff gutter updates in split panes ([#782](https://github.com/batonogov/pine/issues/782)) ([609773b](https://github.com/batonogov/pine/commit/609773b0c94b3f4eb9633771d3b3f425c0d7ffe6))
+* **grammar:** scan full text for multiline rules (fenced code interiors) ([#789](https://github.com/batonogov/pine/issues/789)) ([5584225](https://github.com/batonogov/pine/commit/5584225863b1016638306dcfb4c0743512861850))
+* **sidebar:** refresh tree promptly for changes from built-in terminal ([#774](https://github.com/batonogov/pine/issues/774)) ([#777](https://github.com/batonogov/pine/issues/777)) ([0485df3](https://github.com/batonogov/pine/commit/0485df32116e6161e03afb570fbe5173c9acf917))
+
+
+### Code Refactoring
+
+* **app:** split PineApp.swift into menu commands and notifications ([#785](https://github.com/batonogov/pine/issues/785)) ([2ea3bc3](https://github.com/batonogov/pine/commit/2ea3bc3b3969097244e6dfe797c332982d491899))
+* **editor:** split CodeEditorView.swift into focused files ([#797](https://github.com/batonogov/pine/issues/797)) ([370c91c](https://github.com/batonogov/pine/commit/370c91cbc895886b7c5273639221778146b6a66a))
+
 ## [1.20.1](https://github.com/batonogov/pine/compare/v1.20.0...v1.20.1) (2026-04-09)
 
 

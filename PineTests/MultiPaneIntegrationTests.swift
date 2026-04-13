@@ -170,8 +170,8 @@ struct MultiPaneIntegrationTests {
         // Verify files were written
         let contentA = try String(contentsOf: files[0], encoding: .utf8)
         let contentB = try String(contentsOf: files[1], encoding: .utf8)
-        #expect(contentA == "// modified a.swift")
-        #expect(contentB == "// modified b.swift")
+        #expect(contentA == "// modified a.swift\n")
+        #expect(contentB == "// modified b.swift\n")
     }
 
     // MARK: - Session persistence collects all pane tabs

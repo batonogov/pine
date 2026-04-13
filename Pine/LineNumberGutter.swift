@@ -52,11 +52,18 @@ final class LineNumberView: NSView {
     var onFoldToggle: ((FoldableRange) -> Void)?
 
     /// Validation diagnostics for the current file (error/warning/info icons).
+    ///
+    /// `ValidationDiagnostic` already provides a manual `Equatable` that
+    /// excludes the synthesized `id` UUID (see `ConfigValidator.swift`), so
+    /// the short-circuit below uses `==` directly. Without this guard every
+    /// `updateNSView` pass would look like a change and instantly dismiss
+    /// any open popover, breaking the click-to-explain affordance (#781).
     var validationDiagnostics: [ValidationDiagnostic] = [] {
         didSet {
+            guard oldValue != validationDiagnostics else { return }
             rebuildDiagnosticMap()
-            // Dismiss any open diagnostic popover when the diagnostics change —
-            // its diagnostic may be stale or the line may no longer have an icon.
+            // Diagnostics actually changed — dismiss any open popover,
+            // its anchor line may no longer carry an icon.
             diagnosticPopover?.close()
             diagnosticPopover = nil
             needsDisplay = true
@@ -98,12 +105,9 @@ final class LineNumberView: NSView {
     /// Whether the mouse is currently inside the gutter (for showing fold indicators).
     private var isMouseInside = false
 
-    /// Active tooltip rect tag — non-nil when diagnostics are present and tooltip rect is registered.
-    private(set) var toolTipTag: NSView.ToolTipTag?
-
-    /// Cached last-resolved line number used by `mouseMoved` to skip redundant
-    /// `resolveTooltip` work when the cursor is still hovering over the same line.
-    /// Reset to `nil` whenever the cursor leaves the gutter.
+    /// Cached last-resolved line number used by `mouseMoved` to skip the
+    /// per-pixel diagnostic lookup when the cursor is still hovering over
+    /// the same line. Reset to `nil` whenever the cursor leaves the gutter.
     private var lastHoveredLine: Int?
 
     /// Whether `mouseMoved` last set the pointing-hand cursor. Used so we only reset
@@ -115,6 +119,48 @@ final class LineNumberView: NSView {
     /// Sized to match the fold-indicator area so the icon (drawn at x=1..1+iconSize)
     /// is fully covered.
     static let diagnosticIconHitZoneWidth: CGFloat = 14
+
+    /// Horizontal space reserved on the left edge of the gutter for the
+    /// diagnostic icon when diagnostics are present. Line numbers never enter
+    /// this zone — this guarantees the icon and line number never overlap,
+    /// regardless of how many digits the line number has (#781).
+    static let diagnosticReservedWidth: CGFloat = 14
+
+    /// Right-side padding between the line number and the diff bar / gutter
+    /// edge. Exposed so tests can reproduce the draw-path math exactly.
+    static let lineNumberRightPadding: CGFloat = 8
+
+    /// Test-only snapshot of the x-coordinates used when drawing a line number.
+    /// Returned by `lineNumberDrawLayout(forDigits:)` so tests can verify the
+    /// icon zone and the line number zone never overlap.
+    struct LineNumberDrawLayout: Equatable {
+        /// Left edge of the drawn line number (x of the first digit).
+        let lineNumberX: CGFloat
+        /// Right edge of the drawn line number string.
+        let lineNumberRightEdge: CGFloat
+        /// Right edge of the reserved diagnostic icon zone (i.e. the first x
+        /// coordinate that line numbers are allowed to touch).
+        let diagnosticZoneRightEdge: CGFloat
+        /// Current gutter width when the layout was computed.
+        let gutterWidth: CGFloat
+    }
+
+    /// Computes the exact draw coordinates the paint path would use for a line
+    /// number with the given digit count. Mirrors the formula inside
+    /// `draw(_:)` so tests can assert non-overlap without touching drawing.
+    func lineNumberDrawLayout(forDigits digits: Int) -> LineNumberDrawLayout {
+        let attrs: [NSAttributedString.Key: Any] = [.font: gutterFont]
+        let digitString = String(repeating: "0", count: max(digits, 1)) as NSString
+        let textWidth = digitString.size(withAttributes: attrs).width
+        let rightEdge = gutterWidth - Self.lineNumberRightPadding
+        let leftEdge = rightEdge - textWidth
+        return LineNumberDrawLayout(
+            lineNumberX: leftEdge,
+            lineNumberRightEdge: rightEdge,
+            diagnosticZoneRightEdge: Self.diagnosticReservedWidth,
+            gutterWidth: gutterWidth
+        )
+    }
 
     private func rebuildDiffMap() {
         diffMap = Dictionary(lineDiffs.map { ($0.line, $0.kind) }, uniquingKeysWith: { _, last in last })
@@ -137,23 +183,8 @@ final class LineNumberView: NSView {
                 diagnosticMap[diag.line] = diag
             }
         }
-        updateTooltipRect()
-    }
-
-    /// Registers or removes the tooltip rect covering the entire gutter.
-    /// When diagnostics are present, a single tooltip rect is registered with `self` as owner.
-    /// AppKit calls `view(_:stringForToolTip:point:userData:)` to resolve the tooltip text
-    /// dynamically based on mouse position.
-    private func updateTooltipRect() {
-        // Remove existing tooltip rect
-        if let tag = toolTipTag {
-            removeToolTip(tag)
-            toolTipTag = nil
-        }
-        // Register new tooltip rect only if there are diagnostics
-        if !diagnosticMap.isEmpty {
-            toolTipTag = addToolTip(bounds, owner: self, userData: nil)
-        }
+        // No tooltip rect is registered — diagnostic explanations are shown
+        // only by explicit click, never by hover (#781).
     }
 
     /// Returns a numeric rank for severity (higher = more severe).
@@ -260,8 +291,6 @@ final class LineNumberView: NSView {
             userInfo: nil
         )
         addTrackingArea(area)
-        // Re-register tooltip rect with updated bounds
-        updateTooltipRect()
     }
 
     override func mouseEntered(with event: NSEvent) {
@@ -295,17 +324,12 @@ final class LineNumberView: NSView {
     override func mouseMoved(with event: NSEvent) {
         let point = convert(event.locationInWindow, from: nil)
 
-        // Throttle: skip the (relatively expensive) resolveTooltip + diagnostic
-        // lookup when the cursor is still hovering over the same line as the
-        // previous mouseMoved call. Mouse-moved events fire many times per pixel.
+        // Track the hovered line purely for cursor state — we deliberately do
+        // NOT set `toolTip` on hover. Diagnostic explanations are only revealed
+        // via an explicit click (#781). Hover tooltips were noisy and stole
+        // focus from the editor content.
         let line = lineNumber(at: point)
-        if line != lastHoveredLine {
-            lastHoveredLine = line
-            let message = resolveTooltip(at: point)
-            if toolTip != message {
-                toolTip = message
-            }
-        }
+        lastHoveredLine = line
 
         // Cursor handling: pointing-hand only inside the icon hit zone AND only when
         // there is actually a diagnostic on this line. Reset to arrow as soon as the
@@ -375,13 +399,8 @@ final class LineNumberView: NSView {
     /// Mirrors the production path so tests cover the real cursor state machine.
     func simulateMouseMovedForTesting(at point: NSPoint) {
         let line = lineNumber(at: point)
-        if line != lastHoveredLine {
-            lastHoveredLine = line
-            let message = resolveTooltip(at: point)
-            if toolTip != message {
-                toolTip = message
-            }
-        }
+        lastHoveredLine = line
+        // Hover must NOT set toolTip on diagnostic icons (#781).
         let inIconZone = point.x < Self.diagnosticIconHitZoneWidth
         let hasDiagnostic = (line.flatMap { diagnosticMap[$0] }) != nil
         if inIconZone && hasDiagnostic {
@@ -399,22 +418,26 @@ final class LineNumberView: NSView {
     /// The popover lists the severity, source, and full message — providing the
     /// "click to see what is wrong" affordance requested in #679.
     func showDiagnosticPopover(for diag: ValidationDiagnostic, at point: NSPoint) {
-        // Dismiss any existing popover first
+        // Dismiss any existing popover first and clear the stored reference
+        // immediately, so a subsequent `show` failure leaves no stale handle.
         diagnosticPopover?.close()
+        diagnosticPopover = nil
 
         let popover = NSPopover()
         popover.behavior = .transient
         popover.contentViewController = DiagnosticPopoverController(diagnostic: diag)
 
-        // Anchor the popover to a small rect around the click point so it points
-        // at the icon, not at the entire gutter.
-        let anchorRect = NSRect(
-            x: max(0, point.x - 4),
-            y: max(0, point.y - 4),
-            width: 8,
-            height: 8
+        // Anchor to the fixed icon rect (x = 1, width = diagnosticIconDrawSize),
+        // not to the click point. Earlier code placed the anchor at
+        // `point.x ± 4`, which meant a click at x=12 in the 14pt hit zone
+        // pointed the popover's arrow mid-air, not at the glyph.
+        let iconRect = NSRect(
+            x: 1,
+            y: max(0, point.y - Self.diagnosticIconDrawSize / 2),
+            width: Self.diagnosticIconDrawSize,
+            height: Self.diagnosticIconDrawSize
         )
-        popover.show(relativeTo: anchorRect, of: self, preferredEdge: .maxX)
+        popover.show(relativeTo: iconRect, of: self, preferredEdge: .maxX)
         diagnosticPopover = popover
     }
 
@@ -470,7 +493,7 @@ final class LineNumberView: NSView {
         needsDisplay = true
     }
 
-    private func recountTotalLines() {
+    func recountTotalLines() {
         if let cache = lineStartsCache {
             cachedTotalLines = cache.lineCount
             return
@@ -661,12 +684,31 @@ final class LineNumberView: NSView {
         }
 
         // ── Обновляем ширину гуттера если изменилось количество цифр ──
+        recomputeGutterWidth()
+    }
+
+    /// Recomputes `gutterWidth` based on the current digit count and whether
+    /// diagnostics are present. Splits the gutter into three zones, left→right:
+    ///
+    ///   [0, diagnosticReservedWidth)  — diagnostic icon (when diagnostics present)
+    ///   [diagnosticReservedWidth + ε, gutterWidth - rightPadding) — line numbers
+    ///   [gutterWidth - diffBarWidth, gutterWidth) — git diff bar
+    ///
+    /// The icon zone and the line-number zone can never overlap regardless of
+    /// how many digits the line number has (#781).
+    func recomputeGutterWidth() {
         let digits = max(String(cachedTotalLines).count, 2)
         if cachedDigitWidthFont != gutterFont {
             cachedDigitWidth = "0".size(withAttributes: [.font: gutterFont]).width
             cachedDigitWidthFont = gutterFont
         }
-        let newWidth = CGFloat(digits) * cachedDigitWidth + 20
+        // The diagnostic icon zone is reserved unconditionally. Earlier this
+        // value depended on `!diagnosticMap.isEmpty`, which caused the gutter
+        // (and the editor text) to jump by 14pt the instant the first error
+        // appeared during an edit → validate loop — visible flicker for the
+        // user. Always reserving the zone trades a tiny constant amount of
+        // gutter space for a stable editor layout.
+        let newWidth = Self.diagnosticReservedWidth + CGFloat(digits) * cachedDigitWidth + 20
         if abs(gutterWidth - newWidth) > 1 {
             gutterWidth = newWidth
             frame.size.width = newWidth
@@ -711,49 +753,30 @@ final class LineNumberView: NSView {
         guard let image = NSImage(systemSymbolName: symbolName, accessibilityDescription: nil)?
             .withSymbolConfiguration(config) else { return }
 
-        let tintedImage = image.tinted(with: color)
-        let imageSize = tintedImage.size
-        let centerY = y + (lineHeight - imageSize.height) / 2
-        // Position at the left edge of the gutter, within the fold indicator area (0–14px).
-        // x=1 + iconSize=8 → right edge at 9px, well clear of two-digit line numbers (~18px).
+        let tintedImage = image.pine_tinted(with: color)
+        let centerY = y + (lineHeight - iconSize) / 2
+        // Draw in a fixed rect — SF Symbols render larger than their
+        // pointSize (e.g. pointSize 12 → ~16px image), so using the
+        // natural imageSize would overflow the reserved icon zone and
+        // overlap line numbers. Constraining to iconSize keeps the
+        // glyph within [1, 1+diagnosticIconDrawSize] = [1, 13].
         let x: CGFloat = 1
-
         tintedImage.draw(in: NSRect(
             x: x, y: centerY,
-            width: imageSize.width, height: imageSize.height
+            width: iconSize, height: iconSize
         ))
     }
 
-    // MARK: - Diagnostic tooltips
+    // MARK: - Diagnostic lookup (test helper)
 
-    /// Returns the diagnostic message for the given line number, or nil if none.
+    /// Returns the diagnostic message for the given line number, or nil if
+    /// none. Kept because `ValidationGutterTests` uses it to assert the
+    /// severity-priority behavior of `rebuildDiagnosticMap()` without
+    /// touching drawing or mouse handling. Not used in production — the
+    /// hover tooltip path was removed in #781, diagnostics now surface via
+    /// the click-to-show popover (`showDiagnosticPopover(for:at:)`).
     func diagnosticTooltip(forLine line: Int) -> String? {
         diagnosticMap[line]?.message
-    }
-
-    /// Resolves the tooltip for a given point in view coordinates.
-    /// Returns the diagnostic message if the point is inside bounds and over a line with a diagnostic,
-    /// or nil otherwise. This is a pure query method, safe to call from tests.
-    func resolveTooltip(at point: NSPoint) -> String? {
-        guard bounds.contains(point) else { return nil }
-        guard let line = lineNumber(at: point) else { return nil }
-        return diagnosticTooltip(forLine: line)
-    }
-
-    /// NSView tooltip owner callback — AppKit calls this to resolve tooltip text dynamically
-    /// for the registered tooltip rect. Returns the diagnostic message for the line under the cursor.
-    ///
-    /// Must be annotated `@objc` so that AppKit can find this method via Objective-C message
-    /// dispatch. The `NSToolTipOwner` informal protocol is an ObjC category on `NSObject` —
-    /// Swift does not automatically bridge it, so without `@objc` AppKit falls back to the
-    /// default `NSView` implementation which returns the view's `description`.
-    @objc func view(
-        _ view: NSView,
-        stringForToolTip tag: NSView.ToolTipTag,
-        point: NSPoint,
-        userData data: UnsafeMutableRawPointer?
-    ) -> String {
-        resolveTooltip(at: point) ?? ""
     }
 
     // MARK: - Fold indicator drawing

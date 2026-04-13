@@ -6,8 +6,17 @@ name: CI
 on:
   pull_request:
     branches: [main]
+    # `labeled` lets the `perf` label trigger the performance-tests job
+    # on-demand from a PR without re-running the rest of CI.
+    types: [opened, synchronize, reopened, labeled]
   push:
     branches: [main]
+  workflow_dispatch:
+    inputs:
+      run_performance_tests:
+        description: "Run PinePerformanceTests benchmark suite"
+        type: boolean
+        default: true
 
 permissions:
   contents: read
@@ -118,11 +127,7 @@ jobs:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
 
       - name: Select Xcode
-        run: |
-          XCODE_PATH=$(ls -d /Applications/Xcode*.app 2>/dev/null | sort -V | tail -1)
-          echo "Using Xcode at: $XCODE_PATH"
-          sudo xcode-select -s "$XCODE_PATH/Contents/Developer"
-          xcodebuild -version
+        uses: ./.github/actions/select-xcode
 
       - name: Download Metal Toolchain
         run: |
@@ -211,10 +216,7 @@ jobs:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
 
       - name: Select Xcode
-        run: |
-          XCODE_PATH=$(ls -d /Applications/Xcode*.app 2>/dev/null | sort -V | tail -1)
-          echo "Using Xcode at: $XCODE_PATH"
-          sudo xcode-select -s "$XCODE_PATH/Contents/Developer"
+        uses: ./.github/actions/select-xcode
 
       - name: Download Build Products
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
@@ -544,10 +546,7 @@ jobs:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
 
       - name: Select Xcode
-        run: |
-          XCODE_PATH=$(ls -d /Applications/Xcode*.app 2>/dev/null | sort -V | tail -1)
-          echo "Using Xcode at: $XCODE_PATH"
-          sudo xcode-select -s "$XCODE_PATH/Contents/Developer"
+        uses: ./.github/actions/select-xcode
 
       - name: Download Build Products
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
@@ -691,3 +690,88 @@ jobs:
                 body,
               });
             }
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # Performance tests — OPT-IN only.
+  #
+  # PinePerformanceTests is skipped from the default Pine scheme because
+  # XCTest `measure {}` blocks are flaky on shared GitHub Actions runners
+  # (noisy neighbors, no thermal guarantees). Running them on every PR would
+  # produce false regressions. Instead this job only runs when:
+  #
+  #   1. Manually dispatched from the Actions tab (workflow_dispatch).
+  #   2. A PR is labeled `perf` — add the label to run one-off benchmarks
+  #      against a pull request without re-running the whole pipeline.
+  #
+  # Results are uploaded as a .xcresult artifact so the developer can open
+  # them locally in Xcode's Test Navigator to inspect the measure {} numbers.
+  performance-tests:
+    name: Performance Tests (on-demand)
+    runs-on: macos-26
+    timeout-minutes: 60
+    concurrency:
+      group: perf-${{ github.ref }}
+      cancel-in-progress: false
+    if: >-
+      (github.event_name == 'workflow_dispatch' &&
+       github.event.inputs.run_performance_tests == 'true') ||
+      (github.event_name == 'pull_request' &&
+       contains(github.event.pull_request.labels.*.name, 'perf'))
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+
+      - name: Select Xcode
+        shell: bash
+        run: |
+          set -euo pipefail
+          XCODE_PATH=$(ls -d /Applications/Xcode*.app | grep -v beta | sort -V | tail -1)
+          if [ -z "$XCODE_PATH" ]; then
+            echo "::error::No non-beta Xcode.app found under /Applications"
+            exit 1
+          fi
+          echo "Using Xcode at: $XCODE_PATH"
+          sudo xcode-select -s "$XCODE_PATH/Contents/Developer"
+          xcodebuild -version
+
+      - name: Cache SPM Dependencies
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: DerivedData/SourcePackages
+          key: spm-${{ runner.os }}-${{ hashFiles('Pine.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved') }}
+          restore-keys: |
+            spm-${{ runner.os }}-
+
+      # PinePerformanceTests is marked `skipped="YES"` in the Pine scheme so
+      # -only-testing: is required to force it to run. build-for-testing is a
+      # separate step so a missing-target failure surfaces clearly before the
+      # measure {} loop kicks in.
+      - name: Build for Testing
+        run: |
+          xcodebuild build-for-testing \
+            -project Pine.xcodeproj \
+            -scheme Pine \
+            -destination "platform=macOS" \
+            -derivedDataPath DerivedData \
+            -only-testing:PinePerformanceTests \
+            CODE_SIGN_IDENTITY=- \
+            CODE_SIGNING_ALLOWED=NO
+
+      - name: Run Performance Tests
+        run: |
+          xcodebuild test-without-building \
+            -project Pine.xcodeproj \
+            -scheme Pine \
+            -destination "platform=macOS" \
+            -derivedDataPath DerivedData \
+            -only-testing:PinePerformanceTests \
+            -resultBundlePath PerformanceResults.xcresult \
+            CODE_SIGN_IDENTITY=- \
+            CODE_SIGNING_ALLOWED=NO
+
+      - name: Upload Performance Results
+        if: success() || failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: performance-results-xcresult
+          path: PerformanceResults.xcresult
+          retention-days: 14
