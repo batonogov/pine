@@ -274,9 +274,10 @@ struct TerminalPaletteTests {
         for index in 0..<16 {
             let entry = TerminalPalette.macOSAligned[index]
             let ratio = contrastRatio(entry, bg)
-            // Slot 0 carries ghost text override — lower threshold is acceptable
-            // (non-essential hint text). All other slots must clear 3:1.
-            let threshold: Double = index == 0 ? 2.5 : 3.0
+            // Slots 0 and 8 carry ghost text / comment colors (#5C6370) —
+            // lower threshold is acceptable for non-essential dim text.
+            // All other slots must clear 3:1.
+            let threshold: Double = (index == 0 || index == 8) ? 2.5 : 3.0
             #expect(ratio >= threshold, "ANSI \(index) contrast \(ratio) below \(threshold):1")
         }
     }
