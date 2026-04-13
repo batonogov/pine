@@ -478,23 +478,14 @@ struct PineAppMenuCommands: Commands {
 
             Divider()
 
-            Menu {
+            Picker(selection: $themeSettings.selectedTheme) {
                 ForEach(TerminalThemeID.allCases) { theme in
-                    Button {
-                        themeSettings.selectedTheme = theme
-                    } label: {
-                        HStack {
-                            Text(theme.displayName)
-                            if themeSettings.selectedTheme == theme {
-                                Spacer()
-                                Image(systemName: "checkmark")
-                            }
-                        }
-                    }
+                    Text(theme.displayName).tag(theme)
                 }
             } label: {
                 Label(Strings.menuTerminalTheme, systemImage: MenuIcons.terminalTheme)
             }
+            .pickerStyle(.inline)
         }
 
         // Cmd+W is intercepted by AppDelegate's local event monitor

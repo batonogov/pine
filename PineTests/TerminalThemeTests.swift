@@ -55,16 +55,23 @@ struct TerminalThemeIDTests {
         #expect(actual == expected)
     }
 
-    @Test("needsGhostTextOverride — solarizedDark does not need it")
-    func solarizedDarkNoGhostOverride() {
-        #expect(!TerminalThemeID.solarizedDark.needsGhostTextOverride)
+    @Test("ghostTextColor — solarizedDark returns nil")
+    func solarizedDarkNoGhostColor() {
+        #expect(TerminalThemeID.solarizedDark.ghostTextColor == nil)
     }
 
-    @Test("needsGhostTextOverride — dark themes with black slot 0 need it")
-    func darkThemesNeedGhostOverride() {
-        let needsOverride: [TerminalThemeID] = [.basic, .pro, .dracula, .oneDark, .nord]
-        for theme in needsOverride {
-            #expect(theme.needsGhostTextOverride, "\(theme.rawValue) should need ghost text override")
+    @Test("ghostTextColor — themes with dark slot 0 return per-theme color")
+    func darkThemesHaveGhostColor() {
+        let expectedColors: [(TerminalThemeID, TerminalPaletteEntry)] = [
+            (.basic, TerminalPaletteEntry(red: 0x96, green: 0x98, blue: 0x96)),
+            (.pro, TerminalPaletteEntry(red: 0x96, green: 0x98, blue: 0x96)),
+            (.dracula, TerminalPaletteEntry(red: 0x62, green: 0x72, blue: 0xA4)),
+            (.oneDark, TerminalPaletteEntry(red: 0x5C, green: 0x63, blue: 0x70)),
+            (.nord, TerminalPaletteEntry(red: 0x4C, green: 0x56, blue: 0x6A)),
+        ]
+        for (theme, expected) in expectedColors {
+            #expect(theme.ghostTextColor == expected,
+                    "\(theme.rawValue) ghostTextColor should be \(expected)")
         }
     }
 
@@ -148,25 +155,21 @@ struct TerminalThemeSettingsTests {
 @Suite("TerminalPalette theme resolution")
 struct TerminalPaletteThemeTests {
 
-    @Test("resolvedPalette applies ghost text override when needed")
-    func ghostTextOverrideApplied() {
-        for theme in TerminalThemeID.allCases where theme.needsGhostTextOverride {
+    @Test("resolvedPalette applies per-theme ghost text color when set")
+    func ghostTextColorApplied() {
+        for theme in TerminalThemeID.allCases {
             let resolved = TerminalPalette.resolvedPalette(for: theme)
-            #expect(
-                resolved[0] == TerminalPalette.ghostTextOverride,
-                "\(theme.rawValue) slot 0 should be ghostTextOverride"
-            )
-        }
-    }
-
-    @Test("resolvedPalette preserves slot 0 when ghost override not needed")
-    func noGhostTextOverrideWhenNotNeeded() {
-        for theme in TerminalThemeID.allCases where !theme.needsGhostTextOverride {
-            let resolved = TerminalPalette.resolvedPalette(for: theme)
-            #expect(
-                resolved[0] == theme.palette[0],
-                "\(theme.rawValue) slot 0 should be unmodified"
-            )
+            if let ghostColor = theme.ghostTextColor {
+                #expect(
+                    resolved[0] == ghostColor,
+                    "\(theme.rawValue) slot 0 should be ghostTextColor"
+                )
+            } else {
+                #expect(
+                    resolved[0] == theme.palette[0],
+                    "\(theme.rawValue) slot 0 should be unmodified"
+                )
+            }
         }
     }
 
@@ -258,5 +261,44 @@ struct PaletteHexValueTests {
         #expect(entry.red == 0x56)
         #expect(entry.green == 0xB6)
         #expect(entry.blue == 0xC2)
+    }
+}
+
+// MARK: - Notification tests
+
+@Suite("TerminalThemeSettings notifications")
+struct TerminalThemeNotificationTests {
+
+    @Test("Posts terminalThemeChanged notification on theme change")
+    @MainActor func postsNotificationOnChange() throws {
+        let suiteName = "com.pine.test.themeNotification.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let settings = TerminalThemeSettings(defaults: defaults)
+
+        var received = false
+        let token = NotificationCenter.default.addObserver(
+            forName: .terminalThemeChanged, object: nil, queue: .main
+        ) { _ in received = true }
+        defer { NotificationCenter.default.removeObserver(token) }
+
+        settings.selectedTheme = .nord
+        #expect(received)
+    }
+
+    @Test("Does NOT post notification during init")
+    @MainActor func noNotificationOnInit() throws {
+        let suiteName = "com.pine.test.themeInitNotif.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        var received = false
+        let token = NotificationCenter.default.addObserver(
+            forName: .terminalThemeChanged, object: nil, queue: .main
+        ) { _ in received = true }
+        defer { NotificationCenter.default.removeObserver(token) }
+
+        _ = TerminalThemeSettings(defaults: defaults)
+        #expect(!received)
     }
 }

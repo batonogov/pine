@@ -145,16 +145,25 @@ enum TerminalThemeID: String, CaseIterable, Identifiable {
         }
     }
 
-    /// Whether slot 0 should be overridden with `ghostTextOverride`.
+    /// Per-theme color to override slot 0 so that zsh-autosuggestions / fish
+    /// ghost text (which hits slot 0 via SwiftTerm's 8 → 0 collapse) remains
+    /// readable. Each theme uses its own slot 8 value as the ghost text color
+    /// because SwiftTerm collapses 8 → 0 when `useBrightColors = false`.
     ///
-    /// Dark themes where slot 0 (black) is too dark for the dark-mode
-    /// background need this override so that zsh-autosuggestions / fish
-    /// ghost text (which hits slot 0 via SwiftTerm's 8 → 0 collapse)
-    /// remains readable. See `TerminalPalette.ghostTextOverride` docs.
-    var needsGhostTextOverride: Bool {
+    /// `nil` means no override — slot 0 is already distinct enough from the
+    /// background (e.g. Solarized Dark where slot 0 is #073642).
+    ///
+    /// Basic and Pro use the Tomorrow Night grey (#969896) instead of their
+    /// own slot 8 values (#666666 / #555555) which are too dark on the
+    /// standard dark-mode background.
+    var ghostTextColor: TerminalPaletteEntry? {
         switch self {
-        case .basic, .pro, .dracula, .oneDark, .nord: true
-        case .solarizedDark: false
+        case .basic: TerminalPaletteEntry(red: 0x96, green: 0x98, blue: 0x96)
+        case .pro: TerminalPaletteEntry(red: 0x96, green: 0x98, blue: 0x96)
+        case .solarizedDark: nil
+        case .dracula: TerminalPaletteEntry(red: 0x62, green: 0x72, blue: 0xA4)
+        case .oneDark: TerminalPaletteEntry(red: 0x5C, green: 0x63, blue: 0x70)
+        case .nord: TerminalPaletteEntry(red: 0x4C, green: 0x56, blue: 0x6A)
         }
     }
 }
@@ -299,6 +308,8 @@ enum TerminalPalette {
     ]
 
     /// One Dark (Atom editor) palette.
+    /// Note: bright colors (slots 9-14) intentionally equal their normal
+    /// counterparts — this is canonical for One Dark, not a copy-paste error.
     static let oneDark: [TerminalPaletteEntry] = [
         .init(red: 0x28, green: 0x2C, blue: 0x34), // 0  black
         .init(red: 0xE0, green: 0x6C, blue: 0x75), // 1  red
@@ -319,6 +330,8 @@ enum TerminalPalette {
     ]
 
     /// Nord — https://www.nordtheme.com
+    /// Note: bright colors (slots 9-14) intentionally equal their normal
+    /// counterparts — this is canonical for Nord, not a copy-paste error.
     static let nord: [TerminalPaletteEntry] = [
         .init(red: 0x3B, green: 0x42, blue: 0x52), // 0  black
         .init(red: 0xBF, green: 0x61, blue: 0x6A), // 1  red
@@ -364,8 +377,8 @@ enum TerminalPalette {
     /// ghost-text override to slot 0 when the theme requires it.
     static func resolvedPalette(for theme: TerminalThemeID) -> [TerminalPaletteEntry] {
         var entries = theme.palette
-        if theme.needsGhostTextOverride {
-            entries[0] = ghostTextOverride
+        if let ghostColor = theme.ghostTextColor {
+            entries[0] = ghostColor
         }
         return entries
     }
