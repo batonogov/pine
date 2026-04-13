@@ -69,9 +69,13 @@ struct LayoutStabilityTests {
 
         workspace.loadDirectory(url: tmpDir)
 
-        // Wait for async loading to complete — shallow load dispatches to
-        // a background queue then back to main, so allow generous time on CI.
-        let deadline = ContinuousClock.now + .seconds(5)
+        // The shallow load dispatches to a background GCD queue (which runs
+        // git setup + file tree scan), then sets isLoading = false via
+        // DispatchQueue.main.async. On CI runners the background work can be
+        // significantly slower than on local machines, so allow a generous
+        // 15-second timeout. Task.sleep on @MainActor yields the main
+        // executor, allowing GCD main-queue blocks to drain.
+        let deadline = ContinuousClock.now + .seconds(15)
         while workspace.isLoading, ContinuousClock.now < deadline {
             try? await Task.sleep(for: .milliseconds(50))
         }
