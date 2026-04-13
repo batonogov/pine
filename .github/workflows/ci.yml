@@ -508,20 +508,22 @@ jobs:
             test-classes: >-
               -only-testing:PineUITests/EditorWindowTests
               -only-testing:PineUITests/LineNumberGutterUITests
-          # Shard 3 — Files & Branch (15 tests)
+          # Shard 3 — Files & Branch (20 tests)
           - shard-name: "Files & Branch"
             test-classes: >-
               -only-testing:PineUITests/DeleteTests
               -only-testing:PineUITests/BranchSwitcherTests
               -only-testing:PineUITests/DiffNavigationUITests
               -only-testing:PineUITests/InlineRenameAlignmentTests
-          # Shard 4 — Search & Duplicate (15 tests)
+              -only-testing:PineUITests/SidebarFileOperationsTests
+          # Shard 4 — Search & Duplicate (21 tests)
           - shard-name: "Search & Duplicate"
             test-classes: >-
               -only-testing:PineUITests/SidebarSearchTests
               -only-testing:PineUITests/DuplicateTests
               -only-testing:PineUITests/MinimapTests
               -only-testing:PineUITests/BlameViewTests
+              -only-testing:PineUITests/SplitPaneLifecycleTests
           # Shard 5 — Security & Terminal (15 tests)
           - shard-name: "Security & Terminal"
             test-classes: >-
