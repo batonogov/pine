@@ -47,6 +47,9 @@ final class WorkspaceManager {
     /// Pending debounced notification work item.
     private var rootNodesChangedWorkItem: DispatchWorkItem?
 
+    /// Continuations waiting for `isLoading` to become `false`.
+    private var loadingContinuations: [CheckedContinuation<Void, Never>] = []
+
     /// Debounce interval for `onRootNodesChanged` notifications.
     private static let rootNodesChangedDebounce: TimeInterval = 0.2
 
@@ -88,6 +91,24 @@ final class WorkspaceManager {
 
     deinit {
         fileWatcher?.stop()
+    }
+
+    /// Suspends until the current load completes (`isLoading` becomes `false`).
+    /// Returns immediately if no load is in progress.
+    func waitForLoadingComplete() async {
+        guard isLoading else { return }
+        await withCheckedContinuation { continuation in
+            loadingContinuations.append(continuation)
+        }
+    }
+
+    /// Resumes all continuations waiting for load completion.
+    private func resumeLoadingContinuations() {
+        let continuations = loadingContinuations
+        loadingContinuations.removeAll()
+        for continuation in continuations {
+            continuation.resume()
+        }
     }
 
     func openFolder() {
@@ -200,6 +221,7 @@ final class WorkspaceManager {
                 // For shallow projects, loading is done — no Phase 2 needed.
                 if !shallowResult.wasDepthLimited {
                     self.isLoading = false
+                    self.resumeLoadingContinuations()
                     if let progressID { self.progressTracker?.endOperation(progressID) }
                 }
             }
@@ -223,6 +245,7 @@ final class WorkspaceManager {
                 self.rootNodes = fullChildren
                 self.notifyRootNodesChanged(fullChildren)
                 self.isLoading = false
+                self.resumeLoadingContinuations()
                 if let progressID { self.progressTracker?.endOperation(progressID) }
             }
         }
