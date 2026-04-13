@@ -64,9 +64,9 @@
 //  rendering decision from the 256-color index collapse so `useBrightColors`
 //  only affects the former. Tracked as a follow-up issue.
 //
-//  Additional palettes (Terminal.app "Pro", Solarized Dark/Light) are
-//  declared below but intentionally not wired up yet — a theme picker is
-//  out of scope for #765 and will land in a follow-up PR.
+//  Theme picker (issue #816) exposes all built-in palettes via the
+//  Terminal > Theme menu. `TerminalThemeID` enumerates the available
+//  themes and `TerminalThemeSettings` persists the user's choice.
 //
 
 import Foundation
@@ -106,6 +106,58 @@ struct TerminalPaletteEntry: Equatable {
 #if canImport(AppKit)
 import AppKit
 #endif
+
+/// Identifies a built-in terminal color theme.
+///
+/// Each case maps to a 16-color ANSI palette. The raw value is persisted in
+/// UserDefaults, so cases must not be renamed without a migration path.
+enum TerminalThemeID: String, CaseIterable, Identifiable {
+    case basic
+    case pro
+    case solarizedDark
+    case dracula
+    case oneDark
+    case nord
+
+    var id: String { rawValue }
+
+    /// Human-readable name shown in the Terminal > Theme menu.
+    var displayName: String {
+        switch self {
+        case .basic: "Basic"
+        case .pro: "Pro"
+        case .solarizedDark: "Solarized Dark"
+        case .dracula: "Dracula"
+        case .oneDark: "One Dark"
+        case .nord: "Nord"
+        }
+    }
+
+    /// Returns the 16-color ANSI palette for this theme.
+    var palette: [TerminalPaletteEntry] {
+        switch self {
+        case .basic: TerminalPalette.terminalAppBasic
+        case .pro: TerminalPalette.terminalAppPro
+        case .solarizedDark: TerminalPalette.solarizedDark
+        case .dracula: TerminalPalette.dracula
+        case .oneDark: TerminalPalette.oneDark
+        case .nord: TerminalPalette.nord
+        }
+    }
+
+    /// Whether slot 0 should be overridden with `ghostTextOverride`.
+    ///
+    /// Dark themes where slot 0 (black) is too dark for the dark-mode
+    /// background need this override so that zsh-autosuggestions / fish
+    /// ghost text (which hits slot 0 via SwiftTerm's 8 → 0 collapse)
+    /// remains readable. See `TerminalPalette.ghostTextOverride` docs.
+    var needsGhostTextOverride: Bool {
+        switch self {
+        case .basic, .pro, .dracula, .oneDark, .nord: true
+        case .solarizedDark: false
+        }
+    }
+}
 
 /// Pine's ANSI 16-color palette plus the non-ANSI background / foreground /
 /// cursor / selection colors required to match a terminal profile end-to-end.
@@ -184,10 +236,9 @@ enum TerminalPalette {
     /// the test target does not depend on host appearance.
     static let darkModeBackgroundReference = TerminalPaletteEntry(red: 0x1E, green: 0x1E, blue: 0x1E)
 
-    // MARK: - Alternative profiles (not wired up yet — follow-up PR)
+    // MARK: - Alternative profiles
 
-    // Terminal.app "Pro" profile — darker red, teal/green bias.
-    // TODO(#765-followup): expose a theme picker and let users opt in.
+    /// Terminal.app "Pro" profile — darker red, teal/green bias.
     static let terminalAppPro: [TerminalPaletteEntry] = [
         .init(red: 0x00, green: 0x00, blue: 0x00), // 0  black
         .init(red: 0xBB, green: 0x00, blue: 0x00), // 1  red
@@ -207,8 +258,7 @@ enum TerminalPalette {
         .init(red: 0xFF, green: 0xFF, blue: 0xFF), // 15 bright white
     ]
 
-    // Ethan Schoonover's Solarized Dark — reference values for the
-    // follow-up theme picker. Intentionally unused for now.
+    /// Ethan Schoonover's Solarized Dark.
     static let solarizedDark: [TerminalPaletteEntry] = [
         .init(red: 0x07, green: 0x36, blue: 0x42), // 0  base02
         .init(red: 0xDC, green: 0x32, blue: 0x2F), // 1  red
@@ -226,6 +276,66 @@ enum TerminalPalette {
         .init(red: 0x6C, green: 0x71, blue: 0xC4), // 13 violet
         .init(red: 0x93, green: 0xA1, blue: 0xA1), // 14 base1
         .init(red: 0xFD, green: 0xF6, blue: 0xE3), // 15 base3
+    ]
+
+    /// Dracula — https://draculatheme.com/contribute
+    static let dracula: [TerminalPaletteEntry] = [
+        .init(red: 0x21, green: 0x22, blue: 0x2C), // 0  black
+        .init(red: 0xFF, green: 0x55, blue: 0x55), // 1  red
+        .init(red: 0x50, green: 0xFA, blue: 0x7B), // 2  green
+        .init(red: 0xF1, green: 0xFA, blue: 0x8C), // 3  yellow
+        .init(red: 0xBD, green: 0x93, blue: 0xF9), // 4  blue
+        .init(red: 0xFF, green: 0x79, blue: 0xC6), // 5  magenta
+        .init(red: 0x8B, green: 0xE9, blue: 0xFD), // 6  cyan
+        .init(red: 0xF8, green: 0xF8, blue: 0xF2), // 7  white
+        .init(red: 0x62, green: 0x72, blue: 0xA4), // 8  bright black
+        .init(red: 0xFF, green: 0x6E, blue: 0x6E), // 9  bright red
+        .init(red: 0x69, green: 0xFF, blue: 0x94), // 10 bright green
+        .init(red: 0xFF, green: 0xFF, blue: 0xA5), // 11 bright yellow
+        .init(red: 0xD6, green: 0xAC, blue: 0xFF), // 12 bright blue
+        .init(red: 0xFF, green: 0x92, blue: 0xDF), // 13 bright magenta
+        .init(red: 0xA4, green: 0xFF, blue: 0xFF), // 14 bright cyan
+        .init(red: 0xFF, green: 0xFF, blue: 0xFF), // 15 bright white
+    ]
+
+    /// One Dark (Atom editor) palette.
+    static let oneDark: [TerminalPaletteEntry] = [
+        .init(red: 0x28, green: 0x2C, blue: 0x34), // 0  black
+        .init(red: 0xE0, green: 0x6C, blue: 0x75), // 1  red
+        .init(red: 0x98, green: 0xC3, blue: 0x79), // 2  green
+        .init(red: 0xE5, green: 0xC0, blue: 0x7B), // 3  yellow
+        .init(red: 0x61, green: 0xAF, blue: 0xEF), // 4  blue
+        .init(red: 0xC6, green: 0x78, blue: 0xDD), // 5  magenta
+        .init(red: 0x56, green: 0xB6, blue: 0xC2), // 6  cyan
+        .init(red: 0xAB, green: 0xB2, blue: 0xBF), // 7  white
+        .init(red: 0x5C, green: 0x63, blue: 0x70), // 8  bright black
+        .init(red: 0xE0, green: 0x6C, blue: 0x75), // 9  bright red
+        .init(red: 0x98, green: 0xC3, blue: 0x79), // 10 bright green
+        .init(red: 0xE5, green: 0xC0, blue: 0x7B), // 11 bright yellow
+        .init(red: 0x61, green: 0xAF, blue: 0xEF), // 12 bright blue
+        .init(red: 0xC6, green: 0x78, blue: 0xDD), // 13 bright magenta
+        .init(red: 0x56, green: 0xB6, blue: 0xC2), // 14 bright cyan
+        .init(red: 0xFF, green: 0xFF, blue: 0xFF), // 15 bright white
+    ]
+
+    /// Nord — https://www.nordtheme.com
+    static let nord: [TerminalPaletteEntry] = [
+        .init(red: 0x3B, green: 0x42, blue: 0x52), // 0  black
+        .init(red: 0xBF, green: 0x61, blue: 0x6A), // 1  red
+        .init(red: 0xA3, green: 0xBE, blue: 0x8C), // 2  green
+        .init(red: 0xEB, green: 0xCB, blue: 0x8B), // 3  yellow
+        .init(red: 0x81, green: 0xA1, blue: 0xC1), // 4  blue
+        .init(red: 0xB4, green: 0x8E, blue: 0xAD), // 5  magenta
+        .init(red: 0x88, green: 0xC0, blue: 0xD0), // 6  cyan
+        .init(red: 0xE5, green: 0xE9, blue: 0xF0), // 7  white
+        .init(red: 0x4C, green: 0x56, blue: 0x6A), // 8  bright black
+        .init(red: 0xBF, green: 0x61, blue: 0x6A), // 9  bright red
+        .init(red: 0xA3, green: 0xBE, blue: 0x8C), // 10 bright green
+        .init(red: 0xEB, green: 0xCB, blue: 0x8B), // 11 bright yellow
+        .init(red: 0x81, green: 0xA1, blue: 0xC1), // 12 bright blue
+        .init(red: 0xB4, green: 0x8E, blue: 0xAD), // 13 bright magenta
+        .init(red: 0x88, green: 0xC0, blue: 0xD0), // 14 bright cyan
+        .init(red: 0xEC, green: 0xEF, blue: 0xF4), // 15 bright white
     ]
 
     /// Default palette Pine actually installs today.
@@ -250,6 +360,16 @@ enum TerminalPalette {
 
     // MARK: - Build / install helpers
 
+    /// Resolves the effective palette for a given theme, applying the
+    /// ghost-text override to slot 0 when the theme requires it.
+    static func resolvedPalette(for theme: TerminalThemeID) -> [TerminalPaletteEntry] {
+        var entries = theme.palette
+        if theme.needsGhostTextOverride {
+            entries[0] = ghostTextOverride
+        }
+        return entries
+    }
+
     /// Builds the SwiftTerm `Color` array for `installColors`.
     /// Returns `nil` if the entry list does not contain exactly 16 entries —
     /// the caller should then leave SwiftTerm on its built-in default rather
@@ -261,22 +381,23 @@ enum TerminalPalette {
         return entries.map { $0.makeSwiftTermColor() }
     }
 
-    /// Installs Pine's ANSI 16-color palette on a `LocalProcessTerminalView`.
+    /// Installs an ANSI 16-color palette on a `LocalProcessTerminalView`.
     ///
     /// Scope is intentionally limited to the 16 ANSI slots. Background,
     /// foreground, cursor and selection are managed by `TerminalSession`
     /// via semantic `NSColor` values so the terminal remains light/dark
-    /// adaptive (Apple HIG). Hard-coding `#000000` here would give light
-    /// mode users a black terminal in the middle of a light UI, which is
-    /// the bug this comment exists to prevent.
+    /// adaptive (Apple HIG).
     ///
     /// Wrapped in a `guard` so that an unexpected SwiftTerm API change (the
     /// palette failing to build) leaves the terminal usable on whatever
-    /// SwiftTerm provides by default — colors might look off, but the
-    /// terminal will not crash or render blank.
+    /// SwiftTerm provides by default.
     @MainActor
-    static func install(on terminalView: LocalProcessTerminalView) {
-        guard let colors = swiftTermColors() else { return }
+    static func install(
+        on terminalView: LocalProcessTerminalView,
+        theme: TerminalThemeID = .basic
+    ) {
+        let entries = resolvedPalette(for: theme)
+        guard let colors = swiftTermColors(from: entries) else { return }
         terminalView.installColors(colors)
     }
 }

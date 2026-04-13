@@ -32,6 +32,7 @@ struct PineAppMenuCommands: Commands {
     let appDelegate: AppDelegate
     @FocusedValue(\.projectManager) private var focusedProject: ProjectManager?
     @AppStorage(TabManager.autoSaveKey) private var autoSaveEnabled = false
+    @State private var themeSettings = TerminalThemeSettings.shared
 
     var body: some Commands {
         // MARK: - App menu (About / CLI install)
@@ -474,6 +475,26 @@ struct PineAppMenuCommands: Commands {
             }
             .keyboardShortcut(.return, modifiers: [.command, .shift])
             .disabled(focusedProject?.activeTabManager.activeTab == nil)
+
+            Divider()
+
+            Menu {
+                ForEach(TerminalThemeID.allCases) { theme in
+                    Button {
+                        themeSettings.selectedTheme = theme
+                    } label: {
+                        HStack {
+                            Text(theme.displayName)
+                            if themeSettings.selectedTheme == theme {
+                                Spacer()
+                                Image(systemName: "checkmark")
+                            }
+                        }
+                    }
+                }
+            } label: {
+                Label(Strings.menuTerminalTheme, systemImage: MenuIcons.terminalTheme)
+            }
         }
 
         // Cmd+W is intercepted by AppDelegate's local event monitor

@@ -327,6 +327,9 @@ enum Strings {
     static let sidebarFiles: LocalizedStringKey = "sidebar.files"
     static let sidebarSearch: LocalizedStringKey = "sidebar.search"
 
+    // MARK: - Terminal Theme
+    static let menuTerminalTheme: LocalizedStringKey = "menu.terminalTheme"
+
     // MARK: - Terminal Search
 
     static let terminalSearchPlaceholder: LocalizedStringKey = "terminal.search.placeholder"
