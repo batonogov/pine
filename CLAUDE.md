@@ -167,9 +167,8 @@ Pine uses GCD for background work, bridged to async/await via `withCheckedContin
   - Config: `release-please-config.json`, manifest: `.release-please-manifest.json`
   - Requires `RELEASE_PLEASE_TOKEN` secret (PAT with `contents: write` + `pull-requests: write`) — default `GITHUB_TOKEN` won't trigger downstream workflows
 - **Build workflow** (`.github/workflows/release.yml`) triggers on `v*` tags
-- Pipeline: build → code sign → notarize → create DMG → GitHub Release → update Homebrew Tap
-- Secrets: `CERTIFICATE_P12`, `CERTIFICATE_PASSWORD`, `APPLE_ID`, `APPLE_ID_PASSWORD`, `APPLE_TEAM_ID`, `TAP_GITHUB_TOKEN`, `RELEASE_PLEASE_TOKEN`
-- Homebrew: `brew tap batonogov/tap && brew install --cask pine-editor`
+- Pipeline: build → code sign → notarize → create DMG → GitHub Release
+- Secrets: `CERTIFICATE_P12`, `CERTIFICATE_PASSWORD`, `APPLE_ID`, `APPLE_ID_PASSWORD`, `APPLE_TEAM_ID`, `RELEASE_PLEASE_TOKEN`
 - **CI pipeline** (`.github/workflows/ci.yml`): Lint → Build → Unit Tests (with code coverage) + 6 UI Test shards (parallel) + Flaky Test Summary. All UI tests always run (no conditional skip). Coverage threshold: 70% logic-only (SwiftUI view files excluded). Flaky tests auto-retry once and are reported separately. UI test shards must be balanced (±3 tests); verify script checks all test classes are assigned to a shard
 - **Branch protection**: requires all checks to pass + branch up-to-date with main. This means sequential merge queue — after merging one PR, others need Update Branch + re-run CI (~5.5 min each)
 - **Action pinning** — all third-party GitHub Actions are pinned by full commit SHA (not mutable tags) for supply-chain safety. To update: find the new version's commit SHA on GitHub (Tags → verify the commit), replace the SHA in the workflow file, and keep the `# vX` comment in sync
