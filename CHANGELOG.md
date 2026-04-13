@@ -1,5 +1,20 @@
 # Changelog
 
+## [1.22.0](https://github.com/batonogov/pine/compare/v1.21.0...v1.22.0) (2026-04-13)
+
+
+### Features
+
+* **editor:** insert final newline on save ([#799](https://github.com/batonogov/pine/issues/799)) ([5cc2f5d](https://github.com/batonogov/pine/commit/5cc2f5d4d1eb0be9540618683e28e1faed0761a4))
+* **terminal:** add terminal theme picker with 6 built-in palettes ([#817](https://github.com/batonogov/pine/issues/817)) ([b165ae2](https://github.com/batonogov/pine/commit/b165ae253e9b6a7b34376bc96211f5ba34bc1e12))
+
+
+### Bug Fixes
+
+* **editor:** constrain diagnostic icon to fixed rect to prevent overlap ([#811](https://github.com/batonogov/pine/issues/811)) ([528997d](https://github.com/batonogov/pine/commit/528997dca462eb3fb6b7d1c509b3068f7928f5e4))
+* **editor:** force diff gutter refresh via diffVersion counter ([#810](https://github.com/batonogov/pine/issues/810)) ([39df7ab](https://github.com/batonogov/pine/commit/39df7abfba77f293d352521a558dd566331f592b))
+* **test:** resolve flaky LayoutStabilityTests on CI ([#818](https://github.com/batonogov/pine/issues/818)) ([7996d3f](https://github.com/batonogov/pine/commit/7996d3ffe95adcf88adb770cdb3fbb89b48b4df6))
+
 ## [1.21.0](https://github.com/batonogov/pine/compare/v1.20.1...v1.21.0) (2026-04-10)
 
 

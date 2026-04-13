@@ -32,7 +32,6 @@ struct PineAppMenuCommands: Commands {
     let appDelegate: AppDelegate
     @FocusedValue(\.projectManager) private var focusedProject: ProjectManager?
     @AppStorage(TabManager.autoSaveKey) private var autoSaveEnabled = false
-
     var body: some Commands {
         // MARK: - App menu (About / CLI install)
         CommandGroup(replacing: .appInfo) {
@@ -155,6 +154,12 @@ struct PineAppMenuCommands: Commands {
 
             Toggle(isOn: $autoSaveEnabled) {
                 Label(Strings.menuAutoSave, systemImage: MenuIcons.autoSave)
+            }
+
+            Toggle(
+                isOn: Bindable(EditorSettings.shared).formatOnSave
+            ) {
+                Label(Strings.menuFormatOnSave, systemImage: MenuIcons.formatOnSave)
             }
         }
 
