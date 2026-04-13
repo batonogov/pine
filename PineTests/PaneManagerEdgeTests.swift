@@ -151,18 +151,42 @@ struct PaneManagerEdgeTests {
 
         manager.updateRatio(for: first, ratio: 0.7)
         if case .split(_, _, _, let ratio) = manager.root {
-            #expect(abs(ratio - 0.7) < 0.001 || abs(ratio - 0.3) < 0.001)
+            // updateRatio sets the parent split's ratio to exactly the clamped value
+            #expect(abs(ratio - 0.7) < 0.001)
+        } else {
+            Issue.record("Expected root to be a split node")
         }
     }
 
     @Test func updateSplitRatio_changesRatio() {
         let manager = PaneManager()
         let first = manager.activePaneID
-        _ = manager.splitPane(first, axis: .horizontal)
+        // Create a two-level tree: root splits into (split(first, third), second)
+        guard let second = manager.splitPane(first, axis: .horizontal) else {
+            Issue.record("First split failed")
+            return
+        }
+        // Split 'first' again so it becomes a child of an inner split
+        guard let third = manager.splitPane(first, axis: .vertical) else {
+            Issue.record("Second split failed")
+            return
+        }
+        #expect(third != PaneID())
 
-        manager.updateSplitRatio(containing: first, ratio: 0.8)
-        // Just verify it doesn't crash
-        #expect(manager.root.leafCount == 2)
+        // Now 'first' is a direct leaf child of an inner split node.
+        // updateSplitRatio(containing: first) targets the root split (one level up).
+        if case .split(_, _, _, let ratioBefore) = manager.root {
+            manager.updateSplitRatio(containing: first, ratio: 0.8)
+            if case .split(_, _, _, let ratioAfter) = manager.root {
+                #expect(abs(ratioAfter - 0.8) < 0.001)
+                #expect(abs(ratioAfter - ratioBefore) > 0.01)
+            } else {
+                Issue.record("Expected root to remain a split node")
+            }
+        } else {
+            Issue.record("Expected root to be a split node")
+        }
+        _ = second // suppress unused warning
     }
 
     // MARK: - Drop zone management
@@ -268,12 +292,11 @@ struct PaneManagerEdgeTests {
     @Test func openFileInPane_opensFile() {
         let manager = PaneManager()
         let paneID = manager.activePaneID
-        let url = FileManager.default.temporaryDirectory
-            .appendingPathComponent(UUID().uuidString)
-            .appendingPathComponent("test.swift")
-        try? FileManager.default.createDirectory(
-            at: url.deletingLastPathComponent(), withIntermediateDirectories: true
-        )
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("PaneMgrEdge-\(UUID().uuidString)")
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let url = dir.appendingPathComponent("test.swift")
         try? "test".write(to: url, atomically: true, encoding: .utf8)
 
         manager.openFileInPane(url: url, paneID: paneID)
@@ -285,12 +308,11 @@ struct PaneManagerEdgeTests {
     @Test func splitAndOpenFile_createsNewPaneWithFile() {
         let manager = PaneManager()
         let paneID = manager.activePaneID
-        let url = FileManager.default.temporaryDirectory
-            .appendingPathComponent(UUID().uuidString)
-            .appendingPathComponent("test.swift")
-        try? FileManager.default.createDirectory(
-            at: url.deletingLastPathComponent(), withIntermediateDirectories: true
-        )
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("PaneMgrEdge-\(UUID().uuidString)")
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let url = dir.appendingPathComponent("test.swift")
         try? "test".write(to: url, atomically: true, encoding: .utf8)
 
         let newID = manager.splitAndOpenFile(url: url, relativeTo: paneID, axis: .horizontal)

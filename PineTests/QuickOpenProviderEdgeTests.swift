@@ -156,6 +156,73 @@ struct QuickOpenProviderEdgeTests {
         #expect(results.count == 1)
     }
 
+    // MARK: - buildIndex and invalidateIndex
+
+    @Test func buildIndex_populatesFileIndex() throws {
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("PineQOBuild-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        try "content".write(
+            to: dir.appendingPathComponent("main.swift"), atomically: true, encoding: .utf8
+        )
+        try "content".write(
+            to: dir.appendingPathComponent("utils.swift"), atomically: true, encoding: .utf8
+        )
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        let root = FileNode(url: dir, projectRoot: dir)
+        let provider = QuickOpenProvider()
+        provider.buildIndex(from: [root], rootURL: dir)
+
+        let results = provider.search(query: "main")
+        #expect(!results.isEmpty)
+        #expect(results[0].fileName == "main.swift")
+    }
+
+    @Test func buildIndex_skipsRebuildWhenSameRoot() throws {
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("PineQOSkip-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        try "a".write(
+            to: dir.appendingPathComponent("alpha.swift"), atomically: true, encoding: .utf8
+        )
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        let root = FileNode(url: dir, projectRoot: dir)
+        let provider = QuickOpenProvider()
+        provider.buildIndex(from: [root], rootURL: dir)
+        let countBefore = provider.search(query: "alpha").count
+
+        // Add a new file and call buildIndex again — should be cached (same root)
+        try "b".write(
+            to: dir.appendingPathComponent("beta.swift"), atomically: true, encoding: .utf8
+        )
+        provider.buildIndex(from: [root], rootURL: dir)
+        let betaResults = provider.search(query: "beta")
+
+        #expect(countBefore == 1)
+        // "beta.swift" not indexed because buildIndex was cached (same root)
+        #expect(betaResults.isEmpty)
+    }
+
+    @Test func invalidateIndex_clearsIndex() throws {
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("PineQOInv-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        try "x".write(
+            to: dir.appendingPathComponent("x.swift"), atomically: true, encoding: .utf8
+        )
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        let root = FileNode(url: dir, projectRoot: dir)
+        let provider = QuickOpenProvider()
+        provider.buildIndex(from: [root], rootURL: dir)
+        #expect(!provider.search(query: "x").isEmpty)
+
+        provider.invalidateIndex()
+        #expect(provider.search(query: "x").isEmpty)
+    }
+
     // MARK: - Empty index search
 
     @Test func search_emptyIndex_returnsEmpty() {

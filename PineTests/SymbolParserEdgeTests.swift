@@ -12,6 +12,51 @@ import Testing
 @MainActor
 struct SymbolParserEdgeTests {
 
+    // MARK: - Empty / unsupported inputs
+
+    @Test("Empty file returns no symbols")
+    func emptyFile() {
+        let symbols = SymbolParser.parse(content: "", fileExtension: "swift")
+        #expect(symbols.isEmpty)
+    }
+
+    @Test("Empty extension returns no symbols")
+    func emptyExtension() {
+        let code = "class Foo {}"
+        let symbols = SymbolParser.parse(content: code, fileExtension: "")
+        #expect(symbols.isEmpty)
+    }
+
+    @Test("C file returns no symbols (unsupported)")
+    func cFileUnsupported() {
+        let code = """
+        void main() {}
+        struct Point { int x; int y; };
+        """
+        let symbols = SymbolParser.parse(content: code, fileExtension: "c")
+        #expect(symbols.isEmpty)
+    }
+
+    @Test("C++ file returns no symbols (unsupported)")
+    func cppFileUnsupported() {
+        let code = """
+        class Widget {};
+        void render() {}
+        """
+        let symbols = SymbolParser.parse(content: code, fileExtension: "cpp")
+        #expect(symbols.isEmpty)
+    }
+
+    @Test("Header file returns no symbols (unsupported)")
+    func headerFileUnsupported() {
+        let code = """
+        @interface NSObject
+        @end
+        """
+        let symbols = SymbolParser.parse(content: code, fileExtension: "h")
+        #expect(symbols.isEmpty)
+    }
+
     // MARK: - Ruby
 
     @Test("Ruby: parses modules")

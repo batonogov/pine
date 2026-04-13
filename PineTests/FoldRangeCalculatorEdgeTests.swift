@@ -7,8 +7,27 @@ import Testing
 import Foundation
 @testable import Pine
 
+@Suite("FoldRangeCalculator Edge Case Tests")
 @MainActor
 struct FoldRangeCalculatorEdgeTests {
+
+    // MARK: - Empty and trivial inputs
+
+    @Test func emptyText_producesNoRanges() {
+        let ranges = FoldRangeCalculator.calculate(text: "")
+        #expect(ranges.isEmpty)
+    }
+
+    @Test func bracesOnSameLine_producesNoRange() {
+        let ranges = FoldRangeCalculator.calculate(text: "{ }")
+        #expect(ranges.isEmpty)
+    }
+
+    @Test func onlyOpeningBrackets_producesNoRanges() {
+        let text = "{\n[\n("
+        let ranges = FoldRangeCalculator.calculate(text: text)
+        #expect(ranges.isEmpty)
+    }
 
     // MARK: - maxStackDepth
 

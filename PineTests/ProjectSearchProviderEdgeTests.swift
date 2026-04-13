@@ -118,6 +118,31 @@ struct ProjectSearchProviderEdgeTests {
         #expect(matches.count == 2)
     }
 
+    @Test func searchFile_caseSensitive_matchesExactCase() throws {
+        let dir = try createTestProject(files: ["test.txt": "Hello hello HELLO"])
+        defer { cleanup(dir) }
+
+        let matches = ProjectSearchProvider.searchFile(
+            at: dir.appendingPathComponent("test.txt"),
+            query: "Hello",
+            isCaseSensitive: true
+        )
+        #expect(matches.count == 1)
+        #expect(matches[0].matchRangeStart == 0)
+    }
+
+    @Test func searchFile_caseSensitive_noMatch() throws {
+        let dir = try createTestProject(files: ["test.txt": "hello world"])
+        defer { cleanup(dir) }
+
+        let matches = ProjectSearchProvider.searchFile(
+            at: dir.appendingPathComponent("test.txt"),
+            query: "Hello",
+            isCaseSensitive: true
+        )
+        #expect(matches.isEmpty)
+    }
+
     @Test func searchFile_nonexistentFile() {
         let matches = ProjectSearchProvider.searchFile(
             at: URL(fileURLWithPath: "/tmp/nonexistent_\(UUID()).txt"),

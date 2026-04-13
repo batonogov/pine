@@ -7,11 +7,23 @@ import Testing
 import AppKit
 @testable import Pine
 
-@Suite(.serialized)
+@Suite("SyntaxHighlighter Edge Case Tests", .serialized)
 @MainActor
 struct SyntaxHighlighterEdgeTests {
 
     nonisolated(unsafe) private let font = NSFont.monospacedSystemFont(ofSize: 13, weight: .regular)
+
+    /// Grammars registered during tests, cleaned up after each test.
+    private static let testGrammarNames = ["TestLangEdge", "TestFileNameGrammar", "CacheLang"]
+
+    /// Removes test grammars from shared singleton to avoid polluting other tests.
+    private func cleanupTestGrammars() {
+        let hl = SyntaxHighlighter.shared
+        for name in Self.testGrammarNames {
+            let grammar = Grammar(name: name, extensions: [], rules: [])
+            hl.unregisterGrammar(grammar)
+        }
+    }
 
     // MARK: - HighlightGeneration
 
@@ -129,6 +141,7 @@ struct SyntaxHighlighterEdgeTests {
             rules: [GrammarRule(pattern: "\\btest\\b", scope: "keyword")]
         )
         hl.registerGrammar(testGrammar)
+        defer { hl.unregisterGrammar(testGrammar) }
 
         let style = hl.commentStyle(forExtension: "testedge", fileName: nil)
         // No comment style defined → nil
@@ -149,6 +162,7 @@ struct SyntaxHighlighterEdgeTests {
             fileNames: ["TestSpecialFile"]
         )
         hl.registerGrammar(testGrammar)
+        defer { hl.unregisterGrammar(testGrammar) }
 
         let comment = hl.lineComment(forFileName: "TestSpecialFile")
         // No line comment defined → nil, but grammar should be loadable
@@ -167,6 +181,7 @@ struct SyntaxHighlighterEdgeTests {
             rules: [GrammarRule(pattern: "\\btest\\b", scope: "keyword")]
         )
         hl.registerGrammar(testGrammar)
+        defer { hl.unregisterGrammar(testGrammar) }
         hl.highlight(textStorage: storage, language: "cachelang", font: font)
 
         // Should not crash

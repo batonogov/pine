@@ -7,6 +7,7 @@ import Foundation
 import Testing
 @testable import Pine
 
+@Suite("ConfigValidator Edge Case Tests")
 @MainActor
 struct ConfigValidatorEdgeTests {
 
@@ -52,6 +53,11 @@ struct ConfigValidatorEdgeTests {
 
     @Test func builtinYAML_emptyContent() {
         let diags = BuiltinValidator.validateYAML("")
+        #expect(diags.isEmpty)
+    }
+
+    @Test func builtinYAML_emptyLinesOnly() {
+        let diags = BuiltinValidator.validateYAML("\n\n\n")
         #expect(diags.isEmpty)
     }
 
