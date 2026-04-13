@@ -55,7 +55,19 @@ nonisolated private func runShell(_ command: String, at dir: URL) throws -> Stri
     process.currentDirectoryURL = dir
     var env = ProcessInfo.processInfo.environment
     if env["DEVELOPER_DIR"] == nil {
-        env["DEVELOPER_DIR"] = "/Applications/Xcode.app/Contents/Developer"
+        // On CI, Xcode may be at a non-standard path (e.g. Xcode_26.5_beta.app).
+        // Use xcode-select -p to discover the active developer directory
+        // rather than hardcoding a path that may not exist on the runner.
+        let xcSelect = Process()
+        xcSelect.executableURL = URL(fileURLWithPath: "/usr/bin/xcode-select")
+        xcSelect.arguments = ["-p"]
+        let pipe = Pipe()
+        xcSelect.standardOutput = pipe
+        try? xcSelect.run()
+        xcSelect.waitUntilExit()
+        let path = String(data: pipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8)?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        env["DEVELOPER_DIR"] = path ?? "/Applications/Xcode.app/Contents/Developer"
     }
     process.environment = env
     let outPipe = Pipe()
