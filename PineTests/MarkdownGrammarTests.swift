@@ -182,21 +182,30 @@ struct MarkdownGrammarTests {
             "README.md must be valid UTF-8"
         )
         let grammar = try loadMarkdownGrammar()
+        // Also register shell grammar so nested highlighting can resolve ```bash
+        let shellGrammar = try loadGrammar(named: "shell")
         hl.registerGrammar(grammar)
+        hl.registerGrammar(shellGrammar)
         let storage = NSTextStorage(string: content)
         hl.highlight(textStorage: storage, language: "markdown", font: font)
 
         // README contains `brew tap batonogov/tap` inside a ```bash block.
+        // With nested highlighting, `brew` is recognized as a shell function
+        // and gets inner grammar color instead of flat fencedColor.
         let ns = content as NSString
         let brewRange = ns.range(of: "brew tap batonogov/tap")
         if brewRange.location != NSNotFound {
-            #expect(color(in: storage, at: brewRange.location) == fencedColor,
-                    "brew tap line inside fenced block must be fenced-colored")
+            let functionColor = hl.theme.color(for: "function")
+            #expect(color(in: storage, at: brewRange.location) == functionColor,
+                    "brew inside ```bash block must get shell function color via nested highlighting")
         }
     }
 
     @Test func fencedCodeBlockWithLanguageTag() throws {
         // Regression for #750 — ```bash ... ``` must color interior lines.
+        // With nested highlighting, recognized tokens get inner grammar colors.
+        let shellGrammar = try loadGrammar(named: "shell")
+        hl.registerGrammar(shellGrammar)
         let storage = try highlight("""
         intro paragraph.
 
@@ -209,10 +218,15 @@ struct MarkdownGrammarTests {
         """)
         let openFence = position(of: "```bash", in: storage)
         #expect(color(in: storage, at: openFence) == fencedColor)
+        // `brew` is a shell "function" scope — nested highlighting overrides fencedColor
+        let functionColor = hl.theme.color(for: "function")
         let line1 = position(of: "brew tap", in: storage)
-        #expect(color(in: storage, at: line1) == fencedColor)
+        #expect(color(in: storage, at: line1) == functionColor)
         let line2 = position(of: "brew install", in: storage)
-        #expect(color(in: storage, at: line2) == fencedColor)
+        #expect(color(in: storage, at: line2) == functionColor)
+        // Non-keyword tokens like "tap" still get fencedColor (no inner grammar match)
+        let tapPos = position(of: "tap ", in: storage)
+        #expect(color(in: storage, at: tapPos) == fencedColor)
         // Prose after the block stays neutral.
         let afterPos = position(of: "after paragraph", in: storage)
         #expect(color(in: storage, at: afterPos) == prose)
@@ -232,16 +246,21 @@ struct MarkdownGrammarTests {
     }
 
     @Test func fencedCodeBlockFiftyLines() throws {
+        // With nested highlighting, `let` inside ```swift gets keyword color.
+        let swiftGrammar = try loadGrammar(named: "swift")
+        hl.registerGrammar(swiftGrammar)
         var lines = ["```swift"]
         for i in 0..<50 {
             lines.append("let var\(i) = \(i)")
         }
         lines.append("```")
         let storage = try highlight(lines.joined(separator: "\n"))
+        let keywordColor = hl.theme.color(for: "keyword")
         for i in 0..<50 {
             let needle = "let var\(i)"
             let pos = position(of: needle, in: storage)
-            #expect(color(in: storage, at: pos) == fencedColor, "line \(i) not fenced-colored")
+            // `let` is a Swift keyword — nested highlighting gives it keyword color
+            #expect(color(in: storage, at: pos) == keywordColor, "line \(i): `let` must get keyword color")
         }
     }
 
@@ -300,7 +319,7 @@ struct MarkdownGrammarTests {
         // Edge: a fenced block larger than the viewport+context window.
         // The user is scrolled into the middle of it — fence markers are
         // far above and below. Highlighter must still color the visible
-        // interior lines as fenced.
+        // interior lines. With nested highlighting, `let` gets keyword color.
         let grammar = try loadMarkdownGrammar()
         hl.registerGrammar(grammar)
 
@@ -322,10 +341,11 @@ struct MarkdownGrammarTests {
             language: "markdown", font: font
         )
 
-        // The inner line must be fenced-colored even though fence markers
-        // are ~500 lines away in both directions.
-        #expect(color(in: storage, at: targetRange.location) == fencedColor,
-                "deep interior of long fenced block must be fenced-colored")
+        // With nested highlighting, `let` is a Swift keyword and gets
+        // keyword color instead of flat fencedColor.
+        let keywordColor = hl.theme.color(for: "keyword")
+        #expect(color(in: storage, at: targetRange.location) == keywordColor,
+                "deep interior of long fenced block: `let` must get keyword color via nested highlighting")
     }
 
     @Test func fencedCodeBlockInLargeFile_highlightVisibleRange() throws {
@@ -335,6 +355,7 @@ struct MarkdownGrammarTests {
         // is more expensive here. This is NOT a direct test of
         // `viewportHighlightThreshold` (which lives in `CodeEditorView`),
         // but of the `highlightVisibleRange` path in SyntaxHighlighter.
+        // With nested highlighting, `let` gets keyword color inside ```swift.
         let grammar = try loadMarkdownGrammar()
         hl.registerGrammar(grammar)
 
@@ -354,10 +375,12 @@ struct MarkdownGrammarTests {
             language: "markdown", font: font
         )
 
+        // `let` is a Swift keyword — nested highlighting gives it keyword color
+        let keywordColor = hl.theme.color(for: "keyword")
         let innerPos = (text as NSString).range(of: "let inner = 42").location
-        #expect(color(in: storage, at: innerPos) == fencedColor)
+        #expect(color(in: storage, at: innerPos) == keywordColor)
         let anotherPos = (text as NSString).range(of: "let another = 7").location
-        #expect(color(in: storage, at: anotherPos) == fencedColor)
+        #expect(color(in: storage, at: anotherPos) == keywordColor)
     }
 
     @Test func headingInsideFencedCodeIsNotHeading() throws {
