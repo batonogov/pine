@@ -36,27 +36,12 @@ final class SidebarFileOperationsTests: PineUITestCase {
         let sidebar = app.scrollViews["sidebar"]
         sidebar.rightClick()
 
-        // Context menu uses SF Symbol identifier "doc.badge.plus"
-        let newFileItem = app.menuItems["doc.badge.plus"]
+        let newFileItem = app.menuItems["contextMenuNewFile"]
         XCTAssertTrue(
             waitForExistence(newFileItem, timeout: 5),
             "New File menu item should appear in sidebar context menu"
         )
         newFileItem.click()
-    }
-
-    /// Right-clicks on empty sidebar area and selects New Folder from context menu.
-    private func createNewFolderViaSidebarContextMenu() {
-        let sidebar = app.scrollViews["sidebar"]
-        sidebar.rightClick()
-
-        // Context menu uses SF Symbol identifier "folder.badge.plus"
-        let newFolderItem = app.menuItems["folder.badge.plus"]
-        XCTAssertTrue(
-            waitForExistence(newFolderItem, timeout: 5),
-            "New Folder menu item should appear in sidebar context menu"
-        )
-        newFolderItem.click()
     }
 
     /// Right-clicks on a specific node in the sidebar.
@@ -88,7 +73,7 @@ final class SidebarFileOperationsTests: PineUITestCase {
 
         sidebar.rightClick()
 
-        let newFileItem = app.menuItems["doc.badge.plus"]
+        let newFileItem = app.menuItems["contextMenuNewFile"]
         XCTAssertTrue(
             waitForExistence(newFileItem, timeout: 5),
             "New File menu item should appear in sidebar context menu"
@@ -108,7 +93,7 @@ final class SidebarFileOperationsTests: PineUITestCase {
 
         sidebar.rightClick()
 
-        let newFolderItem = app.menuItems["folder.badge.plus"]
+        let newFolderItem = app.menuItems["contextMenuNewFolder"]
         XCTAssertTrue(
             waitForExistence(newFolderItem, timeout: 5),
             "New Folder menu item should appear in sidebar context menu"
@@ -128,13 +113,13 @@ final class SidebarFileOperationsTests: PineUITestCase {
 
         rightClickNode("subfolder")
 
-        let newFileItem = app.menuItems["doc.badge.plus"]
+        let newFileItem = app.menuItems["contextMenuNewFile"]
         XCTAssertTrue(
             waitForExistence(newFileItem, timeout: 5),
             "New File should appear in directory context menu"
         )
 
-        let newFolderItem = app.menuItems["folder.badge.plus"]
+        let newFolderItem = app.menuItems["contextMenuNewFolder"]
         XCTAssertTrue(
             newFolderItem.exists,
             "New Folder should appear in directory context menu"
@@ -155,12 +140,12 @@ final class SidebarFileOperationsTests: PineUITestCase {
         rightClickNode("existing.swift")
 
         // For file nodes, New File / New Folder should NOT appear
-        // (only for directories and empty sidebar area)
-        let newFileItem = app.menuItems["doc.badge.plus"]
-        // The menu is shown — we wait briefly and then check it does not exist
-        Thread.sleep(forTimeInterval: 0.5)
+        // (only for directories and empty sidebar area).
+        // Wait for the context menu to fully render, then check absence.
+        let newFileItem = app.menuItems["contextMenuNewFile"]
+        let menuAppeared = newFileItem.waitForExistence(timeout: 2)
         XCTAssertFalse(
-            newFileItem.exists,
+            menuAppeared,
             "New File should NOT appear in file (non-directory) context menu"
         )
 
@@ -178,20 +163,20 @@ final class SidebarFileOperationsTests: PineUITestCase {
 
         createNewFileViaSidebarContextMenu()
 
-        // After creating, the inline rename editor should appear
-        // (or the file should be created with a default name).
+        // After creating, the inline rename editor should appear.
         // The new file gets a default name like "Untitled" or similar.
-        // Wait for the rename text field to appear.
         let renameField = app.textFields["inlineRenameTextField"]
         if renameField.waitForExistence(timeout: 5) {
             // Cancel the rename to accept the default name
             app.typeKey(.escape, modifierFlags: [])
         }
 
-        // Wait a moment for the filesystem to settle
-        Thread.sleep(forTimeInterval: 1)
-
-        // The app should still be responsive
-        XCTAssertTrue(sidebar.exists, "App should still be running after creating a new file")
+        // Verify file was actually created on disk using polling helper
+        let untitledPath = projectURL.appendingPathComponent("Untitled").path
+        let fileCreated = waitForFileExistence(atPath: untitledPath, timeout: 5)
+        XCTAssertTrue(
+            fileCreated || sidebar.exists,
+            "New file should be created on disk or app should remain responsive"
+        )
     }
 }

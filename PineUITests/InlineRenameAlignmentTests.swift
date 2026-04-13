@@ -135,7 +135,7 @@ final class InlineRenameAlignmentTests: PineUITestCase {
         launchWithProject(projectURL)
         expandNestedFolder()
         openContextMenuOnNestedFolder()
-        clickContextItem("doc.badge.plus")
+        clickContextItem("contextMenuNewFile")
         assertRenameIsAligned(siblingID: "fileNode_inside.swift")
     }
 
@@ -145,7 +145,7 @@ final class InlineRenameAlignmentTests: PineUITestCase {
         launchWithProject(projectURL)
         expandNestedFolder()
         openContextMenuOnNestedFolder()
-        clickContextItem("folder.badge.plus")
+        clickContextItem("contextMenuNewFolder")
         assertRenameIsAligned(siblingID: "fileNode_inside.swift")
     }
 

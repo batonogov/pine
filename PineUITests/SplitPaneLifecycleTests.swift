@@ -105,9 +105,9 @@ final class SplitPaneLifecycleTests: PineUITestCase {
         )
     }
 
-    // MARK: - Close terminal restores single pane
+    // MARK: - Hide terminal restores single pane
 
-    func testCloseTerminalRestoresSinglePane() throws {
+    func testHideTerminalRestoresSinglePane() throws {
         launchAndWaitForLoad()
         openFile("main.swift")
 

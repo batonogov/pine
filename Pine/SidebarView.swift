@@ -206,6 +206,7 @@ struct SidebarView: View {
                             } label: {
                                 Label(Strings.contextNewFile, systemImage: MenuIcons.newFile)
                             }
+                            .accessibilityIdentifier(AccessibilityID.contextMenuNewFile)
 
                             Button {
                                 editState.createNewItem(
@@ -217,6 +218,7 @@ struct SidebarView: View {
                             } label: {
                                 Label(Strings.contextNewFolder, systemImage: MenuIcons.newFolder)
                             }
+                            .accessibilityIdentifier(AccessibilityID.contextMenuNewFolder)
 
                             Divider()
 
