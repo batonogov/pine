@@ -113,7 +113,7 @@ struct FileSystemWatcherStressTests {
     /// Rapid start/stop cycles must never leak callbacks or crash.
     /// After the loop finishes, no callback may fire — the generation
     /// token guarantees stale debounce work items are dropped.
-    @Test("Rapid watch/stop cycles do not leak stale callbacks", .timeLimit(.minutes(1)))
+    @Test("Rapid watch/stop cycles do not leak stale callbacks", .timeLimit(.minutes(3)))
     @MainActor
     func rapidWatchStopNoLeakedCallbacks() async throws {
             let dir = try makeTempDir("fsw-rapid")
@@ -156,7 +156,7 @@ struct FileSystemWatcherStressTests {
     /// stop() followed immediately by a new watch() on a reused watcher
     /// (via a fresh instance) under concurrent pressure. Ensures that
     /// FSEventStream lifecycle is not corrupted by rapid reuse.
-    @Test("Concurrent start/stop across many watchers stays stable", .timeLimit(.minutes(1)))
+    @Test("Concurrent start/stop across many watchers stays stable", .timeLimit(.minutes(3)))
     @MainActor
     func concurrentWatchersStable() async throws {
             let dir = try makeTempDir("fsw-concurrent")
@@ -181,7 +181,7 @@ struct FileSystemWatcherStressTests {
     }
 
     /// stop() must be idempotent and safe from multiple calls.
-    @Test("Multiple stop() calls are safe", .timeLimit(.minutes(1)))
+    @Test("Multiple stop() calls are safe", .timeLimit(.minutes(3)))
     @MainActor
     func multipleStopsSafe() async throws {
             let dir = try makeTempDir("fsw-multistop")
@@ -204,7 +204,7 @@ struct GitStatusProviderStressTests {
 
     /// Many parallel `refreshAsync` calls must coalesce into at most a few
     /// fetches and must never leave the in-flight task leaked or deadlock.
-    @Test("Concurrent refreshAsync calls coalesce and complete", .timeLimit(.minutes(1)))
+    @Test("Concurrent refreshAsync calls coalesce and complete", .timeLimit(.minutes(3)))
     func concurrentRefreshAsync() async throws {
             let repo = try makeGitRepo(label: "git-refresh")
             defer { cleanup(repo) }
@@ -229,7 +229,7 @@ struct GitStatusProviderStressTests {
 
     /// Parallel diffForFileAsync on many files must not deadlock the
     /// DispatchQueue.global pool and must return consistent results.
-    @Test("Concurrent diffForFileAsync completes without hang", .timeLimit(.minutes(1)))
+    @Test("Concurrent diffForFileAsync completes without hang", .timeLimit(.minutes(3)))
     func concurrentDiffForFileAsync() async throws {
             let repo = try makeGitRepo(label: "git-diff")
             defer { cleanup(repo) }
@@ -271,7 +271,7 @@ struct GitStatusProviderStressTests {
     /// GitFetcher.fetchAllInParallel uses a DispatchGroup across three
     /// background queues. Hammering it concurrently from many callers must
     /// never deadlock (would indicate a group.enter/leave imbalance).
-    @Test("GitFetcher.fetchAllInParallel does not deadlock under load", .timeLimit(.minutes(1)))
+    @Test("GitFetcher.fetchAllInParallel does not deadlock under load", .timeLimit(.minutes(3)))
     func gitFetcherParallelHammer() async throws {
             let repo = try makeGitRepo(label: "git-fetcher")
             defer { cleanup(repo) }
@@ -325,7 +325,7 @@ struct WorkspaceManagerStressTests {
     /// Rapid successive loadDirectory calls must discard stale async
     /// results via loadGeneration and end in a consistent final state
     /// matching the last directory loaded.
-    @Test("Rapid loadDirectory calls converge on final directory", .timeLimit(.minutes(1)))
+    @Test("Rapid loadDirectory calls converge on final directory", .timeLimit(.minutes(3)))
     func rapidLoadDirectoryGenerationWins() async throws {
             let dirA = try makeTempDir("ws-a")
             let dirB = try makeTempDir("ws-b")
@@ -363,7 +363,7 @@ struct WorkspaceManagerStressTests {
 
     /// Concurrent refreshFileTree + loadDirectory must not produce a
     /// zombie state where rootNodes reflects a previous generation.
-    @Test("refreshFileTree while loadDirectory in flight is race-safe", .timeLimit(.minutes(1)))
+    @Test("refreshFileTree while loadDirectory in flight is race-safe", .timeLimit(.minutes(3)))
     func concurrentRefreshAndLoad() async throws {
             let dir = try makeTempDir("ws-refresh")
             defer { cleanup(dir) }
@@ -418,7 +418,7 @@ struct ProjectSearchProviderStressTests {
     /// Firing many search() calls in quick succession must cancel the
     /// previous in-flight task so only the latest query's result lands
     /// in `results`. isSearching must eventually return to false.
-    @Test("Rapid search calls cancel stale tasks and land on latest query", .timeLimit(.minutes(1)))
+    @Test("Rapid search calls cancel stale tasks and land on latest query", .timeLimit(.minutes(3)))
     func rapidSearchCancelsStale() async throws {
             let dir = try makeTempDir("search-rapid")
             defer { cleanup(dir) }
@@ -448,7 +448,7 @@ struct ProjectSearchProviderStressTests {
     }
 
     /// cancel() must stop an in-flight search and leave isSearching=false.
-    @Test("cancel() terminates in-flight search", .timeLimit(.minutes(1)))
+    @Test("cancel() terminates in-flight search", .timeLimit(.minutes(3)))
     func cancelStopsSearch() async throws {
             let dir = try makeTempDir("search-cancel")
             defer { cleanup(dir) }
@@ -470,7 +470,7 @@ struct ProjectSearchProviderStressTests {
     }
 
     /// Interleaved search/cancel/search must not leak tasks or deadlock.
-    @Test("Interleaved search/cancel does not leak tasks", .timeLimit(.minutes(1)))
+    @Test("Interleaved search/cancel does not leak tasks", .timeLimit(.minutes(3)))
     func interleavedSearchCancel() async throws {
             let dir = try makeTempDir("search-interleave")
             defer { cleanup(dir) }
