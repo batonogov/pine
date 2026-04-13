@@ -138,7 +138,7 @@ struct FileEncodingTests {
 
         // Read back with UTF-16 to verify encoding was preserved
         let onDisk = try String(contentsOf: url, encoding: .utf16)
-        #expect(onDisk == "Modified")
+        #expect(onDisk == "Modified\n")
     }
 
     @Test("Save preserves Latin-1 encoding")
@@ -154,7 +154,7 @@ struct FileEncodingTests {
         #expect(success == true)
 
         let onDisk = try String(contentsOf: url, encoding: .isoLatin1)
-        #expect(onDisk == "résumé")
+        #expect(onDisk == "résumé\n")
     }
 
     @Test("Save As preserves encoding")
@@ -172,7 +172,7 @@ struct FileEncodingTests {
         try manager.saveActiveTabAs(to: newURL)
 
         let onDisk = try String(contentsOf: newURL, encoding: .utf16)
-        #expect(onDisk == "Hello")
+        #expect(onDisk == "Hello\n")
     }
 
     @Test("Duplicate preserves encoding")
@@ -461,7 +461,7 @@ struct FileEncodingTests {
         #expect(success == true)
 
         let onDisk = try String(contentsOf: url, encoding: .windowsCP1251)
-        #expect(onDisk == "Мир")
+        #expect(onDisk == "Мир\n")
     }
 
     // MARK: - displayName edge cases
