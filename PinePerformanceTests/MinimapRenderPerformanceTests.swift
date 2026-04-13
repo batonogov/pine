@@ -169,21 +169,56 @@ final class MinimapRenderPerformanceTests: XCTestCase {
         }
     }
 
-    /// Benchmarks diff marker lookup during minimap rendering.
-    /// The minimap checks each line against a diff map.
-    func testMinimapDiffMarkerLookup() {
-        // Simulate 200 changed lines scattered across a 5000-line file
+    /// Benchmarks minimap data preparation with diff markers overlaid.
+    /// Simulates the real minimap render path: walk line fragments,
+    /// extract syntax colors, and check each line against a diff map.
+    func testMinimapDataPrepWithDiffMarkers() {
+        let (textView, textStorage) = createTextSystem(lines: 3000)
+
+        guard let layoutManager = textView.layoutManager,
+              let textContainer = textView.textContainer else {
+            XCTFail("Text system not configured")
+            return
+        }
+
+        // Simulate ~120 changed lines scattered across the file
         var diffMap: [Int: GitLineDiff.Kind] = [:]
-        for i in stride(from: 10, to: 5000, by: 25) {
+        for i in stride(from: 10, to: 3000, by: 25) {
             diffMap[i] = [.added, .modified, .deleted][i % 3]
         }
 
+        let fullRange = layoutManager.glyphRange(for: textContainer)
+
         measure {
+            var lineIndex = 0
             var markerCount = 0
-            for line in 1...5000 where diffMap[line] != nil {
-                markerCount += 1
+
+            layoutManager.enumerateLineFragments(forGlyphRange: fullRange) { lineRect, _, _, glyphRange, _ in
+                let charRange = layoutManager.characterRange(
+                    forGlyphRange: glyphRange, actualGlyphRange: nil
+                )
+                _ = lineRect.origin.y * 0.12
+
+                // Syntax color segments (same as real minimap)
+                var pos = charRange.location
+                let end = NSMaxRange(charRange)
+                while pos < end {
+                    var effectiveRange = NSRange()
+                    _ = textStorage.attribute(
+                        .foregroundColor, at: pos, effectiveRange: &effectiveRange
+                    )
+                    pos = min(NSMaxRange(effectiveRange), end)
+                }
+
+                // Diff marker lookup per line (same as real minimap)
+                if diffMap[lineIndex] != nil {
+                    markerCount += 1
+                }
+                lineIndex += 1
             }
-            XCTAssertGreaterThan(markerCount, 100)
+
+            XCTAssertGreaterThan(lineIndex, 100, "Expected many line fragments")
+            XCTAssertGreaterThan(markerCount, 10, "Expected some diff markers")
         }
     }
 

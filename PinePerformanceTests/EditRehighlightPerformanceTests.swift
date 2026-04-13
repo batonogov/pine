@@ -145,12 +145,12 @@ final class EditRehighlightPerformanceTests: XCTestCase {
 
         let insertPoint = (code as NSString).length / 2
 
+        let chars = Array("abcdefghij")
+
         measure {
             var offset = 0
             for i in 0..<100 {
-                let char = String("abcdefghij"[
-                    "abcdefghij".index("abcdefghij".startIndex, offsetBy: i % 10)
-                ])
+                let char = String(chars[i % 10])
                 let loc = insertPoint + offset
                 textStorage.replaceCharacters(
                     in: NSRange(location: loc, length: 0),

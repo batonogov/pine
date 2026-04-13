@@ -104,4 +104,4 @@ jobs:
         with:
           name: PerformanceResults-${{ github.run_id }}
           path: PerformanceResults.xcresult
-          retention-days: 30
+          retention-days: 14
