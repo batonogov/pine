@@ -179,7 +179,9 @@ enum TerminalPalette {
     /// Reference background used by the contrast assertions for the
     /// dark-mode `NSColor.textBackgroundColor` worst case. Hard-coded so
     /// the test target does not depend on host appearance.
-    static let darkModeBackgroundReference = TerminalPaletteEntry(red: 0x1E, green: 0x1E, blue: 0x1E)
+    /// One Dark canonical background (#282C34) — matches the hardcoded
+    /// background in `TerminalSession.swift`.
+    static let darkModeBackgroundReference = TerminalPaletteEntry(red: 0x28, green: 0x2C, blue: 0x34)
 
     /// Default palette Pine actually installs.
     ///
