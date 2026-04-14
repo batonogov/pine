@@ -9,8 +9,7 @@ import Foundation
 import Testing
 @testable import Pine
 
-@Suite("Fuzz Go To Line Parser Tests")
-@MainActor
+@Suite("Fuzz Go To Line Parser Tests", .timeLimit(.minutes(1)))
 struct FuzzGoToLineParserTests {
 
     @Test func fuzzGoToLineParser_randomInput() {

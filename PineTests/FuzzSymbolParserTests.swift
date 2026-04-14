@@ -9,8 +9,7 @@ import Foundation
 import Testing
 @testable import Pine
 
-@Suite("Fuzz Symbol Parser Tests")
-@MainActor
+@Suite("Fuzz Symbol Parser Tests", .timeLimit(.minutes(1)))
 struct FuzzSymbolParserTests {
 
     @Test func fuzzSymbolParser_randomInput() {

@@ -9,8 +9,7 @@ import Foundation
 import Testing
 @testable import Pine
 
-@Suite("Fuzz Config Validator Tests")
-@MainActor
+@Suite("Fuzz Config Validator Tests", .timeLimit(.minutes(1)))
 struct FuzzConfigValidatorTests {
 
     @Test func fuzzParseYamllint_randomInput() {

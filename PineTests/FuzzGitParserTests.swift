@@ -11,8 +11,7 @@ import Testing
 
 // MARK: - Git Diff Parser
 
-@Suite("Fuzz Git Diff Parser Tests")
-@MainActor
+@Suite("Fuzz Git Diff Parser Tests", .timeLimit(.minutes(1)))
 struct FuzzGitDiffParserTests {
 
     @Test func fuzzParseDiff_randomInput() {
@@ -135,8 +134,7 @@ struct FuzzGitDiffParserTests {
 
 // MARK: - Git Blame Parser
 
-@Suite("Fuzz Git Blame Parser Tests")
-@MainActor
+@Suite("Fuzz Git Blame Parser Tests", .timeLimit(.minutes(1)))
 struct FuzzGitBlameParserTests {
 
     @Test func fuzzParseBlame_randomInput() {
@@ -272,8 +270,7 @@ struct FuzzGitBlameParserTests {
 
 // MARK: - Git Status Parser
 
-@Suite("Fuzz Git Status Parser Tests")
-@MainActor
+@Suite("Fuzz Git Status Parser Tests", .timeLimit(.minutes(1)))
 struct FuzzGitStatusParserTests {
 
     @Test func fuzzParseStatusOutput_randomInput() {

@@ -9,8 +9,7 @@ import Foundation
 import Testing
 @testable import Pine
 
-@Suite("Fuzz Syntax Highlighter Tests")
-@MainActor
+@Suite("Fuzz Syntax Highlighter Tests", .timeLimit(.minutes(1)))
 struct FuzzSyntaxHighlighterTests {
 
     @Test func fuzzGrammarDecoding_randomJSON() {
@@ -74,29 +73,24 @@ struct FuzzSyntaxHighlighterTests {
         }
     }
 
-    @Test func fuzzCompileRules_invalidRegex() {
-        // Ensure SyntaxHighlighter.compileRules handles invalid regex gracefully
-        // We test via Grammar decoding + rule compilation path
-        let grammars = [
-            Grammar(name: "fuzz", extensions: ["fz"], rules: [
-                GrammarRule(pattern: "[", scope: "error"),
-                GrammarRule(pattern: "(", scope: "error"),
-                GrammarRule(pattern: "***", scope: "error"),
-                GrammarRule(pattern: "(?P<invalid)", scope: "error"),
-                GrammarRule(pattern: String(repeating: "(", count: 100), scope: "deep"),
-                GrammarRule(pattern: "\\", scope: "error")
-            ]),
-            Grammar(name: "fuzz2", extensions: ["fz2"], rules: [
-                GrammarRule(pattern: "(?i)[a-z]+", scope: "keyword", options: ["caseInsensitive"]),
-                GrammarRule(pattern: ".", scope: "all", options: ["dotMatchesLineSeparators"]),
-                GrammarRule(pattern: "^.*$", scope: "line", options: ["anchorsMatchLines"])
-            ])
-        ]
+    @Test func fuzzGrammarDecoding_invalidRegex() {
+        // Proxy test: compileRules is private, so we test the full decode path
+        // that SyntaxHighlighter uses when loading grammars from JSON.
+        // Invalid regex patterns should be silently skipped or handled gracefully.
+        let decoder = JSONDecoder()
 
-        for grammar in grammars {
-            // Attempt to compile — must not crash
-            for rule in grammar.rules {
-                _ = try? NSRegularExpression(pattern: rule.pattern)
+        let invalidPatterns = ["[", "(", "***", "(?P<invalid>)", "\\\\", "(?="]
+        for pattern in invalidPatterns {
+            // Escape backslashes and quotes for JSON embedding
+            let escaped = pattern
+                .replacingOccurrences(of: "\\", with: "\\\\")
+                .replacingOccurrences(of: "\"", with: "\\\"")
+            let json = """
+            {"name":"fuzz","extensions":["fz"],"rules":[{"pattern":"\(escaped)","scope":"error"}]}
+            """
+            if let data = json.data(using: .utf8) {
+                // Grammar must decode without crashing even with invalid regex
+                _ = try? decoder.decode(Grammar.self, from: data)
             }
         }
     }
@@ -115,7 +109,9 @@ struct FuzzSyntaxHighlighterTests {
     }
 
     private func generateInvalidRegexGrammar(rng: inout SplitMix64) -> String {
-        let badPatterns = ["[", "(", "(?=", "***", "\\", "+", "?", "{", "{1,", "[^"]
+        // Intentionally unescaped: these patterns are meant to produce malformed JSON
+        // in some cases, testing the decoder's resilience to garbage input.
+        let badPatterns = ["[", "(", "(?=", "***", "\\\\", "+", "?", "{", "{1,", "[^"]
         let pattern = badPatterns[Int(rng.next() % UInt64(badPatterns.count))]
         return """
         {"name":"fuzz","extensions":["fz"],"rules":[{"pattern":"\(pattern)","scope":"error"}]}

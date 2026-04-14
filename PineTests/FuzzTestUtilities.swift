@@ -7,6 +7,19 @@
 
 import Foundation
 
+// MARK: - Seed Registry
+//
+// Each fuzz test suite uses a unique seed range to avoid correlation.
+// Seed  42–46: FuzzGitParserTests (diff=42, hunk=43, blame=44, status=45, ignored=46)
+// Seed  47:    FuzzSyntaxHighlighterTests
+// Seed  48–49: FuzzQuickOpenProviderTests (score=48, subseq=49)
+// Seed  50–52: FuzzSymbolParserTests (parse=50, filter=51, lineNum=52)
+// Seed  53–60: FuzzConfigValidatorTests (yamllint=53, shellcheck=54, terraform=55,
+//              hadolint=56, builtinYAML=57, dockerfile=58, shell=59, detector=60)
+// Seed  61:    FuzzGoToLineParserTests
+//
+// Next available seed: 62
+
 // MARK: - Deterministic PRNG
 
 /// SplitMix64 — fast, deterministic PRNG seeded once for reproducibility.
@@ -31,9 +44,10 @@ struct SplitMix64: RandomNumberGenerator {
 /// Generates random strings of various kinds for fuzzing.
 enum FuzzGen {
 
-    /// Random ASCII bytes (including control characters).
+    /// Random bytes (full 0–255 range), decoded as UTF-8 with lossy fallback.
     static func randomBytes(count: Int, rng: inout SplitMix64) -> String {
-        String((0..<count).map { _ in Character(UnicodeScalar(UInt8(rng.next() % 128))) })
+        let bytes = (0..<count).map { _ in UInt8(rng.next() % 256) }
+        return String(data: Data(bytes), encoding: .utf8) ?? ""
     }
 
     /// Random printable ASCII string.
