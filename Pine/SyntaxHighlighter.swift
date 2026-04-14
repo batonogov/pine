@@ -203,6 +203,24 @@ nonisolated final class SyntaxHighlighter: @unchecked Sendable {
         }
     }
 
+    #if DEBUG
+    /// Removes a previously registered grammar (for test cleanup).
+    func unregisterGrammar(_ grammar: Grammar) {
+        lock.withLock {
+            for ext in grammar.extensions where grammarsByExtension[ext.lowercased()]?.name == grammar.name {
+                grammarsByExtension.removeValue(forKey: ext.lowercased())
+            }
+            if let fileNames = grammar.fileNames {
+                for name in fileNames where grammarsByFileName[name]?.name == grammar.name {
+                    grammarsByFileName.removeValue(forKey: name)
+                }
+            }
+            grammarsByFilePattern.removeAll { $0.grammar.name == grammar.name }
+            compiledRules.removeValue(forKey: grammar.name)
+        }
+    }
+    #endif
+
     // MARK: - Загрузка грамматик
 
     /// Ищет все .json файлы в папке Grammars/ внутри бандла и загружает их.
