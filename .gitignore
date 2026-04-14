@@ -37,7 +37,7 @@ DerivedData/
 assets/screenshot-unknown-*.png
 
 # Snapshot test failure artifacts
-*.actual.png
+PineTests/SnapshotTests/__Snapshots__/*.actual.png
 
 # Claude Code
 .claude/

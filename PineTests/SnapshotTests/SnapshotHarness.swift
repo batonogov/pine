@@ -119,8 +119,8 @@ enum SnapshotAppearance {
 
     var nsAppearance: NSAppearance {
         switch self {
-        case .light: return NSAppearance(named: .aqua) ?? NSAppearance()
-        case .dark: return NSAppearance(named: .darkAqua) ?? NSAppearance()
+        case .light: return NSAppearance(named: .aqua) ?? .currentDrawing()
+        case .dark: return NSAppearance(named: .darkAqua) ?? .currentDrawing()
         }
     }
 
@@ -191,8 +191,8 @@ enum SnapshotHarness {
         return bitmap
     }
 
-    /// Smoke-only rendering for CI: instantiate the view inside an NSHostingView,
-    /// lay it out, and verify a non-empty bitmap can be produced. No pixel comparison.
+    /// Smoke-only rendering for CI: reuses `render` to verify the view produces
+    /// a valid bitmap without crashing. No pixel comparison.
     @MainActor
     static func smokeRender<V: View>(
         view: V,
@@ -201,34 +201,12 @@ enum SnapshotHarness {
         named: String,
         sourceLocation: SourceLocation
     ) throws {
-        let hosting = NSHostingView(rootView: view)
-        hosting.appearance = appearance.nsAppearance
-        hosting.frame = NSRect(origin: .zero, size: size)
-        hosting.layoutSubtreeIfNeeded()
-
-        let window = NSWindow(
-            contentRect: NSRect(origin: .zero, size: size),
-            styleMask: [.borderless],
-            backing: .buffered,
-            defer: false
-        )
-        window.appearance = appearance.nsAppearance
-        window.contentView = hosting
-        defer { window.orderOut(nil) }
-        hosting.layoutSubtreeIfNeeded()
-
-        // Verify the view produced a valid bitmap (non-nil, non-zero dimensions).
-        guard let bitmap = hosting.bitmapImageRepForCachingDisplay(in: hosting.bounds) else {
-            let message = "Smoke test failed for '\(named)': could not create bitmap"
-            Issue.record(Comment(rawValue: message), sourceLocation: sourceLocation)
-            return
-        }
+        let bitmap = try render(view: view, size: size, appearance: appearance)
         guard bitmap.pixelsWide > 0, bitmap.pixelsHigh > 0 else {
             let message = "Smoke test failed for '\(named)': bitmap has zero dimensions"
             Issue.record(Comment(rawValue: message), sourceLocation: sourceLocation)
             return
         }
-        // Smoke test passed — view renders without crashing and produces a valid bitmap.
     }
 
     static func referenceURL(for name: String, testFile: StaticString) -> URL {
@@ -263,7 +241,7 @@ enum SnapshotHarness {
         var accumulator: UInt64 = 0
         for index in 0..<count {
             let diff = Int(actual.pixels[index]) - Int(reference.pixels[index])
-            accumulator &+= UInt64(abs(diff))
+            accumulator += UInt64(abs(diff))
         }
         // Max possible diff per byte is 255, so the normalized range is [0, 1].
         return Double(accumulator) / (Double(count) * 255.0)
@@ -305,7 +283,16 @@ enum SnapshotHarness {
     }
 }
 
-enum SnapshotError: Error {
+enum SnapshotError: LocalizedError {
     case bitmapCreationFailed
     case decodeFailed
+
+    var errorDescription: String? {
+        switch self {
+        case .bitmapCreationFailed:
+            return "Failed to create bitmap from NSHostingView"
+        case .decodeFailed:
+            return "Failed to decode PNG data into RGBA pixels"
+        }
+    }
 }
