@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.23.1](https://github.com/batonogov/pine/compare/v1.23.0...v1.23.1) (2026-04-14)
+
+
+### Bug Fixes
+
+* **terminal:** normalize embedded terminal env ([#834](https://github.com/batonogov/pine/issues/834)) ([1bd8f4c](https://github.com/batonogov/pine/commit/1bd8f4cb94c4d1fe640c223ef9015f43ee66f9cb))
+* **test:** replace polling with CheckedContinuation in LayoutStabilityTests ([#824](https://github.com/batonogov/pine/issues/824)) ([015a3fb](https://github.com/batonogov/pine/commit/015a3fb7220b458516237084c2586e98039c1046))
+
 ## [1.23.0](https://github.com/batonogov/pine/compare/v1.22.0...v1.23.0) (2026-04-13)
 
 
