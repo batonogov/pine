@@ -11,6 +11,7 @@ on:
 
 permissions:
   contents: read
+  issues: write
 
 jobs:
   performance-tests:
@@ -75,25 +76,17 @@ jobs:
           echo "**Date:** $(date -u '+%Y-%m-%d %H:%M UTC')" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
 
-          # Extract test results
+          # Extract test results using jq
           xcrun xcresulttool get test-results summary \
             --path "$XCRESULT" \
             --compact 2>/dev/null \
-          | python3 -c "
-          import json, sys
-          try:
-              data = json.load(sys.stdin)
-              passed = data.get('passedTests', 0)
-              failed = data.get('failedTests', 0)
-              total = passed + failed
-              print(f'| Metric | Value |')
-              print(f'|--------|-------|')
-              print(f'| Total tests | {total} |')
-              print(f'| Passed | {passed} |')
-              print(f'| Failed | {failed} |')
-          except Exception as e:
-              print(f'Could not parse results: {e}')
-          " >> "$GITHUB_STEP_SUMMARY" || echo "Could not extract test summary" >> "$GITHUB_STEP_SUMMARY"
+          | jq -r '
+            "| Metric | Value |",
+            "|--------|-------|",
+            "| Total tests | \(.passedTests + .failedTests) |",
+            "| Passed | \(.passedTests) |",
+            "| Failed | \(.failedTests) |"
+          ' >> "$GITHUB_STEP_SUMMARY" || echo "Could not extract test summary" >> "$GITHUB_STEP_SUMMARY"
 
           echo "" >> "$GITHUB_STEP_SUMMARY"
           echo "_Download the PerformanceResults.xcresult artifact and open in Xcode Test Navigator for detailed measure {} timings._" >> "$GITHUB_STEP_SUMMARY"
@@ -104,4 +97,25 @@ jobs:
         with:
           name: PerformanceResults-${{ github.run_id }}
           path: PerformanceResults.xcresult
-          retention-days: 14
+          retention-days: 30
+
+      - name: Create Issue on Failure
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          gh issue create \
+            --title "Nightly performance tests failed ($(date -u '+%Y-%m-%d'))" \
+            --body "## Summary
+
+          The nightly performance test run failed.
+
+          **Run:** $RUN_URL
+
+          ## Next steps
+
+          1. Check the workflow logs for failing test(s)
+          2. Download the \`PerformanceResults.xcresult\` artifact for detailed timings
+          3. Investigate whether this is a flaky test or a real regression" \
+            --label "bug,testing"

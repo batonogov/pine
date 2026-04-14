@@ -37,30 +37,7 @@ final class EditRehighlightPerformanceTests: XCTestCase {
     // MARK: - Helpers
 
     private func generateCode(lines: Int) -> String {
-        var result: [String] = ["import Foundation", "import AppKit", ""]
-        var classIdx = 0
-        var lineCount = 3
-        while lineCount < lines {
-            result.append("class Editor\(classIdx): NSObject {")
-            result.append("    var name: String = \"default\"")
-            result.append("    let id: Int = \(classIdx)")
-            for method in 0..<3 {
-                guard lineCount + 8 < lines else { break }
-                result.append("    func process\(method)(input: Int) -> String {")
-                result.append("        let result = input * \(method + 1)")
-                result.append("        if result > 50 {")
-                result.append("            return \"large: \\(result)\"")
-                result.append("        }")
-                result.append("        return \"small: \\(result)\"")
-                result.append("    }")
-                lineCount += 7
-            }
-            result.append("}")
-            result.append("")
-            lineCount += 4
-            classIdx += 1
-        }
-        return result.joined(separator: "\n")
+        PerformanceTestHelpers.generateSwiftCode(lines: lines, classPrefix: "Editor")
     }
 
     // MARK: - Insert + Re-highlight

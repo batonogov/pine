@@ -34,63 +34,24 @@ final class ScrollPerformanceTests: XCTestCase {
 
     // MARK: - Helpers
 
-    /// Generates a Swift-like source file with the given number of lines.
     private func generateCode(lines: Int) -> String {
-        var result: [String] = ["import Foundation", "import AppKit", ""]
-        var classIdx = 0
-        var lineCount = 3
-        while lineCount < lines {
-            result.append("class Scroll\(classIdx): NSObject {")
-            result.append("    var value: Int = \(classIdx)")
-            for method in 0..<5 {
-                guard lineCount + 8 < lines else { break }
-                result.append("    func compute\(method)(input: Int) -> String {")
-                result.append("        let result = input * \(method + 1)")
-                result.append("        if result > 100 {")
-                result.append("            return \"large: \\(result)\"")
-                result.append("        }")
-                result.append("        return \"small: \\(result)\"")
-                result.append("    }")
-                lineCount += 7
-            }
-            result.append("}")
-            result.append("")
-            lineCount += 4
-            classIdx += 1
-        }
-        return result.joined(separator: "\n")
-    }
-
-    /// Creates a text system (NSTextView + NSTextStorage + NSLayoutManager)
-    /// with the given content and forces full layout.
-    private func createTextSystem(text: String) -> (NSTextView, NSTextStorage, NSLayoutManager) {
-        let textView = NSTextView(frame: NSRect(x: 0, y: 0, width: 800, height: 600))
-        textView.textContainer?.size = NSSize(width: 800, height: CGFloat.greatestFiniteMagnitude)
-        textView.textContainer?.widthTracksTextView = true
-
-        guard let textStorage = textView.textStorage,
-              let layoutManager = textView.layoutManager else {
-            return (textView, NSTextStorage(), NSLayoutManager())
-        }
-        textStorage.setAttributedString(NSAttributedString(string: text))
-
-        return (textView, textStorage, layoutManager)
+        PerformanceTestHelpers.generateSwiftCode(lines: lines, classPrefix: "Scroll")
     }
 
     // MARK: - Scroll Benchmarks
 
     /// Benchmarks scrolling through a 100K-line file by forcing layout
     /// for successive viewport-sized ranges (simulating smooth scroll).
-    func testScrollThrough100kLines() {
+    func testScrollThrough100kLines() throws {
         let code = generateCode(lines: 100_000)
-        let (textView, _, layoutManager) = createTextSystem(text: code)
+        let (textView, _, layoutManager) = try createTextSystem(text: code)
 
         guard let textContainer = textView.textContainer else {
             XCTFail("Text container not configured")
             return
         }
 
-        // Force initial layout
+        // Force initial layout before measure — so we benchmark scrolling, not first layout
         layoutManager.ensureLayout(for: textContainer)
 
         let totalGlyphRange = layoutManager.glyphRange(for: textContainer)
@@ -117,15 +78,16 @@ final class ScrollPerformanceTests: XCTestCase {
 
     /// Benchmarks viewport layout for a 100K-line file at random positions
     /// (simulates jump-scrolling via scrollbar or Go to Line).
-    func testViewportLayoutAtRandomPositions100kLines() {
+    func testViewportLayoutAtRandomPositions100kLines() throws {
         let code = generateCode(lines: 100_000)
-        let (textView, _, layoutManager) = createTextSystem(text: code)
+        let (textView, _, layoutManager) = try createTextSystem(text: code)
 
         guard let textContainer = textView.textContainer else {
             XCTFail("Text container not configured")
             return
         }
 
+        // Force initial layout before measure — so we benchmark viewport access, not first layout
         layoutManager.ensureLayout(for: textContainer)
 
         let totalGlyphs = layoutManager.glyphRange(for: textContainer).length
@@ -151,9 +113,9 @@ final class ScrollPerformanceTests: XCTestCase {
     }
 
     /// Benchmarks scroll with syntax highlighting applied (closer to real usage).
-    func testScrollWithHighlighting50kLines() {
+    func testScrollWithHighlighting50kLines() throws {
         let code = generateCode(lines: 50_000)
-        let (textView, textStorage, layoutManager) = createTextSystem(text: code)
+        let (textView, textStorage, layoutManager) = try createTextSystem(text: code)
 
         guard let textContainer = textView.textContainer else {
             XCTFail("Text container not configured")
@@ -162,6 +124,7 @@ final class ScrollPerformanceTests: XCTestCase {
 
         let font = NSFont.monospacedSystemFont(ofSize: 12, weight: .regular)
         highlighter.highlight(textStorage: textStorage, language: "scrollperfswift", font: font)
+        // Force initial layout before measure — so we benchmark scrolling, not first layout
         layoutManager.ensureLayout(for: textContainer)
 
         let totalGlyphs = layoutManager.glyphRange(for: textContainer).length
