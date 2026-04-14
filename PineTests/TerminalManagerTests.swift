@@ -612,6 +612,13 @@ struct TerminalManagerTests {
         #expect(env["TERM"] == "xterm-256color")
     }
 
+    @Test("buildEnvironment sets COLORTERM to truecolor")
+    func buildEnvironmentSetsColorTermValue() {
+        let tab = TerminalTab(name: "test")
+        let env = tab.buildEnvironment()
+        #expect(env["COLORTERM"] == "truecolor")
+    }
+
     @Test("buildEnvironment inherits PATH from parent process")
     func buildEnvironmentInheritsPATH() throws {
         let tab = TerminalTab(name: "test")
@@ -650,6 +657,43 @@ struct TerminalManagerTests {
 
         #expect(envStrings.contains("PINE_TERMINAL=1"))
         #expect(envStrings.contains("TERM=xterm-256color"))
+        #expect(envStrings.contains("COLORTERM=truecolor"))
+    }
+
+    @Test("normalizedEnvironment strips parent terminal markers but keeps shell basics")
+    func normalizedEnvironmentStripsHostTerminalMarkers() throws {
+        let baseEnv = [
+            "PATH": "/usr/bin:/bin",
+            "HOME": "/Users/test",
+            "USER": "test-user",
+            "TERM_PROGRAM": "ghostty",
+            "TERM_PROGRAM_VERSION": "1.2.3",
+            "TERM_SESSION_ID": "session-123",
+            "LC_TERMINAL": "ghostty",
+            "GHOSTTY_RESOURCES_DIR": "/Applications/Ghostty.app/Contents/Resources",
+            "KITTY_WINDOW_ID": "42",
+            "WEZTERM_PANE": "3",
+            "COLORTERM": "24bit",
+        ]
+
+        let env = TerminalTab.normalizedEnvironment(from: baseEnv, workingDirectory: nil)
+
+        let path = try #require(env["PATH"])
+        let home = try #require(env["HOME"])
+        let user = try #require(env["USER"])
+        #expect(path == "/usr/bin:/bin")
+        #expect(home == "/Users/test")
+        #expect(user == "test-user")
+        #expect(env["PINE_TERMINAL"] == "1")
+        #expect(env["TERM"] == "xterm-256color")
+        #expect(env["COLORTERM"] == "truecolor")
+        #expect(env["TERM_PROGRAM"] == nil)
+        #expect(env["TERM_PROGRAM_VERSION"] == nil)
+        #expect(env["TERM_SESSION_ID"] == nil)
+        #expect(env["LC_TERMINAL"] == nil)
+        #expect(env["GHOSTTY_RESOURCES_DIR"] == nil)
+        #expect(env["KITTY_WINDOW_ID"] == nil)
+        #expect(env["WEZTERM_PANE"] == nil)
     }
 
     @Test("resolveWorkingDirectory falls back to HOME when nil")

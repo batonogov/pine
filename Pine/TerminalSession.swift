@@ -282,6 +282,29 @@ struct TerminalSearchMatch {
 @MainActor
 @Observable
 final class TerminalTab: Identifiable, Hashable {
+    /// Environment keys that describe the parent terminal emulator rather than
+    /// Pine's embedded terminal. Leaving these in place makes TUI behaviour
+    /// depend on how Pine itself was launched (Finder/Dock vs a host terminal).
+    private static let hostTerminalEnvironmentKeys: Set<String> = [
+        "TERM_PROGRAM",
+        "TERM_PROGRAM_VERSION",
+        "TERM_SESSION_ID",
+        "LC_TERMINAL",
+        "LC_TERMINAL_VERSION",
+        "TERMINAL_EMULATOR",
+        "VTE_VERSION",
+    ]
+
+    /// Prefixes for terminal-emulator-specific integration variables that
+    /// should not leak into Pine's own embedded terminal session.
+    private static let hostTerminalEnvironmentPrefixes: [String] = [
+        "GHOSTTY_",
+        "ITERM_",
+        "KITTY_",
+        "VTE_",
+        "WEZTERM_",
+    ]
+
     let id = UUID()
     /// Display name shown in the tab. Updated by the shell when it
     /// reports a new terminal title via escape sequences.
@@ -349,13 +372,40 @@ final class TerminalTab: Identifiable, Hashable {
 
     /// Builds the environment dictionary for the terminal child process.
     ///
-    /// Inherits the current process environment and adds:
+    /// Starts from the current process environment, removes host-terminal-
+    /// specific capability markers, and adds:
     /// - `PINE_TERMINAL=1` — marker so scripts can detect Pine's terminal
     /// - `TERM=xterm-256color` — standard 256-color terminal type
+    /// - `COLORTERM=truecolor` — advertises 24-bit color support to TUIs
     func buildEnvironment() -> [String: String] {
-        var env = ProcessInfo.processInfo.environment
+        Self.normalizedEnvironment(
+            from: ProcessInfo.processInfo.environment,
+            workingDirectory: workingDirectory
+        )
+    }
+
+    /// Normalizes the host process environment for Pine's embedded terminal.
+    ///
+    /// This makes terminal child processes deterministic regardless of whether
+    /// Pine was launched from Finder/Dock/Spotlight/Xcode or from another
+    /// terminal emulator. In particular, TUIs such as k9s/tcell use
+    /// `COLORTERM=truecolor` to enable 24-bit colors, while host-specific
+    /// variables like `TERM_PROGRAM` or `GHOSTTY_*` can trigger different
+    /// feature paths that do not apply inside Pine.
+    static func normalizedEnvironment(
+        from baseEnvironment: [String: String],
+        workingDirectory: URL?
+    ) -> [String: String] {
+        var env = baseEnvironment
+
+        for key in env.keys where shouldStripHostTerminalEnvironmentKey(key) {
+            env.removeValue(forKey: key)
+        }
+
         env["PINE_TERMINAL"] = "1"
         env["TERM"] = "xterm-256color"
+        env["COLORTERM"] = "truecolor"
+
         if let wd = workingDirectory {
             env["PINE_PROJECT_ROOT"] = wd.path
             let hash = ContextFileWriter.hashedFileName(for: wd)
@@ -365,7 +415,15 @@ final class TerminalTab: Identifiable, Hashable {
             env["PINE_CONTEXT_FILE"] = contextsDir
                 .appendingPathComponent(hash).path
         }
+
         return env
+    }
+
+    private static func shouldStripHostTerminalEnvironmentKey(_ key: String) -> Bool {
+        if hostTerminalEnvironmentKeys.contains(key) {
+            return true
+        }
+        return hostTerminalEnvironmentPrefixes.contains { key.hasPrefix($0) }
     }
 
     /// Resolves the working directory for the terminal process.
