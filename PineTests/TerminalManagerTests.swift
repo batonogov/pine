@@ -736,6 +736,298 @@ struct TerminalManagerTests {
         #expect(!tab.isProcessRunning)
         #expect(tab.resolveWorkingDirectory() == "/tmp")
     }
+
+    // MARK: - Environment normalization edge cases
+
+    @Test("shouldStrip: keys that must NOT be stripped are preserved")
+    func normalizedEnvironmentPreservesNonTerminalKeys() {
+        let baseEnv = [
+            "PATH": "/usr/bin",
+            "HOME": "/Users/test",
+            "SHELL": "/bin/zsh",
+            "LANG": "en_US.UTF-8",
+            "LC_ALL": "en_US.UTF-8",
+            "LC_CTYPE": "UTF-8",
+            "EDITOR": "vim",
+            "SSH_AUTH_SOCK": "/tmp/ssh.sock",
+            "DISPLAY": ":0",
+            "XPC_FLAGS": "0x0",
+            "TMPDIR": "/tmp",
+        ]
+        let env = TerminalTab.normalizedEnvironment(from: baseEnv, workingDirectory: nil)
+        #expect(env["PATH"] == "/usr/bin")
+        #expect(env["HOME"] == "/Users/test")
+        #expect(env["SHELL"] == "/bin/zsh")
+        #expect(env["LANG"] == "en_US.UTF-8")
+        #expect(env["LC_ALL"] == "en_US.UTF-8")
+        #expect(env["LC_CTYPE"] == "UTF-8")
+        #expect(env["EDITOR"] == "vim")
+        #expect(env["SSH_AUTH_SOCK"] == "/tmp/ssh.sock")
+        #expect(env["DISPLAY"] == ":0")
+        #expect(env["XPC_FLAGS"] == "0x0")
+        #expect(env["TMPDIR"] == "/tmp")
+    }
+
+    @Test("shouldStrip: partial prefix match does not strip (e.g. GHOST without underscore)")
+    func normalizedEnvironmentDoesNotStripPartialPrefix() {
+        let baseEnv = [
+            "GHOST": "casper",
+            "GHOSTING": "someone",
+            "ITERM": "not-iterm-prefix",
+            "KITTYCAT": "meow",
+            "WEZTERMINAL": "not-wezterm-prefix",
+        ]
+        let env = TerminalTab.normalizedEnvironment(from: baseEnv, workingDirectory: nil)
+        // These keys do NOT start with the exact prefixes (GHOSTTY_, ITERM_, KITTY_, WEZTERM_)
+        #expect(env["GHOST"] == "casper")
+        #expect(env["GHOSTING"] == "someone")
+        #expect(env["ITERM"] == "not-iterm-prefix")
+        #expect(env["KITTYCAT"] == "meow")
+        #expect(env["WEZTERMINAL"] == "not-wezterm-prefix")
+    }
+
+    @Test("shouldStrip: exact prefix keys are stripped (prefix + underscore + suffix)")
+    func normalizedEnvironmentStripsExactPrefixKeys() {
+        let baseEnv = [
+            "GHOSTTY_BIN_DIR": "/usr/local/bin",
+            "GHOSTTY_RESOURCES_DIR": "/res",
+            "ITERM_PROFILE": "Default",
+            "ITERM_SESSION_ID": "abc",
+            "KITTY_PID": "12345",
+            "KITTY_INSTALLATION_DIR": "/opt",
+            "VTE_VERSION": "7000",
+            "WEZTERM_EXECUTABLE": "/usr/bin/wezterm",
+            "WEZTERM_CONFIG_FILE": "/home/.config",
+        ]
+        let env = TerminalTab.normalizedEnvironment(from: baseEnv, workingDirectory: nil)
+        #expect(env["GHOSTTY_BIN_DIR"] == nil)
+        #expect(env["GHOSTTY_RESOURCES_DIR"] == nil)
+        #expect(env["ITERM_PROFILE"] == nil)
+        #expect(env["ITERM_SESSION_ID"] == nil)
+        #expect(env["KITTY_PID"] == nil)
+        #expect(env["KITTY_INSTALLATION_DIR"] == nil)
+        #expect(env["VTE_VERSION"] == nil)
+        #expect(env["WEZTERM_EXECUTABLE"] == nil)
+        #expect(env["WEZTERM_CONFIG_FILE"] == nil)
+    }
+
+    @Test("shouldStrip: all exact-match keys from hostTerminalEnvironmentKeys are stripped")
+    func normalizedEnvironmentStripsAllExactKeys() {
+        let baseEnv = [
+            "TERM_PROGRAM": "iTerm2",
+            "TERM_PROGRAM_VERSION": "3.5",
+            "TERM_SESSION_ID": "sess-001",
+            "LC_TERMINAL": "iTerm2",
+            "LC_TERMINAL_VERSION": "3.5",
+            "TERMINAL_EMULATOR": "JetBrains-JediTerm",
+            "VTE_VERSION": "6800",
+        ]
+        let env = TerminalTab.normalizedEnvironment(from: baseEnv, workingDirectory: nil)
+        for key in baseEnv.keys {
+            #expect(env[key] == nil, "Expected \(key) to be stripped")
+        }
+    }
+
+    @Test("normalizedEnvironment with empty base env adds Pine markers")
+    func normalizedEnvironmentEmptyBase() {
+        let env = TerminalTab.normalizedEnvironment(from: [:], workingDirectory: nil)
+        #expect(env["PINE_TERMINAL"] == "1")
+        #expect(env["TERM"] == "xterm-256color")
+        #expect(env["COLORTERM"] == "truecolor")
+        // Should have exactly the 3 Pine-set keys when base is empty
+        #expect(env.count == 3)
+    }
+
+    @Test("normalizedEnvironment with only host terminal vars produces only Pine markers")
+    func normalizedEnvironmentOnlyHostVars() {
+        let baseEnv = [
+            "TERM_PROGRAM": "ghostty",
+            "GHOSTTY_RESOURCES_DIR": "/res",
+            "KITTY_WINDOW_ID": "1",
+            "LC_TERMINAL": "ghostty",
+            "TERMINAL_EMULATOR": "something",
+        ]
+        let env = TerminalTab.normalizedEnvironment(from: baseEnv, workingDirectory: nil)
+        // All host vars stripped, only Pine markers remain
+        #expect(env.count == 3)
+        #expect(env["PINE_TERMINAL"] == "1")
+        #expect(env["TERM"] == "xterm-256color")
+        #expect(env["COLORTERM"] == "truecolor")
+    }
+
+    @Test("normalizedEnvironment overrides existing TERM value")
+    func normalizedEnvironmentOverridesTERM() {
+        let baseEnv = ["TERM": "dumb"]
+        let env = TerminalTab.normalizedEnvironment(from: baseEnv, workingDirectory: nil)
+        #expect(env["TERM"] == "xterm-256color")
+    }
+
+    @Test("normalizedEnvironment overrides existing COLORTERM value")
+    func normalizedEnvironmentOverridesCOLORTERM() {
+        let baseEnv = ["COLORTERM": "24bit"]
+        let env = TerminalTab.normalizedEnvironment(from: baseEnv, workingDirectory: nil)
+        #expect(env["COLORTERM"] == "truecolor")
+    }
+
+    @Test("normalizedEnvironment overrides existing PINE_TERMINAL value")
+    func normalizedEnvironmentOverridesPINE_TERMINAL() {
+        let baseEnv = ["PINE_TERMINAL": "0"]
+        let env = TerminalTab.normalizedEnvironment(from: baseEnv, workingDirectory: nil)
+        #expect(env["PINE_TERMINAL"] == "1")
+    }
+
+    @Test("normalizedEnvironment sets PINE_PROJECT_ROOT when workingDirectory is provided")
+    func normalizedEnvironmentSetsProjectRoot() {
+        let url = URL(fileURLWithPath: "/Users/test/myproject")
+        let env = TerminalTab.normalizedEnvironment(from: [:], workingDirectory: url)
+        #expect(env["PINE_PROJECT_ROOT"] == "/Users/test/myproject")
+    }
+
+    @Test("normalizedEnvironment sets PINE_CONTEXT_FILE when workingDirectory is provided")
+    func normalizedEnvironmentSetsContextFile() {
+        let url = URL(fileURLWithPath: "/Users/test/myproject")
+        let env = TerminalTab.normalizedEnvironment(from: [:], workingDirectory: url)
+        let contextFile = env["PINE_CONTEXT_FILE"]
+        #expect(contextFile != nil)
+        #expect(contextFile?.contains("Pine/contexts") == true)
+    }
+
+    @Test("normalizedEnvironment does NOT set PINE_PROJECT_ROOT when workingDirectory is nil")
+    func normalizedEnvironmentNoProjectRootWhenNil() {
+        let env = TerminalTab.normalizedEnvironment(from: [:], workingDirectory: nil)
+        #expect(env["PINE_PROJECT_ROOT"] == nil)
+        #expect(env["PINE_CONTEXT_FILE"] == nil)
+    }
+
+    @Test("buildEnvironment delegates to normalizedEnvironment with process env")
+    func buildEnvironmentDelegatesToNormalized() {
+        let tab = TerminalTab(name: "test")
+        let env = tab.buildEnvironment()
+        // Must contain Pine markers
+        #expect(env["PINE_TERMINAL"] == "1")
+        #expect(env["TERM"] == "xterm-256color")
+        #expect(env["COLORTERM"] == "truecolor")
+        // Must not contain host terminal vars from current process (if any)
+        #expect(env["TERM_PROGRAM"] == nil)
+        #expect(env["TERM_PROGRAM_VERSION"] == nil)
+    }
+
+    @Test("buildEnvironment with workingDirectory sets project root")
+    func buildEnvironmentWithWorkingDirectory() {
+        let tab = TerminalTab(name: "test")
+        tab.configure(workingDirectory: URL(fileURLWithPath: "/tmp/project"))
+        let env = tab.buildEnvironment()
+        #expect(env["PINE_PROJECT_ROOT"] == "/tmp/project")
+        #expect(env["PINE_CONTEXT_FILE"] != nil)
+    }
+
+    @Test("buildEnvironment without workingDirectory has no project root")
+    func buildEnvironmentWithoutWorkingDirectory() {
+        let tab = TerminalTab(name: "test")
+        let env = tab.buildEnvironment()
+        #expect(env["PINE_PROJECT_ROOT"] == nil)
+        #expect(env["PINE_CONTEXT_FILE"] == nil)
+    }
+
+    @Test("normalizedEnvironment preserves LC_CTYPE but strips LC_TERMINAL")
+    func normalizedEnvironmentLCKeys() {
+        let baseEnv = [
+            "LC_CTYPE": "UTF-8",
+            "LC_ALL": "en_US.UTF-8",
+            "LC_TERMINAL": "iTerm2",
+            "LC_TERMINAL_VERSION": "3.5",
+        ]
+        let env = TerminalTab.normalizedEnvironment(from: baseEnv, workingDirectory: nil)
+        #expect(env["LC_CTYPE"] == "UTF-8")
+        #expect(env["LC_ALL"] == "en_US.UTF-8")
+        #expect(env["LC_TERMINAL"] == nil)
+        #expect(env["LC_TERMINAL_VERSION"] == nil)
+    }
+
+    @Test("normalizedEnvironment preserves TERM_FEATURES but strips TERM_PROGRAM")
+    func normalizedEnvironmentTERMKeys() {
+        let baseEnv = [
+            "TERM_FEATURES": "some-feature",
+            "TERM_PROGRAM": "WezTerm",
+        ]
+        let env = TerminalTab.normalizedEnvironment(from: baseEnv, workingDirectory: nil)
+        // TERM_FEATURES is NOT in the exact-match set and has no matching prefix
+        #expect(env["TERM_FEATURES"] == "some-feature")
+        #expect(env["TERM_PROGRAM"] == nil)
+    }
+
+    @Test("TerminalTab initial state")
+    func terminalTabInitialState() {
+        let tab = TerminalTab(name: "My Terminal")
+        #expect(tab.name == "My Terminal")
+        #expect(tab.stableLabel == "My Terminal")
+        #expect(!tab.isTerminated)
+        #expect(!tab.isProcessRunning)
+        #expect(!tab.hasForegroundProcess)
+        #expect(tab.searchMatches.isEmpty)
+        #expect(tab.currentMatchIndex == -1)
+    }
+
+    @Test("TerminalTab stop sets isTerminated")
+    func terminalTabStop() {
+        let tab = TerminalTab(name: "test")
+        #expect(!tab.isTerminated)
+        tab.stop()
+        #expect(tab.isTerminated)
+    }
+
+    @Test("TerminalTab stop is idempotent")
+    func terminalTabStopIdempotent() {
+        let tab = TerminalTab(name: "test")
+        tab.stop()
+        tab.stop() // should not crash
+        #expect(tab.isTerminated)
+    }
+
+    @Test("TerminalTab equality is by identity (UUID)")
+    func terminalTabEquality() {
+        let tab1 = TerminalTab(name: "test")
+        let tab2 = TerminalTab(name: "test")
+        #expect(tab1 != tab2, "Different tabs with same name should not be equal")
+        #expect(tab1 == tab1, "Same tab should be equal to itself")
+    }
+
+    @Test("TerminalTab hashable consistency")
+    func terminalTabHashable() {
+        let tab = TerminalTab(name: "test")
+        var set: Set<TerminalTab> = [tab]
+        set.insert(tab)
+        #expect(set.count == 1, "Inserting same tab twice should not create duplicates")
+    }
+
+    @Test("sendText does nothing when process not running")
+    func sendTextWhenNotRunning() {
+        let tab = TerminalTab(name: "test")
+        // Should not crash; process is not started
+        tab.sendText("hello")
+        #expect(!tab.isProcessRunning)
+    }
+
+    @Test("sendText does nothing when terminated")
+    func sendTextWhenTerminated() {
+        let tab = TerminalTab(name: "test")
+        tab.stop()
+        tab.sendText("hello")
+        #expect(tab.isTerminated)
+    }
+
+    @Test("hasForegroundProcess is false when not running")
+    func hasForegroundProcessWhenNotRunning() {
+        let tab = TerminalTab(name: "test")
+        #expect(!tab.hasForegroundProcess)
+    }
+
+    @Test("hasForegroundProcess is false when terminated")
+    func hasForegroundProcessWhenTerminated() {
+        let tab = TerminalTab(name: "test")
+        tab.stop()
+        #expect(!tab.hasForegroundProcess)
+    }
 }
 
 // MARK: - TerminalScrollInterceptor Tests
