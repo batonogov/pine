@@ -13,18 +13,6 @@ struct SyntaxHighlighterEdgeTests {
 
     nonisolated(unsafe) private let font = NSFont.monospacedSystemFont(ofSize: 13, weight: .regular)
 
-    /// Grammars registered during tests, cleaned up after each test.
-    private static let testGrammarNames = ["TestLangEdge", "TestFileNameGrammar", "CacheLang"]
-
-    /// Removes test grammars from shared singleton to avoid polluting other tests.
-    private func cleanupTestGrammars() {
-        let hl = SyntaxHighlighter.shared
-        for name in Self.testGrammarNames {
-            let grammar = Grammar(name: name, extensions: [], rules: [])
-            hl.unregisterGrammar(grammar)
-        }
-    }
-
     // MARK: - HighlightGeneration
 
     @Test func highlightGeneration_initialValueIsZero() {
@@ -242,9 +230,17 @@ struct SyntaxHighlighterEdgeTests {
         #expect(grammar.blockComment == nil)
     }
 
-    @Test func blockCommentDelimiters_fields() {
-        let delims = BlockCommentDelimiters(open: "/*", close: "*/")
-        #expect(delims.open == "/*")
-        #expect(delims.close == "*/")
+    @Test func blockCommentDelimiters_roundTrip() {
+        let grammar = Grammar(
+            name: "BlockTest",
+            extensions: ["blk"],
+            rules: [],
+            blockComment: BlockCommentDelimiters(open: "/*", close: "*/")
+        )
+        #expect(grammar.blockComment?.open == "/*")
+        #expect(grammar.blockComment?.close == "*/")
+        // Ensure a grammar without block comment returns nil
+        let noBlock = Grammar(name: "NoBlock", extensions: ["nb"], rules: [])
+        #expect(noBlock.blockComment == nil)
     }
 }

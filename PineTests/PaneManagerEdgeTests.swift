@@ -289,15 +289,15 @@ struct PaneManagerEdgeTests {
         #expect(manager.activeTabManager?.tabs.isEmpty == true)
     }
 
-    @Test func openFileInPane_opensFile() {
+    @Test func openFileInPane_opensFile() throws {
         let manager = PaneManager()
         let paneID = manager.activePaneID
         let dir = FileManager.default.temporaryDirectory
             .appendingPathComponent("PaneMgrEdge-\(UUID().uuidString)")
-        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: dir) }
         let url = dir.appendingPathComponent("test.swift")
-        try? "test".write(to: url, atomically: true, encoding: .utf8)
+        try "test".write(to: url, atomically: true, encoding: .utf8)
 
         manager.openFileInPane(url: url, paneID: paneID)
         #expect(manager.activeTabManager?.tabs.count == 1)
@@ -305,15 +305,15 @@ struct PaneManagerEdgeTests {
 
     // MARK: - splitAndOpenFile
 
-    @Test func splitAndOpenFile_createsNewPaneWithFile() {
+    @Test func splitAndOpenFile_createsNewPaneWithFile() throws {
         let manager = PaneManager()
         let paneID = manager.activePaneID
         let dir = FileManager.default.temporaryDirectory
             .appendingPathComponent("PaneMgrEdge-\(UUID().uuidString)")
-        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: dir) }
         let url = dir.appendingPathComponent("test.swift")
-        try? "test".write(to: url, atomically: true, encoding: .utf8)
+        try "test".write(to: url, atomically: true, encoding: .utf8)
 
         let newID = manager.splitAndOpenFile(url: url, relativeTo: paneID, axis: .horizontal)
         #expect(newID != nil)

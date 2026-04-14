@@ -397,8 +397,13 @@ struct ConfigValidatorEdgeTests {
 
     // MARK: - ValidationSeverity
 
-    @Test func validationSeverity_equatable() {
-        #expect(ValidationSeverity.error == .error)
-        #expect(ValidationSeverity.warning != .info)
+    @Test func validationSeverity_allCasesDistinct() {
+        let all: [ValidationSeverity] = [.error, .warning, .info]
+        // Each case is distinct from every other
+        for i in 0..<all.count {
+            for j in (i + 1)..<all.count {
+                #expect(all[i] != all[j])
+            }
+        }
     }
 }

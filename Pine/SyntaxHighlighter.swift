@@ -203,6 +203,7 @@ nonisolated final class SyntaxHighlighter: @unchecked Sendable {
         }
     }
 
+    #if DEBUG
     /// Removes a previously registered grammar (for test cleanup).
     func unregisterGrammar(_ grammar: Grammar) {
         lock.withLock {
@@ -218,6 +219,7 @@ nonisolated final class SyntaxHighlighter: @unchecked Sendable {
             compiledRules.removeValue(forKey: grammar.name)
         }
     }
+    #endif
 
     // MARK: - Загрузка грамматик
 

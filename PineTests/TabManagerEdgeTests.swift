@@ -27,10 +27,10 @@ struct TabManagerEdgeTests {
     }
 
     /// Creates a temp directory. Caller must use `defer { cleanup(dir) }`.
-    private func makeTempDir() -> URL {
+    private func makeTempDir() throws -> URL {
         let dir = FileManager.default.temporaryDirectory
             .appendingPathComponent("TabMgrEdge-\(UUID().uuidString)")
-        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         return dir
     }
 
@@ -38,9 +38,9 @@ struct TabManagerEdgeTests {
         in dir: URL,
         name: String = "test.swift",
         content: String = "hello"
-    ) -> URL {
+    ) throws -> URL {
         let url = dir.appendingPathComponent(name)
-        try? content.write(to: url, atomically: true, encoding: .utf8)
+        try content.write(to: url, atomically: true, encoding: .utf8)
         return url
     }
 
@@ -50,12 +50,12 @@ struct TabManagerEdgeTests {
 
     // MARK: - Tab navigation
 
-    @Test func selectTab_validIndex() {
-        let dir = makeTempDir()
+    @Test func selectTab_validIndex() throws {
+        let dir = try makeTempDir()
         defer { cleanup(dir) }
         let manager = makeTabManager()
-        let url1 = tempFile(in: dir, name: "a.swift")
-        let url2 = tempFile(in: dir, name: "b.swift")
+        let url1 = try tempFile(in: dir, name: "a.swift")
+        let url2 = try tempFile(in: dir, name: "b.swift")
         manager.openTab(url: url1)
         manager.openTab(url: url2)
 
@@ -63,33 +63,33 @@ struct TabManagerEdgeTests {
         #expect(manager.activeTab?.url == url1)
     }
 
-    @Test func selectTab_negativeIndex_noOp() {
-        let dir = makeTempDir()
+    @Test func selectTab_negativeIndex_noOp() throws {
+        let dir = try makeTempDir()
         defer { cleanup(dir) }
         let manager = makeTabManager()
-        manager.openTab(url: tempFile(in: dir))
+        manager.openTab(url: try tempFile(in: dir))
         let id = manager.activeTabID
         manager.selectTab(at: -1)
         #expect(manager.activeTabID == id)
     }
 
-    @Test func selectTab_outOfBounds_noOp() {
-        let dir = makeTempDir()
+    @Test func selectTab_outOfBounds_noOp() throws {
+        let dir = try makeTempDir()
         defer { cleanup(dir) }
         let manager = makeTabManager()
-        manager.openTab(url: tempFile(in: dir))
+        manager.openTab(url: try tempFile(in: dir))
         let id = manager.activeTabID
         manager.selectTab(at: 100)
         #expect(manager.activeTabID == id)
     }
 
-    @Test func selectLastTab() {
-        let dir = makeTempDir()
+    @Test func selectLastTab() throws {
+        let dir = try makeTempDir()
         defer { cleanup(dir) }
         let manager = makeTabManager()
-        let url1 = tempFile(in: dir, name: "a.swift")
-        let url2 = tempFile(in: dir, name: "b.swift")
-        let url3 = tempFile(in: dir, name: "c.swift")
+        let url1 = try tempFile(in: dir, name: "a.swift")
+        let url2 = try tempFile(in: dir, name: "b.swift")
+        let url3 = try tempFile(in: dir, name: "c.swift")
         manager.openTab(url: url1)
         manager.openTab(url: url2)
         manager.openTab(url: url3)
@@ -105,12 +105,12 @@ struct TabManagerEdgeTests {
         #expect(manager.activeTabID == nil)
     }
 
-    @Test func selectNextTab_wraps() {
-        let dir = makeTempDir()
+    @Test func selectNextTab_wraps() throws {
+        let dir = try makeTempDir()
         defer { cleanup(dir) }
         let manager = makeTabManager()
-        let url1 = tempFile(in: dir, name: "a.swift")
-        let url2 = tempFile(in: dir, name: "b.swift")
+        let url1 = try tempFile(in: dir, name: "a.swift")
+        let url2 = try tempFile(in: dir, name: "b.swift")
         manager.openTab(url: url1)
         manager.openTab(url: url2)
 
@@ -124,12 +124,12 @@ struct TabManagerEdgeTests {
         #expect(manager.activeTabID == nil)
     }
 
-    @Test func selectPreviousTab_wraps() {
-        let dir = makeTempDir()
+    @Test func selectPreviousTab_wraps() throws {
+        let dir = try makeTempDir()
         defer { cleanup(dir) }
         let manager = makeTabManager()
-        let url1 = tempFile(in: dir, name: "a.swift")
-        let url2 = tempFile(in: dir, name: "b.swift")
+        let url1 = try tempFile(in: dir, name: "a.swift")
+        let url2 = try tempFile(in: dir, name: "b.swift")
         manager.openTab(url: url1)
         manager.openTab(url: url2)
 
@@ -146,11 +146,11 @@ struct TabManagerEdgeTests {
 
     // MARK: - Pin tabs
 
-    @Test func togglePin_pinsTab() {
-        let dir = makeTempDir()
+    @Test func togglePin_pinsTab() throws {
+        let dir = try makeTempDir()
         defer { cleanup(dir) }
         let manager = makeTabManager()
-        let url = tempFile(in: dir)
+        let url = try tempFile(in: dir)
         manager.openTab(url: url)
         guard let id = manager.activeTabID else { return }
 
@@ -159,11 +159,11 @@ struct TabManagerEdgeTests {
         #expect(manager.pinnedTabCount == 1)
     }
 
-    @Test func togglePin_unpinsTab() {
-        let dir = makeTempDir()
+    @Test func togglePin_unpinsTab() throws {
+        let dir = try makeTempDir()
         defer { cleanup(dir) }
         let manager = makeTabManager()
-        let url = tempFile(in: dir)
+        let url = try tempFile(in: dir)
         manager.openTab(url: url)
         guard let id = manager.activeTabID else { return }
 
@@ -173,11 +173,11 @@ struct TabManagerEdgeTests {
         #expect(manager.pinnedTabCount == 0)
     }
 
-    @Test func pinnedTab_resistsClose() {
-        let dir = makeTempDir()
+    @Test func pinnedTab_resistsClose() throws {
+        let dir = try makeTempDir()
         defer { cleanup(dir) }
         let manager = makeTabManager()
-        let url = tempFile(in: dir)
+        let url = try tempFile(in: dir)
         manager.openTab(url: url)
         guard let id = manager.activeTabID else { return }
 
@@ -186,11 +186,11 @@ struct TabManagerEdgeTests {
         #expect(manager.tabs.count == 1)
     }
 
-    @Test func pinnedTab_closesWhenForced() {
-        let dir = makeTempDir()
+    @Test func pinnedTab_closesWhenForced() throws {
+        let dir = try makeTempDir()
         defer { cleanup(dir) }
         let manager = makeTabManager()
-        let url = tempFile(in: dir)
+        let url = try tempFile(in: dir)
         manager.openTab(url: url)
         guard let id = manager.activeTabID else { return }
 
@@ -199,12 +199,12 @@ struct TabManagerEdgeTests {
         #expect(manager.tabs.isEmpty)
     }
 
-    @Test func restorePinnedState() {
-        let dir = makeTempDir()
+    @Test func restorePinnedState() throws {
+        let dir = try makeTempDir()
         defer { cleanup(dir) }
         let manager = makeTabManager()
-        let url1 = tempFile(in: dir, name: "a.swift")
-        let url2 = tempFile(in: dir, name: "b.swift")
+        let url1 = try tempFile(in: dir, name: "a.swift")
+        let url2 = try tempFile(in: dir, name: "b.swift")
         manager.openTab(url: url1)
         manager.openTab(url: url2)
 
@@ -215,13 +215,13 @@ struct TabManagerEdgeTests {
 
     // MARK: - Close operations
 
-    @Test func closeOtherTabs_keepsPinnedAndTarget() {
-        let dir = makeTempDir()
+    @Test func closeOtherTabs_keepsPinnedAndTarget() throws {
+        let dir = try makeTempDir()
         defer { cleanup(dir) }
         let manager = makeTabManager()
-        let url1 = tempFile(in: dir, name: "a.swift")
-        let url2 = tempFile(in: dir, name: "b.swift")
-        let url3 = tempFile(in: dir, name: "c.swift")
+        let url1 = try tempFile(in: dir, name: "a.swift")
+        let url2 = try tempFile(in: dir, name: "b.swift")
+        let url3 = try tempFile(in: dir, name: "c.swift")
         manager.openTab(url: url1)
         manager.openTab(url: url2)
         manager.openTab(url: url3)
@@ -233,13 +233,13 @@ struct TabManagerEdgeTests {
         #expect(manager.tabs.count == 2)
     }
 
-    @Test func closeTabsToTheRight() {
-        let dir = makeTempDir()
+    @Test func closeTabsToTheRight() throws {
+        let dir = try makeTempDir()
         defer { cleanup(dir) }
         let manager = makeTabManager()
-        let url1 = tempFile(in: dir, name: "a.swift")
-        let url2 = tempFile(in: dir, name: "b.swift")
-        let url3 = tempFile(in: dir, name: "c.swift")
+        let url1 = try tempFile(in: dir, name: "a.swift")
+        let url2 = try tempFile(in: dir, name: "b.swift")
+        let url3 = try tempFile(in: dir, name: "c.swift")
         manager.openTab(url: url1)
         manager.openTab(url: url2)
         manager.openTab(url: url3)
@@ -250,13 +250,13 @@ struct TabManagerEdgeTests {
         #expect(manager.tabs[0].url == url1)
     }
 
-    @Test func closeTabsToTheRight_pinnedPreserved() {
-        let dir = makeTempDir()
+    @Test func closeTabsToTheRight_pinnedPreserved() throws {
+        let dir = try makeTempDir()
         defer { cleanup(dir) }
         let manager = makeTabManager()
-        let url1 = tempFile(in: dir, name: "a.swift")
-        let url2 = tempFile(in: dir, name: "b.swift")
-        let url3 = tempFile(in: dir, name: "c.swift")
+        let url1 = try tempFile(in: dir, name: "a.swift")
+        let url2 = try tempFile(in: dir, name: "b.swift")
+        let url3 = try tempFile(in: dir, name: "c.swift")
         manager.openTab(url: url1)
         manager.openTab(url: url2)
         manager.openTab(url: url3)
@@ -272,23 +272,23 @@ struct TabManagerEdgeTests {
         #expect(manager.tabs.contains { $0.isPinned })
     }
 
-    @Test func closeAllTabs_force() {
-        let dir = makeTempDir()
+    @Test func closeAllTabs_force() throws {
+        let dir = try makeTempDir()
         defer { cleanup(dir) }
         let manager = makeTabManager()
-        manager.openTab(url: tempFile(in: dir, name: "a.swift"))
-        manager.openTab(url: tempFile(in: dir, name: "b.swift"))
+        manager.openTab(url: try tempFile(in: dir, name: "a.swift"))
+        manager.openTab(url: try tempFile(in: dir, name: "b.swift"))
 
         manager.closeAllTabs(force: true)
         #expect(manager.tabs.isEmpty)
     }
 
-    @Test func dirtyTabsForCloseOthers() {
-        let dir = makeTempDir()
+    @Test func dirtyTabsForCloseOthers() throws {
+        let dir = try makeTempDir()
         defer { cleanup(dir) }
         let manager = makeTabManager()
-        let url1 = tempFile(in: dir, name: "a.swift")
-        let url2 = tempFile(in: dir, name: "b.swift")
+        let url1 = try tempFile(in: dir, name: "a.swift")
+        let url2 = try tempFile(in: dir, name: "b.swift")
         manager.openTab(url: url1)
         manager.openTab(url: url2)
 
@@ -299,12 +299,12 @@ struct TabManagerEdgeTests {
         #expect(dirty.count == 1)
     }
 
-    @Test func dirtyTabsForCloseRight() {
-        let dir = makeTempDir()
+    @Test func dirtyTabsForCloseRight() throws {
+        let dir = try makeTempDir()
         defer { cleanup(dir) }
         let manager = makeTabManager()
-        let url1 = tempFile(in: dir, name: "a.swift")
-        let url2 = tempFile(in: dir, name: "b.swift")
+        let url1 = try tempFile(in: dir, name: "a.swift")
+        let url2 = try tempFile(in: dir, name: "b.swift")
         manager.openTab(url: url1)
         manager.openTab(url: url2)
 
@@ -315,11 +315,11 @@ struct TabManagerEdgeTests {
         #expect(dirty.count == 1)
     }
 
-    @Test func dirtyTabsForCloseAll() {
-        let dir = makeTempDir()
+    @Test func dirtyTabsForCloseAll() throws {
+        let dir = try makeTempDir()
         defer { cleanup(dir) }
         let manager = makeTabManager()
-        let url = tempFile(in: dir)
+        let url = try tempFile(in: dir)
         manager.openTab(url: url)
         manager.updateContent("changed")
 
@@ -329,12 +329,12 @@ struct TabManagerEdgeTests {
 
     // MARK: - Tab reordering
 
-    @Test func reorderTab_swapsPositions() {
-        let dir = makeTempDir()
+    @Test func reorderTab_swapsPositions() throws {
+        let dir = try makeTempDir()
         defer { cleanup(dir) }
         let manager = makeTabManager()
-        let url1 = tempFile(in: dir, name: "a.swift")
-        let url2 = tempFile(in: dir, name: "b.swift")
+        let url1 = try tempFile(in: dir, name: "a.swift")
+        let url2 = try tempFile(in: dir, name: "b.swift")
         manager.openTab(url: url1)
         manager.openTab(url: url2)
 
@@ -342,14 +342,14 @@ struct TabManagerEdgeTests {
         let id2 = manager.tabs[1].id
         manager.reorderTab(draggedID: id1, targetID: id2)
 
-        #expect(manager.tabs[0].id == id2 || manager.tabs[1].id == id1)
+        #expect(manager.tabs[0].id == id2 && manager.tabs[1].id == id1)
     }
 
-    @Test func reorderTab_sameID_noOp() {
-        let dir = makeTempDir()
+    @Test func reorderTab_sameID_noOp() throws {
+        let dir = try makeTempDir()
         defer { cleanup(dir) }
         let manager = makeTabManager()
-        let url = tempFile(in: dir)
+        let url = try tempFile(in: dir)
         manager.openTab(url: url)
         let id = manager.tabs[0].id
 
@@ -357,12 +357,12 @@ struct TabManagerEdgeTests {
         #expect(manager.tabs.count == 1)
     }
 
-    @Test func reorderTab_pinnedToUnpinned_blocked() {
-        let dir = makeTempDir()
+    @Test func reorderTab_pinnedToUnpinned_blocked() throws {
+        let dir = try makeTempDir()
         defer { cleanup(dir) }
         let manager = makeTabManager()
-        let url1 = tempFile(in: dir, name: "a.swift")
-        let url2 = tempFile(in: dir, name: "b.swift")
+        let url1 = try tempFile(in: dir, name: "a.swift")
+        let url2 = try tempFile(in: dir, name: "b.swift")
         manager.openTab(url: url1)
         manager.openTab(url: url2)
 
@@ -377,13 +377,13 @@ struct TabManagerEdgeTests {
 
     // MARK: - moveTab
 
-    @Test func moveTab_fromOffsets() {
-        let dir = makeTempDir()
+    @Test func moveTab_fromOffsets() throws {
+        let dir = try makeTempDir()
         defer { cleanup(dir) }
         let manager = makeTabManager()
-        let url1 = tempFile(in: dir, name: "a.swift")
-        let url2 = tempFile(in: dir, name: "b.swift")
-        let url3 = tempFile(in: dir, name: "c.swift")
+        let url1 = try tempFile(in: dir, name: "a.swift")
+        let url2 = try tempFile(in: dir, name: "b.swift")
+        let url3 = try tempFile(in: dir, name: "c.swift")
         manager.openTab(url: url1)
         manager.openTab(url: url2)
         manager.openTab(url: url3)
@@ -394,21 +394,21 @@ struct TabManagerEdgeTests {
 
     // MARK: - Line endings
 
-    @Test func convertActiveTabLineEndings_changesToCRLF() {
-        let dir = makeTempDir()
+    @Test func convertActiveTabLineEndings_changesToCRLF() throws {
+        let dir = try makeTempDir()
         defer { cleanup(dir) }
         let manager = makeTabManager()
-        let url = tempFile(in: dir, content: "line1\nline2\n")
+        let url = try tempFile(in: dir, content: "line1\nline2\n")
         manager.openTab(url: url)
         manager.convertActiveTabLineEndings(to: .crlf)
         #expect(manager.activeTab?.content.contains("\r\n") == true)
     }
 
-    @Test func convertActiveTabLineEndings_noChangeIfSame() {
-        let dir = makeTempDir()
+    @Test func convertActiveTabLineEndings_noChangeIfSame() throws {
+        let dir = try makeTempDir()
         defer { cleanup(dir) }
         let manager = makeTabManager()
-        let url = tempFile(in: dir, content: "line1\nline2\n")
+        let url = try tempFile(in: dir, content: "line1\nline2\n")
         manager.openTab(url: url)
 
         let contentBefore = manager.activeTab?.content
@@ -423,11 +423,11 @@ struct TabManagerEdgeTests {
 
     // MARK: - File rename handling
 
-    @Test func handleFileRenamed_updatesURL() {
-        let dir = makeTempDir()
+    @Test func handleFileRenamed_updatesURL() throws {
+        let dir = try makeTempDir()
         defer { cleanup(dir) }
         let manager = makeTabManager()
-        let oldURL = tempFile(in: dir, name: "old.swift")
+        let oldURL = try tempFile(in: dir, name: "old.swift")
         manager.openTab(url: oldURL)
 
         let newURL = oldURL.deletingLastPathComponent().appendingPathComponent("new.swift")
@@ -436,15 +436,15 @@ struct TabManagerEdgeTests {
         #expect(manager.tabs[0].url == newURL)
     }
 
-    @Test func handleFileRenamed_updatesChildPaths() {
-        let dir = makeTempDir()
+    @Test func handleFileRenamed_updatesChildPaths() throws {
+        let dir = try makeTempDir()
         defer { cleanup(dir) }
         let manager = makeTabManager()
-        try? FileManager.default.createDirectory(
+        try FileManager.default.createDirectory(
             at: dir.appendingPathComponent("oldDir"), withIntermediateDirectories: true
         )
         let childURL = dir.appendingPathComponent("oldDir/child.swift")
-        try? "test".write(to: childURL, atomically: true, encoding: .utf8)
+        try "test".write(to: childURL, atomically: true, encoding: .utf8)
         manager.openTab(url: childURL)
 
         let oldDir = dir.appendingPathComponent("oldDir")
@@ -456,11 +456,11 @@ struct TabManagerEdgeTests {
 
     // MARK: - Update operations
 
-    @Test func updateFoldState() {
-        let dir = makeTempDir()
+    @Test func updateFoldState() throws {
+        let dir = try makeTempDir()
         defer { cleanup(dir) }
         let manager = makeTabManager()
-        let url = tempFile(in: dir)
+        let url = try tempFile(in: dir)
         manager.openTab(url: url)
 
         let foldState = FoldState()
@@ -468,11 +468,11 @@ struct TabManagerEdgeTests {
         #expect(manager.activeTab?.foldState != nil)
     }
 
-    @Test func updateEditorState() {
-        let dir = makeTempDir()
+    @Test func updateEditorState() throws {
+        let dir = try makeTempDir()
         defer { cleanup(dir) }
         let manager = makeTabManager()
-        let url = tempFile(in: dir, content: "line1\nline2\n")
+        let url = try tempFile(in: dir, content: "line1\nline2\n")
         manager.openTab(url: url)
 
         manager.updateEditorState(cursorPosition: 6, scrollOffset: 100)
@@ -508,21 +508,21 @@ struct TabManagerEdgeTests {
 
     // MARK: - hasUnsavedChanges / dirtyTabs
 
-    @Test func hasUnsavedChanges_false_whenClean() {
-        let dir = makeTempDir()
+    @Test func hasUnsavedChanges_false_whenClean() throws {
+        let dir = try makeTempDir()
         defer { cleanup(dir) }
         let manager = makeTabManager()
-        let url = tempFile(in: dir)
+        let url = try tempFile(in: dir)
         manager.openTab(url: url)
         #expect(!manager.hasUnsavedChanges)
         #expect(manager.dirtyTabs.isEmpty)
     }
 
-    @Test func hasUnsavedChanges_true_whenDirty() {
-        let dir = makeTempDir()
+    @Test func hasUnsavedChanges_true_whenDirty() throws {
+        let dir = try makeTempDir()
         defer { cleanup(dir) }
         let manager = makeTabManager()
-        let url = tempFile(in: dir)
+        let url = try tempFile(in: dir)
         manager.openTab(url: url)
         manager.updateContent("changed")
         #expect(manager.hasUnsavedChanges)
@@ -531,25 +531,25 @@ struct TabManagerEdgeTests {
 
     // MARK: - tabsAffectedByDeletion
 
-    @Test func tabsAffectedByDeletion_exactMatch() {
-        let dir = makeTempDir()
+    @Test func tabsAffectedByDeletion_exactMatch() throws {
+        let dir = try makeTempDir()
         defer { cleanup(dir) }
         let manager = makeTabManager()
-        let url = tempFile(in: dir)
+        let url = try tempFile(in: dir)
         manager.openTab(url: url)
         let affected = manager.tabsAffectedByDeletion(url: url)
         #expect(affected.count == 1)
     }
 
-    @Test func tabsAffectedByDeletion_childOfDirectory() {
-        let dir = makeTempDir()
+    @Test func tabsAffectedByDeletion_childOfDirectory() throws {
+        let dir = try makeTempDir()
         defer { cleanup(dir) }
         let manager = makeTabManager()
-        try? FileManager.default.createDirectory(
+        try FileManager.default.createDirectory(
             at: dir.appendingPathComponent("subdir"), withIntermediateDirectories: true
         )
         let childURL = dir.appendingPathComponent("subdir/child.swift")
-        try? "test".write(to: childURL, atomically: true, encoding: .utf8)
+        try "test".write(to: childURL, atomically: true, encoding: .utf8)
         manager.openTab(url: childURL)
 
         let affected = manager.tabsAffectedByDeletion(url: dir.appendingPathComponent("subdir"))
@@ -594,22 +594,22 @@ struct TabManagerEdgeTests {
 
     // MARK: - Markdown preview toggle
 
-    @Test func togglePreviewMode_nonMarkdown_noOp() {
-        let dir = makeTempDir()
+    @Test func togglePreviewMode_nonMarkdown_noOp() throws {
+        let dir = try makeTempDir()
         defer { cleanup(dir) }
         let manager = makeTabManager()
-        let url = tempFile(in: dir, name: "test.swift")
+        let url = try tempFile(in: dir, name: "test.swift")
         manager.openTab(url: url)
         manager.togglePreviewMode()
     }
 
     // MARK: - openTabAndGoToLine
 
-    @Test func openTabAndGoToLine_setsPendingLine() {
-        let dir = makeTempDir()
+    @Test func openTabAndGoToLine_setsPendingLine() throws {
+        let dir = try makeTempDir()
         defer { cleanup(dir) }
         let manager = makeTabManager()
-        let url = tempFile(in: dir, content: "line1\nline2\nline3")
+        let url = try tempFile(in: dir, content: "line1\nline2\nline3")
         manager.openTabAndGoToLine(url: url, line: 2)
         #expect(manager.pendingGoToLine == 2)
     }

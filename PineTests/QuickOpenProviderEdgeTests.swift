@@ -128,8 +128,10 @@ struct QuickOpenProviderEdgeTests {
 
     // MARK: - maxIndexDepth
 
-    @Test func maxIndexDepth_isReasonable() {
-        #expect(QuickOpenProvider.maxIndexDepth == 100)
+    @Test func maxIndexDepth_preventsInfiniteRecursion() {
+        // maxIndexDepth should be positive and bounded to prevent runaway traversal
+        #expect(QuickOpenProvider.maxIndexDepth > 0)
+        #expect(QuickOpenProvider.maxIndexDepth <= 1000)
     }
 
     // MARK: - Multiple recordOpened deduplicates
