@@ -96,4 +96,30 @@ class PineUITestCase: XCTestCase {
     func cleanupProject(_ url: URL) {
         try? FileManager.default.removeItem(at: url)
     }
+
+    // MARK: - Editor Tab Helpers
+
+    /// Finds an editor tab button by file name.
+    func editorTab(_ fileName: String) -> XCUIElement {
+        app.buttons["editorTab_\(fileName)"].firstMatch
+    }
+
+    /// Finds the close button for an editor tab by file name.
+    func editorTabCloseButton(_ fileName: String) -> XCUIElement {
+        app.buttons["editorTabClose_\(fileName)"].firstMatch
+    }
+
+    /// Opens a file from the sidebar and waits for the editor tab to appear.
+    func openFile(_ name: String) {
+        let fileNode = app.staticTexts["fileNode_\(name)"]
+        XCTAssertTrue(
+            waitForExistence(fileNode, timeout: 10),
+            "\(name) should appear in the sidebar"
+        )
+        fileNode.click()
+        XCTAssertTrue(
+            waitForExistence(editorTab(name), timeout: 5),
+            "\(name) tab should appear"
+        )
+    }
 }

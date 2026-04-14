@@ -1,14 +1,14 @@
 //
-//  EditorSaveDirtyStateTests.swift
+//  EditorTabNavigationTests.swift
 //  PineUITests
 //
-//  Tests for editor save flow, dirty state indicators, find & replace
-//  menu items, and multi-tab switching behavior.
+//  Tests for editor tab navigation: file menu structure, multi-tab
+//  switching, tab close behavior, and status bar integration.
 //
 
 import XCTest
 
-final class EditorSaveDirtyStateTests: PineUITestCase {
+final class EditorTabNavigationTests: PineUITestCase {
 
     private var projectURL: URL!
 
@@ -26,23 +26,6 @@ final class EditorSaveDirtyStateTests: PineUITestCase {
             cleanupProject(url)
         }
         try super.tearDownWithError()
-    }
-
-    // MARK: - Helpers
-
-    private func editorTab(_ fileName: String) -> XCUIElement {
-        app.buttons["editorTab_\(fileName)"].firstMatch
-    }
-
-    private func editorTabCloseButton(_ fileName: String) -> XCUIElement {
-        app.buttons["editorTabClose_\(fileName)"].firstMatch
-    }
-
-    private func openFile(_ name: String) {
-        let fileNode = app.staticTexts["fileNode_\(name)"]
-        XCTAssertTrue(waitForExistence(fileNode, timeout: 5), "\(name) should appear in sidebar")
-        fileNode.click()
-        XCTAssertTrue(waitForExistence(editorTab(name), timeout: 5), "\(name) tab should open")
     }
 
     // MARK: - Save menu item exists and is accessible
@@ -104,17 +87,15 @@ final class EditorSaveDirtyStateTests: PineUITestCase {
 
         // Switch between tabs and verify none disappear
         editorTab("main.swift").click()
-        let mainDeadline = Date().addingTimeInterval(5)
-        while !editorTab("main.swift").isSelected && Date() < mainDeadline {
-            Thread.sleep(forTimeInterval: 0.1)
-        }
+        let mainSelected = NSPredicate(format: "isSelected == true")
+        let mainExpectation = XCTNSPredicateExpectation(predicate: mainSelected, object: editorTab("main.swift"))
+        wait(for: [mainExpectation], timeout: 5)
         XCTAssertTrue(editorTab("main.swift").isSelected, "main.swift should become selected")
 
         editorTab("notes.txt").click()
-        let notesDeadline = Date().addingTimeInterval(5)
-        while !editorTab("notes.txt").isSelected && Date() < notesDeadline {
-            Thread.sleep(forTimeInterval: 0.1)
-        }
+        let notesSelected = NSPredicate(format: "isSelected == true")
+        let notesExpectation = XCTNSPredicateExpectation(predicate: notesSelected, object: editorTab("notes.txt"))
+        wait(for: [notesExpectation], timeout: 5)
         XCTAssertTrue(editorTab("notes.txt").isSelected, "notes.txt should become selected")
 
         // All tabs should still be present

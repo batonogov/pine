@@ -175,8 +175,8 @@ final class SidebarFileOperationsTests: PineUITestCase {
         let untitledPath = projectURL.appendingPathComponent("Untitled").path
         let fileCreated = waitForFileExistence(atPath: untitledPath, timeout: 5)
         XCTAssertTrue(
-            fileCreated || sidebar.exists,
-            "New file should be created on disk or app should remain responsive"
+            fileCreated,
+            "New file should be created on disk"
         )
     }
 }

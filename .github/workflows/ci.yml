@@ -524,7 +524,7 @@ jobs:
             test-classes: >-
               -only-testing:PineUITests/GoToLineTabOverflowExternalChangesUITests
               -only-testing:PineUITests/QuickOpenUITests
-              -only-testing:PineUITests/EditorSaveDirtyStateTests
+              -only-testing:PineUITests/EditorTabNavigationTests
           # Shard 5 — Files & Branch (21 tests)
           - shard-name: "Files & Branch"
             test-classes: >-

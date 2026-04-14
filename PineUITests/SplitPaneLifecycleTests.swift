@@ -30,10 +30,6 @@ final class SplitPaneLifecycleTests: PineUITestCase {
 
     // MARK: - Helpers
 
-    private func editorTab(_ fileName: String) -> XCUIElement {
-        app.buttons["editorTab_\(fileName)"].firstMatch
-    }
-
     private func terminalTab(_ name: String) -> XCUIElement {
         app.descendants(matching: .any)["terminalTab_\(name)"].firstMatch
     }
@@ -57,19 +53,6 @@ final class SplitPaneLifecycleTests: PineUITestCase {
     private func createTerminalViaMenu() {
         clickMenuBarItem("Terminal")
         app.menuItems["New Tab"].click()
-    }
-
-    private func openFile(_ name: String) {
-        let fileNode = app.staticTexts["fileNode_\(name)"]
-        XCTAssertTrue(
-            waitForExistence(fileNode, timeout: 10),
-            "\(name) should appear in the sidebar"
-        )
-        fileNode.click()
-        XCTAssertTrue(
-            waitForExistence(editorTab(name), timeout: 5),
-            "\(name) tab should appear"
-        )
     }
 
     private func launchAndWaitForLoad() {
@@ -123,10 +106,9 @@ final class SplitPaneLifecycleTests: PineUITestCase {
 
         // Wait for divider to disappear
         let divider = paneDividers.firstMatch
-        let deadline = Date().addingTimeInterval(5)
-        while divider.exists && Date() < deadline {
-            Thread.sleep(forTimeInterval: 0.1)
-        }
+        let predicate = NSPredicate(format: "exists == false")
+        let dividerGone = XCTNSPredicateExpectation(predicate: predicate, object: divider)
+        wait(for: [dividerGone], timeout: 5)
         XCTAssertFalse(divider.exists, "Pane divider should disappear after closing terminal")
 
         // Editor tab should still be there

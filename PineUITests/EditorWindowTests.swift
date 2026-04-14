@@ -27,18 +27,6 @@ final class EditorWindowTests: PineUITestCase {
         try super.tearDownWithError()
     }
 
-    // MARK: - Helpers
-
-    /// Finds an editor tab button by file name.
-    private func editorTab(_ fileName: String) -> XCUIElement {
-        app.buttons["editorTab_\(fileName)"].firstMatch
-    }
-
-    /// Finds the close button for a tab by file name.
-    private func editorTabCloseButton(_ fileName: String) -> XCUIElement {
-        app.buttons["editorTabClose_\(fileName)"].firstMatch
-    }
-
     // MARK: - P1: File selection opens a tab
 
     func testClickFileInSidebarOpensTab() throws {
@@ -96,10 +84,9 @@ final class EditorWindowTests: PineUITestCase {
 
         // Click on main.swift tab to switch back
         mainTab.click()
-        let deadline = Date().addingTimeInterval(10)
-        while !mainTab.isSelected && Date() < deadline {
-            Thread.sleep(forTimeInterval: 0.1)
-        }
+        let selectedPredicate = NSPredicate(format: "isSelected == true")
+        let selectedExpectation = XCTNSPredicateExpectation(predicate: selectedPredicate, object: mainTab)
+        wait(for: [selectedExpectation], timeout: 10)
         XCTAssertTrue(mainTab.isSelected, "main.swift tab should become selected")
 
         // main.swift tab should still exist (switching doesn't close tabs)
