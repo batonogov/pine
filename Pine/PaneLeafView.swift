@@ -178,6 +178,11 @@ struct PaneLeafView: View {
                     onCloseAllTabs: {
                         closeAllTabsWithConfirmation(tabManager: tabManager)
                     },
+                    isMarkdownFile: tabManager.activeTab?.isMarkdownFile ?? false,
+                    previewMode: tabManager.activeTab?.previewMode ?? .source,
+                    onTogglePreview: {
+                        tabManager.toggleMarkdownPreview()
+                    },
                     overridePaneID: paneID
                 )
             }
