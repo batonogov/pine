@@ -53,5 +53,6 @@ runs:
         fi
 
         echo "Using Xcode at: $XCODE_PATH"
+        echo "DEVELOPER_DIR=$XCODE_PATH/Contents/Developer" >> "$GITHUB_ENV"
         sudo xcode-select -s "$XCODE_PATH/Contents/Developer"
         xcodebuild -version
