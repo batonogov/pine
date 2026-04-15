@@ -181,7 +181,7 @@ struct PaneLeafView: View {
                     isMarkdownFile: tabManager.activeTab?.isMarkdownFile ?? false,
                     previewMode: tabManager.activeTab?.previewMode ?? .source,
                     onTogglePreview: {
-                        tabManager.toggleMarkdownPreview()
+                        tabManager.togglePreviewMode()
                     },
                     overridePaneID: paneID
                 )
