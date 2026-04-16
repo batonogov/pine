@@ -70,12 +70,83 @@ struct LayoutStabilityTests {
 
         workspace.loadDirectory(url: tmpDir)
 
-        // Uses CheckedContinuation-based waiting instead of polling with
-        // Task.sleep — eliminates flaky timeouts on CI runners where GCD
-        // main queue drain and Swift concurrency yields don't interleave
-        // reliably (see #823).
+        // After the GCD → Swift Concurrency rewrite (#837), the entire load
+        // pipeline lives in `Task.detached` + `await MainActor.run { ... }`,
+        // so the continuation resume cannot be starved by an unrelated GCD
+        // main-queue block. Local: ~0.08s; CI must stay << 1s.
         await workspace.waitForLoadingComplete()
         #expect(!workspace.isLoading)
+    }
+
+    @Test("isLoading becomes false within 5s even under rapid back-to-back loads",
+          .timeLimit(.minutes(1)))
+    func isLoadingFalseUnderRapidLoads() async throws {
+        // Regression guard for #837 — ensures the new `Task.detached` load
+        // pipeline cooperates with `waitForLoadingComplete` even when the
+        // scheduler is hammered with multiple loads in quick succession.
+        let workspace = WorkspaceManager()
+        var dirs: [URL] = []
+        for index in 0..<5 {
+            let dir = FileManager.default.temporaryDirectory
+                .appendingPathComponent("pine-rapid-\(index)-\(UUID().uuidString)")
+            try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+            dirs.append(dir)
+        }
+        defer {
+            for dir in dirs { try? FileManager.default.removeItem(at: dir) }
+        }
+
+        // Issue 5 loads back-to-back without yielding. Each call cancels
+        // the previous in-flight task and bumps `loadGeneration`.
+        for dir in dirs {
+            workspace.loadDirectory(url: dir)
+        }
+
+        // The final load's continuation must resume in well under the 60s
+        // CI budget — anything longer reproduces the original starvation.
+        let start = ContinuousClock.now
+        await workspace.waitForLoadingComplete()
+        let elapsed = ContinuousClock.now - start
+        #expect(!workspace.isLoading)
+        #expect(elapsed < .seconds(5),
+                "waitForLoadingComplete took \(elapsed) — scheduler starvation regression")
+    }
+
+    @Test("waitForLoadingComplete returns immediately when no load is in flight")
+    func waitForLoadingCompleteIsNoOpWhenIdle() async {
+        // Documents the contract used by `isLoadingFalseAfterEmptyDir`:
+        // calling `waitForLoadingComplete()` on a fresh manager must not
+        // suspend at all.
+        let workspace = WorkspaceManager()
+        let start = ContinuousClock.now
+        await workspace.waitForLoadingComplete()
+        let elapsed = ContinuousClock.now - start
+        #expect(elapsed < .milliseconds(100))
+    }
+
+    @Test("waitForLoadingComplete resumes sequential waiters within budget",
+          .timeLimit(.minutes(1)))
+    func waitForLoadingCompleteSequentialWaiters() async throws {
+        // Calling `waitForLoadingComplete()` repeatedly must continue to
+        // return promptly after the first resume — the continuation array
+        // drain logic must leave the manager in a clean idle state.
+        let workspace = WorkspaceManager()
+        let tmpDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("pine-seqwait-\(UUID().uuidString)")
+        try? FileManager.default.createDirectory(at: tmpDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tmpDir) }
+
+        workspace.loadDirectory(url: tmpDir)
+        await workspace.waitForLoadingComplete()
+        #expect(!workspace.isLoading)
+
+        // Subsequent waits must be no-ops (idle path).
+        let start = ContinuousClock.now
+        for _ in 0..<5 {
+            await workspace.waitForLoadingComplete()
+        }
+        let elapsed = ContinuousClock.now - start
+        #expect(elapsed < .milliseconds(100))
     }
 
     // MARK: - EditorTabBar width stability
