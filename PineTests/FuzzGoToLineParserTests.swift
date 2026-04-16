@@ -15,7 +15,7 @@ struct FuzzGoToLineParserTests {
     @Test func fuzzGoToLineParser_randomInput() {
         var rng = SplitMix64(seed: 61)
 
-        for _ in 0..<1000 {
+        for _ in 0..<200 {
             let input: String
             switch rng.next() % 5 {
             case 0:

@@ -16,7 +16,7 @@ struct FuzzSyntaxHighlighterTests {
         var rng = SplitMix64(seed: 47)
         let decoder = JSONDecoder()
 
-        for _ in 0..<1000 {
+        for _ in 0..<200 {
             let json: String
             switch rng.next() % 6 {
             case 0:

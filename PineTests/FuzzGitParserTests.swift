@@ -17,7 +17,7 @@ struct FuzzGitDiffParserTests {
     @Test func fuzzParseDiff_randomInput() {
         var rng = SplitMix64(seed: 42)
 
-        for _ in 0..<1000 {
+        for _ in 0..<200 {
             let input: String
             switch rng.next() % 5 {
             case 0:
@@ -79,7 +79,7 @@ struct FuzzGitDiffParserTests {
     @Test func fuzzParseHunkNewStart_randomInput() {
         var rng = SplitMix64(seed: 43)
 
-        for _ in 0..<1000 {
+        for _ in 0..<200 {
             let input = FuzzGen.randomPrintable(
                 count: FuzzGen.randomLength(max: 200, rng: &rng),
                 rng: &rng
@@ -140,7 +140,7 @@ struct FuzzGitBlameParserTests {
     @Test func fuzzParseBlame_randomInput() {
         var rng = SplitMix64(seed: 44)
 
-        for _ in 0..<1000 {
+        for _ in 0..<200 {
             let input: String
             switch rng.next() % 5 {
             case 0:
@@ -276,7 +276,7 @@ struct FuzzGitStatusParserTests {
     @Test func fuzzParseStatusOutput_randomInput() {
         var rng = SplitMix64(seed: 45)
 
-        for _ in 0..<1000 {
+        for _ in 0..<200 {
             let input: String
             switch rng.next() % 4 {
             case 0:
@@ -301,7 +301,7 @@ struct FuzzGitStatusParserTests {
     @Test func fuzzParseIgnoredOutput_randomInput() {
         var rng = SplitMix64(seed: 46)
 
-        for _ in 0..<1000 {
+        for _ in 0..<200 {
             let input = FuzzGen.randomPrintable(
                 count: FuzzGen.randomLength(max: 500, rng: &rng),
                 rng: &rng

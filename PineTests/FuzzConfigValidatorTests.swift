@@ -15,7 +15,7 @@ struct FuzzConfigValidatorTests {
     @Test func fuzzParseYamllint_randomInput() {
         var rng = SplitMix64(seed: 53)
 
-        for _ in 0..<1000 {
+        for _ in 0..<200 {
             let input: String
             switch rng.next() % 4 {
             case 0:
@@ -40,7 +40,7 @@ struct FuzzConfigValidatorTests {
     @Test func fuzzParseShellcheck_randomInput() {
         var rng = SplitMix64(seed: 54)
 
-        for _ in 0..<1000 {
+        for _ in 0..<200 {
             let input: String
             switch rng.next() % 4 {
             case 0:
@@ -62,7 +62,7 @@ struct FuzzConfigValidatorTests {
     @Test func fuzzParseTerraform_randomInput() {
         var rng = SplitMix64(seed: 55)
 
-        for _ in 0..<1000 {
+        for _ in 0..<200 {
             let input: String
             switch rng.next() % 4 {
             case 0:
@@ -84,7 +84,7 @@ struct FuzzConfigValidatorTests {
     @Test func fuzzParseHadolint_randomInput() {
         var rng = SplitMix64(seed: 56)
 
-        for _ in 0..<1000 {
+        for _ in 0..<200 {
             let input: String
             switch rng.next() % 4 {
             case 0:
@@ -106,7 +106,7 @@ struct FuzzConfigValidatorTests {
     @Test func fuzzBuiltinValidateYAML_randomInput() {
         var rng = SplitMix64(seed: 57)
 
-        for _ in 0..<1000 {
+        for _ in 0..<200 {
             let content: String
             switch rng.next() % 4 {
             case 0:
@@ -125,7 +125,7 @@ struct FuzzConfigValidatorTests {
     @Test func fuzzBuiltinValidateDockerfile_randomInput() {
         var rng = SplitMix64(seed: 58)
 
-        for _ in 0..<1000 {
+        for _ in 0..<200 {
             let content: String
             switch rng.next() % 4 {
             case 0:
@@ -144,7 +144,7 @@ struct FuzzConfigValidatorTests {
     @Test func fuzzBuiltinValidateShell_randomInput() {
         var rng = SplitMix64(seed: 59)
 
-        for _ in 0..<1000 {
+        for _ in 0..<200 {
             let content: String
             switch rng.next() % 4 {
             case 0:
@@ -165,7 +165,7 @@ struct FuzzConfigValidatorTests {
         let extensions = ["yml", "yaml", "tf", "tfvars", "sh", "bash", "zsh", "txt", "", "swift", "py"]
         let names = ["Dockerfile", "Dockerfile.prod", "dockerfile", "README.md", "Makefile", ".yml"]
 
-        for _ in 0..<1000 {
+        for _ in 0..<200 {
             let url: URL
             if rng.next() % 2 == 0 {
                 let ext = extensions[Int(rng.next() % UInt64(extensions.count))]

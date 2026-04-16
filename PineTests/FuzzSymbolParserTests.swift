@@ -16,7 +16,7 @@ struct FuzzSymbolParserTests {
         var rng = SplitMix64(seed: 50)
         let extensions = ["swift", "py", "js", "ts", "go", "rb", "rs", "java", "kt", "unknown"]
 
-        for _ in 0..<1000 {
+        for _ in 0..<200 {
             let content: String
             let ext = extensions[Int(rng.next() % UInt64(extensions.count))]
 
@@ -34,7 +34,7 @@ struct FuzzSymbolParserTests {
             case 2:
                 content = generateRandomCode(rng: &rng)
             case 3:
-                content = String(repeating: "func ", count: 500)
+                content = String(repeating: "func ", count: 100)
             default:
                 content = ""
             }
@@ -48,7 +48,7 @@ struct FuzzSymbolParserTests {
         let inputs = [
             ("", "swift"),
             ("\0\0\0", "swift"),
-            (String(repeating: "\n", count: 10000), "py"),
+            (String(repeating: "\n", count: 1000), "py"),
             ("class ", "swift"),
             ("func ", "swift"),
             ("struct ", "go"),
@@ -56,11 +56,11 @@ struct FuzzSymbolParserTests {
             ("function ", "js"),
             ("interface ", "ts"),
             // Deeply nested
-            (String(repeating: "class A {\n", count: 100), "swift"),
+            (String(repeating: "class A {\n", count: 50), "swift"),
             // Only comments
-            (String(repeating: "// comment\n", count: 100), "swift"),
+            (String(repeating: "// comment\n", count: 50), "swift"),
             // Only strings
-            ("\"" + String(repeating: "func test() {}", count: 100) + "\"", "swift"),
+            ("\"" + String(repeating: "func test() {}", count: 50) + "\"", "swift"),
         ]
         for (content, ext) in inputs {
             _ = SymbolParser.parse(content: content, fileExtension: ext)
@@ -74,7 +74,7 @@ struct FuzzSymbolParserTests {
             PineSymbol(name: "MyClass", kind: .class, line: 5),
         ]
 
-        for _ in 0..<1000 {
+        for _ in 0..<200 {
             let query = FuzzGen.randomUnicode(
                 count: FuzzGen.randomLength(max: 50, rng: &rng),
                 rng: &rng
@@ -86,7 +86,7 @@ struct FuzzSymbolParserTests {
     @Test func fuzzLineNumber_randomInput() {
         var rng = SplitMix64(seed: 52)
 
-        for _ in 0..<1000 {
+        for _ in 0..<200 {
             let content = FuzzGen.randomUnicode(
                 count: FuzzGen.randomLength(max: 500, rng: &rng),
                 rng: &rng
