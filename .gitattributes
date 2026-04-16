@@ -3,3 +3,7 @@
 # real changes should be merged manually.
 # Setup: git config merge.ours.driver true
 *.xcstrings merge=ours
+
+# Snapshot test reference images — treat as binary to avoid
+# useless text diffs and merge conflicts.
+PineTests/SnapshotTests/__Snapshots__/*.png binary
