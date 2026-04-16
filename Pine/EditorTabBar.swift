@@ -253,12 +253,18 @@ struct EditorTabBar: View {
                 }
                 .buttonStyle(.plain)
                 .help(Strings.menuTogglePreview)
+                .accessibilityLabel(Strings.menuTogglePreview)
                 .accessibilityIdentifier(AccessibilityID.markdownPreviewToggle)
                 .padding(.trailing, 4)
             }
         }
         .frame(height: LayoutMetrics.tabBarHeight)
         .background(.bar)
+        // `.contain` keeps each interactive child as a discrete accessibility
+        // element with its own identifier — without this hint, SwiftUI on
+        // macOS lets the parent PaneLeafView's `paneLeaf_<id>` identifier
+        // propagate to inline buttons (e.g. `markdownPreviewToggle`).
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier(AccessibilityID.editorTabBar)
     }
 }
