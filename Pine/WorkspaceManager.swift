@@ -62,17 +62,18 @@ final class WorkspaceManager {
     /// when a new refresh starts (prevents stale data from overwriting newer results).
     private var gitRefreshTask: Task<Void, Never>?
 
-    /// After a synchronous refreshFileTree(), watcher events within this
-    /// window are suppressed because they echo the action we just handled.
-    /// Kept short (150ms) so external changes (e.g. `mkdir` in the built-in
-    /// terminal) are not silently dropped — issue #774. Previously this was
-    /// 1s, which was long enough to swallow rapid terminal-driven changes
-    /// following any sidebar edit.
-    private var suppressWatcherUntil: Date?
-    /// Shared timing constant: used both as the `FileSystemWatcher` debounce
-    /// interval and as the watcher-echo suppression window after an in-app
-    /// `refreshFileTree()`. Keeping them equal guarantees that a refresh only
-    /// swallows its own immediate echo and never a subsequent external change.
+    /// `FileSystemWatcher` debounce interval. Short enough (150 ms) that
+    /// changes made in the built-in terminal or by external processes
+    /// appear in the sidebar almost immediately while still coalescing
+    /// rapid bursts (npm install, git checkout) into a handful of refreshes.
+    ///
+    /// Note: a previous post-refresh suppression window (`suppressWatcherUntil`)
+    /// was removed in the fix for issue #839 — it was responsible for
+    /// swallowing genuine external FSEvents that happened to land in the
+    /// 150 ms after any in-app sidebar action (rename / create / delete).
+    /// `loadGeneration` already guarantees that overlapping refreshes never
+    /// corrupt `rootNodes`, and `refreshFileTreeAsync` is cheap enough that
+    /// the duplicate cost of an echoed event is invisible to users.
     static let watcherDebounce: TimeInterval = 0.15
 
     /// Schedules a debounced `onRootNodesChanged` notification.
@@ -346,20 +347,21 @@ final class WorkspaceManager {
         // Cancel any in-flight git refresh to avoid stale data overwriting newer results.
         gitRefreshTask?.cancel()
         gitRefreshTask = Task { await gitProvider.refreshAsync() }
-        // Suppress watcher echoes — we just refreshed, so any watcher event
-        // within the next second is redundant and could break inline editing.
-        suppressWatcherUntil = Date().addingTimeInterval(Self.watcherDebounce)
     }
 
     /// Background variant called by the file watcher.
     /// Runs on main (watcher dispatches here) so loadGeneration
     /// access is safe; heavy I/O is dispatched to a background queue.
-    /// `internal` (not `private`) so tests can drive it directly and
-    /// verify suppression behaviour without depending on FSEvents timing.
+    /// `internal` (not `private`) so tests can drive it directly without
+    /// depending on FSEvents timing.
+    ///
+    /// Issue #839: this used to early-return if a suppression window opened
+    /// by `refreshFileTree()` was still active. That window dropped genuine
+    /// external FSEvents (e.g. an external `touch` arriving within 150 ms
+    /// of any sidebar edit), leaving the sidebar stale. The window has been
+    /// removed; `loadGeneration` is enough to keep concurrent refreshes
+    /// consistent and the duplicate cost of an echoed event is invisible.
     func refreshFileTreeAsync() {
-        if let until = suppressWatcherUntil, Date() < until {
-            return
-        }
         guard let url = rootURL else { return }
         loadGeneration += 1
         let generation = loadGeneration
