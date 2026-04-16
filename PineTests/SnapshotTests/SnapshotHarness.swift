@@ -27,6 +27,11 @@
 //      no RunLoop spin required.
 //    - Reference PNGs are stored under `__Snapshots__/` and discovered via
 //      `#filePath` relative lookups so tests work regardless of cwd.
+//    - Pixel buffer is allocated explicitly at 1× the logical size so the
+//      output is independent of the host display's backing scale (Retina vs
+//      1× CI virtual display). Without this baselines recorded on a 2×
+//      machine differ in pixel dimensions from CI output and the diff
+//      short-circuits to 1.0 ("dimension mismatch").
 //
 
 import AppKit
@@ -57,15 +62,10 @@ func assertSnapshot<V: View>(
     sourceLocation: SourceLocation = #_sourceLocation,
     file: StaticString = #filePath
 ) throws {
-    // CI runners: smoke-only — verify the view renders without crashing,
-    // skip pixel comparison (font metrics and GPU output differ across machines).
-    if SnapshotHarness.isCI {
-        try SnapshotHarness.smokeRender(view: view, size: size, appearance: appearance,
-                                        named: named, sourceLocation: sourceLocation)
-        return
-    }
-
     // Truly headless (no display at all, e.g. SSH): skip entirely.
+    // AppKit cannot draw without an `NSScreen`. CI runners have a virtual
+    // display and are *not* headless in this sense — they still run the full
+    // pixel comparison.
     if SnapshotHarness.isHeadless {
         return
     }
@@ -140,25 +140,20 @@ enum SnapshotHarness {
         ProcessInfo.processInfo.environment["PINE_RECORD_SNAPSHOTS"] == "1"
     }
 
-    /// Returns `true` when running on a CI runner (GitHub Actions, etc.).
-    /// On CI we run smoke-only tests (verify rendering doesn't crash) because
-    /// pixel output differs across machines due to GPU, font metrics, and
-    /// display scaling differences.
-    ///
-    /// Checks the standard `CI` env var (always set by GitHub Actions) and
-    /// an explicit `PINE_SKIP_SNAPSHOTS` flag for manual overrides.
-    static var isCI: Bool {
-        ProcessInfo.processInfo.environment["CI"] != nil
-            || ProcessInfo.processInfo.environment["PINE_SKIP_SNAPSHOTS"] != nil
-    }
-
-    /// Returns `true` when there is no display attached at all (e.g. SSH session).
-    /// In this case AppKit rendering is completely unavailable.
+    /// Returns `true` when there is no display attached at all (e.g. SSH session
+    /// with no virtual display). In that case AppKit cannot render and the
+    /// harness skips silently. CI runners with a virtual display do *not*
+    /// trip this — they still run the full pixel comparison.
     static var isHeadless: Bool {
         NSScreen.main == nil
     }
 
     /// Renders `view` into an `NSBitmapImageRep` at the given size/appearance.
+    ///
+    /// Pixel buffer is sized to the *logical* dimensions (1× scale), independent
+    /// of the host display. This guarantees identical pixel dimensions across
+    /// developer machines (Retina, 2×) and CI virtual displays (1×), so byte-wise
+    /// pixel comparison is meaningful.
     @MainActor
     static func render<V: View>(
         view: V,
@@ -171,7 +166,7 @@ enum SnapshotHarness {
         hosting.layoutSubtreeIfNeeded()
 
         // Wrap in a window so SwiftUI's environment (key window, etc.) is populated.
-        // We use a borderless window kept off-screen so nothing flashes during tests.
+        // Borderless + off-screen so nothing flashes during tests.
         let window = NSWindow(
             contentRect: NSRect(origin: .zero, size: size),
             styleMask: [.borderless],
@@ -183,30 +178,46 @@ enum SnapshotHarness {
         defer { window.orderOut(nil) }
         hosting.layoutSubtreeIfNeeded()
 
-        guard let bitmap = hosting.bitmapImageRepForCachingDisplay(in: hosting.bounds) else {
+        // Allocate a bitmap with pixel dimensions == logical dimensions (1×).
+        // `bitmap.size = size` makes `cacheDisplay(in:to:)` use a backing scale
+        // of `pixelsWide / size.width == 1`, so output is independent of the
+        // host display's scale (Retina 2× developer machine vs CI virtual 1×).
+        let pixelsWide = max(1, Int(size.width.rounded()))
+        let pixelsHigh = max(1, Int(size.height.rounded()))
+        guard let bitmap = NSBitmapImageRep(
+            bitmapDataPlanes: nil,
+            pixelsWide: pixelsWide,
+            pixelsHigh: pixelsHigh,
+            bitsPerSample: 8,
+            samplesPerPixel: 4,
+            hasAlpha: true,
+            isPlanar: false,
+            colorSpaceName: .deviceRGB,
+            bytesPerRow: pixelsWide * 4,
+            bitsPerPixel: 32
+        ) else {
             throw SnapshotError.bitmapCreationFailed
         }
-        bitmap.size = hosting.bounds.size
+        bitmap.size = size
+
+        // Pre-fill with the appearance-appropriate window background so any
+        // SwiftUI elements drawn with semi-transparent system colors (e.g.
+        // `.secondary` text) composite onto a realistic backdrop instead of a
+        // transparent canvas — otherwise dark-mode `.secondary` text becomes
+        // nearly invisible in the PNG because there is nothing for it to blend
+        // against.
+        if let context = NSGraphicsContext(bitmapImageRep: bitmap) {
+            NSGraphicsContext.saveGraphicsState()
+            NSGraphicsContext.current = context
+            appearance.nsAppearance.performAsCurrentDrawingAppearance {
+                NSColor.windowBackgroundColor.setFill()
+                NSBezierPath(rect: NSRect(origin: .zero, size: size)).fill()
+            }
+            NSGraphicsContext.restoreGraphicsState()
+        }
+
         hosting.cacheDisplay(in: hosting.bounds, to: bitmap)
         return bitmap
-    }
-
-    /// Smoke-only rendering for CI: reuses `render` to verify the view produces
-    /// a valid bitmap without crashing. No pixel comparison.
-    @MainActor
-    static func smokeRender<V: View>(
-        view: V,
-        size: NSSize,
-        appearance: SnapshotAppearance,
-        named: String,
-        sourceLocation: SourceLocation
-    ) throws {
-        let bitmap = try render(view: view, size: size, appearance: appearance)
-        guard bitmap.pixelsWide > 0, bitmap.pixelsHigh > 0 else {
-            let message = "Smoke test failed for '\(named)': bitmap has zero dimensions"
-            Issue.record(Comment(rawValue: message), sourceLocation: sourceLocation)
-            return
-        }
     }
 
     static func referenceURL(for name: String, testFile: StaticString) -> URL {
