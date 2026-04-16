@@ -88,14 +88,46 @@ struct GitAndNotificationObserver: ViewModifier {
                 onHandleFileDeletion(deletedURL)
             }
             .onChange(of: workspace.externalChangeToken) { _, _ in
-                guard controlActiveState == .key else { return }
+                // Issue #838: never gate the FSEvents path on focus. The
+                // previous `controlActiveState == .key` guard meant that
+                // edits made in `nano`/`vim` while Pine was inactive were
+                // forever invisible — by the time the user came back the
+                // token had already incremented (no further .onChange) and
+                // the activation re-check below could miss the .inactive
+                // → .active transition entirely. `checkExternalChanges()`
+                // is cheap (one `stat()` per open tab) and silent when no
+                // tab changed, so it is safe to run unconditionally.
                 let result = tabManager.checkExternalChanges()
                 onHandleExternalChanges(result)
             }
             .onChange(of: controlActiveState) { _, newState in
-                // When the window becomes key, check for external changes that
-                // may have been missed while the window was inactive (issue #438).
-                guard newState == .key else { return }
+                // When the window comes back into focus, re-check for
+                // external changes. Loosened from `== .key` to
+                // `!= .inactive` so transitions through `.active` are
+                // also caught (multi-window setups, app switcher, menu
+                // bar interactions on macOS 26 with Liquid Glass) —
+                // see issue #838.
+                guard newState != .inactive else { return }
+                let result = tabManager.checkExternalChanges()
+                onHandleExternalChanges(result)
+            }
+            // Defense in depth: AppKit's `didBecomeActive` is the
+            // authoritative source for app-level activation on macOS and
+            // is not subject to SwiftUI environment-value lag. This
+            // catches the "Pine was inactive when the file changed, then
+            // Pine becomes active" path even when the SwiftUI
+            // controlActiveState transition is delivered late or skipped.
+            .onReceive(NotificationCenter.default.publisher(
+                for: NSApplication.didBecomeActiveNotification
+            )) { _ in
+                let result = tabManager.checkExternalChanges()
+                onHandleExternalChanges(result)
+            }
+            // …and per-window key changes. Some app-switcher paths only
+            // fire window-level activation, not application-level.
+            .onReceive(NotificationCenter.default.publisher(
+                for: NSWindow.didBecomeKeyNotification
+            )) { _ in
                 let result = tabManager.checkExternalChanges()
                 onHandleExternalChanges(result)
             }
