@@ -340,9 +340,14 @@ struct WorkspaceManagerTests {
         #expect(aNode?.children?.first?.name == "b")
     }
 
-    @Test("refreshFileTree suppresses watcher echoes within the suppression window")
+    /// Issue #839 — the previous post-refresh suppression window
+    /// (`suppressWatcherUntil`) was removed because it swallowed genuine
+    /// external FSEvents. This test pins down the new invariant: a watcher
+    /// callback delivered immediately after an in-app refresh MUST be
+    /// honored, not silently dropped.
+    @Test("refreshFileTreeAsync immediately after refreshFileTree updates the tree (issue #839)")
     @MainActor
-    func refreshFileTreeSuppressesEchoWithinWindow() async throws {
+    func refreshFileTreeAsyncIsNotSuppressedAfterRefreshFileTree() async throws {
         let dir = try makeTempDirectory()
         defer { cleanup(dir) }
 
@@ -352,36 +357,32 @@ struct WorkspaceManagerTests {
         let manager = WorkspaceManager()
         manager.loadDirectory(url: dir)
 
-        // Wait for initial load
         for _ in 0..<150 {
             try await Task.sleep(for: .milliseconds(200))
             if manager.rootNodes.contains(where: { $0.name == "initial.txt" }) { break }
         }
         #expect(manager.rootNodes.contains { $0.name == "initial.txt" })
 
-        // Simulate an in-app refresh — this opens the suppression window
-        // (WorkspaceManager.watcherDebounce). Watcher callbacks that fire
-        // inside the window are redundant echoes of this refresh and must
-        // be dropped so rapid interactive edits don't fight the reload pipeline.
+        // Sync refresh (formerly opens a 150 ms suppression window).
         manager.refreshFileTree()
 
-        // Mutate the filesystem so that, IF `refreshFileTreeAsync()` were to
-        // actually run, we would observe a difference in `rootNodes`.
+        // External delete that arrives "within the suppression window"
+        // (immediately afterwards on the same main-thread tick).
         try FileManager.default.removeItem(at: initialURL)
 
-        // Drive the watcher code path directly (we cannot rely on FSEvents
-        // timing on CI). `refreshFileTreeAsync` is exposed as `internal`
-        // specifically so tests can exercise the suppression branch.
+        // Watcher path must run, not be silently dropped.
         manager.refreshFileTreeAsync()
 
-        // Well inside the 150ms suppression window.
-        try await Task.sleep(for: .milliseconds(80))
+        // Phase 1 (sync via async dispatch) lands quickly on main; poll a
+        // few ticks rather than sleeping the whole suspected window.
+        for _ in 0..<60 {
+            try await Task.sleep(for: .milliseconds(50))
+            if !manager.rootNodes.contains(where: { $0.name == "initial.txt" }) { break }
+        }
 
-        // Suppression must have caused `refreshFileTreeAsync` to early-return,
-        // so the cached `rootNodes` still reflects the pre-removal snapshot.
         #expect(
-            manager.rootNodes.contains { $0.name == "initial.txt" },
-            "Watcher echoes within the suppression window must not reload the tree"
+            !manager.rootNodes.contains { $0.name == "initial.txt" },
+            "External delete delivered inside the former suppression window must update the tree"
         )
     }
 
