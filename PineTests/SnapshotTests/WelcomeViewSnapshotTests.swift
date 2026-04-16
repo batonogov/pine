@@ -28,6 +28,12 @@ struct WelcomeViewSnapshotTests {
         return registry
     }
 
+    // WelcomeView is the largest snapshot (720×460) and includes a SF Symbol
+    // app icon plus localized prose. SF Symbol rendering and text anti-aliasing
+    // vary by ~1% between developer Macs and the macOS CI runner image, so we
+    // bump tolerance slightly above the default 0.01.
+    private static let largeViewTolerance = 0.02
+
     @Test("WelcomeView renders in light appearance")
     func welcomeLight() throws {
         let view = WelcomeView(registry: makeRegistry())
@@ -35,7 +41,8 @@ struct WelcomeViewSnapshotTests {
             of: view,
             size: NSSize(width: 720, height: 460),
             appearance: .light,
-            named: "WelcomeView.light"
+            named: "WelcomeView.light",
+            tolerance: Self.largeViewTolerance
         )
     }
 
@@ -46,7 +53,8 @@ struct WelcomeViewSnapshotTests {
             of: view,
             size: NSSize(width: 720, height: 460),
             appearance: .dark,
-            named: "WelcomeView.dark"
+            named: "WelcomeView.dark",
+            tolerance: Self.largeViewTolerance
         )
     }
 }
