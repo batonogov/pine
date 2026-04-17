@@ -91,6 +91,35 @@ jobs:
           echo "" >> "$GITHUB_STEP_SUMMARY"
           echo "_Download the PerformanceResults.xcresult artifact and open in Xcode Test Navigator for detailed measure {} timings._" >> "$GITHUB_STEP_SUMMARY"
 
+      - name: Check for Regressions
+        id: regression-check
+        if: success() || failure()
+        run: |
+          XCRESULT="PerformanceResults.xcresult"
+          BASELINES="PinePerformanceTests/baselines.json"
+
+          if [ ! -d "$XCRESULT" ] || [ ! -f "$BASELINES" ]; then
+            echo "Skipping regression check — missing xcresult or baselines"
+            echo "has_regression=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          set +e
+          REPORT=$(python3 .github/scripts/check_perf_regression.py "$BASELINES" "$XCRESULT" 2>&1)
+          EXIT_CODE=$?
+          set -e
+
+          echo "$REPORT" >> "$GITHUB_STEP_SUMMARY"
+
+          # Save report to a temp file for the issue body
+          echo "$REPORT" > /tmp/regression_report.md
+
+          if [ $EXIT_CODE -ne 0 ]; then
+            echo "has_regression=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_regression=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Upload Performance Results
         if: success() || failure()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
@@ -119,3 +148,31 @@ jobs:
           2. Download the \`PerformanceResults.xcresult\` artifact for detailed timings
           3. Investigate whether this is a flaky test or a real regression" \
             --label "bug,testing"
+
+      - name: Create Issue on Regression
+        if: steps.regression-check.outputs.has_regression == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          REGRESSION_REPORT=$(cat /tmp/regression_report.md 2>/dev/null || echo "Report unavailable")
+          BODY=$(cat <<ISSUE_EOF
+          ## Summary
+
+          Performance regression detected in nightly benchmarks.
+
+          **Run:** $RUN_URL
+
+          $REGRESSION_REPORT
+
+          ## Next steps
+
+          1. Download the \`PerformanceResults.xcresult\` artifact for detailed timings
+          2. Check recent commits for performance-impacting changes
+          3. If the regression is expected, update \`PinePerformanceTests/baselines.json\`
+          ISSUE_EOF
+          )
+          gh issue create \
+            --title "Performance regression detected ($(date -u '+%Y-%m-%d'))" \
+            --body "$BODY" \
+            --label "bug,performance,testing"
