@@ -124,9 +124,33 @@ struct EditorTabItemSnapshotTests {
         )
     }
 
-    // MARK: - Pinned tab
+    // MARK: - Dirty inactive tab
 
-    @Test("Pinned tab renders in light appearance")
+    @Test("Dirty inactive tab renders in light appearance")
+    func dirtyInactiveTabLight() throws {
+        let tab = makeTab(isDirty: true)
+        try assertSnapshot(
+            of: Harness(tab: tab, isActive: false, constrainedWidth: 180),
+            size: Self.tabSize,
+            appearance: .light,
+            named: "EditorTabItem.dirtyInactive.light"
+        )
+    }
+
+    @Test("Dirty inactive tab renders in dark appearance")
+    func dirtyInactiveTabDark() throws {
+        let tab = makeTab(isDirty: true)
+        try assertSnapshot(
+            of: Harness(tab: tab, isActive: false, constrainedWidth: 180),
+            size: Self.tabSize,
+            appearance: .dark,
+            named: "EditorTabItem.dirtyInactive.dark"
+        )
+    }
+
+    // MARK: - Pinned tab (active)
+
+    @Test("Pinned active tab renders in light appearance")
     func pinnedTabLight() throws {
         let tab = makeTab(isPinned: true)
         try assertSnapshot(
@@ -137,7 +161,7 @@ struct EditorTabItemSnapshotTests {
         )
     }
 
-    @Test("Pinned tab renders in dark appearance")
+    @Test("Pinned active tab renders in dark appearance")
     func pinnedTabDark() throws {
         let tab = makeTab(isPinned: true)
         try assertSnapshot(
@@ -145,6 +169,30 @@ struct EditorTabItemSnapshotTests {
             size: NSSize(width: 60, height: 40),
             appearance: .dark,
             named: "EditorTabItem.pinned.dark"
+        )
+    }
+
+    // MARK: - Pinned tab (inactive)
+
+    @Test("Pinned inactive tab renders in light appearance")
+    func pinnedInactiveTabLight() throws {
+        let tab = makeTab(isPinned: true)
+        try assertSnapshot(
+            of: Harness(tab: tab, isActive: false, constrainedWidth: 40),
+            size: NSSize(width: 60, height: 40),
+            appearance: .light,
+            named: "EditorTabItem.pinnedInactive.light"
+        )
+    }
+
+    @Test("Pinned inactive tab renders in dark appearance")
+    func pinnedInactiveTabDark() throws {
+        let tab = makeTab(isPinned: true)
+        try assertSnapshot(
+            of: Harness(tab: tab, isActive: false, constrainedWidth: 40),
+            size: NSSize(width: 60, height: 40),
+            appearance: .dark,
+            named: "EditorTabItem.pinnedInactive.dark"
         )
     }
 }

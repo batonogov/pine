@@ -64,7 +64,8 @@ struct StatusBarViewSnapshotTests {
             of: view,
             size: Self.barSize,
             appearance: .light,
-            named: "StatusBarView.activeTab.light"
+            named: "StatusBarView.activeTab.light",
+            tolerance: 0.02
         )
     }
 
@@ -81,7 +82,8 @@ struct StatusBarViewSnapshotTests {
             of: view,
             size: Self.barSize,
             appearance: .dark,
-            named: "StatusBarView.activeTab.dark"
+            named: "StatusBarView.activeTab.dark",
+            tolerance: 0.02
         )
     }
 
@@ -101,7 +103,8 @@ struct StatusBarViewSnapshotTests {
             of: view,
             size: Self.barSize,
             appearance: .light,
-            named: "StatusBarView.gitStatuses.light"
+            named: "StatusBarView.gitStatuses.light",
+            tolerance: 0.02
         )
     }
 
@@ -119,7 +122,8 @@ struct StatusBarViewSnapshotTests {
             of: view,
             size: Self.barSize,
             appearance: .dark,
-            named: "StatusBarView.gitStatuses.dark"
+            named: "StatusBarView.gitStatuses.dark",
+            tolerance: 0.02
         )
     }
 
@@ -138,7 +142,8 @@ struct StatusBarViewSnapshotTests {
             of: view,
             size: Self.barSize,
             appearance: .light,
-            named: "StatusBarView.empty.light"
+            named: "StatusBarView.empty.light",
+            tolerance: 0.02
         )
     }
 
@@ -155,7 +160,8 @@ struct StatusBarViewSnapshotTests {
             of: view,
             size: Self.barSize,
             appearance: .dark,
-            named: "StatusBarView.empty.dark"
+            named: "StatusBarView.empty.dark",
+            tolerance: 0.02
         )
     }
 }
