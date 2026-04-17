@@ -2859,6 +2859,24 @@
         }
       }
     },
+    "menu.smartListContinuation" : {
+      "comment" : "Menu toggle: enable/disable smart list continuation on Enter in Markdown lists.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Smart List Continuation"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Умное продолжение списков"
+          }
+        }
+      }
+    },
     "menu.checkForUpdates" : {
       "comment" : "Menu command: check for app updates.",
       "extractionState" : "manual",
