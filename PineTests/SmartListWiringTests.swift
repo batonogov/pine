@@ -177,8 +177,8 @@ struct SmartListWiringTests {
         tv.setSelectedRange(NSRange(location: 4, length: 0))
         tv.insertNewline(nil)
         // Should use auto-indent, not smart list (cursor not at end)
-        let lines = tv.string.components(separatedBy: "\n")
-        #expect(lines.count >= 2)
+        #expect(tv.string == "- he\nllo world")
+        #expect(!tv.string.contains("\n- "))
     }
 
     // MARK: - Multi-line context
@@ -189,6 +189,52 @@ struct SmartListWiringTests {
         tv.setSelectedRange(NSRange(location: 24, length: 0))
         tv.insertNewline(nil)
         #expect(tv.string == "# Title\n- first\n- second\n- ")
+    }
+
+    // MARK: - Edge cases
+
+    @Test("Emoji in list body continues correctly (UTF-16 safety)")
+    func emojiInListBody() {
+        let text = "- hello 😀"
+        let tv = makeTextView(text: text)
+        // NSString length for proper UTF-16 offset
+        tv.setSelectedRange(NSRange(location: (text as NSString).length, length: 0))
+        tv.insertNewline(nil)
+        #expect(tv.string == "- hello 😀\n- ")
+    }
+
+    @Test("Tab-indented list continues with tab indent")
+    func tabIndentedList() {
+        let tv = makeTextView(text: "\t- tabbed")
+        tv.setSelectedRange(NSRange(location: 9, length: 0))
+        tv.insertNewline(nil)
+        #expect(tv.string == "\t- tabbed\n\t- ")
+    }
+
+    @Test("Spaces after marker with content continues list")
+    func spacesAfterMarker() {
+        let tv = makeTextView(text: "-   spaced")
+        tv.setSelectedRange(NSRange(location: 10, length: 0))
+        tv.insertNewline(nil)
+        #expect(tv.string == "-   spaced\n- ")
+    }
+
+    @Test("Multiple emoji characters in list (UTF-16 multi-unit)")
+    func multipleEmoji() {
+        let text = "- 🇯🇵🏳️‍🌈 flags"
+        let tv = makeTextView(text: text)
+        tv.setSelectedRange(NSRange(location: (text as NSString).length, length: 0))
+        tv.insertNewline(nil)
+        #expect(tv.string == "- 🇯🇵🏳️‍🌈 flags\n- ")
+    }
+
+    @Test("Empty bullet termination with emoji prefix line")
+    func emojiTermination() {
+        let text = "- 😀\n- "
+        let tv = makeTextView(text: text)
+        tv.setSelectedRange(NSRange(location: (text as NSString).length, length: 0))
+        tv.insertNewline(nil)
+        #expect(tv.string == "- 😀\n\n")
     }
 
     // MARK: - EditorSettings integration

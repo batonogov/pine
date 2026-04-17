@@ -490,7 +490,7 @@ final class GutterTextView: NSTextView {
 
         // Smart list continuation: only when cursor is at the end of the line
         // (ignoring the trailing newline character).
-        let lineContentEnd = lineRange.location + lineForParsing.count
+        let lineContentEnd = lineRange.location + (lineForParsing as NSString).length
         if smartListContinuationEnabled && cursorLocation == lineContentEnd {
             if let outcome = SmartListContinuation.handleReturn(currentLine: lineForParsing) {
                 switch outcome {
@@ -506,7 +506,7 @@ final class GutterTextView: NSTextView {
                     undoManager?.beginUndoGrouping()
                     let replaceRange = NSRange(
                         location: lineRange.location,
-                        length: lineForParsing.count
+                        length: (lineForParsing as NSString).length
                     )
                     insertText(replacement, replacementRange: replaceRange)
                     insertText("\n", replacementRange: selectedRange())
