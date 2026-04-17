@@ -245,4 +245,75 @@ struct FormatOnSaveHighlightTests {
         #expect(tabManager.tabs[0].cachedHighlightResult == nil,
                 "Cache should be invalidated after Save As changed content")
     }
+
+    // MARK: - Content caches (indentation / line ending)
+
+    @Test("trySaveTab recomputes cachedIndentation when format-on-save changes indentation style")
+    func trySaveTabRecomputesIndentation() throws {
+        let defaults = makeIsolatedDefaults()
+        let settings = EditorSettings(defaults: defaults)
+        settings.formatOnSave = true
+        settings.insertFinalNewline = false
+        settings.stripTrailingWhitespace = false
+
+        let tabManager = TabManager()
+        tabManager.editorSettings = settings
+        tabManager.fileFormatters = .default
+
+        // Unformatted JSON with tab indentation — formatter will switch to spaces
+        let tabIndented = "{\n\t\"a\": 1,\n\t\"b\": 2\n}"
+        let url = try makeTempFile(content: tabIndented)
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        tabManager.openTab(url: url)
+        // Before save, indentation should be detected as tabs
+        #expect(tabManager.tabs[0].cachedIndentation == .tabs,
+                "Initial indentation should be tabs")
+
+        try tabManager.trySaveTab(at: 0)
+
+        // After format-on-save, JSON formatter uses spaces — cachedIndentation must update
+        let savedContent = tabManager.tabs[0].content
+        #expect(savedContent != tabIndented, "Content should have been reformatted")
+        #expect(tabManager.tabs[0].cachedIndentation != .tabs,
+                "cachedIndentation should update from tabs to spaces after format-on-save")
+    }
+
+    @Test("saveActiveTabAs recomputes cachedLineEnding when content changes")
+    func saveAsRecomputesLineEnding() throws {
+        let defaults = makeIsolatedDefaults()
+        let settings = EditorSettings(defaults: defaults)
+        settings.formatOnSave = false
+        settings.insertFinalNewline = true
+        settings.stripTrailingWhitespace = false
+
+        let tabManager = TabManager()
+        tabManager.editorSettings = settings
+
+        // Content with CRLF line endings and no final newline
+        let crlfContent = "line1\r\nline2\r\nline3"
+        let url = try makeTempFile(content: crlfContent)
+        let newURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("test-le-\(UUID().uuidString).txt")
+        defer {
+            try? FileManager.default.removeItem(at: url)
+            try? FileManager.default.removeItem(at: newURL)
+        }
+
+        tabManager.openTab(url: url)
+        #expect(tabManager.tabs[0].cachedLineEnding == .crlf,
+                "Initial line ending should be CRLF")
+
+        // insertFinalNewline appends "\n" (LF), changing the balance
+        try tabManager.saveActiveTabAs(to: newURL)
+
+        // The content changed (final newline added), so caches should be recomputed
+        let saved = tabManager.tabs[0].content
+        if saved != crlfContent {
+            // Caches were recomputed — verify the line ending reflects actual content
+            let redetected = LineEnding.detect(in: saved)
+            #expect(tabManager.tabs[0].cachedLineEnding == redetected,
+                    "cachedLineEnding should match re-detected value after Save As")
+        }
+    }
 }

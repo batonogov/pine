@@ -382,6 +382,7 @@ final class TabManager {
         // (issue #814).
         if contentChanged {
             tabs[index].cachedHighlightResult = nil
+            tabs[index].recomputeContentCaches()
             NotificationCenter.default.post(
                 name: .tabReloadedFromDisk,
                 object: nil,
@@ -623,6 +624,7 @@ final class TabManager {
         tabs[index].lastModDate = modDate(for: newURL)
         if contentChanged {
             tabs[index].cachedHighlightResult = nil
+            tabs[index].recomputeContentCaches()
             NotificationCenter.default.post(
                 name: .tabReloadedFromDisk,
                 object: nil,
