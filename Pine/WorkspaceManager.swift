@@ -44,8 +44,8 @@ final class WorkspaceManager {
     /// (shallow → full phase) trigger only one rebuild.
     private(set) var onRootNodesChanged: (([FileNode]) -> Void)?
 
-    /// Pending debounced notification work item.
-    private var rootNodesChangedWorkItem: DispatchWorkItem?
+    /// Debouncer for `onRootNodesChanged` notifications.
+    private var rootNodesChangedDebouncer: Debouncer?
 
     /// Continuations waiting for `isLoading` to become `false`.
     private var loadingContinuations: [CheckedContinuation<Void, Never>] = []
@@ -79,15 +79,16 @@ final class WorkspaceManager {
     /// Schedules a debounced `onRootNodesChanged` notification.
     /// Cancels any pending notification so rapid updates coalesce into one.
     private func notifyRootNodesChanged(_ nodes: [FileNode]) {
-        rootNodesChangedWorkItem?.cancel()
-        let workItem = DispatchWorkItem { [weak self] in
-            self?.onRootNodesChanged?(nodes)
+        // Lazily create the debouncer (captures self weakly).
+        if rootNodesChangedDebouncer == nil {
+            rootNodesChangedDebouncer = Debouncer(
+                delay: Self.rootNodesChangedDebounce
+            ) { [weak self] in
+                guard let self else { return }
+                self.onRootNodesChanged?(self.rootNodes)
+            }
         }
-        rootNodesChangedWorkItem = workItem
-        DispatchQueue.main.asyncAfter(
-            deadline: .now() + Self.rootNodesChangedDebounce,
-            execute: workItem
-        )
+        rootNodesChangedDebouncer?.schedule()
     }
 
     deinit {

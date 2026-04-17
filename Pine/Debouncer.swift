@@ -25,7 +25,7 @@ final class Debouncer {
 
     /// Creates a debouncer.
     /// - Parameters:
-    ///   - delay: Seconds to wait after the last `call()` before firing.
+    ///   - delay: Seconds to wait after the last `schedule()` before firing.
     ///   - action: The closure to execute when the debounce fires.
     init(delay: TimeInterval, action: @escaping () -> Void) {
         self.delay = delay
@@ -34,7 +34,7 @@ final class Debouncer {
 
     /// Schedules (or reschedules) the debounced callback.
     /// Any previously pending callback is cancelled.
-    func call() {
+    func schedule() {
         workItem?.cancel()
         let action = self.action
         let item = DispatchWorkItem { action() }
