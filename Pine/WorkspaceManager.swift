@@ -62,6 +62,11 @@ final class WorkspaceManager {
     /// when a new refresh starts (prevents stale data from overwriting newer results).
     private var gitRefreshTask: Task<Void, Never>?
 
+    /// Tracks the in-flight directory-load task. Cancelled and replaced on
+    /// every `loadDirectory` / `refreshFileTreeAsync` call so a slow run
+    /// never resumes after a newer one has started.
+    private var loadingTask: Task<Void, Never>?
+
     /// `FileSystemWatcher` debounce interval. Short enough (150 ms) that
     /// changes made in the built-in terminal or by external processes
     /// appear in the sidebar almost immediately while still coalescing
@@ -185,49 +190,68 @@ final class WorkspaceManager {
 
     /// Depth limit for the initial shallow pass — shows the first few
     /// levels instantly while the full tree loads in the background.
-    private static let shallowDepth = 3
+    /// `nonisolated` so the detached load task can read it without a
+    /// main-actor hop.
+    nonisolated private static let shallowDepth = 3
 
-    /// Heavy I/O (file tree + git) runs on a background queue;
-    /// results are assigned back on the main thread.
+    /// Heavy I/O (file tree + git) runs in a detached `Task` at
+    /// `userInitiated` priority; results are applied back on the main actor
+    /// via `await MainActor.run { ... }`.
+    ///
+    /// Why pure Swift Concurrency (no GCD): mixing `DispatchQueue.global`
+    /// with `DispatchQueue.main.async` and a `withCheckedContinuation`
+    /// resume on the main actor caused scheduler starvation on single-core
+    /// CI runners — the GCD main-queue block could sit behind cooperative
+    /// thread work, taking 55–70 s to fire on an *empty* directory load
+    /// (issue #837). Staying inside the structured-concurrency world lets
+    /// the main actor and the detached worker interleave cooperatively.
+    ///
     /// Uses two-phase progressive loading: a shallow tree appears fast,
     /// then the full tree replaces it once ready.
     private func loadDirectoryContentsAsync(
         url: URL,
         generation: Int
     ) {
-        let progressID = progressTracker?.beginOperation(Strings.progressLoadingProject)
-        // nonisolated-check:ignore — pre-existing pattern; tracked in #720
-        DispatchQueue.global(qos: .userInitiated).async {
-            // Run git setup first so we know which paths are ignored
-            let bgGit = GitStatusProvider()
-            bgGit.setup(repositoryURL: url)
+        // Cancel any prior in-flight load so its `MainActor.run` blocks
+        // become no-ops after the generation check below.
+        loadingTask?.cancel()
 
-            // Phase 1: shallow tree for fast initial render
+        let progressID = progressTracker?.beginOperation(Strings.progressLoadingProject)
+
+        loadingTask = Task.detached(priority: .userInitiated) { [weak self] in
+            // 1. Git setup — pure nonisolated work using static helpers.
+            //    No `@MainActor` object is created off-main: avoids the
+            //    `nonisolated-check:ignore` workaround the GCD path needed.
+            let gitInfo = Self.fetchGitInfo(at: url)
+
+            // 2. Phase 1: shallow tree for fast initial render.
             let shallowResult = FileNode.loadTree(
                 url: url, projectRoot: url,
-                ignoredPaths: bgGit.ignoredPaths,
+                ignoredPaths: gitInfo.ignoredPaths,
                 maxDepth: Self.shallowDepth
             )
             let shallowChildren = shallowResult.root.children ?? []
 
-            DispatchQueue.main.async { [weak self] in
+            if Task.isCancelled { return }
+
+            await MainActor.run { [weak self] in
                 guard let self, self.loadGeneration == generation else {
                     if let progressID { self?.progressTracker?.endOperation(progressID) }
                     return
                 }
                 self.rootNodes = shallowChildren
                 self.notifyRootNodesChanged(shallowChildren)
-                self.gitProvider.repositoryURL = bgGit.repositoryURL
-                self.gitProvider.gitRootPath = bgGit.gitRootPath
+                self.gitProvider.repositoryURL = gitInfo.repositoryURL
+                self.gitProvider.gitRootPath = gitInfo.gitRootPath
                 // Atomically apply git state in a single equality-checked
                 // pass so SwiftUI does not observe transient empty values
                 // between individual property writes (issue #738).
                 self.gitProvider.applyFetched(
-                    branch: bgGit.currentBranch,
-                    statuses: bgGit.fileStatuses,
-                    ignored: bgGit.ignoredPaths,
-                    branches: bgGit.branches,
-                    isRepository: bgGit.isGitRepository
+                    branch: gitInfo.branch,
+                    statuses: gitInfo.statuses,
+                    ignored: gitInfo.ignoredPaths,
+                    branches: gitInfo.branches,
+                    isRepository: gitInfo.isRepository
                 )
 
                 // For shallow projects, loading is done — no Phase 2 needed.
@@ -238,18 +262,19 @@ final class WorkspaceManager {
                 }
             }
 
-            // Phase 2: full tree only if Phase 1 hit the depth limit.
-            // For shallow projects this avoids redundant tree construction.
+            // 3. Phase 2: full tree only if Phase 1 hit the depth limit.
+            //    For shallow projects this avoids redundant tree construction.
             guard shallowResult.wasDepthLimited else { return }
 
+            if Task.isCancelled { return }
+
             let fullChildren = Self.loadTopLevelInParallel(
-                url: url, ignoredPaths: bgGit.ignoredPaths
+                url: url, ignoredPaths: gitInfo.ignoredPaths
             )
 
-            // Safe ordering: main queue is FIFO, so Phase 2 always runs after Phase 1.
-            // Completion (file watcher) starts after Phase 2 to avoid watcher events
-            // racing with and invalidating the in-flight full tree load.
-            DispatchQueue.main.async { [weak self] in
+            if Task.isCancelled { return }
+
+            await MainActor.run { [weak self] in
                 guard let self, self.loadGeneration == generation else {
                     if let progressID { self?.progressTracker?.endOperation(progressID) }
                     return
@@ -261,6 +286,47 @@ final class WorkspaceManager {
                 if let progressID { self.progressTracker?.endOperation(progressID) }
             }
         }
+    }
+
+    /// Plain-data snapshot of the git state captured off-main during a load.
+    private struct GitLoadSnapshot: Sendable {
+        let repositoryURL: URL
+        let gitRootPath: String?
+        let branch: String
+        let statuses: [String: GitFileStatus]
+        let ignoredPaths: Set<String>
+        let branches: [String]
+        let isRepository: Bool
+    }
+
+    /// Pure background helper — runs git detection + a parallel fetch using
+    /// `nonisolated` static helpers and returns a `Sendable` snapshot.
+    /// No `@MainActor` object is created here, so this is safe to call
+    /// from any thread / `Task.detached` context.
+    nonisolated private static func fetchGitInfo(at url: URL) -> GitLoadSnapshot {
+        let topLevel = GitStatusProvider.runGit(["rev-parse", "--show-toplevel"], at: url)
+        guard topLevel.exitCode == 0 else {
+            return GitLoadSnapshot(
+                repositoryURL: url,
+                gitRootPath: nil,
+                branch: "",
+                statuses: [:],
+                ignoredPaths: [],
+                branches: [],
+                isRepository: false
+            )
+        }
+        let rootPath = topLevel.output.trimmingCharacters(in: .whitespacesAndNewlines)
+        let fetched = GitStatusProvider.fetchAllInParallel(at: url)
+        return GitLoadSnapshot(
+            repositoryURL: url,
+            gitRootPath: rootPath,
+            branch: fetched.branch,
+            statuses: fetched.statuses,
+            ignoredPaths: fetched.ignored,
+            branches: fetched.branches,
+            isRepository: true
+        )
     }
 
     /// Loads top-level directory entries in parallel using `concurrentPerform`.
@@ -329,14 +395,16 @@ final class WorkspaceManager {
         rootNodes = shallowResult.root.children ?? []
         notifyRootNodesChanged(rootNodes)
 
-        // Phase 2 (async): full tree only if Phase 1 hit the depth limit
+        // Phase 2 (async): full tree only if Phase 1 hit the depth limit.
+        // Pure Swift Concurrency — no GCD bridging — to avoid scheduler
+        // starvation on single-core CI runners (issue #837).
         if shallowResult.wasDepthLimited {
-            // nonisolated-check:ignore — pre-existing pattern; tracked in #720
-            DispatchQueue.global(qos: .userInitiated).async {
+            Task.detached(priority: .userInitiated) { [weak self] in
                 let fullChildren = Self.loadTopLevelInParallel(
                     url: url, ignoredPaths: ignoredPaths
                 )
-                DispatchQueue.main.async { [weak self] in
+                if Task.isCancelled { return }
+                await MainActor.run { [weak self] in
                     guard let self, self.loadGeneration == generation else { return }
                     self.rootNodes = fullChildren
                     self.notifyRootNodesChanged(fullChildren)
