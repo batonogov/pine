@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.23.2](https://github.com/batonogov/pine/compare/v1.23.1...v1.23.2) (2026-04-17)
+
+
+### Bug Fixes
+
+* **workspace:** restore external file change detection and sidebar refresh ([#840](https://github.com/batonogov/pine/issues/840)) ([24921cf](https://github.com/batonogov/pine/commit/24921cfd83668d00bf44aa75423393c050eecf9d)), closes [#838](https://github.com/batonogov/pine/issues/838) [#839](https://github.com/batonogov/pine/issues/839)
+
+
+### Miscellaneous
+
+* update Xcode project settings for Xcode 26.4 ([#845](https://github.com/batonogov/pine/issues/845)) ([fa4c0e0](https://github.com/batonogov/pine/commit/fa4c0e06744e62e7e24685d2ee3ca69c1b7228e6))
+
 ## [1.23.1](https://github.com/batonogov/pine/compare/v1.23.0...v1.23.1) (2026-04-14)
 
 
