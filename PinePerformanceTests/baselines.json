@@ -1,5 +1,5 @@
 {
-    "_comment": "Performance test baselines. Update by running nightly-perf with PINE_UPDATE_BASELINES=1.",
+    "_comment": "Performance test baselines. Update by manually editing this file after reviewing nightly-perf results.",
     "threshold_percent": 15,
     "tests": {
         "FoldRangeCalculatorPerformanceTests/testDeeplyNestedBraces": {
@@ -201,6 +201,74 @@
         "EditorStressTests/testThroughputHighlightAndFoldCalculation": {
             "baseline_seconds": 0.050,
             "description": "Combined highlight + fold calculation throughput"
+        },
+        "EditorStressTests/testLargeFileContentUpdate": {
+            "baseline_seconds": 0.005,
+            "description": "Content update in 10K-line file"
+        },
+        "EditorStressTests/testLargeFileMemory": {
+            "baseline_seconds": 0.100,
+            "description": "Memory sanity check for 50K-line file open"
+        },
+        "EditorStressTests/testTabSwitching50Tabs": {
+            "baseline_seconds": 0.010,
+            "description": "Switch through 50 open tabs (200 lines each)"
+        },
+        "EditorStressTests/testTabSwitchingWith100TabsAndContentUpdate": {
+            "baseline_seconds": 0.200,
+            "description": "Switch + update content across 100 tabs"
+        },
+        "EditorStressTests/testRapidOpenCloseInterleavedSingle": {
+            "baseline_seconds": 0.100,
+            "description": "Interleaved open/close single tab x 50 files"
+        },
+        "EditorStressTests/testRapidContentUpdates": {
+            "baseline_seconds": 0.050,
+            "description": "1000 rapid content updates on single tab"
+        },
+        "EditorStressTests/testRapidSaveCycles": {
+            "baseline_seconds": 0.100,
+            "description": "100 update+save cycles on single tab"
+        },
+        "EditorStressTests/testThroughputSearchAndHighlight": {
+            "baseline_seconds": 0.050,
+            "description": "Combined highlight + project search throughput"
+        },
+        "EditorStressTests/testFileWatcherRapidStartStop": {
+            "baseline_seconds": 0.050,
+            "description": "100 rapid FileSystemWatcher start/stop cycles"
+        },
+        "EditorStressTests/testFileWatcherWithRapidFileCreation": {
+            "baseline_seconds": 1.000,
+            "description": "FileSystemWatcher callback with 50 rapid file creates"
+        },
+        "EditorStressTests/testExternalChangeDetection50Tabs": {
+            "baseline_seconds": 0.050,
+            "description": "External change detection across 50 open tabs"
+        },
+        "EditorStressTests/testLoadLargeFileTree": {
+            "baseline_seconds": 0.100,
+            "description": "WorkspaceManager load of 500-file directory tree"
+        },
+        "EditorStressTests/testOpen10MBFilePartialLoad": {
+            "baseline_seconds": 0.500,
+            "description": "Open 10MB file with partial load (first 1MB)"
+        },
+        "EditorStressTests/testOpen5MBFileNoHighlight": {
+            "baseline_seconds": 0.300,
+            "description": "Open 5MB file without syntax highlighting"
+        },
+        "EditorStressTests/testOpen1MBFileWithHighlight": {
+            "baseline_seconds": 0.500,
+            "description": "Open 1MB file with syntax highlighting enabled"
+        },
+        "EditorStressTests/testSequentialOpen5LargeFiles": {
+            "baseline_seconds": 1.000,
+            "description": "Sequential open of 5 x 2MB files"
+        },
+        "SyntaxHighlighterPerformanceTests/testViewportHighlightVsFullHighlight5000Lines": {
+            "baseline_seconds": 0.200,
+            "description": "Viewport vs full highlight comparison for 5000 lines"
         }
     }
 }

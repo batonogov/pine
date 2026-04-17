@@ -105,9 +105,14 @@ jobs:
           fi
 
           set +e
-          REPORT=$(python3 .github/scripts/check_perf_regression.py "$BASELINES" "$XCRESULT" 2>&1)
+          REPORT=$(python3 .github/scripts/check_perf_regression.py "$BASELINES" "$XCRESULT" 2>/tmp/perf_stderr.log)
           EXIT_CODE=$?
           set -e
+
+          if [ -s /tmp/perf_stderr.log ]; then
+            echo "::warning::check_perf_regression.py stderr:"
+            cat /tmp/perf_stderr.log
+          fi
 
           echo "$REPORT" >> "$GITHUB_STEP_SUMMARY"
 
@@ -172,7 +177,16 @@ jobs:
           3. If the regression is expected, update \`PinePerformanceTests/baselines.json\`
           ISSUE_EOF
           )
-          gh issue create \
-            --title "Performance regression detected ($(date -u '+%Y-%m-%d'))" \
-            --body "$BODY" \
-            --label "bug,performance,testing"
+
+          # Check for existing open regression issue to avoid duplicates
+          EXISTING=$(gh issue list --label "performance" --state open --search "Performance regression detected" --json number --jq '.[0].number' 2>/dev/null || true)
+
+          if [ -n "$EXISTING" ] && [ "$EXISTING" != "null" ]; then
+            echo "Adding comment to existing issue #$EXISTING"
+            gh issue comment "$EXISTING" --body "$BODY"
+          else
+            gh issue create \
+              --title "Performance regression detected ($(date -u '+%Y-%m-%d'))" \
+              --body "$BODY" \
+              --label "bug,performance,testing"
+          fi

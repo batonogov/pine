@@ -10,6 +10,7 @@ from check_perf_regression import (
     compare_results,
     format_markdown_report,
     RegressionResult,
+    _walk_test_nodes,
 )
 
 
@@ -61,6 +62,162 @@ class TestLoadBaselines(unittest.TestCase):
             self.assertEqual(baselines["tests"], {})
         finally:
             os.unlink(path)
+
+    def test_load_invalid_json(self):
+        """Should exit on invalid JSON."""
+        with tempfile.NamedTemporaryFile(
+            mode="w", suffix=".json", delete=False
+        ) as fh:
+            fh.write("not valid json {{{")
+            path = fh.name
+        try:
+            with self.assertRaises(SystemExit) as cm:
+                load_baselines(path)
+            self.assertEqual(cm.exception.code, 2)
+        finally:
+            os.unlink(path)
+
+
+class TestWalkTestNodes(unittest.TestCase):
+    """Tests for _walk_test_nodes xcresult JSON parser."""
+
+    def test_single_test_case(self):
+        """Should extract duration from a simple test case node."""
+        node = {
+            "nodeType": "Test Suite",
+            "name": "MyTests",
+            "children": [
+                {
+                    "nodeType": "Test Case",
+                    "name": "testFoo()",
+                    "duration": "0.123",
+                }
+            ],
+        }
+        durations = {}
+        _walk_test_nodes(node, durations)
+        self.assertIn("MyTests/testFoo", durations)
+        self.assertAlmostEqual(durations["MyTests/testFoo"], 0.123)
+
+    def test_nested_suites(self):
+        """Should use innermost Test Suite as parent."""
+        node = {
+            "nodeType": "Test Suite",
+            "name": "All Tests",
+            "children": [
+                {
+                    "nodeType": "Test Suite",
+                    "name": "InnerSuite",
+                    "children": [
+                        {
+                            "nodeType": "Test Case",
+                            "name": "testBar()",
+                            "duration": "0.456",
+                        }
+                    ],
+                }
+            ],
+        }
+        durations = {}
+        _walk_test_nodes(node, durations)
+        self.assertIn("InnerSuite/testBar", durations)
+
+    def test_list_root(self):
+        """Should handle JSON array as root node."""
+        nodes = [
+            {
+                "nodeType": "Test Suite",
+                "name": "Suite1",
+                "children": [
+                    {
+                        "nodeType": "Test Case",
+                        "name": "testA()",
+                        "duration": "0.01",
+                    }
+                ],
+            },
+            {
+                "nodeType": "Test Suite",
+                "name": "Suite2",
+                "children": [
+                    {
+                        "nodeType": "Test Case",
+                        "name": "testB()",
+                        "duration": "0.02",
+                    }
+                ],
+            },
+        ]
+        durations = {}
+        _walk_test_nodes(nodes, durations)
+        self.assertIn("Suite1/testA", durations)
+        self.assertIn("Suite2/testB", durations)
+
+    def test_non_dict_node(self):
+        """Should gracefully handle non-dict, non-list input."""
+        durations = {}
+        _walk_test_nodes("invalid", durations)
+        self.assertEqual(durations, {})
+
+    def test_none_node(self):
+        """Should handle None input."""
+        durations = {}
+        _walk_test_nodes(None, durations)
+        self.assertEqual(durations, {})
+
+    def test_missing_duration(self):
+        """Test case without duration should be skipped."""
+        node = {
+            "nodeType": "Test Suite",
+            "name": "Tests",
+            "children": [
+                {
+                    "nodeType": "Test Case",
+                    "name": "testNoDuration()",
+                }
+            ],
+        }
+        durations = {}
+        _walk_test_nodes(node, durations)
+        self.assertEqual(durations, {})
+
+    def test_invalid_duration_value(self):
+        """Non-numeric duration should be skipped."""
+        node = {
+            "nodeType": "Test Suite",
+            "name": "Tests",
+            "children": [
+                {
+                    "nodeType": "Test Case",
+                    "name": "testBad()",
+                    "duration": "not-a-number",
+                }
+            ],
+        }
+        durations = {}
+        _walk_test_nodes(node, durations)
+        self.assertEqual(durations, {})
+
+    def test_empty_children(self):
+        """Node with empty children should not fail."""
+        node = {
+            "nodeType": "Test Suite",
+            "name": "Empty",
+            "children": [],
+        }
+        durations = {}
+        _walk_test_nodes(node, durations)
+        self.assertEqual(durations, {})
+
+    def test_no_children_key(self):
+        """Node without children key should not fail."""
+        node = {
+            "nodeType": "Test Suite",
+            "name": "NoChildren",
+        }
+        durations = {}
+        _walk_test_nodes(node, durations)
+        self.assertEqual(durations, {})
 
 
 class TestCompareResults(unittest.TestCase):
@@ -241,6 +398,23 @@ class TestFormatMarkdownReport(unittest.TestCase):
         self.assertIn("REGRESSION", report)
         self.assertIn("A/test1", report)
         self.assertIn("50.0%", report)
+
+    def test_inf_change_percent(self):
+        """Infinite change percent (baseline=0) should show N/A."""
+        results = [
+            RegressionResult(
+                test_name="A/test1",
+                baseline_seconds=0.0,
+                actual_seconds=0.001,
+                change_percent=float("inf"),
+                threshold_percent=15,
+                is_regression=True,
+                description="zero baseline",
+            )
+        ]
+        report = format_markdown_report(results)
+        self.assertIn("N/A (baseline=0)", report)
+        self.assertNotIn("inf%", report)
 
     def test_mixed_results(self):
         """Mixed results show both passing and failing."""

@@ -44,7 +44,11 @@ def load_baselines(path: str) -> dict:
     }
     """
     with open(path) as fh:
-        return json.load(fh)
+        try:
+            return json.load(fh)
+        except json.JSONDecodeError as exc:
+            print(f"Error: invalid JSON in {path}: {exc}", file=sys.stderr)
+            sys.exit(2)
 
 
 def extract_test_durations(xcresult_path: str) -> dict[str, float]:
@@ -71,8 +75,15 @@ def extract_test_durations(xcresult_path: str) -> dict[str, float]:
     return durations
 
 
-def _walk_test_nodes(node: dict, durations: dict[str, float], parent: str = "") -> None:
+def _walk_test_nodes(node: object, durations: dict[str, float], parent: str = "") -> None:
     """Recursively walk test result nodes to extract durations."""
+    if isinstance(node, list):
+        for item in node:
+            _walk_test_nodes(item, durations, parent)
+        return
+    if not isinstance(node, dict):
+        return
+
     node_type = node.get("nodeType", "")
     name = node.get("name", "")
 
@@ -156,12 +167,16 @@ def format_markdown_report(results: list[RegressionResult]) -> str:
 
     for r in results:
         status = "REGRESSION" if r.is_regression else "OK"
-        sign = "+" if r.change_percent > 0 else ""
+        if r.change_percent == float("inf"):
+            change_str = "N/A (baseline=0)"
+        else:
+            sign = "+" if r.change_percent > 0 else ""
+            change_str = f"{sign}{r.change_percent}%"
         lines.append(
             f"| {r.test_name} "
             f"| {r.baseline_seconds:.4f}s "
             f"| {r.actual_seconds:.4f}s "
-            f"| {sign}{r.change_percent}% "
+            f"| {change_str} "
             f"| {status} |"
         )
 
