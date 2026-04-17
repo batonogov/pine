@@ -24,6 +24,9 @@ protocol ProcessRunning: Sendable {
 }
 
 /// Runs a real `Process` with stdin/stdout piping and a timeout.
+///
+/// **Important:** `run()` blocks the calling thread until the process exits or times out.
+/// Must be called from a background queue — never from the main thread.
 struct RealProcessRunner: ProcessRunning {
     func run(
         executablePath: String,
@@ -31,6 +34,8 @@ struct RealProcessRunner: ProcessRunning {
         stdin: String,
         timeout: TimeInterval
     ) -> ProcessRunResult {
+        dispatchPrecondition(condition: .notOnQueue(.main))
+
         let process = Process()
         process.executableURL = URL(fileURLWithPath: executablePath)
         process.arguments = arguments
@@ -51,30 +56,49 @@ struct RealProcessRunner: ProcessRunning {
             }
             stdinPipe.fileHandleForWriting.closeFile()
 
-            // Schedule timeout
+            // Schedule timeout with thread-safe flag via GCD
+            let timedOutQueue = DispatchQueue(label: "com.pine.process-timeout-flag")
+            nonisolated(unsafe) var timedOutValue = false
+
             let timer = DispatchSource.makeTimerSource(queue: .global(qos: .utility))
-            var timedOut = false
             timer.schedule(deadline: .now() + timeout)
             timer.setEventHandler {
-                timedOut = true
+                timedOutQueue.sync { timedOutValue = true }
                 if process.isRunning {
                     process.terminate()
                 }
             }
             timer.resume()
 
-            // Read pipes before waitUntilExit to avoid deadlock
-            let outData = stdoutPipe.fileHandleForReading.readDataToEndOfFile()
-            let errData = stderrPipe.fileHandleForReading.readDataToEndOfFile()
+            // Read both pipes concurrently in separate threads to avoid
+            // deadlock when stderr pipe buffer fills up (64KB)
+            let readGroup = DispatchGroup()
+            nonisolated(unsafe) var outData = Data()
+            nonisolated(unsafe) var errData = Data()
 
+            readGroup.enter()
+            DispatchQueue.global().async {
+                outData = stdoutPipe.fileHandleForReading.readDataToEndOfFile()
+                readGroup.leave()
+            }
+
+            readGroup.enter()
+            DispatchQueue.global().async {
+                errData = stderrPipe.fileHandleForReading.readDataToEndOfFile()
+                readGroup.leave()
+            }
+
+            readGroup.wait()
             process.waitUntilExit()
             timer.cancel()
+
+            let didTimeout = timedOutQueue.sync { timedOutValue }
 
             return ProcessRunResult(
                 stdout: String(bytes: outData, encoding: .utf8) ?? "",
                 stderr: String(bytes: errData, encoding: .utf8) ?? "",
                 exitCode: process.terminationStatus,
-                timedOut: timedOut
+                timedOut: didTimeout
             )
         } catch {
             return ProcessRunResult(
@@ -91,7 +115,10 @@ struct RealProcessRunner: ProcessRunning {
 ///
 /// Falls back to the original content on any failure: tool not found, non-zero exit,
 /// timeout, or empty output. This guarantees save never blocks on a broken tool.
-final class ExternalFileFormatter: FileFormatter, @unchecked Sendable {
+///
+/// **Threading:** `format()` blocks the calling thread while the external process runs.
+/// Must be called from a background queue — never from the main thread.
+final class ExternalFileFormatter: FileFormatter, Sendable {
 
     /// Display name of the tool (e.g. "terraform", "shfmt", "prettier").
     let toolName: String
@@ -106,26 +133,23 @@ final class ExternalFileFormatter: FileFormatter, @unchecked Sendable {
     let timeout: TimeInterval
 
     /// Resolved path to the executable, or nil if not found.
-    private(set) var toolPath: String?
+    let toolPath: String?
 
     private let processRunner: ProcessRunning
 
-    /// Creates an external file formatter.
+    /// Creates an external file formatter that auto-resolves the tool from PATH.
     ///
     /// - Parameters:
     ///   - toolName: Name of the tool binary.
     ///   - extensions: File extensions to handle (without dot, case-insensitive).
     ///   - arguments: Arguments to pass to the tool.
     ///   - processRunner: Process runner implementation (use `RealProcessRunner` in production).
-    ///   - toolPath: Override the tool path (skips resolution). If nil and a real runner is used,
-    ///               the tool will be resolved via `ExternalToolResolver`.
     ///   - timeout: Maximum execution time (default 5 seconds).
     init(
         toolName: String,
         extensions: [String],
         arguments: [String],
         processRunner: ProcessRunning = RealProcessRunner(),
-        toolPath: String? = "RESOLVE",
         timeout: TimeInterval = 5.0
     ) {
         self.toolName = toolName
@@ -133,13 +157,32 @@ final class ExternalFileFormatter: FileFormatter, @unchecked Sendable {
         self.arguments = arguments
         self.processRunner = processRunner
         self.timeout = timeout
+        self.toolPath = ExternalToolResolver.fromEnvironment().resolve(tool: toolName)
+    }
 
-        if toolPath == "RESOLVE" {
-            // Auto-resolve from PATH
-            self.toolPath = ExternalToolResolver.fromEnvironment().resolve(tool: toolName)
-        } else {
-            self.toolPath = toolPath
-        }
+    /// Creates an external file formatter with an explicit tool path (skips resolution).
+    ///
+    /// - Parameters:
+    ///   - toolPath: Absolute path to the tool binary, or nil if tool is unavailable.
+    ///   - toolName: Display name of the tool.
+    ///   - extensions: File extensions to handle (without dot, case-insensitive).
+    ///   - arguments: Arguments to pass to the tool.
+    ///   - processRunner: Process runner implementation (use `RealProcessRunner` in production).
+    ///   - timeout: Maximum execution time (default 5 seconds).
+    init(
+        toolPath: String?,
+        toolName: String,
+        extensions: [String],
+        arguments: [String],
+        processRunner: ProcessRunning = RealProcessRunner(),
+        timeout: TimeInterval = 5.0
+    ) {
+        self.toolName = toolName
+        self.extensions = Set(extensions.map { $0.lowercased() })
+        self.arguments = arguments
+        self.processRunner = processRunner
+        self.timeout = timeout
+        self.toolPath = toolPath
     }
 
     func canFormat(url: URL) -> Bool {

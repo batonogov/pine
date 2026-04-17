@@ -16,8 +16,7 @@ struct ExternalToolResolverTests {
     @Test("Parses PATH string into directories")
     func parsesPATH() {
         let resolver = ExternalToolResolver(
-            pathString: "/usr/bin:/usr/local/bin:/opt/homebrew/bin",
-            fileManager: .default
+            pathString: "/usr/bin:/usr/local/bin:/opt/homebrew/bin"
         )
         #expect(resolver.searchDirectories.contains("/usr/bin"))
         #expect(resolver.searchDirectories.contains("/usr/local/bin"))
@@ -27,8 +26,7 @@ struct ExternalToolResolverTests {
     @Test("Empty PATH string still includes well-known directories")
     func emptyPATHIncludesWellKnown() {
         let resolver = ExternalToolResolver(
-            pathString: "",
-            fileManager: .default
+            pathString: ""
         )
         #expect(resolver.searchDirectories.contains("/opt/homebrew/bin"))
         #expect(resolver.searchDirectories.contains("/usr/local/bin"))
@@ -38,8 +36,7 @@ struct ExternalToolResolverTests {
     @Test("Nil PATH string still includes well-known directories")
     func nilPATHIncludesWellKnown() {
         let resolver = ExternalToolResolver(
-            pathString: nil,
-            fileManager: .default
+            pathString: nil
         )
         #expect(resolver.searchDirectories.contains("/opt/homebrew/bin"))
         #expect(resolver.searchDirectories.contains("/usr/local/bin"))
@@ -49,8 +46,7 @@ struct ExternalToolResolverTests {
     @Test("Deduplicates directories from PATH and well-known")
     func deduplicates() {
         let resolver = ExternalToolResolver(
-            pathString: "/usr/bin:/usr/bin:/opt/homebrew/bin",
-            fileManager: .default
+            pathString: "/usr/bin:/usr/bin:/opt/homebrew/bin"
         )
         let count = resolver.searchDirectories.filter { $0 == "/usr/bin" }.count
         #expect(count == 1)
@@ -61,8 +57,7 @@ struct ExternalToolResolverTests {
     @Test("Finds an existing executable (git)")
     func findsGit() {
         let resolver = ExternalToolResolver(
-            pathString: "/usr/bin",
-            fileManager: .default
+            pathString: "/usr/bin"
         )
         let path = resolver.resolve(tool: "git")
         #expect(path != nil)
@@ -72,8 +67,7 @@ struct ExternalToolResolverTests {
     @Test("Returns nil for a non-existent tool")
     func returnsNilForMissing() {
         let resolver = ExternalToolResolver(
-            pathString: "/usr/bin",
-            fileManager: .default
+            pathString: "/usr/bin"
         )
         let path = resolver.resolve(tool: "pine_nonexistent_tool_12345")
         #expect(path == nil)
@@ -88,8 +82,7 @@ struct ExternalToolResolverTests {
         defer { try? FileManager.default.removeItem(at: tmpDir) }
 
         let resolver = ExternalToolResolver(
-            pathString: tmpDir.path,
-            fileManager: .default
+            pathString: tmpDir.path
         )
         let path = resolver.resolve(tool: "fakeTool")
         #expect(path == nil)
@@ -100,8 +93,7 @@ struct ExternalToolResolverTests {
     @Test("Caches resolved path after first lookup")
     func cachesResolvedPath() {
         let resolver = ExternalToolResolver(
-            pathString: "/usr/bin",
-            fileManager: .default
+            pathString: "/usr/bin"
         )
         let first = resolver.resolve(tool: "git")
         let second = resolver.resolve(tool: "git")
@@ -112,8 +104,7 @@ struct ExternalToolResolverTests {
     @Test("Caches nil result for missing tool")
     func cachesNilResult() {
         let resolver = ExternalToolResolver(
-            pathString: "/usr/bin",
-            fileManager: .default
+            pathString: "/usr/bin"
         )
         let first = resolver.resolve(tool: "pine_nonexistent_12345")
         let second = resolver.resolve(tool: "pine_nonexistent_12345")
@@ -124,8 +115,7 @@ struct ExternalToolResolverTests {
     @Test("clearCache clears cached results")
     func clearCacheWorks() {
         let resolver = ExternalToolResolver(
-            pathString: "/usr/bin",
-            fileManager: .default
+            pathString: "/usr/bin"
         )
         _ = resolver.resolve(tool: "git")
         resolver.clearCache()
@@ -139,8 +129,7 @@ struct ExternalToolResolverTests {
     @Test("Absolute path bypasses search if executable exists")
     func absolutePathPassthrough() {
         let resolver = ExternalToolResolver(
-            pathString: "",
-            fileManager: .default
+            pathString: ""
         )
         let path = resolver.resolve(tool: "/usr/bin/git")
         #expect(path == "/usr/bin/git")
@@ -149,10 +138,41 @@ struct ExternalToolResolverTests {
     @Test("Absolute path returns nil if not executable")
     func absolutePathNonExistent() {
         let resolver = ExternalToolResolver(
-            pathString: "",
-            fileManager: .default
+            pathString: ""
         )
         let path = resolver.resolve(tool: "/nonexistent/path/tool")
         #expect(path == nil)
+    }
+
+    // MARK: - Thread safety
+
+    @Test("Concurrent resolve from multiple threads does not crash")
+    func concurrentResolveThreadSafety() {
+        let resolver = ExternalToolResolver(
+            pathString: "/usr/bin"
+        )
+        let group = DispatchGroup()
+        let iterations = 10
+
+        for idx in 0..<iterations {
+            group.enter()
+            DispatchQueue.global().async {
+                defer { group.leave() }
+                // Mix of found and not-found tools to exercise both cache paths
+                let tool = idx % 2 == 0 ? "git" : "pine_nonexistent_\(idx)"
+                _ = resolver.resolve(tool: tool)
+                // Also exercise clearCache concurrently
+                if idx % 3 == 0 {
+                    resolver.clearCache()
+                }
+            }
+        }
+
+        let result = group.wait(timeout: .now() + 10)
+        #expect(result == .success)
+
+        // After all concurrent access, resolver should still work correctly
+        let gitPath = resolver.resolve(tool: "git")
+        #expect(gitPath != nil)
     }
 }

@@ -20,11 +20,11 @@ struct ExternalFileFormatterTests {
         timeout: TimeInterval = 5.0
     ) -> ExternalFileFormatter {
         ExternalFileFormatter(
+            toolPath: toolPath,
             toolName: "testfmt",
             extensions: extensions,
             arguments: arguments,
             processRunner: runner,
-            toolPath: toolPath,
             timeout: timeout
         )
     }
@@ -125,11 +125,11 @@ struct ExternalFileFormatterTests {
     @Test("Integration: formats via real /bin/cat (identity transform)")
     func integrationWithCat() {
         let formatter = ExternalFileFormatter(
+            toolPath: "/bin/cat",
             toolName: "cat",
             extensions: ["txt"],
             arguments: [],
-            processRunner: RealProcessRunner(),
-            toolPath: "/bin/cat"
+            processRunner: RealProcessRunner()
         )
         let result = formatter.format("hello world", url: URL(fileURLWithPath: "/tmp/test.txt"))
         #expect(result == "hello world")

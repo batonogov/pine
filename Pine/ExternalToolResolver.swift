@@ -9,7 +9,7 @@ import Foundation
 /// install locations. Caches results for the lifetime of the resolver instance.
 ///
 /// Thread-safe: uses a serial queue to protect the cache dictionary.
-final class ExternalToolResolver: @unchecked Sendable {
+final class ExternalToolResolver: Sendable {
 
     /// Well-known directories that are always searched, even if not in PATH.
     /// Order matters — earlier entries are checked first.
@@ -25,19 +25,15 @@ final class ExternalToolResolver: @unchecked Sendable {
     /// Ordered, deduplicated list of directories to search.
     let searchDirectories: [String]
 
-    private let fileManager: FileManager
     private let cacheQueue = DispatchQueue(label: "com.pine.tool-resolver-cache")
-    private var cache: [String: String?] = [:]
+    nonisolated(unsafe) private var cache: [String: String?] = [:]
 
-    /// Creates a resolver with the given PATH string and file manager.
+    /// Creates a resolver with the given PATH string.
     ///
     /// - Parameters:
     ///   - pathString: Colon-separated PATH string (e.g. from `ProcessInfo.processInfo.environment["PATH"]`).
     ///                 If nil, only well-known directories are searched.
-    ///   - fileManager: FileManager to use for existence/executable checks.
-    init(pathString: String? = nil, fileManager: FileManager = .default) {
-        self.fileManager = fileManager
-
+    init(pathString: String? = nil) {
         var seen = Set<String>()
         var dirs: [String] = []
 
@@ -61,9 +57,9 @@ final class ExternalToolResolver: @unchecked Sendable {
     }
 
     /// Creates a resolver using the current process's PATH environment variable.
-    static func fromEnvironment(fileManager: FileManager = .default) -> ExternalToolResolver {
+    static func fromEnvironment() -> ExternalToolResolver {
         let path = ProcessInfo.processInfo.environment["PATH"]
-        return ExternalToolResolver(pathString: path, fileManager: fileManager)
+        return ExternalToolResolver(pathString: path)
     }
 
     /// Resolves the path to a CLI tool by name.
@@ -74,14 +70,17 @@ final class ExternalToolResolver: @unchecked Sendable {
     /// Returns the absolute path to the executable, or nil if not found.
     /// Results are cached.
     func resolve(tool: String) -> String? {
-        // Check cache first
-        if let cached = cacheQueue.sync(execute: { cache[tool] }) {
-            return cached
+        // Single atomic cache read — use index(forKey:) to distinguish
+        // "key absent" from "key present with nil value"
+        let cachedResult: (found: Bool, value: String?) = cacheQueue.sync {
+            if let idx = cache.index(forKey: tool) {
+                return (true, cache[idx].value)
+            }
+            return (false, nil)
         }
-        // Sentinel check: distinguish "not cached" from "cached as nil"
-        let hasCachedValue = cacheQueue.sync { cache.keys.contains(tool) }
-        if hasCachedValue {
-            return nil
+
+        if cachedResult.found {
+            return cachedResult.value
         }
 
         let result: String?
@@ -120,6 +119,7 @@ final class ExternalToolResolver: @unchecked Sendable {
     }
 
     private func isExecutableFile(_ path: String) -> Bool {
+        let fileManager = FileManager.default
         var isDir: ObjCBool = false
         guard fileManager.fileExists(atPath: path, isDirectory: &isDir), !isDir.boolValue else {
             return false
