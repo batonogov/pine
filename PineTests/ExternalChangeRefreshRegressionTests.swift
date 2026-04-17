@@ -2,7 +2,7 @@
 //  ExternalChangeRefreshRegressionTests.swift
 //  PineTests
 //
-//  Regression tests for issues #838 and #839:
+//  Regression tests for issues #838, #839, and #846:
 //   - #838: external file edits (e.g. nano) not reloaded into open tab
 //     because `controlActiveState == .key` guard was too strict and the
 //     activation re-check missed transitions through `.active`.
@@ -11,6 +11,10 @@
 //     (suppressWatcherUntil window swallowed the FSEvents notification
 //     and Phase 1 of refreshFileTreeAsync wiped already-loaded children
 //     of folders deeper than `shallowDepth`).
+//   - #846: external file reload was routed only through the root
+//     environment's primary TabManager, so tabs opened in other editor
+//     panes (including a recreated editor after terminals-only pruning)
+//     never refreshed.
 //
 //  These tests are intentionally architectural: they drive the same code
 //  paths the runtime triggers fire, without relying on FSEvents timing
@@ -22,7 +26,7 @@ import Testing
 
 @testable import Pine
 
-@Suite("External change refresh regressions — #838 / #839")
+@Suite("External change refresh regressions — #838 / #839 / #846")
 @MainActor
 struct ExternalChangeRefreshRegressionTests {
 
@@ -214,6 +218,77 @@ struct ExternalChangeRefreshRegressionTests {
                 "Second call must be a no-op: file was already reloaded")
         #expect(third.reloadedFileNames.isEmpty)
         #expect(manager.activeTab?.content == "# v2")
+    }
+
+    // MARK: - #846: external reload reaches every editor pane
+
+    /// Splitting creates a non-primary editor pane with its own TabManager.
+    /// The global external-change observer must still reload tabs opened there.
+    @Test("Issue #846: project-level external check reloads tab in non-primary split pane")
+    func projectLevelCheckReloadsNonPrimarySplitPane() throws {
+        let dir = try makeTempDirectory()
+        defer { cleanup(dir) }
+        let url = dir.appendingPathComponent("split.txt")
+        try "v1".write(to: url, atomically: true, encoding: .utf8)
+
+        let projectManager = ProjectManager()
+        let primaryPaneID = projectManager.paneManager.activePaneID
+        guard let secondPaneID = projectManager.paneManager.splitPane(primaryPaneID, axis: .horizontal),
+              let secondTM = projectManager.paneManager.tabManager(for: secondPaneID) else {
+            Issue.record("Failed to create second editor pane")
+            return
+        }
+
+        secondTM.openTab(url: url)
+        #expect(projectManager.primaryTabManager.tabs.isEmpty)
+        #expect(secondTM.activeTab?.content == "v1")
+
+        try "v2".write(to: url, atomically: true, encoding: .utf8)
+        touch(url)
+
+        let result = projectManager.checkExternalChanges()
+
+        #expect(result.reloadedFileNames == ["split.txt"])
+        #expect(secondTM.activeTab?.content == "v2")
+        #expect(projectManager.primaryTabManager.tabs.isEmpty)
+    }
+
+    /// After `pruneEmptyEditorLeaves()` the original primary TabManager can
+    /// be orphaned. Opening a file from the sidebar recreates a fresh editor
+    /// leaf via `ensureEditorPane()`, and external reload must follow that
+    /// new TabManager rather than the stale primary reference.
+    @Test("Issue #846: project-level external check reloads tab in recreated editor pane")
+    func projectLevelCheckReloadsRecreatedEditorPane() throws {
+        let dir = try makeTempDirectory()
+        defer { cleanup(dir) }
+        let url = dir.appendingPathComponent("recreated.txt")
+        try "v1".write(to: url, atomically: true, encoding: .utf8)
+
+        let projectManager = ProjectManager()
+        let initialEditorID = projectManager.paneManager.activePaneID
+        _ = projectManager.paneManager.createTerminalPane(
+            relativeTo: initialEditorID,
+            axis: .horizontal,
+            workingDirectory: nil
+        )
+        projectManager.paneManager.pruneEmptyEditorLeaves()
+        #expect(projectManager.paneManager.root.leafCount(ofType: .editor) == 0)
+
+        let recreatedTM = projectManager.paneManager.ensureEditorPane()
+        #expect(recreatedTM !== projectManager.primaryTabManager)
+
+        recreatedTM.openTab(url: url)
+        #expect(projectManager.primaryTabManager.tabs.isEmpty)
+        #expect(recreatedTM.activeTab?.content == "v1")
+
+        try "v2".write(to: url, atomically: true, encoding: .utf8)
+        touch(url)
+
+        let result = projectManager.checkExternalChanges()
+
+        #expect(result.reloadedFileNames == ["recreated.txt"])
+        #expect(recreatedTM.activeTab?.content == "v2")
+        #expect(projectManager.primaryTabManager.tabs.isEmpty)
     }
 
     // MARK: - #839: deep file appears in sidebar without manual interaction
@@ -497,6 +572,93 @@ struct ExternalChangeRefreshRegressionTests {
                 "ext_\(i).txt must appear after rapid alternation"
             )
         }
+    }
+
+    // MARK: - #846: reloadTabs / closeTabsForDeletedFile / tabsAffectedByDeletion across panes
+
+    /// `reloadTabs(url:)` must update the tab content in every editor pane,
+    /// not just the primary one.
+    @Test("Issue #846: reloadTabs(url:) reloads file content across all split panes")
+    func reloadTabsUpdatesAllPanes() throws {
+        let dir = try makeTempDirectory()
+        defer { cleanup(dir) }
+        let url = dir.appendingPathComponent("shared.txt")
+        try "original".write(to: url, atomically: true, encoding: .utf8)
+
+        let projectManager = ProjectManager()
+        let primaryPaneID = projectManager.paneManager.activePaneID
+        guard let secondPaneID = projectManager.paneManager.splitPane(primaryPaneID, axis: .horizontal),
+              let secondTM = projectManager.paneManager.tabManager(for: secondPaneID) else {
+            Issue.record("Failed to create second editor pane")
+            return
+        }
+
+        projectManager.primaryTabManager.openTab(url: url)
+        secondTM.openTab(url: url)
+        #expect(projectManager.primaryTabManager.activeTab?.content == "original")
+        #expect(secondTM.activeTab?.content == "original")
+
+        // External edit
+        try "updated externally".write(to: url, atomically: true, encoding: .utf8)
+
+        projectManager.reloadTabs(url: url)
+
+        #expect(projectManager.primaryTabManager.activeTab?.content == "updated externally")
+        #expect(secondTM.activeTab?.content == "updated externally")
+    }
+
+    /// `closeTabsForDeletedFile(url:)` must remove matching tabs from every
+    /// editor pane, not just the primary one.
+    @Test("Issue #846: closeTabsForDeletedFile(url:) closes tabs across all split panes")
+    func closeTabsForDeletedFileClosesAllPanes() throws {
+        let dir = try makeTempDirectory()
+        defer { cleanup(dir) }
+        let url = dir.appendingPathComponent("doomed.txt")
+        try "content".write(to: url, atomically: true, encoding: .utf8)
+
+        let projectManager = ProjectManager()
+        let primaryPaneID = projectManager.paneManager.activePaneID
+        guard let secondPaneID = projectManager.paneManager.splitPane(primaryPaneID, axis: .horizontal),
+              let secondTM = projectManager.paneManager.tabManager(for: secondPaneID) else {
+            Issue.record("Failed to create second editor pane")
+            return
+        }
+
+        projectManager.primaryTabManager.openTab(url: url)
+        secondTM.openTab(url: url)
+        #expect(projectManager.primaryTabManager.tabs.count == 1)
+        #expect(secondTM.tabs.count == 1)
+
+        projectManager.closeTabsForDeletedFile(url: url)
+
+        #expect(projectManager.primaryTabManager.tabs.isEmpty)
+        #expect(secondTM.tabs.isEmpty)
+    }
+
+    /// `tabsAffectedByDeletion(url:)` must return tabs from every editor
+    /// pane so the caller can display a complete list.
+    @Test("Issue #846: tabsAffectedByDeletion(url:) returns tabs from all split panes")
+    func tabsAffectedByDeletionReturnsAllPanes() throws {
+        let dir = try makeTempDirectory()
+        defer { cleanup(dir) }
+        let url = dir.appendingPathComponent("multi.txt")
+        try "data".write(to: url, atomically: true, encoding: .utf8)
+
+        let projectManager = ProjectManager()
+        let primaryPaneID = projectManager.paneManager.activePaneID
+        guard let secondPaneID = projectManager.paneManager.splitPane(primaryPaneID, axis: .horizontal),
+              let secondTM = projectManager.paneManager.tabManager(for: secondPaneID) else {
+            Issue.record("Failed to create second editor pane")
+            return
+        }
+
+        projectManager.primaryTabManager.openTab(url: url)
+        secondTM.openTab(url: url)
+
+        let affected = projectManager.tabsAffectedByDeletion(url: url)
+
+        #expect(affected.count == 2, "Expected tabs from both panes, got \(affected.count)")
+        #expect(affected.allSatisfy { $0.url == url })
     }
 
     // MARK: - Tree traversal helper

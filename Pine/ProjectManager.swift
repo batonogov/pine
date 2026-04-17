@@ -64,6 +64,49 @@ final class ProjectManager {
         }
         return true
     }
+
+    /// Checks every editor pane for externally modified or deleted files.
+    /// Aggregates the per-pane results so global observers do not depend on
+    /// the root environment's `TabManager`, which may be orphaned after pane
+    /// pruning or simply not own the currently visible tab.
+    func checkExternalChanges() -> TabManager.ExternalChangeResult {
+        var conflicts: [TabManager.ExternalConflict] = []
+        var reloadedFileNames: [String] = []
+        var seenReloadedFileNames = Set<String>()
+
+        for tabManager in paneManager.allTabManagers {
+            let result = tabManager.checkExternalChanges()
+            conflicts.append(contentsOf: result.conflicts)
+            for fileName in result.reloadedFileNames
+                where seenReloadedFileNames.insert(fileName).inserted {
+                reloadedFileNames.append(fileName)
+            }
+        }
+
+        return .init(conflicts: conflicts, reloadedFileNames: reloadedFileNames)
+    }
+
+    /// Reloads matching tabs in every editor pane. The same file can be open
+    /// in multiple panes, and the primary TabManager may not own any visible
+    /// editor after pane pruning.
+    func reloadTabs(url: URL) {
+        for tabManager in paneManager.allTabManagers {
+            tabManager.reloadTab(url: url)
+        }
+    }
+
+    /// Returns all open tabs affected by deletion across every editor pane.
+    func tabsAffectedByDeletion(url: URL) -> [EditorTab] {
+        paneManager.allTabManagers.flatMap { $0.tabsAffectedByDeletion(url: url) }
+    }
+
+    /// Closes matching tabs for a deleted path across every editor pane.
+    func closeTabsForDeletedFile(url: URL) {
+        for tabManager in paneManager.allTabManagers {
+            tabManager.closeTabsForDeletedFile(url: url)
+        }
+    }
+
     let toastManager = ToastManager()
     // nonisolated(unsafe) allows deinit to call stopPeriodicSnapshots().
     // RecoveryManager is only mutated on @MainActor; deinit is the only

@@ -358,7 +358,7 @@ extension ContentView {
         let deleted = result.conflicts.filter { $0.kind == .deleted }
 
         if !modified.isEmpty {
-            let names = modified.map(\.url.lastPathComponent).joined(separator: ", ")
+            let names = Array(Set(modified.map(\.url.lastPathComponent))).sorted().joined(separator: ", ")
             let alert = NSAlert()
             alert.messageText = Strings.externalModifyTitle
             alert.informativeText = Strings.externalModifyMessage(names)
@@ -368,7 +368,7 @@ extension ContentView {
 
             if alert.runModal() == .alertFirstButtonReturn {
                 for conflict in modified {
-                    tabManager.reloadTab(url: conflict.url)
+                    projectManager.reloadTabs(url: conflict.url)
                 }
             }
         }
@@ -379,7 +379,7 @@ extension ContentView {
     }
 
     func handleFileDeletion(_ deletedURL: URL) {
-        let affected = tabManager.tabsAffectedByDeletion(url: deletedURL)
+        let affected = projectManager.tabsAffectedByDeletion(url: deletedURL)
         guard !affected.isEmpty else { return }
 
         let dirtyTabs = affected.filter { $0.isDirty }
@@ -417,7 +417,7 @@ extension ContentView {
             }
         }
 
-        tabManager.closeTabsForDeletedFile(url: deletedURL)
+        projectManager.closeTabsForDeletedFile(url: deletedURL)
     }
 }
 

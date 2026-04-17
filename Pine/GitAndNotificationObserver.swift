@@ -97,7 +97,7 @@ struct GitAndNotificationObserver: ViewModifier {
                 // → .active transition entirely. `checkExternalChanges()`
                 // is cheap (one `stat()` per open tab) and silent when no
                 // tab changed, so it is safe to run unconditionally.
-                let result = tabManager.checkExternalChanges()
+                let result = projectManager.checkExternalChanges()
                 onHandleExternalChanges(result)
             }
             .onChange(of: controlActiveState) { _, newState in
@@ -108,7 +108,7 @@ struct GitAndNotificationObserver: ViewModifier {
                 // bar interactions on macOS 26 with Liquid Glass) —
                 // see issue #838.
                 guard newState != .inactive else { return }
-                let result = tabManager.checkExternalChanges()
+                let result = projectManager.checkExternalChanges()
                 onHandleExternalChanges(result)
             }
             // Defense in depth: AppKit's `didBecomeActive` is the
@@ -120,7 +120,7 @@ struct GitAndNotificationObserver: ViewModifier {
             .onReceive(NotificationCenter.default.publisher(
                 for: NSApplication.didBecomeActiveNotification
             )) { _ in
-                let result = tabManager.checkExternalChanges()
+                let result = projectManager.checkExternalChanges()
                 onHandleExternalChanges(result)
             }
             // …and per-window key changes. Some app-switcher paths only
@@ -128,7 +128,7 @@ struct GitAndNotificationObserver: ViewModifier {
             .onReceive(NotificationCenter.default.publisher(
                 for: NSWindow.didBecomeKeyNotification
             )) { _ in
-                let result = tabManager.checkExternalChanges()
+                let result = projectManager.checkExternalChanges()
                 onHandleExternalChanges(result)
             }
             .onReceive(NotificationCenter.default.publisher(for: .showProjectSearch)) { _ in
