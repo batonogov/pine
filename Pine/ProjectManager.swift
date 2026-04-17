@@ -106,6 +106,7 @@ final class ProjectManager {
             tabManager.closeTabsForDeletedFile(url: url)
         }
     }
+
     let toastManager = ToastManager()
     // nonisolated(unsafe) allows deinit to call stopPeriodicSnapshots().
     // RecoveryManager is only mutated on @MainActor; deinit is the only

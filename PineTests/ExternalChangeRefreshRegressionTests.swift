@@ -574,6 +574,93 @@ struct ExternalChangeRefreshRegressionTests {
         }
     }
 
+    // MARK: - #846: reloadTabs / closeTabsForDeletedFile / tabsAffectedByDeletion across panes
+
+    /// `reloadTabs(url:)` must update the tab content in every editor pane,
+    /// not just the primary one.
+    @Test("Issue #846: reloadTabs(url:) reloads file content across all split panes")
+    func reloadTabsUpdatesAllPanes() throws {
+        let dir = try makeTempDirectory()
+        defer { cleanup(dir) }
+        let url = dir.appendingPathComponent("shared.txt")
+        try "original".write(to: url, atomically: true, encoding: .utf8)
+
+        let projectManager = ProjectManager()
+        let primaryPaneID = projectManager.paneManager.activePaneID
+        guard let secondPaneID = projectManager.paneManager.splitPane(primaryPaneID, axis: .horizontal),
+              let secondTM = projectManager.paneManager.tabManager(for: secondPaneID) else {
+            Issue.record("Failed to create second editor pane")
+            return
+        }
+
+        projectManager.primaryTabManager.openTab(url: url)
+        secondTM.openTab(url: url)
+        #expect(projectManager.primaryTabManager.activeTab?.content == "original")
+        #expect(secondTM.activeTab?.content == "original")
+
+        // External edit
+        try "updated externally".write(to: url, atomically: true, encoding: .utf8)
+
+        projectManager.reloadTabs(url: url)
+
+        #expect(projectManager.primaryTabManager.activeTab?.content == "updated externally")
+        #expect(secondTM.activeTab?.content == "updated externally")
+    }
+
+    /// `closeTabsForDeletedFile(url:)` must remove matching tabs from every
+    /// editor pane, not just the primary one.
+    @Test("Issue #846: closeTabsForDeletedFile(url:) closes tabs across all split panes")
+    func closeTabsForDeletedFileClosesAllPanes() throws {
+        let dir = try makeTempDirectory()
+        defer { cleanup(dir) }
+        let url = dir.appendingPathComponent("doomed.txt")
+        try "content".write(to: url, atomically: true, encoding: .utf8)
+
+        let projectManager = ProjectManager()
+        let primaryPaneID = projectManager.paneManager.activePaneID
+        guard let secondPaneID = projectManager.paneManager.splitPane(primaryPaneID, axis: .horizontal),
+              let secondTM = projectManager.paneManager.tabManager(for: secondPaneID) else {
+            Issue.record("Failed to create second editor pane")
+            return
+        }
+
+        projectManager.primaryTabManager.openTab(url: url)
+        secondTM.openTab(url: url)
+        #expect(projectManager.primaryTabManager.tabs.count == 1)
+        #expect(secondTM.tabs.count == 1)
+
+        projectManager.closeTabsForDeletedFile(url: url)
+
+        #expect(projectManager.primaryTabManager.tabs.isEmpty)
+        #expect(secondTM.tabs.isEmpty)
+    }
+
+    /// `tabsAffectedByDeletion(url:)` must return tabs from every editor
+    /// pane so the caller can display a complete list.
+    @Test("Issue #846: tabsAffectedByDeletion(url:) returns tabs from all split panes")
+    func tabsAffectedByDeletionReturnsAllPanes() throws {
+        let dir = try makeTempDirectory()
+        defer { cleanup(dir) }
+        let url = dir.appendingPathComponent("multi.txt")
+        try "data".write(to: url, atomically: true, encoding: .utf8)
+
+        let projectManager = ProjectManager()
+        let primaryPaneID = projectManager.paneManager.activePaneID
+        guard let secondPaneID = projectManager.paneManager.splitPane(primaryPaneID, axis: .horizontal),
+              let secondTM = projectManager.paneManager.tabManager(for: secondPaneID) else {
+            Issue.record("Failed to create second editor pane")
+            return
+        }
+
+        projectManager.primaryTabManager.openTab(url: url)
+        secondTM.openTab(url: url)
+
+        let affected = projectManager.tabsAffectedByDeletion(url: url)
+
+        #expect(affected.count == 2, "Expected tabs from both panes, got \(affected.count)")
+        #expect(affected.allSatisfy { $0.url == url })
+    }
+
     // MARK: - Tree traversal helper
 
     /// Walks `nodes` along `path` (folder names) and returns the leaf node
