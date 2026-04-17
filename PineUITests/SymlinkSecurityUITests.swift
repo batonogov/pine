@@ -134,7 +134,7 @@ final class SymlinkSecurityUITests: PineUITestCase {
         XCTAssertTrue(waitForExistence(externalNode, timeout: 5))
 
         externalNode.rightClick()
-        let newFileItem = app.menuItems["doc.badge.plus"]
+        let newFileItem = app.menuItems["contextMenuNewFile"]
         XCTAssertTrue(waitForExistence(newFileItem, timeout: 3))
         newFileItem.click()
 

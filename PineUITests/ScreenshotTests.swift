@@ -253,6 +253,13 @@ final class ScreenshotTests: PineUITestCase {
         XCTAssertTrue(waitForExistence(fileRow, timeout: 5), "README.md should appear")
         fileRow.click()
 
+        // Wait for the editor tab to confirm the file opened.
+        let editorTab = app.descendants(matching: .any)["editorTab_README.md"].firstMatch
+        XCTAssertTrue(
+            waitForExistence(editorTab, timeout: 10),
+            "README.md tab should appear after opening the file"
+        )
+
         // Enable markdown preview mode explicitly via the toggle button in the tab bar
         let previewToggle = app.descendants(matching: .any)["markdownPreviewToggle"].firstMatch
         XCTAssertTrue(

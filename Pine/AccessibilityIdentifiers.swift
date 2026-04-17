@@ -105,6 +105,10 @@ nonisolated enum AccessibilityID {
     // MARK: - Toast notifications
     static let toastNotification = "toastNotification"
 
+    // MARK: - Context menu
+    static let contextMenuNewFile = "contextMenuNewFile"
+    static let contextMenuNewFolder = "contextMenuNewFolder"
+
     // MARK: - Status bar
     static let statusBar = "statusBar"
     static let terminalToggleButton = "terminalToggleButton"

@@ -139,12 +139,14 @@ struct FileNodeRow: View {
             } label: {
                 Label(Strings.contextNewFile, systemImage: MenuIcons.newFile)
             }
+            .accessibilityIdentifier(AccessibilityID.contextMenuNewFile)
 
             Button {
                 createNewItem(isDirectory: true)
             } label: {
                 Label(Strings.contextNewFolder, systemImage: MenuIcons.newFolder)
             }
+            .accessibilityIdentifier(AccessibilityID.contextMenuNewFolder)
 
             Divider()
         }

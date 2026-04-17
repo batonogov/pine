@@ -33,18 +33,6 @@ final class GoToLineTabOverflowExternalChangesUITests: PineUITestCase {
 
     // MARK: - Helpers
 
-    /// Finds an editor tab button by file name.
-    private func editorTab(_ fileName: String) -> XCUIElement {
-        app.buttons["editorTab_\(fileName)"].firstMatch
-    }
-
-    /// Opens a file from the sidebar.
-    private func openFile(_ name: String) {
-        let fileRow = app.staticTexts["fileNode_\(name)"]
-        XCTAssertTrue(waitForExistence(fileRow, timeout: 5), "\(name) should appear in sidebar")
-        fileRow.click()
-    }
-
     /// Opens Go to Line via Edit menu and returns the sheet element.
     @discardableResult
     private func openGoToLine() -> XCUIElement {
