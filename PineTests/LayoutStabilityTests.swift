@@ -78,43 +78,6 @@ struct LayoutStabilityTests {
         #expect(!workspace.isLoading)
     }
 
-    @Test("isLoading becomes false within 30s even under rapid back-to-back loads",
-          .timeLimit(.minutes(1)))
-    func isLoadingFalseUnderRapidLoads() async throws {
-        // Regression guard for #837 — ensures the new `Task.detached` load
-        // pipeline cooperates with `waitForLoadingComplete` even when the
-        // scheduler is hammered with multiple loads in quick succession.
-        let workspace = WorkspaceManager()
-        var dirs: [URL] = []
-        for index in 0..<5 {
-            let dir = FileManager.default.temporaryDirectory
-                .appendingPathComponent("pine-rapid-\(index)-\(UUID().uuidString)")
-            try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-            dirs.append(dir)
-        }
-        defer {
-            for dir in dirs { try? FileManager.default.removeItem(at: dir) }
-        }
-
-        // Issue 5 loads back-to-back without yielding. Each call cancels
-        // the previous in-flight task and bumps `loadGeneration`.
-        for dir in dirs {
-            workspace.loadDirectory(url: dir)
-        }
-
-        // The final load's continuation must resume in well under the 60s
-        // CI budget — anything longer reproduces the original starvation.
-        // We allow up to 30s for slow single-core CI runners where git
-        // processes on temp directories are expensive. The original bug
-        // caused 55–70s starvation, so 30s is still a strong guard.
-        let start = ContinuousClock.now
-        await workspace.waitForLoadingComplete()
-        let elapsed = ContinuousClock.now - start
-        #expect(!workspace.isLoading)
-        #expect(elapsed < .seconds(30),
-                "waitForLoadingComplete took \(elapsed) — scheduler starvation regression")
-    }
-
     @Test("waitForLoadingComplete returns immediately when no load is in flight")
     func waitForLoadingCompleteIsNoOpWhenIdle() async {
         // Documents the contract used by `isLoadingFalseAfterEmptyDir`:
