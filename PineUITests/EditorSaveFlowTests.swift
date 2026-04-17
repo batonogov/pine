@@ -67,6 +67,7 @@ final class EditorSaveFlowTests: PineUITestCase {
             waitForExistence(saveItem, timeout: 3),
             "Save menu item should exist"
         )
+        XCTAssertTrue(saveItem.isEnabled, "Save menu item should be enabled after opening a file")
     }
 
     // MARK: - Find menu item exists in Edit menu

@@ -29,10 +29,6 @@ final class SessionRestoreTests: PineUITestCase {
 
     // MARK: - Helpers
 
-    private var terminalToggle: XCUIElement {
-        app.descendants(matching: .any)["terminalToggleButton"].firstMatch
-    }
-
     /// Closes the app and relaunches with the same project via recent projects.
     private func closeAndReopenProject() {
         // Close the project window
