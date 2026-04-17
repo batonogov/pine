@@ -12,8 +12,8 @@ import Foundation
 /// - **Idempotent** — `format(format(x)) == format(x)`.
 /// - **Safe on parse failure** — return the original string unchanged if the input cannot
 ///   be parsed, so save never blocks on malformed files.
-/// - **Sandbox-friendly** — no spawning of external binaries (we run inside the app
-///   sandbox and cannot exec `terraform`, `swift-format`, or `prettier`).
+/// - **Sandbox-friendly** — pure-Swift formatters should not spawn external binaries.
+///   For external tools, use `ExternalFileFormatter` which handles Process lifecycle.
 protocol FileFormatter: Sendable {
     /// Returns true when this formatter should be applied to the given file URL.
     func canFormat(url: URL) -> Bool
@@ -90,9 +90,9 @@ struct JSONFileFormatter: FileFormatter {
 struct FileFormatterRegistry: Sendable {
     let formatters: [FileFormatter]
 
-    /// Default registry. Currently ships a single in-Swift JSON formatter. Additional
-    /// formatters (YAML, Markdown, Terraform, Swift) can be added here once pure-Swift
-    /// implementations land — the sandbox prevents shelling out to external tools.
+    /// Default registry. Ships a pure-Swift JSON formatter. External tool formatters
+    /// (e.g. `ExternalFileFormatter` for terraform, shfmt, prettier) can be appended
+    /// by consumers — they participate in the same first-match dispatch.
     static let `default` = FileFormatterRegistry(formatters: [JSONFileFormatter()])
 
     /// Returns a formatted copy of `content` for the given URL, or the original if no
