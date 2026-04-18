@@ -367,11 +367,28 @@ final class TabManager {
             formatters: fileFormatters
         )
         try trimmed.write(to: tab.url, atomically: true, encoding: tab.encoding)
+        let contentChanged = trimmed != tab.content
         tabs[index].content = trimmed
         tabs[index].savedContent = trimmed
         tabs[index].lastModDate = modDate(for: tab.url)
         tabs[index].fileSizeBytes = fileSize(url: tab.url)
         recoveryManager?.deleteRecoveryFile(for: tab.id)
+
+        // When save-time transforms (format-on-save, strip trailing whitespace,
+        // insert final newline) changed the text, the cached highlight result is
+        // stale — its match ranges point into the old text layout. Invalidate the
+        // cache and post .tabReloadedFromDisk so the CodeEditorView coordinator
+        // forcibly resyncs NSTextView contents and re-runs syntax highlighting
+        // (issue #814).
+        if contentChanged {
+            tabs[index].cachedHighlightResult = nil
+            tabs[index].recomputeContentCaches()
+            NotificationCenter.default.post(
+                name: .tabReloadedFromDisk,
+                object: nil,
+                userInfo: ["url": tab.url, "text": trimmed]
+            )
+        }
         return true
     }
 
@@ -600,10 +617,20 @@ final class TabManager {
             formatters: fileFormatters
         )
         try trimmed.write(to: newURL, atomically: true, encoding: tab.encoding)
+        let contentChanged = trimmed != tab.content
         tabs[index].content = trimmed
         tabs[index].url = newURL
         tabs[index].savedContent = trimmed
         tabs[index].lastModDate = modDate(for: newURL)
+        if contentChanged {
+            tabs[index].cachedHighlightResult = nil
+            tabs[index].recomputeContentCaches()
+            NotificationCenter.default.post(
+                name: .tabReloadedFromDisk,
+                object: nil,
+                userInfo: ["url": newURL, "text": trimmed]
+            )
+        }
         return true
     }
 

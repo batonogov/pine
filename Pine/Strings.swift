@@ -190,6 +190,7 @@ enum Strings {
 
     static let menuAutoSave: LocalizedStringKey = "menu.autoSave"
     static let menuFormatOnSave: LocalizedStringKey = "menu.formatOnSave"
+    static let menuSmartListContinuation: LocalizedStringKey = "menu.smartListContinuation"
     static let autoSaving: LocalizedStringKey = "editor.autoSaving"
     static let menuSave: LocalizedStringKey = "menu.save"
     static let menuSaveAll: LocalizedStringKey = "menu.saveAll"

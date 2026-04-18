@@ -115,15 +115,17 @@ def walk(node):
         atts = node.get("attachments")
         if isinstance(atts, list):
             for att in atts:
-                name = att.get("name", "") or ""
-                suggested = (
-                    att.get("exportedFileName")
+                # Xcode 26 manifest schema has no "name" field.
+                # The XCTAttachment name is stored in
+                # "suggestedHumanReadableName".
+                name = (
+                    att.get("name")
                     or att.get("suggestedHumanReadableName")
-                    or att.get("filename")
                     or ""
                 )
-                if name.startswith("screenshot-") and suggested:
-                    print(f"{name}\t{suggested}")
+                exported = att.get("exportedFileName", "")
+                if name.startswith("screenshot-") and exported:
+                    print(f"{name}\t{exported}")
         for v in node.values():
             walk(v)
     elif isinstance(node, list):

@@ -364,6 +364,7 @@ struct CodeEditorView: NSViewRepresentable {
             gutterView.fileExtension = language
             gutterView.exactFileName = fileName
             gutterView.indentStyle = indentStyle
+            gutterView.smartListContinuationEnabled = EditorSettings.shared.smartListContinuation
             gutterView.setBlameLines(blameLines)
             if gutterView.isBlameVisible != isBlameVisible {
                 gutterView.isBlameVisible = isBlameVisible

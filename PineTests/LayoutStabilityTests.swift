@@ -70,12 +70,49 @@ struct LayoutStabilityTests {
 
         workspace.loadDirectory(url: tmpDir)
 
-        // Uses CheckedContinuation-based waiting instead of polling with
-        // Task.sleep — eliminates flaky timeouts on CI runners where GCD
-        // main queue drain and Swift concurrency yields don't interleave
-        // reliably (see #823).
+        // After the GCD → Swift Concurrency rewrite (#837), the entire load
+        // pipeline lives in `Task.detached` + `await MainActor.run { ... }`,
+        // so the continuation resume cannot be starved by an unrelated GCD
+        // main-queue block. Local: ~0.08s; CI must stay << 1s.
         await workspace.waitForLoadingComplete()
         #expect(!workspace.isLoading)
+    }
+
+    @Test("waitForLoadingComplete returns immediately when no load is in flight")
+    func waitForLoadingCompleteIsNoOpWhenIdle() async {
+        // Documents the contract used by `isLoadingFalseAfterEmptyDir`:
+        // calling `waitForLoadingComplete()` on a fresh manager must not
+        // suspend at all.
+        let workspace = WorkspaceManager()
+        let start = ContinuousClock.now
+        await workspace.waitForLoadingComplete()
+        let elapsed = ContinuousClock.now - start
+        #expect(elapsed < .milliseconds(100))
+    }
+
+    @Test("waitForLoadingComplete resumes sequential waiters within budget",
+          .timeLimit(.minutes(1)))
+    func waitForLoadingCompleteSequentialWaiters() async throws {
+        // Calling `waitForLoadingComplete()` repeatedly must continue to
+        // return promptly after the first resume — the continuation array
+        // drain logic must leave the manager in a clean idle state.
+        let workspace = WorkspaceManager()
+        let tmpDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("pine-seqwait-\(UUID().uuidString)")
+        try? FileManager.default.createDirectory(at: tmpDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tmpDir) }
+
+        workspace.loadDirectory(url: tmpDir)
+        await workspace.waitForLoadingComplete()
+        #expect(!workspace.isLoading)
+
+        // Subsequent waits must be no-ops (idle path).
+        let start = ContinuousClock.now
+        for _ in 0..<5 {
+            await workspace.waitForLoadingComplete()
+        }
+        let elapsed = ContinuousClock.now - start
+        #expect(elapsed < .milliseconds(100))
     }
 
     // MARK: - EditorTabBar width stability
