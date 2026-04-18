@@ -266,8 +266,10 @@ final class RecoveryManager {
         // Lazily create the debouncer (captures self weakly).
         if snapshotDebouncer == nil {
             snapshotDebouncer = Debouncer(delay: Self.debounceDelay) { [weak self] in
-                guard let self, let tabs = self.tabsProvider?() else { return }
-                self.snapshotDirtyTabs(tabs)
+                MainActor.assumeIsolated {
+                    guard let self, let tabs = self.tabsProvider?() else { return }
+                    self.snapshotDirtyTabs(tabs)
+                }
             }
         }
         snapshotDebouncer?.schedule()

@@ -89,8 +89,10 @@ final class WorkspaceManager {
             rootNodesChangedDebouncer = Debouncer(
                 delay: Self.rootNodesChangedDebounce
             ) { [weak self] in
-                guard let self else { return }
-                self.onRootNodesChanged?(self.rootNodes)
+                MainActor.assumeIsolated {
+                    guard let self else { return }
+                    self.onRootNodesChanged?(self.rootNodes)
+                }
             }
         }
         rootNodesChangedDebouncer?.schedule()
