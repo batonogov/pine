@@ -488,7 +488,7 @@ jobs:
           fi
           echo "All $(echo "$ACTUAL" | wc -l | tr -d ' ') UI test classes are sharded."
 
-  # UI test shards — 7 parallel jobs, 21-23 tests each (delta ≤ 2).
+  # UI test shards — 7 parallel jobs, 23-28 tests each (delta ±3).
   # To rebalance: count tests per class, redistribute so shards stay within ±3 tests.
   # List classes with: grep -r "func test" PineUITests/ | sed 's/:.*//' | sort | uniq -c | sort -rn
   ui-tests:
@@ -499,53 +499,56 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # Shard 1 — Welcome & Misc (23 tests)
-          - shard-name: "Welcome & Misc"
-            test-classes: >-
-              -only-testing:PineUITests/WelcomeWindowTests
-              -only-testing:PineUITests/CheckForUpdatesTests
-              -only-testing:PineUITests/ToggleCommentTests
-              -only-testing:PineUITests/BlameViewTests
-              -only-testing:PineUITests/MinimapTests
-              -only-testing:PineUITests/DiffNavigationUITests
-          # Shard 2 — Editor & Gutter (21 tests)
-          - shard-name: "Editor & Gutter"
-            test-classes: >-
-              -only-testing:PineUITests/EditorWindowTests
-              -only-testing:PineUITests/LineNumberGutterUITests
-              -only-testing:PineUITests/ScreenshotTests
-          # Shard 3 — Terminal (22 tests)
+          # Shard 1 — Terminal (28 tests)
           - shard-name: "Terminal"
             test-classes: >-
               -only-testing:PineUITests/TerminalTests
               -only-testing:PineUITests/SidebarFolderClickTests
-          # Shard 4 — Navigation (23 tests)
+              -only-testing:PineUITests/TerminalMenuTests
+          # Shard 2 — Welcome & Session (25 tests)
+          - shard-name: "Welcome & Session"
+            test-classes: >-
+              -only-testing:PineUITests/WelcomeWindowTests
+              -only-testing:PineUITests/ToggleCommentTests
+              -only-testing:PineUITests/BlameViewTests
+              -only-testing:PineUITests/MinimapTests
+              -only-testing:PineUITests/DiffNavigationUITests
+              -only-testing:PineUITests/SessionRestoreTests
+          # Shard 3 — Navigation (23 tests)
           - shard-name: "Navigation"
             test-classes: >-
               -only-testing:PineUITests/GoToLineTabOverflowExternalChangesUITests
               -only-testing:PineUITests/QuickOpenUITests
               -only-testing:PineUITests/EditorTabNavigationTests
-          # Shard 5 — Files & Branch (21 tests)
-          - shard-name: "Files & Branch"
+          # Shard 4 — Editor Chrome (24 tests)
+          - shard-name: "Editor Chrome"
             test-classes: >-
-              -only-testing:PineUITests/DeleteTests
+              -only-testing:PineUITests/EditorWindowTests
+              -only-testing:PineUITests/ScreenshotTests
               -only-testing:PineUITests/BranchSwitcherTests
+              -only-testing:PineUITests/CheckForUpdatesTests
+          # Shard 5 — Files & Save (26 tests)
+          - shard-name: "Files & Save"
+            test-classes: >-
+              -only-testing:PineUITests/EditorSaveFlowTests
+              -only-testing:PineUITests/DeleteTests
+              -only-testing:PineUITests/SidebarRenameTests
               -only-testing:PineUITests/SidebarFileOperationsTests
-              -only-testing:PineUITests/InlineRenameAlignmentTests
-          # Shard 6 — Search & Duplicate (23 tests)
-          - shard-name: "Search & Duplicate"
+          # Shard 6 — Search & Panes (24 tests)
+          - shard-name: "Search & Panes"
             test-classes: >-
               -only-testing:PineUITests/SidebarSearchTests
               -only-testing:PineUITests/DuplicateTests
               -only-testing:PineUITests/SplitPaneLifecycleTests
-              -only-testing:PineUITests/SidebarRenameTests
-          # Shard 7 — Security & Git (23 tests)
-          - shard-name: "Security & Git"
+              -only-testing:PineUITests/FontSizeTests
+          # Shard 7 — Security & Layout (24 tests)
+          - shard-name: "Security & Layout"
             test-classes: >-
               -only-testing:PineUITests/GitignoreFilterTests
-              -only-testing:PineUITests/FontSizeTests
               -only-testing:PineUITests/SymlinkSecurityUITests
               -only-testing:PineUITests/MultiWindowTests
+              -only-testing:PineUITests/InlineRenameAlignmentTests
+              -only-testing:PineUITests/LineNumberGutterUITests
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
 
