@@ -1,0 +1,274 @@
+{
+    "_comment": "Performance test baselines. Update by manually editing this file after reviewing nightly-perf results.",
+    "threshold_percent": 15,
+    "tests": {
+        "FoldRangeCalculatorPerformanceTests/testDeeplyNestedBraces": {
+            "baseline_seconds": 0.002,
+            "description": "100-level deep nested braces"
+        },
+        "FoldRangeCalculatorPerformanceTests/testManyBlocks": {
+            "baseline_seconds": 0.005,
+            "description": "500 flat brace blocks"
+        },
+        "FoldRangeCalculatorPerformanceTests/testMixedBrackets": {
+            "baseline_seconds": 0.003,
+            "description": "200 mixed bracket groups ({}, [], ())"
+        },
+        "FoldRangeCalculatorPerformanceTests/testLargeFileWithSkipRanges": {
+            "baseline_seconds": 0.004,
+            "description": "300 blocks with skip ranges"
+        },
+        "FoldRangeCalculatorPerformanceTests/testVeryLargeFile": {
+            "baseline_seconds": 0.015,
+            "description": "1000 blocks x 5 lines each"
+        },
+        "SyntaxHighlighterPerformanceTests/testFullHighlight500Lines": {
+            "baseline_seconds": 0.010,
+            "description": "Full syntax highlight of 500-line Swift file"
+        },
+        "SyntaxHighlighterPerformanceTests/testFullHighlight2000Lines": {
+            "baseline_seconds": 0.040,
+            "description": "Full syntax highlight of 2000-line Swift file"
+        },
+        "SyntaxHighlighterPerformanceTests/testFullHighlight5000Lines": {
+            "baseline_seconds": 0.100,
+            "description": "Full syntax highlight of 5000-line Swift file"
+        },
+        "SyntaxHighlighterPerformanceTests/testIncrementalHighlight": {
+            "baseline_seconds": 0.005,
+            "description": "Incremental re-highlight after small edit in 2000-line file"
+        },
+        "SyntaxHighlighterPerformanceTests/testComputeMatches2000Lines": {
+            "baseline_seconds": 0.030,
+            "description": "Pure regex match computation for 2000-line file"
+        },
+        "SyntaxHighlighterPerformanceTests/testViewportHighlight5000Lines": {
+            "baseline_seconds": 0.010,
+            "description": "Viewport-only highlight in middle of 5000-line file"
+        },
+        "SyntaxHighlighterPerformanceTests/testCommentAndStringRanges": {
+            "baseline_seconds": 0.015,
+            "description": "Comment/string range extraction for 2000-line file"
+        },
+        "GitStatusParserPerformanceTests/testParseStatus500Entries": {
+            "baseline_seconds": 0.002,
+            "description": "Parse 500 git status --porcelain lines"
+        },
+        "GitStatusParserPerformanceTests/testParseStatus2000Entries": {
+            "baseline_seconds": 0.008,
+            "description": "Parse 2000 git status --porcelain lines"
+        },
+        "GitStatusParserPerformanceTests/testParseIgnored500Entries": {
+            "baseline_seconds": 0.001,
+            "description": "Parse 500 ignored file entries"
+        },
+        "GitStatusParserPerformanceTests/testParseDiff100Hunks": {
+            "baseline_seconds": 0.002,
+            "description": "Parse git diff with 100 hunks"
+        },
+        "GitStatusParserPerformanceTests/testParseDiff500Hunks": {
+            "baseline_seconds": 0.008,
+            "description": "Parse git diff with 500 hunks"
+        },
+        "GitStatusParserPerformanceTests/testParseBlame500Lines": {
+            "baseline_seconds": 0.003,
+            "description": "Parse git blame output for 500 lines"
+        },
+        "GitStatusParserPerformanceTests/testParseBlame2000Lines": {
+            "baseline_seconds": 0.010,
+            "description": "Parse git blame output for 2000 lines"
+        },
+        "GitStatusParserPerformanceTests/testChangeRegionStarts": {
+            "baseline_seconds": 0.001,
+            "description": "Compute change region starts from 500 diffs"
+        },
+        "GitStatusParserPerformanceTests/testNextChangeLine": {
+            "baseline_seconds": 0.001,
+            "description": "Next change line lookup across 300 positions"
+        },
+        "ProjectSearchPerformanceTests/testSearchSingleLargeFile": {
+            "baseline_seconds": 0.005,
+            "description": "Search 5000-line file for common term"
+        },
+        "ProjectSearchPerformanceTests/testSearchSingleFileCaseSensitive": {
+            "baseline_seconds": 0.005,
+            "description": "Case-sensitive search in 5000-line file"
+        },
+        "ProjectSearchPerformanceTests/testSearchAcross200Files": {
+            "baseline_seconds": 0.050,
+            "description": "Search across 200 files (50 lines each)"
+        },
+        "ProjectSearchPerformanceTests/testSearchAcross500Files": {
+            "baseline_seconds": 0.100,
+            "description": "Search across 500 files (30 lines each)"
+        },
+        "ProjectSearchPerformanceTests/testCollectSearchableFiles": {
+            "baseline_seconds": 0.010,
+            "description": "Collect searchable files from 500-file tree"
+        },
+        "ProjectSearchPerformanceTests/testSearchLargeProject1000Files": {
+            "baseline_seconds": 0.500,
+            "description": "Search 1000 files (100 lines each) for common term"
+        },
+        "ProjectSearchPerformanceTests/testSearchLargeProjectCaseSensitive": {
+            "baseline_seconds": 0.300,
+            "description": "Case-sensitive search across 500 files"
+        },
+        "ProjectSearchPerformanceTests/testSearchRareTermLargeProject": {
+            "baseline_seconds": 0.200,
+            "description": "Search for rare term in 1000-file project"
+        },
+        "ProjectSearchPerformanceTests/testCollectSearchableFilesLargeTree": {
+            "baseline_seconds": 0.020,
+            "description": "Collect files from 1200-file directory tree"
+        },
+        "ProjectSearchPerformanceTests/testSearchHighMatchDensity": {
+            "baseline_seconds": 0.300,
+            "description": "Search 200 files with high match density"
+        },
+        "EditRehighlightPerformanceTests/testInsertLineAndRehighlight2000Lines": {
+            "baseline_seconds": 0.005,
+            "description": "Insert line + re-highlight in 2000-line file"
+        },
+        "EditRehighlightPerformanceTests/testPasteBlockAndRehighlight": {
+            "baseline_seconds": 0.005,
+            "description": "Paste 10-line block + re-highlight in 3000-line file"
+        },
+        "EditRehighlightPerformanceTests/testRapidTypingRehighlight": {
+            "baseline_seconds": 0.050,
+            "description": "100 single-char inserts with incremental re-highlight"
+        },
+        "EditRehighlightPerformanceTests/testDeleteBlockAndRehighlight": {
+            "baseline_seconds": 0.005,
+            "description": "Delete 500 chars + re-highlight in 2000-line file"
+        },
+        "MinimapRenderPerformanceTests/testMinimapDataPrep2000Lines": {
+            "baseline_seconds": 0.020,
+            "description": "Minimap data preparation for 2000-line file"
+        },
+        "MinimapRenderPerformanceTests/testMinimapDataPrep5000Lines": {
+            "baseline_seconds": 0.050,
+            "description": "Minimap data preparation for 5000-line file"
+        },
+        "MinimapRenderPerformanceTests/testMinimapDataPrepWithDiffMarkers": {
+            "baseline_seconds": 0.030,
+            "description": "Minimap data prep with diff markers for 3000-line file"
+        },
+        "MinimapRenderPerformanceTests/testMinimapFullPipeline3000Lines": {
+            "baseline_seconds": 0.060,
+            "description": "Full minimap pipeline (highlight + data prep) for 3000 lines"
+        },
+        "ScrollPerformanceTests/testScrollThrough100kLines": {
+            "baseline_seconds": 0.500,
+            "description": "Scroll through 100K-line file (layout + enumerate)"
+        },
+        "ScrollPerformanceTests/testViewportLayoutAtRandomPositions100kLines": {
+            "baseline_seconds": 0.050,
+            "description": "Viewport layout at 20 random positions in 100K-line file"
+        },
+        "ScrollPerformanceTests/testScrollWithHighlighting50kLines": {
+            "baseline_seconds": 1.000,
+            "description": "Scroll through 50K highlighted lines with color reads"
+        },
+        "EditorStressTests/testOpen10kLineFile": {
+            "baseline_seconds": 0.050,
+            "description": "Open and close 10K-line file"
+        },
+        "EditorStressTests/testOpen50kLineFile": {
+            "baseline_seconds": 0.200,
+            "description": "Open and close 50K-line file"
+        },
+        "EditorStressTests/testOpen100kLineFile": {
+            "baseline_seconds": 0.300,
+            "description": "Open and close 100K-line file (no highlighting)"
+        },
+        "EditorStressTests/testOpen50Tabs": {
+            "baseline_seconds": 0.100,
+            "description": "Open and close 50 tabs (100 lines each)"
+        },
+        "EditorStressTests/testOpen100Tabs": {
+            "baseline_seconds": 0.200,
+            "description": "Open and close 100 tabs (50 lines each)"
+        },
+        "EditorStressTests/testRapidOpenClose": {
+            "baseline_seconds": 0.500,
+            "description": "Rapid open/close 20 files x 50 cycles"
+        },
+        "EditorStressTests/testThroughputHighlightingAndGitParsing": {
+            "baseline_seconds": 0.050,
+            "description": "Combined highlight + git parse throughput"
+        },
+        "EditorStressTests/testThroughputHighlightAndFoldCalculation": {
+            "baseline_seconds": 0.050,
+            "description": "Combined highlight + fold calculation throughput"
+        },
+        "EditorStressTests/testLargeFileContentUpdate": {
+            "baseline_seconds": 0.005,
+            "description": "Content update in 10K-line file"
+        },
+        "EditorStressTests/testLargeFileMemory": {
+            "baseline_seconds": 0.100,
+            "description": "Memory sanity check for 50K-line file open"
+        },
+        "EditorStressTests/testTabSwitching50Tabs": {
+            "baseline_seconds": 0.010,
+            "description": "Switch through 50 open tabs (200 lines each)"
+        },
+        "EditorStressTests/testTabSwitchingWith100TabsAndContentUpdate": {
+            "baseline_seconds": 0.200,
+            "description": "Switch + update content across 100 tabs"
+        },
+        "EditorStressTests/testRapidOpenCloseInterleavedSingle": {
+            "baseline_seconds": 0.100,
+            "description": "Interleaved open/close single tab x 50 files"
+        },
+        "EditorStressTests/testRapidContentUpdates": {
+            "baseline_seconds": 0.050,
+            "description": "1000 rapid content updates on single tab"
+        },
+        "EditorStressTests/testRapidSaveCycles": {
+            "baseline_seconds": 0.100,
+            "description": "100 update+save cycles on single tab"
+        },
+        "EditorStressTests/testThroughputSearchAndHighlight": {
+            "baseline_seconds": 0.050,
+            "description": "Combined highlight + project search throughput"
+        },
+        "EditorStressTests/testFileWatcherRapidStartStop": {
+            "baseline_seconds": 0.050,
+            "description": "100 rapid FileSystemWatcher start/stop cycles"
+        },
+        "EditorStressTests/testFileWatcherWithRapidFileCreation": {
+            "baseline_seconds": 1.000,
+            "description": "FileSystemWatcher callback with 50 rapid file creates"
+        },
+        "EditorStressTests/testExternalChangeDetection50Tabs": {
+            "baseline_seconds": 0.050,
+            "description": "External change detection across 50 open tabs"
+        },
+        "EditorStressTests/testLoadLargeFileTree": {
+            "baseline_seconds": 0.100,
+            "description": "WorkspaceManager load of 500-file directory tree"
+        },
+        "EditorStressTests/testOpen10MBFilePartialLoad": {
+            "baseline_seconds": 0.500,
+            "description": "Open 10MB file with partial load (first 1MB)"
+        },
+        "EditorStressTests/testOpen5MBFileNoHighlight": {
+            "baseline_seconds": 0.300,
+            "description": "Open 5MB file without syntax highlighting"
+        },
+        "EditorStressTests/testOpen1MBFileWithHighlight": {
+            "baseline_seconds": 0.500,
+            "description": "Open 1MB file with syntax highlighting enabled"
+        },
+        "EditorStressTests/testSequentialOpen5LargeFiles": {
+            "baseline_seconds": 1.000,
+            "description": "Sequential open of 5 x 2MB files"
+        },
+        "SyntaxHighlighterPerformanceTests/testViewportHighlightVsFullHighlight5000Lines": {
+            "baseline_seconds": 0.200,
+            "description": "Viewport vs full highlight comparison for 5000 lines"
+        }
+    }
+}
