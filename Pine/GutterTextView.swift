@@ -462,6 +462,12 @@ final class GutterTextView: NSTextView {
         }
     }
 
+    // MARK: - Smart list continuation
+
+    /// When `true`, pressing Return inside a Markdown list automatically
+    /// continues the bullet/number/task on the next line. Toggled via Editor menu.
+    var smartListContinuationEnabled: Bool = true
+
     // MARK: - Auto-indent
 
     /// Символы, после которых увеличиваем отступ
@@ -476,6 +482,39 @@ final class GutterTextView: NSTextView {
         // Находим текущую строку
         let lineRange = source.lineRange(for: NSRange(location: cursorLocation, length: 0))
         let currentLine = source.substring(with: lineRange)
+
+        // Strip trailing newline from current line for SmartListContinuation parsing
+        let lineForParsing = currentLine.hasSuffix("\n")
+            ? String(currentLine.dropLast())
+            : currentLine
+
+        // Smart list continuation: only when cursor is at the end of the line
+        // (ignoring the trailing newline character).
+        let lineContentEnd = lineRange.location + (lineForParsing as NSString).length
+        if smartListContinuationEnabled && cursorLocation == lineContentEnd {
+            if let outcome = SmartListContinuation.handleReturn(currentLine: lineForParsing) {
+                switch outcome {
+                case .continue(let continuation):
+                    // Group into a single undo operation
+                    undoManager?.beginUndoGrouping()
+                    insertText("\n\(continuation)", replacementRange: selectedRange())
+                    undoManager?.endUndoGrouping()
+                    return
+
+                case .terminate(let replacement):
+                    // Replace current line content with replacement, then insert newline
+                    undoManager?.beginUndoGrouping()
+                    let replaceRange = NSRange(
+                        location: lineRange.location,
+                        length: (lineForParsing as NSString).length
+                    )
+                    insertText(replacement, replacementRange: replaceRange)
+                    insertText("\n", replacementRange: selectedRange())
+                    undoManager?.endUndoGrouping()
+                    return
+                }
+            }
+        }
 
         // Извлекаем ведущие пробелы/табы
         let leadingWhitespace = String(currentLine.prefix(while: { $0 == " " || $0 == "\t" }))
