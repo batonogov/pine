@@ -236,4 +236,58 @@ struct FileSystemWatcherTests {
         let watcher = FileSystemWatcher { }
         watcher.stop()
     }
+
+    // MARK: - Generation token / stale-callback guard
+
+    @Test("Generation token prevents stale callbacks after stop")
+    @MainActor
+    func generationTokenPreventsStaleCallbacks() async throws {
+        // Verify that stopping a FileSystemWatcher increments the generation
+        // token so that callbacks enqueued before stop() are discarded.
+        var callbackCount = 0
+        let watcher = FileSystemWatcher(debounceInterval: 0.1) {
+            callbackCount += 1
+        }
+
+        let tmpDir = try makeTempDirectory()
+        defer { cleanup(tmpDir) }
+
+        watcher.watch(directory: tmpDir)
+
+        // Trigger an FS event
+        let testFile = tmpDir.appendingPathComponent("test.txt")
+        try "hello".write(to: testFile, atomically: true, encoding: .utf8)
+
+        // Give FSEvents time to detect the change
+        try await Task.sleep(for: .milliseconds(50))
+
+        // Stop immediately — generation token should invalidate pending callbacks
+        watcher.stop()
+
+        // Record count at stop time — any callbacks that fired before stop are OK
+        let countAtStop = callbackCount
+
+        // Wait well past the debounce interval
+        try await Task.sleep(for: .milliseconds(400))
+
+        // No additional callbacks should have been delivered after stop()
+        #expect(
+            callbackCount == countAtStop,
+            "No callbacks should fire after stop() — generation token must guard"
+        )
+
+        // Now restart and verify the watcher still works correctly
+        callbackCount = 0
+        watcher.watch(directory: tmpDir)
+
+        let testFile2 = tmpDir.appendingPathComponent("test2.txt")
+        try "world".write(to: testFile2, atomically: true, encoding: .utf8)
+
+        // Wait for the debounced callback (3x interval for CI margin)
+        try await Task.sleep(for: .milliseconds(500))
+
+        watcher.stop()
+
+        #expect(callbackCount >= 1, "Watcher should deliver callbacks after restart")
+    }
 }

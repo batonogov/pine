@@ -83,7 +83,7 @@ final class WorkspaceManager {
 
     /// Schedules a debounced `onRootNodesChanged` notification.
     /// Cancels any pending notification so rapid updates coalesce into one.
-    private func notifyRootNodesChanged(_ nodes: [FileNode]) {
+    private func notifyRootNodesChanged() {
         // Lazily create the debouncer (captures self weakly).
         if rootNodesChangedDebouncer == nil {
             rootNodesChangedDebouncer = Debouncer(
@@ -243,7 +243,7 @@ final class WorkspaceManager {
                     return
                 }
                 self.rootNodes = shallowChildren
-                self.notifyRootNodesChanged(shallowChildren)
+                self.notifyRootNodesChanged()
                 self.gitProvider.repositoryURL = gitInfo.repositoryURL
                 self.gitProvider.gitRootPath = gitInfo.gitRootPath
                 // Atomically apply git state in a single equality-checked
@@ -283,7 +283,7 @@ final class WorkspaceManager {
                     return
                 }
                 self.rootNodes = fullChildren
-                self.notifyRootNodesChanged(fullChildren)
+                self.notifyRootNodesChanged()
                 self.isLoading = false
                 self.resumeLoadingContinuations()
                 if let progressID { self.progressTracker?.endOperation(progressID) }
@@ -396,7 +396,7 @@ final class WorkspaceManager {
             maxDepth: Self.shallowDepth
         )
         rootNodes = shallowResult.root.children ?? []
-        notifyRootNodesChanged(rootNodes)
+        notifyRootNodesChanged()
 
         // Phase 2 (async): full tree only if Phase 1 hit the depth limit.
         // Pure Swift Concurrency — no GCD bridging — to avoid scheduler
@@ -410,7 +410,7 @@ final class WorkspaceManager {
                 await MainActor.run { [weak self] in
                     guard let self, self.loadGeneration == generation else { return }
                     self.rootNodes = fullChildren
-                    self.notifyRootNodesChanged(fullChildren)
+                    self.notifyRootNodesChanged()
                 }
             }
         }
