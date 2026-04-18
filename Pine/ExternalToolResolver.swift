@@ -9,7 +9,7 @@ import Foundation
 /// install locations. Caches results for the lifetime of the resolver instance.
 ///
 /// Thread-safe: uses a serial queue to protect the cache dictionary.
-final class ExternalToolResolver: Sendable {
+nonisolated final class ExternalToolResolver: Sendable {
 
     /// Well-known directories that are always searched, even if not in PATH.
     /// Order matters — earlier entries are checked first.

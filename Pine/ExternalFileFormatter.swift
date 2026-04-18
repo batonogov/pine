@@ -27,7 +27,7 @@ protocol ProcessRunning: Sendable {
 ///
 /// **Important:** `run()` blocks the calling thread until the process exits or times out.
 /// Must be called from a background queue — never from the main thread.
-struct RealProcessRunner: ProcessRunning {
+nonisolated struct RealProcessRunner: ProcessRunning {
     func run(
         executablePath: String,
         arguments: [String],
@@ -118,7 +118,7 @@ struct RealProcessRunner: ProcessRunning {
 ///
 /// **Threading:** `format()` blocks the calling thread while the external process runs.
 /// Must be called from a background queue — never from the main thread.
-final class ExternalFileFormatter: FileFormatter, Sendable {
+nonisolated final class ExternalFileFormatter: FileFormatter, Sendable {
 
     /// Display name of the tool (e.g. "terraform", "shfmt", "prettier").
     let toolName: String
