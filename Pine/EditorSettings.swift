@@ -21,6 +21,7 @@ final class EditorSettings {
         static let insertFinalNewline = "editor.insertFinalNewline"
         static let stripTrailingWhitespace = "editor.stripTrailingWhitespace"
         static let formatOnSave = "editor.formatOnSave"
+        static let smartListContinuation = "editor.smartListContinuation"
     }
 
     private let defaults: UserDefaults
@@ -44,6 +45,12 @@ final class EditorSettings {
         didSet { defaults.set(formatOnSave, forKey: Keys.formatOnSave) }
     }
 
+    /// When `true`, pressing Return inside a Markdown list automatically continues the
+    /// bullet/number/task on the next line. Default `true` to match VS Code, Obsidian, iA Writer.
+    var smartListContinuation: Bool {
+        didSet { defaults.set(smartListContinuation, forKey: Keys.smartListContinuation) }
+    }
+
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
         // `object(forKey:)` returns nil for missing keys so we can distinguish "unset" from
@@ -53,5 +60,7 @@ final class EditorSettings {
         // Off by default — JSON formatting via JSONSerialization is lossy for
         // numbers and reorders keys. Users opt in explicitly via menu toggle.
         self.formatOnSave = (defaults.object(forKey: Keys.formatOnSave) as? Bool) ?? false
+        // On by default — matches VS Code, Obsidian, iA Writer behaviour.
+        self.smartListContinuation = (defaults.object(forKey: Keys.smartListContinuation) as? Bool) ?? true
     }
 }

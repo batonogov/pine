@@ -161,6 +161,12 @@ struct PineAppMenuCommands: Commands {
             ) {
                 Label(Strings.menuFormatOnSave, systemImage: MenuIcons.formatOnSave)
             }
+
+            Toggle(
+                isOn: Bindable(EditorSettings.shared).smartListContinuation
+            ) {
+                Label(Strings.menuSmartListContinuation, systemImage: MenuIcons.smartListContinuation)
+            }
         }
 
         // MARK: - Edit menu

@@ -14,6 +14,7 @@ nonisolated enum MenuIcons {
     static let duplicate = "plus.square.on.square"
     static let autoSave = "arrow.triangle.2.circlepath"
     static let formatOnSave = "text.alignleft"
+    static let smartListContinuation = "list.bullet"
 
     static let quickOpen = "doc.text.magnifyingglass"
     static let installCLI = "terminal"
