@@ -34,7 +34,7 @@ nonisolated struct RealProcessRunner: ProcessRunning {
         stdin: String,
         timeout: TimeInterval
     ) -> ProcessRunResult {
-        dispatchPrecondition(condition: .notOnQueue(.main))
+        precondition(!Thread.isMainThread, "RealProcessRunner.run() must not be called on the main thread")
 
         let process = Process()
         process.executableURL = URL(fileURLWithPath: executablePath)
@@ -56,14 +56,18 @@ nonisolated struct RealProcessRunner: ProcessRunning {
             }
             stdinPipe.fileHandleForWriting.closeFile()
 
-            // Schedule timeout with thread-safe flag via GCD
-            let timedOutQueue = DispatchQueue(label: "com.pine.process-timeout-flag")
+            // Schedule timeout with thread-safe flag via NSLock
+            // (GCD serial queue .sync crashes under Swift 6 cooperative threading
+            //  because swift_task_checkIsolatedSwift triggers dispatch_assert_queue)
+            let timedOutLock = NSLock()
             nonisolated(unsafe) var timedOutValue = false
 
             let timer = DispatchSource.makeTimerSource(queue: .global(qos: .utility))
             timer.schedule(deadline: .now() + timeout)
             timer.setEventHandler {
-                timedOutQueue.sync { timedOutValue = true }
+                timedOutLock.lock()
+                timedOutValue = true
+                timedOutLock.unlock()
                 if process.isRunning {
                     process.terminate()
                 }
@@ -92,7 +96,9 @@ nonisolated struct RealProcessRunner: ProcessRunning {
             process.waitUntilExit()
             timer.cancel()
 
-            let didTimeout = timedOutQueue.sync { timedOutValue }
+            timedOutLock.lock()
+            let didTimeout = timedOutValue
+            timedOutLock.unlock()
 
             return ProcessRunResult(
                 stdout: String(bytes: outData, encoding: .utf8) ?? "",

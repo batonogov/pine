@@ -124,14 +124,25 @@ struct ExternalFileFormatterTests {
 
     @Test("Integration: formats via real /bin/cat (identity transform)")
     func integrationWithCat() {
-        let formatter = ExternalFileFormatter(
-            toolPath: "/bin/cat",
-            toolName: "cat",
-            extensions: ["txt"],
-            arguments: [],
-            processRunner: RealProcessRunner()
-        )
-        let result = formatter.format("hello world", url: URL(fileURLWithPath: "/tmp/test.txt"))
+        // RealProcessRunner.run() requires a non-main thread.
+        // Swift Testing runs on the cooperative executor which may map to main,
+        // so we dispatch to a real GCD background thread.
+        let semaphore = DispatchSemaphore(value: 0)
+        nonisolated(unsafe) var result = ""
+
+        DispatchQueue.global().async {
+            let formatter = ExternalFileFormatter(
+                toolPath: "/bin/cat",
+                toolName: "cat",
+                extensions: ["txt"],
+                arguments: [],
+                processRunner: RealProcessRunner()
+            )
+            result = formatter.format("hello world", url: URL(fileURLWithPath: "/tmp/test.txt"))
+            semaphore.signal()
+        }
+
+        semaphore.wait()
         #expect(result == "hello world")
     }
 
