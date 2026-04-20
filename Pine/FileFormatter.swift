@@ -92,7 +92,7 @@ enum HCLFileFormatter {
         processRunner: ProcessRunning = RealProcessRunner(),
         resolver: ExternalToolResolver = .fromEnvironment()
     ) -> ExternalFileFormatter {
-        let extensions = ["tf", "tfvars"]
+        let extensions = ["tf", "tfvars", "hcl"]
         let arguments = ["fmt", "-"]
 
         // Try terraform first, then OpenTofu

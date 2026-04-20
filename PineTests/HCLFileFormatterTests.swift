@@ -11,18 +11,34 @@ import Testing
 @Suite("HCLFileFormatter")
 struct HCLFileFormatterTests {
 
+    // MARK: - Helper
+
+    private func makeFormatter(
+        extensions: [String] = ["tf", "tfvars", "hcl"],
+        arguments: [String] = ["fmt", "-"],
+        runner: MockProcessRunner,
+        toolPath: String? = "/usr/local/bin/terraform",
+        toolName: String = "terraform"
+    ) -> ExternalFileFormatter {
+        ExternalFileFormatter(
+            toolPath: toolPath,
+            toolName: toolName,
+            extensions: extensions,
+            arguments: arguments,
+            processRunner: runner
+        )
+    }
+
     // MARK: - Terraform formatting
 
     @Test("Terraform found — formats .tf files")
     func terraformFormatsTFFiles() {
-        let runner = MockProcessRunner(stdout: "resource \"aws_instance\" \"web\" {\n  ami = \"abc-123\"\n}\n", stderr: "", exitCode: 0)
-        let formatter = ExternalFileFormatter(
-            toolPath: "/usr/local/bin/terraform",
-            toolName: "terraform",
-            extensions: ["tf", "tfvars"],
-            arguments: ["fmt", "-"],
-            processRunner: runner
+        let runner = MockProcessRunner(
+            stdout: "resource \"aws_instance\" \"web\" {\n  ami = \"abc-123\"\n}\n",
+            stderr: "",
+            exitCode: 0
         )
+        let formatter = makeFormatter(runner: runner)
         let result = formatter.format(
             "resource \"aws_instance\" \"web\" {\nami = \"abc-123\"\n}\n",
             url: URL(fileURLWithPath: "/project/main.tf")
@@ -33,13 +49,7 @@ struct HCLFileFormatterTests {
     @Test("Terraform found — formats .tfvars files")
     func terraformFormatsTFVarsFiles() {
         let runner = MockProcessRunner(stdout: "region = \"us-east-1\"\n", stderr: "", exitCode: 0)
-        let formatter = ExternalFileFormatter(
-            toolPath: "/usr/local/bin/terraform",
-            toolName: "terraform",
-            extensions: ["tf", "tfvars"],
-            arguments: ["fmt", "-"],
-            processRunner: runner
-        )
+        let formatter = makeFormatter(runner: runner)
         let result = formatter.format(
             "region=\"us-east-1\"\n",
             url: URL(fileURLWithPath: "/project/terraform.tfvars")
@@ -47,61 +57,49 @@ struct HCLFileFormatterTests {
         #expect(result == "region = \"us-east-1\"\n")
     }
 
+    @Test("Terraform found — formats .hcl files")
+    func terraformFormatsHCLFiles() {
+        let runner = MockProcessRunner(
+            stdout: "variable \"region\" {\n  default = \"us-east-1\"\n}\n",
+            stderr: "",
+            exitCode: 0
+        )
+        let formatter = makeFormatter(runner: runner)
+        let result = formatter.format(
+            "variable \"region\" {\ndefault = \"us-east-1\"\n}\n",
+            url: URL(fileURLWithPath: "/project/config.hcl")
+        )
+        #expect(result == "variable \"region\" {\n  default = \"us-east-1\"\n}\n")
+    }
+
     // MARK: - OpenTofu fallback
 
     @Test("Tofu fallback when terraform is missing")
     func tofuFallbackWhenTerraformMissing() throws {
-        // Use unique tool names that won't exist in well-known dirs.
-        // We create a temp dir with only "tofu" present (no "terraform").
-        // To avoid well-known dirs resolving real tools, we use a resolver with
-        // ONLY the temp dir by overriding PATH to a non-existent prefix that
-        // won't contain terraform or tofu. But ExternalToolResolver always appends
-        // well-known dirs. So we test the resolve logic directly:
-        // If a resolver only finds "tofu" (not "terraform"), the factory returns tofu.
         let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: tempDir) }
 
-        // Create only a tofu executable in our temp dir
+        // Create only a tofu executable in the temp dir (no terraform)
         let tofuPath = tempDir.appendingPathComponent("tofu")
         FileManager.default.createFile(atPath: tofuPath.path, contents: Data("#!/bin/sh\n".utf8))
         try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: tofuPath.path)
 
-        // Use a pathString that lists our temp dir first. The resolver searches PATH dirs
-        // first and caches results. Since terraform won't be found in tempDir, it falls
-        // through to well-known dirs. On machines without terraform, this tests the fallback.
-        // We verify the behavior by using explicit toolPath instead:
+        // Use searchDirectories init to avoid well-known dirs (which may contain real terraform)
+        let resolver = ExternalToolResolver(searchDirectories: [tempDir.path])
         let runner = MockProcessRunner(stdout: "formatted by tofu", stderr: "", exitCode: 0)
-        let formatter = ExternalFileFormatter(
-            toolPath: tofuPath.path,
-            toolName: "tofu",
-            extensions: ["tf", "tfvars"],
-            arguments: ["fmt", "-"],
-            processRunner: runner
-        )
+        let formatter = HCLFileFormatter.resolve(processRunner: runner, resolver: resolver)
 
         #expect(formatter.toolName == "tofu")
         #expect(formatter.toolPath == tofuPath.path)
-        #expect(formatter.canFormat(url: URL(fileURLWithPath: "/project/main.tf")))
-
-        let result = formatter.format("resource {}", url: URL(fileURLWithPath: "/project/main.tf"))
-        #expect(result == "formatted by tofu")
     }
 
     // MARK: - Neither installed
 
     @Test("Neither installed — returns original content (no-op formatter)")
     func neitherInstalledReturnsOriginal() {
-        // When neither terraform nor tofu is found, HCLFileFormatter.resolve() returns
-        // a formatter with toolPath=nil. We test this directly with the explicit init.
         let runner = MockProcessRunner(stdout: "should not appear", stderr: "", exitCode: 0)
-        let formatter = ExternalFileFormatter(
-            toolPath: nil,
-            toolName: "terraform",
-            extensions: ["tf", "tfvars"],
-            arguments: ["fmt", "-"],
-            processRunner: runner
-        )
+        let formatter = makeFormatter(runner: runner, toolPath: nil)
 
         #expect(formatter.toolPath == nil)
         #expect(!formatter.canFormat(url: URL(fileURLWithPath: "/project/main.tf")))
@@ -115,13 +113,7 @@ struct HCLFileFormatterTests {
     @Test("Non-zero exit code — returns original content")
     func nonZeroExitReturnsOriginal() {
         let runner = MockProcessRunner(stdout: "partial output", stderr: "Error: Invalid HCL", exitCode: 1)
-        let formatter = ExternalFileFormatter(
-            toolPath: "/usr/local/bin/terraform",
-            toolName: "terraform",
-            extensions: ["tf", "tfvars"],
-            arguments: ["fmt", "-"],
-            processRunner: runner
-        )
+        let formatter = makeFormatter(runner: runner)
         let result = formatter.format("invalid { hcl", url: URL(fileURLWithPath: "/project/main.tf"))
         #expect(result == "invalid { hcl")
     }
@@ -132,7 +124,7 @@ struct HCLFileFormatterTests {
         let formatter = ExternalFileFormatter(
             toolPath: "/usr/local/bin/terraform",
             toolName: "terraform",
-            extensions: ["tf", "tfvars"],
+            extensions: ["tf", "tfvars", "hcl"],
             arguments: ["fmt", "-"],
             processRunner: runner,
             timeout: 0.1
@@ -144,49 +136,40 @@ struct HCLFileFormatterTests {
     @Test("Empty stdout — returns original content")
     func emptyStdoutReturnsOriginal() {
         let runner = MockProcessRunner(stdout: "", stderr: "", exitCode: 0)
-        let formatter = ExternalFileFormatter(
-            toolPath: "/usr/local/bin/terraform",
-            toolName: "terraform",
-            extensions: ["tf", "tfvars"],
-            arguments: ["fmt", "-"],
-            processRunner: runner
-        )
+        let formatter = makeFormatter(runner: runner)
         let result = formatter.format("resource {}", url: URL(fileURLWithPath: "/project/main.tf"))
         #expect(result == "resource {}")
     }
 
     // MARK: - Extension handling
 
-    @Test("Case-insensitive extensions — .TF and .TFVARS are formatted")
+    @Test("Case-insensitive extensions — .TF, .TFVARS, and .HCL are formatted")
     func caseInsensitiveExtensions() {
         let runner = MockProcessRunner(stdout: "formatted", stderr: "", exitCode: 0)
-        let formatter = ExternalFileFormatter(
-            toolPath: "/usr/local/bin/terraform",
-            toolName: "terraform",
-            extensions: ["tf", "tfvars"],
-            arguments: ["fmt", "-"],
-            processRunner: runner
-        )
+        let formatter = makeFormatter(runner: runner)
         #expect(formatter.canFormat(url: URL(fileURLWithPath: "/project/MAIN.TF")))
         #expect(formatter.canFormat(url: URL(fileURLWithPath: "/project/vars.TFVARS")))
         #expect(formatter.canFormat(url: URL(fileURLWithPath: "/project/mixed.Tf")))
+        #expect(formatter.canFormat(url: URL(fileURLWithPath: "/project/config.HCL")))
     }
 
     @Test("Non-HCL files are not formatted")
     func nonHCLFilesIgnored() {
         let runner = MockProcessRunner(stdout: "formatted", stderr: "", exitCode: 0)
-        let formatter = ExternalFileFormatter(
-            toolPath: "/usr/local/bin/terraform",
-            toolName: "terraform",
-            extensions: ["tf", "tfvars"],
-            arguments: ["fmt", "-"],
-            processRunner: runner
-        )
+        let formatter = makeFormatter(runner: runner)
         #expect(!formatter.canFormat(url: URL(fileURLWithPath: "/project/main.swift")))
         #expect(!formatter.canFormat(url: URL(fileURLWithPath: "/project/config.json")))
         #expect(!formatter.canFormat(url: URL(fileURLWithPath: "/project/style.css")))
         #expect(!formatter.canFormat(url: URL(fileURLWithPath: "/project/readme.md")))
-        #expect(!formatter.canFormat(url: URL(fileURLWithPath: "/project/main.hcl")))
+    }
+
+    @Test(".hcl files ARE formatted")
+    func hclExtensionIsFormatted() {
+        let runner = MockProcessRunner(stdout: "formatted", stderr: "", exitCode: 0)
+        let formatter = makeFormatter(runner: runner)
+        #expect(formatter.canFormat(url: URL(fileURLWithPath: "/project/main.hcl")))
+        #expect(formatter.canFormat(url: URL(fileURLWithPath: "/project/packer.hcl")))
+        #expect(formatter.canFormat(url: URL(fileURLWithPath: "/project/vault.hcl")))
     }
 
     // MARK: - Priority
@@ -204,7 +187,8 @@ struct HCLFileFormatterTests {
             try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: path.path)
         }
 
-        let resolver = ExternalToolResolver(pathString: tempDir.path)
+        // Use searchDirectories init for isolation from system-installed tools
+        let resolver = ExternalToolResolver(searchDirectories: [tempDir.path])
         let runner = MockProcessRunner(stdout: "formatted", stderr: "", exitCode: 0)
         let formatter = HCLFileFormatter.resolve(processRunner: runner, resolver: resolver)
 
@@ -217,13 +201,7 @@ struct HCLFileFormatterTests {
     @Test("File content is piped to the process via stdin")
     func stdinReceivesFileContent() {
         let runner = MockProcessRunner(stdout: "formatted", stderr: "", exitCode: 0)
-        let formatter = ExternalFileFormatter(
-            toolPath: "/usr/local/bin/terraform",
-            toolName: "terraform",
-            extensions: ["tf", "tfvars"],
-            arguments: ["fmt", "-"],
-            processRunner: runner
-        )
+        let formatter = makeFormatter(runner: runner)
         _ = formatter.format("resource \"null\" {}\n", url: URL(fileURLWithPath: "/project/main.tf"))
         #expect(runner.lastStdinContent == "resource \"null\" {}\n")
     }
@@ -233,13 +211,7 @@ struct HCLFileFormatterTests {
     @Test("HCL formatter coexists with JSON formatter in registry")
     func registryIntegration() {
         let runner = MockProcessRunner(stdout: "hcl-formatted", stderr: "", exitCode: 0)
-        let hclFormatter = ExternalFileFormatter(
-            toolPath: "/usr/local/bin/terraform",
-            toolName: "terraform",
-            extensions: ["tf", "tfvars"],
-            arguments: ["fmt", "-"],
-            processRunner: runner
-        )
+        let hclFormatter = makeFormatter(runner: runner)
         let registry = FileFormatterRegistry(formatters: [JSONFileFormatter(), hclFormatter])
 
         // .tf file should be handled by HCL formatter
@@ -255,6 +227,13 @@ struct HCLFileFormatterTests {
             url: URL(fileURLWithPath: "/project/vars.tfvars")
         )
         #expect(tfvarsResult == "hcl-formatted")
+
+        // .hcl file should be handled by HCL formatter
+        let hclResult = registry.format(
+            content: "variable {}",
+            url: URL(fileURLWithPath: "/project/config.hcl")
+        )
+        #expect(hclResult == "hcl-formatted")
 
         // .json file should still be handled by JSON formatter
         let jsonResult = registry.format(
