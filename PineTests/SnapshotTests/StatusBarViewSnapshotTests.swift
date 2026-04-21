@@ -19,6 +19,11 @@ struct StatusBarViewSnapshotTests {
 
     private static let barSize = NSSize(width: 600, height: 28)
 
+    // StatusBarView uses `.background(.bar)` material and borderless Menu
+    // styles whose rendering varies ~2–3% between developer Macs (Retina)
+    // and CI runner images (1× virtual display, different Xcode beta).
+    private static let barTolerance = 0.03
+
     /// Creates a TabManager with a deterministic active tab.
     private func makeTabManagerWithActiveTab() -> TabManager {
         let tm = TabManager()
@@ -65,7 +70,7 @@ struct StatusBarViewSnapshotTests {
             size: Self.barSize,
             appearance: .light,
             named: "StatusBarView.activeTab.light",
-            tolerance: 0.02
+            tolerance: Self.barTolerance
         )
     }
 
@@ -83,7 +88,7 @@ struct StatusBarViewSnapshotTests {
             size: Self.barSize,
             appearance: .dark,
             named: "StatusBarView.activeTab.dark",
-            tolerance: 0.02
+            tolerance: Self.barTolerance
         )
     }
 
@@ -104,7 +109,7 @@ struct StatusBarViewSnapshotTests {
             size: Self.barSize,
             appearance: .light,
             named: "StatusBarView.gitStatuses.light",
-            tolerance: 0.02
+            tolerance: Self.barTolerance
         )
     }
 
@@ -123,7 +128,7 @@ struct StatusBarViewSnapshotTests {
             size: Self.barSize,
             appearance: .dark,
             named: "StatusBarView.gitStatuses.dark",
-            tolerance: 0.02
+            tolerance: Self.barTolerance
         )
     }
 
@@ -143,7 +148,7 @@ struct StatusBarViewSnapshotTests {
             size: Self.barSize,
             appearance: .light,
             named: "StatusBarView.empty.light",
-            tolerance: 0.02
+            tolerance: Self.barTolerance
         )
     }
 
@@ -161,7 +166,7 @@ struct StatusBarViewSnapshotTests {
             size: Self.barSize,
             appearance: .dark,
             named: "StatusBarView.empty.dark",
-            tolerance: 0.02
+            tolerance: Self.barTolerance
         )
     }
 }

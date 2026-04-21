@@ -18,6 +18,11 @@ struct BreadcrumbPathBarSnapshotTests {
 
     private static let barSize = NSSize(width: 500, height: 28)
 
+    // BreadcrumbPathBar uses `.background(.bar.opacity(0.5))` material and
+    // borderless Menu styles. Material rendering varies ~2–3% between
+    // developer Macs and CI runner images (different Xcode beta, 1× display).
+    private static let barTolerance = 0.03
+
     /// Wrapper for snapshot isolation — BreadcrumbPathBar does not
     /// use any Environment dependencies, just URL parameters.
     private struct Harness: View {
@@ -43,7 +48,8 @@ struct BreadcrumbPathBarSnapshotTests {
             of: view,
             size: Self.barSize,
             appearance: .light,
-            named: "BreadcrumbPathBar.light"
+            named: "BreadcrumbPathBar.light",
+            tolerance: Self.barTolerance
         )
     }
 
@@ -57,7 +63,8 @@ struct BreadcrumbPathBarSnapshotTests {
             of: view,
             size: Self.barSize,
             appearance: .dark,
-            named: "BreadcrumbPathBar.dark"
+            named: "BreadcrumbPathBar.dark",
+            tolerance: Self.barTolerance
         )
     }
 
@@ -71,7 +78,8 @@ struct BreadcrumbPathBarSnapshotTests {
             of: view,
             size: Self.barSize,
             appearance: .light,
-            named: "BreadcrumbPathBar.deep.light"
+            named: "BreadcrumbPathBar.deep.light",
+            tolerance: Self.barTolerance
         )
     }
 
@@ -85,7 +93,8 @@ struct BreadcrumbPathBarSnapshotTests {
             of: view,
             size: Self.barSize,
             appearance: .dark,
-            named: "BreadcrumbPathBar.deep.dark"
+            named: "BreadcrumbPathBar.deep.dark",
+            tolerance: Self.barTolerance
         )
     }
 }
