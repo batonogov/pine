@@ -196,15 +196,19 @@ jobs:
           echo "Smoke test passed"
 
       - name: Archive Build Products
-        run: tar -cf build-products.tar --exclude='DerivedData/ModuleCache' DerivedData
+        run: |
+          tar --zstd -cf build-products.tar.zst --exclude='DerivedData/ModuleCache' DerivedData
+          sha256sum build-products.tar.zst > build-products.sha256
 
       - name: Upload Build Products
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: build-products
-          path: build-products.tar
+          path: |
+            build-products.tar.zst
+            build-products.sha256
           retention-days: 1
-          compression-level: 1
+          compression-level: 0
 
   unit-tests:
     name: Unit Tests
@@ -224,7 +228,9 @@ jobs:
           name: build-products
 
       - name: Extract Build Products
-        run: tar -xf build-products.tar
+        run: |
+          sha256sum -c build-products.sha256
+          tar --zstd -xf build-products.tar.zst
 
       - name: Unit Tests
         run: |
@@ -561,7 +567,20 @@ jobs:
           name: build-products
 
       - name: Extract Build Products
-        run: tar -xf build-products.tar
+        run: |
+          sha256sum -c build-products.sha256
+          for attempt in 1 2 3; do
+            if tar --zstd -xf build-products.tar.zst; then
+              echo "Extraction succeeded on attempt $attempt"
+              break
+            fi
+            echo "::warning::Extraction failed on attempt $attempt, retrying..."
+            if [ "$attempt" -eq 3 ]; then
+              echo "::error::Extraction failed after 3 attempts"
+              exit 1
+            fi
+            sleep 5
+          done
 
       # matrix.test-classes expands to multiple -only-testing: flags via YAML folded scalar (>-)
       - name: UI Tests
