@@ -1,5 +1,24 @@
 # Changelog
 
+## [1.24.0](https://github.com/batonogov/pine/compare/v1.23.2...v1.24.0) (2026-04-18)
+
+
+### Features
+
+* **editor:** wire SmartListContinuation into GutterTextView.insertNewline ([#856](https://github.com/batonogov/pine/issues/856)) ([e390c46](https://github.com/batonogov/pine/commit/e390c463322633ddfe8e190bcd16a6f05e7c4032))
+
+
+### Bug Fixes
+
+* **editor:** refresh syntax highlighting after format-on-save ([#859](https://github.com/batonogov/pine/issues/859)) ([830e98f](https://github.com/batonogov/pine/commit/830e98fda1df81db80bcf381b6a7015bf2ef3356))
+* enable PinePerformanceTests in scheme to fix nightly CI ([#850](https://github.com/batonogov/pine/issues/850)) ([66aaf9b](https://github.com/batonogov/pine/commit/66aaf9bb4c29c9475ca797eac5dda20622ef7c1a))
+* use suggestedHumanReadableName for screenshot manifest parsing ([#849](https://github.com/batonogov/pine/issues/849)) ([3e1f25f](https://github.com/batonogov/pine/commit/3e1f25f6a4ebde0a877a9018b8f824caba330440))
+
+
+### Code Refactoring
+
+* **workspace:** rewrite loadDirectoryContentsAsync on pure Swift Concurrency ([#841](https://github.com/batonogov/pine/issues/841)) ([5f70ae7](https://github.com/batonogov/pine/commit/5f70ae7dbe4a810e3fa1a18d6fec75d670e4ca10))
+
 ## [1.23.2](https://github.com/batonogov/pine/compare/v1.23.1...v1.23.2) (2026-04-17)
 
 

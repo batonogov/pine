@@ -115,6 +115,9 @@ class TerminalContainerView: NSView {
             scrollInterceptor.frame = effectiveBounds
             scrollInterceptor.terminalView = tab.terminalView
             addSubview(scrollInterceptor)
+
+            tab.terminalView.needsLayout = true
+            tab.terminalView.needsDisplay = true
         }
 
         installScrollMonitor()
@@ -230,6 +233,16 @@ class TerminalContainerView: NSView {
         }
     }
 
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        guard window != nil else { return }
+        guard let terminalPaneState, let tab = terminalPaneState.activeTab else { return }
+        if tab.terminalView.superview === self {
+            tab.terminalView.needsLayout = true
+            tab.terminalView.needsDisplay = true
+        }
+    }
+
     override func layout() {
         super.layout()
         guard let terminalPaneState, let tab = terminalPaneState.activeTab else { return }
@@ -239,18 +252,10 @@ class TerminalContainerView: NSView {
         guard bounds.size.width > 0, bounds.size.height > 0 else { return }
         if tab.terminalView.superview === self {
             // Terminal view is already in the hierarchy — just update its frame.
-            // Only set needsDisplay when the size actually changed to avoid
-            // redundant redraws on no-op layout passes.
-            let sizeChanged = tab.terminalView.frame.size != bounds.size
             tab.terminalView.frame = bounds
             tab.terminalView.needsLayout = true
+            tab.terminalView.needsDisplay = true
             scrollInterceptor.frame = bounds
-            if sizeChanged {
-                // Force SwiftTerm to recalculate cols/rows and re-render.
-                // This handles the transition from a placeholder frame to the
-                // real container size, ensuring the PTY gets the correct window size.
-                tab.terminalView.needsDisplay = true
-            }
             tab.startIfNeeded()
         } else {
             // Terminal view was removed (e.g. tab switch race) — re-add it.
