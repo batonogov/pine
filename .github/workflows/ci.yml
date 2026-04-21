@@ -533,10 +533,11 @@ jobs:
               -only-testing:PineUITests/ScreenshotTests
               -only-testing:PineUITests/BranchSwitcherTests
               -only-testing:PineUITests/CheckForUpdatesTests
-          # Shard 5 — Files & Save (26 tests)
+          # Shard 5 — Files & Save (27 tests)
           - shard-name: "Files & Save"
             test-classes: >-
               -only-testing:PineUITests/EditorSaveFlowTests
+              -only-testing:PineUITests/HCLFormatOnSaveTests
               -only-testing:PineUITests/DeleteTests
               -only-testing:PineUITests/SidebarRenameTests
               -only-testing:PineUITests/SidebarFileOperationsTests
