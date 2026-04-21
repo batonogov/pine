@@ -150,7 +150,7 @@ struct IndentGuideCalculatorTests {
         )
         #expect(guides.count == 1)
         #expect(guides[0].level == 1)
-        #expect(guides[0].xPosition == 28.0) // 1 * tabStopWidth
+        #expect(guides[0].xPosition == 28.5) // floor(1 * 28.0) + 0.5
     }
 
     @Test func guides_tabBased_level3() {
@@ -159,23 +159,22 @@ struct IndentGuideCalculatorTests {
             usesTabs: true, indentWidth: 4
         )
         #expect(guides.count == 3)
-        #expect(guides[0].xPosition == 28.0)
-        #expect(guides[1].xPosition == 56.0)
-        #expect(guides[2].xPosition == 84.0)
+        #expect(guides[0].xPosition == 28.5)  // floor(28) + 0.5
+        #expect(guides[1].xPosition == 56.5)  // floor(56) + 0.5
+        #expect(guides[2].xPosition == 84.5)  // floor(84) + 0.5
     }
 
     @Test func guides_tabBased_usesTabStopWidth_notCharWidth() {
-        // Key bug fix: tab guides must use tabStopWidth, not charWidth * indentWidth
+        // Key point: tab guides use tabStopWidth, not charWidth * indentWidth
         let charWidth: CGFloat = 7.0
         let tabStopWidth: CGFloat = 28.0
         let guides = IndentGuideCalculator.guides(
             forLevel: 2, charWidth: charWidth, tabStopWidth: tabStopWidth,
             usesTabs: true, indentWidth: 4
         )
-        // Must be 28 and 56, NOT 28 (7*4) and 56 (7*4*2) — same in this case, but
-        // the key point is that tabStopWidth is independent of charWidth * indentWidth
-        #expect(guides[0].xPosition == tabStopWidth)
-        #expect(guides[1].xPosition == tabStopWidth * 2)
+        // Pixel-snapped: floor(28) + 0.5 = 28.5, floor(56) + 0.5 = 56.5
+        #expect(guides[0].xPosition == floor(tabStopWidth) + 0.5)
+        #expect(guides[1].xPosition == floor(tabStopWidth * 2) + 0.5)
     }
 
     @Test func guides_tabBased_customTabStop() {
@@ -184,8 +183,8 @@ struct IndentGuideCalculatorTests {
             forLevel: 2, charWidth: 7.0, tabStopWidth: 32.0,
             usesTabs: true, indentWidth: 4
         )
-        #expect(guides[0].xPosition == 32.0)
-        #expect(guides[1].xPosition == 64.0)
+        #expect(guides[0].xPosition == 32.5) // floor(32) + 0.5
+        #expect(guides[1].xPosition == 64.5) // floor(64) + 0.5
     }
 
     // MARK: - guides: Space-based
@@ -196,7 +195,7 @@ struct IndentGuideCalculatorTests {
             usesTabs: false, indentWidth: 4
         )
         #expect(guides.count == 1)
-        #expect(guides[0].xPosition == 28.0) // 1 * 4 * 7.0
+        #expect(guides[0].xPosition == 28.5) // floor(1 * 4 * 7.0) + 0.5
     }
 
     @Test func guides_spaceBased_level2_indent2() {
@@ -205,8 +204,8 @@ struct IndentGuideCalculatorTests {
             usesTabs: false, indentWidth: 2
         )
         #expect(guides.count == 2)
-        #expect(guides[0].xPosition == 14.0) // 1 * 2 * 7.0
-        #expect(guides[1].xPosition == 28.0) // 2 * 2 * 7.0
+        #expect(guides[0].xPosition == 14.5) // floor(1 * 2 * 7.0) + 0.5
+        #expect(guides[1].xPosition == 28.5) // floor(2 * 2 * 7.0) + 0.5
     }
 
     @Test func guides_spaceBased_differentCharWidth() {
@@ -215,7 +214,7 @@ struct IndentGuideCalculatorTests {
             forLevel: 1, charWidth: 9.5, tabStopWidth: 38.0,
             usesTabs: false, indentWidth: 4
         )
-        #expect(guides[0].xPosition == 38.0) // 1 * 4 * 9.5
+        #expect(guides[0].xPosition == 38.5) // floor(1 * 4 * 9.5) + 0.5
     }
 
     // MARK: - guides: Edge cases
@@ -428,10 +427,9 @@ struct IndentGuideCalculatorTests {
     }
 
     @Test func guides_tabVsSpace_positionsAreDifferent() {
-        // With charWidth=7 and tabStopWidth=28:
-        // Tab-based level 1: x = 28 (tabStopWidth)
-        // Space-based level 1 with indent 4: x = 28 (4 * 7)
-        // Same in this case, but with different tabStopWidth they differ:
+        // With charWidth=7 and tabStopWidth=35:
+        // Tab-based level 1: floor(35) + 0.5 = 35.5
+        // Space-based level 1 with indent 4: floor(28) + 0.5 = 28.5
         let tabGuides = IndentGuideCalculator.guides(
             forLevel: 1, charWidth: 7.0, tabStopWidth: 35.0,
             usesTabs: true, indentWidth: 4
@@ -440,8 +438,182 @@ struct IndentGuideCalculatorTests {
             forLevel: 1, charWidth: 7.0, tabStopWidth: 35.0,
             usesTabs: false, indentWidth: 4
         )
-        #expect(tabGuides[0].xPosition == 35.0) // tabStopWidth
-        #expect(spaceGuides[0].xPosition == 28.0) // indentWidth * charWidth
+        #expect(tabGuides[0].xPosition == 35.5) // floor(tabStopWidth) + 0.5
+        #expect(spaceGuides[0].xPosition == 28.5) // floor(indentWidth * charWidth) + 0.5
         #expect(tabGuides[0].xPosition != spaceGuides[0].xPosition)
+    }
+
+    // MARK: - Pixel-alignment: same indent level → same x across calls
+
+    @Test func guides_sameLevelProducesSameX_spaceBased() {
+        // Simulates calling guides() for multiple lines at the same indent level.
+        // Before the fix, fractional charWidth could produce different x values
+        // per call. Now pixel-snapping ensures exact equality.
+        let charWidth: CGFloat = 7.21875 // Typical fractional advance width
+        let results = (0..<100).map { _ in
+            IndentGuideCalculator.guides(
+                forLevel: 3,
+                charWidth: charWidth,
+                tabStopWidth: 28.0,
+                usesTabs: false,
+                indentWidth: 2
+            )
+        }
+        // All 100 calls must produce identical x for each level
+        for i in 1..<results.count {
+            for lvl in 0..<3 {
+                #expect(
+                    results[0][lvl].xPosition == results[i][lvl].xPosition,
+                    "Level \(lvl + 1) x must be identical across calls"
+                )
+            }
+        }
+    }
+
+    @Test func guides_sameLevelProducesSameX_tabBased() {
+        let results = (0..<100).map { _ in
+            IndentGuideCalculator.guides(
+                forLevel: 3,
+                charWidth: 7.21875,
+                tabStopWidth: 28.875,
+                usesTabs: true,
+                indentWidth: 4
+            )
+        }
+        for i in 1..<results.count {
+            for lvl in 0..<3 {
+                #expect(
+                    results[0][lvl].xPosition == results[i][lvl].xPosition,
+                    "Level \(lvl + 1) x must be identical across calls"
+                )
+            }
+        }
+    }
+
+    // MARK: - Pixel-alignment: x ends in .5
+
+    @Test func guides_xPositionsArePixelSnapped() {
+        // With fractional charWidth, raw x has a fractional part.
+        // After snapping, x must be floor(raw) + 0.5.
+        let charWidth: CGFloat = 7.21875
+        let guides = IndentGuideCalculator.guides(
+            forLevel: 4,
+            charWidth: charWidth,
+            tabStopWidth: 28.0,
+            usesTabs: false,
+            indentWidth: 2
+        )
+        for guide in guides {
+            let fractionalPart = guide.xPosition - floor(guide.xPosition)
+            #expect(
+                fractionalPart == 0.5,
+                "Guide level \(guide.level) x=\(guide.xPosition) must end in .5 for pixel-snap"
+            )
+        }
+    }
+
+    @Test func guides_tabBased_xPositionsArePixelSnapped() {
+        let guides = IndentGuideCalculator.guides(
+            forLevel: 4,
+            charWidth: 7.0,
+            tabStopWidth: 28.875,
+            usesTabs: true,
+            indentWidth: 4
+        )
+        for guide in guides {
+            let fractionalPart = guide.xPosition - floor(guide.xPosition)
+            #expect(
+                fractionalPart == 0.5,
+                "Guide level \(guide.level) x=\(guide.xPosition) must end in .5 for pixel-snap"
+            )
+        }
+    }
+
+    // MARK: - Fractional charWidth correctness
+
+    @Test func guides_fractionalCharWidth_snapsCorrectly() {
+        // charWidth = 7.21875: raw x for level 1 indent 2 = 2 * 7.21875 = 14.4375
+        // Snapped: floor(14.4375) + 0.5 = 14.5
+        let guides = IndentGuideCalculator.guides(
+            forLevel: 1,
+            charWidth: 7.21875,
+            tabStopWidth: 28.0,
+            usesTabs: false,
+            indentWidth: 2
+        )
+        #expect(guides[0].xPosition == 14.5) // floor(14.4375) + 0.5
+    }
+
+    @Test func guides_fractionalCharWidth_level3() {
+        // charWidth = 7.21875, indentWidth = 2:
+        //   level 1: floor(2 * 7.21875) + 0.5 = floor(14.4375) + 0.5 = 14.5
+        //   level 2: floor(4 * 7.21875) + 0.5 = floor(28.875) + 0.5  = 28.5
+        //   level 3: floor(6 * 7.21875) + 0.5 = floor(43.3125) + 0.5 = 43.5
+        let guides = IndentGuideCalculator.guides(
+            forLevel: 3,
+            charWidth: 7.21875,
+            tabStopWidth: 28.0,
+            usesTabs: false,
+            indentWidth: 2
+        )
+        #expect(guides[0].xPosition == 14.5)
+        #expect(guides[1].xPosition == 28.5)
+        #expect(guides[2].xPosition == 43.5)
+    }
+
+    @Test func guides_fractionalTabStop_snapsCorrectly() {
+        // tabStopWidth = 28.875:
+        //   level 1: floor(28.875) + 0.5 = 28.5
+        //   level 2: floor(57.75)  + 0.5 = 57.5
+        let guides = IndentGuideCalculator.guides(
+            forLevel: 2,
+            charWidth: 7.0,
+            tabStopWidth: 28.875,
+            usesTabs: true,
+            indentWidth: 4
+        )
+        #expect(guides[0].xPosition == 28.5)
+        #expect(guides[1].xPosition == 57.5)
+    }
+
+    // MARK: - YAML scenario (issue #876)
+
+    @Test func yamlFile_spaceIndented_guidesAligned() {
+        // YAML with 2-space indentation — the scenario from issue #876
+        let lines = [
+            "root:",                            // level 0
+            "  child1:",                        // level 1
+            "    grandchild1: value",           // level 2
+            "    grandchild2: value",           // level 2
+            "  child2:",                        // level 1
+            "    grandchild3: value"            // level 2
+        ]
+
+        let charWidth: CGFloat = 7.21875 // Typical fractional monospace advance
+
+        // All level-2 lines must produce identical guide positions
+        let level2Lines = [2, 3, 5]
+        var level2Guides: [[IndentGuide]] = []
+        for idx in level2Lines {
+            let level = IndentGuideCalculator.indentLevel(of: lines[idx], indentWidth: 2)
+            #expect(level == 2)
+            let guides = IndentGuideCalculator.guides(
+                forLevel: level,
+                charWidth: charWidth,
+                tabStopWidth: 28.0,
+                usesTabs: false,
+                indentWidth: 2
+            )
+            level2Guides.append(guides)
+        }
+
+        // Guide at level 1 must be identical across all level-2 lines
+        for i in 1..<level2Guides.count {
+            #expect(level2Guides[0][0].xPosition == level2Guides[i][0].xPosition)
+        }
+        // Guide at level 2 must be identical across all level-2 lines
+        for i in 1..<level2Guides.count {
+            #expect(level2Guides[0][1].xPosition == level2Guides[i][1].xPosition)
+        }
     }
 }

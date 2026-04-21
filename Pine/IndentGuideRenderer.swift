@@ -61,9 +61,14 @@ enum IndentGuideCalculator {
     /// For tab-based files, each guide is placed at the tab stop position.
     /// For space-based files, each guide is placed at `level * indentWidth * charWidth`.
     ///
+    /// All x-positions are pixel-snapped to `floor(x) + 0.5` so that 1pt-wide
+    /// stroke lines land on exact pixel boundaries and render crisp on both
+    /// Retina and non-Retina displays.
+    ///
     /// - Parameters:
     ///   - level: Number of indent levels.
-    ///   - charWidth: Width of a single space character in the current font.
+    ///   - charWidth: Width of a single character in the current monospaced font
+    ///     (use `NSFont.maximumAdvancement.width` for accuracy).
     ///   - tabStopWidth: Width of a tab stop in points (from NSTextView paragraph style).
     ///   - usesTabs: Whether the file uses tab-based indentation.
     ///   - indentWidth: Number of spaces per indent level (for space-based indentation).
@@ -78,15 +83,18 @@ enum IndentGuideCalculator {
         guard level > 0, charWidth > 0 else { return [] }
 
         return (1...level).map { lvl in
-            let xPos: CGFloat
+            let rawX: CGFloat
             if usesTabs {
                 // Tab-based: position at the tab stop boundary
-                xPos = CGFloat(lvl) * tabStopWidth
+                rawX = CGFloat(lvl) * tabStopWidth
             } else {
                 // Space-based: position at indentWidth * charWidth per level
-                xPos = CGFloat(lvl * indentWidth) * charWidth
+                rawX = CGFloat(lvl * indentWidth) * charWidth
             }
-            return IndentGuide(level: lvl, xPosition: xPos)
+            // Snap to pixel boundary: floor(x) + 0.5 ensures the 1pt-wide
+            // stroke line fills exactly one column of pixels.
+            let snappedX = floor(rawX) + 0.5
+            return IndentGuide(level: lvl, xPosition: snappedX)
         }
     }
 
@@ -178,9 +186,12 @@ enum IndentGuideRenderer {
             indentWidth = width
         }
 
-        // Calculate character width using a space in the editor font
+        // Use the font's fixed advance width for monospaced character measurement.
+        // `maximumAdvancement.width` returns the exact advance from the font's
+        // metrics table, unlike `" ".size(withAttributes:)` which goes through
+        // CoreText text layout and can produce fractional deviations.
         let font = textView.font ?? NSFont.monospacedSystemFont(ofSize: 13, weight: .regular)
-        let charWidth = " ".size(withAttributes: [.font: font]).width
+        let charWidth = font.maximumAdvancement.width
 
         // Get the actual tab stop width from the text view's paragraph style
         let tabStopWidth: CGFloat
