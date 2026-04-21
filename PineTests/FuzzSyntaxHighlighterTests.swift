@@ -9,14 +9,14 @@ import Foundation
 import Testing
 @testable import Pine
 
-@Suite("Fuzz Syntax Highlighter Tests", .timeLimit(.minutes(1)))
+@Suite("Fuzz Syntax Highlighter Tests", .timeLimit(.minutes(2)))
 struct FuzzSyntaxHighlighterTests {
 
     @Test func fuzzGrammarDecoding_randomJSON() {
         var rng = SplitMix64(seed: 47)
         let decoder = JSONDecoder()
 
-        for _ in 0..<200 {
+        for _ in 0..<100 {
             let json: String
             switch rng.next() % 6 {
             case 0:

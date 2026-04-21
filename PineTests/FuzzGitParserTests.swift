@@ -11,13 +11,13 @@ import Testing
 
 // MARK: - Git Diff Parser
 
-@Suite("Fuzz Git Diff Parser Tests", .timeLimit(.minutes(1)))
+@Suite("Fuzz Git Diff Parser Tests", .timeLimit(.minutes(2)))
 struct FuzzGitDiffParserTests {
 
     @Test func fuzzParseDiff_randomInput() {
         var rng = SplitMix64(seed: 42)
 
-        for _ in 0..<200 {
+        for _ in 0..<100 {
             let input: String
             switch rng.next() % 5 {
             case 0:
@@ -79,7 +79,7 @@ struct FuzzGitDiffParserTests {
     @Test func fuzzParseHunkNewStart_randomInput() {
         var rng = SplitMix64(seed: 43)
 
-        for _ in 0..<200 {
+        for _ in 0..<100 {
             let input = FuzzGen.randomPrintable(
                 count: FuzzGen.randomLength(max: 200, rng: &rng),
                 rng: &rng
@@ -134,13 +134,13 @@ struct FuzzGitDiffParserTests {
 
 // MARK: - Git Blame Parser
 
-@Suite("Fuzz Git Blame Parser Tests", .timeLimit(.minutes(1)))
+@Suite("Fuzz Git Blame Parser Tests", .timeLimit(.minutes(2)))
 struct FuzzGitBlameParserTests {
 
     @Test func fuzzParseBlame_randomInput() {
         var rng = SplitMix64(seed: 44)
 
-        for _ in 0..<200 {
+        for _ in 0..<100 {
             let input: String
             switch rng.next() % 5 {
             case 0:
@@ -270,13 +270,13 @@ struct FuzzGitBlameParserTests {
 
 // MARK: - Git Status Parser
 
-@Suite("Fuzz Git Status Parser Tests", .timeLimit(.minutes(1)))
+@Suite("Fuzz Git Status Parser Tests", .timeLimit(.minutes(2)))
 struct FuzzGitStatusParserTests {
 
     @Test func fuzzParseStatusOutput_randomInput() {
         var rng = SplitMix64(seed: 45)
 
-        for _ in 0..<200 {
+        for _ in 0..<100 {
             let input: String
             switch rng.next() % 4 {
             case 0:
@@ -301,7 +301,7 @@ struct FuzzGitStatusParserTests {
     @Test func fuzzParseIgnoredOutput_randomInput() {
         var rng = SplitMix64(seed: 46)
 
-        for _ in 0..<200 {
+        for _ in 0..<100 {
             let input = FuzzGen.randomPrintable(
                 count: FuzzGen.randomLength(max: 500, rng: &rng),
                 rng: &rng

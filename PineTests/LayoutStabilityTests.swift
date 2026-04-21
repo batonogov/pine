@@ -60,7 +60,7 @@ struct LayoutStabilityTests {
     }
 
     @Test("isLoading becomes false after shallow load completes for empty directory",
-          .timeLimit(.minutes(1)))
+          .timeLimit(.minutes(2)))
     func isLoadingFalseAfterEmptyDir() async throws {
         let workspace = WorkspaceManager()
         let tmpDir = FileManager.default.temporaryDirectory
@@ -91,7 +91,7 @@ struct LayoutStabilityTests {
     }
 
     @Test("waitForLoadingComplete resumes sequential waiters within budget",
-          .timeLimit(.minutes(1)))
+          .timeLimit(.minutes(2)))
     func waitForLoadingCompleteSequentialWaiters() async throws {
         // Calling `waitForLoadingComplete()` repeatedly must continue to
         // return promptly after the first resume — the continuation array

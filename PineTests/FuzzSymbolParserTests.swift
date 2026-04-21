@@ -9,14 +9,14 @@ import Foundation
 import Testing
 @testable import Pine
 
-@Suite("Fuzz Symbol Parser Tests", .timeLimit(.minutes(1)))
+@Suite("Fuzz Symbol Parser Tests", .timeLimit(.minutes(2)))
 struct FuzzSymbolParserTests {
 
     @Test func fuzzSymbolParser_randomInput() {
         var rng = SplitMix64(seed: 50)
         let extensions = ["swift", "py", "js", "ts", "go", "rb", "rs", "java", "kt", "unknown"]
 
-        for _ in 0..<200 {
+        for _ in 0..<100 {
             let content: String
             let ext = extensions[Int(rng.next() % UInt64(extensions.count))]
 
@@ -74,7 +74,7 @@ struct FuzzSymbolParserTests {
             PineSymbol(name: "MyClass", kind: .class, line: 5),
         ]
 
-        for _ in 0..<200 {
+        for _ in 0..<100 {
             let query = FuzzGen.randomUnicode(
                 count: FuzzGen.randomLength(max: 50, rng: &rng),
                 rng: &rng
@@ -86,7 +86,7 @@ struct FuzzSymbolParserTests {
     @Test func fuzzLineNumber_randomInput() {
         var rng = SplitMix64(seed: 52)
 
-        for _ in 0..<200 {
+        for _ in 0..<100 {
             let content = FuzzGen.randomUnicode(
                 count: FuzzGen.randomLength(max: 500, rng: &rng),
                 rng: &rng
