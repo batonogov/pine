@@ -206,6 +206,75 @@ struct HCLFileFormatterTests {
         #expect(runner.lastStdinContent == "resource \"null\" {}\n")
     }
 
+    // MARK: - Tofu formatting
+
+    @Test("Tofu formats .tf files when it is the resolved tool")
+    func tofuFormatsTFFiles() {
+        let runner = MockProcessRunner(
+            stdout: "resource \"aws_instance\" \"web\" {\n  ami = \"abc-123\"\n}\n",
+            stderr: "",
+            exitCode: 0
+        )
+        let formatter = makeFormatter(runner: runner, toolPath: "/opt/homebrew/bin/tofu", toolName: "tofu")
+        let result = formatter.format(
+            "resource \"aws_instance\" \"web\" {\nami = \"abc-123\"\n}\n",
+            url: URL(fileURLWithPath: "/project/main.tf")
+        )
+        #expect(result == "resource \"aws_instance\" \"web\" {\n  ami = \"abc-123\"\n}\n")
+    }
+
+    @Test("Tofu formats .tfvars files")
+    func tofuFormatsTFVarsFiles() {
+        let runner = MockProcessRunner(stdout: "region = \"us-east-1\"\n", stderr: "", exitCode: 0)
+        let formatter = makeFormatter(runner: runner, toolPath: "/opt/homebrew/bin/tofu", toolName: "tofu")
+        let result = formatter.format(
+            "region=\"us-east-1\"\n",
+            url: URL(fileURLWithPath: "/project/terraform.tfvars")
+        )
+        #expect(result == "region = \"us-east-1\"\n")
+    }
+
+    @Test("Tofu formats .hcl files")
+    func tofuFormatsHCLFiles() {
+        let runner = MockProcessRunner(
+            stdout: "variable \"region\" {\n  default = \"us-east-1\"\n}\n",
+            stderr: "",
+            exitCode: 0
+        )
+        let formatter = makeFormatter(runner: runner, toolPath: "/opt/homebrew/bin/tofu", toolName: "tofu")
+        let result = formatter.format(
+            "variable \"region\" {\ndefault = \"us-east-1\"\n}\n",
+            url: URL(fileURLWithPath: "/project/config.hcl")
+        )
+        #expect(result == "variable \"region\" {\n  default = \"us-east-1\"\n}\n")
+    }
+
+    @Test("Tofu non-zero exit code — returns original content")
+    func tofuNonZeroExitReturnsOriginal() {
+        let runner = MockProcessRunner(stdout: "partial", stderr: "Error", exitCode: 1)
+        let formatter = makeFormatter(runner: runner, toolPath: "/opt/homebrew/bin/tofu", toolName: "tofu")
+        let result = formatter.format("invalid { hcl", url: URL(fileURLWithPath: "/project/main.tf"))
+        #expect(result == "invalid { hcl")
+    }
+
+    // MARK: - Main-thread safety (regression for #873)
+
+    @Test("format() can be called from the main thread without crashing")
+    @MainActor
+    func formatFromMainThreadDoesNotCrash() {
+        let runner = MockProcessRunner(
+            stdout: "resource \"aws_instance\" \"web\" {\n  ami = \"abc-123\"\n}\n",
+            stderr: "",
+            exitCode: 0
+        )
+        let formatter = makeFormatter(runner: runner)
+        let result = formatter.format(
+            "resource \"aws_instance\" \"web\" {\nami = \"abc-123\"\n}\n",
+            url: URL(fileURLWithPath: "/project/main.tf")
+        )
+        #expect(result == "resource \"aws_instance\" \"web\" {\n  ami = \"abc-123\"\n}\n")
+    }
+
     // MARK: - Registry integration
 
     @Test("HCL formatter coexists with JSON formatter in registry")
