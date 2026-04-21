@@ -67,8 +67,7 @@ enum IndentGuideCalculator {
     ///
     /// - Parameters:
     ///   - level: Number of indent levels.
-    ///   - charWidth: Width of a single character in the current monospaced font
-    ///     (use `NSFont.maximumAdvancement.width` for accuracy).
+    ///   - charWidth: Width of a single character in the current monospaced font.
     ///   - tabStopWidth: Width of a tab stop in points (from NSTextView paragraph style).
     ///   - usesTabs: Whether the file uses tab-based indentation.
     ///   - indentWidth: Number of spaces per indent level (for space-based indentation).
@@ -160,6 +159,11 @@ enum IndentGuideRenderer {
 
     /// Draws indent guides for all visible lines in the text view.
     ///
+    /// Instead of pre-computing x-positions via character width arithmetic,
+    /// this method queries NSLayoutManager for the **real** glyph position
+    /// of each indent column. This guarantees that the guide line aligns
+    /// exactly with the character the layout engine actually placed there.
+    ///
     /// - Parameters:
     ///   - textView: The GutterTextView to draw in.
     ///   - rect: The dirty rectangle to draw in.
@@ -180,28 +184,10 @@ enum IndentGuideRenderer {
         switch indentStyle {
         case .tabs:
             usesTabs = true
-            indentWidth = 4 // Standard tab = 4 indent units
+            indentWidth = 4
         case .spaces(let width):
             usesTabs = false
             indentWidth = width
-        }
-
-        // Use the font's fixed advance width for monospaced character measurement.
-        // `maximumAdvancement.width` returns the exact advance from the font's
-        // metrics table, unlike `" ".size(withAttributes:)` which goes through
-        // CoreText text layout and can produce fractional deviations.
-        let font = textView.font ?? NSFont.monospacedSystemFont(ofSize: 13, weight: .regular)
-        let charWidth = font.maximumAdvancement.width
-
-        // Get the actual tab stop width from the text view's paragraph style
-        let tabStopWidth: CGFloat
-        if let paragraphStyle = textView.defaultParagraphStyle,
-           let firstTab = paragraphStyle.tabStops.first {
-            tabStopWidth = firstTab.location
-        } else {
-            // Default NSTextView tab interval is 28pt
-            tabStopWidth = textView.defaultParagraphStyle?.defaultTabInterval
-                ?? NSParagraphStyle.default.defaultTabInterval
         }
 
         let origin = textView.textContainerOrigin
@@ -253,32 +239,31 @@ enum IndentGuideRenderer {
             }
 
             if level > 0 {
-                // Get the line fragment rect for this line
                 let lineRange = nsContent.lineRange(for: NSRange(location: lineStart, length: 0))
-                let glyphRange = layoutManager.glyphRange(
+                let lineGlyphRange = layoutManager.glyphRange(
                     forCharacterRange: lineRange, actualCharacterRange: nil
                 )
 
-                if glyphRange.location != NSNotFound && glyphRange.length > 0 {
+                if lineGlyphRange.location != NSNotFound && lineGlyphRange.length > 0 {
                     let lineFragmentRect = layoutManager.lineFragmentRect(
-                        forGlyphAt: glyphRange.location, effectiveRange: nil
+                        forGlyphAt: lineGlyphRange.location, effectiveRange: nil
                     )
+                    let yTop = lineFragmentRect.origin.y + origin.y
+                    let height = lineFragmentRect.height
 
-                    let guides = IndentGuideCalculator.guides(
-                        forLevel: level,
-                        charWidth: charWidth,
-                        tabStopWidth: tabStopWidth,
-                        usesTabs: usesTabs,
-                        indentWidth: indentWidth
-                    )
+                    for lvl in 1...level {
+                        // Character index of the indent column for this level
+                        let charIndex = lineStart + (usesTabs ? lvl : lvl * indentWidth)
 
-                    for guide in guides {
-                        let x = guide.xPosition + origin.x
-                        let y = lineFragmentRect.origin.y + origin.y
-                        let height = lineFragmentRect.height
+                        // Ensure we don't read past the end of this line
+                        guard charIndex < NSMaxRange(lineRange) else { continue }
 
-                        path.move(to: NSPoint(x: x, y: y))
-                        path.line(to: NSPoint(x: x, y: y + height))
+                        let glyphIndex = layoutManager.glyphIndexForCharacter(at: charIndex)
+                        let location = layoutManager.location(forGlyphAt: glyphIndex)
+                        let x = location.x + origin.x
+
+                        path.move(to: NSPoint(x: x, y: yTop))
+                        path.line(to: NSPoint(x: x, y: yTop + height))
                     }
                 }
             }

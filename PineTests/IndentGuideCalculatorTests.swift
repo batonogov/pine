@@ -616,4 +616,164 @@ struct IndentGuideCalculatorTests {
             #expect(level2Guides[0][1].xPosition == level2Guides[i][1].xPosition)
         }
     }
+
+    // MARK: - indentLevel: Unicode & special content
+
+    @Test func indentLevel_unicodeContent() {
+        // Indent level only depends on leading whitespace, not content
+        let level = IndentGuideCalculator.indentLevel(of: "        \u{1F600} emoji", indentWidth: 4)
+        #expect(level == 2)
+    }
+
+    @Test func indentLevel_newlineOnly() {
+        let level = IndentGuideCalculator.indentLevel(of: "\n", indentWidth: 4)
+        #expect(level == 0)
+    }
+
+    @Test func indentLevel_singleSpace_indentWidth1() {
+        let level = IndentGuideCalculator.indentLevel(of: " x", indentWidth: 1)
+        #expect(level == 1)
+    }
+
+    @Test func indentLevel_negativeIndentWidth_returnsZero() {
+        let level = IndentGuideCalculator.indentLevel(of: "    code", indentWidth: -2)
+        #expect(level == 0)
+    }
+
+    @Test func indentLevel_spaceThenTab() {
+        // Spaces before tab: spaces=1, then tab counted
+        // "  \t" → spaces=2, tabs=1 → tabs + spaces/indentWidth = 1 + 2/4 = 1
+        let level = IndentGuideCalculator.indentLevel(of: "  \tcode", indentWidth: 4)
+        #expect(level == 1)
+    }
+
+    @Test func indentLevel_exactSpaces_multipleIndentWidths() {
+        // 12 spaces with indentWidth 3 → 4 levels
+        let level = IndentGuideCalculator.indentLevel(of: "            code", indentWidth: 3)
+        #expect(level == 4)
+    }
+
+    // MARK: - inheritedIndentLevel: Additional edge cases
+
+    @Test func inheritedIndent_singleLineDocument() {
+        let lines = ["code"]
+        // Can't inherit — lineIndex 0 is not blank anyway, but test boundary
+        let level = IndentGuideCalculator.inheritedIndentLevel(
+            forBlankLineAt: 0, in: [""], indentWidth: 4
+        )
+        #expect(level == 0)
+        // Verify non-blank single line
+        let nonBlank = IndentGuideCalculator.indentLevel(of: lines[0], indentWidth: 4)
+        #expect(nonBlank == 0)
+    }
+
+    @Test func inheritedIndent_blankAfterDeepNesting() {
+        let lines = [
+            "                deep",  // 16 spaces → level 4
+            "",
+            "    shallow"            // 4 spaces → level 1
+        ]
+        let level = IndentGuideCalculator.inheritedIndentLevel(
+            forBlankLineAt: 1, in: lines, indentWidth: 4
+        )
+        #expect(level == 1) // min(4, 1) = 1
+    }
+
+    @Test func inheritedIndent_consecutiveBlankLines_differentPositions() {
+        let lines = [
+            "        deep",  // level 2
+            "",              // index 1
+            "",              // index 2
+            "",              // index 3
+            "    shallow"    // level 1
+        ]
+        // First blank
+        let level1 = IndentGuideCalculator.inheritedIndentLevel(
+            forBlankLineAt: 1, in: lines, indentWidth: 4
+        )
+        #expect(level1 == 1) // min(2, 1) = 1
+
+        // Middle blank
+        let level2 = IndentGuideCalculator.inheritedIndentLevel(
+            forBlankLineAt: 2, in: lines, indentWidth: 4
+        )
+        #expect(level2 == 1) // min(2, 1) = 1
+
+        // Last blank
+        let level3 = IndentGuideCalculator.inheritedIndentLevel(
+            forBlankLineAt: 3, in: lines, indentWidth: 4
+        )
+        #expect(level3 == 1) // min(2, 1) = 1
+    }
+
+    @Test func inheritedIndent_blankLineBetweenTabAndSpace() {
+        // Mixed: above uses tabs, below uses spaces
+        let lines = [
+            "\t\tcode",     // 2 tabs → level 2
+            "",
+            "        code"  // 8 spaces → level 2
+        ]
+        let level = IndentGuideCalculator.inheritedIndentLevel(
+            forBlankLineAt: 1, in: lines, indentWidth: 4
+        )
+        #expect(level == 2) // min(2, 2) = 2
+    }
+
+    @Test func inheritedIndent_firstLineIsBlank_noLineAbove() {
+        let lines = [
+            "",
+            "",
+            "        code"  // level 2
+        ]
+        let level = IndentGuideCalculator.inheritedIndentLevel(
+            forBlankLineAt: 0, in: lines, indentWidth: 4
+        )
+        #expect(level == 0) // above = 0 (nothing above), below = 2 → min(0,2) = 0
+    }
+
+    @Test func inheritedIndent_lastLineIsBlank_noLineBelow() {
+        let lines = [
+            "        code",  // level 2
+            "",
+            ""
+        ]
+        let level = IndentGuideCalculator.inheritedIndentLevel(
+            forBlankLineAt: 2, in: lines, indentWidth: 4
+        )
+        #expect(level == 0) // above = 2, below = 0 (nothing below) → min(2,0) = 0
+    }
+
+    // MARK: - Real-world: Swift nested closures
+
+    @Test func swiftFile_nestedClosures() {
+        let lines = [
+            "func test() {",             // level 0
+            "    let x = items.map {",   // level 1
+            "        $0 + 1",            // level 2
+            "    }",                      // level 1
+            "}"                          // level 0
+        ]
+        #expect(IndentGuideCalculator.indentLevel(of: lines[0], indentWidth: 4) == 0)
+        #expect(IndentGuideCalculator.indentLevel(of: lines[1], indentWidth: 4) == 1)
+        #expect(IndentGuideCalculator.indentLevel(of: lines[2], indentWidth: 4) == 2)
+        #expect(IndentGuideCalculator.indentLevel(of: lines[3], indentWidth: 4) == 1)
+        #expect(IndentGuideCalculator.indentLevel(of: lines[4], indentWidth: 4) == 0)
+    }
+
+    // MARK: - Real-world: HTML with 2-space indent
+
+    @Test func htmlFile_twoSpaceIndent() {
+        let lines = [
+            "<div>",                      // level 0
+            "  <ul>",                     // level 1
+            "    <li>item</li>",          // level 2
+            "  </ul>",                    // level 1
+            "</div>"                      // level 0
+        ]
+        #expect(IndentGuideCalculator.indentLevel(of: lines[0], indentWidth: 2) == 0)
+        #expect(IndentGuideCalculator.indentLevel(of: lines[1], indentWidth: 2) == 1)
+        #expect(IndentGuideCalculator.indentLevel(of: lines[2], indentWidth: 2) == 2)
+        #expect(IndentGuideCalculator.indentLevel(of: lines[3], indentWidth: 2) == 1)
+        #expect(IndentGuideCalculator.indentLevel(of: lines[4], indentWidth: 2) == 0)
+    }
 }
