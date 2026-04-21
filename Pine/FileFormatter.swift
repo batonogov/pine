@@ -85,6 +85,40 @@ struct JSONFileFormatter: FileFormatter {
     }
 }
 
+/// Creates an HCL formatter that delegates to `terraform fmt -` or `tofu fmt -`.
+/// Prefers `terraform` when both are installed; gracefully no-ops when neither is found.
+enum HCLFileFormatter {
+    static func resolve(
+        processRunner: ProcessRunning = RealProcessRunner(),
+        resolver: ExternalToolResolver = .fromEnvironment()
+    ) -> ExternalFileFormatter {
+        let extensions = ["tf", "tfvars", "hcl"]
+        let arguments = ["fmt", "-"]
+
+        // Try terraform first, then OpenTofu
+        for toolName in ["terraform", "tofu"] {
+            if let path = resolver.resolve(tool: toolName) {
+                return ExternalFileFormatter(
+                    toolPath: path,
+                    toolName: toolName,
+                    extensions: extensions,
+                    arguments: arguments,
+                    processRunner: processRunner
+                )
+            }
+        }
+
+        // Neither found — no-op formatter
+        return ExternalFileFormatter(
+            toolPath: nil,
+            toolName: "terraform",
+            extensions: extensions,
+            arguments: arguments,
+            processRunner: processRunner
+        )
+    }
+}
+
 /// Composes an ordered list of formatters, applying the first whose `canFormat` returns
 /// true. The empty registry is a no-op — safe default for files with no known formatter.
 struct FileFormatterRegistry: Sendable {
@@ -93,7 +127,10 @@ struct FileFormatterRegistry: Sendable {
     /// Default registry. Ships a pure-Swift JSON formatter. External tool formatters
     /// (e.g. `ExternalFileFormatter` for terraform, shfmt, prettier) can be appended
     /// by consumers — they participate in the same first-match dispatch.
-    static let `default` = FileFormatterRegistry(formatters: [JSONFileFormatter()])
+    static let `default` = FileFormatterRegistry(formatters: [
+        JSONFileFormatter(),
+        HCLFileFormatter.resolve()
+    ])
 
     /// Returns a formatted copy of `content` for the given URL, or the original if no
     /// registered formatter claims the file type.

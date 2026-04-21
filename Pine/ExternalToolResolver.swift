@@ -28,6 +28,12 @@ nonisolated final class ExternalToolResolver: Sendable {
     private let cacheQueue = DispatchQueue(label: "com.pine.tool-resolver-cache")
     nonisolated(unsafe) private var cache: [String: String?] = [:]
 
+    /// Creates a resolver with an explicit list of directories to search.
+    /// Does NOT append well-known directories — useful for isolated testing.
+    init(searchDirectories: [String]) {
+        self.searchDirectories = searchDirectories
+    }
+
     /// Creates a resolver with the given PATH string.
     ///
     /// - Parameters:
