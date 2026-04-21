@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.25.0](https://github.com/batonogov/pine/compare/v1.24.0...v1.25.0) (2026-04-21)
+
+
+### Features
+
+* **editor:** external formatter infrastructure ([#860](https://github.com/batonogov/pine/issues/860)) ([8d4dab4](https://github.com/batonogov/pine/commit/8d4dab4d476f6706a4a58f932b3e119f481bf84a))
+* **editor:** HCL/Terraform format-on-save with OpenTofu fallback ([#869](https://github.com/batonogov/pine/issues/869)) ([9a0f900](https://github.com/batonogov/pine/commit/9a0f90095739bca09ba575b9c041076dc73e68f3))
+
+
+### Bug Fixes
+
+* **editor:** dispatch ExternalFileFormatter to background queue ([#874](https://github.com/batonogov/pine/issues/874)) ([1159ede](https://github.com/batonogov/pine/commit/1159ede4b25120c21ff3b1477dfd0e5cf05a7a0c))
+* **terminal:** force needsDisplay after re-parenting to prevent blank terminal ([#871](https://github.com/batonogov/pine/issues/871)) ([579a37a](https://github.com/batonogov/pine/commit/579a37ac23d21dbd10e5630e32140f2337dbfae7))
+
 ## [1.24.0](https://github.com/batonogov/pine/compare/v1.23.2...v1.24.0) (2026-04-18)
 
 
