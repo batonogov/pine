@@ -38,7 +38,7 @@ final class RecoveryManager {
 
     private let recoveryDirectory: URL
     private var periodicTimer: Timer?
-    private var debounceWorkItem: DispatchWorkItem?
+    private var snapshotDebouncer: Debouncer?
 
     /// Tabs provider — set by ProjectManager so periodic snapshots can access current tabs.
     var tabsProvider: (() -> [EditorTab])?
@@ -263,19 +263,21 @@ final class RecoveryManager {
 
     /// Schedules a debounced snapshot (5 seconds after last edit).
     func scheduleSnapshot() {
-        debounceWorkItem?.cancel()
-        let workItem = DispatchWorkItem { [weak self] in
-            guard let self, let tabs = self.tabsProvider?() else { return }
-            self.snapshotDirtyTabs(tabs)
+        // Lazily create the debouncer (captures self weakly).
+        if snapshotDebouncer == nil {
+            snapshotDebouncer = Debouncer(delay: Self.debounceDelay) { [weak self] in
+                MainActor.assumeIsolated {
+                    guard let self, let tabs = self.tabsProvider?() else { return }
+                    self.snapshotDirtyTabs(tabs)
+                }
+            }
         }
-        debounceWorkItem = workItem
-        DispatchQueue.main.asyncAfter(deadline: .now() + Self.debounceDelay, execute: workItem)
+        snapshotDebouncer?.schedule()
     }
 
     /// Cancels any pending debounced snapshot.
     func cancelScheduledSnapshot() {
-        debounceWorkItem?.cancel()
-        debounceWorkItem = nil
+        snapshotDebouncer?.cancel()
     }
 
     // MARK: - Private

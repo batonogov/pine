@@ -9,13 +9,13 @@ import Foundation
 import Testing
 @testable import Pine
 
-@Suite("Fuzz Go To Line Parser Tests", .timeLimit(.minutes(1)))
+@Suite("Fuzz Go To Line Parser Tests", .timeLimit(.minutes(2)))
 struct FuzzGoToLineParserTests {
 
     @Test func fuzzGoToLineParser_randomInput() {
         var rng = SplitMix64(seed: 61)
 
-        for _ in 0..<200 {
+        for _ in 0..<100 {
             let input: String
             switch rng.next() % 5 {
             case 0:

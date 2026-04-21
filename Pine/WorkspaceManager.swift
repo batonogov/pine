@@ -44,8 +44,8 @@ final class WorkspaceManager {
     /// (shallow → full phase) trigger only one rebuild.
     private(set) var onRootNodesChanged: (([FileNode]) -> Void)?
 
-    /// Pending debounced notification work item.
-    private var rootNodesChangedWorkItem: DispatchWorkItem?
+    /// Debouncer for `onRootNodesChanged` notifications.
+    private var rootNodesChangedDebouncer: Debouncer?
 
     /// Continuations waiting for `isLoading` to become `false`.
     private var loadingContinuations: [CheckedContinuation<Void, Never>] = []
@@ -83,16 +83,19 @@ final class WorkspaceManager {
 
     /// Schedules a debounced `onRootNodesChanged` notification.
     /// Cancels any pending notification so rapid updates coalesce into one.
-    private func notifyRootNodesChanged(_ nodes: [FileNode]) {
-        rootNodesChangedWorkItem?.cancel()
-        let workItem = DispatchWorkItem { [weak self] in
-            self?.onRootNodesChanged?(nodes)
+    private func notifyRootNodesChanged() {
+        // Lazily create the debouncer (captures self weakly).
+        if rootNodesChangedDebouncer == nil {
+            rootNodesChangedDebouncer = Debouncer(
+                delay: Self.rootNodesChangedDebounce
+            ) { [weak self] in
+                MainActor.assumeIsolated {
+                    guard let self else { return }
+                    self.onRootNodesChanged?(self.rootNodes)
+                }
+            }
         }
-        rootNodesChangedWorkItem = workItem
-        DispatchQueue.main.asyncAfter(
-            deadline: .now() + Self.rootNodesChangedDebounce,
-            execute: workItem
-        )
+        rootNodesChangedDebouncer?.schedule()
     }
 
     deinit {
@@ -240,7 +243,7 @@ final class WorkspaceManager {
                     return
                 }
                 self.rootNodes = shallowChildren
-                self.notifyRootNodesChanged(shallowChildren)
+                self.notifyRootNodesChanged()
                 self.gitProvider.repositoryURL = gitInfo.repositoryURL
                 self.gitProvider.gitRootPath = gitInfo.gitRootPath
                 // Atomically apply git state in a single equality-checked
@@ -280,7 +283,7 @@ final class WorkspaceManager {
                     return
                 }
                 self.rootNodes = fullChildren
-                self.notifyRootNodesChanged(fullChildren)
+                self.notifyRootNodesChanged()
                 self.isLoading = false
                 self.resumeLoadingContinuations()
                 if let progressID { self.progressTracker?.endOperation(progressID) }
@@ -393,7 +396,7 @@ final class WorkspaceManager {
             maxDepth: Self.shallowDepth
         )
         rootNodes = shallowResult.root.children ?? []
-        notifyRootNodesChanged(rootNodes)
+        notifyRootNodesChanged()
 
         // Phase 2 (async): full tree only if Phase 1 hit the depth limit.
         // Pure Swift Concurrency — no GCD bridging — to avoid scheduler
@@ -407,7 +410,7 @@ final class WorkspaceManager {
                 await MainActor.run { [weak self] in
                     guard let self, self.loadGeneration == generation else { return }
                     self.rootNodes = fullChildren
-                    self.notifyRootNodesChanged(fullChildren)
+                    self.notifyRootNodesChanged()
                 }
             }
         }
