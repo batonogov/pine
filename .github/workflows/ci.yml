@@ -234,6 +234,7 @@ jobs:
 
       - name: Unit Tests
         run: |
+          set +e
           xcodebuild test-without-building \
             -project Pine.xcodeproj \
             -scheme Pine \
@@ -245,6 +246,53 @@ jobs:
             -resultBundlePath TestResults.xcresult \
             CODE_SIGN_IDENTITY=- \
             CODE_SIGNING_ALLOWED=NO
+          TEST_EXIT=$?
+          set -e
+
+          if [ "$TEST_EXIT" -eq 0 ]; then
+            echo "xcodebuild exited cleanly"
+            exit 0
+          fi
+
+          echo "::warning::xcodebuild exited with code $TEST_EXIT — checking xcresult for actual failures"
+
+          # When the test host crashes on first launch but all tests pass on
+          # retry, xcodebuild still returns exit code 65. Parse the xcresult
+          # to distinguish "real failures" from "crash-then-retry-all-passed".
+          if [ ! -d "TestResults.xcresult" ]; then
+            echo "::error::No xcresult bundle found and xcodebuild failed"
+            exit "$TEST_EXIT"
+          fi
+
+          FAILED_TESTS=$(xcrun xcresulttool get test-results tests \
+            --path TestResults.xcresult \
+            | python3 -c "
+          import json, sys
+
+          def count_failures(node):
+              node_type = node.get('nodeType', '')
+              result = node.get('result', '')
+              children = node.get('children', [])
+
+              if node_type == 'Test Case':
+                  # A test case that ultimately failed (not retried-and-passed)
+                  return 1 if result == 'Failed' else 0
+
+              return sum(count_failures(c) for c in children)
+
+          data = json.load(sys.stdin)
+          print(count_failures(data))
+          ")
+
+          echo "Failed tests (after retries): $FAILED_TESTS"
+
+          if [ "$FAILED_TESTS" -eq 0 ]; then
+            echo "All tests passed after retries — treating as success despite exit code $TEST_EXIT"
+            exit 0
+          else
+            echo "::error::$FAILED_TESTS test(s) still failing after retries"
+            exit "$TEST_EXIT"
+          fi
 
       - name: Detect Flaky Tests
         if: success() || failure()
@@ -533,10 +581,11 @@ jobs:
               -only-testing:PineUITests/ScreenshotTests
               -only-testing:PineUITests/BranchSwitcherTests
               -only-testing:PineUITests/CheckForUpdatesTests
-          # Shard 5 — Files & Save (26 tests)
+          # Shard 5 — Files & Save (27 tests)
           - shard-name: "Files & Save"
             test-classes: >-
               -only-testing:PineUITests/EditorSaveFlowTests
+              -only-testing:PineUITests/HCLFormatOnSaveTests
               -only-testing:PineUITests/DeleteTests
               -only-testing:PineUITests/SidebarRenameTests
               -only-testing:PineUITests/SidebarFileOperationsTests

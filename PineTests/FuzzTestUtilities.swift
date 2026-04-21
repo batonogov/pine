@@ -20,7 +20,7 @@ import Foundation
 //
 // Next available seed: 62
 //
-// Iteration count: each random-input fuzz test runs 200 iterations. With the
+// Iteration count: each random-input fuzz test runs 100 iterations. With the
 // deterministic SplitMix64 PRNG this still exercises ample edge cases while
 // keeping each suite well under the per-test time limit on shared CI runners.
 

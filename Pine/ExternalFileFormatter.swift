@@ -202,12 +202,24 @@ nonisolated final class ExternalFileFormatter: FileFormatter, Sendable {
             return content
         }
 
-        let result = processRunner.run(
-            executablePath: executablePath,
-            arguments: arguments,
-            stdin: content,
-            timeout: timeout
+        // Dispatch to a background queue so RealProcessRunner's main-thread
+        // precondition is satisfied. The caller (trySaveTab) runs on main;
+        // DispatchGroup.wait() blocks it briefly while the process executes.
+        nonisolated(unsafe) var result = ProcessRunResult(
+            stdout: "", stderr: "", exitCode: -1, timedOut: true
         )
+        let group = DispatchGroup()
+        group.enter()
+        DispatchQueue.global(qos: .userInitiated).async {
+            result = self.processRunner.run(
+                executablePath: executablePath,
+                arguments: self.arguments,
+                stdin: content,
+                timeout: self.timeout
+            )
+            group.leave()
+        }
+        group.wait()
 
         // Fall back to original on any failure
         guard !result.timedOut,
