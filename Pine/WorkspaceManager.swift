@@ -210,13 +210,16 @@ final class WorkspaceManager {
     /// then the full tree replaces it once ready.
     private func loadDirectoryContentsAsync(
         url: URL,
-        generation: Int
+        generation: Int,
+        showProgress: Bool = true
     ) {
         // Cancel any prior in-flight load so its `MainActor.run` blocks
         // become no-ops after the generation check below.
         loadingTask?.cancel()
 
-        let progressID = progressTracker?.beginOperation(Strings.progressLoadingProject)
+        let progressID = showProgress
+            ? progressTracker?.beginOperation(Strings.progressLoadingProject)
+            : nil
 
         loadingTask = Task.detached(priority: .userInitiated) { [weak self] in
             // 1. Git setup — pure nonisolated work using static helpers.
@@ -433,6 +436,6 @@ final class WorkspaceManager {
         guard let url = rootURL else { return }
         loadGeneration += 1
         let generation = loadGeneration
-        loadDirectoryContentsAsync(url: url, generation: generation)
+        loadDirectoryContentsAsync(url: url, generation: generation, showProgress: false)
     }
 }
