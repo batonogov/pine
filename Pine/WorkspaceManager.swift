@@ -235,7 +235,14 @@ final class WorkspaceManager {
             )
             let shallowChildren = shallowResult.root.children ?? []
 
-            if Task.isCancelled { return }
+            if Task.isCancelled {
+                if let progressID {
+                    await MainActor.run { [weak self] in
+                        self?.progressTracker?.endOperation(progressID)
+                    }
+                }
+                return
+            }
 
             await MainActor.run { [weak self] in
                 guard let self, self.loadGeneration == generation else {
@@ -269,13 +276,27 @@ final class WorkspaceManager {
             //    For shallow projects this avoids redundant tree construction.
             guard shallowResult.wasDepthLimited else { return }
 
-            if Task.isCancelled { return }
+            if Task.isCancelled {
+                if let progressID {
+                    await MainActor.run { [weak self] in
+                        self?.progressTracker?.endOperation(progressID)
+                    }
+                }
+                return
+            }
 
             let fullChildren = Self.loadTopLevelInParallel(
                 url: url, ignoredPaths: gitInfo.ignoredPaths
             )
 
-            if Task.isCancelled { return }
+            if Task.isCancelled {
+                if let progressID {
+                    await MainActor.run { [weak self] in
+                        self?.progressTracker?.endOperation(progressID)
+                    }
+                }
+                return
+            }
 
             await MainActor.run { [weak self] in
                 guard let self, self.loadGeneration == generation else {
