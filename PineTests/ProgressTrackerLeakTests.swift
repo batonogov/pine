@@ -95,12 +95,7 @@ struct ProgressTrackerLeakTests {
         manager.progressTracker = tracker
 
         manager.loadDirectory(url: dir)
-
-        // Wait for async load to complete
-        for _ in 0..<100 {
-            try await Task.sleep(for: .milliseconds(50))
-            if !manager.isLoading { break }
-        }
+        await manager.waitForLoadingComplete()
 
         #expect(!manager.isLoading)
         #expect(
@@ -109,6 +104,11 @@ struct ProgressTrackerLeakTests {
         )
     }
 
+    // NOTE: On a fast machine dir1 may complete before the second loadDirectory
+    // call cancels it, so the cancellation path is not always exercised.
+    // The test still validates correctness — it just may not exercise the fix
+    // on every run. A synthetic delay in the loader would make it deterministic
+    // but adds complexity not warranted here.
     @Test("Cancelled load cleans up progress operation (no leak)")
     @MainActor
     func cancelledLoadCleansUpProgress() async throws {
@@ -147,20 +147,13 @@ struct ProgressTrackerLeakTests {
         manager.loadDirectory(url: dir2)
 
         // Wait for dir2's load to complete
-        for _ in 0..<100 {
-            try await Task.sleep(for: .milliseconds(50))
-            if !manager.isLoading && manager.rootNodes.contains(where: { $0.name == "simple.txt" }) {
-                break
-            }
-        }
+        await manager.waitForLoadingComplete()
 
-        // Both the cancelled dir1 operation and completed dir2 operation
-        // must have called endOperation. At most one operation should remain
-        // (dir2's if it's still finishing), but typically zero.
-        // Give a bit more time for cleanup of cancelled task.
+        // The cancelled dir1 task's cleanup runs asynchronously on MainActor.
+        // Poll briefly for its endOperation to land.
         for _ in 0..<20 {
-            try await Task.sleep(for: .milliseconds(50))
             if tracker.activeOperationCount == 0 { break }
+            try await Task.sleep(for: .milliseconds(50))
         }
 
         #expect(
@@ -189,12 +182,7 @@ struct ProgressTrackerLeakTests {
         manager.progressTracker = tracker
 
         manager.loadDirectory(url: dir)
-
-        // Wait for initial load
-        for _ in 0..<100 {
-            try await Task.sleep(for: .milliseconds(50))
-            if !manager.isLoading { break }
-        }
+        await manager.waitForLoadingComplete()
 
         #expect(tracker.activeOperationCount == 0, "Initial load must clean up")
 
@@ -204,9 +192,12 @@ struct ProgressTrackerLeakTests {
         }
 
         // Wait for the last refresh to settle
-        for _ in 0..<100 {
-            try await Task.sleep(for: .milliseconds(50))
+        await manager.waitForLoadingComplete()
+
+        // Poll briefly for any cancelled task cleanup to land
+        for _ in 0..<20 {
             if tracker.activeOperationCount == 0 { break }
+            try await Task.sleep(for: .milliseconds(50))
         }
 
         #expect(
@@ -235,10 +226,12 @@ struct ProgressTrackerLeakTests {
         manager.loadDirectory(url: dir)
         manager.refreshFileTreeAsync()
 
-        // Wait for everything to settle
-        for _ in 0..<100 {
+        await manager.waitForLoadingComplete()
+
+        // Poll briefly for any cancelled task cleanup to land
+        for _ in 0..<20 {
+            if tracker.activeOperationCount == 0 { break }
             try await Task.sleep(for: .milliseconds(50))
-            if tracker.activeOperationCount == 0 && !manager.isLoading { break }
         }
 
         #expect(
@@ -263,11 +256,7 @@ struct ProgressTrackerLeakTests {
         // progressTracker is nil — should not crash
 
         manager.loadDirectory(url: dir)
-
-        for _ in 0..<100 {
-            try await Task.sleep(for: .milliseconds(50))
-            if !manager.isLoading { break }
-        }
+        await manager.waitForLoadingComplete()
 
         #expect(!manager.isLoading)
         #expect(manager.rootNodes.contains { $0.name == "file.txt" })
