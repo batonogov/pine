@@ -18,9 +18,7 @@ struct ProgressTrackerLeakTests {
         let rawDir = FileManager.default.temporaryDirectory
             .appendingPathComponent("pine-progress-test-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: rawDir, withIntermediateDirectories: true)
-        guard let resolved = realpath(rawDir.path, nil) else { throw CocoaError(.fileNoSuchFile) }
-        defer { free(resolved) }
-        return URL(fileURLWithPath: String(cString: resolved))
+        return rawDir.resolvingSymlinksInPath()
     }
 
     private func cleanup(_ url: URL) {
