@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.25.1](https://github.com/batonogov/pine/compare/v1.25.0...v1.25.1) (2026-04-24)
+
+
+### Bug Fixes
+
+* **sidebar:** suppress progress indicator flicker during incremental file tree refresh ([#877](https://github.com/batonogov/pine/issues/877)) ([#879](https://github.com/batonogov/pine/issues/879)) ([d526722](https://github.com/batonogov/pine/commit/d526722b0869fa2bdc604bb7be741dbc7054810b))
+* **workspace:** clean up ProgressTracker operations on cancelled loads ([#882](https://github.com/batonogov/pine/issues/882)) ([e3c5156](https://github.com/batonogov/pine/commit/e3c51563121cdf85831387f850ce834f766c11d6))
+
 ## [1.25.0](https://github.com/batonogov/pine/compare/v1.24.0...v1.25.0) (2026-04-21)
 
 
