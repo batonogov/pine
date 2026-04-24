@@ -222,6 +222,17 @@ final class WorkspaceManager {
         let progressID = progressTracker?.beginOperation(Strings.progressLoadingProject)
 
         loadingTask = Task.detached(priority: .userInitiated) { [weak self] in
+            // Shared cleanup closure — ends the progress operation on MainActor.
+            // Extracted to avoid repeating the same 5-line block at every
+            // cancellation / early-return site.
+            let cleanupProgress: () async -> Void = {
+                if let progressID {
+                    await MainActor.run { [weak self] in
+                        self?.progressTracker?.endOperation(progressID)
+                    }
+                }
+            }
+
             // 1. Git setup — pure nonisolated work using static helpers.
             //    No `@MainActor` object is created off-main: avoids the
             //    `nonisolated-check:ignore` workaround the GCD path needed.
@@ -235,7 +246,7 @@ final class WorkspaceManager {
             )
             let shallowChildren = shallowResult.root.children ?? []
 
-            if Task.isCancelled { return }
+            if Task.isCancelled { await cleanupProgress(); return }
 
             await MainActor.run { [weak self] in
                 guard let self, self.loadGeneration == generation else {
@@ -267,15 +278,17 @@ final class WorkspaceManager {
 
             // 3. Phase 2: full tree only if Phase 1 hit the depth limit.
             //    For shallow projects this avoids redundant tree construction.
+            //    Safe to return without cleanup — endOperation was already called
+            //    inside Phase 1's MainActor.run block for non-depth-limited trees.
             guard shallowResult.wasDepthLimited else { return }
 
-            if Task.isCancelled { return }
+            if Task.isCancelled { await cleanupProgress(); return }
 
             let fullChildren = Self.loadTopLevelInParallel(
                 url: url, ignoredPaths: gitInfo.ignoredPaths
             )
 
-            if Task.isCancelled { return }
+            if Task.isCancelled { await cleanupProgress(); return }
 
             await MainActor.run { [weak self] in
                 guard let self, self.loadGeneration == generation else {
