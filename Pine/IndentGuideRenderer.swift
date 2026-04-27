@@ -210,7 +210,16 @@ enum IndentGuideRenderer {
         // (and the bounds-check fallback for short lines) can compute x
         // without re-reading font/paragraph style for every guide.
         let font = textView.font ?? NSFont.monospacedSystemFont(ofSize: 13, weight: .regular)
-        let charWidth = font.maximumAdvancement.width
+        // Use the actual rendered width of a space glyph instead of
+        // `font.maximumAdvancement.width`. For SF Mono (and other monospace
+        // fonts) the maximum advance can be ~0.3-0.5pt wider than what the
+        // layout manager actually uses to place a space — that drift, after
+        // pixel-snapping, leaves blank-line guides one pixel left of the
+        // glyph-based guides drawn for surrounding non-blank lines. Asking
+        // the font for `" ".size(withAttributes:).width` matches the layout
+        // manager's character placement exactly, so blank and non-blank
+        // guides land on the same x-column.
+        let charWidth = (" " as NSString).size(withAttributes: [.font: font]).width
         let tabStopWidth: CGFloat
         if let firstTab = textView.defaultParagraphStyle?.tabStops.first {
             tabStopWidth = firstTab.location
