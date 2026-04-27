@@ -61,9 +61,19 @@ enum IndentGuideCalculator {
     /// For tab-based files, each guide is placed at the tab stop position.
     /// For space-based files, each guide is placed at `level * indentWidth * charWidth`.
     ///
+    /// All x-positions are pixel-snapped to `floor(x) + 0.5` so that 1pt-wide
+    /// stroke lines land on exact pixel boundaries and render crisp on both
+    /// Retina and non-Retina displays.
+    ///
+    /// **Used by the renderer as the fallback path for blank/empty lines**,
+    /// where the layout manager has no glyph at the indent column to query
+    /// for an exact x-coordinate. Non-blank lines use
+    /// `NSLayoutManager.location(forGlyphAt:)` directly to honor the actual
+    /// glyph position chosen by the text layout engine.
+    ///
     /// - Parameters:
     ///   - level: Number of indent levels.
-    ///   - charWidth: Width of a single space character in the current font.
+    ///   - charWidth: Width of a single character in the current monospaced font.
     ///   - tabStopWidth: Width of a tab stop in points (from NSTextView paragraph style).
     ///   - usesTabs: Whether the file uses tab-based indentation.
     ///   - indentWidth: Number of spaces per indent level (for space-based indentation).
@@ -78,15 +88,18 @@ enum IndentGuideCalculator {
         guard level > 0, charWidth > 0 else { return [] }
 
         return (1...level).map { lvl in
-            let xPos: CGFloat
+            let rawX: CGFloat
             if usesTabs {
                 // Tab-based: position at the tab stop boundary
-                xPos = CGFloat(lvl) * tabStopWidth
+                rawX = CGFloat(lvl) * tabStopWidth
             } else {
                 // Space-based: position at indentWidth * charWidth per level
-                xPos = CGFloat(lvl * indentWidth) * charWidth
+                rawX = CGFloat(lvl * indentWidth) * charWidth
             }
-            return IndentGuide(level: lvl, xPosition: xPos)
+            // Snap to pixel boundary: floor(x) + 0.5 ensures the 1pt-wide
+            // stroke line fills exactly one column of pixels.
+            let snappedX = floor(rawX) + 0.5
+            return IndentGuide(level: lvl, xPosition: snappedX)
         }
     }
 
@@ -152,6 +165,21 @@ enum IndentGuideRenderer {
 
     /// Draws indent guides for all visible lines in the text view.
     ///
+    /// For non-blank lines this method queries `NSLayoutManager` for the
+    /// **real** glyph position of each indent column, so the guide line
+    /// aligns exactly with the character the layout engine placed there
+    /// (covers tabs, fractional advance widths, and ligatures uniformly).
+    ///
+    /// For blank/empty lines — where there is no glyph at the indent
+    /// column to query — the method falls back to
+    /// `IndentGuideCalculator.guides(...)` so that inherited guides still
+    /// render through gaps in nested blocks.
+    ///
+    /// All x-coordinates (both glyph-based and calculator-based) are
+    /// snapped to `floor(x) + 0.5` so the 1pt-wide stroke lands on a
+    /// single pixel column and renders crisp on Retina and non-Retina
+    /// displays.
+    ///
     /// - Parameters:
     ///   - textView: The GutterTextView to draw in.
     ///   - rect: The dirty rectangle to draw in.
@@ -172,23 +200,30 @@ enum IndentGuideRenderer {
         switch indentStyle {
         case .tabs:
             usesTabs = true
-            indentWidth = 4 // Standard tab = 4 indent units
+            indentWidth = 4
         case .spaces(let width):
             usesTabs = false
             indentWidth = width
         }
 
-        // Calculate character width using a space in the editor font
+        // Cache font metrics once per draw() call so the blank-line fallback
+        // (and the bounds-check fallback for short lines) can compute x
+        // without re-reading font/paragraph style for every guide.
         let font = textView.font ?? NSFont.monospacedSystemFont(ofSize: 13, weight: .regular)
-        let charWidth = " ".size(withAttributes: [.font: font]).width
-
-        // Get the actual tab stop width from the text view's paragraph style
+        // Use the actual rendered width of a space glyph instead of
+        // `font.maximumAdvancement.width`. For SF Mono (and other monospace
+        // fonts) the maximum advance can be ~0.3-0.5pt wider than what the
+        // layout manager actually uses to place a space — that drift, after
+        // pixel-snapping, leaves blank-line guides one pixel left of the
+        // glyph-based guides drawn for surrounding non-blank lines. Asking
+        // the font for `" ".size(withAttributes:).width` matches the layout
+        // manager's character placement exactly, so blank and non-blank
+        // guides land on the same x-column.
+        let charWidth = (" " as NSString).size(withAttributes: [.font: font]).width
         let tabStopWidth: CGFloat
-        if let paragraphStyle = textView.defaultParagraphStyle,
-           let firstTab = paragraphStyle.tabStops.first {
+        if let firstTab = textView.defaultParagraphStyle?.tabStops.first {
             tabStopWidth = firstTab.location
         } else {
-            // Default NSTextView tab interval is 28pt
             tabStopWidth = textView.defaultParagraphStyle?.defaultTabInterval
                 ?? NSParagraphStyle.default.defaultTabInterval
         }
@@ -231,9 +266,10 @@ enum IndentGuideRenderer {
 
             let line = lines[lineNumber]
             let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
+            let isBlank = trimmed.isEmpty
 
             let level: Int
-            if trimmed.isEmpty {
+            if isBlank {
                 level = IndentGuideCalculator.inheritedIndentLevel(
                     forBlankLineAt: lineNumber, in: lines, indentWidth: indentWidth
                 )
@@ -242,18 +278,27 @@ enum IndentGuideRenderer {
             }
 
             if level > 0 {
-                // Get the line fragment rect for this line
                 let lineRange = nsContent.lineRange(for: NSRange(location: lineStart, length: 0))
-                let glyphRange = layoutManager.glyphRange(
+                let lineGlyphRange = layoutManager.glyphRange(
                     forCharacterRange: lineRange, actualCharacterRange: nil
                 )
 
-                if glyphRange.location != NSNotFound && glyphRange.length > 0 {
+                if lineGlyphRange.location != NSNotFound && lineGlyphRange.length > 0 {
                     let lineFragmentRect = layoutManager.lineFragmentRect(
-                        forGlyphAt: glyphRange.location, effectiveRange: nil
+                        forGlyphAt: lineGlyphRange.location, effectiveRange: nil
                     )
+                    // Snap y as well so vertical edges land on whole pixels —
+                    // otherwise lineFragmentRect's fractional origin can make
+                    // the stroke smear across two rows on non-Retina displays.
+                    let yTop = floor(lineFragmentRect.origin.y + origin.y) + 0.5
+                    let height = floor(lineFragmentRect.height)
 
-                    let guides = IndentGuideCalculator.guides(
+                    // Pre-compute the calculator-based fallback positions once
+                    // per line; used both for blank lines and as a fallback for
+                    // non-blank lines that are too short to host a glyph at the
+                    // requested indent column (e.g. a comment-only line that
+                    // happens to inherit a deeper guide).
+                    let fallbackGuides = IndentGuideCalculator.guides(
                         forLevel: level,
                         charWidth: charWidth,
                         tabStopWidth: tabStopWidth,
@@ -261,13 +306,35 @@ enum IndentGuideRenderer {
                         indentWidth: indentWidth
                     )
 
-                    for guide in guides {
-                        let x = guide.xPosition + origin.x
-                        let y = lineFragmentRect.origin.y + origin.y
-                        let height = lineFragmentRect.height
+                    for lvl in 1...level {
+                        let x: CGFloat
+                        // Character index of the indent column for this level
+                        let charIndex = lineStart + (usesTabs ? lvl : lvl * indentWidth)
+                        let canQueryGlyph = !isBlank && charIndex < NSMaxRange(lineRange)
 
-                        path.move(to: NSPoint(x: x, y: y))
-                        path.line(to: NSPoint(x: x, y: y + height))
+                        if canQueryGlyph {
+                            // Layout-engine path: ask the layout manager for the
+                            // real x of the glyph at the indent column. This is
+                            // the source of truth for non-blank lines and keeps
+                            // guides exactly on top of leading whitespace.
+                            let glyphIndex = layoutManager.glyphIndexForCharacter(at: charIndex)
+                            let location = layoutManager.location(forGlyphAt: glyphIndex)
+                            // Snap x: `location.x` is fractional when the font
+                            // advance is fractional, which would smear a 1pt
+                            // stroke across two pixel columns on @1x displays.
+                            x = floor(location.x + origin.x) + 0.5
+                        } else {
+                            // Fallback: blank lines and short lines have no
+                            // glyph at the indent column, so use the
+                            // pre-snapped calculator x. This keeps inherited
+                            // guides flowing through empty lines inside nested
+                            // blocks (e.g. YAML, Python, Swift function bodies).
+                            let snappedX = fallbackGuides[lvl - 1].xPosition
+                            x = snappedX + origin.x
+                        }
+
+                        path.move(to: NSPoint(x: x, y: yTop))
+                        path.line(to: NSPoint(x: x, y: yTop + height))
                     }
                 }
             }
