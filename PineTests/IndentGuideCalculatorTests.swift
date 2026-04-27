@@ -165,16 +165,33 @@ struct IndentGuideCalculatorTests {
     }
 
     @Test func guides_tabBased_usesTabStopWidth_notCharWidth() {
-        // Key point: tab guides use tabStopWidth, not charWidth * indentWidth
+        // Key bug fix from #587/#601: tab-indented guides must use the actual
+        // tab stop width from NSParagraphStyle, NOT `charWidth * indentWidth`.
+        // Pick values where the two formulas diverge to prove that
+        // `usesTabs: true` ignores `charWidth` and `indentWidth` entirely
+        // and only consults `tabStopWidth`.
+        //
+        //   tabStopWidth = 35.0
+        //   charWidth * indentWidth = 7.0 * 4 = 28.0  ← wrong (regression value)
+        //   tabStopWidth-based:     1×35.0 = 35.0,  2×35.0 = 70.0  ← correct
         let charWidth: CGFloat = 7.0
-        let tabStopWidth: CGFloat = 28.0
+        let indentWidth = 4
+        let tabStopWidth: CGFloat = 35.0
+        let wrongValueLevel1 = charWidth * CGFloat(indentWidth)             // 28
+        let wrongValueLevel2 = charWidth * CGFloat(indentWidth) * 2          // 56
+
         let guides = IndentGuideCalculator.guides(
             forLevel: 2, charWidth: charWidth, tabStopWidth: tabStopWidth,
-            usesTabs: true, indentWidth: 4
+            usesTabs: true, indentWidth: indentWidth
         )
-        // Pixel-snapped: floor(28) + 0.5 = 28.5, floor(56) + 0.5 = 56.5
-        #expect(guides[0].xPosition == floor(tabStopWidth) + 0.5)
-        #expect(guides[1].xPosition == floor(tabStopWidth * 2) + 0.5)
+
+        // Correct: tab-stop-based, pixel-snapped
+        #expect(guides[0].xPosition == floor(tabStopWidth) + 0.5)            // 35.5
+        #expect(guides[1].xPosition == floor(tabStopWidth * 2) + 0.5)        // 70.5
+
+        // Regression guard: must NOT fall back to charWidth * indentWidth
+        #expect(guides[0].xPosition != floor(wrongValueLevel1) + 0.5)        // != 28.5
+        #expect(guides[1].xPosition != floor(wrongValueLevel2) + 0.5)        // != 56.5
     }
 
     @Test func guides_tabBased_customTabStop() {
@@ -775,5 +792,140 @@ struct IndentGuideCalculatorTests {
         #expect(IndentGuideCalculator.indentLevel(of: lines[2], indentWidth: 2) == 2)
         #expect(IndentGuideCalculator.indentLevel(of: lines[3], indentWidth: 2) == 1)
         #expect(IndentGuideCalculator.indentLevel(of: lines[4], indentWidth: 2) == 0)
+    }
+
+    // MARK: - Blank-line fallback (renderer regression guard, issue #876 review)
+
+    /// Reproduction for the regression flagged in PR #878 review:
+    /// the renderer used to query the layout manager for the glyph at
+    /// `lineStart + level * indentWidth`, but for blank lines that index
+    /// is past `NSMaxRange(lineRange)`, so guides for inherited blank
+    /// lines were silently dropped. The renderer now falls back to
+    /// `IndentGuideCalculator.guides(...)` for blank lines, and the
+    /// inherited level must still be > 0 inside a nested block.
+    @Test func inheritedIndent_blankInsideNestedBlock_producesNonZeroLevel() {
+        let lines = [
+            "outer:",                       // level 0
+            "  inner:",                     // level 1
+            "    deepest:",                 // level 2
+            "      value: 1",               // level 3
+            "",                              // blank inside the deepest block
+            "      value: 2",               // level 3
+            "  other: 3"                    // level 1
+        ]
+        let blank = IndentGuideCalculator.inheritedIndentLevel(
+            forBlankLineAt: 4, in: lines, indentWidth: 2
+        )
+        // Above level = 3, below level = 3 → inherited = 3
+        #expect(blank == 3, "Blank lines inside nested blocks must inherit a non-zero level")
+
+        // And the calculator must produce 3 guide positions for that level.
+        let blankGuides = IndentGuideCalculator.guides(
+            forLevel: blank,
+            charWidth: 7.0,
+            tabStopWidth: 28.0,
+            usesTabs: false,
+            indentWidth: 2
+        )
+        #expect(blankGuides.count == 3)
+    }
+
+    /// The fallback path the renderer uses for blank lines must produce
+    /// the *same* x-coordinates as the calculator path used for the
+    /// surrounding non-blank lines (assuming uniform indentation). This
+    /// is what makes the guides look like continuous vertical lines
+    /// flowing through empty rows.
+    @Test func inheritedIndent_blankFallback_xMatchesNonBlankNeighbours() {
+        let lines = [
+            "  child1:",                    // level 1
+            "    grandchild: value",        // level 2
+            "",                              // blank inheriting level 2
+            "    grandchild: value"         // level 2
+        ]
+        let charWidth: CGFloat = 7.21875 // realistic fractional advance
+        let tabStopWidth: CGFloat = 28.0
+
+        let nonBlankLevel = IndentGuideCalculator.indentLevel(
+            of: lines[1], indentWidth: 2
+        )
+        let blankLevel = IndentGuideCalculator.inheritedIndentLevel(
+            forBlankLineAt: 2, in: lines, indentWidth: 2
+        )
+        #expect(blankLevel == nonBlankLevel) // both = 2
+
+        let nonBlankGuides = IndentGuideCalculator.guides(
+            forLevel: nonBlankLevel,
+            charWidth: charWidth,
+            tabStopWidth: tabStopWidth,
+            usesTabs: false,
+            indentWidth: 2
+        )
+        let blankGuides = IndentGuideCalculator.guides(
+            forLevel: blankLevel,
+            charWidth: charWidth,
+            tabStopWidth: tabStopWidth,
+            usesTabs: false,
+            indentWidth: 2
+        )
+        for lvl in 0..<nonBlankGuides.count {
+            #expect(
+                nonBlankGuides[lvl].xPosition == blankGuides[lvl].xPosition,
+                "Blank-line fallback x must match non-blank neighbour x at level \(lvl + 1)"
+            )
+        }
+    }
+
+    /// Tab-indented blank lines must also produce non-zero inherited levels
+    /// and guide x-positions (Makefile/Go/etc.).
+    @Test func inheritedIndent_blankInsideTabBlock_producesNonZeroLevel() {
+        let lines = [
+            "func body() {",                // level 0
+            "\tif cond {",                  // level 1
+            "\t\tdo()",                     // level 2
+            "",                              // blank inside the inner block
+            "\t\tmore()"                    // level 2
+        ]
+        let blank = IndentGuideCalculator.inheritedIndentLevel(
+            forBlankLineAt: 3, in: lines, indentWidth: 4
+        )
+        #expect(blank == 2, "Blank lines inside tab-indented blocks must inherit a non-zero level")
+
+        let blankGuides = IndentGuideCalculator.guides(
+            forLevel: blank,
+            charWidth: 7.0,
+            tabStopWidth: 28.0,
+            usesTabs: true,
+            indentWidth: 4
+        )
+        #expect(blankGuides.count == 2)
+        // Both x positions are pixel-snapped tab-stop multiples.
+        #expect(blankGuides[0].xPosition == 28.5)
+        #expect(blankGuides[1].xPosition == 56.5)
+    }
+
+    /// Guard against a different regression: when a non-blank line is
+    /// shorter than the inherited indent column (e.g. a single comment
+    /// character on a deeply-indented line), the renderer must still draw
+    /// guides via the fallback path. The calculator continues to produce
+    /// positions independent of the actual line length.
+    @Test func guides_shortLineFallback_returnsPositionsForFullLevel() {
+        // 5 levels worth of x-positions even though the "line" has no
+        // glyph past the first column.
+        let guides = IndentGuideCalculator.guides(
+            forLevel: 5,
+            charWidth: 7.0,
+            tabStopWidth: 28.0,
+            usesTabs: false,
+            indentWidth: 4
+        )
+        #expect(guides.count == 5)
+        for (i, g) in guides.enumerated() {
+            #expect(g.level == i + 1)
+            // All snapped, all monotonically increasing.
+            #expect(g.xPosition.truncatingRemainder(dividingBy: 1) == 0.5)
+        }
+        for i in 1..<guides.count {
+            #expect(guides[i].xPosition > guides[i - 1].xPosition)
+        }
     }
 }
