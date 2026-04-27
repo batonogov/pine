@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.25.2](https://github.com/batonogov/pine/compare/v1.25.1...v1.25.2) (2026-04-27)
+
+
+### Bug Fixes
+
+* **editor:** align indent guides with pixel-snapped font metrics ([#878](https://github.com/batonogov/pine/issues/878)) ([42c1474](https://github.com/batonogov/pine/commit/42c14743b9bb3337fa107bfdcff89f10733ccaaf))
+
 ## [1.25.1](https://github.com/batonogov/pine/compare/v1.25.0...v1.25.1) (2026-04-24)
 
 
