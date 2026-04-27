@@ -578,6 +578,61 @@ struct IndentGuideCalculatorTests {
         #expect(guides[2].xPosition == 43.5)
     }
 
+    @Test func snappedXPosition_fractionalOrigin_snapsAfterAddingOrigin_spaceBased() throws {
+        // Regression guard for blank-line fallback drawing: the editor gutter
+        // width can be fractional, so adding origin.x after snapping the
+        // container-relative guide puts empty-line guides on a different pixel
+        // column from the glyph-based path used by non-blank lines.
+        let charWidth: CGFloat = 7.21875
+        let originX: CGFloat = 52.44
+        let rawX = CGFloat(2) * charWidth
+
+        let snapped = try #require(IndentGuideCalculator.snappedXPosition(
+            forLevel: 1,
+            charWidth: charWidth,
+            tabStopWidth: 28.0,
+            usesTabs: false,
+            indentWidth: 2,
+            originX: originX
+        ))
+
+        #expect(snapped == floor(rawX + originX) + 0.5)
+
+        let oldFallbackX = IndentGuideCalculator.guides(
+            forLevel: 1,
+            charWidth: charWidth,
+            tabStopWidth: 28.0,
+            usesTabs: false,
+            indentWidth: 2
+        )[0].xPosition + originX
+        #expect(snapped != oldFallbackX)
+    }
+
+    @Test func snappedXPosition_fractionalOrigin_snapsAfterAddingOrigin_tabBased() throws {
+        let tabStopWidth: CGFloat = 28.875
+        let originX: CGFloat = 52.44
+
+        let snapped = try #require(IndentGuideCalculator.snappedXPosition(
+            forLevel: 1,
+            charWidth: 7.0,
+            tabStopWidth: tabStopWidth,
+            usesTabs: true,
+            indentWidth: 4,
+            originX: originX
+        ))
+
+        #expect(snapped == floor(tabStopWidth + originX) + 0.5)
+
+        let oldFallbackX = IndentGuideCalculator.guides(
+            forLevel: 1,
+            charWidth: 7.0,
+            tabStopWidth: tabStopWidth,
+            usesTabs: true,
+            indentWidth: 4
+        )[0].xPosition + originX
+        #expect(snapped != oldFallbackX)
+    }
+
     @Test func guides_fractionalTabStop_snapsCorrectly() {
         // tabStopWidth = 28.875:
         //   level 1: floor(28.875) + 0.5 = 28.5

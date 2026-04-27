@@ -87,20 +87,72 @@ enum IndentGuideCalculator {
     ) -> [IndentGuide] {
         guard level > 0, charWidth > 0 else { return [] }
 
-        return (1...level).map { lvl in
-            let rawX: CGFloat
-            if usesTabs {
-                // Tab-based: position at the tab stop boundary
-                rawX = CGFloat(lvl) * tabStopWidth
-            } else {
-                // Space-based: position at indentWidth * charWidth per level
-                rawX = CGFloat(lvl * indentWidth) * charWidth
+        return (1...level).compactMap { lvl in
+            guard let snappedX = snappedXPosition(
+                forLevel: lvl,
+                charWidth: charWidth,
+                tabStopWidth: tabStopWidth,
+                usesTabs: usesTabs,
+                indentWidth: indentWidth
+            ) else {
+                return nil
             }
-            // Snap to pixel boundary: floor(x) + 0.5 ensures the 1pt-wide
-            // stroke line fills exactly one column of pixels.
-            let snappedX = floor(rawX) + 0.5
+
             return IndentGuide(level: lvl, xPosition: snappedX)
         }
+    }
+
+    /// Computes the raw, unsnapped x-position of one indent guide in text
+    /// container coordinates.
+    ///
+    /// Renderer code that draws in view coordinates should call
+    /// `snappedXPosition(..., originX:)` instead of adding `originX` after
+    /// snapping. A fractional gutter width changes the final pixel column if
+    /// the origin participates in snapping.
+    static func rawXPosition(
+        forLevel level: Int,
+        charWidth: CGFloat,
+        tabStopWidth: CGFloat,
+        usesTabs: Bool,
+        indentWidth: Int
+    ) -> CGFloat? {
+        guard level > 0, charWidth > 0 else { return nil }
+
+        if usesTabs {
+            // Tab-based: position at the tab stop boundary
+            return CGFloat(level) * tabStopWidth
+        } else {
+            // Space-based: position at indentWidth * charWidth per level
+            return CGFloat(level * indentWidth) * charWidth
+        }
+    }
+
+    /// Computes a pixel-snapped x-position for one indent guide.
+    ///
+    /// `originX` defaults to zero for text-container coordinates. Pass the
+    /// text view's `textContainerOrigin.x` when the returned value will be
+    /// drawn directly in view coordinates.
+    static func snappedXPosition(
+        forLevel level: Int,
+        charWidth: CGFloat,
+        tabStopWidth: CGFloat,
+        usesTabs: Bool,
+        indentWidth: Int,
+        originX: CGFloat = 0
+    ) -> CGFloat? {
+        guard let rawX = rawXPosition(
+            forLevel: level,
+            charWidth: charWidth,
+            tabStopWidth: tabStopWidth,
+            usesTabs: usesTabs,
+            indentWidth: indentWidth
+        ) else {
+            return nil
+        }
+
+        // Snap to pixel boundary: floor(x) + 0.5 ensures the 1pt-wide
+        // stroke line fills exactly one column of pixels.
+        return floor(rawX + originX) + 0.5
     }
 
     /// Determines the effective indent level for blank/empty lines
@@ -293,19 +345,6 @@ enum IndentGuideRenderer {
                     let yTop = floor(lineFragmentRect.origin.y + origin.y) + 0.5
                     let height = floor(lineFragmentRect.height)
 
-                    // Pre-compute the calculator-based fallback positions once
-                    // per line; used both for blank lines and as a fallback for
-                    // non-blank lines that are too short to host a glyph at the
-                    // requested indent column (e.g. a comment-only line that
-                    // happens to inherit a deeper guide).
-                    let fallbackGuides = IndentGuideCalculator.guides(
-                        forLevel: level,
-                        charWidth: charWidth,
-                        tabStopWidth: tabStopWidth,
-                        usesTabs: usesTabs,
-                        indentWidth: indentWidth
-                    )
-
                     for lvl in 1...level {
                         let x: CGFloat
                         // Character index of the indent column for this level
@@ -326,11 +365,20 @@ enum IndentGuideRenderer {
                         } else {
                             // Fallback: blank lines and short lines have no
                             // glyph at the indent column, so use the
-                            // pre-snapped calculator x. This keeps inherited
-                            // guides flowing through empty lines inside nested
-                            // blocks (e.g. YAML, Python, Swift function bodies).
-                            let snappedX = fallbackGuides[lvl - 1].xPosition
-                            x = snappedX + origin.x
+                            // calculator x. Snap after adding origin.x so a
+                            // fractional gutter width cannot shift inherited
+                            // guides onto a neighboring pixel column.
+                            guard let snappedX = IndentGuideCalculator.snappedXPosition(
+                                forLevel: lvl,
+                                charWidth: charWidth,
+                                tabStopWidth: tabStopWidth,
+                                usesTabs: usesTabs,
+                                indentWidth: indentWidth,
+                                originX: origin.x
+                            ) else {
+                                continue
+                            }
+                            x = snappedX
                         }
 
                         path.move(to: NSPoint(x: x, y: yTop))
