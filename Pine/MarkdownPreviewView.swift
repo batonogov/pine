@@ -59,7 +59,7 @@ struct MarkdownPreviewView: NSViewRepresentable {
                 self.textView?.textStorage?.setAttributedString(attributed)
             }
             renderWorkItem = workItem
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3, execute: workItem)
+            DispatchQueue.main.asyncAfter(deadline: .now() + UITimings.Delay.standard, execute: workItem)
         }
     }
 }
