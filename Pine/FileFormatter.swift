@@ -89,7 +89,7 @@ struct JSONFileFormatter: FileFormatter {
 /// Prefers `terraform` when both are installed; gracefully no-ops when neither is found.
 enum HCLFileFormatter {
     static func resolve(
-        processRunner: ProcessRunning = RealProcessRunner(),
+        processRunner: @escaping ProcessRunner = runRealProcess,
         resolver: ExternalToolResolver = .fromEnvironment()
     ) -> ExternalFileFormatter {
         let extensions = ["tf", "tfvars", "hcl"]
