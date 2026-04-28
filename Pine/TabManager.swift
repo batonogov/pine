@@ -75,20 +75,6 @@ final class TabManager {
         return result
     }
 
-    /// Back-compat overload used by tests that were written before the formatter
-    /// registry existed. Delegates to the canonical signature with an empty registry.
-    static func contentPreparedForSave(
-        _ content: String,
-        settings: EditorSettings
-    ) -> String {
-        contentPreparedForSave(
-            content,
-            url: URL(fileURLWithPath: "/dev/null"),
-            settings: settings,
-            formatters: FileFormatterRegistry(formatters: [])
-        )
-    }
-
     var activeTab: EditorTab? {
         guard let id = activeTabID else { return nil }
         return tabs.first { $0.id == id }
