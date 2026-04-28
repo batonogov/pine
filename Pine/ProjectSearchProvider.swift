@@ -302,12 +302,9 @@ final class ProjectSearchProvider {
     /// Uses `git ls-files` to find ignored directories in a single git call
     /// (no need to enumerate the filesystem first).
     nonisolated static func gitIgnoredDirectories(rootURL: URL) async -> Set<String> {
-        await withCheckedContinuation { continuation in
-            // nonisolated-check:ignore — enclosing func is `nonisolated static`; closure body is pure
-            DispatchQueue.global(qos: .userInitiated).async {
-                let result = gitIgnoredDirectoriesSync(rootURL: rootURL)
-                continuation.resume(returning: result)
-            }
+        // nonisolated-check:ignore — enclosing func is `nonisolated static`; closure body is pure
+        await runOnBackground {
+            gitIgnoredDirectoriesSync(rootURL: rootURL)
         }
     }
 

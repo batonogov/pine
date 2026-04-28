@@ -287,23 +287,15 @@ nonisolated enum InlineDiffProvider {
     /// Fetches diff hunks for a file asynchronously.
     /// Returns full `git diff HEAD` output parsed into hunks.
     static func fetchHunks(for fileURL: URL, repoURL: URL) async -> [DiffHunk] {
-        await withCheckedContinuation { continuation in
-            DispatchQueue.global(qos: .userInitiated).async {
-                let headCheck = GitStatusProvider.runGit(["rev-parse", "HEAD"], at: repoURL)
-                guard headCheck.exitCode == 0 else {
-                    continuation.resume(returning: [])
-                    return
-                }
-                let result = GitStatusProvider.runGit(
-                    ["diff", "HEAD", "--unified=1", "--", fileURL.path],
-                    at: repoURL
-                )
-                guard result.exitCode == 0, !result.output.isEmpty else {
-                    continuation.resume(returning: [])
-                    return
-                }
-                continuation.resume(returning: parseHunks(result.output))
-            }
+        await runOnBackground {
+            let headCheck = GitStatusProvider.runGit(["rev-parse", "HEAD"], at: repoURL)
+            guard headCheck.exitCode == 0 else { return [] }
+            let result = GitStatusProvider.runGit(
+                ["diff", "HEAD", "--unified=1", "--", fileURL.path],
+                at: repoURL
+            )
+            guard result.exitCode == 0, !result.output.isEmpty else { return [] }
+            return parseHunks(result.output)
         }
     }
 
@@ -313,28 +305,20 @@ nonisolated enum InlineDiffProvider {
     /// The hunk patch is created from the raw diff text.
     @discardableResult
     static func acceptHunk(_ hunk: DiffHunk, fileURL: URL, repoURL: URL) async -> Bool {
-        await withCheckedContinuation { continuation in
-            DispatchQueue.global(qos: .userInitiated).async {
-                // Build a minimal patch from the hunk
-                let patch = buildPatch(hunk: hunk, fileURL: fileURL, repoURL: repoURL)
-                guard !patch.isEmpty else {
-                    continuation.resume(returning: false)
-                    return
-                }
-                let result = applyPatch(patch, args: ["apply", "--cached", "-"], at: repoURL)
-                continuation.resume(returning: result)
-            }
+        await runOnBackground {
+            // Build a minimal patch from the hunk
+            let patch = buildPatch(hunk: hunk, fileURL: fileURL, repoURL: repoURL)
+            guard !patch.isEmpty else { return false }
+            return applyPatch(patch, args: ["apply", "--cached", "-"], at: repoURL)
         }
     }
 
     /// Stages all hunks for a file (equivalent to `git add <file>`).
     @discardableResult
     static func acceptAllHunks(fileURL: URL, repoURL: URL) async -> Bool {
-        await withCheckedContinuation { continuation in
-            DispatchQueue.global(qos: .userInitiated).async {
-                let result = GitStatusProvider.runGit(["add", "--", fileURL.path], at: repoURL)
-                continuation.resume(returning: result.exitCode == 0)
-            }
+        await runOnBackground {
+            let result = GitStatusProvider.runGit(["add", "--", fileURL.path], at: repoURL)
+            return result.exitCode == 0
         }
     }
 
@@ -343,40 +327,25 @@ nonisolated enum InlineDiffProvider {
     /// Reverts a specific hunk by applying the reverse with `git apply --reverse`.
     /// Returns the new file content after reverting, or nil on failure.
     static func revertHunk(_ hunk: DiffHunk, fileURL: URL, repoURL: URL) async -> String? {
-        await withCheckedContinuation { continuation in
-            DispatchQueue.global(qos: .userInitiated).async {
-                let patch = buildPatch(hunk: hunk, fileURL: fileURL, repoURL: repoURL)
-                guard !patch.isEmpty else {
-                    continuation.resume(returning: nil)
-                    return
-                }
-                let success = applyPatch(patch, args: ["apply", "--reverse", "-"], at: repoURL)
-                guard success else {
-                    continuation.resume(returning: nil)
-                    return
-                }
-                // Read updated file content
-                let content = try? String(contentsOf: fileURL, encoding: .utf8)
-                continuation.resume(returning: content)
-            }
+        await runOnBackground { () -> String? in
+            let patch = buildPatch(hunk: hunk, fileURL: fileURL, repoURL: repoURL)
+            guard !patch.isEmpty else { return nil }
+            let success = applyPatch(patch, args: ["apply", "--reverse", "-"], at: repoURL)
+            guard success else { return nil }
+            // Read updated file content
+            return try? String(contentsOf: fileURL, encoding: .utf8)
         }
     }
 
     /// Reverts all changes in a file (equivalent to `git checkout HEAD -- <file>`).
     static func revertAllHunks(fileURL: URL, repoURL: URL) async -> String? {
-        await withCheckedContinuation { continuation in
-            DispatchQueue.global(qos: .userInitiated).async {
-                let result = GitStatusProvider.runGit(
-                    ["checkout", "HEAD", "--", fileURL.path],
-                    at: repoURL
-                )
-                guard result.exitCode == 0 else {
-                    continuation.resume(returning: nil)
-                    return
-                }
-                let content = try? String(contentsOf: fileURL, encoding: .utf8)
-                continuation.resume(returning: content)
-            }
+        await runOnBackground { () -> String? in
+            let result = GitStatusProvider.runGit(
+                ["checkout", "HEAD", "--", fileURL.path],
+                at: repoURL
+            )
+            guard result.exitCode == 0 else { return nil }
+            return try? String(contentsOf: fileURL, encoding: .utf8)
         }
     }
 
