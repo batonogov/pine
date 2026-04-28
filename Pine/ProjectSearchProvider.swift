@@ -46,7 +46,7 @@ final class ProjectSearchProvider {
     /// Maximum matches per file in parallel search to avoid unbounded memory use.
     nonisolated private static let maxResultsPerFile = 100
     /// Debounce interval for search.
-    nonisolated static let debounceInterval: Duration = .milliseconds(300)
+    nonisolated static let debounceInterval: Duration = .seconds(UITimings.Debounce.projectSearch)
 
     private var searchTask: Task<Void, Never>?
 

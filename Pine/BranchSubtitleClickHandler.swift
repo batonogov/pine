@@ -68,7 +68,7 @@ struct BranchSubtitleClickHandler: NSViewRepresentable {
         let view = NSView(frame: .zero)
         view.alphaValue = 0
         // Delayed install — titlebar views may not exist yet at first layout.
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + UITimings.Delay.standard) {
             guard let window = view.window else { return }
             self.installIfNeeded(in: window, coordinator: context.coordinator)
         }

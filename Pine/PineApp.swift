@@ -450,7 +450,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate {
         openNamedWindow?("welcome")
 
         // Give SwiftUI a moment to process, then verify and fallback via AppKit.
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak self] in
+        DispatchQueue.main.asyncAfter(deadline: .now() + UITimings.Delay.short) { [weak self] in
             guard let self else { return }
             self.ensureWelcomeVisible()
         }
@@ -610,7 +610,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate {
 
         // Ensure Welcome is visible if SwiftUI didn't present it automatically
         // (e.g. when window restoration state interferes with defaultLaunchBehavior)
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+        DispatchQueue.main.asyncAfter(deadline: .now() + UITimings.Delay.long) { [weak self] in
             let hasVisibleWindow = NSApp.windows.contains { $0.isVisible && !$0.title.isEmpty }
             if !hasVisibleWindow {
                 self?.showWelcome()
@@ -682,7 +682,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate {
                 openProjectWindow?(projectDir)
                 welcomeWindow?.orderOut(nil)
                 // Open files after project initializes
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
+                DispatchQueue.main.asyncAfter(deadline: .now() + UITimings.Delay.standard) { [weak self] in
                     guard let pm = self?.registry.openProjects[projectDir] else { return }
                     DropHandler.openFilesAsTabs(classified.files, in: pm.activeTabManager)
                 }
