@@ -482,7 +482,7 @@ final class TabManager {
     /// Pinned tabs are preserved unless they are the target tab.
     /// When `force` is true, dirty tabs are closed without confirmation.
     /// When `force` is false, dirty tabs are skipped (caller must handle them).
-    func closeOtherTabs(keeping tabID: UUID, force: Bool = false) {
+    func closeOtherTabs(keeping tabID: UUID, force: Bool) {
         cancelAutoSave()
         let idsToClose = tabs.filter { tab in
             tab.id != tabID && !tab.isPinned && (force || !tab.isDirty)
@@ -503,7 +503,7 @@ final class TabManager {
     /// Pinned tabs are not closed.
     /// When `force` is true, dirty tabs are closed without confirmation.
     /// When `force` is false, dirty tabs are skipped.
-    func closeTabsToTheRight(of tabID: UUID, force: Bool = false) {
+    func closeTabsToTheRight(of tabID: UUID, force: Bool) {
         guard let index = tabs.firstIndex(where: { $0.id == tabID }) else { return }
         cancelAutoSave()
         let rightTabs = tabs[(index + 1)...].filter { tab in
@@ -522,7 +522,7 @@ final class TabManager {
     /// Closes all tabs. Pinned tabs are force-closed.
     /// When `force` is true, dirty tabs are closed without confirmation.
     /// When `force` is false, dirty tabs are skipped.
-    func closeAllTabs(force: Bool = false) {
+    func closeAllTabs(force: Bool) {
         cancelAutoSave()
         let idsToClose = tabs.filter { tab in
             force || !tab.isDirty

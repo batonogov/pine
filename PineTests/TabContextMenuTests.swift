@@ -186,7 +186,7 @@ struct TabContextMenuTests {
         manager.activeTabID = manager.tabs[1].id
         manager.updateContent("modified content")
 
-        manager.closeOtherTabs(keeping: keepID)
+        manager.closeOtherTabs(keeping: keepID, force: false)
 
         // Tab 0 (clean) closed, tab 1 (dirty) kept, tab 2 (kept), tab 3 (clean) closed
         #expect(manager.tabs.count == 2)
@@ -202,7 +202,7 @@ struct TabContextMenuTests {
         manager.activeTabID = manager.tabs[3].id
         manager.updateContent("modified content")
 
-        manager.closeTabsToTheRight(of: pivotID)
+        manager.closeTabsToTheRight(of: pivotID, force: false)
 
         // Tab 2 (clean) closed, tab 3 (dirty) preserved
         #expect(manager.tabs.count == 3)
@@ -218,7 +218,7 @@ struct TabContextMenuTests {
         manager.activeTabID = manager.tabs[1].id
         manager.updateContent("modified content")
 
-        manager.closeAllTabs()
+        manager.closeAllTabs(force: false)
 
         // Only dirty tab remains
         #expect(manager.tabs.count == 1)
