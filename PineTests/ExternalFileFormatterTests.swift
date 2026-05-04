@@ -24,7 +24,7 @@ struct ExternalFileFormatterTests {
             toolName: "testfmt",
             extensions: extensions,
             arguments: arguments,
-            processRunner: runner,
+            processRunner: runner.run,
             timeout: timeout
         )
     }
@@ -124,7 +124,7 @@ struct ExternalFileFormatterTests {
 
     @Test("Integration: formats via real /bin/cat (identity transform)")
     func integrationWithCat() {
-        // RealProcessRunner.run() requires a non-main thread.
+        // runRealProcess() requires a non-main thread.
         // Swift Testing runs on the cooperative executor which may map to main,
         // so we dispatch to a real GCD background thread.
         let semaphore = DispatchSemaphore(value: 0)
@@ -135,8 +135,7 @@ struct ExternalFileFormatterTests {
                 toolPath: "/bin/cat",
                 toolName: "cat",
                 extensions: ["txt"],
-                arguments: [],
-                processRunner: RealProcessRunner()
+                arguments: []
             )
             result = formatter.format("hello world", url: URL(fileURLWithPath: "/tmp/test.txt"))
             semaphore.signal()
@@ -172,7 +171,9 @@ struct ExternalFileFormatterTests {
 
 // MARK: - Mock ProcessRunner
 
-final class MockProcessRunner: ProcessRunning, @unchecked Sendable {
+/// Test double that records the last stdin content and returns canned output.
+/// Exposes its `run` method directly as a `ProcessRunner` closure via `runner.run`.
+nonisolated final class MockProcessRunner: @unchecked Sendable {
     let stdout: String
     let stderr: String
     let exitCode: Int32

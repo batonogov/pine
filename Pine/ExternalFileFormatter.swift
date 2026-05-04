@@ -13,107 +13,106 @@ struct ProcessRunResult: Sendable {
     let timedOut: Bool
 }
 
-/// Abstraction for running external processes. Allows mocking in tests.
-protocol ProcessRunning: Sendable {
-    func run(
-        executablePath: String,
-        arguments: [String],
-        stdin: String,
-        timeout: TimeInterval
-    ) -> ProcessRunResult
-}
+/// Signature for running an external process. Closure-based so tests can inject
+/// behaviour without implementing a protocol — there is only ever one real impl.
+typealias ProcessRunner = @Sendable (
+    _ executablePath: String,
+    _ arguments: [String],
+    _ stdin: String,
+    _ timeout: TimeInterval
+) -> ProcessRunResult
 
-/// Runs a real `Process` with stdin/stdout piping and a timeout.
+/// Default `ProcessRunner` that spawns a real `Process` with stdin/stdout piping
+/// and a timeout.
 ///
-/// **Important:** `run()` blocks the calling thread until the process exits or times out.
-/// Must be called from a background queue — never from the main thread.
-nonisolated struct RealProcessRunner: ProcessRunning {
-    func run(
-        executablePath: String,
-        arguments: [String],
-        stdin: String,
-        timeout: TimeInterval
-    ) -> ProcessRunResult {
-        precondition(!Thread.isMainThread, "RealProcessRunner.run() must not be called on the main thread")
+/// **Important:** This blocks the calling thread until the process exits or
+/// times out. Must be called from a background queue — never from the main thread.
+@Sendable
+nonisolated func runRealProcess(
+    executablePath: String,
+    arguments: [String],
+    stdin: String,
+    timeout: TimeInterval
+) -> ProcessRunResult {
+    precondition(!Thread.isMainThread, "runRealProcess() must not be called on the main thread")
 
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: executablePath)
-        process.arguments = arguments
+    let process = Process()
+    process.executableURL = URL(fileURLWithPath: executablePath)
+    process.arguments = arguments
 
-        let stdinPipe = Pipe()
-        let stdoutPipe = Pipe()
-        let stderrPipe = Pipe()
-        process.standardInput = stdinPipe
-        process.standardOutput = stdoutPipe
-        process.standardError = stderrPipe
+    let stdinPipe = Pipe()
+    let stdoutPipe = Pipe()
+    let stderrPipe = Pipe()
+    process.standardInput = stdinPipe
+    process.standardOutput = stdoutPipe
+    process.standardError = stderrPipe
 
-        do {
-            try process.run()
+    do {
+        try process.run()
 
-            // Write stdin content and close
-            if let data = stdin.data(using: .utf8) {
-                stdinPipe.fileHandleForWriting.write(data)
-            }
-            stdinPipe.fileHandleForWriting.closeFile()
-
-            // Schedule timeout with thread-safe flag via NSLock
-            // (GCD serial queue .sync crashes under Swift 6 cooperative threading
-            //  because swift_task_checkIsolatedSwift triggers dispatch_assert_queue)
-            let timedOutLock = NSLock()
-            nonisolated(unsafe) var timedOutValue = false
-
-            let timer = DispatchSource.makeTimerSource(queue: .global(qos: .utility))
-            timer.schedule(deadline: .now() + timeout)
-            timer.setEventHandler {
-                timedOutLock.lock()
-                timedOutValue = true
-                timedOutLock.unlock()
-                if process.isRunning {
-                    process.terminate()
-                }
-            }
-            timer.resume()
-
-            // Read both pipes concurrently in separate threads to avoid
-            // deadlock when stderr pipe buffer fills up (64KB)
-            let readGroup = DispatchGroup()
-            nonisolated(unsafe) var outData = Data()
-            nonisolated(unsafe) var errData = Data()
-
-            readGroup.enter()
-            DispatchQueue.global().async {
-                outData = stdoutPipe.fileHandleForReading.readDataToEndOfFile()
-                readGroup.leave()
-            }
-
-            readGroup.enter()
-            DispatchQueue.global().async {
-                errData = stderrPipe.fileHandleForReading.readDataToEndOfFile()
-                readGroup.leave()
-            }
-
-            readGroup.wait()
-            process.waitUntilExit()
-            timer.cancel()
-
-            timedOutLock.lock()
-            let didTimeout = timedOutValue
-            timedOutLock.unlock()
-
-            return ProcessRunResult(
-                stdout: String(bytes: outData, encoding: .utf8) ?? "",
-                stderr: String(bytes: errData, encoding: .utf8) ?? "",
-                exitCode: process.terminationStatus,
-                timedOut: didTimeout
-            )
-        } catch {
-            return ProcessRunResult(
-                stdout: "",
-                stderr: error.localizedDescription,
-                exitCode: -1,
-                timedOut: false
-            )
+        // Write stdin content and close
+        if let data = stdin.data(using: .utf8) {
+            stdinPipe.fileHandleForWriting.write(data)
         }
+        stdinPipe.fileHandleForWriting.closeFile()
+
+        // Schedule timeout with thread-safe flag via NSLock
+        // (GCD serial queue .sync crashes under Swift 6 cooperative threading
+        //  because swift_task_checkIsolatedSwift triggers dispatch_assert_queue)
+        let timedOutLock = NSLock()
+        nonisolated(unsafe) var timedOutValue = false
+
+        let timer = DispatchSource.makeTimerSource(queue: .global(qos: .utility))
+        timer.schedule(deadline: .now() + timeout)
+        timer.setEventHandler {
+            timedOutLock.lock()
+            timedOutValue = true
+            timedOutLock.unlock()
+            if process.isRunning {
+                process.terminate()
+            }
+        }
+        timer.resume()
+
+        // Read both pipes concurrently in separate threads to avoid
+        // deadlock when stderr pipe buffer fills up (64KB)
+        let readGroup = DispatchGroup()
+        nonisolated(unsafe) var outData = Data()
+        nonisolated(unsafe) var errData = Data()
+
+        readGroup.enter()
+        DispatchQueue.global().async {
+            outData = stdoutPipe.fileHandleForReading.readDataToEndOfFile()
+            readGroup.leave()
+        }
+
+        readGroup.enter()
+        DispatchQueue.global().async {
+            errData = stderrPipe.fileHandleForReading.readDataToEndOfFile()
+            readGroup.leave()
+        }
+
+        readGroup.wait()
+        process.waitUntilExit()
+        timer.cancel()
+
+        timedOutLock.lock()
+        let didTimeout = timedOutValue
+        timedOutLock.unlock()
+
+        return ProcessRunResult(
+            stdout: String(bytes: outData, encoding: .utf8) ?? "",
+            stderr: String(bytes: errData, encoding: .utf8) ?? "",
+            exitCode: process.terminationStatus,
+            timedOut: didTimeout
+        )
+    } catch {
+        return ProcessRunResult(
+            stdout: "",
+            stderr: error.localizedDescription,
+            exitCode: -1,
+            timedOut: false
+        )
     }
 }
 
@@ -141,7 +140,7 @@ nonisolated final class ExternalFileFormatter: FileFormatter, Sendable {
     /// Resolved path to the executable, or nil if not found.
     let toolPath: String?
 
-    private let processRunner: ProcessRunning
+    private let processRunner: ProcessRunner
 
     /// Creates an external file formatter that auto-resolves the tool from PATH.
     ///
@@ -149,13 +148,14 @@ nonisolated final class ExternalFileFormatter: FileFormatter, Sendable {
     ///   - toolName: Name of the tool binary.
     ///   - extensions: File extensions to handle (without dot, case-insensitive).
     ///   - arguments: Arguments to pass to the tool.
-    ///   - processRunner: Process runner implementation (use `RealProcessRunner` in production).
+    ///   - processRunner: Closure that runs the external process. Defaults to
+    ///     `runRealProcess`; tests inject their own.
     ///   - timeout: Maximum execution time (default 5 seconds).
     init(
         toolName: String,
         extensions: [String],
         arguments: [String],
-        processRunner: ProcessRunning = RealProcessRunner(),
+        processRunner: @escaping ProcessRunner = runRealProcess,
         timeout: TimeInterval = 5.0
     ) {
         self.toolName = toolName
@@ -173,14 +173,15 @@ nonisolated final class ExternalFileFormatter: FileFormatter, Sendable {
     ///   - toolName: Display name of the tool.
     ///   - extensions: File extensions to handle (without dot, case-insensitive).
     ///   - arguments: Arguments to pass to the tool.
-    ///   - processRunner: Process runner implementation (use `RealProcessRunner` in production).
+    ///   - processRunner: Closure that runs the external process. Defaults to
+    ///     `runRealProcess`; tests inject their own.
     ///   - timeout: Maximum execution time (default 5 seconds).
     init(
         toolPath: String?,
         toolName: String,
         extensions: [String],
         arguments: [String],
-        processRunner: ProcessRunning = RealProcessRunner(),
+        processRunner: @escaping ProcessRunner = runRealProcess,
         timeout: TimeInterval = 5.0
     ) {
         self.toolName = toolName
@@ -202,7 +203,7 @@ nonisolated final class ExternalFileFormatter: FileFormatter, Sendable {
             return content
         }
 
-        // Dispatch to a background queue so RealProcessRunner's main-thread
+        // Dispatch to a background queue so runRealProcess's main-thread
         // precondition is satisfied. The caller (trySaveTab) runs on main;
         // DispatchGroup.wait() blocks it briefly while the process executes.
         nonisolated(unsafe) var result = ProcessRunResult(
@@ -211,11 +212,11 @@ nonisolated final class ExternalFileFormatter: FileFormatter, Sendable {
         let group = DispatchGroup()
         group.enter()
         DispatchQueue.global(qos: .userInitiated).async {
-            result = self.processRunner.run(
-                executablePath: executablePath,
-                arguments: self.arguments,
-                stdin: content,
-                timeout: self.timeout
+            result = self.processRunner(
+                executablePath,
+                self.arguments,
+                content,
+                self.timeout
             )
             group.leave()
         }
