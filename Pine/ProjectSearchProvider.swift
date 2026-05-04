@@ -46,7 +46,7 @@ final class ProjectSearchProvider {
     /// Maximum matches per file in parallel search to avoid unbounded memory use.
     nonisolated private static let maxResultsPerFile = 100
     /// Debounce interval for search.
-    nonisolated static let debounceInterval: Duration = .milliseconds(300)
+    nonisolated static let debounceInterval: Duration = .seconds(UITimings.Debounce.projectSearch)
 
     private var searchTask: Task<Void, Never>?
 
@@ -302,12 +302,9 @@ final class ProjectSearchProvider {
     /// Uses `git ls-files` to find ignored directories in a single git call
     /// (no need to enumerate the filesystem first).
     nonisolated static func gitIgnoredDirectories(rootURL: URL) async -> Set<String> {
-        await withCheckedContinuation { continuation in
-            // nonisolated-check:ignore — enclosing func is `nonisolated static`; closure body is pure
-            DispatchQueue.global(qos: .userInitiated).async {
-                let result = gitIgnoredDirectoriesSync(rootURL: rootURL)
-                continuation.resume(returning: result)
-            }
+        // nonisolated-check:ignore — enclosing func is `nonisolated static`; closure body is pure
+        await runOnBackground {
+            gitIgnoredDirectoriesSync(rootURL: rootURL)
         }
     }
 

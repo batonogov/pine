@@ -67,19 +67,20 @@ final class WorkspaceManager {
     /// never resumes after a newer one has started.
     private var loadingTask: Task<Void, Never>?
 
-    /// `FileSystemWatcher` debounce interval. Short enough (150 ms) that
-    /// changes made in the built-in terminal or by external processes
-    /// appear in the sidebar almost immediately while still coalescing
-    /// rapid bursts (npm install, git checkout) into a handful of refreshes.
+    /// `FileSystemWatcher` debounce interval. Short enough that changes
+    /// made in the built-in terminal or by external processes appear in
+    /// the sidebar almost immediately while still coalescing rapid bursts
+    /// (npm install, git checkout) into a handful of refreshes.
     ///
     /// Note: a previous post-refresh suppression window (`suppressWatcherUntil`)
     /// was removed in the fix for issue #839 — it was responsible for
     /// swallowing genuine external FSEvents that happened to land in the
-    /// 150 ms after any in-app sidebar action (rename / create / delete).
-    /// `loadGeneration` already guarantees that overlapping refreshes never
-    /// corrupt `rootNodes`, and `refreshFileTreeAsync` is cheap enough that
-    /// the duplicate cost of an echoed event is invisible to users.
-    static let watcherDebounce: TimeInterval = 0.15
+    /// debounce window after any in-app sidebar action (rename / create /
+    /// delete). `loadGeneration` already guarantees that overlapping
+    /// refreshes never corrupt `rootNodes`, and `refreshFileTreeAsync` is
+    /// cheap enough that the duplicate cost of an echoed event is invisible
+    /// to users.
+    static let watcherDebounce: TimeInterval = UITimings.Debounce.fileWatcher
 
     /// Schedules a debounced `onRootNodesChanged` notification.
     /// Cancels any pending notification so rapid updates coalesce into one.

@@ -197,7 +197,7 @@ struct ProjectSearchModifier: ViewModifier {
 
     /// Finds the NSSearchToolbarItem in the window toolbar and sets preferred width (Finder-style).
     private func configureSearchToolbarItem() {
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + UITimings.Delay.standard) {
             guard let window = NSApp.keyWindow,
                   let toolbar = window.toolbar else { return }
             for item in toolbar.items {

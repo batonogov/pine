@@ -36,7 +36,7 @@ struct PineAppMenuCommandsTests {
     @Test
     func notificationNamesAreUniqueAndNonEmpty() {
         let names: [Notification.Name] = [
-            .openFolder, .closeTab, .switchBranch, .goToLine,
+            .openFolder, .closeTab, .goToLine,
             .findInFile, .findAndReplace, .findNext, .findPrevious,
             .useSelectionForFind, .toggleWordWrap, .toggleComment,
             .showProjectSearch, .navigateChange, .foldCode,
