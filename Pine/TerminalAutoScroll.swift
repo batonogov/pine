@@ -77,7 +77,16 @@ enum TerminalAutoScroll {
     /// - Linear ramp: 1 line per `pointsPerLineStep` points beyond the edge.
     /// - Always at least 1 line once `distance > 0`, ceilinged at `maxLinesPerTick`.
     /// - Defensive against negative inputs (treats them as 0).
+    /// - Defensive against `NaN` / `-infinity` (treated as 0) and `+infinity`
+    ///   (clamped to `maxLinesPerTick`). `Int(_:)` of a non-finite `Double` is
+    ///   undefined behaviour in Swift (traps in debug, returns garbage in
+    ///   release), so we must intercept before constructing the integer.
     static func linesPerTick(forDistance distance: CGFloat) -> Int {
+        guard distance.isFinite else {
+            // +infinity should saturate at the cap; -infinity / NaN are
+            // treated as "no scroll" so they cannot stall or crash the loop.
+            return distance > 0 ? maxLinesPerTick : 0
+        }
         guard distance > 0 else { return 0 }
         let raw = Int((distance / pointsPerLineStep).rounded(.down))
         let withFloor = max(1, raw)

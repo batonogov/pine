@@ -43,7 +43,43 @@ class TerminalScrollInterceptor: NSView {
     private var lastDragEvent: NSEvent?
     private var isMouseDown = false
 
-    // Forward mouse clicks, drags, and keyboard events to the terminal.
+    /// Global mouse-up monitor installed only while auto-scroll is active.
+    ///
+    /// AppKit only delivers `mouseUp` to a view when the press began inside
+    /// it AND the release happens while the app is key. If the user drags
+    /// past the window, releases over another app (Cmd+Tab, Mission Control,
+    /// the menu bar), or releases over a different window, the local
+    /// `mouseUp` override never fires and the auto-scroll timer would spin
+    /// forever. A global monitor catches the release in those cases.
+    private var globalMouseUpMonitor: Any?
+
+    /// Window-resign-key observer installed only while auto-scroll is active.
+    ///
+    /// Belt-and-braces alongside `globalMouseUpMonitor`: if focus moves to
+    /// another app (Mission Control, Spotlight, screen saver), the global
+    /// monitor may not see the release at all. Losing key status is a
+    /// reliable upper bound — there is nothing useful auto-scroll can do
+    /// against an unfocused window.
+    private var windowResignKeyObserver: NSObjectProtocol?
+
+    /// Test hook: whether the auto-scroll timer is currently running.
+    /// Internal so `@testable import Pine` can assert lifecycle correctness
+    /// without coupling tests to private state.
+    internal var isAutoScrollActive: Bool { autoScrollTimer != nil }
+
+    /// Test-only entry point that starts the auto-scroll timer (and the
+    /// associated safety-net subscriptions) without requiring a real
+    /// terminal view, NSEvent, or scrollback buffer. Tests use this to
+    /// verify that the various stop paths (window resign key, global mouse
+    /// up, active tab change, mouseUp, drag back into bounds) actually tear
+    /// the timer down. Production code never calls this.
+    internal func startAutoScrollForTesting() {
+        isMouseDown = true
+        if autoScrollTimer == nil {
+            startAutoScrollTimer()
+        }
+    }
+
     override func mouseDown(with event: NSEvent) {
         isMouseDown = true
         stopAutoScroll()
@@ -85,6 +121,31 @@ class TerminalScrollInterceptor: NSView {
             stopAutoScroll()
             isMouseDown = false
         }
+    }
+
+    /// Called when the active terminal tab changes, so an in-flight
+    /// auto-scroll on the outgoing tab cannot keep ticking against the
+    /// incoming tab's coordinates. Internal so the container view and
+    /// tests can both invoke it deterministically.
+    internal func handleActiveTabChange() {
+        isMouseDown = false
+        stopAutoScroll()
+    }
+
+    /// Test hook for the global mouse-up safety net. Calling this directly
+    /// is equivalent to a `leftMouseUp` arriving while focus is elsewhere
+    /// (Mission Control, Cmd+Tab, the menu bar, another app).
+    internal func handleGlobalMouseUp() {
+        isMouseDown = false
+        stopAutoScroll()
+    }
+
+    /// Test hook for the window-resign-key safety net. Calling this directly
+    /// is equivalent to the host window losing key status while a drag is
+    /// in flight.
+    internal func handleWindowResignKey() {
+        isMouseDown = false
+        stopAutoScroll()
     }
 
     // No `deinit` cleanup is required: `viewWillMove(toWindow: nil)` is the
@@ -149,11 +210,47 @@ class TerminalScrollInterceptor: NSView {
         // (default mode pauses while AppKit drives an event-tracking loop).
         RunLoop.main.add(timer, forMode: .common)
         autoScrollTimer = timer
+        installLostMouseUpSafetyNets()
     }
 
     private func stopAutoScroll() {
         autoScrollTimer?.invalidate()
         autoScrollTimer = nil
+        removeLostMouseUpSafetyNets()
+    }
+
+    /// Installs the global mouse-up monitor and window-resign-key observer
+    /// so the auto-scroll loop cannot leak past the end of the user's drag.
+    /// Idempotent — repeated calls do not stack monitors.
+    private func installLostMouseUpSafetyNets() {
+        if globalMouseUpMonitor == nil {
+            globalMouseUpMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseUp]) { [weak self] _ in
+                // `addGlobalMonitorForEvents` callbacks fire on the main
+                // thread per AppKit docs; safe to mutate UI state directly.
+                self?.handleGlobalMouseUp()
+            }
+        }
+        if windowResignKeyObserver == nil, let win = window {
+            windowResignKeyObserver = NotificationCenter.default.addObserver(
+                forName: NSWindow.didResignKeyNotification,
+                object: win,
+                queue: .main
+            ) { [weak self] _ in
+                self?.handleWindowResignKey()
+            }
+        }
+    }
+
+    /// Removes both safety-net subscriptions if installed. Idempotent.
+    private func removeLostMouseUpSafetyNets() {
+        if let monitor = globalMouseUpMonitor {
+            NSEvent.removeMonitor(monitor)
+            globalMouseUpMonitor = nil
+        }
+        if let observer = windowResignKeyObserver {
+            NotificationCenter.default.removeObserver(observer)
+            windowResignKeyObserver = nil
+        }
     }
 
     @objc private func autoScrollTick(_ timer: Timer) {
@@ -252,6 +349,9 @@ class TerminalContainerView: NSView {
 
     func showTab(_ tab: TerminalTab?) {
         guard let tab else {
+            // Tab cleared (terminal pane closed) — kill any in-flight
+            // auto-scroll so it cannot tick against a now-detached view.
+            scrollInterceptor.handleActiveTabChange()
             subviews.forEach { $0.removeFromSuperview() }
             currentTabID = nil
             scrollInterceptor.terminalView = nil
@@ -259,6 +359,10 @@ class TerminalContainerView: NSView {
         }
         let tabChanged = tab.id != currentTabID || tab.terminalView.superview !== self
         if tabChanged {
+            // Auto-scroll started against the *outgoing* tab — stop it before
+            // we swap the underlying terminalView so the next tick cannot
+            // scroll the freshly-installed tab using stale coordinates.
+            scrollInterceptor.handleActiveTabChange()
             subviews.forEach { $0.removeFromSuperview() }
             currentTabID = tab.id
             let effectiveBounds = bounds.size.width > 0 && bounds.size.height > 0
