@@ -21,6 +21,17 @@ struct EditorSettingsTests {
         return defaults
     }
 
+    /// Calls `TabManager.contentPreparedForSave` with a sentinel URL and an empty
+    /// formatter registry — these tests exercise the whitespace/newline rules only.
+    private func prepared(_ content: String, settings: EditorSettings) -> String {
+        TabManager.contentPreparedForSave(
+            content,
+            url: URL(fileURLWithPath: "/dev/null"),
+            settings: settings,
+            formatters: FileFormatterRegistry(formatters: [])
+        )
+    }
+
     @Test("Defaults to enabled when no value stored")
     func defaultsEnabled() {
         let defaults = makeIsolatedDefaults()
@@ -68,7 +79,7 @@ struct EditorSettingsTests {
         let defaults = makeIsolatedDefaults()
         let settings = EditorSettings(defaults: defaults)
         let input = "hello   \nworld"
-        let output = TabManager.contentPreparedForSave(input, settings: settings)
+        let output = prepared(input, settings: settings)
         #expect(output == "hello\nworld\n")
     }
 
@@ -79,7 +90,7 @@ struct EditorSettingsTests {
         settings.insertFinalNewline = false
         settings.stripTrailingWhitespace = false
         let input = "hello   \nworld"
-        #expect(TabManager.contentPreparedForSave(input, settings: settings) == input)
+        #expect(prepared(input, settings: settings) == input)
     }
 
     @Test("contentPreparedForSave with only stripping enabled")
@@ -88,7 +99,7 @@ struct EditorSettingsTests {
         let settings = EditorSettings(defaults: defaults)
         settings.insertFinalNewline = false
         let input = "hello   \nworld  "
-        #expect(TabManager.contentPreparedForSave(input, settings: settings) == "hello\nworld")
+        #expect(prepared(input, settings: settings) == "hello\nworld")
     }
 
     @Test("contentPreparedForSave with only newline enabled")
@@ -97,7 +108,7 @@ struct EditorSettingsTests {
         let settings = EditorSettings(defaults: defaults)
         settings.stripTrailingWhitespace = false
         let input = "hello   \nworld"
-        #expect(TabManager.contentPreparedForSave(input, settings: settings) == "hello   \nworld\n")
+        #expect(prepared(input, settings: settings) == "hello   \nworld\n")
     }
 
     @Test("contentPreparedForSave preserves CRLF style")
@@ -105,13 +116,13 @@ struct EditorSettingsTests {
         let defaults = makeIsolatedDefaults()
         let settings = EditorSettings(defaults: defaults)
         let input = "hello  \r\nworld"
-        #expect(TabManager.contentPreparedForSave(input, settings: settings) == "hello\r\nworld\r\n")
+        #expect(prepared(input, settings: settings) == "hello\r\nworld\r\n")
     }
 
     @Test("contentPreparedForSave leaves empty content empty")
     func preparedEmpty() {
         let defaults = makeIsolatedDefaults()
         let settings = EditorSettings(defaults: defaults)
-        #expect(TabManager.contentPreparedForSave("", settings: settings) == "")
+        #expect(prepared("", settings: settings) == "")
     }
 }

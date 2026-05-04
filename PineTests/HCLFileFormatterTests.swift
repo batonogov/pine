@@ -25,7 +25,7 @@ struct HCLFileFormatterTests {
             toolName: toolName,
             extensions: extensions,
             arguments: arguments,
-            processRunner: runner
+            processRunner: runner.run
         )
     }
 
@@ -88,7 +88,7 @@ struct HCLFileFormatterTests {
         // Use searchDirectories init to avoid well-known dirs (which may contain real terraform)
         let resolver = ExternalToolResolver(searchDirectories: [tempDir.path])
         let runner = MockProcessRunner(stdout: "formatted by tofu", stderr: "", exitCode: 0)
-        let formatter = HCLFileFormatter.resolve(processRunner: runner, resolver: resolver)
+        let formatter = HCLFileFormatter.resolve(processRunner: runner.run, resolver: resolver)
 
         #expect(formatter.toolName == "tofu")
         #expect(formatter.toolPath == tofuPath.path)
@@ -126,7 +126,7 @@ struct HCLFileFormatterTests {
             toolName: "terraform",
             extensions: ["tf", "tfvars", "hcl"],
             arguments: ["fmt", "-"],
-            processRunner: runner,
+            processRunner: runner.run,
             timeout: 0.1
         )
         let result = formatter.format("resource {}", url: URL(fileURLWithPath: "/project/main.tf"))
@@ -190,7 +190,7 @@ struct HCLFileFormatterTests {
         // Use searchDirectories init for isolation from system-installed tools
         let resolver = ExternalToolResolver(searchDirectories: [tempDir.path])
         let runner = MockProcessRunner(stdout: "formatted", stderr: "", exitCode: 0)
-        let formatter = HCLFileFormatter.resolve(processRunner: runner, resolver: resolver)
+        let formatter = HCLFileFormatter.resolve(processRunner: runner.run, resolver: resolver)
 
         #expect(formatter.toolName == "terraform")
         #expect(formatter.toolPath == tempDir.appendingPathComponent("terraform").path)

@@ -566,7 +566,12 @@ struct TabManagerEdgeTests {
         settings.insertFinalNewline = false
         settings.formatOnSave = false
 
-        let result = TabManager.contentPreparedForSave("hello  \n", settings: settings)
+        let result = TabManager.contentPreparedForSave(
+            "hello  \n",
+            url: URL(fileURLWithPath: "/dev/null"),
+            settings: settings,
+            formatters: FileFormatterRegistry(formatters: [])
+        )
         #expect(result == "hello  \n")
     }
 
@@ -577,7 +582,12 @@ struct TabManagerEdgeTests {
         settings.stripTrailingWhitespace = true
         settings.insertFinalNewline = false
 
-        let result = TabManager.contentPreparedForSave("hello   \n", settings: settings)
+        let result = TabManager.contentPreparedForSave(
+            "hello   \n",
+            url: URL(fileURLWithPath: "/dev/null"),
+            settings: settings,
+            formatters: FileFormatterRegistry(formatters: [])
+        )
         #expect(result == "hello\n")
     }
 
@@ -588,7 +598,12 @@ struct TabManagerEdgeTests {
         settings.stripTrailingWhitespace = false
         settings.insertFinalNewline = true
 
-        let result = TabManager.contentPreparedForSave("hello", settings: settings)
+        let result = TabManager.contentPreparedForSave(
+            "hello",
+            url: URL(fileURLWithPath: "/dev/null"),
+            settings: settings,
+            formatters: FileFormatterRegistry(formatters: [])
+        )
         #expect(result == "hello\n")
     }
 

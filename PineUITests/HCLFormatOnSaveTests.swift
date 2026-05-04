@@ -5,7 +5,7 @@
 //  UI tests for HCL/Terraform format-on-save.
 //  Verifies the app does not crash when saving .tf files
 //  with terraform/tofu installed (issue: precondition failure
-//  in RealProcessRunner on main thread).
+//  in runRealProcess on main thread).
 //
 
 import XCTest
