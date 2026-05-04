@@ -1,5 +1,22 @@
 # Changelog
 
+## [1.25.5](https://github.com/batonogov/pine/compare/v1.25.4...v1.25.5) (2026-05-04)
+
+
+### Bug Fixes
+
+* **terminal:** start PTY and redraw when adding second tab in same pane ([#921](https://github.com/batonogov/pine/issues/921)) ([db58615](https://github.com/batonogov/pine/commit/db58615ffa43f8fd57b5aa374c92c8e4b78727a6))
+
+
+### Code Refactoring
+
+* remove ProcessRunning protocol, force defaults, contentPreparedForSave overload ([#902](https://github.com/batonogov/pine/issues/902)) ([#907](https://github.com/batonogov/pine/issues/907)) ([249bdcf](https://github.com/batonogov/pine/commit/249bdcf9dbc6a987564209d86166746c882d8d5c))
+
+
+### Documentation
+
+* update CLAUDE.md with recent features and fixes ([#875](https://github.com/batonogov/pine/issues/875)) ([729ba15](https://github.com/batonogov/pine/commit/729ba1563f585ad082bef1710b24b48ba2e637ea))
+
 ## [1.25.4](https://github.com/batonogov/pine/compare/v1.25.3...v1.25.4) (2026-05-04)
 
 
