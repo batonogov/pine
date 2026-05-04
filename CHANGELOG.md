@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.25.4](https://github.com/batonogov/pine/compare/v1.25.3...v1.25.4) (2026-05-04)
+
+
+### Bug Fixes
+
+* **terminal:** auto-scroll scrollback when dragging selection past view bounds ([#915](https://github.com/batonogov/pine/issues/915)) ([#916](https://github.com/batonogov/pine/issues/916)) ([37078b7](https://github.com/batonogov/pine/commit/37078b76862b13e5bc876d93e8d848fe3cce390d))
+
 ## [1.25.3](https://github.com/batonogov/pine/compare/v1.25.2...v1.25.3) (2026-04-28)
 
 
