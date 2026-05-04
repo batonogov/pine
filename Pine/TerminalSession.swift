@@ -19,6 +19,12 @@ import SwiftTerm
 /// Scroll events are handled separately via `NSEvent.addLocalMonitorForEvents`
 /// on `TerminalContainerView` because AppKit on macOS 26 does not dispatch
 /// `scrollWheel` to overlay views — events go directly to SwiftTerm's view.
+///
+/// While the user drags a selection past the top/bottom edges, the
+/// interceptor runs an auto-scroll timer that scrolls SwiftTerm's
+/// scrollback and replays the last drag event so the selection keeps
+/// extending — restoring the standard macOS `NSTextView` behaviour
+/// missing from SwiftTerm 1.13.0 (issue #915).
 class TerminalScrollInterceptor: NSView {
 
     /// The terminal view underneath this overlay.
@@ -31,15 +37,68 @@ class TerminalScrollInterceptor: NSView {
         return self
     }
 
-    // Forward mouse clicks, drags, and keyboard events to the terminal.
+    // MARK: - Auto-scroll-on-drag state
+
+    private var autoScrollTimer: Timer?
+    private var lastDragEvent: NSEvent?
+    private var isMouseDown = false
+
+    /// Global mouse-up monitor installed only while auto-scroll is active.
+    ///
+    /// AppKit only delivers `mouseUp` to a view when the press began inside
+    /// it AND the release happens while the app is key. If the user drags
+    /// past the window, releases over another app (Cmd+Tab, Mission Control,
+    /// the menu bar), or releases over a different window, the local
+    /// `mouseUp` override never fires and the auto-scroll timer would spin
+    /// forever. A global monitor catches the release in those cases.
+    private var globalMouseUpMonitor: Any?
+
+    /// Window-resign-key observer installed only while auto-scroll is active.
+    ///
+    /// Belt-and-braces alongside `globalMouseUpMonitor`: if focus moves to
+    /// another app (Mission Control, Spotlight, screen saver), the global
+    /// monitor may not see the release at all. Losing key status is a
+    /// reliable upper bound — there is nothing useful auto-scroll can do
+    /// against an unfocused window.
+    private var windowResignKeyObserver: NSObjectProtocol?
+
+    /// Test hook: whether the auto-scroll timer is currently running.
+    /// Internal so `@testable import Pine` can assert lifecycle correctness
+    /// without coupling tests to private state.
+    internal var isAutoScrollActive: Bool { autoScrollTimer != nil }
+
+    #if DEBUG
+    /// Test-only entry point that starts the auto-scroll timer (and the
+    /// associated safety-net subscriptions) without requiring a real
+    /// terminal view, NSEvent, or scrollback buffer. Tests use this to
+    /// verify that the various stop paths (window resign key, global mouse
+    /// up, active tab change, mouseUp, drag back into bounds) actually tear
+    /// the timer down. Production code never calls this.
+    internal func startAutoScrollForTesting() {
+        isMouseDown = true
+        if autoScrollTimer == nil {
+            startAutoScrollTimer()
+        }
+    }
+    #endif
+
     override func mouseDown(with event: NSEvent) {
+        isMouseDown = true
+        stopAutoScroll()
         if let tv = terminalView {
             window?.makeFirstResponder(tv)
             tv.mouseDown(with: event)
         }
     }
-    override func mouseUp(with event: NSEvent) { terminalView?.mouseUp(with: event) }
-    override func mouseDragged(with event: NSEvent) { terminalView?.mouseDragged(with: event) }
+    override func mouseUp(with event: NSEvent) {
+        isMouseDown = false
+        stopAutoScroll()
+        terminalView?.mouseUp(with: event)
+    }
+    override func mouseDragged(with event: NSEvent) {
+        terminalView?.mouseDragged(with: event)
+        updateAutoScroll(for: event)
+    }
     override func mouseMoved(with event: NSEvent) { terminalView?.mouseMoved(with: event) }
     override func rightMouseDown(with event: NSEvent) {
         if let tv = terminalView {
@@ -55,6 +114,201 @@ class TerminalScrollInterceptor: NSView {
     override func flagsChanged(with event: NSEvent) { terminalView?.flagsChanged(with: event) }
 
     override var acceptsFirstResponder: Bool { false }
+
+    override func viewWillMove(toWindow newWindow: NSWindow?) {
+        super.viewWillMove(toWindow: newWindow)
+        // Window detach (tab close, app quit) — drop the timer so it cannot
+        // fire against a dangling terminal view.
+        if newWindow == nil {
+            stopAutoScroll()
+            isMouseDown = false
+        }
+    }
+
+    /// Called when the active terminal tab changes, so an in-flight
+    /// auto-scroll on the outgoing tab cannot keep ticking against the
+    /// incoming tab's coordinates. Internal so the container view and
+    /// tests can both invoke it deterministically.
+    internal func handleActiveTabChange() {
+        isMouseDown = false
+        stopAutoScroll()
+    }
+
+    /// Test hook for the global mouse-up safety net. Calling this directly
+    /// is equivalent to a `leftMouseUp` arriving while focus is elsewhere
+    /// (Mission Control, Cmd+Tab, the menu bar, another app).
+    internal func handleGlobalMouseUp() {
+        isMouseDown = false
+        stopAutoScroll()
+    }
+
+    /// Test hook for the window-resign-key safety net. Calling this directly
+    /// is equivalent to the host window losing key status while a drag is
+    /// in flight.
+    internal func handleWindowResignKey() {
+        isMouseDown = false
+        stopAutoScroll()
+    }
+
+    // No `deinit` cleanup is required: `viewWillMove(toWindow: nil)` is the
+    // last call AppKit makes before the view is torn down (tab close, app
+    // quit), and we invalidate the timer there. Touching `autoScrollTimer`
+    // from a nonisolated `deinit` would require unsafe Sendable hops; the
+    // window-detach path is sufficient because the timer always retains
+    // `self`, so this view cannot deallocate while the timer is alive.
+
+    // MARK: - Auto-scroll-on-drag implementation
+
+    /// Updates the auto-scroll timer in response to a `mouseDragged` event.
+    ///
+    /// - Stores the latest event for the next timer tick to replay.
+    /// - Starts/keeps the timer running while the cursor is outside the
+    ///   bounds AND the terminal can actually scroll in that direction.
+    /// - Stops the timer the moment the cursor returns to the bounds, the
+    ///   user enters the alternate screen / a TUI app with mouse reporting,
+    ///   or the scrollback hits the corresponding edge.
+    private func updateAutoScroll(for event: NSEvent) {
+        lastDragEvent = event
+        guard let terminalView, isMouseDown else {
+            stopAutoScroll()
+            return
+        }
+
+        // Disable for TUI apps / alternate screen — selection there is
+        // app-driven and an auto-scroll would corrupt mouse reporting.
+        let term = terminalView.getTerminal()
+        if term.mouseMode != .off || term.isCurrentBufferAlternate {
+            stopAutoScroll()
+            return
+        }
+
+        let point = convert(event.locationInWindow, from: nil)
+        guard let direction = TerminalAutoScroll.direction(forPoint: point, in: bounds) else {
+            stopAutoScroll()
+            return
+        }
+
+        // Already pinned to the edge of scrollback in this direction —
+        // running a timer would just burn CPU. Bail out.
+        if !canScroll(direction: direction, in: terminalView) {
+            stopAutoScroll()
+            return
+        }
+
+        if autoScrollTimer == nil {
+            startAutoScrollTimer()
+        }
+    }
+
+    private func startAutoScrollTimer() {
+        let timer = Timer(
+            timeInterval: TerminalAutoScroll.tickInterval,
+            target: self,
+            selector: #selector(autoScrollTick(_:)),
+            userInfo: nil,
+            repeats: true
+        )
+        // Common run-loop mode keeps the timer firing during mouse tracking
+        // (default mode pauses while AppKit drives an event-tracking loop).
+        RunLoop.main.add(timer, forMode: .common)
+        autoScrollTimer = timer
+        installLostMouseUpSafetyNets()
+    }
+
+    private func stopAutoScroll() {
+        autoScrollTimer?.invalidate()
+        autoScrollTimer = nil
+        removeLostMouseUpSafetyNets()
+    }
+
+    /// Installs the global mouse-up monitor and window-resign-key observer
+    /// so the auto-scroll loop cannot leak past the end of the user's drag.
+    /// Idempotent — repeated calls do not stack monitors.
+    private func installLostMouseUpSafetyNets() {
+        if globalMouseUpMonitor == nil {
+            globalMouseUpMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseUp]) { [weak self] _ in
+                // `addGlobalMonitorForEvents` callbacks fire on the main
+                // thread per AppKit docs; safe to mutate UI state directly.
+                self?.handleGlobalMouseUp()
+            }
+        }
+        if windowResignKeyObserver == nil, let win = window {
+            windowResignKeyObserver = NotificationCenter.default.addObserver(
+                forName: NSWindow.didResignKeyNotification,
+                object: win,
+                queue: .main
+            ) { [weak self] _ in
+                self?.handleWindowResignKey()
+            }
+        }
+    }
+
+    /// Removes both safety-net subscriptions if installed. Idempotent.
+    private func removeLostMouseUpSafetyNets() {
+        if let monitor = globalMouseUpMonitor {
+            NSEvent.removeMonitor(monitor)
+            globalMouseUpMonitor = nil
+        }
+        if let observer = windowResignKeyObserver {
+            NotificationCenter.default.removeObserver(observer)
+            windowResignKeyObserver = nil
+        }
+    }
+
+    @objc private func autoScrollTick(_ timer: Timer) {
+        guard let terminalView, let event = lastDragEvent, isMouseDown else {
+            stopAutoScroll()
+            return
+        }
+
+        let point = convert(event.locationInWindow, from: nil)
+        guard let direction = TerminalAutoScroll.direction(forPoint: point, in: bounds) else {
+            stopAutoScroll()
+            return
+        }
+
+        let term = terminalView.getTerminal()
+        if term.mouseMode != .off || term.isCurrentBufferAlternate {
+            stopAutoScroll()
+            return
+        }
+
+        guard canScroll(direction: direction, in: terminalView) else {
+            stopAutoScroll()
+            return
+        }
+
+        let distance = TerminalAutoScroll.edgeDistance(forPoint: point, in: bounds)
+        let lines = TerminalAutoScroll.linesPerTick(forDistance: distance)
+        guard lines > 0 else { return }
+
+        switch direction {
+        case .up:
+            terminalView.scrollUp(lines: lines)
+        case .down:
+            terminalView.scrollDown(lines: lines)
+        }
+
+        // Replay the last drag event so SwiftTerm's mouseDragged recomputes
+        // the buffer row from the new yDisp and extends the selection to the
+        // freshly revealed line. Without this, selection would clip at the
+        // last buffer row computed before the scroll.
+        terminalView.mouseDragged(with: event)
+    }
+
+    /// Whether SwiftTerm has any scrollback to consume in the given
+    /// direction. Used to avoid spinning the timer for nothing once the
+    /// user has dragged all the way to the top or bottom of the buffer.
+    private func canScroll(direction: TerminalAutoScrollDirection,
+                           in terminalView: LocalProcessTerminalView) -> Bool {
+        guard terminalView.canScroll else { return false }
+        switch direction {
+        case .up:
+            return terminalView.scrollPosition > 0
+        case .down:
+            return terminalView.scrollPosition < 1
+        }
+    }
 }
 
 // MARK: - NSViewRepresentable обёртка для SwiftTerm
@@ -97,6 +351,9 @@ class TerminalContainerView: NSView {
 
     func showTab(_ tab: TerminalTab?) {
         guard let tab else {
+            // Tab cleared (terminal pane closed) — kill any in-flight
+            // auto-scroll so it cannot tick against a now-detached view.
+            scrollInterceptor.handleActiveTabChange()
             subviews.forEach { $0.removeFromSuperview() }
             currentTabID = nil
             scrollInterceptor.terminalView = nil
@@ -104,6 +361,10 @@ class TerminalContainerView: NSView {
         }
         let tabChanged = tab.id != currentTabID || tab.terminalView.superview !== self
         if tabChanged {
+            // Auto-scroll started against the *outgoing* tab — stop it before
+            // we swap the underlying terminalView so the next tick cannot
+            // scroll the freshly-installed tab using stale coordinates.
+            scrollInterceptor.handleActiveTabChange()
             subviews.forEach { $0.removeFromSuperview() }
             currentTabID = tab.id
             let effectiveBounds = bounds.size.width > 0 && bounds.size.height > 0

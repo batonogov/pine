@@ -317,19 +317,16 @@ final class GitStatusProvider {
     /// on a background thread using parallel DispatchGroup, then updates
     /// properties on the main thread.
     func setupAsync(repositoryURL: URL) async {
-        let (isRepo, rootPath, branch, statuses, ignored, branchList) = await withCheckedContinuation { continuation in
-            // nonisolated-check:ignore — closure body only calls nonisolated static helpers; tracked in #720
-            DispatchQueue.global(qos: .userInitiated).async {
-                let result = GitStatusProvider.runGit(["rev-parse", "--show-toplevel"], at: repositoryURL)
-                let isRepo = result.exitCode == 0
-                guard isRepo else {
-                    continuation.resume(returning: (false, nil as String?, "", [:] as [String: GitFileStatus], Set<String>(), [String]()))
-                    return
-                }
-                let rootPath = result.output.trimmingCharacters(in: .whitespacesAndNewlines)
-                let fetched = GitFetcher.fetchAllInParallel(at: repositoryURL)
-                continuation.resume(returning: (true, rootPath, fetched.branch, fetched.statuses, fetched.ignored, fetched.branches))
+        // nonisolated-check:ignore — closure body only calls nonisolated static helpers; tracked in #720
+        let (isRepo, rootPath, branch, statuses, ignored, branchList) = await runOnBackground {
+            let result = GitStatusProvider.runGit(["rev-parse", "--show-toplevel"], at: repositoryURL)
+            let isRepo = result.exitCode == 0
+            guard isRepo else {
+                return (false, nil as String?, "", [:] as [String: GitFileStatus], Set<String>(), [String]())
             }
+            let rootPath = result.output.trimmingCharacters(in: .whitespacesAndNewlines)
+            let fetched = GitFetcher.fetchAllInParallel(at: repositoryURL)
+            return (true, rootPath, fetched.branch, fetched.statuses, fetched.ignored, fetched.branches)
         }
 
         self.repositoryURL = repositoryURL
@@ -417,11 +414,9 @@ final class GitStatusProvider {
             if let progressID { self.progressTracker?.endOperation(progressID) }
         }
 
-        let fetched = await withCheckedContinuation { continuation in
-            // nonisolated-check:ignore — closure body only calls nonisolated static helpers; tracked in #720
-            DispatchQueue.global(qos: .userInitiated).async {
-                continuation.resume(returning: GitFetcher.fetchAllInParallel(at: url))
-            }
+        // nonisolated-check:ignore — closure body only calls nonisolated static helpers; tracked in #720
+        let fetched = await runOnBackground {
+            GitFetcher.fetchAllInParallel(at: url)
         }
 
         // Repository may have been torn down (e.g. .git deleted on the fly)
@@ -525,24 +520,16 @@ final class GitStatusProvider {
         guard isGitRepository, let repoURL = repositoryURL else { return [] }
         let filePath = url.path
 
-        return await withCheckedContinuation { continuation in
-            // nonisolated-check:ignore — closure body only calls nonisolated static helpers; tracked in #720
-            DispatchQueue.global(qos: .userInitiated).async {
-                let headCheck = GitStatusProvider.runGit(["rev-parse", "HEAD"], at: repoURL)
-                guard headCheck.exitCode == 0 else {
-                    continuation.resume(returning: [])
-                    return
-                }
-                let result = GitStatusProvider.runGit(
-                    ["diff", "HEAD", "--unified=0", "--", filePath],
-                    at: repoURL
-                )
-                guard result.exitCode == 0, !result.output.isEmpty else {
-                    continuation.resume(returning: [])
-                    return
-                }
-                continuation.resume(returning: GitStatusProvider.parseDiff(result.output))
-            }
+        // nonisolated-check:ignore — closure body only calls nonisolated static helpers; tracked in #720
+        return await runOnBackground {
+            let headCheck = GitStatusProvider.runGit(["rev-parse", "HEAD"], at: repoURL)
+            guard headCheck.exitCode == 0 else { return [] }
+            let result = GitStatusProvider.runGit(
+                ["diff", "HEAD", "--unified=0", "--", filePath],
+                at: repoURL
+            )
+            guard result.exitCode == 0, !result.output.isEmpty else { return [] }
+            return GitStatusProvider.parseDiff(result.output)
         }
     }
 
@@ -564,12 +551,9 @@ final class GitStatusProvider {
         guard let url = repositoryURL else { return (false, "No repository") }
         let progressID = progressTracker?.beginOperation(Strings.progressGitCheckout)
 
-        let result = await withCheckedContinuation { continuation in
-            // nonisolated-check:ignore — closure body only calls nonisolated static helpers; tracked in #720
-            DispatchQueue.global(qos: .userInitiated).async {
-                let gitResult = GitStatusProvider.runGit(["switch", branch], at: url)
-                continuation.resume(returning: gitResult)
-            }
+        // nonisolated-check:ignore — closure body only calls nonisolated static helpers; tracked in #720
+        let result = await runOnBackground {
+            GitStatusProvider.runGit(["switch", branch], at: url)
         }
 
         guard result.exitCode == 0 else {
