@@ -708,4 +708,90 @@ final class TerminalTests: PineUITestCase {
             "Recreated editor pane must be positioned above the terminal pane"
         )
     }
+
+    // MARK: - Issue #918: blank second-tab regression
+
+    /// Regression test for issue #918: creating a second terminal tab in the
+    /// same pane must leave both tabs renderable. Previously the second tab's
+    /// PTY was never spawned because `startIfNeeded()` was only called from
+    /// `layout()`, and adding a tab without changing pane bounds never
+    /// triggered a new layout pass.
+    ///
+    /// SwiftTerm renders into a CALayer that XCUITest cannot inspect directly,
+    /// so this test verifies the structural state: both tabs exist, both are
+    /// switchable, and the terminal pane container remains hittable. The
+    /// load-bearing assertion that the second tab's process actually started
+    /// lives in `TerminalTabTests.addingSecondTabStartsItsProcessImmediately`.
+    func testSecondTabRendersImmediately() throws {
+        launchAndWaitForLoad()
+
+        createTerminalViaMenu()
+        let tab1 = terminalTab("Terminal 1")
+        XCTAssertTrue(
+            waitForExistence(tab1, timeout: 10),
+            "Terminal 1 tab should appear"
+        )
+        XCTAssertTrue(
+            waitForExistence(newTerminalButton, timeout: 5),
+            "Plus button should be hittable so we can add a second tab"
+        )
+
+        // Click `+` — this is the exact path users hit per issue #918.
+        // Cmd+T cannot be used because XCUITest's typeKey() bypasses the
+        // app's NSEvent.addLocalMonitorForEvents (see CLAUDE.md).
+        newTerminalButton.click()
+
+        let tab2 = terminalTab("Terminal 2")
+        XCTAssertTrue(
+            waitForExistence(tab2, timeout: 10),
+            "Terminal 2 tab should appear"
+        )
+        // Both tabs must coexist. If the bug were present, tabs would still
+        // exist in the model — the symptom is purely visual (blank CALayer).
+        // The structural check happens in unit tests
+        // (`addingSecondTabStartsItsProcessImmediately`) where we can assert
+        // `tab.isProcessRunning`. Here we verify the pane stayed alive: both
+        // tabs are clickable, switching cycles them, and the plus button
+        // remains usable so users can keep working without resizing the pane.
+        XCTAssertTrue(tab1.exists, "Terminal 1 tab must persist when Terminal 2 is added")
+
+        // The pane must keep a non-zero frame after the second tab arrives.
+        // Use Terminal 2's frame as the probe — it's the freshly-installed
+        // tab whose lifecycle is being exercised.
+        let tab2Frame = tab2.frame
+        XCTAssertGreaterThan(
+            tab2Frame.width, 0,
+            "Terminal 2 tab must have a non-zero width — a zero-frame pane is the bug signature"
+        )
+        XCTAssertGreaterThan(
+            tab2Frame.height, 0,
+            "Terminal 2 tab must have a non-zero height — a zero-frame pane is the bug signature"
+        )
+        // The plus button must remain hittable — users must be able to keep
+        // adding tabs without first resizing the pane.
+        XCTAssertTrue(
+            newTerminalButton.isHittable,
+            "Plus button must remain hittable after creating a second terminal tab"
+        )
+
+        // Switch back to tab1 — both tabs must remain in the tab bar.
+        // Re-query elements after each click because the XCUIElement proxy
+        // is invalidated by view updates and caching causes spurious failures
+        // when other tests in the same suite have warmed the accessibility
+        // tree differently.
+        terminalTab("Terminal 1").click()
+        XCTAssertTrue(
+            terminalTab("Terminal 1").exists,
+            "Terminal 1 must remain in the tab bar after switching from Terminal 2"
+        )
+        XCTAssertTrue(
+            terminalTab("Terminal 2").exists,
+            "Terminal 2 must remain in the tab bar after switching back to Terminal 1"
+        )
+
+        // Switch forward to tab2 again — confirms both tabs survive cycling.
+        terminalTab("Terminal 2").click()
+        XCTAssertTrue(terminalTab("Terminal 1").exists)
+        XCTAssertTrue(terminalTab("Terminal 2").exists)
+    }
 }
