@@ -67,19 +67,20 @@ final class WorkspaceManager {
     /// never resumes after a newer one has started.
     private var loadingTask: Task<Void, Never>?
 
-    /// `FileSystemWatcher` debounce interval. Short enough (150 ms) that
-    /// changes made in the built-in terminal or by external processes
-    /// appear in the sidebar almost immediately while still coalescing
-    /// rapid bursts (npm install, git checkout) into a handful of refreshes.
+    /// `FileSystemWatcher` debounce interval. Short enough that changes
+    /// made in the built-in terminal or by external processes appear in
+    /// the sidebar almost immediately while still coalescing rapid bursts
+    /// (npm install, git checkout) into a handful of refreshes.
     ///
     /// Note: a previous post-refresh suppression window (`suppressWatcherUntil`)
     /// was removed in the fix for issue #839 — it was responsible for
     /// swallowing genuine external FSEvents that happened to land in the
-    /// 150 ms after any in-app sidebar action (rename / create / delete).
-    /// `loadGeneration` already guarantees that overlapping refreshes never
-    /// corrupt `rootNodes`, and `refreshFileTreeAsync` is cheap enough that
-    /// the duplicate cost of an echoed event is invisible to users.
-    static let watcherDebounce: TimeInterval = 0.15
+    /// debounce window after any in-app sidebar action (rename / create /
+    /// delete). `loadGeneration` already guarantees that overlapping
+    /// refreshes never corrupt `rootNodes`, and `refreshFileTreeAsync` is
+    /// cheap enough that the duplicate cost of an echoed event is invisible
+    /// to users.
+    static let watcherDebounce: TimeInterval = UITimings.Debounce.fileWatcher
 
     /// Schedules a debounced `onRootNodesChanged` notification.
     /// Cancels any pending notification so rapid updates coalesce into one.
@@ -213,15 +214,29 @@ final class WorkspaceManager {
     /// then the full tree replaces it once ready.
     private func loadDirectoryContentsAsync(
         url: URL,
-        generation: Int
+        generation: Int,
+        showProgress: Bool = true
     ) {
         // Cancel any prior in-flight load so its `MainActor.run` blocks
         // become no-ops after the generation check below.
         loadingTask?.cancel()
 
-        let progressID = progressTracker?.beginOperation(Strings.progressLoadingProject)
+        let progressID = showProgress
+            ? progressTracker?.beginOperation(Strings.progressLoadingProject)
+            : nil
 
         loadingTask = Task.detached(priority: .userInitiated) { [weak self] in
+            // Shared cleanup closure — ends the progress operation on MainActor.
+            // Extracted to avoid repeating the same 5-line block at every
+            // cancellation / early-return site.
+            let cleanupProgress: () async -> Void = {
+                if let progressID {
+                    await MainActor.run { [weak self] in
+                        self?.progressTracker?.endOperation(progressID)
+                    }
+                }
+            }
+
             // 1. Git setup — pure nonisolated work using static helpers.
             //    No `@MainActor` object is created off-main: avoids the
             //    `nonisolated-check:ignore` workaround the GCD path needed.
@@ -235,7 +250,7 @@ final class WorkspaceManager {
             )
             let shallowChildren = shallowResult.root.children ?? []
 
-            if Task.isCancelled { return }
+            if Task.isCancelled { await cleanupProgress(); return }
 
             await MainActor.run { [weak self] in
                 guard let self, self.loadGeneration == generation else {
@@ -267,15 +282,17 @@ final class WorkspaceManager {
 
             // 3. Phase 2: full tree only if Phase 1 hit the depth limit.
             //    For shallow projects this avoids redundant tree construction.
+            //    Safe to return without cleanup — endOperation was already called
+            //    inside Phase 1's MainActor.run block for non-depth-limited trees.
             guard shallowResult.wasDepthLimited else { return }
 
-            if Task.isCancelled { return }
+            if Task.isCancelled { await cleanupProgress(); return }
 
             let fullChildren = Self.loadTopLevelInParallel(
                 url: url, ignoredPaths: gitInfo.ignoredPaths
             )
 
-            if Task.isCancelled { return }
+            if Task.isCancelled { await cleanupProgress(); return }
 
             await MainActor.run { [weak self] in
                 guard let self, self.loadGeneration == generation else {
@@ -436,6 +453,6 @@ final class WorkspaceManager {
         guard let url = rootURL else { return }
         loadGeneration += 1
         let generation = loadGeneration
-        loadDirectoryContentsAsync(url: url, generation: generation)
+        loadDirectoryContentsAsync(url: url, generation: generation, showProgress: false)
     }
 }

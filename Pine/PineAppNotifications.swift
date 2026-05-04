@@ -64,5 +64,4 @@ extension Notification.Name {
 
     // MARK: - Git
     static let refreshLineDiffs = Notification.Name("refreshLineDiffs")
-    static let switchBranch = Notification.Name("switchBranch")
 }

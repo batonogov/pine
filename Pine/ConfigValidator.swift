@@ -725,7 +725,7 @@ final class ConfigValidator {
     private(set) var toolAvailable = false
 
     /// Debounce interval in seconds.
-    nonisolated static let debounceInterval: TimeInterval = 0.3
+    nonisolated static let debounceInterval: TimeInterval = UITimings.Debounce.configValidation
 
     /// Generation token to discard stale results.
     private var generation: UInt64 = 0
@@ -757,7 +757,7 @@ final class ConfigValidator {
 
         debounceTask = Task { [weak self] in
             // Debounce
-            try? await Task.sleep(for: .milliseconds(300))
+            try? await Task.sleep(for: .seconds(Self.debounceInterval))
             guard !Task.isCancelled, let self else { return }
 
             self.runValidation(url: url, content: content, kind: kind, expectedGen: currentGen)

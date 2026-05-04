@@ -160,7 +160,7 @@ final class MinimapView: NSView {
     }
 
     /// Throttle interval for scroll-triggered redraws (~3 frames at 120fps ProMotion).
-    private static let scrollThrottleInterval: TimeInterval = 0.025
+    private static let scrollThrottleInterval: TimeInterval = UITimings.Render.minimapRedraw
     /// Timestamp of last scroll-triggered redraw.
     private var lastScrollRedrawTime: CFTimeInterval = 0
     /// Pending throttled redraw work item.
