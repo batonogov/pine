@@ -67,6 +67,7 @@ class TerminalScrollInterceptor: NSView {
     /// without coupling tests to private state.
     internal var isAutoScrollActive: Bool { autoScrollTimer != nil }
 
+    #if DEBUG
     /// Test-only entry point that starts the auto-scroll timer (and the
     /// associated safety-net subscriptions) without requiring a real
     /// terminal view, NSEvent, or scrollback buffer. Tests use this to
@@ -79,6 +80,7 @@ class TerminalScrollInterceptor: NSView {
             startAutoScrollTimer()
         }
     }
+    #endif
 
     override func mouseDown(with event: NSEvent) {
         isMouseDown = true

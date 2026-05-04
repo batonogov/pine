@@ -372,6 +372,7 @@ struct TerminalAutoScrollTests {
         #expect(interceptor.isAutoScrollActive == false)
     }
 
+    #if DEBUG
     @Test func interceptorTestHookStartsTimer() {
         let interceptor = makeInterceptor()
         interceptor.startAutoScrollForTesting()
@@ -379,7 +380,9 @@ struct TerminalAutoScrollTests {
         // Cleanup so the timer cannot fire after the test exits.
         interceptor.handleGlobalMouseUp()
     }
+    #endif
 
+    #if DEBUG
     @Test func interceptorMouseDownStopsActiveAutoScroll() {
         // A new mouseDown means the user started a fresh drag — any
         // in-flight auto-scroll from a previous (interrupted) drag must
@@ -392,7 +395,9 @@ struct TerminalAutoScrollTests {
         interceptor.mouseDown(with: event)
         #expect(interceptor.isAutoScrollActive == false)
     }
+    #endif
 
+    #if DEBUG
     @Test func interceptorMouseUpStopsAutoScroll() {
         let interceptor = makeInterceptor()
         interceptor.startAutoScrollForTesting()
@@ -402,7 +407,9 @@ struct TerminalAutoScrollTests {
         interceptor.mouseUp(with: event)
         #expect(interceptor.isAutoScrollActive == false)
     }
+    #endif
 
+    #if DEBUG
     @Test func interceptorMouseDraggedWithoutTerminalStopsAutoScroll() {
         // mouseDragged → updateAutoScroll early-returns when terminalView
         // is nil, which calls stopAutoScroll(). This also covers the
@@ -416,7 +423,9 @@ struct TerminalAutoScrollTests {
         interceptor.mouseDragged(with: event)
         #expect(interceptor.isAutoScrollActive == false)
     }
+    #endif
 
+    #if DEBUG
     @Test func interceptorWindowDetachStopsAutoScroll() {
         // viewWillMove(toWindow: nil) is AppKit's "you are about to be
         // unhooked" signal — the interceptor must drop the timer so it
@@ -428,7 +437,9 @@ struct TerminalAutoScrollTests {
         interceptor.viewWillMove(toWindow: nil)
         #expect(interceptor.isAutoScrollActive == false)
     }
+    #endif
 
+    #if DEBUG
     @Test func interceptorActiveTabChangeStopsAutoScroll() {
         // When the user switches terminal tabs while a drag is active
         // (e.g. clicks another tab), the auto-scroll loop is still
@@ -441,7 +452,9 @@ struct TerminalAutoScrollTests {
         interceptor.handleActiveTabChange()
         #expect(interceptor.isAutoScrollActive == false)
     }
+    #endif
 
+    #if DEBUG
     @Test func interceptorGlobalMouseUpStopsAutoScroll() {
         // Safety net: if the user releases the mouse over another app
         // (Cmd+Tab, Mission Control, the menu bar), the local mouseUp
@@ -455,7 +468,9 @@ struct TerminalAutoScrollTests {
         interceptor.handleGlobalMouseUp()
         #expect(interceptor.isAutoScrollActive == false)
     }
+    #endif
 
+    #if DEBUG
     @Test func interceptorWindowResignKeyStopsAutoScroll() {
         // Belt-and-braces alongside the global mouse-up monitor — losing
         // key status means there is nothing useful auto-scroll can do
@@ -468,7 +483,9 @@ struct TerminalAutoScrollTests {
         interceptor.handleWindowResignKey()
         #expect(interceptor.isAutoScrollActive == false)
     }
+    #endif
 
+    #if DEBUG
     @Test func interceptorStopIsIdempotent() {
         // Calling any stop path twice must not crash and must keep
         // isAutoScrollActive == false. Important because multiple
@@ -486,7 +503,9 @@ struct TerminalAutoScrollTests {
         interceptor.handleActiveTabChange()
         #expect(interceptor.isAutoScrollActive == false)
     }
+    #endif
 
+    #if DEBUG
     @Test func interceptorRestartAfterStop() {
         // After a full mouse-up / mouse-down cycle the interceptor must
         // be reusable for the next drag. Verifies safety nets are torn
@@ -502,7 +521,9 @@ struct TerminalAutoScrollTests {
         interceptor.handleGlobalMouseUp()
         #expect(interceptor.isAutoScrollActive == false)
     }
+    #endif
 
+    #if DEBUG
     @Test func interceptorStartIsIdempotent() {
         // Repeated startAutoScrollForTesting() calls must not stack
         // timers — the existing one is reused. Without this guard we
@@ -518,6 +539,7 @@ struct TerminalAutoScrollTests {
         // Cleanup
         interceptor.handleGlobalMouseUp()
     }
+    #endif
 
     @Test func interceptorMouseDraggedInsideBoundsDoesNotStartAutoScroll() {
         // Acceptance criterion from issue #915: cursor inside bounds
