@@ -379,6 +379,37 @@ class TerminalContainerView: NSView {
 
             tab.terminalView.needsLayout = true
             tab.terminalView.needsDisplay = true
+
+            // Adding a second tab to an existing pane does not change the
+            // container's bounds, so AppKit does NOT call `layout()` on its
+            // own — and `layout()` is the only place where `startIfNeeded()`
+            // runs (issue #918). Without this, the new tab's PTY never spawns
+            // and its `LocalProcessTerminalView` paints empty until the user
+            // resizes the pane (which forces a fresh layout pass). Kick the
+            // process directly here using the frame we just installed, then
+            // also mark ourselves dirty so AppKit performs a final layout
+            // pass to reconcile any subsequent geometry change.
+            //
+            // Only start when the container has REAL bounds — when the
+            // container is zero-sized (first SwiftUI layout pass) we
+            // intentionally use the default fallback frame for `effectiveBounds`
+            // but we must NOT spawn the PTY yet, because the fallback size
+            // is just a placeholder. The next `layout()` with real bounds
+            // will both update the frame and call `startIfNeeded()`.
+            if bounds.size.width > 0, bounds.size.height > 0 {
+                tab.startIfNeeded()
+            }
+            self.needsLayout = true
+            self.needsDisplay = true
+
+            // Force a synchronous redraw of the freshly inserted SwiftTerm
+            // view. SwiftTerm renders into a CALayer; `needsDisplay` only
+            // schedules the redraw, and the layer can stay blank for one
+            // tick while waiting for the next display loop. A synchronous
+            // pass guarantees the content appears on the *same* runloop
+            // turn as the tab swap, avoiding the visible black flash users
+            // saw when adding a second tab.
+            tab.terminalView.displayIfNeeded()
         }
 
         installScrollMonitor()
