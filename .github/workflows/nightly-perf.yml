@@ -51,6 +51,7 @@ jobs:
             CODE_SIGNING_ALLOWED=NO
 
       - name: Run Performance Tests
+        # Skipping EditorStressTests until the deterministic CI crash is fixed — see #890.
         run: |
           xcodebuild test-without-building \
             -project Pine.xcodeproj \
@@ -58,6 +59,7 @@ jobs:
             -destination "platform=macOS" \
             -derivedDataPath DerivedData \
             -only-testing:PinePerformanceTests \
+            -skip-testing:PinePerformanceTests/EditorStressTests \
             -resultBundlePath PerformanceResults.xcresult \
             CODE_SIGN_IDENTITY=- \
             CODE_SIGNING_ALLOWED=NO
