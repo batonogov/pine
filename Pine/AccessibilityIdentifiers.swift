@@ -7,7 +7,6 @@
 
 nonisolated enum AccessibilityID {
     // MARK: - Welcome window
-    static let welcomeWindow = "welcomeWindow"
     static let welcomeOpenFolderButton = "welcomeOpenFolderButton"
     static let welcomeRecentProjectsList = "welcomeRecentProjectsList"
     static let welcomeSearchField = "welcomeSearchField"
@@ -16,12 +15,10 @@ nonisolated enum AccessibilityID {
 
     // MARK: - Main editor window
     static let sidebar = "sidebar"
-    static let sidebarFileList = "sidebarFileList"
     static func fileNode(_ name: String) -> String { "fileNode_\(name)" }
     static let inlineRenameTextField = "inlineRenameTextField"
 
     // MARK: - Editor
-    static let editorArea = "editorArea"
     static let editorTabBar = "editorTabBar"
     static func editorTab(_ name: String) -> String { "editorTab_\(name)" }
     static func editorTabCloseButton(_ name: String) -> String { "editorTabClose_\(name)" }
@@ -52,7 +49,6 @@ nonisolated enum AccessibilityID {
     static func breadcrumbSegment(_ name: String) -> String { "breadcrumbSegment_\(name)" }
 
     // MARK: - Terminal
-    static let terminalArea = "terminalArea"
     static let terminalTabBar = "terminalTabBar"
     static func terminalTab(_ name: String) -> String { "terminalTab_\(name)" }
     static let newTerminalButton = "newTerminalButton"
@@ -76,7 +72,6 @@ nonisolated enum AccessibilityID {
     static let goToLineField = "goToLineField"
 
     // MARK: - Branch switcher
-    static let branchSwitcherButton = "branchSwitcherButton"
     static let branchSearchField = "branchSearchField"
     static func branchItem(_ name: String) -> String { "branchItem_\(name)" }
 

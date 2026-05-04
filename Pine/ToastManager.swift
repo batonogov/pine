@@ -81,7 +81,7 @@ final class ToastManager {
             let work = DispatchWorkItem { [weak self] in
                 self?.present(next)
             }
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3, execute: work)
+            DispatchQueue.main.asyncAfter(deadline: .now() + UITimings.Delay.standard, execute: work)
         }
     }
 

@@ -213,7 +213,7 @@ struct WelcomeView: View {
             guard let url = appDelegate?.pendingProjectURL else { return }
             appDelegate?.pendingProjectURL = nil
             // Wait for initial SwiftUI layout to complete.
-            try? await Task.sleep(for: .seconds(0.5))
+            try? await Task.sleep(for: .seconds(UITimings.Delay.long))
             openProject(at: url)
         }
     }
@@ -238,7 +238,7 @@ struct WelcomeView: View {
                         let projectDir = file.deletingLastPathComponent()
                         openProject(at: projectDir)
                         // Give the project window time to initialize, then open the file
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                        DispatchQueue.main.asyncAfter(deadline: .now() + UITimings.Delay.standard) {
                             let canonical = projectDir.resolvingSymlinksInPath()
                             registry.openProjects[canonical]?.primaryTabManager.openTab(url: file)
                         }

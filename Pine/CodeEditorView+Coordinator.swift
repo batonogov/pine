@@ -77,7 +77,7 @@ extension CodeEditorView {
             highlightTask = task
         }
         /// Задержка дебаунсинга
-        private let highlightDelay: TimeInterval = 0.1
+        private let highlightDelay: TimeInterval = UITimings.Debounce.edit
 
         /// True while `updateContentIfNeeded` is replacing text programmatically.
         /// Prevents `textDidChange` from scheduling a competing debounced highlight
@@ -90,9 +90,9 @@ extension CodeEditorView {
         /// Дебаунс для подсветки при скролле.
         private var scrollHighlightWorkItem: DispatchWorkItem?
         /// Задержка дебаунсинга скролла (~3 кадра при 120fps ProMotion)
-        private let scrollHighlightDelay: TimeInterval = 0.050
+        private let scrollHighlightDelay: TimeInterval = UITimings.Debounce.scroll
         /// Задержка дебаунсинга пересчёта фолдинга (тяжелее подсветки)
-        private let foldRecalcDelay: TimeInterval = 0.15
+        private let foldRecalcDelay: TimeInterval = UITimings.Debounce.foldRecalc
 
         init(parent: CodeEditorView) {
             self.parent = parent
