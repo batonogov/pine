@@ -916,7 +916,9 @@ nonisolated final class SyntaxHighlighter: @unchecked Sendable {
         let multilineRange = fullRange
 
         var matches: [HighlightMatch] = []
-        var highlightedRanges: [(range: NSRange, priority: Int, scope: String)] = []
+        var highlightedRanges: [
+            (repaintRange: NSRange, originalRange: NSRange, priority: Int, scope: String)
+        ] = []
         // Fingerprint is collected inline during the main iteration to avoid
         // a redundant second full-text scan of multiline rules (see #789 review).
         var multilineFingerprint: [Int] = []
@@ -950,15 +952,15 @@ nonisolated final class SyntaxHighlighter: @unchecked Sendable {
                 var isOverridden = false
                 var lexicalRangesToReplace: [NSRange] = []
                 for existing in highlightedRanges {
-                    guard NSIntersectionRange(existing.range, clipped).length > 0 else {
+                    guard NSIntersectionRange(existing.repaintRange, clipped).length > 0 else {
                         continue
                     }
                     if self.areMutuallyExclusiveLexicalScopes(rule.scope, existing.scope) {
-                        if NSLocationInRange(clipped.location, existing.range) {
+                        if NSLocationInRange(matchRange.location, existing.originalRange) {
                             isOverridden = true
                             break
                         }
-                        lexicalRangesToReplace.append(existing.range)
+                        lexicalRangesToReplace.append(existing.originalRange)
                         continue
                     }
                     if existing.priority > priority {
@@ -971,13 +973,18 @@ nonisolated final class SyntaxHighlighter: @unchecked Sendable {
                     if !lexicalRangesToReplace.isEmpty {
                         highlightedRanges.removeAll { existing in
                             self.areMutuallyExclusiveLexicalScopes(rule.scope, existing.scope) &&
-                            lexicalRangesToReplace.contains { NSEqualRanges($0, existing.range) }
+                            lexicalRangesToReplace.contains { NSEqualRanges($0, existing.originalRange) }
                         }
                     }
                     matches.append(HighlightMatch(
                         range: clipped, scope: rule.scope, priority: priority
                     ))
-                    highlightedRanges.append((range: clipped, priority: priority, scope: rule.scope))
+                    highlightedRanges.append((
+                        repaintRange: clipped,
+                        originalRange: matchRange,
+                        priority: priority,
+                        scope: rule.scope
+                    ))
                 }
             }
         }

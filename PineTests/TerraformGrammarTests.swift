@@ -107,6 +107,36 @@ struct TerraformGrammarTests {
         #expect(textStorage.attribute(.foregroundColor, at: quotePos, effectiveRange: nil) as? NSColor == commentColor)
     }
 
+    @Test func partialHeredocRepaintKeepsSlashSlashLineAsString() throws {
+        let highlighter = SyntaxHighlighter.shared
+        let text = """
+        payload = <<EOF
+        line 1
+        // not a comment
+        line 3
+        EOF
+        """
+        let source = text as NSString
+        let repaintStart = source.range(of: "// not a comment").location
+        let repaintRange = NSRange(location: repaintStart, length: source.length - repaintStart)
+        let font = NSFont.monospacedSystemFont(ofSize: 12, weight: .regular)
+
+        let result = try #require(highlighter.computeMatches(
+            text: text,
+            language: "tfvars",
+            repaintRange: repaintRange,
+            searchRange: repaintRange
+        ))
+        let textStorage = NSTextStorage(string: text)
+        highlighter.applyMatches(result, to: textStorage, font: font)
+
+        let stringColor = try #require(highlighter.theme.color(for: "string"))
+        let commentColor = try #require(highlighter.theme.color(for: "comment"))
+
+        #expect(textStorage.attribute(.foregroundColor, at: repaintStart, effectiveRange: nil) as? NSColor == stringColor)
+        #expect(textStorage.attribute(.foregroundColor, at: repaintStart, effectiveRange: nil) as? NSColor != commentColor)
+    }
+
     // MARK: - Interpolation
 
     @Test func interpolationExpression() {
