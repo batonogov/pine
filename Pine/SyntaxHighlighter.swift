@@ -916,7 +916,9 @@ nonisolated final class SyntaxHighlighter: @unchecked Sendable {
         let multilineRange = fullRange
 
         var matches: [HighlightMatch] = []
-        var highlightedRanges: [(range: NSRange, priority: Int)] = []
+        var highlightedRanges: [
+            (repaintRange: NSRange, originalRange: NSRange, priority: Int, scope: String)
+        ] = []
         // Fingerprint is collected inline during the main iteration to avoid
         // a redundant second full-text scan of multiline rules (see #789 review).
         var multilineFingerprint: [Int] = []
@@ -947,16 +949,42 @@ nonisolated final class SyntaxHighlighter: @unchecked Sendable {
                 let clipped = NSIntersectionRange(matchRange, repaintRange)
                 guard clipped.length > 0 else { return }
 
-                let isOverridden = highlightedRanges.contains { existing in
-                    existing.priority > priority &&
-                    NSIntersectionRange(existing.range, clipped).length > 0
+                var isOverridden = false
+                var lexicalRangesToReplace: [NSRange] = []
+                for existing in highlightedRanges {
+                    guard NSIntersectionRange(existing.repaintRange, clipped).length > 0 else {
+                        continue
+                    }
+                    if self.areMutuallyExclusiveLexicalScopes(rule.scope, existing.scope) {
+                        if NSLocationInRange(matchRange.location, existing.originalRange) {
+                            isOverridden = true
+                            break
+                        }
+                        lexicalRangesToReplace.append(existing.originalRange)
+                        continue
+                    }
+                    if existing.priority > priority {
+                        isOverridden = true
+                        break
+                    }
                 }
 
                 if !isOverridden {
+                    if !lexicalRangesToReplace.isEmpty {
+                        highlightedRanges.removeAll { existing in
+                            self.areMutuallyExclusiveLexicalScopes(rule.scope, existing.scope) &&
+                            lexicalRangesToReplace.contains { NSEqualRanges($0, existing.originalRange) }
+                        }
+                    }
                     matches.append(HighlightMatch(
                         range: clipped, scope: rule.scope, priority: priority
                     ))
-                    highlightedRanges.append((range: clipped, priority: priority))
+                    highlightedRanges.append((
+                        repaintRange: clipped,
+                        originalRange: matchRange,
+                        priority: priority,
+                        scope: rule.scope
+                    ))
                 }
             }
         }
@@ -976,6 +1004,10 @@ nonisolated final class SyntaxHighlighter: @unchecked Sendable {
             repaintRange: repaintRange,
             multilineFingerprint: fingerprint
         )
+    }
+
+    private func areMutuallyExclusiveLexicalScopes(_ lhs: String, _ rhs: String) -> Bool {
+        (lhs == "comment" && rhs == "string") || (lhs == "string" && rhs == "comment")
     }
 
     /// Applies pre-computed matches to NSTextStorage.
