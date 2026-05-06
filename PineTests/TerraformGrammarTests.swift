@@ -5,6 +5,7 @@
 
 import Testing
 import Foundation
+import AppKit
 @testable import Pine
 
 @MainActor
@@ -71,6 +72,39 @@ struct TerraformGrammarTests {
     @Test func doubleQuotedString() {
         let rule = grammar.rules.first { $0.scope == "string" && $0.pattern.contains("\"") }
         #expect(rule != nil)
+    }
+
+    @Test func urlStringDoesNotTreatSlashSlashAsComment() throws {
+        let highlighter = SyntaxHighlighter.shared
+        let text = #"virtual_environment_endpoint = "https://10.206.101.10:8006/""#
+        let textStorage = NSTextStorage(string: text)
+        let font = NSFont.monospacedSystemFont(ofSize: 12, weight: .regular)
+
+        highlighter.highlight(textStorage: textStorage, language: "tfvars", font: font)
+
+        let stringColor = try #require(highlighter.theme.color(for: "string"))
+        let commentColor = try #require(highlighter.theme.color(for: "comment"))
+        let source = text as NSString
+        let schemePos = source.range(of: "https:").location
+        let slashSlashPos = source.range(of: "//10").location
+
+        #expect(textStorage.attribute(.foregroundColor, at: schemePos, effectiveRange: nil) as? NSColor == stringColor)
+        #expect(textStorage.attribute(.foregroundColor, at: slashSlashPos, effectiveRange: nil) as? NSColor == stringColor)
+        #expect(textStorage.attribute(.foregroundColor, at: slashSlashPos, effectiveRange: nil) as? NSColor != commentColor)
+    }
+
+    @Test func quotedTextInsideLineCommentRemainsComment() throws {
+        let highlighter = SyntaxHighlighter.shared
+        let text = #"// "https://example.com""#
+        let textStorage = NSTextStorage(string: text)
+        let font = NSFont.monospacedSystemFont(ofSize: 12, weight: .regular)
+
+        highlighter.highlight(textStorage: textStorage, language: "tfvars", font: font)
+
+        let commentColor = try #require(highlighter.theme.color(for: "comment"))
+        let quotePos = (text as NSString).range(of: "\"").location
+
+        #expect(textStorage.attribute(.foregroundColor, at: quotePos, effectiveRange: nil) as? NSColor == commentColor)
     }
 
     // MARK: - Interpolation
