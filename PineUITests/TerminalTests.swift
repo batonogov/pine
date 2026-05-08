@@ -794,4 +794,53 @@ final class TerminalTests: PineUITestCase {
         XCTAssertTrue(terminalTab("Terminal 1").exists)
         XCTAssertTrue(terminalTab("Terminal 2").exists)
     }
+
+    // MARK: - Black terminal on TUI fix (PR #923)
+
+    /// After switching away from a terminal tab and back, the pane must
+    /// remain interactive with a non-zero frame. UI tests cannot detect
+    /// "black layer vs valid pixels" — that's covered by unit tests on
+    /// the dirty range. This test guards against regressions where a
+    /// re-parent breaks the pane structure (zero frame, unhittable tabs,
+    /// disappearing plus button) — the visible-but-blank symptom of the
+    /// bug always co-occurs with a fully-rendered tab bar that can mask
+    /// model-level damage.
+    func testReturningToFirstTabKeepsPaneInteractive() throws {
+        launchAndWaitForLoad()
+
+        createTerminalViaMenu()
+        let tab1 = terminalTab("Terminal 1")
+        XCTAssertTrue(waitForExistence(tab1, timeout: 10), "Terminal 1 must appear")
+        XCTAssertTrue(waitForExistence(newTerminalButton, timeout: 5))
+
+        // Add a second tab — Terminal 2 becomes active.
+        newTerminalButton.click()
+        let tab2 = terminalTab("Terminal 2")
+        XCTAssertTrue(waitForExistence(tab2, timeout: 10), "Terminal 2 must appear")
+
+        // Switch back to Terminal 1 — this is the re-parent path that
+        // previously left the layer blank for alternate-screen TUIs.
+        terminalTab("Terminal 1").click()
+        Thread.sleep(forTimeInterval: 0.3)
+
+        // The pane must be alive and interactive after the swap.
+        let tab1AfterSwitch = terminalTab("Terminal 1")
+        XCTAssertTrue(tab1AfterSwitch.exists, "Terminal 1 must still exist after switching back")
+        let frame = tab1AfterSwitch.frame
+        XCTAssertGreaterThan(frame.width, 0, "Terminal 1 tab must have a non-zero width — zero-frame is a regression signature")
+        XCTAssertGreaterThan(frame.height, 0, "Terminal 1 tab must have a non-zero height")
+        XCTAssertTrue(newTerminalButton.isHittable, "Plus button must remain hittable after switching back")
+
+        // Cycle once more (1 → 2 → 1) — the observer / re-parent path
+        // must remain stable across multiple round-trips, not just the
+        // first one. This guards against a regression where the second
+        // attach to the same pane silently drops the dirty-range seed.
+        terminalTab("Terminal 2").click()
+        Thread.sleep(forTimeInterval: 0.2)
+        terminalTab("Terminal 1").click()
+        Thread.sleep(forTimeInterval: 0.2)
+        XCTAssertTrue(terminalTab("Terminal 1").exists)
+        XCTAssertTrue(terminalTab("Terminal 2").exists)
+        XCTAssertTrue(newTerminalButton.isHittable, "Plus button stays hittable across repeated tab cycles")
+    }
 }

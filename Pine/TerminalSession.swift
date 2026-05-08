@@ -354,6 +354,11 @@ class TerminalContainerView: NSView {
     /// the TUI alternate-screen content would stay blank until the next
     /// keystroke or process tick.
     private var becomeKeyObserver: NSObjectProtocol?
+    /// The window we are currently observing for `didBecomeKey`. Tracked
+    /// separately because `NSObjectProtocol` does not expose its target,
+    /// so without this we would tear down and re-install the observer on
+    /// every `viewDidMoveToWindow` even when the window did not change.
+    private weak var observedWindow: NSWindow?
 
     func showTab(_ tab: TerminalTab?) {
         guard let tab else {
@@ -406,17 +411,9 @@ class TerminalContainerView: NSView {
             self.needsDisplay = true
 
             // Force a synchronous full repaint from the SwiftTerm display
-            // buffer. After re-parenting the layer's backing store may be
-            // empty, and TUI apps in alternate screen (k9s, htop, vim) won't
-            // emit any data on their own. `forceFullRedraw` covers the case
-            // where the buffer is valid but the layer is blank; for alternate
-            // screen specifically the buffer may also be blank because the
-            // TUI hasn't redrawn itself yet — `kickPTYWindowSize` raises
-            // SIGWINCH to nudge it.
-            tab.forceFullRedraw()
-            if tab.terminalView.getTerminal().isCurrentBufferAlternate {
-                tab.kickPTYWindowSize()
-            }
+            // buffer (and raise SIGWINCH on alternate-screen TUIs so the
+            // child itself redraws — see `refreshAfterReparent` docs).
+            tab.refreshAfterReparent()
         }
 
         installScrollMonitor()
@@ -526,18 +523,16 @@ class TerminalContainerView: NSView {
             NotificationCenter.default.removeObserver(observer)
             becomeKeyObserver = nil
         }
+        observedWindow = nil
     }
 
-    /// Repaints the active terminal and (for TUI apps in alternate screen)
-    /// raises SIGWINCH so the child redraws. Used by `viewDidMoveToWindow`
+    /// Repaints the active terminal (and for TUI apps in alternate screen
+    /// raises SIGWINCH so the child redraws). Used by `viewDidMoveToWindow`
     /// and the window-become-key observer.
     private func refreshActiveTerminalAfterReparent() {
         guard let tab = terminalPaneState?.activeTab,
               tab.terminalView.superview === self else { return }
-        tab.forceFullRedraw()
-        if tab.terminalView.getTerminal().isCurrentBufferAlternate {
-            tab.kickPTYWindowSize()
-        }
+        tab.refreshAfterReparent()
     }
 
     /// Requests first responder on the terminal view.
@@ -554,9 +549,9 @@ class TerminalContainerView: NSView {
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
-        // Window changed (attach/detach/reparent) — wire up the
-        // become-key observer to the new host window (or remove it if we
-        // no longer have a window).
+        // AppKit may call this method multiple times for the same window —
+        // skip the observer dance when nothing has actually changed.
+        guard window !== observedWindow else { return }
         removeBecomeKeyObserver()
         guard let win = window else { return }
         becomeKeyObserver = NotificationCenter.default.addObserver(
@@ -566,6 +561,7 @@ class TerminalContainerView: NSView {
         ) { [weak self] _ in
             self?.refreshActiveTerminalAfterReparent()
         }
+        observedWindow = win
         // First repaint after attaching to the window — `displayIfNeeded`
         // inside `showTab` is a no-op when the container had no window yet,
         // so this is the first chance to actually paint the SwiftTerm view.
@@ -591,17 +587,13 @@ class TerminalContainerView: NSView {
             scrollInterceptor.frame = bounds
             tab.startIfNeeded()
             if frameChanged {
-                tab.forceFullRedraw()
-                if tab.terminalView.getTerminal().isCurrentBufferAlternate {
-                    tab.kickPTYWindowSize()
-                }
+                tab.refreshAfterReparent()
             }
         } else {
             // Terminal view was removed (e.g. tab switch race) — re-add it.
-            // `showTab` already calls `forceFullRedraw` after the insert.
+            // `showTab` already starts the PTY, marks needsLayout, and calls
+            // `refreshAfterReparent`, so nothing else to do here.
             showTab(tab)
-            tab.terminalView.needsLayout = true
-            tab.startIfNeeded()
         }
     }
 
@@ -839,6 +831,11 @@ final class TerminalTab: Identifiable, Hashable {
     ///
     /// No-op when the process isn't running or the PTY fd is invalid.
     /// Idempotent — sending the same winsize twice is harmless.
+    ///
+    /// There is a benign race window between the `isProcessRunning` check
+    /// and the `setWinSize` call: the child can exit in between, leaving
+    /// `childfd` closed. The ioctl on a closed fd returns `EBADF` which we
+    /// intentionally swallow — the result is the same as a normal no-op.
     func kickPTYWindowSize() {
         guard isProcessRunning else { return }
         let fd = terminalView.process.childfd
@@ -848,6 +845,17 @@ final class TerminalTab: Identifiable, Hashable {
             masterPtyDescriptor: fd,
             windowSize: &size
         )
+    }
+
+    /// Convenience wrapper: repaint the buffer and, for alternate-screen
+    /// TUIs, raise SIGWINCH so the child redraws. Used by every re-parent
+    /// site in `TerminalContainerView` (`showTab`, `viewDidMoveToWindow`,
+    /// `layout` on frame change, become-key observer).
+    func refreshAfterReparent() {
+        forceFullRedraw()
+        if terminalView.getTerminal().isCurrentBufferAlternate {
+            kickPTYWindowSize()
+        }
     }
 
     /// Whether the shell process is still running.
