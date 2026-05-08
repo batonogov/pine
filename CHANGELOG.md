@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.25.6](https://github.com/batonogov/pine/compare/v1.25.5...v1.25.6) (2026-05-08)
+
+
+### Bug Fixes
+
+* **terminal:** redraw and SIGWINCH on re-parent for TUI alternate screen ([#923](https://github.com/batonogov/pine/issues/923)) ([05b3717](https://github.com/batonogov/pine/commit/05b3717b9b9e63465b156e325dd379fed7bd6b12))
+
 ## [1.25.5](https://github.com/batonogov/pine/compare/v1.25.4...v1.25.5) (2026-05-04)
 
 
