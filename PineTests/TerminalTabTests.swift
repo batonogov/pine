@@ -722,6 +722,272 @@ struct TerminalTabTests {
                 "Process must not start while the container has zero bounds")
     }
 
+    // MARK: - Black terminal on TUI fix
+    //
+    // After re-parenting the terminal view (tab switch, pane split, drag,
+    // window become-key, etc.) AppKit may discard the layer's backing store,
+    // and TUI apps in alternate screen (k9s, htop, vim) won't redraw on
+    // their own. Pine repaints from `displayBuffer` via `forceFullRedraw`
+    // and (for alternate screen) raises SIGWINCH via `kickPTYWindowSize` to
+    // nudge the TUI into redrawing.
+
+    /// `forceFullRedraw` must seed SwiftTerm's dirty range so a subsequent
+    /// `updateDisplay` (or our own synchronous `setNeedsDisplay`) repaints
+    /// the entire visible buffer. Without this, an idle TUI in alternate
+    /// screen leaves `getUpdateRange()` empty and SwiftTerm's throttled
+    /// path never schedules a redraw.
+    @Test @MainActor func forceFullRedrawSeedsDirtyRange() {
+        let tab = TerminalTab(name: "test")
+        tab.terminalView.frame = NSRect(x: 0, y: 0, width: 800, height: 300)
+        let term = tab.terminalView.getTerminal()
+
+        term.clearUpdateRange()
+        #expect(term.getUpdateRange() == nil, "Precondition: dirty range must start empty")
+
+        tab.forceFullRedraw()
+
+        let range = term.getUpdateRange()
+        #expect(range != nil, "forceFullRedraw must seed a non-empty dirty range")
+        #expect(range?.startY == 0)
+        #expect(range?.endY == term.rows)
+    }
+
+    /// `forceFullRedraw` must not crash when the terminal view has no
+    /// host window — `displayIfNeeded` is a no-op in that state but the
+    /// dirty-range seeding and `setNeedsDisplay` calls must still succeed.
+    @Test @MainActor func forceFullRedrawSafeWithoutWindow() {
+        let tab = TerminalTab(name: "test")
+        tab.terminalView.frame = NSRect(x: 0, y: 0, width: 800, height: 300)
+        // Not added to any window/superview.
+        tab.forceFullRedraw()
+        #expect(tab.terminalView.window == nil)
+    }
+
+    /// `forceFullRedraw` is idempotent: calling it twice in a row must
+    /// behave like calling it once — same dirty range, no crashes.
+    @Test @MainActor func forceFullRedrawIdempotent() {
+        let tab = TerminalTab(name: "test")
+        tab.terminalView.frame = NSRect(x: 0, y: 0, width: 800, height: 300)
+        let term = tab.terminalView.getTerminal()
+
+        tab.forceFullRedraw()
+        tab.forceFullRedraw()
+
+        let range = term.getUpdateRange()
+        #expect(range?.startY == 0)
+        #expect(range?.endY == term.rows)
+    }
+
+    /// `kickPTYWindowSize` must be a safe no-op when the shell process is
+    /// not running. Calling it on a freshly-created tab (which has not
+    /// reached `startIfNeeded`) must not crash, and `isProcessRunning`
+    /// must stay false.
+    @Test @MainActor func kickPTYWindowSizeNoOpWhenProcessNotRunning() {
+        let tab = TerminalTab(name: "test")
+        // No `startIfNeeded` — process is not running.
+        tab.kickPTYWindowSize()
+        #expect(!tab.isProcessRunning)
+    }
+
+    /// `kickPTYWindowSize` against a running shell must not kill the
+    /// process. Sending the same winsize is identical to a no-change
+    /// `SIGWINCH` and is benign.
+    @Test @MainActor func kickPTYWindowSizeOnRunningProcessKeepsItAlive() throws {
+        let tab = TerminalTab(name: "test")
+        tab.terminalView.frame = NSRect(x: 0, y: 0, width: 800, height: 300)
+        tab.configure(workingDirectory: nil)
+        tab.startIfNeeded()
+        try #require(tab.isProcessRunning)
+
+        tab.kickPTYWindowSize()
+        #expect(tab.isProcessRunning, "SIGWINCH with the same winsize must not terminate the shell")
+    }
+
+    /// `kickPTYWindowSize` after `stop()` must be a safe no-op — the
+    /// process is no longer running and the PTY fd may be invalid.
+    @Test @MainActor func kickPTYWindowSizeAfterStopIsNoOp() throws {
+        let tab = TerminalTab(name: "test")
+        tab.terminalView.frame = NSRect(x: 0, y: 0, width: 800, height: 300)
+        tab.configure(workingDirectory: nil)
+        tab.startIfNeeded()
+        try #require(tab.isProcessRunning)
+        tab.stop()
+        // Should not crash even though the PTY is being torn down.
+        tab.kickPTYWindowSize()
+        #expect(tab.isTerminated)
+    }
+
+    /// Switching back to a previously-active tab must seed its dirty
+    /// range so the layer repaints from the buffer. Reproduces the
+    /// scenario "k9s in tab1, switch to tab2, switch back to tab1 →
+    /// alternate-screen buffer never redrew → blank terminal".
+    @Test @MainActor func returningToPreviousTabRepaintsBuffer() throws {
+        let state = TerminalPaneState()
+        let tab1 = state.addTab(workingDirectory: nil)
+        state.startTabs(workingDirectory: nil)
+        let container = TerminalContainerView(frame: NSRect(x: 0, y: 0, width: 800, height: 300))
+        container.terminalPaneState = state
+        container.showTab(state.activeTab)
+
+        let tab2 = state.addTab(workingDirectory: nil)
+        container.showTab(state.activeTab) // installs tab2
+
+        // Imagine tab1's TUI has been idle on alternate screen for a while —
+        // its dirty range was consumed by SwiftTerm's last paint.
+        tab1.terminalView.getTerminal().clearUpdateRange()
+        #expect(tab1.terminalView.getTerminal().getUpdateRange() == nil)
+
+        // User clicks tab1 in the tab bar — Pine flips active and re-shows.
+        state.activeTerminalID = tab1.id
+        container.showTab(state.activeTab)
+
+        let range = tab1.terminalView.getTerminal().getUpdateRange()
+        #expect(range != nil, "Returning to tab1 must seed its dirty range so the buffer repaints")
+        #expect(range?.startY == 0)
+        _ = tab2 // suppress unused warning
+    }
+
+    /// The first time a `TerminalContainerView` enters a window, the
+    /// active tab's buffer must be marked dirty — `displayIfNeeded`
+    /// inside `showTab` is a no-op while the container has no window,
+    /// so `viewDidMoveToWindow` is the first chance to actually paint.
+    @Test @MainActor func viewDidMoveToWindowSeedsDirtyRange() throws {
+        let state = TerminalPaneState()
+        let tab = state.addTab(workingDirectory: nil)
+        state.startTabs(workingDirectory: nil)
+        let container = TerminalContainerView(frame: NSRect(x: 0, y: 0, width: 800, height: 300))
+        container.terminalPaneState = state
+        container.showTab(state.activeTab)
+
+        // Drain the dirty range that `showTab` already seeded so the
+        // assertion below is about `viewDidMoveToWindow` specifically.
+        tab.terminalView.getTerminal().clearUpdateRange()
+        #expect(tab.terminalView.getTerminal().getUpdateRange() == nil)
+
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 800, height: 300),
+            styleMask: [.titled],
+            backing: .buffered,
+            defer: false
+        )
+        window.contentView = container
+
+        let range = tab.terminalView.getTerminal().getUpdateRange()
+        #expect(range != nil, "Attaching to a window must seed the dirty range")
+        #expect(range?.startY == 0)
+    }
+
+    /// `layout()` with the same bounds twice must NOT re-trigger a
+    /// forceFullRedraw — the `frameChanged` guard prevents redundant
+    /// repaints on AppKit's no-op layout passes.
+    @Test @MainActor func layoutWithUnchangedBoundsDoesNotReseedDirtyRange() throws {
+        let state = TerminalPaneState()
+        let tab = state.addTab(workingDirectory: nil)
+        state.startTabs(workingDirectory: nil)
+
+        let container = TerminalContainerView(frame: NSRect(x: 0, y: 0, width: 800, height: 300))
+        container.terminalPaneState = state
+        container.showTab(state.activeTab)
+        container.layout() // first layout pass — frame changed from showTab fallback to real
+
+        // Drain the dirty range so we can detect a re-seed unambiguously.
+        tab.terminalView.getTerminal().clearUpdateRange()
+        #expect(tab.terminalView.getTerminal().getUpdateRange() == nil)
+
+        // Second layout with identical bounds — must be a no-op for redraw.
+        container.layout()
+
+        #expect(tab.terminalView.getTerminal().getUpdateRange() == nil,
+                "Layout with unchanged bounds must not re-seed the dirty range")
+    }
+
+    /// `layout()` with new bounds must re-seed the dirty range so a TUI
+    /// app's alternate-screen content repaints after a sub-cell pixel
+    /// resize that did NOT trigger SwiftTerm's own size-change path.
+    @Test @MainActor func layoutWithChangedBoundsReseedsDirtyRange() throws {
+        let state = TerminalPaneState()
+        let tab = state.addTab(workingDirectory: nil)
+        state.startTabs(workingDirectory: nil)
+
+        let container = TerminalContainerView(frame: NSRect(x: 0, y: 0, width: 800, height: 300))
+        container.terminalPaneState = state
+        container.showTab(state.activeTab)
+        container.layout()
+
+        tab.terminalView.getTerminal().clearUpdateRange()
+
+        // Resize the container — frame size differs from previous layout.
+        container.frame = NSRect(x: 0, y: 0, width: 1000, height: 400)
+        container.layout()
+
+        let range = tab.terminalView.getTerminal().getUpdateRange()
+        #expect(range != nil, "Layout with new bounds must re-seed the dirty range")
+    }
+
+    /// After `removeFromSuperview` the container must clean up its
+    /// become-key observer so it cannot fire against a now-detached
+    /// terminal view. Verified indirectly: posting the notification
+    /// does not crash and does not re-seed the dirty range.
+    @Test @MainActor func removeFromSuperviewClearsBecomeKeyObserver() throws {
+        let state = TerminalPaneState()
+        let tab = state.addTab(workingDirectory: nil)
+        state.startTabs(workingDirectory: nil)
+
+        let container = TerminalContainerView(frame: NSRect(x: 0, y: 0, width: 800, height: 300))
+        container.terminalPaneState = state
+        container.showTab(state.activeTab)
+
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 800, height: 300),
+            styleMask: [.titled],
+            backing: .buffered,
+            defer: false
+        )
+        window.contentView = container
+
+        container.removeFromSuperview()
+        tab.terminalView.getTerminal().clearUpdateRange()
+        #expect(tab.terminalView.getTerminal().getUpdateRange() == nil)
+
+        // Posting becomeKey on the (now-orphaned) window must not retrigger
+        // a redraw on the detached container.
+        NotificationCenter.default.post(name: NSWindow.didBecomeKeyNotification, object: window)
+
+        #expect(tab.terminalView.getTerminal().getUpdateRange() == nil,
+                "Detached container must not respond to becomeKey notifications")
+    }
+
+    /// When the host window receives `didBecomeKey`, the active terminal
+    /// must repaint so a previously-blanked alternate-screen buffer
+    /// becomes visible again.
+    @Test @MainActor func windowBecomeKeyTriggersTerminalRedraw() throws {
+        let state = TerminalPaneState()
+        let tab = state.addTab(workingDirectory: nil)
+        state.startTabs(workingDirectory: nil)
+
+        let container = TerminalContainerView(frame: NSRect(x: 0, y: 0, width: 800, height: 300))
+        container.terminalPaneState = state
+        container.showTab(state.activeTab)
+
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 800, height: 300),
+            styleMask: [.titled],
+            backing: .buffered,
+            defer: false
+        )
+        window.contentView = container
+
+        // Drain the dirty range that `viewDidMoveToWindow` just seeded.
+        tab.terminalView.getTerminal().clearUpdateRange()
+        #expect(tab.terminalView.getTerminal().getUpdateRange() == nil)
+
+        // Simulate user returning focus to the window via Cmd+Tab.
+        NotificationCenter.default.post(name: NSWindow.didBecomeKeyNotification, object: window)
+
+        let range = tab.terminalView.getTerminal().getUpdateRange()
+        #expect(range != nil, "didBecomeKey must trigger a buffer repaint on the active terminal")
+    }
+
     /// Stress test: rapidly creating, switching, and closing tabs must keep
     /// every running tab attached or cleanly detached, with no leaked
     /// subviews and no duplicated processes.
