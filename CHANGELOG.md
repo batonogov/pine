@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.25.7](https://github.com/batonogov/pine/compare/v1.25.6...v1.25.7) (2026-05-13)
+
+
+### Miscellaneous
+
+* update swift-markdown to 0.8.0 ([#925](https://github.com/batonogov/pine/issues/925)) ([9f67b26](https://github.com/batonogov/pine/commit/9f67b26dd8e732a5bca0e557b75cb853c01a874b))
+
 ## [1.25.6](https://github.com/batonogov/pine/compare/v1.25.5...v1.25.6) (2026-05-08)
 
 
