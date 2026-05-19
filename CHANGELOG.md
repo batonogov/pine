@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.25.8](https://github.com/batonogov/pine/compare/v1.25.7...v1.25.8) (2026-05-19)
+
+
+### Miscellaneous
+
+* update Sparkle to 2.9.2 ([#927](https://github.com/batonogov/pine/issues/927)) ([7cda971](https://github.com/batonogov/pine/commit/7cda9712fd650179bc00a749cab61bf4bbea705b))
+
 ## [1.25.7](https://github.com/batonogov/pine/compare/v1.25.6...v1.25.7) (2026-05-13)
 
 
