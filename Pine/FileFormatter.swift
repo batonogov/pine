@@ -85,6 +85,36 @@ struct JSONFileFormatter: FileFormatter {
     }
 }
 
+/// Creates a YAML formatter that delegates to `prettier --parser yaml`.
+/// Gracefully no-ops when prettier is not installed.
+enum YAMLFileFormatter {
+    static func resolve(
+        processRunner: @escaping ProcessRunner = runRealProcess,
+        resolver: ExternalToolResolver = .fromEnvironment()
+    ) -> ExternalFileFormatter {
+        let extensions = ["yml", "yaml"]
+        let arguments = ["--parser", "yaml"]
+
+        if let path = resolver.resolve(tool: "prettier") {
+            return ExternalFileFormatter(
+                toolPath: path,
+                toolName: "prettier",
+                extensions: extensions,
+                arguments: arguments,
+                processRunner: processRunner
+            )
+        }
+
+        return ExternalFileFormatter(
+            toolPath: nil,
+            toolName: "prettier",
+            extensions: extensions,
+            arguments: arguments,
+            processRunner: processRunner
+        )
+    }
+}
+
 /// Creates an HCL formatter that delegates to `terraform fmt -` or `tofu fmt -`.
 /// Prefers `terraform` when both are installed; gracefully no-ops when neither is found.
 enum HCLFileFormatter {
@@ -129,7 +159,8 @@ struct FileFormatterRegistry: Sendable {
     /// by consumers — they participate in the same first-match dispatch.
     static let `default` = FileFormatterRegistry(formatters: [
         JSONFileFormatter(),
-        HCLFileFormatter.resolve()
+        HCLFileFormatter.resolve(),
+        YAMLFileFormatter.resolve()
     ])
 
     /// Returns a formatted copy of `content` for the given URL, or the original if no
