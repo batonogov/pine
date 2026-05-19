@@ -85,6 +85,66 @@ struct JSONFileFormatter: FileFormatter {
     }
 }
 
+/// Formats YAML via `prettier --parser yaml`. Skips lock files and large files
+/// to avoid corrupting dependency trees or blocking the UI.
+struct YAMLFileFormatter: FileFormatter, Sendable {
+    /// Lock files that must never be reformatted — reformatting changes
+    /// content hashes and breaks dependency resolution.
+    private static let blocklist: Set<String> = [
+        "pnpm-lock.yaml", "yarn.lock",
+        "gemfile.lock", "cargo.lock"
+    ]
+
+    /// Maximum content size to format synchronously on the main thread.
+    /// Larger files are left as-is to avoid blocking the UI.
+    private static let maxFormatSize = 100_000
+
+    private let formatter: ExternalFileFormatter
+
+    init(formatter: ExternalFileFormatter) {
+        self.formatter = formatter
+    }
+
+    static func resolve(
+        processRunner: @escaping ProcessRunner = runRealProcess,
+        resolver: ExternalToolResolver = .fromEnvironment()
+    ) -> YAMLFileFormatter {
+        let extensions = ["yml", "yaml"]
+        let arguments = ["--parser", "yaml"]
+
+        let external: ExternalFileFormatter
+        if let path = resolver.resolve(tool: "prettier") {
+            external = ExternalFileFormatter(
+                toolPath: path,
+                toolName: "prettier",
+                extensions: extensions,
+                arguments: arguments,
+                processRunner: processRunner
+            )
+        } else {
+            external = ExternalFileFormatter(
+                toolPath: nil,
+                toolName: "prettier",
+                extensions: extensions,
+                arguments: arguments,
+                processRunner: processRunner
+            )
+        }
+        return YAMLFileFormatter(formatter: external)
+    }
+
+    func canFormat(url: URL) -> Bool {
+        formatter.canFormat(url: url)
+    }
+
+    func format(_ content: String, url: URL) -> String {
+        let filename = url.lastPathComponent.lowercased()
+        if Self.blocklist.contains(filename) { return content }
+        guard content.utf8.count < Self.maxFormatSize else { return content }
+        return formatter.format(content, url: url)
+    }
+}
+
 /// Creates an HCL formatter that delegates to `terraform fmt -` or `tofu fmt -`.
 /// Prefers `terraform` when both are installed; gracefully no-ops when neither is found.
 enum HCLFileFormatter {
@@ -129,7 +189,8 @@ struct FileFormatterRegistry: Sendable {
     /// by consumers — they participate in the same first-match dispatch.
     static let `default` = FileFormatterRegistry(formatters: [
         JSONFileFormatter(),
-        HCLFileFormatter.resolve()
+        HCLFileFormatter.resolve(),
+        YAMLFileFormatter.resolve()
     ])
 
     /// Returns a formatted copy of `content` for the given URL, or the original if no
