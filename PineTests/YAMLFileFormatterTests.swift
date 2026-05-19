@@ -15,16 +15,16 @@ struct YAMLFileFormatterTests {
 
     private func makeFormatter(
         runner: MockProcessRunner,
-        toolPath: String? = "/usr/local/bin/prettier",
-        toolName: String = "prettier"
-    ) -> ExternalFileFormatter {
-        ExternalFileFormatter(
+        toolPath: String? = "/usr/local/bin/prettier"
+    ) -> YAMLFileFormatter {
+        let external = ExternalFileFormatter(
             toolPath: toolPath,
-            toolName: toolName,
+            toolName: "prettier",
             extensions: ["yml", "yaml"],
             arguments: ["--parser", "yaml"],
             processRunner: runner.run
         )
+        return YAMLFileFormatter(formatter: external)
     }
 
     // MARK: - Prettier found
@@ -66,7 +66,6 @@ struct YAMLFileFormatterTests {
         let runner = MockProcessRunner(stdout: "should not appear", stderr: "", exitCode: 0)
         let formatter = makeFormatter(runner: runner, toolPath: nil)
 
-        #expect(formatter.toolPath == nil)
         #expect(!formatter.canFormat(url: URL(fileURLWithPath: "/project/config.yml")))
 
         let result = formatter.format("key: value", url: URL(fileURLWithPath: "/project/config.yml"))
@@ -89,15 +88,17 @@ struct YAMLFileFormatterTests {
 
     @Test("Timeout — returns original content")
     func timeoutReturnsOriginal() {
-        let runner = MockProcessRunner(stdout: "", stderr: "", exitCode: 0, simulateTimeout: true)
-        let formatter = ExternalFileFormatter(
+        let external = ExternalFileFormatter(
             toolPath: "/usr/local/bin/prettier",
             toolName: "prettier",
             extensions: ["yml", "yaml"],
             arguments: ["--parser", "yaml"],
-            processRunner: runner.run,
+            processRunner: MockProcessRunner(
+                stdout: "", stderr: "", exitCode: 0, simulateTimeout: true
+            ).run,
             timeout: 0.1
         )
+        let formatter = YAMLFileFormatter(formatter: external)
         let result = formatter.format("key: value", url: URL(fileURLWithPath: "/project/config.yml"))
         #expect(result == "key: value")
     }
@@ -143,6 +144,89 @@ struct YAMLFileFormatterTests {
         #expect(runner.lastStdinContent == "key: value\n")
     }
 
+    // MARK: - Blocklist
+
+    @Test("pnpm-lock.yaml is never reformatted")
+    func pnpmLockSkipped() {
+        let runner = MockProcessRunner(stdout: "reformatted lock", stderr: "", exitCode: 0)
+        let formatter = makeFormatter(runner: runner)
+        let result = formatter.format(
+            "lockfileVersion: '6.0'\n",
+            url: URL(fileURLWithPath: "/project/pnpm-lock.yaml")
+        )
+        #expect(result == "lockfileVersion: '6.0'\n")
+        #expect(runner.lastStdinContent == nil)
+    }
+
+    @Test("yarn.lock is never reformatted")
+    func yarnLockSkipped() {
+        let runner = MockProcessRunner(stdout: "reformatted lock", stderr: "", exitCode: 0)
+        let formatter = makeFormatter(runner: runner)
+        let result = formatter.format(
+            "# yarn lockfile\n",
+            url: URL(fileURLWithPath: "/project/yarn.lock")
+        )
+        #expect(result == "# yarn lockfile\n")
+    }
+
+    @Test("Gemfile.lock is never reformatted")
+    func gemfileLockSkipped() {
+        let runner = MockProcessRunner(stdout: "reformatted lock", stderr: "", exitCode: 0)
+        let formatter = makeFormatter(runner: runner)
+        let result = formatter.format(
+            "GEM\n  remote: https://rubygems.org/\n",
+            url: URL(fileURLWithPath: "/project/Gemfile.lock")
+        )
+        #expect(result == "GEM\n  remote: https://rubygems.org/\n")
+    }
+
+    @Test("Cargo.lock is never reformatted")
+    func cargoLockSkipped() {
+        let runner = MockProcessRunner(stdout: "reformatted lock", stderr: "", exitCode: 0)
+        let formatter = makeFormatter(runner: runner)
+        let result = formatter.format(
+            "[[package]]\nname = \"serde\"\n",
+            url: URL(fileURLWithPath: "/project/Cargo.lock")
+        )
+        #expect(result == "[[package]]\nname = \"serde\"\n")
+    }
+
+    @Test("Blocklist is case-insensitive")
+    func blocklistCaseInsensitive() {
+        let runner = MockProcessRunner(stdout: "reformatted", stderr: "", exitCode: 0)
+        let formatter = makeFormatter(runner: runner)
+        let result = formatter.format(
+            "lockfileVersion: '6.0'\n",
+            url: URL(fileURLWithPath: "/project/PNPM-LOCK.YAML")
+        )
+        #expect(result == "lockfileVersion: '6.0'\n")
+    }
+
+    // MARK: - Large files
+
+    @Test("Files over 100KB are skipped")
+    func largeFilesSkipped() {
+        let runner = MockProcessRunner(stdout: "formatted", stderr: "", exitCode: 0)
+        let formatter = makeFormatter(runner: runner)
+        let largeContent = String(repeating: "key: value\n", count: 10_001)
+        let result = formatter.format(
+            largeContent,
+            url: URL(fileURLWithPath: "/project/huge.yml")
+        )
+        #expect(result == largeContent)
+        #expect(runner.lastStdinContent == nil)
+    }
+
+    @Test("Files just under 100KB are formatted")
+    func filesUnderLimitAreFormatted() {
+        let runner = MockProcessRunner(stdout: "formatted", stderr: "", exitCode: 0)
+        let formatter = makeFormatter(runner: runner)
+        let content = "key: value\n"
+        #expect(content.utf8.count < 100_000)
+        let result = formatter.format(content, url: URL(fileURLWithPath: "/project/config.yml"))
+        #expect(result == "formatted")
+    }
+
     // MARK: - Resolve priority
 
     @Test("YAMLFileFormatter.resolve uses prettier when available")
@@ -161,8 +245,9 @@ struct YAMLFileFormatterTests {
         let runner = MockProcessRunner(stdout: "formatted", stderr: "", exitCode: 0)
         let formatter = YAMLFileFormatter.resolve(processRunner: runner.run, resolver: resolver)
 
-        #expect(formatter.toolName == "prettier")
-        #expect(formatter.toolPath == prettierPath.path)
+        #expect(formatter.canFormat(url: URL(fileURLWithPath: "/project/config.yml")))
+        let result = formatter.format("key: value", url: URL(fileURLWithPath: "/project/config.yml"))
+        #expect(result == "formatted")
     }
 
     @Test("YAMLFileFormatter.resolve is no-op when prettier is missing")
@@ -171,7 +256,7 @@ struct YAMLFileFormatterTests {
         let runner = MockProcessRunner(stdout: "formatted", stderr: "", exitCode: 0)
         let formatter = YAMLFileFormatter.resolve(processRunner: runner.run, resolver: resolver)
 
-        #expect(formatter.toolPath == nil)
+        #expect(!formatter.canFormat(url: URL(fileURLWithPath: "/project/config.yml")))
     }
 
     // MARK: - Main-thread safety

@@ -85,33 +85,63 @@ struct JSONFileFormatter: FileFormatter {
     }
 }
 
-/// Creates a YAML formatter that delegates to `prettier --parser yaml`.
-/// Gracefully no-ops when prettier is not installed.
-enum YAMLFileFormatter {
+/// Formats YAML via `prettier --parser yaml`. Skips lock files and large files
+/// to avoid corrupting dependency trees or blocking the UI.
+struct YAMLFileFormatter: FileFormatter, Sendable {
+    /// Lock files that must never be reformatted — reformatting changes
+    /// content hashes and breaks dependency resolution.
+    private static let blocklist: Set<String> = [
+        "pnpm-lock.yaml", "yarn.lock",
+        "gemfile.lock", "cargo.lock"
+    ]
+
+    /// Maximum content size to format synchronously on the main thread.
+    /// Larger files are left as-is to avoid blocking the UI.
+    private static let maxFormatSize = 100_000
+
+    private let formatter: ExternalFileFormatter
+
+    init(formatter: ExternalFileFormatter) {
+        self.formatter = formatter
+    }
+
     static func resolve(
         processRunner: @escaping ProcessRunner = runRealProcess,
         resolver: ExternalToolResolver = .fromEnvironment()
-    ) -> ExternalFileFormatter {
+    ) -> YAMLFileFormatter {
         let extensions = ["yml", "yaml"]
         let arguments = ["--parser", "yaml"]
 
+        let external: ExternalFileFormatter
         if let path = resolver.resolve(tool: "prettier") {
-            return ExternalFileFormatter(
+            external = ExternalFileFormatter(
                 toolPath: path,
                 toolName: "prettier",
                 extensions: extensions,
                 arguments: arguments,
                 processRunner: processRunner
             )
+        } else {
+            external = ExternalFileFormatter(
+                toolPath: nil,
+                toolName: "prettier",
+                extensions: extensions,
+                arguments: arguments,
+                processRunner: processRunner
+            )
         }
+        return YAMLFileFormatter(formatter: external)
+    }
 
-        return ExternalFileFormatter(
-            toolPath: nil,
-            toolName: "prettier",
-            extensions: extensions,
-            arguments: arguments,
-            processRunner: processRunner
-        )
+    func canFormat(url: URL) -> Bool {
+        formatter.canFormat(url: url)
+    }
+
+    func format(_ content: String, url: URL) -> String {
+        let filename = url.lastPathComponent.lowercased()
+        if Self.blocklist.contains(filename) { return content }
+        guard content.utf8.count < Self.maxFormatSize else { return content }
+        return formatter.format(content, url: url)
     }
 }
 
