@@ -483,6 +483,27 @@ extension CodeEditorView {
             // в своих координатах; union между версиями некорректен.
             // При быстром вводе последовательные правки обычно смежны,
             // и 20-строчный контекст в highlightEdited покрывает их.
+            //
+            // Optimization (#863): for files below the viewport threshold,
+            // apply a synchronous incremental highlight immediately. This
+            // eliminates the 100ms debounce gap that caused visible flicker
+            // on Enter — the new line gets syntax colors in the same display
+            // cycle as the text change. The debounced async path is still
+            // scheduled as a fallback to catch any edge cases the sync pass
+            // missed (e.g., multiline token boundary changes that expand
+            // beyond the incremental context window).
+            if let storage = textView.textStorage,
+               let range = editedRange,
+               range.location + range.length <= storage.length,
+               storage.length <= CodeEditorView.viewportHighlightThreshold {
+                SyntaxHighlighter.shared.highlightEdited(
+                    textStorage: storage,
+                    editedRange: range,
+                    language: parent.language,
+                    fileName: parent.fileName,
+                    font: parent.editorFont
+                )
+            }
             scheduleDeferredHighlight(editedRange: editedRange)
         }
 
