@@ -663,7 +663,10 @@ final class TerminalTab: Identifiable, Hashable {
     private let shellSettings: ShellSettings
     private var processStarted = false
     private var workingDirectory: URL?
-    private var appearanceObserver: NSObjectProtocol?
+
+    /// KVO observation token for `NSApp.effectiveAppearance` — re-applies
+    /// palette and background when the user switches between light/dark mode.
+    private var appearanceObservation: NSKeyValueObservation?
 
     init(name: String, shellSettings: ShellSettings = .shared) {
         self.name = name
@@ -696,19 +699,10 @@ final class TerminalTab: Identifiable, Hashable {
         TerminalPalette.install(on: terminalView)
 
         // Re-apply palette and background when system appearance changes.
-        appearanceObserver = NotificationCenter.default.addObserver(
-            forName: NSApplication.effectiveAppearanceDidChangeNotification,
-            object: nil, queue: .main
-        ) { [weak self] _ in
+        appearanceObservation = NSApp.observe(\.effectiveAppearance, options: .new) { [weak self] _, _ in
             guard let self else { return }
             self.terminalView.nativeBackgroundColor = TerminalPalette.currentBackgroundColor()
             TerminalPalette.install(on: self.terminalView)
-        }
-    }
-
-    deinit {
-        if let observer = appearanceObserver {
-            NotificationCenter.default.removeObserver(observer)
         }
     }
 
