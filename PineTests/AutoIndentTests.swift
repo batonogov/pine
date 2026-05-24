@@ -281,7 +281,7 @@ struct AutoIndentTests {
         #expect(view.string == "\t{\n\t    \n\t}")
     }
 
-    @Test func insertNewline_betweenColonAndCloseParen_noExpansion() {
+    @Test func insertNewline_betweenColonAndCloseParen_expansionCursorCorrect() {
         // ":" + ")" — both opener and closer, should trigger bracket expansion
         let view = makeGutterTextView(text: "case .foo:)")
         insertNewline(in: view, at: 10) // after ":"
@@ -353,11 +353,16 @@ struct AutoIndentTests {
     }
 
     @Test func insertNewline_braceExpansion_undoManagerAvailable() {
-        // Verify that undo manager is available after bracket expansion
+        // Verify that undo manager is available and functional after bracket expansion
         let view = makeGutterTextView(text: "{}")
         insertNewline(in: view, at: 1)
 
         // The expansion should modify text — verify text changed
         #expect(view.string == "{\n    \n}", "Text should be expanded to three lines")
+
+        // Undo should restore original text and cursor position
+        view.undoManager?.undo()
+        #expect(view.string == "{}", "Undo should restore original text")
+        #expect(view.selectedRange().location == 1, "Undo should restore cursor position")
     }
 }
