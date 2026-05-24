@@ -30,15 +30,16 @@ final class EditorStressTests: XCTestCase {
         // Use a unique temp directory per test run. Fallback to /tmp if
         // the system temporary directory is unavailable (e.g. some CI runners).
         let systemTemp = FileManager.default.temporaryDirectory
-        tempDir = systemTemp
+        let candidateDir = systemTemp
             .appendingPathComponent("PineStressTests-\(UUID().uuidString)")
         do {
-            try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+            try FileManager.default.createDirectory(at: candidateDir, withIntermediateDirectories: true)
+            tempDir = candidateDir
         } catch {
-            // If the system temp dir is unavailable, fall back to /tmp
-            tempDir = URL(fileURLWithPath: "/tmp")
+            let fallbackDir = URL(fileURLWithPath: "/tmp")
                 .appendingPathComponent("PineStressTests-\(UUID().uuidString)")
-            try? FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+            try? FileManager.default.createDirectory(at: fallbackDir, withIntermediateDirectories: true)
+            tempDir = fallbackDir
         }
         highlighter = SyntaxHighlighter.shared
         highlighter.registerGrammar(stressGrammar)
@@ -46,6 +47,7 @@ final class EditorStressTests: XCTestCase {
 
     override func tearDown() {
         highlighter.unregisterGrammar(stressGrammar)
+        highlighter.clearMultilineCache()
         if let tempDir {
             try? FileManager.default.removeItem(at: tempDir)
         }
@@ -342,7 +344,7 @@ final class EditorStressTests: XCTestCase {
         }
     }
 
-    func testFileWatcherWithRapidFileCreation() {
+    func testFileWatcherWithRapidFileCreation() throws {
         let expectation = expectation(description: "watcher callback")
         expectation.assertForOverFulfill = false
 
@@ -367,7 +369,7 @@ final class EditorStressTests: XCTestCase {
         // full window server session. Gracefully skip the assertion instead
         // of failing when the callback was never invoked.
         if result == .timedOut {
-            print("Skipping assertion: FSEventStream did not deliver events (likely headless CI)")
+            throw XCTSkip("FSEventStream did not deliver events (likely headless CI)")
         } else {
             XCTAssertGreaterThanOrEqual(callbackCount, 1)
         }

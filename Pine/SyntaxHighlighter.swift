@@ -219,6 +219,13 @@ nonisolated final class SyntaxHighlighter: @unchecked Sendable {
             compiledRules.removeValue(forKey: grammar.name)
         }
     }
+
+    /// Clears the multiline match cache (for test teardown).
+    func clearMultilineCache() {
+        lock.withLock {
+            multilineMatchCache.removeAll()
+        }
+    }
     #endif
 
     // MARK: - Загрузка грамматик
