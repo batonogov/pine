@@ -544,10 +544,22 @@ final class GutterTextView: NSTextView {
         if let last = lastNonSpace, let first = firstNonSpaceAfter,
            Self.indentOpeners.contains(last) && Self.indentClosers.contains(first) {
             let closingIndent = leadingWhitespace
-            insertText("\n\(indent)\n\(closingIndent)", replacementRange: selectedRange())
-            // Ставим курсор на среднюю строку (с увеличенным отступом)
-            let newCursorPos = cursorLocation + 1 + indent.count
-            setSelectedRange(NSRange(location: newCursorPos, length: 0))
+            let insertedText = "\n\(indent)\n\(closingIndent)"
+            let insertRange = NSRange(location: cursorLocation, length: 0)
+            let newCursorPos = cursorLocation + 1 + (indent as NSString).length
+
+            // Use shouldChangeText/replaceCharacters/didChangeText pattern
+            // (matching toggleComment) instead of insertText so that:
+            // 1. The cursor is set before textDidChange fires — Coordinator
+            //    reads the correct position via reportStateChange
+            // 2. Undo grouping wraps the entire operation atomically
+            if shouldChangeText(in: insertRange, replacementString: insertedText) {
+                undoManager?.beginUndoGrouping()
+                replaceCharacters(in: insertRange, with: insertedText)
+                setSelectedRange(NSRange(location: newCursorPos, length: 0))
+                undoManager?.endUndoGrouping()
+                didChangeText()
+            }
             return
         }
 
