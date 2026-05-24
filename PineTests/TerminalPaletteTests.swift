@@ -297,11 +297,15 @@ struct TerminalPaletteTests {
         #expect(!TerminalPalette.lightPalette.isEmpty)
     }
 
+    @Test func lightPaletteSlot0EqualsLightGhostTextOverride() {
+        #expect(TerminalPalette.lightPalette[0] == TerminalPalette.lightGhostTextOverride)
+    }
+
     // MARK: - Light palette reference values
 
     @Test func lightPaletteReferenceIsPreserved() {
         let expected: [(UInt8, UInt8, UInt8)] = [
-            (0x5C, 0x5F, 0x77), // 0  black (ghost text)
+            (0x6C, 0x6F, 0x85), // 0  black (ghost text override)
             (0xD2, 0x0F, 0x39), // 1  red
             (0x40, 0xA0, 0x2B), // 2  green
             (0xDF, 0x8E, 0x1D), // 3  yellow
@@ -330,7 +334,7 @@ struct TerminalPaletteTests {
 
     // MARK: - Light palette readability
 
-    @Test func lightPaletteBlackIsDarkerThanBackground() {
+    @Test func lightPaletteAllColorsAreDarkerThanBackground() {
         let bgL = relativeLuminance(TerminalPalette.lightModeBackgroundReference)
         for (index, entry) in TerminalPalette.lightPalette.enumerated() {
             #expect(
@@ -391,12 +395,11 @@ struct TerminalPaletteTests {
         #expect(color.alphaComponent == 1.0)
     }
 
-    @Test @MainActor func currentBackgroundColorDiffersBetweenAppearances() {
-        let darkBg = NSColor(srgbRed: 0x28 / 255.0, green: 0x2C / 255.0, blue: 0x34 / 255.0, alpha: 1.0)
-        let lightBg = NSColor(srgbRed: 0xEF / 255.0, green: 0xF1 / 255.0, blue: 0xF5 / 255.0, alpha: 1.0)
+    @Test @MainActor func currentBackgroundColorMatchesAppearance() {
+        let darkBg = TerminalPalette.darkModeBackgroundReference.makeNSColor()
+        let lightBg = TerminalPalette.lightModeBackgroundReference.makeNSColor()
         let current = TerminalPalette.currentBackgroundColor()
-        let isDark = NSApp.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
-        if isDark {
+        if TerminalPalette.isDarkMode {
             #expect(current == darkBg)
         } else {
             #expect(current == lightBg)
@@ -404,15 +407,14 @@ struct TerminalPaletteTests {
     }
 
     @Test @MainActor func darkAndLightBackgroundsAreDifferentColors() {
-        let dark = NSColor(srgbRed: 0x28 / 255.0, green: 0x2C / 255.0, blue: 0x34 / 255.0, alpha: 1.0)
-        let light = NSColor(srgbRed: 0xEF / 255.0, green: 0xF1 / 255.0, blue: 0xF5 / 255.0, alpha: 1.0)
+        let dark = TerminalPalette.darkModeBackgroundReference.makeNSColor()
+        let light = TerminalPalette.lightModeBackgroundReference.makeNSColor()
         #expect(dark != light)
     }
 
-    @Test @MainActor func currentPaletteDiffersBetweenAppearances() {
-        let isDark = NSApp.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+    @Test @MainActor func currentPaletteMatchesAppearance() {
         let palette = TerminalPalette.currentPalette()
-        if isDark {
+        if TerminalPalette.isDarkMode {
             #expect(palette == TerminalPalette.macOSAligned)
         } else {
             #expect(palette == TerminalPalette.lightPalette)

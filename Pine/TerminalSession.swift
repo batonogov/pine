@@ -663,6 +663,7 @@ final class TerminalTab: Identifiable, Hashable {
     private let shellSettings: ShellSettings
     private var processStarted = false
     private var workingDirectory: URL?
+    private var appearanceObserver: NSObjectProtocol?
 
     init(name: String, shellSettings: ShellSettings = .shared) {
         self.name = name
@@ -693,6 +694,22 @@ final class TerminalTab: Identifiable, Hashable {
         // independently of the SwiftTerm view and kept as a single source of
         // truth. The palette adapts to the current system appearance.
         TerminalPalette.install(on: terminalView)
+
+        // Re-apply palette and background when system appearance changes.
+        appearanceObserver = NotificationCenter.default.addObserver(
+            forName: NSApplication.effectiveAppearanceDidChangeNotification,
+            object: nil, queue: .main
+        ) { [weak self] _ in
+            guard let self else { return }
+            self.terminalView.nativeBackgroundColor = TerminalPalette.currentBackgroundColor()
+            TerminalPalette.install(on: self.terminalView)
+        }
+    }
+
+    deinit {
+        if let observer = appearanceObserver {
+            NotificationCenter.default.removeObserver(observer)
+        }
     }
 
     /// Сохраняет рабочую директорию для отложенного запуска

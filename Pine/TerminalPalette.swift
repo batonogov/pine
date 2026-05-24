@@ -4,11 +4,11 @@
 //
 //  Centralised ANSI 16-color palette for Pine's embedded SwiftTerm terminal.
 //
-//  Pine uses the Atom One Dark palette for the 16 ANSI slots that TUI apps
-//  such as k9s, htop, lazygit, btop and vim drive directly via `\e[3xm` /
-//  `tput setaf`. One Dark provides excellent readability across all 16 slots
-//  on a dark background — unlike Terminal.app Basic whose deep reds and blues
-//  are nearly invisible on dark-mode backgrounds.
+//  Pine uses appearance-aware ANSI palettes for the 16 ANSI slots that TUI
+//  apps such as k9s, htop, lazygit, btop and vim drive directly via
+//  `\e[3xm` / `tput setaf`. One Dark is used in dark mode; Catppuccin Latte
+//  in light mode. Both provide excellent readability on their respective
+//  backgrounds.
 //
 //  Scope of `install(on:)`:
 //  ONLY the 16 ANSI palette slots are touched here. Background / foreground
@@ -200,12 +200,16 @@ enum TerminalPalette {
 
     // MARK: - Light palette (Catppuccin Latte)
 
-    /// Light-mode ANSI palette (Catppuccin Latte). Used when macOS is in
-    /// light appearance so ANSI colors remain readable on a light background.
-    /// Slot 0 uses dark grey (#5C5F77) instead of pure black for the same
-    /// ghost-text reason as the dark palette (SwiftTerm 8 -> 0 collapse).
-    static let lightPalette: [TerminalPaletteEntry] = [
-        .init(red: 0x5C, green: 0x5F, blue: 0x77), // 0  black (ghost text)
+    /// Light-mode ghost text override for slot 0. Catppuccin Latte's Subtext 0
+    /// (#6C6F85) — readable grey for ghost text on the light background.
+    /// Uses the same slot-0 workaround as the dark palette (SwiftTerm 8→0 collapse).
+    static let lightGhostTextOverride = TerminalPaletteEntry(red: 0x6C, green: 0x6F, blue: 0x85)
+
+    /// Catppuccin Latte palette before ghost-text slot-0 override.
+    /// Bright colors (slots 9-14) intentionally equal their normal counterparts
+    /// — canonical for Catppuccin Latte, not a copy-paste error.
+    private static let catppuccinLatte: [TerminalPaletteEntry] = [
+        .init(red: 0xAC, green: 0xBE, blue: 0xBE), // 0  black (overridden below)
         .init(red: 0xD2, green: 0x0F, blue: 0x39), // 1  red
         .init(red: 0x40, green: 0xA0, blue: 0x2B), // 2  green
         .init(red: 0xDF, green: 0x8E, blue: 0x1D), // 3  yellow
@@ -223,24 +227,33 @@ enum TerminalPalette {
         .init(red: 0xBC, green: 0xC0, blue: 0xCC), // 15 bright white
     ]
 
+    /// Light-mode ANSI palette with ghost-text slot-0 override applied.
+    static let lightPalette: [TerminalPaletteEntry] = {
+        var entries = catppuccinLatte
+        entries[0] = lightGhostTextOverride
+        return entries
+    }()
+
     /// Light-mode reference background (#EFF1F5 — Catppuccin Latte base).
-    /// Used for contrast assertions in tests.
     static let lightModeBackgroundReference = TerminalPaletteEntry(red: 0xEF, green: 0xF1, blue: 0xF5)
 
     // MARK: - Appearance detection
 
+    /// Whether the system is currently in dark mode.
+    static var isDarkMode: Bool {
+        NSApp.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+    }
+
     /// Returns the ANSI palette matching the current system appearance.
     static func currentPalette() -> [TerminalPaletteEntry] {
-        let isDark = NSApp.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
-        return isDark ? macOSAligned : lightPalette
+        isDarkMode ? macOSAligned : lightPalette
     }
 
     /// Returns the terminal background color matching the current system appearance.
     static func currentBackgroundColor() -> NSColor {
-        let isDark = NSApp.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
-        return isDark
-            ? NSColor(srgbRed: 0x28 / 255.0, green: 0x2C / 255.0, blue: 0x34 / 255.0, alpha: 1.0)
-            : NSColor(srgbRed: 0xEF / 255.0, green: 0xF1 / 255.0, blue: 0xF5 / 255.0, alpha: 1.0)
+        isDarkMode
+            ? darkModeBackgroundReference.makeNSColor()
+            : lightModeBackgroundReference.makeNSColor()
     }
 
     // MARK: - Build / install helpers
