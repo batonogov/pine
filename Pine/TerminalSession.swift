@@ -664,6 +664,10 @@ final class TerminalTab: Identifiable, Hashable {
     private var processStarted = false
     private var workingDirectory: URL?
 
+    /// KVO observation token for `NSApp.effectiveAppearance` — re-applies
+    /// palette and background when the user switches between light/dark mode.
+    private var appearanceObservation: NSKeyValueObservation?
+
     init(name: String, shellSettings: ShellSettings = .shared) {
         self.name = name
         self.stableLabel = name
@@ -675,15 +679,11 @@ final class TerminalTab: Identifiable, Hashable {
 
         // Настраиваем внешний вид сразу — шрифт определяет размер ячейки
         terminalView.font = NSFont.monospacedSystemFont(ofSize: 13, weight: .regular)
-        // One Dark canonical background (#282C34) gives proper contrast
-        // for the ANSI palette. The system `textBackgroundColor` (~#1E1E1E
-        // in dark mode) is too grey and washes out TUI colors.
+        // Background adapts to system appearance — One Dark (#282C34) in
+        // dark mode, Catppuccin Latte base (#EFF1F5) in light mode.
         // Foreground stays semantic so it adapts to light/dark appearance.
         terminalView.nativeForegroundColor = .textColor
-        terminalView.nativeBackgroundColor = NSColor(srgbRed: 0x28 / 255.0,
-                                                      green: 0x2C / 255.0,
-                                                       blue: 0x34 / 255.0,
-                                                      alpha: 1.0)
+        terminalView.nativeBackgroundColor = TerminalPalette.currentBackgroundColor()
 
         // Match Ghostty / modern terminal behaviour: do NOT auto-promote bold
         // text to the bright color variant. SwiftTerm's default of `true`
@@ -692,11 +692,18 @@ final class TerminalTab: Identifiable, Hashable {
         // native macOS terminals (issue #733).
         terminalView.useBrightColors = false
 
-        // Apply Pine's One Dark terminal palette (issue #816).
+        // Apply Pine's terminal palette (issue #816, #931).
         // Centralised in `TerminalPalette` so it can be unit-tested
         // independently of the SwiftTerm view and kept as a single source of
-        // truth. See `TerminalPalette.swift` for rationale (issues #733, #765).
+        // truth. The palette adapts to the current system appearance.
         TerminalPalette.install(on: terminalView)
+
+        // Re-apply palette and background when system appearance changes.
+        appearanceObservation = NSApp.observe(\.effectiveAppearance, options: .new) { [weak self] _, _ in
+            guard let self else { return }
+            self.terminalView.nativeBackgroundColor = TerminalPalette.currentBackgroundColor()
+            TerminalPalette.install(on: self.terminalView)
+        }
     }
 
     /// Сохраняет рабочую директорию для отложенного запуска
