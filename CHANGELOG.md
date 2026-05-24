@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.26.0](https://github.com/batonogov/pine/compare/v1.25.8...v1.26.0) (2026-05-24)
+
+
+### Features
+
+* **editor:** YAML format-on-save via prettier ([#929](https://github.com/batonogov/pine/issues/929)) ([215a64d](https://github.com/batonogov/pine/commit/215a64d15b91285bf8c2c461f58d55720a775466))
+* **terminal:** light theme for system light appearance ([#931](https://github.com/batonogov/pine/issues/931)) ([#932](https://github.com/batonogov/pine/issues/932)) ([e80a2d3](https://github.com/batonogov/pine/commit/e80a2d33106573f65d964c05560f8b77f330c2a4))
+
 ## [1.25.8](https://github.com/batonogov/pine/compare/v1.25.7...v1.25.8) (2026-05-19)
 
 
