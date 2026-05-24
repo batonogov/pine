@@ -198,6 +198,51 @@ enum TerminalPalette {
         return entries
     }()
 
+    // MARK: - Light palette (Catppuccin Latte)
+
+    /// Light-mode ANSI palette (Catppuccin Latte). Used when macOS is in
+    /// light appearance so ANSI colors remain readable on a light background.
+    /// Slot 0 uses dark grey (#5C5F77) instead of pure black for the same
+    /// ghost-text reason as the dark palette (SwiftTerm 8 -> 0 collapse).
+    static let lightPalette: [TerminalPaletteEntry] = [
+        .init(red: 0x5C, green: 0x5F, blue: 0x77), // 0  black (ghost text)
+        .init(red: 0xD2, green: 0x0F, blue: 0x39), // 1  red
+        .init(red: 0x40, green: 0xA0, blue: 0x2B), // 2  green
+        .init(red: 0xDF, green: 0x8E, blue: 0x1D), // 3  yellow
+        .init(red: 0x1E, green: 0x66, blue: 0xF5), // 4  blue
+        .init(red: 0xEA, green: 0x76, blue: 0xCB), // 5  magenta
+        .init(red: 0x17, green: 0x92, blue: 0x99), // 6  cyan
+        .init(red: 0xAC, green: 0xB0, blue: 0xBE), // 7  white
+        .init(red: 0x6C, green: 0x6F, blue: 0x85), // 8  bright black
+        .init(red: 0xD2, green: 0x0F, blue: 0x39), // 9  bright red
+        .init(red: 0x40, green: 0xA0, blue: 0x2B), // 10 bright green
+        .init(red: 0xDF, green: 0x8E, blue: 0x1D), // 11 bright yellow
+        .init(red: 0x1E, green: 0x66, blue: 0xF5), // 12 bright blue
+        .init(red: 0xEA, green: 0x76, blue: 0xCB), // 13 bright magenta
+        .init(red: 0x17, green: 0x92, blue: 0x99), // 14 bright cyan
+        .init(red: 0xBC, green: 0xC0, blue: 0xCC), // 15 bright white
+    ]
+
+    /// Light-mode reference background (#EFF1F5 — Catppuccin Latte base).
+    /// Used for contrast assertions in tests.
+    static let lightModeBackgroundReference = TerminalPaletteEntry(red: 0xEF, green: 0xF1, blue: 0xF5)
+
+    // MARK: - Appearance detection
+
+    /// Returns the ANSI palette matching the current system appearance.
+    static func currentPalette() -> [TerminalPaletteEntry] {
+        let isDark = NSApp.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+        return isDark ? macOSAligned : lightPalette
+    }
+
+    /// Returns the terminal background color matching the current system appearance.
+    static func currentBackgroundColor() -> NSColor {
+        let isDark = NSApp.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+        return isDark
+            ? NSColor(srgbRed: 0x28 / 255.0, green: 0x2C / 255.0, blue: 0x34 / 255.0, alpha: 1.0)
+            : NSColor(srgbRed: 0xEF / 255.0, green: 0xF1 / 255.0, blue: 0xF5 / 255.0, alpha: 1.0)
+    }
+
     // MARK: - Build / install helpers
 
     /// Builds the SwiftTerm `Color` array for `installColors`.
@@ -222,8 +267,12 @@ enum TerminalPalette {
     /// palette failing to build) leaves the terminal usable on whatever
     /// SwiftTerm provides by default.
     @MainActor
-    static func install(on terminalView: LocalProcessTerminalView) {
-        guard let colors = swiftTermColors() else { return }
+    static func install(
+        palette: [TerminalPaletteEntry]? = nil,
+        on terminalView: LocalProcessTerminalView
+    ) {
+        let entries = palette ?? currentPalette()
+        guard let colors = swiftTermColors(from: entries) else { return }
         terminalView.installColors(colors)
     }
 }

@@ -286,4 +286,136 @@ struct TerminalPaletteTests {
         let tab = TerminalTab(name: "test")
         #expect(tab.terminalView.useBrightColors == false)
     }
+
+    // MARK: - Light palette shape
+
+    @Test func lightPaletteHasExactly16Entries() {
+        #expect(TerminalPalette.lightPalette.count == TerminalPalette.colorCount)
+    }
+
+    @Test func lightPaletteIsNonEmpty() {
+        #expect(!TerminalPalette.lightPalette.isEmpty)
+    }
+
+    // MARK: - Light palette reference values
+
+    @Test func lightPaletteReferenceIsPreserved() {
+        let expected: [(UInt8, UInt8, UInt8)] = [
+            (0x5C, 0x5F, 0x77), // 0  black (ghost text)
+            (0xD2, 0x0F, 0x39), // 1  red
+            (0x40, 0xA0, 0x2B), // 2  green
+            (0xDF, 0x8E, 0x1D), // 3  yellow
+            (0x1E, 0x66, 0xF5), // 4  blue
+            (0xEA, 0x76, 0xCB), // 5  magenta
+            (0x17, 0x92, 0x99), // 6  cyan
+            (0xAC, 0xB0, 0xBE), // 7  white
+            (0x6C, 0x6F, 0x85), // 8  bright black
+            (0xD2, 0x0F, 0x39), // 9  bright red
+            (0x40, 0xA0, 0x2B), // 10 bright green
+            (0xDF, 0x8E, 0x1D), // 11 bright yellow
+            (0x1E, 0x66, 0xF5), // 12 bright blue
+            (0xEA, 0x76, 0xCB), // 13 bright magenta
+            (0x17, 0x92, 0x99), // 14 bright cyan
+            (0xBC, 0xC0, 0xCC), // 15 bright white
+        ]
+        let entries = TerminalPalette.lightPalette
+        #expect(entries.count == expected.count)
+        for (index, exp) in expected.enumerated() {
+            let entry = entries[index]
+            #expect(entry.red == exp.0, "Light ANSI \(index) red mismatch")
+            #expect(entry.green == exp.1, "Light ANSI \(index) green mismatch")
+            #expect(entry.blue == exp.2, "Light ANSI \(index) blue mismatch")
+        }
+    }
+
+    // MARK: - Light palette readability
+
+    @Test func lightPaletteBlackIsDarkerThanBackground() {
+        let bgL = relativeLuminance(TerminalPalette.lightModeBackgroundReference)
+        for (index, entry) in TerminalPalette.lightPalette.enumerated() {
+            #expect(
+                relativeLuminance(entry) < bgL,
+                "Light ANSI \(index) not darker than light-mode background"
+            )
+        }
+    }
+
+    @Test func lightPaletteAllSlotsHaveContrastAgainstLightBackground() {
+        let bg = TerminalPalette.lightModeBackgroundReference
+        for index in 0..<16 {
+            let entry = TerminalPalette.lightPalette[index]
+            let ratio = contrastRatio(entry, bg)
+            let threshold: Double = (index == 0 || index == 8) ? 2.0 : 3.0
+            #expect(
+                ratio >= threshold,
+                "Light ANSI \(index) contrast \(ratio) below \(threshold):1"
+            )
+        }
+    }
+
+    // MARK: - swiftTermColors() accepts light palette
+
+    @Test func swiftTermColorsAcceptsLightPalette() {
+        #expect(TerminalPalette.swiftTermColors(from: TerminalPalette.lightPalette)?.count == 16)
+    }
+
+    // MARK: - install(palette:on:) integration
+
+    @Test @MainActor func installWithExplicitLightPaletteDoesNotCrash() {
+        let view = LocalProcessTerminalView(frame: .init(x: 0, y: 0, width: 400, height: 200))
+        TerminalPalette.install(palette: TerminalPalette.lightPalette, on: view)
+        _ = view.getTerminal()
+    }
+
+    @Test @MainActor func installWithExplicitDarkPaletteDoesNotCrash() {
+        let view = LocalProcessTerminalView(frame: .init(x: 0, y: 0, width: 400, height: 200))
+        TerminalPalette.install(palette: TerminalPalette.macOSAligned, on: view)
+        _ = view.getTerminal()
+    }
+
+    @Test @MainActor func installWithNilPaletteFallsBackToCurrentAppearance() {
+        let view = LocalProcessTerminalView(frame: .init(x: 0, y: 0, width: 400, height: 200))
+        TerminalPalette.install(palette: nil, on: view)
+        _ = view.getTerminal()
+    }
+
+    // MARK: - currentPalette / currentBackgroundColor
+
+    @Test @MainActor func currentPaletteReturnsSixteenEntries() {
+        let palette = TerminalPalette.currentPalette()
+        #expect(palette.count == TerminalPalette.colorCount)
+    }
+
+    @Test @MainActor func currentBackgroundColorReturnsOpaqueColor() {
+        let color = TerminalPalette.currentBackgroundColor()
+        #expect(color.alphaComponent == 1.0)
+    }
+
+    @Test @MainActor func currentBackgroundColorDiffersBetweenAppearances() {
+        let darkBg = NSColor(srgbRed: 0x28 / 255.0, green: 0x2C / 255.0, blue: 0x34 / 255.0, alpha: 1.0)
+        let lightBg = NSColor(srgbRed: 0xEF / 255.0, green: 0xF1 / 255.0, blue: 0xF5 / 255.0, alpha: 1.0)
+        let current = TerminalPalette.currentBackgroundColor()
+        let isDark = NSApp.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+        if isDark {
+            #expect(current == darkBg)
+        } else {
+            #expect(current == lightBg)
+        }
+    }
+
+    @Test @MainActor func darkAndLightBackgroundsAreDifferentColors() {
+        let dark = NSColor(srgbRed: 0x28 / 255.0, green: 0x2C / 255.0, blue: 0x34 / 255.0, alpha: 1.0)
+        let light = NSColor(srgbRed: 0xEF / 255.0, green: 0xF1 / 255.0, blue: 0xF5 / 255.0, alpha: 1.0)
+        #expect(dark != light)
+    }
+
+    @Test @MainActor func currentPaletteDiffersBetweenAppearances() {
+        let isDark = NSApp.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+        let palette = TerminalPalette.currentPalette()
+        if isDark {
+            #expect(palette == TerminalPalette.macOSAligned)
+        } else {
+            #expect(palette == TerminalPalette.lightPalette)
+        }
+    }
 }
