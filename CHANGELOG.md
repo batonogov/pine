@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.26.1](https://github.com/batonogov/pine/compare/v1.26.0...v1.26.1) (2026-05-24)
+
+
+### Bug Fixes
+
+* **editor:** cursor jumps to wrong position after pressing Enter ([#935](https://github.com/batonogov/pine/issues/935)) ([a946eac](https://github.com/batonogov/pine/commit/a946eac53274219b151752c4d89f5027e72fdefa))
+* **editor:** eliminate syntax highlighting flicker on Enter ([#863](https://github.com/batonogov/pine/issues/863)) ([#936](https://github.com/batonogov/pine/issues/936)) ([aeba6de](https://github.com/batonogov/pine/commit/aeba6de778588e437fd437af33e83fd9bc8acc2c))
+
 ## [1.26.0](https://github.com/batonogov/pine/compare/v1.25.8...v1.26.0) (2026-05-24)
 
 
