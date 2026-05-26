@@ -13,9 +13,8 @@
 #     committing zero changes.
 #
 # Compatibility:
-#   - Primary path uses `xcrun xcresulttool export attachments` (Xcode 16+).
-#   - Falls back to a raw filesystem scan of the .xcresult bundle for any
-#     PNG payloads matching screenshot manifest entries.
+#   - Uses `xcresulttool get test-results tests/activities` (Xcode 16+) to
+#     enumerate attachments by name and extract payloads directly.
 
 set -uo pipefail
 
@@ -71,108 +70,97 @@ fi
 
 mkdir -p "$ASSETS_DIR"
 
-# --- Strategy 1: Modern xcresulttool (Xcode 16+) -----------------------------
-# `xcresulttool export attachments` writes every XCTAttachment payload into a
-# directory along with a manifest.json that records the original attachment
-# `name` (without an extension). We honor that name and rename to `.png`.
-extract_with_export_attachments() {
-  local export_dir
-  export_dir=$(mktemp -d)
-
-  if ! "$XCRESULTTOOL" export attachments \
-       --path "$RESULT_PATH" \
-       --output-path "$export_dir" >/dev/null 2>&1; then
-    rm -rf "$export_dir"
-    return 1
-  fi
-
+# --- Extract named screenshots via xcresulttool get test-results --------------
+# Uses `xcresulttool get test-results tests` to enumerate test cases,
+# then `xcresulttool get test-results activities --test-id <id>` to get
+# attachment name + payloadId mappings, and copies payloads directly from
+# the bundle's Data directory. Avoids `export attachments` which fails
+# silently on some Xcode 26 CI runners.
+extract_named_screenshots() {
   local found_any=false
-  local manifest="$export_dir/manifest.json"
-  if [ -f "$manifest" ]; then
-    # Walk the manifest, pull every attachment whose declared name starts
-    # with `screenshot-`, and copy <exported file> -> assets/<name>.png.
-    while IFS=$'\t' read -r att_name suggested; do
-      [ -z "$att_name" ] && continue
-      [ -z "$suggested" ] && continue
-      # Path-traversal guard: only accept well-formed screenshot names.
-      # Rejects "../", slashes, and any other shell-meaningful characters.
-      if [[ ! "$att_name" =~ ^screenshot-[a-zA-Z0-9_-]+$ ]]; then
-        echo "  Skipping attachment with invalid name: $att_name" >&2
-        continue
-      fi
-      local src="$export_dir/$suggested"
-      [ -f "$src" ] || continue
-      cp "$src" "$ASSETS_DIR/${att_name}.png"
-      echo "  Extracted ${att_name}.png"
-      found_any=true
-    done < <(python3 - "$manifest" <<'PY'
-import json, sys
-with open(sys.argv[1]) as f:
-    data = json.load(f)
 
-def walk(node):
-    if isinstance(node, dict):
-        atts = node.get("attachments")
-        if isinstance(atts, list):
-            for att in atts:
-                # Xcode 26 manifest schema has no "name" field.
-                # The XCTAttachment name is stored in
-                # "suggestedHumanReadableName".
-                name = (
-                    att.get("name")
-                    or att.get("suggestedHumanReadableName")
-                    or ""
-                )
-                exported = att.get("exportedFileName", "")
-                if name.startswith("screenshot-") and exported:
-                    print(f"{name}\t{exported}")
-        for v in node.values():
-            walk(v)
-    elif isinstance(node, list):
-        for item in node:
-            walk(item)
-
-walk(data)
-PY
-)
-  fi
-
-  rm -rf "$export_dir"
-  [ "$found_any" = true ] && return 0
-  return 1
-}
-
-# --- Strategy 2: Raw filesystem walk -----------------------------------------
-# As a last resort, scan the bundle for any PNG payloads. Each xcresult
-# attachment is stored as an opaque hash file with no name metadata at this
-# layer, so we cannot recover the original screenshot names here. We simply
-# number the PNGs sequentially (`screenshot-unknown-N.png`) so the workflow
-# notices that "something" was extracted; the required-names guardrail below
-# will then fail loudly because the expected names are still missing.
-extract_with_filesystem() {
-  local found_any=false
-  local idx=0
-  while IFS= read -r -d '' file; do
-    if head -c 4 "$file" 2>/dev/null | xxd -p 2>/dev/null | grep -q '^89504e47'; then
-      idx=$((idx + 1))
-      cp "$file" "$ASSETS_DIR/screenshot-unknown-${idx}.png"
-      echo "  Extracted screenshot-unknown-${idx}.png (raw filesystem)"
-      found_any=true
+  while IFS=$'\t' read -r att_name payload_id; do
+    [ -z "$att_name" ] && continue
+    [ -z "$payload_id" ] && continue
+    if [[ ! "$att_name" =~ ^screenshot-[a-zA-Z0-9_-]+$ ]]; then
+      echo "  Skipping attachment with invalid name: $att_name" >&2
+      continue
     fi
-  done < <(find "$RESULT_PATH" -type f -print0 2>/dev/null)
+    local src=""
+    if [ -f "$RESULT_PATH/Data/$payload_id" ]; then
+      src="$RESULT_PATH/Data/$payload_id"
+    else
+      src=$(find "$RESULT_PATH/Data" -name "$payload_id" -type f -print -quit 2>/dev/null)
+    fi
+    if [ -z "$src" ]; then
+      echo "  Warning: payload not found for $att_name (id=$payload_id)" >&2
+      continue
+    fi
+    cp "$src" "$ASSETS_DIR/${att_name}.png"
+    echo "  Extracted ${att_name}.png"
+    found_any=true
+  done < <(python3 - "$XCRESULTTOOL" "$RESULT_PATH" <<'PY'
+import json, subprocess, sys
+
+xcresulttool = sys.argv[1]
+bundle_path = sys.argv[2]
+
+def get_json(args):
+    r = subprocess.run([xcresulttool] + args, capture_output=True, text=True)
+    if r.returncode != 0:
+        print(f"  xcresulttool error: {r.stderr}", file=sys.stderr)
+        return None
+    return json.loads(r.stdout)
+
+def find_test_ids(node):
+    results = []
+    node_type = node.get("nodeType", "")
+    name = node.get("name", "")
+    if node_type == "Test Case" and name.startswith("testCapture"):
+        tid = node.get("nodeIdentifierURL", "") or node.get("nodeIdentifier", "")
+        if tid:
+            results.append(tid)
+    for child in node.get("children", []):
+        results.extend(find_test_ids(child))
+    return results
+
+def walk_activities(node):
+    for att in node.get("attachments", []):
+        att_name = att.get("name", "")
+        payload_id = att.get("payloadId", "")
+        if att_name.startswith("screenshot-") and payload_id:
+            print(f"{att_name}\t{payload_id}")
+    for child in node.get("childActivities", []):
+        walk_activities(child)
+
+data = get_json(["get", "test-results", "tests", "--path", bundle_path])
+if not data:
+    sys.exit(1)
+
+test_ids = find_test_ids(data)
+if not test_ids:
+    print("  No screenshot test cases found in xcresult bundle.", file=sys.stderr)
+    sys.exit(1)
+
+for tid in test_ids:
+    act_data = get_json(["get", "test-results", "activities",
+                         "--path", bundle_path, "--test-id", tid])
+    if not act_data:
+        continue
+    walk_activities(act_data)
+PY
+  )
+
   [ "$found_any" = true ] && return 0
   return 1
 }
 
-echo "Extracting screenshots via xcresulttool export attachments..."
-if extract_with_export_attachments; then
-  echo "Extraction complete (export attachments)."
+echo "Extracting named screenshots via xcresulttool..."
+if extract_named_screenshots; then
+  echo "Extraction complete."
 else
-  echo "Modern API yielded no screenshots, falling back to raw filesystem walk..."
-  if ! extract_with_filesystem; then
-    echo "Error: all extraction strategies failed (no PNG payloads found)." >&2
-    exit 1
-  fi
+  echo "Error: failed to extract named screenshots." >&2
+  exit 1
 fi
 
 # --- Guardrail ---------------------------------------------------------------
