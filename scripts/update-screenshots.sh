@@ -142,11 +142,14 @@ if not test_ids:
     print("  No screenshot test cases found in xcresult bundle.", file=sys.stderr)
     sys.exit(1)
 
-for tid in test_ids:
+for i, tid in enumerate(test_ids):
     act_data = get_json(["get", "test-results", "activities",
                          "--path", bundle_path, "--test-id", tid])
     if not act_data:
         continue
+    if i == 0:
+        preview = json.dumps(act_data, indent=2)[:2000]
+        print(f"  DEBUG activities schema for {tid}:\n{preview}", file=sys.stderr)
     walk_activities(act_data)
 PY
   )
