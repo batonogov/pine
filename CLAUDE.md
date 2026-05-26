@@ -88,6 +88,8 @@ Pine is a minimal native macOS code editor built with SwiftUI + AppKit. Targets 
 
 **Symbol Navigator:** `SymbolNavigatorView` shows functions, classes, and structs in the current file with fuzzy search. Triggered via Cmd+R. Uses regex-based symbol extraction per language.
 
+**Markdown preview:** Renders markdown using [swift-markdown](https://github.com/swiftlang/swift-markdown). Three modes: source-only, rendered, and side-by-side. Toggled via Cmd+Shift+P. The rendered view converts Markdown AST to NSAttributedString for display in a native text view.
+
 **Session persistence:** `SessionState` (Codable struct) saves project path, open file paths, pane layout tree (PaneNode), per-pane terminal tab counts, and editor state to UserDefaults. `AppDelegate` triggers save on app termination for all open projects. `ContentView.restoreSessionIfNeeded()` restores tabs and pane layout on first load if the saved session matches the current project. Terminal pane positions are preserved; terminal processes are recreated (scrollback lost).
 
 ## Concurrency Model
@@ -185,6 +187,8 @@ Pine uses GCD for background work, bridged to async/await via `withCheckedContin
 - **CI pipeline** (`.github/workflows/ci.yml`): Lint → Build → Unit Tests (with code coverage) + 7 UI Test shards (parallel) + Flaky Test Summary. All UI tests always run (no conditional skip). Coverage threshold: 70% logic-only (SwiftUI view files excluded). Flaky tests auto-retry once and are reported separately. UI test shards must be balanced (±3 tests); verify script checks all test classes are assigned to a shard
 - **Branch protection**: requires all checks to pass + branch up-to-date with main. This means sequential merge queue — after merging one PR, others need Update Branch + re-run CI (~5.5 min each)
 - **Action pinning** — all third-party GitHub Actions are pinned by full commit SHA (not mutable tags) for supply-chain safety. To update: find the new version's commit SHA on GitHub (Tags → verify the commit), replace the SHA in the workflow file, and keep the `# vX` comment in sync
+- **Nightly performance** (`.github/workflows/nightly-perf.yml`) — runs performance tests nightly and on schedule, uploads `PerformanceResults.xcresult` artifact, detects regressions via `scripts/check_perf_regression.py`
+- **Screenshots** (`.github/workflows/screenshots.yml`) — regenerates App Store screenshots in `assets/` on demand
 
 ## Conventions
 
@@ -200,6 +204,8 @@ Pine uses GCD for background work, bridged to async/await via `withCheckedContin
 - **Conventional Commits** — all commit messages must follow the format: `feat:`, `fix:`, `chore:`, `docs:`, `refactor:`, `perf:`, `test:`. Use `feat!:` or `BREAKING CHANGE:` footer for breaking changes
 - **Test coverage** — every new feature or bug fix must include unit tests (and UI tests where applicable). Aim for comprehensive coverage: test public API, edge cases, error paths, boundary conditions, and integration between components. Cover the maximum number of cases — not just the happy path. Do not merge code without corresponding tests
 - **Localizable.xcstrings** — never use `json.dump` or standard JSON serializers to write this file. Xcode uses non-standard formatting (`"key" : "value"` with a space before the colon). Reserializing the entire file creates thousands of lines of whitespace noise in diffs. Instead, insert new translations by reading the file as text and making targeted insertions preserving the existing format
+- **Localization** — 9 languages supported (en, de, es, fr, ja, ko, pt-BR, ru, zh-Hans). All user-facing strings go through `Localizable.xcstrings`. To add a new language: add the language key to the xcstrings dict with translations for every existing key
+- **Utility scripts** — `scripts/` directory contains `normalize-xcstrings.sh` (called by pre-commit hook to unstage cosmetic xcstrings changes), `reset-cosmetic-xcstrings.sh` (reverts cosmetic-only xcstrings diffs), `test-normalize-xcstrings.sh` (tests for the normalizer), and `update-screenshots.sh` (regenerates App Store screenshots)
 
 ## Snapshot Testing
 
