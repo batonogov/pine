@@ -48,15 +48,16 @@ final class TerminalManager {
         guard let pm = paneManager else { return }
 
         if let tpID = lastActiveTerminalPaneID,
-           pm.terminalState(for: tpID) != nil {
+           let state = pm.terminalState(for: tpID) {
             pm.activePaneID = tpID
+            state.pendingFocusTabID = state.activeTerminalID
+        } else if let firstTP = pm.terminalPaneIDs.first,
+                  let state = pm.terminalState(for: firstTP) {
+            pm.activePaneID = firstTP
+            lastActiveTerminalPaneID = firstTP
+            state.pendingFocusTabID = state.activeTerminalID
         } else {
-            if let firstTP = pm.terminalPaneIDs.first {
-                pm.activePaneID = firstTP
-                lastActiveTerminalPaneID = firstTP
-            } else {
-                createTerminalTab(relativeTo: editorPaneID, workingDirectory: workingDirectory)
-            }
+            createTerminalTab(relativeTo: editorPaneID, workingDirectory: workingDirectory)
         }
     }
 
