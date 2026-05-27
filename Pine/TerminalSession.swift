@@ -536,14 +536,14 @@ class TerminalContainerView: NSView {
     }
 
     /// Requests first responder on the terminal view.
-    /// If the view is not yet in a window, defers the call via async dispatch.
+    /// Always deferred via async dispatch so that the focus request lands
+    /// *after* SwiftUI finishes its layout pass — otherwise SwiftUI can
+    /// restore first-responder to the editor's GutterTextView, undoing
+    /// the terminal focus requested by Cmd+T / Cmd+`.
     private func focusTerminalView(_ terminalView: LocalProcessTerminalView) {
-        if let win = window {
-            win.makeFirstResponder(terminalView)
-        } else {
-            DispatchQueue.main.async { [weak self] in
-                self?.window?.makeFirstResponder(terminalView)
-            }
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.window?.makeFirstResponder(terminalView)
         }
     }
 
