@@ -64,6 +64,69 @@ struct TerminalManagerCoordinatorTests {
         #expect(paneManager.activePaneID == tpID)
     }
 
+    @Test func focusOrCreateTerminal_existingPane_setsPendingFocusTabID() {
+        let paneManager = PaneManager()
+        let terminal = TerminalManager()
+        terminal.paneManager = paneManager
+
+        let editorPane = paneManager.activePaneID
+        guard let tpID = paneManager.createTerminalPane(
+            relativeTo: editorPane, axis: .vertical, workingDirectory: nil
+        ) else {
+            Issue.record("createTerminalPane failed")
+            return
+        }
+        terminal.lastActiveTerminalPaneID = tpID
+        paneManager.activePaneID = editorPane
+
+        let activeTabID = paneManager.terminalState(for: tpID)?.activeTerminalID
+        terminal.focusOrCreateTerminal(relativeTo: editorPane, workingDirectory: nil)
+
+        #expect(paneManager.terminalState(for: tpID)?.pendingFocusTabID == activeTabID)
+    }
+
+    @Test func focusOrCreateTerminal_fallbackToFirstPane_setsPendingFocusTabID() {
+        let paneManager = PaneManager()
+        let terminal = TerminalManager()
+        terminal.paneManager = paneManager
+
+        let editorPane = paneManager.activePaneID
+        guard let tpID = paneManager.createTerminalPane(
+            relativeTo: editorPane, axis: .vertical, workingDirectory: nil
+        ) else {
+            Issue.record("createTerminalPane failed")
+            return
+        }
+        // No lastActiveTerminalPaneID — should fall back to first terminal pane
+        let activeTabID = paneManager.terminalState(for: tpID)?.activeTerminalID
+
+        terminal.focusOrCreateTerminal(relativeTo: editorPane, workingDirectory: nil)
+
+        #expect(paneManager.activePaneID == tpID)
+        #expect(paneManager.terminalState(for: tpID)?.pendingFocusTabID == activeTabID)
+    }
+
+    @Test func createTerminalTab_existingPane_setsPendingFocusTabID() {
+        let paneManager = PaneManager()
+        let terminal = TerminalManager()
+        terminal.paneManager = paneManager
+
+        let editorPane = paneManager.activePaneID
+        guard let tpID = paneManager.createTerminalPane(
+            relativeTo: editorPane, axis: .vertical, workingDirectory: nil
+        ) else {
+            Issue.record("createTerminalPane failed")
+            return
+        }
+        terminal.lastActiveTerminalPaneID = tpID
+
+        terminal.createTerminalTab(relativeTo: editorPane, workingDirectory: nil)
+
+        let state = paneManager.terminalState(for: tpID)
+        #expect(state?.tabCount == 2)
+        #expect(state?.pendingFocusTabID == state?.activeTerminalID)
+    }
+
     @Test func focusOrCreateTerminal_noPane_createsOne() {
         let paneManager = PaneManager()
         let terminal = TerminalManager()
