@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.26.2](https://github.com/batonogov/pine/compare/v1.26.1...v1.26.2) (2026-05-27)
+
+
+### Bug Fixes
+
+* **terminal:** auto-focus terminal after Cmd+T ([#941](https://github.com/batonogov/pine/issues/941)) ([d7ded33](https://github.com/batonogov/pine/commit/d7ded330048b4c5164800f310683cc634261acc8))
+
+
+### Documentation
+
+* add missing sections to CLAUDE.md ([#938](https://github.com/batonogov/pine/issues/938)) ([5652b11](https://github.com/batonogov/pine/commit/5652b1138b63e660a27ac05654be96a6865e4e04))
+
 ## [1.26.1](https://github.com/batonogov/pine/compare/v1.26.0...v1.26.1) (2026-05-24)
 
 
