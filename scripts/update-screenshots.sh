@@ -86,17 +86,17 @@ extract_named_screenshots() {
       echo "  Skipping attachment with invalid name: $att_name" >&2
       continue
     fi
-    local src=""
-    if [ -f "$RESULT_PATH/Data/$payload_id" ]; then
-      src="$RESULT_PATH/Data/$payload_id"
-    else
-      src=$(find "$RESULT_PATH/Data" -name "$payload_id" -type f -print -quit 2>/dev/null)
-    fi
-    if [ -z "$src" ]; then
-      echo "  Warning: payload not found for $att_name (id=$payload_id)" >&2
+    # Validate payload_id — only alphanumeric, dots, dashes, underscores
+    if [[ ! "$payload_id" =~ ^[a-zA-Z0-9._-]+$ ]]; then
+      echo "  Skipping attachment with invalid payload_id: $payload_id" >&2
       continue
     fi
-    cp "$src" "$ASSETS_DIR/${att_name}.png"
+    local src="$RESULT_PATH/Data/$payload_id"
+    if [ ! -f "$src" ]; then
+      echo "  Warning: payload not found at $src" >&2
+      continue
+    fi
+    cp -- "$src" "$ASSETS_DIR/${att_name}.png"
     echo "  Extracted ${att_name}.png"
     found_any=true
   done < <(python3 - "$XCRESULTTOOL" "$RESULT_PATH" <<'PY'
@@ -122,6 +122,8 @@ def find_test_ids(node):
     node_type = node.get("nodeType", "")
     name = node.get("name", "")
     if node_type == "Test Case" and name.startswith("testCapture"):
+        # xcresulttool uses nodeIdentifierURL as test identifier for --test-id;
+        # fall back to nodeIdentifier for older Xcode versions
         tid = node.get("nodeIdentifierURL", "") or node.get("nodeIdentifier", "")
         if tid:
             results.append(tid)
@@ -148,8 +150,9 @@ if not test_ids:
     # Diagnostic: show first 5 files in Data/ to help debug extraction failures
     data_dir = bundle_path + "/Data"
     if os.path.isdir(data_dir):
-        entries = sorted(os.listdir(data_dir))[:5]
-        print(f"  Diagnostic: Data/ directory has {len(os.listdir(data_dir))} entries, first 5: {entries}", file=sys.stderr)
+        all_entries = os.listdir(data_dir)
+        entries = sorted(all_entries)[:5]
+        print(f"  Diagnostic: Data/ directory has {len(all_entries)} entries, first 5: {entries}", file=sys.stderr)
     else:
         print(f"  Diagnostic: Data/ directory does not exist at {data_dir}", file=sys.stderr)
     sys.exit(1)
