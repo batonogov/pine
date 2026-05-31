@@ -19,7 +19,7 @@ nonisolated final class SyntaxHighlighter: @unchecked Sendable {
 
     private let registry = GrammarRegistry()
     private let compiledCache = CompiledGrammarCache()
-    let engine: SyntaxHighlightEngine
+    private(set) var engine: SyntaxHighlightEngine
     private let nestedHighlighter: NestedHighlighter
     private let asyncHighlighter: SyntaxHighlightAsync
     private let multilineCache = MultilineMatchCache()
@@ -151,6 +151,7 @@ nonisolated final class SyntaxHighlighter: @unchecked Sendable {
             grammarName: grammar.name,
             repaintRange: expanded,
             searchRange: expanded,
+            fullFingerprintRange: NSRange(location: 0, length: totalLength),
             nestedHighlighter: nestedHighlighter
         )
 

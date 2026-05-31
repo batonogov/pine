@@ -52,7 +52,7 @@ nonisolated final class SyntaxHighlightEngine: @unchecked Sendable {
     let viewportContextLines = 50
 
     /// Scope priorities: comment and string override others.
-    let scopePriority: [String: Int] = [
+    private(set) var scopePriority: [String: Int] = [
         "comment": 100,
         "attribute": 95,
         "string": 90,
@@ -74,27 +74,39 @@ nonisolated final class SyntaxHighlightEngine: @unchecked Sendable {
         "markdown.rule": 20,
     ]
 
-    let theme: Theme
+    private(set) var theme: Theme
 
     init(theme: Theme = .default) {
         self.theme = theme
     }
 
+    /// Returns priority and color for a scope if it should be highlighted.
+    /// Returns nil if the scope has no theme color.
+    func shouldHighlight(scope: String) -> (priority: Int, color: NSColor)? {
+        guard let color = theme.color(for: scope) else { return nil }
+        let priority = scopePriority[scope] ?? 0
+        return (priority, color)
+    }
+
     // MARK: - Match Computation (thread-safe)
 
     /// Pure computation: finds regex matches without touching NSTextStorage.
+    /// - Parameter fullFingerprintRange: When non-nil, collects multiline fingerprint
+    ///   via a separate full-text pass instead of inline collection. Use this for
+    ///   viewport highlights where `searchRange != fullRange` to ensure the fingerprint
+    ///   covers the entire document (needed for structural change detection).
     func computeMatches(
         text: String,
         rules: [CompiledRule],
         grammarName: String?,
         repaintRange: NSRange,
         searchRange: NSRange,
+        fullFingerprintRange: NSRange? = nil,
         nestedHighlighter: NestedHighlighter? = nil
     ) -> HighlightMatchResult {
         let source = text as NSString
         let totalLength = source.length
         let fullRange = NSRange(location: 0, length: totalLength)
-        let multilineRange = fullRange
 
         var matches: [HighlightMatch] = []
         var highlightedRanges: [
@@ -102,18 +114,27 @@ nonisolated final class SyntaxHighlightEngine: @unchecked Sendable {
         ] = []
         var multilineFingerprint: [Int] = []
 
+        // When caller requests a full fingerprint, compute it upfront from the full text.
+        if let fpRange = fullFingerprintRange {
+            multilineFingerprint = GrammarCompiler.collectMultilineFingerprint(
+                rules: rules, source: text, searchRange: fpRange
+            )
+        }
+
         for rule in rules {
             let priority = scopePriority[rule.scope] ?? 0
             let hasColor = theme.color(for: rule.scope) != nil
 
             if !hasColor && !rule.isMultiline { continue }
 
-            let scanRange = rule.isMultiline ? multilineRange : searchRange
+            // Multiline rules scan the full text; others scan only searchRange
+            let scanRange = rule.isMultiline ? fullRange : searchRange
 
             rule.regex.enumerateMatches(in: text, range: scanRange) { match, _, _ in
                 guard let matchRange = match?.range else { return }
 
-                if rule.isMultiline {
+                // Collect inline fingerprint only when no separate full pass was requested
+                if rule.isMultiline && fullFingerprintRange == nil {
                     multilineFingerprint.append(matchRange.length)
                 }
 

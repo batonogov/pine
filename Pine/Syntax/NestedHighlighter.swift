@@ -58,8 +58,8 @@ nonisolated final class NestedHighlighter: @unchecked Sendable {
             let content = source.substring(with: contentRange)
 
             for rule in innerRules {
-                let priority = engine.scopePriority[rule.scope] ?? 0
-                guard engine.theme.color(for: rule.scope) != nil else { continue }
+                guard let highlight = engine.shouldHighlight(scope: rule.scope) else { continue }
+                let priority = highlight.priority
 
                 let contentNS = content as NSString
                 let innerRange = NSRange(location: 0, length: contentNS.length)

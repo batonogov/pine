@@ -127,7 +127,11 @@ nonisolated final class GrammarRegistry: @unchecked Sendable {
                 registerGrammar(grammar)
                 loadedGrammars.append(grammar)
             } catch {
-                // Skip files that are not grammars (e.g. Assets JSON)
+                // Skip non-grammar JSON files (Assets, configs, etc.)
+                // but log decoding errors for actual grammar files
+                if url.lastPathComponent.hasSuffix(".grammar.json") || url.deletingPathExtension().pathExtension == "grammar" {
+                    Logger.syntax.error("Failed to load grammar from \(url.lastPathComponent): \(error)")
+                }
                 continue
             }
         }
