@@ -160,6 +160,34 @@ struct ShellFileFormatterTests {
         #expect(result == "#!/bin/bash -e\necho hello\n")
     }
 
+    @Test("Shebang #!/bin/dash detected — formats file without extension")
+    func shebangBinDashDetected() {
+        let runner = MockProcessRunner(
+            stdout: "#!/bin/dash\necho hello\n",
+            stderr: "",
+            exitCode: 0
+        )
+        let formatter = makeFormatter(runner: runner)
+        let url = URL(fileURLWithPath: "/project/dashscript")
+        #expect(formatter.canFormat(url: url))
+        let result = formatter.format("#!/bin/dash\necho hello\n", url: url)
+        #expect(result == "#!/bin/dash\necho hello\n")
+    }
+
+    @Test("Shebang #!/usr/bin/env dash detected — formats file without extension")
+    func shebangEnvDashDetected() {
+        let runner = MockProcessRunner(
+            stdout: "#!/usr/bin/env dash\necho hello\n",
+            stderr: "",
+            exitCode: 0
+        )
+        let formatter = makeFormatter(runner: runner)
+        let url = URL(fileURLWithPath: "/project/envdash")
+        #expect(formatter.canFormat(url: url))
+        let result = formatter.format("#!/usr/bin/env dash\necho hello\n", url: url)
+        #expect(result == "#!/usr/bin/env dash\necho hello\n")
+    }
+
     @Test("No shebang and no shell extension — format() returns original")
     func noShebangNoExtensionNotFormatted() {
         let runner = MockProcessRunner(stdout: "formatted", stderr: "", exitCode: 0)
@@ -265,6 +293,22 @@ struct ShellFileFormatterTests {
             url: URL(fileURLWithPath: "/project/script.sh")
         )
         #expect(result == "#!/bin/sh\necho hello\n")
+    }
+
+    // MARK: - Size limit
+
+    @Test("Large file — returns original content (maxFormatSize exceeded)")
+    func largeFileReturnsOriginal() {
+        let runner = MockProcessRunner(stdout: "formatted", stderr: "", exitCode: 0)
+        let formatter = makeFormatter(runner: runner)
+        // Create content larger than maxFormatSize (100_000 bytes)
+        let largeContent = String(repeating: "#!/bin/sh\necho hello\n", count: 5_000)
+        #expect(largeContent.utf8.count > 100_000)
+        let result = formatter.format(
+            largeContent,
+            url: URL(fileURLWithPath: "/project/large.sh")
+        )
+        #expect(result == largeContent)
     }
 
     // MARK: - Extension handling

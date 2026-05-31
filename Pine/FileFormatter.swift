@@ -186,30 +186,27 @@ struct ShellFileFormatter: FileFormatter, Sendable {
     /// Shell file extensions (lowercase, without dot).
     private static let shellExtensions: Set<String> = ["sh", "bash", "zsh"]
 
-    /// Shebang patterns that indicate a shell script.
+    /// Maximum content size to format. Larger files are left as-is
+    /// to avoid blocking the UI with an external process.
+    private static let maxFormatSize = 100_000
+
+    /// Pre-compiled regex for shell shebang detection.
     /// Matches lines like `#!/bin/sh`, `#!/bin/bash -e`, `#!/usr/bin/env bash`.
-    private static let shellShebangPattern: String = {
+    private static let shellShebangRegex: NSRegularExpression = {
         let interpreters = [
-            "/bin/sh",
-            "/bin/bash",
-            "/bin/zsh",
-            "/usr/bin/env sh",
-            "/usr/bin/env bash",
-            "/usr/bin/env zsh"
+            "/bin/sh", "/bin/bash", "/bin/zsh", "/bin/dash",
+            "/usr/bin/env sh", "/usr/bin/env bash", "/usr/bin/env zsh", "/usr/bin/env dash"
         ]
         let alt = interpreters.map { NSRegularExpression.escapedPattern(for: $0) }.joined(separator: "|")
-        return "^#!.*(" + alt + ")(\\s|$)"
+        let pattern = "^#!.*(" + alt + ")(\\s|$)"
+        // swiftlint:disable:next force_try
+        return try! NSRegularExpression(pattern: pattern)
     }()
 
     private let formatter: ExternalFileFormatter
 
-    /// Whether to claim extensionless files (needed for shebang detection in `format()`).
-    /// Set to `false` when shfmt is not installed.
-    private let claimExtensionless: Bool
-
-    init(formatter: ExternalFileFormatter, claimExtensionless: Bool = true) {
+    init(formatter: ExternalFileFormatter) {
         self.formatter = formatter
-        self.claimExtensionless = claimExtensionless
     }
 
     static func resolve(
@@ -228,7 +225,6 @@ struct ShellFileFormatter: FileFormatter, Sendable {
                 arguments: arguments,
                 processRunner: processRunner
             )
-            return ShellFileFormatter(formatter: external, claimExtensionless: true)
         } else {
             external = ExternalFileFormatter(
                 toolPath: nil,
@@ -237,8 +233,8 @@ struct ShellFileFormatter: FileFormatter, Sendable {
                 arguments: arguments,
                 processRunner: processRunner
             )
-            return ShellFileFormatter(formatter: external, claimExtensionless: false)
         }
+        return ShellFileFormatter(formatter: external)
     }
 
     func canFormat(url: URL) -> Bool {
@@ -247,14 +243,16 @@ struct ShellFileFormatter: FileFormatter, Sendable {
         if Self.shellExtensions.contains(ext) {
             return formatter.toolPath != nil
         }
-        // Extensionless files — claim conditionally for shebang detection in format()
-        if ext.isEmpty && claimExtensionless {
-            return true
+        // Extensionless files — claim when shfmt is available for shebang detection in format()
+        if ext.isEmpty {
+            return formatter.toolPath != nil
         }
         return false
     }
 
     func format(_ content: String, url: URL) -> String {
+        guard content.utf8.count < Self.maxFormatSize else { return content }
+
         let ext = url.pathExtension.lowercased()
 
         // For extensionless files, verify shell shebang before formatting
@@ -273,11 +271,8 @@ struct ShellFileFormatter: FileFormatter, Sendable {
         guard let firstLine = content.split(separator: "\n", maxSplits: 1).first else {
             return false
         }
-        guard let regex = try? NSRegularExpression(pattern: Self.shellShebangPattern) else {
-            return false
-        }
         let range = NSRange(firstLine.startIndex..., in: firstLine)
-        return regex.firstMatch(in: String(firstLine), range: range) != nil
+        return Self.shellShebangRegex.firstMatch(in: String(firstLine), range: range) != nil
     }
 }
 
