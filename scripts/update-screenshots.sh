@@ -100,7 +100,7 @@ extract_named_screenshots() {
     echo "  Extracted ${att_name}.png"
     found_any=true
   done < <(python3 - "$XCRESULTTOOL" "$RESULT_PATH" <<'PY'
-import json, subprocess, sys
+import json, os, subprocess, sys
 
 xcresulttool = sys.argv[1]
 bundle_path = sys.argv[2]
@@ -110,7 +110,12 @@ def get_json(args):
     if r.returncode != 0:
         print(f"  xcresulttool error: {r.stderr}", file=sys.stderr)
         return None
-    return json.loads(r.stdout)
+    try:
+        return json.loads(r.stdout)
+    except json.JSONDecodeError as e:
+        print(f"  Failed to parse xcresulttool output as JSON: {e}", file=sys.stderr)
+        print(f"  Output preview: {r.stdout[:200]}", file=sys.stderr)
+        return None
 
 def find_test_ids(node):
     results = []
@@ -140,6 +145,13 @@ if not data:
 test_ids = find_test_ids(data)
 if not test_ids:
     print("  No screenshot test cases found in xcresult bundle.", file=sys.stderr)
+    # Diagnostic: show first 5 files in Data/ to help debug extraction failures
+    data_dir = bundle_path + "/Data"
+    if os.path.isdir(data_dir):
+        entries = sorted(os.listdir(data_dir))[:5]
+        print(f"  Diagnostic: Data/ directory has {len(os.listdir(data_dir))} entries, first 5: {entries}", file=sys.stderr)
+    else:
+        print(f"  Diagnostic: Data/ directory does not exist at {data_dir}", file=sys.stderr)
     sys.exit(1)
 
 for i, tid in enumerate(test_ids):
@@ -147,14 +159,14 @@ for i, tid in enumerate(test_ids):
                          "--path", bundle_path, "--test-id", tid])
     if not act_data:
         continue
-    if i == 0:
-        preview = json.dumps(act_data, indent=2)[:2000]
-        print(f"  DEBUG activities schema for {tid}:\n{preview}", file=sys.stderr)
     walk_activities(act_data)
 PY
   )
 
   [ "$found_any" = true ] && return 0
+  echo "  No attachments were extracted from any test case." >&2
+  echo "  Diagnostic: listing first 5 files in Data/ directory:" >&2
+  ls "$RESULT_PATH/Data/" 2>/dev/null | head -5 >&2 || echo "  (Data/ directory not found or empty)" >&2
   return 1
 }
 
