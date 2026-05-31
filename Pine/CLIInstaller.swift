@@ -136,6 +136,7 @@ enum CLIInstaller {
 
     // MARK: - Private
 
+    // TODO: Swift 6 — mark CLIInstaller or this method as @MainActor
     private static func showAlert(title: String, message: String) {
         AlertTemplate.cliInstallerInfo.runModal(
             messageText: title,

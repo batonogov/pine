@@ -118,7 +118,11 @@ extension AlertTemplate {
             return .critical
         case .cliInstallerInfo:
             return .informational
-        default:
+        case .unsavedChangesSingle, .unsavedChangesBulk,
+             .terminalTabCloseWarning, .terminalActiveProcessWarning,
+             .externalModifyConflict, .fileDeletedSaveAs,
+             .fileOperationErrorWarning, .largeFileWarning,
+             .branchUncommittedChanges, .revertAllConfirmation:
             return .warning
         }
     }
