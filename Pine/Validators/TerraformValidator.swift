@@ -7,6 +7,43 @@
 
 import Foundation
 
+// MARK: - TerraformLanguageValidator
+
+/// LanguageValidator for Terraform files (.tf, .tfvars).
+/// Uses `terraform validate` if installed. No built-in fallback.
+struct TerraformLanguageValidator: LanguageValidator, Sendable {
+    let supportedExtensions: Set<String> = ["tf", "tfvars"]
+    let supportedNames: Set<String> = []
+    let supportedNamePrefixes: Set<String> = []
+    let toolName = "terraform"
+    let displayName = "terraform"
+
+    nonisolated func validate(url: URL, content: String) -> (diagnostics: [ValidationDiagnostic], toolAvailable: Bool) {
+        let toolPath = ToolAvailability.path(for: toolName)
+        let hasExternalTool = toolPath != nil
+
+        var parsed: [ValidationDiagnostic] = []
+        if let toolPath = toolPath {
+            let tempDir = FileManager.default.temporaryDirectory
+            let tempFile = tempDir.appendingPathComponent(url.lastPathComponent)
+
+            do {
+                try content.write(to: tempFile, atomically: true, encoding: .utf8)
+                defer { try? FileManager.default.removeItem(at: tempFile) }
+
+                let result = ConfigValidationWorker.runTool(
+                    toolPath: toolPath, kind: .terraform, filePath: tempFile.path
+                )
+                parsed = ValidatorOutputParser.parseTerraform(result)
+            } catch {
+                // Temp file write failed — no built-in terraform validation
+            }
+        }
+
+        return (parsed, hasExternalTool)
+    }
+}
+
 // MARK: - terraform validate Output Parser
 
 extension ValidatorOutputParser {

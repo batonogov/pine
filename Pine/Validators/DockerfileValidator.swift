@@ -7,6 +7,47 @@
 
 import Foundation
 
+// MARK: - DockerfileLanguageValidator
+
+/// LanguageValidator for Dockerfiles (Dockerfile, Dockerfile.*).
+/// Uses hadolint if installed, falls back to built-in regex-based validation.
+struct DockerfileLanguageValidator: LanguageValidator, Sendable {
+    let supportedExtensions: Set<String> = []
+    let supportedNames: Set<String> = ["dockerfile"]
+    let supportedNamePrefixes: Set<String> = ["dockerfile."]
+    let toolName = "hadolint"
+    let displayName = "hadolint"
+
+    nonisolated func validate(url: URL, content: String) -> (diagnostics: [ValidationDiagnostic], toolAvailable: Bool) {
+        let toolPath = ToolAvailability.path(for: toolName)
+        let hasExternalTool = toolPath != nil
+
+        var parsed: [ValidationDiagnostic] = []
+        if let toolPath = toolPath {
+            let tempDir = FileManager.default.temporaryDirectory
+            let tempFile = tempDir.appendingPathComponent(url.lastPathComponent)
+
+            do {
+                try content.write(to: tempFile, atomically: true, encoding: .utf8)
+                defer { try? FileManager.default.removeItem(at: tempFile) }
+
+                let result = ConfigValidationWorker.runTool(
+                    toolPath: toolPath, kind: .hadolint, filePath: tempFile.path
+                )
+                parsed = ValidatorOutputParser.parseHadolint(result)
+            } catch {
+                // Temp file write failed — fall through to built-in
+            }
+        }
+
+        if parsed.isEmpty && !hasExternalTool {
+            parsed = BuiltinValidator.validateDockerfile(content)
+        }
+
+        return (parsed, hasExternalTool)
+    }
+}
+
 // MARK: - hadolint Output Parser
 
 extension ValidatorOutputParser {
