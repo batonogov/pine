@@ -124,6 +124,7 @@ final class GitStatusProvider {
             return (true, rootPath, fetched.branch, fetched.statuses, fetched.ignored, fetched.branches)
         }
 
+        // Assign root path before fetching so observers see a consistent (root, statuses) pair
         self.repositoryURL = repositoryURL
         self.gitRootPath = rootPath
         applyFetchedResults(
@@ -198,6 +199,8 @@ final class GitStatusProvider {
             GitFetcher.fetchAllInParallel(at: url)
         }
 
+        // Repository may have been torn down (e.g. .git deleted on the fly) —
+        // detect by checking if previously-present data suddenly vanished.
         let looksUnreachable = fetched.branch.isEmpty
             && fetched.statuses.isEmpty
             && fetched.branches.isEmpty
@@ -218,6 +221,8 @@ final class GitStatusProvider {
     func statusForFile(at url: URL) -> GitFileStatus? {
         guard let path = relativePath(for: url) else { return nil }
         if let status = fileStatuses[path] { return status }
+        // git status --porcelain reports untracked directories as a single entry
+        // with a trailing slash, so individual files inside need a prefix check.
         if isInsideUntrackedDirectory(path) { return .untracked }
         return nil
     }
@@ -229,6 +234,7 @@ final class GitStatusProvider {
 
     private func isPathIgnored(_ path: String) -> Bool {
         if ignoredPaths.contains(path) { return true }
+        // Walk up parent directories — O(depth) instead of O(ignoredPaths.count)
         var components = path.components(separatedBy: "/")
         while components.count > 1 {
             components.removeLast()

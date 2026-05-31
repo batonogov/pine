@@ -14,7 +14,7 @@ extension GitStatusProvider {
     /// Synchronously switches to the given branch and refreshes git status.
     func checkoutBranch(_ branch: String) -> (success: Bool, error: String) {
         guard let url = repositoryURL else { return (false, "No repository") }
-        let result = Self.runGit(["switch", branch], at: url)
+        let result = GitCommand.run(["switch", branch], at: url)
         if result.exitCode == 0 {
             refresh()
             return (true, "")

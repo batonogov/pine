@@ -148,6 +148,8 @@ nonisolated enum GitParser {
         for line in output.components(separatedBy: "\n") {
             guard line.hasPrefix("!! ") else { continue }
             var path = String(line.dropFirst(3))
+            // Git C-quotes ignored paths containing spaces, non-ASCII, or special characters
+            path = unquoteGitPath(path)
             // Remove trailing slash for directories to normalize
             if path.hasSuffix("/") { path = String(path.dropLast()) }
             paths.insert(path)

@@ -5,7 +5,7 @@
 //  Data models for git status, diff markers, and blame display.
 //
 
-import SwiftUI
+import Foundation
 
 // MARK: - GitFileStatus
 
@@ -17,19 +17,6 @@ enum GitFileStatus: Equatable, Sendable {
     case deleted
     case conflict
     case mixed // staged + unstaged changes
-}
-
-extension GitFileStatus {
-    var color: Color {
-        switch self {
-        case .modified, .mixed: return .orange
-        case .staged:           return .green
-        case .added:            return Color(.systemGreen)
-        case .untracked:        return Color(.systemTeal)
-        case .deleted:          return .red
-        case .conflict:         return .red
-        }
-    }
 }
 
 // MARK: - GitLineDiff
