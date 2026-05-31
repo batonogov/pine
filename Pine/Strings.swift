@@ -247,6 +247,23 @@ enum Strings {
         String(localized: "dialog.ok")
     }
 
+    // MARK: - Revert All Confirmation
+
+    static var revertAllTitle: String {
+        String(localized: "revertAll.title", defaultValue: "Revert All Changes?")
+    }
+
+    static func revertAllMessage(_ fileName: String) -> String {
+        String(
+            localized: "revertAll.message",
+            defaultValue: "All changes in \"\(fileName)\" will be permanently lost. This action cannot be undone."
+        )
+    }
+
+    static var revertAllButton: String {
+        String(localized: "revertAll.button", defaultValue: "Revert All")
+    }
+
     // MARK: - Save As Panel (AppKit)
 
     static var saveAsPanelTitle: String {
