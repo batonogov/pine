@@ -7,6 +7,47 @@
 
 import Foundation
 
+// MARK: - YAMLLanguageValidator
+
+/// LanguageValidator for YAML files (.yml, .yaml).
+/// Uses yamllint if installed, falls back to built-in regex-based validation.
+struct YAMLLanguageValidator: LanguageValidator, Sendable {
+    let supportedExtensions: Set<String> = ["yml", "yaml"]
+    let supportedNames: Set<String> = []
+    let supportedNamePrefixes: Set<String> = []
+    let toolName = "yamllint"
+    let displayName = "yamllint"
+
+    nonisolated func validate(url: URL, content: String) -> (diagnostics: [ValidationDiagnostic], toolAvailable: Bool) {
+        let toolPath = ToolAvailability.path(for: toolName)
+        let hasExternalTool = toolPath != nil
+
+        var parsed: [ValidationDiagnostic] = []
+        if let toolPath = toolPath {
+            let tempDir = FileManager.default.temporaryDirectory
+            let tempFile = tempDir.appendingPathComponent(url.lastPathComponent)
+
+            do {
+                try content.write(to: tempFile, atomically: true, encoding: .utf8)
+                defer { try? FileManager.default.removeItem(at: tempFile) }
+
+                let result = ConfigValidationWorker.runTool(
+                    toolPath: toolPath, kind: .yamllint, filePath: tempFile.path
+                )
+                parsed = ValidatorOutputParser.parseYamllint(result)
+            } catch {
+                // Temp file write failed — fall through to built-in
+            }
+        }
+
+        if parsed.isEmpty && !hasExternalTool {
+            parsed = BuiltinValidator.validateYAML(content)
+        }
+
+        return (parsed, hasExternalTool)
+    }
+}
+
 // MARK: - yamllint Output Parser
 
 extension ValidatorOutputParser {
@@ -24,6 +65,9 @@ extension ValidatorOutputParser {
 
     /// Parses a single yamllint output line.
     /// Format: `path:line:col: [level] message` or `path:line:col: [level] message (rule)`
+    ///
+    /// Marked `internal` to prevent misuse outside the module. Test-only access
+    /// is available via `@testable import Pine`.
     nonisolated static func parseYamllintLine(_ line: String) -> ValidationDiagnostic? {
         // Pattern: anything:digits:digits: [error/warning] message
         let pattern = #"^.*?:(\d+):(\d+): \[(error|warning)\] (.+)$"#

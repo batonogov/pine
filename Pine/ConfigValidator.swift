@@ -28,11 +28,24 @@ nonisolated enum BuiltinValidator {}
 /// Runs external config validators and produces diagnostics.
 /// Falls back to built-in regex-based validators when external tools are not installed.
 /// Explicitly `@MainActor` — all UI state lives here. Heavy validation work is
-/// dispatched to `ConfigValidationWorker` (nonisolated) to avoid
+/// dispatched to `LanguageValidator` conformances (nonisolated) to avoid
 /// `dispatch_assert_queue_fail` crashes under `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor`.
+///
+/// Uses protocol-based dispatch: the `validators` array holds all registered
+/// `LanguageValidator` instances. Adding a new language only requires creating
+/// a conforming type — no switch-cases to update.
 @MainActor
 @Observable
 final class ConfigValidator {
+
+    /// All registered language validators, dispatched by file extension/name.
+    /// New languages are added by appending a `LanguageValidator` conforming type.
+    let validators: [LanguageValidator] = [
+        YAMLLanguageValidator(),
+        ShellLanguageValidator(),
+        DockerfileLanguageValidator(),
+        TerraformLanguageValidator()
+    ]
 
     /// Current diagnostics for the active file.
     private(set) var diagnostics: [ValidationDiagnostic] = []
@@ -68,12 +81,24 @@ final class ConfigValidator {
     func validate(url: URL, content: String) {
         debounceTask?.cancel()
 
-        guard let kind = ValidatorDetector.detect(for: url) else {
+        let ext = url.pathExtension.lowercased()
+        let name = url.lastPathComponent.lowercased()
+
+        let validator = validators.first { v in
+            v.supportedExtensions.contains(ext)
+                || v.supportedNames.contains(name)
+                || v.supportedNamePrefixes.contains(where: { name.hasPrefix($0) })
+        }
+
+        guard let validator else {
             diagnostics = []
             activeValidator = nil
             toolAvailable = false
             return
         }
+
+        // Map to ValidatorKind for backward-compatible activeValidator display
+        activeValidator = ValidatorDetector.detect(for: url)
 
         let currentGen = nextGeneration()
 
@@ -82,7 +107,7 @@ final class ConfigValidator {
             try? await Task.sleep(for: .seconds(Self.debounceInterval))
             guard !Task.isCancelled, let self else { return }
 
-            self.runValidation(url: url, content: content, kind: kind, expectedGen: currentGen)
+            self.runValidation(url: url, content: content, validator: validator, expectedGen: currentGen)
         }
     }
 
@@ -98,16 +123,20 @@ final class ConfigValidator {
 
     // MARK: - Private
 
-    private func runValidation(url: URL, content: String, kind: ValidatorKind, expectedGen: UInt64) {
+    private func runValidation(
+        url: URL,
+        content: String,
+        validator: LanguageValidator,
+        expectedGen: UInt64
+    ) {
         guard generation == expectedGen else { return }
 
         isValidating = true
-        activeValidator = kind
 
         let capturedGen = expectedGen
 
         Task.detached {
-            let result = ConfigValidationWorker.runValidation(url: url, content: content, kind: kind)
+            let result = validator.validate(url: url, content: content)
 
             await MainActor.run { [weak self] in
                 guard let self, self.generation == capturedGen else { return }

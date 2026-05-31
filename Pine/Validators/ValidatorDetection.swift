@@ -63,6 +63,33 @@ nonisolated enum ValidatorKind: Sendable, Equatable {
     }
 }
 
+// MARK: - LanguageValidator Protocol
+
+/// Protocol for language-specific validators. Each validator declares which file
+/// extensions it supports and can produce diagnostics for a given file.
+/// Adding a new language requires only creating a conforming type — no switch-cases to update.
+protocol LanguageValidator: Sendable {
+    /// File extensions this validator handles (lowercased, without dot).
+    var supportedExtensions: Set<String> { get }
+
+    /// File names this validator handles (lowercased). Used for extensionless files like "Dockerfile".
+    var supportedNames: Set<String> { get }
+
+    /// File name prefixes this validator handles (lowercased). E.g. "dockerfile.".
+    var supportedNamePrefixes: Set<String> { get }
+
+    /// The tool name for display and lookup purposes.
+    var toolName: String { get }
+
+    /// Display name for status bar / tooltips.
+    var displayName: String { get }
+
+    /// Validate the file content, running the external tool if available.
+    /// Falls back to built-in validation when no external tool is installed.
+    /// Explicitly nonisolated — runs on background threads via ConfigValidator.
+    nonisolated func validate(url: URL, content: String) -> (diagnostics: [ValidationDiagnostic], toolAvailable: Bool)
+}
+
 // MARK: - Validator Detection
 
 /// Determines which validator to use based on file extension or name.

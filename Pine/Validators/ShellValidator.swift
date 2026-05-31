@@ -7,6 +7,47 @@
 
 import Foundation
 
+// MARK: - ShellLanguageValidator
+
+/// LanguageValidator for shell scripts (.sh, .bash, .zsh).
+/// Uses shellcheck if installed, falls back to built-in regex-based validation.
+struct ShellLanguageValidator: LanguageValidator, Sendable {
+    let supportedExtensions: Set<String> = ["sh", "bash", "zsh"]
+    let supportedNames: Set<String> = []
+    let supportedNamePrefixes: Set<String> = []
+    let toolName = "shellcheck"
+    let displayName = "shellcheck"
+
+    nonisolated func validate(url: URL, content: String) -> (diagnostics: [ValidationDiagnostic], toolAvailable: Bool) {
+        let toolPath = ToolAvailability.path(for: toolName)
+        let hasExternalTool = toolPath != nil
+
+        var parsed: [ValidationDiagnostic] = []
+        if let toolPath = toolPath {
+            let tempDir = FileManager.default.temporaryDirectory
+            let tempFile = tempDir.appendingPathComponent(url.lastPathComponent)
+
+            do {
+                try content.write(to: tempFile, atomically: true, encoding: .utf8)
+                defer { try? FileManager.default.removeItem(at: tempFile) }
+
+                let result = ConfigValidationWorker.runTool(
+                    toolPath: toolPath, kind: .shellcheck, filePath: tempFile.path
+                )
+                parsed = ValidatorOutputParser.parseShellcheck(result)
+            } catch {
+                // Temp file write failed — fall through to built-in
+            }
+        }
+
+        if parsed.isEmpty && !hasExternalTool {
+            parsed = BuiltinValidator.validateShell(content)
+        }
+
+        return (parsed, hasExternalTool)
+    }
+}
+
 // MARK: - shellcheck Output Parser
 
 extension ValidatorOutputParser {
