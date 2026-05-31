@@ -74,6 +74,40 @@ struct ShellFileFormatterTests {
         #expect(result == "#!/bin/zsh\necho \"zsh script\"\n")
     }
 
+    @Test(".sh file without shebang — formats because shfmt detects language by extension")
+    func shFileWithoutShebang() {
+        let runner = MockProcessRunner(stdout: "echo hello\n", stderr: "", exitCode: 0)
+        let formatter = makeFormatter(runner: runner)
+        let url = URL(fileURLWithPath: "/project/script.sh")
+        #expect(formatter.canFormat(url: url))
+        let result = formatter.format("echo hello\n", url: url)
+        #expect(result == "echo hello\n")
+    }
+
+    @Test("Non-standard path — #!/usr/local/bin/bash detected via regex")
+    func nonStandardPathBash() {
+        let runner = MockProcessRunner(
+            stdout: "#!/usr/local/bin/bash\necho hello\n", stderr: "", exitCode: 0
+        )
+        let formatter = makeFormatter(runner: runner)
+        let url = URL(fileURLWithPath: "/project/runme")
+        #expect(formatter.canFormat(url: url))
+        let result = formatter.format("#!/usr/local/bin/bash\necho hello\n", url: url)
+        #expect(result == "#!/usr/local/bin/bash\necho hello\n")
+    }
+
+    @Test("Non-standard path — #!/opt/homebrew/bin/zsh detected via regex")
+    func nonStandardPathZsh() {
+        let runner = MockProcessRunner(
+            stdout: "#!/opt/homebrew/bin/zsh\necho hello\n", stderr: "", exitCode: 0
+        )
+        let formatter = makeFormatter(runner: runner)
+        let url = URL(fileURLWithPath: "/project/setup")
+        #expect(formatter.canFormat(url: url))
+        let result = formatter.format("#!/opt/homebrew/bin/zsh\necho hello\n", url: url)
+        #expect(result == "#!/opt/homebrew/bin/zsh\necho hello\n")
+    }
+
     // MARK: - Shebang detection — files without shell extension
 
     @Test("Shebang #!/bin/sh detected — formats file without extension")
