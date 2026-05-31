@@ -179,6 +179,108 @@ enum HCLFileFormatter {
     }
 }
 
+/// Formats shell scripts via `shfmt -i 2 -ci -bn`. Handles `.sh`, `.bash`, `.zsh` extensions
+/// and detects shell shebangs (`#!/bin/sh`, `#!/bin/bash`, `#!/usr/bin/env bash`, etc.)
+/// in extensionless files. Gracefully no-ops when `shfmt` is not installed.
+struct ShellFileFormatter: FileFormatter, Sendable {
+    /// Shell file extensions (lowercase, without dot).
+    private static let shellExtensions: Set<String> = ["sh", "bash", "zsh"]
+
+    /// Shebang patterns that indicate a shell script.
+    /// Matches lines like `#!/bin/sh`, `#!/bin/bash -e`, `#!/usr/bin/env bash`.
+    private static let shellShebangPattern: String = {
+        let interpreters = [
+            "/bin/sh",
+            "/bin/bash",
+            "/bin/zsh",
+            "/usr/bin/env sh",
+            "/usr/bin/env bash",
+            "/usr/bin/env zsh"
+        ]
+        let alt = interpreters.map { NSRegularExpression.escapedPattern(for: $0) }.joined(separator: "|")
+        return "^#!.*(" + alt + ")(\\s|$)"
+    }()
+
+    private let formatter: ExternalFileFormatter
+
+    /// Whether to claim extensionless files (needed for shebang detection in `format()`).
+    /// Set to `false` when shfmt is not installed.
+    private let claimExtensionless: Bool
+
+    init(formatter: ExternalFileFormatter, claimExtensionless: Bool = true) {
+        self.formatter = formatter
+        self.claimExtensionless = claimExtensionless
+    }
+
+    static func resolve(
+        processRunner: @escaping ProcessRunner = runRealProcess,
+        resolver: ExternalToolResolver = .fromEnvironment()
+    ) -> ShellFileFormatter {
+        let extensions = ["sh", "bash", "zsh"]
+        let arguments = ["-i", "2", "-ci", "-bn"]
+
+        let external: ExternalFileFormatter
+        if let path = resolver.resolve(tool: "shfmt") {
+            external = ExternalFileFormatter(
+                toolPath: path,
+                toolName: "shfmt",
+                extensions: extensions,
+                arguments: arguments,
+                processRunner: processRunner
+            )
+            return ShellFileFormatter(formatter: external, claimExtensionless: true)
+        } else {
+            external = ExternalFileFormatter(
+                toolPath: nil,
+                toolName: "shfmt",
+                extensions: extensions,
+                arguments: arguments,
+                processRunner: processRunner
+            )
+            return ShellFileFormatter(formatter: external, claimExtensionless: false)
+        }
+    }
+
+    func canFormat(url: URL) -> Bool {
+        let ext = url.pathExtension.lowercased()
+        // Files with shell extensions
+        if Self.shellExtensions.contains(ext) {
+            return formatter.toolPath != nil
+        }
+        // Extensionless files — claim conditionally for shebang detection in format()
+        if ext.isEmpty && claimExtensionless {
+            return true
+        }
+        return false
+    }
+
+    func format(_ content: String, url: URL) -> String {
+        let ext = url.pathExtension.lowercased()
+
+        // For extensionless files, verify shell shebang before formatting
+        if ext.isEmpty {
+            guard hasShellShebang(content) else {
+                return content
+            }
+        }
+
+        return formatter.format(content, url: url)
+    }
+
+    /// Checks whether the content starts with a shell shebang line.
+    private func hasShellShebang(_ content: String) -> Bool {
+        guard content.hasPrefix("#!") else { return false }
+        guard let firstLine = content.split(separator: "\n", maxSplits: 1).first else {
+            return false
+        }
+        guard let regex = try? NSRegularExpression(pattern: Self.shellShebangPattern) else {
+            return false
+        }
+        let range = NSRange(firstLine.startIndex..., in: firstLine)
+        return regex.firstMatch(in: String(firstLine), range: range) != nil
+    }
+}
+
 /// Composes an ordered list of formatters, applying the first whose `canFormat` returns
 /// true. The empty registry is a no-op — safe default for files with no known formatter.
 struct FileFormatterRegistry: Sendable {
@@ -187,10 +289,13 @@ struct FileFormatterRegistry: Sendable {
     /// Default registry. Ships a pure-Swift JSON formatter. External tool formatters
     /// (e.g. `ExternalFileFormatter` for terraform, shfmt, prettier) can be appended
     /// by consumers — they participate in the same first-match dispatch.
+    /// ShellFileFormatter is listed last so it doesn't intercept extensionless files
+    /// before other formatters get a chance.
     static let `default` = FileFormatterRegistry(formatters: [
         JSONFileFormatter(),
         HCLFileFormatter.resolve(),
-        YAMLFileFormatter.resolve()
+        YAMLFileFormatter.resolve(),
+        ShellFileFormatter.resolve()
     ])
 
     /// Returns a formatted copy of `content` for the given URL, or the original if no
