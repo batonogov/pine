@@ -6,7 +6,7 @@ name: CI
 on:
   pull_request:
     branches: [main]
-    # `labeled` lets the `perf` label trigger the performance-tests job
+    # `labeled` lets the `perf` / `fuzz` labels trigger opt-in jobs
     # on-demand from a PR without re-running the rest of CI.
     types: [opened, synchronize, reopened, labeled]
   push:
@@ -162,6 +162,11 @@ jobs:
           sha256sum -c build-products.sha256
           tar --zstd -xf build-products.tar.zst
 
+      # Fuzz tests are excluded from the blocking CI pipeline because they
+      # generate random input data and occasionally hit pathological cases
+      # (large strings, regex backtracking) that exceed the 60s time limit.
+      # They run in a separate nightly job (.github/workflows/nightly-fuzz.yml)
+      # and can be triggered on-demand via the `fuzz` label on a PR.
       - name: Unit Tests
         run: |
           set +e
@@ -171,6 +176,14 @@ jobs:
             -destination "platform=macOS" \
             -derivedDataPath DerivedData \
             -only-testing:PineTests \
+            -skip-testing:PineTests/FuzzGitDiffParserTests \
+            -skip-testing:PineTests/FuzzGitBlameParserTests \
+            -skip-testing:PineTests/FuzzGitStatusParserTests \
+            -skip-testing:PineTests/FuzzSyntaxHighlighterTests \
+            -skip-testing:PineTests/FuzzQuickOpenProviderTests \
+            -skip-testing:PineTests/FuzzSymbolParserTests \
+            -skip-testing:PineTests/FuzzConfigValidatorTests \
+            -skip-testing:PineTests/FuzzGoToLineParserTests \
             -retry-tests-on-failure \
             -enableCodeCoverage YES \
             -resultBundlePath TestResults.xcresult \
@@ -770,4 +783,82 @@ jobs:
         with:
           name: performance-results-xcresult
           path: PerformanceResults.xcresult
+          retention-days: 14
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # Fuzz tests — OPT-IN only.
+  #
+  # Fuzz tests generate random input data and can occasionally hit pathological
+  # cases (large strings, regex backtracking) that exceed the default test time
+  # limit. They are excluded from the blocking unit-tests job via -skip-testing:
+  # flags and run here only when:
+  #
+  #   1. A PR is labeled `fuzz` — add the label to run fuzz tests against a
+  #      pull request without re-running the whole pipeline.
+  #
+  # For nightly scheduled runs, see .github/workflows/nightly-fuzz.yml.
+  fuzz-tests:
+    name: Fuzz Tests (on-demand)
+    runs-on: macos-26
+    timeout-minutes: 30
+    concurrency:
+      group: fuzz-${{ github.ref }}
+      cancel-in-progress: false
+    if: >-
+      github.event_name == 'pull_request' &&
+      contains(github.event.pull_request.labels.*.name, 'fuzz')
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+
+      - name: Select Xcode
+        uses: ./.github/actions/select-xcode
+
+      - name: Download Metal Toolchain
+        run: |
+          xcodebuild -downloadComponent MetalToolchain
+
+      - name: Cache SPM Dependencies
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: DerivedData/SourcePackages
+          key: spm-${{ runner.os }}-${{ hashFiles('Pine.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved') }}
+          restore-keys: |
+            spm-${{ runner.os }}-
+
+      - name: Build for Testing
+        run: |
+          xcodebuild build-for-testing \
+            -project Pine.xcodeproj \
+            -scheme Pine \
+            -destination "platform=macOS" \
+            -derivedDataPath DerivedData \
+            -only-testing:PineTests \
+            CODE_SIGN_IDENTITY=- \
+            CODE_SIGNING_ALLOWED=NO
+
+      - name: Run Fuzz Tests
+        run: |
+          xcodebuild test-without-building \
+            -project Pine.xcodeproj \
+            -scheme Pine \
+            -destination "platform=macOS" \
+            -derivedDataPath DerivedData \
+            -only-testing:PineTests/FuzzGitDiffParserTests \
+            -only-testing:PineTests/FuzzGitBlameParserTests \
+            -only-testing:PineTests/FuzzGitStatusParserTests \
+            -only-testing:PineTests/FuzzSyntaxHighlighterTests \
+            -only-testing:PineTests/FuzzQuickOpenProviderTests \
+            -only-testing:PineTests/FuzzSymbolParserTests \
+            -only-testing:PineTests/FuzzConfigValidatorTests \
+            -only-testing:PineTests/FuzzGoToLineParserTests \
+            -resultBundlePath FuzzResults.xcresult \
+            CODE_SIGN_IDENTITY=- \
+            CODE_SIGNING_ALLOWED=NO
+
+      - name: Upload Fuzz Results
+        if: success() || failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: fuzz-results-xcresult
+          path: FuzzResults.xcresult
           retention-days: 14
