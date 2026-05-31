@@ -42,7 +42,7 @@ nonisolated final class CompiledGrammarCache: @unchecked Sendable {
 
 /// Compiles grammar rules into NSRegularExpression instances.
 /// Pure functions — no lock required; safe to call from any context.
-nonisolated enum GrammarCompiler {
+enum GrammarCompiler: Sendable {
     /// Compiles all rules in a grammar into CompiledRule instances.
     nonisolated static func compileRules(for grammar: Grammar) -> [CompiledRule] {
         var rules: [CompiledRule] = []

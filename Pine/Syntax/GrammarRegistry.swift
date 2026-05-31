@@ -109,19 +109,23 @@ nonisolated final class GrammarRegistry: @unchecked Sendable {
     // MARK: - Loading
 
     /// Loads all .json grammar files from the Grammars/ subdirectory in the app bundle.
-    func loadGrammarsFromBundle() {
+    /// Returns the loaded grammars so callers can compile rules without re-reading files.
+    @discardableResult
+    func loadGrammarsFromBundle() -> [Grammar] {
         guard let urls = Bundle.main.urls(forResourcesWithExtension: "json", subdirectory: nil) else {
             Logger.syntax.error("No grammar files found in bundle")
-            return
+            return []
         }
 
         let decoder = JSONDecoder()
+        var loadedGrammars: [Grammar] = []
 
         for url in urls {
             do {
                 let data = try Data(contentsOf: url)
                 let grammar = try decoder.decode(Grammar.self, from: data)
                 registerGrammar(grammar)
+                loadedGrammars.append(grammar)
             } catch {
                 // Skip files that are not grammars (e.g. Assets JSON)
                 continue
@@ -130,6 +134,7 @@ nonisolated final class GrammarRegistry: @unchecked Sendable {
 
         let count = lock.withLock { Set(grammarsByExtension.values.map(\.name)).count }
         Logger.syntax.info("Loaded \(count) grammars")
+        return loadedGrammars
     }
 
     // MARK: - Registration

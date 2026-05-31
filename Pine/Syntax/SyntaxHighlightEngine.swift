@@ -170,14 +170,10 @@ nonisolated final class SyntaxHighlightEngine: @unchecked Sendable {
             matches.append(contentsOf: nestedMatches)
         }
 
-        let fingerprint = GrammarCompiler.collectMultilineFingerprint(
-            rules: rules, source: text, searchRange: fullRange
-        )
-
         return HighlightMatchResult(
             matches: matches,
             repaintRange: repaintRange,
-            multilineFingerprint: fingerprint
+            multilineFingerprint: multilineFingerprint
         )
     }
 

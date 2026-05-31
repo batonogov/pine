@@ -24,9 +24,6 @@ nonisolated final class SyntaxHighlighter: @unchecked Sendable {
     private let asyncHighlighter: SyntaxHighlightAsync
     private let multilineCache = MultilineMatchCache()
 
-    /// Lock for synchronizing access to mutable dictionaries.
-    private let lock = NSLock()
-
     /// Current theme (public for call sites that read theme colors).
     var theme: Theme { engine.theme }
 
@@ -47,8 +44,8 @@ nonisolated final class SyntaxHighlighter: @unchecked Sendable {
             nestedHighlighter: nestedHighlighter,
             multilineCache: multilineCache
         )
-        registry.loadGrammarsFromBundle()
-        compileAllGrammars()
+        let grammars = registry.loadGrammarsFromBundle()
+        compileGrammars(grammars)
     }
 
     // MARK: - Grammar Registration
@@ -339,22 +336,11 @@ nonisolated final class SyntaxHighlighter: @unchecked Sendable {
 
     // MARK: - Private
 
-    private func compileAllGrammars() {
-        // Re-scan all registered grammars and compile rules.
-        // This runs only at init, after loadGrammarsFromBundle().
-        // Since loadGrammarsFromBundle populates the registry but not the cache,
-        // we need to compile rules for all registered grammars.
-        // We do this by loading grammars again and compiling them.
-        guard let urls = Bundle.main.urls(forResourcesWithExtension: "json", subdirectory: nil) else {
-            return
-        }
-        let decoder = JSONDecoder()
-        for url in urls {
-            if let data = try? Data(contentsOf: url),
-               let grammar = try? decoder.decode(Grammar.self, from: data) {
-                let rules = GrammarCompiler.compileRules(for: grammar)
-                compiledCache.setRules(rules, for: grammar.name)
-            }
+    /// Compiles rules for pre-loaded grammars without re-reading files from disk.
+    private func compileGrammars(_ grammars: [Grammar]) {
+        for grammar in grammars {
+            let rules = GrammarCompiler.compileRules(for: grammar)
+            compiledCache.setRules(rules, for: grammar.name)
         }
     }
 }
