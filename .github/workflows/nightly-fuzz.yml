@@ -1,0 +1,131 @@
+# NOTE: All third-party actions are pinned by full commit SHA for supply-chain safety.
+# To update an action: find the new version's commit SHA on GitHub (Tags → verify commit),
+# replace the SHA, and keep the "# vX" comment in sync.
+name: Nightly Fuzz Tests
+
+on:
+  schedule:
+    # Run daily at 4:00 AM UTC (one hour after nightly-perf to avoid resource contention)
+    - cron: '0 4 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  fuzz-tests:
+    name: Fuzz Tests
+    runs-on: macos-26
+    timeout-minutes: 30
+    concurrency:
+      group: nightly-fuzz
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+
+      - name: Select Xcode
+        uses: ./.github/actions/select-xcode
+
+      - name: Download Metal Toolchain
+        run: |
+          xcodebuild -downloadComponent MetalToolchain
+
+      - name: Cache SPM Dependencies
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: DerivedData/SourcePackages
+          key: spm-${{ runner.os }}-${{ hashFiles('Pine.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved') }}
+          restore-keys: |
+            spm-${{ runner.os }}-
+
+      - name: Build for Testing
+        run: |
+          xcodebuild build-for-testing \
+            -project Pine.xcodeproj \
+            -scheme Pine \
+            -destination "platform=macOS" \
+            -derivedDataPath DerivedData \
+            -only-testing:PineTests \
+            CODE_SIGN_IDENTITY=- \
+            CODE_SIGNING_ALLOWED=NO
+
+      # Fuzz tests live in PineTests alongside unit tests but are excluded
+      # from the blocking CI pipeline via -skip-testing: flags. This job
+      # runs only the fuzz suites with an extended time limit (2 minutes
+      # per suite via .timeLimit(.minutes(2)) in the test suites).
+      - name: Run Fuzz Tests
+        run: |
+          xcodebuild test-without-building \
+            -project Pine.xcodeproj \
+            -scheme Pine \
+            -destination "platform=macOS" \
+            -derivedDataPath DerivedData \
+            -only-testing:PineTests/FuzzGitDiffParserTests \
+            -only-testing:PineTests/FuzzGitBlameParserTests \
+            -only-testing:PineTests/FuzzGitStatusParserTests \
+            -only-testing:PineTests/FuzzSyntaxHighlighterTests \
+            -only-testing:PineTests/FuzzQuickOpenProviderTests \
+            -only-testing:PineTests/FuzzSymbolParserTests \
+            -only-testing:PineTests/FuzzConfigValidatorTests \
+            -only-testing:PineTests/FuzzGoToLineParserTests \
+            -resultBundlePath FuzzResults.xcresult \
+            CODE_SIGN_IDENTITY=- \
+            CODE_SIGNING_ALLOWED=NO
+
+      - name: Fuzz Test Summary
+        if: success() || failure()
+        run: |
+          XCRESULT="FuzzResults.xcresult"
+          if [ ! -d "$XCRESULT" ]; then
+            echo "No .xcresult bundle found"
+            exit 0
+          fi
+
+          echo "## Nightly Fuzz Test Results" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "**Date:** $(date -u '+%Y-%m-%d %H:%M UTC')" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+
+          # Extract test results using jq
+          xcrun xcresulttool get test-results summary \
+            --path "$XCRESULT" \
+            --compact 2>/dev/null \
+          | jq -r '
+            "| Metric | Value |",
+            "|--------|-------|",
+            "| Total tests | \(.passedTests + .failedTests) |",
+            "| Passed | \(.passedTests) |",
+            "| Failed | \(.failedTests) |"
+          ' >> "$GITHUB_STEP_SUMMARY" || echo "Could not extract test summary" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload Fuzz Results
+        if: success() || failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: FuzzResults-${{ github.run_id }}
+          path: FuzzResults.xcresult
+          retention-days: 14
+
+      - name: Create Issue on Failure
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          gh issue create \
+            --title "Nightly fuzz tests failed ($(date -u '+%Y-%m-%d'))" \
+            --body "## Summary
+
+          The nightly fuzz test run failed. This typically indicates a crash or
+          pathological input that exposed a parser bug.
+
+          **Run:** $RUN_URL
+
+          ## Next steps
+
+          1. Check the workflow logs for the failing test class and seed
+          2. Download the \`FuzzResults.xcresult\` artifact for detailed failure info
+          3. Reproduce locally using the seed from the failing test
+          4. Fix the parser/handler to gracefully handle the problematic input" \
+            --label "bug,testing"
