@@ -19,15 +19,10 @@ enum TabCloseHelper {
         gitProvider: GitStatusProvider
     ) -> Bool {
         if tab.isDirty {
-            let alert = NSAlert()
-            alert.messageText = Strings.unsavedChangesTitle
-            alert.informativeText = Strings.unsavedChangesMessage
-            alert.addButton(withTitle: Strings.dialogSave)
-            alert.addButton(withTitle: Strings.dialogDontSave)
-            alert.addButton(withTitle: Strings.dialogCancel)
-            alert.alertStyle = .warning
-
-            let response = alert.runModal()
+            let response = AlertTemplate.unsavedChangesSingle.runModal(
+                messageText: Strings.unsavedChangesTitle,
+                informativeText: Strings.unsavedChangesMessage
+            )
             switch response {
             case .alertFirstButtonReturn:
                 guard let index = tabManager.tabs.firstIndex(where: { $0.id == tab.id }) else { return false }
@@ -55,15 +50,10 @@ enum TabCloseHelper {
         guard !dirtyTabs.isEmpty else { return true }
 
         let fileList = dirtyTabs.map { "  \u{2022} \($0.fileName)" }.joined(separator: "\n")
-        let alert = NSAlert()
-        alert.messageText = Strings.unsavedChangesTitle
-        alert.informativeText = Strings.unsavedChangesListMessage(fileList)
-        alert.addButton(withTitle: Strings.dialogSaveAll)
-        alert.addButton(withTitle: Strings.dialogDontSave)
-        alert.addButton(withTitle: Strings.dialogCancel)
-        alert.alertStyle = .warning
-
-        let response = alert.runModal()
+        let response = AlertTemplate.unsavedChangesBulk.runModal(
+            messageText: Strings.unsavedChangesTitle,
+            informativeText: Strings.unsavedChangesListMessage(fileList)
+        )
         switch response {
         case .alertFirstButtonReturn:
             for tab in dirtyTabs {

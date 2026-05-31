@@ -137,11 +137,9 @@ enum CLIInstaller {
     // MARK: - Private
 
     private static func showAlert(title: String, message: String) {
-        let alert = NSAlert()
-        alert.messageText = title
-        alert.informativeText = message
-        alert.alertStyle = .informational
-        alert.addButton(withTitle: "OK")
-        alert.runModal()
+        AlertTemplate.cliInstallerInfo.runModal(
+            messageText: title,
+            informativeText: message
+        )
     }
 }
