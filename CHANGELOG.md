@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.26.3](https://github.com/batonogov/pine/compare/v1.26.2...v1.26.3) (2026-06-01)
+
+
+### Bug Fixes
+
+* **ci:** screenshot extraction via xcresulttool get test-results ([#939](https://github.com/batonogov/pine/issues/939)) ([dca495b](https://github.com/batonogov/pine/commit/dca495b77d9647300420c417b777b54a744fbf6f))
+
 ## [1.26.2](https://github.com/batonogov/pine/compare/v1.26.1...v1.26.2) (2026-05-27)
 
 
