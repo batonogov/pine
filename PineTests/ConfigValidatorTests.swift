@@ -686,15 +686,16 @@ struct ConfigValidatorTests {
         #expect(validator.isValidating == false)
     }
 
-    // MARK: - ConfigValidationWorker (nonisolated)
+    // MARK: - LanguageValidator integration tests
 
-    @Test func worker_builtinYAML_tabIndentation() {
+    @Test func yamlValidator_builtinYAML_tabIndentation() {
+        let validator = YAMLLanguageValidator()
         let url = URL(fileURLWithPath: "/tmp/test.yml")
         let content = "key: value\n\tindented: bad\n"
-        let result = ConfigValidationWorker.runValidation(url: url, content: content, kind: .yamllint)
+        let result = validator.validate(url: url, content: content)
         if result.toolAvailable {
             // External yamllint handles validation — result depends on host config
-            // Just verify no crash (the core fix being tested)
+            // Just verify no crash
         } else {
             // Built-in validator catches tab indentation
             let tabErrors = result.diagnostics.filter { $0.message.contains("tab") }
@@ -702,10 +703,11 @@ struct ConfigValidatorTests {
         }
     }
 
-    @Test func worker_builtinDockerfile_missingFrom() {
+    @Test func dockerfileValidator_builtinDockerfile_missingFrom() {
+        let validator = DockerfileLanguageValidator()
         let url = URL(fileURLWithPath: "/tmp/Dockerfile")
         let content = "RUN echo hello\n"
-        let result = ConfigValidationWorker.runValidation(url: url, content: content, kind: .hadolint)
+        let result = validator.validate(url: url, content: content)
         // Built-in validator should report missing FROM (if hadolint not installed)
         if !result.toolAvailable {
             let fromErrors = result.diagnostics.filter { $0.message.contains("FROM") }
@@ -713,43 +715,47 @@ struct ConfigValidatorTests {
         }
     }
 
-    @Test func worker_builtinShell_backticks() {
+    @Test func shellValidator_builtinShell_backticks() {
+        let validator = ShellLanguageValidator()
         let url = URL(fileURLWithPath: "/tmp/test.sh")
         let content = "result=`date`\n"
-        let result = ConfigValidationWorker.runValidation(url: url, content: content, kind: .shellcheck)
+        let result = validator.validate(url: url, content: content)
         if !result.toolAvailable {
             let backtickInfo = result.diagnostics.filter { $0.severity == .info }
             #expect(!backtickInfo.isEmpty)
         }
     }
 
-    @Test func worker_terraform_noBuiltinFallback() {
+    @Test func terraformValidator_noBuiltinFallback() {
+        let validator = TerraformLanguageValidator()
         let url = URL(fileURLWithPath: "/tmp/main.tf")
         let content = "resource \"null_resource\" \"test\" {}\n"
-        let result = ConfigValidationWorker.runValidation(url: url, content: content, kind: .terraform)
+        let result = validator.validate(url: url, content: content)
         if !result.toolAvailable {
             // No built-in terraform validation — empty diagnostics expected
             #expect(result.diagnostics.isEmpty)
         }
     }
 
-    @Test func worker_validYAML_noDiagnostics() {
+    @Test func yamlValidator_validYAML_noDiagnostics() {
+        let validator = YAMLLanguageValidator()
         let url = URL(fileURLWithPath: "/tmp/valid.yml")
         let content = "key: value\nlist:\n  - item1\n  - item2\n"
-        let result = ConfigValidationWorker.runValidation(url: url, content: content, kind: .yamllint)
+        let result = validator.validate(url: url, content: content)
         if !result.toolAvailable {
             #expect(result.diagnostics.isEmpty)
         }
     }
 
-    @Test func worker_canBeCalledFromBackgroundThread() async {
-        // This test verifies that ConfigValidationWorker can be called from
+    @Test func validator_canBeCalledFromBackgroundThread() async {
+        // This test verifies that LanguageValidator.validate can be called from
         // any isolation domain without crashing — the core fix for the SIGTRAP.
+        let validator = YAMLLanguageValidator()
         let url = URL(fileURLWithPath: "/tmp/test.yml")
         let content = "key: value\n\tindented: bad\n"
 
         let result = await Task.detached {
-            ConfigValidationWorker.runValidation(url: url, content: content, kind: .yamllint)
+            validator.validate(url: url, content: content)
         }.value
 
         if !result.toolAvailable {

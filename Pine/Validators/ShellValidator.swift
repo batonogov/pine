@@ -17,34 +17,14 @@ struct ShellLanguageValidator: LanguageValidator, Sendable {
     let supportedNamePrefixes: Set<String> = []
     let toolName = "shellcheck"
     let displayName = "shellcheck"
+    let validatorKind: ValidatorKind = .shellcheck
 
-    nonisolated func validate(url: URL, content: String) -> (diagnostics: [ValidationDiagnostic], toolAvailable: Bool) {
-        let toolPath = ToolAvailability.path(for: toolName)
-        let hasExternalTool = toolPath != nil
+    nonisolated func builtinValidation(_ content: String) -> [ValidationDiagnostic]? {
+        BuiltinValidator.validateShell(content)
+    }
 
-        var parsed: [ValidationDiagnostic] = []
-        if let toolPath = toolPath {
-            let tempDir = FileManager.default.temporaryDirectory
-            let tempFile = tempDir.appendingPathComponent(url.lastPathComponent)
-
-            do {
-                try content.write(to: tempFile, atomically: true, encoding: .utf8)
-                defer { try? FileManager.default.removeItem(at: tempFile) }
-
-                let result = ConfigValidationWorker.runTool(
-                    toolPath: toolPath, kind: .shellcheck, filePath: tempFile.path
-                )
-                parsed = ValidatorOutputParser.parseShellcheck(result)
-            } catch {
-                // Temp file write failed — fall through to built-in
-            }
-        }
-
-        if parsed.isEmpty && !hasExternalTool {
-            parsed = BuiltinValidator.validateShell(content)
-        }
-
-        return (parsed, hasExternalTool)
+    nonisolated func parseToolOutput(_ output: String) -> [ValidationDiagnostic] {
+        ValidatorOutputParser.parseShellcheck(output)
     }
 }
 
