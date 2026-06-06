@@ -316,13 +316,10 @@ extension ContentView {
     /// Shows a confirmation dialog before reverting all changes in a file.
     static func confirmRevertAll(fileName: String, completion: @escaping (Bool) -> Void) {
         DispatchQueue.main.async {
-            let alert = NSAlert()
-            alert.messageText = "Revert All Changes?"
-            alert.informativeText = "All changes in \"\(fileName)\" will be permanently lost. This action cannot be undone."
-            alert.alertStyle = .warning
-            alert.addButton(withTitle: "Revert All")
-            alert.addButton(withTitle: "Cancel")
-            let response = alert.runModal()
+            let response = AlertTemplate.revertAllConfirmation.runModal(
+                messageText: Strings.revertAllTitle,
+                informativeText: Strings.revertAllMessage(fileName)
+            )
             completion(response == .alertFirstButtonReturn)
         }
     }
@@ -359,14 +356,12 @@ extension ContentView {
 
         if !modified.isEmpty {
             let names = Array(Set(modified.map(\.url.lastPathComponent))).sorted().joined(separator: ", ")
-            let alert = NSAlert()
-            alert.messageText = Strings.externalModifyTitle
-            alert.informativeText = Strings.externalModifyMessage(names)
-            alert.addButton(withTitle: Strings.externalModifyReload)
-            alert.addButton(withTitle: Strings.externalModifyKeep)
-            alert.alertStyle = .warning
+            let response = AlertTemplate.externalModifyConflict.runModal(
+                messageText: Strings.externalModifyTitle,
+                informativeText: Strings.externalModifyMessage(names)
+            )
 
-            if alert.runModal() == .alertFirstButtonReturn {
+            if response == .alertFirstButtonReturn {
                 for conflict in modified {
                     projectManager.reloadTabs(url: conflict.url)
                 }
@@ -384,15 +379,10 @@ extension ContentView {
 
         let dirtyTabs = affected.filter { $0.isDirty }
         if !dirtyTabs.isEmpty {
-            let alert = NSAlert()
-            alert.messageText = Strings.fileDeletedTitle
-            alert.informativeText = Strings.fileDeletedMessage
-            alert.addButton(withTitle: Strings.fileDeletedSaveAs)
-            alert.addButton(withTitle: Strings.dialogDontSave)
-            alert.addButton(withTitle: Strings.dialogCancel)
-            alert.alertStyle = .warning
-
-            let response = alert.runModal()
+            let response = AlertTemplate.fileDeletedSaveAs.runModal(
+                messageText: Strings.fileDeletedTitle,
+                informativeText: Strings.fileDeletedMessage
+            )
             switch response {
             case .alertFirstButtonReturn:
                 for tab in dirtyTabs {
@@ -402,11 +392,10 @@ extension ContentView {
                     do {
                         try tab.content.write(to: saveURL, atomically: true, encoding: .utf8)
                     } catch {
-                        let errAlert = NSAlert()
-                        errAlert.messageText = Strings.fileOperationErrorTitle
-                        errAlert.informativeText = error.localizedDescription
-                        errAlert.alertStyle = .warning
-                        errAlert.runModal()
+                        AlertTemplate.fileOperationErrorWarning.runModal(
+                            messageText: Strings.fileOperationErrorTitle,
+                            informativeText: error.localizedDescription
+                        )
                         return
                     }
                 }

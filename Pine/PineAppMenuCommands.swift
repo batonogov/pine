@@ -131,11 +131,10 @@ struct PineAppMenuCommands: Commands {
                         NotificationCenter.default.post(name: .refreshLineDiffs, object: nil)
                     }
                 } catch {
-                    let alert = NSAlert()
-                    alert.messageText = Strings.fileOperationErrorTitle
-                    alert.informativeText = error.localizedDescription
-                    alert.alertStyle = .critical
-                    alert.runModal()
+                    AlertTemplate.fileOperationErrorCritical.runModal(
+                        messageText: Strings.fileOperationErrorTitle,
+                        informativeText: error.localizedDescription
+                    )
                 }
             } label: {
                 Label(Strings.menuSaveAs, systemImage: MenuIcons.saveAs)

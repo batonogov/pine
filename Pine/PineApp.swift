@@ -300,13 +300,10 @@ class CloseDelegate: NSObject, NSWindowDelegate {
             guard let state = pane.terminalState(for: activePaneID),
                   let tab = state.activeTab else { return }
             if tab.hasForegroundProcess {
-                let alert = NSAlert()
-                alert.messageText = Strings.terminalTabCloseWarningTitle
-                alert.informativeText = Strings.terminalTabCloseWarningMessage
-                alert.addButton(withTitle: Strings.terminalTabCloseWarningClose)
-                alert.addButton(withTitle: Strings.dialogCancel)
-                alert.alertStyle = .warning
-                guard alert.runModal() == .alertFirstButtonReturn else { return }
+                guard AlertTemplate.terminalTabCloseWarning.runModal(
+                    messageText: Strings.terminalTabCloseWarningTitle,
+                    informativeText: Strings.terminalTabCloseWarningMessage
+                ) == .alertFirstButtonReturn else { return }
             }
             state.removeTab(id: tab.id)
             if state.terminalTabs.isEmpty {
@@ -337,15 +334,10 @@ class CloseDelegate: NSObject, NSWindowDelegate {
         guard !dirty.isEmpty else { return true }
 
         let fileList = dirty.map { "  • \($0.fileName)" }.joined(separator: "\n")
-        let alert = NSAlert()
-        alert.messageText = Strings.unsavedChangesTitle
-        alert.informativeText = Strings.unsavedChangesListMessage(fileList)
-        alert.addButton(withTitle: Strings.dialogSaveAll)
-        alert.addButton(withTitle: Strings.dialogDontSave)
-        alert.addButton(withTitle: Strings.dialogCancel)
-        alert.alertStyle = .warning
-
-        let response = alert.runModal()
+        let response = AlertTemplate.unsavedChangesBulk.runModal(
+            messageText: Strings.unsavedChangesTitle,
+            informativeText: Strings.unsavedChangesListMessage(fileList)
+        )
         switch response {
         case .alertFirstButtonReturn:
             guard projectManager.saveAllPaneTabs() else {
@@ -760,15 +752,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate {
             guard !dirty.isEmpty else { continue }
 
             let fileList = dirty.map { "  • \($0.fileName)" }.joined(separator: "\n")
-            let alert = NSAlert()
-            alert.messageText = Strings.unsavedChangesTitle
-            alert.informativeText = Strings.unsavedChangesListMessage(fileList)
-            alert.addButton(withTitle: Strings.dialogSaveAll)
-            alert.addButton(withTitle: Strings.dialogDontSave)
-            alert.addButton(withTitle: Strings.dialogCancel)
-            alert.alertStyle = .warning
-
-            let response = alert.runModal()
+            let response = AlertTemplate.unsavedChangesBulk.runModal(
+                messageText: Strings.unsavedChangesTitle,
+                informativeText: Strings.unsavedChangesListMessage(fileList)
+            )
             switch response {
             case .alertFirstButtonReturn:
                 guard pm.saveAllPaneTabs() else {
@@ -786,14 +773,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate {
         // Check for active terminal processes
         let hasActiveProcesses = registry.openProjects.values.contains { $0.terminal.hasActiveProcesses }
         if hasActiveProcesses {
-            let alert = NSAlert()
-            alert.messageText = Strings.terminalActiveProcessWarningTitle
-            alert.informativeText = Strings.terminalActiveProcessWarningMessage
-            alert.addButton(withTitle: Strings.terminalActiveProcessWarningQuit)
-            alert.addButton(withTitle: Strings.dialogCancel)
-            alert.alertStyle = .warning
-
-            if alert.runModal() != .alertFirstButtonReturn {
+            if AlertTemplate.terminalActiveProcessWarning.runModal(
+                messageText: Strings.terminalActiveProcessWarningTitle,
+                informativeText: Strings.terminalActiveProcessWarningMessage
+            ) != .alertFirstButtonReturn {
                 isTerminating = false
                 return .terminateCancel
             }
