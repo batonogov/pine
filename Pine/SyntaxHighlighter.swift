@@ -4,398 +4,93 @@
 //
 //  Created by Федор Батоногов on 09.03.2026.
 //
+//  Facade — delegates to GrammarRegistry, CompiledGrammarCache, SyntaxHighlightEngine,
+//  NestedHighlighter, SyntaxHighlightAsync, and MultilineMatchCache.
+//  Public API is unchanged; all call sites compile without edits.
+//
 
 import AppKit
-import os
-
-// MARK: - Модели грамматики
-
-/// Одно правило подсветки из JSON.
-nonisolated struct GrammarRule: Codable, Sendable {
-    let pattern: String      // Regex-паттерн
-    let scope: String        // Семантический scope: "keyword", "string", "comment" и т.д.
-    var options: [String]?   // Опции regex: ["anchorsMatchLines"]
-}
-
-/// Block comment delimiters (e.g. `/* */`, `<!-- -->`).
-nonisolated struct BlockCommentDelimiters: Codable, Sendable {
-    let open: String
-    let close: String
-}
-
-/// Грамматика языка, загружаемая из JSON-файла.
-nonisolated struct Grammar: Codable, Sendable {
-    let name: String             // "Swift", "Python" и т.д.
-    let extensions: [String]     // ["swift"], ["py", "pyw"]
-    let rules: [GrammarRule]     // Правила подсветки
-    var fileNames: [String]?     // Точные имена файлов: ["Dockerfile", "Makefile"]
-    var filePatterns: [String]?  // Glob-паттерны: ["Dockerfile.*", "*.Dockerfile"]
-    var lineComment: String?     // Символ однострочного комментария: "//", "#" и т.д.
-    var blockComment: BlockCommentDelimiters? // Блочный комментарий: {"open": "/*", "close": "*/"}
-}
-
-// MARK: - Тема (маппинг scope → цвет)
-
-/// Тема определяет цвета для каждого scope.
-/// Отделена от грамматик — можно менять тему, не трогая правила.
-nonisolated struct Theme {
-    let colors: [String: NSColor]
-
-    /// Тема по умолчанию — адаптируется к light/dark mode.
-    static let `default` = Theme(colors: [
-        "comment": dynamicColor(light: (0.35, 0.55, 0.33), dark: (0.42, 0.68, 0.40)),
-        "string": dynamicColor(light: (0.76, 0.32, 0.18), dark: (0.89, 0.49, 0.33)),
-        "keyword": dynamicColor(light: (0.72, 0.20, 0.45), dark: (0.89, 0.36, 0.60)),
-        "number": dynamicColor(light: (0.64, 0.58, 0.20), dark: (0.82, 0.76, 0.42)),
-        "type": dynamicColor(light: (0.22, 0.55, 0.60), dark: (0.40, 0.78, 0.82)),
-        "attribute": dynamicColor(light: (0.52, 0.35, 0.70), dark: (0.68, 0.51, 0.85)),
-        "function": dynamicColor(light: (0.25, 0.42, 0.75), dark: (0.40, 0.60, 0.90)),
-        // Markdown-specific scopes — distinct hues for visual hierarchy.
-        // Headings step through the spectrum from warm (H1) to cool (H6) so each level is
-        // immediately distinguishable; matches the Xcode Quick Help / Zed feel.
-        "markdown.heading.1": dynamicColor(light: (0.82, 0.18, 0.22), dark: (0.95, 0.42, 0.45)),
-        "markdown.heading.2": dynamicColor(light: (0.78, 0.36, 0.10), dark: (0.96, 0.58, 0.26)),
-        "markdown.heading.3": dynamicColor(light: (0.62, 0.46, 0.05), dark: (0.92, 0.78, 0.30)),
-        "markdown.heading.4": dynamicColor(light: (0.20, 0.55, 0.30), dark: (0.42, 0.82, 0.52)),
-        "markdown.heading.5": dynamicColor(light: (0.18, 0.45, 0.70), dark: (0.42, 0.70, 0.95)),
-        "markdown.heading.6": dynamicColor(light: (0.42, 0.32, 0.72), dark: (0.66, 0.58, 0.92)),
-        "markdown.bold": dynamicColor(light: (0.72, 0.20, 0.45), dark: (0.92, 0.46, 0.66)),
-        "markdown.italic": dynamicColor(light: (0.52, 0.35, 0.70), dark: (0.78, 0.62, 0.92)),
-        "markdown.code": dynamicColor(light: (0.76, 0.32, 0.18), dark: (0.95, 0.58, 0.40)),
-        "markdown.code.fenced": dynamicColor(light: (0.58, 0.22, 0.10), dark: (0.99, 0.72, 0.52)),
-        // Double-backtick inline code — same hue as inline code so the visual
-        // matches user expectations, but a distinct scope lets the grammar
-        // prioritise it over single-backtick spans.
-        "markdown.code.double": dynamicColor(light: (0.76, 0.32, 0.18), dark: (0.95, 0.58, 0.40)),
-        "markdown.link": dynamicColor(light: (0.10, 0.45, 0.78), dark: (0.36, 0.68, 0.98)),
-        // Image links — slightly teal-shifted from plain links so they read as
-        // "link carrying media".
-        "markdown.image": dynamicColor(light: (0.12, 0.56, 0.62), dark: (0.38, 0.82, 0.88)),
-        "markdown.list": dynamicColor(light: (0.22, 0.55, 0.60), dark: (0.46, 0.82, 0.86)),
-        "markdown.quote": dynamicColor(light: (0.40, 0.50, 0.42), dark: (0.58, 0.72, 0.60)),
-        "markdown.rule": dynamicColor(light: (0.50, 0.50, 0.50), dark: (0.62, 0.62, 0.62)),
-    ])
-
-    private static func dynamicColor(
-        light: (CGFloat, CGFloat, CGFloat),
-        dark: (CGFloat, CGFloat, CGFloat)
-    ) -> NSColor {
-        NSColor(name: nil) { appearance in
-            if appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua {
-                return NSColor(red: dark.0, green: dark.1, blue: dark.2, alpha: 1)
-            } else {
-                return NSColor(red: light.0, green: light.1, blue: light.2, alpha: 1)
-            }
-        }
-    }
-
-    func color(for scope: String) -> NSColor? {
-        colors[scope]
-    }
-}
-
-// MARK: - SyntaxHighlighter
-
-/// Единый движок подсветки синтаксиса.
-/// Загружает грамматики из JSON-файлов в папке Grammars/ в бандле приложения.
-/// При подсветке выбирает грамматику по расширению файла и применяет правила.
-/// Thread-safe generation counter for cancelling stale highlight requests.
-nonisolated final class HighlightGeneration: @unchecked Sendable {
-    private let lock = NSLock()
-    private var value: Int = 0
-
-    var current: Int {
-        lock.withLock { value }
-    }
-
-    @discardableResult
-    func increment() -> Int {
-        lock.withLock {
-            value += 1
-            return value
-        }
-    }
-}
-
-/// A single match found by regex computation (value type, safe to pass between threads).
-nonisolated struct HighlightMatch: Sendable {
-    let range: NSRange
-    let scope: String
-    let priority: Int
-}
-
-/// Result of background match computation.
-nonisolated struct HighlightMatchResult: Sendable {
-    let matches: [HighlightMatch]
-    let repaintRange: NSRange
-    let multilineFingerprint: [Int]
-}
 
 nonisolated final class SyntaxHighlighter: @unchecked Sendable {
-    /// Singleton — один экземпляр на всё приложение (грамматики загружаются один раз).
+    /// Singleton — one instance per application (grammars loaded once).
     static let shared = SyntaxHighlighter()
 
-    /// Lock for synchronizing access to mutable dictionaries.
-    /// Only protects dictionary read/write — never held during heavy computation (regex compilation/matching).
-    /// All locking uses `withLock { }` for consistency.
-    private let lock = NSLock()
+    // MARK: - Sub-components
 
-    /// Все загруженные грамматики, индексированные по расширению файла.
-    /// ["swift": Grammar(...), "py": Grammar(...), "pyw": Grammar(...), ...]
-    private var grammarsByExtension: [String: Grammar] = [:]
+    private let registry = GrammarRegistry()
+    private let compiledCache = CompiledGrammarCache()
+    private(set) var engine: SyntaxHighlightEngine
+    private let nestedHighlighter: NestedHighlighter
+    private let asyncHighlighter: SyntaxHighlightAsync
+    private let multilineCache = MultilineMatchCache()
 
-    /// Грамматики по точному имени файла (Dockerfile, Makefile и т.д.)
-    private var grammarsByFileName: [String: Grammar] = [:]
+    /// Current theme (public for call sites that read theme colors).
+    var theme: Theme { engine.theme }
 
-    /// Грамматики с glob-паттернами для имён файлов.
-    /// Каждый элемент: (паттерн, грамматика). Проверяются после exact match.
-    private var grammarsByFilePattern: [(pattern: String, grammar: Grammar)] = []
-
-    /// Скомпилированное правило подсветки.
-    struct CompiledRule {
-        let regex: NSRegularExpression
-        let scope: String
-        /// true для правил, способных матчить через переносы строк
-        /// (паттерн содержит `[\s\S]` или опция dotMatchesLineSeparators).
-        let isMultiline: Bool
-    }
-
-    /// Скомпилированные regex для каждой грамматики (кэшируем для производительности).
-    /// Ключ — имя языка.
-    private var compiledRules: [String: [CompiledRule]] = [:]
-
-    /// Кэш «отпечатка» многострочных токенов по ObjectIdentifier текстового хранилища.
-    /// Отпечаток — упорядоченный массив длин матчей (без позиций).
-    /// Вставка/удаление выше токена сдвигает location, но не меняет длину,
-    /// поэтому обычные правки не вызывают ложных полных перекрасок.
-    /// Изменение границы токена (добавление/удаление `/*`, `"""` и т.д.)
-    /// меняет количество или длину матчей → обнаруживается и запускает full repaint.
-    private var multilineMatchCache: [ObjectIdentifier: [Int]] = [:]
-
-    /// Текущая тема
-    var theme: Theme = .default
+    /// Maximum number of concurrent highlight operations.
+    static let maxConcurrentHighlights = SyntaxHighlightAsync.maxConcurrentHighlights
 
     private init() {
-        loadGrammars()
+        let engine = SyntaxHighlightEngine()
+        self.engine = engine
+        let nestedHighlighter = NestedHighlighter(
+            engine: engine, registry: registry, cache: compiledCache
+        )
+        self.nestedHighlighter = nestedHighlighter
+        asyncHighlighter = SyntaxHighlightAsync(
+            engine: engine,
+            registry: registry,
+            cache: compiledCache,
+            nestedHighlighter: nestedHighlighter,
+            multilineCache: multilineCache
+        )
+        let grammars = registry.loadGrammarsFromBundle()
+        compileGrammars(grammars)
     }
 
-    /// Регистрирует грамматику напрямую (для тестов через @testable import).
+    // MARK: - Grammar Registration
+
+    /// Registers a grammar directly (for tests via @testable import).
     func registerGrammar(_ grammar: Grammar) {
-        lock.withLock {
-            for ext in grammar.extensions {
-                grammarsByExtension[ext.lowercased()] = grammar
-            }
-            if let fileNames = grammar.fileNames {
-                for name in fileNames {
-                    grammarsByFileName[name] = grammar
-                }
-            }
-            if let patterns = grammar.filePatterns {
-                for pattern in patterns {
-                    grammarsByFilePattern.append((pattern: pattern, grammar: grammar))
-                }
-            }
-        }
-        // Compile regex outside the lock — NSRegularExpression(pattern:) is heavy.
-        let rules = compileRules(for: grammar)
-        lock.withLock {
-            compiledRules[grammar.name] = rules
-        }
+        registry.registerGrammar(grammar)
+        let rules = GrammarCompiler.compileRules(for: grammar)
+        compiledCache.setRules(rules, for: grammar.name)
     }
 
     #if DEBUG
     /// Removes a previously registered grammar (for test cleanup).
     func unregisterGrammar(_ grammar: Grammar) {
-        lock.withLock {
-            for ext in grammar.extensions where grammarsByExtension[ext.lowercased()]?.name == grammar.name {
-                grammarsByExtension.removeValue(forKey: ext.lowercased())
-            }
-            if let fileNames = grammar.fileNames {
-                for name in fileNames where grammarsByFileName[name]?.name == grammar.name {
-                    grammarsByFileName.removeValue(forKey: name)
-                }
-            }
-            grammarsByFilePattern.removeAll { $0.grammar.name == grammar.name }
-            compiledRules.removeValue(forKey: grammar.name)
-        }
+        registry.unregisterGrammar(grammar)
+        compiledCache.removeRules(for: grammar.name)
     }
 
     /// Clears the multiline match cache (for test teardown).
     func clearMultilineCache() {
-        lock.withLock {
-            multilineMatchCache.removeAll()
-        }
+        multilineCache.removeAll()
     }
     #endif
 
-    // MARK: - Загрузка грамматик
+    // MARK: - Line Comment Lookup
 
-    /// Ищет все .json файлы в папке Grammars/ внутри бандла и загружает их.
-    private func loadGrammars() {
-        // Bundle.main — бандл текущего приложения.
-        // .urls(forResourcesWithExtension:subdirectory:) — ищет файлы по расширению в подпапке.
-        guard let urls = Bundle.main.urls(forResourcesWithExtension: "json", subdirectory: nil) else {
-            Logger.syntax.error("No grammar files found in bundle")
-            return
-        }
-
-        let decoder = JSONDecoder()
-
-        for url in urls {
-            do {
-                let data = try Data(contentsOf: url)
-                let grammar = try decoder.decode(Grammar.self, from: data)
-
-                // Индексируем по каждому расширению
-                for ext in grammar.extensions {
-                    grammarsByExtension[ext.lowercased()] = grammar
-                }
-
-                // Индексируем по имени файла (если указано)
-                if let fileNames = grammar.fileNames {
-                    for name in fileNames {
-                        grammarsByFileName[name] = grammar
-                    }
-                }
-
-                // Индексируем glob-паттерны
-                if let patterns = grammar.filePatterns {
-                    for pattern in patterns {
-                        grammarsByFilePattern.append((pattern: pattern, grammar: grammar))
-                    }
-                }
-
-                // Компилируем regex один раз при загрузке
-                compiledRules[grammar.name] = compileRules(for: grammar)
-
-            } catch {
-                // Пропускаем файлы, которые не являются грамматиками (например Assets JSON)
-                continue
-            }
-        }
-
-        Logger.syntax.info("Loaded \(Set(self.grammarsByExtension.values.map(\.name)).count) grammars")
-    }
-
-    /// Компилирует regex-паттерны грамматики в NSRegularExpression.
-    /// Pure function — no lock required; safe to call from any context.
-    private func compileRules(for grammar: Grammar) -> [CompiledRule] {
-        var rules: [CompiledRule] = []
-
-        for rule in grammar.rules {
-            var opts: NSRegularExpression.Options = []
-            var isMultiline = false
-
-            // Преобразуем строковые опции в NSRegularExpression.Options
-            if let options = rule.options {
-                for opt in options {
-                    switch opt {
-                    case "anchorsMatchLines":
-                        opts.insert(.anchorsMatchLines)
-                    case "caseInsensitive":
-                        opts.insert(.caseInsensitive)
-                    case "dotMatchesLineSeparators":
-                        opts.insert(.dotMatchesLineSeparators)
-                        isMultiline = true
-                    default:
-                        break
-                    }
-                }
-            }
-
-            // Паттерны с [\s\S] матчат через переносы строк
-            if rule.pattern.contains("[\\s\\S]") || rule.pattern.contains("[\\S\\s]") {
-                isMultiline = true
-            }
-
-            if let regex = try? NSRegularExpression(pattern: rule.pattern, options: opts) {
-                rules.append(CompiledRule(regex: regex, scope: rule.scope, isMultiline: isMultiline))
-            } else {
-                Logger.syntax.error("Invalid regex in \(grammar.name): \(rule.pattern)")
-            }
-        }
-
-        return rules
-    }
-
-    // MARK: - Line comment lookup
-
-    /// Returns the line comment prefix for a file extension (e.g. "swift" → "//").
     func lineComment(forExtension ext: String) -> String? {
-        lock.withLock { grammarsByExtension[ext.lowercased()]?.lineComment }
+        registry.lineComment(forExtension: ext)
     }
 
-    /// Returns the line comment prefix for an exact file name (e.g. "Dockerfile" → "#").
     func lineComment(forFileName name: String) -> String? {
-        lock.withLock { grammarsByFileName[name]?.lineComment ?? matchFilePatternUnlocked(name)?.lineComment }
+        registry.lineComment(forFileName: name)
     }
 
-    // MARK: - Comment info lookup
+    // MARK: - Comment Style Lookup
 
-    /// Resolved comment style for a file — line comment preferred, block comment as fallback.
-    enum CommentStyle {
-        case line(String)
-        case block(open: String, close: String)
-    }
+    // Backward-compatible alias — call sites use SyntaxHighlighter.CommentStyle
+    typealias CommentStyle = GrammarRegistry.CommentStyle
 
-    /// Returns the preferred comment style for a file, resolving by exact name first, then extension.
-    /// Line comments take priority over block comments.
     func commentStyle(forExtension ext: String?, fileName: String?) -> CommentStyle? {
-        let grammar: Grammar? = lock.withLock {
-            if let name = fileName, let g = grammarsByFileName[name] {
-                return g
-            } else if let ext, let g = grammarsByExtension[ext.lowercased()] {
-                return g
-            }
-            return nil
-        }
-        guard let grammar else { return nil }
-
-        if let lc = grammar.lineComment {
-            return .line(lc)
-        } else if let bc = grammar.blockComment {
-            return .block(open: bc.open, close: bc.close)
-        }
-        return nil
+        registry.commentStyle(forExtension: ext, fileName: fileName)
     }
 
-    // MARK: - Подсветка
+    // MARK: - Sync Highlight (full)
 
-    /// Количество строк контекста вокруг изменённого региона для инкрементальной подсветки.
-    private let contextLines = 20
-
-    /// Приоритеты scopes: comment и string перекрывают остальные
-    private let scopePriority: [String: Int] = [
-        "comment": 100,
-        // attribute (dict keys, HTML/YAML/TOML keys) must beat string so dict
-        // keys don't get re-coloured by the catch-all string rule. See #732.
-        "attribute": 95,
-        "string": 90,
-        // Markdown: fenced/inline code must beat headings, headings beat emphasis,
-        // emphasis beats links/lists/quotes so contained markup doesn't bleed through.
-        "markdown.code.fenced": 95,
-        // Double-backtick span must beat single-backtick so the inner single
-        // backtick in ``foo`bar`` isn't re-coloured by the single-tick rule.
-        "markdown.code.double": 94,
-        "markdown.code": 92,
-        "markdown.heading.1": 80,
-        "markdown.heading.2": 80,
-        "markdown.heading.3": 80,
-        "markdown.heading.4": 80,
-        "markdown.heading.5": 80,
-        "markdown.heading.6": 80,
-        "markdown.bold": 60,
-        "markdown.italic": 55,
-        // Image links above plain links so `![alt](url)` isn't taken by link.
-        "markdown.image": 52,
-        "markdown.link": 50,
-        "markdown.list": 40,
-        "markdown.quote": 30,
-        "markdown.rule": 20
-    ]
-
-    /// Применяет подсветку ко всему NSTextStorage и обновляет кэш многострочных матчей.
-    /// Returns the match result so callers can cache it for instant reapplication on tab switch.
     @discardableResult
     func highlight(
         textStorage: NSTextStorage,
@@ -403,27 +98,30 @@ nonisolated final class SyntaxHighlighter: @unchecked Sendable {
         fileName: String? = nil,
         font: NSFont
     ) -> HighlightMatchResult? {
-        guard let (grammar, rules) = resolveGrammar(language: language, fileName: fileName) else {
-            resetAttributes(textStorage: textStorage,
+        guard let grammar = registry.resolveGrammar(language: language, fileName: fileName),
+              let rules = compiledCache.rules(for: grammar.name) else {
+            engine.resetAttributes(textStorage: textStorage,
                             range: NSRange(location: 0, length: textStorage.length),
                             font: font)
             return nil
         }
 
         let fullRange = NSRange(location: 0, length: textStorage.length)
-        let result = applyRules(
-            rules, to: textStorage, repaintRange: fullRange, searchRange: fullRange, font: font,
-            grammarName: grammar.name
+        let result = engine.computeMatches(
+            text: textStorage.string,
+            rules: rules,
+            grammarName: grammar.name,
+            repaintRange: fullRange,
+            searchRange: fullRange,
+            nestedHighlighter: nestedHighlighter
         )
-        lock.withLock { multilineMatchCache[ObjectIdentifier(textStorage)] = result.multilineFingerprint }
+        engine.applyMatches(result, to: textStorage, font: font)
+        multilineCache.update(key: ObjectIdentifier(textStorage), fingerprint: result.multilineFingerprint)
         return result
     }
 
-    /// Количество строк контекста для viewport-based подсветки (больше, чем для edit).
-    private let viewportContextLines = 50
+    // MARK: - Sync Highlight (viewport)
 
-    /// Подсветка только видимой области + буфер.
-    /// Используется для больших файлов вместо полного `highlight()`.
     func highlightVisibleRange(
         textStorage: NSTextStorage,
         visibleCharRange: NSRange,
@@ -434,49 +132,37 @@ nonisolated final class SyntaxHighlighter: @unchecked Sendable {
         let totalLength = textStorage.length
         guard totalLength > 0 else { return }
 
-        guard let (grammar, rules) = resolveGrammar(language: language, fileName: fileName) else {
-            resetAttributes(textStorage: textStorage,
+        guard let grammar = registry.resolveGrammar(language: language, fileName: fileName),
+              let rules = compiledCache.rules(for: grammar.name) else {
+            engine.resetAttributes(textStorage: textStorage,
                             range: visibleCharRange,
                             font: font)
             return
         }
 
         let source = textStorage.string as NSString
-
-        // Expand visible range by viewportContextLines
-        let expanded = expandToContext(
-            visibleCharRange, in: source, totalLength: totalLength, lines: viewportContextLines
+        let expanded = engine.expandToContext(
+            visibleCharRange, in: source, totalLength: totalLength, lines: engine.viewportContextLines
         )
 
-        // Multiline rules (block comments, fenced code blocks, multiline
-        // strings) always scan the full text rather than a bounded context
-        // window: a match can start arbitrarily far above the viewport and
-        // any window — even ±200 lines — will miss the opening delimiter of
-        // a very long construct (#750). The cost is bounded because only a
-        // handful of rules per grammar are multiline.
-        let result = applyRules(
-            rules, to: textStorage, repaintRange: expanded, searchRange: expanded, font: font,
-            grammarName: grammar.name
+        let result = engine.computeMatches(
+            text: textStorage.string,
+            rules: rules,
+            grammarName: grammar.name,
+            repaintRange: expanded,
+            searchRange: expanded,
+            fullFingerprintRange: NSRange(location: 0, length: totalLength),
+            nestedHighlighter: nestedHighlighter
         )
 
-        // Build multiline match cache (needed for subsequent highlightEdited calls)
+        engine.applyMatches(result, to: textStorage, font: font)
+
         let key = ObjectIdentifier(textStorage)
-        lock.withLock {
-            if multilineMatchCache[key] == nil {
-                multilineMatchCache[key] = result.multilineFingerprint
-            }
-        }
+        multilineCache.setIfNil(key: key, fingerprint: result.multilineFingerprint)
     }
 
-    /// Инкрементальная подсветка: подсвечивает только изменённый регион.
-    ///
-    /// Стратегия:
-    /// 1. Многострочные правила (2–3 на грамматику) запускаются по всему тексту,
-    ///    чтобы обнаружить токены, начинающиеся за пределами окна.
-    ///    Результат сравнивается с кэшем — если границы изменились
-    ///    (добавлен/удалён `/*`, `"""` и т.д.), запускается полная перекраска.
-    /// 2. Однострочные правила (keyword, type, function и т.д.) запускаются
-    ///    только в пределах расширенного диапазона.
+    // MARK: - Sync Highlight (incremental)
+
     func highlightEdited(
         textStorage: NSTextStorage,
         editedRange: NSRange,
@@ -487,8 +173,9 @@ nonisolated final class SyntaxHighlighter: @unchecked Sendable {
         let totalLength = textStorage.length
         guard totalLength > 0 else { return }
 
-        guard let (grammar, rules) = resolveGrammar(language: language, fileName: fileName) else {
-            resetAttributes(textStorage: textStorage,
+        guard let grammar = registry.resolveGrammar(language: language, fileName: fileName),
+              let rules = compiledCache.rules(for: grammar.name) else {
+            engine.resetAttributes(textStorage: textStorage,
                             range: NSRange(location: 0, length: totalLength),
                             font: font)
             return
@@ -497,378 +184,71 @@ nonisolated final class SyntaxHighlighter: @unchecked Sendable {
         let source = textStorage.string
         let fullRange = NSRange(location: 0, length: totalLength)
 
-        // Сканируем многострочные правила по всему тексту
-        let currentFingerprint = collectMultilineFingerprint(
+        let currentFingerprint = GrammarCompiler.collectMultilineFingerprint(
             rules: rules, source: source, searchRange: fullRange
         )
 
         let key = ObjectIdentifier(textStorage)
-        let cachedFingerprint: [Int]? = lock.withLock { multilineMatchCache[key] }
+        let cachedFingerprint = multilineCache.fingerprint(for: key)
 
-        // Если структура многострочных токенов изменилась — полная перекраска
         if cachedFingerprint != currentFingerprint {
-            let result = applyRules(
-                rules, to: textStorage, repaintRange: fullRange, searchRange: fullRange, font: font,
-                grammarName: grammar.name
+            let result = engine.computeMatches(
+                text: source,
+                rules: rules,
+                grammarName: grammar.name,
+                repaintRange: fullRange,
+                searchRange: fullRange,
+                nestedHighlighter: nestedHighlighter
             )
-            lock.withLock { multilineMatchCache[key] = result.multilineFingerprint }
+            engine.applyMatches(result, to: textStorage, font: font)
+            multilineCache.update(key: key, fingerprint: result.multilineFingerprint)
             return
         }
 
-        // Границы не изменились — инкрементальная подсветка
-        let repaintRange = expandToContext(editedRange, in: source as NSString, totalLength: totalLength)
-        applyRules(
-            rules, to: textStorage, repaintRange: repaintRange, searchRange: repaintRange, font: font,
-            grammarName: grammar.name
+        let repaintRange = engine.expandToContext(editedRange, in: source as NSString, totalLength: totalLength)
+        let result = engine.computeMatches(
+            text: source,
+            rules: rules,
+            grammarName: grammar.name,
+            repaintRange: repaintRange,
+            searchRange: repaintRange,
+            nestedHighlighter: nestedHighlighter
         )
+        engine.applyMatches(result, to: textStorage, font: font)
     }
 
-    /// Удаляет кэш для textStorage (вызывать при смене файла).
+    // MARK: - Cache Invalidation
+
     func invalidateCache(for textStorage: NSTextStorage) {
-        lock.withLock { multilineMatchCache.removeValue(forKey: ObjectIdentifier(textStorage)) }
+        multilineCache.remove(key: ObjectIdentifier(textStorage))
     }
 
-    /// Thread-safe read of multilineMatchCache. Callable from async context.
-    private func cachedMultilineFingerprint(for key: ObjectIdentifier) -> [Int]? {
-        lock.withLock { multilineMatchCache[key] }
-    }
+    // MARK: - Comment & String Ranges
 
-    /// Thread-safe update of multilineMatchCache. Callable from async context.
-    private func updateMultilineCache(key: ObjectIdentifier, fingerprint: [Int]) {
-        lock.withLock { multilineMatchCache[key] = fingerprint }
-    }
-
-    /// Thread-safe conditional set of multilineMatchCache (only if nil).
-    private func setMultilineCacheIfNil(key: ObjectIdentifier, fingerprint: [Int]) {
-        lock.withLock {
-            if multilineMatchCache[key] == nil {
-                multilineMatchCache[key] = fingerprint
-            }
-        }
-    }
-
-    /// Возвращает диапазоны комментариев и строк для данного текста.
-    /// Используется для пропуска скобок при bracket matching.
     func commentAndStringRanges(
         in text: String,
         language: String,
         fileName: String? = nil
     ) -> [NSRange] {
-        guard let (_, rules) = resolveGrammar(language: language, fileName: fileName) else {
+        guard let grammar = registry.resolveGrammar(language: language, fileName: fileName),
+              let rules = compiledCache.rules(for: grammar.name) else {
             return []
         }
-
-        let fullRange = NSRange(location: 0, length: (text as NSString).length)
-        var ranges: [NSRange] = []
-
-        for rule in rules where rule.scope == "comment" || rule.scope == "string" {
-            rule.regex.enumerateMatches(in: text, range: fullRange) { match, _, _ in
-                if let range = match?.range {
-                    ranges.append(range)
-                }
-            }
-        }
-
-        return ranges
+        return engine.commentAndStringRanges(in: text, rules: rules)
     }
 
-    // MARK: - Private helpers
+    // MARK: - Grammar Tag Resolution
 
-    private func resolveGrammar(language: String, fileName: String?) -> (Grammar, [CompiledRule])? {
-        lock.withLock {
-            let grammar: Grammar?
-            if let name = fileName, let g = grammarsByFileName[name] {
-                // Приоритет 1: точное совпадение имени файла
-                grammar = g
-            } else if let g = grammarsByExtension[language.lowercased()] {
-                // Приоритет 2: совпадение по расширению
-                grammar = g
-            } else if let name = fileName, let g = matchFilePatternUnlocked(name) {
-                // Приоритет 3: glob-паттерн имени файла
-                grammar = g
-            } else {
-                grammar = nil
-            }
-            guard let grammar, let rules = compiledRules[grammar.name] else { return nil }
-            return (grammar, rules)
-        }
-    }
-
-    // MARK: - Language tag resolution for fenced code blocks
-
-    /// Common language aliases used in fenced code blocks.
-    /// Maps alias → file extension recognized by `grammarsByExtension`.
-    private let languageAliases: [String: String] = [
-        "bash": "bash",
-        "sh": "sh",
-        "zsh": "zsh",
-        "shell": "sh",
-        "javascript": "js",
-        "typescript": "ts",
-        "python": "py",
-        "ruby": "rb",
-        "rust": "rs",
-        "golang": "go",
-        "csharp": "cs",
-        "c++": "cpp",
-        "objective-c": "m",
-        "yml": "yaml",
-        "dockerfile": "dockerfile",
-        "makefile": "mk",
-        "hcl": "hcl",
-        "terraform": "tf",
-    ]
-
-    /// Resolves a fenced code block language tag to compiled grammar rules.
-    /// Tries tag as-is first (works for `swift`, `py`, `go`, `html`, etc.),
-    /// then falls back to the alias map.
     func resolveGrammarByTag(_ tag: String) -> (Grammar, [CompiledRule])? {
-        let lowered = tag.lowercased()
-        // Try direct extension lookup first
-        if let result = resolveGrammar(language: lowered, fileName: nil) {
-            return result
+        guard let grammar = registry.resolveGrammarByTag(tag),
+              let rules = compiledCache.rules(for: grammar.name) else {
+            return nil
         }
-        // Try alias map
-        if let mapped = languageAliases[lowered] {
-            return resolveGrammar(language: mapped, fileName: nil)
-        }
-        return nil
+        return (grammar, rules)
     }
 
-    // MARK: - Nested fenced code block highlighting
+    // MARK: - Pure Computation (thread-safe)
 
-    /// Regex to match fenced code blocks with an optional language tag.
-    /// Group 1 captures the language tag (e.g. "swift", "python").
-    /// Uses dotMatchesLineSeparators equivalent via [\s\S].
-    private static let fencedBlockRegex: NSRegularExpression? = {
-        try? NSRegularExpression(pattern: "```(\\w+)?[^\\n]*\\n([\\s\\S]*?)```")
-    }()
-
-    /// Computes nested highlight matches for fenced code blocks in markdown.
-    /// For each fenced block with a recognized language tag, runs the inner
-    /// grammar on the block content and returns additional matches.
-    ///
-    /// - Parameters:
-    ///   - text: the full markdown text
-    ///   - repaintRange: range to clip matches to
-    /// - Returns: additional matches from inner grammars
-    func computeNestedFencedMatches(
-        text: String,
-        repaintRange: NSRange
-    ) -> [HighlightMatch] {
-        guard let regex = Self.fencedBlockRegex else { return [] }
-        let source = text as NSString
-        let fullRange = NSRange(location: 0, length: source.length)
-
-        var nestedMatches: [HighlightMatch] = []
-
-        regex.enumerateMatches(in: text, range: fullRange) { match, _, _ in
-            guard let match else { return }
-
-            // Extract language tag (group 1)
-            let tagRange = match.range(at: 1)
-            guard tagRange.location != NSNotFound, tagRange.length > 0 else { return }
-            let tag = source.substring(with: tagRange)
-
-            // Resolve grammar for this language
-            guard let (_, innerRules) = self.resolveGrammarByTag(tag) else { return }
-
-            // Extract interior range (group 2 — content between fences)
-            let contentRange = match.range(at: 2)
-            guard contentRange.location != NSNotFound, contentRange.length > 0 else { return }
-
-            // Check if content intersects repaint range
-            let clipped = NSIntersectionRange(contentRange, repaintRange)
-            guard clipped.length > 0 else { return }
-
-            // Extract the content substring for inner grammar matching
-            let content = source.substring(with: contentRange)
-
-            // Run inner grammar rules on the content
-            for rule in innerRules {
-                let priority = self.scopePriority[rule.scope] ?? 0
-                guard self.theme.color(for: rule.scope) != nil else { continue }
-
-                let contentNS = content as NSString
-                let innerRange = NSRange(location: 0, length: contentNS.length)
-
-                rule.regex.enumerateMatches(in: content, range: innerRange) { innerMatch, _, _ in
-                    guard let innerMatchRange = innerMatch?.range else { return }
-
-                    // Offset to absolute position in the full text
-                    let absoluteRange = NSRange(
-                        location: innerMatchRange.location + contentRange.location,
-                        length: innerMatchRange.length
-                    )
-
-                    // Clip to repaint range
-                    let absoluteClipped = NSIntersectionRange(absoluteRange, repaintRange)
-                    guard absoluteClipped.length > 0 else { return }
-
-                    // Inner matches override the fenced color — use high priority
-                    // but below comment/string within the inner grammar's own hierarchy
-                    nestedMatches.append(HighlightMatch(
-                        range: absoluteClipped,
-                        scope: rule.scope,
-                        priority: max(priority, 96)
-                    ))
-                }
-            }
-        }
-
-        return nestedMatches
-    }
-
-    /// Проверяет имя файла по glob-паттернам. `*` матчит любые символы.
-    /// Must be called while `lock` is held.
-    private func matchFilePatternUnlocked(_ fileName: String) -> Grammar? {
-        for entry in grammarsByFilePattern where globMatch(pattern: entry.pattern, string: fileName) {
-            return entry.grammar
-        }
-        return nil
-    }
-
-    /// Простой glob-matching: `*` матчит любую последовательность символов (кроме пустой, если не в начале/конце).
-    private func globMatch(pattern: String, string: String) -> Bool {
-        // Конвертируем glob в regex: экранируем спецсимволы, заменяем * на .*
-        let escaped = NSRegularExpression.escapedPattern(for: pattern)
-            .replacingOccurrences(of: "\\*", with: ".*")
-            .replacingOccurrences(of: "\\?", with: ".")
-        let regexPattern = "^" + escaped + "$"
-        guard let regex = try? NSRegularExpression(pattern: regexPattern) else { return false }
-        let range = NSRange(location: 0, length: (string as NSString).length)
-        return regex.firstMatch(in: string, range: range) != nil
-    }
-
-    /// Собирает отпечаток многострочных матчей — упорядоченный массив длин.
-    /// Длины инвариантны к вставкам/удалениям выше токена (location сдвигается,
-    /// length — нет), поэтому обычные правки не вызывают ложного full repaint.
-    private func collectMultilineFingerprint(
-        rules: [CompiledRule],
-        source: String,
-        searchRange: NSRange
-    ) -> [Int] {
-        var lengths: [Int] = []
-        for rule in rules where rule.isMultiline {
-            rule.regex.enumerateMatches(in: source, range: searchRange) { match, _, _ in
-                if let r = match?.range {
-                    lengths.append(r.length)
-                }
-            }
-        }
-        return lengths
-    }
-
-    /// Расширяет диапазон до границ строк + N строк контекста.
-    private func expandToContext(
-        _ range: NSRange,
-        in source: NSString,
-        totalLength: Int,
-        lines: Int? = nil
-    ) -> NSRange {
-        let contextCount = lines ?? contextLines
-        let expanded = source.lineRange(for: range)
-
-        var linesAdded = 0
-        var start = expanded.location
-        while start > 0 && linesAdded < contextCount {
-            start -= 1
-            if source.character(at: start) == ASCII.newline { linesAdded += 1 }
-        }
-        if start > 0 { start += 1 }
-
-        linesAdded = 0
-        var end = NSMaxRange(expanded)
-        while end < totalLength && linesAdded < contextCount {
-            if source.character(at: end) == ASCII.newline { linesAdded += 1 }
-            end += 1
-        }
-
-        return NSRange(location: start, length: end - start)
-    }
-
-    /// Сбрасывает атрибуты на базовый стиль (без грамматики).
-    /// Clamps range to textStorage.length to avoid crash if text changed.
-    /// Skips if undo/redo is in progress to prevent EXC_BAD_ACCESS (#650).
-    private func resetAttributes(textStorage: NSTextStorage, range: NSRange, font: NSFont) {
-        let currentLength = textStorage.length
-        guard currentLength > 0 else { return }
-        let safeRange = NSRange(
-            location: min(range.location, currentLength),
-            length: min(range.length, currentLength - min(range.location, currentLength))
-        )
-        guard safeRange.length > 0 else { return }
-
-        let undoManager = textStorage.layoutManagers.first?.firstTextView?.undoManager
-
-        // Bail out if undo/redo is in progress (#650).
-        if undoManager?.isUndoing == true || undoManager?.isRedoing == true {
-            return
-        }
-
-        undoManager?.disableUndoRegistration()
-        defer { undoManager?.enableUndoRegistration() }
-        textStorage.beginEditing()
-        textStorage.addAttributes([
-            .foregroundColor: NSColor.textColor,
-            .font: font
-        ], range: safeRange)
-        textStorage.endEditing()
-    }
-
-    /// Применяет правила подсветки.
-    /// Делегирует в `computeMatches` + `applyMatches` для единой логики.
-    ///
-    /// - `repaintRange`: диапазон, в котором сбрасываются и перекрашиваются атрибуты.
-    /// - `searchRange`: диапазон поиска для однострочных правил.
-    ///   Многострочные правила всегда ищут по всему тексту (через fullRange),
-    ///   чтобы обнаружить токены, начинающиеся до repaintRange.
-    @discardableResult
-    private func applyRules(
-        _ rules: [CompiledRule],
-        to textStorage: NSTextStorage,
-        repaintRange: NSRange,
-        searchRange: NSRange,
-        font: NSFont,
-        grammarName: String? = nil
-    ) -> HighlightMatchResult {
-        let result = computeMatchesWithRules(
-            rules, text: textStorage.string, repaintRange: repaintRange, searchRange: searchRange,
-            grammarName: grammarName
-        )
-        applyMatches(result, to: textStorage, font: font)
-        return result
-    }
-
-    // MARK: - Async highlighting (background computation)
-
-    /// Maximum number of concurrent highlight operations.
-    /// Limits CPU saturation during session restore with many open tabs.
-    /// Each tab's NSTextStorage is independent, so parallel highlighting is safe.
-    static let maxConcurrentHighlights = 4
-
-    /// Concurrent queue for regex computation across multiple tabs.
-    /// NSRegularExpression creates per-invocation matcher state, so concurrent
-    /// calls on independent text snapshots are safe. OperationQueue bounds
-    /// parallelism to avoid CPU saturation during session restore.
-    private let highlightQueue: OperationQueue = {
-        let queue = OperationQueue()
-        queue.name = "com.pine.syntax-highlight"
-        queue.qualityOfService = .userInitiated
-        queue.maxConcurrentOperationCount = SyntaxHighlighter.maxConcurrentHighlights
-        return queue
-    }()
-
-    /// Pure computation: finds regex matches without touching NSTextStorage.
-    /// Thread-safe — operates only on the provided String snapshot.
-    ///
-    /// - Parameters:
-    ///   - text: snapshot of the text to search
-    ///   - language: file extension for grammar lookup
-    ///   - fileName: optional file name for grammar lookup
-    ///   - repaintRange: range to clip matches to
-    ///   - searchRange: range to search for single-line rules
-    /// - Returns: match results, or nil if no grammar found
     func computeMatches(
         text: String,
         language: String,
@@ -876,274 +256,32 @@ nonisolated final class SyntaxHighlighter: @unchecked Sendable {
         repaintRange: NSRange,
         searchRange: NSRange
     ) -> HighlightMatchResult? {
-        guard let (grammar, rules) = resolveGrammar(language: language, fileName: fileName) else {
+        guard let grammar = registry.resolveGrammar(language: language, fileName: fileName),
+              let rules = compiledCache.rules(for: grammar.name) else {
             return nil
         }
-        return computeMatchesWithRules(
-            rules, text: text, repaintRange: repaintRange, searchRange: searchRange,
-            grammarName: grammar.name
-        )
-    }
-
-    /// Core match computation — used by both `computeMatches` and `applyRules`.
-    ///
-    /// **Thread safety.** Safe to call from any thread (including concurrent
-    /// callers on the background `highlightQueue`) as long as each invocation
-    /// passes its own `text` snapshot. This method:
-    /// - only reads immutable compiled rules via `rules` and the scope
-    ///   priority map (both immutable after registration),
-    /// - reads `theme.color(for:)` which is a pure dictionary lookup on an
-    ///   immutable `[String: NSColor]`,
-    /// - operates on local `matches`/`highlightedRanges` buffers that never
-    ///   escape this call,
-    /// - does NOT touch any `NSTextStorage` — that happens only in
-    ///   `applyMatches` on the main thread.
-    ///
-    /// Scopes without a registered theme color are skipped early so that no
-    /// nil color can later be written into an attribute dictionary.
-    private func computeMatchesWithRules(
-        _ rules: [CompiledRule],
-        text: String,
-        repaintRange: NSRange,
-        searchRange: NSRange,
-        grammarName: String? = nil
-    ) -> HighlightMatchResult {
-        let source = text as NSString
-        let totalLength = source.length
-        let fullRange = NSRange(location: 0, length: totalLength)
-
-        // Multiline rules (block comments, fenced code blocks, multiline strings)
-        // must scan the full text: a match can start arbitrarily far above the
-        // viewport, and a bounded context window (even ±200 lines) cannot see
-        // the opening delimiter of a very long construct. The cost is bounded
-        // because only a handful of rules per grammar are multiline. See #750 —
-        // fenced markdown blocks larger than the context window left the
-        // interior lines uncolored because the fence markers were outside the
-        // scan range.
-        let multilineRange = fullRange
-
-        var matches: [HighlightMatch] = []
-        var highlightedRanges: [
-            (repaintRange: NSRange, originalRange: NSRange, priority: Int, scope: String)
-        ] = []
-        // Fingerprint is collected inline during the main iteration to avoid
-        // a redundant second full-text scan of multiline rules (see #789 review).
-        var multilineFingerprint: [Int] = []
-
-        for rule in rules {
-            let priority = scopePriority[rule.scope] ?? 0
-            let hasColor = theme.color(for: rule.scope) != nil
-
-            // Multiline rules are always scanned for fingerprint collection
-            // (structural change detection), even when they have no color in
-            // the current theme. Single-line rules without color are skipped.
-            if !hasColor && !rule.isMultiline { continue }
-
-            let scanRange = rule.isMultiline ? multilineRange : searchRange
-
-            rule.regex.enumerateMatches(in: text, range: scanRange) { match, _, _ in
-                guard let matchRange = match?.range else { return }
-
-                // Record fingerprint for all multiline matches (regardless
-                // of whether we apply color) — the cache is used only for
-                // structural change detection in `highlightEdited`.
-                if rule.isMultiline {
-                    multilineFingerprint.append(matchRange.length)
-                }
-
-                guard hasColor else { return }
-
-                let clipped = NSIntersectionRange(matchRange, repaintRange)
-                guard clipped.length > 0 else { return }
-
-                var isOverridden = false
-                var lexicalRangesToReplace: [NSRange] = []
-                for existing in highlightedRanges {
-                    guard NSIntersectionRange(existing.repaintRange, clipped).length > 0 else {
-                        continue
-                    }
-                    if self.areMutuallyExclusiveLexicalScopes(rule.scope, existing.scope) {
-                        if NSLocationInRange(matchRange.location, existing.originalRange) {
-                            isOverridden = true
-                            break
-                        }
-                        lexicalRangesToReplace.append(existing.originalRange)
-                        continue
-                    }
-                    if existing.priority > priority {
-                        isOverridden = true
-                        break
-                    }
-                }
-
-                if !isOverridden {
-                    if !lexicalRangesToReplace.isEmpty {
-                        highlightedRanges.removeAll { existing in
-                            self.areMutuallyExclusiveLexicalScopes(rule.scope, existing.scope) &&
-                            lexicalRangesToReplace.contains { NSEqualRanges($0, existing.originalRange) }
-                        }
-                    }
-                    matches.append(HighlightMatch(
-                        range: clipped, scope: rule.scope, priority: priority
-                    ))
-                    highlightedRanges.append((
-                        repaintRange: clipped,
-                        originalRange: matchRange,
-                        priority: priority,
-                        scope: rule.scope
-                    ))
-                }
-            }
-        }
-
-        // Post-pass: nested highlighting inside fenced code blocks for Markdown
-        if grammarName == "Markdown" {
-            let nestedMatches = computeNestedFencedMatches(text: text, repaintRange: repaintRange)
-            matches.append(contentsOf: nestedMatches)
-        }
-
-        let fingerprint = collectMultilineFingerprint(
-            rules: rules, source: text, searchRange: fullRange
-        )
-
-        return HighlightMatchResult(
-            matches: matches,
+        return engine.computeMatches(
+            text: text,
+            rules: rules,
+            grammarName: grammar.name,
             repaintRange: repaintRange,
-            multilineFingerprint: fingerprint
+            searchRange: searchRange,
+            nestedHighlighter: nestedHighlighter
         )
     }
 
-    private func areMutuallyExclusiveLexicalScopes(_ lhs: String, _ rhs: String) -> Bool {
-        (lhs == "comment" && rhs == "string") || (lhs == "string" && rhs == "comment")
-    }
+    // MARK: - Apply Matches (main thread only)
 
-    /// Applies pre-computed matches to NSTextStorage.
-    ///
-    /// **Thread safety — MUST be called on the main thread.**
-    /// `NSTextStorage`/`NSMutableAttributedString` are not thread-safe. Calling
-    /// `addAttributes`/`addAttribute` from a background thread — or concurrently
-    /// with another thread (including the main thread via a synchronous
-    /// `highlightVisibleRange` call) — corrupts the internal
-    /// `NSMutableDictionary` backing store, surfacing as
-    /// `NSInvalidArgumentException: object cannot be nil` inside
-    /// `-[__NSDictionaryM setObject:forKey:]` even though every value passed in
-    /// is non-nil. See issue #790.
-    ///
-    /// Async entry points (`highlightAsync`, `highlightEditedAsync`,
-    /// `highlightVisibleRangeAsync`) hop to `@MainActor` before invoking this
-    /// method. Synchronous entry points (`highlightVisibleRange`,
-    /// `highlightEdited`) are documented main-thread-only and inherit the
-    /// caller's main-thread guarantee.
-    ///
-    /// Validates that ranges are still valid — text may have changed between
-    /// computation and application.
-    /// Skips application if the undo manager is currently undoing/redoing to
-    /// prevent EXC_BAD_ACCESS from concurrent NSTextStorage mutations (#650).
     func applyMatches(
         _ result: HighlightMatchResult,
         to textStorage: NSTextStorage,
         font: NSFont
     ) {
-        let currentLength = textStorage.length
-        // Discard if text changed and repaintRange is now out of bounds
-        guard result.repaintRange.location + result.repaintRange.length <= currentLength else {
-            return
-        }
-
-        let undoManager = textStorage.layoutManagers.first?.firstTextView?.undoManager
-
-        // Bail out if undo/redo is in progress — modifying textStorage attributes
-        // during an undo group causes EXC_BAD_ACCESS (#650).
-        if undoManager?.isUndoing == true || undoManager?.isRedoing == true {
-            return
-        }
-
-        undoManager?.disableUndoRegistration()
-        defer { undoManager?.enableUndoRegistration() }
-
-        textStorage.beginEditing()
-        textStorage.addAttributes([
-            .foregroundColor: NSColor.textColor,
-            .font: font
-        ], range: result.repaintRange)
-
-        for match in result.matches {
-            guard match.range.location + match.range.length <= currentLength else { continue }
-            guard let color = theme.color(for: match.scope) else { continue }
-            textStorage.addAttribute(.foregroundColor, value: color, range: match.range)
-        }
-
-        textStorage.endEditing()
+        engine.applyMatches(result, to: textStorage, font: font)
     }
 
-    /// Hops to the main thread (synchronously) to call `applyMatches`.
-    ///
-    /// Used by the async entry points. `NSTextStorage` and `NSFont` are not
-    /// `Sendable`, so we avoid `MainActor.run { }` (which requires Sendable
-    /// captures under strict concurrency) and instead route through
-    /// `DispatchQueue.main.sync` — classic Apple pattern for bridging
-    /// background GCD work to the main-thread UI. This also preserves ordering
-    /// with respect to the caller's `await`.
-    ///
-    /// Safe to call from any non-main thread; falls through directly when
-    /// already on main to avoid a redundant hop (and to prevent the deadlock
-    /// that `DispatchQueue.main.sync` causes when called from main).
-    nonisolated private func applyMatchesOnMain(
-        _ result: HighlightMatchResult,
-        to textStorage: NSTextStorage,
-        font: NSFont
-    ) {
-        let box = MainHopBox(textStorage: textStorage, font: font, highlighter: self)
-        if Thread.isMainThread {
-            box.highlighter.applyMatches(result, to: box.textStorage, font: box.font)
-        } else {
-            DispatchQueue.main.sync {
-                box.highlighter.applyMatches(result, to: box.textStorage, font: box.font)
-            }
-        }
-    }
+    // MARK: - Async Entry Points
 
-    /// Hops to the main thread (synchronously) to call `resetAttributes`.
-    /// See `applyMatchesOnMain` for rationale.
-    nonisolated private func resetAttributesOnMain(
-        textStorage: NSTextStorage,
-        range: NSRange,
-        font: NSFont
-    ) {
-        let box = MainHopBox(textStorage: textStorage, font: font, highlighter: self)
-        if Thread.isMainThread {
-            box.highlighter.resetAttributes(textStorage: box.textStorage, range: range, font: box.font)
-        } else {
-            DispatchQueue.main.sync {
-                box.highlighter.resetAttributes(
-                    textStorage: box.textStorage, range: range, font: box.font
-                )
-            }
-        }
-    }
-
-    /// `@unchecked Sendable` container for the non-Sendable captures needed to
-    /// hop `applyMatches`/`resetAttributes` to the main thread.
-    ///
-    /// `NSTextStorage` and `NSFont` are AppKit types without `Sendable`
-    /// conformance. Capturing them directly in a `DispatchQueue.main.sync {}`
-    /// closure trips Swift 6 strict concurrency. Safety invariants:
-    ///
-    /// - `textStorage` is exclusively mutated on the main thread (enforced by
-    ///   `applyMatches`/`resetAttributes` preconditions and the sync hop).
-    /// - `NSFont` is immutable.
-    /// - `SyntaxHighlighter` itself is already `@unchecked Sendable`.
-    /// - The box is stack-local: it never escapes beyond a single synchronous
-    ///   main-thread call, and the caller blocks on `sync` until the closure
-    ///   returns, so there is no cross-thread lifetime extension.
-    private struct MainHopBox: @unchecked Sendable {
-        let textStorage: NSTextStorage
-        let font: NSFont
-        let highlighter: SyntaxHighlighter
-    }
-
-    /// Async full highlight: computes on background queue, applies on main thread.
-    /// Returns the applied match result (for caching on tab switch), or nil if generation was stale.
     @discardableResult
     func highlightAsync(
         textStorage: NSTextStorage,
@@ -1152,46 +290,15 @@ nonisolated final class SyntaxHighlighter: @unchecked Sendable {
         font: NSFont,
         generation: HighlightGeneration? = nil
     ) async -> HighlightMatchResult? {
-        // Explicit copy — NSTextStorage.string returns a reference to the internal
-        // NSMutableString which may mutate while background work is in progress.
-        let text = String(textStorage.string)
-        let textLength = (text as NSString).length
-        guard textLength > 0 else { return nil }
-
-        let fullRange = NSRange(location: 0, length: textLength)
-        let gen = generation?.current ?? 0
-
-        let result: HighlightMatchResult? = await withCheckedContinuation { continuation in
-            highlightQueue.addOperation {
-                let r = self.computeMatches(
-                    text: text,
-                    language: language,
-                    fileName: fileName,
-                    repaintRange: fullRange,
-                    searchRange: fullRange
-                )
-                continuation.resume(returning: r)
-            }
-        }
-
-        // Check generation — if bumped, discard stale results
-        if let generation, generation.current != gen { return nil }
-
-        // Mutating NSTextStorage attributes from a background thread races with
-        // any other highlight (sync or async) on the same storage and with
-        // main-thread consumers (layout manager, drawing). Hop to the main
-        // actor before calling applyMatches/resetAttributes — see #790.
-        if let result {
-            self.applyMatchesOnMain(result, to: textStorage, font: font)
-            updateMultilineCache(key: ObjectIdentifier(textStorage), fingerprint: result.multilineFingerprint)
-            return result
-        } else {
-            self.resetAttributesOnMain(textStorage: textStorage, range: fullRange, font: font)
-            return nil
-        }
+        await asyncHighlighter.highlightAsync(
+            textStorage: textStorage,
+            language: language,
+            fileName: fileName,
+            font: font,
+            generation: generation
+        )
     }
 
-    /// Async incremental highlight after an edit.
     func highlightEditedAsync(
         textStorage: NSTextStorage,
         editedRange: NSRange,
@@ -1200,64 +307,16 @@ nonisolated final class SyntaxHighlighter: @unchecked Sendable {
         font: NSFont,
         generation: HighlightGeneration? = nil
     ) async {
-        let text = String(textStorage.string)
-        let textLength = (text as NSString).length
-        guard textLength > 0 else { return }
-
-        let fullRange = NSRange(location: 0, length: textLength)
-        let key = ObjectIdentifier(textStorage)
-        let cachedFingerprint = cachedMultilineFingerprint(for: key)
-        let gen = generation?.current ?? 0
-
-        // Compute on background
-        let bgResult: (HighlightMatchResult?, Bool) = await withCheckedContinuation { continuation in
-            highlightQueue.addOperation {
-                let currentFingerprint = self.collectMultilineFingerprint(
-                    rules: self.resolveGrammar(language: language, fileName: fileName)?.1 ?? [],
-                    source: text,
-                    searchRange: fullRange
-                )
-
-                let needsFullRepaint = (cachedFingerprint != currentFingerprint)
-
-                let repaintRange: NSRange
-                let searchRange: NSRange
-                if needsFullRepaint {
-                    repaintRange = fullRange
-                    searchRange = fullRange
-                } else {
-                    let expanded = self.expandToContext(
-                        editedRange, in: text as NSString, totalLength: textLength
-                    )
-                    repaintRange = expanded
-                    searchRange = expanded
-                }
-
-                let result = self.computeMatches(
-                    text: text,
-                    language: language,
-                    fileName: fileName,
-                    repaintRange: repaintRange,
-                    searchRange: searchRange
-                )
-
-                continuation.resume(returning: (result, needsFullRepaint))
-            }
-        }
-
-        if let generation, generation.current != gen { return }
-
-        let (result, _) = bgResult
-        // Hop to main before touching NSTextStorage — see #790.
-        if let result {
-            self.applyMatchesOnMain(result, to: textStorage, font: font)
-            updateMultilineCache(key: key, fingerprint: result.multilineFingerprint)
-        } else {
-            self.resetAttributesOnMain(textStorage: textStorage, range: fullRange, font: font)
-        }
+        await asyncHighlighter.highlightEditedAsync(
+            textStorage: textStorage,
+            editedRange: editedRange,
+            language: language,
+            fileName: fileName,
+            font: font,
+            generation: generation
+        )
     }
 
-    /// Async viewport-based highlight.
     func highlightVisibleRangeAsync(
         textStorage: NSTextStorage,
         visibleCharRange: NSRange,
@@ -1266,40 +325,23 @@ nonisolated final class SyntaxHighlighter: @unchecked Sendable {
         font: NSFont,
         generation: HighlightGeneration? = nil
     ) async {
-        let text = String(textStorage.string)
-        let textLength = (text as NSString).length
-        guard textLength > 0 else { return }
+        await asyncHighlighter.highlightVisibleRangeAsync(
+            textStorage: textStorage,
+            visibleCharRange: visibleCharRange,
+            language: language,
+            fileName: fileName,
+            font: font,
+            generation: generation
+        )
+    }
 
-        let key = ObjectIdentifier(textStorage)
-        let gen = generation?.current ?? 0
+    // MARK: - Private
 
-        let result: HighlightMatchResult? = await withCheckedContinuation { continuation in
-            highlightQueue.addOperation {
-                let source = text as NSString
-                let expanded = self.expandToContext(
-                    visibleCharRange, in: source,
-                    totalLength: textLength, lines: self.viewportContextLines
-                )
-
-                let r = self.computeMatches(
-                    text: text,
-                    language: language,
-                    fileName: fileName,
-                    repaintRange: expanded,
-                    searchRange: expanded
-                )
-                continuation.resume(returning: r)
-            }
-        }
-
-        if let generation, generation.current != gen { return }
-
-        // Hop to main before touching NSTextStorage — see #790.
-        if let result {
-            self.applyMatchesOnMain(result, to: textStorage, font: font)
-            setMultilineCacheIfNil(key: key, fingerprint: result.multilineFingerprint)
-        } else {
-            self.resetAttributesOnMain(textStorage: textStorage, range: visibleCharRange, font: font)
+    /// Compiles rules for pre-loaded grammars without re-reading files from disk.
+    private func compileGrammars(_ grammars: [Grammar]) {
+        for grammar in grammars {
+            let rules = GrammarCompiler.compileRules(for: grammar)
+            compiledCache.setRules(rules, for: grammar.name)
         }
     }
 }
