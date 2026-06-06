@@ -203,6 +203,14 @@ struct GitStatusParserTests {
         #expect(ignored.contains("tmp/pids"))
     }
 
+    @Test func parsesIgnoredPathWithSpaces() {
+        // git C-quotes ignored paths containing spaces
+        let output = "!! \"build copy/\"\n!! \"my cache\"\n"
+        let ignored = GitStatusProvider.parseIgnoredOutput(output)
+        #expect(ignored.contains("build copy"))
+        #expect(ignored.contains("my cache"))
+    }
+
     // MARK: - isIgnored
 
     @Test func isIgnoredReturnsTrueForIgnoredFile() {
