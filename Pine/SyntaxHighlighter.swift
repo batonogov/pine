@@ -19,10 +19,20 @@ nonisolated final class SyntaxHighlighter: @unchecked Sendable {
 
     private let registry = GrammarRegistry()
     private let compiledCache = CompiledGrammarCache()
-    private(set) var engine: SyntaxHighlightEngine
+    private let engine: SyntaxHighlightEngine
     private let nestedHighlighter: NestedHighlighter
     private let asyncHighlighter: SyntaxHighlightAsync
     private let multilineCache = MultilineMatchCache()
+
+    /// Lazily created context bundle for sync operations.
+    private var syncContext: SyncContext {
+        SyncContext(
+            registry: registry,
+            cache: compiledCache,
+            multilineCache: multilineCache,
+            nestedHighlighter: nestedHighlighter
+        )
+    }
 
     /// Current theme (public for call sites that read theme colors).
     var theme: Theme { engine.theme }
@@ -98,26 +108,18 @@ nonisolated final class SyntaxHighlighter: @unchecked Sendable {
         fileName: String? = nil,
         font: NSFont
     ) -> HighlightMatchResult? {
-        guard let grammar = registry.resolveGrammar(language: language, fileName: fileName),
-              let rules = compiledCache.rules(for: grammar.name) else {
+        let ctx = syncContext
+        guard let resolved = engine.resolveRules(
+            language: language, fileName: fileName, context: ctx
+        ) else {
             engine.resetAttributes(textStorage: textStorage,
                             range: NSRange(location: 0, length: textStorage.length),
                             font: font)
             return nil
         }
-
-        let fullRange = NSRange(location: 0, length: textStorage.length)
-        let result = engine.computeMatches(
-            text: textStorage.string,
-            rules: rules,
-            grammarName: grammar.name,
-            repaintRange: fullRange,
-            searchRange: fullRange,
-            nestedHighlighter: nestedHighlighter
+        return engine.highlight(
+            textStorage: textStorage, font: font, context: ctx, resolved: resolved
         )
-        engine.applyMatches(result, to: textStorage, font: font)
-        multilineCache.update(key: ObjectIdentifier(textStorage), fingerprint: result.multilineFingerprint)
-        return result
     }
 
     // MARK: - Sync Highlight (viewport)
@@ -129,36 +131,24 @@ nonisolated final class SyntaxHighlighter: @unchecked Sendable {
         fileName: String? = nil,
         font: NSFont
     ) {
+        let ctx = syncContext
         let totalLength = textStorage.length
         guard totalLength > 0 else { return }
-
-        guard let grammar = registry.resolveGrammar(language: language, fileName: fileName),
-              let rules = compiledCache.rules(for: grammar.name) else {
+        guard let resolved = engine.resolveRules(
+            language: language, fileName: fileName, context: ctx
+        ) else {
             engine.resetAttributes(textStorage: textStorage,
                             range: visibleCharRange,
                             font: font)
             return
         }
-
-        let source = textStorage.string as NSString
-        let expanded = engine.expandToContext(
-            visibleCharRange, in: source, totalLength: totalLength, lines: engine.viewportContextLines
+        engine.highlightVisibleRange(
+            textStorage: textStorage,
+            visibleCharRange: visibleCharRange,
+            font: font,
+            context: ctx,
+            resolved: resolved
         )
-
-        let result = engine.computeMatches(
-            text: textStorage.string,
-            rules: rules,
-            grammarName: grammar.name,
-            repaintRange: expanded,
-            searchRange: expanded,
-            fullFingerprintRange: NSRange(location: 0, length: totalLength),
-            nestedHighlighter: nestedHighlighter
-        )
-
-        engine.applyMatches(result, to: textStorage, font: font)
-
-        let key = ObjectIdentifier(textStorage)
-        multilineCache.setIfNil(key: key, fingerprint: result.multilineFingerprint)
     }
 
     // MARK: - Sync Highlight (incremental)
@@ -170,51 +160,24 @@ nonisolated final class SyntaxHighlighter: @unchecked Sendable {
         fileName: String? = nil,
         font: NSFont
     ) {
+        let ctx = syncContext
         let totalLength = textStorage.length
         guard totalLength > 0 else { return }
-
-        guard let grammar = registry.resolveGrammar(language: language, fileName: fileName),
-              let rules = compiledCache.rules(for: grammar.name) else {
+        guard let resolved = engine.resolveRules(
+            language: language, fileName: fileName, context: ctx
+        ) else {
             engine.resetAttributes(textStorage: textStorage,
                             range: NSRange(location: 0, length: totalLength),
                             font: font)
             return
         }
-
-        let source = textStorage.string
-        let fullRange = NSRange(location: 0, length: totalLength)
-
-        let currentFingerprint = GrammarCompiler.collectMultilineFingerprint(
-            rules: rules, source: source, searchRange: fullRange
+        engine.highlightEdited(
+            textStorage: textStorage,
+            editedRange: editedRange,
+            font: font,
+            context: ctx,
+            resolved: resolved
         )
-
-        let key = ObjectIdentifier(textStorage)
-        let cachedFingerprint = multilineCache.fingerprint(for: key)
-
-        if cachedFingerprint != currentFingerprint {
-            let result = engine.computeMatches(
-                text: source,
-                rules: rules,
-                grammarName: grammar.name,
-                repaintRange: fullRange,
-                searchRange: fullRange,
-                nestedHighlighter: nestedHighlighter
-            )
-            engine.applyMatches(result, to: textStorage, font: font)
-            multilineCache.update(key: key, fingerprint: result.multilineFingerprint)
-            return
-        }
-
-        let repaintRange = engine.expandToContext(editedRange, in: source as NSString, totalLength: totalLength)
-        let result = engine.computeMatches(
-            text: source,
-            rules: rules,
-            grammarName: grammar.name,
-            repaintRange: repaintRange,
-            searchRange: repaintRange,
-            nestedHighlighter: nestedHighlighter
-        )
-        engine.applyMatches(result, to: textStorage, font: font)
     }
 
     // MARK: - Cache Invalidation
@@ -230,8 +193,9 @@ nonisolated final class SyntaxHighlighter: @unchecked Sendable {
         language: String,
         fileName: String? = nil
     ) -> [NSRange] {
-        guard let grammar = registry.resolveGrammar(language: language, fileName: fileName),
-              let rules = compiledCache.rules(for: grammar.name) else {
+        guard let (_, rules) = engine.resolveRules(
+            language: language, fileName: fileName, context: syncContext
+        ) else {
             return []
         }
         return engine.commentAndStringRanges(in: text, rules: rules)
@@ -256,8 +220,9 @@ nonisolated final class SyntaxHighlighter: @unchecked Sendable {
         repaintRange: NSRange,
         searchRange: NSRange
     ) -> HighlightMatchResult? {
-        guard let grammar = registry.resolveGrammar(language: language, fileName: fileName),
-              let rules = compiledCache.rules(for: grammar.name) else {
+        guard let (grammar, rules) = engine.resolveRules(
+            language: language, fileName: fileName, context: syncContext
+        ) else {
             return nil
         }
         return engine.computeMatches(
