@@ -5,15 +5,18 @@
 //  Extracted from SyntaxHighlighter.swift — nested fenced code block highlighting.
 //
 
-import Foundation
+import AppKit
 
 /// Handles nested highlighting for fenced code blocks in Markdown.
 /// For each fenced block with a recognized language tag, runs the inner
 /// grammar on the block content and returns additional matches.
 nonisolated final class NestedHighlighter: @unchecked Sendable {
-    private let engine: SyntaxHighlightEngine
     private let registry: GrammarRegistry
     private let cache: CompiledGrammarCache
+
+    /// Resolves a scope to its highlight info (priority + color).
+    /// Returns nil if the scope has no theme color and should be skipped.
+    private let scopeResolver: @Sendable (String) -> (priority: Int, color: NSColor)?
 
     /// Regex to match fenced code blocks with an optional language tag.
     /// Group 1 captures the language tag (e.g. "swift", "python").
@@ -21,10 +24,30 @@ nonisolated final class NestedHighlighter: @unchecked Sendable {
         try? NSRegularExpression(pattern: "```(\\w+)?[^\\n]*\\n([\\s\\S]*?)```")
     }()
 
-    init(engine: SyntaxHighlightEngine, registry: GrammarRegistry, cache: CompiledGrammarCache) {
-        self.engine = engine
+    /// Designated initializer — takes a scope resolver closure to decouple
+    /// from SyntaxHighlightEngine.
+    init(
+        registry: GrammarRegistry,
+        cache: CompiledGrammarCache,
+        scopeResolver: @Sendable @escaping (String) -> (priority: Int, color: NSColor)?
+    ) {
         self.registry = registry
         self.cache = cache
+        self.scopeResolver = scopeResolver
+    }
+
+    /// Convenience initializer that derives the scope resolver from an engine instance.
+    /// Provided for backward compatibility with existing call sites and tests.
+    convenience init(
+        engine: SyntaxHighlightEngine,
+        registry: GrammarRegistry,
+        cache: CompiledGrammarCache
+    ) {
+        self.init(
+            registry: registry,
+            cache: cache,
+            scopeResolver: { scope in engine.shouldHighlight(scope: scope) }
+        )
     }
 
     /// Computes nested highlight matches for fenced code blocks in markdown.
@@ -58,7 +81,7 @@ nonisolated final class NestedHighlighter: @unchecked Sendable {
             let content = source.substring(with: contentRange)
 
             for rule in innerRules {
-                guard let highlight = engine.shouldHighlight(scope: rule.scope) else { continue }
+                guard let highlight = scopeResolver(rule.scope) else { continue }
                 let priority = highlight.priority
 
                 let contentNS = content as NSString
