@@ -75,13 +75,10 @@ struct BranchSwitcherView: View {
         }
 
         if gitProvider.hasUncommittedChanges {
-            let alert = NSAlert()
-            alert.messageText = Strings.branchUncommittedChangesTitle
-            alert.informativeText = Strings.branchUncommittedChangesMessage(branch)
-            alert.addButton(withTitle: Strings.branchUncommittedChangesSwitch)
-            alert.addButton(withTitle: Strings.dialogCancel)
-            alert.alertStyle = .warning
-            guard alert.runModal() == .alertFirstButtonReturn else { return }
+            guard AlertTemplate.branchUncommittedChanges.runModal(
+                messageText: Strings.branchUncommittedChangesTitle,
+                informativeText: Strings.branchUncommittedChangesMessage(branch)
+            ) == .alertFirstButtonReturn else { return }
         }
 
         Task {

@@ -117,11 +117,10 @@ final class SidebarEditState {
 
     /// Shows an AppKit error alert for file operations.
     static func showFileError(_ message: String) {
-        let alert = NSAlert()
-        alert.messageText = Strings.fileOperationErrorTitle
-        alert.informativeText = message
-        alert.alertStyle = .warning
-        alert.runModal()
+        AlertTemplate.fileOperationErrorWarning.runModal(
+            messageText: Strings.fileOperationErrorTitle,
+            informativeText: message
+        )
     }
 }
 
