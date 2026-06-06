@@ -9,20 +9,24 @@
             "options": ["anchorsMatchLines"]
         },
         {
-            "pattern": "\"\"\"[\\s\\S]*?\"\"\"",
-            "scope": "string"
+            "pattern": "[fFrRuUbB]{0,2}\"\"\"[\\s\\S]*?\"\"\"",
+            "scope": "string",
+            "options": ["caseInsensitive"]
         },
         {
-            "pattern": "'''[\\s\\S]*?'''",
-            "scope": "string"
+            "pattern": "[fFrRuUbB]{0,2}'''[\\s\\S]*?'''",
+            "scope": "string",
+            "options": ["caseInsensitive"]
         },
         {
-            "pattern": "\"(?:[^\"\\\\]|\\\\.)*\"",
-            "scope": "string"
+            "pattern": "[fFrRuUbB]{0,2}\"(?:[^\"\\\\]|\\\\.)*\"",
+            "scope": "string",
+            "options": ["caseInsensitive"]
         },
         {
-            "pattern": "'(?:[^'\\\\]|\\\\.)*'",
-            "scope": "string"
+            "pattern": "[fFrRuUbB]{0,2}'(?:[^'\\\\]|\\\\.)*'",
+            "scope": "string",
+            "options": ["caseInsensitive"]
         },
         {
             "pattern": "\"(?:[^\"\\\\]|\\\\.)*\"(?=\\s*:)",
@@ -33,6 +37,18 @@
             "scope": "attribute"
         },
         {
+            "pattern": "@[a-zA-Z_][a-zA-Z0-9_.]*",
+            "scope": "attribute"
+        },
+        {
+            "pattern": "\\bdef\\s+([a-zA-Z_][a-zA-Z0-9_]*)",
+            "scope": "function"
+        },
+        {
+            "pattern": "\\bclass\\s+([a-zA-Z_][a-zA-Z0-9_]*)",
+            "scope": "function"
+        },
+        {
             "pattern": "\\b(def|class|if|elif|else|for|while|return|import|from|as|try|except|finally|with|raise|pass|break|continue|in|not|and|or|is|lambda|yield|global|nonlocal|assert|del|async|await|match|case)\\b",
             "scope": "keyword"
         },
@@ -41,28 +57,32 @@
             "scope": "keyword"
         },
         {
-            "pattern": "\\bself\\b",
+            "pattern": "(?<!\\.)\\.\\.\\.(?!\\.)",
+            "scope": "keyword"
+        },
+        {
+            "pattern": "\\b(self|cls)\\b",
             "scope": "attribute"
         },
         {
-            "pattern": "\\b(int|float|str|bool|list|dict|tuple|set|bytes|type|object|Exception|ValueError|TypeError|KeyError|IndexError|RuntimeError|print|len|range|enumerate|zip|map|filter|sorted|isinstance|hasattr|getattr|setattr|super)\\b",
+            "pattern": "\\b(int|float|str|bool|list|dict|tuple|set|bytes|type|object|Exception|ValueError|TypeError|KeyError|IndexError|RuntimeError|OSError|FileNotFoundError|AttributeError|StopIteration|NotImplementedError|OverflowError|ImportError|ModuleNotFoundError|SyntaxError|NameError|UnboundLocalError|ZeroDivisionError|StopAsyncIteration|BufferError|EOFError|FloatingPointError|GeneratorExit|KeyboardInterrupt|SystemExit|RecursionError|MemoryError|print|len|range|enumerate|zip|map|filter|sorted|isinstance|hasattr|getattr|setattr|super|abs|all|any|chr|dir|exec|eval|hash|hex|id|input|iter|max|min|next|open|ord|pow|repr|round|sum|vars|bytearray|complex|frozenset|memoryview|property|staticmethod|classmethod|abstractmethod)\\b",
             "scope": "type"
-        },
-        {
-            "pattern": "\\b\\d+(\\.\\d+)?([eE][+-]?\\d+)?j?\\b",
-            "scope": "number"
         },
         {
             "pattern": "0x[0-9a-fA-F]+",
             "scope": "number"
         },
         {
-            "pattern": "@[a-zA-Z_][a-zA-Z0-9_.]*",
-            "scope": "attribute"
+            "pattern": "0[bB][01]+",
+            "scope": "number"
         },
         {
-            "pattern": "\\bdef\\s+([a-zA-Z_][a-zA-Z0-9_]*)",
-            "scope": "function"
+            "pattern": "0[oO][0-7]+",
+            "scope": "number"
+        },
+        {
+            "pattern": "\\b\\d+(\\.\\d+)?([eE][+-]?\\d+)?j?\\b",
+            "scope": "number"
         }
     ]
 }

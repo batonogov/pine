@@ -214,15 +214,10 @@ final class TabManager {
 
     /// Shows a warning alert for large files. Returns the user's choice.
     private func showLargeFileAlert(fileName: String, sizeMB: Double) -> LargeFileAlertResult {
-        let alert = NSAlert()
-        alert.messageText = Strings.largeFileWarningTitle
-        alert.informativeText = Strings.largeFileWarningMessage(fileName, sizeMB)
-        alert.alertStyle = .warning
-        alert.addButton(withTitle: Strings.largeFileOpenWithoutHighlighting)
-        alert.addButton(withTitle: Strings.largeFileOpenWithHighlighting)
-        alert.addButton(withTitle: Strings.dialogCancel)
-
-        let response = alert.runModal()
+        let response = AlertTemplate.largeFileWarning.runModal(
+            messageText: Strings.largeFileWarningTitle,
+            informativeText: Strings.largeFileWarningMessage(fileName, sizeMB)
+        )
         switch response {
         case .alertFirstButtonReturn:
             return .openWithoutHighlighting
@@ -385,11 +380,10 @@ final class TabManager {
         do {
             return try trySaveTab(at: index)
         } catch {
-            let alert = NSAlert()
-            alert.messageText = Strings.fileOperationErrorTitle
-            alert.informativeText = error.localizedDescription
-            alert.alertStyle = .critical
-            alert.runModal()
+            AlertTemplate.fileOperationErrorCritical.runModal(
+                messageText: Strings.fileOperationErrorTitle,
+                informativeText: error.localizedDescription
+            )
             return false
         }
     }
@@ -581,11 +575,10 @@ final class TabManager {
             try trySaveAllTabs()
             return true
         } catch {
-            let alert = NSAlert()
-            alert.messageText = Strings.fileOperationErrorTitle
-            alert.informativeText = error.localizedDescription
-            alert.alertStyle = .critical
-            alert.runModal()
+            AlertTemplate.fileOperationErrorCritical.runModal(
+                messageText: Strings.fileOperationErrorTitle,
+                informativeText: error.localizedDescription
+            )
             return false
         }
     }
@@ -664,11 +657,10 @@ final class TabManager {
         do {
             return try tryDuplicateActiveTab(projectRoot: projectRoot)
         } catch {
-            let alert = NSAlert()
-            alert.messageText = Strings.fileOperationErrorTitle
-            alert.informativeText = error.localizedDescription
-            alert.alertStyle = .critical
-            alert.runModal()
+            AlertTemplate.fileOperationErrorCritical.runModal(
+                messageText: Strings.fileOperationErrorTitle,
+                informativeText: error.localizedDescription
+            )
             return false
         }
     }
