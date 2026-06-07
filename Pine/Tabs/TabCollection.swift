@@ -96,22 +96,6 @@ enum TabCollection {
         }
     }
 
-    // MARK: - Selection helpers
-
-    /// Returns the new active tab ID after closing a tab at the given index.
-    /// Prefers the tab at the same index, or the last one.
-    static func activeTabAfterClosing(
-        closedIndex: Int,
-        closedID: UUID,
-        currentActiveID: UUID?,
-        tabs: [EditorTab]
-    ) -> UUID? {
-        guard currentActiveID == closedID else { return currentActiveID }
-        if tabs.isEmpty { return nil }
-        let newIndex = min(closedIndex, tabs.count - 1)
-        return tabs[newIndex].id
-    }
-
     // MARK: - Navigation
 
     /// Next tab index with wrap-around.

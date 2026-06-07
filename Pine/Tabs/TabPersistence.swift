@@ -121,7 +121,7 @@ enum TabPersistence {
     static func createHugeFileTab(
         url: URL,
         totalSize: Int,
-        modDateProvider: @MainActor @Sendable (URL) -> Date? = modDate(for:)
+        providers: FileProviders = .default
     ) -> EditorTab {
         let content: String
         do {
@@ -138,7 +138,7 @@ enum TabPersistence {
         }
 
         var tab = EditorTab(url: url, content: content, savedContent: content)
-        tab.lastModDate = modDateProvider(url)
+        tab.lastModDate = providers.modDate(url)
         tab.syntaxHighlightingDisabled = true
         tab.isTruncated = true
         tab.fileSizeBytes = totalSize

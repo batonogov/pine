@@ -83,6 +83,7 @@ final class ProjectManager {
             }
         }
 
+        // Tabs already closed by per-pane checkExternalChanges()
         return .init(conflicts: conflicts, reloadedFileNames: reloadedFileNames, cleanDeletedIDs: [])
     }
 

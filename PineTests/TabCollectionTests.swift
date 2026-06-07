@@ -187,37 +187,6 @@ struct TabCollectionTests {
         #expect(affected[0].url.lastPathComponent == "b.swift")
     }
 
-    // MARK: - Selection
-
-    @Test("activeTabAfterClosing selects adjacent tab")
-    func activeTabAfterClosing() {
-        let tabs = makeTabs(["a.swift", "b.swift", "c.swift"])
-        // Close tab at index 1 — active was that tab, remaining = [tabs[0], tabs[2]]
-        let result = TabCollection.activeTabAfterClosing(
-            closedIndex: 1, closedID: tabs[1].id, currentActiveID: tabs[1].id, tabs: [tabs[0], tabs[2]]
-        )
-        // min(1, 2-1) = 1 → remaining[1] = tabs[2]
-        #expect(result == tabs[2].id)
-    }
-
-    @Test("activeTabAfterClosing returns nil for empty tabs")
-    func activeTabAfterClosingEmpty() {
-        let tab = EditorTab(url: URL(fileURLWithPath: "/tmp/a.swift"), content: "", savedContent: "")
-        let result = TabCollection.activeTabAfterClosing(
-            closedIndex: 0, closedID: tab.id, currentActiveID: tab.id, tabs: []
-        )
-        #expect(result == nil)
-    }
-
-    @Test("activeTabAfterClosing keeps current if not closed")
-    func activeTabAfterClosingNotActive() {
-        let tabs = makeTabs(["a.swift", "b.swift"])
-        let result = TabCollection.activeTabAfterClosing(
-            closedIndex: 0, closedID: tabs[0].id, currentActiveID: tabs[1].id, tabs: [tabs[1]]
-        )
-        #expect(result == tabs[1].id)
-    }
-
     // MARK: - Navigation
 
     @Test("nextTabIndex wraps around")

@@ -11,16 +11,22 @@ import Testing
 @Suite("TabFormatter Tests")
 struct TabFormatterTests {
 
-    @Test("contentPreparedForSave strips trailing whitespace")
-    func stripsWhitespace() {
+    @Test("contentPreparedForSave with default settings returns original")
+    func stripsWhitespaceDefaultOff() throws {
+        let suite = "TabFormatterTests-\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        let settings = EditorSettings(defaults: defaults)
+        settings.stripTrailingWhitespace = false
+        settings.insertFinalNewline = false
+
+        let content = "hello   \nworld\t\n"
         let result = TabFormatter.contentPreparedForSave(
-            "hello   \nworld\t\n",
+            content,
             url: URL(fileURLWithPath: "/tmp/test.txt"),
-            settings: EditorSettings(defaults: UserDefaults()),
+            settings: settings,
             formatters: .default
         )
-        // Default settings: no format, no strip, no newline
-        // We need to enable strip via settings
+        #expect(result == content)
     }
 
     @Test("contentPreparedForSave with all features disabled returns original")
