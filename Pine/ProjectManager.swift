@@ -83,7 +83,7 @@ final class ProjectManager {
             }
         }
 
-        return .init(conflicts: conflicts, reloadedFileNames: reloadedFileNames)
+        return .init(conflicts: conflicts, reloadedFileNames: reloadedFileNames, cleanDeletedIDs: [])
     }
 
     /// Reloads matching tabs in every editor pane. The same file can be open
