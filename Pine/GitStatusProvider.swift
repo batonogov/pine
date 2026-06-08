@@ -6,185 +6,6 @@
 //
 
 import Foundation
-import SwiftUI
-
-// MARK: - Models
-
-enum GitFileStatus: Equatable, Sendable {
-    case untracked
-    case modified
-    case staged
-    case added
-    case deleted
-    case conflict
-    case mixed // staged + unstaged changes
-}
-
-extension GitFileStatus {
-    var color: Color {
-        switch self {
-        case .modified, .mixed: return .orange
-        case .staged:           return .green
-        case .added:            return Color(.systemGreen)
-        case .untracked:        return Color(.systemTeal)
-        case .deleted:          return .red
-        case .conflict:         return .red
-        }
-    }
-}
-
-struct GitLineDiff: Equatable, Sendable {
-    enum Kind: Sendable { case added, modified, deleted }
-    let line: Int
-    let kind: Kind
-
-    /// Returns the first line of each contiguous change region, sorted ascending.
-    nonisolated static func changeRegionStarts(_ diffs: [GitLineDiff]) -> [Int] {
-        let sorted = diffs.sorted { $0.line < $1.line }
-        var starts: [Int] = []
-        var previousLine: Int?
-        for diff in sorted {
-            if let prev = previousLine, diff.line == prev + 1 {
-                previousLine = diff.line
-            } else {
-                starts.append(diff.line)
-                previousLine = diff.line
-            }
-        }
-        return starts
-    }
-
-    /// Returns the line of the next change region after `currentLine`, wrapping to the first if needed.
-    nonisolated static func nextChangeLine(from currentLine: Int, in diffs: [GitLineDiff]) -> Int? {
-        let starts = changeRegionStarts(diffs)
-        return nextChangeLine(from: currentLine, regionStarts: starts, diffs: diffs)
-    }
-
-    /// Returns the line of the previous change region before `currentLine`, wrapping to the last if needed.
-    nonisolated static func previousChangeLine(from currentLine: Int, in diffs: [GitLineDiff]) -> Int? {
-        let starts = changeRegionStarts(diffs)
-        return previousChangeLine(from: currentLine, regionStarts: starts, diffs: diffs)
-    }
-
-    /// Next change using pre-computed region starts (avoids recomputation when caller needs both directions).
-    nonisolated static func nextChangeLine(from currentLine: Int, regionStarts starts: [Int], diffs: [GitLineDiff]) -> Int? {
-        guard !starts.isEmpty else { return nil }
-        let idx = regionIndex(forLine: currentLine, regionStarts: starts, diffs: diffs)
-        if let idx {
-            return starts[(idx + 1) % starts.count]
-        }
-        if let next = starts.first(where: { $0 > currentLine }) {
-            return next
-        }
-        return starts[0]
-    }
-
-    /// Previous change using pre-computed region starts.
-    nonisolated static func previousChangeLine(from currentLine: Int, regionStarts starts: [Int], diffs: [GitLineDiff]) -> Int? {
-        guard !starts.isEmpty else { return nil }
-        let idx = regionIndex(forLine: currentLine, regionStarts: starts, diffs: diffs)
-        if let idx {
-            return starts[(idx - 1 + starts.count) % starts.count]
-        }
-        if let prev = starts.last(where: { $0 < currentLine }) {
-            return prev
-        }
-        return starts[starts.count - 1]
-    }
-
-    /// Returns the index of the region that contains `line`, or nil if line is not in any region.
-    nonisolated private static func regionIndex(forLine line: Int, regionStarts: [Int], diffs: [GitLineDiff]) -> Int? {
-        let diffLines = Set(diffs.map(\.line))
-        guard diffLines.contains(line) else { return nil }
-        // Walk backwards from line to find the region start
-        var current = line
-        while current > 0 && diffLines.contains(current - 1) {
-            current -= 1
-        }
-        return regionStarts.firstIndex(of: current)
-    }
-}
-
-// MARK: - GitFetcher
-
-/// Namespace for git fetch operations that run on background threads.
-/// Deliberately **not** `@MainActor` so closures inside `DispatchQueue.global().async`
-/// do not inherit MainActor isolation — prevents `dispatch_assert_queue_fail`
-/// crash under Swift 6 strict concurrency (issue #613).
-/// Marked `nonisolated` to opt out of `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor`.
-nonisolated enum GitFetcher {
-
-    /// Runs branch, status+ignored, and branch-list fetches in parallel.
-    /// Safe to call from any thread (all work happens on background queues).
-    /// Each variable is written by exactly one thread; `group.wait()` ensures
-    /// happens-before ordering so the reads after wait are safe.
-    static func fetchAllInParallel(
-        at url: URL
-    ) -> (branch: String, statuses: [String: GitFileStatus], ignored: Set<String>, branches: [String]) {
-        let group = DispatchGroup()
-        // nonisolated(unsafe): each var is written by exactly one dispatch block,
-        // and group.wait() provides happens-before guarantee before reads.
-        nonisolated(unsafe) var branch = ""
-        nonisolated(unsafe) var statuses: [String: GitFileStatus] = [:]
-        nonisolated(unsafe) var ignored: Set<String> = []
-        nonisolated(unsafe) var branchList: [String] = []
-
-        group.enter()
-        DispatchQueue.global(qos: .userInitiated).async {
-            branch = fetchBranch(at: url)
-            group.leave()
-        }
-
-        group.enter()
-        DispatchQueue.global(qos: .userInitiated).async {
-            let result = fetchStatusAndIgnored(at: url)
-            statuses = result.statuses
-            ignored = result.ignored
-            group.leave()
-        }
-
-        group.enter()
-        DispatchQueue.global(qos: .userInitiated).async {
-            branchList = fetchBranches(at: url)
-            group.leave()
-        }
-
-        group.wait()
-        return (branch, statuses, ignored, branchList)
-    }
-
-    static func fetchBranch(at url: URL) -> String {
-        let result = GitStatusProvider.runGit(["rev-parse", "--abbrev-ref", "HEAD"], at: url)
-        return result.exitCode == 0
-            ? result.output.trimmingCharacters(in: .whitespacesAndNewlines)
-            : ""
-    }
-
-    static func fetchStatusAndIgnored(
-        at url: URL
-    ) -> (statuses: [String: GitFileStatus], ignored: Set<String>) {
-        let result = GitStatusProvider.runGit(
-            ["--no-optional-locks", "status", "--ignored", "--porcelain"],
-            at: url
-        )
-        guard result.exitCode == 0 else { return ([:], []) }
-        return (
-            GitStatusProvider.parseStatusOutput(result.output),
-            GitStatusProvider.parseIgnoredOutput(result.output)
-        )
-    }
-
-    static func fetchBranches(at url: URL) -> [String] {
-        let result = GitStatusProvider.runGit(
-            ["branch", "--sort=-committerdate", "--format=%(refname:short)"],
-            at: url
-        )
-        guard result.exitCode == 0 else { return [] }
-        return result.output
-            .components(separatedBy: "\n")
-            .filter { !$0.isEmpty }
-    }
-}
 
 // MARK: - GitStatusProvider
 
@@ -199,36 +20,19 @@ final class GitStatusProvider {
 
     var repositoryURL: URL?
     var gitRootPath: String?
-    /// Shared progress tracker — set by ProjectManager after init.
+    /// Shared progress tracker -- set by ProjectManager after init.
     weak var progressTracker: ProgressTracker?
 
     /// True when the working tree has any uncommitted changes (modified, staged, untracked, etc.).
     var hasUncommittedChanges: Bool { !fileStatuses.isEmpty }
 
     // MARK: - Refresh Coalescing (issue #738)
-    //
-    // Multiple sources can request a refresh in rapid succession:
-    // FileSystemWatcher events, file saves, branch switches, manual refresh.
-    // Without coalescing, each request races to overwrite `fileStatuses` and
-    // friends — and because `@Observable` triggers an observer event for
-    // every property write, the bottom-left git indicator visibly flickers
-    // (issue #738). To stop the flicker we:
-    //   1. Coalesce concurrent refreshAsync calls into a single in-flight
-    //      task. Subsequent callers either piggy-back on the running task or
-    //      schedule exactly one follow-up if work is already in flight.
-    //   2. Skip property writes whose new value equals the current value,
-    //      so SwiftUI never observes a no-op change.
-    //   3. Discard results on cancellation / generation mismatch instead of
-    //      blanking out state with empty values.
-    //
-    // `pendingRefreshCount` tracks "do another pass after the current one",
-    // collapsing N concurrent refreshes into at most two git invocations.
+
     private var inFlightRefreshTask: Task<Void, Never>?
     private var pendingRefreshCount: Int = 0
 
     /// Test hook: increments every time `applyFetchedResults` actually writes
-    /// at least one observable property. A no-op apply leaves it unchanged.
-    /// Lets unit tests verify equality short-circuiting.
+    /// at least one observable property.
     private(set) var observableUpdateCount: Int = 0
 
     // MARK: - Setup & Refresh
@@ -238,8 +42,6 @@ final class GitStatusProvider {
         let result = Self.runGit(["rev-parse", "--show-toplevel"], at: repositoryURL)
         let detected = result.exitCode == 0
         if detected {
-            // Assign root path before fetching so observers see a consistent
-            // (root, statuses) pair when isGitRepository flips to true.
             gitRootPath = result.output.trimmingCharacters(in: .whitespacesAndNewlines)
             let fetched = Self.fetchAllInParallel(at: repositoryURL)
             applyFetchedResults(fetched, isRepository: true)
@@ -257,12 +59,7 @@ final class GitStatusProvider {
     ///
     /// Critical: each property is checked for equality before assignment so
     /// `@Observable` does not emit a change event when nothing actually
-    /// changed. This is the core of the anti-flicker fix — without it,
-    /// every FSEvents burst would re-trigger StatusBarView even though the
-    /// data is identical.
-    ///
-    /// `isRepository` is written last so observers that key off
-    /// `isGitRepository` see fully populated state.
+    /// changed. This is the core of the anti-flicker fix (issue #738).
     private func applyFetchedResults(
         _ result: (branch: String, statuses: [String: GitFileStatus], ignored: Set<String>, branches: [String]),
         isRepository: Bool
@@ -292,7 +89,6 @@ final class GitStatusProvider {
     }
 
     /// Resets all observable git state to the empty/non-repository values.
-    /// Uses equality checks so a no-op call does not trigger SwiftUI updates.
     func applyEmptyState() {
         applyFetchedResults((branch: "", statuses: [:], ignored: [], branches: []), isRepository: false)
     }
@@ -313,13 +109,12 @@ final class GitStatusProvider {
         )
     }
 
-    /// Async version of setup — runs git detection and initial refresh
-    /// on a background thread using parallel DispatchGroup, then updates
-    /// properties on the main thread.
+    /// Async version of setup -- runs git detection and initial refresh
+    /// on a background thread using parallel DispatchGroup.
     func setupAsync(repositoryURL: URL) async {
-        // nonisolated-check:ignore — closure body only calls nonisolated static helpers; tracked in #720
+        // nonisolated-check:ignore -- closure body only calls nonisolated static helpers; tracked in #720
         let (isRepo, rootPath, branch, statuses, ignored, branchList) = await runOnBackground {
-            let result = GitStatusProvider.runGit(["rev-parse", "--show-toplevel"], at: repositoryURL)
+            let result = GitCommand.run(["rev-parse", "--show-toplevel"], at: repositoryURL)
             let isRepo = result.exitCode == 0
             guard isRepo else {
                 return (false, nil as String?, "", [:] as [String: GitFileStatus], Set<String>(), [String]())
@@ -329,6 +124,7 @@ final class GitStatusProvider {
             return (true, rootPath, fetched.branch, fetched.statuses, fetched.ignored, fetched.branches)
         }
 
+        // Assign root path before fetching so observers see a consistent (root, statuses) pair
         self.repositoryURL = repositoryURL
         self.gitRootPath = rootPath
         applyFetchedResults(
@@ -337,11 +133,8 @@ final class GitStatusProvider {
         )
     }
 
-    // MARK: - Static Fetch Methods
+    // MARK: - Static Fetch Methods (Facade delegates to GitFetcher)
 
-    /// Delegates to `GitFetcher` which lives outside `@MainActor` isolation.
-    /// This avoids Swift 6 strict concurrency inheriting `@MainActor` for
-    /// closures inside `DispatchQueue.global().async { }` — see issue #613.
     nonisolated static func fetchAllInParallel(
         at url: URL
     ) -> (branch: String, statuses: [String: GitFileStatus], ignored: Set<String>, branches: [String]) {
@@ -362,26 +155,17 @@ final class GitStatusProvider {
         GitFetcher.fetchBranches(at: url)
     }
 
-    /// Runs git refresh on a background queue and updates properties on the main thread.
-    /// Safe to call from the main thread — does not block.
-    /// Uses `DispatchGroup` for parallel git operations (branch, status, branches).
-    ///
+    // MARK: - Async Refresh
+
     /// Coalesces concurrent callers (issue #738): if a refresh is already
     /// running, additional callers wait for the current pass and trigger at
-    /// most one follow-up. This collapses bursts of FSEvents / save / git
-    /// operations into a single final state update, eliminating indicator
-    /// flicker. Stale results are discarded via the in-flight task identity.
+    /// most one follow-up.
     func refreshAsync() async {
         guard isGitRepository, repositoryURL != nil else { return }
 
-        // If a refresh is already running, request a follow-up pass and wait
-        // for the in-flight task to finish. The follow-up will pick up any
-        // changes that arrived after the running task started its git fetch.
         if let existing = inFlightRefreshTask {
             pendingRefreshCount = min(pendingRefreshCount + 1, 1)
             await existing.value
-            // The follow-up (if any) will run inside `existing`'s loop below.
-            // Re-await to make sure the caller observes the latest state.
             if let next = inFlightRefreshTask {
                 await next.value
             }
@@ -395,10 +179,6 @@ final class GitStatusProvider {
         await task.value
     }
 
-    /// Runs git refresh in a loop until no more refreshes are pending.
-    /// At most one refresh is in flight at a time, and at most one
-    /// follow-up is queued — additional requests collapse onto the queued
-    /// follow-up so that N concurrent callers cause at most 2 git fetches.
     private func runRefreshLoop() async {
         defer { inFlightRefreshTask = nil }
         repeat {
@@ -414,24 +194,18 @@ final class GitStatusProvider {
             if let progressID { self.progressTracker?.endOperation(progressID) }
         }
 
-        // nonisolated-check:ignore — closure body only calls nonisolated static helpers; tracked in #720
+        // nonisolated-check:ignore -- closure body only calls nonisolated static helpers; tracked in #720
         let fetched = await runOnBackground {
             GitFetcher.fetchAllInParallel(at: url)
         }
 
-        // Repository may have been torn down (e.g. .git deleted on the fly)
-        // while the background fetch was running. If git now reports an empty
-        // branch *and* zero changes *and* zero branches, treat that as the
-        // repository being unreachable rather than blanking out our state —
-        // unless this matches the truly clean baseline. We err on the side
-        // of preserving the previous state to avoid the indicator flicker
-        // that issue #738 describes.
+        // Repository may have been torn down (e.g. .git deleted on the fly) —
+        // detect by checking if previously-present data suddenly vanished.
         let looksUnreachable = fetched.branch.isEmpty
             && fetched.statuses.isEmpty
             && fetched.branches.isEmpty
             && (!self.currentBranch.isEmpty || !self.branches.isEmpty)
         if looksUnreachable {
-            // Verify the repository is actually gone before clearing state.
             let stillRepo = Self.runGit(["rev-parse", "--show-toplevel"], at: url).exitCode == 0
             if !stillRepo {
                 applyEmptyState()
@@ -447,10 +221,8 @@ final class GitStatusProvider {
     func statusForFile(at url: URL) -> GitFileStatus? {
         guard let path = relativePath(for: url) else { return nil }
         if let status = fileStatuses[path] { return status }
-        // git status --porcelain reports untracked directories as a single
-        // entry with a trailing slash (e.g. "?? newdir/") without listing
-        // individual files inside. Check if this file lives inside such
-        // a directory so it inherits the untracked status.
+        // git status --porcelain reports untracked directories as a single entry
+        // with a trailing slash, so individual files inside need a prefix check.
         if isInsideUntrackedDirectory(path) { return .untracked }
         return nil
     }
@@ -495,8 +267,6 @@ final class GitStatusProvider {
         if hasModified { return .modified }
         if hasStaged { return .staged }
         if hasUntracked { return .untracked }
-        // This directory may itself be inside a wholly untracked parent
-        // directory (git reports only the top-level entry "?? parent/").
         if isInsideUntrackedDirectory(prefix) { return .untracked }
         return nil
     }
@@ -505,145 +275,33 @@ final class GitStatusProvider {
 
     func diffForFile(at url: URL) -> [GitLineDiff] {
         guard isGitRepository, let repoURL = repositoryURL else { return [] }
-        // Check if HEAD exists (new repo without commits)
         let headCheck = Self.runGit(["rev-parse", "HEAD"], at: repoURL)
         guard headCheck.exitCode == 0 else { return [] }
 
         let result = Self.runGit(["diff", "HEAD", "--unified=0", "--", url.path], at: repoURL)
         guard result.exitCode == 0, !result.output.isEmpty else { return [] }
-        return Self.parseDiff(result.output)
+        return GitParser.parseDiff(result.output)
     }
 
-    /// Async version of diffForFile — runs git diff on a background thread.
-    /// Safe to call from the main thread.
     func diffForFileAsync(at url: URL) async -> [GitLineDiff] {
         guard isGitRepository, let repoURL = repositoryURL else { return [] }
         let filePath = url.path
 
-        // nonisolated-check:ignore — closure body only calls nonisolated static helpers; tracked in #720
+        // nonisolated-check:ignore -- closure body only calls nonisolated static helpers; tracked in #720
         return await runOnBackground {
-            let headCheck = GitStatusProvider.runGit(["rev-parse", "HEAD"], at: repoURL)
+            let headCheck = GitCommand.run(["rev-parse", "HEAD"], at: repoURL)
             guard headCheck.exitCode == 0 else { return [] }
-            let result = GitStatusProvider.runGit(
+            let result = GitCommand.run(
                 ["diff", "HEAD", "--unified=0", "--", filePath],
                 at: repoURL
             )
             guard result.exitCode == 0, !result.output.isEmpty else { return [] }
-            return GitStatusProvider.parseDiff(result.output)
+            return GitParser.parseDiff(result.output)
         }
-    }
-
-    // MARK: - Branch Operations
-
-    func checkoutBranch(_ branch: String) -> (success: Bool, error: String) {
-        guard let url = repositoryURL else { return (false, "No repository") }
-        let result = Self.runGit(["switch", branch], at: url)
-        if result.exitCode == 0 {
-            refresh()
-            return (true, "")
-        }
-        return (false, result.errorOutput.trimmingCharacters(in: .whitespacesAndNewlines))
-    }
-
-    /// Async version of checkoutBranch — runs git switch on a background thread,
-    /// then refreshes status asynchronously. Safe to call from the main thread.
-    func checkoutBranchAsync(_ branch: String) async -> (success: Bool, error: String) {
-        guard let url = repositoryURL else { return (false, "No repository") }
-        let progressID = progressTracker?.beginOperation(Strings.progressGitCheckout)
-
-        // nonisolated-check:ignore — closure body only calls nonisolated static helpers; tracked in #720
-        let result = await runOnBackground {
-            GitStatusProvider.runGit(["switch", branch], at: url)
-        }
-
-        guard result.exitCode == 0 else {
-            if let progressID { self.progressTracker?.endOperation(progressID) }
-            return (false, result.errorOutput.trimmingCharacters(in: .whitespacesAndNewlines))
-        }
-
-        if let progressID { self.progressTracker?.endOperation(progressID) }
-        await refreshAsync()
-        return (true, "")
     }
 
     // MARK: - Private Helpers
 
-    /// Strips C-style quoting that git applies to paths containing spaces,
-    /// non-ASCII characters, or special characters.
-    /// `"examples copy/"` → `examples copy/`
-    /// `"\320\241\320\275\320\270\320\274\320\276\320\272.png"` → `Снимок.png`
-    nonisolated static func unquoteGitPath(_ path: String) -> String {
-        guard path.hasPrefix("\"") && path.hasSuffix("\"") && path.count >= 2 else {
-            return path
-        }
-        // Strip surrounding quotes
-        let inner = path.dropFirst().dropLast()
-        var bytes: [UInt8] = []
-        var i = inner.startIndex
-        while i < inner.endIndex {
-            if inner[i] == "\\" {
-                let next = inner.index(after: i)
-                guard next < inner.endIndex else {
-                    bytes.append(UInt8(ascii: "\\"))
-                    break
-                }
-                switch inner[next] {
-                case "\\":
-                    bytes.append(UInt8(ascii: "\\"))
-                    i = inner.index(after: next)
-                case "\"":
-                    bytes.append(UInt8(ascii: "\""))
-                    i = inner.index(after: next)
-                case "n":
-                    bytes.append(UInt8(ascii: "\n"))
-                    i = inner.index(after: next)
-                case "t":
-                    bytes.append(UInt8(ascii: "\t"))
-                    i = inner.index(after: next)
-                case "a":
-                    bytes.append(0x07)
-                    i = inner.index(after: next)
-                case "b":
-                    bytes.append(0x08)
-                    i = inner.index(after: next)
-                case "f":
-                    bytes.append(0x0C)
-                    i = inner.index(after: next)
-                case "r":
-                    bytes.append(UInt8(ascii: "\r"))
-                    i = inner.index(after: next)
-                case "v":
-                    bytes.append(0x0B)
-                    i = inner.index(after: next)
-                case "0"..."3":
-                    // Octal escape: 1-3 digits
-                    var octal = String(inner[next])
-                    var end = inner.index(after: next)
-                    for _ in 0..<2 {
-                        guard end < inner.endIndex, inner[end] >= "0", inner[end] <= "7" else { break }
-                        octal.append(inner[end])
-                        end = inner.index(after: end)
-                    }
-                    if let value = UInt8(octal, radix: 8) {
-                        bytes.append(value)
-                    }
-                    i = end
-                default:
-                    bytes.append(UInt8(ascii: "\\"))
-                    i = next
-                }
-            } else {
-                for byte in String(inner[i]).utf8 {
-                    bytes.append(byte)
-                }
-                i = inner.index(after: i)
-            }
-        }
-        return String(bytes: bytes, encoding: .utf8) ?? ""
-    }
-
-    /// Returns true when `path` falls inside a directory that git reports as
-    /// wholly untracked (i.e. there is a "?? dir/" entry in `fileStatuses`).
     private func isInsideUntrackedDirectory(_ path: String) -> Bool {
         for (key, status) in fileStatuses where status == .untracked && key.hasSuffix("/") {
             if path.hasPrefix(key) { return true }
@@ -659,295 +317,40 @@ final class GitStatusProvider {
         return String(filePath.dropFirst(prefix.count))
     }
 
+    // MARK: - Parser & Command Facade (backwards compatibility)
+
+    nonisolated static func unquoteGitPath(_ path: String) -> String {
+        GitParser.unquoteGitPath(path)
+    }
+
     nonisolated static func parseStatusOutput(_ output: String) -> [String: GitFileStatus] {
-        var statuses: [String: GitFileStatus] = [:]
-
-        for line in output.components(separatedBy: "\n") {
-            guard line.count >= 3 else { continue }
-            // Skip ignored entries (!! prefix) from --ignored output
-            guard !line.hasPrefix("!!") else { continue }
-            let indexChar = line[line.startIndex]
-            let workTreeChar = line[line.index(after: line.startIndex)]
-            var path = String(line.dropFirst(3))
-
-            // git status --porcelain C-quotes paths containing spaces,
-            // non-ASCII, or special characters (e.g. "examples copy/"
-            // or "\320\241\320\275\320\270\320\274\320\276\320\272.png").
-            path = Self.unquoteGitPath(path)
-
-            // Handle renames: "R  old -> new"
-            if path.contains(" -> ") {
-                let parts = path.components(separatedBy: " -> ")
-                if parts.count == 2 { path = parts[1] }
-            }
-
-            let status: GitFileStatus
-            switch (indexChar, workTreeChar) {
-            case ("?", "?"):
-                status = .untracked
-            case ("U", _), (_, "U"), ("A", "A"), ("D", "D"):
-                status = .conflict
-            case ("A", " "):
-                status = .added
-            case ("D", " "), (" ", "D"):
-                status = .deleted
-            case ("M", " "), ("R", " "):
-                status = .staged
-            case (" ", "M"):
-                status = .modified
-            case ("M", "M"):
-                status = .mixed
-            default:
-                if indexChar != " " && indexChar != "?" {
-                    status = workTreeChar != " " && workTreeChar != "?" ? .mixed : .staged
-                } else {
-                    status = .modified
-                }
-            }
-
-            statuses[path] = status
-        }
-
-        return statuses
+        GitParser.parseStatusOutput(output)
     }
 
     nonisolated static func parseIgnoredOutput(_ output: String) -> Set<String> {
-        var paths: Set<String> = []
-        for line in output.components(separatedBy: "\n") {
-            guard line.hasPrefix("!! ") else { continue }
-            var path = String(line.dropFirst(3))
-            // Remove trailing slash for directories to normalize
-            if path.hasSuffix("/") { path = String(path.dropLast()) }
-            paths.insert(path)
-        }
-        return paths
+        GitParser.parseIgnoredOutput(output)
     }
 
-    // MARK: - Blame Parser
-
-    /// Parses `git blame --porcelain` output into an array of `GitBlameLine`.
-    ///
-    /// Porcelain format:
-    /// ```
-    /// <hash> <orig-line> <final-line> [<num-lines>]   ← first occurrence of commit
-    /// author <name>
-    /// author-time <unix-timestamp>
-    /// summary <text>
-    /// \t<content>
-    ///
-    /// <hash> <orig-line> <final-line>                  ← subsequent lines from same commit
-    /// \t<content>
-    /// ```
     nonisolated static func parseBlame(_ output: String) -> [GitBlameLine] {
-        guard !output.isEmpty else { return [] }
-
-        var result: [GitBlameLine] = []
-        let lines = output.components(separatedBy: "\n")
-
-        // Cache: hash → (author, authorTime, summary)
-        var commitCache: [String: (author: String, authorTime: Date, summary: String)] = [:]
-
-        var i = 0
-        while i < lines.count {
-            let line = lines[i]
-
-            // Skip empty lines
-            guard !line.isEmpty else {
-                i += 1
-                continue
-            }
-
-            // Commit header line: <40-char-hash> <orig> <final> [<count>]
-            let parts = line.split(separator: " ", maxSplits: 4)
-            guard parts.count >= 3,
-                  parts[0].count == 40,
-                  parts[0].allSatisfy({ $0.isHexDigit }),
-                  let finalLine = Int(parts[2]) else {
-                i += 1
-                continue
-            }
-
-            let hash = String(parts[0])
-            i += 1
-
-            // If this is the first occurrence, read header fields
-            var author = ""
-            var authorTime = Date(timeIntervalSince1970: 0)
-            var summary = ""
-            var hasHeaders = false
-
-            while i < lines.count {
-                let headerLine = lines[i]
-                if headerLine.hasPrefix("\t") {
-                    // Content line — end of headers
-                    break
-                } else if headerLine.hasPrefix("author ") {
-                    author = String(headerLine.dropFirst(7))
-                    hasHeaders = true
-                } else if headerLine.hasPrefix("author-time ") {
-                    if let ts = TimeInterval(headerLine.dropFirst(12)) {
-                        authorTime = Date(timeIntervalSince1970: ts)
-                    }
-                } else if headerLine.hasPrefix("summary ") {
-                    summary = String(headerLine.dropFirst(8))
-                }
-                i += 1
-            }
-
-            // Skip the content line (starts with \t)
-            if i < lines.count && lines[i].hasPrefix("\t") {
-                i += 1
-            }
-
-            if hasHeaders {
-                commitCache[hash] = (author, authorTime, summary)
-            } else if let cached = commitCache[hash] {
-                author = cached.author
-                authorTime = cached.authorTime
-                summary = cached.summary
-            }
-
-            result.append(GitBlameLine(
-                hash: hash,
-                author: author,
-                authorTime: authorTime,
-                summary: summary,
-                finalLine: finalLine
-            ))
-        }
-
-        return result
+        GitParser.parseBlame(output)
     }
-
-    // MARK: - Diff Parser
 
     nonisolated static func parseDiff(_ diffOutput: String) -> [GitLineDiff] {
-        var diffs: [GitLineDiff] = []
-        let lines = diffOutput.components(separatedBy: "\n")
-
-        var i = 0
-        while i < lines.count {
-            let line = lines[i]
-
-            guard line.hasPrefix("@@") else {
-                i += 1
-                continue
-            }
-
-            // Parse @@ -old[,count] +new[,count] @@
-            guard let newStart = parseHunkNewStart(line) else {
-                i += 1
-                continue
-            }
-
-            i += 1
-            var newLine = newStart
-
-            while i < lines.count && !lines[i].hasPrefix("@@") && !lines[i].hasPrefix("diff ") {
-                let hl = lines[i]
-
-                if hl.hasPrefix("-") || hl.hasPrefix("+") {
-                    // Collect consecutive block of -/+ lines
-                    var deletions = 0
-                    var additions = 0
-                    let blockNewLine = newLine
-
-                    while i < lines.count && lines[i].hasPrefix("-") {
-                        deletions += 1
-                        i += 1
-                    }
-                    // Skip "\ No newline at end of file"
-                    while i < lines.count && lines[i].hasPrefix("\\") { i += 1 }
-
-                    while i < lines.count && lines[i].hasPrefix("+") {
-                        additions += 1
-                        i += 1
-                    }
-                    while i < lines.count && lines[i].hasPrefix("\\") { i += 1 }
-
-                    let modifiedCount = min(deletions, additions)
-                    let addedCount = additions - modifiedCount
-
-                    for j in 0..<modifiedCount {
-                        diffs.append(GitLineDiff(line: blockNewLine + j, kind: .modified))
-                    }
-                    for j in 0..<addedCount {
-                        diffs.append(GitLineDiff(line: blockNewLine + modifiedCount + j, kind: .added))
-                    }
-                    if deletions > 0 && additions == 0 {
-                        diffs.append(GitLineDiff(line: blockNewLine, kind: .deleted))
-                    }
-
-                    newLine = blockNewLine + additions
-                } else if hl.hasPrefix("\\") {
-                    i += 1
-                } else {
-                    // Context line
-                    newLine += 1
-                    i += 1
-                }
-            }
-        }
-
-        return diffs
+        GitParser.parseDiff(diffOutput)
     }
 
     nonisolated static func parseHunkNewStart(_ header: String) -> Int? {
-        // Format: @@ -old[,count] +new[,count] @@
-        guard let plusIndex = header.firstIndex(of: "+") else { return nil }
-        let afterPlus = header[header.index(after: plusIndex)...]
-        guard let endIndex = afterPlus.firstIndex(where: { $0 == "," || $0 == " " }) else { return nil }
-        return Int(afterPlus[..<endIndex])
+        GitParser.parseHunkNewStart(header)
     }
 
-    // MARK: - Git Command Runner
-
-    /// Default timeout for git commands (30 seconds).
-    nonisolated static let defaultGitTimeout: TimeInterval = 30.0
+    nonisolated static let defaultGitTimeout: TimeInterval = GitCommand.defaultTimeout
 
     nonisolated static func runGit(
         _ arguments: [String],
         at directory: URL,
         timeout: TimeInterval = defaultGitTimeout
     ) -> (output: String, errorOutput: String, exitCode: Int32) {
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
-        process.arguments = arguments
-        process.currentDirectoryURL = directory
-
-        let outPipe = Pipe()
-        let errPipe = Pipe()
-        process.standardOutput = outPipe
-        process.standardError = errPipe
-
-        do {
-            try process.run()
-
-            // Schedule a timeout to terminate hung processes
-            let timer = DispatchSource.makeTimerSource(queue: .global(qos: .utility))
-            timer.schedule(deadline: .now() + timeout)
-            timer.setEventHandler {
-                if process.isRunning {
-                    process.terminate()
-                }
-            }
-            timer.resume()
-
-            // Read pipe data before waitUntilExit to avoid deadlock:
-            // if the process fills the pipe buffer, it blocks on write
-            // and never exits, while we block on waitUntilExit.
-            let outData = outPipe.fileHandleForReading.readDataToEndOfFile()
-            let errData = errPipe.fileHandleForReading.readDataToEndOfFile()
-
-            process.waitUntilExit()
-            timer.cancel()
-            return (
-                String(bytes: outData, encoding: .utf8) ?? "",
-                String(bytes: errData, encoding: .utf8) ?? "",
-                process.terminationStatus
-            )
-        } catch {
-            return ("", error.localizedDescription, -1)
-        }
+        let result = GitCommand.run(arguments, at: directory, timeout: timeout)
+        return (result.output, result.errorOutput, result.exitCode)
     }
 }

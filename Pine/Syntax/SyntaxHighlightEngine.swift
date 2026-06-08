@@ -39,6 +39,15 @@ nonisolated struct HighlightMatchResult: Sendable {
     let multilineFingerprint: [Int]
 }
 
+/// Bundle of dependencies needed for sync highlight operations.
+/// Created by the facade, consumed by the engine — keeps the facade thin.
+struct SyncContext: Sendable {
+    let registry: GrammarRegistry
+    let cache: CompiledGrammarCache
+    let multilineCache: MultilineMatchCache
+    let nestedHighlighter: NestedHighlighter
+}
+
 /// Synchronous syntax highlight engine.
 /// Computes matches against compiled rules and applies colors to NSTextStorage.
 ///
@@ -52,7 +61,7 @@ nonisolated final class SyntaxHighlightEngine: @unchecked Sendable {
     let viewportContextLines = 50
 
     /// Scope priorities: comment and string override others.
-    private(set) var scopePriority: [String: Int] = [
+    private var scopePriority: [String: Int] = [
         "comment": 100,
         "attribute": 95,
         "string": 90,
@@ -86,6 +95,130 @@ nonisolated final class SyntaxHighlightEngine: @unchecked Sendable {
         guard let color = theme.color(for: scope) else { return nil }
         let priority = scopePriority[scope] ?? 0
         return (priority, color)
+    }
+
+    // MARK: - Sync Highlight Operations (facade delegates here)
+
+    /// Resolves grammar + compiled rules for a language/fileName pair.
+    /// Returns nil if no grammar matches or rules haven't been compiled.
+    func resolveRules(
+        language: String,
+        fileName: String?,
+        context: SyncContext
+    ) -> (Grammar, [CompiledRule])? {
+        guard let grammar = context.registry.resolveGrammar(language: language, fileName: fileName),
+              let rules = context.cache.rules(for: grammar.name) else {
+            return nil
+        }
+        return (grammar, rules)
+    }
+
+    /// Full sync highlight — computes matches for the entire document and applies them.
+    @discardableResult
+    func highlight(
+        textStorage: NSTextStorage,
+        font: NSFont,
+        context: SyncContext,
+        resolved: (Grammar, [CompiledRule])
+    ) -> HighlightMatchResult? {
+        let (grammar, rules) = resolved
+
+        let fullRange = NSRange(location: 0, length: textStorage.length)
+        let result = computeMatches(
+            text: textStorage.string,
+            rules: rules,
+            grammarName: grammar.name,
+            repaintRange: fullRange,
+            searchRange: fullRange,
+            nestedHighlighter: context.nestedHighlighter
+        )
+        applyMatches(result, to: textStorage, font: font)
+        context.multilineCache.update(
+            key: ObjectIdentifier(textStorage), fingerprint: result.multilineFingerprint
+        )
+        return result
+    }
+
+    /// Viewport-based sync highlight — only computes and paints the visible region.
+    func highlightVisibleRange(
+        textStorage: NSTextStorage,
+        visibleCharRange: NSRange,
+        font: NSFont,
+        context: SyncContext,
+        resolved: (Grammar, [CompiledRule])
+    ) {
+        let (grammar, rules) = resolved
+        let totalLength = textStorage.length
+
+        let source = textStorage.string as NSString
+        let expanded = expandToContext(
+            visibleCharRange, in: source, totalLength: totalLength, lines: viewportContextLines
+        )
+
+        let result = computeMatches(
+            text: textStorage.string,
+            rules: rules,
+            grammarName: grammar.name,
+            repaintRange: expanded,
+            searchRange: expanded,
+            fullFingerprintRange: NSRange(location: 0, length: totalLength),
+            nestedHighlighter: context.nestedHighlighter
+        )
+
+        applyMatches(result, to: textStorage, font: font)
+
+        let key = ObjectIdentifier(textStorage)
+        context.multilineCache.setIfNil(key: key, fingerprint: result.multilineFingerprint)
+    }
+
+    /// Incremental sync highlight after an edit — uses fingerprint comparison
+    /// to decide between full repaint and local re-highlight.
+    func highlightEdited(
+        textStorage: NSTextStorage,
+        editedRange: NSRange,
+        font: NSFont,
+        context: SyncContext,
+        resolved: (Grammar, [CompiledRule])
+    ) {
+        let (grammar, rules) = resolved
+        let totalLength = textStorage.length
+
+        let source = textStorage.string
+        let fullRange = NSRange(location: 0, length: totalLength)
+
+        let currentFingerprint = GrammarCompiler.collectMultilineFingerprint(
+            rules: rules, source: source, searchRange: fullRange
+        )
+
+        let key = ObjectIdentifier(textStorage)
+        let cachedFingerprint = context.multilineCache.fingerprint(for: key)
+
+        if cachedFingerprint != currentFingerprint {
+            let result = computeMatches(
+                text: source,
+                rules: rules,
+                grammarName: grammar.name,
+                repaintRange: fullRange,
+                searchRange: fullRange,
+                nestedHighlighter: context.nestedHighlighter
+            )
+            applyMatches(result, to: textStorage, font: font)
+            context.multilineCache.update(key: key, fingerprint: result.multilineFingerprint)
+            return
+        }
+
+        let repaintRange = expandToContext(
+            editedRange, in: source as NSString, totalLength: totalLength
+        )
+        let result = computeMatches(
+            text: source,
+            rules: rules,
+            grammarName: grammar.name,
+            repaintRange: repaintRange,
+            searchRange: repaintRange,
+            nestedHighlighter: context.nestedHighlighter
+        )
+        applyMatches(result, to: textStorage, font: font)
     }
 
     // MARK: - Match Computation (thread-safe)

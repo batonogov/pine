@@ -1,5 +1,26 @@
 # Changelog
 
+## [1.27.0](https://github.com/batonogov/pine/compare/v1.26.3...v1.27.0) (2026-06-06)
+
+
+### Features
+
+* **editor:** Shell script format-on-save via shfmt ([#855](https://github.com/batonogov/pine/issues/855)) ([85023a5](https://github.com/batonogov/pine/commit/85023a5ea8fa3321512227924c73f774429f9ffa))
+* **syntax:** improve Python grammar — f-strings, prefixes, builtins, exceptions ([#958](https://github.com/batonogov/pine/issues/958)) ([0324c39](https://github.com/batonogov/pine/commit/0324c39892d9d89c06c49afa3ef0d7a9c3ec5507))
+
+
+### Bug Fixes
+
+* **syntax:** thin out facade, fix encapsulation, break circular dependency ([#955](https://github.com/batonogov/pine/issues/955)) ([#960](https://github.com/batonogov/pine/issues/960)) ([4a9cd51](https://github.com/batonogov/pine/commit/4a9cd51d05b794edc18a4f82cce0e978410950ff))
+
+
+### Code Refactoring
+
+* **config:** split ConfigValidator.swift (798 LOC) into per-language files ([522e894](https://github.com/batonogov/pine/commit/522e8940ceb5d4b299769b2ac39c1c65a56dcacf))
+* **git:** split GitStatusProvider.swift (959 LOC) into focused modules ([#946](https://github.com/batonogov/pine/issues/946)) ([8f9dac0](https://github.com/batonogov/pine/commit/8f9dac0aca028df55c2a53808a17748a24007e07))
+* introduce AlertTemplate builder to deduplicate NSAlert boilerplate ([8055bed](https://github.com/batonogov/pine/commit/8055bedf89b366ad8943b8093ec1f979b59a13ac))
+* **syntax:** split SyntaxHighlighter.swift (1266 LOC) into 5 focused modules + facade ([61fab81](https://github.com/batonogov/pine/commit/61fab816482ee8c9e3d3bcad1ff2ef781f7d21f7))
+
 ## [1.26.3](https://github.com/batonogov/pine/compare/v1.26.2...v1.26.3) (2026-06-01)
 
 
