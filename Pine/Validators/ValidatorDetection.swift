@@ -70,24 +70,75 @@ nonisolated enum ValidatorKind: Sendable, Equatable {
 /// Adding a new language requires only creating a conforming type — no switch-cases to update.
 protocol LanguageValidator: Sendable {
     /// File extensions this validator handles (lowercased, without dot).
-    var supportedExtensions: Set<String> { get }
+    nonisolated var supportedExtensions: Set<String> { get }
 
     /// File names this validator handles (lowercased). Used for extensionless files like "Dockerfile".
-    var supportedNames: Set<String> { get }
+    nonisolated var supportedNames: Set<String> { get }
 
     /// File name prefixes this validator handles (lowercased). E.g. "dockerfile.".
-    var supportedNamePrefixes: Set<String> { get }
+    nonisolated var supportedNamePrefixes: Set<String> { get }
 
     /// The tool name for display and lookup purposes.
-    var toolName: String { get }
+    nonisolated var toolName: String { get }
 
     /// Display name for status bar / tooltips.
-    var displayName: String { get }
+    nonisolated var displayName: String { get }
+
+    /// The `ValidatorKind` used to configure the external tool process.
+    nonisolated var validatorKind: ValidatorKind { get }
+
+    /// Built-in validation fallback. Returns nil when no built-in validator exists (e.g. terraform).
+    nonisolated func builtinValidation(_ content: String) -> [ValidationDiagnostic]?
+
+    /// Parse external tool output into diagnostics.
+    nonisolated func parseToolOutput(_ output: String) -> [ValidationDiagnostic]
 
     /// Validate the file content, running the external tool if available.
     /// Falls back to built-in validation when no external tool is installed.
     /// Explicitly nonisolated — runs on background threads via ConfigValidator.
     nonisolated func validate(url: URL, content: String) -> (diagnostics: [ValidationDiagnostic], toolAvailable: Bool)
+}
+
+// MARK: - LanguageValidator Default Implementation
+
+nonisolated extension LanguageValidator {
+    /// Default `validate` implementation shared by all language validators.
+    /// Writes content to a UUID-named temp file, runs the external tool if available,
+    /// parses its output, and falls back to built-in validation when no tool is installed.
+    nonisolated func validate(url: URL, content: String) -> (diagnostics: [ValidationDiagnostic], toolAvailable: Bool) {
+        let toolPath = ToolAvailability.path(for: toolName)
+        let hasExternalTool = toolPath != nil
+
+        var parsed: [ValidationDiagnostic] = []
+        if let toolPath = toolPath {
+            let tempDir = FileManager.default.temporaryDirectory
+            let tempFile = tempDir.appendingPathComponent(
+                "\(UUID().uuidString)-\(url.lastPathComponent)"
+            )
+
+            do {
+                try content.write(to: tempFile, atomically: true, encoding: .utf8)
+                defer { try? FileManager.default.removeItem(at: tempFile) }
+
+                let result = ConfigValidationWorker.runTool(
+                    toolPath: toolPath, kind: validatorKind, filePath: tempFile.path
+                )
+                parsed = parseToolOutput(result)
+            } catch {
+                // Temp file write failed — fall through to built-in
+            }
+        }
+
+        // Fall back to built-in validation only when external tool is not installed.
+        // If external tool is installed and returned empty output, the file is valid.
+        if parsed.isEmpty && !hasExternalTool {
+            if let builtin = builtinValidation(content) {
+                parsed = builtin
+            }
+        }
+
+        return (parsed, hasExternalTool)
+    }
 }
 
 // MARK: - Validator Detection
