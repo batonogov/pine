@@ -500,8 +500,23 @@ class TerminalContainerView: NSView {
                 return nil
             }
 
-            // Normal mode — let SwiftTerm handle scrollback
-            return event
+            // Normal mode — controlled scrollback instead of SwiftTerm's raw
+            // velocity which jumps to full-page scrolls at delta > 9.
+            let result = MouseScrollForwarder.normalScrollLines(
+                accumulatedDelta: self.accumulatedScrollDelta,
+                newDelta: scrollDelta,
+                isPrecise: event.hasPreciseScrollingDeltas,
+                phaseBegan: event.phase == .began
+            )
+            self.accumulatedScrollDelta = result.remainingDelta
+            if result.lines > 0 {
+                if scrollDelta > 0 {
+                    terminalView.scrollUp(lines: result.lines)
+                } else {
+                    terminalView.scrollDown(lines: result.lines)
+                }
+            }
+            return nil
         }
     }
 

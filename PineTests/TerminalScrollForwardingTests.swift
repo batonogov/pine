@@ -459,4 +459,196 @@ struct TerminalScrollForwardingTests {
         )
         #expect(pos.row == 0) // top of screen = first row
     }
+
+    // MARK: - Normal-mode scrollback line calculation
+
+    @Test func normalScrollTrackpadSingleLineThreshold() {
+        let result = MouseScrollForwarder.normalScrollLines(
+            accumulatedDelta: 0,
+            newDelta: 10,
+            isPrecise: true,
+            phaseBegan: false
+        )
+        #expect(result.lines == 1)
+        #expect(result.remainingDelta == 0)
+    }
+
+    @Test func normalScrollTrackpadMultipleLines() {
+        let result = MouseScrollForwarder.normalScrollLines(
+            accumulatedDelta: 0,
+            newDelta: 35,
+            isPrecise: true,
+            phaseBegan: false
+        )
+        #expect(result.lines == 3)
+        #expect(result.remainingDelta == 5)
+    }
+
+    @Test func normalScrollTrackpadAccumulation() {
+        // First event: delta 6, below threshold
+        let r1 = MouseScrollForwarder.normalScrollLines(
+            accumulatedDelta: 0,
+            newDelta: 6,
+            isPrecise: true,
+            phaseBegan: false
+        )
+        #expect(r1.lines == 0)
+        #expect(r1.remainingDelta == 6)
+
+        // Second event: delta 6, accumulated = 12, crosses threshold
+        let r2 = MouseScrollForwarder.normalScrollLines(
+            accumulatedDelta: r1.remainingDelta,
+            newDelta: 6,
+            isPrecise: true,
+            phaseBegan: false
+        )
+        #expect(r2.lines == 1)
+        #expect(r2.remainingDelta == 2)
+    }
+
+    @Test func normalScrollTrackpadPhaseBeganResetsAccumulation() {
+        // phaseBegan = true ignores the accumulated delta and starts fresh
+        let result = MouseScrollForwarder.normalScrollLines(
+            accumulatedDelta: 999,
+            newDelta: 5,
+            isPrecise: true,
+            phaseBegan: true
+        )
+        #expect(result.lines == 0)
+        #expect(result.remainingDelta == 5)
+    }
+
+    @Test func normalScrollTrackpadNegativeDelta() {
+        let result = MouseScrollForwarder.normalScrollLines(
+            accumulatedDelta: 0,
+            newDelta: -25,
+            isPrecise: true,
+            phaseBegan: false
+        )
+        #expect(result.lines == 2)
+        #expect(result.remainingDelta == -5)
+    }
+
+    @Test func normalScrollTrackpadAlternatingDirection() {
+        // Scroll up 15, then down 5 — remaining should be 5 (positive)
+        let r1 = MouseScrollForwarder.normalScrollLines(
+            accumulatedDelta: 0,
+            newDelta: 15,
+            isPrecise: true,
+            phaseBegan: false
+        )
+        #expect(r1.lines == 1)
+        #expect(r1.remainingDelta == 5)
+
+        let r2 = MouseScrollForwarder.normalScrollLines(
+            accumulatedDelta: r1.remainingDelta,
+            newDelta: -5,
+            isPrecise: true,
+            phaseBegan: false
+        )
+        #expect(r2.lines == 0)
+        #expect(r2.remainingDelta == 0)
+    }
+
+    @Test func normalScrollTrackpadTinyDeltaNoScroll() {
+        let result = MouseScrollForwarder.normalScrollLines(
+            accumulatedDelta: 0,
+            newDelta: 3,
+            isPrecise: true,
+            phaseBegan: false
+        )
+        #expect(result.lines == 0)
+        #expect(result.remainingDelta == 3)
+    }
+
+    @Test func normalScrollMouseWheelSmallDelta() {
+        let result = MouseScrollForwarder.normalScrollLines(
+            accumulatedDelta: 0,
+            newDelta: 1,
+            isPrecise: false,
+            phaseBegan: false
+        )
+        #expect(result.lines == 1)
+        #expect(result.remainingDelta == 0)
+    }
+
+    @Test func normalScrollMouseWheelMediumDelta() {
+        let result = MouseScrollForwarder.normalScrollLines(
+            accumulatedDelta: 0,
+            newDelta: 2,
+            isPrecise: false,
+            phaseBegan: false
+        )
+        #expect(result.lines == 2)
+        #expect(result.remainingDelta == 0)
+    }
+
+    @Test func normalScrollMouseWheelLargeDeltaCappedAt3() {
+        let result = MouseScrollForwarder.normalScrollLines(
+            accumulatedDelta: 0,
+            newDelta: 15,
+            isPrecise: false,
+            phaseBegan: false
+        )
+        #expect(result.lines == 3)
+        #expect(result.remainingDelta == 0)
+    }
+
+    @Test func normalScrollMouseWheelIgnoresAccumulation() {
+        let result = MouseScrollForwarder.normalScrollLines(
+            accumulatedDelta: 500,
+            newDelta: 1,
+            isPrecise: false,
+            phaseBegan: false
+        )
+        // Mouse wheel never accumulates — ignores accumulated delta
+        #expect(result.lines == 1)
+        #expect(result.remainingDelta == 0)
+    }
+
+    @Test func normalScrollMouseWheelNegativeDelta() {
+        let result = MouseScrollForwarder.normalScrollLines(
+            accumulatedDelta: 0,
+            newDelta: -3,
+            isPrecise: false,
+            phaseBegan: false
+        )
+        #expect(result.lines == 3)
+    }
+
+    @Test func normalScrollTrackpadLargeMomentumDelta() {
+        // Simulates a large momentum event that would have scrolled
+        // an entire page with SwiftTerm's default velocity.
+        let result = MouseScrollForwarder.normalScrollLines(
+            accumulatedDelta: 0,
+            newDelta: 150,
+            isPrecise: true,
+            phaseBegan: false
+        )
+        // 150 / 10 = 15 lines — controlled, not a full page
+        #expect(result.lines == 15)
+        #expect(result.remainingDelta == 0)
+    }
+
+    @Test func normalScrollTrackpadCarriesRemainderAcrossEvents() {
+        // Three events of delta 7 each: 7 → 14 → 21
+        // 7/10=0, 14/10=1 (rem 4), 11/10=1 (rem 1)
+        let r1 = MouseScrollForwarder.normalScrollLines(
+            accumulatedDelta: 0, newDelta: 7, isPrecise: true, phaseBegan: false
+        )
+        #expect(r1.lines == 0)
+        #expect(r1.remainingDelta == 7)
+
+        let r2 = MouseScrollForwarder.normalScrollLines(
+            accumulatedDelta: r1.remainingDelta, newDelta: 7, isPrecise: true, phaseBegan: false
+        )
+        #expect(r2.lines == 1)
+        #expect(r2.remainingDelta == 4)
+
+        let r3 = MouseScrollForwarder.normalScrollLines(
+            accumulatedDelta: r2.remainingDelta, newDelta: 7, isPrecise: true, phaseBegan: false
+        )
+        #expect(r3.lines == 1)
+        #expect(r3.remainingDelta == 1)
+    }
 }
