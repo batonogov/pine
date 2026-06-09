@@ -1,5 +1,27 @@
 # Changelog
 
+## [1.27.1](https://github.com/batonogov/pine/compare/v1.27.0...v1.27.1) (2026-06-09)
+
+
+### Bug Fixes
+
+* **terminal:** dampen scrollback scroll speed to prevent runaway momentum ([#965](https://github.com/batonogov/pine/issues/965)) ([e4167e6](https://github.com/batonogov/pine/commit/e4167e65222ecdc4b28d18799c682f4afc6bdba8))
+
+
+### Code Refactoring
+
+* **config:** remove dead code, extract shared logic, fix race condition ([#959](https://github.com/batonogov/pine/issues/959)) ([13dcb39](https://github.com/batonogov/pine/commit/13dcb39dac776ce7c1812594c236892cda9b43dc))
+
+
+### Documentation
+
+* trim CLAUDE.md — remove duplication, add missing CI details ([#964](https://github.com/batonogov/pine/issues/964)) ([34be3ef](https://github.com/batonogov/pine/commit/34be3ef0db5419f0b71c6965456a14a83cc1501e))
+
+
+### Miscellaneous
+
+* **deps:** bump Sparkle 2.9.2 → 2.9.3, swift-argument-parser 1.7.1 → 1.8.2 ([#963](https://github.com/batonogov/pine/issues/963)) ([2261747](https://github.com/batonogov/pine/commit/226174783cb37693030de7991dc8689a26606683))
+
 ## [1.27.0](https://github.com/batonogov/pine/compare/v1.26.3...v1.27.0) (2026-06-06)
 
 
