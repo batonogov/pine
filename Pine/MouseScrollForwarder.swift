@@ -110,4 +110,48 @@ enum MouseScrollForwarder {
         }
         return 1
     }
+
+    /// Points of trackpad delta that correspond to one line of scrollback.
+    static let trackpadLineThreshold: CGFloat = 10
+
+    /// Result of a normal-mode scroll calculation.
+    struct NormalScrollResult {
+        /// Number of scrollback lines to scroll.
+        let lines: Int
+        /// Remaining accumulated delta after consuming whole lines.
+        let remainingDelta: CGFloat
+    }
+
+    /// Calculates controlled scroll lines for normal-mode terminal scrollback.
+    ///
+    /// Trackpad scrolling accumulates precise deltas and scrolls one line per
+    /// `trackpadLineThreshold` points, preventing macOS momentum from scrolling
+    /// entire pages. Mouse wheel scrolling uses a clamped delta (1–3 lines).
+    ///
+    /// - Parameters:
+    ///   - accumulatedDelta: Previously accumulated trackpad delta (ignored for mouse wheel).
+    ///   - newDelta: The current event's scroll delta.
+    ///   - isPrecise: Whether the event comes from a trackpad (`hasPreciseScrollingDeltas`).
+    ///   - phaseBegan: Whether the gesture phase is `.began` (resets accumulation).
+    /// - Returns: The number of lines to scroll and the remaining delta.
+    static func normalScrollLines(
+        accumulatedDelta: CGFloat,
+        newDelta: CGFloat,
+        isPrecise: Bool,
+        phaseBegan: Bool
+    ) -> NormalScrollResult {
+        if isPrecise {
+            let accumulated = phaseBegan ? newDelta : accumulatedDelta + newDelta
+            let linesToScroll = Int(abs(accumulated) / trackpadLineThreshold)
+            if linesToScroll > 0 {
+                let consumed = CGFloat(linesToScroll) * trackpadLineThreshold
+                let remaining = accumulated - consumed * (accumulated > 0 ? 1 : -1)
+                return NormalScrollResult(lines: linesToScroll, remainingDelta: remaining)
+            }
+            return NormalScrollResult(lines: 0, remainingDelta: accumulated)
+        } else {
+            let lines = min(max(Int(abs(newDelta)), 1), 3)
+            return NormalScrollResult(lines: lines, remainingDelta: 0)
+        }
+    }
 }
