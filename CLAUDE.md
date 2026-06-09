@@ -8,7 +8,7 @@ Pine is a minimal native macOS code editor built with SwiftUI + AppKit. Targets 
 
 **Dependencies** (via Xcode SPM):
 - [SwiftTerm](https://github.com/migueldeicaza/SwiftTerm) — terminal emulator
-- [Sparkle](https://github.com/sparkle-project/Sparkle) — auto-updates
+- [Sparkle](https://sparkle-project.org/Sparkle) — auto-updates
 - [swift-markdown](https://github.com/swiftlang/swift-markdown) — markdown preview rendering
 
 ## Build & Run
@@ -21,14 +21,15 @@ Pine is a minimal native macOS code editor built with SwiftUI + AppKit. Targets 
 - No other third-party dependencies
 - **Xcode project format:** Uses `PBXFileSystemSynchronizedRootGroup` (objectVersion 77) — new `.swift` files placed in `Pine/`, `PineTests/`, or `PineUITests/` are automatically picked up by Xcode. No manual `project.pbxproj` edits needed
 - **Git hooks:** Run once after cloning: `git config core.hooksPath .githooks && git config merge.ours.driver true`. Enables pre-commit hook that auto-unstages cosmetic-only changes to `Localizable.xcstrings` (Xcode build artifacts) and `ours` merge driver for xcstrings conflicts
-- **SwiftLint:** `brew install swiftlint` — runs as a build phase; config in `.swiftlint.yml`. Run `swiftlint` before every commit and fix all warnings/errors. If `swiftlint` crashes with `sourcekitdInProc` error, prefix with `DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer`
+- **SwiftLint:** `brew install swiftlint` — runs as a build phase; config in `.swiftlint.yml`. CI pins SwiftLint 0.63.2. Run `swiftlint` before every commit and fix all warnings/errors. If `swiftlint` crashes with `sourcekitdInProc` error, prefix with `DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer`
 - **Unit Tests:** `DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer xcodebuild test -project Pine.xcodeproj -scheme Pine -destination 'platform=macOS' -only-testing:PineTests`
 - Run a single test class: `DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer xcodebuild test -project Pine.xcodeproj -scheme Pine -destination 'platform=macOS' -only-testing:PineTests/GoToLineTests`
-- Unit test target: `PineTests` (Swift Testing framework) — covers git parsing, grammar models, file tree, syntax highlighting, find & replace, code folding, minimap, status bar, project search, external formatters, and more (180+ test files)
+- Unit test target: `PineTests` (Swift Testing framework) — 180+ test files covering git parsing, grammar models, file tree, syntax highlighting, find & replace, code folding, minimap, status bar, project search, external formatters, and more
 - **UI Tests:** `DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer xcodebuild test -project Pine.xcodeproj -scheme Pine -destination 'platform=macOS' -only-testing:PineUITests`
-- UI test target: `PineUITests` (XCTest/XCUITest) — end-to-end tests for Welcome window, editor tabs, terminal, multi-window, minimap, git blame, branch switcher, format-on-save, and more (30 test files)
+- UI test target: `PineUITests` (XCTest/XCUITest) — 30 test files, base class `PineUITestCase`. CI runs 7 parallel shards (Terminal, Welcome & Session, Navigation, Editor Chrome, Files & Save, Search & Panes, Security & Layout)
 - Launch arguments for UI testing: `--reset-state` (clears persisted sessions), `-ApplePersistenceIgnoreState YES` (ignores macOS saved window state), `-AppleLanguages (en)`, `-AppleLocale en_US` (force English locale so menu item names are predictable)
 - Environment variable for UI testing: `PINE_OPEN_PROJECT=<path>` (opens project without file dialog — uses env var because macOS interprets bare paths in launch arguments as files to open)
+- **Performance Tests:** `DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer xcodebuild test -project Pine.xcodeproj -scheme Pine -destination 'platform=macOS' -only-testing:PinePerformanceTests` — XCTest `measure {}` benchmarks for FoldRange, SyntaxHighlighter, ProjectSearch, GitStatus. Enabled in default scheme but excluded from CI (opt-in via `perf` label on PR or `workflow_dispatch`)
 - **Known issue:** On macOS 26, `XCUIApplication.launch()` bypasses LaunchServices, so SwiftUI `.defaultLaunchBehavior(.presented)` does not create windows. The app includes an AppKit fallback (`createWelcomeWindowViaAppKit`) that activates after 0.5s if no windows appear.
 - **Known issue:** `GutterTextView` (NSTextView inside NSViewRepresentable) does not receive keyboard input from XCUITest's `typeText()`/`typeKey()`. UI tests that need to verify editor content changes should use alternative approaches (e.g., verifying menu item availability, checking tab state).
 - **Known issue:** XCUITest's `typeKey()` bypasses the app's `NSEvent.addLocalMonitorForEvents` — synthetic key events go through Accessibility APIs, not the app's event queue. Keyboard shortcuts handled via local event monitors (e.g., Cmd+W for tab closing, Cmd+Shift+B for branch switcher) cannot be reliably UI-tested with `typeKey()`. Use mouse clicks on UI elements instead.
@@ -92,6 +93,23 @@ Pine is a minimal native macOS code editor built with SwiftUI + AppKit. Targets 
 
 **Session persistence:** `SessionState` (Codable struct) saves project path, open file paths, pane layout tree (PaneNode), per-pane terminal tab counts, and editor state to UserDefaults. `AppDelegate` triggers save on app termination for all open projects. `ContentView.restoreSessionIfNeeded()` restores tabs and pane layout on first load if the saved session matches the current project. Terminal pane positions are preserved; terminal processes are recreated (scrollback lost).
 
+## Key Entry Points
+
+- `PineApp.swift` — @main, AppDelegate, menu commands, `CloseDelegate`
+- `ContentView.swift` — NavigationSplitView: sidebar + PaneTreeView
+- `ProjectManager.swift` — Central state: pane manager, tab manager, terminal coordinator, git provider
+- `CodeEditorView.swift` — NSViewRepresentable editor (GutterTextView + LineNumberView)
+- `PaneManager.swift` / `PaneNode.swift` — Split pane tree (binary tree of editor/terminal leaves)
+- `TabManager.swift` — Editor tab lifecycle (open, close, save, saveAs, duplicate, dirty tracking)
+- `WorkspaceManager.swift` — Async file tree loading, git integration, file watching
+- `GitStatusProvider.swift` — Git status/diff parsing, branch listing and checkout
+- `SyntaxHighlighter.swift` — Grammar loading, regex compilation, async highlighting
+- `TerminalSession.swift` / `TerminalManager.swift` — SwiftTerm integration and terminal coordination
+- `SessionState.swift` — Codable session persistence via UserDefaults
+- `PineTests/` — Unit tests (180+ files, Swift Testing framework)
+- `PineUITests/` — XCUITest suite (30 files), base class `PineUITestCase`
+- `PinePerformanceTests/` — XCTest `measure {}` benchmarks; enabled in default scheme but excluded from CI (opt-in via `perf` label or `workflow_dispatch`)
+
 ## Concurrency Model
 
 Pine uses GCD for background work, bridged to async/await via `withCheckedContinuation` at API boundaries.
@@ -117,62 +135,6 @@ Pine uses GCD for background work, bridged to async/await via `withCheckedContin
 - Project search skips files > 1MB
 - Target: <4ms main thread work per scroll frame for 120Hz ProMotion
 
-## Key Files
-
-- `PineApp.swift` — @main entry point, AppDelegate (window tabbing config, session save on terminate, Cmd+W event monitor), keyboard shortcuts (Cmd+S, Cmd+Option+S, Cmd+Shift+S, Cmd+Shift+D, Cmd+Shift+O, Cmd+W, Cmd+`), project WindowGroup + Welcome Window scenes, `CloseDelegate` (top-level class for testability) handles window close with dirty-tabs dialog
-- `ContentView.swift` — NavigationSplitView layout: sidebar (file tree) + detail (PaneTreeView for split panes), session restoration
-- `SessionState.swift` — Codable session persistence (project path + open file paths + pane layout + terminal state) via UserDefaults
-- `ProjectManager.swift` — Central state: file tree, pane manager, terminal coordinator, git provider, project I/O, saveSession()
-- `WorkspaceManager.swift` — Async file tree loading with two-phase progressive rendering (shallow then full), git integration, file watching; generation tokens prevent stale async results
-- `FileNode.swift` — Recursive tree model for filesystem
-- `FileSystemWatcher.swift` — FSEvents-based directory watcher with debounced main-thread callback and generation tokens to prevent stale callbacks after stop()
-- `CodeEditorView.swift` — NSViewRepresentable editor with GutterTextView and LineNumberView; handles syntax highlighting, find & replace, code folding, git blame display, bracket matching, and diff markers
-- `SyntaxHighlighter.swift` — Grammar loading, regex compilation, theme colors, async highlighting application
-- `LineNumberGutter.swift` — Line number rendering (enumerates only visible line fragments)
-- `MinimapView.swift` — Scaled-down (12%) document overview with syntax colors and git diff markers; click/drag scrolls the editor; viewport indicator shows visible region
-- `StatusBarInfo.swift` — Computes cursor position (line:column), line ending style (LF/CRLF), indentation style (spaces/tabs), and file size for the status bar
-- `FoldState.swift` — Tracks folded code regions for the active tab; O(1) hidden-line lookups via sorted set
-- `FoldRangeCalculator.swift` — Identifies foldable ranges from matched bracket pairs `{}`, `[]`, `()` using binary search for line number resolution
-- `GitBlameInfo.swift` — Data structures for git blame output (GitBlameLine: hash, author, timestamp, summary; BlameConstants for storage key)
-- `GoToLineParser.swift` — Parses "line" and "line:column" input for Go to Line navigation (Cmd+L)
-- `GoToLineView.swift` — Compact sheet dialog for Go to Line with validation and auto-focus
-- `BracketMatcher.swift` — Finds matching bracket pairs while skipping comment and string ranges
-- `CommentToggler.swift` — Toggles line and block comments for the active selection
-- `ProjectSearchProvider.swift` — Async full-project text search with debounce, .gitignore support, binary file detection, and 1 MB per-file limit
-- `SearchResultsView.swift` — Search results UI grouped by file with match highlighting and case-sensitivity toggle
-- `TerminalSession.swift` — SwiftTerm integration: TerminalTab, TerminalContainerView (AppKit), TerminalContentView (NSViewRepresentable), TerminalTabDelegate
-- `TerminalManager.swift` — Coordinator routing Cmd+T/Cmd+\` to terminal panes via PaneManager
-- `TerminalPaneState.swift` — Per-pane terminal state: tab array, active tab, search state
-- `TerminalPaneContent.swift` — SwiftUI view for terminal pane leaf (tab bar + search + terminal)
-- `TerminalPaneTabBar.swift` — Terminal tab bar with DnD, maximize/restore, close buttons
-- `PaneManager.swift` — Split pane tree management: TabManagers for editor leaves, TerminalPaneStates for terminal leaves, split/remove/maximize operations
-- `PaneNode.swift` — Recursive enum (leaf/split) for pane layout tree, Codable for session persistence
-- `PaneTreeView.swift` — Recursive SwiftUI view rendering PaneNode tree
-- `PaneLeafView.swift` — Single pane leaf: switches on PaneContent (.editor/.terminal)
-- `PaneDividerView.swift` — Draggable divider between panes with cursor change
-- `PaneDropZone.swift` — Drop zone detection and overlay for pane splitting via DnD
-- `PaneFocusDetector.swift` — NSView that detects mouse-down to set active pane
-- `TabCloseHelper.swift` — Shared tab close confirmation dialogs for editor tabs
-- `TabDragInfo.swift` — Drag data for moving tabs between panes (paneID, tabID, fileURL, contentType)
-- `GitStatusProvider.swift` — Git status/diff parsing for sidebar indicators and gutter markers, branch listing and checkout
-- `BranchSubtitleClickHandler.swift` — NSViewRepresentable that makes the window subtitle clickable for branch switching (AppKit workaround for broken `toolbarTitleMenu`)
-- `BranchSwitcherView.swift` — SwiftUI sheet with search field for branch switching (opened via Cmd+Shift+B)
-- `ProjectRegistry.swift` — Manages open projects and recent project history, deduplicates by URL
-- `WelcomeView.swift` — Welcome window with recent projects list and Open Folder button
-- `FocusedProjectKey.swift` — FocusedValueKey for passing active ProjectManager to menu commands
-- `AccessibilityIdentifiers.swift` — Shared accessibility ID constants for UI testing
-- `Pine/TabManager.swift` — Editor tab lifecycle: open, close, save, saveAll, saveAs, duplicate, dirty tracking, external change detection
-- `QuickOpenProvider.swift` — File indexing from FileNode tree, fuzzy subsequence matching with scoring, recent files boost
-- `QuickOpenView.swift` — Sheet overlay with live search, arrow key navigation, file icons
-- `SymbolNavigatorView.swift` — Symbol list (functions, classes, structs) with fuzzy search for current file (Cmd+R)
-- `FileFormatter.swift` — `FileFormatter` protocol, `JSONFileFormatter` (pure-Swift), `HCLFileFormatter` (terraform/tofu resolver), `FileFormatterRegistry` (first-match dispatch)
-- `ExternalFileFormatter.swift` — `ExternalFileFormatter` delegates to CLI tools via stdin/stdout; `RealProcessRunner` runs `Process` with timeout; `ProcessRunning` protocol for mocking
-- `ExternalToolResolver.swift` — Discovers CLI tools by searching PATH + well-known directories; thread-safe cache
-- `SmartListContinuation.swift` — Auto-continues Markdown list bullets/numbers/tasks on Enter
-- `PineTests/` — Unit tests (180+ files, Swift Testing framework)
-- `PineUITests/` — XCUITest suite (30 files), base class `PineUITestCase`
-- `PinePerformanceTests/` — XCTest `measure {}` benchmarks for FoldRange, SyntaxHighlighter, ProjectSearch, GitStatus. Enabled in the default Pine scheme (`skipped="NO"`), so Cmd+U in Xcode runs them locally alongside unit tests. Not executed in CI because all CI jobs use explicit `-only-testing:` filters targeting PineTests or PineUITests. Wired into CI as an opt-in `performance-tests` job triggered two ways: (1) `workflow_dispatch` from the Actions tab, or (2) adding the `perf` label to a pull request. Results upload as a `PerformanceResults.xcresult` artifact (14-day retention) for inspection in Xcode's Test Navigator. Run locally with `xcodebuild test -only-testing:PinePerformanceTests ...`
-
 ## Release & CI
 
 - **Release Please** (`.github/workflows/release-please.yml`) automates versioning and changelog via [Conventional Commits](https://www.conventionalcommits.org/):
@@ -188,24 +150,24 @@ Pine uses GCD for background work, bridged to async/await via `withCheckedContin
 - **Branch protection**: requires all checks to pass + branch up-to-date with main. This means sequential merge queue — after merging one PR, others need Update Branch + re-run CI (~5.5 min each)
 - **Action pinning** — all third-party GitHub Actions are pinned by full commit SHA (not mutable tags) for supply-chain safety. To update: find the new version's commit SHA on GitHub (Tags → verify the commit), replace the SHA in the workflow file, and keep the `# vX` comment in sync
 - **Nightly performance** (`.github/workflows/nightly-perf.yml`) — runs performance tests nightly and on schedule, uploads `PerformanceResults.xcresult` artifact, detects regressions via `scripts/check_perf_regression.py`
-- **Screenshots** (`.github/workflows/screenshots.yml`) — regenerates App Store screenshots in `assets/` on demand
+- **Nightly fuzz** (`.github/workflows/nightly-fuzz.yml`) — scheduled fuzz testing
+- **Screenshots** (`.github/workflows/screenshots.yml`) — regenerates GitHub/landing page screenshots in `assets/` on demand
 
 ## Conventions
 
 - Uses `@Observable` macro (Swift 5.9+), not ObservableObject/Published
 - Models are either structs (EditorTab) or classes depending on identity semantics. `FileNode` is a plain `nonisolated final class` (not @Observable) — it's a recursive tree data structure, not reactive state. `TerminalTab` is `@Observable` because it drives SwiftUI updates
 - Grammar files are JSON in `Pine/Grammars/` — add new languages by adding a new JSON file following the existing format
-- Keyboard shortcuts: Save (Cmd+S), Save All (Cmd+Option+S), Save As (Cmd+Shift+S), Duplicate (Cmd+Shift+D), Open Folder (Cmd+Shift+O), Close Tab (Cmd+W), Focus/Create Terminal (Cmd+\`), New Terminal Tab (Cmd+T), Switch Branch (Cmd+Shift+B), Go to Line (Cmd+L), Quick Open (Cmd+P), Symbol Navigator (Cmd+R), Toggle Minimap (Cmd+Shift+M), Toggle Markdown Preview (Cmd+Shift+P), Next Change (Ctrl+Opt+↓), Previous Change (Ctrl+Opt+↑), Find (Cmd+F), Find & Replace (Cmd+Option+F), Find Next (Cmd+G), Find Previous (Cmd+Shift+G), Use Selection for Find (Cmd+E). Menu commands flow through `@FocusedValue(\.projectManager)` to `TabManager`. Cmd+W is intercepted via `NSEvent.addLocalMonitorForEvents` in AppDelegate (not a SwiftUI menu command) to close the active tab (editor or terminal); the window close button goes through `CloseDelegate.windowShouldClose` to close the entire window. Cmd+\` focuses the terminal pane or creates one if none exists. Cmd+T creates a new terminal tab in the last-used terminal pane or creates a full-width terminal pane at the bottom
+- **Keyboard shortcuts** — menu commands flow through `@FocusedValue(\.projectManager)` to `TabManager`. Notable exceptions: Cmd+W is intercepted via `NSEvent.addLocalMonitorForEvents` in AppDelegate (closes active tab, not window); Cmd+\` focuses terminal pane or creates one; Cmd+T creates a new terminal tab in the last-used terminal pane or creates a full-width terminal pane at the bottom
 - UI uses semantic system colors (migrated from hardcoded dark theme values)
 - macOS 26 SDK renamed `NSColor(sRGBRed:)` → `NSColor(srgbRed:)` (lowercase)
-- Editor features: auto-indent on newline, current line highlight, git diff gutter markers, minimap, code folding, git blame, find & replace, status bar (line/col, indentation, encoding, line endings, file size), auto-save, format-on-save (JSON built-in, HCL/Terraform via external tools), async syntax highlighting, bracket matching, comment toggling, markdown preview, smart list continuation, strip trailing whitespace on save, Quick Open (Cmd+P), Go to Line (Cmd+L), Symbol Navigator (Cmd+R), partial load for 10MB+ files
 - Editor tabs use an internal SwiftUI tab bar (`EditorTabBar`), not native macOS window tabs
 - Project windows use `WindowGroup(for: URL.self)` where URL = project directory; `ProjectRegistry` prevents duplicate windows for the same project
 - **Conventional Commits** — all commit messages must follow the format: `feat:`, `fix:`, `chore:`, `docs:`, `refactor:`, `perf:`, `test:`. Use `feat!:` or `BREAKING CHANGE:` footer for breaking changes
 - **Test coverage** — every new feature or bug fix must include unit tests (and UI tests where applicable). Aim for comprehensive coverage: test public API, edge cases, error paths, boundary conditions, and integration between components. Cover the maximum number of cases — not just the happy path. Do not merge code without corresponding tests
 - **Localizable.xcstrings** — never use `json.dump` or standard JSON serializers to write this file. Xcode uses non-standard formatting (`"key" : "value"` with a space before the colon). Reserializing the entire file creates thousands of lines of whitespace noise in diffs. Instead, insert new translations by reading the file as text and making targeted insertions preserving the existing format
 - **Localization** — 9 languages supported (en, de, es, fr, ja, ko, pt-BR, ru, zh-Hans). All user-facing strings go through `Localizable.xcstrings`. To add a new language: add the language key to the xcstrings dict with translations for every existing key
-- **Utility scripts** — `scripts/` directory contains `normalize-xcstrings.sh` (called by pre-commit hook to unstage cosmetic xcstrings changes), `reset-cosmetic-xcstrings.sh` (reverts cosmetic-only xcstrings diffs), `test-normalize-xcstrings.sh` (tests for the normalizer), and `update-screenshots.sh` (regenerates App Store screenshots)
+- **Utility scripts** — `scripts/` directory contains `normalize-xcstrings.sh` (called by pre-commit hook to unstage cosmetic xcstrings changes), `reset-cosmetic-xcstrings.sh` (reverts cosmetic-only xcstrings diffs), `test-normalize-xcstrings.sh` (tests for the normalizer), and `update-screenshots.sh` (regenerates GitHub/landing page screenshots)
 
 ## Snapshot Testing
 
