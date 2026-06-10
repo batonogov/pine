@@ -8,6 +8,34 @@
 import SwiftUI
 import SwiftTerm
 
+/// Pine-specific terminal view wrapper.
+///
+/// SwiftTerm's CoreGraphics renderer only paints cells that have an explicit
+/// background attribute; cells with the default terminal background rely on
+/// the view/layer background. When a TUI briefly paints a colored rectangle
+/// and then returns those cells to the default background, stale pixels can
+/// remain in the layer. Pine drops the stale layer contents and promotes
+/// partial invalidations to full redraws so default-background cells are
+/// repainted against the current layer background.
+final class PineTerminalView: LocalProcessTerminalView {
+    private var redrawBackgroundColor: CGColor?
+
+    func prepareLayerForRedraw(background: NSColor? = nil) {
+        if let background {
+            redrawBackgroundColor = background.cgColor
+        }
+        if let redrawBackgroundColor {
+            layer?.backgroundColor = redrawBackgroundColor
+        }
+        layer?.contents = nil
+    }
+
+    override func setNeedsDisplay(_ invalidRect: NSRect) {
+        prepareLayerForRedraw()
+        super.setNeedsDisplay(bounds.isEmpty ? invalidRect : bounds)
+    }
+}
+
 // MARK: - Click interceptor overlay for terminal focus management
 
 /// Transparent overlay NSView placed on top of `LocalProcessTerminalView`.
@@ -687,18 +715,13 @@ final class TerminalTab: Identifiable, Hashable {
         self.name = name
         self.stableLabel = name
         self.shellSettings = shellSettings
-        self.terminalView = LocalProcessTerminalView(frame: TerminalContainerView.defaultTerminalFrame)
+        self.terminalView = PineTerminalView(frame: TerminalContainerView.defaultTerminalFrame)
         self.delegate = TerminalTabDelegate()
         self.delegate.tab = self
         self.terminalView.processDelegate = self.delegate
 
         // Настраиваем внешний вид сразу — шрифт определяет размер ячейки
         terminalView.font = NSFont.monospacedSystemFont(ofSize: 13, weight: .regular)
-        // Background adapts to system appearance — One Dark (#282C34) in
-        // dark mode, Catppuccin Latte base (#EFF1F5) in light mode.
-        // Foreground stays semantic so it adapts to light/dark appearance.
-        terminalView.nativeForegroundColor = .textColor
-        terminalView.nativeBackgroundColor = TerminalPalette.currentBackgroundColor()
 
         // Match Ghostty / modern terminal behaviour: do NOT auto-promote bold
         // text to the bright color variant. SwiftTerm's default of `true`
@@ -707,17 +730,38 @@ final class TerminalTab: Identifiable, Hashable {
         // native macOS terminals (issue #733).
         terminalView.useBrightColors = false
 
+        applyCurrentTerminalAppearance(forceRedraw: false)
+
+        // Re-apply palette and background when system appearance changes.
+        appearanceObservation = NSApp.observe(\.effectiveAppearance, options: .new) { [weak self] _, _ in
+            Task { @MainActor [weak self] in
+                self?.applyCurrentTerminalAppearance(forceRedraw: true)
+            }
+        }
+    }
+
+    /// Applies Pine's appearance-aware terminal colors and keeps SwiftTerm's
+    /// layer background in sync with the terminal model. SwiftTerm only sets
+    /// `layer.backgroundColor` during initial setup, so Pine must refresh it
+    /// when the app moves between light and dark appearances.
+    private func applyCurrentTerminalAppearance(forceRedraw: Bool) {
+        let background = TerminalPalette.currentBackgroundColor()
+        terminalView.nativeForegroundColor = .textColor
+        terminalView.nativeBackgroundColor = background
+        if let pineTerminalView = terminalView as? PineTerminalView {
+            pineTerminalView.prepareLayerForRedraw(background: background)
+        } else {
+            terminalView.layer?.backgroundColor = background.cgColor
+        }
+
         // Apply Pine's terminal palette (issue #816, #931).
         // Centralised in `TerminalPalette` so it can be unit-tested
         // independently of the SwiftTerm view and kept as a single source of
         // truth. The palette adapts to the current system appearance.
         TerminalPalette.install(on: terminalView)
 
-        // Re-apply palette and background when system appearance changes.
-        appearanceObservation = NSApp.observe(\.effectiveAppearance, options: .new) { [weak self] _, _ in
-            guard let self else { return }
-            self.terminalView.nativeBackgroundColor = TerminalPalette.currentBackgroundColor()
-            TerminalPalette.install(on: self.terminalView)
+        if forceRedraw {
+            forceFullRedraw()
         }
     }
 
@@ -835,6 +879,11 @@ final class TerminalTab: Identifiable, Hashable {
     /// Safe to call when the view is detached from a window — AppKit
     /// silently no-ops `displayIfNeeded()` in that state.
     func forceFullRedraw() {
+        if let pineTerminalView = terminalView as? PineTerminalView {
+            pineTerminalView.prepareLayerForRedraw(background: terminalView.nativeBackgroundColor)
+        } else {
+            terminalView.layer?.backgroundColor = terminalView.nativeBackgroundColor.cgColor
+        }
         let term = terminalView.getTerminal()
         term.updateFullScreen()
         terminalView.setNeedsDisplay(terminalView.bounds)
