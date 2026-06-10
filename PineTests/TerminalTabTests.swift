@@ -22,6 +22,11 @@ struct TerminalTabTests {
         #expect(tab.currentMatchIndex == -1)
     }
 
+    @Test @MainActor func terminalTabUsesPineTerminalView() {
+        let tab = TerminalTab(name: "zsh")
+        #expect(tab.terminalView is PineTerminalView)
+    }
+
     @Test @MainActor func terminalTabsHaveUniqueIDs() {
         let tab1 = TerminalTab(name: "tab1")
         let tab2 = TerminalTab(name: "tab2")
@@ -776,6 +781,40 @@ struct TerminalTabTests {
         let range = term.getUpdateRange()
         #expect(range?.startY == 0)
         #expect(range?.endY == term.rows)
+    }
+
+    /// SwiftTerm's layer background can drift from Pine's appearance-aware
+    /// native background when AppKit recreates or reuses backing layers.
+    /// `forceFullRedraw` must restore it before asking SwiftTerm to paint.
+    @Test @MainActor func forceFullRedrawSyncsLayerBackground() {
+        let tab = TerminalTab(name: "test")
+        let expected = tab.terminalView.nativeBackgroundColor.cgColor
+        let staleContents = "stale-terminal-backing" as NSString
+        tab.terminalView.layer?.backgroundColor = NSColor.black.cgColor
+        tab.terminalView.layer?.contents = staleContents
+
+        tab.forceFullRedraw()
+
+        #expect(tab.terminalView.layer?.backgroundColor == expected)
+        #expect((tab.terminalView.layer?.contents as? NSString) != staleContents)
+    }
+
+    /// PineTerminalView drops stale layer contents before scheduling a full
+    /// redraw. This prevents colored rectangles from remaining when a terminal
+    /// program returns cells to the default background.
+    @Test @MainActor func pineTerminalViewClearsLayerContentsBeforeRedraw() {
+        let view = PineTerminalView(frame: NSRect(x: 0, y: 0, width: 80, height: 24))
+        let background = NSColor(srgbRed: 0.90, green: 0.91, blue: 0.92, alpha: 1)
+        let staleContents = "stale-terminal-backing" as NSString
+        view.nativeBackgroundColor = background
+        view.prepareLayerForRedraw(background: background)
+        view.layer?.backgroundColor = NSColor.black.cgColor
+        view.layer?.contents = staleContents
+
+        view.setNeedsDisplay(NSRect(x: 0, y: 0, width: 10, height: 10))
+
+        #expect(view.layer?.backgroundColor == background.cgColor)
+        #expect(view.layer?.contents == nil)
     }
 
     /// `kickPTYWindowSize` must be a safe no-op when the shell process is

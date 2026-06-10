@@ -12,11 +12,9 @@
 //
 //  Scope of `install(on:)`:
 //  ONLY the 16 ANSI palette slots are touched here. Background / foreground
-//  / cursor / selection are deliberately NOT set — `TerminalSession` keeps
-//  them on semantic `NSColor.textBackgroundColor` / `NSColor.textColor` so
-//  the terminal stays adaptive to light/dark mode and respects the system
-//  appearance the way every other native macOS app does. TUI apps paint
-//  their own background through ANSI sequences anyway.
+//  / cursor / selection are deliberately NOT set — `TerminalSession` owns
+//  the default terminal colors and reapplies them when the system appearance
+//  changes. TUI apps paint their own background through ANSI sequences anyway.
 //
 //  Coverage across SGR forms — and the SwiftTerm 1.13.0 collapse quirk:
 //
