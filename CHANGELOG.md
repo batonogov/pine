@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.27.2](https://github.com/batonogov/pine/compare/v1.27.1...v1.27.2) (2026-06-11)
+
+
+### Miscellaneous
+
+* trigger release for terminal redraw fix ([#966](https://github.com/batonogov/pine/issues/966)) ([#967](https://github.com/batonogov/pine/issues/967)) ([64259da](https://github.com/batonogov/pine/commit/64259daf86f99390700c3d028eb5f6e3628ce3a0))
+
 ## [1.27.1](https://github.com/batonogov/pine/compare/v1.27.0...v1.27.1) (2026-06-09)
 
 
