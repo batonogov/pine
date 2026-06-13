@@ -83,7 +83,8 @@ final class ProjectManager {
             }
         }
 
-        return .init(conflicts: conflicts, reloadedFileNames: reloadedFileNames)
+        // Tabs already closed by per-pane checkExternalChanges()
+        return .init(conflicts: conflicts, reloadedFileNames: reloadedFileNames, cleanDeletedIDs: [])
     }
 
     /// Reloads matching tabs in every editor pane. The same file can be open
