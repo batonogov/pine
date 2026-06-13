@@ -362,17 +362,31 @@ final class TabManager {
         )
         let result = TabExternalChangeDetector.checkExternalChanges(tabs: &tabs, providers: providers)
         for id in result.cleanDeletedIDs { closeTab(id: id) }
+        postReloadNotifications(result.reloadedTabs)
         return result
     }
 
     func reloadTab(url: URL) {
-        TabExternalChangeDetector.reloadTab(
+        let reloaded = TabExternalChangeDetector.reloadTab(
             url: url, tabs: &tabs,
             providers: .init(
                 modDate: { [weak self] url in self?.modDate(for: url) },
                 fileSize: { [weak self] url in self?.fileSize(url: url) }
             )
         )
+        if let reloaded {
+            postReloadNotifications([reloaded])
+        }
+    }
+
+    private func postReloadNotifications(_ reloadedTabs: [TabExternalChangeDetector.ReloadedTab]) {
+        for reloaded in reloadedTabs {
+            NotificationCenter.default.post(
+                name: .tabReloadedFromDisk,
+                object: nil,
+                userInfo: ["url": reloaded.url, "text": reloaded.text]
+            )
+        }
     }
 
     @discardableResult

@@ -27,6 +27,26 @@ enum TabExternalChangeDetector {
         let conflicts: [ExternalConflict]
         let reloadedFileNames: [String]
         let cleanDeletedIDs: [UUID]
+        let reloadedTabs: [ReloadedTab]
+
+        init(
+            conflicts: [ExternalConflict],
+            reloadedFileNames: [String],
+            cleanDeletedIDs: [UUID],
+            reloadedTabs: [ReloadedTab] = []
+        ) {
+            self.conflicts = conflicts
+            self.reloadedFileNames = reloadedFileNames
+            self.cleanDeletedIDs = cleanDeletedIDs
+            self.reloadedTabs = reloadedTabs
+        }
+    }
+
+    /// Content loaded from disk for a clean tab. The caller posts notifications
+    /// after the `tabs` inout mutation has ended, avoiding re-entrant tab edits.
+    struct ReloadedTab {
+        let url: URL
+        let text: String
     }
 
     /// Checks open tabs against disk state. Silently reloads clean tabs that were
@@ -44,6 +64,7 @@ enum TabExternalChangeDetector {
         var conflicts: [ExternalConflict] = []
         var cleanDeletedIDs: [UUID] = []
         var reloadedNames: [String] = []
+        var reloadedTabs: [ReloadedTab] = []
 
         for index in tabs.indices {
             let tab = tabs[index]
@@ -78,18 +99,19 @@ enum TabExternalChangeDetector {
                     tabs[index].cachedHighlightResult = nil
                     tabs[index].recomputeContentCaches()
                     reloadedNames.append(tab.url.lastPathComponent)
-                    NotificationCenter.default.post(
-                        name: .tabReloadedFromDisk,
-                        object: nil,
-                        userInfo: ["url": tab.url, "text": content]
-                    )
+                    reloadedTabs.append(.init(url: tab.url, text: content))
                 } catch {
                     logger.error("Failed to reload tab \(tab.url.lastPathComponent): \(error)")
                 }
             }
         }
 
-        return ExternalChangeResult(conflicts: conflicts, reloadedFileNames: reloadedNames, cleanDeletedIDs: cleanDeletedIDs)
+        return ExternalChangeResult(
+            conflicts: conflicts,
+            reloadedFileNames: reloadedNames,
+            cleanDeletedIDs: cleanDeletedIDs,
+            reloadedTabs: reloadedTabs
+        )
     }
 
     /// Reloads a tab's content from disk (used after user chooses "reload" in conflict dialog).
@@ -98,8 +120,8 @@ enum TabExternalChangeDetector {
         url: URL,
         tabs: inout [EditorTab],
         providers: FileProviders
-    ) {
-        guard let index = tabs.firstIndex(where: { $0.url == url }) else { return }
+    ) -> ReloadedTab? {
+        guard let index = tabs.firstIndex(where: { $0.url == url }) else { return nil }
         do {
             let content = try String(contentsOf: url, encoding: tabs[index].encoding)
             tabs[index].content = content
@@ -108,13 +130,10 @@ enum TabExternalChangeDetector {
             tabs[index].fileSizeBytes = providers.fileSize(url)
             tabs[index].cachedHighlightResult = nil
             tabs[index].recomputeContentCaches()
-            NotificationCenter.default.post(
-                name: .tabReloadedFromDisk,
-                object: nil,
-                userInfo: ["url": url, "text": content]
-            )
+            return .init(url: url, text: content)
         } catch {
             logger.error("Failed to reload tab from disk \(url.lastPathComponent): \(error)")
+            return nil
         }
     }
 }

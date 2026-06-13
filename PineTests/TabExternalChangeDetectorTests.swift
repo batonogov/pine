@@ -53,6 +53,9 @@ struct TabExternalChangeDetectorTests {
 
         #expect(result.conflicts.isEmpty)
         #expect(result.reloadedFileNames.count == 1)
+        #expect(result.reloadedTabs.count == 1)
+        #expect(result.reloadedTabs[0].url == url)
+        #expect(result.reloadedTabs[0].text == "v2")
         #expect(tabs[0].content == "v2")
         #expect(result.cleanDeletedIDs.isEmpty)
     }
@@ -162,19 +165,22 @@ struct TabExternalChangeDetectorTests {
         var tabs = [tab]
         try "v2".write(to: url, atomically: true, encoding: .utf8)
 
-        TabExternalChangeDetector.reloadTab(url: url, tabs: &tabs, providers: providers)
+        let reloaded = TabExternalChangeDetector.reloadTab(url: url, tabs: &tabs, providers: providers)
 
         #expect(tabs[0].content == "v2")
         #expect(tabs[0].savedContent == "v2")
+        #expect(reloaded?.url == url)
+        #expect(reloaded?.text == "v2")
     }
 
     @Test("reloadTab is no-op for unknown URL")
     func reloadTabUnknownURL() {
         var tabs = [EditorTab(url: URL(fileURLWithPath: "/tmp/a.txt"), content: "data", savedContent: "data")]
-        TabExternalChangeDetector.reloadTab(
+        let reloaded = TabExternalChangeDetector.reloadTab(
             url: URL(fileURLWithPath: "/tmp/missing.txt"), tabs: &tabs,
             providers: .init(modDate: { _ in nil }, fileSize: { _ in nil })
         )
         #expect(tabs[0].content == "data")
+        #expect(reloaded == nil)
     }
 }
