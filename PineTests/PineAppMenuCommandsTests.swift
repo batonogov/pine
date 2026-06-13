@@ -59,4 +59,47 @@ struct PineAppMenuCommandsTests {
         let content = try String(contentsOf: readmeURL, encoding: .utf8)
         #expect(content.contains("| `Cmd+Shift+B` | Switch branch |"))
     }
+
+    @Test
+    func branchSwitcherNotificationScopeMatchesTargetProjectOrKeyWindow() {
+        let currentProject = ProjectManager()
+        let otherProject = ProjectManager()
+
+        #expect(ContentView.shouldPresentBranchSwitcher(
+            notificationObject: currentProject,
+            currentProject: currentProject,
+            isKeyWindow: false,
+            isGitRepository: true
+        ))
+        #expect(!ContentView.shouldPresentBranchSwitcher(
+            notificationObject: otherProject,
+            currentProject: currentProject,
+            isKeyWindow: true,
+            isGitRepository: true
+        ))
+        #expect(ContentView.shouldPresentBranchSwitcher(
+            notificationObject: nil,
+            currentProject: currentProject,
+            isKeyWindow: true,
+            isGitRepository: true
+        ))
+        #expect(!ContentView.shouldPresentBranchSwitcher(
+            notificationObject: nil,
+            currentProject: currentProject,
+            isKeyWindow: false,
+            isGitRepository: true
+        ))
+        #expect(!ContentView.shouldPresentBranchSwitcher(
+            notificationObject: currentProject,
+            currentProject: currentProject,
+            isKeyWindow: true,
+            isGitRepository: false
+        ))
+        #expect(!ContentView.shouldPresentBranchSwitcher(
+            notificationObject: "unexpected",
+            currentProject: currentProject,
+            isKeyWindow: true,
+            isGitRepository: true
+        ))
+    }
 }

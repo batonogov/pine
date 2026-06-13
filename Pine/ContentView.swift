@@ -144,8 +144,13 @@ struct ContentView: View {
             )
             .padding(12)
         }
-        .onReceive(NotificationCenter.default.publisher(for: .showBranchSwitcher)) { _ in
-            guard workspace.gitProvider.isGitRepository else { return }
+        .onReceive(NotificationCenter.default.publisher(for: .showBranchSwitcher)) { notification in
+            guard Self.shouldPresentBranchSwitcher(
+                notificationObject: notification.object,
+                currentProject: projectManager,
+                isKeyWindow: controlActiveState == .key,
+                isGitRepository: workspace.gitProvider.isGitRepository
+            ) else { return }
             isBranchSwitcherPresented = true
         }
         .onReceive(NotificationCenter.default.publisher(for: .symbolNavigate)) { notification in
@@ -243,6 +248,18 @@ struct ContentView: View {
     /// Kept as a static function for testability.
     static func branchSubtitle(isGitRepo: Bool, branchName: String) -> String {
         isGitRepo ? "\(branchName) ▾" : ""
+    }
+
+    static func shouldPresentBranchSwitcher(
+        notificationObject: Any?,
+        currentProject: ProjectManager,
+        isKeyWindow: Bool,
+        isGitRepository: Bool
+    ) -> Bool {
+        guard isGitRepository else { return false }
+        guard let notificationObject else { return isKeyWindow }
+        guard let targetProject = notificationObject as? ProjectManager else { return false }
+        return targetProject === currentProject
     }
 
     // MARK: - Subview builders

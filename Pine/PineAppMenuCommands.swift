@@ -449,7 +449,8 @@ struct PineAppMenuCommands: Commands {
         // MARK: - Git menu
         CommandMenu(Strings.menuGit) {
             Button {
-                NotificationCenter.default.post(name: .showBranchSwitcher, object: nil)
+                guard let focusedProject else { return }
+                NotificationCenter.default.post(name: .showBranchSwitcher, object: focusedProject)
             } label: {
                 Label(Strings.menuSwitchBranch, systemImage: MenuIcons.switchBranch)
             }

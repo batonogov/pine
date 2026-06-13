@@ -562,10 +562,16 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate {
         // across keyboard layouts while the menu item remains discoverable.
         NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
             guard event.modifierFlags.intersection(.deviceIndependentFlagsMask) == [.command, .shift],
-                  event.keyCode == 11 else {
+                  event.keyCode == 11,
+                  let window = NSApp.keyWindow,
+                  let closeDelegate = window.delegate as? CloseDelegate,
+                  closeDelegate.projectManager.workspace.gitProvider.isGitRepository else {
                 return event
             }
-            NotificationCenter.default.post(name: .showBranchSwitcher, object: nil)
+            NotificationCenter.default.post(
+                name: .showBranchSwitcher,
+                object: closeDelegate.projectManager
+            )
             return nil // consume event
         }
 
