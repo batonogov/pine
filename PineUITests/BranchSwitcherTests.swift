@@ -8,8 +8,8 @@
 //  recognizer (BranchSubtitleClickHandler), which XCUITest cannot
 //  interact with directly (window chrome is not an accessibility element).
 //  Cmd+Shift+B is handled via NSEvent.addLocalMonitorForEvents, which
-//  XCUITest's typeKey() bypasses. Therefore, these tests verify the
-//  display of branch information and external branch switch detection.
+//  XCUITest's typeKey() bypasses. Therefore, these tests open the switcher
+//  through the Git menu and verify the displayed branch information.
 //
 
 import XCTest
@@ -109,16 +109,31 @@ final class BranchSwitcherTests: PineUITestCase {
         )
     }
 
-    // MARK: - Git menu not in menu bar (lives in subtitle popup instead)
+    // MARK: - Git menu opens branch switcher
 
-    func testGitMenuDoesNotExist() throws {
+    func testGitMenuOpensBranchSwitcher() throws {
         launchWithProject(projectURL)
 
         let window = app.windows.firstMatch
         XCTAssertTrue(window.waitForExistence(timeout: 10))
 
         let gitMenu = app.menuBars.menuBarItems["Git"]
-        XCTAssertFalse(gitMenu.exists, "Git menu should not exist in the menu bar")
+        XCTAssertTrue(gitMenu.waitForExistence(timeout: 5), "Git menu should exist in the menu bar")
+        gitMenu.click()
+
+        let switchBranch = app.menuItems["Switch Branch…"]
+        XCTAssertTrue(
+            switchBranch.waitForExistence(timeout: 5),
+            "Git menu should contain Switch Branch"
+        )
+        XCTAssertTrue(switchBranch.isEnabled, "Switch Branch should be enabled for git projects")
+        switchBranch.click()
+
+        let searchField = app.textFields["branchSearchField"]
+        XCTAssertTrue(
+            searchField.waitForExistence(timeout: 5),
+            "Switch Branch should open the branch switcher"
+        )
     }
 
     // MARK: - External branch switch updates subtitle

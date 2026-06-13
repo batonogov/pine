@@ -34,6 +34,7 @@ struct MenuIconTests {
         (MenuIcons.findInProject, "Find in Project"),
         (MenuIcons.nextChange, "Next Change"),
         (MenuIcons.previousChange, "Previous Change"),
+        (MenuIcons.switchBranch, "Switch Branch"),
     ])
     func mainMenuIconExists(_ symbol: String, _ menuItem: String) {
         #expect(

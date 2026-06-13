@@ -14,7 +14,7 @@
 //
 //  Declaration order mirrors the macOS menu bar left-to-right:
 //  App (about/CLI) → File (open/save) → Edit (find/fold/diff) →
-//  View (font/minimap/reveal) → Terminal.
+//  View (font/minimap/reveal) → Git → Terminal.
 //
 
 import AppKit
@@ -444,6 +444,18 @@ struct PineAppMenuCommands: Commands {
                 Label(Strings.menuRevealProjectInFinder, systemImage: MenuIcons.revealProjectInFinder)
             }
             .disabled(focusedProject?.workspace.rootURL == nil)
+        }
+
+        // MARK: - Git menu
+        CommandMenu(Strings.menuGit) {
+            Button {
+                guard let focusedProject else { return }
+                NotificationCenter.default.post(name: .showBranchSwitcher, object: focusedProject)
+            } label: {
+                Label(Strings.menuSwitchBranch, systemImage: MenuIcons.switchBranch)
+            }
+            .keyboardShortcut("b", modifiers: [.command, .shift])
+            .disabled(focusedProject?.workspace.gitProvider.isGitRepository != true)
         }
 
         // MARK: - Terminal menu

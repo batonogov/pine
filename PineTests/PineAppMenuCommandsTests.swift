@@ -43,10 +43,63 @@ struct PineAppMenuCommandsTests {
             .findInTerminal, .showQuickOpen, .showSymbolNavigator,
             .symbolNavigate, .sendToTerminal, .sendTextToTerminal,
             .revealInSidebar, .inlineDiffAction, .tabReloadedFromDisk,
-            .refreshLineDiffs, .fileRenamed, .fileDeleted
+            .showBranchSwitcher, .refreshLineDiffs, .fileRenamed, .fileDeleted
         ]
         let raws = names.map(\.rawValue)
         #expect(Set(raws).count == raws.count, "Notification names must be unique")
         #expect(raws.allSatisfy { !$0.isEmpty }, "Notification names must be non-empty")
+    }
+
+    @Test
+    func branchSwitchShortcutIsDocumentedInReadme() throws {
+        let readmeURL = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .appendingPathComponent("README.md")
+        let content = try String(contentsOf: readmeURL, encoding: .utf8)
+        #expect(content.contains("| `Cmd+Shift+B` | Switch branch |"))
+    }
+
+    @Test
+    func branchSwitcherNotificationScopeMatchesTargetProjectOrKeyWindow() {
+        let currentProject = ProjectManager()
+        let otherProject = ProjectManager()
+
+        #expect(ContentView.shouldPresentBranchSwitcher(
+            notificationObject: currentProject,
+            currentProject: currentProject,
+            isKeyWindow: false,
+            isGitRepository: true
+        ))
+        #expect(!ContentView.shouldPresentBranchSwitcher(
+            notificationObject: otherProject,
+            currentProject: currentProject,
+            isKeyWindow: true,
+            isGitRepository: true
+        ))
+        #expect(ContentView.shouldPresentBranchSwitcher(
+            notificationObject: nil,
+            currentProject: currentProject,
+            isKeyWindow: true,
+            isGitRepository: true
+        ))
+        #expect(!ContentView.shouldPresentBranchSwitcher(
+            notificationObject: nil,
+            currentProject: currentProject,
+            isKeyWindow: false,
+            isGitRepository: true
+        ))
+        #expect(!ContentView.shouldPresentBranchSwitcher(
+            notificationObject: currentProject,
+            currentProject: currentProject,
+            isKeyWindow: true,
+            isGitRepository: false
+        ))
+        #expect(!ContentView.shouldPresentBranchSwitcher(
+            notificationObject: "unexpected",
+            currentProject: currentProject,
+            isKeyWindow: true,
+            isGitRepository: true
+        ))
     }
 }

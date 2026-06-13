@@ -49,6 +49,9 @@ nonisolated enum MenuIcons {
     static let revealFileInFinder = "doc.viewfinder"
     static let revealProjectInFinder = "arrow.right.circle"
 
+    // MARK: - Git menu
+    static let switchBranch = "arrow.triangle.branch"
+
     // MARK: - Terminal menu
     static let newTerminalTab = "plus"
     static let sendToTerminal = "paperplane"

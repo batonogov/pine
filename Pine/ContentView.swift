@@ -33,6 +33,7 @@ struct ContentView: View {
     @State var isDragTargeted = false
     @State var isQuickOpenPresented = false
     @State var isSymbolNavigatorPresented = false
+    @State var isBranchSwitcherPresented = false
     @State var showGoToLine = false
     @AppStorage("minimapVisible") var isMinimapVisible = true
     @AppStorage(BlameConstants.storageKey) var isBlameVisible = true
@@ -136,6 +137,22 @@ struct ContentView: View {
             guard tabManager.activeTab != nil else { return }
             isSymbolNavigatorPresented = true
         }
+        .sheet(isPresented: $isBranchSwitcherPresented) {
+            BranchSwitcherView(
+                gitProvider: workspace.gitProvider,
+                isPresented: $isBranchSwitcherPresented
+            )
+            .padding(12)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .showBranchSwitcher)) { notification in
+            guard Self.shouldPresentBranchSwitcher(
+                notificationObject: notification.object,
+                currentProject: projectManager,
+                isKeyWindow: controlActiveState == .key,
+                isGitRepository: workspace.gitProvider.isGitRepository
+            ) else { return }
+            isBranchSwitcherPresented = true
+        }
         .onReceive(NotificationCenter.default.publisher(for: .symbolNavigate)) { notification in
             guard let offset = notification.userInfo?["offset"] as? Int else { return }
             goToLineOffset = GoToRequest(offset: offset)
@@ -231,6 +248,18 @@ struct ContentView: View {
     /// Kept as a static function for testability.
     static func branchSubtitle(isGitRepo: Bool, branchName: String) -> String {
         isGitRepo ? "\(branchName) ▾" : ""
+    }
+
+    static func shouldPresentBranchSwitcher(
+        notificationObject: Any?,
+        currentProject: ProjectManager,
+        isKeyWindow: Bool,
+        isGitRepository: Bool
+    ) -> Bool {
+        guard isGitRepository else { return false }
+        guard let notificationObject else { return isKeyWindow }
+        guard let targetProject = notificationObject as? ProjectManager else { return false }
+        return targetProject === currentProject
     }
 
     // MARK: - Subview builders

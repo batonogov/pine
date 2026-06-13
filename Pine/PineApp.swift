@@ -558,6 +558,23 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate {
             return nil // consume event
         }
 
+        // Intercept Cmd+Shift+B by physical keyCode so branch switching works
+        // across keyboard layouts while the menu item remains discoverable.
+        NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+            guard event.modifierFlags.intersection(.deviceIndependentFlagsMask) == [.command, .shift],
+                  event.keyCode == 11,
+                  let window = NSApp.keyWindow,
+                  let closeDelegate = window.delegate as? CloseDelegate,
+                  closeDelegate.projectManager.workspace.gitProvider.isGitRepository else {
+                return event
+            }
+            NotificationCenter.default.post(
+                name: .showBranchSwitcher,
+                object: closeDelegate.projectManager
+            )
+            return nil // consume event
+        }
+
         // Intercept Ctrl+Tab and Ctrl+Shift+Tab for tab cycling.
         // Tab key generates keyCode 48. Must intercept via event monitor
         // because SwiftUI's keyboardShortcut doesn't support the Tab key.

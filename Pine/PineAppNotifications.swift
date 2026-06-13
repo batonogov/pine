@@ -63,5 +63,6 @@ extension Notification.Name {
     static let sendTextToTerminal = Notification.Name("sendTextToTerminal")
 
     // MARK: - Git
+    static let showBranchSwitcher = Notification.Name("showBranchSwitcher")
     static let refreshLineDiffs = Notification.Name("refreshLineDiffs")
 }
