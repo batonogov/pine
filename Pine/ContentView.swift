@@ -33,6 +33,7 @@ struct ContentView: View {
     @State var isDragTargeted = false
     @State var isQuickOpenPresented = false
     @State var isSymbolNavigatorPresented = false
+    @State var isBranchSwitcherPresented = false
     @State var showGoToLine = false
     @AppStorage("minimapVisible") var isMinimapVisible = true
     @AppStorage(BlameConstants.storageKey) var isBlameVisible = true
@@ -135,6 +136,17 @@ struct ContentView: View {
         .onReceive(NotificationCenter.default.publisher(for: .showSymbolNavigator)) { _ in
             guard tabManager.activeTab != nil else { return }
             isSymbolNavigatorPresented = true
+        }
+        .sheet(isPresented: $isBranchSwitcherPresented) {
+            BranchSwitcherView(
+                gitProvider: workspace.gitProvider,
+                isPresented: $isBranchSwitcherPresented
+            )
+            .padding(12)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .showBranchSwitcher)) { _ in
+            guard workspace.gitProvider.isGitRepository else { return }
+            isBranchSwitcherPresented = true
         }
         .onReceive(NotificationCenter.default.publisher(for: .symbolNavigate)) { notification in
             guard let offset = notification.userInfo?["offset"] as? Int else { return }
