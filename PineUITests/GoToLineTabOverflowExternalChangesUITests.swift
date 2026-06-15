@@ -33,7 +33,7 @@ final class GoToLineTabOverflowExternalChangesUITests: PineUITestCase {
 
     // MARK: - Helpers
 
-    /// Opens Go to Line via Edit menu and returns the sheet element.
+    /// Opens Go to Line via Edit menu and returns the overlay element.
     @discardableResult
     private func openGoToLine() -> XCUIElement {
         clickMenuBarItem("Edit")
@@ -41,8 +41,11 @@ final class GoToLineTabOverflowExternalChangesUITests: PineUITestCase {
         XCTAssertTrue(waitForExistence(goToLineItem, timeout: 5))
         goToLineItem.click()
 
-        let sheet = app.sheets.firstMatch
-        XCTAssertTrue(waitForExistence(sheet, timeout: 5), "Go to Line sheet should appear")
+        // Quick Open/Symbol Navigator/Go to Line are now presented as a
+        // lightweight CommandOverlayView (.overlay) instead of a .sheet,
+        // so they appear as otherElements (id "commandOverlay"), not sheets.
+        let sheet = app.otherElements["commandOverlay"]
+        XCTAssertTrue(waitForExistence(sheet, timeout: 5), "Go to Line overlay should appear")
         return sheet
     }
 

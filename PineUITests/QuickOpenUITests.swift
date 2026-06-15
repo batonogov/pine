@@ -44,7 +44,7 @@ final class QuickOpenUITests: PineUITestCase {
         menuItem.click()
 
         // Verify Quick Open overlay appears
-        let overlay = app.sheets.firstMatch
+        let overlay = app.otherElements["commandOverlay"]
         XCTAssertTrue(overlay.waitForExistence(timeout: 5))
     }
 
@@ -57,7 +57,7 @@ final class QuickOpenUITests: PineUITestCase {
         clickMenuBarItem("File")
         app.menuItems["Quick Open…"].click()
 
-        let overlay = app.sheets.firstMatch
+        let overlay = app.otherElements["commandOverlay"]
         XCTAssertTrue(overlay.waitForExistence(timeout: 5))
 
         // Press Escape to dismiss
@@ -82,7 +82,7 @@ final class QuickOpenUITests: PineUITestCase {
         clickMenuBarItem("File")
         app.menuItems["Quick Open…"].click()
 
-        let overlay = app.sheets.firstMatch
+        let overlay = app.otherElements["commandOverlay"]
         XCTAssertTrue(overlay.waitForExistence(timeout: 5))
 
         // The search field is an NSTextField (NSViewRepresentable).
@@ -108,7 +108,7 @@ final class QuickOpenUITests: PineUITestCase {
         clickMenuBarItem("File")
         app.menuItems["Quick Open…"].click()
 
-        let overlay = app.sheets.firstMatch
+        let overlay = app.otherElements["commandOverlay"]
         XCTAssertTrue(overlay.waitForExistence(timeout: 5))
 
         // Type to find a specific file
@@ -149,7 +149,7 @@ final class QuickOpenUITests: PineUITestCase {
         if menuItem.waitForExistence(timeout: 5) {
             menuItem.click()
 
-            let overlay = app.sheets.firstMatch
+            let overlay = app.otherElements["commandOverlay"]
             XCTAssertTrue(overlay.waitForExistence(timeout: 5))
 
             // Type a query — should show no results
