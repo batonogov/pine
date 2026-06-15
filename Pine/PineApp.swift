@@ -528,9 +528,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate {
         // Intercept Cmd+W before the system "Close" menu item.
         // For project windows: close active tab (or close window if no tabs).
         // For other windows: pass through to default behavior.
+        // Uses physical key code so it works on all keyboard layouts (e.g. Russian).
         NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
-            guard event.modifierFlags.intersection(.deviceIndependentFlagsMask) == .command,
-                  event.charactersIgnoringModifiers == "w",
+            guard KeyboardShortcutMatcher.matches(
+                      keyCode: KeyboardShortcutMatcher.PhysicalKey.w,
+                      modifiers: .command,
+                      in: event),
                   let window = NSApp.keyWindow,
                   let closeDelegate = window.delegate as? CloseDelegate else {
                 return event
@@ -545,11 +548,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate {
 
         // Intercept Cmd+F when a terminal view is the first responder.
         // When the terminal is focused, Cmd+F opens terminal search instead of editor find.
-        // Uses keyCode (3 = F key) instead of charactersIgnoringModifiers because the latter
-        // returns locale-specific characters (e.g. "ф" on Russian keyboard layout).
+        // Uses physical key code so it works on all keyboard layouts.
         NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
-            guard event.modifierFlags.intersection(.deviceIndependentFlagsMask) == .command,
-                  event.keyCode == 3,
+            guard KeyboardShortcutMatcher.matches(
+                      keyCode: KeyboardShortcutMatcher.PhysicalKey.f,
+                      modifiers: .command,
+                      in: event),
                   let responder = NSApp.keyWindow?.firstResponder as? NSView,
                   responder.className.contains("TerminalView") else {
                 return event
@@ -561,8 +565,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate {
         // Intercept Cmd+Shift+B by physical keyCode so branch switching works
         // across keyboard layouts while the menu item remains discoverable.
         NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
-            guard event.modifierFlags.intersection(.deviceIndependentFlagsMask) == [.command, .shift],
-                  event.keyCode == 11,
+            guard KeyboardShortcutMatcher.matches(
+                      keyCode: KeyboardShortcutMatcher.PhysicalKey.b,
+                      modifiers: [.command, .shift],
+                      in: event),
                   let window = NSApp.keyWindow,
                   let closeDelegate = window.delegate as? CloseDelegate,
                   closeDelegate.projectManager.workspace.gitProvider.isGitRepository else {
@@ -598,10 +604,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate {
         // Intercept Cmd+1..9 for tab selection by index.
         // Cmd+1..8 select tab at that position, Cmd+9 selects the last tab
         // (matching Safari/Chrome behavior).
+        // Uses physical key codes so digits work on all keyboard layouts.
         NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
-            guard event.modifierFlags.intersection(.deviceIndependentFlagsMask) == .command,
-                  let chars = event.charactersIgnoringModifiers,
-                  let digit = chars.first, digit >= "1", digit <= "9",
+            guard let digit = KeyboardShortcutMatcher.digit(from: event, modifiers: .command),
                   let window = NSApp.keyWindow,
                   let closeDelegate = window.delegate as? CloseDelegate else {
                 return event
@@ -609,10 +614,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate {
             let activeTM = closeDelegate.projectManager.activeTabManager
             guard !activeTM.tabs.isEmpty else { return event }
 
-            if digit == "9" {
+            if digit == 9 {
                 activeTM.selectLastTab()
-            } else if let index = digit.wholeNumberValue {
-                activeTM.selectTab(at: index - 1)
+            } else {
+                activeTM.selectTab(at: digit - 1)
             }
             return nil // consume event
         }
