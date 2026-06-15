@@ -9,7 +9,9 @@ import SwiftUI
 
 struct SearchResultsView: View {
     @Environment(ProjectManager.self) var projectManager
-    @Environment(TabManager.self) var tabManager
+
+    /// Flattened selection index across all groups. `nil` means no selection.
+    @State private var selectedIndex: Int? = nil
 
     var body: some View {
         let search = projectManager.searchProvider
@@ -45,21 +47,92 @@ struct SearchResultsView: View {
         }
         .animation(PineAnimation.content, value: search.isSearching)
         .animation(PineAnimation.content, value: search.results.isEmpty)
+        .onChange(of: search.totalMatchCount) { _, _ in
+            // Reset selection when results change
+            selectedIndex = search.flattenedMatches.isEmpty ? nil : 0
+        }
     }
 
     private var searchResultsList: some View {
-        ScrollView {
-            LazyVStack(alignment: .leading, spacing: 0) {
-                ForEach(projectManager.searchProvider.results) { group in
-                    fileGroupView(group)
+        let flat = projectManager.searchProvider.flattenedMatches
+
+        return VStack(spacing: 0) {
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 0) {
+                    ForEach(Array(projectManager.searchProvider.results.enumerated()), id: \.element.id) { groupIndex, group in
+                        fileGroupView(group, groupIndex: groupIndex, flat: flat)
+                    }
                 }
             }
+            .accessibilityIdentifier(AccessibilityID.projectSearchResultsList)
+            .onKeyPress(.upArrow) {
+                moveSelection(delta: -1, total: flat.count)
+                return .handled
+            }
+            .onKeyPress(.downArrow) {
+                moveSelection(delta: 1, total: flat.count)
+                return .handled
+            }
+            .onKeyPress(.return) {
+                if let selectedIndex, flat.indices.contains(selectedIndex) {
+                    openMatch(flat[selectedIndex])
+                }
+                return .handled
+            }
+            .focusable()
+
+            truncationFooter
         }
-        .accessibilityIdentifier(AccessibilityID.projectSearchResultsList)
+    }
+
+    // MARK: - Truncation footer
+
+    @ViewBuilder
+    private var truncationFooter: some View {
+        let search = projectManager.searchProvider
+        if search.isTotalCapped || search.isPerFileCapped {
+            HStack(spacing: 4) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .font(.system(size: LayoutMetrics.captionFontSize))
+                    .foregroundStyle(.orange)
+                Text(truncationMessage)
+                    .font(.system(size: LayoutMetrics.captionFontSize))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+            }
+            .padding(.horizontal, LayoutMetrics.searchResultHorizontalPadding)
+            .padding(.vertical, LayoutMetrics.searchResultHeaderVerticalPadding)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(.bar)
+            .accessibilityIdentifier(AccessibilityID.searchTruncationFooter)
+        }
+    }
+
+    private var truncationMessage: String {
+        let search = projectManager.searchProvider
+        if search.isTotalCapped {
+            return Strings.searchTruncatedTotal(shown: search.totalMatchCount, max: ProjectSearchProvider.maxResults)
+        } else if search.isPerFileCapped {
+            return Strings.searchTruncatedPerFile(ProjectSearchProvider.maxResultsPerFile)
+        }
+        return ""
+    }
+
+    // MARK: - Keyboard navigation
+
+    private func moveSelection(delta: Int, total: Int) {
+        selectedIndex = SearchSelectionLogic.nextIndex(current: selectedIndex, delta: delta, total: total)
+    }
+
+    private func openMatch(_ entry: FlatSearchMatch) {
+        projectManager.activeTabManager.openTabAndGoToLine(
+            url: entry.fileURL,
+            line: entry.match.lineNumber
+        )
     }
 
     @ViewBuilder
-    private func fileGroupView(_ group: SearchFileGroup) -> some View {
+    private func fileGroupView(_ group: SearchFileGroup, groupIndex: Int, flat: [FlatSearchMatch]) -> some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 4) {
                 Image(systemName: FileIconMapper.iconForFile(group.url.lastPathComponent))
@@ -82,30 +155,33 @@ struct SearchResultsView: View {
             .padding(.vertical, LayoutMetrics.searchResultHeaderVerticalPadding)
             .background(.bar)
 
-            ForEach(group.matches) { match in
+            ForEach(Array(group.matches.enumerated()), id: \.element.id) { _, match in
+                let flatIndex = flat.firstIndex { $0.fileURL == group.url && $0.match.id == match.id } ?? -1
+                let isSelected = selectedIndex == flatIndex
+
                 MatchRowView(
                     match: match,
                     fileURL: group.url,
-                    tabManager: tabManager
+                    isSelected: isSelected,
+                    onTap: { openMatch(FlatSearchMatch(fileURL: group.url, match: match)) }
                 )
             }
         }
     }
 }
 
-// MARK: - Match row with hover highlight
+// MARK: - Match row with hover + selection highlight
 
 private struct MatchRowView: View {
     let match: SearchMatch
     let fileURL: URL
-    let tabManager: TabManager
+    let isSelected: Bool
+    let onTap: () -> Void
 
     @State private var isHovered = false
 
     var body: some View {
-        Button {
-            tabManager.openTabAndGoToLine(url: fileURL, line: match.lineNumber)
-        } label: {
+        Button(action: onTap) {
             HStack(spacing: 6) {
                 Text("\(match.lineNumber)")
                     .font(.system(size: LayoutMetrics.captionFontSize, design: .monospaced))
@@ -121,11 +197,22 @@ private struct MatchRowView: View {
             .padding(.vertical, LayoutMetrics.searchResultRowVerticalPadding)
             .frame(maxWidth: .infinity, alignment: .leading)
             .contentShape(Rectangle())
-            .background(isHovered ? Color.primary.opacity(0.06) : Color.clear)
+            .background(rowBackground)
         }
         .buttonStyle(.plain)
         .animation(PineAnimation.quick, value: isHovered)
+        .animation(PineAnimation.quick, value: isSelected)
         .onHover { isHovered = $0 }
+    }
+
+    private var rowBackground: Color {
+        if isSelected {
+            return Color.accentColor.opacity(0.15)
+        } else if isHovered {
+            return Color.primary.opacity(0.06)
+        } else {
+            return Color.clear
+        }
     }
 
     /// Builds a Text view with the match highlighted in bold using stored range offsets.
