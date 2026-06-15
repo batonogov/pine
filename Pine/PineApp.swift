@@ -299,7 +299,12 @@ class CloseDelegate: NSObject, NSWindowDelegate {
         case .terminal:
             guard let state = pane.terminalState(for: activePaneID),
                   let tab = state.activeTab else { return }
-            guard TabCloseHelper.confirmTerminalProcessStop(tabs: [tab]) else { return }
+            if tab.hasForegroundProcess {
+                guard AlertTemplate.terminalTabCloseWarning.runModal(
+                    messageText: Strings.terminalTabCloseWarningTitle,
+                    informativeText: Strings.terminalTabCloseWarningMessage
+                ) == .alertFirstButtonReturn else { return }
+            }
             state.removeTab(id: tab.id)
             if state.terminalTabs.isEmpty {
                 pane.removePane(activePaneID)
@@ -324,34 +329,26 @@ class CloseDelegate: NSObject, NSWindowDelegate {
             guard original.windowShouldClose?(sender) != false else { return false }
         }
 
-        // 1. Check dirty editor tabs
+        // Close button → close the entire window.
         let dirty = projectManager.allDirtyTabs
-        if !dirty.isEmpty {
-            let fileList = dirty.map { "  • \($0.fileName)" }.joined(separator: "\n")
-            let response = AlertTemplate.unsavedChangesBulk.runModal(
-                messageText: Strings.unsavedChangesTitle,
-                informativeText: Strings.unsavedChangesListMessage(fileList)
-            )
-            switch response {
-            case .alertFirstButtonReturn:
-                guard projectManager.saveAllPaneTabs() else {
-                    return false // Save failed — abort close
-                }
-            case .alertSecondButtonReturn:
-                break // Don't save — allow close
-            default:
-                return false // Cancel — abort close
+        guard !dirty.isEmpty else { return true }
+
+        let fileList = dirty.map { "  • \($0.fileName)" }.joined(separator: "\n")
+        let response = AlertTemplate.unsavedChangesBulk.runModal(
+            messageText: Strings.unsavedChangesTitle,
+            informativeText: Strings.unsavedChangesListMessage(fileList)
+        )
+        switch response {
+        case .alertFirstButtonReturn:
+            guard projectManager.saveAllPaneTabs() else {
+                return false // Save failed — abort close
             }
+            return true
+        case .alertSecondButtonReturn:
+            return true // Don't save — allow close
+        default:
+            return false // Cancel — abort close
         }
-
-        // 2. Warn about active terminal processes before closing
-        guard TabCloseHelper.confirmTerminalProcessStop(
-            tabs: projectManager.terminal.allTerminalTabs
-        ) else {
-            return false
-        }
-
-        return true
     }
 
     // Forward other delegate calls to the original
