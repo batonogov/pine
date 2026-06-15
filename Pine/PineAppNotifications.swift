@@ -54,6 +54,12 @@ extension Notification.Name {
     /// userInfo: ["url": URL, "text": String]
     static let tabReloadedFromDisk = Notification.Name("tabReloadedFromDisk")
 
+    /// Opens a file at a specific line and optional column.
+    /// Posted when the user clicks a `file:line` reference in terminal
+    /// output (issue #949).
+    /// userInfo: ["url": URL, "line": Int, "column": Int?]
+    static let openFileAtLine = Notification.Name("openFileAtLine")
+
     // MARK: - Terminal
     /// Find in Terminal (issue #308)
     static let findInTerminal = Notification.Name("findInTerminal")

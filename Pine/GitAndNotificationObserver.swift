@@ -142,6 +142,13 @@ struct GitAndNotificationObserver: ViewModifier {
                       tabManager.activeTab != nil else { return }
                 showGoToLine = true
             }
+            .onReceive(NotificationCenter.default.publisher(for: .openFileAtLine)) { notification in
+                guard let url = notification.userInfo?["url"] as? URL,
+                      let line = notification.userInfo?["line"] as? Int else { return }
+                // Column is parsed and passed for future use; the current
+                // navigation infrastructure is line-based (issue #949).
+                tabManager.openTabAndGoToLine(url: url, line: line)
+            }
             .onReceive(NotificationCenter.default.publisher(for: .navigateChange)) { notification in
                 guard controlActiveState == .key,
                       let direction = notification.userInfo?["direction"] as? String else { return }
