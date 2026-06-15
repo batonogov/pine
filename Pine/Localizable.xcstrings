@@ -532,6 +532,66 @@
         }
       }
     },
+    "breadcrumb.showHiddenSegments" : {
+      "comment" : "Breadcrumb ellipsis menu: accessibility label for the button that reveals collapsed path segments.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ausgeblendete Pfadsegmente anzeigen"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Show hidden path segments"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mostrar segmentos de ruta ocultos"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Afficher les segments de chemin masqués"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "非表示のパスセグメントを表示"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "숨겨진 경로 세그먼트 표시"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mostrar segmentos de caminho ocultos"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Показать скрытые сегменты пути"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "显示隐藏的路径段"
+          }
+        }
+      }
+    },
     "conflict.externalModify.keep" : {
       "comment" : "Button: keep local unsaved changes instead of reloading from disk.",
       "extractionState" : "manual",
@@ -7351,6 +7411,66 @@
         }
       }
     },
+    "statusbar.encodingDisabledDirty" : {
+      "comment" : "Status bar: tooltip explaining why the encoding menu is disabled while the file has unsaved changes.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Datei speichern oder verwerfen, um die Codierung zu ändern"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Save or revert the file to change encoding"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Guarda o revierte el archivo para cambiar la codificación"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Enregistrez ou rétablissez le fichier pour modifier l'encodage"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "エンコーディングを変更するにはファイルを保存または取り消してください"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "인코딩을 변경하려면 파일을 저장하거나 되돌리세요"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Salve ou reverta o arquivo para alterar a codificação"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Сохраните или отмените изменения, чтобы изменить кодировку"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "保存或还原文件以更改编码"
+          }
+        }
+      }
+    },
     "symbolNavigator.empty" : {
       "comment" : "Text shown when no symbols are found in the current file.",
       "extractionState" : "manual",
@@ -7647,6 +7767,66 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "关闭其他标签页"
+          }
+        }
+      }
+    },
+    "tab.closeTabDisabledPinned" : {
+      "comment" : "Tab context menu: tooltip explaining why Close Tab is disabled for pinned tabs.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tab ist angeheftet — lösen, um zu schließen"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tab is pinned — unpin to close"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La pestaña está fijada — desfíjala para cerrarla"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "L'onglet est épinglé — désépinglez-le pour le fermer"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "タブが固定されています — 固定解除して閉じる"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "탭이 고정되어 있습니다 — 고정 해제 후 닫기"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A aba está fixada — desafixe para fechar"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Вкладка закреплена — открепите, чтобы закрыть"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "标签页已固定 — 取消固定以关闭"
           }
         }
       }
