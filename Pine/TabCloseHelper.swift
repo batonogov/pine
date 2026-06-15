@@ -3,6 +3,8 @@
 //  Pine
 //
 //  Shared tab close confirmation dialogs used by both ContentView and PaneLeafView.
+//  Also provides the shared terminal foreground-process confirmation used by
+//  the status bar toggle, window close, tab close, and pane close paths.
 //
 
 import AppKit
@@ -99,5 +101,55 @@ enum TabCloseHelper {
         let dirty = tabManager.dirtyTabsForCloseAll()
         guard confirmBulkClose(dirtyTabs: dirty, in: tabManager, gitProvider: gitProvider) else { return }
         tabManager.closeAllTabs(force: true)
+    }
+
+    // MARK: - Terminal foreground-process confirmation
+
+    /// Decides whether a terminal stop/close operation should proceed when
+    /// foreground processes are running.
+    ///
+    /// - Parameters:
+    ///   - hasForegroundProcess: Whether any terminal tab in scope has a
+    ///     running foreground process.
+    ///   - presentAlert: Closure that presents the confirmation alert and
+    ///     returns the modal response. Injected for testing; defaults to the
+    ///     standard `terminalTabCloseWarning` alert.
+    /// - Returns: `true` if there is no foreground process (no warning needed)
+    ///     or the user confirmed. `false` to abort the stop/close.
+    static func confirmTerminalStop(
+        hasForegroundProcess: Bool,
+        presentAlert: () -> NSApplication.ModalResponse = {
+            AlertTemplate.terminalTabCloseWarning.runModal(
+                messageText: Strings.terminalTabCloseWarningTitle,
+                informativeText: Strings.terminalTabCloseWarningMessage
+            )
+        }
+    ) -> Bool {
+        guard hasForegroundProcess else { return true }
+        return presentAlert() == .alertFirstButtonReturn
+    }
+
+    /// Convenience overload that checks the foreground-process predicate on
+    /// a collection of terminal tabs before presenting the shared alert.
+    ///
+    /// - Parameters:
+    ///   - tabs: The terminal tabs to inspect.
+    ///   - presentAlert: Closure that presents the confirmation alert.
+    ///     Injected for testing; defaults to the standard alert.
+    /// - Returns: `true` if none of the tabs has a foreground process or the
+    ///     user confirmed. `false` to abort.
+    static func confirmTerminalProcessStop(
+        tabs: [TerminalTab],
+        presentAlert: () -> NSApplication.ModalResponse = {
+            AlertTemplate.terminalTabCloseWarning.runModal(
+                messageText: Strings.terminalTabCloseWarningTitle,
+                informativeText: Strings.terminalTabCloseWarningMessage
+            )
+        }
+    ) -> Bool {
+        confirmTerminalStop(
+            hasForegroundProcess: tabs.contains { $0.hasForegroundProcess },
+            presentAlert: presentAlert
+        )
     }
 }

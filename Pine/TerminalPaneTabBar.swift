@@ -17,12 +17,7 @@ struct TerminalPaneTabBar: View {
     @State private var draggingTabID: UUID?
 
     private func closeTerminalTabWithConfirmation(_ tab: TerminalTab) {
-        if tab.hasForegroundProcess {
-            guard AlertTemplate.terminalTabCloseWarning.runModal(
-                messageText: Strings.terminalTabCloseWarningTitle,
-                informativeText: Strings.terminalTabCloseWarningMessage
-            ) == .alertFirstButtonReturn else { return }
-        }
+        guard TabCloseHelper.confirmTerminalProcessStop(tabs: [tab]) else { return }
         terminalState.removeTab(id: tab.id)
         // Remove the pane if no tabs remain
         if terminalState.terminalTabs.isEmpty {
@@ -121,12 +116,9 @@ struct TerminalPaneTabBar: View {
             // Close terminal pane
             Button {
                 // Warn if any tab has a foreground process
-                if terminalState.terminalTabs.contains(where: { $0.hasForegroundProcess }) {
-                    guard AlertTemplate.terminalTabCloseWarning.runModal(
-                        messageText: Strings.terminalTabCloseWarningTitle,
-                        informativeText: Strings.terminalTabCloseWarningMessage
-                    ) == .alertFirstButtonReturn else { return }
-                }
+                guard TabCloseHelper.confirmTerminalProcessStop(
+                    tabs: terminalState.terminalTabs
+                ) else { return }
                 // Stop all tabs and remove pane
                 for tab in terminalState.terminalTabs {
                     tab.stop()
