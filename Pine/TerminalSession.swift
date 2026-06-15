@@ -58,6 +58,11 @@ class TerminalScrollInterceptor: NSView {
     /// The terminal view underneath this overlay.
     weak var terminalView: LocalProcessTerminalView?
 
+    /// Working directory of the active terminal tab. Used to resolve
+    /// relative `file:line` references when the user Cmd+clicks terminal
+    /// output (issue #949). Set by `TerminalContainerView.showTab`.
+    var workingDirectory: URL?
+
     override var isFlipped: Bool { true }
 
     override func hitTest(_ point: NSPoint) -> NSView? {
@@ -111,6 +116,14 @@ class TerminalScrollInterceptor: NSView {
     #endif
 
     override func mouseDown(with event: NSEvent) {
+        // Cmd+click: detect and open file:line references in terminal output (issue #949).
+        // When the Command modifier is held, the click is interpreted as a
+        // navigation gesture rather than terminal input. If a file:line
+        // reference is found under the cursor, the file is opened in the
+        // editor; otherwise the click falls through to the terminal.
+        if event.modifierFlags.contains(.command), handleFileLinkClick(event) {
+            return
+        }
         isMouseDown = true
         stopAutoScroll()
         if let tv = terminalView {
@@ -118,6 +131,68 @@ class TerminalScrollInterceptor: NSView {
             tv.mouseDown(with: event)
         }
     }
+
+    // MARK: - File link click handling (issue #949)
+
+    /// Attempts to open a `file:line` reference under the cursor.
+    ///
+    /// Maps the click point to a terminal grid cell, extracts the full row
+    /// text from SwiftTerm's buffer, runs it through ``TerminalOutputParser``,
+    /// and if a link spans the clicked column, posts an ``.openFileAtLine``
+    /// notification that `ContentView` observes to open the file.
+    ///
+    /// - Parameter event: The mouse-down event (expected to carry `.command`).
+    /// - Returns: `true` if a file link was found and the notification was posted,
+    ///   `false` if no link was under the cursor (caller should fall through
+    ///   to normal terminal mouse handling).
+    @discardableResult
+    internal func handleFileLinkClick(_ event: NSEvent) -> Bool {
+        guard let terminalView, let workingDirectory else { return false }
+        let term = terminalView.getTerminal()
+
+        // Map the click location to terminal grid coordinates.
+        let point = convert(event.locationInWindow, from: nil)
+        let grid = MouseScrollForwarder.gridPosition(
+            point: point,
+            viewBounds: terminalView.bounds,
+            cols: term.cols,
+            rows: term.rows,
+            isFlipped: terminalView.isFlipped
+        )
+
+        // Extract the text of the clicked row from SwiftTerm's buffer.
+        guard let line = term.getLine(row: grid.row) else { return false }
+        let rowText = line.translateToString()
+        guard !rowText.isEmpty else { return false }
+
+        // Parse file:line references in the row text.
+        let links = TerminalOutputParser.parseFilePaths(
+            in: rowText,
+            workingDirectory: workingDirectory
+        )
+        guard !links.isEmpty else { return false }
+
+        // Find the link that spans the clicked column.
+        guard let link = TerminalOutputParser.link(atColumn: grid.col, in: links) else {
+            return false
+        }
+
+        // Post the notification — ContentView observes this and opens the file.
+        var userInfo: [String: Any] = [
+            "url": link.fileURL,
+            "line": link.line,
+        ]
+        if let column = link.column {
+            userInfo["column"] = column
+        }
+        NotificationCenter.default.post(
+            name: .openFileAtLine,
+            object: nil,
+            userInfo: userInfo
+        )
+        return true
+    }
+
     override func mouseUp(with event: NSEvent) {
         isMouseDown = false
         stopAutoScroll()
@@ -396,6 +471,7 @@ class TerminalContainerView: NSView {
             subviews.forEach { $0.removeFromSuperview() }
             currentTabID = nil
             scrollInterceptor.terminalView = nil
+            scrollInterceptor.workingDirectory = nil
             return
         }
         let tabChanged = tab.id != currentTabID || tab.terminalView.superview !== self
@@ -414,6 +490,7 @@ class TerminalContainerView: NSView {
             // Place click interceptor on top of the terminal view
             scrollInterceptor.frame = effectiveBounds
             scrollInterceptor.terminalView = tab.terminalView
+            scrollInterceptor.workingDirectory = tab.workingDirectoryURL
             addSubview(scrollInterceptor)
 
             tab.terminalView.needsLayout = true
@@ -832,6 +909,11 @@ final class TerminalTab: Identifiable, Hashable {
     func resolveWorkingDirectory() -> String {
         workingDirectory?.path ?? (ProcessInfo.processInfo.environment["HOME"] ?? "/")
     }
+
+    /// The configured working directory URL, or `nil` if none was set.
+    /// Used by the file-link click handler to resolve relative `file:line`
+    /// references in terminal output (issue #949).
+    var workingDirectoryURL: URL? { workingDirectory }
 
     /// Запускает процесс если ещё не запущен и view добавлен в иерархию.
     /// The terminal view must have a non-zero frame so SwiftTerm can calculate
