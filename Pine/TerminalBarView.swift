@@ -36,7 +36,7 @@ struct TerminalNativeTabItem: View {
                         )
                 }
                 .buttonStyle(.plain)
-                .opacity(isHovering || isActive ? 1 : 0)
+                .opacity(isHovering || isActive ? 1 : 0.35)
                 .accessibilityIdentifier("closeTerminalTab_\(tab.stableLabel)")
             }
 

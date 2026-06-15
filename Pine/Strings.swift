@@ -198,6 +198,11 @@ enum Strings {
     static let menuDuplicate: LocalizedStringKey = "menu.duplicate"
     static let menuCloseTab: LocalizedStringKey = "menu.closeTab"
 
+    // MARK: - Affordance / Accessibility Help
+
+    static let statusbarEncodingDisabledDirty: LocalizedStringKey = "statusbar.encodingDisabledDirty"
+    static let breadcrumbShowHiddenSegments: LocalizedStringKey = "breadcrumb.showHiddenSegments"
+
     // MARK: - Tab Pinning
 
     static let tabPin: LocalizedStringKey = "tab.pin"
@@ -212,6 +217,7 @@ enum Strings {
     static let tabCopyRelativePath: LocalizedStringKey = "tab.copyRelativePath"
     static let tabRevealInSidebar: LocalizedStringKey = "tab.revealInSidebar"
     static let tabRevealInFinder: LocalizedStringKey = "tab.revealInFinder"
+    static let tabCloseTabDisabledPinned: LocalizedStringKey = "tab.closeTabDisabledPinned"
 
     // MARK: - Unsaved Changes Dialog (AppKit)
 

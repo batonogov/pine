@@ -130,6 +130,7 @@ struct StatusBarView: View {
                 .menuStyle(.borderlessButton)
                 .fixedSize()
                 .disabled(activeTab.isDirty)
+                .help(activeTab.isDirty ? Strings.statusbarEncodingDisabledDirty : "")
                 .accessibilityIdentifier(AccessibilityID.encodingMenu)
 
                 // File size indicator (cached in EditorTab)

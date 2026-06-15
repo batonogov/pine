@@ -26,11 +26,31 @@ struct BreadcrumbPathBar: View {
             HStack(spacing: 2) {
                 let allSegments = segments
                 let (showEllipsis, visible) = BreadcrumbProvider.truncate(allSegments, maxVisible: 8)
+                let hiddenSegments = showEllipsis ? Array(allSegments.dropLast(visible.count)) : []
 
                 if showEllipsis {
-                    Text("\u{2026}")
-                        .font(.system(size: LayoutMetrics.bodySmallFontSize))
-                        .foregroundStyle(.quaternary)
+                    Menu {
+                        ForEach(hiddenSegments) { segment in
+                            Button {
+                                NSWorkspace.shared.activateFileViewerSelecting([segment.url])
+                            } label: {
+                                Label {
+                                    Text(segment.name)
+                                } icon: {
+                                    Image(systemName: "folder")
+                                }
+                            }
+                        }
+                    } label: {
+                        Text("\u{2026}")
+                            .font(.system(size: LayoutMetrics.bodySmallFontSize))
+                            .foregroundStyle(.secondary)
+                            .padding(.horizontal, 2)
+                    }
+                    .menuStyle(.borderlessButton)
+                    .menuIndicator(.hidden)
+                    .fixedSize()
+                    .accessibilityLabel(Strings.breadcrumbShowHiddenSegments)
 
                     chevronSeparator
                 }
@@ -74,7 +94,9 @@ private struct BreadcrumbSegmentButton: View {
             let siblings = BreadcrumbProvider.siblings(for: segment, projectRoot: projectRoot)
             ForEach(siblings) { sibling in
                 Button {
-                    if !sibling.isDirectory {
+                    if sibling.isDirectory {
+                        NSWorkspace.shared.activateFileViewerSelecting([sibling.url])
+                    } else {
                         onOpenFile(sibling.url)
                     }
                 } label: {
@@ -86,7 +108,6 @@ private struct BreadcrumbSegmentButton: View {
                               : FileIconMapper.iconForFile(sibling.name))
                     }
                 }
-                .disabled(sibling.isDirectory)
             }
         } label: {
             HStack(spacing: 3) {

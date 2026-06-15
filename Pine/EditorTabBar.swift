@@ -356,13 +356,13 @@ struct EditorTabItem: View {
             }
             .accessibilityIdentifier(AccessibilityID.editorTabPinToggle(tab.fileName))
 
-            if !tab.isPinned {
-                Button(role: .destructive) {
-                    onClose()
-                } label: {
-                    Label(Strings.menuCloseTab, systemImage: "xmark")
-                }
+            Button(role: .destructive) {
+                onClose()
+            } label: {
+                Label(Strings.menuCloseTab, systemImage: "xmark")
             }
+            .disabled(tab.isPinned)
+            .help(tab.isPinned ? Strings.tabCloseTabDisabledPinned : "")
 
             Divider()
 
@@ -474,7 +474,7 @@ struct EditorTabItem: View {
                 )
             }
             .buttonStyle(.plain)
-            .opacity(isHovering || isActive || tab.isDirty ? 1 : 0.01)
+            .opacity(isHovering || isActive || tab.isDirty ? 1 : 0.35)
             .accessibilityIdentifier(AccessibilityID.editorTabCloseButton(tab.fileName))
 
             Image(systemName: FileIconMapper.iconForFile(tab.fileName))
