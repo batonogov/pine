@@ -21,14 +21,12 @@ struct TabAffordanceTests {
     func newStringKeysExist() {
         // These keys must resolve at runtime — verify the LocalizedStringKey
         // constants exist and are non-empty.
-        let key1 = Strings.tabCloseTabDisabledPinned
-        let key2 = Strings.statusbarEncodingDisabledDirty
-        let key3 = Strings.breadcrumbShowHiddenSegments
-
-        // LocalizedStringKey wraps a String value; verify it's non-empty.
-        #expect(!key1.key.isEmpty)
-        #expect(!key2.key.isEmpty)
-        #expect(!key3.key.isEmpty)
+        // Verify each constant resolves to its expected localization key.
+        // (LocalizedStringKey.key is internal in the SDK, so compare via ==
+        // which checks the underlying key string for string-literal keys.)
+        #expect(Strings.tabCloseTabDisabledPinned == LocalizedStringKey("tab.closeTabDisabledPinned"))
+        #expect(Strings.statusbarEncodingDisabledDirty == LocalizedStringKey("statusbar.encodingDisabledDirty"))
+        #expect(Strings.breadcrumbShowHiddenSegments == LocalizedStringKey("breadcrumb.showHiddenSegments"))
     }
 
     @Test("New string keys are present in Localizable.xcstrings")
