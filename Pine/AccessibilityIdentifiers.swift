@@ -72,9 +72,6 @@ nonisolated enum AccessibilityID {
     static let goToLineField = "goToLineField"
     static let goToLineInvalidMessage = "goToLineInvalidMessage"
 
-    // MARK: - Command Overlays
-    static let commandOverlay = "commandOverlay"
-
     // MARK: - Branch switcher
     static let branchSearchField = "branchSearchField"
     static func branchItem(_ name: String) -> String { "branchItem_\(name)" }

@@ -31,11 +31,6 @@ struct CommandOverlayViewTests {
         #expect(isPresented == false)
     }
 
-    @Test("CommandOverlayView has accessibility identifier")
-    func accessibilityIdentifierExists() {
-        #expect(AccessibilityID.commandOverlay == "commandOverlay")
-    }
-
     // MARK: - GoToLineView accessibility
 
     @Test("GoToLineView has invalid message accessibility identifier")

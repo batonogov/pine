@@ -40,7 +40,6 @@ struct GoToLineView: View {
         .padding()
         .frame(width: 220)
         .accessibilityIdentifier(AccessibilityID.goToLineSheet)
-        .accessibilityElement(children: .contain)
         .onAppear { isFieldFocused = true }
         .onExitCommand { isPresented = false }
         .onChange(of: isInvalid) { _, newValue in

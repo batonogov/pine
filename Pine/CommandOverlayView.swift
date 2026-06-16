@@ -43,7 +43,6 @@ struct CommandOverlayView<Content: View>: View {
         }
         .animation(PineAnimation.overlay, value: isPresented)
         .accessibilityAddTraits(.isModal)
-        .accessibilityIdentifier(AccessibilityID.commandOverlay)
         .onExitCommand {
             withAnimation(PineAnimation.overlay) {
                 isPresented = false
