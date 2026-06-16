@@ -37,9 +37,11 @@ final class GoToLineTabOverflowExternalChangesUITests: PineUITestCase {
     ///
     /// Go to Line is now presented as a lightweight `CommandOverlayView` (.overlay)
     /// instead of a `.sheet`. Rather than depending on how the overlay container is
-    /// classified in the accessibility tree, we locate the inner text field directly
-    /// via its stable semantic id. The field exists iff the overlay is presented, so
-    /// it also serves as the appearance/dismissal signal for the tests below.
+    /// classified in the accessibility tree, we locate the inner SwiftUI TextField
+    /// directly via its stable semantic id using the scoped `.textFields[id]`
+    /// lookup (the same lookup that worked when the view was presented as a sheet).
+    /// The field exists iff the overlay is presented, so it also serves as the
+    /// appearance/dismissal signal for the tests below.
     @discardableResult
     private func openGoToLine() -> XCUIElement {
         clickMenuBarItem("Edit")
@@ -47,9 +49,7 @@ final class GoToLineTabOverflowExternalChangesUITests: PineUITestCase {
         XCTAssertTrue(waitForExistence(goToLineItem, timeout: 5))
         goToLineItem.click()
 
-        let field = app.descendants(matching: .any)
-            .matching(identifier: "goToLineField")
-            .firstMatch
+        let field = app.textFields["goToLineField"].firstMatch
         XCTAssertTrue(waitForExistence(field, timeout: 5), "Go to Line overlay should appear")
         return field
     }
@@ -151,19 +151,14 @@ final class GoToLineTabOverflowExternalChangesUITests: PineUITestCase {
 
         let field = openGoToLine()
 
-        // Find the text field anywhere in the app hierarchy
-        let textField = app.descendants(matching: .any)
-            .matching(identifier: "goToLineField")
-            .firstMatch
-        guard waitForExistence(textField, timeout: 5) else {
-            // If the SwiftUI TextField is not accessible, just verify overlay opens/closes
-            // by pressing Escape (already tested above). Skip this test.
+        // Find the text field (the helper already returns it)
+        guard field.exists else {
             XCTSkip("GoToLine text field not accessible via XCUITest")
             return
         }
-        textField.click()
-        textField.typeText("10")
-        textField.typeKey(.return, modifierFlags: [])
+        field.click()
+        field.typeText("10")
+        field.typeKey(.return, modifierFlags: [])
 
         XCTAssertTrue(
             field.waitForNonExistence(timeout: 5),
@@ -184,16 +179,13 @@ final class GoToLineTabOverflowExternalChangesUITests: PineUITestCase {
 
         let field = openGoToLine()
 
-        let textField = app.descendants(matching: .any)
-            .matching(identifier: "goToLineField")
-            .firstMatch
-        guard waitForExistence(textField, timeout: 5) else {
+        guard field.exists else {
             XCTSkip("GoToLine text field not accessible via XCUITest")
             return
         }
-        textField.click()
-        textField.typeText("abc")
-        textField.typeKey(.return, modifierFlags: [])
+        field.click()
+        field.typeText("abc")
+        field.typeKey(.return, modifierFlags: [])
 
         // Overlay should remain open (invalid input) — field still present
         sleep(1)

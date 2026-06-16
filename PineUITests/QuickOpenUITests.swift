@@ -34,14 +34,12 @@ final class QuickOpenUITests: PineUITestCase {
     ///
     /// Quick Open is now presented as a lightweight `CommandOverlayView` (.overlay)
     /// instead of a `.sheet`. Rather than depending on how the overlay container is
-    /// classified in the accessibility tree (which varies and can cause identifier
-    /// propagation issues), we locate the inner search field directly via its stable
-    /// semantic id. The field exists iff the overlay is presented, so it also serves
-    /// as the appearance/dismissal signal.
+    /// classified in the accessibility tree, we locate the inner search field directly
+    /// via its stable semantic id using the scoped `.textFields[id]` lookup (the
+    /// NSTextField wrapper exposes itself as a textField). The field exists iff the
+    /// overlay is presented, so it also serves as the appearance/dismissal signal.
     private func quickOpenField() -> XCUIElement {
-        app.descendants(matching: .any)
-            .matching(identifier: "quickOpenSearchField")
-            .firstMatch
+        app.textFields["quickOpenSearchField"].firstMatch
     }
 
     // MARK: - Open & Close
