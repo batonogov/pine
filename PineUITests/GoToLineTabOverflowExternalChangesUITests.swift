@@ -33,7 +33,13 @@ final class GoToLineTabOverflowExternalChangesUITests: PineUITestCase {
 
     // MARK: - Helpers
 
-    /// Opens Go to Line via Edit menu and returns the overlay element.
+    /// Opens Go to Line via Edit menu and returns the Go to Line text field.
+    ///
+    /// Go to Line is now presented as a lightweight `CommandOverlayView` (.overlay)
+    /// instead of a `.sheet`. Rather than depending on how the overlay container is
+    /// classified in the accessibility tree, we locate the inner text field directly
+    /// via its stable semantic id. The field exists iff the overlay is presented, so
+    /// it also serves as the appearance/dismissal signal for the tests below.
     @discardableResult
     private func openGoToLine() -> XCUIElement {
         clickMenuBarItem("Edit")
@@ -41,14 +47,11 @@ final class GoToLineTabOverflowExternalChangesUITests: PineUITestCase {
         XCTAssertTrue(waitForExistence(goToLineItem, timeout: 5))
         goToLineItem.click()
 
-        // Quick Open/Symbol Navigator/Go to Line are now presented as a
-        // lightweight CommandOverlayView (.overlay) instead of a .sheet.
-        // Search all element types — SwiftUI overlays' accessibility
-        // classification (.other/.dialog/...) can vary, so a broad
-        // descendants query is more reliable than app.sheets/.otherElements.
-        let sheet = app.descendants(matching: .any).matching(identifier: "commandOverlay").firstMatch
-        XCTAssertTrue(waitForExistence(sheet, timeout: 5), "Go to Line overlay should appear")
-        return sheet
+        let field = app.descendants(matching: .any)
+            .matching(identifier: "goToLineField")
+            .firstMatch
+        XCTAssertTrue(waitForExistence(field, timeout: 5), "Go to Line overlay should appear")
+        return field
     }
 
     // MARK: - Go to Line: opens via menu
@@ -98,14 +101,14 @@ final class GoToLineTabOverflowExternalChangesUITests: PineUITestCase {
         openFile("main.swift")
         XCTAssertTrue(waitForExistence(editorTab("main.swift"), timeout: 5))
 
-        let sheet = openGoToLine()
+        let field = openGoToLine()
 
         // Press Escape to dismiss
         app.typeKey(.escape, modifierFlags: [])
 
         XCTAssertTrue(
-            sheet.waitForNonExistence(timeout: 5),
-            "Go to Line sheet should dismiss on Escape"
+            field.waitForNonExistence(timeout: 5),
+            "Go to Line overlay should dismiss on Escape"
         )
     }
 
@@ -120,16 +123,19 @@ final class GoToLineTabOverflowExternalChangesUITests: PineUITestCase {
         openFile("main.swift")
         XCTAssertTrue(waitForExistence(editorTab("main.swift"), timeout: 5))
 
-        let sheet = openGoToLine()
+        let field = openGoToLine()
 
-        // The view shows "1-N" as a hint for the valid range
-        let rangeHint = sheet.staticTexts.element(matching: NSPredicate(
+        // The view shows "1-N" as a hint for the valid range. Locate it
+        // globally (the overlay container's a11y classification is unreliable).
+        let rangeHint = app.staticTexts.element(matching: NSPredicate(
             format: "value CONTAINS '1'"
         ))
         XCTAssertTrue(
             waitForExistence(rangeHint, timeout: 3),
             "Go to Line should display a line range hint"
         )
+        // Sanity: the field is still present (overlay did not auto-dismiss)
+        XCTAssertTrue(field.exists)
     }
 
     // MARK: - Go to Line: accepts valid input and dismisses
@@ -143,12 +149,14 @@ final class GoToLineTabOverflowExternalChangesUITests: PineUITestCase {
         openFile("main.swift")
         XCTAssertTrue(waitForExistence(editorTab("main.swift"), timeout: 5))
 
-        let sheet = openGoToLine()
+        let field = openGoToLine()
 
         // Find the text field anywhere in the app hierarchy
-        let textField = app.textFields["goToLineField"].firstMatch
+        let textField = app.descendants(matching: .any)
+            .matching(identifier: "goToLineField")
+            .firstMatch
         guard waitForExistence(textField, timeout: 5) else {
-            // If the SwiftUI TextField is not accessible, just verify sheet opens/closes
+            // If the SwiftUI TextField is not accessible, just verify overlay opens/closes
             // by pressing Escape (already tested above). Skip this test.
             XCTSkip("GoToLine text field not accessible via XCUITest")
             return
@@ -158,8 +166,8 @@ final class GoToLineTabOverflowExternalChangesUITests: PineUITestCase {
         textField.typeKey(.return, modifierFlags: [])
 
         XCTAssertTrue(
-            sheet.waitForNonExistence(timeout: 5),
-            "Go to Line sheet should dismiss after accepting valid input"
+            field.waitForNonExistence(timeout: 5),
+            "Go to Line overlay should dismiss after accepting valid input"
         )
     }
 
@@ -174,9 +182,11 @@ final class GoToLineTabOverflowExternalChangesUITests: PineUITestCase {
         openFile("main.swift")
         XCTAssertTrue(waitForExistence(editorTab("main.swift"), timeout: 5))
 
-        let sheet = openGoToLine()
+        let field = openGoToLine()
 
-        let textField = app.textFields["goToLineField"].firstMatch
+        let textField = app.descendants(matching: .any)
+            .matching(identifier: "goToLineField")
+            .firstMatch
         guard waitForExistence(textField, timeout: 5) else {
             XCTSkip("GoToLine text field not accessible via XCUITest")
             return
@@ -185,11 +195,11 @@ final class GoToLineTabOverflowExternalChangesUITests: PineUITestCase {
         textField.typeText("abc")
         textField.typeKey(.return, modifierFlags: [])
 
-        // Sheet should remain open (invalid input)
+        // Overlay should remain open (invalid input) — field still present
         sleep(1)
         XCTAssertTrue(
-            sheet.exists,
-            "Go to Line sheet should stay open for invalid input"
+            field.exists,
+            "Go to Line overlay should stay open for invalid input"
         )
     }
 
