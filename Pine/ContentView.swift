@@ -76,6 +76,10 @@ struct ContentView: View {
                                 workingDirectory: workspace.rootURL
                             )
                         } else {
+                            // Warn before stopping tabs with foreground processes
+                            guard TabCloseHelper.confirmTerminalProcessStop(
+                                tabs: terminal.allTerminalTabs
+                            ) else { return }
                             // Hide all terminal panes
                             for paneID in paneManager.terminalPaneIDs {
                                 if let state = paneManager.terminalState(for: paneID) {
