@@ -42,9 +42,11 @@ final class GoToLineTabOverflowExternalChangesUITests: PineUITestCase {
         goToLineItem.click()
 
         // Quick Open/Symbol Navigator/Go to Line are now presented as a
-        // lightweight CommandOverlayView (.overlay) instead of a .sheet,
-        // so they appear as otherElements (id "commandOverlay"), not sheets.
-        let sheet = app.otherElements["commandOverlay"]
+        // lightweight CommandOverlayView (.overlay) instead of a .sheet.
+        // Search all element types — SwiftUI overlays' accessibility
+        // classification (.other/.dialog/...) can vary, so a broad
+        // descendants query is more reliable than app.sheets/.otherElements.
+        let sheet = app.descendants(matching: .any).matching(identifier: "commandOverlay").firstMatch
         XCTAssertTrue(waitForExistence(sheet, timeout: 5), "Go to Line overlay should appear")
         return sheet
     }
