@@ -95,9 +95,6 @@ struct ContentView: View {
         .overlay(alignment: .top) {
             ToastOverlay()
         }
-        .overlay {
-            navigationOverlay
-        }
         .modifier(ProjectSearchModifier(
             projectManager: projectManager,
             isSearchPresented: $isSearchPresented
@@ -129,8 +126,16 @@ struct ContentView: View {
                 onDiscard: { discardRecovery() }
             )
         }
+        .sheet(isPresented: $isQuickOpenPresented) {
+            QuickOpenView(isPresented: $isQuickOpenPresented)
+                .environment(projectManager)
+        }
         .onReceive(NotificationCenter.default.publisher(for: .showQuickOpen)) { _ in
             isQuickOpenPresented = true
+        }
+        .sheet(isPresented: $isSymbolNavigatorPresented) {
+            SymbolNavigatorView(isPresented: $isSymbolNavigatorPresented)
+                .environment(projectManager)
         }
         .onReceive(NotificationCenter.default.publisher(for: .showSymbolNavigator)) { _ in
             guard tabManager.activeTab != nil else { return }
@@ -155,6 +160,18 @@ struct ContentView: View {
         .onReceive(NotificationCenter.default.publisher(for: .symbolNavigate)) { notification in
             guard let offset = notification.userInfo?["offset"] as? Int else { return }
             goToLineOffset = GoToRequest(offset: offset)
+        }
+        .sheet(isPresented: $showGoToLine) {
+            GoToLineView(
+                totalLines: totalLineCount,
+                isPresented: $showGoToLine,
+                onGoTo: { line, column in
+                    guard let tab = tabManager.activeTab else { return }
+                    goToLineOffset = GoToRequest(
+                        offset: Self.cursorOffset(forLine: line, column: column, in: tab.content)
+                    )
+                }
+            )
         }
         .onChange(of: selectedNode) { _, newNode in
             guard let node = newNode, !node.isDirectory else { return }
@@ -254,41 +271,6 @@ struct ContentView: View {
     @ViewBuilder
     var editorArea: some View {
         PaneTreeView(node: paneManager.root)
-    }
-
-    // MARK: - Navigation Overlays
-
-    /// Lightweight non-modal overlay for Quick Open, Symbol Navigator, and
-    /// Go to Line. Replaces document-modal `.sheet` presentations so the
-    /// editor context remains visible and the overlay is keyboard-first.
-    @ViewBuilder
-    var navigationOverlay: some View {
-        if isQuickOpenPresented {
-            CommandOverlayView(isPresented: $isQuickOpenPresented) {
-                QuickOpenView(isPresented: $isQuickOpenPresented)
-                    .environment(projectManager)
-            }
-        } else if isSymbolNavigatorPresented {
-            CommandOverlayView(isPresented: $isSymbolNavigatorPresented) {
-                SymbolNavigatorView(isPresented: $isSymbolNavigatorPresented)
-                    .environment(projectManager)
-            }
-        } else if showGoToLine {
-            CommandOverlayView(isPresented: $showGoToLine) {
-                GoToLineView(
-                    totalLines: totalLineCount,
-                    isPresented: $showGoToLine,
-                    onGoTo: { line, column in
-                        guard let tab = tabManager.activeTab else { return }
-                        goToLineOffset = GoToRequest(
-                            offset: Self.cursorOffset(
-                                forLine: line, column: column, in: tab.content
-                            )
-                        )
-                    }
-                )
-            }
-        }
     }
 
 }
