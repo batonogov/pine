@@ -70,6 +70,7 @@ nonisolated enum AccessibilityID {
     // MARK: - Go to Line
     static let goToLineSheet = "goToLineSheet"
     static let goToLineField = "goToLineField"
+    static let goToLineInvalidMessage = "goToLineInvalidMessage"
 
     // MARK: - Branch switcher
     static let branchSearchField = "branchSearchField"
