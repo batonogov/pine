@@ -30,18 +30,6 @@ final class QuickOpenUITests: PineUITestCase {
         try super.tearDownWithError()
     }
 
-    /// Locates the Quick Open search field by its own accessibility identifier.
-    ///
-    /// Quick Open is now presented as a lightweight `CommandOverlayView` (.overlay)
-    /// instead of a `.sheet`. Rather than depending on how the overlay container is
-    /// classified in the accessibility tree, we locate the inner search field directly
-    /// via its stable semantic id using the scoped `.textFields[id]` lookup (the
-    /// NSTextField wrapper exposes itself as a textField). The field exists iff the
-    /// overlay is presented, so it also serves as the appearance/dismissal signal.
-    private func quickOpenField() -> XCUIElement {
-        app.textFields["quickOpenSearchField"].firstMatch
-    }
-
     // MARK: - Open & Close
 
     func testQuickOpenOpensViaMenu() throws {
@@ -55,8 +43,9 @@ final class QuickOpenUITests: PineUITestCase {
         XCTAssertTrue(menuItem.waitForExistence(timeout: 5))
         menuItem.click()
 
-        // Verify Quick Open overlay appears (search field is the signal)
-        XCTAssertTrue(quickOpenField().waitForExistence(timeout: 5))
+        // Verify Quick Open overlay appears
+        let overlay = app.sheets.firstMatch
+        XCTAssertTrue(overlay.waitForExistence(timeout: 5))
     }
 
     func testQuickOpenDismissesOnEscape() throws {
@@ -68,14 +57,14 @@ final class QuickOpenUITests: PineUITestCase {
         clickMenuBarItem("File")
         app.menuItems["Quick Open…"].click()
 
-        let field = quickOpenField()
-        XCTAssertTrue(field.waitForExistence(timeout: 5))
+        let overlay = app.sheets.firstMatch
+        XCTAssertTrue(overlay.waitForExistence(timeout: 5))
 
         // Press Escape to dismiss
         app.typeKey(.escape, modifierFlags: [])
 
-        // Overlay should dismiss (search field disappears)
-        XCTAssertTrue(field.waitForNonExistence(timeout: 5))
+        // Sheet should dismiss
+        XCTAssertTrue(overlay.waitForNonExistence(timeout: 5))
     }
 
     // MARK: - Search & Selection
@@ -93,11 +82,14 @@ final class QuickOpenUITests: PineUITestCase {
         clickMenuBarItem("File")
         app.menuItems["Quick Open…"].click()
 
+        let overlay = app.sheets.firstMatch
+        XCTAssertTrue(overlay.waitForExistence(timeout: 5))
+
         // The search field is an NSTextField (NSViewRepresentable).
         // XCUITest's typeText does not reliably input into NSTextField
         // wrapped via NSViewRepresentable (same known issue as GutterTextView).
         // Verify the search field exists and accepts focus.
-        let searchField = quickOpenField()
+        let searchField = overlay.textFields.firstMatch
         XCTAssertTrue(searchField.waitForExistence(timeout: 3), "Search field should exist")
         searchField.click()
         XCTAssertTrue(searchField.exists, "Search field should remain after click")
@@ -116,23 +108,24 @@ final class QuickOpenUITests: PineUITestCase {
         clickMenuBarItem("File")
         app.menuItems["Quick Open…"].click()
 
-        let searchField = quickOpenField()
-        XCTAssertTrue(searchField.waitForExistence(timeout: 5))
+        let overlay = app.sheets.firstMatch
+        XCTAssertTrue(overlay.waitForExistence(timeout: 5))
 
         // Type to find a specific file
+        let searchField = overlay.textFields.firstMatch
         searchField.click()
         searchField.typeText("utils")
 
         sleep(1)
 
         // Click on the result. The overlay may expose "utils.swift" in both
-        // the filename and path-hint labels; search globally and pick the first.
-        let result = app.staticTexts["utils.swift"].firstMatch
+        // the filename and path-hint labels; `firstMatch` picks the first.
+        let result = overlay.staticTexts["utils.swift"].firstMatch
         if result.waitForExistence(timeout: 3) {
             result.click()
 
-            // Overlay should dismiss after selection (search field disappears)
-            XCTAssertTrue(searchField.waitForNonExistence(timeout: 5))
+            // Sheet should dismiss after selection
+            XCTAssertTrue(overlay.waitForNonExistence(timeout: 5))
 
             // Verify the file tab is opened
             let tab = window.buttons["editorTab_utils.swift"]
@@ -156,9 +149,12 @@ final class QuickOpenUITests: PineUITestCase {
         if menuItem.waitForExistence(timeout: 5) {
             menuItem.click()
 
-            // Verify the overlay opens, then type a query (should show no results)
-            let searchField = quickOpenField()
-            if searchField.waitForExistence(timeout: 5) {
+            let overlay = app.sheets.firstMatch
+            XCTAssertTrue(overlay.waitForExistence(timeout: 5))
+
+            // Type a query — should show no results
+            let searchField = overlay.textFields.firstMatch
+            if searchField.waitForExistence(timeout: 3) {
                 searchField.click()
                 searchField.typeText("nonexistent")
                 sleep(1)
