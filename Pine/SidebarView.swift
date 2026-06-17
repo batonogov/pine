@@ -271,10 +271,21 @@ struct SidebarSearchableContent: View {
     @Environment(ProjectManager.self) private var projectManager
 
     var body: some View {
-        if !projectManager.searchProvider.query.isEmpty {
-            SearchResultsView()
-        } else {
-            SidebarView(selectedFile: $selectedNode)
+        Group {
+            if !projectManager.searchProvider.query.isEmpty {
+                SearchResultsView()
+            } else {
+                SidebarView(selectedFile: $selectedNode)
+            }
+        }
+        .onKeyPress(.escape) {
+            // Escape clears the search query and returns to the file tree.
+            if !projectManager.searchProvider.query.isEmpty {
+                projectManager.searchProvider.query = ""
+                projectManager.searchProvider.cancel()
+                return .handled
+            }
+            return .ignored
         }
     }
 }

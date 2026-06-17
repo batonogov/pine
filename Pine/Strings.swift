@@ -331,6 +331,13 @@ enum Strings {
     static let searchInitialDescription: LocalizedStringKey = "search.initialDescription"
     static let searchCaseSensitive: LocalizedStringKey = "search.caseSensitive"
     static let searchClose: LocalizedStringKey = "search.close"
+
+    static func searchTruncatedTotal(shown: Int, max: Int) -> String {
+        String(localized: "search.truncatedTotal \(shown) \(max)")
+    }
+    static func searchTruncatedPerFile(_ max: Int) -> String {
+        String(localized: "search.truncatedPerFile \(max)")
+    }
     static let menuFind: LocalizedStringKey = "menu.find"
     static let menuFindAndReplace: LocalizedStringKey = "menu.findAndReplace"
     static let menuFindNext: LocalizedStringKey = "menu.findNext"

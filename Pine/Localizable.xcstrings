@@ -6835,6 +6835,126 @@
         }
       }
     },
+    "search.truncatedPerFile %lld" : {
+      "comment" : "Footer shown when per-file search results are truncated. %lld is the per-file cap.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pro Datei auf %lld Treffer begrenzt — verfeinern Sie die Suche"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Per-file results limited to %lld matches — refine your query"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Resultados por archivo limitados a %lld coincidencias — refine su búsqueda"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Résultats par fichier limités à %lld correspondances — affinez votre recherche"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ファイルあたりの結果は %lld 件まで制限されています — 検索を絞り込んでください"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "파일당 결과가 %lld개로 제한되었습니다 — 검색어를 구체화하세요"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Resultados por arquivo limitados a %lld correspondências — refine sua busca"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Результатов на файл: не более %lld — уточните запрос"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "每个文件的结果限制为 %lld 个匹配 — 请优化搜索条件"
+          }
+        }
+      }
+    },
+    "search.truncatedTotal %lld %lld" : {
+      "comment" : "Footer shown when total search results are truncated. First %lld is shown count, second %lld is the cap.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Zeige %1$lld von %2$lld Treffern — verfeinern Sie die Suche"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Showing %1$lld of %2$lld matches — refine your query"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mostrando %1$lld de %2$lld coincidencias — refine su búsqueda"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Affichage de %1$lld sur %2$lld correspondances — affinez votre recherche"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$lld / %2$lld 件を表示中 — 検索を絞り込んでください"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%2$lld개 중 %1$lld개 표시 중 — 검색어를 구체화하세요"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mostrando %1$lld de %2$lld correspondências — refine sua busca"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Показано %1$lld из %2$lld совпадений — уточните запрос"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "显示 %2$lld 个匹配中的 %1$lld 个 — 请优化搜索条件"
+          }
+        }
+      }
+    },
     "search.initialDescription" : {
       "comment" : "Description text shown on the initial search screen before any query is entered.",
       "extractionState" : "manual",

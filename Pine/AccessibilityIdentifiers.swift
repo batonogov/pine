@@ -80,6 +80,7 @@ nonisolated enum AccessibilityID {
     static let projectSearchResultsList = "projectSearchResultsList"
     static let searchEmptyState = "searchEmptyState"
     static let searchInitialState = "searchInitialState"
+    static let searchTruncationFooter = "searchTruncationFooter"
 
     // MARK: - Quick Open
     static let quickOpenOverlay = "quickOpenOverlay"

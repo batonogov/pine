@@ -27,6 +27,25 @@ struct SearchFileGroup: Identifiable, Sendable {
     let matches: [SearchMatch]
 }
 
+/// A search match paired with its owning file URL, for keyboard navigation.
+struct FlatSearchMatch: Hashable, Sendable {
+    let fileURL: URL
+    let match: SearchMatch
+}
+
+/// Pure functions for search result keyboard selection, extracted for testability.
+enum SearchSelectionLogic {
+    /// Computes the next selection index with wrapping at bounds.
+    /// Returns nil if total is 0. When nothing is selected (current is nil),
+    /// returns 0 to select the first item regardless of delta direction.
+    static func nextIndex(current: Int?, delta: Int, total: Int) -> Int? {
+        guard total > 0 else { return nil }
+        guard let start = current else { return 0 }
+        // Double-modulo to handle negative results from Swift's % operator
+        return ((start + delta) % total + total) % total
+    }
+}
+
 // MARK: - Search Provider
 
 @MainActor
@@ -38,13 +57,17 @@ final class ProjectSearchProvider {
     private(set) var isSearching: Bool = false
     private(set) var results: [SearchFileGroup] = []
     private(set) var totalMatchCount: Int = 0
+    /// True when the most recent search hit the total match cap.
+    private(set) var isTotalCapped: Bool = false
+    /// True when the most recent search hit the per-file match cap in any file.
+    private(set) var isPerFileCapped: Bool = false
 
     /// Maximum file size to search (1 MB).
     nonisolated static let maxFileSize = FileSizeConstants.oneMB
     /// Maximum total matches before stopping.
     nonisolated static let maxResults = 1_000
     /// Maximum matches per file in parallel search to avoid unbounded memory use.
-    nonisolated private static let maxResultsPerFile = 100
+    nonisolated static let maxResultsPerFile = 100
     /// Debounce interval for search.
     nonisolated static let debounceInterval: Duration = .seconds(UITimings.Debounce.projectSearch)
 
@@ -57,6 +80,8 @@ final class ProjectSearchProvider {
         guard !currentQuery.isEmpty else {
             results = []
             totalMatchCount = 0
+            isTotalCapped = false
+            isPerFileCapped = false
             isSearching = false
             return
         }
@@ -79,6 +104,8 @@ final class ProjectSearchProvider {
             await MainActor.run {
                 self.results = fileGroups
                 self.totalMatchCount = fileGroups.reduce(0) { $0 + $1.matches.count }
+                self.isTotalCapped = Self.detectTotalCap(matchCount: self.totalMatchCount)
+                self.isPerFileCapped = Self.detectPerFileCap(in: fileGroups)
                 self.isSearching = false
             }
         }
@@ -87,6 +114,34 @@ final class ProjectSearchProvider {
     func cancel() {
         searchTask?.cancel()
         isSearching = false
+    }
+
+    // MARK: - Flattened matches
+
+    /// Flattens grouped results into a single ordered list for keyboard navigation.
+    var flattenedMatches: [FlatSearchMatch] {
+        Self.flatten(results)
+    }
+
+    /// Static helper for flattening groups — exposed for testing.
+    nonisolated static func flatten(_ groups: [SearchFileGroup]) -> [FlatSearchMatch] {
+        groups.flatMap { group in
+            group.matches.map { FlatSearchMatch(fileURL: group.url, match: $0) }
+        }
+    }
+
+    // MARK: - Truncation detection
+
+    /// Returns true when the total match count reached ``maxResults``, indicating
+    /// that additional matches may exist beyond the returned results.
+    nonisolated static func detectTotalCap(matchCount: Int) -> Bool {
+        matchCount >= maxResults
+    }
+
+    /// Returns true when any file group contains exactly ``maxResultsPerFile`` matches,
+    /// indicating that the per-file cap was hit for at least one file.
+    nonisolated static func detectPerFileCap(in groups: [SearchFileGroup]) -> Bool {
+        groups.contains { $0.matches.count >= maxResultsPerFile }
     }
 
     // MARK: - Search logic
