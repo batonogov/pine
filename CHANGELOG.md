@@ -1,5 +1,29 @@
 # Changelog
 
+## [1.28.0](https://github.com/batonogov/pine/compare/v1.27.2...v1.28.0) (2026-06-17)
+
+
+### Features
+
+* **git:** add branch switch command ([#977](https://github.com/batonogov/pine/issues/977)) ([65ab725](https://github.com/batonogov/pine/commit/65ab725f21f00dd2a19ca295d56e0d63d6409620))
+* **terminal:** make file:line references clickable in terminal output ([#949](https://github.com/batonogov/pine/issues/949)) ([#983](https://github.com/batonogov/pine/issues/983)) ([7be53ba](https://github.com/batonogov/pine/commit/7be53bafa198509840a58c4f052d85b618100f13))
+
+
+### Bug Fixes
+
+* **keyboard:** make global shortcuts independent of keyboard layout ([#981](https://github.com/batonogov/pine/issues/981)) ([94b7e53](https://github.com/batonogov/pine/commit/94b7e537ab949df97809b4aeab81980268e514ab))
+* **terminal:** confirm before stopping foreground processes ([#970](https://github.com/batonogov/pine/issues/970)) ([#982](https://github.com/batonogov/pine/issues/982)) ([a66f89e](https://github.com/batonogov/pine/commit/a66f89e26bc89426bffbe817c8afdb876f8504a0))
+
+
+### Code Refactoring
+
+* **tabs:** split TabManager.swift (900 LOC) into focused modules ([#961](https://github.com/batonogov/pine/issues/961)) ([76cbea3](https://github.com/batonogov/pine/commit/76cbea3e519d302cf2c358e35cbdf2cbcccff39a))
+
+
+### Documentation
+
+* correct branch protection rules (no up-to-date gate, no merge queue) ([#987](https://github.com/batonogov/pine/issues/987)) ([8c724b0](https://github.com/batonogov/pine/commit/8c724b0db61efc58c0cb4e9628691237dad25f5f))
+
 ## [1.27.2](https://github.com/batonogov/pine/compare/v1.27.1...v1.27.2) (2026-06-11)
 
 
