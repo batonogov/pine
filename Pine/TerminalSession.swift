@@ -585,21 +585,20 @@ class TerminalContainerView: NSView {
             if term.isCurrentBufferAlternate {
                 // Alternate screen (k9s, htop, vim, etc.) without mouse reporting —
                 // convert scroll to arrow keys like Ghostty/WezTerm/iTerm2.
-                // Accumulate trackpad deltas and emit 1 arrow key per threshold.
-                let arrowKey: String = scrollDelta > 0 ? "\u{1b}OA" : "\u{1b}OB"
-                if event.hasPreciseScrollingDeltas {
-                    self.accumulatedScrollDelta += scrollDelta
-                    // Reset accumulator on gesture start
-                    if event.phase == .began {
-                        self.accumulatedScrollDelta = scrollDelta
-                    }
-                    let threshold: CGFloat = 25
-                    if abs(self.accumulatedScrollDelta) >= threshold {
-                        term.sendResponse(text: arrowKey)
-                        self.accumulatedScrollDelta = 0
-                    }
-                } else {
-                    // Mouse wheel: 1 arrow key per tick
+                // Reuse the shared `normalScrollLines` helper so the arrow-key
+                // cadence matches normal-mode scrollback (1 arrow per
+                // `trackpadLineThreshold` = 10 points) and residual delta is
+                // preserved via `remainingDelta` (no lost overshoot).
+                let arrowKey = MouseScrollForwarder.arrowKeyForScroll(deltaY: scrollDelta)
+                let result = MouseScrollForwarder.normalScrollLines(
+                    accumulatedDelta: self.accumulatedScrollDelta,
+                    newDelta: scrollDelta,
+                    isPrecise: event.hasPreciseScrollingDeltas,
+                    phaseBegan: event.phase == .began
+                )
+                self.accumulatedScrollDelta = result.remainingDelta
+                let arrowCount = MouseScrollForwarder.arrowKeyCount(for: result)
+                for _ in 0..<arrowCount {
                     term.sendResponse(text: arrowKey)
                 }
                 return nil

@@ -96,6 +96,23 @@ enum MouseScrollForwarder {
         deltaY > 0 ? "\u{1b}OA" : "\u{1b}OB"
     }
 
+    /// Returns the number of arrow keys the alternate-screen scroll path should
+    /// emit for a given `NormalScrollResult`.
+    ///
+    /// The alternate-screen path (TUI apps without mouse reporting: vim/less/man,
+    /// k9s without mouse) emits one application cursor sequence
+    /// (`ESC O A`/`ESC O B`) per scrollback line, so this forwards `result.lines`.
+    /// Centralizing the mapping keeps the integration between
+    /// `normalScrollLines` and the arrow-key emitter unit-testable without a
+    /// live terminal, and documents that the arrow cadence intentionally
+    /// matches normal-mode scrollback.
+    ///
+    /// - Parameter result: The result of `normalScrollLines` for the scroll event.
+    /// - Returns: Number of arrow key sequences to emit.
+    static func arrowKeyCount(for result: NormalScrollResult) -> Int {
+        result.lines
+    }
+
     /// Computes scroll velocity (number of events to send) based on scroll delta magnitude.
     ///
     /// - Parameter delta: Absolute scroll delta value.

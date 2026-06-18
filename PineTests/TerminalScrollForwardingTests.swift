@@ -651,4 +651,98 @@ struct TerminalScrollForwardingTests {
         #expect(r3.lines == 1)
         #expect(r3.remainingDelta == 1)
     }
+
+    // MARK: - Alternate-screen arrow-key emission (#979)
+
+    // The alternate-screen scroll path (TUI apps without mouse reporting:
+    // vim/less/man, k9s without mouse) feeds `normalScrollLines` into an
+    // arrow-key emitter: one `ESC O A`/`ESC O B` sequence per resulting line.
+    // These tests verify that integration — the cadence matches normal-mode
+    // scrollback (1 arrow per `trackpadLineThreshold` = 10 points) and residual
+    // delta is preserved.
+
+    @Test func alternateScreenArrowTrackpadBelowThresholdEmitsNothing() {
+        // Precise delta < 10 → 0 arrows, remaining carried forward
+        let result = MouseScrollForwarder.normalScrollLines(
+            accumulatedDelta: 0, newDelta: 5, isPrecise: true, phaseBegan: false
+        )
+        let arrowCount = MouseScrollForwarder.arrowKeyCount(for: result)
+        #expect(arrowCount == 0)
+        #expect(result.remainingDelta == 5) // carried forward, not discarded
+    }
+
+    @Test func alternateScreenArrowTrackpadAccumulatedTo25EmitsTwoArrows() {
+        // Precise delta = 25 → 2 arrows (25/10 = 2), remaining = 5
+        let result = MouseScrollForwarder.normalScrollLines(
+            accumulatedDelta: 0, newDelta: 25, isPrecise: true, phaseBegan: false
+        )
+        let arrowCount = MouseScrollForwarder.arrowKeyCount(for: result)
+        #expect(arrowCount == 2)
+        #expect(result.remainingDelta == 5) // overshoot preserved
+    }
+
+    @Test func alternateScreenArrowPhaseBeganResetsAccumulation() {
+        // .began phase resets accumulation; previously accumulated 999 is
+        // discarded instead of being added to the new delta.
+        let result = MouseScrollForwarder.normalScrollLines(
+            accumulatedDelta: 999, newDelta: 5, isPrecise: true, phaseBegan: true
+        )
+        let arrowCount = MouseScrollForwarder.arrowKeyCount(for: result)
+        #expect(arrowCount == 0)
+        #expect(result.remainingDelta == 5) // not 1004 — accumulation was reset
+    }
+
+    @Test func alternateScreenArrowMouseWheelEmitsOneToThreeArrows() {
+        // Non-precise mouse wheel: 1..3 arrows scaled by delta magnitude.
+        // This is an intentional behavior change from the previous code, which
+        // always emitted exactly 1 arrow per tick — see PR body for rationale.
+        let small = MouseScrollForwarder.normalScrollLines(
+            accumulatedDelta: 0, newDelta: 1, isPrecise: false, phaseBegan: false
+        )
+        #expect(MouseScrollForwarder.arrowKeyCount(for: small) >= 1)
+        #expect(small.remainingDelta == 0)
+
+        let medium = MouseScrollForwarder.normalScrollLines(
+            accumulatedDelta: 0, newDelta: 2, isPrecise: false, phaseBegan: false
+        )
+        #expect(MouseScrollForwarder.arrowKeyCount(for: medium) == 2)
+
+        let large = MouseScrollForwarder.normalScrollLines(
+            accumulatedDelta: 0, newDelta: 15, isPrecise: false, phaseBegan: false
+        )
+        #expect(MouseScrollForwarder.arrowKeyCount(for: large) == 3) // capped at 3
+    }
+
+    @Test func alternateScreenArrowDirectionDeterminesSequence() {
+        // Direction determines ESC O A (up) vs ESC O B (down); count is symmetric.
+        let up = MouseScrollForwarder.normalScrollLines(
+            accumulatedDelta: 0, newDelta: 25, isPrecise: true, phaseBegan: false
+        )
+        let down = MouseScrollForwarder.normalScrollLines(
+            accumulatedDelta: 0, newDelta: -25, isPrecise: true, phaseBegan: false
+        )
+        #expect(MouseScrollForwarder.arrowKeyCount(for: up) == 2)
+        #expect(MouseScrollForwarder.arrowKeyCount(for: down) == 2)
+        #expect(MouseScrollForwarder.arrowKeyForScroll(deltaY: 25) == "\u{1b}OA")
+        #expect(MouseScrollForwarder.arrowKeyForScroll(deltaY: -25) == "\u{1b}OB")
+    }
+
+    @Test func alternateScreenArrowResidualCarriedAcrossEvents() {
+        // Demonstrates residual preservation across events — the central fix.
+        // Event 1: delta 12 → emit 1 arrow, remaining 2.
+        // Event 2: delta 8 → accumulated 10 → emit 1 arrow, remaining 0.
+        // With the old code (threshold 25, reset to 0), neither event would
+        // have emitted any arrow key.
+        let r1 = MouseScrollForwarder.normalScrollLines(
+            accumulatedDelta: 0, newDelta: 12, isPrecise: true, phaseBegan: false
+        )
+        #expect(MouseScrollForwarder.arrowKeyCount(for: r1) == 1)
+        #expect(r1.remainingDelta == 2)
+
+        let r2 = MouseScrollForwarder.normalScrollLines(
+            accumulatedDelta: r1.remainingDelta, newDelta: 8, isPrecise: true, phaseBegan: false
+        )
+        #expect(MouseScrollForwarder.arrowKeyCount(for: r2) == 1)
+        #expect(r2.remainingDelta == 0)
+    }
 }
