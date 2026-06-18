@@ -421,7 +421,7 @@ struct TerminalScrollForwardingTests {
     }
 
     @Test func mouseReportingPreciseCarriesRemainderAcrossEvents() {
-        // Three events of delta 7 each: 7 → 14 → 21
+        // Three events of delta 7 each: 7 → 14 → 11
         // 7/10=0 (rem 7), 14/10=1 (rem 4), 11/10=1 (rem 1)
         let r1 = MouseScrollForwarder.mouseReportingScrollEvents(
             accumulatedDelta: 0, newDelta: 7, isPrecise: true, phaseBegan: false
@@ -467,6 +467,39 @@ struct TerminalScrollForwardingTests {
         )
         #expect(result.events == 2)
         #expect(result.remainingDelta == 5)
+    }
+
+    // MARK: - Sign-flip mid-gesture (mouse reporting)
+
+    @Test func mouseReportingPreciseSubThresholdSignFlipFoldsResidual() {
+        // Direction reversal while a sub-threshold residual is pending: the
+        // old +8 residual folds into the new-direction accumulation. This
+        // matches `normalScrollLines` by design — the residual is not reset
+        // mid-gesture, it carries into the new direction.
+        // accumulated = 8 + (-15) = -7, |−7|/10 = 0 crossings, rem −7.
+        let result = MouseScrollForwarder.mouseReportingScrollEvents(
+            accumulatedDelta: 8,
+            newDelta: -15,
+            isPrecise: true,
+            phaseBegan: false
+        )
+        #expect(result.events == 0)
+        #expect(result.remainingDelta == -7)
+    }
+
+    @Test func mouseReportingPreciseCrossingSignFlipEmitsInNewDirection() {
+        // Direction reversal with enough magnitude to cross the threshold in
+        // the new direction: one event is emitted, and the residual is carried.
+        // accumulated = 8 + (-25) = -17, |−17|/10 = 1 crossing,
+        // consumed = 1*10 = 10, rem = -17 - 10*(-1) = -7.
+        let result = MouseScrollForwarder.mouseReportingScrollEvents(
+            accumulatedDelta: 8,
+            newDelta: -25,
+            isPrecise: true,
+            phaseBegan: false
+        )
+        #expect(result.events == 1)
+        #expect(result.remainingDelta == -7)
     }
 
     @Test func mouseReportingMouseWheelAlwaysOneEvent() {
