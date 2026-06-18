@@ -559,7 +559,16 @@ class TerminalContainerView: NSView {
 
             // Use scrollingDeltaY for trackpad (precise), deltaY for mouse wheel
             let scrollDelta = event.hasPreciseScrollingDeltas ? event.scrollingDeltaY : event.deltaY
-            guard scrollDelta != 0 else { return event }
+            // Trackpad gesture/momentum phase boundaries (.began / .ended)
+            // frequently carry a zero scrolling delta but still must reach the
+            // per-branch logic: .began resets the active accumulator and .ended
+            // flushes residual delta so the final partial line is committed
+            // rather than dropped. Non-phase events with zero delta (e.g. inert
+            // ticks) are ignored as before. Momentum phase lives in
+            // `momentumPhase` (not `phase`), so both are consulted.
+            let phaseBegan = event.phase == .began || event.momentumPhase == .began
+            let phaseEnded = event.phase == .ended || event.momentumPhase == .ended
+            guard scrollDelta != 0 || phaseBegan || phaseEnded else { return event }
 
             let term = terminalView.getTerminal()
 
@@ -586,7 +595,7 @@ class TerminalContainerView: NSView {
                     accumulatedDelta: self.mouseReportingAccumulatedDelta,
                     newDelta: scrollDelta,
                     isPrecise: event.hasPreciseScrollingDeltas,
-                    phaseBegan: event.phase == .began
+                    phaseBegan: phaseBegan
                 )
                 self.mouseReportingAccumulatedDelta = velocity.remainingDelta
                 // Forward exactly one VT100 mouse-button event per accumulated
@@ -601,6 +610,33 @@ class TerminalContainerView: NSView {
                         pixelX: Int(locationInTerminal.x),
                         pixelY: Int(locationInTerminal.y)
                     )
+                }
+                // On gesture/momentum end, flush residual delta above the settle
+                // threshold so the final partial threshold crossing is committed
+                // instead of being silently dropped (Ghostty/iTerm2 behavior).
+                if phaseEnded {
+                    let residual = self.mouseReportingAccumulatedDelta
+                    let flushCount = MouseScrollForwarder.flushResidual(accumulatedDelta: residual)
+                    self.mouseReportingAccumulatedDelta = 0
+                    if flushCount > 0 {
+                        // Direction comes from the residual sign, not scrollDelta,
+                        // because .ended markers often carry a zero delta.
+                        let flushButtonFlags = MouseScrollForwarder.encodeScrollButton(
+                            deltaY: residual,
+                            shift: modifiers.contains(.shift),
+                            option: modifiers.contains(.option),
+                            control: modifiers.contains(.control)
+                        )
+                        for _ in 0..<flushCount {
+                            term.sendEvent(
+                                buttonFlags: flushButtonFlags,
+                                x: pos.col,
+                                y: pos.row,
+                                pixelX: Int(locationInTerminal.x),
+                                pixelY: Int(locationInTerminal.y)
+                            )
+                        }
+                    }
                 }
                 return nil
             }
@@ -617,12 +653,28 @@ class TerminalContainerView: NSView {
                     accumulatedDelta: self.accumulatedScrollDelta,
                     newDelta: scrollDelta,
                     isPrecise: event.hasPreciseScrollingDeltas,
-                    phaseBegan: event.phase == .began
+                    phaseBegan: phaseBegan
                 )
                 self.accumulatedScrollDelta = result.remainingDelta
                 let arrowCount = MouseScrollForwarder.arrowKeyCount(for: result)
                 for _ in 0..<arrowCount {
                     term.sendResponse(text: arrowKey)
+                }
+                // On gesture/momentum end, flush residual delta above the settle
+                // threshold so the final partial line is committed instead of
+                // being silently dropped (Ghostty/iTerm2 behavior).
+                if phaseEnded {
+                    let residual = self.accumulatedScrollDelta
+                    let flushCount = MouseScrollForwarder.flushResidual(accumulatedDelta: residual)
+                    self.accumulatedScrollDelta = 0
+                    if flushCount > 0 {
+                        // Direction comes from the residual sign, not scrollDelta,
+                        // because .ended markers often carry a zero delta.
+                        let flushKey = MouseScrollForwarder.arrowKeyForScroll(deltaY: residual)
+                        for _ in 0..<flushCount {
+                            term.sendResponse(text: flushKey)
+                        }
+                    }
                 }
                 return nil
             }
@@ -633,7 +685,7 @@ class TerminalContainerView: NSView {
                 accumulatedDelta: self.accumulatedScrollDelta,
                 newDelta: scrollDelta,
                 isPrecise: event.hasPreciseScrollingDeltas,
-                phaseBegan: event.phase == .began
+                phaseBegan: phaseBegan
             )
             self.accumulatedScrollDelta = result.remainingDelta
             if result.lines > 0 {
@@ -641,6 +693,23 @@ class TerminalContainerView: NSView {
                     terminalView.scrollUp(lines: result.lines)
                 } else {
                     terminalView.scrollDown(lines: result.lines)
+                }
+            }
+            // On gesture/momentum end, flush residual delta above the settle
+            // threshold so the final partial line is committed instead of
+            // being silently dropped (Ghostty/iTerm2 behavior).
+            if phaseEnded {
+                let residual = self.accumulatedScrollDelta
+                let flushCount = MouseScrollForwarder.flushResidual(accumulatedDelta: residual)
+                self.accumulatedScrollDelta = 0
+                if flushCount > 0 {
+                    // Direction comes from the residual sign, not scrollDelta,
+                    // because .ended markers often carry a zero delta.
+                    if residual > 0 {
+                        terminalView.scrollUp(lines: flushCount)
+                    } else {
+                        terminalView.scrollDown(lines: flushCount)
+                    }
                 }
             }
             return nil

@@ -121,12 +121,44 @@ enum MouseScrollForwarder {
     /// Points of trackpad delta that correspond to one line of scrollback.
     static let trackpadLineThreshold: CGFloat = 10
 
+    /// Minimum residual trackpad delta (points) that still commits a final
+    /// line when a scroll gesture ends. Half the per-line `trackpadLineThreshold`
+    /// so the last partial line is not lost, while sub-threshold noise is
+    /// dropped to avoid a stray 1-line twitch.
+    static let gestureEndSettleThreshold: CGFloat = trackpadLineThreshold / 2
+
     /// Result of a normal-mode scroll calculation.
     struct NormalScrollResult {
         /// Number of scrollback lines to scroll.
         let lines: Int
         /// Remaining accumulated delta after consuming whole lines.
         let remainingDelta: CGFloat
+    }
+
+    /// Returns how many whole lines of residual delta to commit when a scroll
+    /// gesture ends (trackpad phase `.ended`, including the final momentum
+    /// `.ended`), so a partial line above the settle threshold is not silently
+    /// dropped.
+    ///
+    /// Both `normalScrollLines` and `mouseReportingScrollEvents` always consume
+    /// whole `trackpadLineThreshold` multiples during the gesture, so the
+    /// residual reaching `.ended` is strictly below one full threshold.
+    /// Therefore this returns `0` or `1`: commit the single final partial line
+    /// when the residual meets `gestureEndSettleThreshold` (half a line), or
+    /// drop it to avoid a stray twitch. This matches the Ghostty/iTerm2 gesture
+    /// model where `.ended` flushes the residual so the buffer lands exactly
+    /// where the fingers stopped.
+    ///
+    /// - Parameters:
+    ///   - accumulatedDelta: The residual delta carried by the active branch.
+    ///   - settleThreshold: Minimum residual magnitude that still emits. Defaults
+    ///     to `gestureEndSettleThreshold` (`trackpadLineThreshold / 2`).
+    /// - Returns: `1` when the residual should commit its final line, else `0`.
+    static func flushResidual(
+        accumulatedDelta: CGFloat,
+        settleThreshold: CGFloat = gestureEndSettleThreshold
+    ) -> Int {
+        abs(accumulatedDelta) >= settleThreshold ? 1 : 0
     }
 
     /// Calculates controlled scroll lines for normal-mode terminal scrollback.
