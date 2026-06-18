@@ -883,4 +883,165 @@ struct TerminalScrollForwardingTests {
         #expect(MouseScrollForwarder.arrowKeyCount(for: r2) == 1)
         #expect(r2.remainingDelta == 0)
     }
+
+    // MARK: - Gesture phase boundary flush (#980)
+
+    // On trackpad gesture end (phase `.ended`, including the final momentum
+    // `.ended`), residual delta above the settle threshold
+    // (`gestureEndSettleThreshold` = `trackpadLineThreshold / 2` = 5) is flushed
+    // so the final partial line is committed instead of being silently dropped.
+    // Residual below the settle threshold is dropped to avoid a stray twitch.
+    // Because the per-event helpers always consume whole thresholds during the
+    // gesture, the residual reaching `.ended` is below one full threshold, so
+    // `flushResidual` returns 0 or 1.
+
+    @Test func flushResidualAboveSettleThresholdCommitsOneLine() {
+        // Residual 8 (>= settle 5) → commit the final partial line.
+        #expect(MouseScrollForwarder.flushResidual(accumulatedDelta: 8) == 1)
+        // Exactly at the settle boundary.
+        #expect(MouseScrollForwarder.flushResidual(accumulatedDelta: 5) == 1)
+        // Negative residual scrolls down and still commits.
+        #expect(MouseScrollForwarder.flushResidual(accumulatedDelta: -8) == 1)
+    }
+
+    @Test func flushResidualBelowSettleThresholdDropsNothing() {
+        // Residual 3 (< settle 5) → dropped to avoid a stray 1-line twitch.
+        #expect(MouseScrollForwarder.flushResidual(accumulatedDelta: 3) == 0)
+        // Just under the boundary.
+        #expect(MouseScrollForwarder.flushResidual(accumulatedDelta: 4.9) == 0)
+        // Zero residual → nothing to flush.
+        #expect(MouseScrollForwarder.flushResidual(accumulatedDelta: 0) == 0)
+        // Small negative residual → also dropped.
+        #expect(MouseScrollForwarder.flushResidual(accumulatedDelta: -2) == 0)
+    }
+
+    @Test func flushResidualCustomSettleThreshold() {
+        // A custom settle threshold changes the gate but still returns 0/1 for
+        // sub-threshold residuals.
+        #expect(MouseScrollForwarder.flushResidual(accumulatedDelta: 4, settleThreshold: 4) == 1)
+        #expect(MouseScrollForwarder.flushResidual(accumulatedDelta: 3.9, settleThreshold: 4) == 0)
+    }
+
+    // The following tests simulate full synthetic gesture sequences — threading
+    // residual delta through the per-event helpers, then flushing on `.ended` —
+    // exactly as `TerminalContainerView.installScrollMonitor` does at runtime.
+
+    @Test func gestureEndFlushCommitsFinalPartialLine() {
+        // Sequence: .began(delta 8) → 0 lines, residual 8. Then .ended carries
+        // delta 0: normalScrollLines keeps residual 8, then flushResidual(8)
+        // commits the final partial line. The last line the user intended is
+        // not lost.
+        let began = MouseScrollForwarder.normalScrollLines(
+            accumulatedDelta: 0, newDelta: 8, isPrecise: true, phaseBegan: true
+        )
+        #expect(began.lines == 0)
+        #expect(began.remainingDelta == 8)
+
+        let ended = MouseScrollForwarder.normalScrollLines(
+            accumulatedDelta: began.remainingDelta, newDelta: 0, isPrecise: true, phaseBegan: false
+        )
+        #expect(ended.lines == 0)
+        #expect(ended.remainingDelta == 8)
+
+        let flushCount = MouseScrollForwarder.flushResidual(accumulatedDelta: ended.remainingDelta)
+        #expect(flushCount == 1)
+    }
+
+    @Test func gestureEndWithTinyResidualEmitsNothing() {
+        // Sequence: .began(delta 3) → 0 lines, residual 3. .ended → residual
+        // still 3, below settle threshold → no spurious emit (no twitch).
+        let began = MouseScrollForwarder.normalScrollLines(
+            accumulatedDelta: 0, newDelta: 3, isPrecise: true, phaseBegan: true
+        )
+        let ended = MouseScrollForwarder.normalScrollLines(
+            accumulatedDelta: began.remainingDelta, newDelta: 0, isPrecise: true, phaseBegan: false
+        )
+        let flushCount = MouseScrollForwarder.flushResidual(accumulatedDelta: ended.remainingDelta)
+        #expect(flushCount == 0)
+    }
+
+    @Test func mouseReportingGestureEndFlushCommitsFinalEvent() {
+        // Mouse-reporting path: .began(delta 8) → 0 events, residual 8. .ended
+        // → flushResidual(8) commits one final VT100 mouse-button event.
+        let began = MouseScrollForwarder.mouseReportingScrollEvents(
+            accumulatedDelta: 0, newDelta: 8, isPrecise: true, phaseBegan: true
+        )
+        #expect(began.events == 0)
+        #expect(began.remainingDelta == 8)
+
+        let flushCount = MouseScrollForwarder.flushResidual(accumulatedDelta: began.remainingDelta)
+        #expect(flushCount == 1)
+    }
+
+    @Test func momentumContinuesUnderSamePerLineThreshold() {
+        // After the main gesture `.ended` flushes and resets the accumulator to
+        // 0, momentum `.changed` events accumulate under the SAME per-line
+        // threshold (no cap, no multiply). Then the momentum `.ended` flushes
+        // its own residual.
+        //
+        // Main gesture: .began(8) → residual 8, flush → 1 line, reset to 0.
+        let began = MouseScrollForwarder.normalScrollLines(
+            accumulatedDelta: 0, newDelta: 8, isPrecise: true, phaseBegan: true
+        )
+        let mainFlush = MouseScrollForwarder.flushResidual(accumulatedDelta: began.remainingDelta)
+        #expect(mainFlush == 1)
+        // Accumulator reset to 0 on .ended (runtime does this).
+        var residual: CGFloat = 0
+
+        // Momentum .changed(12) → 1 line (12/10), residual 2 — same threshold.
+        let momentum = MouseScrollForwarder.normalScrollLines(
+            accumulatedDelta: residual, newDelta: 12, isPrecise: true, phaseBegan: false
+        )
+        #expect(momentum.lines == 1)
+        #expect(momentum.remainingDelta == 2)
+        residual = momentum.remainingDelta
+
+        // Momentum .ended → residual 2 below settle → no flush.
+        let momentumFlush = MouseScrollForwarder.flushResidual(accumulatedDelta: residual)
+        #expect(momentumFlush == 0)
+    }
+
+    @Test func beganResetsStaleAccumulatorFromPreviousGesture() {
+        // A previous gesture leaves a stale residual of 7. A new gesture starts
+        // with .began(delta 4): phaseBegan discards the stale 7 and seeds 4,
+        // so no phantom jump carries over from the old gesture.
+        let staleResidual: CGFloat = 7
+        let newBegan = MouseScrollForwarder.normalScrollLines(
+            accumulatedDelta: staleResidual, newDelta: 4, isPrecise: true, phaseBegan: true
+        )
+        #expect(newBegan.lines == 0)
+        #expect(newBegan.remainingDelta == 4) // not 11 — stale residual discarded
+    }
+
+    @Test func fullGestureSequenceAccumulatesThenFlushes() {
+        // End-to-end: .began(7) → .changed(7) → .ended, simulating a flick.
+        // .began(7): reset, residual 7, 0 lines.
+        let r0 = MouseScrollForwarder.normalScrollLines(
+            accumulatedDelta: 0, newDelta: 7, isPrecise: true, phaseBegan: true
+        )
+        #expect(r0.lines == 0)
+        #expect(r0.remainingDelta == 7)
+        // .changed(7): accumulated 14 → 1 line, residual 4.
+        let r1 = MouseScrollForwarder.normalScrollLines(
+            accumulatedDelta: r0.remainingDelta, newDelta: 7, isPrecise: true, phaseBegan: false
+        )
+        #expect(r1.lines == 1)
+        #expect(r1.remainingDelta == 4)
+        // .ended: residual 4 < settle 5 → no flush. Final tally: 1 line.
+        let flush = MouseScrollForwarder.flushResidual(accumulatedDelta: r1.remainingDelta)
+        #expect(flush == 0)
+
+        // Contrast: .began(7) → .changed(8) → .ended leaves residual 5.
+        let s0 = MouseScrollForwarder.normalScrollLines(
+            accumulatedDelta: 0, newDelta: 7, isPrecise: true, phaseBegan: true
+        )
+        let s1 = MouseScrollForwarder.normalScrollLines(
+            accumulatedDelta: s0.remainingDelta, newDelta: 8, isPrecise: true, phaseBegan: false
+        )
+        #expect(s1.lines == 1)
+        #expect(s1.remainingDelta == 5)
+        // .ended: residual 5 >= settle 5 → flush 1 line. Final tally: 2 lines.
+        let flush2 = MouseScrollForwarder.flushResidual(accumulatedDelta: s1.remainingDelta)
+        #expect(flush2 == 1)
+    }
 }
