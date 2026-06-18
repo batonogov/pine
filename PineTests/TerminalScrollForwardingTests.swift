@@ -1044,4 +1044,41 @@ struct TerminalScrollForwardingTests {
         let flush2 = MouseScrollForwarder.flushResidual(accumulatedDelta: s1.remainingDelta)
         #expect(flush2 == 1)
     }
+
+    @Test func gestureEndFlushAfterMultipleChangedEvents() {
+        // Issue #980 requires ".began + several .changed + .ended with residual"
+        // to assert the final flush count. Multiple .changed(3) events accumulate
+        // below the per-line threshold so 0 lines are emitted during the gesture,
+        // and the residual crosses the settle threshold only at .ended.
+        // Math: 3 → 6 → 9, none crosses threshold 10, so 0 per-event lines and
+        // residual 9 at .ended; 9 ≥ 5 settle → flush 1.
+        let r0 = MouseScrollForwarder.normalScrollLines(
+            accumulatedDelta: 0, newDelta: 3, isPrecise: true, phaseBegan: true
+        )
+        #expect(r0.lines == 0)
+        #expect(r0.remainingDelta == 3)
+
+        let r1 = MouseScrollForwarder.normalScrollLines(
+            accumulatedDelta: r0.remainingDelta, newDelta: 3, isPrecise: true, phaseBegan: false
+        )
+        #expect(r1.lines == 0)
+        #expect(r1.remainingDelta == 6)
+
+        let r2 = MouseScrollForwarder.normalScrollLines(
+            accumulatedDelta: r1.remainingDelta, newDelta: 3, isPrecise: true, phaseBegan: false
+        )
+        #expect(r2.lines == 0)
+        #expect(r2.remainingDelta == 9)
+
+        // .ended carries delta 0: residual stays 9, no per-event line.
+        let rEnd = MouseScrollForwarder.normalScrollLines(
+            accumulatedDelta: r2.remainingDelta, newDelta: 0, isPrecise: true, phaseBegan: false
+        )
+        #expect(rEnd.lines == 0)
+        #expect(rEnd.remainingDelta == 9)
+
+        // .ended flush: residual 9 ≥ settle 5 → commit the final partial line.
+        let flushCount = MouseScrollForwarder.flushResidual(accumulatedDelta: rEnd.remainingDelta)
+        #expect(flushCount == 1)
+    }
 }
