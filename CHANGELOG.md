@@ -1,5 +1,20 @@
 # Changelog
 
+## [1.28.1](https://github.com/batonogov/pine/compare/v1.28.0...v1.28.1) (2026-06-18)
+
+
+### Bug Fixes
+
+* **terminal:** accumulate residual delta for alternate-screen arrow-key scroll ([#991](https://github.com/batonogov/pine/issues/991)) ([508bb1f](https://github.com/batonogov/pine/commit/508bb1f356083906f4e32a5b42a4ed2499b4cd95))
+* **terminal:** flush residual delta on scroll gesture phase boundaries ([#992](https://github.com/batonogov/pine/issues/992)) ([53020ec](https://github.com/batonogov/pine/commit/53020ecd3eeffb98c2d254b1deb40c93ef7aaede))
+* **terminal:** pixel-precise mouse forwarding for TUI scroll ([#989](https://github.com/batonogov/pine/issues/989)) ([9c1d8d2](https://github.com/batonogov/pine/commit/9c1d8d2e816d07aaeb7541a5b5994e1358a8d0a8))
+
+
+### Documentation
+
+* document milestone-driven subagent orchestration workflow ([#993](https://github.com/batonogov/pine/issues/993)) ([50f7885](https://github.com/batonogov/pine/commit/50f7885af8114b40a9aa781fa479c6403885b489))
+* move CLAUDE.md to AGENTS.md and document maintainer workflow ([#988](https://github.com/batonogov/pine/issues/988)) ([0e358c8](https://github.com/batonogov/pine/commit/0e358c8dc46c3ebaec100a62234a328824054e81))
+
 ## [1.28.0](https://github.com/batonogov/pine/compare/v1.27.2...v1.28.0) (2026-06-17)
 
 
