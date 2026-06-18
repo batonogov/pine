@@ -145,8 +145,6 @@ struct TerminalScrollForwardingTests {
 
     // NOTE: Non-flipped coordinate tests are in the "Grid position edge cases (#551)" section below.
 
-    // NOTE: Velocity threshold tests are in the "Scroll velocity threshold tests (#551)" section below.
-
     // MARK: - TerminalContainerView scroll forwarding integration
 
     @Test func containerViewIsFlipped() {
@@ -214,20 +212,7 @@ struct TerminalScrollForwardingTests {
         #expect(key == "\u{1b}OB")
     }
 
-    // MARK: - Scroll velocity edge cases
-
-    @Test func scrollVelocityForNegativeDelta() {
-        let velocity = MouseScrollForwarder.scrollVelocity(delta: -3.0)
-        #expect(velocity == 3)
-    }
-
-    @Test func scrollVelocityForNegativeLargeDelta() {
-        let velocity = MouseScrollForwarder.scrollVelocity(delta: -10.0)
-        #expect(velocity == 3)
-    }
-
-    // NOTE: Scroll velocity boundary and grid position edge case tests
-    // are in the "#551" sections below — duplicates removed.
+    // MARK: - Arrow key zero-delta
 
     @Test func arrowKeyForScrollZeroDelta() {
         // Zero delta defaults to scroll down (ESC O B) since 0 > 0 is false
@@ -337,59 +322,245 @@ struct TerminalScrollForwardingTests {
         #expect(flags == 73)
     }
 
-    // MARK: - Scroll velocity threshold tests (#551)
+    // MARK: - Mouse-reporting scroll forwarding (#978)
+    //
+    // When a TUI app enables mouse reporting (mouseMode != .off), scroll
+    // events are forwarded as VT100 mouse-button-4/5 events. The helper
+    // emits exactly one event per `trackpadLineThreshold` of accumulated
+    // trackpad motion (not a burst), and exactly one event per mouse-wheel
+    // tick. The former `scrollVelocity` 1–3 burst helper was removed in
+    // favor of this accumulator; see issue #978.
 
-    @Test func scrollVelocityAtExactThresholdOne() {
-        // delta exactly 1.0 → absDelta is 1.0, not > 1 → velocity = 1
-        let v = MouseScrollForwarder.scrollVelocity(delta: 1.0)
-        #expect(v == 1)
+    @Test func mouseReportingPreciseDeltaBelowThresholdEmitsNothing() {
+        // A single precise (trackpad) delta below the threshold produces no
+        // events and carries the full delta forward into the accumulator.
+        let result = MouseScrollForwarder.mouseReportingScrollEvents(
+            accumulatedDelta: 0,
+            newDelta: 5,
+            isPrecise: true,
+            phaseBegan: false
+        )
+        #expect(result.events == 0)
+        #expect(result.remainingDelta == 5)
     }
 
-    @Test func scrollVelocityJustAboveThresholdOne() {
-        // delta 1.01 → absDelta > 1 → velocity = Int(min(1.01, 3)) = 1
-        let v = MouseScrollForwarder.scrollVelocity(delta: 1.01)
-        #expect(v == 1)
+    @Test func mouseReportingPreciseDeltaExactlyAtThresholdEmitsOne() {
+        // Exactly one threshold worth of motion → exactly one event.
+        let result = MouseScrollForwarder.mouseReportingScrollEvents(
+            accumulatedDelta: 0,
+            newDelta: MouseScrollForwarder.trackpadLineThreshold,
+            isPrecise: true,
+            phaseBegan: false
+        )
+        #expect(result.events == 1)
+        #expect(result.remainingDelta == 0)
     }
 
-    @Test func scrollVelocityAtExactThresholdFive() {
-        // delta exactly 5.0 → absDelta is 5.0, which is > 1 but not > 5 → velocity = Int(min(5.0, 3)) = 3
-        let v = MouseScrollForwarder.scrollVelocity(delta: 5.0)
-        #expect(v == 3)
+    @Test func mouseReportingPreciseDeltaMultipleCrossingsEmitsOnePerCrossing() {
+        // delta 25 at threshold 10 → 2 crossings (2 events), remainder 5.
+        // This is the key difference from the old `scrollVelocity` burst:
+        // each crossing is exactly one wheel click in the TUI's view, so a
+        // flick scrolls two lines, not a 3× burst × something.
+        let result = MouseScrollForwarder.mouseReportingScrollEvents(
+            accumulatedDelta: 0,
+            newDelta: 25,
+            isPrecise: true,
+            phaseBegan: false
+        )
+        #expect(result.events == 2)
+        #expect(result.remainingDelta == 5)
     }
 
-    @Test func scrollVelocityJustAboveThresholdFive() {
-        // delta 5.01 → absDelta > 5 → velocity = 3
-        let v = MouseScrollForwarder.scrollVelocity(delta: 5.01)
-        #expect(v == 3)
+    @Test func mouseReportingPreciseAccumulatesAcrossEvents() {
+        // First event: delta 6 (below threshold) → 0 events, remaining 6.
+        let r1 = MouseScrollForwarder.mouseReportingScrollEvents(
+            accumulatedDelta: 0,
+            newDelta: 6,
+            isPrecise: true,
+            phaseBegan: false
+        )
+        #expect(r1.events == 0)
+        #expect(r1.remainingDelta == 6)
+
+        // Second event: delta 6, accumulated = 12 → 1 crossing, remaining 2.
+        let r2 = MouseScrollForwarder.mouseReportingScrollEvents(
+            accumulatedDelta: r1.remainingDelta,
+            newDelta: 6,
+            isPrecise: true,
+            phaseBegan: false
+        )
+        #expect(r2.events == 1)
+        #expect(r2.remainingDelta == 2)
     }
 
-    @Test func scrollVelocityWithNegativeDelta() {
-        // Negative deltas should use abs() and produce same velocities
-        #expect(MouseScrollForwarder.scrollVelocity(delta: -1.0) == 1)
-        #expect(MouseScrollForwarder.scrollVelocity(delta: -3.0) == 3)
-        #expect(MouseScrollForwarder.scrollVelocity(delta: -7.0) == 3)
+    @Test func mouseReportingPreciseNegativeDeltaEmitsPerCrossing() {
+        // Scrolling down accumulates negative deltas; 25 points → 2 events,
+        // remainder -5. The sign of the remaining delta is preserved.
+        let result = MouseScrollForwarder.mouseReportingScrollEvents(
+            accumulatedDelta: 0,
+            newDelta: -25,
+            isPrecise: true,
+            phaseBegan: false
+        )
+        #expect(result.events == 2)
+        #expect(result.remainingDelta == -5)
     }
 
-    @Test func scrollVelocityForMediumValues() {
-        // delta 2.0 → absDelta > 1, not > 5 → Int(min(2.0, 3)) = 2
-        #expect(MouseScrollForwarder.scrollVelocity(delta: 2.0) == 2)
-        // delta 2.5 → Int(min(2.5, 3)) = 2
-        #expect(MouseScrollForwarder.scrollVelocity(delta: 2.5) == 2)
+    @Test func mouseReportingPreciseLargeMomentumDelta() {
+        // A large trackpad-momentum delta of 150 → 15 crossings (15 single
+        // events), no remainder. Previously this would have been clamped to a
+        // 3-event burst regardless of magnitude.
+        let result = MouseScrollForwarder.mouseReportingScrollEvents(
+            accumulatedDelta: 0,
+            newDelta: 150,
+            isPrecise: true,
+            phaseBegan: false
+        )
+        #expect(result.events == 15)
+        #expect(result.remainingDelta == 0)
     }
 
-    @Test func scrollVelocityNeverExceedsThree() {
-        // Even with extremely large deltas, velocity should cap at 3
-        let v = MouseScrollForwarder.scrollVelocity(delta: 1000.0)
-        #expect(v == 3)
-        let vNeg = MouseScrollForwarder.scrollVelocity(delta: -1000.0)
-        #expect(vNeg == 3)
+    @Test func mouseReportingPreciseCarriesRemainderAcrossEvents() {
+        // Three events of delta 7 each: 7 → 14 → 11
+        // 7/10=0 (rem 7), 14/10=1 (rem 4), 11/10=1 (rem 1)
+        let r1 = MouseScrollForwarder.mouseReportingScrollEvents(
+            accumulatedDelta: 0, newDelta: 7, isPrecise: true, phaseBegan: false
+        )
+        #expect(r1.events == 0)
+        #expect(r1.remainingDelta == 7)
+
+        let r2 = MouseScrollForwarder.mouseReportingScrollEvents(
+            accumulatedDelta: r1.remainingDelta, newDelta: 7, isPrecise: true, phaseBegan: false
+        )
+        #expect(r2.events == 1)
+        #expect(r2.remainingDelta == 4)
+
+        let r3 = MouseScrollForwarder.mouseReportingScrollEvents(
+            accumulatedDelta: r2.remainingDelta, newDelta: 7, isPrecise: true, phaseBegan: false
+        )
+        #expect(r3.events == 1)
+        #expect(r3.remainingDelta == 1)
     }
 
-    @Test func scrollVelocityIsAlwaysAtLeastOne() {
-        // Even for tiny deltas, velocity should be at least 1
-        #expect(MouseScrollForwarder.scrollVelocity(delta: 0.001) >= 1)
-        #expect(MouseScrollForwarder.scrollVelocity(delta: -0.001) >= 1)
-        #expect(MouseScrollForwarder.scrollVelocity(delta: 0.0) >= 1)
+    @Test func mouseReportingPhaseBeganResetsAccumulation() {
+        // A residual of 999 must be discarded when a new gesture begins; the
+        // new gesture's first delta (5, below threshold) becomes the seed.
+        let result = MouseScrollForwarder.mouseReportingScrollEvents(
+            accumulatedDelta: 999,
+            newDelta: 5,
+            isPrecise: true,
+            phaseBegan: true
+        )
+        #expect(result.events == 0)
+        #expect(result.remainingDelta == 5)
+    }
+
+    @Test func mouseReportingPhaseBeganWithLargeDeltaEmitsImmediately() {
+        // If the very first event of a gesture is large enough to cross the
+        // threshold, events are emitted right away (phaseBegan seeds then
+        // consumes in one step).
+        let result = MouseScrollForwarder.mouseReportingScrollEvents(
+            accumulatedDelta: 999,
+            newDelta: 25,
+            isPrecise: true,
+            phaseBegan: true
+        )
+        #expect(result.events == 2)
+        #expect(result.remainingDelta == 5)
+    }
+
+    // MARK: - Sign-flip mid-gesture (mouse reporting)
+
+    @Test func mouseReportingPreciseSubThresholdSignFlipFoldsResidual() {
+        // Direction reversal while a sub-threshold residual is pending: the
+        // old +8 residual folds into the new-direction accumulation. This
+        // matches `normalScrollLines` by design — the residual is not reset
+        // mid-gesture, it carries into the new direction.
+        // accumulated = 8 + (-15) = -7, |−7|/10 = 0 crossings, rem −7.
+        let result = MouseScrollForwarder.mouseReportingScrollEvents(
+            accumulatedDelta: 8,
+            newDelta: -15,
+            isPrecise: true,
+            phaseBegan: false
+        )
+        #expect(result.events == 0)
+        #expect(result.remainingDelta == -7)
+    }
+
+    @Test func mouseReportingPreciseCrossingSignFlipEmitsInNewDirection() {
+        // Direction reversal with enough magnitude to cross the threshold in
+        // the new direction: one event is emitted, and the residual is carried.
+        // accumulated = 8 + (-25) = -17, |−17|/10 = 1 crossing,
+        // consumed = 1*10 = 10, rem = -17 - 10*(-1) = -7.
+        let result = MouseScrollForwarder.mouseReportingScrollEvents(
+            accumulatedDelta: 8,
+            newDelta: -25,
+            isPrecise: true,
+            phaseBegan: false
+        )
+        #expect(result.events == 1)
+        #expect(result.remainingDelta == -7)
+    }
+
+    @Test func mouseReportingMouseWheelAlwaysOneEvent() {
+        // Non-precise (physical mouse wheel) input always produces exactly one
+        // event regardless of magnitude — a wheel tick is a single discrete
+        // click, and there is no accumulation between ticks.
+        let small = MouseScrollForwarder.mouseReportingScrollEvents(
+            accumulatedDelta: 0, newDelta: 1, isPrecise: false, phaseBegan: false
+        )
+        #expect(small.events == 1)
+        #expect(small.remainingDelta == 0)
+
+        let medium = MouseScrollForwarder.mouseReportingScrollEvents(
+            accumulatedDelta: 0, newDelta: 2, isPrecise: false, phaseBegan: false
+        )
+        #expect(medium.events == 1)
+        #expect(medium.remainingDelta == 0)
+
+        let large = MouseScrollForwarder.mouseReportingScrollEvents(
+            accumulatedDelta: 0, newDelta: 15, isPrecise: false, phaseBegan: false
+        )
+        #expect(large.events == 1)
+        #expect(large.remainingDelta == 0)
+    }
+
+    @Test func mouseReportingMouseWheelIgnoresAccumulatedDelta() {
+        // Mouse wheel never accumulates — a leftover trackpad residual must
+        // not turn a single wheel tick into multiple events.
+        let result = MouseScrollForwarder.mouseReportingScrollEvents(
+            accumulatedDelta: 500,
+            newDelta: 1,
+            isPrecise: false,
+            phaseBegan: false
+        )
+        #expect(result.events == 1)
+        #expect(result.remainingDelta == 0)
+    }
+
+    @Test func mouseReportingMouseWheelNegativeDeltaOneEvent() {
+        // Scrolling down with a mouse wheel is also a single event.
+        let result = MouseScrollForwarder.mouseReportingScrollEvents(
+            accumulatedDelta: 0,
+            newDelta: -3,
+            isPrecise: false,
+            phaseBegan: false
+        )
+        #expect(result.events == 1)
+        #expect(result.remainingDelta == 0)
+    }
+
+    @Test func mouseReportingMouseWheelIgnoresPhaseBegan() {
+        // phaseBegan only matters for the precise accumulator; a mouse wheel
+        // tick at gesture start is still one event with no remainder.
+        let result = MouseScrollForwarder.mouseReportingScrollEvents(
+            accumulatedDelta: 0,
+            newDelta: 1,
+            isPrecise: false,
+            phaseBegan: true
+        )
+        #expect(result.events == 1)
+        #expect(result.remainingDelta == 0)
     }
 
     // MARK: - Grid position edge cases (#551)

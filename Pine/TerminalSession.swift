@@ -451,6 +451,13 @@ class TerminalContainerView: NSView {
     private let scrollInterceptor = TerminalScrollInterceptor()
     private var scrollMonitor: Any?
     private var accumulatedScrollDelta: CGFloat = 0
+    /// Dedicated accumulator for the mouse-reporting branch of
+    /// `installScrollMonitor` (the `term.mouseMode != .off` path). Kept
+    /// separate from `accumulatedScrollDelta` — which is shared by the
+    /// alternate-screen and normal-mode branches — so this change stays
+    /// cleanly mergeable with the sibling PR for issue #979 that reworks
+    /// the alternate-screen branch.
+    private var mouseReportingAccumulatedDelta: CGFloat = 0
     /// Notification observer that re-renders the active terminal when the
     /// host window regains key focus. After a long Cmd+Tab into another app
     /// AppKit may discard the layer's backing store; without this observer
@@ -575,9 +582,25 @@ class TerminalContainerView: NSView {
                     isFlipped: terminalView.isFlipped
                 )
 
-                let velocity = MouseScrollForwarder.scrollVelocity(delta: scrollDelta)
-                for _ in 0..<velocity {
-                    term.sendEvent(buttonFlags: buttonFlags, x: pos.col, y: pos.row)
+                let velocity = MouseScrollForwarder.mouseReportingScrollEvents(
+                    accumulatedDelta: self.mouseReportingAccumulatedDelta,
+                    newDelta: scrollDelta,
+                    isPrecise: event.hasPreciseScrollingDeltas,
+                    phaseBegan: event.phase == .began
+                )
+                self.mouseReportingAccumulatedDelta = velocity.remainingDelta
+                // Forward exactly one VT100 mouse-button event per accumulated
+                // threshold crossing (trackpad) or one per tick (mouse wheel),
+                // using the SwiftTerm pixel overload so SGR-pixel-capable TUIs
+                // (mode 1016) can do sub-row scrolling.
+                for _ in 0..<velocity.events {
+                    term.sendEvent(
+                        buttonFlags: buttonFlags,
+                        x: pos.col,
+                        y: pos.row,
+                        pixelX: Int(locationInTerminal.x),
+                        pixelY: Int(locationInTerminal.y)
+                    )
                 }
                 return nil
             }
