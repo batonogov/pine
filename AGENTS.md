@@ -1,6 +1,6 @@
-# CLAUDE.md
+# AGENTS.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+Guidance for AI coding agents (Claude Code, pi, and others) working in this repository.
 
 ## Project Overview
 
@@ -188,3 +188,53 @@ When creating issues, always:
 - Add appropriate labels from the repo's label set (e.g. `enhancement`, `bug`, `editor`, `UX`, `priority: high/medium/low`, etc.)
 - Use a clear, concise title
 - Include **Summary**, **Motivation**, and **Implementation ideas** sections in the body
+- **Always assign the issue to a milestone.** Work is milestone-driven: pick the next task from the current milestone, prioritizing by the `priority:` labels. No milestone = no work.
+
+## Workflow
+
+How the maintainer works day-to-day. Documents intent and handoff conventions for contributors and AI agents.
+
+### Prioritization
+- Work is driven by **milestones**. The next task is picked from the active milestone, prioritized by labels (`priority: high` first).
+- An issue is filed **before or alongside** implementation and always assigned to a milestone (see `## GitHub Issues`).
+
+### Branches & PRs
+- **One task = one short-lived branch**, named by type with no issue number: `feat/terminal-scroll`, `fix/gutter-bug`.
+- No long-lived feature branches. Nothing is committed directly to `main`.
+- PRs are **squash-merged** into `main` (one commit per PR).
+- The PR description states **when the branch is ready to merge** — do not merge before that.
+
+### Local development loop
+- Code is edited **inside Pine itself**, or via AI agents in the terminal.
+- Fast feedback loop: **single-file typecheck** (`swiftc -typecheck`, see `## Build & Run`) — not a full build on every change.
+- A full `xcodebuild build` is run **before opening a PR**.
+- Run locally: `swiftlint` + the unit tests in `PineTests` that cover the touched area.
+- **UI tests (`PineUITests`, 7 shards) run only on CI** — almost never locally.
+
+### Working with AI agents
+- Typical handoff: **"реши issue #N"** (solve issue #N) — the agent reads the issue **and all its comments** in full, then plans, implements, writes tests, and opens a PR.
+- Agents may freely, without asking: edit code, run single-file typecheck, run unit tests, create branches, open PRs.
+- **Explicit confirmation required** for: merging a PR, and anything in the destructive-command list in `AGENTS.md` (deletions, force-pushes, infrastructure changes).
+- Agents should run unit tests themselves — no need to ask first.
+
+### Milestone orchestration with subagents
+
+For a milestone with multiple issues, the maintainer (or a parent agent) orchestrates implementation across subagents instead of doing all the work in one session. Used for parallelizable issues, large features, or when strict adversarial review is wanted. The full loop runs inside the agent; the human only merges at the end.
+
+Flow:
+1. **Scope first.** Read every issue in the milestone end-to-end, identify shared files, and note dependencies (`blocked-by`, or an explicit "depends on #X" in the body). Order implementation and merge accordingly.
+2. **One issue = one worker = one PR.** Delegate each issue to a worker subagent in an isolated worktree (`worktree: true`). Each worker creates its own branch and opens its own PR against `main`. Pass each worker explicit permissions in the task (which `git` / `gh` / `xcodebuild` commands are allowed) and an `acceptance` contract with `verify` commands and `stopRules` (notably: never merge, never force-push, never amend).
+3. **Respect cross-issue boundaries.** Tell each worker exactly which files/branches it may touch so sibling PRs stay mergeable (e.g. add a dedicated accumulator field per branch instead of repurposing a shared one). When an issue depends on siblings not yet merged, the dependent worker merges those sibling branches into its own branch and documents it in the PR body — GitHub auto-shrinks the diff once the siblings land.
+4. **Strict review from fresh context.** Once PRs are open, run fresh-context `reviewer` subagents with distinct angles (e.g. correctness/regressions, tests/validation) against the actual diff. Reviewers are read-only — they must not edit.
+5. **Fix on the existing branch.** Synthesize reviewer findings and hand them to a fix-worker that checks out the **existing** PR branch and adds a follow-up commit. Never amend, force-push, or open a new branch for fixes. Repeat the review/fix loop until reviewers return a clean verdict (typically ~2 rounds).
+6. **Verify before handoff.** Confirm every PR is `MERGEABLE`, CI is green (or explicitly note which checks are still pending), and state the merge order.
+7. **Never merge.** The agent opens and reviews PRs; only the human merges them.
+
+Operational notes:
+- Worktree isolation requires a clean main tree — remove stray artifacts (e.g. a `reviews/` folder written by reviewers) before launching new worktree runs.
+- "needs attention" control signals from a finished run are stale noise; trust `gh pr checks` / `gh pr view` as ground truth.
+- Acceptance-gate / parse-report errors in the subagent harness do not mean the work failed — check the PR and CI; the code usually landed.
+
+### Releases
+- **No fixed cadence** — release when ready, by merging the Release Please PR.
+- Manual work before tagging is kept to a minimum; Release Please handles `version.txt` and `CHANGELOG.md` automatically (see `## Release & CI`).

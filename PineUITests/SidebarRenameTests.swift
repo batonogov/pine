@@ -36,7 +36,7 @@ final class SidebarRenameTests: PineUITestCase {
     /// `.onKeyPress(.return)` handler, which wires up the Finder-style
     /// Enter-to-rename shortcut in `SidebarView`, does not receive XCUITest
     /// synthetic key events on macOS 26 — the same class of flake documented
-    /// for `NSEvent.addLocalMonitorForEvents` in `CLAUDE.md`. Using the
+    /// for `NSEvent.addLocalMonitorForEvents` in `AGENTS.md`. Using the
     /// context-menu trigger keeps the rest of the rename flow under real
     /// end-to-end coverage (inline editor appears, typing, commit path,
     /// file-system effects) while sidestepping the synthetic-event race on
@@ -239,7 +239,7 @@ final class SidebarRenameTests: PineUITestCase {
     /// The Enter-trigger path lives in `SidebarView`'s `.onKeyPress(.return)`
     /// handler, which under XCUITest on macOS 26 does not reliably receive
     /// synthetic key events (same class of flake as the Cmd+W local event
-    /// monitor documented in `CLAUDE.md`). When the trigger fails to fire,
+    /// monitor documented in `AGENTS.md`). When the trigger fails to fire,
     /// we `XCTSkip` rather than fail — the commit path itself is covered
     /// end-to-end by the tests above, and the `startRename` logic is
     /// covered by unit tests on `SidebarEditState`.
