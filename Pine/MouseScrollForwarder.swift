@@ -96,21 +96,6 @@ enum MouseScrollForwarder {
         deltaY > 0 ? "\u{1b}OA" : "\u{1b}OB"
     }
 
-    /// Computes scroll velocity (number of events to send) based on scroll delta magnitude.
-    ///
-    /// - Parameter delta: Absolute scroll delta value.
-    /// - Returns: Number of scroll events to send (1–3).
-    static func scrollVelocity(delta: CGFloat) -> Int {
-        let absDelta = abs(delta)
-        if absDelta > 5 {
-            return 3
-        }
-        if absDelta > 1 {
-            return Int(min(absDelta, 3))
-        }
-        return 1
-    }
-
     /// Points of trackpad delta that correspond to one line of scrollback.
     static let trackpadLineThreshold: CGFloat = 10
 
@@ -152,6 +137,75 @@ enum MouseScrollForwarder {
         } else {
             let lines = min(max(Int(abs(newDelta)), 1), 3)
             return NormalScrollResult(lines: lines, remainingDelta: 0)
+        }
+    }
+
+    // MARK: - Mouse-reporting scroll forwarding
+
+    /// Result of a mouse-reporting scroll calculation.
+    ///
+    /// `events` is the number of VT100 mouse-button events to forward to the
+    /// TUI app (each one represents a single wheel click in the TUI's view).
+    /// `remainingDelta` is the residual trackpad delta carried into the next
+    /// scroll event so sub-threshold motion is not lost.
+    struct MouseReportingScrollResult {
+        /// Number of VT100 mouse-button events to send.
+        let events: Int
+        /// Remaining accumulated delta after consuming whole thresholds.
+        let remainingDelta: CGFloat
+    }
+
+    /// Calculates how many VT100 mouse-button events to forward to a TUI app
+    /// that has mouse reporting enabled (vim `set mouse=a`, lazygit, htop,
+    /// k9s, etc.).
+    ///
+    /// This mirrors `normalScrollLines`'s trackpad accumulator pattern
+    /// (accumulate precise deltas, consume whole `trackpadLineThreshold`
+    /// multiples, preserve the remainder, reset on `phaseBegan`) but differs
+    /// in two important ways:
+    ///
+    /// 1. **Each threshold crossing emits exactly one event, not `n`.**
+    ///    TUI apps treat every VT100 mouse-button-4/5 event as a discrete
+    ///    wheel click, so emitting `n` per `n × threshold` of motion produces
+    ///    `n`-line jumps. Forwarding one event per threshold crossing lets the
+    ///    TUI pace itself to the actual gesture (Ghostty/WezTerm/iTerm2
+    ///    behavior).
+    ///
+    /// 2. **Non-precise (mouse wheel) input always returns exactly one event**
+    ///    with no accumulation. A physical mouse wheel tick is already a
+    ///    single discrete click; scaling it to 1–3 (as `normalScrollLines`
+    ///    does for scrollback) would again cause multi-line jumps in the TUI.
+    ///
+    /// - Parameters:
+    ///   - accumulatedDelta: Previously accumulated trackpad delta (ignored
+    ///     for non-precise input and on `phaseBegan`).
+    ///   - newDelta: The current event's scroll delta.
+    ///   - isPrecise: Whether the event comes from a trackpad
+    ///     (`hasPreciseScrollingDeltas`).
+    ///   - phaseBegan: Whether the gesture phase is `.began` (resets
+    ///     accumulation).
+    /// - Returns: The number of events to forward and the remaining delta.
+    static func mouseReportingScrollEvents(
+        accumulatedDelta: CGFloat,
+        newDelta: CGFloat,
+        isPrecise: Bool,
+        phaseBegan: Bool
+    ) -> MouseReportingScrollResult {
+        if isPrecise {
+            let accumulated = phaseBegan ? newDelta : accumulatedDelta + newDelta
+            let crossings = Int(abs(accumulated) / trackpadLineThreshold)
+            if crossings > 0 {
+                // One event per threshold crossing — the TUI sees one wheel
+                // click per `trackpadLineThreshold` of motion, not a burst.
+                let consumed = CGFloat(crossings) * trackpadLineThreshold
+                let remaining = accumulated - consumed * (accumulated > 0 ? 1 : -1)
+                return MouseReportingScrollResult(events: crossings, remainingDelta: remaining)
+            }
+            return MouseReportingScrollResult(events: 0, remainingDelta: accumulated)
+        } else {
+            // Physical mouse wheel: one discrete click → one event, no scaling,
+            // no accumulation (consistent with how TUIs expect wheel input).
+            return MouseReportingScrollResult(events: 1, remainingDelta: 0)
         }
     }
 }
