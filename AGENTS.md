@@ -1,6 +1,6 @@
-# CLAUDE.md
+# AGENTS.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+Guidance for AI coding agents (Claude Code, pi, and others) working in this repository.
 
 ## Project Overview
 
@@ -188,3 +188,35 @@ When creating issues, always:
 - Add appropriate labels from the repo's label set (e.g. `enhancement`, `bug`, `editor`, `UX`, `priority: high/medium/low`, etc.)
 - Use a clear, concise title
 - Include **Summary**, **Motivation**, and **Implementation ideas** sections in the body
+- **Always assign the issue to a milestone.** Work is milestone-driven: pick the next task from the current milestone, prioritizing by the `priority:` labels. No milestone = no work.
+
+## Workflow
+
+How the maintainer works day-to-day. Documents intent and handoff conventions for contributors and AI agents.
+
+### Prioritization
+- Work is driven by **milestones**. The next task is picked from the active milestone, prioritized by labels (`priority: high` first).
+- An issue is filed **before or alongside** implementation and always assigned to a milestone (see `## GitHub Issues`).
+
+### Branches & PRs
+- **One task = one short-lived branch**, named by type with no issue number: `feat/terminal-scroll`, `fix/gutter-bug`.
+- No long-lived feature branches. Nothing is committed directly to `main`.
+- PRs are **squash-merged** into `main` (one commit per PR).
+- The PR description states **when the branch is ready to merge** — do not merge before that.
+
+### Local development loop
+- Code is edited **inside Pine itself**, or via AI agents in the terminal.
+- Fast feedback loop: **single-file typecheck** (`swiftc -typecheck`, see `## Build & Run`) — not a full build on every change.
+- A full `xcodebuild build` is run **before opening a PR**.
+- Run locally: `swiftlint` + the unit tests in `PineTests` that cover the touched area.
+- **UI tests (`PineUITests`, 7 shards) run only on CI** — almost never locally.
+
+### Working with AI agents
+- Typical handoff: **"реши issue #N"** (solve issue #N) — the agent reads the issue **and all its comments** in full, then plans, implements, writes tests, and opens a PR.
+- Agents may freely, without asking: edit code, run single-file typecheck, run unit tests, create branches, open PRs.
+- **Explicit confirmation required** for: merging a PR, and anything in the destructive-command list in `AGENTS.md` (deletions, force-pushes, infrastructure changes).
+- Agents should run unit tests themselves — no need to ask first.
+
+### Releases
+- **No fixed cadence** — release when ready, by merging the Release Please PR.
+- Manual work before tagging is kept to a minimum; Release Please handles `version.txt` and `CHANGELOG.md` automatically (see `## Release & CI`).
