@@ -18,6 +18,14 @@ on:
         type: boolean
         default: true
 
+# Cancel superseded runs on PRs to reclaim ~27 min of macOS-26 runner time
+# per push. Main-branch pushes and manual dispatches use a dedicated group
+# with `cancel-in-progress: false` so required main-branch runs are never
+# cancelled mid-run (they queue instead). See issue #999.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
 permissions:
   contents: read
   pull-requests: write
@@ -483,7 +491,7 @@ jobs:
           fi
           echo "All $(echo "$ACTUAL" | wc -l | tr -d ' ') UI test classes are sharded."
 
-  # UI test shards — 7 parallel jobs, 23-28 tests each (delta ±3).
+  # UI test shards — 7 parallel jobs, 24-27 tests each (delta ±3).
   # To rebalance: count tests per class, redistribute so shards stay within ±3 tests.
   # List classes with: grep -r "func test" PineUITests/ | sed 's/:.*//' | sort | uniq -c | sort -rn
   ui-tests:
@@ -494,11 +502,10 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # Shard 1 — Terminal (28 tests)
+          # Shard 1 — Terminal (26 tests)
           - shard-name: "Terminal"
             test-classes: >-
               -only-testing:PineUITests/TerminalTests
-              -only-testing:PineUITests/SidebarFolderClickTests
               -only-testing:PineUITests/TerminalMenuTests
           # Shard 2 — Welcome & Session (25 tests)
           - shard-name: "Welcome & Session"
@@ -509,12 +516,13 @@ jobs:
               -only-testing:PineUITests/MinimapTests
               -only-testing:PineUITests/DiffNavigationUITests
               -only-testing:PineUITests/SessionRestoreTests
-          # Shard 3 — Navigation (23 tests)
+          # Shard 3 — Navigation (27 tests)
           - shard-name: "Navigation"
             test-classes: >-
               -only-testing:PineUITests/GoToLineTabOverflowExternalChangesUITests
               -only-testing:PineUITests/QuickOpenUITests
               -only-testing:PineUITests/EditorTabNavigationTests
+              -only-testing:PineUITests/SidebarFolderClickTests
           # Shard 4 — Editor Chrome (24 tests)
           - shard-name: "Editor Chrome"
             test-classes: >-
