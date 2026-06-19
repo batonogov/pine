@@ -105,6 +105,22 @@ struct PaneLeafView: View {
                     refreshLineDiffs(tabManager: tabManager)
                     refreshBlame(tabManager: tabManager)
                 }
+                .onChange(of: tabManager.pendingGoToLine) { _, newLine in
+                    // Per-pane go-to handler (issue #971). ContentView and
+                    // SearchResultsView route line-based navigation requests
+                    // through `pendingGoToLine` on the focused pane's
+                    // TabManager; this observer converts the line to an offset
+                    // and feeds it to the local `goToLineOffset` consumed by
+                    // `CodeEditorView`. The previous architecture wrote
+                    // `GoToRequest`s into root `ContentView` state that no
+                    // `PaneLeafView` ever read.
+                    guard let line = newLine,
+                          let tab = tabManager.activeTab else { return }
+                    tabManager.pendingGoToLine = nil
+                    goToLineOffset = GoToRequest(
+                        offset: ContentView.cursorOffset(forLine: line, in: tab.content)
+                    )
+                }
                 .onChange(of: tabManager.activeTab?.contentVersion) { _, _ in
                     // Re-compute diff markers as the user edits. Debounced so
                     // `git diff` does not run on every keystroke (issue #780).

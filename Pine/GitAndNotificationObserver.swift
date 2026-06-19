@@ -31,7 +31,6 @@ struct BlameObserver: ViewModifier {
 /// Handles git status changes, file notifications, and menu command notifications.
 struct GitAndNotificationObserver: ViewModifier {
     @Environment(WorkspaceManager.self) private var workspace
-    @Environment(TabManager.self) private var tabManager
     @Environment(ProjectManager.self) private var projectManager
     @Environment(\.controlActiveState) private var controlActiveState
     @Binding var lineDiffs: [GitLineDiff]
@@ -46,6 +45,12 @@ struct GitAndNotificationObserver: ViewModifier {
     var onHandleExternalChanges: (TabManager.ExternalChangeResult) -> Void
     var onNavigateToChange: (ContentView.ChangeDirection) -> Void
     var onInlineDiffAction: (InlineDiffAction) -> Void
+
+    /// Resolves the focused editor pane's TabManager via `ProjectManager`,
+    /// avoiding the primary-vs-active conflation that issue #998 describes.
+    /// All command/notification handlers below target this instance, never
+    /// the primary TabManager.
+    private var activeTabManager: TabManager { projectManager.activeTabManager }
 
     func body(content: Content) -> some View {
         content
@@ -70,7 +75,7 @@ struct GitAndNotificationObserver: ViewModifier {
             }
             .onReceive(NotificationCenter.default.publisher(for: .closeTab)) { _ in
                 guard controlActiveState == .key,
-                      let tab = tabManager.activeTab else { return }
+                      let tab = activeTabManager.activeTab else { return }
                 onCloseTab(tab)
             }
             .onReceive(NotificationCenter.default.publisher(for: .openFolder)) { _ in
@@ -80,7 +85,10 @@ struct GitAndNotificationObserver: ViewModifier {
             .onReceive(NotificationCenter.default.publisher(for: .fileRenamed)) { notification in
                 guard let oldURL = notification.userInfo?["oldURL"] as? URL,
                       let newURL = notification.userInfo?["newURL"] as? URL else { return }
-                tabManager.handleFileRenamed(oldURL: oldURL, newURL: newURL)
+                // Route through ProjectManager so the rename is reflected in
+                // every pane (the same file can be open in multiple panes),
+                // not just the primary TabManager.
+                projectManager.handleFileRenamed(oldURL: oldURL, newURL: newURL)
                 projectManager.saveSession()
             }
             .onReceive(NotificationCenter.default.publisher(for: .fileDeleted)) { notification in
@@ -139,7 +147,7 @@ struct GitAndNotificationObserver: ViewModifier {
             }
             .onReceive(NotificationCenter.default.publisher(for: .goToLine)) { _ in
                 guard controlActiveState == .key,
-                      tabManager.activeTab != nil else { return }
+                      activeTabManager.activeTab != nil else { return }
                 showGoToLine = true
             }
             .onReceive(NotificationCenter.default.publisher(for: .openFileAtLine)) { notification in
@@ -147,7 +155,9 @@ struct GitAndNotificationObserver: ViewModifier {
                       let line = notification.userInfo?["line"] as? Int else { return }
                 // Column is parsed and passed for future use; the current
                 // navigation infrastructure is line-based (issue #949).
-                tabManager.openTabAndGoToLine(url: url, line: line)
+                // Open into the focused pane so terminal ⌘-click and search
+                // results land in the editor the user is looking at (#971).
+                activeTabManager.openTabAndGoToLine(url: url, line: line)
             }
             .onReceive(NotificationCenter.default.publisher(for: .navigateChange)) { notification in
                 guard controlActiveState == .key,

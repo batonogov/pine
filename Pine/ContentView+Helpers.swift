@@ -29,7 +29,7 @@ extension ContentView {
         var didRestoreTabs = false
 
         // Restore editor tabs only if PM has no tabs (fresh or after restart)
-        if tabManager.tabs.isEmpty {
+        if primaryTabManager.tabs.isEmpty {
             let disabledSet = Set(session.existingHighlightingDisabledPaths ?? [])
             let previewModes = session.existingPreviewModes
             let editorStates = session.existingEditorStates
@@ -59,15 +59,15 @@ extension ContentView {
                 // Single-pane restore (backwards compatible)
                 for url in session.existingFileURLs {
                     let disabled = disabledSet.contains(url.path)
-                    tabManager.openTab(url: url, syntaxHighlightingDisabled: disabled)
+                    primaryTabManager.openTab(url: url, syntaxHighlightingDisabled: disabled)
                 }
-                Self.applyTabState(to: tabManager, previewModes: previewModes,
+                Self.applyTabState(to: primaryTabManager, previewModes: previewModes,
                                    editorStates: editorStates, pinnedPaths: pinnedSet)
             }
 
             if let activeURL = session.activeFileURL,
-               let tab = tabManager.tab(for: activeURL) {
-                tabManager.activeTabID = tab.id
+               let tab = primaryTabManager.tab(for: activeURL) {
+                primaryTabManager.activeTabID = tab.id
             }
 
             // Collapse any restored editor leaves that ended up with no tabs
@@ -150,16 +150,20 @@ extension ContentView {
     }
 
     func recoverTabs() {
+        // Recover into the focused editor pane (issue #971): the user is
+        // looking at the active pane, so recovered tabs should appear there,
+        // not in the possibly-orphaned primary TabManager.
+        let target = activeTabManager
         for (_, entry) in recoveryEntries {
             guard !entry.originalPath.isEmpty else { continue }
 
             let url = URL(fileURLWithPath: entry.originalPath)
-            tabManager.openTab(url: url)
+            target.openTab(url: url)
 
-            if let index = tabManager.tabs.firstIndex(where: { $0.url == url }) {
-                tabManager.tabs[index].content = entry.content
-                tabManager.tabs[index].encoding = entry.encoding
-                tabManager.tabs[index].recomputeContentCaches()
+            if let index = target.tabs.firstIndex(where: { $0.url == url }) {
+                target.tabs[index].content = entry.content
+                target.tabs[index].encoding = entry.encoding
+                target.tabs[index].recomputeContentCaches()
             }
         }
         projectManager.recoveryManager?.deleteAllRecoveryFiles()
@@ -202,7 +206,7 @@ extension ContentView {
 
     /// Syncs sidebar selection to match the active editor tab.
     func syncSidebarSelection() {
-        guard let url = tabManager.activeTab?.url else {
+        guard let url = activeTabManager.activeTab?.url else {
             selectedNode = nil
             return
         }
@@ -243,58 +247,81 @@ extension ContentView {
     /// Used by GitAndNotificationObserver — internal visibility required for cross-struct access.
     enum ChangeDirection { case next, previous }
 
+    /// Navigates to the next/previous git change region in the **active**
+    /// editor pane. Fetches fresh diffs for the active tab so it does not
+    /// depend on root `lineDiffs` state (which is never populated — see
+    /// issue #971: the previous implementation read root state and so never
+    /// moved the cursor). Routes the resulting line through
+    /// `activeTabManager.pendingGoToLine` so the focused `PaneLeafView`
+    /// performs the actual scroll/cursor update.
     func navigateToChange(direction: ChangeDirection) {
-        guard let tab = tabManager.activeTab, !lineDiffs.isEmpty else { return }
-        let currentLine = Self.lineNumber(forOffset: tab.cursorPosition, in: tab.content)
-        let starts = GitLineDiff.changeRegionStarts(lineDiffs)
-        let targetLine: Int?
-        switch direction {
-        case .next:
-            targetLine = GitLineDiff.nextChangeLine(from: currentLine, regionStarts: starts, diffs: lineDiffs)
-        case .previous:
-            targetLine = GitLineDiff.previousChangeLine(from: currentLine, regionStarts: starts, diffs: lineDiffs)
-        }
-        if let line = targetLine {
-            goToLineOffset = GoToRequest(offset: Self.cursorOffset(forLine: line, in: tab.content))
+        guard let tab = activeTabManager.activeTab else { return }
+        let fileURL = tab.url
+        let provider = workspace.gitProvider
+        guard provider.isGitRepository else { return }
+        let activeTM = activeTabManager
+        Task { @MainActor in
+            let diffs = await provider.diffForFileAsync(at: fileURL)
+            guard !diffs.isEmpty,
+                  let currentTab = activeTM.activeTab,
+                  currentTab.url == fileURL else { return }
+            let currentLine = Self.lineNumber(forOffset: currentTab.cursorPosition, in: currentTab.content)
+            let starts = GitLineDiff.changeRegionStarts(diffs)
+            let targetLine: Int?
+            switch direction {
+            case .next:
+                targetLine = GitLineDiff.nextChangeLine(from: currentLine, regionStarts: starts, diffs: diffs)
+            case .previous:
+                targetLine = GitLineDiff.previousChangeLine(from: currentLine, regionStarts: starts, diffs: diffs)
+            }
+            if let line = targetLine {
+                activeTM.pendingGoToLine = line
+            }
         }
     }
 
     // MARK: - Inline diff actions (menu/keyboard)
 
+    /// Handles inline-diff menu/keyboard actions against the **active**
+    /// editor pane (issue #971): accept / revert / accept-all / revert-all
+    /// operate on the focused pane's active tab, never the primary
+    /// TabManager's tab.
     func handleInlineDiffAction(_ action: InlineDiffAction) {
-        guard let tab = tabManager.activeTab,
+        guard let tab = activeTabManager.activeTab,
               let repoURL = workspace.rootURL,
               workspace.gitProvider.isGitRepository else { return }
 
         let fileURL = tab.url
+        let activeTM = activeTabManager
 
         switch action {
         case .accept:
             Task {
                 let hunks = await InlineDiffProvider.fetchHunks(for: fileURL, repoURL: repoURL)
-                let currentLine = Self.lineNumber(forOffset: tab.cursorPosition, in: tab.content)
+                guard let currentTab = activeTM.activeTab,
+                      currentTab.url == fileURL else { return }
+                let currentLine = Self.lineNumber(forOffset: currentTab.cursorPosition, in: currentTab.content)
                 guard let hunk = InlineDiffProvider.hunk(atLine: currentLine, in: hunks) else { return }
                 await InlineDiffProvider.acceptHunk(hunk, fileURL: fileURL, repoURL: repoURL)
                 await workspace.gitProvider.refreshAsync()
-                refreshLineDiffs()
             }
         case .revert:
             Task {
                 let hunks = await InlineDiffProvider.fetchHunks(for: fileURL, repoURL: repoURL)
-                let currentLine = Self.lineNumber(forOffset: tab.cursorPosition, in: tab.content)
+                guard let currentTab = activeTM.activeTab,
+                      currentTab.url == fileURL else { return }
+                let currentLine = Self.lineNumber(forOffset: currentTab.cursorPosition, in: currentTab.content)
                 guard let hunk = InlineDiffProvider.hunk(atLine: currentLine, in: hunks) else { return }
                 if let newContent = await InlineDiffProvider.revertHunk(hunk, fileURL: fileURL, repoURL: repoURL) {
-                    tabManager.updateContent(newContent)
-                    tabManager.reloadTab(url: fileURL)
+                    activeTM.updateContent(newContent)
+                    activeTM.reloadTab(url: fileURL)
                     await workspace.gitProvider.refreshAsync()
-                    refreshLineDiffs()
                 }
             }
         case .acceptAll:
             Task {
                 await InlineDiffProvider.acceptAllHunks(fileURL: fileURL, repoURL: repoURL)
                 await workspace.gitProvider.refreshAsync()
-                refreshLineDiffs()
             }
         case .revertAll:
             Self.confirmRevertAll(fileName: fileURL.lastPathComponent) { confirmed in
@@ -303,10 +330,9 @@ extension ContentView {
                     if let newContent = await InlineDiffProvider.revertAllHunks(
                         fileURL: fileURL, repoURL: repoURL
                     ) {
-                        self.tabManager.updateContent(newContent)
-                        self.tabManager.reloadTab(url: fileURL)
-                        await self.workspace.gitProvider.refreshAsync()
-                        self.refreshLineDiffs()
+                        activeTM.updateContent(newContent)
+                        activeTM.reloadTab(url: fileURL)
+                        await workspace.gitProvider.refreshAsync()
                     }
                 }
             }
@@ -330,19 +356,19 @@ extension ContentView {
 extension ContentView {
 
     func closeOtherTabsWithConfirmation(keeping tabID: UUID) {
-        TabCloseHelper.closeOtherTabs(keeping: tabID, in: tabManager, gitProvider: workspace.gitProvider)
+        TabCloseHelper.closeOtherTabs(keeping: tabID, in: activeTabManager, gitProvider: workspace.gitProvider)
     }
 
     func closeTabsToTheRightWithConfirmation(of tabID: UUID) {
-        TabCloseHelper.closeTabsToTheRight(of: tabID, in: tabManager, gitProvider: workspace.gitProvider)
+        TabCloseHelper.closeTabsToTheRight(of: tabID, in: activeTabManager, gitProvider: workspace.gitProvider)
     }
 
     func closeAllTabsWithConfirmation() {
-        TabCloseHelper.closeAllTabs(in: tabManager, gitProvider: workspace.gitProvider)
+        TabCloseHelper.closeAllTabs(in: activeTabManager, gitProvider: workspace.gitProvider)
     }
 
     func closeTabWithConfirmation(_ tab: EditorTab) {
-        TabCloseHelper.closeTab(tab, in: tabManager, gitProvider: workspace.gitProvider)
+        TabCloseHelper.closeTab(tab, in: activeTabManager, gitProvider: workspace.gitProvider)
     }
 
     func handleExternalChanges(_ result: TabManager.ExternalChangeResult) {

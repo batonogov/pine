@@ -108,6 +108,16 @@ final class ProjectManager {
         }
     }
 
+    /// Updates tab URLs in every editor pane to reflect a renamed file or
+    /// directory, preserving tab identity. The primary ``primaryTabManager``
+    /// alone is not enough — the same file may be open in a split pane, and
+    /// the primary TabManager may be orphaned after pane pruning.
+    func handleFileRenamed(oldURL: URL, newURL: URL) {
+        for tabManager in paneManager.allTabManagers {
+            tabManager.handleFileRenamed(oldURL: oldURL, newURL: newURL)
+        }
+    }
+
     let toastManager = ToastManager()
     // nonisolated(unsafe) allows deinit to call stopPeriodicSnapshots().
     // RecoveryManager is only mutated on @MainActor; deinit is the only
