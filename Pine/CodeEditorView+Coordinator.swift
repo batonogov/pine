@@ -198,8 +198,47 @@ extension CodeEditorView {
             scheduleViewportHighlighting(textView: textView)
         }
 
+        // Cancel all outstanding async syntax-highlighting and debounced
+        // recalculation work so an in-flight `Task` or `DispatchWorkItem`
+        // cannot fire against a now-detached `NSTextView`. The generation
+        // token (`HighlightGeneration`) already discards stale results, but
+        // cancelling at deinit is cheaper and closes the race window
+        // entirely (issue #1007).
+        //
+        // Undo/highlight race window (issue #650 family):
+        // Even with this cancellation, a residual window remains between the
+        // moment a highlight `Task`'s background regex work finishes and the
+        // moment it checks the generation token on the main actor. If an
+        // undo/redo is in flight on the main thread at that exact instant,
+        // the apply path relies on `isUndoRedoInProgress` /
+        // `undoManager.isUndoing` guards (see `scheduleDeferredHighlight`
+        // and `SyntaxHighlightEngine.applyMatches`) rather than on
+        // cancellation. The deinit cancellation shrinks — but does not
+        // eliminate — that window, because the `Task` may already be past
+        // its cancellation point by the time deinit runs. Documented here so
+        // future work does not re-discover it.
         deinit {
             NotificationCenter.default.removeObserver(self)
+            // Coordinator is a UI coordinator owned by SwiftUI's
+            // NSViewRepresentable lifecycle and AppKit delegate roles — it is
+            // always torn down on the main thread, so assuming MainActor
+            // isolation here is safe and lets us cancel the non-Sendable
+            // DispatchWorkItem / Task properties directly.
+            MainActor.assumeIsolated {
+                highlightWorkItem?.cancel()
+                highlightWorkItem = nil
+                scrollHighlightWorkItem?.cancel()
+                scrollHighlightWorkItem = nil
+                foldWorkItem?.cancel()
+                foldWorkItem = nil
+                highlightTask?.cancel()
+                highlightTask = nil
+                // Bump the generation so any async highlight that already
+                // passed its cancellation point discards its result instead
+                // of applying attributes to the coordinator's
+                // soon-to-be-detached text view.
+                highlightGeneration.increment()
+            }
         }
 
         /// Отменяет отложенную подсветку. Вызывается при смене файла
