@@ -58,10 +58,6 @@ final class WorkspaceManager {
         onRootNodesChanged = handler
     }
 
-    /// Tracks the in-flight async git refresh so it can be cancelled
-    /// when a new refresh starts (prevents stale data from overwriting newer results).
-    private var gitRefreshTask: Task<Void, Never>?
-
     /// Tracks the in-flight directory-load task. Cancelled and replaced on
     /// every `loadDirectory` / `refreshFileTreeAsync` call so a slow run
     /// never resumes after a newer one has started.
@@ -402,15 +398,41 @@ final class WorkspaceManager {
     }
 
     /// Reload the file tree from disk (e.g. after creating/renaming/deleting files).
-    /// A shallow tree (depth-limited) is built synchronously for immediate UI feedback;
-    /// the full tree and git status refresh run asynchronously on background queues.
+    ///
+    /// This is the **user-initiated** refresh path — called from sidebar
+    /// actions (rename / create / delete / duplicate in `FileNodeRow` and
+    /// `SidebarEditState`). The shallow `loadTree(maxDepth:)` runs
+    /// **synchronously on the main thread** so `rootNodes` reflects the
+    /// mutation in the same main-thread tick. This is required for the
+    /// inline rename `TextField` in `FileNodeRow` to appear over the
+    /// freshly-created `FileNode`: the field is keyed off
+    /// `editState.renamingURL` matching a `FileNode` that must already be
+    /// in the tree, and XCUITest's `waitForExistence` on that field
+    /// (`InlineRenameAlignmentTests`) relies on the node rendering in the
+    /// same pass.
+    ///
+    /// The full tree (when the shallow pass is depth-limited) and the git
+    /// status refresh run asynchronously off the main thread via the shared
+    /// two-phase loader (`loadDirectoryContentsAsync`), race-safe via
+    /// `loadGeneration`.
+    ///
+    /// External file-system changes take a different entry point —
+    /// `refreshFileTreeAsync()` — which runs the shallow pass off the main
+    /// thread too. That split preserves the #1006 perf win (external
+    /// watcher bursts no longer stutter the sidebar on large monorepos)
+    /// without regressing sidebar inline-rename timing: the synchronous
+    /// shallow cost is paid only for direct user mutations, which are
+    /// infrequent, and not for every external FSEvents burst.
     func refreshFileTree() {
         guard let url = rootURL else { return }
         loadGeneration += 1
         let generation = loadGeneration
         let ignoredPaths = gitProvider.ignoredPaths
 
-        // Phase 1 (sync): shallow tree for immediate feedback
+        // Phase 1 (sync): shallow tree for immediate `rootNodes` feedback.
+        // MUST stay synchronous for sidebar inline-rename timing — the new
+        // FileNode has to be in the tree on the same main-thread tick so
+        // FileNodeRow renders the inline editor over it.
         let shallowResult = FileNode.loadTree(
             url: url, projectRoot: url,
             ignoredPaths: ignoredPaths,
@@ -419,26 +441,14 @@ final class WorkspaceManager {
         rootNodes = shallowResult.root.children ?? []
         notifyRootNodesChanged()
 
-        // Phase 2 (async): full tree only if Phase 1 hit the depth limit.
-        // Pure Swift Concurrency — no GCD bridging — to avoid scheduler
-        // starvation on single-core CI runners (issue #837).
-        if shallowResult.wasDepthLimited {
-            Task.detached(priority: .userInitiated) { [weak self] in
-                let fullChildren = Self.loadTopLevelInParallel(
-                    url: url, ignoredPaths: ignoredPaths
-                )
-                if Task.isCancelled { return }
-                await MainActor.run { [weak self] in
-                    guard let self, self.loadGeneration == generation else { return }
-                    self.rootNodes = fullChildren
-                    self.notifyRootNodesChanged()
-                }
-            }
-        }
-
-        // Cancel any in-flight git refresh to avoid stale data overwriting newer results.
-        gitRefreshTask?.cancel()
-        gitRefreshTask = Task { await gitProvider.refreshAsync() }
+        // Phase 2 (async): full tree (if depth-limited) + git status refresh,
+        // off the main thread. Reuses the shared two-phase loader so race
+        // safety (`loadGeneration`) and git state stay consistent with the
+        // initial load and the external watcher path. The loader repeats
+        // the shallow pass; that is cheap and lands identical data, so
+        // there is no visible flicker, and it carries the git fetch that
+        // the pre-#1006 path used to trigger via a separate `gitRefreshTask`.
+        loadDirectoryContentsAsync(url: url, generation: generation, showProgress: false)
     }
 
     /// Background variant called by the file watcher.

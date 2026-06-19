@@ -144,7 +144,8 @@ struct LayoutStabilityTests {
     // MARK: - Sidebar content transition stability
 
     @Test("WorkspaceManager refreshFileTree does not clear rootNodes")
-    func refreshDoesNotClearNodes() {
+    @MainActor
+    func refreshDoesNotClearNodes() async {
         let workspace = WorkspaceManager()
         let tmpDir = FileManager.default.temporaryDirectory
             .appendingPathComponent("pine-test-\(UUID().uuidString)")
@@ -157,8 +158,14 @@ struct LayoutStabilityTests {
 
         workspace.loadDirectory(url: tmpDir)
 
-        // After loadDirectory, refreshFileTree should not flash the sidebar empty
+        // refreshFileTree is now async (issue #1006): the shallow pass
+        // runs off the main thread and lands on the main actor a few
+        // milliseconds later. Poll until rootNodes is populated.
         workspace.refreshFileTree()
+        for _ in 0..<200 {
+            if !workspace.rootNodes.isEmpty { break }
+            try? await Task.sleep(for: .milliseconds(25))
+        }
         // rootNodes should have content (shallow tree of the directory)
         #expect(!workspace.rootNodes.isEmpty)
     }

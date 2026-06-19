@@ -156,7 +156,15 @@ struct SidebarRefreshTests {
         // so this test exercises WorkspaceManager.refreshFileTree() directly.
         // The watcher → refresh wiring is covered separately by
         // workspaceManagerRefreshesOnWatcherEvent and externalChangeTokenIncrements.
+        //
+        // refreshFileTree is now async (issue #1006) — the shallow pass
+        // runs off the main thread; poll for the new files to land.
         manager.refreshFileTree()
+        for _ in 0..<200 {
+            let names = manager.rootNodes.map(\.name)
+            if names.contains("alpha.swift") && names.contains("beta.swift") { break }
+            try await Task.sleep(for: .milliseconds(25))
+        }
 
         let names = manager.rootNodes.map(\.name)
         #expect(names.contains("alpha.swift"), "alpha.swift should appear in tree")
@@ -191,7 +199,14 @@ struct SidebarRefreshTests {
         // so this test exercises WorkspaceManager.refreshFileTree() directly.
         // The watcher → refresh wiring is covered separately by
         // workspaceManagerRefreshesOnWatcherEvent and externalChangeTokenIncrements.
+        //
+        // refreshFileTree is now async (issue #1006) — the shallow pass
+        // runs off the main thread; poll for the new directory to land.
         manager.refreshFileTree()
+        for _ in 0..<200 {
+            if manager.rootNodes.contains(where: { $0.name == "Sources" }) { break }
+            try await Task.sleep(for: .milliseconds(25))
+        }
 
         let sourcesNode = manager.rootNodes.first { $0.name == "Sources" }
         #expect(sourcesNode != nil, "Sources directory should appear in tree")
