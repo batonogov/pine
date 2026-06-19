@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Pine.tracetemplate — Instruments template descriptor for Pine profiling.
+
+  This property list documents the intended Instruments configuration for
+  profiling Pine's hot paths (scroll latency, highlight passes, file-tree
+  loading, memory pressure on large files). It is a well-formed plist that
+  captures the template metadata and the instruments Pine should be profiled
+  with.
+
+  Instruments templates saved via File > Save As Template store their layout
+  in a binary Template.waxobject, which is not human-writable. This plist is
+  the canonical, version-controlled description of that template. The
+  Perf/README.md shows how to reproduce the working template and how to drive
+  recordings from the command line with `xctrace`.
+-->
+<plist version="1.0">
+<dict>
+    <key>CFBundleName</key>
+    <string>Pine Profiling</string>
+    <key>CFBundleIdentifier</key>
+    <string>io.github.batonogov.pine.profiling-template</string>
+    <key>Creator</key>
+    <string>Pine</string>
+    <key>PineTemplateVersion</key>
+    <integer>1</integer>
+    <key>PineTemplateDescription</key>
+    <string>Time Profiler + System Trace for Pine scroll / highlight / file-tree hot paths.</string>
+
+    <!-- Instruments to record with (mirrors the UI instrument picker). -->
+    <key>Instruments</key>
+    <array>
+        <string>Time Profiler</string>
+        <string>System Trace</string>
+        <string>Allocations</string>
+    </array>
+
+    <!-- Signpost subsystem emitted by PerformanceSignposts.swift. Filter the
+         Points-of-Interest / Logging instrument on this subsystem in
+         Instruments to see Pine's hot-path intervals. -->
+    <key>SignpostSubsystem</key>
+    <string>io.github.batonogov.pine</string>
+
+    <!-- Named signpost intervals to look for under the subsystem above.
+         Emitted only in DEBUG builds (see Pine/PerformanceSignposts.swift). -->
+    <key>SignpostIntervals</key>
+    <array>
+        <string>highlight.full</string>
+        <string>highlight.viewport</string>
+        <string>highlight.edited</string>
+        <string>scroll.frame</string>
+        <string>filetree.shallow</string>
+        <string>filetree.full</string>
+    </array>
+
+    <!-- Scenarios this template is meant to capture. See Perf/README.md. -->
+    <key>TargetScenarios</key>
+    <array>
+        <string>scroll-latency: smooth-scroll a 100K-line file for ~5s</string>
+        <string>highlight-overhead: open a 5K-line file and force a full highlight</string>
+        <string>file-tree-load: open a large project root (1000+ files)</string>
+        <string>memory-pressure: open a 10MB+ file (hugeFileThreshold path)</string>
+    </array>
+</dict>
+</plist>

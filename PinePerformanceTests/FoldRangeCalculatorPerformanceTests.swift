@@ -94,7 +94,10 @@ final class FoldRangeCalculatorPerformanceTests: XCTestCase {
 
     func testVeryLargeFile() {
         let text = generateManyBlocks(count: 1000, linesPerBlock: 5)
-        measure {
+        // Explicit XCTClockMetric — the documented default for `measure {}`,
+        // declared explicitly as the XCTMetric adoption pattern. Wall-clock
+        // baseline stays directly comparable.
+        measure(metrics: [XCTClockMetric()]) {
             _ = FoldRangeCalculator.calculate(text: text)
         }
     }

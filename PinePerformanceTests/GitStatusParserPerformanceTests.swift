@@ -94,7 +94,10 @@ final class GitStatusParserPerformanceTests: XCTestCase {
 
     func testParseStatus2000Entries() {
         let output = generateStatusOutput(count: 2000)
-        measure {
+        // Explicit XCTClockMetric — the documented default for `measure {}`,
+        // declared explicitly as the XCTMetric adoption pattern. Wall-clock
+        // baseline stays directly comparable.
+        measure(metrics: [XCTClockMetric()]) {
             _ = GitStatusProvider.parseStatusOutput(output)
         }
     }

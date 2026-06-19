@@ -117,9 +117,11 @@ nonisolated final class SyntaxHighlighter: @unchecked Sendable {
                             font: font)
             return nil
         }
-        return engine.highlight(
-            textStorage: textStorage, font: font, context: ctx, resolved: resolved
-        )
+        return PerformanceSignposts.trace("highlight.full") {
+            engine.highlight(
+                textStorage: textStorage, font: font, context: ctx, resolved: resolved
+            )
+        }
     }
 
     // MARK: - Sync Highlight (viewport)
@@ -142,13 +144,15 @@ nonisolated final class SyntaxHighlighter: @unchecked Sendable {
                             font: font)
             return
         }
-        engine.highlightVisibleRange(
-            textStorage: textStorage,
-            visibleCharRange: visibleCharRange,
-            font: font,
-            context: ctx,
-            resolved: resolved
-        )
+        PerformanceSignposts.trace("highlight.viewport") {
+            engine.highlightVisibleRange(
+                textStorage: textStorage,
+                visibleCharRange: visibleCharRange,
+                font: font,
+                context: ctx,
+                resolved: resolved
+            )
+        }
     }
 
     // MARK: - Sync Highlight (incremental)
@@ -171,13 +175,15 @@ nonisolated final class SyntaxHighlighter: @unchecked Sendable {
                             font: font)
             return
         }
-        engine.highlightEdited(
-            textStorage: textStorage,
-            editedRange: editedRange,
-            font: font,
-            context: ctx,
-            resolved: resolved
-        )
+        PerformanceSignposts.trace("highlight.edited") {
+            engine.highlightEdited(
+                textStorage: textStorage,
+                editedRange: editedRange,
+                font: font,
+                context: ctx,
+                resolved: resolved
+            )
+        }
     }
 
     // MARK: - Cache Invalidation
