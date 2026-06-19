@@ -395,27 +395,56 @@ final class WorkspaceManager {
 
     /// Reload the file tree from disk (e.g. after creating/renaming/deleting files).
     ///
-    /// Issue #1006: this previously ran a synchronous shallow
-    /// `FileNode.loadTree(maxDepth:)` on the main thread on every refresh,
-    /// which caused visible sidebar stutter on large monorepos when called
-    /// from sidebar actions (rename / move / delete / create). It now routes
-    /// through the same async two-phase loader used by the initial load and
-    /// `refreshFileTreeAsync()`: the shallow pass runs off the main thread,
-    /// then results are applied via `MainActor.run` with a `loadGeneration`
-    /// check that discards stale results from earlier refreshes.
+    /// This is the **user-initiated** refresh path — called from sidebar
+    /// actions (rename / create / delete / duplicate in `FileNodeRow` and
+    /// `SidebarEditState`). The shallow `loadTree(maxDepth:)` runs
+    /// **synchronously on the main thread** so `rootNodes` reflects the
+    /// mutation in the same main-thread tick. This is required for the
+    /// inline rename `TextField` in `FileNodeRow` to appear over the
+    /// freshly-created `FileNode`: the field is keyed off
+    /// `editState.renamingURL` matching a `FileNode` that must already be
+    /// in the tree, and XCUITest's `waitForExistence` on that field
+    /// (`InlineRenameAlignmentTests`) relies on the node rendering in the
+    /// same pass.
     ///
-    /// `rootNodes` is no longer updated synchronously — the previous
-    /// contents are preserved until the shallow pass lands (a few
-    /// milliseconds on typical hardware), so callers do not see an empty
-    /// flash. Code that needs to verify the refreshed tree should poll or
-    /// await the next SwiftUI update tick.
+    /// The full tree (when the shallow pass is depth-limited) and the git
+    /// status refresh run asynchronously off the main thread via the shared
+    /// two-phase loader (`loadDirectoryContentsAsync`), race-safe via
+    /// `loadGeneration`.
     ///
-    /// Note: the previous explicit `gitRefreshTask` trigger is no longer
-    /// needed — `loadDirectoryContentsAsync` already performs an off-main
-    /// git fetch and applies it atomically via `applyFetched` on the main
-    /// actor (same path used by `loadDirectory` and `refreshFileTreeAsync`).
+    /// External file-system changes take a different entry point —
+    /// `refreshFileTreeAsync()` — which runs the shallow pass off the main
+    /// thread too. That split preserves the #1006 perf win (external
+    /// watcher bursts no longer stutter the sidebar on large monorepos)
+    /// without regressing sidebar inline-rename timing: the synchronous
+    /// shallow cost is paid only for direct user mutations, which are
+    /// infrequent, and not for every external FSEvents burst.
     func refreshFileTree() {
-        refreshFileTreeAsync()
+        guard let url = rootURL else { return }
+        loadGeneration += 1
+        let generation = loadGeneration
+        let ignoredPaths = gitProvider.ignoredPaths
+
+        // Phase 1 (sync): shallow tree for immediate `rootNodes` feedback.
+        // MUST stay synchronous for sidebar inline-rename timing — the new
+        // FileNode has to be in the tree on the same main-thread tick so
+        // FileNodeRow renders the inline editor over it.
+        let shallowResult = FileNode.loadTree(
+            url: url, projectRoot: url,
+            ignoredPaths: ignoredPaths,
+            maxDepth: Self.shallowDepth
+        )
+        rootNodes = shallowResult.root.children ?? []
+        notifyRootNodesChanged()
+
+        // Phase 2 (async): full tree (if depth-limited) + git status refresh,
+        // off the main thread. Reuses the shared two-phase loader so race
+        // safety (`loadGeneration`) and git state stay consistent with the
+        // initial load and the external watcher path. The loader repeats
+        // the shallow pass; that is cheap and lands identical data, so
+        // there is no visible flicker, and it carries the git fetch that
+        // the pre-#1006 path used to trigger via a separate `gitRefreshTask`.
+        loadDirectoryContentsAsync(url: url, generation: generation, showProgress: false)
     }
 
     /// Background variant called by the file watcher.

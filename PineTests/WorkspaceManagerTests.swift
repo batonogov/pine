@@ -229,7 +229,7 @@ struct WorkspaceManagerTests {
         #expect(manager.gitProvider.ignoredPaths.contains(".env"))
     }
 
-    @Test("refreshFileTree runs file tree and git updates off the main thread (issue #1006)")
+    @Test("refreshFileTree updates file tree synchronously but git asynchronously (sidebar mutation path)")
     @MainActor
     func refreshFileTreeGitAsync() async throws {
         let dir = try makeGitRepo()
@@ -248,28 +248,33 @@ struct WorkspaceManagerTests {
             encoding: .utf8
         )
 
-        // Issue #1006: refreshFileTree() used to update the file tree
-        // synchronously on the main thread while leaving git async. Now
-        // both are async — the heavy `loadTree` and the git fetch both
-        // run inside the same `loadDirectoryContentsAsync` Task.detached.
+        // refreshFileTree() is the user-initiated sidebar path: the shallow
+        // loadTree runs synchronously on the main thread so rootNodes
+        // reflects the mutation in the same tick (inline rename timing —
+        // InlineRenameAlignmentTests). Git status stays async: it is
+        // refreshed by the follow-up loadDirectoryContentsAsync Task, which
+        // fetches off the main thread and applies via applyFetched.
         manager.refreshFileTree()
 
-        // Synchronously (same main-thread tick) neither the file tree nor
-        // git status has been updated yet, proving the work was dispatched
-        // off the main thread instead of running inline.
-        #expect(
-            !manager.rootNodes.contains { $0.name == "untracked.txt" },
-            "File tree must not be updated synchronously by refreshFileTree"
-        )
+        // File tree IS updated immediately (synchronous shallow pass) —
+        // this is what restores sidebar inline-rename timing after #1022
+        // regressed it by routing the shallow pass off the main thread too.
+        let names = manager.rootNodes.map(\.url.lastPathComponent)
+        #expect(names.contains("untracked.txt"))
+        #expect(names.contains("README.md"))
+
+        // Git status has NOT been updated yet — the git fetch is still
+        // in-flight inside loadDirectoryContentsAsync. The untracked file
+        // must not appear in fileStatuses immediately, proving git refresh
+        // is still asynchronous.
         #expect(
             manager.gitProvider.fileStatuses["untracked.txt"] == nil,
             "Git status must not be updated synchronously by refreshFileTree"
         )
 
-        // Eventually both land on the main actor.
-        await waitFor { manager.rootNodes.contains { $0.name == "untracked.txt" } }
-        #expect(manager.rootNodes.contains { $0.name == "untracked.txt" })
-        #expect(manager.rootNodes.contains { $0.name == "README.md" })
+        // Eventually the git fetch lands on the main actor.
+        await waitFor { manager.gitProvider.fileStatuses["untracked.txt"] != nil }
+        #expect(manager.gitProvider.fileStatuses["untracked.txt"] != nil)
     }
 
     @Test("multiple rapid refreshFileTree calls do not crash")

@@ -45,15 +45,18 @@ struct RefreshFileTreeRaceRegressionTests {
         }
     }
 
-    // MARK: - criterion-1: refreshFileTree no longer blocks main thread
+    // MARK: - criterion-1: external refresh does not block main thread (issue #1006)
 
-    /// Asserts that `rootNodes` is NOT populated synchronously after
-    /// `refreshFileTree()` returns. This is the defining behavior change
-    /// of issue #1006: the heavy `loadTree(maxDepth:)` is dispatched off
-    /// the main thread, so a same-tick inspection must see the previous
-    /// (initial empty) state, not the freshly loaded tree.
-    @Test("refreshFileTree does not populate rootNodes synchronously (issue #1006)")
-    func refreshFileTreeDoesNotBlockMainThread() async throws {
+    /// Asserts that `refreshFileTreeAsync()` — the entry point used by the
+    /// FSEvents watcher for external changes — does NOT populate `rootNodes`
+    /// synchronously. This is the defining behavior change of issue #1006:
+    /// the heavy `loadTree(maxDepth:)` for external watcher bursts runs off
+    /// the main thread so large monorepos do not stutter on every external
+    /// change. The user-initiated path (`refreshFileTree()`) is covered by
+    /// `userRefreshPopulatesSynchronously` below and intentionally stays
+    /// synchronous to preserve sidebar inline-rename timing.
+    @Test("refreshFileTreeAsync does not populate rootNodes synchronously (issue #1006)")
+    func externalRefreshDoesNotBlockMainThread() async throws {
         let dir = try makeTempDirectory()
         defer { cleanup(dir) }
 
@@ -69,23 +72,65 @@ struct RefreshFileTreeRaceRegressionTests {
         await waitFor { manager.rootNodes.contains { $0.name == "first.txt" } }
         #expect(manager.rootNodes.contains { $0.name == "first.txt" })
 
-        // Create a new file, then synchronously call refreshFileTree and
-        // inspect rootNodes on the SAME main-thread tick. The shallow
-        // pass is now off the main thread, so the new file must NOT be
-        // visible yet — proving the I/O was dispatched, not run inline.
+        // Create a new file, then synchronously call refreshFileTreeAsync
+        // (the watcher entry point) and inspect rootNodes on the SAME
+        // main-thread tick. The shallow pass is off the main thread for the
+        // external path, so the new file must NOT be visible yet — proving
+        // the I/O was dispatched, not run inline.
+        try "second".write(
+            to: dir.appendingPathComponent("second.txt"),
+            atomically: true, encoding: .utf8
+        )
+        manager.refreshFileTreeAsync()
+        #expect(
+            !manager.rootNodes.contains { $0.name == "second.txt" },
+            "refreshFileTreeAsync must not run the shallow load synchronously on the main thread"
+        )
+
+        // Eventually the async shallow pass lands and the file appears.
+        await waitFor { manager.rootNodes.contains { $0.name == "second.txt" } }
+        #expect(manager.rootNodes.contains { $0.name == "second.txt" })
+    }
+
+    // MARK: - sidebar inline-rename timing: user refresh stays synchronous
+
+    /// Asserts that `refreshFileTree()` — the entry point used by sidebar
+    /// actions (rename / create / delete / duplicate) — DOES populate
+    /// `rootNodes` synchronously, on the same main-thread tick as the call.
+    /// The inline rename `TextField` in `FileNodeRow` is keyed off
+    /// `editState.renamingURL` matching a `FileNode` that must already be
+    /// in the tree, so a same-tick update is required for the field to
+    /// appear (InlineRenameAlignmentTests). External watcher bursts use
+    /// `refreshFileTreeAsync()` instead, so this synchronous cost is only
+    /// paid for direct user mutations, not for every FSEvents event.
+    @Test("refreshFileTree populates rootNodes synchronously for sidebar mutations")
+    func userRefreshPopulatesSynchronously() async throws {
+        let dir = try makeTempDirectory()
+        defer { cleanup(dir) }
+
+        try "first".write(
+            to: dir.appendingPathComponent("first.txt"),
+            atomically: true, encoding: .utf8
+        )
+
+        let manager = WorkspaceManager()
+        manager.loadDirectory(url: dir)
+        await waitFor { manager.rootNodes.contains { $0.name == "first.txt" } }
+
+        // Create a new file, then call the user-initiated refresh and
+        // inspect rootNodes on the SAME main-thread tick. The shallow pass
+        // runs synchronously for sidebar mutations, so the new file must be
+        // visible immediately — this is what lets FileNodeRow render the
+        // inline rename TextField over the freshly-created node.
         try "second".write(
             to: dir.appendingPathComponent("second.txt"),
             atomically: true, encoding: .utf8
         )
         manager.refreshFileTree()
         #expect(
-            !manager.rootNodes.contains { $0.name == "second.txt" },
-            "refreshFileTree must not run the shallow load synchronously on the main thread"
+            manager.rootNodes.contains { $0.name == "second.txt" },
+            "refreshFileTree must populate rootNodes synchronously for sidebar mutations (inline rename timing)"
         )
-
-        // Eventually the async shallow pass lands and the file appears.
-        await waitFor { manager.rootNodes.contains { $0.name == "second.txt" } }
-        #expect(manager.rootNodes.contains { $0.name == "second.txt" })
     }
 
     // MARK: - criterion-4: rapid successive refreshes converge on latest state
