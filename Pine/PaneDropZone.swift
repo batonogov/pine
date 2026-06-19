@@ -245,3 +245,25 @@ struct PaneSplitDropDelegate: DropDelegate {
         paneManager.startStaleDropPollingIfNeeded()
     }
 }
+
+// MARK: - Test Support
+
+extension PaneSplitDropDelegate {
+    /// Testable entry point for the pane-tab branch of `performDrop(info:)`.
+    ///
+    /// Equivalent to invoking `performDrop` when
+    /// `info.hasItemsConforming(to: [.paneTabDrag])` is true, after
+    /// `paneManager.dropZones[paneID]` has been populated by `dropEntered` /
+    /// `dropUpdated` and `paneManager.activeDrag` has been set by the drag
+    /// source. Exposed for unit tests because SwiftUI's `DropInfo` has no
+    /// public initializer, so tests cannot construct one to drive
+    /// `performDrop` directly. See issue #1002.
+    ///
+    /// Behavior is identical to `performDrop(info:)` for the pane-tab case:
+    /// reads `paneManager.activeDrag`, clears it on success, and dispatches to
+    /// `PaneManager` based on `zone` and `dragInfo.contentType`.
+    @discardableResult
+    func performPaneTabDrop(zone: PaneDropZone?) -> Bool {
+        handlePaneTabDrop(zone: zone)
+    }
+}
