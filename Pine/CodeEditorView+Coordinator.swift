@@ -760,8 +760,10 @@ extension CodeEditorView {
         }
 
         @objc func scrollViewDidScroll(_ notification: Notification) {
-            reportStateChange()
-            highlightOnScrollIfNeeded()
+            PerformanceSignposts.trace("scroll.frame") {
+                reportStateChange()
+                highlightOnScrollIfNeeded()
+            }
         }
 
         /// Подсвечивает видимую область при скролле (для больших файлов).

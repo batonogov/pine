@@ -243,11 +243,13 @@ final class WorkspaceManager {
             let gitInfo = Self.fetchGitInfo(at: url)
 
             // 2. Phase 1: shallow tree for fast initial render.
-            let shallowResult = FileNode.loadTree(
-                url: url, projectRoot: url,
-                ignoredPaths: gitInfo.ignoredPaths,
-                maxDepth: Self.shallowDepth
-            )
+            let shallowResult = PerformanceSignposts.trace("filetree.shallow") {
+                FileNode.loadTree(
+                    url: url, projectRoot: url,
+                    ignoredPaths: gitInfo.ignoredPaths,
+                    maxDepth: Self.shallowDepth
+                )
+            }
             let shallowChildren = shallowResult.root.children ?? []
 
             if Task.isCancelled { await cleanupProgress(); return }
@@ -288,9 +290,11 @@ final class WorkspaceManager {
 
             if Task.isCancelled { await cleanupProgress(); return }
 
-            let fullChildren = Self.loadTopLevelInParallel(
-                url: url, ignoredPaths: gitInfo.ignoredPaths
-            )
+            let fullChildren = PerformanceSignposts.trace("filetree.full") {
+                Self.loadTopLevelInParallel(
+                    url: url, ignoredPaths: gitInfo.ignoredPaths
+                )
+            }
 
             if Task.isCancelled { await cleanupProgress(); return }
 
