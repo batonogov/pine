@@ -557,18 +557,15 @@ class TerminalContainerView: NSView {
             let locationInSelf = self.convert(event.locationInWindow, from: nil)
             guard self.bounds.contains(locationInSelf) else { return event }
 
-            // Use scrollingDeltaY for trackpad (precise), deltaY for mouse wheel
-            let scrollDelta = event.hasPreciseScrollingDeltas ? event.scrollingDeltaY : event.deltaY
-            // Trackpad gesture/momentum phase boundaries (.began / .ended)
-            // frequently carry a zero scrolling delta but still must reach the
-            // per-branch logic: .began resets the active accumulator and .ended
-            // flushes residual delta so the final partial line is committed
-            // rather than dropped. Non-phase events with zero delta (e.g. inert
-            // ticks) are ignored as before. Momentum phase lives in
-            // `momentumPhase` (not `phase`), so both are consulted.
-            let phaseBegan = event.phase == .began || event.momentumPhase == .began
-            let phaseEnded = event.phase == .ended || event.momentumPhase == .ended
-            guard scrollDelta != 0 || phaseBegan || phaseEnded else { return event }
+            // Resolve the scroll delta, gesture/momentum phase boundaries, and
+            // the "should this event reach the per-branch logic" decision in
+            // one testable place (`TerminalScrollEventInfo`). See that type for
+            // the full rationale on phase-boundary handling and delta selection.
+            let scrollInfo = TerminalScrollEventInfo(event: event)
+            let scrollDelta = scrollInfo.delta
+            let phaseBegan = scrollInfo.phaseBegan
+            let phaseEnded = scrollInfo.phaseEnded
+            guard scrollInfo.shouldIntercept else { return event }
 
             let term = terminalView.getTerminal()
 
@@ -594,7 +591,7 @@ class TerminalContainerView: NSView {
                 let velocity = MouseScrollForwarder.mouseReportingScrollEvents(
                     accumulatedDelta: self.mouseReportingAccumulatedDelta,
                     newDelta: scrollDelta,
-                    isPrecise: event.hasPreciseScrollingDeltas,
+                    isPrecise: scrollInfo.isPrecise,
                     phaseBegan: phaseBegan
                 )
                 self.mouseReportingAccumulatedDelta = velocity.remainingDelta
@@ -652,7 +649,7 @@ class TerminalContainerView: NSView {
                 let result = MouseScrollForwarder.normalScrollLines(
                     accumulatedDelta: self.accumulatedScrollDelta,
                     newDelta: scrollDelta,
-                    isPrecise: event.hasPreciseScrollingDeltas,
+                    isPrecise: scrollInfo.isPrecise,
                     phaseBegan: phaseBegan
                 )
                 self.accumulatedScrollDelta = result.remainingDelta
@@ -684,7 +681,7 @@ class TerminalContainerView: NSView {
             let result = MouseScrollForwarder.normalScrollLines(
                 accumulatedDelta: self.accumulatedScrollDelta,
                 newDelta: scrollDelta,
-                isPrecise: event.hasPreciseScrollingDeltas,
+                isPrecise: scrollInfo.isPrecise,
                 phaseBegan: phaseBegan
             )
             self.accumulatedScrollDelta = result.remainingDelta
@@ -1143,27 +1140,21 @@ final class TerminalTab: Identifiable, Hashable {
         let terminal = terminalView.getTerminal()
         let bufferData = terminal.getBufferAsData()
 
-        // Search off main thread
+        // Search off main thread. The match-finding algorithm lives in the
+        // pure `TerminalBufferSearch` helper so it can be unit-tested without
+        // a live SwiftTerm terminal; this closure just decodes the buffer and
+        // delegates to it.
         let searchQuery = query
         let isCaseSensitive = caseSensitive
         let (matches, totalRows) = await Task.detached(priority: .userInitiated) {
             guard let bufferText = String(data: bufferData, encoding: .utf8) else {
                 return ([TerminalSearchMatch](), 0)
             }
-            let lines = bufferText.split(separator: "\n", omittingEmptySubsequences: false)
-            let needle = isCaseSensitive ? searchQuery : searchQuery.lowercased()
-            var result: [TerminalSearchMatch] = []
-            for (row, line) in lines.enumerated() {
-                let haystack = isCaseSensitive ? String(line) : String(line).lowercased()
-                var searchStart = haystack.startIndex
-                while let range = haystack.range(of: needle, range: searchStart..<haystack.endIndex) {
-                    let col = haystack.distance(from: haystack.startIndex, to: range.lowerBound)
-                    let length = haystack.distance(from: range.lowerBound, to: range.upperBound)
-                    result.append(TerminalSearchMatch(row: row, col: col, length: length))
-                    searchStart = range.upperBound
-                }
-            }
-            return (result, lines.count)
+            return TerminalBufferSearch.scan(
+                bufferText: bufferText,
+                query: searchQuery,
+                caseSensitive: isCaseSensitive
+            )
         }.value
 
         guard !Task.isCancelled else { return }
