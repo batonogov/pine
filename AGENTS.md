@@ -120,16 +120,17 @@ Pine uses GCD for background work, bridged to async/await via `withCheckedContin
 - **Never block main thread** with file I/O, regex computation, or git process execution
 - Generation tokens (`HighlightGeneration`, `WorkspaceManager.loadGeneration`, `FileSystemWatcher.activeGeneration`) prevent stale async results from overwriting newer ones — always check generation before applying results
 
-**Debounce values:**
-- Syntax highlight on edit: 100ms
-- Syntax highlight on scroll: 50ms
-- Fold range recalculation: 150ms
-- Project search: 300ms
-- File system watcher: configurable (default ~0.5s)
-- Minimap redraw: 25ms with trailing coalesce
+**Debounce values** (centralised in `UITimings.Debounce` / `UITimings.Render`):
+- Syntax highlight on edit: 100ms (`Debounce.edit`)
+- Syntax highlight on scroll: 50ms (`Debounce.scroll`)
+- Fold range recalculation: 150ms (`Debounce.foldRecalc`)
+- Project search: 300ms (`Debounce.projectSearch`)
+- File system watcher: 150ms (`Debounce.fileWatcher`, `WorkspaceManager.watcherDebounce`)
+- Config validator (yamllint / shellcheck / hadolint / terraform validate): 300ms (`Debounce.configValidation`, `ConfigValidator.debounceInterval`)
+- Minimap redraw: 25ms with trailing coalesce (`Render.minimapRedraw`)
 
 **Performance thresholds:**
-- Viewport-only highlighting: files > 100KB (`viewportHighlightThreshold`)
+- Viewport-only highlighting: files > 50 000 characters (`viewportHighlightThreshold`; lowered from 100KB in #637)
 - Large file dialog (disable highlighting?): files > 1MB (`largeFileThreshold`)
 - Partial load (first 1MB only): files > 10MB (`hugeFileThreshold`)
 - Project search skips files > 1MB
@@ -180,7 +181,7 @@ Pine uses a minimal zero-dependency visual snapshot harness for SwiftUI views. R
 - **Running:** `DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer xcodebuild test -project Pine.xcodeproj -scheme Pine -destination 'platform=macOS' -only-testing:PineTests/WelcomeViewSnapshotTests` (one suite at a time).
 - **Updating snapshots:** run tests with `PINE_RECORD_SNAPSHOTS=1` in the test environment (set it via the Pine scheme's Test action, or pass as the final positional `KEY=VALUE` arg to `xcodebuild test`). In record mode the harness always overwrites the reference PNG and passes. Review the PNG diff in the PR before merging.
 - **First run:** if no reference exists the harness writes a baseline and fails the test so new baselines can never sneak in silently. A failing test also writes an `<name>.actual.png` alongside the reference for visual inspection.
-- **Current coverage:** `WelcomeView`, `BranchSwitcherView`, `GoToLineView` (each in light + dark). Remaining scope from issue #796 (editor gutter, sidebar file tree, minimap, diagnostic popover, inline diff, tab bar) is tracked as follow-ups.
+- **Current coverage:** 8 view suites / 32 reference PNGs — `WelcomeView`, `BranchSwitcherView`, `GoToLineView`, `NavigationOverlay` (GoToLine overlay via `CommandOverlayView`), `BreadcrumbPathBar`, `EditorTabItem`, `IndentGuidesYAML`, `StatusBarView` (each in light + dark; `BreadcrumbPathBar`, `EditorTabItem`, and `StatusBarView` also snapshot multiple states). Remaining scope from issue #796 (editor gutter, sidebar file tree, minimap, diagnostic popover, inline diff) is tracked as follow-ups — the tab bar is now partially covered via `EditorTabItem` snapshots.
 
 ## GitHub Issues
 
