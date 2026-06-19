@@ -78,6 +78,13 @@ mkdir -p "$ASSETS_DIR"
 # silently on some Xcode 26 CI runners.
 extract_named_screenshots() {
   local found_any=false
+  # Pass the known canonical screenshot names to the extractor so it can map
+  # Xcode 26's suffixed attachment names back to the names the workflow
+  # expects (e.g. screenshot-editor_0_<UUID>.png -> screenshot-editor).
+  # Computed once here (before the loop) because the process substitution
+  # feeding the `while read` is set up at loop entry, not per iteration.
+  local canon_arg
+  canon_arg=$(IFS=,; printf '%s' "${REQUIRED_NAMES[*]},${OPTIONAL_NAMES[*]}")
 
   while IFS=$'\t' read -r att_name payload_id; do
     [ -z "$att_name" ] && continue
@@ -86,24 +93,36 @@ extract_named_screenshots() {
       echo "  Skipping attachment with invalid name: $att_name" >&2
       continue
     fi
-    # Validate payload_id — only alphanumeric, dots, dashes, underscores
-    if [[ ! "$payload_id" =~ ^[a-zA-Z0-9._-]+$ ]]; then
+    # Validate payload_id — Xcode 26 payload ids look like "0~<base64>=="
+    # and include '~' and '='. Allow those alongside alphanumerics, dots,
+    # dashes, and underscores.
+    if [[ ! "$payload_id" =~ ^[a-zA-Z0-9._~=-]+$ ]]; then
       echo "  Skipping attachment with invalid payload_id: $payload_id" >&2
       continue
     fi
-    local src="$RESULT_PATH/Data/$payload_id"
+    # Payloads are stored under Data/ with a "data." prefix on Xcode 26
+    # (e.g. Data/data.<payload_id>). Fall back to the unprefixed path for
+    # older bundle formats just in case.
+    local src="$RESULT_PATH/Data/data.$payload_id"
     if [ ! -f "$src" ]; then
-      echo "  Warning: payload not found at $src" >&2
+      src="$RESULT_PATH/Data/$payload_id"
+    fi
+    if [ ! -f "$src" ]; then
+      echo "  Warning: payload not found at $RESULT_PATH/Data/data.$payload_id" >&2
       continue
     fi
     cp -- "$src" "$ASSETS_DIR/${att_name}.png"
     echo "  Extracted ${att_name}.png"
     found_any=true
-  done < <(python3 - "$XCRESULTTOOL" "$RESULT_PATH" <<'PY'
+  done < <(python3 - "$XCRESULTTOOL" "$RESULT_PATH" "$canon_arg" <<'PY'
 import json, os, subprocess, sys
 
 xcresulttool = sys.argv[1]
 bundle_path = sys.argv[2]
+# Known screenshot base names (passed in from the bash arrays), used to map
+# Xcode 26's suffixed attachment names back to the canonical file names the
+# workflow expects.
+canonical_names = sys.argv[3].split(",") if len(sys.argv) > 3 else []
 
 def get_json(args):
     r = subprocess.run([xcresulttool] + args, capture_output=True, text=True)
@@ -131,20 +150,52 @@ def find_test_ids(node):
         results.extend(find_test_ids(child))
     return results
 
+def canonical_name(raw):
+    # Xcode 26 stores attachment names like
+    #   "screenshot-editor_0_<UUID>.png"
+    # rather than the bare "screenshot-editor" the workflow expects. Map the
+    # raw name back to a known canonical name so the required-names guardrail
+    # and the commit step keep working unchanged.
+    base = raw[:-4] if raw.endswith(".png") else raw
+    for c in canonical_names:
+        if base == c or base.startswith(c + "_"):
+            return c
+    return None
+
 def walk_activities(node):
-    for att in node.get("attachments", []):
-        att_name = att.get("name", "")
-        payload_id = att.get("payloadId", "")
-        if att_name.startswith("screenshot-") and payload_id:
-            print(f"{att_name}\t{payload_id}")
-    for child in node.get("childActivities", []):
-        walk_activities(child)
+    # Attachments live under testRuns[*].activities[*].attachments (with
+    # optional nested childActivities). The top-level activities JSON has a
+    # "testRuns" array rather than direct attachments, so this walker is
+    # seeded with each run's activities list — see call site below.
+    if isinstance(node, dict):
+        for att in node.get("attachments", []):
+            att_name = att.get("name", "")
+            payload_id = att.get("payloadId", "")
+            if not att_name or not payload_id:
+                continue
+            canon = canonical_name(att_name)
+            if canon:
+                print(f"{canon}\t{payload_id}")
+            else:
+                print(f"  Skipping non-canonical attachment: {att_name}", file=sys.stderr)
+        for child in node.get("childActivities", []):
+            walk_activities(child)
+    elif isinstance(node, list):
+        for item in node:
+            walk_activities(item)
 
 data = get_json(["get", "test-results", "tests", "--path", bundle_path])
 if not data:
     sys.exit(1)
 
-test_ids = find_test_ids(data)
+# On Xcode 26 the test tree is rooted at top-level "testNodes" — the whole
+# document has no "children" key — so seed find_test_ids with each testNodes
+# entry rather than with the document root. (The previous implementation
+# walked the non-existent root "children" and silently found zero tests,
+# which is what made this workflow fail on every release since v1.26.3.)
+test_ids = []
+for root in data.get("testNodes", []):
+    test_ids.extend(find_test_ids(root))
 if not test_ids:
     print("  No screenshot test cases found in xcresult bundle.", file=sys.stderr)
     # Diagnostic: show first 5 files in Data/ to help debug extraction failures
@@ -157,12 +208,13 @@ if not test_ids:
         print(f"  Diagnostic: Data/ directory does not exist at {data_dir}", file=sys.stderr)
     sys.exit(1)
 
-for i, tid in enumerate(test_ids):
+for tid in test_ids:
     act_data = get_json(["get", "test-results", "activities",
                          "--path", bundle_path, "--test-id", tid])
     if not act_data:
         continue
-    walk_activities(act_data)
+    for run in act_data.get("testRuns", []):
+        walk_activities(run.get("activities", []))
 PY
   )
 
