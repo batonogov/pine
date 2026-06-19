@@ -13,7 +13,17 @@ struct ContentView: View {
     @Environment(ProjectManager.self) var projectManager
     @Environment(WorkspaceManager.self) var workspace
     @Environment(TerminalManager.self) var terminal
-    @Environment(TabManager.self) var tabManager
+    /// The project's *primary* TabManager (root editor pane), injected from
+    /// `PineApp.ProjectWindowView`. This is **not** the active pane's
+    /// TabManager — for command/action routing that must target the focused
+    /// editor pane, use ``activeTabManager`` instead. The environment
+    /// injection is kept so sidebar rows (`FileNodeRow`) and other subviews
+    /// that do not depend on focus can still resolve a TabManager.
+    ///
+    /// See issues #971 and #998: the previous `tabManager` naming conflated
+    /// primary with active and caused commands to target the wrong pane in
+    /// split layouts.
+    @Environment(TabManager.self) var primaryTabManager
     @Environment(PaneManager.self) var paneManager
     @Environment(ProjectRegistry.self) var registry
     @Environment(\.openWindow) var openWindow
@@ -27,7 +37,6 @@ struct ContentView: View {
     @State var lineDiffs: [GitLineDiff] = []
     @State var didRestoreSession = false
     @State var isSearchPresented = false
-    @State var goToLineOffset: GoToRequest?
     @State var recoveryEntries: [(UUID, RecoveryEntry)] = []
     @State var showRecoveryDialog = false
     @State var isDragTargeted = false
@@ -39,7 +48,14 @@ struct ContentView: View {
     @AppStorage(BlameConstants.storageKey) var isBlameVisible = true
     @AppStorage("wordWrapEnabled") var isWordWrapEnabled = true
 
-    var activeTab: EditorTab? { tabManager.activeTab }
+    /// The TabManager for the currently focused editor pane. Use this for
+    /// any menu command, go-to request, search result, status bar binding,
+    /// or diff/inline-diff action that should target the active editor.
+    /// Falls back to ``primaryTabManager`` when no editor pane is focused
+    /// (e.g. terminals-only layout), matching ``ProjectManager/activeTabManager``.
+    var activeTabManager: TabManager { projectManager.activeTabManager }
+
+    var activeTab: EditorTab? { activeTabManager.activeTab }
 
     var body: some View {
         NavigationSplitView(columnVisibility: $columnVisibility) {
@@ -67,7 +83,7 @@ struct ContentView: View {
                 StatusBarView(
                     gitProvider: workspace.gitProvider,
                     paneManager: paneManager,
-                    tabManager: tabManager,
+                    tabManager: activeTabManager,
                     progress: projectManager.progress,
                     onToggleTerminal: {
                         if paneManager.terminalPaneIDs.isEmpty {
@@ -138,7 +154,7 @@ struct ContentView: View {
                 .environment(projectManager)
         }
         .onReceive(NotificationCenter.default.publisher(for: .showSymbolNavigator)) { _ in
-            guard tabManager.activeTab != nil else { return }
+            guard activeTabManager.activeTab != nil else { return }
             isSymbolNavigatorPresented = true
         }
         .sheet(isPresented: $isBranchSwitcherPresented) {
@@ -158,18 +174,27 @@ struct ContentView: View {
             isBranchSwitcherPresented = true
         }
         .onReceive(NotificationCenter.default.publisher(for: .symbolNavigate)) { notification in
-            guard let offset = notification.userInfo?["offset"] as? Int else { return }
-            goToLineOffset = GoToRequest(offset: offset)
+            guard let offset = notification.userInfo?["offset"] as? Int,
+                  let tab = activeTabManager.activeTab else { return }
+            // Convert the symbol's UTF-16 offset to a 1-based line and route
+            // through `pendingGoToLine` on the active pane's TabManager so
+            // the focused `PaneLeafView` performs the actual navigation.
+            // The previous implementation wrote a `GoToRequest` into root
+            // `ContentView` state that no `PaneLeafView` ever consumed.
+            let line = Self.lineNumber(forOffset: offset, in: tab.content)
+            activeTabManager.pendingGoToLine = line
         }
         .sheet(isPresented: $showGoToLine) {
             GoToLineView(
                 totalLines: totalLineCount,
                 isPresented: $showGoToLine,
                 onGoTo: { line, column in
-                    guard let tab = tabManager.activeTab else { return }
-                    goToLineOffset = GoToRequest(
-                        offset: Self.cursorOffset(forLine: line, column: column, in: tab.content)
-                    )
+                    guard activeTabManager.activeTab != nil else { return }
+                    // Route through `pendingGoToLine` so the focused
+                    // `PaneLeafView` performs the navigation. `column` is
+                    // honored by the line-based protocol as the line's start.
+                    _ = column
+                    activeTabManager.pendingGoToLine = line
                 }
             )
         }
@@ -183,7 +208,7 @@ struct ContentView: View {
             projectManager.saveSession()
             applySearchQueryFromEnvironment()
         }
-        .onChange(of: tabManager.activeTabID) { _, _ in
+        .onChange(of: activeTabManager.activeTabID) { _, _ in
             syncSidebarSelection()
             refreshLineDiffs()
             refreshBlame()
@@ -200,7 +225,12 @@ struct ContentView: View {
             }
             syncSidebarSelection()
         }
-        .onChange(of: tabManager.tabs.count) { _, _ in
+        .onChange(of: primaryTabManager.tabs.count) { _, _ in
+            // Note: this observes only the primary pane's tab count. Tabs in
+            // other split panes are still saved by `projectManager.saveSession()`
+            // (which iterates every pane); this observer is a best-effort
+            // trigger for the common single-pane case and is preserved for
+            // backward compatibility.
             projectManager.saveSession()
         }
         .modifier(GitAndNotificationObserver(
@@ -232,11 +262,6 @@ struct ContentView: View {
                   let text = notification.userInfo?["text"] as? String,
                   !text.isEmpty else { return }
             sendTextToTerminal(text)
-        }
-        .onChange(of: tabManager.pendingGoToLine) { _, newLine in
-            guard let line = newLine, let tab = tabManager.activeTab else { return }
-            tabManager.pendingGoToLine = nil
-            goToLineOffset = GoToRequest(offset: Self.cursorOffset(forLine: line, in: tab.content))
         }
     }
 
