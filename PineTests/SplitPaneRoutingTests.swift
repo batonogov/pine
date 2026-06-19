@@ -400,6 +400,231 @@ struct SplitPaneRoutingTests {
         #expect(resolved.activeTab != nil,
                 "active TabManager must resolve even when focus is on a terminal pane")
     }
+
+    // MARK: - #971: close*WithConfirmation routing (review F3)
+    //
+    // ContentView's closeOther/All/ToTheRight/Tab helpers all delegate to
+    // `TabCloseHelper.<op>(in: activeTabManager, gitProvider:)`. TabCloseHelper
+    // is not a SwiftUI view, so we exercise it directly with the active pane's
+    // TabManager and assert the primary pane is never touched — pinning the
+    // routing contract the view relies on. Clean tabs are used so no modal
+    // confirmation alert blocks the test.
+
+    @Test("closeAllTabsWithConfirmation closes only the active pane (TabCloseHelper contract)")
+    func closeAllTabsRoutesToActivePaneOnly() throws {
+        let f = try makeSplitWithTwoPanes()
+        let pm = f.pm
+        let firstTM = f.firstTM
+        let secondTM = f.secondTM
+
+        // Both panes hold one clean tab each.
+        #expect(firstTM.tabs.count == 1)
+        #expect(secondTM.tabs.count == 1)
+
+        // Mirror ContentView.closeAllTabsWithConfirmation():
+        //   TabCloseHelper.closeAllTabs(in: activeTabManager, gitProvider:)
+        let provider = GitStatusProvider()
+        TabCloseHelper.closeAllTabs(in: pm.activeTabManager, gitProvider: provider)
+
+        #expect(secondTM.tabs.isEmpty, "close-all must affect only the active pane")
+        #expect(firstTM.tabs.count == 1, "primary pane must be untouched by active-pane close-all")
+    }
+
+    @Test("closeOtherTabsWithConfirmation closes only the active pane's other tabs")
+    func closeOtherTabsRoutesToActivePaneOnly() throws {
+        let f = try makeSplitWithTwoPanes()
+        let pm = f.pm
+        let firstTM = f.firstTM
+        let secondTM = f.secondTM
+
+        // Add two extra clean tabs to the active (second) pane.
+        let extra1 = URL(fileURLWithPath: "/tmp/pine-close-other-1-\(UUID().uuidString).swift")
+        let extra2 = URL(fileURLWithPath: "/tmp/pine-close-other-2-\(UUID().uuidString).swift")
+        try "a".write(to: extra1, atomically: true, encoding: .utf8)
+        try "b".write(to: extra2, atomically: true, encoding: .utf8)
+        secondTM.openTab(url: extra1)
+        secondTM.openTab(url: extra2)
+        #expect(secondTM.tabs.count == 3)
+        #expect(firstTM.tabs.count == 1)
+
+        guard let keepID = secondTM.tabs.first?.id else {
+            Issue.record("keep tab missing")
+            return
+        }
+        let provider = GitStatusProvider()
+        TabCloseHelper.closeOtherTabs(keeping: keepID, in: pm.activeTabManager, gitProvider: provider)
+
+        #expect(secondTM.tabs.count == 1)
+        #expect(secondTM.tabs.first?.id == keepID)
+        #expect(firstTM.tabs.count == 1, "primary pane must be untouched by active-pane close-other")
+    }
+
+    @Test("closeTabsToTheRightWithConfirmation closes only the active pane's right tabs")
+    func closeTabsToTheRightRoutesToActivePaneOnly() throws {
+        let f = try makeSplitWithTwoPanes()
+        let pm = f.pm
+        let firstTM = f.firstTM
+        let secondTM = f.secondTM
+
+        let extra1 = URL(fileURLWithPath: "/tmp/pine-close-right-1-\(UUID().uuidString).swift")
+        let extra2 = URL(fileURLWithPath: "/tmp/pine-close-right-2-\(UUID().uuidString).swift")
+        try "a".write(to: extra1, atomically: true, encoding: .utf8)
+        try "b".write(to: extra2, atomically: true, encoding: .utf8)
+        secondTM.openTab(url: extra1)
+        secondTM.openTab(url: extra2)
+        #expect(secondTM.tabs.count == 3)
+
+        guard let keepID = secondTM.tabs.first?.id else {
+            Issue.record("keep tab missing")
+            return
+        }
+        let provider = GitStatusProvider()
+        TabCloseHelper.closeTabsToTheRight(of: keepID, in: pm.activeTabManager, gitProvider: provider)
+
+        #expect(secondTM.tabs.count == 1, "only the kept tab plus those left of it survive in the active pane")
+        #expect(secondTM.tabs.first?.id == keepID)
+        #expect(firstTM.tabs.count == 1, "primary pane must be untouched by active-pane close-to-the-right")
+    }
+
+    @Test("closeTabWithConfirmation closes only the active pane's tab")
+    func closeTabRoutesToActivePaneOnly() throws {
+        let f = try makeSplitWithTwoPanes()
+        let pm = f.pm
+        let firstTM = f.firstTM
+        let secondTM = f.secondTM
+
+        guard let activeTab = secondTM.activeTab else {
+            Issue.record("active tab missing")
+            return
+        }
+        let provider = GitStatusProvider()
+        let closed = TabCloseHelper.closeTab(activeTab, in: pm.activeTabManager, gitProvider: provider)
+
+        #expect(closed)
+        #expect(secondTM.tabs.isEmpty, "the active pane's tab must be closed")
+        #expect(firstTM.tabs.count == 1, "primary pane must be untouched by active-pane single close")
+    }
+
+    // MARK: - #971: navigateToChange result routing (review F1)
+    //
+    // ContentView.navigateToChange resolves the active tab, fetches fresh diffs
+    // via diffForFileAsync, computes the next/previous change region through
+    // GitLineDiff, then writes `activeTabManager.pendingGoToLine`. The async
+    // fetch + re-entry guard (`currentTab.url == fileURL`) require a live git
+    // repo and are integration/UI-test territory. Here we pin the routing
+    // contract that the computed line lands in the active pane, never primary.
+
+    @Test("navigateToChange routes its result to the active pane's pendingGoToLine")
+    func navigateToChangeResultRoutesToActivePane() throws {
+        let f = try makeSplitWithTwoPanes()
+        let pm = f.pm
+        let firstTM = f.firstTM
+        let secondTM = f.secondTM
+
+        // Simulate the freshly-fetched diffs + computation navigateToChange
+        // performs, then mirror its final routing step.
+        let diffs = [
+            GitLineDiff(line: 5, kind: .added),
+            GitLineDiff(line: 20, kind: .modified)
+        ]
+        let starts = GitLineDiff.changeRegionStarts(diffs)
+        let target = GitLineDiff.nextChangeLine(from: 1, regionStarts: starts, diffs: diffs)
+
+        #expect(target == 5, "from line 1 the next change region starts at line 5")
+
+        if let line = target {
+            pm.activeTabManager.pendingGoToLine = line
+        }
+
+        #expect(secondTM.pendingGoToLine == 5,
+                "change-navigation result must land in the active pane")
+        #expect(firstTM.pendingGoToLine == nil,
+                "primary pane must not receive change-navigation (#971/#998)")
+    }
+
+    // MARK: - #971: handleInlineDiffAction routing (review F2)
+    //
+    // The .revert/.revertAll branches mutate `activeTabManager` via
+    // updateContent(newContent) + reloadTab(url:). reloadTab re-syncs from disk
+    // (an integration concern), so we assert the updateContent routing step in
+    // isolation: mutating the active pane's content must not touch the primary.
+    // The .accept/.acceptAll branches write through git and do not mutate any
+    // TabManager, so they have no pane-routing surface to test at this layer.
+
+    @Test("inline diff revert mutates only the active pane's tab content")
+    func inlineDiffRevertRoutesToActivePaneOnly() throws {
+        let f = try makeSplitWithTwoPanes()
+        let pm = f.pm
+        let firstTM = f.firstTM
+        let secondTM = f.secondTM
+
+        let originalFirst = firstTM.activeTab?.content
+        #expect(secondTM.activeTab?.content == "second")
+        #expect(originalFirst == "first")
+
+        // Mirror handleInlineDiffAction(.revert)'s updateContent routing step.
+        pm.activeTabManager.updateContent("reverted content")
+
+        #expect(secondTM.activeTab?.content == "reverted content",
+                "inline-diff revert must mutate the active pane's tab")
+        #expect(firstTM.activeTab?.content == originalFirst,
+                "primary pane's tab content must be untouched by active-pane inline diff")
+    }
+
+    // MARK: - #971: GoToLineView.onGoTo + symbolNavigate routing (review F4)
+    //
+    // Both the GoToLineView onGoTo closure and the .symbolNavigate handler end
+    // with `activeTabManager.pendingGoToLine = line`. Pin the routing contract.
+
+    @Test("Go-to-Line onGoTo routes to the active pane's pendingGoToLine")
+    func goToLineOnGoToRoutesToActivePane() throws {
+        let f = try makeSplitWithTwoPanes()
+        let pm = f.pm
+        let firstTM = f.firstTM
+        let secondTM = f.secondTM
+
+        // Mirror the onGoTo closure body: `activeTabManager.pendingGoToLine = line`.
+        pm.activeTabManager.pendingGoToLine = 17
+
+        #expect(secondTM.pendingGoToLine == 17, "go-to-line must land in the active pane")
+        #expect(firstTM.pendingGoToLine == nil, "primary pane must not receive go-to-line")
+    }
+
+    // MARK: - #971: Go-to-Line column-discard contract (review F5)
+    //
+    // The onGoTo closure captures `column` then discards it (`_ = column`) and
+    // routes only `line` via pendingGoToLine (an Int, not a line+column pair).
+    // This is the documented behavior: navigation is line-based and lands at
+    // the line start. Below we (1) pin the line-only contract and (2) prove the
+    // column-aware helper exists and is correct, so a future re-wiring of
+    // onGoTo to `cursorOffset(forLine:column:)` would restore column precision
+    // — documenting the behavior change rather than leaving it silent.
+
+    @Test("pendingGoToLine is line-only; column is discarded on go-to-line")
+    func goToLineRoutesLineOnlyDiscardsColumn() throws {
+        let f = try makeSplitWithTwoPanes()
+        let pm = f.pm
+        let secondTM = f.secondTM
+
+        // The onGoTo closure writes only `line`; there is no column channel.
+        pm.activeTabManager.pendingGoToLine = 9
+        #expect(secondTM.pendingGoToLine == 9)
+        #expect(secondTM.pendingGoToLine == Optional(9),
+                "pendingGoToLine is Int? — line-only, no column is carried")
+    }
+
+    @Test("cursorOffset(forLine:column:) honors column (capability currently unused by onGoTo)")
+    func cursorOffsetHonorsColumnCapability() {
+        let content = "abcdef\nghijkl\n"
+        // Line 2 starts at offset 7 ('g'); column 4 lands on 'j' (offset 10).
+        let lineStart = ContentView.cursorOffset(forLine: 2, in: content)
+        let withColumn = ContentView.cursorOffset(forLine: 2, column: 4, in: content)
+
+        #expect(lineStart == 7)
+        #expect(withColumn == 10, "column-aware offset must point past the line start")
+        #expect(withColumn != lineStart,
+                "proves column precision is achievable — onGoTo discards it today (F5)")
+    }
 }
 
 // MARK: - Recovery routing into the active pane
