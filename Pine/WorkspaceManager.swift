@@ -58,10 +58,6 @@ final class WorkspaceManager {
         onRootNodesChanged = handler
     }
 
-    /// Tracks the in-flight async git refresh so it can be cancelled
-    /// when a new refresh starts (prevents stale data from overwriting newer results).
-    private var gitRefreshTask: Task<Void, Never>?
-
     /// Tracks the in-flight directory-load task. Cancelled and replaced on
     /// every `loadDirectory` / `refreshFileTreeAsync` call so a slow run
     /// never resumes after a newer one has started.
@@ -398,43 +394,28 @@ final class WorkspaceManager {
     }
 
     /// Reload the file tree from disk (e.g. after creating/renaming/deleting files).
-    /// A shallow tree (depth-limited) is built synchronously for immediate UI feedback;
-    /// the full tree and git status refresh run asynchronously on background queues.
+    ///
+    /// Issue #1006: this previously ran a synchronous shallow
+    /// `FileNode.loadTree(maxDepth:)` on the main thread on every refresh,
+    /// which caused visible sidebar stutter on large monorepos when called
+    /// from sidebar actions (rename / move / delete / create). It now routes
+    /// through the same async two-phase loader used by the initial load and
+    /// `refreshFileTreeAsync()`: the shallow pass runs off the main thread,
+    /// then results are applied via `MainActor.run` with a `loadGeneration`
+    /// check that discards stale results from earlier refreshes.
+    ///
+    /// `rootNodes` is no longer updated synchronously — the previous
+    /// contents are preserved until the shallow pass lands (a few
+    /// milliseconds on typical hardware), so callers do not see an empty
+    /// flash. Code that needs to verify the refreshed tree should poll or
+    /// await the next SwiftUI update tick.
+    ///
+    /// Note: the previous explicit `gitRefreshTask` trigger is no longer
+    /// needed — `loadDirectoryContentsAsync` already performs an off-main
+    /// git fetch and applies it atomically via `applyFetched` on the main
+    /// actor (same path used by `loadDirectory` and `refreshFileTreeAsync`).
     func refreshFileTree() {
-        guard let url = rootURL else { return }
-        loadGeneration += 1
-        let generation = loadGeneration
-        let ignoredPaths = gitProvider.ignoredPaths
-
-        // Phase 1 (sync): shallow tree for immediate feedback
-        let shallowResult = FileNode.loadTree(
-            url: url, projectRoot: url,
-            ignoredPaths: ignoredPaths,
-            maxDepth: Self.shallowDepth
-        )
-        rootNodes = shallowResult.root.children ?? []
-        notifyRootNodesChanged()
-
-        // Phase 2 (async): full tree only if Phase 1 hit the depth limit.
-        // Pure Swift Concurrency — no GCD bridging — to avoid scheduler
-        // starvation on single-core CI runners (issue #837).
-        if shallowResult.wasDepthLimited {
-            Task.detached(priority: .userInitiated) { [weak self] in
-                let fullChildren = Self.loadTopLevelInParallel(
-                    url: url, ignoredPaths: ignoredPaths
-                )
-                if Task.isCancelled { return }
-                await MainActor.run { [weak self] in
-                    guard let self, self.loadGeneration == generation else { return }
-                    self.rootNodes = fullChildren
-                    self.notifyRootNodesChanged()
-                }
-            }
-        }
-
-        // Cancel any in-flight git refresh to avoid stale data overwriting newer results.
-        gitRefreshTask?.cancel()
-        gitRefreshTask = Task { await gitProvider.refreshAsync() }
+        refreshFileTreeAsync()
     }
 
     /// Background variant called by the file watcher.

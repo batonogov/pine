@@ -381,7 +381,8 @@ struct WorkspaceManagerStressTests {
             // Give any in-flight background load a chance to deliver.
             try await Task.sleep(for: .milliseconds(800))
 
-            // refreshFileTree() synchronously rebuilds shallow rootNodes,
+            // refreshFileTree() bumps loadGeneration and routes through the
+            // same async two-phase loader as `loadDirectory` (issue #1006),
             // so after many refreshes the tree must reflect `dir`, and
             // rootURL must be unchanged (no stale loadDirectory race).
             #expect(manager.rootURL == dir)

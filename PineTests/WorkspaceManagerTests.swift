@@ -27,6 +27,22 @@ struct WorkspaceManagerTests {
         try? FileManager.default.removeItem(at: url)
     }
 
+    /// Polls `condition` on the main actor until it returns true or the
+    /// attempt budget is exhausted. Used in place of the old synchronous
+    /// assertions about `rootNodes` now that `refreshFileTree()` runs its
+    /// shallow pass off the main thread (issue #1006).
+    @MainActor
+    private func waitFor(
+        _ condition: @MainActor () -> Bool,
+        maxAttempts: Int = 200,
+        interval: Duration = .milliseconds(25)
+    ) async {
+        for _ in 0..<maxAttempts {
+            if condition() { return }
+            try? await Task.sleep(for: interval)
+        }
+    }
+
     @discardableResult
     private func runShell(_ command: String, at dir: URL) throws -> String {
         let process = Process()
@@ -118,14 +134,17 @@ struct WorkspaceManagerTests {
     }
 
     @Test("refreshFileTree reloads children from disk")
-    func refreshFileTree() throws {
+    @MainActor
+    func refreshFileTree() async throws {
         let dir = try makeTempDirectory()
         defer { cleanup(dir) }
 
         let manager = WorkspaceManager()
         manager.loadDirectory(url: dir)
-        // Sync refresh to populate from empty dir
+        // refreshFileTree now runs off the main thread (issue #1006);
+        // poll for the shallow pass to land.
         manager.refreshFileTree()
+        await waitFor { manager.rootNodes.isEmpty }
 
         // Initially empty directory
         #expect(manager.rootNodes.isEmpty)
@@ -137,21 +156,27 @@ struct WorkspaceManagerTests {
             encoding: .utf8
         )
 
-        // Refresh should pick it up
+        // Refresh should pick it up once the async shallow pass lands.
         manager.refreshFileTree()
+        await waitFor { manager.rootNodes.count == 1 }
         #expect(manager.rootNodes.count == 1)
         #expect(manager.rootNodes.first?.url.lastPathComponent == "newfile.txt")
     }
 
     @Test("refreshFileTree does nothing without rootURL")
-    func refreshFileTreeNoRoot() {
+    @MainActor
+    func refreshFileTreeNoRoot() async {
         let manager = WorkspaceManager()
         manager.refreshFileTree()
+        // Give any incidental Task a chance to land (there should be none —
+        // the guard returns before scheduling anything).
+        try? await Task.sleep(for: .milliseconds(50))
         #expect(manager.rootNodes.isEmpty)
     }
 
     @Test("loadDirectory then refreshFileTree populates rootNodes")
-    func loadDirectoryThenRefreshPopulatesNodes() throws {
+    @MainActor
+    func loadDirectoryThenRefreshPopulatesNodes() async throws {
         let dir = try makeTempDirectory()
         defer { cleanup(dir) }
 
@@ -161,15 +186,17 @@ struct WorkspaceManagerTests {
         let manager = WorkspaceManager()
         manager.loadDirectory(url: dir)
 
-        // Async load dispatches to main which we can't easily await in tests.
-        // Use synchronous refreshFileTree instead (rootURL is already set).
+        // refreshFileTree now routes through the async two-phase loader
+        // (issue #1006); rootNodes is no longer populated synchronously.
         manager.refreshFileTree()
+        await waitFor { manager.rootNodes.count == 2 }
 
         #expect(manager.rootNodes.count == 2)
     }
 
     @Test("refreshFileTree populates ignoredPaths in git repo")
-    func refreshFileTreePopulatesIgnoredPaths() throws {
+    @MainActor
+    func refreshFileTreePopulatesIgnoredPaths() async throws {
         let dir = try makeTempDirectory()
         defer { cleanup(dir) }
 
@@ -195,14 +222,16 @@ struct WorkspaceManagerTests {
         manager.loadDirectory(url: dir)
         manager.gitProvider.setup(repositoryURL: dir)
         manager.refreshFileTree()
+        await waitFor { !manager.rootNodes.isEmpty }
 
         #expect(manager.gitProvider.isGitRepository == true)
         #expect(manager.gitProvider.ignoredPaths.contains("build"))
         #expect(manager.gitProvider.ignoredPaths.contains(".env"))
     }
 
-    @Test("refreshFileTree updates file tree synchronously but does not run git synchronously")
-    func refreshFileTreeGitAsync() throws {
+    @Test("refreshFileTree runs file tree and git updates off the main thread (issue #1006)")
+    @MainActor
+    func refreshFileTreeGitAsync() async throws {
         let dir = try makeGitRepo()
         defer { cleanup(dir) }
 
@@ -210,6 +239,7 @@ struct WorkspaceManagerTests {
         manager.loadDirectory(url: dir)
         manager.gitProvider.setup(repositoryURL: dir)
         manager.refreshFileTree()
+        await waitFor { !manager.rootNodes.isEmpty }
 
         // Create an untracked file — git status should detect it after refresh
         try "new".write(
@@ -218,33 +248,45 @@ struct WorkspaceManagerTests {
             encoding: .utf8
         )
 
-        // refreshFileTree() should update the file tree synchronously
-        // but NOT update git status synchronously (that's the fix).
+        // Issue #1006: refreshFileTree() used to update the file tree
+        // synchronously on the main thread while leaving git async. Now
+        // both are async — the heavy `loadTree` and the git fetch both
+        // run inside the same `loadDirectoryContentsAsync` Task.detached.
         manager.refreshFileTree()
 
-        // File tree is updated immediately (synchronous)
-        let names = manager.rootNodes.map(\.url.lastPathComponent)
-        #expect(names.contains("untracked.txt"))
-        #expect(names.contains("README.md"))
+        // Synchronously (same main-thread tick) neither the file tree nor
+        // git status has been updated yet, proving the work was dispatched
+        // off the main thread instead of running inline.
+        #expect(
+            !manager.rootNodes.contains { $0.name == "untracked.txt" },
+            "File tree must not be updated synchronously by refreshFileTree"
+        )
+        #expect(
+            manager.gitProvider.fileStatuses["untracked.txt"] == nil,
+            "Git status must not be updated synchronously by refreshFileTree"
+        )
 
-        // Git status has NOT been updated yet — refreshAsync() is still in-flight.
-        // The untracked file should NOT appear in fileStatuses immediately,
-        // proving that git refresh is no longer synchronous.
-        #expect(manager.gitProvider.fileStatuses["untracked.txt"] == nil)
+        // Eventually both land on the main actor.
+        await waitFor { manager.rootNodes.contains { $0.name == "untracked.txt" } }
+        #expect(manager.rootNodes.contains { $0.name == "untracked.txt" })
+        #expect(manager.rootNodes.contains { $0.name == "README.md" })
     }
 
     @Test("multiple rapid refreshFileTree calls do not crash")
-    func rapidRefreshFileTree() throws {
+    @MainActor
+    func rapidRefreshFileTree() async throws {
         let dir = try makeGitRepo()
         defer { cleanup(dir) }
 
         let manager = WorkspaceManager()
         manager.loadDirectory(url: dir)
         manager.refreshFileTree()
+        await waitFor { !manager.rootNodes.isEmpty }
 
         // Simulate rapid user actions (create, rename, delete) that each
-        // trigger refreshFileTree(). Each spawns a Task with refreshAsync() —
-        // multiple overlapping async git processes should not crash.
+        // trigger refreshFileTree(). Each bumps loadGeneration and schedules
+        // an async Task — overlapping tasks must not crash, and the latest
+        // generation must win (issue #1006).
         for i in 0..<5 {
             try "file\(i)".write(
                 to: dir.appendingPathComponent("file\(i).txt"),
@@ -254,7 +296,13 @@ struct WorkspaceManagerTests {
             manager.refreshFileTree()
         }
 
-        // File tree should reflect the latest state
+        // File tree should reflect the latest state once the final
+        // refresh's shallow pass lands on main.
+        await waitFor {
+            (0..<5).allSatisfy { i in
+                manager.rootNodes.contains { $0.name == "file\(i).txt" }
+            }
+        }
         let names = manager.rootNodes.map(\.url.lastPathComponent)
         for i in 0..<5 {
             #expect(names.contains("file\(i).txt"))
@@ -262,7 +310,8 @@ struct WorkspaceManagerTests {
     }
 
     @Test("refreshFileTree works on non-git directory without crash")
-    func refreshFileTreeNonGitDirectory() throws {
+    @MainActor
+    func refreshFileTreeNonGitDirectory() async throws {
         let dir = try makeTempDirectory()
         defer { cleanup(dir) }
 
@@ -274,16 +323,18 @@ struct WorkspaceManagerTests {
 
         let manager = WorkspaceManager()
         manager.loadDirectory(url: dir)
-        // refreshFileTree on non-git dir — refreshAsync() should bail out
-        // (guard isGitRepository) without crash
+        // refreshFileTree on non-git dir — the loader's git-detection
+        // branch bails out without crash.
         manager.refreshFileTree()
+        await waitFor { !manager.rootNodes.isEmpty }
 
         #expect(manager.rootNodes.count == 1)
         #expect(manager.gitProvider.isGitRepository == false)
     }
 
     @Test("refreshFileTree then loadDirectory does not crash from stale async git")
-    func refreshFileTreeThenSwitchProject() throws {
+    @MainActor
+    func refreshFileTreeThenSwitchProject() async throws {
         let dir1 = try makeGitRepo()
         let dir2 = try makeTempDirectory()
         defer { cleanup(dir1); cleanup(dir2) }
@@ -301,17 +352,19 @@ struct WorkspaceManagerTests {
         manager.refreshFileTree()
 
         // Immediately switch to dir2 (non-git) — async git Task for dir1
-        // is still in-flight but should not crash or corrupt state
+        // is still in-flight but should not crash or corrupt state.
         manager.loadDirectory(url: dir2)
         manager.refreshFileTree()
 
         #expect(manager.rootURL == dir2)
+        await waitFor { manager.rootNodes.contains { $0.name == "other.txt" } }
         let names = manager.rootNodes.map(\.url.lastPathComponent)
         #expect(names.contains("other.txt"))
     }
 
     @Test("refreshFileTree uses shallow load followed by async deep load")
-    func refreshFileTreeProgressiveLoad() throws {
+    @MainActor
+    func refreshFileTreeProgressiveLoad() async throws {
         let dir = try makeTempDirectory()
         defer { cleanup(dir) }
 
@@ -329,6 +382,7 @@ struct WorkspaceManagerTests {
         let manager = WorkspaceManager()
         manager.loadDirectory(url: dir)
         manager.refreshFileTree()
+        await waitFor { manager.rootNodes.contains { $0.name == "top.txt" } }
 
         // Top-level files should be present
         let names = manager.rootNodes.map(\.url.lastPathComponent)
@@ -478,7 +532,8 @@ struct WorkspaceManagerTests {
     }
 
     @Test("Multiple rapid loadDirectory calls settle on the last directory")
-    func multipleRapidLoadDirectory() throws {
+    @MainActor
+    func multipleRapidLoadDirectory() async throws {
         let dirs = try (0..<5).map { _ in try makeTempDirectory() }
         defer { dirs.forEach { cleanup($0) } }
 
@@ -498,13 +553,15 @@ struct WorkspaceManagerTests {
         // Should settle on the last directory
         #expect(manager.rootURL == dirs.last)
         manager.refreshFileTree()
+        await waitFor { manager.rootNodes.contains { $0.name == "file4.txt" } }
         let names = manager.rootNodes.map(\.url.lastPathComponent)
         #expect(names.contains("file4.txt"))
         #expect(!names.contains("file0.txt"))
     }
 
     @Test("loadGeneration prevents stale async results from overwriting newer state")
-    func loadGenerationPreventsStaleResults() throws {
+    @MainActor
+    func loadGenerationPreventsStaleResults() async throws {
         let dir1 = try makeTempDirectory()
         let dir2 = try makeTempDirectory()
         defer { cleanup(dir1); cleanup(dir2) }
@@ -530,8 +587,10 @@ struct WorkspaceManagerTests {
         // Synchronous state should reflect dir2
         #expect(manager.rootURL == dir2)
 
-        // Use sync refresh to verify
+        // refreshFileTree is now async (issue #1006); poll for the
+        // shallow pass to land and verify the latest generation wins.
         manager.refreshFileTree()
+        await waitFor { manager.rootNodes.contains { $0.name == "from_dir2.txt" } }
         let names = manager.rootNodes.map(\.url.lastPathComponent)
         #expect(names.contains("from_dir2.txt"))
         #expect(!names.contains("from_dir1.txt"))
@@ -564,7 +623,8 @@ struct WorkspaceManagerTests {
         manager.loadDirectory(url: dir)
         manager.refreshFileTree()
 
-        // Phase 1 (sync) loads shallow tree — all top-level dirs visible immediately
+        // Phase 1 (shallow pass) lands on main via MainActor.run; poll for it.
+        await waitFor { manager.rootNodes.contains { $0.name == "alpha" } }
         let topNames = manager.rootNodes.map(\.name)
         #expect(topNames.contains("alpha"))
         #expect(topNames.contains("beta"))
@@ -573,8 +633,8 @@ struct WorkspaceManagerTests {
         #expect(topNames == topNames.sorted())
 
         // Phase 2 (async) loads full tree in parallel — wait for it to complete
-        for _ in 0..<20 {
-            try await Task.sleep(for: .milliseconds(100))
+        for _ in 0..<60 {
+            try await Task.sleep(for: .milliseconds(50))
             let alphaNode = manager.rootNodes.first { $0.name == "alpha" }
             let level4 = alphaNode?.children?.first { $0.name == "level1" }?
                 .children?.first { $0.name == "level2" }?
@@ -601,7 +661,8 @@ struct WorkspaceManagerTests {
     }
 
     @Test("loadDirectory twice quickly uses latest directory")
-    func loadDirectoryRaceProtection() throws {
+    @MainActor
+    func loadDirectoryRaceProtection() async throws {
         let dir1 = try makeTempDirectory()
         let dir2 = try makeTempDirectory()
         defer { cleanup(dir1); cleanup(dir2) }
@@ -618,8 +679,10 @@ struct WorkspaceManagerTests {
         #expect(manager.rootURL == dir2)
         #expect(manager.projectName == dir2.lastPathComponent)
 
-        // Use synchronous refresh to load dir2 content
+        // refreshFileTree is now async (issue #1006); poll for the
+        // dir2 content to land.
         manager.refreshFileTree()
+        await waitFor { manager.rootNodes.contains { $0.name == "from_dir2.txt" } }
         let names = manager.rootNodes.map(\.url.lastPathComponent)
         #expect(names.contains("from_dir2.txt"))
         #expect(!names.contains("from_dir1.txt"))
@@ -627,7 +690,7 @@ struct WorkspaceManagerTests {
 
     @Test("refreshFileTree shallow load preserves gitignored dir children")
     @MainActor
-    func refreshFileTreeKeepsGitignoredChildren() throws {
+    func refreshFileTreeKeepsGitignoredChildren() async throws {
         let tempDir = try makeTempDirectory()
         defer { cleanup(tempDir) }
 
@@ -655,10 +718,10 @@ struct WorkspaceManagerTests {
 
         let manager = WorkspaceManager()
         manager.loadDirectory(url: tempDir)
-        // loadDirectory dispatches heavy work to a background queue.
-        // Use the synchronous refreshFileTree to populate rootNodes
-        // deterministically, mirroring what the file watcher does at runtime.
+        // refreshFileTree is now async (issue #1006); poll for the
+        // shallow pass to land before inspecting rootNodes.
         manager.refreshFileTree()
+        await waitFor { manager.rootNodes.contains { $0.name == ".claude" } }
 
         let claudeNode = manager.rootNodes.first { $0.name == ".claude" }
         #expect(claudeNode != nil, "`.claude` should appear in rootNodes")
