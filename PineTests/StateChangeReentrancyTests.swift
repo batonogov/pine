@@ -104,12 +104,16 @@ struct StateChangeReentrancyTests {
         coordinator.scrollView = scrollView
         coordinator.syncContentVersion()
 
-        // Simulate the synchronous selection-notification delivery that
-        // AppKit posts during endEditing/setSelectedRanges.
-        NotificationCenter.default.post(
-            name: NSTextView.didChangeSelectionNotification,
-            object: textView
-        )
+        // Wire the Coordinator as the text view's delegate so AppKit actually
+        // delivers `textViewDidChangeSelection(_:)` to it. Without this wiring
+        // the test would post a notification nobody observes, pass trivially,
+        // and not exercise the selection-change path at all.
+        textView.delegate = coordinator
+
+        // Simulate the synchronous selection-notification delivery that AppKit
+        // posts during a programmatic `setSelectedRange`. Because `delegate` is
+        // set, this reaches `reportStateChange` synchronously.
+        textView.setSelectedRange(NSRange(location: 2, length: 0))
 
         // Must not fire synchronously — the whole point of the #1032 fix.
         #expect(syncCallCount == 0,
@@ -186,25 +190,20 @@ struct StateChangeReentrancyTests {
         coordinator.scrollView = scrollView
         coordinator.syncContentVersion()
 
+        // Wire the Coordinator as the text view's delegate so AppKit actually
+        // delivers `textViewDidChangeSelection(_:)` to it. Without this wiring
+        // the test would post a notification nobody observes, never reach
+        // `reportStateChange`, and `counter.count` would stay 0 — failing the
+        // assertion below without exercising the path under test.
+        textView.delegate = coordinator
+
         // Simulate the rapid sequence AppKit produces during a programmatic
-        // edit + selection restore: replaceCharacters → setSelectedRange →
-        // scroll. All three funnel through reportStateChange on the same
-        // runloop, so they must coalesce into exactly one onStateChange.
+        // edit + selection restore. With `delegate` wired, each
+        // `setSelectedRange` reaches `reportStateChange` synchronously on the
+        // same runloop, so they must coalesce into exactly one onStateChange.
         textView.setSelectedRange(NSRange(location: 3, length: 0))
-        NotificationCenter.default.post(
-            name: NSTextView.didChangeSelectionNotification,
-            object: textView
-        )
         textView.setSelectedRange(NSRange(location: 7, length: 0))
-        NotificationCenter.default.post(
-            name: NSTextView.didChangeSelectionNotification,
-            object: textView
-        )
         textView.setSelectedRange(NSRange(location: 9, length: 0))
-        NotificationCenter.default.post(
-            name: NSTextView.didChangeSelectionNotification,
-            object: textView
-        )
 
         // Drain the runloop.
         await Task.yield()
