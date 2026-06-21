@@ -24,6 +24,8 @@ enum AgentType: Equatable, Sendable {
     case aider
     /// GitHub Copilot CLI (`github-copilot-cli`).
     case copilot
+    /// pi coding agent (`pi`).
+    case pi
     /// Any other/unrecognised agent, identified by a free-form name.
     case generic(name: String)
 
@@ -34,6 +36,7 @@ enum AgentType: Equatable, Sendable {
         case .codex: "Codex"
         case .aider: "Aider"
         case .copilot: "Copilot"
+        case .pi: "Pi"
         case .generic(let name): name
         }
     }
@@ -46,6 +49,7 @@ enum AgentType: Equatable, Sendable {
         case .codex: ["codex"]
         case .aider: ["aider"]
         case .copilot: ["github-copilot-cli", "copilot"]
+        case .pi: ["pi"]
         case .generic: []
         }
     }
@@ -57,6 +61,7 @@ enum AgentType: Equatable, Sendable {
         case .codex: .systemGreen
         case .aider: .systemPurple
         case .copilot: .systemBlue
+        case .pi: .systemTeal
         case .generic: .systemGray
         }
     }
@@ -70,7 +75,7 @@ enum AgentType: Equatable, Sendable {
         guard !trimmed.isEmpty else { return nil }
         let lowered = trimmed.lowercased()
 
-        let known: [AgentType] = [.claudeCode, .codex, .aider, .copilot]
+        let known: [AgentType] = [.claudeCode, .codex, .aider, .copilot, .pi]
         for agent in known where agent.cliNames.contains(lowered) {
             return agent
         }
