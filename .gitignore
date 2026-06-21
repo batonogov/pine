@@ -39,5 +39,6 @@ assets/screenshot-unknown-*.png
 # Snapshot test failure artifacts
 PineTests/SnapshotTests/__Snapshots__/*.actual.png
 
-# Claude Code
+# Agents
 .claude/
+.pi/
