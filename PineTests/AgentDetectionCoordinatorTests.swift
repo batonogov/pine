@@ -1,0 +1,122 @@
+//
+//  AgentDetectionCoordinatorTests.swift
+//  PineTests
+//
+//  Unit tests for AgentDetectionCoordinator (issue #951).
+//
+
+import Testing
+@testable import Pine
+
+@MainActor
+@Suite("AgentDetectionCoordinator Tests")
+struct AgentDetectionCoordinatorTests {
+
+    @Test func parsePsOutputExtractsPidAndCommand() {
+        let output = "1234 /bin/bash\n5678 claude --verbose\n9012 codex"
+        let processes = AgentDetectionCoordinator.parsePsOutput(output)
+        #expect(processes.count == 3)
+        #expect(processes[0].pid == 1234)
+        #expect(processes[1].command == "claude --verbose")
+    }
+
+    @Test func parsePsOutputSkipsNonNumericLines() {
+        let processes = AgentDetectionCoordinator.parsePsOutput("PID COMMAND\n42 claude")
+        #expect(processes.count == 1)
+        #expect(processes[0].pid == 42)
+    }
+
+    @Test func parsePsOutputHandlesEmptyInput() {
+        #expect(AgentDetectionCoordinator.parsePsOutput("").isEmpty)
+    }
+
+    @Test func coordinatorFeedsSnapshotsToDetector() {
+        let detector = AgentDetector()
+        let runner: ProcessRunner = { _, _, _, _ in
+            ProcessRunResult(stdout: "100 claude\n200 codex\n300 bash", stderr: "", exitCode: 0, timedOut: false)
+        }
+        let coordinator = AgentDetectionCoordinator(detector: detector, terminalManager: nil, processRunner: runner, pollInterval: 0.05)
+        coordinator.runSnapshotForTesting()
+        #expect(detector.detectedSessions.count == 2)
+        #expect(detector.detectedSessions[0].agentType == .claudeCode)
+        #expect(detector.detectedSessions[1].agentType == .codex)
+    }
+
+    @Test func coordinatorReconcilesDoneWhenProcessExits() {
+        let detector = AgentDetector()
+        var mockOutput = "100 claude"
+        let runner: ProcessRunner = { _, _, _, _ in
+            ProcessRunResult(stdout: mockOutput, stderr: "", exitCode: 0, timedOut: false)
+        }
+        let coordinator = AgentDetectionCoordinator(detector: detector, terminalManager: nil, processRunner: runner, pollInterval: 0.05)
+        coordinator.runSnapshotForTesting()
+        #expect(detector.activeCount == 1)
+        mockOutput = ""
+        coordinator.runSnapshotForTesting()
+        #expect(detector.detectedSessions[0].state == .done)
+        #expect(detector.activeCount == 0)
+    }
+
+    @Test func coordinatorDoesNotDoubleCount() {
+        let detector = AgentDetector()
+        let runner: ProcessRunner = { _, _, _, _ in
+            ProcessRunResult(stdout: "100 claude", stderr: "", exitCode: 0, timedOut: false)
+        }
+        let coordinator = AgentDetectionCoordinator(detector: detector, terminalManager: nil, processRunner: runner, pollInterval: 0.05)
+        coordinator.runSnapshotForTesting()
+        coordinator.runSnapshotForTesting()
+        #expect(detector.detectedSessions.count == 1)
+    }
+
+    @Test func startStopIsIdempotent() {
+        let detector = AgentDetector()
+        let runner: ProcessRunner = { _, _, _, _ in ProcessRunResult(stdout: "", stderr: "", exitCode: 0, timedOut: false) }
+        let coordinator = AgentDetectionCoordinator(detector: detector, terminalManager: nil, processRunner: runner, pollInterval: 0.05)
+        #expect(!coordinator.isRunning)
+        coordinator.start()
+        #expect(coordinator.isRunning)
+        coordinator.start()
+        coordinator.stop()
+        #expect(!coordinator.isRunning)
+        coordinator.stop()
+    }
+
+    @Test func sessionForPIDReturnsActiveSession() {
+        let detector = AgentDetector()
+        detector.processSnapshotDidUpdate([DetectedProcess(pid: 500, command: "claude")])
+        let session = detector.session(forPID: 500)
+        #expect(session != nil)
+        #expect(session?.agentType == .claudeCode)
+    }
+
+    @Test func sessionForPIDReturnsNilForUnknown() {
+        let detector = AgentDetector()
+        detector.processSnapshotDidUpdate([DetectedProcess(pid: 500, command: "claude")])
+        #expect(detector.session(forPID: 999) == nil)
+    }
+
+    @Test func sessionForPIDReturnsNilForDone() {
+        let detector = AgentDetector()
+        detector.processSnapshotDidUpdate([DetectedProcess(pid: 500, command: "claude")])
+        detector.processSnapshotDidUpdate([])
+        #expect(detector.session(forPID: 500) == nil)
+    }
+
+    @Test func badgeColorUsesAgentTypeColor() {
+        for agentType in [AgentType.claudeCode, .codex, .aider, .copilot, .pi] {
+            let session = AgentSession(agentType: agentType)
+            #expect(session.agentType.color == agentType.color)
+        }
+    }
+
+    @Test func badgeColorForGenericIsGray() {
+        let session = AgentSession(agentType: .generic(name: "custom"))
+        #expect(session.agentType.color == .systemGray)
+    }
+
+    @Test func tooltipFormatIsDisplayNameAndState() {
+        let session = AgentSession(agentType: .claudeCode, state: .executing)
+        let expected = "\(session.agentType.displayName) — \(session.state.displayName)"
+        #expect(expected == "Claude Code — Executing")
+    }
+}

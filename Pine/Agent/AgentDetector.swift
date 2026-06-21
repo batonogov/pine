@@ -78,6 +78,16 @@ final class AgentDetector {
         detectedSessions.filter { $0.state != .done }
     }
 
+    /// Returns the active (non-`.done`) session tracking the given pid, or
+    /// `nil` if no agent with that pid is currently tracked.
+    ///
+    /// Used by `AgentDetectionCoordinator` to map a terminal tab's foreground
+    /// process to its agent session for badge display (#951).
+    func session(forPID pid: Int32) -> AgentSession? {
+        guard let session = sessionsByPID[pid], session.state != .done else { return nil }
+        return session
+    }
+
     /// Convenience accessor for the number of currently-active agent sessions.
     var activeCount: Int { activeSessions.count }
 
