@@ -355,18 +355,6 @@ extension ContentView {
 
 extension ContentView {
 
-    func closeOtherTabsWithConfirmation(keeping tabID: UUID) {
-        TabCloseHelper.closeOtherTabs(keeping: tabID, in: activeTabManager, gitProvider: workspace.gitProvider)
-    }
-
-    func closeTabsToTheRightWithConfirmation(of tabID: UUID) {
-        TabCloseHelper.closeTabsToTheRight(of: tabID, in: activeTabManager, gitProvider: workspace.gitProvider)
-    }
-
-    func closeAllTabsWithConfirmation() {
-        TabCloseHelper.closeAllTabs(in: activeTabManager, gitProvider: workspace.gitProvider)
-    }
-
     func closeTabWithConfirmation(_ tab: EditorTab) {
         TabCloseHelper.closeTab(tab, in: activeTabManager, gitProvider: workspace.gitProvider)
     }
