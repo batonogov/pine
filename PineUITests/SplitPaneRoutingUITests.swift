@@ -2,16 +2,30 @@
 //  SplitPaneRoutingUITests.swift
 //  PineUITests
 //
-//  End-to-end UI coverage for split-pane command routing from a non-primary
+//  UI smoke coverage for split-pane command availability from a non-primary
 //  editor pane (follow-up to #1024, issue #1026).
 //
-//  The unit-level SplitPaneRoutingTests verify data-flow contracts but cannot
-//  exercise SwiftUI view methods directly. These XCUITest cases drive the
-//  actual view routing end-to-end: they create a two-editor-pane split via
-//  pre-seeded session state, focus the non-primary pane, and verify that
-//  commands (Go-to-Line, Close All Tabs) target the focused pane — not the
-//  primary pane. This catches a #998-style regression where a developer
-//  swaps `activeTabManager` → `primaryTabManager` inside a view method.
+//  ⚠️ These are SMOKE tests, not routing-verification tests.
+//
+//  Routing itself (active TabManager vs primary TabManager) is verified at
+//  the unit level by `PineTests/SplitPaneRoutingTests.swift` — 20+ tests
+//  that pin every routing primitive (pendingGoToLine, close*, inline diff,
+//  change navigation, status bar, recovery) and FAIL if routing regresses
+//  from active→primary. Those unit tests are the regression gate for #998.
+//
+//  These XCUITest cases complement the unit suite by verifying the USER-
+//  FACING layer: that commands are reachable and functional when a non-
+//  primary pane is focused, session-restore produces a valid two-pane
+//  layout, and the tab context menu operates per-pane as expected. They do
+//  NOT — and cannot — verify routing through XCUITest, because:
+//
+//    1. The tab context menu binds to the per-pane `tabManager` (PaneLeafView),
+//       not `activeTabManager` — so Close All Tabs from a context menu is
+//       per-pane by construction, independent of routing.
+//    2. The Go-to-Line overlay appears whenever any tab is active, so its
+//       presence does not prove routing — and cursor movement (the actual
+//       routing effect) is unverifiable via XCUITest due to the
+//       GutterTextView keyboard-input limitation (see AGENTS.md).
 //
 //  XCUITest cannot create editor-pane splits via drag-and-drop (SwiftUI's
 //  onDrag/onDrop relies on the macOS pasteboard system, which synthetic
@@ -114,7 +128,7 @@ final class SplitPaneRoutingUITests: PineUITestCase {
         runDefaults(["write", bundleID, key, "-data", hex])
 
         guard defaultsWriteSucceeded(key: key) else {
-            throw XCTSkip("Session state seeding failed — skipping split-pane routing tests")
+            throw XCTSkip("Session state seeding failed — skipping split-pane smoke tests")
         }
     }
 
@@ -169,7 +183,7 @@ final class SplitPaneRoutingUITests: PineUITestCase {
 
     /// Verifies the pre-seeded session state produces a two-editor-pane split
     /// with both files visible. If this fails, session-state seeding is broken
-    /// and all subsequent routing tests are invalid.
+    /// and all subsequent smoke tests are invalid.
     func testSplitLayoutRestoredWithTwoEditorPanes() throws {
         launchAndRestoreSplit()
 
@@ -193,14 +207,15 @@ final class SplitPaneRoutingUITests: PineUITestCase {
         )
     }
 
-    // MARK: - Test: Close All Tabs routes to the active pane
+    // MARK: - Test: Close All Tabs from non-primary pane (per-pane smoke)
 
-    /// From the secondary pane, triggers "Close All Tabs" via the tab context
-    /// menu. Only the secondary pane's tab should close; the primary pane's
-    /// tab must survive. This catches a #998-style regression where
-    /// `closeAllTabsWithConfirmation` routes to `primaryTabManager` instead of
-    /// `activeTabManager`.
-    func testCloseAllTabsRoutesToActivePane() throws {
+    /// Smoke test: triggers "Close All Tabs" via the tab context menu from the
+    /// secondary pane. Verifies the command is reachable and operates per-pane
+    /// (the context menu binds to the pane's own `tabManager` via PaneLeafView,
+    /// not `activeTabManager`). This is a UI availability + per-pane isolation
+    /// check — routing through `activeTabManager` is verified at the unit level
+    /// by `SplitPaneRoutingTests.closeAllTabsRoutesToActivePaneOnly`.
+    func testCloseAllTabsFromNonPrimaryPane() throws {
         launchAndRestoreSplit()
 
         // Both tabs must be present before the test.
@@ -225,22 +240,24 @@ final class SplitPaneRoutingUITests: PineUITestCase {
         let utilsGone = !editorTab("utils.swift").waitForExistence(timeout: 3)
         XCTAssertTrue(utilsGone, "utils.swift (secondary pane) should be closed by Close All Tabs")
 
-        // The primary pane's tab must survive — proving routing went to the
-        // active pane, not the primary.
+        // The primary pane's tab must survive — the tab context menu binds to
+        // the pane's own `tabManager` (PaneLeafView), so Close All Tabs only
+        // affects the pane whose tab was right-clicked.
         XCTAssertTrue(
             editorTab("main.swift").exists,
-            "main.swift (primary pane) must survive — Close All Tabs should only affect the active pane"
+            "main.swift (primary pane) must survive — the context menu operates per-pane"
         )
     }
 
-    // MARK: - Test: Go to Line opens from non-primary pane
+    // MARK: - Test: Go to Line opens from non-primary pane (availability smoke)
 
-    /// Focuses the secondary pane and triggers Go to Line via the Edit menu.
-    /// The Go to Line overlay must appear, confirming the command fires from
-    /// the active pane. (Cursor position cannot be verified in XCUITest due
-    /// to the GutterTextView keyboard-input limitation documented in
-    /// AGENTS.md.)
-    func testGoToLineOpensFromNonPrimaryPane() throws {
+    /// Smoke test: focuses the secondary pane and triggers Go to Line via the
+    /// Edit menu, verifying the overlay is reachable from a non-primary pane.
+    /// This is a UI availability check — the overlay appears whenever any tab
+    /// is active, so its presence does not prove routing. The actual routing
+    /// (pendingGoToLine lands in the active pane, not primary) is verified at
+    /// the unit level by `SplitPaneRoutingTests.goToLineOnGoToRoutesToActivePane`.
+    func testGoToLineAvailableFromNonPrimaryPane() throws {
         launchAndRestoreSplit()
 
         XCTAssertTrue(waitForExistence(editorTab("utils.swift"), timeout: 10))
@@ -257,14 +274,15 @@ final class SplitPaneRoutingUITests: PineUITestCase {
         )
         goToLineItem.click()
 
-        // The Go to Line overlay must appear — confirming the command routed
-        // through the active (secondary) pane's TabManager. We check for the
-        // text field inside the overlay (goToLineField) which is the most
-        // reliable indicator the overlay is presented.
+        // The Go to Line overlay must appear — confirming the command is
+        // reachable from the non-primary pane. We check for the text field
+        // inside the overlay (goToLineField) which is the most reliable
+        // indicator the overlay is presented. This is an availability check,
+        // not a routing proof (see file header).
         let goToLineField = app.descendants(matching: .any)["goToLineField"].firstMatch
         XCTAssertTrue(
             waitForExistence(goToLineField, timeout: 5),
-            "Go to Line overlay should appear when triggered from the non-primary pane"
+            "Go to Line overlay should be reachable from the non-primary pane"
         )
 
         // Dismiss.
