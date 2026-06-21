@@ -104,7 +104,7 @@ enum AgentState: Equatable, Sendable {
 /// terminal tab. `id` is stable for the session lifetime; mutable properties
 /// (`state`, `currentTask`, `filesModified`, `filesRead`) are updated by an
 /// `AgentDetector` as the session progresses.
-@Observable
+@MainActor @Observable
 final class AgentSession: Identifiable {
     /// Stable identifier for this session.
     let id: UUID
@@ -147,13 +147,13 @@ final class AgentSession: Identifiable {
 }
 
 extension AgentSession: Equatable {
-    static func == (lhs: AgentSession, rhs: AgentSession) -> Bool {
+    nonisolated static func == (lhs: AgentSession, rhs: AgentSession) -> Bool {
         lhs.id == rhs.id
     }
 }
 
 extension AgentSession: Hashable {
-    func hash(into hasher: inout Hasher) {
+    nonisolated func hash(into hasher: inout Hasher) {
         hasher.combine(id)
     }
 }

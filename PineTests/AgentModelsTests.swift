@@ -33,12 +33,21 @@ struct AgentModelsTests {
         #expect(AgentType.generic(name: "Custom").cliNames.isEmpty)
     }
 
-    @Test func color_isNotNil() {
-        // All cases must return a concrete system color for UI color-coding.
-        for agent in [AgentType.claudeCode, .codex, .aider, .copilot, .generic(name: "X")] {
-            // NSColor is always non-nil here; exercise the getter to ensure
-            // no crash and a valid object is returned for every case.
-            #expect(agent.color != NSColor.clear)
+    @Test func color_isDistinctAndNotClearPerAgent() {
+        let agents: [AgentType] = [.claudeCode, .codex, .aider, .copilot, .generic(name: "X")]
+
+        // Every case must resolve to a concrete, non-transparent color.
+        for agent in agents {
+            #expect(agent.color != .clear)
+        }
+
+        // Known agents must return distinct colors so UI badges stay distinguishable.
+        let known = [AgentType.claudeCode, .codex, .aider, .copilot]
+        for i in known.indices {
+            for j in (i + 1)..<known.count {
+                #expect(known[i].color != known[j].color,
+                        "\(known[i]) and \(known[j]) should have distinct colors")
+            }
         }
     }
 
@@ -85,6 +94,24 @@ struct AgentModelsTests {
         #expect(AgentType.resolve(fromProcessName: "") == nil)
         #expect(AgentType.resolve(fromProcessName: "   ") == nil)
         #expect(AgentType.resolve(fromProcessName: "\t\n") == nil)
+    }
+
+    @Test func resolve_rejectsInexactCliName() {
+        // cliNames uses exact membership, not prefix/substring matching.
+        // "claude-code" resembles the registered "claude" but must not match it.
+        let result = AgentType.resolve(fromProcessName: "claude-code")
+        #expect(result == .generic(name: "claude-code"))
+        #expect(result != .claudeCode)
+    }
+
+    @Test func resolve_preservesCaseForGenericName() {
+        // Unknown names keep their original case (not lowercased) in .generic.
+        let result = AgentType.resolve(fromProcessName: "MyAgent")
+        if case .generic(let name) = result {
+            #expect(name == "MyAgent")
+        } else {
+            Issue.record("expected .generic, got \(result)")
+        }
     }
 
     // MARK: - AgentState
