@@ -5,6 +5,7 @@
 //  Unit tests for AgentDetectionCoordinator (issue #951).
 //
 
+import AppKit
 import Testing
 @testable import Pine
 
@@ -44,14 +45,18 @@ struct AgentDetectionCoordinatorTests {
 
     @Test func coordinatorReconcilesDoneWhenProcessExits() {
         let detector = AgentDetector()
-        var mockOutput = "100 claude"
+        // Reference-type box so the @Sendable mock runner can read a
+        // mutable value without capturing a mutable local (strict
+        // concurrency forbids capturing `var` in @Sendable closures).
+        nonisolated final class MockOutput: @unchecked Sendable { var value: String; init(_ v: String) { value = v } }
+        let mockOutput = MockOutput("100 claude")
         let runner: ProcessRunner = { _, _, _, _ in
-            ProcessRunResult(stdout: mockOutput, stderr: "", exitCode: 0, timedOut: false)
+            ProcessRunResult(stdout: mockOutput.value, stderr: "", exitCode: 0, timedOut: false)
         }
         let coordinator = AgentDetectionCoordinator(detector: detector, terminalManager: nil, processRunner: runner, pollInterval: 0.05)
         coordinator.runSnapshotForTesting()
         #expect(detector.activeCount == 1)
-        mockOutput = ""
+        mockOutput.value = ""
         coordinator.runSnapshotForTesting()
         #expect(detector.detectedSessions[0].state == .done)
         #expect(detector.activeCount == 0)

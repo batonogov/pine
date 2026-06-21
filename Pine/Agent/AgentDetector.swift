@@ -23,7 +23,13 @@ import Foundation
 ///
 /// `cwd` is carried for future file-system correlation (Phase 2) but is NOT
 /// used for matching in this implementation.
-struct DetectedProcess: Sendable, Equatable {
+///
+/// Marked `nonisolated` so the memberwise init is callable from a
+/// `nonisolated` context (`AgentDetectionCoordinator.parsePsOutput` runs
+/// off the main thread on a background dispatch queue). Without this, the
+/// project-wide `-default-isolation=MainActor` flag would make the init
+/// MainActor-isolated and break the off-main `ps` parsing path.
+nonisolated struct DetectedProcess: Sendable, Equatable {
     /// Operating-system process id.
     let pid: Int32
     /// Full command line as reported by `ps -o command=` (executable + args).
