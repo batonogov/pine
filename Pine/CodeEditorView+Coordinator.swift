@@ -87,6 +87,27 @@ extension CodeEditorView {
         /// Диапазон символов, уже подсвеченных viewport-based подсветкой.
         /// Internal access — записывается из `applyViewportHighlighting` и `highlightOnScrollIfNeeded`.
         var highlightedCharRange: NSRange?
+        /// Pending state change — coalesces multiple selection/scroll
+        /// notifications within the same runloop so only the latest
+        /// cursor/scroll wins, and breaks the synchronous reentrancy that
+        /// caused the macOS 27 exclusivity abort (issue #1032).
+        ///
+        /// `onStateChange` mutates @Observable fields
+        /// (cursorPosition/scrollOffset) on the active tab, which forces a
+        /// synchronous SwiftUI re-render. When this happens inside an AppKit
+        /// text-storage / selection-notification callstack (programmatic
+        /// `setSelectedRange` after `replaceCharacters` — external reload,
+        /// toggle comment, auto-indent, tab switch), the re-render collides
+        /// with the outer callstack's exclusive access to `EnvironmentValues`
+        /// and triggers `_swift_reportExclusivityConflict` → `abort()` on
+        /// macOS 27 beta 1 where notification delivery became synchronous.
+        ///
+        /// Deferring to the next runloop breaks the reentrancy: the AppKit
+        /// callstack unwinds first, THEN the @Observable mutation runs, so
+        /// there is no overlap.
+        private var deferredStateChange: (cursor: Int, scroll: CGFloat)?
+        private var deferredStateChangeScheduled = false
+
         /// Дебаунс для подсветки при скролле.
         private var scrollHighlightWorkItem: DispatchWorkItem?
         /// Задержка дебаунсинга скролла (~3 кадра при 120fps ProMotion)
@@ -1143,7 +1164,25 @@ extension CodeEditorView {
                   let textView = sv.documentView as? NSTextView else { return }
             let cursor = textView.selectedRange().location
             let scroll = sv.contentView.bounds.origin.y
-            parent.onStateChange?(cursor, scroll)
+
+            // Defer the @Observable mutation to the next runloop to break the
+            // reentrancy that caused the macOS 27 exclusivity abort (#1032).
+            // Coalesce: only schedule one async drain per runloop; the latest
+            // cursor/scroll overwrites any pending value so the final state is
+            // always correct. On macOS ≤ 26 this is a no-op semantically — the
+            // same values are delivered ~1 frame later (imperceptible at
+            // 120 Hz); on macOS 27 beta 1 it removes the synchronous overlap
+            // that triggered `_swift_reportExclusivityConflict`.
+            deferredStateChange = (cursor, scroll)
+            guard !deferredStateChangeScheduled else { return }
+            deferredStateChangeScheduled = true
+            DispatchQueue.main.async { [weak self] in
+                guard let self else { return }
+                self.deferredStateChangeScheduled = false
+                guard let pending = self.deferredStateChange else { return }
+                self.deferredStateChange = nil
+                self.parent.onStateChange?(pending.cursor, pending.scroll)
+            }
         }
     }
 }
