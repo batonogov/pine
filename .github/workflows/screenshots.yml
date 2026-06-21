@@ -18,6 +18,12 @@ jobs:
     runs-on: macos-26
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          # Checkout main (not the release tag) so the Commit screenshots
+          # step can push back to main. Without this, release-published
+          # runs land in detached HEAD on the tag and `git push` fails with
+          # "You are not currently on a branch." (issue #1030)
+          ref: main
 
       - name: Run screenshot tests and extract
         # The script soft-fails xcodebuild but hard-fails if extraction
