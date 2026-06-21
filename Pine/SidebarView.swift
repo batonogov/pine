@@ -173,16 +173,17 @@ struct SidebarView: View {
                     ScrollView {
                         VStack(alignment: .leading, spacing: 0) {
                             SidebarFileTree(nodes: workspace.rootNodes, selection: $selectedFile)
+                                .id(workspace.rootNodesRevision)
                         }
                         .padding(.vertical, 4)
                     }
                     .accessibilityIdentifier("sidebar")
                     .environment(editState)
                     .environment(expansion)
-                    .onChange(of: workspace.rootNodes) { _, newNodes in
+                    .onChange(of: workspace.rootNodesRevision) { _, _ in
                         // Drop expanded entries for folders that disappeared
                         // (e.g. after delete) so the set stays bounded.
-                        expansion.prune(toMatch: newNodes)
+                        expansion.prune(toMatch: workspace.rootNodes)
                     }
                     .onKeyPress(.return) {
                         // Finder-style: Enter on a selected sidebar item starts inline rename.

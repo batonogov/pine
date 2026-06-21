@@ -17,6 +17,16 @@ import SwiftUI
 final class WorkspaceManager {
     nonisolated private static let logger = Logger.fileTree
     var rootNodes: [FileNode] = []
+    /// Monotonically increasing counter bumped every time `rootNodes` is
+    /// assigned. Used by `SidebarView` as a SwiftUI `.id()` to force the
+    /// file tree to re-render after an external refresh (FSEvents).
+    ///
+    /// Without this, SwiftUI may not re-render expanded folders whose
+    /// `FileNode` identity (URL) is unchanged but whose children array has
+    /// been replaced with new instances — the nested `ForEach` keeps showing
+    /// stale children until the user manually collapses/expands the folder
+    /// (issue #1041).
+    private(set) var rootNodesRevision: Int = 0
     var projectName: String = "Pine"
     var rootURL: URL?
     /// True while the initial directory load is in progress (shallow or full phase).
@@ -77,6 +87,16 @@ final class WorkspaceManager {
     /// cheap enough that the duplicate cost of an echoed event is invisible
     /// to users.
     static let watcherDebounce: TimeInterval = UITimings.Debounce.fileWatcher
+
+    /// Sets `rootNodes`, bumps `rootNodesRevision`, and schedules a debounced
+    /// `onRootNodesChanged` notification. Centralised so every assignment site
+    /// (initial load, shallow refresh, full refresh) gets the revision bump
+    /// that drives the sidebar re-render fix (#1041).
+    private func setRootNodes(_ nodes: [FileNode]) {
+        rootNodes = nodes
+        rootNodesRevision += 1
+        notifyRootNodesChanged()
+    }
 
     /// Schedules a debounced `onRootNodesChanged` notification.
     /// Cancels any pending notification so rapid updates coalesce into one.
@@ -255,8 +275,7 @@ final class WorkspaceManager {
                     if let progressID { self?.progressTracker?.endOperation(progressID) }
                     return
                 }
-                self.rootNodes = shallowChildren
-                self.notifyRootNodesChanged()
+                self.setRootNodes(shallowChildren)
                 self.gitProvider.repositoryURL = gitInfo.repositoryURL
                 self.gitProvider.gitRootPath = gitInfo.gitRootPath
                 // Atomically apply git state in a single equality-checked
@@ -299,8 +318,7 @@ final class WorkspaceManager {
                     if let progressID { self?.progressTracker?.endOperation(progressID) }
                     return
                 }
-                self.rootNodes = fullChildren
-                self.notifyRootNodesChanged()
+                self.setRootNodes(fullChildren)
                 self.isLoading = false
                 self.resumeLoadingContinuations()
                 if let progressID { self.progressTracker?.endOperation(progressID) }
@@ -438,8 +456,7 @@ final class WorkspaceManager {
             ignoredPaths: ignoredPaths,
             maxDepth: Self.shallowDepth
         )
-        rootNodes = shallowResult.root.children ?? []
-        notifyRootNodesChanged()
+        setRootNodes(shallowResult.root.children ?? [])
 
         // Phase 2 (async): full tree (if depth-limited) + git status refresh,
         // off the main thread. Reuses the shared two-phase loader so race
