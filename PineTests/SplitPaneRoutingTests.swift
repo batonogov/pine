@@ -421,7 +421,7 @@ struct SplitPaneRoutingTests {
         #expect(firstTM.tabs.count == 1)
         #expect(secondTM.tabs.count == 1)
 
-        // Mirror ContentView.closeAllTabsWithConfirmation():
+        // Mirror the active-pane close-all contract (TabCloseHelper):
         //   TabCloseHelper.closeAllTabs(in: activeTabManager, gitProvider:)
         let provider = GitStatusProvider()
         TabCloseHelper.closeAllTabs(in: pm.activeTabManager, gitProvider: provider)
