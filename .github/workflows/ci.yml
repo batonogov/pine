@@ -1,6 +1,11 @@
 # NOTE: All third-party actions are pinned by full commit SHA for supply-chain safety.
 # To update an action: find the new version's commit SHA on GitHub (Tags → verify commit),
 # replace the SHA, and keep the "# vX" comment in sync.
+#
+# CI gate: PR jobs do NOT run until a maintainer adds the `run-ci` label.
+# Main-branch pushes and manual dispatch always run. Remove the label to
+# stop CI from re-running on subsequent pushes to the same PR.
+# Heavier opt-in jobs (perf, fuzz) keep their own labels on top of this gate.
 name: CI
 
 on:
@@ -35,6 +40,9 @@ jobs:
     name: SwiftLint
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    if: >-
+      github.event_name != 'pull_request' ||
+      contains(github.event.pull_request.labels.*.name, 'run-ci')
     env:
       SWIFTLINT_VERSION: "0.63.2"
       SWIFTLINT_SHA256: "dd1017cfd20a1457f264590bcb5875a6ee06cd75b9a9d4f77cd43a552499143b"
@@ -63,6 +71,9 @@ jobs:
     name: Build for Testing
     runs-on: macos-26
     timeout-minutes: 30
+    if: >-
+      github.event_name != 'pull_request' ||
+      contains(github.event.pull_request.labels.*.name, 'run-ci')
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
 
@@ -469,6 +480,9 @@ jobs:
     name: Verify UI Test Shards
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    if: >-
+      github.event_name != 'pull_request' ||
+      contains(github.event.pull_request.labels.*.name, 'run-ci')
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
 
