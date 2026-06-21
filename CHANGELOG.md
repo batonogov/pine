@@ -1,5 +1,30 @@
 # Changelog
 
+## [1.29.0](https://github.com/batonogov/pine/compare/v1.28.1...v1.29.0) (2026-06-20)
+
+
+### Features
+
+* **perf:** Instruments template + OSSignposter tracing + input-latency rig ([#1023](https://github.com/batonogov/pine/issues/1023)) ([eef658b](https://github.com/batonogov/pine/commit/eef658b3d4f541f700137e247f0ebf663c2bfec4)), closes [#1005](https://github.com/batonogov/pine/issues/1005)
+
+
+### Bug Fixes
+
+* **ci:** repair screenshots.yml + add failure notification ([#1019](https://github.com/batonogov/pine/issues/1019)) ([66e430a](https://github.com/batonogov/pine/commit/66e430a5a8c30da540cba8be47f7dc21a480aea7))
+* **concurrency:** cancel outstanding highlight work in Coordinator.deinit ([#1016](https://github.com/batonogov/pine/issues/1016)) ([e48bd84](https://github.com/batonogov/pine/commit/e48bd84782a1909c39d9037ebda6d70f14983226)), closes [#1007](https://github.com/batonogov/pine/issues/1007)
+* **perf:** move shallow loadTree off main thread in refreshFileTree ([#1022](https://github.com/batonogov/pine/issues/1022)) ([ff17ec9](https://github.com/batonogov/pine/commit/ff17ec9676a3bfd1433166aa7eef8a44e61eeb78))
+* **split-pane:** route commands through active pane + fix TabManager leak ([#1024](https://github.com/batonogov/pine/issues/1024)) ([c0bd8da](https://github.com/batonogov/pine/commit/c0bd8dae4e1c167a51c3de1b0445aa27c8482183))
+
+
+### Documentation
+
+* sync AGENTS.md drift (debounce, snapshot count, thresholds) ([#1017](https://github.com/batonogov/pine/issues/1017)) ([6af03d5](https://github.com/batonogov/pine/commit/6af03d5e5c04bc4c72d99b6abc3d93064ffb8822)), closes [#1004](https://github.com/batonogov/pine/issues/1004)
+
+
+### Miscellaneous
+
+* **ci:** remove Claude Code workflows ([#1025](https://github.com/batonogov/pine/issues/1025)) ([4a2d5ec](https://github.com/batonogov/pine/commit/4a2d5ec9e0898243fbacba34aec3a9187287f7a6))
+
 ## [1.28.1](https://github.com/batonogov/pine/compare/v1.28.0...v1.28.1) (2026-06-18)
 
 
