@@ -23,7 +23,12 @@ final class AgentDetectionCoordinator {
     private var timer: DispatchSourceTimer?
     private(set) var isRunning = false
 
-    init(detector: AgentDetector, terminalManager: TerminalManager?, processRunner: @escaping ProcessRunner = runRealProcess, pollInterval: TimeInterval = 2.0) {
+    init(
+        detector: AgentDetector,
+        terminalManager: TerminalManager?,
+        processRunner: @escaping ProcessRunner = runRealProcess,
+        pollInterval: TimeInterval = 2.0
+    ) {
         self.detector = detector
         self.terminalManager = terminalManager
         self.processRunner = processRunner
@@ -50,7 +55,7 @@ final class AgentDetectionCoordinator {
 
     deinit { timer?.cancel() }
 
-    private nonisolated func captureSnapshot() {
+    nonisolated private func captureSnapshot() {
         let result = processRunner("/bin/ps", ["-eo", "pid=,command="], "", 3.0)
         let processes = Self.parsePsOutput(result.stdout)
         Task { @MainActor [weak self] in self?.applySnapshot(processes) }
