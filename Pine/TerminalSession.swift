@@ -858,6 +858,14 @@ final class TerminalTab: Identifiable, Hashable {
     let terminalView: LocalProcessTerminalView
     fileprivate(set) var isTerminated = false
 
+    // MARK: - Agent tracking (#951)
+
+    /// The AI agent session detected in this tab, if any. Set by
+    /// `AgentDetectionCoordinator` when the tab's foreground process matches
+    /// a known agent CLI. `nil` when no agent is running or the process has
+    /// exited. Drives the agent badge in `TerminalNativeTabItem`.
+    var agentSession: AgentSession?
+
     // MARK: - Search state
 
     /// All matches found by the most recent search.
@@ -1107,12 +1115,20 @@ final class TerminalTab: Identifiable, Hashable {
     /// Whether a foreground process (child of the shell) is currently running.
     /// Returns true if tcgetpgrp reports a different process group than the shell.
     var hasForegroundProcess: Bool {
-        guard isProcessRunning else { return false }
+        foregroundProcessID > 0
+    }
+
+    /// The process group ID of the foreground process in this terminal, or
+    /// `-1` if the shell itself is in the foreground or the process is not
+    /// running. Used by `AgentDetectionCoordinator` (#951).
+    var foregroundProcessID: Int32 {
+        guard isProcessRunning else { return -1 }
         let fd = terminalView.process.childfd
-        guard fd >= 0 else { return false }
+        guard fd >= 0 else { return -1 }
         let foregroundPgid = tcgetpgrp(fd)
         let shellPid = terminalView.process.shellPid
-        return foregroundPgid > 0 && foregroundPgid != shellPid
+        guard foregroundPgid > 0, foregroundPgid != shellPid else { return -1 }
+        return foregroundPgid
     }
 
     // MARK: - Search

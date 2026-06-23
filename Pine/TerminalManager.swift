@@ -17,6 +17,16 @@ final class TerminalManager {
     /// ID of the last-focused terminal pane (for Cmd+T routing).
     var lastActiveTerminalPaneID: PaneID?
 
+    // MARK: - Agent detection (#950, #951)
+
+    /// The agent detector fed by `agentCoordinator`. Exposed read-only so
+    /// future consumers (status bar #952) can observe it.
+    private(set) var agentDetector = AgentDetector()
+
+    /// Coordinator that polls `ps` off the main thread and reconciles agent
+    /// sessions with terminal tabs. Started in `startTerminals(_:)`.
+    private var agentCoordinator: AgentDetectionCoordinator?
+
     // MARK: - Tab creation
 
     /// Creates a terminal tab in the last-used terminal pane.
@@ -85,6 +95,13 @@ final class TerminalManager {
         guard let pm = paneManager else { return }
         for state in pm.terminalStates.values {
             state.startTabs(workingDirectory: workingDirectory)
+        }
+
+        // Start agent detection polling once terminals are live (#951).
+        if agentCoordinator == nil {
+            let coord = AgentDetectionCoordinator(detector: agentDetector, terminalManager: self)
+            agentCoordinator = coord
+            coord.start()
         }
     }
 }

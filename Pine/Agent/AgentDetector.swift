@@ -23,7 +23,13 @@ import Foundation
 ///
 /// `cwd` is carried for future file-system correlation (Phase 2) but is NOT
 /// used for matching in this implementation.
-struct DetectedProcess: Sendable, Equatable {
+///
+/// Marked `nonisolated` so the memberwise init is callable from a
+/// `nonisolated` context (`AgentDetectionCoordinator.parsePsOutput` runs
+/// off the main thread on a background dispatch queue). Without this, the
+/// project-wide `-default-isolation=MainActor` flag would make the init
+/// MainActor-isolated and break the off-main `ps` parsing path.
+nonisolated struct DetectedProcess: Sendable, Equatable {
     /// Operating-system process id.
     let pid: Int32
     /// Full command line as reported by `ps -o command=` (executable + args).
@@ -76,6 +82,16 @@ final class AgentDetector {
     /// Sessions whose state is not `.done`.
     var activeSessions: [AgentSession] {
         detectedSessions.filter { $0.state != .done }
+    }
+
+    /// Returns the active (non-`.done`) session tracking the given pid, or
+    /// `nil` if no agent with that pid is currently tracked.
+    ///
+    /// Used by `AgentDetectionCoordinator` to map a terminal tab's foreground
+    /// process to its agent session for badge display (#951).
+    func session(forPID pid: Int32) -> AgentSession? {
+        guard let session = sessionsByPID[pid], session.state != .done else { return nil }
+        return session
     }
 
     /// Convenience accessor for the number of currently-active agent sessions.

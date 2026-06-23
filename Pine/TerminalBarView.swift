@@ -11,6 +11,33 @@ import SwiftUI
 
 // Legacy terminal tab bar removed — terminal panes use TerminalPaneTabBar instead.
 
+// MARK: - Agent badge (issue #951)
+
+/// Colored badge displayed on a terminal tab when an AI agent is detected.
+/// Shows a colored dot using the agent's `AgentType.color`, with:
+/// - Pulsing animation for active states (`.thinking`, `.executing`)
+/// - Static for `.idle` / `.waitingInput`, dimmed for `.done`
+struct AgentTabBadge: View {
+    let session: AgentSession
+    @State private var pulse = false
+
+    private var isActive: Bool {
+        session.state == .thinking || session.state == .executing
+    }
+
+    var body: some View {
+        Circle()
+            .fill(Color(nsColor: session.agentType.color))
+            .frame(width: 7, height: 7)
+            .opacity(session.state == .done ? 0.4 : 1.0)
+            .scaleEffect(isActive && pulse ? 1.25 : 1.0)
+            .animation(isActive ? .easeInOut(duration: 0.8).repeatForever(autoreverses: true) : .default, value: pulse)
+            .onAppear { if isActive { pulse = true } }
+            .onChange(of: isActive) { _, active in pulse = active }
+            .help("\(session.agentType.displayName) — \(session.state.displayName)")
+    }
+}
+
 // MARK: - Terminal tab item (capsule style)
 
 struct TerminalNativeTabItem: View {
@@ -47,6 +74,10 @@ struct TerminalNativeTabItem: View {
             Text(tab.name)
                 .font(.system(size: 11))
                 .lineLimit(1)
+
+            if let session = tab.agentSession {
+                AgentTabBadge(session: session)
+            }
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 4)
