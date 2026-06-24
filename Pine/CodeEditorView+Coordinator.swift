@@ -1001,12 +1001,48 @@ extension CodeEditorView {
         }
 
         /// Handles fold code notifications from menu/keyboard shortcuts.
+        ///
+        /// The fold mutation is deferred to the next runloop to break the
+        /// reentrancy that causes the macOS 26 exclusivity abort. The menu
+        /// command (Cmd+Opt+arrows / Cmd+Opt+Shift+arrows) posts `.foldCode`
+        /// synchronously inside the `ButtonAction` callstack, which holds
+        /// SwiftUI's exclusive transaction access. Mutating `parent.foldState`
+        /// — a `@Binding` to a value-type `FoldState` — synchronously here
+        /// forces a SwiftUI body re-evaluation that collides with that access
+        /// and triggers `_swift_reportExclusivityConflict` → `abort()`.
+        ///
+        /// This is the same class of bug as #1051 (which closed the SwiftUI
+        /// `.onReceive` path) and #1047 (which closed the AppKit
+        /// `reportStateChange` path), on the one AppKit-observer path that
+        /// #1051 did not audit: the keyboard-driven `.foldCode` observer.
+        /// `applyFoldState()` is deferred alongside the mutation because it
+        /// reads `parent.foldState` and must observe the just-applied change.
         @objc func handleFoldCode(_ notification: Notification) {
             guard let sv = scrollView,
                   let textView = sv.documentView as? GutterTextView,
                   textView.window?.isKeyWindow == true,
                   let action = notification.userInfo?["action"] as? String else { return }
 
+            scheduleFoldAction(action)
+        }
+
+        /// Defers `performFoldAction` to the next runloop. Extracted and
+        /// internal so the reentrancy deferral contract is unit-testable
+        /// directly (without the key-window guard in ``handleFoldCode``, which
+        /// a background test runner cannot satisfy and which would otherwise
+        /// hide the deferral path from CI).
+        func scheduleFoldAction(_ action: String) {
+            DispatchQueue.main.async { [weak self] in
+                self?.performFoldAction(action)
+            }
+        }
+
+        /// Applies a fold action to `parent.foldState`. Extracted and internal
+        /// so the reentrancy deferral contract in ``handleFoldCode`` is
+        /// unit-testable (the deferral lives in the caller, the fold logic
+        /// here is the deferred body), and so the fold logic itself can be
+        /// exercised without a key window.
+        func performFoldAction(_ action: String) {
             switch action {
             case "fold":
                 foldAtCursor()
