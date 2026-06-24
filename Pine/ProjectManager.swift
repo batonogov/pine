@@ -65,6 +65,48 @@ final class ProjectManager {
         return true
     }
 
+    // MARK: - Menu-triggered saves (reentrancy-safe)
+
+    /// Cmd+S from the File menu. Defers the save (and its synchronous
+    /// `@Observable` model mutation when format-on-save changes content) to
+    /// the next runloop so it does NOT execute inside the SwiftUI
+    /// `ButtonAction` callstack. That reentrancy forced a synchronous SwiftUI
+    /// body re-evaluation that collided with the button-action's exclusive
+    /// access and triggered `_swift_reportExclusivityConflict` → `abort()`
+    /// on macOS 26.5.1 when format-on-save reformatted the buffer (#XXXX).
+    ///
+    /// Autosave (`TabAutoSave`), close, and quit call
+    /// `activeTabManager.saveActiveTab()` directly — they are not invoked
+    /// from a `ButtonAction`, so there is no transactional exclusive access
+    /// to collide with and no deferral is needed.
+    ///
+    /// The disk write is deferred by ~1 runloop (imperceptible at 60 Hz);
+    /// the dirty indicator and git status settle one frame later.
+    func saveActiveTabFromMenu() {
+        performMenuSave { [weak self] in self?.activeTabManager.saveActiveTab() ?? false }
+    }
+
+    /// Cmd+Option+S (Save All) from the File menu. Same reentrancy rationale
+    /// as ``saveActiveTabFromMenu`` — Save All can also mutate `@Observable`
+    /// per-pane tab state synchronously when format-on-save changes content.
+    func saveAllTabsFromMenu() {
+        performMenuSave { [weak self] in self?.saveAllPaneTabs() ?? false }
+    }
+
+    /// Shared deferral for menu-triggered saves. Runs the save `operation`
+    /// on the next runloop (outside any `ButtonAction` callstack), then
+    /// refreshes git status + line diffs when it succeeded.
+    private func performMenuSave(_ operation: @escaping () -> Bool) {
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            guard operation() else { return }
+            Task {
+                await self.workspace.gitProvider.refreshAsync()
+                NotificationCenter.default.post(name: .refreshLineDiffs, object: nil)
+            }
+        }
+    }
+
     /// Checks every editor pane for externally modified or deleted files.
     /// Aggregates the per-pane results so global observers do not depend on
     /// the root environment's `TabManager`, which may be orphaned after pane
