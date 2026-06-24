@@ -74,26 +74,18 @@ struct GitAndNotificationObserver: ViewModifier {
                 onRefreshBlame()
             }
             .onReceive(NotificationCenter.default.publisher(for: .closeTab)) { _ in
-                guard controlActiveState == .key,
-                      let tab = activeTabManager.activeTab else { return }
-                onCloseTab(tab)
+                handleCloseTab()
             }
             .onReceive(NotificationCenter.default.publisher(for: .openFolder)) { _ in
                 guard controlActiveState == .key else { return }
                 onOpenNewProject()
             }
             .onReceive(NotificationCenter.default.publisher(for: .fileRenamed)) { notification in
-                guard let oldURL = notification.userInfo?["oldURL"] as? URL,
-                      let newURL = notification.userInfo?["newURL"] as? URL else { return }
-                // Route through ProjectManager so the rename is reflected in
-                // every pane (the same file can be open in multiple panes),
-                // not just the primary TabManager.
-                projectManager.handleFileRenamed(oldURL: oldURL, newURL: newURL)
-                projectManager.saveSession()
+                handleFileRenamed(notification)
             }
             .onReceive(NotificationCenter.default.publisher(for: .fileDeleted)) { notification in
                 guard let deletedURL = notification.userInfo?["url"] as? URL else { return }
-                onHandleFileDeletion(deletedURL)
+                handleFileDeleted(deletedURL)
             }
             .onChange(of: workspace.externalChangeToken) { _, _ in
                 // Issue #838: never gate the FSEvents path on focus. The
@@ -140,24 +132,13 @@ struct GitAndNotificationObserver: ViewModifier {
                 onHandleExternalChanges(result)
             }
             .onReceive(NotificationCenter.default.publisher(for: .showProjectSearch)) { _ in
-                withAnimation(PineAnimation.quick) {
-                    columnVisibility = .all
-                }
-                isSearchPresented = true
+                handleShowProjectSearch()
             }
             .onReceive(NotificationCenter.default.publisher(for: .goToLine)) { _ in
-                guard controlActiveState == .key,
-                      activeTabManager.activeTab != nil else { return }
-                showGoToLine = true
+                handleGoToLine()
             }
             .onReceive(NotificationCenter.default.publisher(for: .openFileAtLine)) { notification in
-                guard let url = notification.userInfo?["url"] as? URL,
-                      let line = notification.userInfo?["line"] as? Int else { return }
-                // Column is parsed and passed for future use; the current
-                // navigation infrastructure is line-based (issue #949).
-                // Open into the focused pane so terminal ⌘-click and search
-                // results land in the editor the user is looking at (#971).
-                activeTabManager.openTabAndGoToLine(url: url, line: line)
+                handleOpenFileAtLine(notification)
             }
             .onReceive(NotificationCenter.default.publisher(for: .navigateChange)) { notification in
                 guard controlActiveState == .key,
@@ -169,6 +150,82 @@ struct GitAndNotificationObserver: ViewModifier {
                       let action = notification.userInfo?["action"] as? InlineDiffAction else { return }
                 onInlineDiffAction(action)
             }
+    }
+
+    // MARK: - Notification handlers (deferred to break reentrancy, #1051)
+    //
+    // Each handler that mutates @Binding / @State / @Observable state wraps
+    // the mutation in `DispatchQueue.main.async { ... }`. A menu command
+    // posts the notification synchronously inside the `ButtonAction`
+    // callstack, which holds exclusive access to SwiftUI storage; mutating
+    // observable state from the `.onReceive` closure synchronously forces a
+    // re-evaluation that collides with that access and triggers
+    // `_swift_reportExclusivityConflict` → `abort()` (issue #1051).
+    //
+    // Deferring lets the button-action callstack unwind first; the mutation
+    // then runs on the next runloop with no overlap — same pattern as the
+    // `reportStateChange` fix in #1047, applied to the SwiftUI side.
+    //
+    // The handlers are extracted into named methods (rather than inline
+    // closures) so the `body` type-checker stays fast and so the defer
+    // contract is directly unit-testable without a live SwiftUI view.
+
+    func handleCloseTab() {
+        guard controlActiveState == .key,
+              let tab = activeTabManager.activeTab else { return }
+        DispatchQueue.main.async {
+            self.onCloseTab(tab)
+        }
+    }
+
+    func handleFileRenamed(_ notification: Notification) {
+        guard let oldURL = notification.userInfo?["oldURL"] as? URL,
+              let newURL = notification.userInfo?["newURL"] as? URL else { return }
+        DispatchQueue.main.async {
+            // Route through ProjectManager so the rename is reflected in
+            // every pane (the same file can be open in multiple panes),
+            // not just the primary TabManager.
+            self.projectManager.handleFileRenamed(oldURL: oldURL, newURL: newURL)
+            self.projectManager.saveSession()
+        }
+    }
+
+    func handleFileDeleted(_ deletedURL: URL) {
+        DispatchQueue.main.async {
+            self.onHandleFileDeletion(deletedURL)
+        }
+    }
+
+    func handleShowProjectSearch() {
+        // Prime suspect for the Cmd+Shift+F crash: mutates two pieces of
+        // state (columnVisibility @Binding + isSearchPresented @Binding)
+        // and wraps one in withAnimation, maximising synchronous re-render.
+        DispatchQueue.main.async {
+            withAnimation(PineAnimation.quick) {
+                self.columnVisibility = .all
+            }
+            self.isSearchPresented = true
+        }
+    }
+
+    func handleGoToLine() {
+        guard controlActiveState == .key,
+              activeTabManager.activeTab != nil else { return }
+        DispatchQueue.main.async {
+            self.showGoToLine = true
+        }
+    }
+
+    func handleOpenFileAtLine(_ notification: Notification) {
+        guard let url = notification.userInfo?["url"] as? URL,
+              let line = notification.userInfo?["line"] as? Int else { return }
+        DispatchQueue.main.async {
+            // Column is parsed and passed for future use; the current
+            // navigation infrastructure is line-based (issue #949).
+            // Open into the focused pane so terminal ⌘-click and search
+            // results land in the editor the user is looking at (#971).
+            self.activeTabManager.openTabAndGoToLine(url: url, line: line)
+        }
     }
 }
 

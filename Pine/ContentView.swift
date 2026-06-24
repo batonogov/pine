@@ -147,7 +147,13 @@ struct ContentView: View {
                 .environment(projectManager)
         }
         .onReceive(NotificationCenter.default.publisher(for: .showQuickOpen)) { _ in
-            isQuickOpenPresented = true
+            // Defer to break reentrancy (#1051): mutating @State
+            // synchronously from a menu→notification callstack collides with
+            // the button-action's exclusive access to SwiftUI storage →
+            // exclusivity abort.
+            DispatchQueue.main.async {
+                isQuickOpenPresented = true
+            }
         }
         .sheet(isPresented: $isSymbolNavigatorPresented) {
             SymbolNavigatorView(isPresented: $isSymbolNavigatorPresented)
@@ -155,7 +161,10 @@ struct ContentView: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: .showSymbolNavigator)) { _ in
             guard activeTabManager.activeTab != nil else { return }
-            isSymbolNavigatorPresented = true
+            // Defer to break reentrancy (#1051).
+            DispatchQueue.main.async {
+                isSymbolNavigatorPresented = true
+            }
         }
         .sheet(isPresented: $isBranchSwitcherPresented) {
             BranchSwitcherView(
@@ -171,18 +180,25 @@ struct ContentView: View {
                 isKeyWindow: controlActiveState == .key,
                 isGitRepository: workspace.gitProvider.isGitRepository
             ) else { return }
-            isBranchSwitcherPresented = true
+            // Defer to break reentrancy (#1051).
+            DispatchQueue.main.async {
+                isBranchSwitcherPresented = true
+            }
         }
         .onReceive(NotificationCenter.default.publisher(for: .symbolNavigate)) { notification in
             guard let offset = notification.userInfo?["offset"] as? Int,
                   let tab = activeTabManager.activeTab else { return }
-            // Convert the symbol's UTF-16 offset to a 1-based line and route
-            // through `pendingGoToLine` on the active pane's TabManager so
-            // the focused `PaneLeafView` performs the actual navigation.
-            // The previous implementation wrote a `GoToRequest` into root
-            // `ContentView` state that no `PaneLeafView` ever consumed.
-            let line = Self.lineNumber(forOffset: offset, in: tab.content)
-            activeTabManager.pendingGoToLine = line
+            // Defer to break reentrancy (#1051): pendingGoToLine is an
+            // @Observable mutation on TabManager.
+            DispatchQueue.main.async {
+                // Convert the symbol's UTF-16 offset to a 1-based line and route
+                // through `pendingGoToLine` on the active pane's TabManager so
+                // the focused `PaneLeafView` performs the actual navigation.
+                // The previous implementation wrote a `GoToRequest` into root
+                // `ContentView` state that no `PaneLeafView` ever consumed.
+                let line = Self.lineNumber(forOffset: offset, in: tab.content)
+                activeTabManager.pendingGoToLine = line
+            }
         }
         .sheet(isPresented: $showGoToLine) {
             GoToLineView(
@@ -248,20 +264,32 @@ struct ContentView: View {
             onInlineDiffAction: { handleInlineDiffAction($0) }
         ))
         .onReceive(NotificationCenter.default.publisher(for: .toggleWordWrap)) { _ in
-            isWordWrapEnabled.toggle()
+            // Defer to break reentrancy (#1051): @AppStorage mutation from
+            // a menu→notification callstack (⌥Z).
+            DispatchQueue.main.async {
+                isWordWrapEnabled.toggle()
+            }
         }
         .onReceive(NotificationCenter.default.publisher(for: .revealInSidebar)) { notification in
             guard let url = notification.userInfo?["url"] as? URL else { return }
-            if let node = findNode(url: url, in: workspace.rootNodes) {
-                selectedNode = node
-                columnVisibility = .all
+            // Defer to break reentrancy (#1051): mutating @State
+            // (selectedNode + columnVisibility).
+            DispatchQueue.main.async {
+                if let node = findNode(url: url, in: workspace.rootNodes) {
+                    selectedNode = node
+                    columnVisibility = .all
+                }
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: .sendTextToTerminal)) { notification in
             guard controlActiveState == .key,
                   let text = notification.userInfo?["text"] as? String,
                   !text.isEmpty else { return }
-            sendTextToTerminal(text)
+            // Defer to break reentrancy (#1051): sendTextToTerminal mutates
+            // @Observable terminal state.
+            DispatchQueue.main.async {
+                sendTextToTerminal(text)
+            }
         }
     }
 
