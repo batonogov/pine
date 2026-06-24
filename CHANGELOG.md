@@ -1,5 +1,31 @@
 # Changelog
 
+## [1.30.0](https://github.com/batonogov/pine/compare/v1.29.0...v1.30.0) (2026-06-23)
+
+
+### Features
+
+* **agent:** add AgentDetector for process-name detection ([#1036](https://github.com/batonogov/pine/issues/1036)) ([08c0b63](https://github.com/batonogov/pine/commit/08c0b63cb3c9f6b9903bf3c71227607af538996a))
+* **agent:** show agent badge and color coding on terminal tabs ([#1048](https://github.com/batonogov/pine/issues/1048)) ([bb90df7](https://github.com/batonogov/pine/commit/bb90df7d8f8b03b5d6c05cd1f39f2cb83e98be76))
+
+
+### Bug Fixes
+
+* checkout main in screenshots workflow to avoid detached HEAD ([#1037](https://github.com/batonogov/pine/issues/1037)) ([fbf656e](https://github.com/batonogov/pine/commit/fbf656e340ae43e571008f4eae6a1aa4fb5a41e5))
+* **editor:** break @Observable reentrancy causing macOS 27 exclusivity abort ([#1047](https://github.com/batonogov/pine/issues/1047)) ([c2334e4](https://github.com/batonogov/pine/commit/c2334e407e2754f0f4c3ddd34caa2d3cf685992b))
+* **sidebar:** force tree re-render after external refresh ([#1043](https://github.com/batonogov/pine/issues/1043)) ([7bd80bd](https://github.com/batonogov/pine/commit/7bd80bd64f3c59175830750db069ea2c747f7753))
+
+
+### Code Refactoring
+
+* **panes:** remove dead close-routing helpers from [#1024](https://github.com/batonogov/pine/issues/1024) ([#1046](https://github.com/batonogov/pine/issues/1046)) ([14af3cc](https://github.com/batonogov/pine/commit/14af3ccb81f34c2809c86afecef7a42b9e855400))
+
+
+### Miscellaneous
+
+* **build:** align macOS deployment target to 26.0 ([#1040](https://github.com/batonogov/pine/issues/1040)) ([266795f](https://github.com/batonogov/pine/commit/266795f33b36d99adca0aa13b12cb04741437104))
+* ignore .pi agent artifacts and group agent ignores ([#1033](https://github.com/batonogov/pine/issues/1033)) ([4165087](https://github.com/batonogov/pine/commit/4165087b88c6dd9affc4aa4c546cb91b4dbb33bc))
+
 ## [1.29.0](https://github.com/batonogov/pine/compare/v1.28.1...v1.29.0) (2026-06-20)
 
 
