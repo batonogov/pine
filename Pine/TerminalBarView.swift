@@ -137,7 +137,16 @@ struct TerminalSearchObserver: ViewModifier {
         content
             .onReceive(NotificationCenter.default.publisher(for: .findInTerminal)) { _ in
                 guard controlActiveState == .key else { return }
-                terminalState.isSearchVisible = true
+                // Defer to break reentrancy (#1051): `.findInTerminal` is posted
+                // synchronously from the Terminal menu ButtonAction callstack
+                // (PineAppMenuCommands.swift). Mutating the @Observable
+                // `terminalState.isSearchVisible` synchronously here would
+                // collide with the button-action's exclusive access to SwiftUI
+                // storage and trigger the exclusivity abort — same class of
+                // bug fixed across the other .onReceive handlers in this PR.
+                DispatchQueue.main.async {
+                    terminalState.isSearchVisible = true
+                }
             }
             .onChange(of: terminalState.terminalSearchQuery) { _, newQuery in
                 searchTask?.cancel()
