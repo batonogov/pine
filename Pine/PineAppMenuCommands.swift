@@ -88,12 +88,12 @@ struct PineAppMenuCommands: Commands {
         CommandGroup(replacing: .saveItem) {
             Button {
                 guard let pm = focusedProject else { return }
-                if pm.activeTabManager.saveActiveTab() {
-                    Task {
-                        await pm.workspace.gitProvider.refreshAsync()
-                        NotificationCenter.default.post(name: .refreshLineDiffs, object: nil)
-                    }
-                }
+                // Deferred via ProjectManager.saveActiveTabFromMenu() to break
+                // reentrancy (#1058): saveActiveTab mutates @Observable tab
+                // state synchronously when format-on-save changes content; doing
+                // that inside the ButtonAction callstack triggers an exclusivity
+                // abort on macOS 26.5.1.
+                pm.saveActiveTabFromMenu()
             } label: {
                 Label(Strings.menuSave, systemImage: MenuIcons.save)
             }
@@ -101,12 +101,8 @@ struct PineAppMenuCommands: Commands {
 
             Button {
                 guard let pm = focusedProject else { return }
-                if pm.saveAllPaneTabs() {
-                    Task {
-                        await pm.workspace.gitProvider.refreshAsync()
-                        NotificationCenter.default.post(name: .refreshLineDiffs, object: nil)
-                    }
-                }
+                // Same reentrancy rationale as Save (#1058).
+                pm.saveAllTabsFromMenu()
             } label: {
                 Label(Strings.menuSaveAll, systemImage: MenuIcons.saveAll)
             }
@@ -124,17 +120,24 @@ struct PineAppMenuCommands: Commands {
                     panel.directoryURL = dir
                 }
                 guard panel.runModal() == .OK, let url = panel.url else { return }
-                do {
-                    try pm.activeTabManager.saveActiveTabAs(to: url)
-                    Task {
-                        await pm.workspace.gitProvider.refreshAsync()
-                        NotificationCenter.default.post(name: .refreshLineDiffs, object: nil)
+                // Defer the save + refresh to break reentrancy (#1058):
+                // saveActiveTabAs mutates @Observable tab state synchronously
+                // when format-on-save changes content; doing that inside the
+                // ButtonAction callstack triggers an exclusivity abort on
+                // macOS 26.5.1. The panel stays synchronous (user interaction).
+                DispatchQueue.main.async {
+                    do {
+                        try pm.activeTabManager.saveActiveTabAs(to: url)
+                        Task {
+                            await pm.workspace.gitProvider.refreshAsync()
+                            NotificationCenter.default.post(name: .refreshLineDiffs, object: nil)
+                        }
+                    } catch {
+                        AlertTemplate.fileOperationErrorCritical.runModal(
+                            messageText: Strings.fileOperationErrorTitle,
+                            informativeText: error.localizedDescription
+                        )
                     }
-                } catch {
-                    AlertTemplate.fileOperationErrorCritical.runModal(
-                        messageText: Strings.fileOperationErrorTitle,
-                        informativeText: error.localizedDescription
-                    )
                 }
             } label: {
                 Label(Strings.menuSaveAs, systemImage: MenuIcons.saveAs)
