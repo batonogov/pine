@@ -23,7 +23,10 @@ struct StatusBarView: View {
     }
 
     var body: some View {
-        HStack(spacing: LayoutMetrics.statusBarItemSpacing) {
+        // Compute once per render: StatusBarView re-renders on every cursor move,
+        // and walking the pane/tab tree twice (isEmpty check + arg) is wasteful.
+        let summaries = agentSummaries
+        return HStack(spacing: LayoutMetrics.statusBarItemSpacing) {
             if let progress, progress.isLoading {
                 HStack(spacing: 4) {
                     ProgressView()
@@ -36,8 +39,8 @@ struct StatusBarView: View {
                 .accessibilityIdentifier(AccessibilityID.progressIndicator)
             }
 
-            if !agentSummaries.isEmpty {
-                AgentStatusBarItem(summaries: agentSummaries) { paneID, tabID in
+            if !summaries.isEmpty {
+                AgentStatusBarItem(summaries: summaries) { paneID, tabID in
                     paneManager.activePaneID = paneID
                     paneManager.terminalState(for: paneID)?.activeTerminalID = tabID
                 }

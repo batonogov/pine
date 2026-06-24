@@ -21,6 +21,9 @@ struct AgentStatusBarItemSnapshotTests {
 
     /// Sized to match the status-bar height; width leaves room for the label.
     private static let itemSize = NSSize(width: 420, height: 28)
+    /// Matches `StatusBarViewSnapshotTests.barTolerance` (0.03): the item uses
+    /// the same `.bar`-adjacent system colors and `Circle` anti-aliasing that
+    /// drift ~2–3% between Retina dev Macs and 1× CI runners.
     private static let tolerance = 0.03
 
     private func singleAgentSummary() -> AgentStatusSummary {

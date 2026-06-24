@@ -118,8 +118,7 @@ struct AgentStatusBarItem: View {
     /// multi-agent menu: count + per-agent colored dot and name/state.
     private var label: some View {
         HStack(spacing: 4) {
-            Text(verbatim: "\(summaries.count) ")
-                + Text(Strings.statusbarAgentsActive)
+            countLabel
 
             ForEach(summaries) { summary in
                 divider
@@ -134,6 +133,15 @@ struct AgentStatusBarItem: View {
         .font(.system(size: LayoutMetrics.bodySmallFontSize))
         .foregroundStyle(.secondary)
         .lineLimit(1)
+    }
+
+    /// "N agent[s] active" with correct singular/plural form.
+    private var countLabel: Text {
+        if summaries.count == 1 {
+            Text(verbatim: "1 ") + Text(Strings.statusbarAgentActive)
+        } else {
+            Text(verbatim: "\(summaries.count) ") + Text(Strings.statusbarAgentsActive)
+        }
     }
 
     private var divider: some View {

@@ -114,6 +114,8 @@ struct AgentStatusSummaryTests {
         let summaries = AgentStatusSummary.activeSummaries(in: paneManager)
         #expect(summaries.count == 2)
         #expect(summaries.allSatisfy { $0.paneID == paneID })
+        // Order within a pane follows tab order (documented contract).
+        #expect(summaries.map(\.tabID) == [tabA.id, tabB.id])
         let tabIDs = Set(summaries.map(\.tabID))
         #expect(tabIDs == [tabA.id, tabB.id])
     }

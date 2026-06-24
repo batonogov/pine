@@ -135,6 +135,7 @@ enum Strings {
 
     // MARK: - Status bar (agent awareness, #952)
 
+    static let statusbarAgentActive: LocalizedStringKey = "statusbar.agentActive"
     static let statusbarAgentsActive: LocalizedStringKey = "statusbar.agentsActive"
 
     // MARK: - Menu Commands
