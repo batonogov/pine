@@ -1017,6 +1017,13 @@ extension CodeEditorView {
         /// #1051 did not audit: the keyboard-driven `.foldCode` observer.
         /// `applyFoldState()` is deferred alongside the mutation because it
         /// reads `parent.foldState` and must observe the just-applied change.
+        ///
+        /// The defer lives in ``scheduleFoldAction`` (not inline here) so the
+        /// deferral contract is unit-testable — see
+        /// `FoldObserverReentrancyTests`. Do not inline it back: the
+        /// `isKeyWindow` guard above cannot be satisfied by a background
+        /// test runner, so inlining would silently drop CI coverage of the
+        /// deferral and let the crash regress unnoticed.
         @objc func handleFoldCode(_ notification: Notification) {
             guard let sv = scrollView,
                   let textView = sv.documentView as? GutterTextView,
