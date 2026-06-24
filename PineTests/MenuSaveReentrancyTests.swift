@@ -62,7 +62,7 @@ struct MenuSaveReentrancyTests {
         try await Task.sleep(for: .milliseconds(50))
     }
 
-    // MARK: - saveActiveTabFromMenu defers the disk write (#XXXX)
+    // MARK: - saveActiveTabFromMenu defers the disk write (#1058)
 
     @Test("saveActiveTabFromMenu does not rewrite the file synchronously when format-on-save changes content")
     func saveActiveTabFromMenuNotSynchronous() async throws {
@@ -104,7 +104,7 @@ struct MenuSaveReentrancyTests {
                 "deferred format-on-save must have pretty-printed the JSON")
     }
 
-    // MARK: - saveAllTabsFromMenu defers too (#XXXX)
+    // MARK: - saveAllTabsFromMenu defers too (#1058)
 
     @Test("saveAllTabsFromMenu does not rewrite files synchronously")
     func saveAllTabsFromMenuNotSynchronous() async throws {
@@ -126,6 +126,11 @@ struct MenuSaveReentrancyTests {
         // rewrite the file. saveActiveTab writes unconditionally; Save All
         // does not, so the dirty setup is required here.
         pm.primaryTabManager.updateContent("{\"a\":1,\"b\":2,\"c\":3}")
+        // Explicit precondition: saveAllTabs only persists dirty tabs, so the
+        // deferred save is observable only when this holds. Asserting it here
+        // fails with a clear message if isDirty/updateContent semantics drift.
+        #expect(pm.primaryTabManager.activeTab?.isDirty == true,
+                "precondition: tab must be dirty for saveAllTabs to persist it")
         let originalOnDisk = readDisk(url)
 
         pm.saveAllTabsFromMenu()

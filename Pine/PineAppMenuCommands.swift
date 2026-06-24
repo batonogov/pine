@@ -89,7 +89,7 @@ struct PineAppMenuCommands: Commands {
             Button {
                 guard let pm = focusedProject else { return }
                 // Deferred via ProjectManager.saveActiveTabFromMenu() to break
-                // reentrancy (#XXXX): saveActiveTab mutates @Observable tab
+                // reentrancy (#1058): saveActiveTab mutates @Observable tab
                 // state synchronously when format-on-save changes content; doing
                 // that inside the ButtonAction callstack triggers an exclusivity
                 // abort on macOS 26.5.1.
@@ -101,7 +101,7 @@ struct PineAppMenuCommands: Commands {
 
             Button {
                 guard let pm = focusedProject else { return }
-                // Same reentrancy rationale as Save (#XXXX).
+                // Same reentrancy rationale as Save (#1058).
                 pm.saveAllTabsFromMenu()
             } label: {
                 Label(Strings.menuSaveAll, systemImage: MenuIcons.saveAll)
@@ -120,7 +120,7 @@ struct PineAppMenuCommands: Commands {
                     panel.directoryURL = dir
                 }
                 guard panel.runModal() == .OK, let url = panel.url else { return }
-                // Defer the save + refresh to break reentrancy (#XXXX):
+                // Defer the save + refresh to break reentrancy (#1058):
                 // saveActiveTabAs mutates @Observable tab state synchronously
                 // when format-on-save changes content; doing that inside the
                 // ButtonAction callstack triggers an exclusivity abort on

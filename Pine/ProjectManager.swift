@@ -73,7 +73,7 @@ final class ProjectManager {
     /// `ButtonAction` callstack. That reentrancy forced a synchronous SwiftUI
     /// body re-evaluation that collided with the button-action's exclusive
     /// access and triggered `_swift_reportExclusivityConflict` → `abort()`
-    /// on macOS 26.5.1 when format-on-save reformatted the buffer (#XXXX).
+    /// on macOS 26.5.1 when format-on-save reformatted the buffer (#1058).
     ///
     /// Autosave (`TabAutoSave`), close, and quit call
     /// `activeTabManager.saveActiveTab()` directly — they are not invoked
