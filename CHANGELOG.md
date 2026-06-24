@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.30.1](https://github.com/batonogov/pine/compare/v1.30.0...v1.30.1) (2026-06-24)
+
+
+### Bug Fixes
+
+* **editor:** break @State reentrancy in .onReceive handlers ([#1051](https://github.com/batonogov/pine/issues/1051)) ([#1052](https://github.com/batonogov/pine/issues/1052)) ([e35fc7c](https://github.com/batonogov/pine/commit/e35fc7c1f518d0c3935c0fc88e91510ad5e31109))
+
+
+### Miscellaneous
+
+* update screenshots ([#1049](https://github.com/batonogov/pine/issues/1049)) ([19bce3a](https://github.com/batonogov/pine/commit/19bce3a886792ad15803378f5ccaf83dd0d3c00a))
+
 ## [1.30.0](https://github.com/batonogov/pine/compare/v1.29.0...v1.30.0) (2026-06-23)
 
 
