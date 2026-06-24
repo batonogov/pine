@@ -133,6 +133,11 @@ enum Strings {
     static let showTerminalShortcut: LocalizedStringKey = "terminal.showShortcut"
     static let toggleTerminal: LocalizedStringKey = "terminal.toggle"
 
+    // MARK: - Status bar (agent awareness, #952)
+
+    static let statusbarAgentActive: LocalizedStringKey = "statusbar.agentActive"
+    static let statusbarAgentsActive: LocalizedStringKey = "statusbar.agentsActive"
+
     // MARK: - Menu Commands
 
     static let menuIncreaseFontSize: LocalizedStringKey = "menu.increaseFontSize"

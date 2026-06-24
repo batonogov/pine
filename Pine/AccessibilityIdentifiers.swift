@@ -115,4 +115,7 @@ nonisolated enum AccessibilityID {
     static let lineEndingIndicator = "lineEndingIndicator"
     static let fileSizeIndicator = "fileSizeIndicator"
     static let progressIndicator = "progressIndicator"
+    static let agentStatusBar = "agentStatusBar"
+    static let agentStatusBarItem = "agentStatusBarItem"
+    static let agentStatusBarMenu = "agentStatusBarMenu"
 }
