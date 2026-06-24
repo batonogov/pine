@@ -16,6 +16,12 @@ struct StatusBarView: View {
     var progress: ProgressTracker?
     var onToggleTerminal: (() -> Void)?
 
+    /// Active AI agent sessions across all terminal panes (#952).
+    /// Empty when no agent is running → `AgentStatusBarItem` is hidden.
+    private var agentSummaries: [AgentStatusSummary] {
+        AgentStatusSummary.activeSummaries(in: paneManager)
+    }
+
     var body: some View {
         HStack(spacing: LayoutMetrics.statusBarItemSpacing) {
             if let progress, progress.isLoading {
@@ -28,6 +34,14 @@ struct StatusBarView: View {
                         .lineLimit(1)
                 }
                 .accessibilityIdentifier(AccessibilityID.progressIndicator)
+            }
+
+            if !agentSummaries.isEmpty {
+                AgentStatusBarItem(summaries: agentSummaries) { paneID, tabID in
+                    paneManager.activePaneID = paneID
+                    paneManager.terminalState(for: paneID)?.activeTerminalID = tabID
+                }
+                .accessibilityIdentifier(AccessibilityID.agentStatusBar)
             }
 
             if gitProvider.isGitRepository {
