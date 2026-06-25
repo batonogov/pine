@@ -1,5 +1,23 @@
 # Changelog
 
+## [1.31.0](https://github.com/batonogov/pine/compare/v1.30.1...v1.31.0) (2026-06-25)
+
+
+### Features
+
+* **agent:** add agent status summary to status bar ([#1055](https://github.com/batonogov/pine/issues/1055)) ([4899973](https://github.com/batonogov/pine/commit/4899973b9427c2dd0b83da4fd48cca4623bf3880))
+
+
+### Bug Fixes
+
+* **editor:** break fold-observer reentrancy causing macOS exclusivity abort ([#1056](https://github.com/batonogov/pine/issues/1056)) ([#1057](https://github.com/batonogov/pine/issues/1057)) ([80a35a7](https://github.com/batonogov/pine/commit/80a35a74e693873215f884a6a456c2bf54e01363))
+* **editor:** break menu-save reentrancy causing macOS exclusivity abort ([#1058](https://github.com/batonogov/pine/issues/1058)) ([#1059](https://github.com/batonogov/pine/issues/1059)) ([837ffa5](https://github.com/batonogov/pine/commit/837ffa52ba09701d57f63440ad81292545d3f147))
+
+
+### Documentation
+
+* require green CI before merge (branch protection) ([#1062](https://github.com/batonogov/pine/issues/1062)) ([26222c2](https://github.com/batonogov/pine/commit/26222c230dd3564cf6b586878f6c19931c727922))
+
 ## [1.30.1](https://github.com/batonogov/pine/compare/v1.30.0...v1.30.1) (2026-06-24)
 
 
