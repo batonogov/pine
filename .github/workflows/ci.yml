@@ -528,13 +528,14 @@ jobs:
               -only-testing:PineUITests/QuickOpenUITests
               -only-testing:PineUITests/EditorTabNavigationTests
               -only-testing:PineUITests/SidebarFolderClickTests
-          # Shard 4 — Editor Chrome (24 tests)
+          # Shard 4 — Editor Chrome (27 tests)
           - shard-name: "Editor Chrome"
             test-classes: >-
               -only-testing:PineUITests/EditorWindowTests
               -only-testing:PineUITests/ScreenshotTests
               -only-testing:PineUITests/BranchSwitcherTests
               -only-testing:PineUITests/CheckForUpdatesTests
+              -only-testing:PineUITests/SplitPaneRoutingUITests
           # Shard 5 — Files & Save (27 tests)
           - shard-name: "Files & Save"
             test-classes: >-
