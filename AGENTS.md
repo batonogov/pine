@@ -204,6 +204,7 @@ How the maintainer works day-to-day. Documents intent and handoff conventions fo
 - No long-lived feature branches. Nothing is committed directly to `main`.
 - PRs are **squash-merged** into `main` (one commit per PR).
 - The PR description states **when the branch is ready to merge** — do not merge before that.
+- **All CI checks must be green before a PR can be merged.** This is enforced by repository branch protection ("requires all checks to pass", see `## Release & CI`) — GitHub will refuse the merge button on any non-green PR. Red PRs are never merged. When CI fails due to flakiness or a runner/infrastructure issue that is provably not the diff's fault (e.g. an identical hang reproduces on a screenshots-only PR), the fix is to resolve the failure — rerun, mitigate the flakiness, or fix the code — until a fully green run exists. Do not hand-wave a red check as "not our fault" and call the PR mergeable; a green run is a hard prerequisite, not a judgment call.
 
 ### Local development loop
 - Code is edited **inside Pine itself**, or via AI agents in the terminal.
@@ -228,7 +229,7 @@ Flow:
 3. **Respect cross-issue boundaries.** Tell each worker exactly which files/branches it may touch so sibling PRs stay mergeable (e.g. add a dedicated accumulator field per branch instead of repurposing a shared one). When an issue depends on siblings not yet merged, the dependent worker merges those sibling branches into its own branch and documents it in the PR body — GitHub auto-shrinks the diff once the siblings land.
 4. **Strict review from fresh context.** Once PRs are open, run fresh-context `reviewer` subagents with distinct angles (e.g. correctness/regressions, tests/validation) against the actual diff. Reviewers are read-only — they must not edit.
 5. **Fix on the existing branch.** Synthesize reviewer findings and hand them to a fix-worker that checks out the **existing** PR branch and adds a follow-up commit. Never amend, force-push, or open a new branch for fixes. Repeat the review/fix loop until reviewers return a clean verdict (typically ~2 rounds).
-6. **Verify before handoff.** Confirm every PR is `MERGEABLE`, CI is green (or explicitly note which checks are still pending), and state the merge order.
+6. **Verify before handoff.** Confirm every PR is `MERGEABLE` and **fully green** — every required CI check passing, no exceptions. Pending checks must be explicitly noted. There is no "red but mergeable" state: branch protection blocks the merge button on any failing check, so a red PR is not ready regardless of why it failed. State the merge order.
 7. **Never merge.** The agent opens and reviews PRs; only the human merges them.
 
 Operational notes:
