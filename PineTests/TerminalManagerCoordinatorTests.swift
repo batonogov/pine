@@ -157,4 +157,37 @@ struct TerminalManagerCoordinatorTests {
         terminal.paneManager = paneManager
         #expect(!terminal.hasActiveProcesses)
     }
+
+    // MARK: - Agent detection wiring (regression: startTerminals was dead code)
+
+    /// No-op `ps` runner used by agent-detection tests so the coordinator never
+    /// forks a real subprocess (avoids the macos-26 fork/spawn hang, #1060).
+    private static let noOpProcessRunner: ProcessRunner = { _, _, _, _ in
+        ProcessRunResult(stdout: "", stderr: "", exitCode: 0, timedOut: false)
+    }
+
+    @Test func agentDetection_notPolling_beforeAnyTerminal() {
+        let paneManager = PaneManager()
+        let terminal = TerminalManager()
+        terminal.paneManager = paneManager
+        // Fresh manager with no terminals must not have started polling.
+        #expect(!terminal.isAgentDetectionPolling)
+    }
+
+    @Test func createTerminalTab_startsAgentDetection() {
+        let paneManager = PaneManager()
+        let terminal = TerminalManager()
+        terminal.paneManager = paneManager
+        // Inject a no-op runner so the coordinator polls without forking `ps`.
+        terminal.agentDetectionProcessRunner = Self.noOpProcessRunner
+
+        let editorPane = paneManager.activePaneID
+        terminal.createTerminalTab(relativeTo: editorPane, workingDirectory: nil)
+
+        // Regression: previously `startTerminals` (the sole boot path for the
+        // agent-detection coordinator) was never called from anywhere in the
+        // app, so the coordinator never started and agent badges never
+        // appeared. Creating a terminal must now boot detection.
+        #expect(terminal.isAgentDetectionPolling)
+    }
 }

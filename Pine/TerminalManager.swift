@@ -23,8 +23,23 @@ final class TerminalManager {
     /// future consumers (status bar #952) can observe it.
     private(set) var agentDetector = AgentDetector()
 
+    /// Process runner used by the agent-detection coordinator to capture the
+    /// `ps` snapshot. Defaults to real subprocess execution (`runRealProcess`);
+    /// tests inject a no-op to avoid forking `/bin/ps` (and the macos-26
+    /// fork/spawn hang, #1060). Must be set before the first terminal is
+    /// created — the coordinator reads it once at startup.
+    var agentDetectionProcessRunner: ProcessRunner = runRealProcess
+
+    /// `true` once agent-detection polling has started. Read-only diagnostic /
+    /// test hook; the coordinator runs for the lifetime of this
+    /// `TerminalManager` once booted.
+    var isAgentDetectionPolling: Bool { agentCoordinator != nil }
+
     /// Coordinator that polls `ps` off the main thread and reconciles agent
-    /// sessions with terminal tabs. Started in `startTerminals(_:)`.
+    /// sessions with terminal tabs. Started lazily by
+    /// ``ensureAgentDetectionStarted()``, which is invoked on the first
+    /// terminal creation via ``createTerminalTab(relativeTo:workingDirectory:)``
+    /// and on session restore via ``startTerminals(workingDirectory:)``.
     private var agentCoordinator: AgentDetectionCoordinator?
 
     // MARK: - Tab creation
@@ -33,6 +48,12 @@ final class TerminalManager {
     /// If no terminal pane exists, creates one below the given editor pane.
     func createTerminalTab(relativeTo editorPaneID: PaneID, workingDirectory: URL?) {
         guard let pm = paneManager else { return }
+        // Boot agent detection on the first terminal creation. Idempotent —
+        // the guard inside makes repeated calls a no-op. The coordinator
+        // lives for the lifetime of this `TerminalManager` and reconciles
+        // against all terminal tabs on each 2s poll, so terminals created
+        // later are picked up automatically (vision #933, issues #950/#951).
+        ensureAgentDetectionStarted()
 
         if let tpID = lastActiveTerminalPaneID,
            pm.terminalState(for: tpID) != nil {
@@ -98,10 +119,27 @@ final class TerminalManager {
         }
 
         // Start agent detection polling once terminals are live (#951).
-        if agentCoordinator == nil {
-            let coord = AgentDetectionCoordinator(detector: agentDetector, terminalManager: self)
-            agentCoordinator = coord
-            coord.start()
-        }
+        ensureAgentDetectionStarted()
+    }
+
+    /// Ensures the agent-detection coordinator is polling `ps` and reconciling
+    /// agent sessions with terminal tabs. Idempotent: a no-op once the
+    /// coordinator exists, so safe to call on every terminal creation.
+    ///
+    /// This is the sole boot path for agent detection. It MUST be invoked when
+    /// a terminal comes alive — otherwise the coordinator never starts, `ps`
+    /// is never polled, and no `AgentSession` is ever attached to a tab, so
+    /// agent badges/status-bar items never appear (regression: `startTerminals`
+    /// was previously the only caller and was never wired into the app
+    /// lifecycle, leaving detection dead in shipped builds).
+    private func ensureAgentDetectionStarted() {
+        guard agentCoordinator == nil else { return }
+        let coord = AgentDetectionCoordinator(
+            detector: agentDetector,
+            terminalManager: self,
+            processRunner: agentDetectionProcessRunner
+        )
+        agentCoordinator = coord
+        coord.start()
     }
 }
