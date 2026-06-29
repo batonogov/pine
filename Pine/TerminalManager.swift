@@ -25,21 +25,22 @@ final class TerminalManager {
 
     /// Process runner used by the agent-detection coordinator to capture the
     /// `ps` snapshot. Defaults to real subprocess execution (`runRealProcess`);
-    /// tests inject a no-op to avoid forking `/bin/ps` (and the macos-26
-    /// fork/spawn hang, #1060). Must be set before the first terminal is
-    /// created — the coordinator reads it once at startup.
-    var agentDetectionProcessRunner: ProcessRunner = runRealProcess
+    /// tests inject a no-op via `@testable` to avoid forking `/bin/ps` (and
+    /// the macos-26 fork/spawn hang, #1060). Set-once: the coordinator reads
+    /// it once at boot, so late mutations have no effect.
+    private(set) var agentDetectionProcessRunner: ProcessRunner = runRealProcess
 
     /// `true` once agent-detection polling has started. Read-only diagnostic /
-    /// test hook; the coordinator runs for the lifetime of this
-    /// `TerminalManager` once booted.
-    var isAgentDetectionPolling: Bool { agentCoordinator != nil }
+    /// test hook. Delegates to the coordinator's `isRunning` so it correctly
+    /// reports `false` after a future `stop()`.
+    var isAgentDetectionPolling: Bool { agentCoordinator?.isRunning ?? false }
 
     /// Coordinator that polls `ps` off the main thread and reconciles agent
     /// sessions with terminal tabs. Started lazily by
-    /// ``ensureAgentDetectionStarted()``, which is invoked on the first
-    /// terminal creation via ``createTerminalTab(relativeTo:workingDirectory:)``
-    /// and on session restore via ``startTerminals(workingDirectory:)``.
+    /// ``ensureAgentDetectionStarted()`` — invoked on the first terminal
+    /// creation via ``createTerminalTab(relativeTo:workingDirectory:)``, on
+    /// session restore (`ContentView.restoreSessionIfNeeded`), and via
+    /// ``startTerminals(workingDirectory:)``.
     private var agentCoordinator: AgentDetectionCoordinator?
 
     // MARK: - Tab creation
@@ -132,8 +133,19 @@ final class TerminalManager {
     /// agent badges/status-bar items never appear (regression: `startTerminals`
     /// was previously the only caller and was never wired into the app
     /// lifecycle, leaving detection dead in shipped builds).
-    private func ensureAgentDetectionStarted() {
+    ///
+    /// Callers: `createTerminalTab` (interactive creation), `startTerminals`
+    /// (legacy), and `ContentView.restoreSessionIfNeeded` (session restore
+    /// creates tabs via `state.addTab` directly, bypassing `createTerminalTab`).
+    /// Internal rather than private so the restore path can reach it.
+    func ensureAgentDetectionStarted() {
         guard agentCoordinator == nil else { return }
+        // Allow UI tests (and users hitting the macos-26 fork/spawn hang,
+        // #1060) to disable the coordinator entirely. Without this gate the
+        // repeated 2s `ps` fork hangs the terminal UI-test shards on macos-26
+        // runners — unit tests inject a no-op runner instead, so they do not
+        // set this flag and still exercise the boot path.
+        if Self.isAgentDetectionDisabled { return }
         let coord = AgentDetectionCoordinator(
             detector: agentDetector,
             terminalManager: self,
@@ -142,4 +154,24 @@ final class TerminalManager {
         agentCoordinator = coord
         coord.start()
     }
+
+    /// `true` when agent detection is explicitly disabled via the
+    /// `--disable-agent-detection` launch argument or the
+    /// `PINE_DISABLE_AGENT_DETECTION` environment variable. Used by UI tests
+    /// to avoid the macos-26 fork/spawn hang (#1060) and as a production
+    /// opt-out for affected users.
+    private static var isAgentDetectionDisabled: Bool {
+        CommandLine.arguments.contains("--disable-agent-detection")
+            || ProcessInfo.processInfo.environment["PINE_DISABLE_AGENT_DETECTION"] != nil
+    }
+
+    #if DEBUG
+    /// Synchronous one-shot poll for unit tests: runs a single snapshot using
+    /// the injected `agentDetectionProcessRunner` so tests can assert detector
+    /// state without waiting for the 2s timer. No-op if detection has not
+    /// booted. Proves the injected runner is wired through to the coordinator.
+    @MainActor internal func runAgentSnapshotForTesting() {
+        agentCoordinator?.runSnapshotForTesting()
+    }
+    #endif
 }

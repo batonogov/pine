@@ -117,6 +117,17 @@ extension ContentView {
             }
         }
 
+        // Boot agent detection if any terminal panes were restored. The
+        // primary restore path (terminalPaneTabCounts) creates tabs via
+        // `state.addTab` directly, bypassing `createTerminalTab`, so the
+        // coordinator would never start for restored sessions — detection must
+        // be booted explicitly here (vision #933, #951). Idempotent: a no-op
+        // if already started (e.g. the legacy path above called
+        // `createTerminalTab`).
+        if !paneManager.terminalPaneIDs.isEmpty {
+            terminal.ensureAgentDetectionStarted()
+        }
+
         return didRestoreTabs
     }
 

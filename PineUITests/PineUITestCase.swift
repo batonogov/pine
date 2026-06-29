@@ -16,6 +16,7 @@ class PineUITestCase: XCTestCase {
         app = XCUIApplication()
         app.launchArguments += [
             "--reset-state",
+            "--disable-agent-detection",
             "-ApplePersistenceIgnoreState", "YES",
             "-AppleLanguages", "(en)",
             "-AppleLocale", "en_US"
