@@ -47,9 +47,9 @@ struct SaveConfig {
 /// delivered the `.tabReloadedFromDisk` observer back into
 /// `TabManager.tabs` via `updateHighlightCache`, a re-entrant access that
 /// triggered `swift_beginAccess` → `_swift_reportExclusivityConflict` →
-/// `abort()` on macOS 26 (#1066). Same bug class as #1047 / #1051 / #1057
-/// / #1059 but rooted in the save path (format-on-save), not a menu
-/// `ButtonAction` — so the #1059 menu-button deferral did not cover it.
+/// `abort()` on macOS 26 (#1066). Same bug class as #1047 / #1051 / #1056
+/// / #1058 but rooted in the save path (format-on-save), not a menu
+/// `ButtonAction` — so the #1058 menu-button deferral did not cover it.
 /// Mirrors the safe pattern already used by
 /// `TabExternalChangeDetector.reloadTab` (returns data; the caller posts).
 struct SaveOutcome {
