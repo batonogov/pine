@@ -7,6 +7,22 @@
 
 import Foundation
 
+/// Payload pushed back into the editor view after a disk read/write that
+/// changed the on-disk text and must be resynced into the NSTextView.
+///
+/// Carried (NOT posted synchronously) out of any `inout tabs` scope: the
+/// caller posts `.tabReloadedFromDisk` AFTER the exclusive `&tabs` access
+/// has ended. Posting inside that scope delivered the synchronous observer
+/// back into `TabManager.tabs` (`updateHighlightCache`) → Swift runtime
+/// exclusivity abort (#1066). Shared by the save path
+/// (`TabPersistence.SaveOutcome.reload`) and the external-change path
+/// (`TabExternalChangeDetector` reloads), which both need the same
+/// url + text to resync the view.
+struct ReloadedTab: Sendable {
+    let url: URL
+    let text: String
+}
+
 /// Represents a single open editor tab with its file URL and content state.
 struct EditorTab: Identifiable, Hashable {
 

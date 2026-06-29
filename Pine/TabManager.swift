@@ -184,7 +184,7 @@ final class TabManager {
     func trySaveTab(at index: Int) throws -> Bool {
         assert(tabs.indices.contains(index), "trySaveTab: index \(index) out of bounds, count \(tabs.count)")
         let tabID = tabs[index].id
-        let result = try TabPersistence.saveTabContent(
+        let outcome = try TabPersistence.saveTabContent(
             at: index, tabs: &tabs,
             config: .init(editorSettings: editorSettings, formatters: fileFormatters),
             providers: .init(
@@ -192,8 +192,19 @@ final class TabManager {
                 fileSize: { [weak self] url in self?.fileSize(url: url) }
             )
         )
-        if result { recoveryManager?.deleteRecoveryFile(for: tabID) }
-        return result
+        if outcome.saved { recoveryManager?.deleteRecoveryFile(for: tabID) }
+        // Post AFTER saveTabContent returns so its `inout tabs` exclusive
+        // access has ended. The synchronous .tabReloadedFromDisk observer
+        // re-enters TabManager.tabs via updateHighlightCache; posting under
+        // the live inout was a Swift runtime exclusivity abort (#1066).
+        if let reload = outcome.reload {
+            NotificationCenter.default.post(
+                name: .tabReloadedFromDisk,
+                object: nil,
+                userInfo: ["url": reload.url, "text": reload.text]
+            )
+        }
+        return outcome.saved
     }
 
     @discardableResult
@@ -227,7 +238,7 @@ final class TabManager {
     @discardableResult
     func saveActiveTabAs(to newURL: URL) throws -> Bool {
         guard let index = activeTabIndex else { return false }
-        return try TabPersistence.saveTabAs(
+        let outcome = try TabPersistence.saveTabAs(
             at: index, tabs: &tabs, newURL: newURL,
             config: .init(editorSettings: editorSettings, formatters: fileFormatters),
             providers: .init(
@@ -235,6 +246,16 @@ final class TabManager {
                 fileSize: { _ in nil }
             )
         )
+        // Same reentrancy rationale as trySaveTab (#1066): post after the
+        // saveTabAs `inout tabs` scope ends, not inside it.
+        if let reload = outcome.reload {
+            NotificationCenter.default.post(
+                name: .tabReloadedFromDisk,
+                object: nil,
+                userInfo: ["url": reload.url, "text": reload.text]
+            )
+        }
+        return outcome.saved
     }
 
     // MARK: - Reorder & Pin
@@ -379,7 +400,7 @@ final class TabManager {
         }
     }
 
-    private func postReloadNotifications(_ reloadedTabs: [TabExternalChangeDetector.ReloadedTab]) {
+    private func postReloadNotifications(_ reloadedTabs: [ReloadedTab]) {
         for reloaded in reloadedTabs {
             NotificationCenter.default.post(
                 name: .tabReloadedFromDisk,

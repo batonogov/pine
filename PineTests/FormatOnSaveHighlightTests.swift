@@ -316,4 +316,147 @@ struct FormatOnSaveHighlightTests {
                     "cachedLineEnding should match re-detected value after Save As")
         }
     }
+
+    // MARK: - Save-path reentrancy (#1066)
+
+    /// `TabPersistence.saveTabContent` must NOT post `.tabReloadedFromDisk`
+    /// itself — the post was relocated to the caller (`TabManager.trySaveTab`)
+    /// so it fires AFTER the `inout tabs` exclusive access ends. Posting under
+    /// the live inout delivered the synchronous observer back into
+    /// `TabManager.tabs` via `updateHighlightCache` → Swift runtime
+    /// exclusivity abort (#1066). This pins the relocation: if the post moves
+    /// back inside `saveTabContent`, the observer fires here and the test
+    /// goes red. Same contract-testing approach as `FoldObserverReentrancyTests`
+    /// / `MenuSaveReentrancyTests` (test the mechanism, not the crash).
+    @Test("saveTabContent does not post tabReloadedFromDisk (post relocated to caller)")
+    func saveTabContentDoesNotPostReloadNotification() throws {
+        let defaults = makeIsolatedDefaults()
+        let settings = EditorSettings(defaults: defaults)
+        settings.formatOnSave = true
+        settings.insertFinalNewline = false
+        settings.stripTrailingWhitespace = false
+
+        let unformatted = "{\"a\":1}"
+        let url = try makeTempFile(content: unformatted)
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        var tabs: [EditorTab] = [EditorTab(url: url, content: unformatted, savedContent: unformatted)]
+
+        var posted = false
+        let observer = NotificationCenter.default.addObserver(
+            forName: .tabReloadedFromDisk, object: nil, queue: .main
+        ) { _ in posted = true }
+        defer { NotificationCenter.default.removeObserver(observer) }
+
+        let outcome = try TabPersistence.saveTabContent(
+            at: 0, tabs: &tabs,
+            config: .init(editorSettings: settings, formatters: .default),
+            providers: .default
+        )
+
+        #expect(outcome.saved, "saveTabContent should write the file")
+        #expect(outcome.reload != nil,
+                "saveTabContent should report a reload payload when content changed")
+        #expect(!posted,
+                "saveTabContent must NOT post tabReloadedFromDisk itself (post relocated to caller, #1066)")
+    }
+
+    /// Live regression for the macOS 26 exclusivity abort (#1066). When
+    /// format-on-save changes content, `trySaveTab` posts
+    /// `.tabReloadedFromDisk`; the observer registered here re-enters
+    /// `TabManager.tabs` via `updateHighlightCache` — exactly the reentrant
+    /// access that aborted when the post fired under `saveTabContent`'s live
+    /// `inout tabs`. With the fix the post fires after the inout scope ends,
+    /// so the observer's write lands safely. Before the fix this test aborts
+    /// the process (exclusivity conflict); completing the assertions below is
+    /// the regression signal.
+    @Test("trySaveTab survives a reentrant observer writing tabs via updateHighlightCache (#1066)")
+    func trySaveTabSurvivesReentrantObserver() throws {
+        let defaults = makeIsolatedDefaults()
+        let settings = EditorSettings(defaults: defaults)
+        settings.formatOnSave = true
+        settings.insertFinalNewline = false
+        settings.stripTrailingWhitespace = false
+
+        let tabManager = TabManager()
+        tabManager.editorSettings = settings
+        tabManager.fileFormatters = .default
+
+        let unformatted = "{\"a\":1,\"b\":2}"
+        let url = try makeTempFile(content: unformatted)
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        tabManager.openTab(url: url)
+
+        let reentrantCache = HighlightMatchResult(
+            matches: [HighlightMatch(range: NSRange(location: 0, length: 3), scope: "keyword.reentrancy", priority: 0)],
+            repaintRange: NSRange(location: 0, length: 10),
+            multilineFingerprint: []
+        )
+        // The observer re-enters TabManager.tabs storage — the access that
+        // collided with the live inout and aborted before #1066. Delivered
+        // on .main during the synchronous post, so MainActor.assumeIsolated
+        // is valid.
+        let observer = NotificationCenter.default.addObserver(
+            forName: .tabReloadedFromDisk, object: nil, queue: .main
+        ) { [weak tabManager] note in
+            guard let noteURL = note.userInfo?["url"] as? URL, noteURL == url else { return }
+            MainActor.assumeIsolated {
+                tabManager?.updateHighlightCache(reentrantCache)
+            }
+        }
+        defer { NotificationCenter.default.removeObserver(observer) }
+
+        // Before the fix this line aborted the process via the exclusivity
+        // conflict; reaching the assertions below is the regression proof.
+        //
+        // Debug-only enforcement note: Swift runtime exclusivity checking is
+        // active in Debug (and `-Onone`/unchecked). CI and the standard test
+        // scheme run Debug, so this test reproduces the abort there. In a
+        // Release build the overlapping access is undefined behaviour and may
+        // not abort — so this regression guard is meaningful on CI, not in a
+        // release-config run.
+        try tabManager.trySaveTab(at: 0)
+
+        #expect(tabManager.tabs[0].cachedHighlightResult?.matches.first?.scope == "keyword.reentrancy",
+                "reentrant updateHighlightCache from the reload observer should land safely (#1066)")
+    }
+
+    /// Save-As caller responsibility: `saveActiveTabAs` posts
+    /// `.tabReloadedFromDisk` (with the NEW url) when save-time transforms
+    /// change the content — the post relocated out of `TabPersistence.saveTabAs`.
+    @Test("saveActiveTabAs posts tabReloadedFromDisk when content changed")
+    func saveActiveTabAsPostsReloadNotification() throws {
+        let defaults = makeIsolatedDefaults()
+        let settings = EditorSettings(defaults: defaults)
+        settings.formatOnSave = true
+        settings.insertFinalNewline = false
+        settings.stripTrailingWhitespace = false
+
+        let tabManager = TabManager()
+        tabManager.editorSettings = settings
+        tabManager.fileFormatters = .default
+
+        let unformatted = "{\"a\":1}"
+        let url = try makeTempFile(content: unformatted)
+        let newURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("saveas-\(UUID().uuidString).json")
+        defer {
+            try? FileManager.default.removeItem(at: url)
+            try? FileManager.default.removeItem(at: newURL)
+        }
+
+        tabManager.openTab(url: url)
+
+        var postedURL: URL?
+        let observer = NotificationCenter.default.addObserver(
+            forName: .tabReloadedFromDisk, object: nil, queue: .main
+        ) { note in postedURL = note.userInfo?["url"] as? URL }
+        defer { NotificationCenter.default.removeObserver(observer) }
+
+        try tabManager.saveActiveTabAs(to: newURL)
+
+        #expect(postedURL == newURL,
+                "saveActiveTabAs should post tabReloadedFromDisk with the new URL when content changed (#1066)")
+    }
 }

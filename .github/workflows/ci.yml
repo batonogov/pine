@@ -59,6 +59,12 @@ jobs:
         working-directory: .github/scripts
         run: python3 -m unittest test_check_nonisolated.py -v
 
+      - name: Check no NotificationCenter post under inout (exclusivity-abort reentrancy, #1066)
+        run: python3 scripts/check-no-post-under-inout.py Pine
+
+      - name: Tests for inout-post reentrancy guard
+        run: bash scripts/tests/test-check-no-post-under-inout.sh
+
   build:
     name: Build for Testing
     runs-on: macos-26

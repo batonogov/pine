@@ -34,6 +34,35 @@ struct SaveConfig {
     let formatters: FileFormatterRegistry
 }
 
+/// Outcome of a save performed by ``TabPersistence``.
+///
+/// `reload` is non-nil when save-time transforms (formatter, insert-final-
+/// newline, strip-trailing-whitespace) changed the on-disk text and the
+/// editor view must be forcibly resynced. The payload is RETURNED rather
+/// than posted inside the save so the caller (``TabManager``) posts
+/// `.tabReloadedFromDisk` AFTER the save's `inout tabs` exclusive access
+/// has ended.
+///
+/// Posting synchronously inside the save — while `&tabs` was live —
+/// delivered the `.tabReloadedFromDisk` observer back into
+/// `TabManager.tabs` via `updateHighlightCache`, a re-entrant access that
+/// triggered `swift_beginAccess` → `_swift_reportExclusivityConflict` →
+/// `abort()` on macOS 26 (#1066). Same bug class as #1047 / #1051 / #1056
+/// / #1058 but rooted in the save path (format-on-save), not a menu
+/// `ButtonAction` — so the #1058 menu-button deferral did not cover it.
+/// Mirrors the safe pattern already used by
+/// `TabExternalChangeDetector.reloadTab` (returns data; the caller posts).
+struct SaveOutcome {
+    /// `true` when the file was written to disk. `false` for preview tabs
+    /// (which are never persisted) and any other non-text tab kind.
+    let saved: Bool
+    /// Non-nil when save-time transforms changed the text and the editor
+    /// view must be resynced. The caller posts `.tabReloadedFromDisk`.
+    /// Uses the shared ``ReloadedTab`` payload type (same shape the
+    /// external-change path carries) so the post helper is uniform.
+    let reload: ReloadedTab?
+}
+
 /// Handles disk I/O for editor tabs: opening files, saving content,
 /// large file handling, and preview file detection.
 @MainActor
@@ -216,17 +245,25 @@ enum TabPersistence {
         }
     }
 
-    /// Saves tab content to disk. Returns true on success.
-    /// Posts `.tabReloadedFromDisk` when save-time transforms changed the text.
+    /// Saves tab content to disk.
+    ///
+    /// When save-time transforms change the on-disk text, the editor must be
+    /// resynced — but the `.tabReloadedFromDisk` post is RETURNED via
+    /// ``SaveOutcome.reload`` (not posted here) so the caller posts it AFTER
+    /// this function's `inout tabs` scope has ended. Posting synchronously
+    /// here, while `&tabs` was exclusively accessed, delivered the observer
+    /// back into `TabManager.tabs` via `updateHighlightCache` → re-entrant
+    /// access → `_swift_reportExclusivityConflict` → `abort()` on macOS 26
+    /// (#1066). See ``SaveOutcome`` for the full rationale.
     static func saveTabContent(
         at index: Int,
         tabs: inout [EditorTab],
         config: SaveConfig,
         providers: FileProviders
-    ) throws -> Bool {
+    ) throws -> SaveOutcome {
         assert(tabs.indices.contains(index), "saveTabContent called with out-of-bounds index \(index)")
         let tab = tabs[index]
-        guard tab.kind == .text else { return false }
+        guard tab.kind == .text else { return SaveOutcome(saved: false, reload: nil) }
         if tab.isTruncated {
             throw CocoaError(.fileWriteUnknown, userInfo: [
                 NSLocalizedDescriptionKey: "Cannot save: file was partially loaded (truncated). Saving would corrupt the original file."
@@ -245,26 +282,27 @@ enum TabPersistence {
         tabs[index].lastModDate = providers.modDate(tab.url)
         tabs[index].fileSizeBytes = providers.fileSize(tab.url)
 
+        var reload: ReloadedTab?
         if contentChanged {
             tabs[index].cachedHighlightResult = nil
             tabs[index].recomputeContentCaches()
-            NotificationCenter.default.post(
-                name: .tabReloadedFromDisk,
-                object: nil,
-                userInfo: ["url": tab.url, "text": trimmed]
-            )
+            reload = ReloadedTab(url: tab.url, text: trimmed)
         }
-        return true
+        return SaveOutcome(saved: true, reload: reload)
     }
 
     /// Save As — writes content to a new URL and updates tab in-place.
+    ///
+    /// Like ``saveTabContent``, the `.tabReloadedFromDisk` post is RETURNED
+    /// (not posted here) so the caller posts it after the `inout tabs` scope
+    /// ends — see ``SaveOutcome`` (#1066).
     static func saveTabAs(
         at index: Int,
         tabs: inout [EditorTab],
         newURL: URL,
         config: SaveConfig,
         providers: FileProviders
-    ) throws -> Bool {
+    ) throws -> SaveOutcome {
         let tab = tabs[index]
         let trimmed = TabFormatter.contentPreparedForSave(
             tab.content,
@@ -278,15 +316,12 @@ enum TabPersistence {
         tabs[index].url = newURL
         tabs[index].savedContent = trimmed
         tabs[index].lastModDate = providers.modDate(newURL)
+        var reload: ReloadedTab?
         if contentChanged {
             tabs[index].cachedHighlightResult = nil
             tabs[index].recomputeContentCaches()
-            NotificationCenter.default.post(
-                name: .tabReloadedFromDisk,
-                object: nil,
-                userInfo: ["url": newURL, "text": trimmed]
-            )
+            reload = ReloadedTab(url: newURL, text: trimmed)
         }
-        return true
+        return SaveOutcome(saved: true, reload: reload)
     }
 }
