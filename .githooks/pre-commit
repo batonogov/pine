@@ -4,3 +4,9 @@
 
 # Unstage cosmetic-only xcstrings changes (Xcode build artifacts)
 scripts/normalize-xcstrings.sh
+
+# Block the exclusivity-abort reentrancy class (#1066): a NotificationCenter
+# post inside an `inout` function re-enters the live exclusive access via a
+# synchronous observer and aborts the process. CI runs the same check as a
+# hard gate; this pre-commit copy gives local feedback before push.
+python3 scripts/check-no-post-under-inout.py Pine/
