@@ -53,18 +53,14 @@ struct SaveConfig {
 /// Mirrors the safe pattern already used by
 /// `TabExternalChangeDetector.reloadTab` (returns data; the caller posts).
 struct SaveOutcome {
-    /// `true` when the file was written to disk.
+    /// `true` when the file was written to disk. `false` for preview tabs
+    /// (which are never persisted) and any other non-text tab kind.
     let saved: Bool
     /// Non-nil when save-time transforms changed the text and the editor
     /// view must be resynced. The caller posts `.tabReloadedFromDisk`.
-    let reload: Reload?
-
-    /// url + text to push back into the editor view after a save that
-    /// changed the on-disk content.
-    struct Reload {
-        let url: URL
-        let text: String
-    }
+    /// Uses the shared ``ReloadedTab`` payload type (same shape the
+    /// external-change path carries) so the post helper is uniform.
+    let reload: ReloadedTab?
 }
 
 /// Handles disk I/O for editor tabs: opening files, saving content,
@@ -286,11 +282,11 @@ enum TabPersistence {
         tabs[index].lastModDate = providers.modDate(tab.url)
         tabs[index].fileSizeBytes = providers.fileSize(tab.url)
 
-        var reload: SaveOutcome.Reload?
+        var reload: ReloadedTab?
         if contentChanged {
             tabs[index].cachedHighlightResult = nil
             tabs[index].recomputeContentCaches()
-            reload = SaveOutcome.Reload(url: tab.url, text: trimmed)
+            reload = ReloadedTab(url: tab.url, text: trimmed)
         }
         return SaveOutcome(saved: true, reload: reload)
     }
@@ -320,11 +316,11 @@ enum TabPersistence {
         tabs[index].url = newURL
         tabs[index].savedContent = trimmed
         tabs[index].lastModDate = providers.modDate(newURL)
-        var reload: SaveOutcome.Reload?
+        var reload: ReloadedTab?
         if contentChanged {
             tabs[index].cachedHighlightResult = nil
             tabs[index].recomputeContentCaches()
-            reload = SaveOutcome.Reload(url: newURL, text: trimmed)
+            reload = ReloadedTab(url: newURL, text: trimmed)
         }
         return SaveOutcome(saved: true, reload: reload)
     }

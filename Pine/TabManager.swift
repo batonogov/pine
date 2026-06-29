@@ -400,7 +400,7 @@ final class TabManager {
         }
     }
 
-    private func postReloadNotifications(_ reloadedTabs: [TabExternalChangeDetector.ReloadedTab]) {
+    private func postReloadNotifications(_ reloadedTabs: [ReloadedTab]) {
         for reloaded in reloadedTabs {
             NotificationCenter.default.post(
                 name: .tabReloadedFromDisk,

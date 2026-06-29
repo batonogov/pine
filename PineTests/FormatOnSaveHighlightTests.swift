@@ -409,6 +409,13 @@ struct FormatOnSaveHighlightTests {
 
         // Before the fix this line aborted the process via the exclusivity
         // conflict; reaching the assertions below is the regression proof.
+        //
+        // Debug-only enforcement note: Swift runtime exclusivity checking is
+        // active in Debug (and `-Onone`/unchecked). CI and the standard test
+        // scheme run Debug, so this test reproduces the abort there. In a
+        // Release build the overlapping access is undefined behaviour and may
+        // not abort — so this regression guard is meaningful on CI, not in a
+        // release-config run.
         try tabManager.trySaveTab(at: 0)
 
         #expect(tabManager.tabs[0].cachedHighlightResult?.matches.first?.scope == "keyword.reentrancy",

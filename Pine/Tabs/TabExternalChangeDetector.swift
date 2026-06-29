@@ -42,13 +42,6 @@ enum TabExternalChangeDetector {
         }
     }
 
-    /// Content loaded from disk for a clean tab. The caller posts notifications
-    /// after the `tabs` inout mutation has ended, avoiding re-entrant tab edits.
-    struct ReloadedTab {
-        let url: URL
-        let text: String
-    }
-
     /// Checks open tabs against disk state. Silently reloads clean tabs that were
     /// modified externally. Returns conflicts for dirty tabs, names of reloaded files,
     /// and IDs of clean-deleted tabs that the caller should close.
