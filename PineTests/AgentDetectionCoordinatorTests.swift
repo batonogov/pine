@@ -102,9 +102,28 @@ struct AgentDetectionCoordinatorTests {
         // dispatch queue entirely. This test lets the real timer fire several
         // times on `pollQueue`: with the bug the process traps here (failing
         // the whole suite); with the nonisolated handler it completes.
+        //
+        // This is the SOLE automated guard for the timer-handler isolation
+        // class — the repo's `check_nonisolated.py` lint operates at type
+        // granularity and its queue patterns do not cover `DispatchSource` /
+        // `setEventHandler`, so it cannot see closure-literal isolation. Keep
+        // this test behavioral (assert the handler fired AND the snapshot
+        // reached the detector), not just "process survived".
+        //
+        // Reference-type box so the @Sendable mock runner can bump a counter
+        // without capturing a mutable local (strict concurrency forbids
+        // capturing `var` in @Sendable closures). Atomic via NSLock.
+        nonisolated final class FireCounter: @unchecked Sendable {
+            private let lock = NSLock()
+            private var value = 0
+            func increment() { lock.lock(); value += 1; lock.unlock() }
+            var count: Int { lock.lock(); defer { lock.unlock() }; return value }
+        }
         let detector = AgentDetector()
+        let fires = FireCounter()
         let runner: ProcessRunner = { _, _, _, _ in
-            ProcessRunResult(stdout: "100 claude", stderr: "", exitCode: 0, timedOut: false)
+            fires.increment()
+            return ProcessRunResult(stdout: "100 claude", stderr: "", exitCode: 0, timedOut: false)
         }
         let coordinator = AgentDetectionCoordinator(
             detector: detector, terminalManager: nil,
@@ -114,6 +133,17 @@ struct AgentDetectionCoordinatorTests {
         // ~6 polls on pollQueue; the bug would kill the process in this window.
         try await Task.sleep(for: .milliseconds(300))
         coordinator.stop()
+        // The timer handler actually fired on pollQueue (guards against a
+        // false pass under extreme CI load where no fire occurs).
+        #expect(fires.count >= 1)
+        // The snapshot reached the detector via the real dispatch path
+        // (pollQueue -> captureSnapshot -> DispatchQueue.main.async hop ->
+        // applySnapshot). The main hop drains while `Task.sleep` suspends the
+        // @MainActor test, so `detectedSessions` is populated by now. This is
+        // the assertion that proves end-to-end polling works — without it the
+        // test reduces to "the process didn't trap".
+        #expect(detector.detectedSessions.count >= 1)
+        #expect(detector.detectedSessions.first?.agentType == .claudeCode)
         #expect(!coordinator.isRunning)
     }
 
