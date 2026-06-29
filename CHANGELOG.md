@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.31.1](https://github.com/batonogov/pine/compare/v1.31.0...v1.31.1) (2026-06-29)
+
+
+### Bug Fixes
+
+* **agent:** boot detection coordinator on first terminal creation ([#1064](https://github.com/batonogov/pine/issues/1064)) ([29ae9c4](https://github.com/batonogov/pine/commit/29ae9c4d19715b21c38fffb9636d6c00b09f7c2b))
+* **editor:** break save-path reentrancy causing macOS exclusivity abort ([#1066](https://github.com/batonogov/pine/issues/1066)) ([#1067](https://github.com/batonogov/pine/issues/1067)) ([dae439c](https://github.com/batonogov/pine/commit/dae439c858219a130ecc3096d71db5002fe946e5))
+
 ## [1.31.0](https://github.com/batonogov/pine/compare/v1.30.1...v1.31.0) (2026-06-25)
 
 
