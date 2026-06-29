@@ -25,10 +25,10 @@ final class TerminalManager {
 
     /// Process runner used by the agent-detection coordinator to capture the
     /// `ps` snapshot. Defaults to real subprocess execution (`runRealProcess`);
-    /// tests inject a no-op via `@testable` to avoid forking `/bin/ps` (and
-    /// the macos-26 fork/spawn hang, #1060). Set-once: the coordinator reads
-    /// it once at boot, so late mutations have no effect.
-    private(set) var agentDetectionProcessRunner: ProcessRunner = runRealProcess
+    /// tests inject a no-op at construction to avoid forking `/bin/ps` (and
+    /// the macos-26 fork/spawn hang, #1060). Read once at boot; stored
+    /// privately so it cannot be mutated after construction.
+    private let agentDetectionProcessRunner: ProcessRunner
 
     /// `true` once agent-detection polling has started. Read-only diagnostic /
     /// test hook. Delegates to the coordinator's `isRunning` so it correctly
@@ -42,6 +42,14 @@ final class TerminalManager {
     /// session restore (`ContentView.restoreSessionIfNeeded`), and via
     /// ``startTerminals(workingDirectory:)``.
     private var agentCoordinator: AgentDetectionCoordinator?
+
+    /// Creates a terminal manager. `agentDetectionProcessRunner` is injected
+    /// here (rather than exposed as a mutable property) so the coordinator's
+    /// runner is fixed for the manager's lifetime — matches the init-param
+    /// injection pattern used by `ExternalFileFormatter` / `FileFormatter`.
+    init(agentDetectionProcessRunner: @escaping ProcessRunner = runRealProcess) {
+        self.agentDetectionProcessRunner = agentDetectionProcessRunner
+    }
 
     // MARK: - Tab creation
 

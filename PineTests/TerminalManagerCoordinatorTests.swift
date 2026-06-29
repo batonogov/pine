@@ -176,10 +176,10 @@ struct TerminalManagerCoordinatorTests {
 
     @Test func createTerminalTab_startsAgentDetection() {
         let paneManager = PaneManager()
-        let terminal = TerminalManager()
+        // Inject a no-op runner at construction so the coordinator polls
+        // without forking `ps`.
+        let terminal = TerminalManager(agentDetectionProcessRunner: Self.noOpProcessRunner)
         terminal.paneManager = paneManager
-        // Inject a no-op runner so the coordinator polls without forking `ps`.
-        terminal.agentDetectionProcessRunner = Self.noOpProcessRunner
 
         let editorPane = paneManager.activePaneID
         terminal.createTerminalTab(relativeTo: editorPane, workingDirectory: nil)
@@ -194,9 +194,8 @@ struct TerminalManagerCoordinatorTests {
 
     @Test func startTerminals_bootsAgentDetection() {
         let paneManager = PaneManager()
-        let terminal = TerminalManager()
+        let terminal = TerminalManager(agentDetectionProcessRunner: Self.noOpProcessRunner)
         terminal.paneManager = paneManager
-        terminal.agentDetectionProcessRunner = Self.noOpProcessRunner
 
         terminal.startTerminals(workingDirectory: nil)
 
@@ -206,16 +205,15 @@ struct TerminalManagerCoordinatorTests {
 
     @Test func createTerminalTab_injectedRunnerWiredToCoordinator() {
         let paneManager = PaneManager()
-        let terminal = TerminalManager()
-        terminal.paneManager = paneManager
         // Inject a runner returning a fake `claude` process to prove the
         // injected runner (not the default `runRealProcess`) reaches the
         // booted coordinator and feeds the shared detector — validating the
         // full boot -> coordinator -> runner -> detector wiring through the
         // new `createTerminalTab` boot path.
-        terminal.agentDetectionProcessRunner = { _, _, _, _ in
+        let terminal = TerminalManager(agentDetectionProcessRunner: { _, _, _, _ in
             ProcessRunResult(stdout: "100 claude", stderr: "", exitCode: 0, timedOut: false)
-        }
+        })
+        terminal.paneManager = paneManager
 
         let editorPane = paneManager.activePaneID
         terminal.createTerminalTab(relativeTo: editorPane, workingDirectory: nil)
