@@ -17,10 +17,9 @@ import Foundation
 /// Marked `nonisolated` (not `@MainActor`) because it owns a background
 /// `DispatchQueue` for polling. This matches the project's canonical pattern
 /// for background-queue owners — see `FileSystemWatcher`. The project-wide
-/// `-default-isolation=MainActor` flag means an unannotated class would be
-/// implicitly `@MainActor`, which is exactly the crash pattern forbidden by
-/// `check_nonisolated.py` (a `@MainActor` type that schedules work on a
-/// background queue is the bug from #613/#693).
+/// `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor` build setting means an
+/// unannotated class would be implicitly `@MainActor`; a `@MainActor` type
+/// that owns a background dispatch queue is the crash pattern from #613/#693.
 ///
 /// The polling path (`captureSnapshot`) runs on `pollQueue`, parses `ps`
 /// output via the `nonisolated` `parsePsOutput`, then hops to main using a
@@ -30,6 +29,18 @@ import Foundation
 /// `@MainActor` closure never captures `self` (which is nonisolated and
 /// non-Sendable). The static `applySnapshot(_:detector:terminalManager:)`
 /// method is `@MainActor` and takes its dependencies as parameters.
+///
+/// **Timer handler isolation (release 1.31.1 crash fix):** the
+/// `DispatchSource` timer fires on `pollQueue` and invokes its handler
+/// closure directly — no actor hop. A closure literal inherits the isolation
+/// of its *enclosing* function, so a handler written inline inside the
+/// `@MainActor` `start()` is MainActor-isolated; running it off-main trips
+/// Swift's `swift_task_isCurrentExecutorWithFlagsImpl` check
+/// (`dispatch_assert_queue(main)`) and traps the process (the macOS 27 crash
+/// on project open in 1.31.1). The handler is therefore built in the
+/// `nonisolated` `makePollHandler()` so the closure is nonisolated. Note that
+/// `captureSnapshot` being `nonisolated` is NOT sufficient on its own — only
+/// the closure literal's own isolation matters at the dispatch boundary.
 nonisolated final class AgentDetectionCoordinator {
     let detector: AgentDetector
     weak var terminalManager: TerminalManager?
@@ -59,9 +70,26 @@ nonisolated final class AgentDetectionCoordinator {
         isRunning = true
         let timer = DispatchSource.makeTimerSource(queue: pollQueue)
         timer.schedule(deadline: .now() + pollInterval, repeating: pollInterval)
-        timer.setEventHandler { [weak self] in self?.captureSnapshot() }
+        // Build the handler via the nonisolated makePollHandler(): a closure
+        // literal written here (inside the @MainActor start()) would inherit
+        // MainActor isolation and trap when the source invokes it on
+        // pollQueue — see the class doc and the release 1.31.1 crash fix.
+        timer.setEventHandler(handler: makePollHandler())
         timer.resume()
         self.timer = timer
+    }
+
+    /// Builds the timer's event handler in a `nonisolated` function so the
+    /// returned closure is nonisolated. The `DispatchSource` timer invokes
+    /// this handler directly on `pollQueue` (no actor hop); a MainActor-
+    /// isolated handler would trip Swift's executor-isolation assertion
+    /// (`swift_task_isCurrentExecutorWithFlagsImpl` → `dispatch_assert_queue`)
+    /// and trap the process (release 1.31.1 crash). `captureSnapshot` is
+    /// itself `nonisolated`, so a nonisolated handler can call it directly.
+    /// Returns `() -> Void` (not `@Sendable`) so the closure may capture the
+    /// non-Sendable `self` without a strict-concurrency violation.
+    nonisolated private func makePollHandler() -> () -> Void {
+        { [weak self] in self?.captureSnapshot() }
     }
 
     @MainActor func stop() {
@@ -75,9 +103,12 @@ nonisolated final class AgentDetectionCoordinator {
     deinit { timer?.cancel() }
 
     /// Runs on `pollQueue`: captures the process list, parses it, then hops
-    /// to main to apply the snapshot. Stays `nonisolated` so the timer event
-    /// handler closure does not inherit MainActor isolation (which would
-    /// crash at runtime — see `check_nonisolated.py` / #693).
+    /// to main to apply the snapshot. `nonisolated` so the nonisolated timer
+    /// handler (`makePollHandler`) can call it directly off-main. A handler's
+    /// isolation is determined by where its closure literal is written, not
+    /// by this method's isolation — that is why the handler lives in
+    /// `makePollHandler`, not inline in `start()` (see the class doc and the
+    /// release 1.31.1 crash fix).
     ///
     /// Uses `DispatchWorkItem` + `MainActor.assumeIsolated` instead of
     /// `Task { @MainActor in }` to match the `FileSystemWatcher` pattern:

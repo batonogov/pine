@@ -86,6 +86,37 @@ struct AgentDetectionCoordinatorTests {
         coordinator.stop()
     }
 
+    @Test func start_pollsOffMainWithoutCrashing() async throws {
+        // Regression for the macOS 27 crash shipped in release 1.31.1: the
+        // timer's `setEventHandler` closure was written inline inside the
+        // `@MainActor` `start()`, so under `SWIFT_DEFAULT_ACTOR_ISOLATION =
+        // MainActor` the closure literal inherited MainActor isolation. The
+        // `DispatchSource` timer invokes its handler directly on `pollQueue`
+        // (no actor hop), so Swift's `swift_task_isCurrentExecutorWithFlagsImpl`
+        // check tripped `dispatch_assert_queue(main)` and trapped the process
+        // ~2s after the first terminal was created — i.e. right after opening
+        // a project. The handler is now built in the `nonisolated`
+        // `makePollHandler()` so the closure is nonisolated.
+        //
+        // `runSnapshotForTesting()` cannot catch this — it bypasses the
+        // dispatch queue entirely. This test lets the real timer fire several
+        // times on `pollQueue`: with the bug the process traps here (failing
+        // the whole suite); with the nonisolated handler it completes.
+        let detector = AgentDetector()
+        let runner: ProcessRunner = { _, _, _, _ in
+            ProcessRunResult(stdout: "100 claude", stderr: "", exitCode: 0, timedOut: false)
+        }
+        let coordinator = AgentDetectionCoordinator(
+            detector: detector, terminalManager: nil,
+            processRunner: runner, pollInterval: 0.05
+        )
+        coordinator.start()
+        // ~6 polls on pollQueue; the bug would kill the process in this window.
+        try await Task.sleep(for: .milliseconds(300))
+        coordinator.stop()
+        #expect(!coordinator.isRunning)
+    }
+
     @Test func sessionForPIDReturnsActiveSession() {
         let detector = AgentDetector()
         detector.processSnapshotDidUpdate([DetectedProcess(pid: 500, command: "claude")])
