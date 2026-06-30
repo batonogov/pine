@@ -14,6 +14,9 @@ import SwiftUI
 final class ProjectManager {
     let workspace = WorkspaceManager()
     let terminal = TerminalManager()
+    /// Structured agent-action feed for the Activity Panel (vision #933,
+    /// Phase 2 — Visibility, issue #1072).
+    let agentActivity = AgentActivityStore()
     /// The primary TabManager (root editor pane). Owns the recovery wiring and
     /// editor-context subscription. For the *focused* pane's TabManager, use
     /// ``activeTabManager`` which delegates to ``PaneManager/activeEditorTabManager``.
@@ -170,6 +173,10 @@ final class ProjectManager {
         workspace.setOnRootNodesChanged { [weak self] nodes in
             guard let self, let rootURL = self.workspace.rootURL else { return }
             self.quickOpenProvider.rebuildIndex(from: nodes, rootURL: rootURL)
+            // Agent activity correlation (#1072): when the file tree refreshes
+            // (typically a FileSystemWatcher event) and ≥1 agent session is
+            // active, attribute newly-modified files to the active session(s).
+            self.correlateAgentActivity(rootURL: rootURL)
         }
         workspace.progressTracker = progress
         workspace.gitProvider.progressTracker = progress
@@ -319,6 +326,53 @@ final class ProjectManager {
         workspace.loadDirectory(url: url)
         setupRecovery(projectURL: url)
         Task { await contextFileWriter.setProjectRoot(url) }
+    }
+
+    // MARK: - Agent activity file-system correlation (#1072)
+
+    /// Modified paths (relative to the project root) already attributed to an
+    /// agent session, so the same change isn't recorded repeatedly while the
+    /// `FileSystemWatcher` keeps firing for the same edit.
+    private var attributedModifiedPaths: Set<String> = []
+    /// Whether `attributedModifiedPaths` has been seeded with pre-existing
+    /// modifications since an agent became active. Cleared when no agent is
+    /// active, so a fresh run attributes only files changed *during* it.
+    private var agentActivitySeeded = false
+
+    /// Minimal real data source for the Activity Panel (#1072): attributes
+    /// file-tree refreshes to the active agent session(s). The
+    /// `FileSystemWatcher` signals only that *something* changed — not which
+    /// file — so the modified set is read from `gitProvider.fileStatuses`.
+    ///
+    /// Conservative heuristic: ignored when no agent is active; the first
+    /// refresh after an agent appears seeds the seen-set with whatever was
+    /// already modified (so pre-existing changes aren't misattributed), and
+    /// only subsequently-changed files are recorded. With several active
+    /// sessions attribution falls back to the most-recently-active (see
+    /// `AgentActivityStore`).
+    private func correlateAgentActivity(rootURL: URL) {
+        let active = terminal.agentDetector.activeSessions
+        guard !active.isEmpty else {
+            attributedModifiedPaths = []
+            agentActivitySeeded = false
+            return
+        }
+        let modified = gitProvider.fileStatuses
+            .filter { $0.value == .modified || $0.value == .added }
+            .map(\.key)
+        if !agentActivitySeeded {
+            // Seed: treat currently-modified files as pre-existing.
+            attributedModifiedPaths = Set(modified)
+            agentActivitySeeded = true
+            return
+        }
+        for path in modified where !attributedModifiedPaths.contains(path) {
+            attributedModifiedPaths.insert(path)
+            agentActivity.noteFileSystemChange(
+                at: rootURL.appendingPathComponent(path),
+                activeSessions: active
+            )
+        }
     }
 
     // MARK: - Convenience accessors (terminal)

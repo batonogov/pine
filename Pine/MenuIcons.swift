@@ -56,6 +56,9 @@ nonisolated enum MenuIcons {
     static let newTerminalTab = "plus"
     static let sendToTerminal = "paperplane"
 
+    // MARK: - Agent Activity Panel (#1072)
+    static let agentActivity = "list.bullet.rectangle"
+
     // MARK: - Validation
     static let toggleValidation = "checkmark.shield"
 

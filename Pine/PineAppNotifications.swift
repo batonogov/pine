@@ -68,6 +68,9 @@ extension Notification.Name {
     /// userInfo: ["text": String]
     static let sendTextToTerminal = Notification.Name("sendTextToTerminal")
 
+    // MARK: - Agent Activity Panel (vision #933, Phase 2 — #1072)
+    static let showAgentActivity = Notification.Name("showAgentActivity")
+
     // MARK: - Git
     static let showBranchSwitcher = Notification.Name("showBranchSwitcher")
     static let refreshLineDiffs = Notification.Name("refreshLineDiffs")

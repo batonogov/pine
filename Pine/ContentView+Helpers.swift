@@ -215,6 +215,11 @@ extension ContentView {
         paneManager.ensureEditorPane().openTab(url: node.url)
     }
 
+    /// Opens a file from the Agent Activity Panel (#1072).
+    func openFileFromActivity(_ url: URL) {
+        paneManager.ensureEditorPane().openTab(url: url)
+    }
+
     /// Syncs sidebar selection to match the active editor tab.
     func syncSidebarSelection() {
         guard let url = activeTabManager.activeTab?.url else {
@@ -512,5 +517,39 @@ extension ContentView {
 
         // Send text followed by newline to execute
         activeTab.sendText(text + "\n")
+    }
+}
+
+// MARK: - Agent Activity presenter (#1072)
+
+/// Presents the Agent Activity Panel sheet in response to the
+/// `showAgentActivity` notification. Encapsulating the `.sheet` + `.onReceive`
+/// wiring in a `ViewModifier` keeps `ContentView.body` within the Swift
+/// compiler's type-checking budget (an inline `.sheet`/`.onReceive` pair with
+/// a `map(AgentActivityRow.init)` argument pushed the surrounding view over
+/// the “unable to type-check in reasonable time” limit).
+///
+/// The notification handler defers the state mutation to the next runloop to
+/// avoid the `.onReceive` reentrancy class from #1051.
+struct AgentActivityPresenter: ViewModifier {
+    @Binding var isPresented: Bool
+    let store: AgentActivityStore
+    let onSelect: (URL) -> Void
+
+    func body(content: Content) -> some View {
+        content
+            .sheet(isPresented: $isPresented) {
+                AgentActivityView(
+                    rows: store.actions.map(AgentActivityRow.init),
+                    onSelectFile: onSelect,
+                    onClose: { isPresented = false }
+                )
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .showAgentActivity)) { _ in
+                // Defer to break reentrancy (#1051).
+                DispatchQueue.main.async {
+                    isPresented = true
+                }
+            }
     }
 }
