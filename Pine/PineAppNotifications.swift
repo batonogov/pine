@@ -68,6 +68,10 @@ extension Notification.Name {
     /// userInfo: ["text": String]
     static let sendTextToTerminal = Notification.Name("sendTextToTerminal")
 
+    // MARK: - Agent history (#1073)
+    /// Shows the persistent agent-history timeline sheet.
+    static let showAgentHistory = Notification.Name("showAgentHistory")
+
     // MARK: - Git
     static let showBranchSwitcher = Notification.Name("showBranchSwitcher")
     static let refreshLineDiffs = Notification.Name("refreshLineDiffs")

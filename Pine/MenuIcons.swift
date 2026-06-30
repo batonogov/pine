@@ -56,6 +56,9 @@ nonisolated enum MenuIcons {
     static let newTerminalTab = "plus"
     static let sendToTerminal = "paperplane"
 
+    // MARK: - Agent History & Undo (#1073)
+    static let agentHistory = "clock.arrow.circlepath"
+
     // MARK: - Validation
     static let toggleValidation = "checkmark.shield"
 

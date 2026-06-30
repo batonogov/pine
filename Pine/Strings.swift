@@ -138,6 +138,19 @@ enum Strings {
     static let statusbarAgentActive: LocalizedStringKey = "statusbar.agentActive"
     static let statusbarAgentsActive: LocalizedStringKey = "statusbar.agentsActive"
 
+    // MARK: - Agent History & Undo (#1073)
+    static let menuAgentHistory: LocalizedStringKey = "menu.agentHistory"
+    static let agentHistoryTitle: LocalizedStringKey = "agentHistory.title"
+    static let agentHistoryEmptyTitle: LocalizedStringKey = "agentHistory.emptyTitle"
+    static let agentHistoryEmptyMessage: LocalizedStringKey = "agentHistory.emptyMessage"
+    static let agentHistoryRevertedBadge: LocalizedStringKey = "agentHistory.revertedBadge"
+    static let agentHistoryRevertButton: LocalizedStringKey = "agentHistory.revertButton"
+    static let agentHistoryRevertConfirmTitle: LocalizedStringKey = "agentHistory.revertConfirmTitle"
+    static let agentHistoryRevertConfirmAction: LocalizedStringKey = "agentHistory.revertConfirmAction"
+    static let agentHistoryRevertConfirmMessage: LocalizedStringKey = "agentHistory.revertConfirmMessage"
+    static let agentHistoryRevertSuccess: LocalizedStringKey = "agentHistory.revertSuccess"
+    static let agentHistoryRevertPartialFailure: LocalizedStringKey = "agentHistory.revertPartialFailure"
+
     // MARK: - Menu Commands
 
     static let menuIncreaseFontSize: LocalizedStringKey = "menu.increaseFontSize"
