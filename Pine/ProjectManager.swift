@@ -342,14 +342,19 @@ final class ProjectManager {
     /// Minimal real data source for the Activity Panel (#1072): attributes
     /// file-tree refreshes to the active agent session(s). The
     /// `FileSystemWatcher` signals only that *something* changed — not which
-    /// file — so the modified set is read from `gitProvider.fileStatuses`.
+    /// file — so the changed set is read from `gitProvider.fileStatuses`.
     ///
     /// Conservative heuristic: ignored when no agent is active; the first
     /// refresh after an agent appears seeds the seen-set with whatever was
-    /// already modified (so pre-existing changes aren't misattributed), and
+    /// already changed (so pre-existing changes aren't misattributed), and
     /// only subsequently-changed files are recorded. With several active
     /// sessions attribution falls back to the most-recently-active (see
     /// `AgentActivityStore`).
+    ///
+    /// "Changed" covers every working-tree state except `.deleted` — agents
+    /// routinely create brand-new files (` .untracked`), `git add` files
+    /// (`.staged`), and modify already-staged files (`.mixed`); dropping any
+    /// of those would make the panel miss the most common agent action.
     private func correlateAgentActivity(rootURL: URL) {
         let active = terminal.agentDetector.activeSessions
         guard !active.isEmpty else {
@@ -357,21 +362,37 @@ final class ProjectManager {
             agentActivitySeeded = false
             return
         }
-        let modified = gitProvider.fileStatuses
-            .filter { $0.value == .modified || $0.value == .added }
+        let changed = gitProvider.fileStatuses
+            .filter { Self.isAttributableStatus($0.value) }
             .map(\.key)
         if !agentActivitySeeded {
-            // Seed: treat currently-modified files as pre-existing.
-            attributedModifiedPaths = Set(modified)
+            // Seed: treat currently-changed files as pre-existing.
+            attributedModifiedPaths = Set(changed)
             agentActivitySeeded = true
             return
         }
-        for path in modified where !attributedModifiedPaths.contains(path) {
+        // Prune paths no longer changed (e.g. an agent reverted a file) so a
+        // later re-modification is recorded instead of silently dropped.
+        attributedModifiedPaths.formIntersection(changed)
+        for path in changed where !attributedModifiedPaths.contains(path) {
             attributedModifiedPaths.insert(path)
             agentActivity.noteFileSystemChange(
                 at: rootURL.appendingPathComponent(path),
                 activeSessions: active
             )
+        }
+    }
+
+    /// `true` for working-tree states that represent a change an agent could
+    /// have made. `.deleted` is excluded (the file no longer exists to open).
+    /// `internal` so the attribution filter is unit-testable (the integration
+    /// through `correlateAgentActivity` reads main-actor state with no DI seam).
+    static func isAttributableStatus(_ status: GitFileStatus) -> Bool {
+        switch status {
+        case .untracked, .modified, .staged, .added, .conflict, .mixed:
+            return true
+        case .deleted:
+            return false
         }
     }
 

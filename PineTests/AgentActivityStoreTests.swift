@@ -182,6 +182,23 @@ struct AgentActivityStoreTests {
         #expect(store.actions.count == 1)
     }
 
+    // MARK: - Attribution status filter (correlation integration, #1072 SF-1)
+
+    @Test("Attribution covers all changed working-tree states except deleted")
+    func isAttributableStatus_coversAllChangedStates() {
+        // SF-1 regression guard: agents routinely create new files
+        // (.untracked), stage them (.staged), and edit staged files (.mixed).
+        // Dropping any of those made the panel miss the most common actions.
+        #expect(ProjectManager.isAttributableStatus(.untracked))
+        #expect(ProjectManager.isAttributableStatus(.modified))
+        #expect(ProjectManager.isAttributableStatus(.staged))
+        #expect(ProjectManager.isAttributableStatus(.added))
+        #expect(ProjectManager.isAttributableStatus(.conflict))
+        #expect(ProjectManager.isAttributableStatus(.mixed))
+        // Deleted files no longer exist to open, so they are excluded.
+        #expect(!ProjectManager.isAttributableStatus(.deleted))
+    }
+
     // MARK: - Helpers
 
     private func makeAction(
