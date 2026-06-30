@@ -59,6 +59,9 @@ nonisolated enum MenuIcons {
     // MARK: - Agent Activity Panel (#1072)
     static let agentActivity = "list.bullet.rectangle"
 
+    // MARK: - Agent History & Undo (#1073)
+    static let agentHistory = "clock.arrow.circlepath"
+
     // MARK: - Validation
     static let toggleValidation = "checkmark.shield"
 

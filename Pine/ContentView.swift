@@ -45,6 +45,7 @@ struct ContentView: View {
     @State var isBranchSwitcherPresented = false
     @State var showGoToLine = false
     @State var isAgentActivityPresented = false
+    @State var isAgentHistoryPresented = false
     @AppStorage("minimapVisible") var isMinimapVisible = true
     @AppStorage(BlameConstants.storageKey) var isBlameVisible = true
     @AppStorage("wordWrapEnabled") var isWordWrapEnabled = true
@@ -222,6 +223,10 @@ struct ContentView: View {
                 isAgentActivityPresented = false
                 openFileFromActivity(url)
             }
+        ))
+        .modifier(AgentHistoryPresenter(
+            isPresented: $isAgentHistoryPresented,
+            store: projectManager.agentHistory
         ))
         .onChange(of: selectedNode) { _, newNode in
             guard let node = newNode, !node.isDirectory else { return }

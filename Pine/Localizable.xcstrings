@@ -171,182 +171,602 @@
         }
       }
     },
-    "agentActivity.close" : {
-      "comment" : "Agent Activity Panel: accessibility label for the close button (#1072).",
+    "agentHistory.emptyMessage" : {
+      "comment" : "Agent History: empty-state explanation (#1073).",
       "extractionState" : "manual",
       "localizations" : {
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Schließen"
+            "value" : "Abgeschlossene Agenten-Sitzungen erscheinen hier. Setze die Änderungen eines Durchlaufs mit einem Klick zurück."
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Close"
+            "value" : "Finished agent sessions will appear here. Revert any run's changes with one click."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Cerrar"
+            "value" : "Las sesiones de agente finalizadas aparecerán aquí. Revierte los cambios de cualquier ejecución con un clic."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Fermer"
+            "value" : "Les sessions d'agent terminées apparaîtront ici. Annulez les modifications de n'importe quelle exécution d'un clic."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "閉じる"
+            "value" : "終了したエージェントセッションがここに表示されます。実行の変更をワンクリックで取り消せます。"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "닫기"
+            "value" : "완료된 에이전트 세션이 여기에 표시됩니다. 클릭 한 번으로 실행 변경 사항을 되돌릴 수 있습니다."
           }
         },
         "pt-BR" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Fechar"
+            "value" : "Sessões de agente finalizadas aparecerão aqui. Reverta as alterações de qualquer execução com um clique."
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Закрыть"
+            "value" : "Завершённые сессии агента появятся здесь. Изменения любого запуска можно отменить одним нажатием."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "关闭"
+            "value" : "已完成的智能体会话将显示在此处。一键即可撤销任意运行的更改。"
           }
         }
       }
     },
-    "agentActivity.empty" : {
-      "comment" : "Agent Activity Panel: message shown when no agent actions have been recorded yet (#1072).",
+    "agentHistory.emptyTitle" : {
+      "comment" : "Agent History: empty-state title (#1073).",
       "extractionState" : "manual",
       "localizations" : {
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Noch keine Agentenaktionen. Führe einen Agenten im Terminal aus, um seine Aktivität hier zu sehen."
+            "value" : "Noch kein Verlauf"
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "No agent actions yet. Run an agent in the terminal to see its activity here."
+            "value" : "No History Yet"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Aún no hay acciones del agente. Ejecuta un agente en el terminal para ver su actividad aquí."
+            "value" : "Aún no hay historial"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Aucune action d'agent pour le moment. Lancez un agent dans le terminal pour voir son activité ici."
+            "value" : "Aucun historiel"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "エージェントのアクションはまだありません。ターミナルでエージェントを実行すると、ここにアクティビティが表示されます。"
+            "value" : "履歴はまだありません"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "아직 에이전트 동작이 없습니다. 터미널에서 에이전트를 실행하면 여기에 활동이 표시됩니다."
+            "value" : "기록 없음"
           }
         },
         "pt-BR" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Nenhuma ação do agente ainda. Execute um agente no terminal para ver a atividade aqui."
+            "value" : "Sem histórico"
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Действий агента пока нет. Запустите агента в терминале, чтобы увидеть его активность здесь."
+            "value" : "Истории пока нет"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "尚无智能体操作。在终端中运行智能体即可在此查看其活动。"
+            "value" : "暂无历史"
           }
         }
       }
     },
-    "agentActivity.title" : {
-      "comment" : "Agent Activity Panel: sheet title (#1072).",
+    "agentHistory.revertButton" : {
+      "comment" : "Agent History: revert button label (#1073).",
       "extractionState" : "manual",
       "localizations" : {
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Agentenaktivität"
+            "value" : "Zurücksetzen"
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Agent Activity"
+            "value" : "Revert"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Actividad del agente"
+            "value" : "Revertir"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Activité de l'agent"
+            "value" : "Annuler"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "エージェントのアクティビティ"
+            "value" : "取り消す"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "에이전트 활동"
+            "value" : "되돌리기"
           }
         },
         "pt-BR" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Atividade do agente"
+            "value" : "Reverter"
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Активность агента"
+            "value" : "Отменить"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "智能体活动"
+            "value" : "撤销"
+          }
+        }
+      }
+    },
+    "agentHistory.revertConfirmAction" : {
+      "comment" : "Agent History: destructive confirm button in the revert alert (#1073).",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Zurücksetzen"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Revert"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Revertir"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Annuler"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "取り消す"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "되돌리기"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reverter"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Отменить"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "撤销"
+          }
+        }
+      }
+    },
+    "agentHistory.revertConfirmMessage" : {
+      "comment" : "Agent History: revert confirmation alert message (#1073).",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dies führt „git checkout“ für die Dateien des Durchlaufs aus und verwirft die Änderungen des Agenten. Das kann nicht rückgängig gemacht werden."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This runs git checkout on the run's files, discarding the agent's changes. This cannot be undone."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Esto ejecuta git checkout en los archivos de la ejecución, descartando los cambios del agente. No se puede deshacer."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cela exécute git checkout sur les fichiers de l'exécution, annulant les modifications de l'agent. Action irréversible."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "実行のファイルに対して git checkout を実行し、エージェントの変更を破棄します。この操作は元に戻せません。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "실행의 파일에 대해 git checkout을 실행하여 에이전트의 변경 사항을 폐기합니다. 이 작업은 취소할 수 없습니다."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Isso executa git checkout nos arquivos da execução, descartando as alterações do agente. Não pode ser desfeito."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Это выполнит git checkout для файлов запуска, отбросив изменения агента. Действие необратимо."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "这会对该运行的文件执行 git checkout，丢弃智能体的更改。此操作无法撤销。"
+          }
+        }
+      }
+    },
+    "agentHistory.revertConfirmTitle" : {
+      "comment" : "Agent History: revert confirmation alert title (#1073).",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Agenten-Änderungen zurücksetzen?"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Revert Agent Changes?"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "¿Revertir los cambios del agente?"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Annuler les modifications de l'agent ?"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "エージェントの変更を取り消しますか？"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "에이전트 변경 사항을 되돌리시겠습니까?"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reverter as alterações do agente?"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Отменить изменения агента?"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "撤销智能体的更改？"
+          }
+        }
+      }
+    },
+    "agentHistory.revertPartialFailure" : {
+      "comment" : "Agent History: banner shown when some files failed to revert (#1073).",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Einige Dateien konnten nicht zurückgesetzt werden. Prüfe, ob dies ein Git-Repository ist."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Some files could not be reverted. Check that this is a git repository."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No se pudieron revertir algunos archivos. Comprueba que este sea un repositorio git."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Certains fichiers n'ont pas pu être annulés. Vérifiez qu'il s'agit d'un dépôt git."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "一部のファイルを取り消せませんでした。ここが git リポジトリか確認してください。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "일부 파일을 되돌릴 수 없습니다. 여기가 git 저장소인지 확인하세요."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Alguns arquivos não puderam ser revertidos. Verifique se este é um repositório git."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Не удалось отменить некоторые файлы. Убедитесь, что это git-репозиторий."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "部分文件无法撤销。请检查这是否是一个 git 仓库。"
+          }
+        }
+      }
+    },
+    "agentHistory.revertSuccess" : {
+      "comment" : "Agent History: banner shown after a successful revert (#1073).",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Änderungen wurden in den committeten Zustand zurückgesetzt."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Changes reverted to their committed state."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cambios revertidos a su estado confirmado."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Modifications annulées vers leur état validé."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "変更をコミットされた状態に戻しました。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "변경 사항이 커밋된 상태로 되돌려졌습니다."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Alterações revertidas para o estado commitado."
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Изменения возвращены к закоммиченному состоянию."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "更改已还原到已提交状态。"
+          }
+        }
+      }
+    },
+    "agentHistory.revertedBadge" : {
+      "comment" : "Agent History: 'Reverted' badge on a reverted entry (#1073).",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Zurückgesetzt"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reverted"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Revertido"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Annulé"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "取り消し済み"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "되돌림"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Revertido"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Отменено"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已撤销"
+          }
+        }
+      }
+    },
+    "agentHistory.title" : {
+      "comment" : "Agent History: sheet title (#1073).",
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Agentenverlauf"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Agent History"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Historial del agente"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Historique de l'agent"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "エージェント履歴"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "에이전트 기록"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Histórico do agente"
+          }
+        },
+        "ru" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "История агента"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "智能体历史"
           }
         }
       }
@@ -3184,62 +3604,62 @@
         }
       }
     },
-    "menu.agentActivity" : {
-      "comment" : "Menu item: opens the Agent Activity Panel (#1072).",
+    "menu.agentHistory" : {
+      "comment" : "Menu item: opens the Agent History sheet (#1073).",
       "extractionState" : "manual",
       "localizations" : {
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Agentenaktivität"
+            "value" : "Agentenverlauf"
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Agent Activity"
+            "value" : "Agent History"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Actividad del agente"
+            "value" : "Historial del agente"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Activité de l'agent"
+            "value" : "Historique de l'agent"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "エージェントのアクティビティ"
+            "value" : "エージェント履歴"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "에이전트 활동"
+            "value" : "에이전트 기록"
           }
         },
         "pt-BR" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Atividade do agente"
+            "value" : "Histórico do agente"
           }
         },
         "ru" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Активность агента"
+            "value" : "История агента"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "智能体活动"
+            "value" : "智能体历史"
           }
         }
       }

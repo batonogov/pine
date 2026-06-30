@@ -455,6 +455,13 @@ struct PineAppMenuCommands: Commands {
             } label: {
                 Label(Strings.menuAgentActivity, systemImage: MenuIcons.agentActivity)
             }
+
+            Button {
+                NotificationCenter.default.post(name: .showAgentHistory, object: nil)
+            } label: {
+                Label(Strings.menuAgentHistory, systemImage: MenuIcons.agentHistory)
+            }
+            .disabled(focusedProject?.workspace.rootURL == nil)
         }
 
         // MARK: - Git menu

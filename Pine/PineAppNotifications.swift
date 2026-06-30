@@ -71,6 +71,10 @@ extension Notification.Name {
     // MARK: - Agent Activity Panel (vision #933, Phase 2 — #1072)
     static let showAgentActivity = Notification.Name("showAgentActivity")
 
+    // MARK: - Agent history (#1073)
+    /// Shows the persistent agent-history timeline sheet.
+    static let showAgentHistory = Notification.Name("showAgentHistory")
+
     // MARK: - Git
     static let showBranchSwitcher = Notification.Name("showBranchSwitcher")
     static let refreshLineDiffs = Notification.Name("refreshLineDiffs")

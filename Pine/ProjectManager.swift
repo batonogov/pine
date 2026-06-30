@@ -17,6 +17,9 @@ final class ProjectManager {
     /// Structured agent-action feed for the Activity Panel (vision #933,
     /// Phase 2 — Visibility, issue #1072).
     let agentActivity = AgentActivityStore()
+    /// Persistent audit log of finished agent sessions for the History &
+    /// Undo view (vision #933, Phase 2 — Visibility, issue #1073).
+    let agentHistory = AgentHistoryStore()
     /// The primary TabManager (root editor pane). Owns the recovery wiring and
     /// editor-context subscription. For the *focused* pane's TabManager, use
     /// ``activeTabManager`` which delegates to ``PaneManager/activeEditorTabManager``.
@@ -325,6 +328,7 @@ final class ProjectManager {
     func loadDirectory(url: URL) {
         workspace.loadDirectory(url: url)
         setupRecovery(projectURL: url)
+        agentHistory.updateProjectRoot(url)
         Task { await contextFileWriter.setProjectRoot(url) }
     }
 
@@ -394,6 +398,49 @@ final class ProjectManager {
         case .deleted:
             return false
         }
+    }
+
+    // MARK: - Agent history finalization (#1073)
+
+    /// Finalizes any `.done` agent sessions not yet logged into the durable
+    /// `AgentHistoryStore`. Called on app termination (and safe to call
+    /// periodically). Records affected relative paths and a file-count
+    /// summary, so a finished agent run is never lost and can be reverted from
+    /// the history view.
+    ///
+    /// The summary is intentionally file-count only (no `+/-` line counts):
+    /// `GitStatusProvider.diffForFile` collapses consecutive diff lines into
+    /// block entries, so a line count would be misleading, and computing it
+    /// synchronously per file on the main thread at termination would stall
+    /// the UI (S2/S3 from the #1075 review).
+    func finalizeAgentSessionsForHistory() {
+        let doneSessions = terminal.agentDetector.detectedSessions.filter {
+            $0.state == .done
+        }
+        guard !doneSessions.isEmpty else { return }
+        guard let root = workspace.rootURL else { return }
+        for session in doneSessions {
+            let relativePaths = session.filesModified.compactMap { relativePath(from: $0, root: root) }
+            agentHistory.finalize(
+                session: session,
+                summary: "",
+                affectedRelativePaths: relativePaths
+            )
+        }
+    }
+
+    /// Returns `url` relative to `root`, or `nil` if `url` is not under `root`.
+    /// Resolves symlinks on both sides so a file recorded via a symlinked path
+    /// still matches the (resolved) project root (S4 from the #1075 review).
+    private func relativePath(from url: URL, root: URL) -> String? {
+        // `URL.path(relativeTo:)` was removed in newer SDKs, so derive the
+        // relative path manually. `resolvingSymlinksInPath()` canonicalizes
+        // both sides so symlinked roots/paths still match.
+        let rootPath = root.resolvingSymlinksInPath().path
+        let urlPath = url.resolvingSymlinksInPath().path
+        guard urlPath == rootPath || urlPath.hasPrefix(rootPath + "/") else { return nil }
+        if urlPath == rootPath { return "" }
+        return String(urlPath.dropFirst(rootPath.count + 1))
     }
 
     // MARK: - Convenience accessors (terminal)

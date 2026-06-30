@@ -553,3 +553,32 @@ struct AgentActivityPresenter: ViewModifier {
             }
     }
 }
+
+// MARK: - Agent History presenter (#1073)
+
+/// Presents the Agent History sheet in response to the `showAgentHistory`
+/// notification. Encapsulating the `.sheet` + `.onReceive` wiring in a
+/// `ViewModifier` keeps `ContentView.body` within the Swift compiler's
+/// type-checking budget (an inline `.sheet`/`.onReceive` pair pushed the
+/// surrounding view over the “unable to type-check in reasonable time”
+/// limit — same fix as the Activity Panel's `AgentActivityPresenter`).
+///
+/// The notification handler defers the state mutation to the next runloop to
+/// avoid the `.onReceive` reentrancy class from #1051.
+struct AgentHistoryPresenter: ViewModifier {
+    @Binding var isPresented: Bool
+    let store: AgentHistoryStore
+
+    func body(content: Content) -> some View {
+        content
+            .sheet(isPresented: $isPresented) {
+                AgentHistoryView(store: store, isPresented: $isPresented)
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .showAgentHistory)) { _ in
+                // Defer to break reentrancy (#1051).
+                DispatchQueue.main.async {
+                    isPresented = true
+                }
+            }
+    }
+}

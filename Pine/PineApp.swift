@@ -757,6 +757,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate {
     func applicationWillTerminate(_ notification: Notification) {
         // Save sessions before terminating processes.
         for (_, pm) in registry.openProjects {
+            pm.finalizeAgentSessionsForHistory()
+            // Flush the agent-history log synchronously so a session finalized
+            // above is guaranteed to reach `.pine/agent-log.json` before the OS
+            // reclaims the process — the feature's durability promise.
+            pm.agentHistory.flush()
             pm.saveSession()
             pm.cleanupEditorContext()
             // Clean up recovery files if all tabs are saved
