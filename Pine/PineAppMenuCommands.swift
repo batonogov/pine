@@ -451,6 +451,12 @@ struct PineAppMenuCommands: Commands {
             Divider()
 
             Button {
+                NotificationCenter.default.post(name: .showAgentActivity, object: nil)
+            } label: {
+                Label(Strings.menuAgentActivity, systemImage: MenuIcons.agentActivity)
+            }
+
+            Button {
                 NotificationCenter.default.post(name: .showAgentHistory, object: nil)
             } label: {
                 Label(Strings.menuAgentHistory, systemImage: MenuIcons.agentHistory)

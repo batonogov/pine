@@ -44,6 +44,7 @@ struct ContentView: View {
     @State var isSymbolNavigatorPresented = false
     @State var isBranchSwitcherPresented = false
     @State var showGoToLine = false
+    @State var isAgentActivityPresented = false
     @State var isAgentHistoryPresented = false
     @AppStorage("minimapVisible") var isMinimapVisible = true
     @AppStorage(BlameConstants.storageKey) var isBlameVisible = true
@@ -215,6 +216,14 @@ struct ContentView: View {
                 }
             )
         }
+        .modifier(AgentActivityPresenter(
+            isPresented: $isAgentActivityPresented,
+            store: projectManager.agentActivity,
+            onSelect: { url in
+                isAgentActivityPresented = false
+                openFileFromActivity(url)
+            }
+        ))
         .modifier(AgentHistoryPresenter(
             isPresented: $isAgentHistoryPresented,
             store: projectManager.agentHistory
