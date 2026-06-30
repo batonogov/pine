@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.31.2](https://github.com/batonogov/pine/compare/v1.31.1...v1.31.2) (2026-06-29)
+
+
+### Bug Fixes
+
+* **agent:** break MainActor-isolated timer handler causing crash on project open ([#1069](https://github.com/batonogov/pine/issues/1069)) ([d129fb9](https://github.com/batonogov/pine/commit/d129fb9ac0e8a7f709e519831a123ea18d956b51))
+
 ## [1.31.1](https://github.com/batonogov/pine/compare/v1.31.0...v1.31.1) (2026-06-29)
 
 
