@@ -165,8 +165,11 @@ struct AgentHistoryView: View {
             Button(Strings.agentHistoryRevertConfirmAction, role: .destructive) {
                 guard let target = revertTarget else { return }
                 let entry = store.entries.first { $0.id == target.id }
-                revertResult = entry.map { store.revert(entry: $0) }
                 revertTarget = nil
+                guard let entry else { return }
+                // `revert` runs git off-main; wrap in a Task so the result
+                // banner reflects the outcome once the revert completes.
+                Task { revertResult = await store.revert(entry: entry) }
             }
             Button(Strings.dialogCancel, role: .cancel) {
                 revertTarget = nil

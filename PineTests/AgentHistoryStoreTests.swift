@@ -160,19 +160,19 @@ struct AgentHistoryStoreTests {
 
     // MARK: - Revert (no git repo: graceful failure)
 
-    @Test func revertWithoutProjectRootFails() throws {
+    @Test func revertWithoutProjectRootFails() async throws {
         let store = AgentHistoryStore(projectRoot: nil)
         let session = AgentSession(agentType: .claudeCode, state: .done)
         store.finalize(session: session, summary: "", affectedRelativePaths: ["a.swift"])
         let entry = try #require(store.entries.first)
 
-        let result = store.revert(entry: entry)
+        let result = await store.revert(entry: entry)
         #expect(result.allSucceeded == false)
         // Entry stays non-reverted because nothing succeeded.
         #expect(store.entries.first?.reverted == false)
     }
 
-    @Test func revertAlreadyRevertedIsNoOp() throws {
+    @Test func revertAlreadyRevertedIsNoOp() async throws {
         let temp = try makeTempProject()
         defer { try? FileManager.default.removeItem(at: temp) }
 
@@ -187,26 +187,26 @@ struct AgentHistoryStoreTests {
         )
         store.append(entry)
 
-        let first = store.revert(entry: entry)
+        let first = await store.revert(entry: entry)
         #expect(first.allSucceeded == true)
         #expect(store.entries.first?.reverted == true)
 
         // Second revert on an already-reverted entry is a no-op (allSucceeded false).
-        let second = store.revert(entry: entry)
+        let second = await store.revert(entry: entry)
         #expect(second.allSucceeded == false)
     }
 
-    // MARK: - Atomic write no-clobber
+    // MARK: - Atomic write + flush
 
-    @Test("Rapid sequential appends all land on disk (no stale write clobbers a newer one)")
-    func atomicWriteNoClobber() async throws {
+    @Test("Rapid sequential appends all land on disk after flush")
+    func atomicWriteFlushesToDisk() async throws {
         let temp = try makeTempProject()
         defer { try? FileManager.default.removeItem(at: temp) }
 
         let store = AgentHistoryStore(projectRoot: temp)
-        // Append several entries in quick succession. Each persist captures a
-        // newer generation; a stale queued write must never overwrite the
-        // latest snapshot. Poll the on-disk file until it reflects all entries.
+        // Append several entries in quick succession (each schedules an async
+        // write). `flush()` is the same barrier `applicationWillTerminate`
+        // uses, so this also exercises the durability path.
         let count = 20
         for index in 0..<count {
             store.append(
@@ -220,14 +220,51 @@ struct AgentHistoryStoreTests {
             )
         }
 
-        // Wait for the serial write queue to drain (bounded polling).
-        let logURL = temp.appendingPathComponent(".pine/agent-log.json")
-        try await waitForDiskCount(at: logURL, expected: count, timeoutSeconds: 5)
+        // Block until every queued write has completed.
+        store.flush()
 
         // Reload from disk to confirm the final state survived.
         let reloaded = AgentHistoryStore(projectRoot: temp)
         #expect(reloaded.entries.count == count)
         #expect(reloaded.entries.last?.summary == "entry \(count - 1)")
+    }
+
+    // MARK: - Revert integration (store → GitFileRevert → real git repo)
+
+    @Test("store.revert restores real files in a temp git repo")
+    func revertRestoresRealFilesInTempGitRepo() async throws {
+        // Integration coverage for the revert wiring flagged as a gap by the
+        // #1075 review (SF-1): store.revert → runOnBackground → GitFileRevert
+        // against a real git repo with real files.
+        let repo = try makeTempGitRepo()
+        defer { try? FileManager.default.removeItem(at: repo) }
+
+        try writeToRepo(repo, file: "src/a.swift", contents: "v1\n")
+        try gitInRepo(repo, ["add", "src/a.swift"])
+        try gitInRepo(repo, ["commit", "-m", "initial"])
+
+        // Simulate an agent modifying the file.
+        try writeToRepo(repo, file: "src/a.swift", contents: "v1\nagent change\n")
+
+        // Log the session via the store, then revert through the store.
+        let store = AgentHistoryStore(projectRoot: repo)
+        store.append(
+            AgentHistoryEntry(
+                sessionID: UUID(),
+                agentTypeRaw: "claudeCode",
+                startedAt: Date(),
+                affectedFiles: ["src/a.swift"],
+                summary: "1 file"
+            )
+        )
+        let entry = try #require(store.entries.first)
+
+        let result = await store.revert(entry: entry)
+        #expect(result.allSucceeded)
+        #expect(store.entries.first?.reverted == true)
+        // File content actually reverted to HEAD.
+        let restored = try readFromRepo(repo, file: "src/a.swift")
+        #expect(restored == "v1\n")
     }
 
     // MARK: - Capacity trim
@@ -266,18 +303,48 @@ struct AgentHistoryStoreTests {
         try contents.write(to: logURL)
     }
 
-    private func waitForDiskCount(at logURL: URL, expected: Int, timeoutSeconds: Int) async throws {
-        let decoder = AgentHistoryStore.makeDecoder()
-        for _ in 0..<(timeoutSeconds * 10) {
-            if let data = try? Data(contentsOf: logURL),
-               !data.isEmpty,
-               let entries = try? decoder.decode([AgentHistoryEntry].self, from: data),
-               entries.count == expected {
-                return
-            }
-            try await Task.sleep(nanoseconds: 100_000_000)
+    // MARK: - Temp git repo helpers (for revert integration)
+
+    private func makeTempGitRepo() throws -> URL {
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("pine-history-repo-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+        try gitInRepo(url, ["init"])
+        // Stable identity so commits work on CI runners without git config.
+        try gitInRepo(url, ["config", "user.email", "test@pine.local"])
+        try gitInRepo(url, ["config", "user.name", "Pine Test"])
+        try gitInRepo(url, ["symbolic-ref", "HEAD", "refs/heads/main"])
+        return url
+    }
+
+    private func gitInRepo(_ repo: URL, _ arguments: [String]) throws {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
+        process.arguments = ["-C", repo.path] + arguments
+        let pipe = Pipe()
+        process.standardOutput = pipe
+        process.standardError = pipe
+        try process.run()
+        process.waitUntilExit()
+        guard process.terminationStatus == 0 else {
+            throw NSError(
+                domain: "AgentHistoryStoreTests",
+                code: Int(process.terminationStatus),
+                userInfo: [NSLocalizedDescriptionKey: "git \(arguments.joined(separator: " ")) failed"]
+            )
         }
-        let actual = (try? decoder.decode([AgentHistoryEntry].self, from: Data(contentsOf: logURL)))?.count
-        Issue.record("Disk never reached \(expected) entries; last seen count = \(actual ?? -1)")
+    }
+
+    private func writeToRepo(_ repo: URL, file: String, contents: String) throws {
+        let fileURL = repo.appendingPathComponent(file)
+        try FileManager.default.createDirectory(
+            at: fileURL.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        try contents.write(to: fileURL, atomically: true, encoding: .utf8)
+    }
+
+    private func readFromRepo(_ repo: URL, file: String) throws -> String {
+        try String(contentsOf: repo.appendingPathComponent(file), encoding: .utf8)
     }
 }

@@ -329,56 +329,40 @@ final class ProjectManager {
 
     /// Finalizes any `.done` agent sessions not yet logged into the durable
     /// `AgentHistoryStore`. Called on app termination (and safe to call
-    /// periodically). Computes a per-file line-count summary via the git
-    /// provider and records relative paths, so a finished agent run is never
-    /// lost and can be reverted from the history view.
+    /// periodically). Records affected relative paths and a file-count
+    /// summary, so a finished agent run is never lost and can be reverted from
+    /// the history view.
+    ///
+    /// The summary is intentionally file-count only (no `+/-` line counts):
+    /// `GitStatusProvider.diffForFile` collapses consecutive diff lines into
+    /// block entries, so a line count would be misleading, and computing it
+    /// synchronously per file on the main thread at termination would stall
+    /// the UI (S2/S3 from the #1075 review).
     func finalizeAgentSessionsForHistory() {
         let doneSessions = terminal.agentDetector.detectedSessions.filter {
             $0.state == .done
         }
         guard !doneSessions.isEmpty else { return }
-        let root = workspace.rootURL
+        guard let root = workspace.rootURL else { return }
         for session in doneSessions {
-            let relativePaths = session.filesModified.compactMap { url -> String? in
-                guard let root else { return nil }
-                return relativePath(from: url, root: root)
-            }
-            let summary = agentHistorySummary(for: session)
+            let relativePaths = session.filesModified.compactMap { relativePath(from: $0, root: root) }
             agentHistory.finalize(
                 session: session,
-                summary: summary,
+                summary: "",
                 affectedRelativePaths: relativePaths
             )
         }
     }
 
-    /// Computes a "N files, +added/-deleted lines" summary for a session's
-    /// modified files using the git provider's per-file diff. Files without a
-    /// computable diff are counted toward the file total only.
-    private func agentHistorySummary(for session: AgentSession) -> String {
-        let fileCount = session.filesModified.count
-        var added = 0
-        var deleted = 0
-        for url in session.filesModified {
-            for diff in gitProvider.diffForFile(at: url) {
-                switch diff.kind {
-                case .added, .modified: added += 1
-                case .deleted: deleted += 1
-                }
-            }
-        }
-        if added == 0, deleted == 0 {
-            return fileCount == 1 ? "1 file" : "\(fileCount) files"
-        }
-        return "\(fileCount) \(fileCount == 1 ? "file" : "files"), +\(added)/-\(deleted) lines"
-    }
-
     /// Returns `url` relative to `root`, or `nil` if `url` is not under `root`.
+    /// Resolves symlinks on both sides so a file recorded via a symlinked path
+    /// still matches the (resolved) project root (S4 from the #1075 review).
     private func relativePath(from url: URL, root: URL) -> String? {
         // `URL.path(relativeTo:)` was removed in newer SDKs, so derive the
-        // relative path manually from the standardized absolute paths.
-        let rootPath = root.standardizedFileURL.path
-        let urlPath = url.standardizedFileURL.path
+        // relative path manually. `resolvingSymlinksInPath()` canonicalizes
+        // both sides so symlinked roots/paths still match.
+        let rootPath = root.resolvingSymlinksInPath().path
+        let urlPath = url.resolvingSymlinksInPath().path
         guard urlPath == rootPath || urlPath.hasPrefix(rootPath + "/") else { return nil }
         if urlPath == rootPath { return "" }
         return String(urlPath.dropFirst(rootPath.count + 1))
