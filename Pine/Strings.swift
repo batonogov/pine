@@ -138,6 +138,12 @@ enum Strings {
     static let statusbarAgentActive: LocalizedStringKey = "statusbar.agentActive"
     static let statusbarAgentsActive: LocalizedStringKey = "statusbar.agentsActive"
 
+    // MARK: - Agent Activity Panel (#1072)
+    static let menuAgentActivity: LocalizedStringKey = "menu.agentActivity"
+    static let agentActivityTitle: LocalizedStringKey = "agentActivity.title"
+    static let agentActivityClose: LocalizedStringKey = "agentActivity.close"
+    static let agentActivityEmpty: LocalizedStringKey = "agentActivity.empty"
+
     // MARK: - Menu Commands
 
     static let menuIncreaseFontSize: LocalizedStringKey = "menu.increaseFontSize"
