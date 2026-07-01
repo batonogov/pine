@@ -85,6 +85,131 @@ struct AgentDetectorTests {
         #expect(detector.detectedSessions[0].agentType == .codex)
     }
 
+    // MARK: - Interpreter-wrapper resolution (node/python/… script CLIs)
+
+    @Test func detectsPiLaunchedViaNodeWrapper() {
+        // Homebrew `pi` is a node script: `ps` reports `node /opt/homebrew/bin/pi`.
+        let detector = AgentDetector()
+        detector.processSnapshotDidUpdate([
+            DetectedProcess(pid: 250, command: "node /opt/homebrew/bin/pi"),
+        ])
+        #expect(detector.detectedSessions.count == 1)
+        #expect(detector.detectedSessions[0].agentType == .pi)
+    }
+
+    @Test func detectsAgentViaNodeWrapperWithArgs() {
+        let detector = AgentDetector()
+        detector.processSnapshotDidUpdate([
+            DetectedProcess(pid: 251, command: "/opt/homebrew/opt/node/bin/node /opt/homebrew/bin/pi -p \"task\""),
+        ])
+        #expect(detector.detectedSessions.count == 1)
+        #expect(detector.detectedSessions[0].agentType == .pi)
+    }
+
+    @Test func detectsAgentViaNodeWrapperScriptExtension() {
+        // When an agent ships as a `<name>.js` script, the wrapper resolves
+        // to the agent's CLI name (extension stripped): `claude.js` → `claude`.
+        let detector = AgentDetector()
+        detector.processSnapshotDidUpdate([
+            DetectedProcess(pid: 252, command: "node /usr/local/bin/claude.js"),
+        ])
+        #expect(detector.detectedSessions.count == 1)
+        #expect(detector.detectedSessions[0].agentType == .claudeCode)
+    }
+
+    @Test func doesNotResolveNestedScriptNamedAfterEntryPoint() {
+        // A script whose filename is NOT an agent CLI name (e.g. a generic
+        // `cli.js` buried under `node_modules/`) resolves to that filename and
+        // is not tracked — precise resolution of such paths is left to output-
+        // pattern matching (out of scope for process-name detection).
+        //
+        // Pin both halves explicitly: the `.js` extension IS stripped (`cli.js` →
+        // `cli`), but `cli` is not a registered agent CLI name, so the entry is
+        // not tracked. A bare `.isEmpty` assertion would pass even if stripping
+        // silently regressed.
+        #expect(AgentDetector.extractExecutableName(from: "node /usr/local/lib/node_modules/acme/cli.js") == "cli")
+        let detector = AgentDetector()
+        detector.processSnapshotDidUpdate([
+            DetectedProcess(pid: 257, command: "node /usr/local/lib/node_modules/acme/cli.js"),
+        ])
+        #expect(detector.detectedSessions.isEmpty)
+    }
+
+    @Test func noFalsePositiveOnNodeScriptNotMatchingAgent() {
+        // `node server.js` → `server` → generic → not tracked (no false positive).
+        let detector = AgentDetector()
+        detector.processSnapshotDidUpdate([
+            DetectedProcess(pid: 253, command: "node server.js"),
+            DetectedProcess(pid: 254, command: "python3 unrelated_script.py"),
+        ])
+        #expect(detector.detectedSessions.isEmpty)
+    }
+
+    @Test func interpreterAloneDoesNotMatch() {
+        // A bare interpreter with no second token resolves to itself (`node`),
+        // which is generic and must not be tracked.
+        let detector = AgentDetector()
+        detector.processSnapshotDidUpdate([
+            DetectedProcess(pid: 255, command: "node"),
+        ])
+        #expect(detector.detectedSessions.isEmpty)
+    }
+
+    // MARK: - Interpreter-wrapper resolution — extended coverage
+
+    @Test func detectsAgentLaunchedViaNpx() {
+        // `npx` is in the interpreter-wrapper set: `npx <pkg>` resolves to the
+        // package name. `npx claude` → `claude` → `.claudeCode`.
+        let detector = AgentDetector()
+        detector.processSnapshotDidUpdate([
+            DetectedProcess(pid: 260, command: "npx claude --verbose"),
+        ])
+        #expect(detector.detectedSessions.count == 1)
+        #expect(detector.detectedSessions[0].agentType == .claudeCode)
+    }
+
+    @Test func extractExecutableNameFromTsxWrapperStripsTsExtension() {
+        // `tsx` is in the wrapper set; the `.ts` extension is stripped.
+        #expect(AgentDetector.extractExecutableName(from: "tsx /opt/aider/aider.ts") == "aider")
+    }
+
+    @Test func extractExecutableNameFromExeInterpreterVariant() {
+        // The `*.exe` interpreter variants are declared for completeness; pin
+        // that the lowercased comparison resolves them like the bare form.
+        #expect(AgentDetector.extractExecutableName(from: "node.exe /opt/homebrew/bin/pi") == "pi")
+    }
+
+    @Test func extractExecutableNameCaseInsensitiveInterpreter() {
+        // The interpreter name is matched case-insensitively, while the resolved
+        // CLI stem preserves its original casing.
+        #expect(AgentDetector.extractExecutableName(from: "NODE /opt/homebrew/bin/pi") == "pi")
+        #expect(AgentDetector.extractExecutableName(from: "Python3 /usr/local/bin/aider") == "aider")
+    }
+
+    @Test func extractExecutableNameFromNodeWrapperMultipleSpaces() {
+        // `split(omittingEmptySubsequences:)` collapses internal runs of spaces
+        // so the wrapper still resolves with extra spacing in `ps` output.
+        #expect(AgentDetector.extractExecutableName(from: "node    /opt/homebrew/bin/pi") == "pi")
+    }
+
+    @Test func pythonWrapperDoesNotStripPyExtension() {
+        // Only JS/TS script extensions are stripped; a `.py`/`.rb` script is
+        // left as-is, so `aider.py` does not match the `aider` CLI name and is
+        // not tracked. (pip/npm install agents as plain executables without an
+        // extension, so this is the intended behavior.)
+        #expect(AgentDetector.extractExecutableName(from: "python3 /x/aider.py") == "aider.py")
+    }
+
+    @Test func idempotentWrapperFormDoesNotDuplicate() {
+        // A wrapper-form pid is deduplicated by pid just like a bare command.
+        let detector = AgentDetector()
+        let snapshot = [DetectedProcess(pid: 320, command: "node /opt/homebrew/bin/pi")]
+        detector.processSnapshotDidUpdate(snapshot)
+        detector.processSnapshotDidUpdate(snapshot)
+        #expect(detector.detectedSessions.count == 1)
+        #expect(detector.detectedSessions[0].agentType == .pi)
+    }
+
     // MARK: - No false positives
 
     @Test func noFalsePositivesOnShellCommands() {
@@ -315,6 +440,35 @@ struct AgentDetectorTests {
     @Test func extractExecutableNameFromEmpty() {
         #expect(AgentDetector.extractExecutableName(from: "") == "")
         #expect(AgentDetector.extractExecutableName(from: "   ") == "")
+    }
+
+    @Test func extractExecutableNameFromNodeWrapper() {
+        // Homebrew `pi` shape: `node /opt/homebrew/bin/pi` → `pi`.
+        #expect(AgentDetector.extractExecutableName(from: "node /opt/homebrew/bin/pi") == "pi")
+    }
+
+    @Test func extractExecutableNameFromNodeWrapperFullPathWithArgs() {
+        #expect(
+            AgentDetector.extractExecutableName(from: "/opt/homebrew/opt/node/bin/node /opt/homebrew/bin/pi -p task") == "pi"
+        )
+    }
+
+    @Test func extractExecutableNameFromNodeWrapperStripsScriptExtension() {
+        #expect(AgentDetector.extractExecutableName(from: "node /usr/local/lib/.../claude.js") == "claude")
+        #expect(AgentDetector.extractExecutableName(from: "bun /x/aider.ts") == "aider")
+    }
+
+    @Test func extractExecutableNameFromPythonWrapper() {
+        #expect(AgentDetector.extractExecutableName(from: "python3 /usr/local/bin/aider") == "aider")
+    }
+
+    @Test func extractExecutableNamePreservesStemCase() {
+        #expect(AgentDetector.extractExecutableName(from: "node /x/MyAgent.js") == "MyAgent")
+    }
+
+    @Test func extractExecutableNameBareInterpreter() {
+        // No second token → resolves to the interpreter itself.
+        #expect(AgentDetector.extractExecutableName(from: "node") == "node")
     }
 
     // MARK: - Multiple sequential updates
