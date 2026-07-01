@@ -537,4 +537,67 @@ enum Strings {
         )
         return String(format: format, locale: .current, line, column)
     }
+
+    // MARK: - Accessibility (#1003)
+    //
+    // VoiceOver labels / hints for custom controls. These are resolved into
+    // Localizable.xcstrings by Xcode's string catalog extraction and are
+    // translated into the 9 supported languages (de, en, es, fr, ja, ko,
+    // pt-BR, ru, zh-Hans).
+
+    // Editor tab bar
+    static let a11yCloseTabLabel: String =
+        String(localized: "a11y.editorTab.close.label", defaultValue: "Close tab")
+    static let a11yCloseTabHint: String =
+        String(localized: "a11y.editorTab.close.hint", defaultValue: "Closes this editor tab")
+
+    // Pane divider
+    static let a11yPaneDividerLabel: String =
+        String(localized: "a11y.paneDivider.label", defaultValue: "Pane divider")
+    static let a11yPaneDividerHint: String =
+        String(localized: "a11y.paneDivider.hint", defaultValue: "Drag to resize the panes")
+
+    // Minimap
+    static let a11yMinimapLabel: String =
+        String(localized: "a11y.minimap.label", defaultValue: "Minimap")
+    static let a11yMinimapHint: String =
+        String(localized: "a11y.minimap.hint", defaultValue: "Code overview. Click to jump to a line.")
+
+    // Terminal pane controls
+    static let a11yNewTerminalLabel: String =
+        String(localized: "a11y.terminal.new.label", defaultValue: "New terminal tab")
+    static let a11yMaximizeTerminalLabel: String =
+        String(localized: "a11y.terminal.maximize.label", defaultValue: "Maximize terminal pane")
+    static let a11yRestoreTerminalLabel: String =
+        String(localized: "a11y.terminal.restore.label", defaultValue: "Restore terminal pane")
+    static let a11yCloseTerminalLabel: String =
+        String(localized: "a11y.terminal.close.label", defaultValue: "Close terminal pane")
+    static let a11yCloseTerminalHint: String =
+        String(localized: "a11y.terminal.close.hint", defaultValue: "Closes this terminal pane")
+
+    // Branch switcher
+    static let a11yBranchSwitcherHint: String =
+        String(localized: "a11y.branchSwitcher.hint", defaultValue: "Switches to this git branch")
+
+    // Quick open
+    static let a11yQuickOpenItemHint: String =
+        String(localized: "a11y.quickOpen.item.hint", defaultValue: "Opens this file")
+
+    // Symbol navigator
+    static let a11ySymbolItemHint: String =
+        String(localized: "a11y.symbolNavigator.item.hint", defaultValue: "Jumps to this symbol")
+
+    // Status bar
+    static let a11yStatusBarLabel: String =
+        String(localized: "a11y.statusBar.label", defaultValue: "Status bar")
+    static let a11yTerminalToggleHint: String =
+        String(localized: "a11y.statusBar.terminalToggle.hint", defaultValue: "Shows or hides the terminal")
+
+    // Git status differentiate-without-color labels
+    static let a11yGitStatusModified: String =
+        String(localized: "a11y.gitStatus.modified", defaultValue: "Modified")
+    static let a11yGitStatusAdded: String =
+        String(localized: "a11y.gitStatus.added", defaultValue: "Added")
+    static let a11yGitStatusUntracked: String =
+        String(localized: "a11y.gitStatus.untracked", defaultValue: "Untracked")
 }

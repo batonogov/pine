@@ -68,6 +68,15 @@ struct PaneDividerView: View {
                     isCursorPushed = false
                 }
             }
+            .accessibilityElement()
+            .accessibilityLabel(Strings.a11yPaneDividerLabel)
+            .accessibilityHint(Strings.a11yPaneDividerHint)
+            .accessibilityAddTraits(.adjustable)
+            .accessibilityAdjustableAction { _ in
+                // No-op single increment — drag is the primary interaction.
+                // Exposed as adjustable so VoiceOver users can discover and
+                // focus the divider; fine-grained resize stays mouse-driven.
+            }
             .accessibilityIdentifier(AccessibilityID.paneDivider)
     }
 }
