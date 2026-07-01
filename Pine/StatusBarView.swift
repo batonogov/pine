@@ -15,6 +15,11 @@ struct StatusBarView: View {
     var tabManager: TabManager
     var progress: ProgressTracker?
     var onToggleTerminal: (() -> Void)?
+    /// LSP / validator diagnostics summary for the Problems indicator (#1010).
+    /// `nil` hides the indicator (e.g. no project loaded).
+    var diagnosticsSummary: DiagnosticsSummary?
+    /// Called when the user clicks the Problems indicator to toggle the panel.
+    var onToggleProblems: (() -> Void)?
 
     /// Active AI agent sessions across all terminal panes (#952).
     /// Empty when no agent is running → `AgentStatusBarItem` is hidden.
@@ -27,6 +32,24 @@ struct StatusBarView: View {
         // and walking the pane/tab tree twice (isEmpty check + arg) is wasteful.
         let summaries = agentSummaries
         return HStack(spacing: LayoutMetrics.statusBarItemSpacing) {
+            // Problems indicator (#1010): click to toggle the Problems panel.
+            // Hidden when there are zero diagnostics *and* no panel is open.
+            if let summary = diagnosticsSummary, summary.total > 0 {
+                Button {
+                    onToggleProblems?()
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: summary.errorCount > 0 ? "xmark.octagon.fill" : "exclamationmark.bubble.fill")
+                            .font(.system(size: LayoutMetrics.captionFontSize))
+                        Text(verbatim: "\(summary.errorCount) error\(summary.errorCount == 1 ? "" : "s")  \(summary.warningCount) warning\(summary.warningCount == 1 ? "" : "s")")
+                            .font(.system(size: LayoutMetrics.bodySmallFontSize))
+                    }
+                    .foregroundStyle(summary.errorCount > 0 ? .red : .orange)
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier(AccessibilityID.problemsIndicator)
+            }
+
             if let progress, progress.isLoading {
                 HStack(spacing: 4) {
                     ProgressView()
