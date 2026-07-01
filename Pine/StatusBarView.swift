@@ -41,8 +41,7 @@ struct StatusBarView: View {
                     HStack(spacing: 4) {
                         Image(systemName: summary.errorCount > 0 ? "xmark.octagon.fill" : "exclamationmark.bubble.fill")
                             .font(.system(size: LayoutMetrics.captionFontSize))
-                                                let label = "\(summary.errorCount) error\(summary.errorCount == 1 ? "" : "s")  \(summary.warningCount) warning\(summary.warningCount == 1 ? "" : "s")"
-                                                Text(verbatim: label)
+                        Text(verbatim: summary.description)
                             .font(.system(size: LayoutMetrics.bodySmallFontSize))
                     }
                     .foregroundStyle(summary.errorCount > 0 ? .red : .orange)
