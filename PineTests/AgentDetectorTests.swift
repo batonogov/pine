@@ -122,6 +122,12 @@ struct AgentDetectorTests {
         // `cli.js` buried under `node_modules/`) resolves to that filename and
         // is not tracked — precise resolution of such paths is left to output-
         // pattern matching (out of scope for process-name detection).
+        //
+        // Pin both halves explicitly: the `.js` extension IS stripped (`cli.js` →
+        // `cli`), but `cli` is not a registered agent CLI name, so the entry is
+        // not tracked. A bare `.isEmpty` assertion would pass even if stripping
+        // silently regressed.
+        #expect(AgentDetector.extractExecutableName(from: "node /usr/local/lib/node_modules/acme/cli.js") == "cli")
         let detector = AgentDetector()
         detector.processSnapshotDidUpdate([
             DetectedProcess(pid: 257, command: "node /usr/local/lib/node_modules/acme/cli.js"),
@@ -147,6 +153,61 @@ struct AgentDetectorTests {
             DetectedProcess(pid: 255, command: "node"),
         ])
         #expect(detector.detectedSessions.isEmpty)
+    }
+
+    // MARK: - Interpreter-wrapper resolution — extended coverage
+
+    @Test func detectsAgentLaunchedViaNpx() {
+        // `npx` is in the interpreter-wrapper set: `npx <pkg>` resolves to the
+        // package name. `npx claude` → `claude` → `.claudeCode`.
+        let detector = AgentDetector()
+        detector.processSnapshotDidUpdate([
+            DetectedProcess(pid: 260, command: "npx claude --verbose"),
+        ])
+        #expect(detector.detectedSessions.count == 1)
+        #expect(detector.detectedSessions[0].agentType == .claudeCode)
+    }
+
+    @Test func extractExecutableNameFromTsxWrapperStripsTsExtension() {
+        // `tsx` is in the wrapper set; the `.ts` extension is stripped.
+        #expect(AgentDetector.extractExecutableName(from: "tsx /opt/aider/aider.ts") == "aider")
+    }
+
+    @Test func extractExecutableNameFromExeInterpreterVariant() {
+        // The `*.exe` interpreter variants are declared for completeness; pin
+        // that the lowercased comparison resolves them like the bare form.
+        #expect(AgentDetector.extractExecutableName(from: "node.exe /opt/homebrew/bin/pi") == "pi")
+    }
+
+    @Test func extractExecutableNameCaseInsensitiveInterpreter() {
+        // The interpreter name is matched case-insensitively, while the resolved
+        // CLI stem preserves its original casing.
+        #expect(AgentDetector.extractExecutableName(from: "NODE /opt/homebrew/bin/pi") == "pi")
+        #expect(AgentDetector.extractExecutableName(from: "Python3 /usr/local/bin/aider") == "aider")
+    }
+
+    @Test func extractExecutableNameFromNodeWrapperMultipleSpaces() {
+        // `split(omittingEmptySubsequences:)` collapses internal runs of spaces
+        // so the wrapper still resolves with extra spacing in `ps` output.
+        #expect(AgentDetector.extractExecutableName(from: "node    /opt/homebrew/bin/pi") == "pi")
+    }
+
+    @Test func pythonWrapperDoesNotStripPyExtension() {
+        // Only JS/TS script extensions are stripped; a `.py`/`.rb` script is
+        // left as-is, so `aider.py` does not match the `aider` CLI name and is
+        // not tracked. (pip/npm install agents as plain executables without an
+        // extension, so this is the intended behavior.)
+        #expect(AgentDetector.extractExecutableName(from: "python3 /x/aider.py") == "aider.py")
+    }
+
+    @Test func idempotentWrapperFormDoesNotDuplicate() {
+        // A wrapper-form pid is deduplicated by pid just like a bare command.
+        let detector = AgentDetector()
+        let snapshot = [DetectedProcess(pid: 320, command: "node /opt/homebrew/bin/pi")]
+        detector.processSnapshotDidUpdate(snapshot)
+        detector.processSnapshotDidUpdate(snapshot)
+        #expect(detector.detectedSessions.count == 1)
+        #expect(detector.detectedSessions[0].agentType == .pi)
     }
 
     // MARK: - No false positives
