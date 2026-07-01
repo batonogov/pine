@@ -208,7 +208,6 @@ jobs:
             -skip-testing:PineTests/FuzzGoToLineParserTests \
             -retry-tests-on-failure \
             -test-timeouts-enabled \
-            -default-test-execution-time-limit 60 \
             -enableCodeCoverage YES \
             -resultBundlePath TestResults.xcresult \
             CODE_SIGN_IDENTITY=- \
