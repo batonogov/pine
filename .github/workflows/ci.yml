@@ -160,7 +160,12 @@ jobs:
     name: Unit Tests
     runs-on: macos-26
     needs: build
-    timeout-minutes: 45
+    # Bumped from 45 → 60 min as a safety net. The per-test timeout
+    # (-test-timeouts-enabled below) is the primary mitigation for the
+    # macos-26 fork/spawn hang (#1060): a stuck test is now killed in
+    # seconds rather than burning the whole job budget. This extra headroom
+    # covers legitimate slow-but-passing tests on a noisy shared runner.
+    timeout-minutes: 60
     env:
       COVERAGE_THRESHOLD: 70
     steps:
@@ -202,6 +207,8 @@ jobs:
             -skip-testing:PineTests/FuzzConfigValidatorTests \
             -skip-testing:PineTests/FuzzGoToLineParserTests \
             -retry-tests-on-failure \
+            -test-timeouts-enabled \
+            -default-test-execution-time-limit 60s \
             -enableCodeCoverage YES \
             -resultBundlePath TestResults.xcresult \
             CODE_SIGN_IDENTITY=- \
