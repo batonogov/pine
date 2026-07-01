@@ -96,7 +96,7 @@ jobs:
           # main is accepted (GH013: "Repository rule violations found for
           # refs/heads/main"). The previous approach (checkout main → commit
           # → push) was rejected at push time (#1038). Instead we create a
-          # dated branch, commit there, and open a PR for manual merge.
+          # branch, commit there, and open a PR for manual merge.
           #
           # GH_TOKEN uses RELEASE_PLEASE_TOKEN (an existing PAT) when
           # available so that CI workflows actually trigger on the PR —
@@ -104,11 +104,34 @@ jobs:
           # downstream workflow runs (known GitHub limitation), which
           # would leave the PR without the required status checks and
           # block the merge.
+          #
+          # Dedupe (#1077): a FIXED branch name is used instead of a
+          # timestamped one. Before pushing, any pre-existing open PR on
+          # this branch is closed (and its branch deleted) so repeated
+          # workflow_dispatch / release triggers never pile up duplicate
+          # screenshot PRs. Combined with the git diff --staged --quiet
+          # guard above, a run with no meaningful pixel change opens no
+          # PR at all.
           # ------------------------------------------------------------------
-          BRANCH="chore/screenshots-update-$(date -u '+%Y-%m-%d-%H%M%S')"
-          git checkout -b "$BRANCH"
+          BRANCH="chore/screenshots-update"
+
+          # Close any pre-existing open PR on this branch and delete the
+          # stale remote branch so the force-push below is clean. `gh pr
+          # list` returns at most one number for a fixed head branch.
+          EXISTING_PRS=$(gh pr list --head "$BRANCH" --state open --json number --jq '.[].number')
+          if [ -n "$EXISTING_PRS" ]; then
+            for pr in $EXISTING_PRS; do
+              echo "Closing stale screenshot PR #$pr before re-running."
+              gh pr close "$pr" --delete-branch || true
+            done
+          fi
+
+          # Reset to a fresh branch off main and commit the staged changes.
+          git checkout -B "$BRANCH"
           git commit -m "chore: update screenshots"
-          git push -u origin "$BRANCH"
+          # Force-push: the branch name is fixed and any stale copy was
+          # already deleted above (or never existed).
+          git push --force -u origin "$BRANCH"
 
           gh pr create \
             --base main \
