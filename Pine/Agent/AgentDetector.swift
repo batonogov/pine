@@ -170,24 +170,65 @@ final class AgentDetector {
 
     /// Extracts the executable name from a `ps -o command=` string.
     ///
-    /// Handles three shapes:
+    /// Handles these shapes:
     /// - `claude` → `claude`
     /// - `/usr/local/bin/claude` → `claude`
     /// - `/usr/local/bin/claude --verbose` → `claude`
+    /// - `node /opt/homebrew/bin/pi` → `pi`  (interpreter-wrapper form)
+    /// - `node /usr/local/lib/.../claude.js` → `claude`  (script extension stripped)
     ///
-    /// Node-wrapper invocation (`node /path/to/claude.js`) resolves to
-    /// `node` and is therefore NOT detected by process-name matching in this
-    /// PR; that case is left to output-pattern matching (out of scope).
+    /// Many agent CLIs ship as script files launched through an interpreter
+    /// (`pi`, `claude`, `aider`, …). Homebrew's `pi`, for example, is a
+    /// `node` script, so `ps` reports it as `node /opt/homebrew/bin/pi`. The
+    /// bare first token (`node`) resolves to a generic name and would never
+    /// match. When the first token is a known interpreter, we therefore treat
+    /// the *second* token as the real CLI, resolving its basename and stripping
+    /// a common script extension. A second token that is not a known agent
+    /// (e.g. `server.js`) still resolves to `.generic` and is not tracked.
     static func extractExecutableName(from command: String) -> String {
         let trimmed = command.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return "" }
 
-        let firstToken: String
-        if let spaceIndex = trimmed.firstIndex(of: " ") {
-            firstToken = String(trimmed[..<spaceIndex])
-        } else {
-            firstToken = trimmed
+        let tokens = trimmed.split(separator: " ", omittingEmptySubsequences: true)
+        guard let firstToken = tokens.first else { return "" }
+        let firstBase = (String(firstToken) as NSString).lastPathComponent
+
+        // Interpreter-wrapper form: `node /path/pi`, `python3 …/aider`, …
+        // The second token is the real CLI; resolve its basename and strip a
+        // common script extension so `claude.js` → `claude`.
+        if Self.interpreterWrappers.contains(firstBase.lowercased()), tokens.count >= 2 {
+            let scriptBase = (String(tokens[1]) as NSString).lastPathComponent
+            return Self.strippingScriptExtension(scriptBase)
         }
-        return (firstToken as NSString).lastPathComponent
+        return firstBase
+    }
+
+    /// Interpreter executable basenames that wrap a script CLI. When the first
+    /// token of a command is one of these, the second token holds the real CLI.
+    /// Lowercased; compared case-insensitively.
+    private static let interpreterWrappers: Set<String> = [
+        "node", "node.exe",
+        "python", "python3", "python3.exe",
+        "ruby", "ruby.exe",
+        "bun", "bun.exe",
+        "deno", "deno.exe",
+        "tsx", "tsx.exe",
+        "npx",
+    ]
+
+    /// Script-file extensions stripped from a wrapped script's basename so
+    /// `node …/claude.js` resolves to `claude`.
+    private static let scriptExtensions: Set<String> = [
+        "js", "mjs", "cjs", "ts", "mts", "cts",
+    ]
+
+    /// Returns `name` with a single trailing script extension removed (if any),
+    /// preserving the original casing of the stem.
+    private static func strippingScriptExtension(_ name: String) -> String {
+        let lower = name.lowercased()
+        for ext in scriptExtensions where lower.hasSuffix("." + ext) {
+            return String(name.dropLast(ext.count + 1))
+        }
+        return name
     }
 }
