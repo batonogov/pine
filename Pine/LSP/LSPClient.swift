@@ -497,7 +497,6 @@ final class LSPClient {
 /// Error wrapping a JSON-RPC error object.
 struct LSPError: Error {
     let error: [String: Any]
-    init(error: [String: Any]) { self.error = error }
 }
 
 // MARK: - LSPTransportDelegate

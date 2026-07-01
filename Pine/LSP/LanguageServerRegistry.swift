@@ -18,7 +18,7 @@
 import Foundation
 
 /// Describes how to launch a single language server.
-struct LanguageServerConfig: Sendable, Equatable {
+nonisolated struct LanguageServerConfig: Sendable, Equatable {
     /// The language id this server serves (e.g. "swift", "typescript").
     let language: String
     /// File extensions (lowercased, without dot) this server handles.
@@ -27,13 +27,6 @@ struct LanguageServerConfig: Sendable, Equatable {
     let command: String
     /// Arguments to pass to the server binary.
     let arguments: [String]
-
-    init(language: String, fileExtensions: Set<String>, command: String, arguments: [String]) {
-        self.language = language
-        self.fileExtensions = fileExtensions
-        self.command = command
-        self.arguments = arguments
-    }
 }
 
 /// Static registry of the language servers Pine knows how to drive.
