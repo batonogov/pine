@@ -18,6 +18,7 @@
 //
 
 import AppKit
+import os
 import SwiftUI
 
 /// Top-level `Commands` struct containing every `CommandGroup` / `CommandMenu`
