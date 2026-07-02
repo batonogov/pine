@@ -37,7 +37,7 @@ final class LSPUIEndpoint {
 
     /// Called by the coordinator with the file URL, UTF-16 offset, and full
     /// document text. Returns the server's hover info or `nil`.
-    var hoverHandler: ((URL, Int, String) async -> LSPHover)?
+    var hoverHandler: ((URL, Int, String) async -> LSPHover?)?
 
     /// Convenience wrapper that no-ops (returns `nil`) when no handler is
     /// installed.
