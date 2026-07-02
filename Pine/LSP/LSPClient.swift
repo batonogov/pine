@@ -453,6 +453,41 @@ final class LSPClient {
         ])
     }
 
+    // MARK: - Phase 2 requests (hover + definition)
+
+    /// Sends `textDocument/hover` and returns the decoded result, or `nil`
+    /// when the server reports no hover info for this position.
+    func hover(uri: String, position: LSPPosition) async -> LSPHover? {
+        guard state == .initialized else { return nil }
+        do {
+            let result = try await sendRequest("textDocument/hover", params: [
+                "textDocument": ["uri": uri],
+                "position": ["line": position.line, "character": position.character]
+            ])
+            return LSPHover(result: result)
+        } catch {
+            Logger.lsp.error("LSP hover failed: \(String(describing: error), privacy: .public)")
+            return nil
+        }
+    }
+
+    /// Sends `textDocument/definition` and returns the decoded result.
+    /// `.empty` when the server reports no definition (or the feature is
+    /// unsupported). Handles `Location`, `Location[]`, and `LocationLink[]`.
+    func definition(uri: String, position: LSPPosition) async -> LSPDefinitionResponse {
+        guard state == .initialized else { return .empty }
+        do {
+            let result = try await sendRequest("textDocument/definition", params: [
+                "textDocument": ["uri": uri],
+                "position": ["line": position.line, "character": position.character]
+            ])
+            return LSPDefinitionResponse(result: result)
+        } catch {
+            Logger.lsp.error("LSP definition failed: \(String(describing: error), privacy: .public)")
+            return .empty
+        }
+    }
+
     // MARK: - JSON-RPC plumbing
 
     /// Sends a JSON-RPC request and awaits the server's response.
