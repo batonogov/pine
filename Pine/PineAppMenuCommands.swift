@@ -18,6 +18,7 @@
 //
 
 import AppKit
+import os
 import SwiftUI
 
 /// Top-level `Commands` struct containing every `CommandGroup` / `CommandMenu`
@@ -510,10 +511,58 @@ struct PineAppMenuCommands: Commands {
             .disabled(focusedProject?.activeTabManager.activeTab == nil)
         }
 
+        // MARK: - Tasks menu (issue #1009)
+        // User-defined external commands loaded from tasks.json. Dynamically
+        // populated from ExtensibilityManager; each item runs its task via
+        // UserTaskRunner and reports the outcome in a toast.
+        CommandMenu(Strings.menuTasks) {
+            let taskList = ExtensibilityManager.shared.tasks.tasks
+            if taskList.isEmpty {
+                Text(Strings.menuTasksEmpty)
+                    .foregroundStyle(.secondary)
+            }
+            ForEach(taskList) { task in
+                Button {
+                    guard let pm = focusedProject else { return }
+                    let activeTab = pm.activeTabManager.activeTab
+                    UserTaskRunner.shared.run(
+                        task: task,
+                        fileURL: activeTab?.url,
+                        projectRootURL: pm.workspace.rootURL,
+                        fileContent: activeTab?.content
+                    ) { outcome in
+                        Self.presentTaskOutcome(outcome, task: task, projectManager: pm)
+                    }
+                } label: {
+                    Label(task.label, systemImage: MenuIcons.tasks)
+                }
+            }
+        }
+
         // Cmd+W is intercepted by AppDelegate's local event monitor
         // to close the active tab. The close button goes through
         // windowShouldClose which closes the entire window.
         // Cmd+1..9 and Ctrl+Tab/Ctrl+Shift+Tab are also intercepted
         // via local event monitors in applicationDidFinishLaunching.
+    }
+
+    // MARK: - Task outcome presentation
+
+    /// Shows a brief toast/alert for a completed user task.
+    private static func presentTaskOutcome(
+        _ outcome: UserTaskOutcome,
+        task: UserTask,
+        projectManager: ProjectManager
+    ) {
+        // For now: log the outcome. A proper toast UI can be added later.
+        if outcome.exitCode == 0 {
+            Logger.extensibility.info(
+                "Task '\(task.label)' completed successfully"
+            )
+        } else {
+            Logger.extensibility.error(
+                "Task '\(task.label)' failed (exit \(outcome.exitCode)): \(outcome.stderr)"
+            )
+        }
     }
 }

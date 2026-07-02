@@ -508,6 +508,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate {
         // Preload syntax grammars at startup instead of lazily on first tab open
         _ = SyntaxHighlighter.shared
 
+        // Preload user-supplied tasks + keybindings (issue #1009). User
+        // grammars are loaded by SyntaxHighlighter.shared above.
+        _ = ExtensibilityManager.shared
+
         // UI testing support: clear persisted state for a clean launch
         if CommandLine.arguments.contains("--reset-state") {
             SessionState.removeAll()
@@ -622,6 +626,20 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate {
             } else {
                 activeTM.selectTab(at: digit - 1)
             }
+            return nil // consume event
+        }
+
+        // User-defined keybindings (issue #1009). Loaded from
+        // keybindings.json; each entry maps a chord to a built-in command,
+        // posted via NotificationCenter. Checked last so built-in menu
+        // shortcuts and physical-key monitors take precedence.
+        NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+            let registry = ExtensibilityManager.shared.keybindings
+            guard !registry.isEmpty,
+                  let command = registry.command(for: event) else {
+                return event
+            }
+            NotificationCenter.default.post(name: Notification.Name(command.notificationKey), object: nil)
             return nil // consume event
         }
 

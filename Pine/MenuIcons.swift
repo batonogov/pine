@@ -56,6 +56,9 @@ nonisolated enum MenuIcons {
     static let newTerminalTab = "plus"
     static let sendToTerminal = "paperplane"
 
+    // MARK: - Tasks menu (issue #1009)
+    static let tasks = "wrench.and.screwdriver"
+
     // MARK: - Agent Activity Panel (#1072)
     static let agentActivity = "list.bullet.rectangle"
 

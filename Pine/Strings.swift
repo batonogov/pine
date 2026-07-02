@@ -171,6 +171,8 @@ enum Strings {
     static let menuSwitchBranch: LocalizedStringKey = "menu.switchBranch"
     static let menuRevealFileInFinder: LocalizedStringKey = "menu.revealFileInFinder"
     static let menuRevealProjectInFinder: LocalizedStringKey = "menu.revealProjectInFinder"
+    static let menuTasks: LocalizedStringKey = "menu.tasks"
+    static let menuTasksEmpty: LocalizedStringKey = "menu.tasksEmpty"
 
     // MARK: - Quick Open
 

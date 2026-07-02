@@ -56,6 +56,14 @@ nonisolated final class SyntaxHighlighter: @unchecked Sendable {
         )
         let grammars = registry.loadGrammarsFromBundle()
         compileGrammars(grammars)
+
+        // User-supplied grammars from ~/Library/Application Support/Pine/Grammars/
+        // (issue #1009). Loaded after the bundled grammars so they override
+        // overlapping extensions / file names. Errors are logged, not fatal.
+        let userGrammars = registry.loadGrammarsFromDirectory(
+            UserConfigurationPaths.userGrammarsDirectory
+        )
+        compileGrammars(userGrammars)
     }
 
     // MARK: - Grammar Registration
