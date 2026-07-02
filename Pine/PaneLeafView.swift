@@ -253,12 +253,6 @@ struct PaneLeafView: View {
 
     @ViewBuilder
     private func codeEditorView(for tab: EditorTab, tabManager: TabManager) -> some View {
-        // Merge config-validator diagnostics (yamllint, shellcheck, etc.) with
-        // LSP diagnostics for the current file. LSP diagnostics are keyed by
-        // document URI; config diagnostics are per-active-file in the validator.
-        var combinedDiagnostics = configValidator.diagnostics
-        combinedDiagnostics.append(contentsOf: projectManager.lspManager.diagnostics(for: tab.url))
-
         CodeEditorView(
             text: Binding(
                 get: { tab.content },
@@ -271,7 +265,7 @@ struct PaneLeafView: View {
             lineDiffs: lineDiffs,
             diffVersion: diffVersion,
             diffHunks: diffHunks,
-            validationDiagnostics: combinedDiagnostics,
+            validationDiagnostics: mergedDiagnostics(for: tab),
             isBlameVisible: isBlameVisible,
             blameLines: blameLines,
             foldState: Binding(
@@ -309,6 +303,17 @@ struct PaneLeafView: View {
             configValidator.validate(url: tab.url, content: newValue)
             projectManager.lspManager.didChange(url: tab.url, text: newValue)
         }
+    }
+
+    // MARK: - Diagnostics merging
+
+    /// Merges config-validator diagnostics (yamllint, shellcheck, etc.) with
+    /// LSP diagnostics for the given file. LSP diagnostics are keyed by
+    /// document URI; config diagnostics are per-active-file in the validator.
+    private func mergedDiagnostics(for tab: EditorTab) -> [ValidationDiagnostic] {
+        var combined = configValidator.diagnostics
+        combined.append(contentsOf: projectManager.lspManager.diagnostics(for: tab.url))
+        return combined
     }
 
     // MARK: - Git diff & blame
