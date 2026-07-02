@@ -51,6 +51,7 @@ struct EditorTabBar: View {
     }
 
     @Environment(PaneManager.self) private var paneManager
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     @State private var draggingTabID: UUID?
     @State private var hoverTargetTabID: UUID?
@@ -191,8 +192,12 @@ struct EditorTabBar: View {
                     }
                     .onChange(of: tabManager.activeTabID) {
                         guard let activeID = tabManager.activeTabID else { return }
-                        withAnimation(PineAnimation.quick) {
+                        if reduceMotion {
                             proxy.scrollTo(activeID, anchor: .center)
+                        } else {
+                            withAnimation(PineAnimation.quick) {
+                                proxy.scrollTo(activeID, anchor: .center)
+                            }
                         }
                     }
                 }
@@ -240,7 +245,7 @@ struct EditorTabBar: View {
                         .padding(.trailing, 4)
                 }
             }
-            .animation(PineAnimation.quick, value: isAutoSaving)
+            .animation(reduceMotion ? nil : PineAnimation.quick, value: isAutoSaving)
 
             if isMarkdownFile {
                 Button {
@@ -475,6 +480,8 @@ struct EditorTabItem: View {
             }
             .buttonStyle(.plain)
             .opacity(isHovering || isActive || tab.isDirty ? 1 : 0.35)
+            .accessibilityLabel(Strings.a11yCloseTabLabel)
+            .accessibilityHint(Strings.a11yCloseTabHint)
             .accessibilityIdentifier(AccessibilityID.editorTabCloseButton(tab.fileName))
 
             Image(systemName: FileIconMapper.iconForFile(tab.fileName))

@@ -68,6 +68,9 @@ struct PaneDividerView: View {
                     isCursorPushed = false
                 }
             }
+            .accessibilityElement()
+            .accessibilityLabel(Strings.a11yPaneDividerLabel)
+            .accessibilityHint(Strings.a11yPaneDividerHint)
             .accessibilityIdentifier(AccessibilityID.paneDivider)
     }
 }
