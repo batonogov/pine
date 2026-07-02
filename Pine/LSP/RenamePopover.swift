@@ -76,7 +76,7 @@ final class RenameController {
 /// `@MainActor` because NSPopover and NSTextField must be manipulated on the
 /// main thread.
 @MainActor
-final class RenamePopoverManager {
+final class RenamePopoverManager: NSObject {
 
     /// The underlying popover.
     private var popover: NSPopover?
