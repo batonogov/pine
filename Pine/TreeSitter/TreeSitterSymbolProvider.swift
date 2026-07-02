@@ -38,33 +38,36 @@ nonisolated enum TreeSitterSymbolProvider {
 
     /// Node-type → PineSymbolKind. Keys are the union of the 4 grammars' type
     /// names for declarations.
-    private static let typeMap: [String: PineSymbolKind] = [
-        // Swift
-        "class_declaration": .class,
-        "struct_declaration": .struct,
-        "enum_declaration": .enum,
-        "protocol_declaration": .protocol,
-        "function_declaration": .function,
-        "method_declaration": .function,
-
-        // Python
-        "class_definition": .class,
-        "function_definition": .function,
-
-        // Rust
-        "struct_item": .struct,
-        "enum_item": .enum,
-        "trait_item": .protocol,
-        "function_item": .function,
-        "function_signature_item": .function,
-
-        // TypeScript / TSX
-        "class_declaration": .class,
-        "interface_declaration": .interface,
-        "enum_declaration": .enum,
-        "function_declaration": .function,
-        "method_definition": .function,
-        "function": .function,
+    /// Per-language node-type → symbol kind. Separate dictionaries per
+    /// language to avoid duplicate-key crashes.
+    private static let typeMap: [String: [String: PineSymbolKind]] = [
+        "swift": [
+            "class_declaration": .class,
+            "struct_declaration": .struct,
+            "enum_declaration": .enum,
+            "protocol_declaration": .protocol,
+            "function_declaration": .function,
+            "method_declaration": .function,
+        ],
+        "python": [
+            "class_definition": .class,
+            "function_definition": .function,
+        ],
+        "rust": [
+            "struct_item": .struct,
+            "enum_item": .enum,
+            "trait_item": .protocol,
+            "function_item": .function,
+            "function_signature_item": .function,
+        ],
+        "typescript": [
+            "class_declaration": .class,
+            "interface_declaration": .interface,
+            "enum_declaration": .enum,
+            "function_declaration": .function,
+            "method_definition": .function,
+            "function": .function,
+        ],
     ]
 
     /// Extracts symbols from a parsed tree, preserving declaration order and
@@ -90,7 +93,7 @@ nonisolated enum TreeSitterSymbolProvider {
         var declStack: [(node: TreeSitterNodeInfo, depth: Int)] = []
 
         for node in result.nodes {
-            guard let kind = typeMap[node.nodeType] else { continue }
+            guard let kind = (typeMap[result.language] ?? [:])[node.nodeType] else { continue }
 
             // Pop declarations whose end is before this node's start.
             while let last = declStack.last,

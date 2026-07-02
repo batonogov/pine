@@ -33,66 +33,69 @@ enum TreeSitterFoldKind: String, Sendable, Equatable {
     case `try`
     case other
 
-    /// The set of tree-sitter node types (per supported language) that map to
-    /// this fold kind, used by `TreeSitterFoldProvider`.
-    fileprivate static let typeMap: [String: TreeSitterFoldKind] = [
-        // Swift
-        "function_declaration": .function,
-        "method_declaration": .method,
-        "initializer_declaration": .method,
-        "class_declaration": .class,
-        "struct_declaration": .struct,
-        "enum_declaration": .enum,
-        "protocol_declaration": .protocol,
-        "extension_declaration": .other,
-        "code_block": .block,
-        "if_statement": .if,
-        "guard_statement": .other,
-        "for_statement": .for,
-        "while_statement": .while,
-        "switch_statement": .switch,
-        "do_statement": .do,
-        "catch_clause": .try,
-
-        // Python
-        "function_definition": .function,
-        "class_definition": .class,
-        "decorated_definition": .other,
-        "block": .block,
-        "if_statement": .if,
-        "for_statement": .for,
-        "while_statement": .while,
-        "try_statement": .try,
-        "with_statement": .other,
-        "match_statement": .switch,
-
-        // Rust
-        "function_item": .function,
-        "struct_item": .struct,
-        "enum_item": .enum,
-        "trait_item": .protocol,
-        "impl_item": .other,
-        "block": .block,
-        "if_expression": .if,
-        "for_expression": .for,
-        "while_expression": .while,
-        "match_expression": .switch,
-        "unsafe_block": .block,
-
-        // TypeScript / TSX
-        "function_declaration": .function,
-        "method_definition": .method,
-        "class_declaration": .class,
-        "interface_declaration": .interface,
-        "enum_declaration": .enum,
-        "function": .function,
-        "arrow_function": .function,
-        "statement_block": .block,
-        "if_statement": .if,
-        "for_statement": .for,
-        "while_statement": .while,
-        "switch_statement": .switch,
-        "try_statement": .try,
+    /// Per-language node type → fold kind mapping.
+    /// Separate dictionaries avoid duplicate-key crashes when the same
+    /// tree-sitter node type name (e.g. "block", "if_statement") appears
+    /// in multiple language grammars.
+    fileprivate static let typeMap: [String: [String: TreeSitterFoldKind]] = [
+        "swift": [
+            "function_declaration": .function,
+            "method_declaration": .method,
+            "initializer_declaration": .method,
+            "class_declaration": .class,
+            "struct_declaration": .struct,
+            "enum_declaration": .enum,
+            "protocol_declaration": .protocol,
+            "extension_declaration": .other,
+            "code_block": .block,
+            "if_statement": .if,
+            "guard_statement": .other,
+            "for_statement": .for,
+            "while_statement": .while,
+            "switch_statement": .switch,
+            "do_statement": .do,
+            "catch_clause": .try,
+        ],
+        "python": [
+            "function_definition": .function,
+            "class_definition": .class,
+            "decorated_definition": .other,
+            "block": .block,
+            "if_statement": .if,
+            "for_statement": .for,
+            "while_statement": .while,
+            "try_statement": .try,
+            "with_statement": .other,
+            "match_statement": .switch,
+        ],
+        "rust": [
+            "function_item": .function,
+            "struct_item": .struct,
+            "enum_item": .enum,
+            "trait_item": .protocol,
+            "impl_item": .other,
+            "block": .block,
+            "if_expression": .if,
+            "for_expression": .for,
+            "while_expression": .while,
+            "match_expression": .switch,
+            "unsafe_block": .block,
+        ],
+        "typescript": [
+            "function_declaration": .function,
+            "method_definition": .method,
+            "class_declaration": .class,
+            "interface_declaration": .interface,
+            "enum_declaration": .enum,
+            "function": .function,
+            "arrow_function": .function,
+            "statement_block": .block,
+            "if_statement": .if,
+            "for_statement": .for,
+            "while_statement": .while,
+            "switch_statement": .switch,
+            "try_statement": .try,
+        ],
     ]
 }
 
@@ -135,8 +138,9 @@ nonisolated enum TreeSitterFoldProvider {
         let lineStarts = Self.lineStarts(in: result.source)
 
         var ranges: [TreeSitterFoldRange] = []
+        let langMap = TreeSitterFoldKind.typeMap[result.language] ?? [:]
         for node in result.nodes {
-            guard let kind = TreeSitterFoldKind.typeMap[node.nodeType] else {
+            guard let kind = langMap[node.nodeType] else {
                 continue
             }
             let startLine = Self.lineNumber(
