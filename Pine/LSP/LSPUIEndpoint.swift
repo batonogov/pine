@@ -42,7 +42,7 @@ final class LSPUIEndpoint {
     /// Convenience wrapper that no-ops (returns `nil`) when no handler is
     /// installed.
     func hover(url: URL, offset: Int, text: String) async -> LSPHover? {
-        guard let handler else { return nil }
+        guard let handler = hoverHandler else { return nil }
         return await handler(url, offset, text)
     }
 
@@ -53,7 +53,7 @@ final class LSPUIEndpoint {
 
     /// Convenience wrapper that returns `.empty` when no handler is installed.
     func definition(url: URL, offset: Int, text: String) async -> LSPDefinitionResponse {
-        guard let handler else { return .empty }
+        guard let handler = definitionHandler else { return .empty }
         return await handler(url, offset, text)
     }
 
@@ -64,7 +64,7 @@ final class LSPUIEndpoint {
 
     /// Convenience wrapper that returns empty when no handler is installed.
     func codeAction(url: URL, offset: Int, text: String) async -> LSPCodeActionResponse {
-        guard let handler else { return LSPCodeActionResponse(actions: []) }
+        guard let handler = codeActionHandler else { return LSPCodeActionResponse(actions: []) }
         return await handler(url, offset, text)
     }
 
@@ -76,7 +76,7 @@ final class LSPUIEndpoint {
 
     /// Convenience wrapper that returns an empty edit when no handler.
     func rename(url: URL, offset: Int, text: String, newName: String) async -> LSPWorkspaceEdit {
-        guard let handler else { return LSPWorkspaceEdit(operatedFiles: []) }
+        guard let handler = renameHandler else { return LSPWorkspaceEdit(operatedFiles: []) }
         return await handler(url, offset, text, newName)
     }
 
@@ -88,7 +88,7 @@ final class LSPUIEndpoint {
 
     /// Convenience wrapper that returns `false` when no handler is installed.
     func applyWorkspaceEdit(_ edit: LSPWorkspaceEdit) -> Bool {
-        guard let handler else { return false }
+        guard let handler = applyEditHandler else { return false }
         return handler(edit)
     }
 

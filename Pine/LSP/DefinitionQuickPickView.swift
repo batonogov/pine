@@ -112,35 +112,15 @@ struct DefinitionQuickPickContent: View {
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 0) {
                         ForEach(Array(controller.items.enumerated()), id: \.element.id) { index, item in
-                            HStack(spacing: 6) {
-                                Image(systemName: "doc.text")
-                                    .font(.system(size: 12))
-                                    .foregroundStyle(.secondary)
-                                    .frame(width: 16)
-                                Text(item.label)
-                                    .font(.system(size: 12))
-                                    .foregroundStyle(.primary)
-                                    .lineLimit(1)
-                                Spacer(minLength: 0)
-                                Text(item.detail)
-                                    .font(.system(size: 11))
-                                    .foregroundStyle(.secondary)
-                                    .lineLimit(1)
-                            }
-                            .padding(.horizontal, 10)
-                            .frame(height: 22)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .background(index == controller.selectedIndex
-                                ? Color.accentColor.opacity(0.2)
-                                : Color.clear)
-                            .id(index)
-                            .onTapGesture(count: 2) {
-                                controller.selectedIndex = index
-                                controller.selectCurrent()
-                            }
-                            .onTapGesture {
-                                controller.selectedIndex = index
-                            }
+                            DefinitionRow(item: item, isSelected: index == controller.selectedIndex)
+                                .id(index)
+                                .onTapGesture(count: 2) {
+                                    controller.selectedIndex = index
+                                    controller.selectCurrent()
+                                }
+                                .onTapGesture {
+                                    controller.selectedIndex = index
+                                }
                         }
                     }
                 }
@@ -183,5 +163,33 @@ struct DefinitionQuickPickOverlay: View {
                 Spacer()
             }
         }
+    }
+}
+
+/// Extracted row view for definition quick-pick items.
+private struct DefinitionRow: View {
+    let item: DefinitionQuickPickItem
+    let isSelected: Bool
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "doc.text")
+                .font(.system(size: 12))
+                .foregroundStyle(.secondary)
+                .frame(width: 16)
+            Text(item.label)
+                .font(.system(size: 12))
+                .foregroundStyle(.primary)
+                .lineLimit(1)
+            Spacer(minLength: 0)
+            Text(item.detail)
+                .font(.system(size: 11))
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+        }
+        .padding(.horizontal, 10)
+        .frame(height: 22)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(isSelected ? Color.accentColor.opacity(0.2) : Color.clear)
     }
 }

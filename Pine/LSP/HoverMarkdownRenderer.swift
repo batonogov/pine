@@ -133,7 +133,7 @@ nonisolated enum HoverMarkdownRenderer {
                 let attr = NSMutableAttributedString(string: sep)
                 let fullRange = NSRange(location: 0, length: attr.length)
                 attr.addAttribute(.font, value: style.font, range: fullRange)
-                attr.addAttribute(.foregroundColor, value: secondaryTextColor, range: fullRange)
+                attr.addAttribute(.foregroundColor, value: style.secondaryTextColor, range: fullRange)
                 result.append(attr)
                 i += 1
                 continue
@@ -260,7 +260,7 @@ nonisolated enum HoverMarkdownRenderer {
     ) {
         guard !text.isEmpty else { return }
         result.append(NSAttributedString(string: text, attributes: [
-            .font: style.font,
+            .font: font,
             .foregroundColor: color
         ]))
     }
