@@ -29,6 +29,14 @@ nonisolated struct UserTask: Codable, Sendable, Identifiable, Equatable {
     /// When `false` (default), the command output is shown in a toast but the
     /// file is left untouched.
     var replacesFileContent: Bool = false
+    /// Whether the user must confirm before the task runs.
+    ///
+    /// When `nil` (the default when omitted from `tasks.json`), the runner
+    /// auto-detects: commands that look destructive (contain `rm`, `chmod`,
+    /// `dd`, `diskutil`, etc.) default to **requiring** confirmation; benign
+    /// commands (lint, format, build) do not.  An explicit `true` / `false`
+    /// in the JSON always overrides auto-detection.
+    var requireConfirmation: Bool?
 
     enum Scope: String, Codable, Sendable {
         /// Runs in the active file's directory; the file content is piped to
@@ -42,6 +50,7 @@ nonisolated struct UserTask: Codable, Sendable, Identifiable, Equatable {
         case id, label, command, scope
         // Kept out of the synthesized memberwise init; decoded explicitly below.
         case replacesFileContent = "replaces_file_content"
+        case requireConfirmation = "require_confirmation"
     }
 
     init(
@@ -49,13 +58,15 @@ nonisolated struct UserTask: Codable, Sendable, Identifiable, Equatable {
         label: String,
         command: String,
         scope: Scope = .activeFile,
-        replacesFileContent: Bool = false
+        replacesFileContent: Bool = false,
+        requireConfirmation: Bool? = nil
     ) {
         self.id = id
         self.label = label
         self.command = command
         self.scope = scope
         self.replacesFileContent = replacesFileContent
+        self.requireConfirmation = requireConfirmation
     }
 
     init(from decoder: Decoder) throws {
@@ -65,6 +76,7 @@ nonisolated struct UserTask: Codable, Sendable, Identifiable, Equatable {
         command = try c.decode(String.self, forKey: .command)
         scope = try c.decodeIfPresent(Scope.self, forKey: .scope) ?? .activeFile
         replacesFileContent = try c.decodeIfPresent(Bool.self, forKey: .replacesFileContent) ?? false
+        requireConfirmation = try c.decodeIfPresent(Bool.self, forKey: .requireConfirmation)
     }
 
     func encode(to encoder: Encoder) throws {
@@ -74,6 +86,18 @@ nonisolated struct UserTask: Codable, Sendable, Identifiable, Equatable {
         try c.encode(command, forKey: .command)
         try c.encode(scope, forKey: .scope)
         try c.encode(replacesFileContent, forKey: .replacesFileContent)
+        try c.encodeIfPresent(requireConfirmation, forKey: .requireConfirmation)
+    }
+
+    /// Resolves whether this task requires user confirmation before running.
+    /// An explicit `requireConfirmation` value from `tasks.json` takes
+    /// precedence; otherwise the command is inspected for destructive
+    /// patterns (rm, chmod, dd, diskutil, etc.).
+    func effectiveRequireConfirmation(validator: UserTaskValidator = .default) -> Bool {
+        if let explicit = requireConfirmation {
+            return explicit
+        }
+        return validator.isDestructive(command)
     }
 }
 
