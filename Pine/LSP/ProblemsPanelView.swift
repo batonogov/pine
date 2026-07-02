@@ -23,6 +23,16 @@ struct DiagnosticsSummary: Equatable {
         self.errorCount = errorCount
         self.warningCount = warningCount
     }
+
+    /// Human-readable summary for the status bar (e.g. "2 errors, 1 warning").
+    var description: String {
+        switch (errorCount, warningCount) {
+        case (0, 0): return ""
+        case (let e, 0) where e > 0: return "\(e) error\(e == 1 ? "" : "s")"
+        case (0, let w) where w > 0: return "\(w) warning\(w == 1 ? "" : "s")"
+        default: return "\(errorCount) error\(errorCount == 1 ? "" : "s"), \(warningCount) warning\(warningCount == 1 ? "" : "s")"
+        }
+    }
 }
 
 // MARK: - Problems panel

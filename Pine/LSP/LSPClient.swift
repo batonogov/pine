@@ -76,7 +76,7 @@ nonisolated enum LSPMessageFraming {
 /// Marked `nonisolated(unsafe)` because access is fully serialised by
 /// `ioQueue`. The only cross-thread surface is the delegate callback, which
 /// hops to the main actor at the call site.
-final class LSPTransport {
+nonisolated final class LSPTransport: @unchecked Sendable {
 
     /// Receives fully-decoded JSON-RPC messages (notifications and responses).
     weak var delegate: LSPTransportDelegate?
