@@ -56,6 +56,9 @@ struct CodeEditorView: NSViewRepresentable {
     var initialCursorPosition: Int = 0
     /// Scroll offset to restore when the view is created (tab switch).
     var initialScrollOffset: CGFloat = 0
+    /// Definition quick-pick controller, passed from PaneLeafView so the
+    /// overlay and the coordinator share the same observable instance.
+    var definitionQuickPickController: DefinitionQuickPickController?
     /// Called when cursor position or scroll offset changes, so the caller can persist them.
     var onStateChange: ((Int, CGFloat) -> Void)?
     /// Called when a new syntax highlight result is computed, so the caller can cache it in the tab.
@@ -67,10 +70,6 @@ struct CodeEditorView: NSViewRepresentable {
     var goToOffset: GoToRequest?
     /// Indentation style detected for the current file, used for indent guide rendering.
     var indentStyle: IndentationStyle = .spaces(4)
-
-    /// Definition quick-pick controller, passed from PaneLeafView so the
-    /// overlay and the coordinator share the same observable instance.
-    var definitionQuickPickController: DefinitionQuickPickController?
 
     /// Порог (в символах) для переключения на viewport-based подсветку.
     /// Lowered from 100KB to 50KB to be more aggressive about lazy highlighting (#637).
