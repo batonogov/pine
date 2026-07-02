@@ -53,7 +53,8 @@ struct UserTaskRequireConfirmationTests {
         let json = """
         {"id":"t","label":"T","command":"echo hi","scope":"activeFile"}
         """
-        let task = try JSONDecoder().decode(UserTask.self, from: json.data(using: .utf8)!)
+        let data = try #require(json.data(using: .utf8))
+        let task = try JSONDecoder().decode(UserTask.self, from: data)
         #expect(task.requireConfirmation == nil)
     }
 
@@ -62,13 +63,15 @@ struct UserTaskRequireConfirmationTests {
         let jsonTrue = """
         {"id":"t","label":"T","command":"echo hi","require_confirmation":true}
         """
-        let taskTrue = try JSONDecoder().decode(UserTask.self, from: jsonTrue.data(using: .utf8)!)
+        let dataTrue = try #require(jsonTrue.data(using: .utf8))
+        let taskTrue = try JSONDecoder().decode(UserTask.self, from: dataTrue)
         #expect(taskTrue.requireConfirmation == true)
 
         let jsonFalse = """
         {"id":"t","label":"T","command":"echo hi","require_confirmation":false}
         """
-        let taskFalse = try JSONDecoder().decode(UserTask.self, from: jsonFalse.data(using: .utf8)!)
+        let dataFalse = try #require(jsonFalse.data(using: .utf8))
+        let taskFalse = try JSONDecoder().decode(UserTask.self, from: dataFalse)
         #expect(taskFalse.requireConfirmation == false)
     }
 }
