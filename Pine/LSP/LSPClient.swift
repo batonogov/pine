@@ -253,10 +253,22 @@ nonisolated final class LSPTransport: @unchecked Sendable {
     /// Delivers a decoded message to the delegate on the main thread — the
     /// delegate is an `LSPClient` which is `@MainActor`.
     private func deliver(_ message: [String: Any]) {
+        // Wrap in an @unchecked Sendable box so Swift 6 strict concurrency
+        // allows crossing the ioQueue → main thread boundary. The dictionary
+        // is a freshly decoded JSON payload — no shared mutable state.
+        let box = SendableJSONBox(message)
         DispatchQueue.main.async { [weak self] in
-            self?.delegate?.transport(didReceive: message)
+            self?.delegate?.transport(didReceive: box.value)
         }
     }
+}
+
+/// Boxes a `[String: Any]` JSON payload as `@unchecked Sendable` so it can
+/// cross actor boundaries. Safe because the payload is always a freshly
+/// decoded JSON dictionary — never shared mutable state.
+nonisolated struct SendableJSONBox: @unchecked Sendable {
+    let value: [String: Any]
+    init(_ value: [String: Any]) { self.value = value }
 }
 
 /// Callback surface for `LSPTransport`.
@@ -299,7 +311,7 @@ final class LSPClient {
     private var nextRequestID: Int = 0
 
     /// Pending requests awaiting a server response, keyed by request id.
-    private var pending: [Int: (Result<[String: Any], Error>) -> Void] = [:]
+    private var pending: [Int: (Result<SendableJSONBox, Error>) -> Void] = [:]
 
     /// The language id this client serves (e.g. "swift", "typescript").
     let language: String
@@ -446,11 +458,13 @@ final class LSPClient {
     /// Sends a JSON-RPC request and awaits the server's response.
     func sendRequest(_ method: String, params: [String: Any]) async throws -> [String: Any] {
         let id = allocateRequestID()
-        return try await withCheckedThrowingContinuation { continuation in
+        // Continuation carries SendableJSONBox (not raw [String: Any]) to satisfy
+        // Swift 6 strict concurrency — the continuation crosses actor boundaries.
+        return try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<SendableJSONBox, Error>) in
             pending[id] = { result in
                 switch result {
-                case .success(let value):
-                    continuation.resume(returning: value)
+                case .success(let boxed):
+                    continuation.resume(returning: boxed)
                 case .failure(let error):
                     continuation.resume(throwing: error)
                 }
@@ -462,7 +476,7 @@ final class LSPClient {
                 "method": method,
                 "params": params
             ])
-        }
+        }.value
     }
 
     /// Sends a JSON-RPC notification (no response expected).
@@ -489,7 +503,7 @@ final class LSPClient {
         if let error {
             handler(.failure(LSPError(error: error)))
         } else {
-            handler(.success((result as? [String: Any]) ?? [:]))
+            handler(.success(SendableJSONBox((result as? [String: Any]) ?? [:])))
         }
     }
 }
