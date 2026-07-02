@@ -1874,7 +1874,7 @@ extension CodeEditorView {
             // Add rename option.
             menu.addItem(.separator())
             let renameItem = NSMenuItem(
-                title: "Rename Symbol",
+                title: Strings.contextRenameTitle,
                 action: #selector(handleRenameFromMenu(_:)),
                 keyEquivalent: "r"
             )
@@ -1892,7 +1892,7 @@ extension CodeEditorView {
         }
 
         /// Payload wrapping an LSPCodeAction for menu selection.
-        private final class CodeActionPayload {
+        private final class CodeActionPayload: @unchecked Sendable {
             let action: LSPCodeAction
             init(action: LSPCodeAction) { self.action = action }
         }
