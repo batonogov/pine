@@ -87,7 +87,9 @@ final class RenamePopoverManager: NSObject {
     /// Whether the popover is currently shown.
     var isVisible: Bool { popover?.isShown ?? false }
 
-    init() {}
+    override init() {
+        super.init()
+    }
 
     // MARK: - Show
 
