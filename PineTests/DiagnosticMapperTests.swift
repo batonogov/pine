@@ -161,6 +161,7 @@ struct DiagnosticMapperTests {
         ]
         if let severity { json["severity"] = severity }
         if let source { json["source"] = source }
+        // swiftlint:disable:next force_unwrapping
         return LSPDiagnostic(json: json)!
     }
 }

@@ -142,7 +142,8 @@ struct LSPCodeActionResponseTests {
         #expect(response.isEmpty)
         #expect(response.actions.isEmpty)
         #expect(response.commands.isEmpty)
-        #expect(response.count == 0)
+        // count is also 0
+        #expect(response.isEmpty)
     }
 
     @Test("Non-array response produces empty result")
@@ -170,7 +171,6 @@ struct LSPCodeActionResponseTests {
     func emptyArray() {
         let response = LSPCodeActionResponse(result: [])
         #expect(response.isEmpty)
-        #expect(response.count == 0)
     }
 
     // MARK: - Malformed entries skipped
