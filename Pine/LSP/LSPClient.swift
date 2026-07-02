@@ -509,6 +509,79 @@ final class LSPClient {
         }
     }
 
+    // MARK: - Phase 4 requests (code action + rename)
+
+    /// Sends `textDocument/codeAction` and returns the decoded response.
+    /// Returns an empty response when the server reports no actions for
+    /// this position/range or the feature is unsupported.
+    ///
+    /// - Parameters:
+    ///   - uri: The document URI.
+    ///   - range: The LSP range to request actions for.
+    ///   - diagnostics: The diagnostics at the range (passed as context so
+    ///     the server can return targeted quick fixes).
+    func codeAction(uri: String, range: LSPRange, diagnostics: [LSPDiagnostic]) async -> LSPCodeActionResponse {
+        guard state == .initialized else { return LSPCodeActionResponse(actions: []) }
+        do {
+            let rawDiagnostics: [[String: Any]] = diagnostics.map { diag in
+                var dict: [String: Any] = [
+                    "range": [
+                        "start": ["line": diag.range.start.line, "character": diag.range.start.character],
+                        "end": ["line": diag.range.end.line, "character": diag.range.end.character]
+                    ],
+                    "message": diag.message
+                ]
+                if let severity = diag.severity {
+                    dict["severity"] = severity.rawValue
+                }
+                if let source = diag.source {
+                    dict["source"] = source
+                }
+                if let code = diag.code {
+                    dict["code"] = code
+                }
+                return dict
+            }
+            let result = try await sendRequest("textDocument/codeAction", params: [
+                "textDocument": ["uri": uri],
+                "range": [
+                    "start": ["line": range.start.line, "character": range.start.character],
+                    "end": ["line": range.end.line, "character": range.end.character]
+                ],
+                "context": [
+                    "diagnostics": rawDiagnostics
+                ]
+            ])
+            return LSPCodeActionResponse(result: result)
+        } catch {
+            Logger.lsp.error("LSP codeAction failed: \(String(describing: error), privacy: .public)")
+            return LSPCodeActionResponse(actions: [])
+        }
+    }
+
+    /// Sends `textDocument/rename` and returns the decoded `WorkspaceEdit`.
+    /// Returns an empty edit when the server reports no rename targets for
+    /// this position or the feature is unsupported.
+    ///
+    /// - Parameters:
+    ///   - uri: The document URI.
+    ///   - position: The cursor position on the symbol to rename.
+    ///   - newName: The new name for the symbol.
+    func rename(uri: String, position: LSPPosition, newName: String) async -> LSPWorkspaceEdit {
+        guard state == .initialized else { return LSPWorkspaceEdit(operatedFiles: []) }
+        do {
+            let result = try await sendRequest("textDocument/rename", params: [
+                "textDocument": ["uri": uri],
+                "position": ["line": position.line, "character": position.character],
+                "newName": newName
+            ])
+            return LSPWorkspaceEdit(json: result)
+        } catch {
+            Logger.lsp.error("LSP rename failed: \(String(describing: error), privacy: .public)")
+            return LSPWorkspaceEdit(operatedFiles: [])
+        }
+    }
+
     // MARK: - JSON-RPC plumbing
 
     /// Sends a JSON-RPC request and awaits the server's response.

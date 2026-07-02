@@ -45,6 +45,11 @@ final class LSPManager {
     /// Replacing/emptying an entry clears that file's markers.
     private(set) var diagnosticsByURI: [String: [ValidationDiagnostic]] = [:]
 
+    /// Raw LSP diagnostics keyed by URI, retained for code-action context.
+    /// These are the original `LSPDiagnostic` structs (0-based LSP positions)
+    /// needed when building the `CodeActionContext.diagnostics` array.
+    private var rawDiagnosticsByURI: [String: [LSPDiagnostic]] = [:]
+
     /// Whether LSP diagnostics are enabled (global toggle). Defaults on.
     var enabled: Bool = true
 
@@ -125,6 +130,7 @@ final class LSPManager {
         servers[serverConfig.language]?.client.didClose(uri: uri)
         // Clear that file's diagnostics immediately so stale markers don't linger.
         diagnosticsByURI[uri] = nil
+        rawDiagnosticsByURI[uri] = nil
     }
 
     // MARK: - Phase 2 queries (hover + definition)
@@ -187,6 +193,134 @@ final class LSPManager {
         let position = LSPPositionConverter.lspPosition(utf16Offset: offset, in: text)
         return await servers[language]?.client.completion(uri: uri, position: position)
             ?? LSPCompletionList(items: [])
+    }
+
+    // MARK: - Phase 4 queries (code action + rename)
+
+    /// Requests code actions for the symbol at `offset` in the file at `url`.
+    /// Returns an empty response when LSP is disabled, the file has no server,
+    /// or the server reports no actions.
+    func codeAction(url: URL, offset: Int, text: String) async -> LSPCodeActionResponse {
+        guard enabled else { return LSPCodeActionResponse(actions: []) }
+        guard let serverConfig = LanguageServerRegistry.server(for: url) else {
+            return LSPCodeActionResponse(actions: [])
+        }
+        let language = serverConfig.language
+        guard await ensureServer(for: serverConfig) else {
+            return LSPCodeActionResponse(actions: [])
+        }
+        guard servers[language]?.state == .initialized else {
+            return LSPCodeActionResponse(actions: [])
+        }
+        let uri = url.absoluteString
+        let position = LSPPositionConverter.lspPosition(utf16Offset: offset, in: text)
+        // Build a range from the word at the cursor (or a zero-length range).
+        let range = wordRange(at: offset, in: text) ?? LSPRange(start: position, end: position)
+        // Gather diagnostics for this file so the server can target fixes.
+        let lspDiagnostics = lspDiagnosticsForApply(uri: uri)
+        return await servers[language]?.client.codeAction(uri: uri, range: range, diagnostics: lspDiagnostics)
+            ?? LSPCodeActionResponse(actions: [])
+    }
+
+    /// Requests a project-wide rename for the symbol at `offset` in the file
+    /// at `url`. Returns the `WorkspaceEdit` describing all changes, or an
+    /// empty edit when LSP is disabled or the server reports no targets.
+    func rename(url: URL, offset: Int, text: String, newName: String) async -> LSPWorkspaceEdit {
+        guard enabled else { return LSPWorkspaceEdit(operatedFiles: []) }
+        guard let serverConfig = LanguageServerRegistry.server(for: url) else {
+            return LSPWorkspaceEdit(operatedFiles: [])
+        }
+        let language = serverConfig.language
+        guard await ensureServer(for: serverConfig) else {
+            return LSPWorkspaceEdit(operatedFiles: [])
+        }
+        guard servers[language]?.state == .initialized else {
+            return LSPWorkspaceEdit(operatedFiles: [])
+        }
+        let uri = url.absoluteString
+        let position = LSPPositionConverter.lspPosition(utf16Offset: offset, in: text)
+        return await servers[language]?.client.rename(uri: uri, position: position, newName: newName)
+            ?? LSPWorkspaceEdit(operatedFiles: [])
+    }
+
+    // MARK: - WorkspaceEdit application
+
+    /// Applies a `WorkspaceEdit` transactionally across open tabs.
+    ///
+    /// For each `.edit` operation:
+    ///   1. If the file is open in any tab, applies the edits to the tab
+    ///      content in memory (marking it dirty for save).
+    ///   2. If the file is not open, reads it from disk, applies the edits,
+    ///      and writes back.
+    ///
+    /// If any file's edit fails to apply, no partial state is committed and
+    /// the method returns `false`.
+    ///
+    /// - Parameters:
+    ///   - workspaceEdit: The edit to apply.
+    ///   - tabManager: The active project's tab manager (for in-memory edits).
+    ///   - workspaceURL: The project root URL (for resolving relative paths).
+    /// - Returns: `true` when all edits were applied successfully.
+    func applyWorkspaceEdit(
+        _ workspaceEdit: LSPWorkspaceEdit,
+        tabManager: TabManager,
+        workspaceURL: URL?
+    ) -> Bool {
+        guard !workspaceEdit.isEmpty else { return true }
+
+        // Phase 1: compute all new texts without committing any changes.
+        // This ensures the operation is transactional — if any file fails,
+        // nothing is modified.
+        var pendingChanges: [(tabIndex: Int, newText: String, fileURL: URL)] = []
+        var diskWrites: [(url: URL, newText: String)] = []
+
+        for operated in workspaceEdit.operatedFiles where operated.kind == .edit {
+            guard let fileURL = operated.url else { continue }
+            guard !operated.edits.isEmpty else { continue }
+
+            // Check if this file is open in a tab.
+            if let tabIndex = tabManager.tabs.firstIndex(where: { $0.url == fileURL }) {
+                let original = tabManager.tabs[tabIndex].content
+                let result = WorkspaceEditApplier.applyEdits(operated.edits, to: original)
+                guard result.success, let newText = result.newText else {
+                    Logger.lsp.error("WorkspaceEdit apply failed for \(fileURL.lastPathComponent, privacy: .public): \(result.errorMessage ?? "unknown", privacy: .public)")
+                    return false
+                }
+                pendingChanges.append((tabIndex: tabIndex, newText: newText, fileURL: fileURL))
+            } else {
+                // File not open — read from disk, apply, write back.
+                guard let original = try? String(contentsOf: fileURL, encoding: .utf8) else {
+                    Logger.lsp.error("WorkspaceEdit: cannot read file \(fileURL.lastPathComponent, privacy: .public)")
+                    return false
+                }
+                let result = WorkspaceEditApplier.applyEdits(operated.edits, to: original)
+                guard result.success, let newText = result.newText else {
+                    Logger.lsp.error("WorkspaceEdit apply failed for \(fileURL.lastPathComponent, privacy: .public): \(result.errorMessage ?? "unknown", privacy: .public)")
+                    return false
+                }
+                diskWrites.append((url: fileURL, newText: newText))
+            }
+        }
+
+        // Phase 2: commit all changes.
+        for change in pendingChanges {
+            // Use the tab's direct content update — the edit is already computed.
+            tabManager.applyExternalEdit(at: change.tabIndex, newText: change.newText)
+            // Notify the LSP server of the change.
+            didChange(url: change.fileURL, text: change.newText)
+        }
+
+        for write in diskWrites {
+            do {
+                try write.newText.write(to: write.url, atomically: true, encoding: .utf8)
+            } catch {
+                Logger.lsp.error("WorkspaceEdit: cannot write file \(write.url.lastPathComponent, privacy: .public): \(String(describing: error), privacy: .public)")
+                return false
+            }
+        }
+
+        Logger.lsp.info("WorkspaceEdit applied: \(pendingChanges.count, privacy: .public) tab(s), \(diskWrites.count, privacy: .public) disk file(s)")
+        return true
     }
 
     // MARK: - Diagnostics access
@@ -272,5 +406,53 @@ final class LSPManager {
     private func handleDiagnostics(_ notification: LSPDiagnosticsNotification, from client: LSPClient?) {
         let mapped = DiagnosticMapper.map(notification)
         diagnosticsByURI[notification.uri] = mapped
+        rawDiagnosticsByURI[notification.uri] = notification.diagnostics
+    }
+
+    // MARK: - Phase 4 helpers
+
+    /// Extracts the word range at `offset` for the code action context, or
+    /// `nil` when the cursor is not on a word.
+    private func wordRange(at offset: Int, in text: String) -> LSPRange? {
+        let ns = text as NSString
+        let clamped = min(max(0, offset), ns.length)
+
+        // Scan backwards for word start.
+        var start = clamped
+        while start > 0 {
+            let unit = ns.character(at: start - 1)
+            guard let scalar = Unicode.Scalar(unit) else { break }
+            let char = Character(scalar)
+            if char.isLetter || char.isNumber || char == "_" {
+                start -= 1
+            } else {
+                break
+            }
+        }
+
+        // Scan forwards for word end.
+        var end = clamped
+        while end < ns.length {
+            let unit = ns.character(at: end)
+            guard let scalar = Unicode.Scalar(unit) else { break }
+            let char = Character(scalar)
+            if char.isLetter || char.isNumber || char == "_" {
+                end += 1
+            } else {
+                break
+            }
+        }
+
+        guard end > start else { return nil }
+        let startPos = LSPPositionConverter.lspPosition(utf16Offset: start, in: text)
+        let endPos = LSPPositionConverter.lspPosition(utf16Offset: end, in: text)
+        return LSPRange(start: startPos, end: endPos)
+    }
+
+    /// Returns the raw `LSPDiagnostic` values for a URI, needed for the code
+    /// action request context. These are the original structs with 0-based LSP
+    /// positions, retained alongside the mapped Pine diagnostics.
+    private func lspDiagnosticsForApply(uri: String) -> [LSPDiagnostic] {
+        rawDiagnosticsByURI[uri] ?? []
     }
 }
