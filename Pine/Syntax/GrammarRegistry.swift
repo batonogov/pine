@@ -168,7 +168,7 @@ nonisolated final class GrammarRegistry: @unchecked Sendable {
         let decoder = JSONDecoder()
         var loadedGrammars: [Grammar] = []
 
-        for url in files.sorted() { // deterministic order for stable override priority
+        for url in files.sorted(by: { $0.path < $1.path }) { // deterministic order
             do {
                 let data = try Data(contentsOf: url)
                 let grammar = try decoder.decode(Grammar.self, from: data)
