@@ -120,7 +120,7 @@ nonisolated struct LSPCommand: @unchecked Sendable, Identifiable {
 /// The `edit` is stored as the raw `LSPWorkspaceEdit` value type (defined in
 /// `RenameProvider.swift`) so it can be applied by the same trusted path that
 /// rename uses.
-nonisolated struct LSPCodeAction: Equatable, Sendable, Identifiable {
+nonisolated struct LSPCodeAction: @unchecked Sendable, Identifiable {
     /// Stable identifier for menu identity (derived from `title` + `kind`).
     let id: String
     /// Human-readable title shown in the menu.
@@ -199,7 +199,7 @@ nonisolated struct LSPCodeAction: Equatable, Sendable, Identifiable {
 /// The LSP spec allows the server to answer with an array of `CodeAction`
 /// and/or `Command` objects, or `null` (no actions available). This type
 /// normalises all forms into a single value.
-nonisolated struct LSPCodeActionResponse: Equatable, Sendable {
+nonisolated struct LSPCodeActionResponse: @unchecked Sendable {
     /// All code actions, in server order.
     let actions: [LSPCodeAction]
     /// All bare commands (when the server returns `Command` objects without
