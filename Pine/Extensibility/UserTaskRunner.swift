@@ -113,8 +113,10 @@ nonisolated final class UserTaskRunner: @unchecked Sendable {
                     "Task '\(task.id, privacy: .public)' completed (exit 0)"
                 )
             } else {
+                let exitCode = outcome.exitCode
+                let timedOut = outcome.timedOut
                 Logger.task.error(
-                    "Task '\(task.id, privacy: .public)' finished (exit \(outcome.exitCode), timedOut: \(outcome.timedOut)): \(outcome.stderr, privacy: .public)"
+                    "Task '\(task.id, privacy: .public)' finished (exit \(exitCode), timedOut: \(timedOut)): \(outcome.stderr, privacy: .public)"
                 )
             }
 
