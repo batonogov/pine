@@ -59,6 +59,26 @@ nonisolated final class UserTaskRunner: @unchecked Sendable {
         fileContent: String?,
         completion: @escaping @Sendable (UserTaskOutcome) -> Void
     ) {
+        // --- Security gate (milestone #1088, item 4) ---
+        // Validate the command *before* spawning any process.  Commands that
+        // match known-dangerous patterns (rm -rf, sudo, curl|sh, …) are
+        // rejected outright and never reach `/bin/sh`.
+        let validation = UserTaskValidator.default.validate(command: task.command)
+        if !validation.allowed {
+            Logger.task.error(
+                "Task '\(task.id, privacy: .public)' blocked by validator: \(validation.reason, privacy: .public)"
+            )
+            let outcome = UserTaskOutcome(
+                taskID: task.id,
+                stdout: "",
+                stderr: "Task blocked: \(validation.reason)",
+                exitCode: -1,
+                timedOut: false
+            )
+            DispatchQueue.main.async { completion(outcome) }
+            return
+        }
+
         let workingDir: URL?
         let stdinText: String
 
@@ -73,6 +93,11 @@ nonisolated final class UserTaskRunner: @unchecked Sendable {
 
         let timeout = self.timeout
 
+        // Log the attempt (what + when).
+        Logger.task.info(
+            "Task '\(task.id, privacy: .public)' starting: '\(task.command, privacy: .public)'"
+        )
+
         DispatchQueue.global(qos: .userInitiated).async {
             let outcome = Self.execute(
                 command: task.command,
@@ -81,6 +106,20 @@ nonisolated final class UserTaskRunner: @unchecked Sendable {
                 timeout: timeout,
                 taskID: task.id
             )
+
+            // Log the result (exit code).
+            if outcome.succeeded {
+                Logger.task.info(
+                    "Task '\(task.id, privacy: .public)' completed (exit 0)"
+                )
+            } else {
+                let exitCode = outcome.exitCode
+                let timedOut = outcome.timedOut
+                Logger.task.error(
+                    "Task '\(task.id, privacy: .public)' finished (exit \(exitCode), timedOut: \(timedOut)): \(outcome.stderr, privacy: .public)"
+                )
+            }
+
             DispatchQueue.main.async {
                 completion(outcome)
             }

@@ -525,13 +525,24 @@ struct PineAppMenuCommands: Commands {
                 Button {
                     guard let pm = focusedProject else { return }
                     let activeTab = pm.activeTabManager.activeTab
-                    UserTaskRunner.shared.run(
-                        task: task,
-                        fileURL: activeTab?.url,
-                        projectRootURL: pm.workspace.rootURL,
-                        fileContent: activeTab?.content
-                    ) { outcome in
-                        Self.presentTaskOutcome(outcome, task: task, projectManager: pm)
+
+                    // Security: require confirmation for destructive commands
+                    // (milestone #1088, item 4).
+                    if task.effectiveRequireConfirmation() {
+                        let alert = NSAlert()
+                        alert.messageText = "Run task \"\(task.label)\"?"
+                        alert.informativeText = """
+                            This task will execute the following command:
+                            \(task.command)
+                            """
+                        alert.alertStyle = .warning
+                        alert.addButton(withTitle: "Run")
+                        alert.addButton(withTitle: "Cancel")
+                        if alert.runModal() == .alertFirstButtonReturn {
+                            Self.runUserTask(task, activeTab: activeTab, projectManager: pm)
+                        }
+                    } else {
+                        Self.runUserTask(task, activeTab: activeTab, projectManager: pm)
                     }
                 } label: {
                     Label(task.label, systemImage: MenuIcons.tasks)
@@ -547,6 +558,24 @@ struct PineAppMenuCommands: Commands {
     }
 
     // MARK: - Task outcome presentation
+
+    /// Runs a user task via `UserTaskRunner` and presents the outcome.
+    /// Extracted so the confirmation alert and the non-confirmation path
+    /// share a single execution point.
+    private static func runUserTask(
+        _ task: UserTask,
+        activeTab: EditorTab?,
+        projectManager: ProjectManager
+    ) {
+        UserTaskRunner.shared.run(
+            task: task,
+            fileURL: activeTab?.url,
+            projectRootURL: projectManager.workspace.rootURL,
+            fileContent: activeTab?.content
+        ) { outcome in
+            Self.presentTaskOutcome(outcome, task: task, projectManager: projectManager)
+        }
+    }
 
     /// Shows a brief toast/alert for a completed user task.
     private static func presentTaskOutcome(
