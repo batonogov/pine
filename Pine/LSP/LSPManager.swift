@@ -161,6 +161,34 @@ final class LSPManager {
         return await servers[language]?.client.definition(uri: uri, position: position) ?? .empty
     }
 
+    // MARK: - Phase 3 queries (completion)
+
+    /// The idle delay after the user stops typing before a completion request
+    /// is sent, in milliseconds. Tuned to feel responsive without spamming the
+    /// server on every keystroke.
+    static let completionDebounceMillis: Int = 300
+
+    /// Requests completion items for the position at `offset` in the file at
+    /// `url`. Returns an empty list when LSP is disabled, the file has no
+    /// server, or the server reports no completions.
+    ///
+    /// The caller is responsible for debouncing (see
+    /// `completionDebounceMillis`) and for filtering/ranking the returned
+    /// items against the current word prefix.
+    func completion(url: URL, offset: Int, text: String) async -> LSPCompletionList {
+        guard enabled else { return LSPCompletionList(items: []) }
+        guard let serverConfig = LanguageServerRegistry.server(for: url) else {
+            return LSPCompletionList(items: [])
+        }
+        let language = serverConfig.language
+        guard await ensureServer(for: serverConfig) else { return LSPCompletionList(items: []) }
+        guard servers[language]?.state == .initialized else { return LSPCompletionList(items: []) }
+        let uri = url.absoluteString
+        let position = LSPPositionConverter.lspPosition(utf16Offset: offset, in: text)
+        return await servers[language]?.client.completion(uri: uri, position: position)
+            ?? LSPCompletionList(items: [])
+    }
+
     // MARK: - Diagnostics access
 
     /// Returns the current Pine diagnostics for a document URI.
