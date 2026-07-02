@@ -67,6 +67,26 @@ extension CodeEditorView {
         /// popup container.
         let completionController = CompletionController()
 
+        // MARK: - LSP UI Integration (Phase 5, milestone #1088, item 1)
+
+        /// Hover popover manager. Lazily created on first hover request.
+        private(set) var hoverPopoverManager: HoverPopoverManager?
+
+        /// Definition quick-pick controller for multiple-definition results.
+        /// Set from the parent view so the overlay and coordinator share the
+        /// same observable instance.
+        var definitionQuickPickController = DefinitionQuickPickController()
+
+        /// Rename popover manager.
+        private(set) var renamePopoverManager: RenamePopoverManager?
+
+        /// Monotonic generation token for cancelling stale hover requests.
+        /// Bumped before scheduling a new hover request.
+        private var hoverGeneration: Int = 0
+
+        /// The hover request task. Cancelled on every new hover or mouseExit.
+        private var hoverTask: Task<Void, Never>?
+
         /// The AppKit popup container, lazily added to the editor container
         /// view on first presentation. Reused across presentations.
         private(set) var completionPopup: CompletionPopupContainer?
@@ -810,6 +830,11 @@ extension CodeEditorView {
             PerformanceSignposts.trace("scroll.frame") {
                 reportStateChange()
                 highlightOnScrollIfNeeded()
+                // Dismiss the hover popover on scroll — the position is stale.
+                hideHoverPopover()
+                if let textView = scrollView?.documentView as? GutterTextView {
+                    textView.lspDismissHoverOnScroll()
+                }
             }
         }
 
@@ -1484,5 +1509,437 @@ extension CodeEditorView {
                 self.parent.onStateChange?(pending.cursor, pending.scroll)
             }
         }
+
+        // MARK: - LSP UI Integration (Phase 5, milestone #1088, item 1)
+
+        /// Wires the coordinator as the `lspMouseHandler` on the GutterTextView.
+        /// Called from `makeNSView` after the text view is created.
+        func installLSPMouseHandler() {
+            guard let textView = scrollView?.documentView as? GutterTextView else { return }
+            textView.lspMouseHandler = self
+        }
+
+        // MARK: - Hover
+
+        /// Hides the hover popover if visible.
+        func hideHoverPopover() {
+            hoverPopoverManager?.hide()
+        }
+
+        // MARK: - LSPMouseHandling conformance
+
+        func lspHover(at offset: Int) {
+            hoverGeneration += 1
+            let generation = hoverGeneration
+            hoverTask?.cancel()
+
+            guard let textView = scrollView?.documentView as? NSTextView,
+                  let layoutManager = textView.layoutManager,
+                  let textContainer = textView.textContainer,
+                  let url = parent.fileURL else { return }
+
+            // Compute the screen rect of the hovered character for popover
+            // positioning.
+            let charRange = NSRange(location: offset, length: 1)
+            let glyphRange = layoutManager.glyphRange(
+                forCharacterRange: charRange, actualCharacterRange: nil
+            )
+            let glyphRect = layoutManager.boundingRect(
+                forGlyphRange: glyphRange, in: textContainer
+            )
+            // Convert to the text view's superview coordinate space (screen).
+            let rectInView = textView.convert(glyphRect, to: nil)
+
+            let text = textView.string
+            let fileURL = url
+
+            hoverTask = Task { @MainActor [weak self] in
+                guard let self else { return }
+                let hover = await LSPUIEndpoint.shared.hover(
+                    url: fileURL, offset: offset, text: text
+                )
+                guard !Task.isCancelled else { return }
+                guard self.hoverGeneration == generation else { return }
+                guard let hover else { return }
+
+                // Show the popover.
+                self.ensureHoverPopover()
+                self.hoverPopoverManager?.show(
+                    content: hover.markup.value,
+                    isMarkdown: hover.markup.isMarkdown,
+                    anchorRect: rectInView,
+                    positioningView: textView
+                )
+            }
+        }
+
+        func lspHoverEnded() {
+            hoverTask?.cancel()
+            hoverTask = nil
+            hideHoverPopover()
+        }
+
+        // MARK: - Go-to-Definition
+
+        func lspGoToDefinition(at offset: Int) -> Bool {
+            guard let textView = scrollView?.documentView as? NSTextView,
+                  let url = parent.fileURL else { return false }
+
+            let text = textView.string
+            let fileURL = url
+            let currentURL = url
+
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                let response = await LSPUIEndpoint.shared.definition(
+                    url: fileURL, offset: offset, text: text
+                )
+                guard !Task.isCancelled else { return }
+                guard !response.isEmpty else { return }
+
+                switch response {
+                case .empty:
+                    return
+
+                case .locations(let locations):
+                    if locations.count == 1 {
+                        self.navigateToLocation(locations[0], currentURL: currentURL)
+                    } else {
+                        self.showDefinitionQuickPick(
+                            locations: locations, currentURL: currentURL
+                        )
+                    }
+
+                case .locationLinks(let links):
+                    if links.count == 1 {
+                        self.navigateToLocationLink(links[0], currentURL: currentURL)
+                    } else {
+                        self.showDefinitionQuickPick(
+                            links: links, currentURL: currentURL
+                        )
+                    }
+                }
+            }
+            return true
+        }
+
+        // MARK: - Code Actions
+
+        func lspRequestCodeActions(at offset: Int, menuLocation: NSPoint) {
+            guard let textView = scrollView?.documentView as? NSTextView,
+                  let url = parent.fileURL else { return }
+
+            let text = textView.string
+            let fileURL = url
+
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                let response = await LSPUIEndpoint.shared.codeAction(
+                    url: fileURL, offset: offset, text: text
+                )
+                guard !Task.isCancelled else { return }
+                guard !response.isEmpty else { return }
+
+                self.showCodeActionMenu(
+                    response: response,
+                    menuLocation: menuLocation,
+                    textView: textView
+                )
+            }
+        }
+
+        // MARK: - Rename
+
+        func lspRequestRename(at offset: Int) {
+            guard let textView = scrollView?.documentView as? NSTextView,
+                  let url = parent.fileURL else { return }
+
+            // Extract the current word at offset for prefill.
+            let source = textView.string as NSString
+            let wordRange = CompletionInsertion.wordRange(endingAt: offset, in: source)
+            let currentName: String
+            if wordRange.length > 0 {
+                currentName = source.substring(with: wordRange)
+            } else {
+                currentName = ""
+            }
+
+            // Compute the screen rect for popover positioning.
+            let charRange = NSRange(location: wordRange.location, length: max(wordRange.length, 1))
+            guard let layoutManager = textView.layoutManager,
+                  let textContainer = textView.textContainer else { return }
+            let glyphRange = layoutManager.glyphRange(
+                forCharacterRange: charRange, actualCharacterRange: nil
+            )
+            let glyphRect = layoutManager.boundingRect(
+                forGlyphRange: glyphRange, in: textContainer
+            )
+            let rectInView = textView.convert(glyphRect, to: nil)
+
+            // Capture the rename offset for the confirm callback.
+            let renameOffset = wordRange.location
+            let fileText = textView.string
+            let fileURL = url
+
+            ensureRenamePopover()
+
+            renamePopoverManager?.show(
+                currentName: currentName,
+                anchorRect: rectInView,
+                positioningView: textView,
+                onConfirm: { [weak self] newName in
+                    guard let self else { return }
+                    self.performRename(
+                        url: fileURL, offset: renameOffset,
+                        text: fileText, newName: newName
+                    )
+                },
+                onCancel: { }
+            )
+        }
+
+        // MARK: - LSP helper methods
+
+        private func ensureHoverPopover() {
+            if hoverPopoverManager == nil {
+                hoverPopoverManager = HoverPopoverManager()
+            }
+        }
+
+        private func ensureRenamePopover() {
+            if renamePopoverManager == nil {
+                renamePopoverManager = RenamePopoverManager()
+            }
+        }
+
+        // MARK: - Navigation
+
+        /// Navigates to a single LSP Location. If it's in the current file,
+        /// moves the cursor; if in another file, opens it and navigates.
+        private func navigateToLocation(_ location: LSPLocation, currentURL: URL) {
+            guard let targetURL = location.url else { return }
+            if targetURL == currentURL {
+                moveCursorToLocation(location)
+            } else {
+                LSPUIEndpoint.shared.openFileAtLine(
+                    url: targetURL,
+                    line: location.range.start.line,
+                    character: location.range.start.character
+                )
+            }
+        }
+
+        /// Navigates to a single LSP LocationLink.
+        private func navigateToLocationLink(_ link: LSPLocationLink, currentURL: URL) {
+            guard let targetURL = link.url else { return }
+            if targetURL == currentURL {
+                moveCursorToLSPRange(link.targetSelectionRange)
+            } else {
+                LSPUIEndpoint.shared.openFileAtLine(
+                    url: targetURL,
+                    line: link.targetSelectionRange.start.line,
+                    character: link.targetSelectionRange.start.character
+                )
+            }
+        }
+
+        /// Moves the cursor in the current text view to the start of an LSP
+        /// Location's range (0-based positions).
+        private func moveCursorToLocation(_ location: LSPLocation) {
+            moveCursorToLSPRange(location.range)
+        }
+
+        /// Moves the cursor in the current text view to the start of an LSP
+        /// Range (0-based positions).
+        private func moveCursorToLSPRange(_ range: LSPRange) {
+            guard let textView = scrollView?.documentView as? NSTextView else { return }
+            let text = textView.string
+            let offset = LSPPositionConverter.utf16Offset(
+                line: range.start.line,
+                character: range.start.character,
+                in: text
+            )
+            let clamped = min(max(0, offset), (text as NSString).length)
+            textView.setSelectedRange(NSRange(location: clamped, length: 0))
+            textView.scrollRangeToVisible(NSRange(location: clamped, length: 0))
+        }
+
+        // MARK: - Definition quick-pick
+
+        /// Shows the quick-pick for multiple locations.
+        private func showDefinitionQuickPick(
+            locations: [LSPLocation], currentURL: URL
+        ) {
+            let items = locations.compactMap { location -> DefinitionQuickPickItem? in
+                guard let url = location.url else { return nil }
+                let label = url.lastPathComponent
+                let detail = "\(location.range.start.line + 1):\(location.range.start.character + 1)"
+                return DefinitionQuickPickItem(
+                    label: label, detail: detail, url: url,
+                    line: location.range.start.line,
+                    character: location.range.start.character
+                )
+            }
+            definitionQuickPickController.onSelect = { [weak self] item in
+                guard let self else { return }
+                if item.url == currentURL {
+                    self.moveCursorToLSPRange(LSPRange(
+                        start: LSPPosition(line: item.line, character: item.character),
+                        end: LSPPosition(line: item.line, character: item.character)
+                    ))
+                } else {
+                    LSPUIEndpoint.shared.openFileAtLine(
+                        url: item.url, line: item.line, character: item.character
+                    )
+                }
+            }
+            definitionQuickPickController.present(items: items)
+        }
+
+        /// Shows the quick-pick for multiple location links.
+        private func showDefinitionQuickPick(
+            links: [LSPLocationLink], currentURL: URL
+        ) {
+            let items = links.compactMap { link -> DefinitionQuickPickItem? in
+                guard let url = link.url else { return nil }
+                let label = url.lastPathComponent
+                let detail = "\(link.targetSelectionRange.start.line + 1):\(link.targetSelectionRange.start.character + 1)"
+                return DefinitionQuickPickItem(
+                    label: label, detail: detail, url: url,
+                    line: link.targetSelectionRange.start.line,
+                    character: link.targetSelectionRange.start.character
+                )
+            }
+            definitionQuickPickController.onSelect = { [weak self] item in
+                guard let self else { return }
+                if item.url == currentURL {
+                    self.moveCursorToLSPRange(LSPRange(
+                        start: LSPPosition(line: item.line, character: item.character),
+                        end: LSPPosition(line: item.line, character: item.character)
+                    ))
+                } else {
+                    LSPUIEndpoint.shared.openFileAtLine(
+                        url: item.url, line: item.line, character: item.character
+                    )
+                }
+            }
+            definitionQuickPickController.present(items: items)
+        }
+
+        // MARK: - Code action menu
+
+        /// Builds and shows an NSMenu with the available code actions at the
+        /// given location.
+        private func showCodeActionMenu(
+            response: LSPCodeActionResponse,
+            menuLocation: NSPoint,
+            textView: NSTextView
+        ) {
+            let menu = NSMenu()
+            menu.autoenablesItems = false
+
+            // Add code actions.
+            for action in response.actions {
+                let item = NSMenuItem(
+                    title: action.title,
+                    action: #selector(handleCodeActionSelection(_:)),
+                    keyEquivalent: ""
+                )
+                item.target = self
+                item.representedObject = CodeActionPayload(action: action)
+                if let kind = action.kind {
+                    item.image = NSImage(
+                        systemSymbolName: kind.symbolName,
+                        accessibilityDescription: nil
+                    )
+                }
+                if !action.isExecutable {
+                    item.isEnabled = false
+                }
+                menu.addItem(item)
+            }
+
+            // Add bare commands.
+            for command in response.commands {
+                let item = NSMenuItem(
+                    title: command.title,
+                    action: #selector(handleCodeCommandSelection(_:)),
+                    keyEquivalent: ""
+                )
+                item.target = self
+                item.representedObject = command
+                menu.addItem(item)
+            }
+
+            // Add rename option.
+            menu.addItem(.separator())
+            let renameItem = NSMenuItem(
+                title: "Rename Symbol",
+                action: #selector(handleRenameFromMenu(_:)),
+                keyEquivalent: "r"
+            )
+            renameItem.target = self
+            renameItem.keyEquivalentModifierMask = [.command]
+            menu.addItem(renameItem)
+
+            guard !menu.items.isEmpty else { return }
+
+            menu.popUp(
+                positioning: nil,
+                at: menuLocation,
+                in: textView
+            )
+        }
+
+        /// Payload wrapping an LSPCodeAction for menu selection.
+        private final class CodeActionPayload {
+            let action: LSPCodeAction
+            init(action: LSPCodeAction) { self.action = action }
+        }
+
+        @objc private func handleCodeActionSelection(_ sender: NSMenuItem) {
+            guard let payload = sender.representedObject as? CodeActionPayload else { return }
+            let action = payload.action
+            // Apply the edit if present.
+            if let edit = action.edit {
+                _ = LSPUIEndpoint.shared.applyWorkspaceEdit(edit)
+            }
+            // TODO: Execute the command via workspace/executeCommand when
+            // the command is present but no edit. Deferred — the server
+            // command infrastructure is not yet wired for executeCommand.
+        }
+
+        @objc private func handleCodeCommandSelection(_ sender: NSMenuItem) {
+            // Commands without an edit — would need workspace/executeCommand.
+            // Deferred for now.
+        }
+
+        @objc private func handleRenameFromMenu(_ sender: NSMenuItem) {
+            guard let textView = scrollView?.documentView as? NSTextView else { return }
+            let offset = textView.selectedRange().location
+            lspRequestRename(at: offset)
+        }
+
+        // MARK: - Rename execution
+
+        /// Performs the rename request and applies the resulting WorkspaceEdit.
+        private func performRename(
+            url: URL, offset: Int, text: String, newName: String
+        ) {
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                let edit = await LSPUIEndpoint.shared.rename(
+                    url: url, offset: offset, text: text, newName: newName
+                )
+                guard !Task.isCancelled else { return }
+                guard !edit.isEmpty else { return }
+
+                _ = LSPUIEndpoint.shared.applyWorkspaceEdit(edit)
+            }
+        }
     }
 }
+
+// MARK: - LSPMouseHandling conformance
+
+extension CodeEditorView.Coordinator: LSPMouseHandling {}

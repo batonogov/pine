@@ -585,4 +585,60 @@ final class GutterTextView: NSTextView {
         }
         super.keyDown(with: event)
     }
+
+    // MARK: - LSP mouse tracking (Phase 5, milestone #1088)
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        installLSPTrackingArea()
+    }
+
+    override func mouseMoved(with event: NSEvent) {
+        super.mouseMoved(with: event)
+        let location = convert(event.locationInWindow, from: nil)
+        scheduleLSPHover(at: location)
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        super.mouseExited(with: event)
+        cancelLSPHover()
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        // ⌘+Click → go-to-definition
+        if event.modifierFlags.contains(.command) && event.type == .leftMouseDown {
+            let location = convert(event.locationInWindow, from: nil)
+            let offset = lspCharacterIndex(at: location)
+            if offset >= 0 {
+                let handled = lspMouseHandler?.lspGoToDefinition(at: offset) ?? false
+                if handled { return }
+            }
+        }
+
+        // Cmd+Shift+Click → rename at this position
+        if event.modifierFlags.contains(.command) && event.modifierFlags.contains(.shift)
+            && event.type == .leftMouseDown {
+            let location = convert(event.locationInWindow, from: nil)
+            let offset = lspCharacterIndex(at: location)
+            if offset >= 0 {
+                lspMouseHandler?.lspRequestRename(at: offset)
+                return
+            }
+        }
+
+        super.mouseDown(with: event)
+    }
+
+    override func rightMouseDown(with event: NSEvent) {
+        let location = convert(event.locationInWindow, from: nil)
+        let offset = lspCharacterIndex(at: location)
+
+        if offset >= 0 {
+            // Request code actions at this position before showing the menu.
+            lspMouseHandler?.lspRequestCodeActions(at: offset, menuLocation: location)
+        }
+
+        // Still call super so the default context menu (if any) also shows.
+        super.rightMouseDown(with: event)
+    }
 }

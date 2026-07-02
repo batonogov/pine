@@ -68,6 +68,10 @@ struct CodeEditorView: NSViewRepresentable {
     /// Indentation style detected for the current file, used for indent guide rendering.
     var indentStyle: IndentationStyle = .spaces(4)
 
+    /// Definition quick-pick controller, passed from PaneLeafView so the
+    /// overlay and the coordinator share the same observable instance.
+    var definitionQuickPickController: DefinitionQuickPickController?
+
     /// Порог (в символах) для переключения на viewport-based подсветку.
     /// Lowered from 100KB to 50KB to be more aggressive about lazy highlighting (#637).
     static let viewportHighlightThreshold = 50_000
@@ -311,6 +315,15 @@ struct CodeEditorView: NSViewRepresentable {
 
         // Calculate initial foldable ranges
         context.coordinator.recalculateFoldableRanges()
+
+        // Install the LSP mouse handler so hover/definition/code-action/rename
+        // mouse events route to the coordinator.
+        context.coordinator.installLSPMouseHandler()
+
+        // Wire the definition quick-pick controller from the parent view.
+        if let controller = definitionQuickPickController {
+            context.coordinator.definitionQuickPickController = controller
+        }
 
         return container
     }
