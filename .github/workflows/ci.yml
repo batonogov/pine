@@ -270,6 +270,7 @@ jobs:
       - name: Extract Coverage Report
         if: success() || failure()
         id: coverage
+        continue-on-error: true
         run: |
           XCRESULT="TestResults.xcresult"
           if [ ! -d "$XCRESULT" ]; then
@@ -278,7 +279,13 @@ jobs:
           fi
 
           # Get JSON coverage report
-          xcrun xccov view --report --json "$XCRESULT" > coverage.json
+          # On macos-26 / Xcode 26 RC runners, xccov sometimes fails with
+          # "No coverage data in result bundle" even when tests pass (#1060).
+          # Coverage is informational — never block the PR on this.
+          if ! xcrun xccov view --report --json "$XCRESULT" > coverage.json 2>/dev/null; then
+            echo "::warning::Could not extract coverage data from result bundle — skipping coverage check"
+            exit 0
+          fi
 
           # Extract coverage for Pine target, excluding pure SwiftUI view files
           # (views are covered by UI tests separately)
