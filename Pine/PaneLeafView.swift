@@ -265,7 +265,7 @@ struct PaneLeafView: View {
             lineDiffs: lineDiffs,
             diffVersion: diffVersion,
             diffHunks: diffHunks,
-            validationDiagnostics: configValidator.diagnostics,
+            validationDiagnostics: mergedDiagnostics(for: tab),
             isBlameVisible: isBlameVisible,
             blameLines: blameLines,
             foldState: Binding(
@@ -293,13 +293,27 @@ struct PaneLeafView: View {
         .onAppear {
             goToLineOffset = nil
             configValidator.validate(url: tab.url, content: tab.content)
+            projectManager.lspManager.didOpen(url: tab.url, text: tab.content)
         }
         .onDisappear {
             configValidator.clear()
+            projectManager.lspManager.didClose(url: tab.url)
         }
         .onChange(of: tab.content) { _, newValue in
             configValidator.validate(url: tab.url, content: newValue)
+            projectManager.lspManager.didChange(url: tab.url, text: newValue)
         }
+    }
+
+    // MARK: - Diagnostics merging
+
+    /// Merges config-validator diagnostics (yamllint, shellcheck, etc.) with
+    /// LSP diagnostics for the given file. LSP diagnostics are keyed by
+    /// document URI; config diagnostics are per-active-file in the validator.
+    private func mergedDiagnostics(for tab: EditorTab) -> [ValidationDiagnostic] {
+        var combined = configValidator.diagnostics
+        combined.append(contentsOf: projectManager.lspManager.diagnostics(for: tab.url))
+        return combined
     }
 
     // MARK: - Git diff & blame

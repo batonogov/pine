@@ -538,6 +538,12 @@ enum Strings {
         return String(format: format, locale: .current, line, column)
     }
 
+    // MARK: - LSP / Problems panel (#1010)
+
+    static var problemsNoIssues: String {
+        String(localized: "problems.noIssues", defaultValue: "No problems detected")
+    }
+
     // MARK: - Accessibility (#1003)
     //
     // VoiceOver labels / hints for custom controls. These are resolved into

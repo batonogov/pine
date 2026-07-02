@@ -38,6 +38,10 @@ final class ProjectManager {
     let quickOpenProvider = QuickOpenProvider()
     let progress = ProgressTracker()
     let contextFileWriter = ContextFileWriter()
+    /// Language Server Protocol manager — owns per-language server processes
+    /// and aggregates diagnostics (#1010, parent #994). Spawned lazily on the
+    /// first open of a matching file; shut down on project close / app quit.
+    let lspManager = LSPManager()
     @ObservationIgnored
     private(set) lazy var paneManager = PaneManager(existingTabManager: primaryTabManager)
 
@@ -330,6 +334,7 @@ final class ProjectManager {
         setupRecovery(projectURL: url)
         agentHistory.updateProjectRoot(url)
         Task { await contextFileWriter.setProjectRoot(url) }
+        lspManager.setWorkspaceRoot(url)
     }
 
     // MARK: - Agent activity file-system correlation (#1072)
@@ -486,5 +491,12 @@ final class ProjectManager {
         Task {
             await contextFileWriter.cleanup()
         }
+    }
+
+    /// Shuts down all language servers for this project. Called on window
+    /// close and app termination so no orphan language-server process
+    /// survives (acceptance criterion #1010). Safe to call multiple times.
+    func shutdownLanguageServers() {
+        lspManager.shutdownAll()
     }
 }

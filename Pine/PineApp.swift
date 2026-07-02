@@ -764,6 +764,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate {
             pm.agentHistory.flush()
             pm.saveSession()
             pm.cleanupEditorContext()
+            // Shut down language servers so no orphan process survives (#1010).
+            pm.shutdownLanguageServers()
             // Clean up recovery files if all tabs are saved
             if !pm.hasUnsavedChanges {
                 pm.recoveryManager?.deleteAllRecoveryFiles()
