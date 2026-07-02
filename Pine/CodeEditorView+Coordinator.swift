@@ -1340,10 +1340,12 @@ extension CodeEditorView {
             // Get the caret rect in text-view coordinates, convert to the
             // container's coordinate space.
             let caretRange = textView.selectedRange()
-            guard caretRange.location != NSNotFound else { return }
-            let glyphRange = textView.layoutManager.glyphRange(forCharacterRange: caretRange, actualCharacterRange: nil)
-            let caretRect = textView.layoutManager.boundingRect(forGlyphRange: glyphRange,
-                                                                in: textView.textContainer)
+            guard caretRange.location != NSNotFound,
+                  let layoutManager = textView.layoutManager,
+                  let textContainer = textView.textContainer else { return }
+            let glyphRange = layoutManager.glyphRange(forCharacterRange: caretRange, actualCharacterRange: nil)
+            let caretRect = layoutManager.boundingRect(forGlyphRange: glyphRange,
+                                                       in: textContainer)
             let rectInContainer = container.convert(caretRect, from: textView)
             popup.position(below: rectInContainer, in: container.bounds.width)
         }
