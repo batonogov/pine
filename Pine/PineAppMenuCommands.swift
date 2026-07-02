@@ -510,6 +510,34 @@ struct PineAppMenuCommands: Commands {
             .disabled(focusedProject?.activeTabManager.activeTab == nil)
         }
 
+        // MARK: - Tasks menu (issue #1009)
+        // User-defined external commands loaded from tasks.json. Dynamically
+        // populated from ExtensibilityManager; each item runs its task via
+        // UserTaskRunner and reports the outcome in a toast.
+        CommandMenu(Strings.menuTasks) {
+            let taskList = ExtensibilityManager.shared.tasks.tasks
+            if taskList.isEmpty {
+                Text(Strings.menuTasksEmpty)
+                    .foregroundStyle(.secondary)
+            }
+            ForEach(taskList) { task in
+                Button {
+                    guard let pm = focusedProject else { return }
+                    let activeTab = pm.activeTabManager.activeTab
+                    UserTaskRunner.shared.run(
+                        task: task,
+                        fileURL: activeTab?.url,
+                        projectRootURL: pm.workspace.rootURL,
+                        fileContent: activeTab?.content
+                    ) { outcome in
+                        Self.presentTaskOutcome(outcome, task: task, projectManager: pm)
+                    }
+                } label: {
+                    Label(task.label, systemImage: MenuIcons.tasks)
+                }
+            }
+        }
+
         // Cmd+W is intercepted by AppDelegate's local event monitor
         // to close the active tab. The close button goes through
         // windowShouldClose which closes the entire window.

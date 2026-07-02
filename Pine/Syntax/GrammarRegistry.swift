@@ -141,6 +141,52 @@ nonisolated final class GrammarRegistry: @unchecked Sendable {
         return loadedGrammars
     }
 
+    /// Loads JSON grammar files from a user-supplied directory
+    /// (`~/Library/Application Support/Pine/Grammars/` by default), merged
+    /// with the bundled grammars. User grammars override bundled ones for
+    /// overlapping extensions / file names (issue #1009).
+    ///
+    /// Malformed or undecodable files are skipped with a log line — a single
+    /// bad user file never blocks the rest. Returns the successfully loaded
+    /// grammars so callers can compile their rules without re-reading disk.
+    @discardableResult
+    func loadGrammarsFromDirectory(_ directoryURL: URL) -> [Grammar] {
+        let files: [URL]
+        do {
+            files = try FileManager.default.contentsOfDirectory(
+                at: directoryURL,
+                includingPropertiesForKeys: nil
+            ).filter { $0.pathExtension.lowercased() == "json" }
+        } catch {
+            // Directory missing or unreadable — not an error, just no user grammars.
+            Logger.syntax.info("No user grammars at \(directoryURL.path)")
+            return []
+        }
+
+        guard !files.isEmpty else { return [] }
+
+        let decoder = JSONDecoder()
+        var loadedGrammars: [Grammar] = []
+
+        for url in files.sorted() { // deterministic order for stable override priority
+            do {
+                let data = try Data(contentsOf: url)
+                let grammar = try decoder.decode(Grammar.self, from: data)
+                registerGrammar(grammar)
+                loadedGrammars.append(grammar)
+            } catch {
+                Logger.syntax.error(
+                    "Failed to load user grammar \(url.lastPathComponent): \(error)"
+                )
+            }
+        }
+
+        if !loadedGrammars.isEmpty {
+            Logger.syntax.info("Loaded \(loadedGrammars.count) user grammars from \(directoryURL.path)")
+        }
+        return loadedGrammars
+    }
+
     // MARK: - Registration
 
     /// Registers a grammar and indexes it by extensions, file names, and patterns.
