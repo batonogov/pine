@@ -286,6 +286,7 @@ struct PaneLeafView: View {
             syntaxHighlightingDisabled: tab.syntaxHighlightingDisabled,
             initialCursorPosition: goToLineOffset?.offset ?? tab.cursorPosition,
             initialScrollOffset: goToLineOffset != nil ? 0 : tab.scrollOffset,
+            definitionQuickPickController: definitionQuickPickController,
             onStateChange: { cursor, scroll in
                 tabManager.updateEditorState(cursorPosition: cursor, scrollOffset: scroll)
             },
@@ -295,8 +296,7 @@ struct PaneLeafView: View {
             cachedHighlightResult: tab.cachedHighlightResult,
             goToOffset: goToLineOffset,
             indentStyle: tab.cachedIndentation,
-            fontSize: FontSizeSettings.shared.fontSize,
-            definitionQuickPickController: definitionQuickPickController
+            fontSize: FontSizeSettings.shared.fontSize
         )
         .id(tab.id)
         .accessibilityIdentifier(AccessibilityID.codeEditor)
