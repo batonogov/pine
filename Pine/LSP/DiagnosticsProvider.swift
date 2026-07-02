@@ -15,7 +15,7 @@ import Foundation
 // MARK: - LSP position / range
 
 /// An LSP `Position` (0-based line and character).
-struct LSPPosition: Equatable, Sendable {
+nonisolated struct LSPPosition: Equatable, Sendable {
     let line: Int
     let character: Int
 
@@ -35,7 +35,7 @@ struct LSPPosition: Equatable, Sendable {
 }
 
 /// An LSP `Range` (start and end positions, 0-based).
-struct LSPRange: Equatable, Sendable {
+nonisolated struct LSPRange: Equatable, Sendable {
     let start: LSPPosition
     let end: LSPPosition
 
@@ -56,7 +56,7 @@ struct LSPRange: Equatable, Sendable {
 // MARK: - LSP severity
 
 /// The LSP `DiagnosticSeverity` enum (1-based per spec).
-enum LSPDiagnosticSeverity: Int, Sendable, Equatable {
+nonisolated enum LSPDiagnosticSeverity: Int, Sendable, Equatable {
     case error = 1
     case warning = 2
     case information = 3
@@ -83,7 +83,7 @@ enum LSPDiagnosticSeverity: Int, Sendable, Equatable {
 // MARK: - LSP Diagnostic
 
 /// A single LSP `Diagnostic`.
-struct LSPDiagnostic: Equatable, Sendable {
+nonisolated struct LSPDiagnostic: Equatable, Sendable {
     let range: LSPRange
     let severity: LSPDiagnosticSeverity?
     let code: String?
@@ -114,7 +114,7 @@ struct LSPDiagnostic: Equatable, Sendable {
 // MARK: - publishDiagnostics notification
 
 /// The `textDocument/publishDiagnostics` notification payload.
-struct LSPDiagnosticsNotification: Equatable, Sendable {
+nonisolated struct LSPDiagnosticsNotification: Equatable, Sendable {
     let uri: String
     let diagnostics: [LSPDiagnostic]
 

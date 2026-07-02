@@ -495,7 +495,7 @@ final class LSPClient {
 }
 
 /// Error wrapping a JSON-RPC error object.
-struct LSPError: Error {
+nonisolated struct LSPError: Error {
     let error: [String: Any]
 }
 
@@ -536,7 +536,7 @@ extension LSPClient: LSPTransportDelegate {
 // MARK: - LSP value types
 
 /// A `textDocument/didOpen` payload.
-struct LSPTextDocumentItem {
+nonisolated struct LSPTextDocumentItem {
     var uri: String
     var languageId: String
     var version: Int
