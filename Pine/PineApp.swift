@@ -635,11 +635,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate {
         // shortcuts and physical-key monitors take precedence.
         NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
             let registry = ExtensibilityManager.shared.keybindings
-            guard registry.count > 0,
+            guard !registry.isEmpty,
                   let command = registry.command(for: event) else {
                 return event
             }
-            NotificationCenter.default.post(name: command.notificationName, object: nil)
+            NotificationCenter.default.post(name: Notification.Name(command.notificationKey), object: nil)
             return nil // consume event
         }
 

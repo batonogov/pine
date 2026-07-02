@@ -56,44 +56,29 @@ nonisolated enum UserCommand: String, Sendable, CaseIterable {
     case toggleTerminal
     case newTerminalTab
 
-    /// The `Notification.Name` posted when this command fires.
-    var notificationName: Notification.Name {
+    /// The string key for the `Notification.Name` posted when this command fires.
+    /// Use `Notification.Name(rawValue:)` on the MainActor side to convert.
+    var notificationKey: String {
         switch self {
-        case .toggleComment: .toggleComment
-        case .findInFile: .findInFile
-        case .findAndReplace: .findAndReplace
-        case .findNext: .findNext
-        case .findPrevious: .findPrevious
-        case .findInProject: .showProjectSearch
-        case .goToLine: .goToLine
-        case .symbolNavigator: .showSymbolNavigator
-        case .quickOpen: .showQuickOpen
-        case .openFolder: .openFolder
-        case .showBranchSwitcher: .showBranchSwitcher
-        case .toggleWordWrap: .toggleWordWrap
-        case .toggleMinimap:
-            // Minimap has no dedicated notification; it's a UserDefaults toggle.
-            // Use a dedicated name so the monitor can flip the setting directly.
-            Self.toggleMinimapNotification
-        case .toggleBlame:
-            Self.toggleBlameNotification
-        case .togglePreview:
-            Self.togglePreviewNotification
-        case .toggleTerminal:
-            Self.toggleTerminalNotification
-        case .newTerminalTab:
-            Self.newTerminalTabNotification
+        case .toggleComment: "toggleComment"
+        case .findInFile: "findInFile"
+        case .findAndReplace: "findAndReplace"
+        case .findNext: "findNext"
+        case .findPrevious: "findPrevious"
+        case .findInProject: "showProjectSearch"
+        case .goToLine: "goToLine"
+        case .symbolNavigator: "showSymbolNavigator"
+        case .quickOpen: "showQuickOpen"
+        case .openFolder: "openFolder"
+        case .showBranchSwitcher: "showBranchSwitcher"
+        case .toggleWordWrap: "toggleWordWrap"
+        case .toggleMinimap: "user.toggleMinimap"
+        case .toggleBlame: "user.toggleBlame"
+        case .togglePreview: "user.togglePreview"
+        case .toggleTerminal: "user.toggleTerminal"
+        case .newTerminalTab: "user.newTerminalTab"
         }
     }
-
-    // Dedicated notification names for commands that previously had no
-    // NotificationCenter-based entry point. They are observed in
-    // ContentView / AppDelegate.
-    static let toggleMinimapNotification = Notification.Name("user.toggleMinimap")
-    static let toggleBlameNotification = Notification.Name("user.toggleBlame")
-    static let togglePreviewNotification = Notification.Name("user.togglePreview")
-    static let toggleTerminalNotification = Notification.Name("user.toggleTerminal")
-    static let newTerminalTabNotification = Notification.Name("user.newTerminalTab")
 
     static func from(_ raw: String) -> UserCommand? {
         UserCommand(rawValue: raw)
@@ -114,6 +99,7 @@ nonisolated final class UserKeybindingRegistry: @unchecked Sendable {
     private(set) var entries: [(command: UserCommand, chord: ParsedKeyChord)] = []
 
     var count: Int { entries.count }
+    var isEmpty: Bool { entries.isEmpty }
 
     @discardableResult
     func load(from url: URL) -> [(command: UserCommand, chord: ParsedKeyChord)] {
