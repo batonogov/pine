@@ -15,7 +15,7 @@ import AppKit
 ///
 /// Physical key codes identify a key by its position on the keyboard, not by the
 /// glyph it produces, so they are stable across every layout.
-enum KeyboardShortcutMatcher {
+nonisolated enum KeyboardShortcutMatcher {
     /// Physical key codes (Carbon HID / `kVK_ANSI_*` constants).
     ///
     /// These are not contiguous — digit row codes jump around — so they are listed

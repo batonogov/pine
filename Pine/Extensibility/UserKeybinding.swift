@@ -37,7 +37,7 @@ nonisolated struct UserKeybindingsDocument: Codable, Sendable, Equatable {
 /// user keybinding simply posts the matching notification when its chord is
 /// pressed. This keeps the keybinding surface fully decoupled from the rest
 /// of the app — no protocol surface to maintain.
-enum UserCommand: String, Sendable, CaseIterable {
+nonisolated enum UserCommand: String, Sendable, CaseIterable {
     case toggleComment
     case findInFile
     case findAndReplace
