@@ -149,7 +149,7 @@ nonisolated enum DiagnosticMapper {
 
     /// Converts a single LSP diagnostic into a Pine validation diagnostic.
     /// The `source` falls back to `"lsp"` when the server omits it.
-    @MainActor static func map(_ lsp: LSPDiagnostic, fallbackSource: String = "lsp") -> ValidationDiagnostic {
+    static func map(_ lsp: LSPDiagnostic, fallbackSource: String = "lsp") -> ValidationDiagnostic {
         // LSP line is 0-based; Pine lines are 1-based.
         let pineLine = lsp.range.start.line + 1
         // LSP character is 0-based; Pine columns are 1-based. Clamp negatives defensively.
