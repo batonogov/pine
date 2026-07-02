@@ -60,6 +60,32 @@ extension CodeEditorView {
         /// NSTextStorageDelegate. Used for incremental lineStartsCache update.
         var pendingChangeInLength: Int = 0
 
+        // MARK: - Completion (Phase 3, #1012)
+
+        /// State object driving the completion popup. Owned by the coordinator
+        /// so it survives SwiftUI re-renders and is shared with the AppKit
+        /// popup container.
+        let completionController = CompletionController()
+
+        /// The AppKit popup container, lazily added to the editor container
+        /// view on first presentation. Reused across presentations.
+        private(set) var completionPopup: CompletionPopupContainer?
+
+        /// Debounced completion request task. Cancelled on every new keystroke
+        /// and when the popup is dismissed, so only the latest idle pause fires
+        /// a request (generation-token pattern, matching highlight scheduling).
+        private var completionTask: Task<Void, Never>?
+
+        /// Monotonic generation token for cancelling stale completion
+        /// requests. Bumped before scheduling a new request and checked after
+        /// the async gap so a late server reply cannot show a stale popup.
+        private var completionGeneration: Int = 0
+
+        /// Whether the last character inserted was a completion trigger
+        /// character for the current language. When `true`, the completion
+        /// request fires immediately (no debounce) to feel responsive.
+        private var lastInsertWasTrigger: Bool = false
+
         /// Last consumed navigation request ID — prevents re-processing.
         var lastGoToID: UUID?
 
@@ -1200,6 +1226,239 @@ extension CodeEditorView {
             }
 
             return false
+        }
+
+        // MARK: - Completion (Phase 3, #1012)
+
+        /// Called from `textDidChange` after the user types. Schedules a
+        /// debounced completion request when the edited character is an
+        /// identifier character or a trigger character, and refines the
+        /// existing popup live as the user keeps typing.
+        ///
+        /// - Parameter editedRange: The NSTextStorage edited range captured
+        ///   before processEditing reset it (may be nil on the first change).
+        func scheduleCompletionIfNeeded(editedRange: NSRange?) {
+            // Only auto-trigger on user edits, not programmatic changes.
+            guard !isProgrammaticTextChange else { return }
+            guard let textView = scrollView?.documentView as? NSTextView else { return }
+
+            // Don't trigger completion when the editor isn't editable.
+            guard textView.isEditable else { return }
+
+            let cursor = textView.selectedRange().location
+            let source = textView.string as NSString
+
+            // If the popup is already visible, refine it live against the new
+            // word prefix rather than issuing a fresh server request. This
+            // keeps the UI responsive as the user narrows the selection.
+            if completionController.isVisible {
+                let prefix = CompletionTrigger.wordPrefix(at: cursor, in: source)
+                if prefix.isEmpty {
+                    // The user deleted the word or moved past it — dismiss.
+                    completionController.dismiss()
+                    cancelCompletionRequest()
+                } else {
+                    completionController.refine(prefix: prefix)
+                }
+                return
+            }
+
+            // Determine the character just typed (if any) to decide whether to
+            // trigger immediately (trigger char) or debounce (identifier char).
+            let triggerInfo = CompletionTrigger.evaluate(
+                editedRange: editedRange,
+                cursor: cursor,
+                source: source
+            )
+
+            guard triggerInfo.shouldTrigger else {
+                cancelCompletionRequest()
+                return
+            }
+
+            // Schedule a (possibly immediate) request. Use the generation
+            // token so stale replies from a previous idle pause are dropped.
+            let debounceMillis = triggerInfo.fireImmediately
+                ? 0
+                : LSPManager.completionDebounceMillis
+
+            let generation = incrementCompletionGeneration()
+            let prefix = triggerInfo.prefix
+            let fileURL = parent.fileURL
+            let text = textView.string
+
+            completionTask?.cancel()
+            completionTask = Task { @MainActor [weak self] in
+                guard let self else { return }
+                if debounceMillis > 0 {
+                    try? await Task.sleep(for: .milliseconds(debounceMillis))
+                    if Task.isCancelled { return }
+                }
+                guard self.completionGeneration == generation else { return }
+                await self.requestCompletion(fileURL: fileURL, offset: cursor, text: text, prefix: prefix)
+            }
+        }
+
+        /// Fires the actual `textDocument/completion` request and presents the
+        /// popup with the results. Runs on the main actor; the await suspends
+        /// without blocking the UI.
+        private func requestCompletion(
+            fileURL: URL?, offset: Int, text: String, prefix: String
+        ) async {
+            guard let url = fileURL else { return }
+            let list = await CompletionEndpoint.shared.completion(
+                url: url, offset: offset, text: text
+            )
+            // Drop stale replies: the user may have kept typing or dismissed.
+            guard !Task.isCancelled else { return }
+            guard completionController.isVisible || !list.isEmpty else { return }
+
+            // Configure the accept callback the first time we present.
+            ensureCompletionCallbacks()
+
+            completionController.present(items: list.items, prefix: prefix)
+
+            if completionController.isVisible {
+                positionCompletionPopup()
+            }
+        }
+
+        /// Positions the popup container just below the caret.
+        private func positionCompletionPopup() {
+            guard let container = scrollView?.superview,
+                  let textView = scrollView?.documentView as? NSTextView,
+                  completionController.isVisible else { return }
+
+            // Lazily create + attach the popup container.
+            if completionPopup == nil {
+                let popup = CompletionPopupContainer(controller: completionController)
+                container.addSubview(popup)
+                completionPopup = popup
+            }
+            guard let popup = completionPopup else { return }
+
+            // Get the caret rect in text-view coordinates, convert to the
+            // container's coordinate space.
+            let caretRange = textView.selectedRange()
+            let caretRect = textView.boundingRect(forGlyphRange: caretRange,
+                                                  in: textView.textContainer)
+            let rectInContainer = container.convert(caretRect, from: textView)
+            popup.position(below: rectInContainer, in: container.bounds.width)
+        }
+
+        /// Wires the controller's accept/dismiss callbacks to the editor.
+        /// Idempotent — safe to call before every present.
+        private func ensureCompletionCallbacks() {
+            completionController.onAccept = { [weak self] item in
+                self?.acceptCompletion(item)
+            }
+            completionController.onDismiss = { [weak self] in
+                self?.hideCompletionPopup()
+            }
+        }
+
+        /// Accepts `item`: replaces the current word with the item's insert
+        /// text, expanding LSP snippets into plain text + tab stops.
+        private func acceptCompletion(_ item: LSPCompletionItem) {
+            guard let textView = scrollView?.documentView as? NSTextView else {
+                hideCompletionPopup()
+                return
+            }
+            let source = textView.string as NSString
+            let cursor = textView.selectedRange().location
+
+            // Compute the word range to replace. Scan backwards from the cursor
+            // over identifier characters (letters, digits, underscore) so the
+            // server's insertText fully replaces the partially-typed token.
+            let wordRange = CompletionInsertion.wordRange(
+                endingAt: cursor, in: source
+            )
+
+            // Expand the insert text (snippet or plain).
+            let expansion: CompletionInsertion
+            switch item.insertTextFormat {
+            case .snippet:
+                let snippet = LSPSnippet(item.insertText)
+                expansion = CompletionInsertion.fromSnippet(snippet)
+            case .plain:
+                expansion = CompletionInsertion(text: item.insertText, tabStops: [])
+            }
+
+            // Replace the word with the expanded text as a single undo step.
+            if textView.shouldChangeText(in: wordRange, replacementString: expansion.text) {
+                textView.undoManager?.beginUndoGrouping()
+                textView.replaceCharacters(in: wordRange, with: expansion.text)
+                // Position the cursor at the first tab stop (or end of text).
+                let newCursor = wordRange.location + expansion.finalCursorOffset
+                textView.setSelectedRange(NSRange(location: newCursor, length: 0))
+                textView.undoManager?.endUndoGrouping()
+                textView.didChangeText()
+            }
+
+            hideCompletionPopup()
+        }
+
+        /// Cancels any pending debounced completion request.
+        private func cancelCompletionRequest() {
+            completionTask?.cancel()
+            completionTask = nil
+        }
+
+        /// Bumps the generation token and returns the new value.
+        @discardableResult
+        private func incrementCompletionGeneration() -> Int {
+            completionGeneration += 1
+            return completionGeneration
+        }
+
+        /// Hides the popup and cancels pending requests. Does NOT invoke
+        /// `onDismiss` (this is the dismissal path itself).
+        func hideCompletionPopup() {
+            cancelCompletionRequest()
+            completionPopup?.isHidden = true
+            // Force the controller to its hidden state without re-entering
+            // `onDismiss` (which calls this method).
+            completionController.isVisible = false
+            completionController.items = []
+            completionController.serverItems = []
+            completionController.prefix = ""
+            completionController.selectedIndex = 0
+        }
+
+        /// Handles Escape for the completion popup. Returns `true` if the
+        /// popup consumed the key (so the caller should NOT forward it to the
+        /// text view's collapse-inline-diff handler).
+        func handleCompletionEscape() -> Bool {
+            guard completionController.isVisible else { return false }
+            hideCompletionPopup()
+            return true
+        }
+
+        /// Routes Up/Down/Enter/Tab to the popup when it is visible. Returns
+        /// `true` when the popup consumed the event.
+        ///
+        /// - Parameters:
+        ///   - selector: The `doCommandBy:` selector the text view is about to
+        ///     invoke.
+        func interceptCommandForCompletion(_ selector: Selector) -> Bool {
+            guard completionController.isVisible else { return false }
+            switch selector {
+            case #selector(NSResponder.moveUp(_:)):
+                completionController.move(by: -1)
+                return true
+            case #selector(NSResponder.moveDown(_:)):
+                completionController.move(by: 1)
+                return true
+            case #selector(NSResponder.insertNewline(_:)),
+                 #selector(NSResponder.insertTab(_:)):
+                completionController.acceptSelected()
+                return true
+            case #selector(NSResponder.cancelOperation(_:)):
+                hideCompletionPopup()
+                return true
+            default:
+                return false
+            }
         }
 
         private func reportStateChange() {

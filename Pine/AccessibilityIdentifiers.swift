@@ -124,6 +124,11 @@ nonisolated enum AccessibilityID {
     static let problemsEmptyState = "problemsEmptyState"
     static let agentStatusBarMenu = "agentStatusBarMenu"
 
+    // MARK: - LSP completion popup (#1012)
+    static let completionPopup = "completionPopup"
+    static let completionPopupList = "completionPopupList"
+    static func completionItem(_ label: String) -> String { "completionItem_\(label)" }
+
     // MARK: - Agent Activity Panel (#1072)
     static let agentActivityPanel = "agentActivityPanel"
     static let agentActivityRow = "agentActivityRow"

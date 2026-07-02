@@ -488,6 +488,27 @@ final class LSPClient {
         }
     }
 
+    // MARK: - Phase 3 requests (completion)
+
+    /// Sends `textDocument/completion` and returns the decoded list, or an
+    /// empty list when the server reports no completions for this position.
+    ///
+    /// Handles both the `CompletionList` object and the `CompletionItem[]`
+    /// array shapes the spec permits.
+    func completion(uri: String, position: LSPPosition) async -> LSPCompletionList {
+        guard state == .initialized else { return LSPCompletionList(items: []) }
+        do {
+            let result = try await sendRequest("textDocument/completion", params: [
+                "textDocument": ["uri": uri],
+                "position": ["line": position.line, "character": position.character]
+            ])
+            return LSPCompletionList(result: result)
+        } catch {
+            Logger.lsp.error("LSP completion failed: \(String(describing: error), privacy: .public)")
+            return LSPCompletionList(items: [])
+        }
+    }
+
     // MARK: - JSON-RPC plumbing
 
     /// Sends a JSON-RPC request and awaits the server's response.
