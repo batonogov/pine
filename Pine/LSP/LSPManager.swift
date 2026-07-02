@@ -283,7 +283,8 @@ final class LSPManager {
                 let original = tabManager.tabs[tabIndex].content
                 let result = WorkspaceEditApplier.applyEdits(operated.edits, to: original)
                 guard result.success, let newText = result.newText else {
-                    Logger.lsp.error("WorkspaceEdit apply failed for \(fileURL.lastPathComponent, privacy: .public): \(result.errorMessage ?? "unknown", privacy: .public)")
+                    let msg = result.errorMessage ?? "unknown"
+                    Logger.lsp.error("WorkspaceEdit apply failed for \(fileURL.lastPathComponent, privacy: .public): \(msg, privacy: .public)")
                     return false
                 }
                 pendingChanges.append((tabIndex: tabIndex, newText: newText, fileURL: fileURL))
@@ -295,7 +296,8 @@ final class LSPManager {
                 }
                 let result = WorkspaceEditApplier.applyEdits(operated.edits, to: original)
                 guard result.success, let newText = result.newText else {
-                    Logger.lsp.error("WorkspaceEdit apply failed for \(fileURL.lastPathComponent, privacy: .public): \(result.errorMessage ?? "unknown", privacy: .public)")
+                    let msg = result.errorMessage ?? "unknown"
+                    Logger.lsp.error("WorkspaceEdit apply failed for \(fileURL.lastPathComponent, privacy: .public): \(msg, privacy: .public)")
                     return false
                 }
                 diskWrites.append((url: fileURL, newText: newText))
@@ -304,8 +306,8 @@ final class LSPManager {
 
         // Phase 2: commit all changes.
         for change in pendingChanges {
-            // Use the tab's direct content update — the edit is already computed.
-            tabManager.applyExternalEdit(at: change.tabIndex, newText: change.newText)
+            // Update the tab content directly — the edit is already computed.
+            tabManager.tabs[change.tabIndex].content = change.newText
             // Notify the LSP server of the change.
             didChange(url: change.fileURL, text: change.newText)
         }
@@ -314,7 +316,8 @@ final class LSPManager {
             do {
                 try write.newText.write(to: write.url, atomically: true, encoding: .utf8)
             } catch {
-                Logger.lsp.error("WorkspaceEdit: cannot write file \(write.url.lastPathComponent, privacy: .public): \(String(describing: error), privacy: .public)")
+                let errDesc = String(describing: error)
+                Logger.lsp.error("WorkspaceEdit: cannot write \(write.url.lastPathComponent, privacy: .public): \(errDesc, privacy: .public)")
                 return false
             }
         }

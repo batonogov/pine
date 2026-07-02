@@ -309,7 +309,7 @@ nonisolated enum WorkspaceEditApplier {
         }
 
         let ns = text as NSString
-        var mutable = text as NSMutableString
+        var mutable = NSMutableString(string: text)
 
         for edit in sorted {
             let startOffset = LSPPositionConverter.utf16Offset(
@@ -326,8 +326,9 @@ nonisolated enum WorkspaceEditApplier {
             // Validate bounds.
             guard startOffset >= 0, startOffset <= ns.length,
                   endOffset >= startOffset, endOffset <= ns.length else {
+                let desc = "line \(edit.range.start.line):\(edit.range.start.character) – \(edit.range.end.line):\(edit.range.end.character)"
                 return WorkspaceEditApplyResult(
-                    error: "Edit range out of bounds: line \(edit.range.start.line):\(edit.range.start.character) – \(edit.range.end.line):\(edit.range.end.character)"
+                    error: "Edit range out of bounds: \(desc)"
                 )
             }
 

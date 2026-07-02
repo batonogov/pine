@@ -71,7 +71,7 @@ nonisolated enum LSPCodeActionKind: String, Sendable, Equatable {
 /// `CodeAction` with a `command` but no `edit`). Pine presents the title in
 /// the menu and, on selection, sends `workspace/executeCommand` if the
 /// command has no pre-attached `edit`.
-nonisolated struct LSPCommand: Equatable, Sendable, Identifiable {
+nonisolated struct LSPCommand: @unchecked Sendable, Identifiable {
     /// Stable identifier for menu identity (derived from `command` + `title`).
     let id: String
     /// Human-readable title shown in the menu.
@@ -79,7 +79,8 @@ nonisolated struct LSPCommand: Equatable, Sendable, Identifiable {
     /// The command identifier (server-defined).
     let command: String
     /// Optional arguments passed to `workspace/executeCommand`.
-    let arguments: [Any]?
+    /// Stored as raw JSON string to satisfy Sendable.
+    let arguments: String?
 
     /// Initialises from the raw JSON dictionary of a `Command`.
     /// Returns `nil` when `title` or `command` is missing.
@@ -89,12 +90,17 @@ nonisolated struct LSPCommand: Equatable, Sendable, Identifiable {
         guard let command = dict["command"] as? String, !command.isEmpty else { return nil }
         self.title = title
         self.command = command
-        self.arguments = dict["arguments"] as? [Any]
+        if let args = dict["arguments"] {
+            self.arguments = (try? JSONSerialization.data(withJSONObject: args))
+                .flatMap { String(data: $0, encoding: .utf8) }
+        } else {
+            self.arguments = nil
+        }
         self.id = "\(command)\u{0}\(title)"
     }
 
     /// Test/fixture convenience constructor.
-    init(title: String, command: String, arguments: [Any]? = nil) {
+    init(title: String, command: String, arguments: String? = nil) {
         self.title = title
         self.command = command
         self.arguments = arguments
