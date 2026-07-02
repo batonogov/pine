@@ -344,7 +344,7 @@ struct PaneLeafView: View {
                 workspaceURL: workspace.rootURL
             )
         }
-        LSPUIEndpoint.shared.openFileAtLineHandler = { [weak tabManager] url, line, character in
+        LSPUIEndpoint.shared.openFileAtLineHandler = { [weak tabManager] url, line, _ in
             tabManager?.openTab(url: url)
             // Navigate to the position after a short delay so the tab content
             // is loaded. Uses the pendingGoToLine mechanism (1-based line).

@@ -25,6 +25,17 @@ import AppKit
 /// path; it holds no state.
 nonisolated enum HoverMarkdownRenderer {
 
+    /// Font/color configuration for rendering hover content.
+    private struct Style {
+        let font: NSFont
+        let boldFont: NSFont
+        let codeFont: NSFont
+        let headingFont: NSFont
+        let textColor: NSColor
+        let secondaryTextColor: NSColor
+        let codeBackgroundColor: NSColor
+    }
+
     /// Renders `content` into an attributed string for the hover popover.
     ///
     /// - Parameters:
@@ -32,31 +43,24 @@ nonisolated enum HoverMarkdownRenderer {
     ///   - isMarkdown: Whether the content is Markdown (parsed) or plain
     ///     text (shown verbatim in monospaced font).
     static func render(_ content: String, isMarkdown: Bool) -> NSAttributedString {
-        let font = NSFont.systemFont(ofSize: 12)
-        let boldFont = NSFont.boldSystemFont(ofSize: 12)
-        let codeFont = NSFont.monospacedSystemFont(ofSize: 11, weight: .regular)
-        let headingFont = NSFont.boldSystemFont(ofSize: 13)
-        let textColor = NSColor.labelColor
-        let secondaryTextColor = NSColor.secondaryLabelColor
-        let codeBackgroundColor = NSColor.textBackgroundColor
+        let style = Style(
+            font: NSFont.systemFont(ofSize: 12),
+            boldFont: NSFont.boldSystemFont(ofSize: 12),
+            codeFont: NSFont.monospacedSystemFont(ofSize: 11, weight: .regular),
+            headingFont: NSFont.boldSystemFont(ofSize: 13),
+            textColor: NSColor.labelColor,
+            secondaryTextColor: NSColor.secondaryLabelColor,
+            codeBackgroundColor: NSColor.textBackgroundColor
+        )
 
         if isMarkdown {
-            return parseMarkdown(
-                content,
-                font: font,
-                boldFont: boldFont,
-                codeFont: codeFont,
-                headingFont: headingFont,
-                textColor: textColor,
-                secondaryTextColor: secondaryTextColor,
-                codeBackgroundColor: codeBackgroundColor
-            )
+            return parseMarkdown(content, style: style)
         } else {
             // Plain text — show verbatim in monospaced font.
             let attr = NSMutableAttributedString(string: content)
             let fullRange = NSRange(location: 0, length: attr.length)
-            attr.addAttribute(.font, value: codeFont, range: fullRange)
-            attr.addAttribute(.foregroundColor, value: textColor, range: fullRange)
+            attr.addAttribute(.font, value: style.codeFont, range: fullRange)
+            attr.addAttribute(.foregroundColor, value: style.textColor, range: fullRange)
             return attr
         }
     }
@@ -74,13 +78,7 @@ nonisolated enum HoverMarkdownRenderer {
     ///   - Separator lines: ---
     private static func parseMarkdown(
         _ markdown: String,
-        font: NSFont,
-        boldFont: NSFont,
-        codeFont: NSFont,
-        headingFont: NSFont,
-        textColor: NSColor,
-        secondaryTextColor: NSColor,
-        codeBackgroundColor: NSColor
+        style: Style
     ) -> NSAttributedString {
         let result = NSMutableAttributedString()
         let lines = markdown.components(separatedBy: "\n")
@@ -106,9 +104,9 @@ nonisolated enum HoverMarkdownRenderer {
                     let code = codeLines.joined(separator: "\n") + "\n"
                     let attr = NSMutableAttributedString(string: code)
                     let fullRange = NSRange(location: 0, length: attr.length)
-                    attr.addAttribute(.font, value: codeFont, range: fullRange)
-                    attr.addAttribute(.foregroundColor, value: textColor, range: fullRange)
-                    attr.addAttribute(.backgroundColor, value: codeBackgroundColor, range: fullRange)
+                    attr.addAttribute(.font, value: style.codeFont, range: fullRange)
+                    attr.addAttribute(.foregroundColor, value: style.textColor, range: fullRange)
+                    attr.addAttribute(.backgroundColor, value: style.codeBackgroundColor, range: fullRange)
                     result.append(attr)
                 }
                 continue
@@ -120,8 +118,8 @@ nonisolated enum HoverMarkdownRenderer {
                 if !title.isEmpty {
                     let attr = NSMutableAttributedString(string: title + "\n")
                     let fullRange = NSRange(location: 0, length: attr.length)
-                    attr.addAttribute(.font, value: headingFont, range: fullRange)
-                    attr.addAttribute(.foregroundColor, value: textColor, range: fullRange)
+                    attr.addAttribute(.font, value: style.headingFont, range: fullRange)
+                    attr.addAttribute(.foregroundColor, value: style.textColor, range: fullRange)
                     result.append(attr)
                 }
                 i += 1
@@ -134,7 +132,7 @@ nonisolated enum HoverMarkdownRenderer {
                 let sep = String(repeating: "\u{2014}", count: 40) + "\n"
                 let attr = NSMutableAttributedString(string: sep)
                 let fullRange = NSRange(location: 0, length: attr.length)
-                attr.addAttribute(.font, value: font, range: fullRange)
+                attr.addAttribute(.font, value: style.font, range: fullRange)
                 attr.addAttribute(.foregroundColor, value: secondaryTextColor, range: fullRange)
                 result.append(attr)
                 i += 1
@@ -144,11 +142,7 @@ nonisolated enum HoverMarkdownRenderer {
             // Regular line — parse inline formatting.
             let lineAttr = parseInlineFormatting(
                 line + "\n",
-                font: font,
-                boldFont: boldFont,
-                codeFont: codeFont,
-                textColor: textColor,
-                codeBackgroundColor: codeBackgroundColor
+                style: style
             )
             result.append(lineAttr)
             i += 1
@@ -176,11 +170,7 @@ nonisolated enum HoverMarkdownRenderer {
     /// Parses inline formatting: **bold** and `code`.
     private static func parseInlineFormatting(
         _ text: String,
-        font: NSFont,
-        boldFont: NSFont,
-        codeFont: NSFont,
-        textColor: NSColor,
-        codeBackgroundColor: NSColor
+        style: Style
     ) -> NSAttributedString {
         let result = NSMutableAttributedString()
         var current = ""
@@ -194,8 +184,8 @@ nonisolated enum HoverMarkdownRenderer {
                 flush(
                     current,
                     into: result,
-                    font: font,
-                    color: textColor
+                    font: style.font,
+                    color: style.textColor
                 )
                 current = ""
 
@@ -209,9 +199,9 @@ nonisolated enum HoverMarkdownRenderer {
                 if j < chars.count {
                     // Found closing backtick.
                     let attr = NSAttributedString(string: codeContent, attributes: [
-                        .font: codeFont,
-                        .foregroundColor: textColor,
-                        .backgroundColor: codeBackgroundColor
+                        .font: style.codeFont,
+                        .foregroundColor: style.textColor,
+                        .backgroundColor: style.codeBackgroundColor
                     ])
                     result.append(attr)
                     i = j + 1
@@ -239,13 +229,13 @@ nonisolated enum HoverMarkdownRenderer {
                 }
                 if j < chars.count {
                     // Flush current text first.
-                    flush(current, into: result, font: font, color: textColor)
+                    flush(current, into: result, font: style.font, color: style.textColor)
                     current = ""
 
                     // Found closing **.
                     let attr = NSAttributedString(string: boldContent, attributes: [
-                        .font: boldFont,
-                        .foregroundColor: textColor
+                        .font: style.boldFont,
+                        .foregroundColor: style.textColor
                     ])
                     result.append(attr)
                     i = j + 2
@@ -257,7 +247,7 @@ nonisolated enum HoverMarkdownRenderer {
             i += 1
         }
 
-        flush(current, into: result, font: font, color: textColor)
+        flush(current, into: result, font: style.font, color: style.textColor)
         return result
     }
 
@@ -270,7 +260,7 @@ nonisolated enum HoverMarkdownRenderer {
     ) {
         guard !text.isEmpty else { return }
         result.append(NSAttributedString(string: text, attributes: [
-            .font: font,
+            .font: style.font,
             .foregroundColor: color
         ]))
     }
