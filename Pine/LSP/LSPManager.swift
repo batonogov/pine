@@ -127,6 +127,40 @@ final class LSPManager {
         diagnosticsByURI[uri] = nil
     }
 
+    // MARK: - Phase 2 queries (hover + definition)
+
+    /// Requests hover info for the symbol at `offset` (UTF-16 code units,
+    /// matching `NSString`/`NSTextView`) in the file at `url`. Returns `nil`
+    /// when LSP is disabled, the file has no configured server, or the server
+    /// reports no hover for this position.
+    func hover(url: URL, offset: Int, text: String) async -> LSPHover? {
+        guard enabled else { return nil }
+        guard let serverConfig = LanguageServerRegistry.server(for: url) else { return nil }
+        let language = serverConfig.language
+        // Ensure the server is up. A read-only hover should never spawn a
+        // server that wasn't already needed — but if the file is open (it is,
+        // since the editor is showing it) the server was spawned on didOpen.
+        guard await ensureServer(for: serverConfig) else { return nil }
+        guard servers[language]?.state == .initialized else { return nil }
+        let uri = url.absoluteString
+        let position = LSPPositionConverter.lspPosition(utf16Offset: offset, in: text)
+        return await servers[language]?.client.hover(uri: uri, position: position)
+    }
+
+    /// Requests go-to-definition for the symbol at `offset` in the file at
+    /// `url`. Returns `.empty` when LSP is disabled, the file has no server,
+    /// or the server reports no definition.
+    func definition(url: URL, offset: Int, text: String) async -> LSPDefinitionResponse {
+        guard enabled else { return .empty }
+        guard let serverConfig = LanguageServerRegistry.server(for: url) else { return .empty }
+        let language = serverConfig.language
+        guard await ensureServer(for: serverConfig) else { return .empty }
+        guard servers[language]?.state == .initialized else { return .empty }
+        let uri = url.absoluteString
+        let position = LSPPositionConverter.lspPosition(utf16Offset: offset, in: text)
+        return await servers[language]?.client.definition(uri: uri, position: position) ?? .empty
+    }
+
     // MARK: - Diagnostics access
 
     /// Returns the current Pine diagnostics for a document URI.
