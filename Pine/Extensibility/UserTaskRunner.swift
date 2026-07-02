@@ -65,7 +65,7 @@ nonisolated final class UserTaskRunner: @unchecked Sendable {
         switch task.scope {
         case .activeFile:
             workingDir = fileURL?.deletingLastPathComponent() ?? projectRootURL
-            stdinText = (task.replacesFileContent ? (fileContent ?? "")) : ""
+            stdinText = task.replacesFileContent ? (fileContent ?? "") : ""
         case .project:
             workingDir = projectRootURL
             stdinText = ""
