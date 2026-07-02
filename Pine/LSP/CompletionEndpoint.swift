@@ -98,8 +98,8 @@ nonisolated enum CompletionTrigger {
         let inserted: String
         if let range = editedRange, range.length == 0, range.location < source.length {
             // An insertion: range.length == 0, the new char is at range.location.
-            let unit = source.character(at: range.location)
-            inserted = String(Unicode.Scalar(unit) ?? Unicode.Scalar(0)!)
+            let scalar = Unicode.Scalar(unit)
+            inserted = scalar.map { String($0) } ?? ""
         } else if let range = editedRange, range.length > 0,
                   NSMaxRange(range) <= source.length {
             inserted = source.substring(with: range)

@@ -1340,8 +1340,10 @@ extension CodeEditorView {
             // Get the caret rect in text-view coordinates, convert to the
             // container's coordinate space.
             let caretRange = textView.selectedRange()
-            let caretRect = textView.boundingRect(forGlyphRange: caretRange,
-                                                  in: textView.textContainer)
+            guard caretRange.location != NSNotFound else { return }
+            let glyphRange = textView.layoutManager.glyphRange(forCharacterRange: caretRange, actualCharacterRange: nil)
+            let caretRect = textView.layoutManager.boundingRect(forGlyphRange: glyphRange,
+                                                                in: textView.textContainer)
             let rectInContainer = container.convert(caretRect, from: textView)
             popup.position(below: rectInContainer, in: container.bounds.width)
         }
@@ -1381,7 +1383,7 @@ extension CodeEditorView {
                 let snippet = LSPSnippet(item.insertText)
                 expansion = CompletionInsertion.fromSnippet(snippet)
             case .plain:
-                expansion = CompletionInsertion(text: item.insertText, tabStops: [])
+                expansion = CompletionInsertion(text: item.insertText, finalCursorOffset: item.insertText.count)
             }
 
             // Replace the word with the expanded text as a single undo step.
@@ -1416,13 +1418,7 @@ extension CodeEditorView {
         func hideCompletionPopup() {
             cancelCompletionRequest()
             completionPopup?.isHidden = true
-            // Force the controller to its hidden state without re-entering
-            // `onDismiss` (which calls this method).
-            completionController.isVisible = false
-            completionController.items = []
-            completionController.serverItems = []
-            completionController.prefix = ""
-            completionController.selectedIndex = 0
+            completionController.dismiss()
         }
 
         /// Handles Escape for the completion popup. Returns `true` if the
