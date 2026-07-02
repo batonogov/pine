@@ -544,4 +544,24 @@ struct PineAppMenuCommands: Commands {
         // Cmd+1..9 and Ctrl+Tab/Ctrl+Shift+Tab are also intercepted
         // via local event monitors in applicationDidFinishLaunching.
     }
+
+    // MARK: - Task outcome presentation
+
+    /// Shows a brief toast/alert for a completed user task.
+    private static func presentTaskOutcome(
+        _ outcome: UserTaskOutcome,
+        task: UserTask,
+        projectManager: ProjectManager
+    ) {
+        // For now: log the outcome. A proper toast UI can be added later.
+        if outcome.exitCode == 0 {
+            Logger.extensibility.info(
+                "Task '\(task.label)' completed successfully"
+            )
+        } else {
+            Logger.extensibility.error(
+                "Task '\(task.label)' failed (exit \(outcome.exitCode)): \(outcome.stderr)"
+            )
+        }
+    }
 }
