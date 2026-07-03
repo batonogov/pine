@@ -67,6 +67,10 @@ final class DefinitionQuickPickController {
         selectedIndex = newIndex
     }
 
+    func select(at index: Int) {
+        selectedIndex = index
+    }
+
     func selectCurrent() {
         guard selectedIndex >= 0, selectedIndex < items.count else { return }
         let item = items[selectedIndex]
@@ -134,7 +138,7 @@ struct DefinitionQuickPickContent: View {
         .clipShape(RoundedRectangle(cornerRadius: 8))
         .overlay(
             RoundedRectangle(cornerRadius: 8)
-                .stroke(NSColor.separatorColor.colorWithAlphaComponent(0.5), lineWidth: 1)
+                .stroke(Color(NSColor.separatorColor.withAlphaComponent(0.5)), lineWidth: 1)
         )
     }
 }
@@ -177,11 +181,11 @@ private struct DefinitionRowContainer: View {
     var body: some View {
         DefinitionRow(item: item, isSelected: isSelected)
             .onTapGesture(count: 2) {
-                controller.selectedIndex = index
+                controller.select(at: index)
                 controller.selectCurrent()
             }
             .onTapGesture {
-                controller.selectedIndex = index
+                controller.select(at: index)
             }
     }
 }
