@@ -56,6 +56,9 @@ struct CodeEditorView: NSViewRepresentable {
     var initialCursorPosition: Int = 0
     /// Scroll offset to restore when the view is created (tab switch).
     var initialScrollOffset: CGFloat = 0
+    /// Definition quick-pick controller, passed from PaneLeafView so the
+    /// overlay and the coordinator share the same observable instance.
+    var definitionQuickPickController: DefinitionQuickPickController?
     /// Called when cursor position or scroll offset changes, so the caller can persist them.
     var onStateChange: ((Int, CGFloat) -> Void)?
     /// Called when a new syntax highlight result is computed, so the caller can cache it in the tab.
@@ -311,6 +314,15 @@ struct CodeEditorView: NSViewRepresentable {
 
         // Calculate initial foldable ranges
         context.coordinator.recalculateFoldableRanges()
+
+        // Install the LSP mouse handler so hover/definition/code-action/rename
+        // mouse events route to the coordinator.
+        context.coordinator.installLSPMouseHandler()
+
+        // Wire the definition quick-pick controller from the parent view.
+        if let controller = definitionQuickPickController {
+            context.coordinator.definitionQuickPickController = controller
+        }
 
         return container
     }

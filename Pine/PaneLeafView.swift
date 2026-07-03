@@ -34,6 +34,9 @@ struct PaneLeafView: View {
     @State private var isDragTargeted = false
     @State private var goToLineOffset: GoToRequest?
     @State private var paneSize: CGSize = .zero
+    /// Definition quick-pick controller — shared with the editor coordinator
+    /// via the `CodeEditorView` environment for multiple-definition navigation.
+    @State private var definitionQuickPickController = DefinitionQuickPickController()
 
     @AppStorage("minimapVisible") private var isMinimapVisible = true
     @AppStorage(BlameConstants.storageKey) private var isBlameVisible = true
@@ -249,6 +252,12 @@ struct PaneLeafView: View {
 
             // StatusBar is rendered once in ContentView, not per-pane
         }
+        .overlay {
+            // Definition quick-pick (multiple go-to-definition results)
+            if definitionQuickPickController.isVisible {
+                DefinitionQuickPickOverlay(controller: definitionQuickPickController)
+            }
+        }
     }
 
     @ViewBuilder
@@ -277,6 +286,7 @@ struct PaneLeafView: View {
             syntaxHighlightingDisabled: tab.syntaxHighlightingDisabled,
             initialCursorPosition: goToLineOffset?.offset ?? tab.cursorPosition,
             initialScrollOffset: goToLineOffset != nil ? 0 : tab.scrollOffset,
+            definitionQuickPickController: definitionQuickPickController,
             onStateChange: { cursor, scroll in
                 tabManager.updateEditorState(cursorPosition: cursor, scrollOffset: scroll)
             },
@@ -294,15 +304,64 @@ struct PaneLeafView: View {
             goToLineOffset = nil
             configValidator.validate(url: tab.url, content: tab.content)
             projectManager.lspManager.didOpen(url: tab.url, text: tab.content)
+            installLSPUIEndpoint(tabManager: tabManager)
         }
         .onDisappear {
             configValidator.clear()
             projectManager.lspManager.didClose(url: tab.url)
+            clearLSPUIEndpoint()
         }
         .onChange(of: tab.content) { _, newValue in
             configValidator.validate(url: tab.url, content: newValue)
             projectManager.lspManager.didChange(url: tab.url, text: newValue)
         }
+    }
+
+    // MARK: - LSP UI endpoint installation
+
+    /// Installs the LSP UI endpoint handlers so the editor coordinator can
+    /// route hover, definition, code action, and rename requests to this
+    /// project's `LSPManager`.
+    private func installLSPUIEndpoint(tabManager: TabManager) {
+        let lspManager = projectManager.lspManager
+
+        LSPUIEndpoint.shared.hoverHandler = { url, offset, text in
+            await lspManager.hover(url: url, offset: offset, text: text)
+        }
+        LSPUIEndpoint.shared.definitionHandler = { url, offset, text in
+            await lspManager.definition(url: url, offset: offset, text: text)
+        }
+        LSPUIEndpoint.shared.codeActionHandler = { url, offset, text in
+            await lspManager.codeAction(url: url, offset: offset, text: text)
+        }
+        LSPUIEndpoint.shared.renameHandler = { url, offset, text, newName in
+            await lspManager.rename(url: url, offset: offset, text: text, newName: newName)
+        }
+        LSPUIEndpoint.shared.applyEditHandler = { edit in
+            lspManager.applyWorkspaceEdit(
+                edit,
+                tabManager: tabManager,
+                workspaceURL: workspace.rootURL
+            )
+        }
+        LSPUIEndpoint.shared.openFileAtLineHandler = { [weak tabManager] url, line, _ in
+            tabManager?.openTab(url: url)
+            // Navigate to the position after a short delay so the tab content
+            // is loaded. Uses the pendingGoToLine mechanism (1-based line).
+            DispatchQueue.main.async {
+                tabManager?.pendingGoToLine = line + 1
+            }
+        }
+    }
+
+    /// Clears the LSP UI endpoint handlers.
+    private func clearLSPUIEndpoint() {
+        LSPUIEndpoint.shared.hoverHandler = nil
+        LSPUIEndpoint.shared.definitionHandler = nil
+        LSPUIEndpoint.shared.codeActionHandler = nil
+        LSPUIEndpoint.shared.renameHandler = nil
+        LSPUIEndpoint.shared.applyEditHandler = nil
+        LSPUIEndpoint.shared.openFileAtLineHandler = nil
     }
 
     // MARK: - Diagnostics merging
