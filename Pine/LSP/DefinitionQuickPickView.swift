@@ -112,15 +112,13 @@ struct DefinitionQuickPickContent: View {
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 0) {
                         ForEach(Array(controller.items.enumerated()), id: \.element.id) { index, item in
-                            DefinitionRow(item: item, isSelected: index == controller.selectedIndex)
-                                .id(index)
-                                .onTapGesture(count: 2) {
-                                    controller.selectedIndex = index
-                                    controller.selectCurrent()
-                                }
-                                .onTapGesture {
-                                    controller.selectedIndex = index
-                                }
+                            DefinitionRowContainer(
+                                item: item,
+                                isSelected: index == controller.selectedIndex,
+                                index: index,
+                                controller: controller
+                            )
+                            .id(index)
                         }
                     }
                 }
@@ -163,6 +161,28 @@ struct DefinitionQuickPickOverlay: View {
                 Spacer()
             }
         }
+    }
+}
+
+/// Container that wraps a `DefinitionRow` and handles tap gestures.
+///
+/// Extracted into its own `View` struct so the Swift type-checker can
+/// resolve the gesture chain within reasonable time.
+private struct DefinitionRowContainer: View {
+    let item: DefinitionQuickPickItem
+    let isSelected: Bool
+    let index: Int
+    let controller: DefinitionQuickPickController
+
+    var body: some View {
+        DefinitionRow(item: item, isSelected: isSelected)
+            .onTapGesture(count: 2) {
+                controller.selectedIndex = index
+                controller.selectCurrent()
+            }
+            .onTapGesture {
+                controller.selectedIndex = index
+            }
     }
 }
 
