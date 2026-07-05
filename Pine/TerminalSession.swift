@@ -14,9 +14,13 @@ import SwiftTerm
 /// background attribute; cells with the default terminal background rely on
 /// the view/layer background. When a TUI briefly paints a colored rectangle
 /// and then returns those cells to the default background, stale pixels can
-/// remain in the layer. Pine drops the stale layer contents and promotes
-/// partial invalidations to full redraws so default-background cells are
-/// repainted against the current layer background.
+/// remain in the layer. Pine addresses this in `forceFullRedraw()` (called
+/// at every re-parent / layout / backing-store-invalidation boundary) by
+/// dropping the stale layer contents before a synchronous repaint.
+///
+/// `setNeedsDisplay` is overridden to promote partial invalidations to
+/// full-bounds redraws (so SwiftTerm repaints as many cells as possible),
+/// but deliberately does NOT zero `layer.contents` — see issue #1094.
 final class PineTerminalView: LocalProcessTerminalView {
     private var redrawBackgroundColor: CGColor?
 
