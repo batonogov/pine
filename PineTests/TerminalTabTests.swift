@@ -799,19 +799,38 @@ struct TerminalTabTests {
         #expect((tab.terminalView.layer?.contents as? NSString) != staleContents)
     }
 
-    /// PineTerminalView drops stale layer contents before scheduling a full
-    /// redraw. This prevents colored rectangles from remaining when a terminal
-    /// program returns cells to the default background.
-    @Test @MainActor func pineTerminalViewClearsLayerContentsBeforeRedraw() {
+    /// `setNeedsDisplay` promotes partial invalidations to full-bounds
+    /// redraws but does NOT zero `layer.contents` — zeroing on every call
+    /// created a race where AppKit cancelled the pending display cycle,
+    /// leaving the layer permanently black (issue #1094). Contents are
+    /// only cleared by `prepareLayerForRedraw()` / `forceFullRedraw()`,
+    /// where the nil is immediately followed by synchronous
+    /// `displayIfNeeded()`.
+    @Test @MainActor func pineTerminalViewSetNeedsDisplayDoesNotClearContents() {
+        let view = PineTerminalView(frame: NSRect(x: 0, y: 0, width: 80, height: 24))
+        let background = NSColor(srgbRed: 0.90, green: 0.91, blue: 0.92, alpha: 1)
+        let existingContents = "valid-backing" as NSString
+        view.nativeBackgroundColor = background
+        view.prepareLayerForRedraw(background: background)
+        view.layer?.contents = existingContents
+
+        view.setNeedsDisplay(NSRect(x: 0, y: 0, width: 10, height: 10))
+
+        // Background must be preserved, contents must NOT be nil'd.
+        #expect(view.layer?.backgroundColor == background.cgColor)
+        #expect(view.layer?.contents != nil)
+    }
+
+    /// `prepareLayerForRedraw` (called from `forceFullRedraw`) DOES clear
+    /// stale contents — this is the safe call site because it is always
+    /// followed by synchronous `displayIfNeeded()`.
+    @Test @MainActor func prepareLayerForRedrawClearsStaleContents() {
         let view = PineTerminalView(frame: NSRect(x: 0, y: 0, width: 80, height: 24))
         let background = NSColor(srgbRed: 0.90, green: 0.91, blue: 0.92, alpha: 1)
         let staleContents = "stale-terminal-backing" as NSString
-        view.nativeBackgroundColor = background
-        view.prepareLayerForRedraw(background: background)
-        view.layer?.backgroundColor = NSColor.black.cgColor
         view.layer?.contents = staleContents
 
-        view.setNeedsDisplay(NSRect(x: 0, y: 0, width: 10, height: 10))
+        view.prepareLayerForRedraw(background: background)
 
         #expect(view.layer?.backgroundColor == background.cgColor)
         #expect(view.layer?.contents == nil)
