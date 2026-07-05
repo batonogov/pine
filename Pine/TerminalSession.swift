@@ -30,8 +30,18 @@ final class PineTerminalView: LocalProcessTerminalView {
         layer?.contents = nil
     }
 
+    /// Promotes partial invalidations to full-bounds redraws so default-
+    /// background cells are repainted (SwiftTerm only paints cells with
+    /// explicit background attributes).
+    ///
+    /// IMPORTANT: do NOT call `prepareLayerForRedraw()` here. Zeroing
+    /// `layer.contents` on every `setNeedsDisplay` call (including cursor
+    /// blink, single-char input) creates a race: between `contents = nil`
+    /// and the actual display cycle, AppKit may coalesce or cancel the
+    /// pending `needsDisplay`, leaving the layer permanently black (issue
+    /// #1094). Only clear `contents` from `forceFullRedraw()`, where the
+    /// nil is immediately followed by a synchronous `displayIfNeeded()`.
     override func setNeedsDisplay(_ invalidRect: NSRect) {
-        prepareLayerForRedraw()
         super.setNeedsDisplay(bounds.isEmpty ? invalidRect : bounds)
     }
 }
@@ -469,6 +479,11 @@ class TerminalContainerView: NSView {
     /// so without this we would tear down and re-install the observer on
     /// every `viewDidMoveToWindow` even when the window did not change.
     private weak var observedWindow: NSWindow?
+    /// Notification observer that re-renders the active terminal when the
+    /// host window moves to a different screen (e.g. external display with
+    /// a different backingScaleFactor). The backing store may be invalidated
+    /// in this case, leaving the terminal black (issue #1094).
+    private var didChangeScreenObserver: NSObjectProtocol?
 
     func showTab(_ tab: TerminalTab?) {
         guard let tab else {
@@ -731,6 +746,10 @@ class TerminalContainerView: NSView {
             NotificationCenter.default.removeObserver(observer)
             becomeKeyObserver = nil
         }
+        if let observer = didChangeScreenObserver {
+            NotificationCenter.default.removeObserver(observer)
+            didChangeScreenObserver = nil
+        }
         observedWindow = nil
     }
 
@@ -764,6 +783,15 @@ class TerminalContainerView: NSView {
         guard let win = window else { return }
         becomeKeyObserver = NotificationCenter.default.addObserver(
             forName: NSWindow.didBecomeKeyNotification,
+            object: win,
+            queue: .main
+        ) { [weak self] _ in
+            self?.refreshActiveTerminalAfterReparent()
+        }
+        // Re-render when the window moves to a different screen — the backing
+        // scale factor may differ, invalidating the layer's contents (issue #1094).
+        didChangeScreenObserver = NotificationCenter.default.addObserver(
+            forName: NSWindow.didChangeScreenNotification,
             object: win,
             queue: .main
         ) { [weak self] _ in
@@ -806,6 +834,18 @@ class TerminalContainerView: NSView {
     }
 
     override var isFlipped: Bool { true }
+
+    // MARK: - Backing store invalidation (issue #1094)
+
+    /// AppKit calls this when the view's backing properties change — display
+    /// scale (Retina ↔ external), Liquid Glass layer management, memory
+    /// pressure purge, screen sleep/wake. In all these cases the layer's
+    /// backing store may be discarded, leaving a black terminal. Force a
+    /// synchronous repaint from SwiftTerm's displayBuffer to recover.
+    override func viewDidChangeBackingProperties() {
+        super.viewDidChangeBackingProperties()
+        refreshActiveTerminalAfterReparent()
+    }
 }
 
 // MARK: - Terminal search
