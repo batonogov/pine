@@ -484,6 +484,44 @@ struct FileNodeTests {
         #expect(names.contains("file.txt"))
     }
 
+    @Test func depthLimitedDirectoryTracksDeferredChildrenUntilLoaded() throws {
+        let tempDir = try makeTempDirectory()
+        defer { cleanup(tempDir) }
+
+        let sub = tempDir.appendingPathComponent("sub")
+        try FileManager.default.createDirectory(at: sub, withIntermediateDirectories: true)
+        FileManager.default.createFile(atPath: sub.appendingPathComponent("file.txt").path, contents: nil)
+
+        let node = FileNode(url: tempDir, projectRoot: tempDir, ignoredPaths: [], maxDepth: 0)
+        let subNode = try #require(node.children?.first { $0.name == "sub" })
+
+        #expect(subNode.children?.isEmpty == true)
+        #expect(subNode.hasDeferredChildren == true)
+
+        subNode.loadChildren()
+
+        #expect(subNode.hasDeferredChildren == false)
+        #expect(subNode.children?.contains { $0.name == "file.txt" } == true)
+    }
+
+    @Test func emptyDepthLimitedDirectoryClearsDeferredFlagAfterLoad() throws {
+        let tempDir = try makeTempDirectory()
+        defer { cleanup(tempDir) }
+
+        let sub = tempDir.appendingPathComponent("empty")
+        try FileManager.default.createDirectory(at: sub, withIntermediateDirectories: true)
+
+        let node = FileNode(url: tempDir, projectRoot: tempDir, ignoredPaths: [], maxDepth: 0)
+        let subNode = try #require(node.children?.first { $0.name == "empty" })
+
+        #expect(subNode.hasDeferredChildren == true)
+
+        subNode.loadChildren()
+
+        #expect(subNode.children?.isEmpty == true)
+        #expect(subNode.hasDeferredChildren == false)
+    }
+
     @Test func maxDepthCombinesWithGitignore() throws {
         let tempDir = try makeTempDirectory()
         defer { cleanup(tempDir) }

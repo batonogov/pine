@@ -172,8 +172,11 @@ struct SidebarView: View {
                     // `SidebarFileTree.row`.
                     ScrollView {
                         VStack(alignment: .leading, spacing: 0) {
-                            SidebarFileTree(nodes: workspace.rootNodes, selection: $selectedFile)
-                                .id(workspace.rootNodesRevision)
+                            SidebarFileTree(
+                                nodes: workspace.rootNodes,
+                                treeRevision: workspace.rootNodesRevision,
+                                selection: $selectedFile
+                            )
                         }
                         .padding(.vertical, 4)
                     }

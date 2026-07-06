@@ -23,6 +23,7 @@ nonisolated final class FileNode: Identifiable, Hashable, @unchecked Sendable {
     private let ignoredPaths: Set<String>?
 
     var children: [FileNode]?
+    private(set) var hasDeferredChildren = false
 
     /// Для List(children:): nil = лист (файл), непустой массив = папка с содержимым.
     var optionalChildren: [FileNode]? {
@@ -99,6 +100,7 @@ nonisolated final class FileNode: Identifiable, Hashable, @unchecked Sendable {
                 if depth > context.maxDepth {
                     context.reachedDepthLimit = true
                     self.children = []
+                    self.hasDeferredChildren = true
                     return
                 }
 
@@ -155,10 +157,19 @@ nonisolated final class FileNode: Identifiable, Hashable, @unchecked Sendable {
     }
 
     func loadChildren() {
+        replaceChildren(loadedChildren())
+    }
+
+    func loadedChildren() -> [FileNode] {
         let context = projectRoot.map {
             LoadContext(projectRoot: $0, ignoredPaths: ignoredPaths ?? [])
         }
-        children = Self.loadContents(of: url, context: context)
+        return Self.loadContents(of: url, context: context)
+    }
+
+    func replaceChildren(_ loadedChildren: [FileNode]) {
+        children = loadedChildren
+        hasDeferredChildren = false
     }
 
     /// Result of a depth-limited tree build, including whether the depth limit was reached.

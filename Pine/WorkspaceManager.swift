@@ -18,14 +18,8 @@ final class WorkspaceManager {
     nonisolated private static let logger = Logger.fileTree
     var rootNodes: [FileNode] = []
     /// Monotonically increasing counter bumped every time `rootNodes` is
-    /// assigned. Used by `SidebarView` as a SwiftUI `.id()` to force the
-    /// file tree to re-render after an external refresh (FSEvents).
-    ///
-    /// Without this, SwiftUI may not re-render expanded folders whose
-    /// `FileNode` identity (URL) is unchanged but whose children array has
-    /// been replaced with new instances — the nested `ForEach` keeps showing
-    /// stale children until the user manually collapses/expands the folder
-    /// (issue #1041).
+    /// assigned. Sidebar observers use this to prune expansion state after
+    /// refreshes without recreating the entire tree.
     private(set) var rootNodesRevision: Int = 0
     var projectName: String = "Pine"
     var rootURL: URL?
@@ -90,8 +84,7 @@ final class WorkspaceManager {
 
     /// Sets `rootNodes`, bumps `rootNodesRevision`, and schedules a debounced
     /// `onRootNodesChanged` notification. Centralised so every assignment site
-    /// (initial load, shallow refresh, full refresh) gets the revision bump
-    /// that drives the sidebar re-render fix (#1041).
+    /// (initial load, shallow refresh, full refresh) emits the same signals.
     private func setRootNodes(_ nodes: [FileNode]) {
         rootNodes = nodes
         rootNodesRevision += 1

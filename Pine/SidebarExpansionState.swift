@@ -101,15 +101,24 @@ final class SidebarExpansionState {
     /// at `nodes`. Used to keep the set bounded after file deletions.
     func prune(toMatch nodes: [FileNode]) {
         var alive: Set<String> = []
+        var deferredRoots: Set<String> = []
         var stack: [FileNode] = nodes
         while let node = stack.popLast() {
             if node.isDirectory {
-                alive.insert(Self.key(for: node.url))
+                let key = Self.key(for: node.url)
+                alive.insert(key)
+                if node.hasDeferredChildren {
+                    deferredRoots.insert(key)
+                }
                 if let children = node.children {
                     stack.append(contentsOf: children)
                 }
             }
         }
-        expandedPaths.formIntersection(alive)
+        expandedPaths = expandedPaths.filter { path in
+            alive.contains(path) || deferredRoots.contains { root in
+                path == root || path.hasPrefix(root + "/")
+            }
+        }
     }
 }

@@ -36,11 +36,12 @@ enum SidebarRowMetrics {
 
 struct SidebarFileTree: View {
     let nodes: [FileNode]
+    let treeRevision: Int
     @Binding var selection: FileNode?
 
     var body: some View {
         ForEach(nodes) { node in
-            SidebarFileTreeNode(node: node, selection: $selection)
+            SidebarFileTreeNode(node: node, treeRevision: treeRevision, selection: $selection)
         }
     }
 }
@@ -48,31 +49,85 @@ struct SidebarFileTree: View {
 /// A single node row in the recursive sidebar tree.
 private struct SidebarFileTreeNode: View {
     let node: FileNode
+    let treeRevision: Int
     @Binding var selection: FileNode?
     @Environment(SidebarExpansionState.self) private var expansion
     @Environment(SidebarEditState.self) private var editState
     @State private var fontSettings = FontSizeSettings.shared
+    @State private var isLoadingDeferredChildren = false
+    @State private var loadedChildrenRevision = 0
+    /// Monotonic generation token for in-flight deferred loads. Bumps on
+    /// every load start so a result computed against a pre-refresh subtree
+    /// is dropped after a refresh re-triggers the load with a fresh node
+    /// (see `loadDeferredChildrenIfNeeded`). Survives URL-stable row
+    /// rebuilds because SwiftUI keys `@State` by view identity, not struct.
+    @State private var deferredLoadGeneration = 0
 
     var body: some View {
-        if node.isDirectory, let children = node.optionalChildren {
+        if node.isDirectory {
             // IMPORTANT: read `expansion.isExpanded(...)` directly in the
             // view body so SwiftUI's @Observable tracker registers the
             // dependency.
             let isExpanded = expansion.isExpanded(node.url)
+            let children = visibleChildren
             VStack(alignment: .leading, spacing: 0) {
                 row(isFolder: true)
                 if isExpanded {
                     VStack(alignment: .leading, spacing: 0) {
+                        if children.isEmpty && isLoadingDeferredChildren {
+                            ProgressView()
+                                .controlSize(.small)
+                                .padding(.leading, SidebarRowMetrics.childIndent)
+                                .padding(.vertical, 2)
+                        }
                         ForEach(children) { child in
-                            SidebarFileTreeNode(node: child, selection: $selection)
+                            SidebarFileTreeNode(
+                                node: child,
+                                treeRevision: treeRevision,
+                                selection: $selection
+                            )
                         }
                     }
+                    .id(children.map(\.id))
                     .padding(.leading, SidebarRowMetrics.childIndent)
+                }
+            }
+            .onAppear {
+                if isExpanded {
+                    loadDeferredChildrenIfNeeded()
+                }
+            }
+            .onChange(of: isExpanded) { _, expanded in
+                if expanded {
+                    loadDeferredChildrenIfNeeded()
+                }
+            }
+            .onChange(of: treeRevision) { _, _ in
+                // A refresh (FSEvents/git) replaces this row's node with a
+                // new instance that is deferred again. `.onAppear` and
+                // `.onChange(of: isExpanded)` do not re-fire for URL-stable
+                // rows, so re-trigger the deferred load on each revision.
+                // Clearing the in-flight flag first lets the load restart
+                // even if a previous load (capturing the now-orphaned node)
+                // is still in flight; its result is dropped by the
+                // generation guard in `loadDeferredChildrenIfNeeded`.
+                if isExpanded, node.hasDeferredChildren {
+                    isLoadingDeferredChildren = false
+                    loadDeferredChildrenIfNeeded()
                 }
             }
         } else {
             row(isFolder: false)
         }
+    }
+
+    private var visibleChildren: [FileNode] {
+        // Reading `loadedChildrenRevision` in the body registers the
+        // `@State` dependency so a deferred-load completion re-renders the
+        // row. (`treeRevision` is a plain `let` propagated by the parent's
+        // struct re-evaluation — no explicit read is needed.)
+        _ = loadedChildrenRevision
+        return node.children ?? []
     }
 
     /// Single clickable row. The whole row is hit-tested via `contentShape`
@@ -116,7 +171,32 @@ private struct SidebarFileTreeNode: View {
         guard !isRenamingThisNode else { return }
         selection = node
         if isFolder {
+            if !expansion.isExpanded(node.url) {
+                loadDeferredChildrenIfNeeded()
+            }
             expansion.toggleDebounced(node.url)
+        }
+    }
+
+    private func loadDeferredChildrenIfNeeded() {
+        guard node.hasDeferredChildren, !isLoadingDeferredChildren else { return }
+        isLoadingDeferredChildren = true
+        deferredLoadGeneration += 1
+        let generation = deferredLoadGeneration
+        let capturedNode = node
+        Task { @MainActor in
+            let loadedChildren = await Task.detached(priority: .userInitiated) {
+                capturedNode.loadedChildren()
+            }.value
+            // Generation guard: a refresh can re-trigger this load (bumping
+            // `deferredLoadGeneration`) with a fresh node instance while the
+            // detached load was in flight. Drop the stale result so we never
+            // apply children computed against the pre-refresh subtree. This
+            // is the sidebar-local equivalent of `WorkspaceManager.loadGeneration`.
+            guard generation == deferredLoadGeneration else { return }
+            capturedNode.replaceChildren(loadedChildren)
+            loadedChildrenRevision += 1
+            isLoadingDeferredChildren = false
         }
     }
 }

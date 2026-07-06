@@ -3,9 +3,9 @@
 //  PineTests
 //
 //  Regression tests for issue #1041: new files in expanded folders don't
-//  appear until the user manually collapses/expands. The fix adds a
-//  `rootNodesRevision` counter that bumps on every `rootNodes` assignment,
-//  enabling SidebarView to force a SwiftUI re-render via `.id()`.
+//  appear until the user manually collapses/expands. `rootNodesRevision`
+//  still bumps on every root tree assignment so observers can react to
+//  refreshes while SidebarView keeps rebuilds scoped to changed branches.
 //
 
 import Foundation
@@ -239,8 +239,8 @@ struct SidebarExpandedRefreshTests {
 
         // For a deep project: Phase 1 (shallow) sets rootNodes (revision=1),
         // Phase 2 (full) sets rootNodes again (revision=2).
-        // Both phases increment the revision, ensuring the sidebar re-renders
-        // after each phase — the fix for issue #1041.
+        // Both phases increment the revision, ensuring sidebar observers can
+        // react after each phase.
         #expect(
             manager.rootNodesRevision >= 2,
             "Deep project should have at least 2 revision increments (shallow + full phases)"
