@@ -56,6 +56,12 @@ private struct SidebarFileTreeNode: View {
     @State private var fontSettings = FontSizeSettings.shared
     @State private var isLoadingDeferredChildren = false
     @State private var loadedChildrenRevision = 0
+    /// Monotonic generation token for in-flight deferred loads. Bumps on
+    /// every load start so a result computed against a pre-refresh subtree
+    /// is dropped after a refresh re-triggers the load with a fresh node
+    /// (see `loadDeferredChildrenIfNeeded`). Survives URL-stable row
+    /// rebuilds because SwiftUI keys `@State` by view identity, not struct.
+    @State private var deferredLoadGeneration = 0
 
     var body: some View {
         if node.isDirectory {
@@ -68,6 +74,12 @@ private struct SidebarFileTreeNode: View {
                 row(isFolder: true)
                 if isExpanded {
                     VStack(alignment: .leading, spacing: 0) {
+                        if children.isEmpty && isLoadingDeferredChildren {
+                            ProgressView()
+                                .controlSize(.small)
+                                .padding(.leading, SidebarRowMetrics.childIndent)
+                                .padding(.vertical, 2)
+                        }
                         ForEach(children) { child in
                             SidebarFileTreeNode(
                                 node: child,
@@ -90,14 +102,31 @@ private struct SidebarFileTreeNode: View {
                     loadDeferredChildrenIfNeeded()
                 }
             }
+            .onChange(of: treeRevision) { _, _ in
+                // A refresh (FSEvents/git) replaces this row's node with a
+                // new instance that is deferred again. `.onAppear` and
+                // `.onChange(of: isExpanded)` do not re-fire for URL-stable
+                // rows, so re-trigger the deferred load on each revision.
+                // Clearing the in-flight flag first lets the load restart
+                // even if a previous load (capturing the now-orphaned node)
+                // is still in flight; its result is dropped by the
+                // generation guard in `loadDeferredChildrenIfNeeded`.
+                if isExpanded, node.hasDeferredChildren {
+                    isLoadingDeferredChildren = false
+                    loadDeferredChildrenIfNeeded()
+                }
+            }
         } else {
             row(isFolder: false)
         }
     }
 
     private var visibleChildren: [FileNode] {
+        // Reading `loadedChildrenRevision` in the body registers the
+        // `@State` dependency so a deferred-load completion re-renders the
+        // row. (`treeRevision` is a plain `let` propagated by the parent's
+        // struct re-evaluation — no explicit read is needed.)
         _ = loadedChildrenRevision
-        _ = treeRevision
         return node.children ?? []
     }
 
@@ -152,12 +181,20 @@ private struct SidebarFileTreeNode: View {
     private func loadDeferredChildrenIfNeeded() {
         guard node.hasDeferredChildren, !isLoadingDeferredChildren else { return }
         isLoadingDeferredChildren = true
-        let node = node
+        deferredLoadGeneration += 1
+        let generation = deferredLoadGeneration
+        let capturedNode = node
         Task { @MainActor in
             let loadedChildren = await Task.detached(priority: .userInitiated) {
-                node.loadedChildren()
+                capturedNode.loadedChildren()
             }.value
-            node.replaceChildren(loadedChildren)
+            // Generation guard: a refresh can re-trigger this load (bumping
+            // `deferredLoadGeneration`) with a fresh node instance while the
+            // detached load was in flight. Drop the stale result so we never
+            // apply children computed against the pre-refresh subtree. This
+            // is the sidebar-local equivalent of `WorkspaceManager.loadGeneration`.
+            guard generation == deferredLoadGeneration else { return }
+            capturedNode.replaceChildren(loadedChildren)
             loadedChildrenRevision += 1
             isLoadingDeferredChildren = false
         }

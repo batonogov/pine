@@ -167,6 +167,33 @@ struct SidebarExpansionStateTests {
         #expect(state.isExpanded(deep))
     }
 
+    @Test func pruneKeepsExpandedDescendantsAcrossDeferredRefresh() throws {
+        // Regression for the sidebar flicker fix (#1097/#1098): an
+        // FSEvents/git refresh rebuilds the tree, making a depth-limited
+        // folder deferred again (empty children). Pruning against the
+        // refreshed tree must still keep deep expansion state so the row can
+        // reload its deferred children via `onChange(of: treeRevision)`
+        // without collapsing the user's place in the tree.
+        let root = try makeTempTree(["a/b/c/d/e"])
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let state = SidebarExpansionState()
+        let deep = root.appendingPathComponent("a/b/c/d/e")
+        state.setExpanded(deep, true)
+
+        // Initial load + prune.
+        let v1 = FileNode.loadTree(url: root, projectRoot: root, ignoredPaths: [], maxDepth: 1)
+        state.prune(toMatch: [v1.root])
+
+        // Simulate a refresh: rebuild with the same depth limit so `a` is
+        // deferred again (its subtree was never traversed).
+        let v2 = FileNode.loadTree(url: root, projectRoot: root, ignoredPaths: [], maxDepth: 1)
+        state.prune(toMatch: [v2.root])
+
+        #expect(v2.wasDepthLimited == true)
+        #expect(state.isExpanded(deep))
+    }
+
     // MARK: - Edge: massive number of folders
 
     @Test func canHoldThousandsOfExpandedFolders() {
