@@ -1,5 +1,29 @@
 # Changelog
 
+## [1.32.0](https://github.com/batonogov/pine/compare/v1.31.2...v1.32.0) (2026-07-05)
+
+
+### Features
+
+* **a11y:** VoiceOver labels, differentiate-without-color, reduce-motion ([#1003](https://github.com/batonogov/pine/issues/1003)) ([#1081](https://github.com/batonogov/pine/issues/1081)) ([360fc78](https://github.com/batonogov/pine/commit/360fc781d55bc4d0acac14c29fd956e7a899037b))
+* **agent:** Agent Activity Panel ([#1072](https://github.com/batonogov/pine/issues/1072)) ([#1074](https://github.com/batonogov/pine/issues/1074)) ([f237048](https://github.com/batonogov/pine/commit/f2370485c42c497c6ba21a3e105a43fb5706f210))
+* **agent:** Agent History & Undo ([#1073](https://github.com/batonogov/pine/issues/1073)) ([#1075](https://github.com/batonogov/pine/issues/1075)) ([bd2219f](https://github.com/batonogov/pine/commit/bd2219fbfeb1944479d39005a77f976782d169cc))
+* lightweight extensibility — user grammars, tasks, keybindings ([#1009](https://github.com/batonogov/pine/issues/1009)) ([#1083](https://github.com/batonogov/pine/issues/1083)) ([83a894d](https://github.com/batonogov/pine/commit/83a894df3f3b344280d7639a17aaa55563a31f58))
+* **lsp:** Phase 1 — Diagnostics (LSP client foundation) ([#1010](https://github.com/batonogov/pine/issues/1010)) ([#1082](https://github.com/batonogov/pine/issues/1082)) ([ea9893d](https://github.com/batonogov/pine/commit/ea9893d993752376377be4ffd8f9329c002ab08c))
+* **lsp:** Phase 2 — Hover + Go-to-Definition ([#1011](https://github.com/batonogov/pine/issues/1011)) ([#1084](https://github.com/batonogov/pine/issues/1084)) ([4167def](https://github.com/batonogov/pine/commit/4167deffb8570019494b28015a7925bf87cd2966))
+* **lsp:** Phase 3 — Completion ([#1012](https://github.com/batonogov/pine/issues/1012)) ([#1086](https://github.com/batonogov/pine/issues/1086)) ([b4233be](https://github.com/batonogov/pine/commit/b4233be18e26161febf849c806490d38feb4818a))
+* **lsp:** Phase 4 — Code actions + Rename ([#1013](https://github.com/batonogov/pine/issues/1013)) ([#1087](https://github.com/batonogov/pine/issues/1087)) ([294ed8a](https://github.com/batonogov/pine/commit/294ed8addadcffa1ef0041e6976b438a23801b0c))
+* **lsp:** UI integration — hover, go-to-definition, code actions, rename ([#1088](https://github.com/batonogov/pine/issues/1088)) ([#1091](https://github.com/batonogov/pine/issues/1091)) ([d7618cc](https://github.com/batonogov/pine/commit/d7618ccbb0cbbb21a9757c85c1b692eecb6817c2))
+
+
+### Bug Fixes
+
+* add security validation layer to UserTaskRunner ([#1088](https://github.com/batonogov/pine/issues/1088)) ([#1089](https://github.com/batonogov/pine/issues/1089)) ([ebf14f2](https://github.com/batonogov/pine/commit/ebf14f20dd010ee48dcf2b9061d2b788dc251327))
+* **agent:** detect interpreter-wrapped agent CLIs (node/python/bun/…) ([#1078](https://github.com/batonogov/pine/issues/1078)) ([51deafb](https://github.com/batonogov/pine/commit/51deafbd799fa24dbd2c5a8d84a69212c78c771f))
+* **i18n:** add localizations for a11y labels, Go-to-Line, and Problems panel ([#1093](https://github.com/batonogov/pine/issues/1093)) ([b7a70d5](https://github.com/batonogov/pine/commit/b7a70d58cdf96dfc319de933a25ecda22afdf3a3))
+* **i18n:** add missing localizations for Tasks, Agent Activity, and rename-error ([#1092](https://github.com/batonogov/pine/issues/1092)) ([2b7d54c](https://github.com/batonogov/pine/commit/2b7d54c4d68c0343a658dfa47acc82ea1de82b1b))
+* **terminal:** fix root cause of black screen — setNeedsDisplay race condition ([#1094](https://github.com/batonogov/pine/issues/1094)) ([#1095](https://github.com/batonogov/pine/issues/1095)) ([bdce6b1](https://github.com/batonogov/pine/commit/bdce6b1d22af1dc7fd2a857ddd7b5340932dc14f))
+
 ## [1.31.2](https://github.com/batonogov/pine/compare/v1.31.1...v1.31.2) (2026-06-29)
 
 
