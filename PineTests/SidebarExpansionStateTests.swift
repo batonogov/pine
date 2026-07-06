@@ -147,6 +147,26 @@ struct SidebarExpansionStateTests {
         #expect(state.isExpanded(deep))
     }
 
+    @Test func pruneKeepsExpandedDescendantsUnderDeferredFolder() throws {
+        let root = try makeTempTree(["a/b/c/d/e"])
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let result = FileNode.loadTree(
+            url: root,
+            projectRoot: root,
+            ignoredPaths: [],
+            maxDepth: 1
+        )
+        let state = SidebarExpansionState()
+        let deep = root.appendingPathComponent("a/b/c/d/e")
+        state.setExpanded(deep, true)
+
+        state.prune(toMatch: [result.root])
+
+        #expect(result.wasDepthLimited == true)
+        #expect(state.isExpanded(deep))
+    }
+
     // MARK: - Edge: massive number of folders
 
     @Test func canHoldThousandsOfExpandedFolders() {

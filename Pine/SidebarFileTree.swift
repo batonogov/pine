@@ -36,11 +36,12 @@ enum SidebarRowMetrics {
 
 struct SidebarFileTree: View {
     let nodes: [FileNode]
+    let treeRevision: Int
     @Binding var selection: FileNode?
 
     var body: some View {
         ForEach(nodes) { node in
-            SidebarFileTreeNode(node: node, selection: $selection)
+            SidebarFileTreeNode(node: node, treeRevision: treeRevision, selection: $selection)
         }
     }
 }
@@ -48,31 +49,56 @@ struct SidebarFileTree: View {
 /// A single node row in the recursive sidebar tree.
 private struct SidebarFileTreeNode: View {
     let node: FileNode
+    let treeRevision: Int
     @Binding var selection: FileNode?
     @Environment(SidebarExpansionState.self) private var expansion
     @Environment(SidebarEditState.self) private var editState
     @State private var fontSettings = FontSizeSettings.shared
+    @State private var isLoadingDeferredChildren = false
+    @State private var loadedChildrenRevision = 0
 
     var body: some View {
-        if node.isDirectory, let children = node.optionalChildren {
+        if node.isDirectory {
             // IMPORTANT: read `expansion.isExpanded(...)` directly in the
             // view body so SwiftUI's @Observable tracker registers the
             // dependency.
             let isExpanded = expansion.isExpanded(node.url)
+            let children = visibleChildren
             VStack(alignment: .leading, spacing: 0) {
                 row(isFolder: true)
                 if isExpanded {
                     VStack(alignment: .leading, spacing: 0) {
                         ForEach(children) { child in
-                            SidebarFileTreeNode(node: child, selection: $selection)
+                            SidebarFileTreeNode(
+                                node: child,
+                                treeRevision: treeRevision,
+                                selection: $selection
+                            )
                         }
                     }
+                    .id(children.map(\.id))
                     .padding(.leading, SidebarRowMetrics.childIndent)
+                }
+            }
+            .onAppear {
+                if isExpanded {
+                    loadDeferredChildrenIfNeeded()
+                }
+            }
+            .onChange(of: isExpanded) { _, expanded in
+                if expanded {
+                    loadDeferredChildrenIfNeeded()
                 }
             }
         } else {
             row(isFolder: false)
         }
+    }
+
+    private var visibleChildren: [FileNode] {
+        _ = loadedChildrenRevision
+        _ = treeRevision
+        return node.children ?? []
     }
 
     /// Single clickable row. The whole row is hit-tested via `contentShape`
@@ -116,7 +142,24 @@ private struct SidebarFileTreeNode: View {
         guard !isRenamingThisNode else { return }
         selection = node
         if isFolder {
+            if !expansion.isExpanded(node.url) {
+                loadDeferredChildrenIfNeeded()
+            }
             expansion.toggleDebounced(node.url)
+        }
+    }
+
+    private func loadDeferredChildrenIfNeeded() {
+        guard node.hasDeferredChildren, !isLoadingDeferredChildren else { return }
+        isLoadingDeferredChildren = true
+        let node = node
+        Task { @MainActor in
+            let loadedChildren = await Task.detached(priority: .userInitiated) {
+                node.loadedChildren()
+            }.value
+            node.replaceChildren(loadedChildren)
+            loadedChildrenRevision += 1
+            isLoadingDeferredChildren = false
         }
     }
 }
