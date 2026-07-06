@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.32.1](https://github.com/batonogov/pine/compare/v1.32.0...v1.32.1) (2026-07-06)
+
+
+### Bug Fixes
+
+* prevent sidebar flicker during deep expansion ([#1098](https://github.com/batonogov/pine/issues/1098)) ([8d45848](https://github.com/batonogov/pine/commit/8d458480959821d194b3f2ba4a0a760ae1ad7be6))
+
 ## [1.32.0](https://github.com/batonogov/pine/compare/v1.31.2...v1.32.0) (2026-07-05)
 
 
