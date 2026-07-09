@@ -488,6 +488,21 @@ class TerminalContainerView: NSView {
     /// a different backingScaleFactor). The backing store may be invalidated
     /// in this case, leaving the terminal black (issue #1094).
     private var didChangeScreenObserver: NSObjectProtocol?
+    /// Notification observer that re-renders the active terminal when the
+    /// window transitions from occluded to visible. macOS aggressively
+    /// purges the backing store of fully-occluded windows; without recovery
+    /// the terminal stays black after the covering window moves away (issue #1094).
+    private var didChangeOcclusionStateObserver: NSObjectProtocol?
+    /// Notification observer that re-renders the active terminal when the
+    /// app is reactivated (Cmd+H hide → reveal, Spaces / Mission Control
+    /// return). `didBecomeKey` does NOT fire if the window was already key
+    /// before the hide, so the terminal would stay black until a manual
+    /// resize (issue #1094). App-level, so `object: nil`.
+    private var didBecomeActiveObserver: NSObjectProtocol?
+    /// Notification observer that re-renders the active terminal when the
+    /// window is restored from the Dock. AppKit may discard the layer's
+    /// backing store while the window is minimized (issue #1094).
+    private var didDeminiaturizeObserver: NSObjectProtocol?
 
     func showTab(_ tab: TerminalTab?) {
         guard let tab else {
@@ -741,11 +756,15 @@ class TerminalContainerView: NSView {
 
     override func removeFromSuperview() {
         removeScrollMonitor()
-        removeBecomeKeyObserver()
+        removeWindowObservers()
         super.removeFromSuperview()
     }
 
-    private func removeBecomeKeyObserver() {
+    /// Tears down every window/app-level notification observer registered in
+    /// ``viewDidMoveToWindow()``. Called on superview removal and whenever the
+    /// host window changes, so observers registered for a previous window
+    /// cannot fire against the new one (issue #1094 recovery-trigger family).
+    private func removeWindowObservers() {
         if let observer = becomeKeyObserver {
             NotificationCenter.default.removeObserver(observer)
             becomeKeyObserver = nil
@@ -753,6 +772,18 @@ class TerminalContainerView: NSView {
         if let observer = didChangeScreenObserver {
             NotificationCenter.default.removeObserver(observer)
             didChangeScreenObserver = nil
+        }
+        if let observer = didChangeOcclusionStateObserver {
+            NotificationCenter.default.removeObserver(observer)
+            didChangeOcclusionStateObserver = nil
+        }
+        if let observer = didBecomeActiveObserver {
+            NotificationCenter.default.removeObserver(observer)
+            didBecomeActiveObserver = nil
+        }
+        if let observer = didDeminiaturizeObserver {
+            NotificationCenter.default.removeObserver(observer)
+            didDeminiaturizeObserver = nil
         }
         observedWindow = nil
     }
@@ -783,7 +814,7 @@ class TerminalContainerView: NSView {
         // AppKit may call this method multiple times for the same window —
         // skip the observer dance when nothing has actually changed.
         guard window !== observedWindow else { return }
-        removeBecomeKeyObserver()
+        removeWindowObservers()
         guard let win = window else { return }
         becomeKeyObserver = NotificationCenter.default.addObserver(
             forName: NSWindow.didBecomeKeyNotification,
@@ -796,6 +827,40 @@ class TerminalContainerView: NSView {
         // scale factor may differ, invalidating the layer's contents (issue #1094).
         didChangeScreenObserver = NotificationCenter.default.addObserver(
             forName: NSWindow.didChangeScreenNotification,
+            object: win,
+            queue: .main
+        ) { [weak self] _ in
+            self?.refreshActiveTerminalAfterReparent()
+        }
+        // Re-render when the window transitions from occluded to visible.
+        // macOS purges the backing store of fully-occluded windows; without
+        // recovery the terminal stays black after the covering window moves
+        // away (issue #1094). Only repaint on the occluded → visible edge —
+        // repainting when becoming occluded is wasteful (window off-screen).
+        didChangeOcclusionStateObserver = NotificationCenter.default.addObserver(
+            forName: NSWindow.didChangeOcclusionStateNotification,
+            object: win,
+            queue: .main
+        ) { [weak self, weak win] _ in
+            guard let win,
+                  Self.shouldRecoverAfterOcclusionChange(occlusionState: win.occlusionState) else { return }
+            self?.refreshActiveTerminalAfterReparent()
+        }
+        // Re-render on app reactivation (Cmd+H hide → reveal, Spaces / Mission
+        // Control return). `didBecomeKey` does NOT fire if the window was
+        // already key before the hide, so without this the terminal stays
+        // black until a manual resize (issue #1094).
+        didBecomeActiveObserver = NotificationCenter.default.addObserver(
+            forName: NSApplication.didBecomeActiveNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.refreshActiveTerminalAfterReparent()
+        }
+        // Re-render when the window is restored from the Dock. AppKit may
+        // discard the layer's backing store while the window is minimized (issue #1094).
+        didDeminiaturizeObserver = NotificationCenter.default.addObserver(
+            forName: NSWindow.didDeminiaturizeNotification,
             object: win,
             queue: .main
         ) { [weak self] _ in
@@ -849,6 +914,18 @@ class TerminalContainerView: NSView {
     override func viewDidChangeBackingProperties() {
         super.viewDidChangeBackingProperties()
         refreshActiveTerminalAfterReparent()
+    }
+
+    /// Whether the container should repaint after a window occlusion-state
+    /// change. Only the occluded → visible transition needs recovery: macOS
+    /// purges the backing store of fully-occluded windows, and that store must
+    /// be rebuilt when the window is revealed again. Repainting when becoming
+    /// occluded is wasteful (the window is off-screen). Internal so unit tests
+    /// can pin the visible-edge decision without a live window (issue #1094).
+    internal static func shouldRecoverAfterOcclusionChange(
+        occlusionState: NSWindow.OcclusionState
+    ) -> Bool {
+        occlusionState.contains(.visible)
     }
 }
 

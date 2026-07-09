@@ -836,6 +836,18 @@ struct TerminalTabTests {
         #expect(view.layer?.contents == nil)
     }
 
+    // MARK: - Backing-store recovery triggers (occlusion / hide / minimize)
+
+    /// The terminal must recover its backing store on the occluded → visible
+    /// window transition only. Becoming occluded (window fully covered) must
+    /// NOT trigger a repaint — it is wasteful and the window is off-screen.
+    /// Pins the visible-edge decision without instantiating a live window,
+    /// so CI headless runners can exercise it (issue #1094 family).
+    @Test func recoverAfterOcclusionOnlyWhenBecomingVisible() {
+        #expect(TerminalContainerView.shouldRecoverAfterOcclusionChange(occlusionState: [.visible]))
+        #expect(!TerminalContainerView.shouldRecoverAfterOcclusionChange(occlusionState: []))
+    }
+
     /// `kickPTYWindowSize` must be a safe no-op when the shell process is
     /// not running. Calling it on a freshly-created tab (which has not
     /// reached `startIfNeeded`) must not crash, and `isProcessRunning`
