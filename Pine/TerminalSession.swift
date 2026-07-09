@@ -832,11 +832,13 @@ class TerminalContainerView: NSView {
         ) { [weak self] _ in
             self?.refreshActiveTerminalAfterReparent()
         }
-        // Re-render when the window transitions from occluded to visible.
+        // Re-render when the window becomes at least partially visible again.
         // macOS purges the backing store of fully-occluded windows; without
         // recovery the terminal stays black after the covering window moves
-        // away (issue #1094). Only repaint on the occluded → visible edge —
-        // repainting when becoming occluded is wasteful (window off-screen).
+        // away (issue #1094). The handler repaints only when the resulting
+        // occlusion state still contains `.visible` — a transition into full
+        // occlusion (`.visible` absent) is skipped because the window is
+        // off-screen anyway.
         didChangeOcclusionStateObserver = NotificationCenter.default.addObserver(
             forName: NSWindow.didChangeOcclusionStateNotification,
             object: win,
