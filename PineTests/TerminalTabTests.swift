@@ -836,6 +836,18 @@ struct TerminalTabTests {
         #expect(view.layer?.contents == nil)
     }
 
+    // MARK: - Backing-store recovery triggers (occlusion / hide / minimize)
+
+    /// The terminal must recover its backing store on the occluded → visible
+    /// window transition only. Becoming occluded (window fully covered) must
+    /// NOT trigger a repaint — it is wasteful and the window is off-screen.
+    /// Pins the visible-edge decision without instantiating a live window,
+    /// so CI headless runners can exercise it (issue #1094 family).
+    @Test func recoverAfterOcclusionOnlyWhenBecomingVisible() {
+        #expect(TerminalContainerView.shouldRecoverAfterOcclusionChange(occlusionState: [.visible]))
+        #expect(!TerminalContainerView.shouldRecoverAfterOcclusionChange(occlusionState: []))
+    }
+
     /// `kickPTYWindowSize` must be a safe no-op when the shell process is
     /// not running. Calling it on a freshly-created tab (which has not
     /// reached `startIfNeeded`) must not crash, and `isProcessRunning`
@@ -982,11 +994,13 @@ struct TerminalTabTests {
         #expect(range != nil, "Layout with new bounds must re-seed the dirty range")
     }
 
-    /// After `removeFromSuperview` the container must clean up its
-    /// become-key observer so it cannot fire against a now-detached
-    /// terminal view. Verified indirectly: posting the notification
-    /// does not crash and does not re-seed the dirty range.
-    @Test @MainActor func removeFromSuperviewClearsBecomeKeyObserver() throws {
+    /// After `removeFromSuperview` the container must clean up EVERY
+    /// backing-store recovery observer (become-key, change-screen,
+    /// change-occlusion-state, app-become-active, deminiaturize) so none
+    /// can fire against a now-detached terminal view. Verified indirectly:
+    /// posting each notification does not crash and does not re-seed the
+    /// dirty range (issue #1094 recovery-trigger family).
+    @Test @MainActor func removeFromSuperviewClearsAllRecoveryObservers() throws {
         let state = TerminalPaneState()
         let tab = state.addTab(workingDirectory: nil)
         state.startTabs(workingDirectory: nil)
@@ -1013,6 +1027,16 @@ struct TerminalTabTests {
 
         #expect(tab.terminalView.getTerminal().getUpdateRange() == nil,
                 "Detached container must not respond to becomeKey notifications")
+
+        // The three new recovery triggers added for occlusion/hide/minimize
+        // (issue #1094) must likewise be torn down — posting any of them
+        // against the orphaned window/app must not re-seed the dirty range.
+        NotificationCenter.default.post(name: NSWindow.didChangeOcclusionStateNotification, object: window)
+        NotificationCenter.default.post(name: NSApplication.didBecomeActiveNotification, object: nil)
+        NotificationCenter.default.post(name: NSWindow.didDeminiaturizeNotification, object: window)
+
+        #expect(tab.terminalView.getTerminal().getUpdateRange() == nil,
+                "Detached container must not respond to occlusion/app-active/deminimize notifications")
     }
 
     /// When the host window receives `didBecomeKey`, the active terminal

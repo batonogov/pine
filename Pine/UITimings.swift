@@ -100,6 +100,15 @@ nonisolated enum UITimings {
         /// per-keystroke fork+exec while keeping diagnostics current
         /// during a brief typing pause.
         static let configValidation: TimeInterval = 0.3
+
+        /// Terminal backing-store recovery repaint coalesce. The burst-prone
+        /// observer triggers (window occlusion toggling during Mission Control /
+        /// Stage Manager, app reactivation) each perform a synchronous
+        /// full-buffer `displayIfNeeded()` via `forceFullRedraw()`; this
+        /// trailing-edge delay collapses a flurry of visibility transitions
+        /// into a single repaint while staying imperceptible for recovery
+        /// (~3 frames at 120 Hz). Issue #1094 family.
+        static let terminalRecovery: TimeInterval = 0.05
     }
 
     /// Render-side cadences — throttling for views that redraw on every

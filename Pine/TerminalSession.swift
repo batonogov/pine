@@ -488,6 +488,27 @@ class TerminalContainerView: NSView {
     /// a different backingScaleFactor). The backing store may be invalidated
     /// in this case, leaving the terminal black (issue #1094).
     private var didChangeScreenObserver: NSObjectProtocol?
+    /// Defensive repaint when the window becomes visible again after being
+    /// fully occluded. macOS suppresses drawing for occluded windows; if a
+    /// pending redraw was dropped or the cached frame is stale on reveal,
+    /// this forces a fresh paint so the terminal is never left black
+    /// (issue #1094 family). Coalesced (occlusion can toggle in bursts).
+    private var didChangeOcclusionStateObserver: NSObjectProtocol?
+    /// Defensive repaint on app reactivation (Cmd+H hide → reveal, Spaces /
+    /// Mission Control return). `didBecomeKey` does NOT fire if the window
+    /// was already key before the hide, so this covers the gap. App-level
+    /// (`object: nil`); coalesced since it can fire in bursts (issue #1094 family).
+    private var didBecomeActiveObserver: NSObjectProtocol?
+    /// Defensive repaint when the window is restored from the Dock, in case
+    /// the cached frame is stale after minimization (issue #1094 family).
+    private var didDeminiaturizeObserver: NSObjectProtocol?
+    /// Trailing-edge coalescer for the burst-prone observer recovery repaints
+    /// (occlusion toggling during Mission Control / Stage Manager, app
+    /// reactivation). Collapses a flurry of visibility transitions into a
+    /// single `forceFullRedraw()` (a synchronous full-buffer `displayIfNeeded()`).
+    /// Lazily created; captures `self` weakly. See `scheduleCoalescedRecovery()`
+    /// and `UITimings.Debounce.terminalRecovery`.
+    private var recoveryDebouncer: Debouncer?
 
     func showTab(_ tab: TerminalTab?) {
         guard let tab else {
@@ -741,11 +762,15 @@ class TerminalContainerView: NSView {
 
     override func removeFromSuperview() {
         removeScrollMonitor()
-        removeBecomeKeyObserver()
+        removeWindowObservers()
         super.removeFromSuperview()
     }
 
-    private func removeBecomeKeyObserver() {
+    /// Tears down every window/app-level notification observer registered in
+    /// ``viewDidMoveToWindow()``. Called on superview removal and whenever the
+    /// host window changes, so observers registered for a previous window
+    /// cannot fire against the new one (issue #1094 recovery-trigger family).
+    private func removeWindowObservers() {
         if let observer = becomeKeyObserver {
             NotificationCenter.default.removeObserver(observer)
             becomeKeyObserver = nil
@@ -754,6 +779,21 @@ class TerminalContainerView: NSView {
             NotificationCenter.default.removeObserver(observer)
             didChangeScreenObserver = nil
         }
+        if let observer = didChangeOcclusionStateObserver {
+            NotificationCenter.default.removeObserver(observer)
+            didChangeOcclusionStateObserver = nil
+        }
+        if let observer = didBecomeActiveObserver {
+            NotificationCenter.default.removeObserver(observer)
+            didBecomeActiveObserver = nil
+        }
+        if let observer = didDeminiaturizeObserver {
+            NotificationCenter.default.removeObserver(observer)
+            didDeminiaturizeObserver = nil
+        }
+        // Cancel any pending coalesced recovery so it cannot fire against a
+        // detached container or a new host window (issue #1094 family).
+        recoveryDebouncer?.cancel()
         observedWindow = nil
     }
 
@@ -764,6 +804,27 @@ class TerminalContainerView: NSView {
         guard let tab = terminalPaneState?.activeTab,
               tab.terminalView.superview === self else { return }
         tab.refreshAfterReparent()
+    }
+
+    /// Schedules a trailing-edge-coalesced recovery repaint for the burst-prone
+    /// observer triggers (`didChangeOcclusionState`, `didBecomeActive`). A
+    /// flurry of visibility transitions within one animation (Mission Control,
+    /// Stage Manager, app reactivation) collapses into a single
+    /// `forceFullRedraw()` — a synchronous full-buffer `displayIfNeeded()` —
+    /// instead of firing N times. The delay is `UITimings.Debounce.terminalRecovery`
+    /// (~50 ms: imperceptible for recovery, collapses a burst). Low-frequency
+    /// observers (`becomeKey`, `didChangeScreen`, `didDeminiaturize`) and the
+    /// lifecycle hooks (`viewDidMoveToWindow`, `viewDidChangeBackingProperties`)
+    /// call `refreshActiveTerminalAfterReparent()` directly for a prompt paint.
+    private func scheduleCoalescedRecovery() {
+        if recoveryDebouncer == nil {
+            recoveryDebouncer = Debouncer(delay: UITimings.Debounce.terminalRecovery) { [weak self] in
+                MainActor.assumeIsolated {
+                    self?.refreshActiveTerminalAfterReparent()
+                }
+            }
+        }
+        recoveryDebouncer?.schedule()
     }
 
     /// Requests first responder on the terminal view.
@@ -783,7 +844,7 @@ class TerminalContainerView: NSView {
         // AppKit may call this method multiple times for the same window —
         // skip the observer dance when nothing has actually changed.
         guard window !== observedWindow else { return }
-        removeBecomeKeyObserver()
+        removeWindowObservers()
         guard let win = window else { return }
         becomeKeyObserver = NotificationCenter.default.addObserver(
             forName: NSWindow.didBecomeKeyNotification,
@@ -796,6 +857,46 @@ class TerminalContainerView: NSView {
         // scale factor may differ, invalidating the layer's contents (issue #1094).
         didChangeScreenObserver = NotificationCenter.default.addObserver(
             forName: NSWindow.didChangeScreenNotification,
+            object: win,
+            queue: .main
+        ) { [weak self] _ in
+            self?.refreshActiveTerminalAfterReparent()
+        }
+        // Defensive repaint when the window becomes visible again after being
+        // fully occluded. macOS suppresses (not purges) drawing for occluded
+        // windows, so a pending redraw may have been dropped or the cached
+        // frame may be stale on reveal — this guarantees a fresh paint. It
+        // repaints only when the resulting occlusion state contains `.visible`
+        // (skips becoming fully occluded, which is off-screen) and is coalesced
+        // because occlusion can toggle repeatedly during Mission Control / window
+        // drag (issue #1094 family).
+        didChangeOcclusionStateObserver = NotificationCenter.default.addObserver(
+            forName: NSWindow.didChangeOcclusionStateNotification,
+            object: win,
+            queue: .main
+        ) { [weak self, weak win] _ in
+            guard let win,
+                  Self.shouldRecoverAfterOcclusionChange(occlusionState: win.occlusionState) else { return }
+            self?.scheduleCoalescedRecovery()
+        }
+        // Defensive repaint on app reactivation (Cmd+H hide → reveal, Spaces /
+        // Mission Control return). `didBecomeKey` does NOT fire if the window
+        // was already key before the hide, so this covers the gap. App-level
+        // (`object: nil`) and coalesced: it can fire in bursts (reactivation
+        // while occlusion is also settling), so route through the coalesced
+        // recovery path (issue #1094 family).
+        didBecomeActiveObserver = NotificationCenter.default.addObserver(
+            forName: NSApplication.didBecomeActiveNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.scheduleCoalescedRecovery()
+        }
+        // Defensive repaint when the window is restored from the Dock, in case
+        // the cached frame is stale after minimization. Low-frequency, so kept
+        // synchronous (not coalesced) (issue #1094 family).
+        didDeminiaturizeObserver = NotificationCenter.default.addObserver(
+            forName: NSWindow.didDeminiaturizeNotification,
             object: win,
             queue: .main
         ) { [weak self] _ in
@@ -849,6 +950,18 @@ class TerminalContainerView: NSView {
     override func viewDidChangeBackingProperties() {
         super.viewDidChangeBackingProperties()
         refreshActiveTerminalAfterReparent()
+    }
+
+    /// Whether the container should repaint after a window occlusion-state
+    /// change. Only repaint when the window is at least partially visible
+    /// again — repainting while fully occluded (off-screen) is wasteful, since
+    /// macOS suppresses drawing for occluded windows anyway. Internal so unit
+    /// tests can pin the visible-edge decision without a live window
+    /// (issue #1094 family).
+    internal static func shouldRecoverAfterOcclusionChange(
+        occlusionState: NSWindow.OcclusionState
+    ) -> Bool {
+        occlusionState.contains(.visible)
     }
 }
 
