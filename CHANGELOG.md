@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.32.2](https://github.com/batonogov/pine/compare/v1.32.1...v1.32.2) (2026-07-09)
+
+
+### Bug Fixes
+
+* **terminal:** recover terminal backing store on occlusion/hide/minimize ([#1101](https://github.com/batonogov/pine/issues/1101)) ([2badccd](https://github.com/batonogov/pine/commit/2badccd13db99894b97bbe16087f48c639122d9f))
+
 ## [1.32.1](https://github.com/batonogov/pine/compare/v1.32.0...v1.32.1) (2026-07-06)
 
 
