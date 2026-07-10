@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.32.4](https://github.com/batonogov/pine/compare/v1.32.3...v1.32.4) (2026-07-10)
+
+
+### Bug Fixes
+
+* **terminal:** stop clearing layer.contents outside forceFullRedraw in appearance apply ([#1109](https://github.com/batonogov/pine/issues/1109)) ([4bdf3e3](https://github.com/batonogov/pine/commit/4bdf3e38950f8f90e9f649e3266edfd5dee8cc18))
+
 ## [1.32.3](https://github.com/batonogov/pine/compare/v1.32.2...v1.32.3) (2026-07-10)
 
 
