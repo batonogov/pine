@@ -871,6 +871,11 @@ struct TerminalTabTests {
 
         let expected = tab.terminalView.nativeBackgroundColor.cgColor
         #expect(tab.terminalView.layer?.backgroundColor == expected)
+        // forceFullRedraw() runs the safe clear path (prepareLayerForRedraw +
+        // synchronous repaint), so the stale backing must have been replaced.
+        // Uses `!= staleContents` (not `== nil`) because SwiftTerm may repaint
+        // into a fresh CGImage even on a detached view — consistent with the
+        // sibling `forceFullRedrawSyncsLayerBackground` test.
         #expect((tab.terminalView.layer?.contents as? NSString) != staleContents)
     }
 
