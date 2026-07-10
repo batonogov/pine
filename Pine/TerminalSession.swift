@@ -1074,15 +1074,26 @@ final class TerminalTab: Identifiable, Hashable {
     /// layer background in sync with the terminal model. SwiftTerm only sets
     /// `layer.backgroundColor` during initial setup, so Pine must refresh it
     /// when the app moves between light and dark appearances.
-    private func applyCurrentTerminalAppearance(forceRedraw: Bool) {
+    ///
+    /// `internal` (not `private`) so unit tests can pin the invariant that
+    /// this method does NOT clear `layer.contents` without a synchronous
+    /// repaint (issue #1107).
+    internal func applyCurrentTerminalAppearance(forceRedraw: Bool) {
         let background = TerminalPalette.currentBackgroundColor()
         terminalView.nativeForegroundColor = .textColor
         terminalView.nativeBackgroundColor = background
-        if let pineTerminalView = terminalView as? PineTerminalView {
-            pineTerminalView.prepareLayerForRedraw(background: background)
-        } else {
-            terminalView.layer?.backgroundColor = background.cgColor
-        }
+        // Sync the layer's background colour WITHOUT clearing `contents`.
+        // `prepareLayerForRedraw()` nils `layer.contents`, which is only safe
+        // from `forceFullRedraw()` — where the nil is immediately followed by
+        // a synchronous `displayIfNeeded()`. Calling it here unconditionally
+        // (including the `forceRedraw == false` init path) leaves the layer
+        // black when the subsequent repaint is a no-op: window minimized /
+        // occluded / view detached, e.g. an appearance change firing while
+        // the window is hidden (issue #1107, #1094 invariant).
+        // `forceFullRedraw()` already syncs the background and clears contents
+        // itself, so the explicit `prepareLayerForRedraw` here was both racy
+        // and redundant on the `forceRedraw == true` path.
+        terminalView.layer?.backgroundColor = background.cgColor
 
         // Apply Pine's terminal palette (issue #816, #931).
         // Centralised in `TerminalPalette` so it can be unit-tested

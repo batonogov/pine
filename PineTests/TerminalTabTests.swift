@@ -836,6 +836,44 @@ struct TerminalTabTests {
         #expect(view.layer?.contents == nil)
     }
 
+    /// `applyCurrentTerminalAppearance(forceRedraw: false)` must sync the
+    /// layer background WITHOUT clearing `contents`. Clearing contents here —
+    /// when no synchronous repaint follows — leaves the layer black if the
+    /// window is minimized/occluded (e.g. an appearance change firing while
+    /// the window is hidden). Contents clearing belongs exclusively in
+    /// `forceFullRedraw()`, where a synchronous `displayIfNeeded()` always
+    /// follows (issue #1107, #1094 invariant).
+    @Test @MainActor func applyCurrentTerminalAppearanceDoesNotClearContentsWithoutRedraw() {
+        let tab = TerminalTab(name: "test")
+        let existingContents = "valid-backing" as NSString
+        tab.terminalView.layer?.contents = existingContents
+
+        tab.applyCurrentTerminalAppearance(forceRedraw: false)
+
+        // Background must be synced to the appearance-aware native background,
+        // but contents must NOT be nil'd — no synchronous repaint follows.
+        let expected = tab.terminalView.nativeBackgroundColor.cgColor
+        #expect(tab.terminalView.layer?.backgroundColor == expected)
+        #expect((tab.terminalView.layer?.contents as? NSString) == existingContents)
+    }
+
+    /// `applyCurrentTerminalAppearance(forceRedraw: true)` keeps the safe
+    /// behaviour: `forceFullRedraw()` clears stale contents and syncs the
+    /// background. This pins that the `forceRedraw == true` path did not
+    /// regress when the unconditional `prepareLayerForRedraw` was removed
+    /// from `applyCurrentTerminalAppearance` (issue #1107).
+    @Test @MainActor func applyCurrentTerminalAppearanceForceRedrawClearsContents() {
+        let tab = TerminalTab(name: "test")
+        let staleContents = "stale-terminal-backing" as NSString
+        tab.terminalView.layer?.contents = staleContents
+
+        tab.applyCurrentTerminalAppearance(forceRedraw: true)
+
+        let expected = tab.terminalView.nativeBackgroundColor.cgColor
+        #expect(tab.terminalView.layer?.backgroundColor == expected)
+        #expect((tab.terminalView.layer?.contents as? NSString) != staleContents)
+    }
+
     // MARK: - Backing-store recovery triggers (occlusion / hide / minimize)
 
     /// The terminal must recover its backing store on the occluded → visible
