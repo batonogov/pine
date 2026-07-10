@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.32.3](https://github.com/batonogov/pine/compare/v1.32.2...v1.32.3) (2026-07-10)
+
+
+### Bug Fixes
+
+* **sidebar:** preserve loaded children across tree refresh ([#1104](https://github.com/batonogov/pine/issues/1104)) ([b77d33d](https://github.com/batonogov/pine/commit/b77d33d43f15e0a41101201ea73959a11d5dc640))
+
 ## [1.32.2](https://github.com/batonogov/pine/compare/v1.32.1...v1.32.2) (2026-07-09)
 
 
