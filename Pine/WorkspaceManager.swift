@@ -85,7 +85,17 @@ final class WorkspaceManager {
     /// Sets `rootNodes`, bumps `rootNodesRevision`, and schedules a debounced
     /// `onRootNodesChanged` notification. Centralised so every assignment site
     /// (initial load, shallow refresh, full refresh) emits the same signals.
+    ///
+    /// Before replacing the tree, previously-loaded children of deep folders
+    /// are merged from the current tree into matching deferred nodes of the
+    /// new tree. This prevents expanded deep folders from briefly showing an
+    /// empty/ProgressView gap when a refresh replaces the tree — the residual
+    /// flicker left after #1098 (#1097). The merge keeps `hasDeferredChildren`
+    /// true so the sidebar still reloads fresh data in the background; this is
+    /// required for gitignored subdirectories (e.g. `node_modules/*`) which
+    /// Phase 2 never refreshes.
     private func setRootNodes(_ nodes: [FileNode]) {
+        FileNode.mergeLoadedSubtrees(into: nodes, preservingFrom: rootNodes)
         rootNodes = nodes
         rootNodesRevision += 1
         notifyRootNodesChanged()

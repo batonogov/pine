@@ -172,6 +172,73 @@ nonisolated final class FileNode: Identifiable, Hashable, @unchecked Sendable {
         hasDeferredChildren = false
     }
 
+    /// Transfers previously-loaded children from `oldNodes` into matching
+    /// deferred nodes inside `newNodes` (keyed by URL), so that expanded
+    /// deep folders do not lose their content when a refresh replaces the
+    /// tree with fresh (shallow) instances.
+    ///
+    /// Without this, every FSEvents-triggered `setRootNodes(shallowChildren)`
+    /// replaces the whole tree with fresh instances where folders beyond
+    /// `shallowDepth` (and every gitignored subdirectory) are
+    /// `hasDeferredChildren = true, children = []`. The sidebar then shows a
+    /// `ProgressView` gap while `.onChange(of: treeRevision)` re-triggers an
+    /// async deferred load — visible as flicker (#1097).
+    ///
+    /// Merging adopts the previously-loaded children WITHOUT clearing
+    /// `hasDeferredChildren`. Keeping the deferred flag true lets the
+    /// sidebar's `.onChange(of: treeRevision)` re-trigger
+    /// `loadDeferredChildrenIfNeeded`, which reloads fresh data in the
+    /// background while the old children stay visible (no ProgressView gap).
+    /// This is essential for gitignored subdirectories (e.g. `node_modules/*`):
+    /// they are always shallow-loaded (`maxDepth: 0`) on a separate
+    /// `LoadContext`, so `wasDepthLimit` does not propagate and Phase 2 never
+    /// refreshes them — without the background reload they would go stale.
+    ///
+    /// Pure static helper so it is unit-testable without a WorkspaceManager.
+    static func mergeLoadedSubtrees(
+        into newNodes: [FileNode],
+        preservingFrom oldNodes: [FileNode]
+    ) {
+        guard !oldNodes.isEmpty else { return }
+
+        // Index directories that have loaded children by URL so a deferred
+        // counterpart in the new tree can adopt them. Include directories
+        // that are themselves still flagged deferred but already carry
+        // (previously-merged) children — this chains merged children across
+        // successive setRootNodes calls (Phase 1 → Phase 2, or rapid
+        // successive refreshes) so a gitignored subdir does not briefly go
+        // empty between phases while its background reload is in flight.
+        var loadedByURL: [URL: FileNode] = [:]
+        var oldStack: [FileNode] = oldNodes
+        while let n = oldStack.popLast() {
+            guard n.isDirectory else { continue }
+            if let kids = n.children, !kids.isEmpty {
+                loadedByURL[n.url] = n
+            }
+            if let kids = n.children { oldStack.append(contentsOf: kids) }
+        }
+        guard !loadedByURL.isEmpty else { return }
+
+        // Walk the new tree; for each deferred directory with an empty
+        // children array that has a loaded counterpart, adopt its children.
+        // Transferred children are already fully loaded (loadedChildren uses
+        // maxDepth = .max), so we do not descend into them. Crucially, we keep
+        // `hasDeferredChildren = true` (do NOT call replaceChildren) so the
+        // sidebar re-triggers a background reload of fresh data.
+        var newStack: [FileNode] = newNodes
+        while let n = newStack.popLast() {
+            guard n.isDirectory else { continue }
+            if n.hasDeferredChildren,
+               n.children?.isEmpty ?? true,
+               let old = loadedByURL[n.url],
+               let oldKids = old.children, !oldKids.isEmpty {
+                n.children = oldKids
+                continue
+            }
+            if let kids = n.children { newStack.append(contentsOf: kids) }
+        }
+    }
+
     /// Result of a depth-limited tree build, including whether the depth limit was reached.
     struct LoadResult {
         let root: FileNode

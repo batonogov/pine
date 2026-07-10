@@ -246,4 +246,61 @@ struct SidebarExpandedRefreshTests {
             "Deep project should have at least 2 revision increments (shallow + full phases)"
         )
     }
+
+    // MARK: - Sidebar flicker fix (#1097): loaded children survive refresh
+
+    @Test("Deep loaded folder retains children after sync refresh (no empty gap)")
+    @MainActor
+    func deepLoadedFolderRetainsChildrenAfterSyncRefresh() async throws {
+        // Regression for the #1097 flicker fix: a previously-expanded deep
+        // folder must not briefly go empty when a refresh rebuilds the tree
+        // with a shallow depth limit. `refreshFileTree()` runs Phase 1
+        // (shallow) synchronously via `setRootNodes`, which must merge the
+        // folder's previously-loaded children into the fresh deferred node.
+        // The assertions run synchronously on the main thread before the
+        // async Phase 2 (`loadDirectoryContentsAsync`) can replace rootNodes,
+        // so this is deterministic.
+        let dir = try makeTempDirectory()
+        defer { cleanup(dir) }
+
+        // `d` is beyond shallowDepth=3 → deferred on shallow rebuilds.
+        let deepDir = dir.appendingPathComponent("a/b/c/d")
+        try FileManager.default.createDirectory(at: deepDir, withIntermediateDirectories: true)
+        try "x".write(
+            to: deepDir.appendingPathComponent("file.txt"),
+            atomically: true, encoding: .utf8
+        )
+
+        let manager = WorkspaceManager()
+        manager.loadDirectory(url: dir)
+        // Wait for the initial two-phase load to finish (Phase 2 loads `d` fully).
+        for _ in 0..<200 {
+            try await Task.sleep(for: .milliseconds(50))
+            if !manager.isLoading { break }
+        }
+
+        func findD() -> FileNode? {
+            manager.rootNodes.first { $0.name == "a" }?
+                .children?.first { $0.name == "b" }?
+                .children?.first { $0.name == "c" }?
+                .children?.first { $0.name == "d" }
+        }
+        #expect(
+            findD()?.children?.contains { $0.name == "file.txt" } == true,
+            "`d` should be fully loaded after the initial Phase 2"
+        )
+
+        // Synchronous shallow refresh — must merge `d`'s children, not drop them.
+        manager.refreshFileTree()
+
+        let d = findD()
+        #expect(
+            d?.hasDeferredChildren == true,
+            "`d` stays deferred so the sidebar background-reloads fresh data"
+        )
+        #expect(
+            d?.children?.contains { $0.name == "file.txt" } == true,
+            "Previously-loaded children survive the sync shallow refresh (no flicker gap)"
+        )
+    }
 }
