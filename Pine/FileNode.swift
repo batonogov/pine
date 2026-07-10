@@ -201,13 +201,18 @@ nonisolated final class FileNode: Identifiable, Hashable, @unchecked Sendable {
     ) {
         guard !oldNodes.isEmpty else { return }
 
-        // Index previously-loaded (non-deferred) directories by URL so a
-        // deferred counterpart in the new tree can adopt their children.
+        // Index directories that have loaded children by URL so a deferred
+        // counterpart in the new tree can adopt them. Include directories
+        // that are themselves still flagged deferred but already carry
+        // (previously-merged) children — this chains merged children across
+        // successive setRootNodes calls (Phase 1 → Phase 2, or rapid
+        // successive refreshes) so a gitignored subdir does not briefly go
+        // empty between phases while its background reload is in flight.
         var loadedByURL: [URL: FileNode] = [:]
         var oldStack: [FileNode] = oldNodes
         while let n = oldStack.popLast() {
             guard n.isDirectory else { continue }
-            if !n.hasDeferredChildren, let kids = n.children, !kids.isEmpty {
+            if let kids = n.children, !kids.isEmpty {
                 loadedByURL[n.url] = n
             }
             if let kids = n.children { oldStack.append(contentsOf: kids) }
