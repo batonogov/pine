@@ -598,4 +598,143 @@ struct FileNodeTests {
         #expect(names.contains("new.swift"))
         #expect(names.contains("vendor"))
     }
+
+    // MARK: - mergeLoadedSubtrees (sidebar flicker fix, #1097)
+
+    /// Helper: walk a tree following a slash-separated path of names.
+    private func descend(_ path: String, from node: FileNode) -> FileNode? {
+        var current = node
+        for component in path.split(separator: "/") {
+            guard let next = current.children?.first(where: { $0.name == String(component) }) else {
+                return nil
+            }
+            current = next
+        }
+        return current
+    }
+
+    @Test func mergeLoadedSubtreesPreservesDeepChildrenAcrossShallowRefresh() throws {
+        // Regression for sidebar flicker (#1097): a refresh rebuilds the
+        // tree with a shallow depth limit, making a previously-expanded
+        // deep folder deferred again (empty children). Without merging,
+        // the sidebar shows a ProgressView gap until the deferred load
+        // re-runs. mergeLoadedSubtrees must carry the previously-loaded
+        // children over so there is no empty gap.
+        let tempDir = try makeTempDirectory()
+        defer { cleanup(tempDir) }
+
+        // Structure: root/a/b/c/d/file.txt (d is beyond shallowDepth=3)
+        let deepDir = tempDir.appendingPathComponent("a/b/c/d")
+        try FileManager.default.createDirectory(at: deepDir, withIntermediateDirectories: true)
+        FileManager.default.createFile(atPath: deepDir.appendingPathComponent("file.txt").path, contents: nil)
+
+        // Old tree: fully loaded (simulates the user having expanded `d`).
+        let oldTree = FileNode.loadTree(url: tempDir, projectRoot: tempDir, ignoredPaths: [], maxDepth: .max)
+        let oldD = descend("a/b/c/d", from: oldTree.root)
+        #expect(oldD?.hasDeferredChildren == false)
+        #expect(oldD?.children?.contains { $0.name == "file.txt" } == true)
+
+        // New shallow tree: `d` is deferred (depth 4 > shallowDepth 3).
+        let newTree = FileNode.loadTree(url: tempDir, projectRoot: tempDir, ignoredPaths: [], maxDepth: 3)
+        let newNodes = newTree.root.children ?? []
+        let newD = descend("a/b/c/d", from: newTree.root)
+        #expect(newD?.hasDeferredChildren == true)
+        #expect(newD?.children?.isEmpty ?? true)
+
+        // Merge previously-loaded children into the new (deferred) tree.
+        FileNode.mergeLoadedSubtrees(into: newNodes, preservingFrom: oldTree.root.children ?? [])
+
+        // After merge: `d` keeps its children — no empty gap. The deferred
+        // flag stays true so the sidebar reloads fresh data in the background
+        // (essential for gitignored subdirs that Phase 2 never refreshes).
+        #expect(newD?.hasDeferredChildren == true)
+        #expect(newD?.children?.contains { $0.name == "file.txt" } == true)
+    }
+
+    @Test func mergeLoadedSubtreesSkipsFoldersWithoutLoadedChildren() throws {
+        // A deep folder that was never expanded (still deferred in the old
+        // tree) must not gain phantom children from an unrelated node.
+        let tempDir = try makeTempDirectory()
+        defer { cleanup(tempDir) }
+
+        let deepDir = tempDir.appendingPathComponent("a/b/c/d")
+        try FileManager.default.createDirectory(at: deepDir, withIntermediateDirectories: true)
+        FileManager.default.createFile(atPath: deepDir.appendingPathComponent("file.txt").path, contents: nil)
+
+        // Old tree is ALSO shallow — `d` was never expanded, so it has no
+        // loaded children to merge.
+        let oldTree = FileNode.loadTree(url: tempDir, projectRoot: tempDir, ignoredPaths: [], maxDepth: 3)
+        let newTree = FileNode.loadTree(url: tempDir, projectRoot: tempDir, ignoredPaths: [], maxDepth: 3)
+        let newNodes = newTree.root.children ?? []
+
+        FileNode.mergeLoadedSubtrees(into: newNodes, preservingFrom: oldTree.root.children ?? [])
+
+        let newD = descend("a/b/c/d", from: newTree.root)
+        #expect(newD?.hasDeferredChildren == true)
+        #expect(newD?.children?.isEmpty ?? true)
+    }
+
+    @Test func mergeLoadedSubtreesIsNoOpWhenOldTreeEmpty() throws {
+        let tempDir = try makeTempDirectory()
+        defer { cleanup(tempDir) }
+
+        let deepDir = tempDir.appendingPathComponent("a/b/c/d")
+        try FileManager.default.createDirectory(at: deepDir, withIntermediateDirectories: true)
+        FileManager.default.createFile(atPath: deepDir.appendingPathComponent("file.txt").path, contents: nil)
+
+        let newTree = FileNode.loadTree(url: tempDir, projectRoot: tempDir, ignoredPaths: [], maxDepth: 3)
+        let newNodes = newTree.root.children ?? []
+
+        // No old tree to merge from — must not crash and must not change state.
+        FileNode.mergeLoadedSubtrees(into: newNodes, preservingFrom: [])
+
+        let newD = descend("a/b/c/d", from: newTree.root)
+        #expect(newD?.hasDeferredChildren == true)
+        #expect(newD?.children?.isEmpty ?? true)
+    }
+
+    @Test func mergeLoadedSubtreesKeepsDeferredFlagForGitignoredSubdirs() throws {
+        // Regression for the staleness bug found in review of the #1097 fix:
+        // gitignored directories (e.g. node_modules) are shallow-loaded with
+        // a separate LoadContext(maxDepth: 0), so their subdirectories are
+        // deferred and Phase 2 never refreshes them. The merge must keep
+        // `hasDeferredChildren = true` after adopting old children so the
+        // sidebar still reloads fresh data in the background — otherwise the
+        // merged children would freeze forever.
+        let tempDir = try makeTempDirectory()
+        defer { cleanup(tempDir) }
+
+        // Structure: root/vendor/express/index.js — `vendor` is gitignored.
+        let vendorDir = tempDir.appendingPathComponent("vendor/express")
+        try FileManager.default.createDirectory(at: vendorDir, withIntermediateDirectories: true)
+        FileManager.default.createFile(atPath: vendorDir.appendingPathComponent("index.js").path, contents: nil)
+
+        // Old tree: vendor is shallow (gitignored), express deferred until
+        // the user expands it (simulated here via loadChildren).
+        let oldTree = FileNode.loadTree(
+            url: tempDir, projectRoot: tempDir, ignoredPaths: ["vendor"], maxDepth: .max
+        )
+        let oldExpress = try #require(descend("vendor/express", from: oldTree.root))
+        // Before expansion express is deferred (empty) — gitignored shallow load
+        // uses maxDepth: 0 regardless of the tree's maxDepth.
+        #expect(oldExpress.hasDeferredChildren == true)
+        oldExpress.loadChildren()  // simulate the user expanding express
+        #expect(oldExpress.children?.contains { $0.name == "index.js" } == true)
+
+        // New shallow tree: express is deferred (empty children) again.
+        let newTree = FileNode.loadTree(
+            url: tempDir, projectRoot: tempDir, ignoredPaths: ["vendor"], maxDepth: 3
+        )
+        let newNodes = newTree.root.children ?? []
+        let newExpress = descend("vendor/express", from: newTree.root)
+        #expect(newExpress?.hasDeferredChildren == true)
+        #expect(newExpress?.children?.isEmpty ?? true)
+
+        FileNode.mergeLoadedSubtrees(into: newNodes, preservingFrom: oldTree.root.children ?? [])
+
+        // Children adopted (no empty gap) AND deferred flag preserved so the
+        // sidebar background-reloads fresh data.
+        #expect(newExpress?.hasDeferredChildren == true)
+        #expect(newExpress?.children?.contains { $0.name == "index.js" } == true)
+    }
 }
