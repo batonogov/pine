@@ -67,10 +67,17 @@ struct StatusBarView: View {
 
             // Agent attention bell (#1112): amber + filled when any agent is
             // blocked waiting for input (permission prompt / reply), plain
-            // when agents are merely active/done, hidden when none are
-            // running. Clicking opens the attention-list overlay.
+            // when agents are merely active, hidden when none are running or
+            // every agent is idle. Clicking opens the attention-list overlay.
+            //
+            // `.done` sessions are intentionally excluded: a session is moved
+            // to `.done` and immediately detached from its tab
+            // (`session(forPID:)` returns nil), so a done summary can never
+            // reach the status bar. Surfacing "done" on the bell is tracked
+            // as a follow-up (would need retaining the session briefly).
             let waitingCount = summaries.filter { $0.state.needsAttention }.count
-            if waitingCount > 0 || summaries.contains(where: { $0.state.isActive || $0.state == .done }) {
+            let hasActive = summaries.contains(where: { $0.state.isActive })
+            if waitingCount > 0 || hasActive {
                 Button {
                     onShowAttention?()
                 } label: {
@@ -80,7 +87,6 @@ struct StatusBarView: View {
                 }
                 .buttonStyle(.plain)
                 .accessibilityIdentifier(AccessibilityID.agentAttentionBell)
-                .help(waitingCount > 0 ? Strings.agentAttentionTitle : "")
             }
 
             if !summaries.isEmpty {

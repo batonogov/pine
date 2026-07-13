@@ -185,4 +185,54 @@ struct AgentDetectionCoordinatorTests {
         let expected = "\(session.agentType.displayName) — \(session.state.displayName)"
         #expect(expected == "Claude Code — Executing")
     }
+
+    // MARK: - cputime parsing (#1112 fix: `times=` was an invalid ps keyword;
+    // the coordinator now polls `cputime=` and parses `[[DD-]HH:]MM:SS[.cc]`.)
+
+    @Test func parseCpuTimeHandlesMmSs() {
+        #expect(AgentDetectionCoordinator.parseCpuTime("0:00.08") == 0)
+        #expect(AgentDetectionCoordinator.parseCpuTime("1:15") == 75)
+        #expect(AgentDetectionCoordinator.parseCpuTime("99:15.60") == 5955)
+    }
+
+    @Test func parseCpuTimeHandlesHhMmSsAndDayField() {
+        #expect(AgentDetectionCoordinator.parseCpuTime("1:23:45") == 5025)
+        // 2 days, 4 hours, 10 minutes, 27 seconds.
+        #expect(AgentDetectionCoordinator.parseCpuTime("2-04:10:27") == 187827)
+    }
+
+    @Test func parseCpuTimeRejectsBareIntegerAndGarbage() {
+        // A bare integer is a command argument (e.g. `--port 8080`), NOT a
+        // cputime value — must return nil so the command string is preserved.
+        #expect(AgentDetectionCoordinator.parseCpuTime("8080") == nil)
+        #expect(AgentDetectionCoordinator.parseCpuTime("--verbose") == nil)
+        #expect(AgentDetectionCoordinator.parseCpuTime("") == nil)
+    }
+
+    @Test func parsePsOutputExtractsCpuTimeFromThreeColumnForm() {
+        // Realistic `ps -eo pid=,command=,cputime=` output: multi-word
+        // command followed by an `MM:SS.cc` cputime.
+        let output = """
+          1234 /usr/local/bin/claude 0:12.45
+          5678 node /opt/homebrew/bin/pi 1:23:01
+          """
+        let processes = AgentDetectionCoordinator.parsePsOutput(output)
+        #expect(processes.count == 2)
+        #expect(processes[0].pid == 1234)
+        #expect(processes[0].command == "/usr/local/bin/claude")
+        #expect(processes[0].cpuTime == 12)
+        #expect(processes[1].pid == 5678)
+        #expect(processes[1].command == "node /opt/homebrew/bin/pi")
+        #expect(processes[1].cpuTime == 4981)
+    }
+
+    @Test func parsePsOutputDoesNotCorruptCommandEndingInNumericArg() {
+        // `claude --port 8080` — the trailing `8080` is a command arg, not a
+        // cputime value (no colon). Must stay in the command string.
+        let output = "  1234 claude --port 8080\n"
+        let processes = AgentDetectionCoordinator.parsePsOutput(output)
+        #expect(processes.count == 1)
+        #expect(processes[0].command == "claude --port 8080")
+        #expect(processes[0].cpuTime == nil)
+    }
 }

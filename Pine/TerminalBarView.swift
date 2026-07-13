@@ -18,9 +18,14 @@ import SwiftUI
 /// - amber `exclamationmark.circle.fill` when the agent is blocked waiting
 ///   for input (permission prompt / reply) — the per-tab "needs attention"
 ///   signal (#1112, cf. agterm's blocked status);
-/// - green `checkmark.circle.fill` (dimmed) when the session is `.done`;
 /// - otherwise the agent's colored dot, pulsing for active states
 ///   (`.thinking` / `.executing`) (#1048).
+///
+/// `.done` is intentionally not given its own glyph here: the moment a
+/// session goes `.done` it is detached from its tab (`session(forPID:)`
+/// returns nil for done), so this view stops rendering entirely. A visible
+/// "completed" indicator would require retaining the session briefly —
+/// tracked as a follow-up to #1112.
 struct AgentTabBadge: View {
     let session: AgentSession
     @State private var pulse = false
@@ -29,15 +34,10 @@ struct AgentTabBadge: View {
 
     var body: some View {
         Group {
-            switch session.state {
-            case .waitingInput:
+            if session.state == .waitingInput {
                 Image(systemName: "exclamationmark.circle.fill")
                     .foregroundStyle(.orange)
-            case .done:
-                Image(systemName: "checkmark.circle.fill")
-                    .foregroundStyle(.green)
-                    .opacity(0.7)
-            case .idle, .thinking, .executing:
+            } else {
                 Circle()
                     .fill(Color(nsColor: session.agentType.color))
                     .frame(width: 7, height: 7)

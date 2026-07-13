@@ -118,7 +118,7 @@ nonisolated final class AgentDetectionCoordinator {
     /// `@MainActor` closure never captures `self`, avoiding the strict-
     /// concurrency "sending 'self' risks causing data races" error.
     nonisolated private func captureSnapshot() {
-        let result = processRunner("/bin/ps", ["-eo", "pid=,command=,times="], "", 3.0)
+        let result = processRunner("/bin/ps", ["-eo", "pid=,command=,cputime="], "", 3.0)
         let processes = Self.parsePsOutput(result.stdout)
         // Extract references before the hop — the DispatchWorkItem closure
         // must not capture `self` (nonisolated, non-Sendable).
@@ -132,17 +132,21 @@ nonisolated final class AgentDetectionCoordinator {
         DispatchQueue.main.async(execute: work)
     }
 
-    /// Parses raw `ps -eo pid=,command=,times=` output into `[DetectedProcess]`.
+    /// Parses raw `ps -eo pid=,command=,cputime=` output into `[DetectedProcess]`.
     /// `nonisolated` so it is callable from the background polling queue
     /// via `captureSnapshot`. Relies on `DetectedProcess` being `nonisolated`
     /// so its init is reachable from here.
     ///
-    /// The format is `<pid> <command...> <cpu_seconds>`: `pid` is the first
-    /// whitespace-delimited token, `cpu_seconds` the last (an integer from
-    /// `ps times=`), and `command` everything in between (commands contain
-    /// spaces). When the trailing token is not an integer the line is treated
-    /// as the legacy two-column `pid=,command=` form — `cpuTime` stays `nil`
-    /// and state refinement is skipped (#1112 backward compatibility).
+    /// The format is `<pid> <command...> <cputime>`: `pid` is the first
+    /// whitespace-delimited token, `cputime` the last (formatted as
+    /// `[[DD-]HH:]MM:SS[.cc]` — always containing a colon), and `command`
+    /// everything in between (commands contain spaces). A trailing token is
+    /// treated as cputime only when ``parseCpuTime(_:)`` accepts it; this
+    /// guards against a command line whose final argv is numeric
+    /// (e.g. `claude --port 8080`) being misread as CPU seconds (#1112).
+    /// When the trailing token is not a cputime value the line is treated as
+    /// the legacy two-column `pid=,command=` form — `cpuTime` stays `nil`
+    /// and state refinement is skipped.
     nonisolated static func parsePsOutput(_ output: String) -> [DetectedProcess] {
         var processes: [DetectedProcess] = []
         for line in output.split(separator: "\n", omittingEmptySubsequences: true) {
@@ -150,14 +154,43 @@ nonisolated final class AgentDetectionCoordinator {
             let tokens = trimmed.split(separator: " ", omittingEmptySubsequences: true)
             guard tokens.count >= 2 else { continue }
             guard let pid = Int32(tokens[0]) else { continue }
-            // Last token is cumulative CPU seconds when present (ps times=).
+            // Last token is cumulative CPU time (ps cputime=) when it parses
+            // as one — see ``parseCpuTime(_:)``.
             let last = String(tokens[tokens.count - 1])
-            let cpuTime = Int(last)
+            let cpuTime = parseCpuTime(last)
             let commandEnd = cpuTime != nil ? tokens.count - 1 : tokens.count
             let command = tokens[1..<commandEnd].joined(separator: " ")
             processes.append(DetectedProcess(pid: pid, command: command, cpuTime: cpuTime))
         }
         return processes
+    }
+
+    /// Parses a macOS `ps cputime=` value (`[[DD-]HH:]MM:SS[.cc]`, always
+    /// containing a colon) into cumulative whole seconds. Returns `nil` for
+    /// anything without a colon — in particular a bare integer, which is a
+    /// command argument (e.g. `--port 8080`), not a CPU time. Centiseconds
+    /// (the `.cc` suffix) are truncated, not rounded — we only compare for
+    /// advancement between snapshots, so sub-second precision is irrelevant.
+    ///
+    /// `nonisolated` so it is reachable from the nonisolated parser above.
+    nonisolated static func parseCpuTime(_ value: String) -> Int? {
+        // macOS `ps` always emits at least `MM:SS[.cc]`; a colon must be
+        // present. Reject bare integers (command args) explicitly.
+        guard value.contains(":") else { return nil }
+        // Strip a leading day field (`DD-HH:MM:SS` → `DD:HH:MM:SS`) and the
+        // optional centisecond suffix (`.cc`).
+        let withoutDays = value.replacingOccurrences(of: "-", with: ":")
+        let withoutCenti = withoutDays.split(separator: ".").first.map(String.init) ?? withoutDays
+        let parts = withoutCenti.split(separator: ":").compactMap { Int($0) }
+        // parts is [SS], [MM, SS], [HH, MM, SS], or [DD, HH, MM, SS]. Must
+        // match the segment count exactly (a stray non-numeric segment means
+        // this was not really a cputime value). Days are base-24, the rest
+        // base-60, so pad to a fixed [DD, HH, MM, SS] and apply positional
+        // multipliers (a naive `*60` fold mis-counts day fields).
+        let expectedSegments = withoutCenti.filter { $0 == ":" }.count + 1
+        guard parts.count == expectedSegments, (1...4).contains(parts.count) else { return nil }
+        let padded = [Int](repeating: 0, count: 4 - parts.count) + parts
+        return padded[0] * 86_400 + padded[1] * 3_600 + padded[2] * 60 + padded[3]
     }
 
     /// Feeds the process snapshot to the detector and reconciles terminal
@@ -190,7 +223,7 @@ nonisolated final class AgentDetectionCoordinator {
     /// returns. Uses the injected `processRunner` (mock in tests), parses via
     /// `parsePsOutput`, then calls `applySnapshot` directly on the main actor.
     @MainActor internal func runSnapshotForTesting() {
-        let result = processRunner("/bin/ps", ["-eo", "pid=,command=,times="], "", 3.0)
+        let result = processRunner("/bin/ps", ["-eo", "pid=,command=,cputime="], "", 3.0)
         let processes = Self.parsePsOutput(result.stdout)
         Self.applySnapshot(processes, detector: detector, terminalManager: terminalManager)
     }
