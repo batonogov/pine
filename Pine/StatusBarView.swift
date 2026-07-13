@@ -20,6 +20,9 @@ struct StatusBarView: View {
     var diagnosticsSummary: DiagnosticsSummary?
     /// Called when the user clicks the Problems indicator to toggle the panel.
     var onToggleProblems: (() -> Void)?
+    /// Called when the user clicks the agent attention bell to open the
+    /// attention-list overlay (#1112).
+    var onShowAttention: (() -> Void)?
 
     /// Active AI agent sessions across all terminal panes (#952).
     /// Empty when no agent is running → `AgentStatusBarItem` is hidden.
@@ -60,6 +63,30 @@ struct StatusBarView: View {
                         .lineLimit(1)
                 }
                 .accessibilityIdentifier(AccessibilityID.progressIndicator)
+            }
+
+            // Agent attention bell (#1112): amber + filled when any agent is
+            // blocked waiting for input (permission prompt / reply), plain
+            // when agents are merely active, hidden when none are running or
+            // every agent is idle. Clicking opens the attention-list overlay.
+            //
+            // `.done` sessions are intentionally excluded: a session is moved
+            // to `.done` and immediately detached from its tab
+            // (`session(forPID:)` returns nil), so a done summary can never
+            // reach the status bar. Surfacing "done" on the bell is tracked
+            // as a follow-up (would need retaining the session briefly).
+            let waitingCount = summaries.filter { $0.state.needsAttention }.count
+            let hasActive = summaries.contains(where: { $0.state.isActive })
+            if waitingCount > 0 || hasActive {
+                Button {
+                    onShowAttention?()
+                } label: {
+                    Image(systemName: waitingCount > 0 ? "bell.badge.fill" : "bell")
+                        .font(.system(size: LayoutMetrics.captionFontSize))
+                        .foregroundStyle(waitingCount > 0 ? .orange : .secondary)
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier(AccessibilityID.agentAttentionBell)
             }
 
             if !summaries.isEmpty {

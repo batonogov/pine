@@ -37,11 +37,19 @@ nonisolated struct DetectedProcess: Sendable, Equatable {
     /// Working directory of the process, if known. Reserved for Phase 2
     /// (file-system correlation); not consulted for matching in this PR.
     let cwd: URL?
+    /// Cumulative CPU time in seconds (from `ps -eo ... times=`). Used by
+    /// `AgentDetector.processSnapshotDidUpdate(_:)` to refine
+    /// `.idle` → `.executing` / `.waitingInput`: a session whose CPU time
+    /// stopped advancing between two snapshots is idle at a prompt (#1112).
+    /// `nil` when the snapshot did not carry CPU time (legacy parse path,
+    /// unit tests) — the detector leaves the state untouched in that case.
+    let cpuTime: Int?
 
-    init(pid: Int32, command: String, cwd: URL? = nil) {
+    init(pid: Int32, command: String, cwd: URL? = nil, cpuTime: Int? = nil) {
         self.pid = pid
         self.command = command
         self.cwd = cwd
+        self.cpuTime = cpuTime
     }
 }
 
@@ -79,6 +87,11 @@ final class AgentDetector {
     /// once its pid is no longer observed.
     private var sessionsByPID: [Int32: AgentSession] = [:]
 
+    /// Last cumulative CPU time (seconds) seen for each tracked pid, used by
+    /// `processSnapshotDidUpdate(_:)` to refine state. Cleared in `markDone`
+    /// so pid reuse starts a fresh baseline (#1112).
+    private var lastCpuTimeByPID: [Int32: Int] = [:]
+
     /// Sessions whose state is not `.done`.
     var activeSessions: [AgentSession] {
         detectedSessions.filter { $0.state != .done }
@@ -109,20 +122,38 @@ final class AgentDetector {
     func processSnapshotDidUpdate(_ processes: [DetectedProcess]) {
         let snapshotPIDs = Set(processes.map(\.pid))
 
-        // 1. Detect: create sessions for newly-recognised agent pids.
+        // 1. Detect + refine: recognise new agent pids, and refine the state
+        //    of already-tracked sessions from their cumulative CPU time.
+        //    CPU time advancing between snapshots → the agent is doing work
+        //    (.executing); stalled → it is idle at a prompt, waiting for
+        //    input (.waitingInput). This is a coarse, agent-agnostic
+        //    heuristic — output-pattern / hook-based detection (Claude Code
+        //    Stop/Notification, Codex lifecycle) is tracked as a follow-up
+        //    to #1112 for higher fidelity.
         for process in processes {
             let executableName = Self.extractExecutableName(from: process.command)
             guard let resolved = AgentType.resolve(fromProcessName: executableName),
                   !Self.isGeneric(resolved) else { continue }
 
-            // Already tracked and still active — nothing to do in this PR.
-            // State refinement (thinking / executing / waitingInput) requires
-            // output-pattern matching, which is out of scope.
-            if sessionsByPID[process.pid] != nil { continue }
+            if let existing = sessionsByPID[process.pid] {
+                // State refinement (issue #1112): compare cumulative CPU time
+                // against the previous snapshot. CPU time is unavailable in
+                // some test/legacy snapshots → leave the state untouched.
+                if let cpu = process.cpuTime {
+                    if let prev = lastCpuTimeByPID[process.pid], existing.state != .done {
+                        existing.state = (cpu > prev) ? .executing : .waitingInput
+                    }
+                    lastCpuTimeByPID[process.pid] = cpu
+                }
+                continue
+            }
 
+            // Newly recognised agent — start in `.idle`; the first CPU sample
+            // is the baseline, the next snapshot begins refinement.
             let session = AgentSession(agentType: resolved, state: .idle)
             sessionsByPID[process.pid] = session
             detectedSessions.append(session)
+            if let cpu = process.cpuTime { lastCpuTimeByPID[process.pid] = cpu }
         }
 
         // 2. Reconcile: mark sessions for pids no longer present as done.
@@ -155,6 +186,7 @@ final class AgentDetector {
     /// mapping so that pid reuse later creates a fresh session.
     private func markDone(pid: Int32) {
         guard let session = sessionsByPID.removeValue(forKey: pid) else { return }
+        lastCpuTimeByPID.removeValue(forKey: pid)
         session.state = .done
     }
 

@@ -46,6 +46,8 @@ struct ContentView: View {
     @State var showGoToLine = false
     @State var isAgentActivityPresented = false
     @State var isAgentHistoryPresented = false
+    /// Agent attention-list overlay (#1112).
+    @State var showAgentAttention = false
     @AppStorage("minimapVisible") var isMinimapVisible = true
     @AppStorage(BlameConstants.storageKey) var isBlameVisible = true
     @AppStorage("wordWrapEnabled") var isWordWrapEnabled = true
@@ -79,36 +81,7 @@ struct ContentView: View {
                 }
             }
         } detail: {
-            VStack(spacing: 0) {
-                editorArea
-                    .frame(maxHeight: .infinity)
-                StatusBarView(
-                    gitProvider: workspace.gitProvider,
-                    paneManager: paneManager,
-                    tabManager: activeTabManager,
-                    progress: projectManager.progress,
-                    onToggleTerminal: {
-                        if paneManager.terminalPaneIDs.isEmpty {
-                            terminal.focusOrCreateTerminal(
-                                relativeTo: paneManager.activePaneID,
-                                workingDirectory: workspace.rootURL
-                            )
-                        } else {
-                            // Warn before stopping tabs with foreground processes
-                            guard TabCloseHelper.confirmTerminalProcessStop(
-                                tabs: terminal.allTerminalTabs
-                            ) else { return }
-                            // Hide all terminal panes
-                            for paneID in paneManager.terminalPaneIDs {
-                                if let state = paneManager.terminalState(for: paneID) {
-                                    for tab in state.terminalTabs { tab.stop() }
-                                }
-                                paneManager.removePane(paneID)
-                            }
-                        }
-                    }
-                )
-            }
+            detailContent
         }
         .overlay(alignment: .top) {
             ToastOverlay()
@@ -144,6 +117,7 @@ struct ContentView: View {
                 onDiscard: { discardRecovery() }
             )
         }
+        .overlay { agentAttentionOverlay }
         .sheet(isPresented: $isQuickOpenPresented) {
             QuickOpenView(isPresented: $isQuickOpenPresented)
                 .environment(projectManager)
@@ -305,6 +279,73 @@ struct ContentView: View {
                 sendTextToTerminal(text)
             }
         }
+    }
+
+    /// Detail pane content: editor area + status bar. Broken out into its
+    /// own computed property because the `StatusBarView(…)` initializer with
+    /// its multi-line terminal-toggle closure pushes the `body` modifier
+    /// chain past the SwiftUI type-checker's budget (#1112).
+    @ViewBuilder
+    private var detailContent: some View {
+        VStack(spacing: 0) {
+            editorArea
+                .frame(maxHeight: .infinity)
+            StatusBarView(
+                gitProvider: workspace.gitProvider,
+                paneManager: paneManager,
+                tabManager: activeTabManager,
+                progress: projectManager.progress,
+                onToggleTerminal: {
+                    if paneManager.terminalPaneIDs.isEmpty {
+                        terminal.focusOrCreateTerminal(
+                            relativeTo: paneManager.activePaneID,
+                            workingDirectory: workspace.rootURL
+                        )
+                    } else {
+                        // Warn before stopping tabs with foreground processes
+                        guard TabCloseHelper.confirmTerminalProcessStop(
+                            tabs: terminal.allTerminalTabs
+                        ) else { return }
+                        // Hide all terminal panes
+                        for paneID in paneManager.terminalPaneIDs {
+                            if let state = paneManager.terminalState(for: paneID) {
+                                for tab in state.terminalTabs { tab.stop() }
+                            }
+                            paneManager.removePane(paneID)
+                        }
+                    }
+                },
+                onShowAttention: {
+                    withAnimation(PineAnimation.overlay) {
+                        showAgentAttention = true
+                    }
+                }
+            )
+        }
+    }
+
+    /// Agent attention-list overlay (#1112). Broken out into its own
+    /// computed property so the SwiftUI type-checker can resolve `body` in
+    /// reasonable time — an inline `.overlay { CommandOverlayView { … } }`
+    /// pushes the already-large `body` past the type-checker's budget.
+    /// Returns `AnyView` to erase the `CommandOverlayView<…>` generic from the
+    /// call site (the body modifier chain is already near the inference
+    /// limit); the cost is negligible since the overlay is rarely shown.
+    private var agentAttentionOverlay: AnyView {
+        guard showAgentAttention else { return AnyView(EmptyView()) }
+        return AnyView(
+            CommandOverlayView(isPresented: $showAgentAttention) {
+                AgentAttentionOverlay(
+                    summaries: AgentStatusSummary.activeSummaries(in: paneManager)
+                ) { paneID, tabID in
+                    paneManager.activePaneID = paneID
+                    paneManager.terminalState(for: paneID)?.activeTerminalID = tabID
+                    withAnimation(PineAnimation.overlay) {
+                        showAgentAttention = false
+                    }
+                }
+            }
+        )
     }
 
     /// Branch subtitle as a plain String to avoid generating a localization key.

@@ -101,6 +101,32 @@ enum AgentState: Equatable, Sendable {
         case .done: "Done"
         }
     }
+
+    /// `true` when the agent is doing work — thinking or executing a tool.
+    /// Drives the pulsing animation on terminal-tab badges (#1048).
+    var isActive: Bool {
+        self == .thinking || self == .executing
+    }
+
+    /// `true` when the agent is blocked waiting for the user — a permission
+    /// prompt or a reply. Drives the global "needs attention" indicator and
+    /// the amber per-tab glyph (#1112, cf. agterm's blocked status).
+    var needsAttention: Bool {
+        self == .waitingInput
+    }
+
+    /// SF Symbol name for per-tab / attention-list status glyphs, or `nil`
+    /// when no glyph should be shown (idle). Active states share one ellipsis
+    /// glyph (the per-agent color still distinguishes them via the dot);
+    /// `waitingInput` is an amber exclamation, `done` a green check (#1112).
+    var glyphName: String? {
+        switch self {
+        case .idle: nil
+        case .thinking, .executing: "ellipsis"
+        case .waitingInput: "exclamationmark"
+        case .done: "checkmark"
+        }
+    }
 }
 
 /// Tracks a single AI agent session running within a terminal tab.
