@@ -18,6 +18,7 @@ class PineUITestCase: XCTestCase {
             "--reset-state",
             "--disable-agent-detection",
             "--disable-metal",
+            "--disable-quick-terminal",
             "-ApplePersistenceIgnoreState", "YES",
             "-AppleLanguages", "(en)",
             "-AppleLocale", "en_US"
