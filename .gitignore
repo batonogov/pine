@@ -42,3 +42,5 @@ PineTests/SnapshotTests/__Snapshots__/*.actual.png
 # Agents
 .claude/
 .pi/
+.pi-subagents/
+.pine/

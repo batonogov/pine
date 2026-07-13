@@ -24,7 +24,64 @@ import SwiftTerm
 final class PineTerminalView: LocalProcessTerminalView {
     private var redrawBackgroundColor: CGColor?
 
+    /// Enables SwiftTerm's Metal renderer once the view lands in a window.
+    ///
+    /// Metal replaces the layer-backed CoreGraphics raster (`layer.contents`
+    /// = CGImage) with a GPU swapchain (`CAMetalLayer` drawables owned by an
+    /// embedded `MTKView`). That eliminates the entire class of black-screen
+    /// bugs where AppKit purges `layer.contents` and a subsequent no-op
+    /// `displayIfNeeded()` leaves the terminal black — #64, #661, #871, #918,
+    /// #923, #966, #1094 (#1108). Under Metal, SwiftTerm's `draw(_:)` returns
+    /// early (`if metalView != nil { return }`), so the CoreGraphics raster
+    /// path — and the "zeroed contents + no-op displayIfNeeded" race —
+    /// ceases to exist.
+    ///
+    /// Idempotent: `setUseMetal(_:)` no-ops when already in the requested
+    /// mode, and the `isUsingMetalRenderer` / `window != nil` guards make
+    /// repeated calls (re-parenting on tab switch, pane split,
+    /// maximize/restore) safe. On failure — a headless CI VM, an old GPU, a
+    /// virtual display without a Metal device —
+    /// `MTLCreateSystemDefaultDevice()` returns nil and
+    /// `MetalError.deviceUnavailable` is thrown; we swallow it and SwiftTerm
+    /// keeps using CoreGraphics with no behavioural change.
+    func enableMetalRendererIfNeeded() {
+        guard !Self.isMetalExplicitlyDisabled else { return }
+        guard window != nil else { return }
+        guard !isUsingMetalRenderer else { return }
+        do {
+            try setUseMetal(true)
+        } catch {
+            // Metal unavailable (e.g. headless CI VM, old GPU). SwiftTerm
+            // keeps using CoreGraphics — no action needed.
+        }
+    }
+
+    /// `true` when Metal is explicitly disabled via the `--disable-metal`
+    /// launch argument or the `PINE_DISABLE_METAL` environment variable. Used
+    /// by the UI-test harness on macOS-26 virtual displays (where Metal may
+    /// be unavailable) and as a production escape hatch. Mirrors the
+    /// `--disable-agent-detection` / `PINE_DISABLE_AGENT_DETECTION` pattern
+    /// from `TerminalManager`.
+    static var isMetalExplicitlyDisabled: Bool {
+        CommandLine.arguments.contains("--disable-metal")
+            || ProcessInfo.processInfo.environment["PINE_DISABLE_METAL"] != nil
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        // SwiftTerm's `setUseMetal(_:)` must be called only once the view is
+        // in a window — it needs a Metal device, which is nil when headless
+        // (GPURendering.md). Re-parenting (tab switch, pane split, drag-drop)
+        // fires `viewDidMoveToWindow` again, but `enableMetalRendererIfNeeded`
+        // is idempotent, so the second call is a cheap no-op.
+        enableMetalRendererIfNeeded()
+    }
+
     func prepareLayerForRedraw(background: NSColor? = nil) {
+        // Under the Metal renderer `layer.contents` holds no terminal raster
+        // (the MTKView owns the swapchain), so zeroing it is at best a no-op
+        // and at worst a source of flicker. Skip entirely when Metal is active.
+        if isUsingMetalRenderer { return }
         if let background {
             redrawBackgroundColor = background.cgColor
         }
