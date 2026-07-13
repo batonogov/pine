@@ -105,6 +105,34 @@ final class PineTerminalView: LocalProcessTerminalView {
     override func setNeedsDisplay(_ invalidRect: NSRect) {
         super.setNeedsDisplay(bounds.isEmpty ? invalidRect : bounds)
     }
+
+    // MARK: - OSC 8 hyperlinks (#1114)
+
+    /// SwiftTerm calls this on ⌘+click of a hover-underlined link (explicit
+    /// OSC 8 or an implicit URL it detected). `LocalProcessTerminalView`
+    /// installs `self` as its own `terminalDelegate`, so this concrete
+    /// method on the subclass is the witness that runs INSTEAD of SwiftTerm's
+    /// default `requestOpenLink` (which calls `NSWorkspace.shared.open(url)`
+    /// and would LAUNCH a `file://` link pointing at an `.app`/`.command`
+    /// bundle — exactly what #1114 exists to prevent).
+    ///
+    /// The decision lives in the pure, unit-tested ``TerminalLinkOpener``:
+    /// `file://` (local host) → reveal in Finder (no launch),
+    /// `http(s)`/`mailto` → open externally, foreign-host `file://` and
+    /// unknown schemes → ignore. The implicit `path:line` path (#949) is
+    /// resolved earlier by `TerminalScrollInterceptor.handleFileLinkClick`
+    /// on `mouseDown` and does not flow through here.
+    func requestOpenLink(source: TerminalView, link: String, params: [String: String]) {
+        guard let action = TerminalLinkOpener.action(for: link) else { return }
+        switch action {
+        case .revealInFinder(let url):
+            // Selects the entry in Finder WITHOUT launching it — safe even
+            // when the link points at an `.app` / `.command` bundle.
+            NSWorkspace.shared.activateFileViewerSelecting([url])
+        case .openExternally(let url):
+            NSWorkspace.shared.open(url)
+        }
+    }
 }
 
 // MARK: - Click interceptor overlay for terminal focus management
