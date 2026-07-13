@@ -1477,4 +1477,31 @@ class TerminalTabDelegate: NSObject, LocalProcessTerminalViewDelegate {
     func processTerminated(source: TerminalView, exitCode: Int32?) {
         tab?.isTerminated = true
     }
+
+    // MARK: - OSC 8 hyperlinks (#1114)
+
+    /// Activated when the user ⌘+clicks an explicit OSC 8 hyperlink or an
+    /// implicit URL that SwiftTerm detected (`linkReporting = .implicit`,
+    /// `linkHighlightMode = .hoverWithModifier`). SwiftTerm does the parsing
+    /// and hover-underline; Pine only decides — safely — what to do with the
+    /// URI via ``TerminalLinkOpener``.
+    ///
+    /// A terminal renders untrusted program output, so `file://` links reveal
+    /// in Finder (never launch — the link may point at a `.app`/`.command`
+    /// bundle); `http(s)`/`mailto` open in the system handler. Foreign-host
+    /// `file://` links are ignored to avoid Finder network mounts. The
+    /// existing implicit `path:line` handling (#949) is a separate path
+    /// resolved earlier by `TerminalScrollInterceptor.handleFileLinkClick`
+    /// and does not flow through here.
+    func requestOpenLink(source: TerminalView, link: String, params: [String: String]) {
+        guard let action = TerminalLinkOpener.action(for: link) else { return }
+        switch action {
+        case .revealInFinder(let url):
+            // Selects the entry in Finder WITHOUT launching it — safe even
+            // when the link points at an `.app` / `.command` bundle.
+            NSWorkspace.shared.activateFileViewerSelecting([url])
+        case .openExternally(let url):
+            NSWorkspace.shared.open(url)
+        }
+    }
 }
