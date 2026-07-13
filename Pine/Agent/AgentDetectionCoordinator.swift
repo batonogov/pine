@@ -118,7 +118,7 @@ nonisolated final class AgentDetectionCoordinator {
     /// `@MainActor` closure never captures `self`, avoiding the strict-
     /// concurrency "sending 'self' risks causing data races" error.
     nonisolated private func captureSnapshot() {
-        let result = processRunner("/bin/ps", ["-eo", "pid=,command="], "", 3.0)
+        let result = processRunner("/bin/ps", ["-eo", "pid=,command=,times="], "", 3.0)
         let processes = Self.parsePsOutput(result.stdout)
         // Extract references before the hop — the DispatchWorkItem closure
         // must not capture `self` (nonisolated, non-Sendable).
@@ -132,19 +132,30 @@ nonisolated final class AgentDetectionCoordinator {
         DispatchQueue.main.async(execute: work)
     }
 
-    /// Parses raw `ps -eo pid=,command=` output into `[DetectedProcess]`.
+    /// Parses raw `ps -eo pid=,command=,times=` output into `[DetectedProcess]`.
     /// `nonisolated` so it is callable from the background polling queue
     /// via `captureSnapshot`. Relies on `DetectedProcess` being `nonisolated`
     /// so its init is reachable from here.
+    ///
+    /// The format is `<pid> <command...> <cpu_seconds>`: `pid` is the first
+    /// whitespace-delimited token, `cpu_seconds` the last (an integer from
+    /// `ps times=`), and `command` everything in between (commands contain
+    /// spaces). When the trailing token is not an integer the line is treated
+    /// as the legacy two-column `pid=,command=` form — `cpuTime` stays `nil`
+    /// and state refinement is skipped (#1112 backward compatibility).
     nonisolated static func parsePsOutput(_ output: String) -> [DetectedProcess] {
         var processes: [DetectedProcess] = []
         for line in output.split(separator: "\n", omittingEmptySubsequences: true) {
             let trimmed = line.trimmingCharacters(in: .whitespaces)
-            guard let spaceIndex = trimmed.firstIndex(of: " ") else { continue }
-            let pidString = String(trimmed[..<spaceIndex])
-            guard let pid = Int32(pidString) else { continue }
-            let command = String(trimmed[trimmed.index(after: spaceIndex)...]).trimmingCharacters(in: .whitespaces)
-            processes.append(DetectedProcess(pid: pid, command: command))
+            let tokens = trimmed.split(separator: " ", omittingEmptySubsequences: true)
+            guard tokens.count >= 2 else { continue }
+            guard let pid = Int32(tokens[0]) else { continue }
+            // Last token is cumulative CPU seconds when present (ps times=).
+            let last = String(tokens[tokens.count - 1])
+            let cpuTime = Int(last)
+            let commandEnd = cpuTime != nil ? tokens.count - 1 : tokens.count
+            let command = tokens[1..<commandEnd].joined(separator: " ")
+            processes.append(DetectedProcess(pid: pid, command: command, cpuTime: cpuTime))
         }
         return processes
     }
@@ -179,7 +190,7 @@ nonisolated final class AgentDetectionCoordinator {
     /// returns. Uses the injected `processRunner` (mock in tests), parses via
     /// `parsePsOutput`, then calls `applySnapshot` directly on the main actor.
     @MainActor internal func runSnapshotForTesting() {
-        let result = processRunner("/bin/ps", ["-eo", "pid=,command="], "", 3.0)
+        let result = processRunner("/bin/ps", ["-eo", "pid=,command=,times="], "", 3.0)
         let processes = Self.parsePsOutput(result.stdout)
         Self.applySnapshot(processes, detector: detector, terminalManager: terminalManager)
     }

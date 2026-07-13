@@ -14,27 +14,42 @@ import SwiftUI
 // MARK: - Agent badge (issue #951)
 
 /// Colored badge displayed on a terminal tab when an AI agent is detected.
-/// Shows a colored dot using the agent's `AgentType.color`, with:
-/// - Pulsing animation for active states (`.thinking`, `.executing`)
-/// - Static for `.idle` / `.waitingInput`, dimmed for `.done`
+/// Shows:
+/// - amber `exclamationmark.circle.fill` when the agent is blocked waiting
+///   for input (permission prompt / reply) — the per-tab "needs attention"
+///   signal (#1112, cf. agterm's blocked status);
+/// - green `checkmark.circle.fill` (dimmed) when the session is `.done`;
+/// - otherwise the agent's colored dot, pulsing for active states
+///   (`.thinking` / `.executing`) (#1048).
 struct AgentTabBadge: View {
     let session: AgentSession
     @State private var pulse = false
 
-    private var isActive: Bool {
-        session.state == .thinking || session.state == .executing
-    }
+    private var isActive: Bool { session.state.isActive }
 
     var body: some View {
-        Circle()
-            .fill(Color(nsColor: session.agentType.color))
-            .frame(width: 7, height: 7)
-            .opacity(session.state == .done ? 0.4 : 1.0)
-            .scaleEffect(isActive && pulse ? 1.25 : 1.0)
-            .animation(isActive ? .easeInOut(duration: 0.8).repeatForever(autoreverses: true) : .default, value: pulse)
-            .onAppear { if isActive { pulse = true } }
-            .onChange(of: isActive) { _, active in pulse = active }
-            .help("\(session.agentType.displayName) — \(session.state.displayName)")
+        Group {
+            switch session.state {
+            case .waitingInput:
+                Image(systemName: "exclamationmark.circle.fill")
+                    .foregroundStyle(.orange)
+            case .done:
+                Image(systemName: "checkmark.circle.fill")
+                    .foregroundStyle(.green)
+                    .opacity(0.7)
+            case .idle, .thinking, .executing:
+                Circle()
+                    .fill(Color(nsColor: session.agentType.color))
+                    .frame(width: 7, height: 7)
+                    .opacity(session.state == .idle ? 0.6 : 1.0)
+                    .scaleEffect(isActive && pulse ? 1.25 : 1.0)
+                    .animation(isActive ? .easeInOut(duration: 0.8).repeatForever(autoreverses: true) : .default, value: pulse)
+                    .onAppear { if isActive { pulse = true } }
+                    .onChange(of: isActive) { _, active in pulse = active }
+            }
+        }
+        .font(.system(size: 10))
+        .help("\(session.agentType.displayName) — \(session.state.displayName)")
     }
 }
 

@@ -144,6 +144,10 @@ enum Strings {
     static let agentActivityClose: LocalizedStringKey = "agentActivity.close"
     static let agentActivityEmpty: LocalizedStringKey = "agentActivity.empty"
 
+    // MARK: - Agent Attention overlay (#1112)
+    static let agentAttentionTitle: LocalizedStringKey = "agentAttention.title"
+    static let agentAttentionEmpty: LocalizedStringKey = "agentAttention.empty"
+
     // MARK: - Agent History & Undo (#1073)
     static let menuAgentHistory: LocalizedStringKey = "menu.agentHistory"
     static let agentHistoryTitle: LocalizedStringKey = "agentHistory.title"

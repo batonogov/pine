@@ -117,6 +117,8 @@ nonisolated enum AccessibilityID {
     static let progressIndicator = "progressIndicator"
     static let agentStatusBar = "agentStatusBar"
     static let agentStatusBarItem = "agentStatusBarItem"
+    static let agentAttentionBell = "agentAttentionBell"
+    static let agentAttentionOverlay = "agentAttentionOverlay"
 
     // MARK: - LSP / Problems panel (#1010)
     static let problemsIndicator = "problemsIndicator"

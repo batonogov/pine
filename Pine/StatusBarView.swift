@@ -20,6 +20,9 @@ struct StatusBarView: View {
     var diagnosticsSummary: DiagnosticsSummary?
     /// Called when the user clicks the Problems indicator to toggle the panel.
     var onToggleProblems: (() -> Void)?
+    /// Called when the user clicks the agent attention bell to open the
+    /// attention-list overlay (#1112).
+    var onShowAttention: (() -> Void)?
 
     /// Active AI agent sessions across all terminal panes (#952).
     /// Empty when no agent is running → `AgentStatusBarItem` is hidden.
@@ -60,6 +63,24 @@ struct StatusBarView: View {
                         .lineLimit(1)
                 }
                 .accessibilityIdentifier(AccessibilityID.progressIndicator)
+            }
+
+            // Agent attention bell (#1112): amber + filled when any agent is
+            // blocked waiting for input (permission prompt / reply), plain
+            // when agents are merely active/done, hidden when none are
+            // running. Clicking opens the attention-list overlay.
+            let waitingCount = summaries.filter { $0.state.needsAttention }.count
+            if waitingCount > 0 || summaries.contains(where: { $0.state.isActive || $0.state == .done }) {
+                Button {
+                    onShowAttention?()
+                } label: {
+                    Image(systemName: waitingCount > 0 ? "bell.badge.fill" : "bell")
+                        .font(.system(size: LayoutMetrics.captionFontSize))
+                        .foregroundStyle(waitingCount > 0 ? .orange : .secondary)
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier(AccessibilityID.agentAttentionBell)
+                .help(waitingCount > 0 ? Strings.agentAttentionTitle : "")
             }
 
             if !summaries.isEmpty {
