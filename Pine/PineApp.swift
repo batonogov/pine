@@ -823,6 +823,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate {
             pm.recoveryManager?.stopPeriodicSnapshots()
         }
         registry.destroyAllProjects()
+
+        // Stop the global quick-terminal session so its PTY does not outlive
+        // Pine (#1113 review). The session is keep-alive across toggles but
+        // not across app launches.
+        quickTerminalCoordinator.shutdown()
     }
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {

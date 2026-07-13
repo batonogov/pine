@@ -7,6 +7,7 @@
 
 import Testing
 import AppKit
+import Carbon.HIToolbox
 @testable import Pine
 
 @MainActor
@@ -20,22 +21,24 @@ struct QuickTerminalTests {
         #expect(manager.isRegistered == false)
     }
 
-    @Test("register attempt does not crash in a test host; idempotent")
-    func registerIsSafeInTestHost() {
-        // RegisterEventHotKey needs a running app event loop, which the
-        // unit-test host does not provide — so we assert only that the call
-        // is safe and symmetric, not that it succeeds. Real registration is
-        // validated by manual smoke-test (press the hotkey) and by the app
-        // launching with the hotkey armed.
+    @Test("register/unregister is safe and symmetric with a throwaway combo")
+    func registerIsSafeAndSymmetric() {
+        // Use a throwaway keyCode + modifiers unlikely to be claimed by any
+        // real app, so the test never grabs the production ⌃⌥Space on the
+        // developer's machine. The unit-test host (Pine.app) does run an
+        // event loop, so registration may genuinely succeed — we assert
+        // symmetry: after `unregister()`, `isRegistered` is false regardless
+        // of whether `register()` succeeded (the combo could be claimed by
+        // another process). Real delivery is validated by the manual
+        // smoke-test (press ⌃⌥Space from another app).
         let manager = GlobalHotkeyManager()
         manager.onTrigger = {}
+        // F19 + ctrl+option+shift — extremely unlikely to conflict.
+        let dummyKeyCode: UInt32 = UInt32(kVK_F19)
+        let dummyMods: UInt32 = UInt32(controlKey | optionKey | shiftKey)
         for _ in 0..<3 {
-            _ = manager.register(
-                keyCode: GlobalHotkeyManager.defaultQuickTerminalKeyCode,
-                carbonModifiers: GlobalHotkeyManager.defaultQuickTerminalModifiers
-            )
+            _ = manager.register(keyCode: dummyKeyCode, carbonModifiers: dummyMods)
         }
-        // unregister is safe whether or not register succeeded.
         manager.unregister()
         #expect(manager.isRegistered == false)
     }
@@ -52,6 +55,7 @@ struct QuickTerminalTests {
     @Test("toggle flips visibility")
     func toggleFlipsVisibility() {
         let coordinator = QuickTerminalController()
+        defer { coordinator.shutdown() }
         // First toggle shows the window (keep-alive: created on first show).
         coordinator.toggle()
         #expect(coordinator.isVisible)
@@ -65,6 +69,7 @@ struct QuickTerminalTests {
     @Test("hide after show keeps the keep-alive session")
     func hideKeepsSessionAlive() {
         let coordinator = QuickTerminalController()
+        defer { coordinator.shutdown() }
         coordinator.show()
         let firstTabID = coordinator.paneState.activeTab?.id
         coordinator.hide()
@@ -73,18 +78,18 @@ struct QuickTerminalTests {
         #expect(coordinator.paneState.activeTab?.id == firstTabID)
     }
 
-    @Test("cwd falls back through recent projects to home")
+    @Test("cwd resolves to most-recent project, else $HOME")
     func cwdFallbackChain() {
         let coordinator = QuickTerminalController()
+        defer { coordinator.shutdown() }
         let registry = ProjectRegistry()
         coordinator.registry = registry
         coordinator.show()
-        let cwd = coordinator.paneState.activeTab?.workingDirectoryURL
-        // resolveCwd priority: open project → recent project → $HOME. The
-        // test host has no window-open project, so the cwd is either the
-        // most-recent project (if any are persisted) or $HOME.
-        let expected: [String] = registry.recentProjects.map(\.path) + [NSHomeDirectory()]
-        #expect(cwd.map(\.path).map(expected.contains) == true)
+        // No open project (openProjects is empty) → resolveCwd returns
+        // recentProjects.first ?? $HOME. Assert the EXACT value, not a set
+        // membership, so the test catches a wrong selection (e.g. .last).
+        let expected = registry.recentProjects.first?.path ?? NSHomeDirectory()
+        #expect(coordinator.paneState.activeTab?.workingDirectoryURL?.path == expected)
         coordinator.hide()
     }
 }

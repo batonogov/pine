@@ -62,6 +62,16 @@ final class QuickTerminalController {
         isVisible = false
     }
 
+    /// Stops the terminal session and closes the window. Called at app
+    /// termination so the PTY child does not outlive Pine, matching
+    /// `registry.destroyAllProjects()` for project windows (#1113 review).
+    func shutdown() {
+        for tab in paneState.terminalTabs { tab.stop() }
+        window?.close()
+        window = nil
+        isVisible = false
+    }
+
     // MARK: - Window lifecycle
 
     /// Lazily creates the keep-alive window and its terminal session. Called
@@ -87,6 +97,12 @@ final class QuickTerminalController {
         let container = TerminalContainerView(frame: rect)
         container.terminalPaneState = paneState
         win.contentView = container
+        // Explicit `showTab` matches the in-window pattern
+        // (`TerminalContentView.updateNSView`) and makes the PTY-spawn path
+        // robust against future changes to `TerminalContainerView.layout()`'s
+        // contract — `layout()`'s else-branch already calls `showTab`, but
+        // only when the container has real bounds on that specific pass.
+        container.showTab(paneState.activeTab)
 
         window = win
     }
