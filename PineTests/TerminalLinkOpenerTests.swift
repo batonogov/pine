@@ -75,6 +75,11 @@ struct TerminalLinkOpenerTests {
         #expect(TerminalLinkOpener.action(for: "ssh://user@host") == nil)
         #expect(TerminalLinkOpener.action(for: "git://github.com/repo.git") == nil)
         #expect(TerminalLinkOpener.action(for: "slack://channel") == nil)
+        // Security-relevant: javascript:/data: must never open — a hostile
+        // program could sneak them into OSC 8 links for XSS-style execution.
+        #expect(TerminalLinkOpener.action(for: "javascript:alert(1)") == nil)
+        let dataUri = "data:text/html,<script>alert(1)</script>"
+        #expect(TerminalLinkOpener.action(for: dataUri) == nil)
     }
 
     @Test("schemeless and unparseable URIs are ignored")
@@ -88,5 +93,9 @@ struct TerminalLinkOpenerTests {
     func schemeCaseInsensitive() {
         #expect(TerminalLinkOpener.action(for: "FILE:///Users/fedor/notes.txt") == .revealInFinder(url("FILE:///Users/fedor/notes.txt")))
         #expect(TerminalLinkOpener.action(for: "HTTPS://example.com") == .openExternally(url("HTTPS://example.com")))
+        // Host normalization: FILE://LOCALHOST must reveal (host is lowercased
+        // before the localhost check), not be rejected as a foreign host.
+        let upperFile = "FILE://LOCALHOST/Users/fedor/notes.txt"
+        #expect(TerminalLinkOpener.action(for: upperFile) == .revealInFinder(url(upperFile)))
     }
 }
