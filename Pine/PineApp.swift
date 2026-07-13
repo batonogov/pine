@@ -396,6 +396,23 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate {
     /// Central project registry — created early so it's available for AppKit fallback.
     var registry = ProjectRegistry()
 
+    // MARK: - Quick terminal (#1113)
+
+    /// Owner of the global drop-down terminal session + its system-wide hotkey.
+    /// Created early so the hotkey is armed in `applicationDidFinishLaunching`
+    /// before any window opens.
+    let quickTerminalCoordinator = QuickTerminalController()
+    private let hotkeyManager = GlobalHotkeyManager()
+
+    /// `true` when the quick-terminal hotkey is explicitly disabled via the
+    /// `--disable-quick-terminal` launch argument or `PINE_DISABLE_QUICK_TERMINAL`
+    /// environment variable. Used by UI tests to avoid the global hotkey
+    /// grabbing key events on CI, and as a production opt-out.
+    private static var isQuickTerminalDisabled: Bool {
+        CommandLine.arguments.contains("--disable-quick-terminal")
+            || ProcessInfo.processInfo.environment["PINE_DISABLE_QUICK_TERMINAL"] != nil
+    }
+
     // MARK: - SPUUpdaterDelegate
 
     nonisolated func feedURLString(for updater: SPUUpdater) -> String? {
@@ -531,6 +548,21 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate {
 
         // Clean up stale recovery files older than 7 days across all projects
         RecoveryManager.cleanupAllStaleEntries(olderThan: 7)
+
+        // Arm the global quick-terminal hotkey (#1113). Carbon hotkeys work
+        // in the App Sandbox without Accessibility permission; disabled by
+        // launch flag for UI tests / opt-out.
+        if !Self.isQuickTerminalDisabled {
+            quickTerminalCoordinator.registry = registry
+            hotkeyManager.onTrigger = { @Sendable [weak self] in
+                // Hop to MainActor: toggle touches @MainActor coordinator state.
+                Task { @MainActor in self?.quickTerminalCoordinator.toggle() }
+            }
+            hotkeyManager.register(
+                keyCode: GlobalHotkeyManager.defaultQuickTerminalKeyCode,
+                carbonModifiers: GlobalHotkeyManager.defaultQuickTerminalModifiers
+            )
+        }
 
         // Intercept Cmd+W before the system "Close" menu item.
         // For project windows: close active tab (or close window if no tabs).
@@ -791,6 +823,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate {
             pm.recoveryManager?.stopPeriodicSnapshots()
         }
         registry.destroyAllProjects()
+
+        // Stop the global quick-terminal session so its PTY does not outlive
+        // Pine (#1113 review). The session is keep-alive across toggles but
+        // not across app launches.
+        quickTerminalCoordinator.shutdown()
     }
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
