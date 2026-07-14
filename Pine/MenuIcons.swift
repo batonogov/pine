@@ -55,6 +55,7 @@ nonisolated enum MenuIcons {
     // MARK: - Terminal menu
     static let newTerminalTab = "plus"
     static let sendToTerminal = "paperplane"
+    static let maximizeTerminal = "arrow.up.left.and.arrow.down.right"
 
     // MARK: - Tasks menu (issue #1009)
     static let tasks = "wrench.and.screwdriver"
