@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.33.1](https://github.com/batonogov/pine/compare/v1.33.0...v1.33.1) (2026-07-14)
+
+
+### Bug Fixes
+
+* **terminal:** bump SwiftTerm to 1.14.0 to fix Metal cursor + TUI scroll artifacts ([#1125](https://github.com/batonogov/pine/issues/1125)) ([d2ac2ba](https://github.com/batonogov/pine/commit/d2ac2ba30c9d07f0b8a24e90b93bb0c488329582))
+
 ## [1.33.0](https://github.com/batonogov/pine/compare/v1.32.4...v1.33.0) (2026-07-14)
 
 
