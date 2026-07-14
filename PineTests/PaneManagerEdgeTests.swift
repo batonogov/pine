@@ -68,22 +68,55 @@ struct PaneManagerEdgeTests {
         #expect(manager.maximizedPaneID == terminalPane)
     }
 
-    @Test func toggleZoom_restoresWhenAlreadyMaximized() {
+    @Test func toggleZoom_restoresWhenAlreadyMaximized() throws {
         let manager = PaneManager()
         let terminalPane = manager.createTerminalPaneAtBottom(workingDirectory: nil)
         manager.activePaneID = terminalPane
+        // Capture the editor pane id BEFORE maximize — after maximize `root`
+        // is a single terminal leaf and the editor lives only in
+        // `savedRootBeforeMaximize`, so `root.leafIDs` would not find it.
+        let editorPane = try #require(manager.root.leafIDs.first { $0 != terminalPane })
         manager.toggleMaximizeOnActiveTerminalPane()
         #expect(manager.isMaximized)
 
-        // Toggle again from anywhere (even non-terminal focus) always exits zoom.
+        // Toggle from ANY focus (even non-terminal) always exits zoom —
+        // `isMaximized` is checked before the focus guard.
+        manager.activePaneID = editorPane
         manager.toggleMaximizeOnActiveTerminalPane()
         #expect(manager.isMaximized == false)
         #expect(manager.maximizedPaneID == nil)
+        // Layout restored exactly: editor + terminal split (2 leaves).
+        #expect(manager.root.leafCount == 2)
+    }
+
+    @Test func toggleZoom_idempotentCycle() {
+        // maximize → restore → maximize-again must return to the same zoomed
+        // state without corrupting the saved root. The headline "toggle" UX.
+        let manager = PaneManager()
+        let terminalPane = manager.createTerminalPaneAtBottom(workingDirectory: nil)
+        manager.activePaneID = terminalPane
+
+        manager.toggleMaximizeOnActiveTerminalPane() // maximize
+        #expect(manager.isMaximized)
+        manager.toggleMaximizeOnActiveTerminalPane() // restore
+        #expect(manager.isMaximized == false)
+        #expect(manager.root.leafCount == 2)
+        manager.toggleMaximizeOnActiveTerminalPane() // maximize again
+        #expect(manager.isMaximized)
+        #expect(manager.maximizedPaneID == terminalPane)
+        #expect(manager.root.leafCount == 1)
     }
 
     @Test func toggleZoom_noTerminalPane_noOp() {
         // Default PaneManager has only an editor pane; toggle must no-op
         // rather than maximize the editor (#1115: zoom is terminal-only).
+        //
+        // Note: the 'editor focused but a terminal exists elsewhere' variant
+        // is covered by `toggleZoom_restoresWhenAlreadyMaximized`, which
+        // switches activePaneID to the editor leaf mid-test.
+        // `createTerminalPaneAtBottom` switches active to the new terminal,
+        // so an editor-focused setup cannot be constructed via that helper
+        // alone — the editor leaf is obtained from `root.leafIDs` instead.
         let manager = PaneManager()
         manager.toggleMaximizeOnActiveTerminalPane()
         #expect(manager.isMaximized == false)
