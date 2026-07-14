@@ -509,6 +509,23 @@ struct PineAppMenuCommands: Commands {
             }
             .keyboardShortcut(.return, modifiers: [.command, .shift])
             .disabled(focusedProject?.activeTabManager.activeTab == nil)
+
+            Divider()
+
+            // Zoom the focused terminal pane to fill the detail area
+            // (tmux-style). Cmd+Shift+Return is taken by Send to Terminal,
+            // so zoom uses Cmd+Option+Return (#1115). Auto-collapsing the
+            // sidebar from this shortcut is tracked as a follow-up — v1 ships
+            // the pane-level zoom + shortcut, matching the existing tab-bar
+            // maximize button (#1048).
+            Button {
+                guard let pm = focusedProject else { return }
+                pm.paneManager.toggleMaximizeOnActiveTerminalPane()
+            } label: {
+                Label(Strings.menuToggleTerminalZoom, systemImage: MenuIcons.maximizeTerminal)
+            }
+            .keyboardShortcut(.return, modifiers: [.command, .option])
+            .disabled(focusedProject?.hasTerminalPanes != true)
         }
 
         // MARK: - Tasks menu (issue #1009)

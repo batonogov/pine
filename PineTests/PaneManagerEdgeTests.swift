@@ -55,6 +55,40 @@ struct PaneManagerEdgeTests {
         #expect(manager.isMaximized == false)
     }
 
+    // MARK: - Toggle zoom on active terminal pane (#1115)
+
+    @Test func toggleZoom_maximizesActiveTerminalPane() {
+        let manager = PaneManager()
+        let terminalPane = manager.createTerminalPaneAtBottom(workingDirectory: nil)
+        manager.activePaneID = terminalPane
+        #expect(manager.terminalPaneIDs.contains(terminalPane))
+
+        manager.toggleMaximizeOnActiveTerminalPane()
+        #expect(manager.isMaximized)
+        #expect(manager.maximizedPaneID == terminalPane)
+    }
+
+    @Test func toggleZoom_restoresWhenAlreadyMaximized() {
+        let manager = PaneManager()
+        let terminalPane = manager.createTerminalPaneAtBottom(workingDirectory: nil)
+        manager.activePaneID = terminalPane
+        manager.toggleMaximizeOnActiveTerminalPane()
+        #expect(manager.isMaximized)
+
+        // Toggle again from anywhere (even non-terminal focus) always exits zoom.
+        manager.toggleMaximizeOnActiveTerminalPane()
+        #expect(manager.isMaximized == false)
+        #expect(manager.maximizedPaneID == nil)
+    }
+
+    @Test func toggleZoom_noTerminalPane_noOp() {
+        // Default PaneManager has only an editor pane; toggle must no-op
+        // rather than maximize the editor (#1115: zoom is terminal-only).
+        let manager = PaneManager()
+        manager.toggleMaximizeOnActiveTerminalPane()
+        #expect(manager.isMaximized == false)
+    }
+
     @Test func persistableRoot_returnsFullLayoutWhenMaximized() {
         let manager = PaneManager()
         let paneID = manager.activePaneID

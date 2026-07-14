@@ -566,6 +566,20 @@ final class PaneManager {
         maximizedPaneID = nil
     }
 
+    /// Toggles zoom on the focused terminal pane (#1115): maximizes the
+    /// active pane if it is a terminal and nothing is zoomed; restores the
+    /// full layout if a pane is currently zoomed. No-op when the focus is
+    /// not on a terminal pane and nothing is zoomed (so the user can always
+    /// escape zoom with the same shortcut regardless of focus).
+    func toggleMaximizeOnActiveTerminalPane() {
+        if isMaximized {
+            restoreFromMaximize()
+            return
+        }
+        guard terminalPaneIDs.contains(activePaneID) else { return }
+        maximize(paneID: activePaneID)
+    }
+
     // MARK: - Session restore
 
     /// Restores a previously saved pane layout.
