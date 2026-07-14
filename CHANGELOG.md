@@ -1,5 +1,16 @@
 # Changelog
 
+## [1.33.0](https://github.com/batonogov/pine/compare/v1.32.4...v1.33.0) (2026-07-14)
+
+
+### Features
+
+* **agent:** per-tab status glyphs + global attention indicator ([#1120](https://github.com/batonogov/pine/issues/1120)) ([b8bcd8f](https://github.com/batonogov/pine/commit/b8bcd8fac0f3e5e1ccabd0712c9fd91a8ce508ea))
+* **terminal:** global hotkey drop-down (quick) terminal ([#1121](https://github.com/batonogov/pine/issues/1121)) ([e73eb05](https://github.com/batonogov/pine/commit/e73eb05fc26933dd6cace30e71edcd351c12650a))
+* **terminal:** opt into SwiftTerm Metal renderer to eliminate black-screen class ([#1118](https://github.com/batonogov/pine/issues/1118)) ([06c6d38](https://github.com/batonogov/pine/commit/06c6d387815a8ec79515fefd9a8182407d35177b))
+* **terminal:** OSC 8 hyperlinks + file:// reveal-in-Finder ([#1122](https://github.com/batonogov/pine/issues/1122)) ([e5ab3ea](https://github.com/batonogov/pine/commit/e5ab3ea839297d375093d5197b90734f45d04f77))
+* **terminal:** zoom-to-fullscreen pane toggle ([#1123](https://github.com/batonogov/pine/issues/1123)) ([6010012](https://github.com/batonogov/pine/commit/601001227bf1a32b338eef89b624da6dccf19da9))
+
 ## [1.32.4](https://github.com/batonogov/pine/compare/v1.32.3...v1.32.4) (2026-07-10)
 
 
