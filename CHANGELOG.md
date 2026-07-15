@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.33.2](https://github.com/batonogov/pine/compare/v1.33.1...v1.33.2) (2026-07-15)
+
+
+### Bug Fixes
+
+* prevent black Metal terminal frames ([#1129](https://github.com/batonogov/pine/issues/1129)) ([c924d8f](https://github.com/batonogov/pine/commit/c924d8f83a907dbcc4ae6cfce635e45beac8e7d3))
+
 ## [1.33.1](https://github.com/batonogov/pine/compare/v1.33.0...v1.33.1) (2026-07-14)
 
 
