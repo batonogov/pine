@@ -7,6 +7,7 @@
 
 import SwiftUI
 import SwiftTerm
+import os
 
 /// Pine-specific terminal view wrapper.
 ///
@@ -23,6 +24,13 @@ import SwiftTerm
 /// but deliberately does NOT zero `layer.contents` — see issue #1094.
 final class PineTerminalView: LocalProcessTerminalView {
     private var redrawBackgroundColor: CGColor?
+    private var initialMetalRedrawWorkItems: [DispatchWorkItem] = []
+
+    #if DEBUG
+    /// Test hook that observes every backend-aware redraw request without
+    /// replacing the production AppKit/Metal behavior.
+    var backendRedrawRequestObserver: (() -> Void)?
+    #endif
 
     /// Enables SwiftTerm's Metal renderer once the view lands in a window.
     ///
@@ -42,8 +50,8 @@ final class PineTerminalView: LocalProcessTerminalView {
     /// maximize/restore) safe. On failure — a headless CI VM, an old GPU, a
     /// virtual display without a Metal device —
     /// `MTLCreateSystemDefaultDevice()` returns nil and
-    /// `MetalError.deviceUnavailable` is thrown; we swallow it and SwiftTerm
-    /// keeps using CoreGraphics with no behavioural change.
+    /// `MetalError.deviceUnavailable` is thrown; SwiftTerm keeps using
+    /// CoreGraphics and Pine records the concrete failure for diagnostics.
     func enableMetalRendererIfNeeded() {
         guard !Self.isMetalExplicitlyDisabled else { return }
         guard window != nil else { return }
@@ -51,8 +59,9 @@ final class PineTerminalView: LocalProcessTerminalView {
         do {
             try setUseMetal(true)
         } catch {
-            // Metal unavailable (e.g. headless CI VM, old GPU). SwiftTerm
-            // keeps using CoreGraphics — no action needed.
+            Logger.terminal.error(
+                "SwiftTerm Metal renderer unavailable; falling back to CoreGraphics: \(String(describing: error), privacy: .public)"
+            )
         }
     }
 
@@ -69,12 +78,78 @@ final class PineTerminalView: LocalProcessTerminalView {
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
+        guard window != nil else {
+            cancelInitialMetalRedrawRetries()
+            return
+        }
         // SwiftTerm's `setUseMetal(_:)` must be called only once the view is
         // in a window — it needs a Metal device, which is nil when headless
         // (GPURendering.md). Re-parenting (tab switch, pane split, drag-drop)
         // fires `viewDidMoveToWindow` again, but `enableMetalRendererIfNeeded`
         // is idempotent, so the second call is a cheap no-op.
         enableMetalRendererIfNeeded()
+
+        // `MTKView` is on-demand (`isPaused = true`) and its CAMetalLayer may
+        // not have a drawable during the first display request. SwiftTerm
+        // 1.14.0 marks that frame pending, but the pending flag is consumed
+        // only by a successfully submitted command buffer — which does not
+        // exist in this bootstrap failure. Retry after every real attachment,
+        // including a detach/reattach within the same window: re-parenting
+        // replaces the CAMetalLayer presentation context and can reproduce
+        // the same drawable bootstrap race. The sequence is bounded and
+        // cancelled on the next detach (issue #1128).
+        if isUsingMetalRenderer {
+            scheduleInitialMetalRedrawRetries()
+        }
+    }
+
+    /// Requests a display through the renderer that actually owns the pixels.
+    ///
+    /// SwiftTerm's CoreGraphics path draws in this outer NSView, so the
+    /// synchronous `setNeedsDisplay` + `displayIfNeeded` sequence remains the
+    /// right recovery operation. Under Metal, however, outer `draw(_:)`
+    /// returns immediately and a private nested `MTKView` owns presentation.
+    /// SwiftTerm 1.14.0 does not expose `requestMetalDisplay()` publicly, so
+    /// Pine uses two stable public entry points:
+    ///
+    /// - `selectionChanged(source:)` marks the full visible Metal range dirty
+    ///   and queues a display, ensuring cached rows are rebuilt when needed.
+    /// - same-size `setFrameSize(_:)` is harmless (`processSizeChange` no-ops
+    ///   when cols/rows are unchanged) and immediately calls SwiftTerm's
+    ///   internal `requestMetalDisplay()`.
+    ///
+    /// Together they provide an immediate request plus a coalesced trailing
+    /// request. Replace this compatibility bridge once SwiftTerm exposes a
+    /// public backend-aware display API (issue #1128).
+    func requestRendererDisplay() {
+        #if DEBUG
+        backendRedrawRequestObserver?()
+        #endif
+
+        if isUsingMetalRenderer {
+            selectionChanged(source: getTerminal())
+            setFrameSize(frame.size)
+        } else {
+            setNeedsDisplay(bounds)
+            displayIfNeeded()
+        }
+    }
+
+    private func scheduleInitialMetalRedrawRetries() {
+        cancelInitialMetalRedrawRetries()
+        initialMetalRedrawWorkItems = UITimings.Render.terminalFirstFrameRetryDelays.map { delay in
+            let workItem = DispatchWorkItem { [weak self] in
+                guard let self, self.window != nil, self.isUsingMetalRenderer else { return }
+                self.requestRendererDisplay()
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: workItem)
+            return workItem
+        }
+    }
+
+    private func cancelInitialMetalRedrawRetries() {
+        initialMetalRedrawWorkItems.forEach { $0.cancel() }
+        initialMetalRedrawWorkItems.removeAll()
     }
 
     func prepareLayerForRedraw(background: NSColor? = nil) {
@@ -1293,22 +1368,23 @@ final class TerminalTab: Identifiable, Hashable {
         terminalView.terminate()
     }
 
-    /// Forces SwiftTerm to mark the entire visible buffer as dirty and the
-    /// view to redraw synchronously.
+    /// Forces SwiftTerm to mark the entire visible buffer as dirty and asks
+    /// the active renderer to present it immediately.
     ///
     /// Used after re-parenting the terminal view (tab switch, pane split,
     /// maximize/restore, drag-and-drop) and when the host window regains
     /// key focus. AppKit may have dropped the layer's backing store while
     /// the view was detached, leaving a black frame after re-attach.
-    /// `setNeedsDisplay(bounds)` + `displayIfNeeded()` is enough to
-    /// repaint from `displayBuffer`, since SwiftTerm's `draw(_:)` paints
-    /// the full visible buffer for any `dirtyRect` it receives.
+    /// On CoreGraphics, `setNeedsDisplay(bounds)` + `displayIfNeeded()`
+    /// repaints from `displayBuffer`. On Metal, the outer SwiftTerm view does
+    /// not draw; `PineTerminalView.requestRendererDisplay()` routes the
+    /// recovery request to the nested `MTKView` instead (issue #1128).
     /// `terminal.updateFullScreen()` additionally seeds the dirty range
     /// in case SwiftTerm's own throttled `updateDisplay` is the next path
     /// to fire (e.g. on incoming PTY data).
     ///
-    /// Safe to call when the view is detached from a window — AppKit
-    /// silently no-ops `displayIfNeeded()` in that state.
+    /// Safe to call when the view is detached from a window — AppKit and
+    /// SwiftTerm retain or safely coalesce the pending display request.
     func forceFullRedraw() {
         if let pineTerminalView = terminalView as? PineTerminalView {
             pineTerminalView.prepareLayerForRedraw(background: terminalView.nativeBackgroundColor)
@@ -1317,8 +1393,12 @@ final class TerminalTab: Identifiable, Hashable {
         }
         let term = terminalView.getTerminal()
         term.updateFullScreen()
-        terminalView.setNeedsDisplay(terminalView.bounds)
-        terminalView.displayIfNeeded()
+        if let pineTerminalView = terminalView as? PineTerminalView {
+            pineTerminalView.requestRendererDisplay()
+        } else {
+            terminalView.setNeedsDisplay(terminalView.bounds)
+            terminalView.displayIfNeeded()
+        }
     }
 
     /// Sends the current PTY window size again via `TIOCSWINSZ`, which

@@ -121,5 +121,13 @@ nonisolated enum UITimings {
         /// the per-frame budget; trailing redraws coalesce via a
         /// scheduled work item to capture the final scroll position.
         static let minimapRedraw: TimeInterval = 0.025
+
+        /// Bounded retries for the first Metal terminal frame. A freshly
+        /// attached `CAMetalLayer` may legitimately have no drawable yet;
+        /// SwiftTerm 1.14.0 records that missed draw but only consumes the
+        /// pending flag after a *successful* command buffer completes. These
+        /// sparse retries bridge that bootstrap gap without creating a
+        /// continuous display loop or polling an occluded/detached view.
+        static let terminalFirstFrameRetryDelays: [TimeInterval] = [0, 0.05, 0.15, 0.35]
     }
 }

@@ -7,16 +7,16 @@
 
 import Testing
 import AppKit
+import MetalKit
 import SwiftTerm
 @testable import Pine
 
 /// Tests for Pine's opt-in to SwiftTerm's Metal renderer.
 ///
-/// The full Metal path needs a window + a Metal device, so it is exercised
-/// manually / via UI tests. These unit tests pin the headless invariants
-/// that must hold regardless of environment: the opt-out flag is honoured,
-/// enabling without a window is a safe no-op, and the CoreGraphics-only
-/// `prepareLayerForRedraw()` does not crash (#1108).
+/// Hosted-window tests exercise the production Metal path when the runner has
+/// a GPU; headless runners still pin the fallback invariants. This keeps the
+/// suite portable while covering the first-frame recovery that UI tests miss
+/// because they intentionally pass `--disable-metal` (#1108, #1128).
 @Suite("Terminal Metal Renderer Tests")
 @MainActor
 struct TerminalMetalRendererTests {
@@ -65,5 +65,132 @@ struct TerminalMetalRendererTests {
             view.enableMetalRendererIfNeeded()
         }
         #expect(view.isUsingMetalRenderer == false)
+    }
+
+    // MARK: - Backend-aware redraw (#1128)
+
+    @Test("First-frame retry plan is bounded and ordered")
+    func firstFrameRetryPlanIsBoundedAndOrdered() {
+        let delays = UITimings.Render.terminalFirstFrameRetryDelays
+        #expect(delays.first == 0)
+        #expect(delays == delays.sorted())
+        #expect(delays.count == 4)
+        #expect(delays.last == 0.35)
+    }
+
+    @Test("forceFullRedraw routes through Pine's backend-aware display bridge")
+    func forceFullRedrawUsesBackendAwareBridge() {
+        let tab = TerminalTab(name: "redraw-test")
+        let view = tab.terminalView as? PineTerminalView
+        var redrawRequests = 0
+        view?.backendRedrawRequestObserver = { redrawRequests += 1 }
+
+        tab.forceFullRedraw()
+
+        #expect(view != nil)
+        #expect(redrawRequests == 1)
+    }
+
+    @Test("Metal redraw invalidates the nested MTKView")
+    func metalRedrawTargetsNestedView() async {
+        guard MTLCreateSystemDefaultDevice() != nil else { return }
+        let view = PineTerminalView(frame: NSRect(x: 0, y: 0, width: 800, height: 300))
+        let window = makeWindow(containing: view)
+
+        guard view.isUsingMetalRenderer,
+              let metalView = firstMetalView(in: view) else {
+            window.contentView = nil
+            return
+        }
+
+        // Let the initial bounded retry batch drain, then isolate one request.
+        try? await Task.sleep(for: .milliseconds(450))
+        metalView.needsDisplay = false
+        view.requestRendererDisplay()
+
+        #expect(metalView.needsDisplay)
+        window.contentView = nil
+    }
+
+    @Test("Initial Metal attachment schedules bounded redraw retries")
+    func initialAttachmentSchedulesRetries() async {
+        guard MTLCreateSystemDefaultDevice() != nil else { return }
+        let view = PineTerminalView(frame: NSRect(x: 0, y: 0, width: 800, height: 300))
+        var redrawRequests = 0
+        view.backendRedrawRequestObserver = { redrawRequests += 1 }
+
+        let window = makeWindow(containing: view)
+        guard view.isUsingMetalRenderer else {
+            window.contentView = nil
+            return
+        }
+
+        try? await Task.sleep(for: .milliseconds(450))
+
+        #expect(redrawRequests == UITimings.Render.terminalFirstFrameRetryDelays.count)
+        window.contentView = nil
+    }
+
+    @Test("Detaching Metal view cancels pending first-frame retries")
+    func detachingCancelsRetries() async {
+        guard MTLCreateSystemDefaultDevice() != nil else { return }
+        let view = PineTerminalView(frame: NSRect(x: 0, y: 0, width: 800, height: 300))
+        var redrawRequests = 0
+        view.backendRedrawRequestObserver = { redrawRequests += 1 }
+
+        let window = makeWindow(containing: view)
+        guard view.isUsingMetalRenderer else {
+            window.contentView = nil
+            return
+        }
+        window.contentView = nil
+
+        try? await Task.sleep(for: .milliseconds(450))
+
+        #expect(redrawRequests == 0)
+    }
+
+    @Test("Reattaching Metal view schedules a fresh bounded retry batch")
+    func reattachingSchedulesFreshRetries() async {
+        guard MTLCreateSystemDefaultDevice() != nil else { return }
+        let view = PineTerminalView(frame: NSRect(x: 0, y: 0, width: 800, height: 300))
+        var redrawRequests = 0
+        view.backendRedrawRequestObserver = { redrawRequests += 1 }
+
+        let window = makeWindow(containing: view)
+        guard view.isUsingMetalRenderer else {
+            window.contentView = nil
+            return
+        }
+
+        // Cancel the first batch before the main queue can deliver it, then
+        // reattach to the same window. A fresh batch is required because the
+        // CAMetalLayer can lose its drawable during ordinary tab re-parenting.
+        window.contentView = nil
+        window.contentView = view
+
+        try? await Task.sleep(for: .milliseconds(450))
+
+        #expect(redrawRequests == UITimings.Render.terminalFirstFrameRetryDelays.count)
+        window.contentView = nil
+    }
+
+    private func makeWindow(containing view: NSView) -> NSWindow {
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 800, height: 300),
+            styleMask: [.borderless],
+            backing: .buffered,
+            defer: false
+        )
+        window.contentView = view
+        return window
+    }
+
+    private func firstMetalView(in view: NSView) -> MTKView? {
+        if let metalView = view as? MTKView { return metalView }
+        for subview in view.subviews {
+            if let metalView = firstMetalView(in: subview) { return metalView }
+        }
+        return nil
     }
 }
