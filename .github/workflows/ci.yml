@@ -74,6 +74,9 @@ jobs:
       - name: Tests for Metal toolchain installer
         run: bash scripts/tests/test-ensure-metal-toolchain.sh
 
+      - name: Tests for xcodebuild CLI options
+        run: bash scripts/tests/test-xcodebuild-cli-options.sh
+
   build:
     name: Build for Testing
     runs-on: macos-26
@@ -248,7 +251,7 @@ jobs:
             -skip-testing:PineTests/FuzzConfigValidatorTests \
             -skip-testing:PineTests/FuzzGoToLineParserTests \
             -retry-tests-on-failure \
-            -test-timeouts-enabled \
+            -test-timeouts-enabled YES \
             -resultBundlePath Xcode27TestResults.xcresult \
             MACOSX_DEPLOYMENT_TARGET=26.0 \
             CODE_SIGN_IDENTITY=- \
