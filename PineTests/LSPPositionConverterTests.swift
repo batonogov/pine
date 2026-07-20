@@ -78,10 +78,15 @@ struct LSPPositionConverterTests {
     @Test("Three lines, offset on third line")
     func threeLines() {
         let text = "a\nb\nc"
-        // offset 4 = 'c' on line 2
-        let pos = LSPPositionConverter.lspPosition(utf16Offset: 4, in: text)
-        #expect(pos.line == 2)
-        #expect(pos.character == 1)
+        // offset 4 is immediately before 'c' on line 2.
+        let start = LSPPositionConverter.lspPosition(utf16Offset: 4, in: text)
+        #expect(start.line == 2)
+        #expect(start.character == 0)
+
+        // offset 5 is immediately after 'c', at the end of the document.
+        let end = LSPPositionConverter.lspPosition(utf16Offset: 5, in: text)
+        #expect(end.line == 2)
+        #expect(end.character == 1)
     }
 
     // MARK: - Multi-byte characters (emoji)
