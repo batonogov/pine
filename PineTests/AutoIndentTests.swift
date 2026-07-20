@@ -25,6 +25,29 @@ struct AutoIndentTests {
         )
     }
 
+    private func makeUndoableGutterTextView(
+        text: String
+    ) throws -> (view: GutterTextView, undoManager: UndoManager, window: NSWindow) {
+        let view = makeGutterTextView(text: text)
+        view.allowsUndo = true
+
+        // NSTextView only vends its undo manager after joining a window hierarchy.
+        // The window is never ordered front, so the fixture remains hidden.
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 500, height: 500),
+            styleMask: [.titled],
+            backing: .buffered,
+            defer: false
+        )
+        window.contentView = view
+
+        let undoManager = try #require(
+            view.undoManager,
+            "GutterTextView should provide an undo manager while attached to a window"
+        )
+        return (view, undoManager, window)
+    }
+
     /// Simulates pressing Enter at the given cursor position.
     private func insertNewline(in view: GutterTextView, at position: Int) {
         view.setSelectedRange(NSRange(location: position, length: 0))
@@ -352,17 +375,21 @@ struct AutoIndentTests {
         #expect(view.string == "(\n    \n){}")
     }
 
-    @Test func insertNewline_braceExpansion_undoManagerAvailable() {
+    @Test func insertNewline_braceExpansion_undoManagerAvailable() throws {
         // Verify that undo manager is available and functional after bracket expansion
-        let view = makeGutterTextView(text: "{}")
-        insertNewline(in: view, at: 1)
+        let fixture = try makeUndoableGutterTextView(text: "{}")
 
-        // The expansion should modify text — verify text changed
-        #expect(view.string == "{\n    \n}", "Text should be expanded to three lines")
+        withExtendedLifetime(fixture.window) {
+            insertNewline(in: fixture.view, at: 1)
 
-        // Undo should restore original text and cursor position
-        view.undoManager?.undo()
-        #expect(view.string == "{}", "Undo should restore original text")
-        #expect(view.selectedRange().location == 1, "Undo should restore cursor position")
+            // The expansion should modify text — verify text changed
+            #expect(fixture.view.string == "{\n    \n}", "Text should be expanded to three lines")
+            #expect(fixture.undoManager.canUndo, "Brace expansion should register one undoable edit")
+
+            // Undo should restore original text and cursor position
+            fixture.undoManager.undo()
+            #expect(fixture.view.string == "{}", "Undo should restore original text")
+            #expect(fixture.view.selectedRange().location == 1, "Undo should restore cursor position")
+        }
     }
 }
