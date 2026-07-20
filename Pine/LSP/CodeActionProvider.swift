@@ -144,6 +144,12 @@ nonisolated struct LSPCodeAction: @unchecked Sendable, Identifiable {
     init?(json: Any) {
         guard let dict = json as? [String: Any] else { return nil }
         guard let title = dict["title"] as? String, !title.isEmpty else { return nil }
+        // The code-action response is a union of CodeAction and Command.
+        // A top-level string is the Command discriminator; CodeAction.command
+        // is a nested Command object. Reject the bare form here so the response
+        // parser can decode it with LSPCommand instead of swallowing it as a
+        // disabled CodeAction.
+        guard !(dict["command"] is String) else { return nil }
         self.title = title
         self.kind = LSPCodeActionKind(raw: dict["kind"])
         self.isPreferred = (dict["isPreferred"] as? Bool) ?? false
