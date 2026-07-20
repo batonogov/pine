@@ -91,7 +91,7 @@ struct TerminalMetalRendererTests {
         #expect(redrawRequests == 1)
     }
 
-    @Test("Metal redraw invalidates the nested MTKView")
+    @Test("Metal redraw uses the nested MTKView compatibility bridge")
     func metalRedrawTargetsNestedView() async {
         guard MTLCreateSystemDefaultDevice() != nil else { return }
         let view = PineTerminalView(frame: NSRect(x: 0, y: 0, width: 800, height: 300))
@@ -105,10 +105,16 @@ struct TerminalMetalRendererTests {
 
         // Let the initial bounded retry batch drain, then isolate one request.
         try? await Task.sleep(for: .milliseconds(450))
-        metalView.needsDisplay = false
+        var bridgeRequests = 0
+        view.metalRedrawBridgeObserver = { bridgeRequests += 1 }
         view.requestRendererDisplay()
 
-        #expect(metalView.needsDisplay)
+        // `needsDisplay` is deliberately not asserted here: AppKit may
+        // consume the on-demand MTKView request synchronously and reset that
+        // transient flag before this line. The bridge hook records the stable
+        // production boundary immediately before SwiftTerm receives it.
+        #expect(metalView.superview === view)
+        #expect(bridgeRequests == 1)
         window.contentView = nil
     }
 
@@ -175,6 +181,89 @@ struct TerminalMetalRendererTests {
         window.contentView = nil
     }
 
+    // MARK: - First-output recovery (#1135)
+
+    @Test("OSC title does not consume Metal recovery before visible output")
+    func delayedFirstOutputRearmsMetalRecovery() async {
+        guard MTLCreateSystemDefaultDevice() != nil else { return }
+        let view = PineTerminalView(frame: NSRect(x: 0, y: 0, width: 800, height: 300))
+        let window = makeWindow(containing: view)
+        guard view.isUsingMetalRenderer else {
+            window.contentView = nil
+            return
+        }
+
+        // Model a slow zsh/oh-my-zsh startup: the view-attachment recovery
+        // window has fully elapsed before the first prompt bytes arrive.
+        try? await Task.sleep(for: .milliseconds(450))
+        var redrawRequests = 0
+        view.backendRedrawRequestObserver = { redrawRequests += 1 }
+
+        // Shells commonly publish OSC metadata before drawing their prompt.
+        // Metadata alone must not spend the one visible-content recovery.
+        feed("\u{1B}]2;pine-title\u{07}", to: view)
+        try? await Task.sleep(for: .milliseconds(450))
+        #expect(redrawRequests == 0)
+
+        feed("pine> ", to: view)
+        try? await Task.sleep(for: .milliseconds(450))
+
+        #expect(redrawRequests == UITimings.Render.terminalFirstFrameRetryDelays.count)
+        window.contentView = nil
+    }
+
+    @Test("CoreGraphics recovery ignores empty and subsequent PTY chunks")
+    func firstOutputRecoveryIsOneShotAndIgnoresEmptyChunks() throws {
+        let view = PineTerminalView(frame: NSRect(x: 0, y: 0, width: 800, height: 300))
+        let window = makeWindow(containing: view)
+        if view.isUsingMetalRenderer {
+            try view.setUseMetal(false)
+        }
+        #expect(!view.isUsingMetalRenderer)
+
+        var redrawRequests = 0
+        view.backendRedrawRequestObserver = { redrawRequests += 1 }
+
+        let emptyBytes: [UInt8] = []
+        view.dataReceived(slice: emptyBytes[...])
+        #expect(redrawRequests == 0)
+
+        feed("first", to: view)
+        #expect(redrawRequests == 1)
+
+        feed("second", to: view)
+        #expect(redrawRequests == 1)
+        window.contentView = nil
+    }
+
+    @Test("Detaching cancels first-output retries and reattaching starts a fresh batch")
+    func detachCancelsFirstOutputRetriesAndReattachRecovers() async {
+        guard MTLCreateSystemDefaultDevice() != nil else { return }
+        let view = PineTerminalView(frame: NSRect(x: 0, y: 0, width: 800, height: 300))
+        let window = makeWindow(containing: view)
+        guard view.isUsingMetalRenderer else {
+            window.contentView = nil
+            return
+        }
+
+        // Isolate the output-triggered batch from the original attachment.
+        try? await Task.sleep(for: .milliseconds(450))
+        var redrawRequests = 0
+        view.backendRedrawRequestObserver = { redrawRequests += 1 }
+
+        feed("pine> ", to: view)
+        // All retry work is asynchronous, so a synchronous detach must cancel
+        // even the zero-delay item before it can touch the orphaned MTKView.
+        window.contentView = nil
+        try? await Task.sleep(for: .milliseconds(450))
+        #expect(redrawRequests == 0)
+
+        window.contentView = view
+        try? await Task.sleep(for: .milliseconds(450))
+        #expect(redrawRequests == UITimings.Render.terminalFirstFrameRetryDelays.count)
+        window.contentView = nil
+    }
+
     private func makeWindow(containing view: NSView) -> NSWindow {
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 800, height: 300),
@@ -192,5 +281,10 @@ struct TerminalMetalRendererTests {
             if let metalView = firstMetalView(in: subview) { return metalView }
         }
         return nil
+    }
+
+    private func feed(_ text: String, to view: PineTerminalView) {
+        let bytes = Array(text.utf8)
+        view.dataReceived(slice: bytes[...])
     }
 }
