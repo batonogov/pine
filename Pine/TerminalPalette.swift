@@ -6,9 +6,9 @@
 //
 //  Pine uses appearance-aware ANSI palettes for the 16 ANSI slots that TUI
 //  apps such as k9s, htop, lazygit, btop and vim drive directly via
-//  `\e[3xm` / `tput setaf`. One Dark is used in dark mode; Catppuccin Latte
-//  in light mode. Both provide excellent readability on their respective
-//  backgrounds.
+//  `\e[3xm` / `tput setaf`. One Dark is used in dark mode; a
+//  contrast-adjusted Catppuccin Latte palette is used in light mode. Both
+//  provide excellent readability on their respective backgrounds.
 //
 //  Scope of `install(on:)`:
 //  ONLY the 16 ANSI palette slots are touched here. Background / foreground
@@ -196,7 +196,7 @@ enum TerminalPalette {
         return entries
     }()
 
-    // MARK: - Light palette (Catppuccin Latte)
+    // MARK: - Light palette (Catppuccin Latte base)
 
     /// Light-mode ghost text override for slot 0. Catppuccin Latte's Subtext 0
     /// (#6C6F85) — readable grey for ghost text on the light background.
@@ -225,10 +225,36 @@ enum TerminalPalette {
         .init(red: 0xBC, green: 0xC0, blue: 0xCC), // 15 bright white
     ]
 
-    /// Light-mode ANSI palette with ghost-text slot-0 override applied.
+    /// Pine-specific light-palette adjustments for ANSI colors that do not
+    /// reach 3:1 against Catppuccin Latte Base (#EFF1F5). Each color is a
+    /// proportional sRGB darkening of its upstream value, preserving hue.
+    /// Normal/bright chromatic pairs continue to share one value, while both
+    /// neutral whites use the same 72% scale so bright white stays brighter.
+    ///
+    /// These are intentional deviations from upstream Catppuccin Latte:
+    /// - green: #40A02B -> #3F9E2B (99%)
+    /// - yellow: #DF8E1D -> #C07A19 (86%)
+    /// - magenta: #EA76CB -> #CC67B1 (87%)
+    /// - white: #ACB0BE -> #7C7F89 (72%)
+    /// - bright white: #BCC0CC -> #878A93 (72%)
+    private static let lightContrastGreen = TerminalPaletteEntry(red: 0x3F, green: 0x9E, blue: 0x2B)
+    private static let lightContrastYellow = TerminalPaletteEntry(red: 0xC0, green: 0x7A, blue: 0x19)
+    private static let lightContrastMagenta = TerminalPaletteEntry(red: 0xCC, green: 0x67, blue: 0xB1)
+    private static let lightContrastWhite = TerminalPaletteEntry(red: 0x7C, green: 0x7F, blue: 0x89)
+    private static let lightContrastBrightWhite = TerminalPaletteEntry(red: 0x87, green: 0x8A, blue: 0x93)
+
+    /// Light-mode ANSI palette with ghost-text and contrast overrides applied.
     static let lightPalette: [TerminalPaletteEntry] = {
         var entries = catppuccinLatte
         entries[0] = lightGhostTextOverride
+        entries[2] = lightContrastGreen
+        entries[3] = lightContrastYellow
+        entries[5] = lightContrastMagenta
+        entries[7] = lightContrastWhite
+        entries[10] = lightContrastGreen
+        entries[11] = lightContrastYellow
+        entries[13] = lightContrastMagenta
+        entries[15] = lightContrastBrightWhite
         return entries
     }()
 
