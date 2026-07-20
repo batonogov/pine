@@ -23,6 +23,7 @@ struct PythonGrammarTests {
     private var numberColor: NSColor { hl.theme.color(for: "number")! } // swiftlint:disable:this force_unwrapping
     private var typeColor: NSColor { hl.theme.color(for: "type")! } // swiftlint:disable:this force_unwrapping
     private var attributeColor: NSColor { hl.theme.color(for: "attribute")! } // swiftlint:disable:this force_unwrapping
+    private var functionColor: NSColor { hl.theme.color(for: "function")! } // swiftlint:disable:this force_unwrapping
 
     // MARK: - Helpers
 
@@ -183,6 +184,24 @@ struct PythonGrammarTests {
     }
 
     // MARK: - Keywords / numbers / types still work
+
+    @Test func functionDeclarationOverridesKeywordScope() throws {
+        let storage = try highlight("def hello():\n    pass")
+        let defPos = position(of: "def", in: storage)
+        let namePos = position(of: "hello", in: storage)
+
+        #expect(color(in: storage, at: defPos) === functionColor)
+        #expect(color(in: storage, at: namePos) === functionColor)
+    }
+
+    @Test func classDeclarationOverridesKeywordScope() throws {
+        let storage = try highlight("class Foo:\n    pass")
+        let classPos = position(of: "class", in: storage)
+        let namePos = position(of: "Foo", in: storage)
+
+        #expect(color(in: storage, at: classPos) === functionColor)
+        #expect(color(in: storage, at: namePos) === functionColor)
+    }
 
     @Test func keywordHighlightingStillWorks() throws {
         let storage = try highlight("if x: pass")
