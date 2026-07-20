@@ -162,6 +162,116 @@ jobs:
           retention-days: 1
           compression-level: 0
 
+  # Compiler/SDK compatibility lane for the Xcode 27 preview image. The
+  # hosted runner still uses macOS 26, so runtime coverage on macOS 27 must
+  # continue on real hardware. Keep this non-blocking while the image is in
+  # preview; failures should remain visible without becoming required checks.
+  xcode-27-compatibility:
+    name: Xcode 27 Preview Compatibility
+    runs-on: xcode-27
+    continue-on-error: true
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+
+      # Do not use the stable select-xcode helper here: xcode-27 runners
+      # provide the preview Xcode/SDK pair as their active toolchain.
+      - name: Report Preview Environment
+        run: |
+          sw_vers
+          uname -m
+          xcodebuild -version
+          echo "macOS SDK version: $(xcrun --sdk macosx --show-sdk-version)"
+          echo "macOS SDK build: $(xcrun --sdk macosx --show-sdk-build-version)"
+          echo "macOS SDK path: $(xcrun --sdk macosx --show-sdk-path)"
+
+      - name: Ensure Metal Toolchain
+        run: |
+          if xcodebuild -showComponent MetalToolchain -json 2>/dev/null; then
+            echo "Metal Toolchain is already installed"
+            exit 0
+          fi
+
+          for attempt in 1 2 3; do
+            echo "Downloading Metal Toolchain (attempt $attempt of 3)"
+            if xcodebuild -downloadComponent MetalToolchain \
+              && xcodebuild -showComponent MetalToolchain -json; then
+              exit 0
+            fi
+
+            if [ "$attempt" -lt 3 ]; then
+              echo "::warning::Metal Toolchain download failed; retrying in 10 seconds"
+              sleep 10
+            fi
+          done
+
+          echo "::error::Metal Toolchain could not be installed after 3 attempts"
+          exit 1
+
+      - name: Cache SPM Dependencies
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: DerivedData-Xcode27/SourcePackages
+          key: spm-xcode-27-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Pine.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved') }}
+          restore-keys: |
+            spm-xcode-27-${{ runner.os }}-${{ runner.arch }}-
+
+      - name: Verify macOS 26 Deployment Target
+        run: |
+          deployment_target="$(
+            xcodebuild \
+              -project Pine.xcodeproj \
+              -scheme Pine \
+              -destination "platform=macOS" \
+              -derivedDataPath DerivedData-Xcode27 \
+              -showBuildSettings \
+              -json \
+              | jq -r '.[] | select(.target == "Pine") | .buildSettings.MACOSX_DEPLOYMENT_TARGET'
+          )"
+
+          if [ "$deployment_target" != "26.0" ]; then
+            echo "::error::Expected MACOSX_DEPLOYMENT_TARGET=26.0, got $deployment_target"
+            exit 1
+          fi
+
+          echo "Verified MACOSX_DEPLOYMENT_TARGET=$deployment_target"
+
+      - name: Build App with Xcode 27
+        run: |
+          xcodebuild build \
+            -project Pine.xcodeproj \
+            -scheme Pine \
+            -destination "platform=macOS" \
+            -derivedDataPath DerivedData-Xcode27 \
+            MACOSX_DEPLOYMENT_TARGET=26.0 \
+            CODE_SIGN_IDENTITY=- \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO
+
+      - name: Unit Tests with Xcode 27
+        run: |
+          xcodebuild test \
+            -project Pine.xcodeproj \
+            -scheme Pine \
+            -destination "platform=macOS" \
+            -derivedDataPath DerivedData-Xcode27 \
+            -only-testing:PineTests \
+            -skip-testing:PineTests/FuzzGitDiffParserTests \
+            -skip-testing:PineTests/FuzzGitBlameParserTests \
+            -skip-testing:PineTests/FuzzGitStatusParserTests \
+            -skip-testing:PineTests/FuzzSyntaxHighlighterTests \
+            -skip-testing:PineTests/FuzzQuickOpenProviderTests \
+            -skip-testing:PineTests/FuzzSymbolParserTests \
+            -skip-testing:PineTests/FuzzConfigValidatorTests \
+            -skip-testing:PineTests/FuzzGoToLineParserTests \
+            -retry-tests-on-failure \
+            -test-timeouts-enabled \
+            -resultBundlePath Xcode27TestResults.xcresult \
+            MACOSX_DEPLOYMENT_TARGET=26.0 \
+            CODE_SIGN_IDENTITY=- \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO
+
   unit-tests:
     name: Unit Tests
     runs-on: macos-26
