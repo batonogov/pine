@@ -303,24 +303,24 @@ struct TerminalPaletteTests {
 
     // MARK: - Light palette reference values
 
-    @Test func lightPaletteReferenceIsPreserved() {
+    @Test func lightPalettePineReferenceIsPreserved() {
         let expected: [(UInt8, UInt8, UInt8)] = [
             (0x6C, 0x6F, 0x85), // 0  black (ghost text override)
             (0xD2, 0x0F, 0x39), // 1  red
-            (0x40, 0xA0, 0x2B), // 2  green
-            (0xDF, 0x8E, 0x1D), // 3  yellow
+            (0x3F, 0x9E, 0x2B), // 2  green (contrast adjusted)
+            (0xC0, 0x7A, 0x19), // 3  yellow (contrast adjusted)
             (0x1E, 0x66, 0xF5), // 4  blue
-            (0xEA, 0x76, 0xCB), // 5  magenta
+            (0xCC, 0x67, 0xB1), // 5  magenta (contrast adjusted)
             (0x17, 0x92, 0x99), // 6  cyan
-            (0xAC, 0xB0, 0xBE), // 7  white
+            (0x7C, 0x7F, 0x89), // 7  white (contrast adjusted)
             (0x6C, 0x6F, 0x85), // 8  bright black
             (0xD2, 0x0F, 0x39), // 9  bright red
-            (0x40, 0xA0, 0x2B), // 10 bright green
-            (0xDF, 0x8E, 0x1D), // 11 bright yellow
+            (0x3F, 0x9E, 0x2B), // 10 bright green (contrast adjusted)
+            (0xC0, 0x7A, 0x19), // 11 bright yellow (contrast adjusted)
             (0x1E, 0x66, 0xF5), // 12 bright blue
-            (0xEA, 0x76, 0xCB), // 13 bright magenta
+            (0xCC, 0x67, 0xB1), // 13 bright magenta (contrast adjusted)
             (0x17, 0x92, 0x99), // 14 bright cyan
-            (0xBC, 0xC0, 0xCC), // 15 bright white
+            (0x87, 0x8A, 0x93), // 15 bright white (contrast adjusted)
         ]
         let entries = TerminalPalette.lightPalette
         #expect(entries.count == expected.count)
@@ -330,6 +330,22 @@ struct TerminalPaletteTests {
             #expect(entry.green == exp.1, "Light ANSI \(index) green mismatch")
             #expect(entry.blue == exp.2, "Light ANSI \(index) blue mismatch")
         }
+    }
+
+    @Test func lightPalettePreservesNormalBrightRelationships() {
+        let pairedSlots = [(1, 9), (2, 10), (3, 11), (4, 12), (5, 13), (6, 14)]
+        for (normal, bright) in pairedSlots {
+            #expect(
+                TerminalPalette.lightPalette[normal] == TerminalPalette.lightPalette[bright],
+                "Light ANSI slots \(normal) and \(bright) must remain paired"
+            )
+        }
+
+        #expect(
+            relativeLuminance(TerminalPalette.lightPalette[15])
+            > relativeLuminance(TerminalPalette.lightPalette[7]),
+            "Light ANSI bright white must remain brighter than white"
+        )
     }
 
     // MARK: - Light palette readability
