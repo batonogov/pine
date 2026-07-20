@@ -206,6 +206,84 @@ struct LSPPositionConverterTests {
         #expect(offset == 4)
     }
 
+    // MARK: - Strict reverse conversion
+
+    @Test("Strict reverse accepts start and end of each line")
+    func strictReverseLineBoundaries() {
+        let text = "ab\ncd"
+        #expect(LSPPositionConverter.utf16OffsetIfValid(line: 0, character: 0, in: text) == 0)
+        #expect(LSPPositionConverter.utf16OffsetIfValid(line: 0, character: 2, in: text) == 2)
+        #expect(LSPPositionConverter.utf16OffsetIfValid(line: 1, character: 0, in: text) == 3)
+        #expect(LSPPositionConverter.utf16OffsetIfValid(line: 1, character: 2, in: text) == 5)
+    }
+
+    @Test("Strict reverse rejects negative and out-of-document positions")
+    func strictReverseInvalidPositions() {
+        let text = "ab\ncd"
+        #expect(LSPPositionConverter.utf16OffsetIfValid(line: -1, character: 0, in: text) == nil)
+        #expect(LSPPositionConverter.utf16OffsetIfValid(line: 0, character: -1, in: text) == nil)
+        #expect(LSPPositionConverter.utf16OffsetIfValid(line: 0, character: 3, in: text) == nil)
+        #expect(LSPPositionConverter.utf16OffsetIfValid(line: 1, character: 3, in: text) == nil)
+        #expect(LSPPositionConverter.utf16OffsetIfValid(line: 2, character: 0, in: text) == nil)
+    }
+
+    @Test("Strict reverse handles empty and trailing-empty documents")
+    func strictReverseEmptyLines() {
+        #expect(LSPPositionConverter.utf16OffsetIfValid(line: 0, character: 0, in: "") == 0)
+        #expect(LSPPositionConverter.utf16OffsetIfValid(line: 0, character: 1, in: "") == nil)
+        #expect(LSPPositionConverter.utf16OffsetIfValid(line: 1, character: 0, in: "") == nil)
+
+        let trailingNewline = "ab\n"
+        #expect(LSPPositionConverter.utf16OffsetIfValid(
+            line: 1,
+            character: 0,
+            in: trailingNewline
+        ) == 3)
+        #expect(LSPPositionConverter.utf16OffsetIfValid(
+            line: 2,
+            character: 0,
+            in: trailingNewline
+        ) == nil)
+    }
+
+    @Test("Strict reverse rejects positions inside UTF-16 surrogate pairs")
+    func strictReverseUTF16ScalarBoundaries() {
+        let utf16Text = "A😀B"
+        #expect(LSPPositionConverter.utf16OffsetIfValid(line: 0, character: 0, in: utf16Text) == 0)
+        #expect(LSPPositionConverter.utf16OffsetIfValid(line: 0, character: 1, in: utf16Text) == 1)
+        #expect(LSPPositionConverter.utf16OffsetIfValid(line: 0, character: 2, in: utf16Text) == nil)
+        #expect(LSPPositionConverter.utf16OffsetIfValid(line: 0, character: 3, in: utf16Text) == 3)
+        #expect(LSPPositionConverter.utf16OffsetIfValid(line: 0, character: 4, in: utf16Text) == 4)
+        #expect(LSPPositionConverter.utf16OffsetIfValid(line: 0, character: 5, in: utf16Text) == nil)
+    }
+
+    @Test("Strict reverse excludes CRLF code units from line characters")
+    func strictReverseCRLF() {
+        let crlfText = "a\r\nb"
+        #expect(LSPPositionConverter.utf16OffsetIfValid(line: 0, character: 1, in: crlfText) == 1)
+        #expect(LSPPositionConverter.utf16OffsetIfValid(line: 0, character: 2, in: crlfText) == nil)
+        #expect(LSPPositionConverter.utf16OffsetIfValid(line: 1, character: 0, in: crlfText) == 3)
+    }
+
+    @Test("Strict reverse recognizes CR-only line endings")
+    func strictReverseCROnly() {
+        let crText = "a\rb"
+        #expect(LSPPositionConverter.utf16OffsetIfValid(line: 0, character: 1, in: crText) == 1)
+        #expect(LSPPositionConverter.utf16OffsetIfValid(line: 0, character: 2, in: crText) == nil)
+        #expect(LSPPositionConverter.utf16OffsetIfValid(line: 1, character: 0, in: crText) == 2)
+        #expect(LSPPositionConverter.utf16OffsetIfValid(line: 1, character: 1, in: crText) == 3)
+    }
+
+    @Test("Strict reverse exposes one empty line after trailing CRLF")
+    func strictReverseTrailingCRLF() {
+        let text = "ab\r\n"
+        #expect(LSPPositionConverter.utf16OffsetIfValid(line: 0, character: 2, in: text) == 2)
+        #expect(LSPPositionConverter.utf16OffsetIfValid(line: 0, character: 3, in: text) == nil)
+        #expect(LSPPositionConverter.utf16OffsetIfValid(line: 1, character: 0, in: text) == 4)
+        #expect(LSPPositionConverter.utf16OffsetIfValid(line: 1, character: 1, in: text) == nil)
+        #expect(LSPPositionConverter.utf16OffsetIfValid(line: 2, character: 0, in: text) == nil)
+    }
+
     // MARK: - Round-trip
 
     @Test("Round-trip: offset → position → offset")

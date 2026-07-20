@@ -308,4 +308,63 @@ nonisolated enum LSPPositionConverter {
         let remaining = ns.length - offset
         return offset + min(max(0, character), remaining)
     }
+
+    /// Converts an LSP position to a UTF-16 offset only when the position is
+    /// inside the document. Unlike ``utf16Offset(line:character:in:)``, this
+    /// method does not clamp invalid positions and is therefore suitable for
+    /// validating server-supplied mutation ranges.
+    static func utf16OffsetIfValid(line: Int, character: Int, in text: String) -> Int? {
+        guard line >= 0, character >= 0 else { return nil }
+
+        let ns = text as NSString
+        var currentLine = 0
+        var lineStart = 0
+
+        while currentLine < line {
+            guard lineStart < ns.length else { return nil }
+
+            var lineEnd = lineStart
+            while lineEnd < ns.length, !isLineEnding(at: lineEnd, in: ns) {
+                lineEnd += 1
+            }
+            guard lineEnd < ns.length else { return nil }
+
+            lineStart = lineEnd + lineEndingLength(at: lineEnd, in: ns)
+            currentLine += 1
+        }
+
+        var lineEnd = lineStart
+        while lineEnd < ns.length, !isLineEnding(at: lineEnd, in: ns) {
+            lineEnd += 1
+        }
+
+        guard character <= lineEnd - lineStart else { return nil }
+        let offset = lineStart + character
+        guard isUnicodeScalarBoundary(offset, in: ns) else { return nil }
+        return offset
+    }
+
+    private static func isLineEnding(at offset: Int, in text: NSString) -> Bool {
+        let codeUnit = text.character(at: offset)
+        return codeUnit == ASCII.newline || codeUnit == ASCII.carriageReturn
+    }
+
+    private static func lineEndingLength(at offset: Int, in text: NSString) -> Int {
+        guard text.character(at: offset) == ASCII.carriageReturn,
+              offset + 1 < text.length,
+              text.character(at: offset + 1) == ASCII.newline else {
+            return 1
+        }
+        return 2
+    }
+
+    private static func isUnicodeScalarBoundary(_ offset: Int, in text: NSString) -> Bool {
+        guard offset > 0, offset < text.length else { return true }
+
+        let preceding = text.character(at: offset - 1)
+        let following = text.character(at: offset)
+        let splitsSurrogatePair = (0xD800...0xDBFF).contains(preceding)
+            && (0xDC00...0xDFFF).contains(following)
+        return !splitsSurrogatePair
+    }
 }

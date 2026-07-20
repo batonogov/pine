@@ -300,32 +300,22 @@ nonisolated enum WorkspaceEditApplier {
             return WorkspaceEditApplyResult(newText: text)
         }
 
-        // Sort by descending start position (apply from end to start).
-        let sorted = edits.sorted { lhs, rhs in
-            if lhs.range.start.line != rhs.range.start.line {
-                return lhs.range.start.line > rhs.range.start.line
-            }
-            return lhs.range.start.character > rhs.range.start.character
-        }
+        // Resolve every range against the original text before mutating it.
+        // This prevents an invalid later edit from being interpreted against
+        // already-modified text and guarantees all-or-nothing application.
+        var preparedEdits: [(edit: LSPTextEdit, range: NSRange, originalIndex: Int)] = []
+        preparedEdits.reserveCapacity(edits.count)
 
-        let ns = text as NSString
-        var mutable = NSMutableString(string: text)
-
-        for edit in sorted {
-            let startOffset = LSPPositionConverter.utf16Offset(
+        for (originalIndex, edit) in edits.enumerated() {
+            guard let startOffset = LSPPositionConverter.utf16OffsetIfValid(
                 line: edit.range.start.line,
                 character: edit.range.start.character,
                 in: text
-            )
-            let endOffset = LSPPositionConverter.utf16Offset(
+            ), let endOffset = LSPPositionConverter.utf16OffsetIfValid(
                 line: edit.range.end.line,
                 character: edit.range.end.character,
                 in: text
-            )
-
-            // Validate bounds.
-            guard startOffset >= 0, startOffset <= ns.length,
-                  endOffset >= startOffset, endOffset <= ns.length else {
+            ), endOffset >= startOffset else {
                 let desc = "line \(edit.range.start.line):\(edit.range.start.character) – \(edit.range.end.line):\(edit.range.end.character)"
                 return WorkspaceEditApplyResult(
                     error: "Edit range out of bounds: \(desc)"
@@ -333,7 +323,53 @@ nonisolated enum WorkspaceEditApplier {
             }
 
             let range = NSRange(location: startOffset, length: endOffset - startOffset)
-            mutable.replaceCharacters(in: range, with: edit.newText)
+            preparedEdits.append((edit, range, originalIndex))
+        }
+
+        // Sort once for both conflict validation and application. Insertions
+        // precede a replacement at the same offset in this ascending order;
+        // iterating the array in reverse below therefore applies the
+        // replacement first and same-position insertions in reverse input
+        // order, preserving their final server-specified order.
+        preparedEdits.sort { lhs, rhs in
+            if lhs.range.location != rhs.range.location {
+                return lhs.range.location < rhs.range.location
+            }
+            if (lhs.range.length > 0) != (rhs.range.length > 0) {
+                return lhs.range.length == 0
+            }
+            return lhs.originalIndex < rhs.originalIndex
+        }
+
+        // Sweep the start-sorted ranges in O(E). Because overlapping
+        // non-empty ranges are rejected as soon as they are encountered, the
+        // most recent non-empty range is the only one that can contain the
+        // current start/insert position. Touching ranges and insertions at
+        // either boundary remain valid.
+        var activeNonemptyRange: NSRange?
+        for prepared in preparedEdits {
+            let range = prepared.range
+            if range.length == 0 {
+                if let activeNonemptyRange,
+                   activeNonemptyRange.location < range.location,
+                   range.location < NSMaxRange(activeNonemptyRange) {
+                    return WorkspaceEditApplyResult(error: "Edit ranges overlap")
+                }
+                continue
+            }
+
+            if let activeNonemptyRange,
+               NSMaxRange(activeNonemptyRange) > range.location {
+                return WorkspaceEditApplyResult(error: "Edit ranges overlap")
+            }
+            activeNonemptyRange = range
+        }
+
+        // Apply from end to start so earlier ranges keep their original
+        // offsets while later ranges change length.
+        let mutable = NSMutableString(string: text)
+        for prepared in preparedEdits.reversed() {
+            mutable.replaceCharacters(in: prepared.range, with: prepared.edit.newText)
         }
 
         return WorkspaceEditApplyResult(newText: mutable as String)
