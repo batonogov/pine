@@ -60,7 +60,7 @@ struct WorkspaceEditApplierTests {
             LSPTextEdit(
                 range: LSPRange(start: LSPPosition(line: 0, character: 0),
                                 end: LSPPosition(line: 0, character: 1)),
-                newText: "W"
+                newText: "H"
             ),
             LSPTextEdit(
                 range: LSPRange(start: LSPPosition(line: 0, character: 6),
@@ -77,8 +77,8 @@ struct WorkspaceEditApplierTests {
     func applyThreeEditsJumbled() {
         let edits = [
             LSPTextEdit(
-                range: LSPRange(start: LSPPosition(line: 0, character: 7),
-                                end: LSPPosition(line: 0, character: 12)),
+                range: LSPRange(start: LSPPosition(line: 0, character: 6),
+                                end: LSPPosition(line: 0, character: 11)),
                 newText: "Swift"
             ),
             LSPTextEdit(
@@ -88,7 +88,7 @@ struct WorkspaceEditApplierTests {
             ),
             LSPTextEdit(
                 range: LSPRange(start: LSPPosition(line: 0, character: 5),
-                                end: LSPPosition(line: 0, character: 7)),
+                                end: LSPPosition(line: 0, character: 6)),
                 newText: " "
             ),
         ]
@@ -108,7 +108,7 @@ struct WorkspaceEditApplierTests {
             ),
             LSPTextEdit(
                 range: LSPRange(start: LSPPosition(line: 1, character: 0),
-                                end: LSPPosition(line: 1, character: 6)),
+                                end: LSPPosition(line: 1, character: 5)),
                 newText: "second"
             ),
         ]
@@ -140,6 +140,55 @@ struct WorkspaceEditApplierTests {
             newText: "x"
         )
         let result = WorkspaceEditApplier.applyEdits([edit], to: "hello")
+        #expect(!result.success)
+        #expect(result.newText == nil)
+    }
+
+    @Test("Character past its line fails instead of spilling into next line")
+    func characterPastLineEnd() {
+        let edit = LSPTextEdit(
+            range: LSPRange(start: LSPPosition(line: 0, character: 3),
+                            end: LSPPosition(line: 0, character: 3)),
+            newText: "x"
+        )
+        let result = WorkspaceEditApplier.applyEdits([edit], to: "hi\nthere")
+        #expect(!result.success)
+        #expect(result.newText == nil)
+    }
+
+    @Test("Negative line or character fails")
+    func negativePosition() {
+        let negativeLine = LSPTextEdit(
+            range: LSPRange(start: LSPPosition(line: -1, character: 0),
+                            end: LSPPosition(line: 0, character: 0)),
+            newText: "x"
+        )
+        let negativeCharacter = LSPTextEdit(
+            range: LSPRange(start: LSPPosition(line: 0, character: -1),
+                            end: LSPPosition(line: 0, character: 0)),
+            newText: "x"
+        )
+
+        #expect(!WorkspaceEditApplier.applyEdits([negativeLine], to: "hi").success)
+        #expect(!WorkspaceEditApplier.applyEdits([negativeCharacter], to: "hi").success)
+    }
+
+    @Test("One invalid range rejects the complete edit batch")
+    func invalidRangeIsAtomic() {
+        let edits = [
+            LSPTextEdit(
+                range: LSPRange(start: LSPPosition(line: 0, character: 0),
+                                end: LSPPosition(line: 0, character: 5)),
+                newText: "changed"
+            ),
+            LSPTextEdit(
+                range: LSPRange(start: LSPPosition(line: 2, character: 0),
+                                end: LSPPosition(line: 2, character: 0)),
+                newText: "invalid"
+            ),
+        ]
+
+        let result = WorkspaceEditApplier.applyEdits(edits, to: "hello")
         #expect(!result.success)
         #expect(result.newText == nil)
     }
@@ -177,6 +226,184 @@ struct WorkspaceEditApplierTests {
         let result = WorkspaceEditApplier.applyEdits([edit], to: "hello")
         #expect(result.success)
         #expect(result.newText == "hello!")
+    }
+
+    @Test("Insert into an empty document at its only valid position")
+    func editEmptyDocument() {
+        let edit = LSPTextEdit(
+            range: LSPRange(start: LSPPosition(line: 0, character: 0),
+                            end: LSPPosition(line: 0, character: 0)),
+            newText: "hello"
+        )
+        let result = WorkspaceEditApplier.applyEdits([edit], to: "")
+        #expect(result.success)
+        #expect(result.newText == "hello")
+    }
+
+    @Test("Empty document rejects positions after line zero character zero")
+    func invalidEditInEmptyDocument() {
+        let invalidLine = LSPTextEdit(
+            range: LSPRange(start: LSPPosition(line: 1, character: 0),
+                            end: LSPPosition(line: 1, character: 0)),
+            newText: "x"
+        )
+        let invalidCharacter = LSPTextEdit(
+            range: LSPRange(start: LSPPosition(line: 0, character: 1),
+                            end: LSPPosition(line: 0, character: 1)),
+            newText: "x"
+        )
+
+        #expect(!WorkspaceEditApplier.applyEdits([invalidLine], to: "").success)
+        #expect(!WorkspaceEditApplier.applyEdits([invalidCharacter], to: "").success)
+    }
+
+    @Test("Trailing newline creates one final empty line")
+    func editTrailingEmptyLine() {
+        let edit = LSPTextEdit(
+            range: LSPRange(start: LSPPosition(line: 1, character: 0),
+                            end: LSPPosition(line: 1, character: 0)),
+            newText: "second"
+        )
+        let result = WorkspaceEditApplier.applyEdits([edit], to: "first\n")
+        #expect(result.success)
+        #expect(result.newText == "first\nsecond")
+    }
+
+    @Test("Line after a trailing empty line is invalid")
+    func editAfterTrailingEmptyLine() {
+        let edit = LSPTextEdit(
+            range: LSPRange(start: LSPPosition(line: 2, character: 0),
+                            end: LSPPosition(line: 2, character: 0)),
+            newText: "third"
+        )
+        let result = WorkspaceEditApplier.applyEdits([edit], to: "first\n")
+        #expect(!result.success)
+        #expect(result.newText == nil)
+    }
+
+    @Test("Ranges use UTF-16 code-unit coordinates")
+    func editUTF16Range() {
+        let edit = LSPTextEdit(
+            range: LSPRange(start: LSPPosition(line: 0, character: 1),
+                            end: LSPPosition(line: 0, character: 3)),
+            newText: "🙂"
+        )
+        let result = WorkspaceEditApplier.applyEdits([edit], to: "A😀B")
+        #expect(result.success)
+        #expect(result.newText == "A🙂B")
+    }
+
+    @Test("Range boundary inside a UTF-16 surrogate pair fails")
+    func editInsideSurrogatePair() {
+        let edit = LSPTextEdit(
+            range: LSPRange(start: LSPPosition(line: 0, character: 2),
+                            end: LSPPosition(line: 0, character: 3)),
+            newText: "x"
+        )
+        let result = WorkspaceEditApplier.applyEdits([edit], to: "A😀B")
+        #expect(!result.success)
+        #expect(result.newText == nil)
+    }
+
+    @Test("Overlapping replacement ranges reject the complete batch")
+    func overlappingReplacementsFailAtomically() {
+        let edits = [
+            LSPTextEdit(
+                range: LSPRange(start: LSPPosition(line: 0, character: 0),
+                                end: LSPPosition(line: 0, character: 3)),
+                newText: "first"
+            ),
+            LSPTextEdit(
+                range: LSPRange(start: LSPPosition(line: 0, character: 2),
+                                end: LSPPosition(line: 0, character: 5)),
+                newText: "second"
+            ),
+        ]
+
+        let result = WorkspaceEditApplier.applyEdits(edits, to: "abcdef")
+        #expect(!result.success)
+        #expect(result.newText == nil)
+    }
+
+    @Test("Insertion strictly inside a replacement range fails")
+    func insertionInsideReplacementFails() {
+        let edits = [
+            LSPTextEdit(
+                range: LSPRange(start: LSPPosition(line: 0, character: 1),
+                                end: LSPPosition(line: 0, character: 4)),
+                newText: "X"
+            ),
+            LSPTextEdit(
+                range: LSPRange(start: LSPPosition(line: 0, character: 2),
+                                end: LSPPosition(line: 0, character: 2)),
+                newText: "inside"
+            ),
+        ]
+
+        let result = WorkspaceEditApplier.applyEdits(edits, to: "abcdef")
+        #expect(!result.success)
+        #expect(result.newText == nil)
+    }
+
+    @Test("Insertions at replacement boundaries remain valid")
+    func insertionsAtReplacementBoundaries() {
+        let edits = [
+            LSPTextEdit(
+                range: LSPRange(start: LSPPosition(line: 0, character: 1),
+                                end: LSPPosition(line: 0, character: 1)),
+                newText: "["
+            ),
+            LSPTextEdit(
+                range: LSPRange(start: LSPPosition(line: 0, character: 1),
+                                end: LSPPosition(line: 0, character: 2)),
+                newText: "X"
+            ),
+            LSPTextEdit(
+                range: LSPRange(start: LSPPosition(line: 0, character: 2),
+                                end: LSPPosition(line: 0, character: 2)),
+                newText: "]"
+            ),
+        ]
+
+        let result = WorkspaceEditApplier.applyEdits(edits, to: "abc")
+        #expect(result.success)
+        #expect(result.newText == "a[X]c")
+    }
+
+    @Test("Insertions at the same position preserve server order")
+    func samePositionInsertionsPreserveOrder() {
+        let edits = ["A", "B", "C"].map { newText in
+            LSPTextEdit(
+                range: LSPRange(start: LSPPosition(line: 0, character: 1),
+                                end: LSPPosition(line: 0, character: 1)),
+                newText: newText
+            )
+        }
+
+        let result = WorkspaceEditApplier.applyEdits(edits, to: "abc")
+        #expect(result.success)
+        #expect(result.newText == "aABCbc")
+    }
+
+    @Test("Large non-conflicting batch applies successfully")
+    func largeNonconflictingBatch() {
+        let insertion = LSPTextEdit(
+            range: LSPRange(start: LSPPosition(line: 0, character: 0),
+                            end: LSPPosition(line: 0, character: 0)),
+            newText: ""
+        )
+        var edits = Array(repeating: insertion, count: 10_000)
+        edits.append(
+            LSPTextEdit(
+                range: LSPRange(start: LSPPosition(line: 0, character: 0),
+                                end: LSPPosition(line: 0, character: 1)),
+                newText: "B"
+            )
+        )
+
+        let result = WorkspaceEditApplier.applyEdits(edits, to: "a")
+        #expect(result.success)
+        #expect(result.newText == "B")
     }
 
     @Test("Edit replacing entire single line")
