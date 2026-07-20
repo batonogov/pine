@@ -197,13 +197,13 @@ struct CompletionFilterTests {
     @Test("Full ranking hierarchy: exact > prefix > boundary > substring > fuzzy")
     func fullHierarchy() {
         let items = [
-            LSPCompletionItem(label: "xfoobar"),       // substring
+            LSPCompletionItem(label: "xftlbar"),       // substring
             LSPCompletionItem(label: "football"),       // fuzzy (ftl subsequence)
             LSPCompletionItem(label: "ftl"),            // exact
             LSPCompletionItem(label: "my_ftl"),         // word boundary
             LSPCompletionItem(label: "ftl_extra"),      // prefix
         ]
         let result = CompletionFilter.filter(items, prefix: "ftl")
-        #expect(result.map(\.label) == ["ftl", "ftl_extra", "my_ftl", "xfoobar", "football"])
+        #expect(result.map(\.label) == ["ftl", "ftl_extra", "my_ftl", "xftlbar", "football"])
     }
 }
