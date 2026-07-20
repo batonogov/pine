@@ -41,16 +41,16 @@
             "scope": "attribute"
         },
         {
+            "pattern": "\\b(def|class|if|elif|else|for|while|return|import|from|as|try|except|finally|with|raise|pass|break|continue|in|not|and|or|is|lambda|yield|global|nonlocal|assert|del|async|await|match|case)\\b",
+            "scope": "keyword"
+        },
+        {
             "pattern": "\\bdef\\s+([a-zA-Z_][a-zA-Z0-9_]*)",
             "scope": "function"
         },
         {
             "pattern": "\\bclass\\s+([a-zA-Z_][a-zA-Z0-9_]*)",
             "scope": "function"
-        },
-        {
-            "pattern": "\\b(def|class|if|elif|else|for|while|return|import|from|as|try|except|finally|with|raise|pass|break|continue|in|not|and|or|is|lambda|yield|global|nonlocal|assert|del|async|await|match|case)\\b",
-            "scope": "keyword"
         },
         {
             "pattern": "\\b(True|False|None)\\b",

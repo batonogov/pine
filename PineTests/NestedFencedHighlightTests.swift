@@ -95,10 +95,10 @@ struct NestedFencedHighlightTests {
         // `def hello` matches as function scope in Python grammar (def + name),
         // so `def` gets function color, not keyword color.
         let defPos = position(of: "def", in: storage)
-        #expect(color(in: storage, at: defPos) == functionColor)
+        #expect(color(in: storage, at: defPos) === functionColor)
 
         let passPos = position(of: "pass", in: storage)
-        #expect(color(in: storage, at: passPos) == keywordColor)
+        #expect(color(in: storage, at: passPos) === keywordColor)
     }
 
     @Test func pythonFunctionHighlightedInsideFencedBlock() throws {
@@ -110,7 +110,7 @@ struct NestedFencedHighlightTests {
         """
         let storage = try highlight(text)
         let helloPos = position(of: "hello", in: storage)
-        #expect(color(in: storage, at: helloPos) == functionColor)
+        #expect(color(in: storage, at: helloPos) === functionColor)
     }
 
     // MARK: - No language tag
@@ -155,14 +155,14 @@ struct NestedFencedHighlightTests {
         let storage = try highlight(text)
 
         let letPos = position(of: "let", in: storage)
-        #expect(color(in: storage, at: letPos) == keywordColor)
+        #expect(color(in: storage, at: letPos) === keywordColor)
 
         // `def hello` matches as function scope in Python grammar
         let defPos = position(of: "def", in: storage)
-        #expect(color(in: storage, at: defPos) == functionColor)
+        #expect(color(in: storage, at: defPos) === functionColor)
 
         let passPos = position(of: "pass", in: storage)
-        #expect(color(in: storage, at: passPos) == keywordColor)
+        #expect(color(in: storage, at: passPos) === keywordColor)
     }
 
     // MARK: - Bash/shell alias
