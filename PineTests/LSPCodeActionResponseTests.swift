@@ -131,7 +131,18 @@ struct LSPCodeActionResponseTests {
         ]
         let response = LSPCodeActionResponse(result: json)
         #expect(response.commands.count == 1)
-        #expect(response.commands[0].arguments != nil)
+        #expect(response.commands.first?.title == "Go to")
+        #expect(response.commands.first?.command == "navigate")
+        #expect(response.commands.first?.arguments != nil)
+    }
+
+    @Test("Bare Command with empty identifier is skipped")
+    func emptyBareCommandIdentifierSkipped() {
+        let json: [Any] = [
+            ["title": "Invalid", "command": ""]
+        ]
+        let response = LSPCodeActionResponse(result: json)
+        #expect(response.isEmpty)
     }
 
     // MARK: - Null response
