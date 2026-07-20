@@ -59,6 +59,22 @@ struct LoggerTests {
         #expect(LogCategory.app.rawValue == "app")
     }
 
+    @Test func migrationCategoryRawValue() {
+        #expect(LogCategory.migration.rawValue == "migration")
+    }
+
+    @Test func lspCategoryRawValue() {
+        #expect(LogCategory.lsp.rawValue == "lsp")
+    }
+
+    @Test func taskCategoryRawValue() {
+        #expect(LogCategory.task.rawValue == "task")
+    }
+
+    @Test func extensibilityCategoryRawValue() {
+        #expect(LogCategory.extensibility.rawValue == "extensibility")
+    }
+
     // MARK: - Uniqueness
 
     @Test func allCategoriesAreUnique() {
@@ -69,11 +85,23 @@ struct LoggerTests {
     // MARK: - CaseIterable
 
     @Test func expectedCategoryCount() {
-        #expect(LogCategory.allCases.count == 8)
+        #expect(LogCategory.allCases.count == 11)
     }
 
     @Test func allCasesContainsAllCategories() {
-        let expected: Set<LogCategory> = [.syntax, .git, .fileTree, .search, .terminal, .editor, .app, .migration]
+        let expected: Set<LogCategory> = [
+            .syntax,
+            .git,
+            .fileTree,
+            .search,
+            .terminal,
+            .editor,
+            .app,
+            .migration,
+            .lsp,
+            .task,
+            .extensibility,
+        ]
         #expect(Set(LogCategory.allCases) == expected)
     }
 
@@ -88,6 +116,9 @@ struct LoggerTests {
         Logger.editor.debug("test")
         Logger.app.debug("test")
         Logger.migration.debug("test")
+        Logger.lsp.debug("test")
+        Logger.task.debug("test")
+        Logger.extensibility.debug("test")
     }
 
     // MARK: - Logger creation from category
