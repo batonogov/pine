@@ -25,11 +25,47 @@ import os
 final class PineTerminalView: LocalProcessTerminalView {
     private var redrawBackgroundColor: CGColor?
     private var initialMetalRedrawWorkItems: [DispatchWorkItem] = []
+    /// The attachment retry batch can finish before a slow interactive shell
+    /// emits its first prompt. Re-arm it once, after the first PTY chunk that
+    /// actually changes visible buffer content, so an earlier OSC title does
+    /// not consume recovery before there is anything to present.
+    private let firstVisibleContentLock = NSLock()
+    private var didObserveFirstVisibleContent = false
+
+    /// Lightweight snapshot of the visible cells SwiftTerm would render.
+    /// Buffer-line generations change on cell/attribute mutations, while OSC
+    /// metadata such as title and working directory leaves this state intact.
+    private struct VisibleContentState: Equatable {
+        struct Line: Equatable {
+            let identity: ObjectIdentifier?
+            let generation: UInt64
+        }
+
+        let bufferIdentity: ObjectIdentifier
+        let displayOffset: Int
+        let totalLinesTrimmed: Int
+        let lines: [Line]
+
+        init(terminal: Terminal) {
+            let buffer = terminal.buffer
+            bufferIdentity = ObjectIdentifier(buffer)
+            displayOffset = buffer.yDisp
+            totalLinesTrimmed = buffer.totalLinesTrimmed
+            lines = (0..<terminal.rows).map { row in
+                guard let line = terminal.getLine(row: row) else {
+                    return Line(identity: nil, generation: 0)
+                }
+                return Line(identity: ObjectIdentifier(line), generation: line.generation)
+            }
+        }
+    }
 
     #if DEBUG
     /// Test hook that observes every backend-aware redraw request without
     /// replacing the production AppKit/Metal behavior.
     var backendRedrawRequestObserver: (() -> Void)?
+    /// Test hook for the Metal-specific SwiftTerm compatibility bridge.
+    var metalRedrawBridgeObserver: (() -> Void)?
     #endif
 
     /// Enables SwiftTerm's Metal renderer once the view lands in a window.
@@ -103,6 +139,48 @@ final class PineTerminalView: LocalProcessTerminalView {
         }
     }
 
+    /// Re-arms first-frame recovery when visible terminal content first
+    /// changes, rather than relying solely on the earlier view-attachment
+    /// window. This matters for shells whose startup takes longer than the
+    /// bounded attachment retries: OSC title/working-directory sequences can
+    /// arrive well before the prompt and must not consume the one-shot.
+    ///
+    /// `super` must run first so the bytes (including the prompt) are already
+    /// represented in SwiftTerm's display buffer before Pine requests a frame.
+    /// SwiftTerm may deliver process output away from the main queue, so the
+    /// recovery hop keeps the AppKit/Metal work main-thread-safe.
+    override func dataReceived(slice: ArraySlice<UInt8>) {
+        let shouldInspectContent = firstVisibleContentLock.withLock {
+            !didObserveFirstVisibleContent
+        }
+        let contentBefore = slice.isEmpty || !shouldInspectContent
+            ? nil
+            : VisibleContentState(terminal: getTerminal())
+        super.dataReceived(slice: slice)
+        guard let contentBefore,
+              VisibleContentState(terminal: getTerminal()) != contentBefore,
+              claimFirstVisibleContent() else { return }
+
+        if Thread.isMainThread {
+            scheduleFirstVisibleContentRecoveryIfNeeded()
+        } else {
+            DispatchQueue.main.async { [weak self] in
+                self?.scheduleFirstVisibleContentRecoveryIfNeeded()
+            }
+        }
+    }
+
+    /// Claims the one-shot on SwiftTerm's delivery queue. This makes all
+    /// later PTY chunks bypass the visible-row snapshots; only the first real
+    /// cell mutation pays that bounded O(rows) comparison cost.
+    private func claimFirstVisibleContent() -> Bool {
+        firstVisibleContentLock.withLock {
+            guard !didObserveFirstVisibleContent else { return false }
+            didObserveFirstVisibleContent = true
+            return true
+        }
+    }
+
     /// Requests a display through the renderer that actually owns the pixels.
     ///
     /// SwiftTerm's CoreGraphics path draws in this outer NSView, so the
@@ -127,6 +205,9 @@ final class PineTerminalView: LocalProcessTerminalView {
         #endif
 
         if isUsingMetalRenderer {
+            #if DEBUG
+            metalRedrawBridgeObserver?()
+            #endif
             selectionChanged(source: getTerminal())
             setFrameSize(frame.size)
         } else {
@@ -144,6 +225,25 @@ final class PineTerminalView: LocalProcessTerminalView {
             }
             DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: workItem)
             return workItem
+        }
+    }
+
+    private func scheduleFirstVisibleContentRecoveryIfNeeded() {
+        // If content arrived while detached, the next viewDidMoveToWindow()
+        // starts the same bounded attachment batch, so no separate work is
+        // needed here.
+        guard window != nil else { return }
+
+        if isUsingMetalRenderer {
+            // Restart (rather than append to) the bounded batch. If shell
+            // startup overlaps the attachment batch, this moves the whole
+            // recovery window to the point where drawable content exists.
+            scheduleInitialMetalRedrawRetries()
+        } else {
+            // CoreGraphics does not need Metal's retry loop. Route exactly
+            // one request through the existing backend-aware bridge, which
+            // repaints synchronously without clearing layer.contents.
+            requestRendererDisplay()
         }
     }
 
