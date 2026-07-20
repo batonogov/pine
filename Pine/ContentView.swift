@@ -252,32 +252,13 @@ struct ContentView: View {
             onInlineDiffAction: { handleInlineDiffAction($0) }
         ))
         .onReceive(NotificationCenter.default.publisher(for: .toggleWordWrap)) { _ in
-            // Defer to break reentrancy (#1051): @AppStorage mutation from
-            // a menu→notification callstack (⌥Z).
-            DispatchQueue.main.async {
-                isWordWrapEnabled.toggle()
-            }
+            handleToggleWordWrap()
         }
         .onReceive(NotificationCenter.default.publisher(for: .revealInSidebar)) { notification in
-            guard let url = notification.userInfo?["url"] as? URL else { return }
-            // Defer to break reentrancy (#1051): mutating @State
-            // (selectedNode + columnVisibility).
-            DispatchQueue.main.async {
-                if let node = findNode(url: url, in: workspace.rootNodes) {
-                    selectedNode = node
-                    columnVisibility = .all
-                }
-            }
+            handleRevealInSidebar(notification)
         }
         .onReceive(NotificationCenter.default.publisher(for: .sendTextToTerminal)) { notification in
-            guard controlActiveState == .key,
-                  let text = notification.userInfo?["text"] as? String,
-                  !text.isEmpty else { return }
-            // Defer to break reentrancy (#1051): sendTextToTerminal mutates
-            // @Observable terminal state.
-            DispatchQueue.main.async {
-                sendTextToTerminal(text)
-            }
+            handleSendTextToTerminal(notification)
         }
     }
 

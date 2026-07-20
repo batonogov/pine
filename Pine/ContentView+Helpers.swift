@@ -261,7 +261,7 @@ extension ContentView {
 extension ContentView {
 
     /// Used by GitAndNotificationObserver — internal visibility required for cross-struct access.
-    enum ChangeDirection { case next, previous }
+    enum ChangeDirection: Equatable, Sendable { case next, previous }
 
     /// Navigates to the next/previous git change region in the **active**
     /// editor pane. Fetches fresh diffs for the active tab so it does not
@@ -517,6 +517,56 @@ extension ContentView {
 
         // Send text followed by newline to execute
         activeTab.sendText(text + "\n")
+    }
+
+    // MARK: - Menu notification handlers (#1051, #1133)
+
+    /// Keeps the mutation deferred so synchronous menu-notification delivery
+    /// cannot re-enter SwiftUI's `@AppStorage` access (#1051).
+    func handleToggleWordWrap() {
+        DispatchQueue.main.async {
+            self.isWordWrapEnabled.toggle()
+        }
+    }
+
+    /// Extracted from `body` to keep Xcode 27's SwiftUI type-checker within
+    /// budget while preserving the existing next-runloop mutation (#1133).
+    func handleRevealInSidebar(_ notification: Notification) {
+        guard let url = Self.resolveRevealInSidebarURL(from: notification) else { return }
+        DispatchQueue.main.async {
+            if let node = self.findNode(url: url, in: self.workspace.rootNodes) {
+                self.selectedNode = node
+                self.columnVisibility = .all
+            }
+        }
+    }
+
+    /// Extracted from `body` without changing focus gating or the reentrancy
+    /// defer required before mutating terminal state (#1051, #1133).
+    func handleSendTextToTerminal(_ notification: Notification) {
+        guard let text = Self.resolveTerminalText(
+            from: notification,
+            isKeyWindow: controlActiveState == .key
+        ) else { return }
+        DispatchQueue.main.async {
+            self.sendTextToTerminal(text)
+        }
+    }
+
+    static func resolveRevealInSidebarURL(from notification: Notification) -> URL? {
+        notification.userInfo?["url"] as? URL
+    }
+
+    /// Whitespace-only text remains valid; the pre-#1133 observer rejected
+    /// only the empty string.
+    static func resolveTerminalText(
+        from notification: Notification,
+        isKeyWindow: Bool
+    ) -> String? {
+        guard isKeyWindow,
+              let text = notification.userInfo?["text"] as? String,
+              !text.isEmpty else { return nil }
+        return text
     }
 }
 

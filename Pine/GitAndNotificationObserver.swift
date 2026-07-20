@@ -53,7 +53,7 @@ struct GitAndNotificationObserver: ViewModifier {
     private var activeTabManager: TabManager { projectManager.activeTabManager }
 
     func body(content: Content) -> some View {
-        content
+        let contentWithFileObservers = content
             .onChange(of: workspace.gitProvider.isGitRepository) { _, isRepo in
                 if isRepo {
                     onRefreshLineDiffs()
@@ -87,6 +87,8 @@ struct GitAndNotificationObserver: ViewModifier {
                 guard let deletedURL = notification.userInfo?["url"] as? URL else { return }
                 handleFileDeleted(deletedURL)
             }
+
+        return contentWithFileObservers
             .onChange(of: workspace.externalChangeToken) { _, _ in
                 // Issue #838: never gate the FSEvents path on focus. The
                 // previous `controlActiveState == .key` guard meant that
@@ -141,14 +143,10 @@ struct GitAndNotificationObserver: ViewModifier {
                 handleOpenFileAtLine(notification)
             }
             .onReceive(NotificationCenter.default.publisher(for: .navigateChange)) { notification in
-                guard controlActiveState == .key,
-                      let direction = notification.userInfo?["direction"] as? String else { return }
-                onNavigateToChange(direction == "next" ? .next : .previous)
+                handleNavigateChange(notification)
             }
             .onReceive(NotificationCenter.default.publisher(for: .inlineDiffAction)) { notification in
-                guard controlActiveState == .key,
-                      let action = notification.userInfo?["action"] as? InlineDiffAction else { return }
-                onInlineDiffAction(action)
+                handleInlineDiffAction(notification)
             }
     }
 
@@ -226,6 +224,51 @@ struct GitAndNotificationObserver: ViewModifier {
             // results land in the editor the user is looking at (#971).
             self.activeTabManager.openTabAndGoToLine(url: url, line: line)
         }
+    }
+
+    /// Kept out of the modifier closure so Xcode 27's SwiftUI type-checker
+    /// does not have to solve payload parsing inside the long modifier chain
+    /// (issue #1133).
+    func handleNavigateChange(_ notification: Notification) {
+        guard let direction = Self.resolveChangeDirection(
+            from: notification,
+            isKeyWindow: controlActiveState == .key
+        ) else { return }
+        onNavigateToChange(direction)
+    }
+
+    /// Mirrors `handleNavigateChange` for the adjacent inline-diff command.
+    /// Leaving this payload cast inline merely moved Xcode 27's type-checking
+    /// failure to the next modifier (issue #1133).
+    func handleInlineDiffAction(_ notification: Notification) {
+        guard let action = Self.resolveInlineDiffAction(
+            from: notification,
+            isKeyWindow: controlActiveState == .key
+        ) else { return }
+        onInlineDiffAction(action)
+    }
+
+    /// Pure resolver used by the notification handler and its regression
+    /// tests. Any string other than `"next"` intentionally maps to
+    /// `.previous`, preserving the command's pre-#1133 behavior.
+    static func resolveChangeDirection(
+        from notification: Notification,
+        isKeyWindow: Bool
+    ) -> ContentView.ChangeDirection? {
+        guard isKeyWindow,
+              let direction = notification.userInfo?["direction"] as? String else { return nil }
+        return direction == "next" ? .next : .previous
+    }
+
+    /// Pure resolver for inline-diff notifications. The payload must contain
+    /// an `InlineDiffAction` value; raw strings are deliberately not decoded.
+    static func resolveInlineDiffAction(
+        from notification: Notification,
+        isKeyWindow: Bool
+    ) -> InlineDiffAction? {
+        guard isKeyWindow,
+              let action = notification.userInfo?["action"] as? InlineDiffAction else { return nil }
+        return action
     }
 }
 
