@@ -13,6 +13,82 @@ import Testing
 
 @testable import Pine
 
+/// Virtual-time scheduler for exercising Debouncer without wall-clock waits.
+/// It retains submitted work items exactly like a dispatch queue would; an
+/// advance executes only uncancelled items whose deadlines have been reached.
+nonisolated private final class ManualDebouncerScheduler: Sendable {
+    private struct SendableWorkItem: @unchecked Sendable {
+        let value: DispatchWorkItem
+    }
+
+    private struct Entry: Sendable {
+        let deadline: TimeInterval
+        let order: Int
+        let workItem: SendableWorkItem
+    }
+
+    private struct State: Sendable {
+        var now: TimeInterval = 0
+        var nextOrder = 0
+        var entries: [Entry] = []
+    }
+
+    private let state = OSAllocatedUnfairLock(initialState: State())
+
+    var now: TimeInterval {
+        state.withLock { $0.now }
+    }
+
+    func makeDebouncer(
+        delay: TimeInterval,
+        action: @escaping @Sendable () -> Void
+    ) -> Debouncer {
+        Debouncer(
+            delay: delay,
+            scheduleWorkItem: { [self] delay, workItem in
+                schedule(after: delay, workItem: workItem)
+            },
+            action: action
+        )
+    }
+
+    func advance(by interval: TimeInterval) {
+        precondition(interval >= 0)
+        let ready = state.withLock { state in
+            state.now += interval
+            let now = state.now
+            var ready: [Entry] = []
+            state.entries.removeAll { entry in
+                guard entry.deadline <= now else { return false }
+                ready.append(entry)
+                return true
+            }
+            return ready.sorted { lhs, rhs in
+                if lhs.deadline == rhs.deadline {
+                    return lhs.order < rhs.order
+                }
+                return lhs.deadline < rhs.deadline
+            }
+        }
+
+        for entry in ready where !entry.workItem.value.isCancelled {
+            entry.workItem.value.perform()
+        }
+    }
+
+    private func schedule(after delay: TimeInterval, workItem: DispatchWorkItem) {
+        let sendableWorkItem = SendableWorkItem(value: workItem)
+        state.withLock { state in
+            state.entries.append(Entry(
+                deadline: state.now + delay,
+                order: state.nextOrder,
+                workItem: sendableWorkItem
+            ))
+            state.nextOrder += 1
+        }
+    }
+}
+
 // swiftlint:disable type_body_length
 @Suite("Debouncer Tests")
 struct DebouncerTests {
@@ -21,41 +97,47 @@ struct DebouncerTests {
 
     @Test("Single trigger fires callback exactly once after the delay")
     @MainActor
-    func singleTriggerFiresOnce() async throws {
+    func singleTriggerFiresOnce() {
         var fireCount = 0
-        let debouncer = Debouncer(delay: 0.05) {
+        let scheduler = ManualDebouncerScheduler()
+        let debouncer = scheduler.makeDebouncer(delay: 0.05) {
             MainActor.assumeIsolated { fireCount += 1 }
         }
 
         debouncer.schedule()
 
-        // Before delay — should not have fired yet
-        try await Task.sleep(for: .milliseconds(20))
+        scheduler.advance(by: 0.049)
         #expect(fireCount == 0, "Callback should not fire before delay elapses")
 
-        // After delay — wait generously for CI
-        try await Task.sleep(for: .milliseconds(150))
+        scheduler.advance(by: 0.002)
         #expect(fireCount == 1, "Callback should fire exactly once after delay")
+
+        scheduler.advance(by: 1)
+        #expect(fireCount == 1, "A scheduled callback should not fire more than once")
     }
 
     // MARK: - Multiple rapid triggers coalesce into single fire
 
     @Test("Multiple rapid triggers coalesce into a single delayed fire")
     @MainActor
-    func rapidTriggersCoalesce() async throws {
+    func rapidTriggersCoalesce() {
         var fireCount = 0
-        let debouncer = Debouncer(delay: 0.1) {
+        let scheduler = ManualDebouncerScheduler()
+        let debouncer = scheduler.makeDebouncer(delay: 0.1) {
             MainActor.assumeIsolated { fireCount += 1 }
         }
 
-        // Fire rapidly 10 times
-        for _ in 0..<10 {
+        for index in 0..<10 {
             debouncer.schedule()
-            try await Task.sleep(for: .milliseconds(5))
+            if index < 9 {
+                scheduler.advance(by: 0.005)
+            }
         }
 
-        // Wait for debounce to settle — 3x delay from last call
-        try await Task.sleep(for: .milliseconds(400))
+        scheduler.advance(by: 0.099)
+        #expect(fireCount == 0, "The last trigger should start a fresh delay window")
+
+        scheduler.advance(by: 0.002)
 
         #expect(
             fireCount == 1,
@@ -67,20 +149,19 @@ struct DebouncerTests {
 
     @Test("A new trigger after the delay window fires independently")
     @MainActor
-    func triggerAfterDelayFiresSeparately() async throws {
+    func triggerAfterDelayFiresSeparately() {
         var fireCount = 0
-        let debouncer = Debouncer(delay: 0.05) {
+        let scheduler = ManualDebouncerScheduler()
+        let debouncer = scheduler.makeDebouncer(delay: 0.05) {
             MainActor.assumeIsolated { fireCount += 1 }
         }
 
-        // First trigger
         debouncer.schedule()
-        try await Task.sleep(for: .milliseconds(200))
+        scheduler.advance(by: 0.051)
         #expect(fireCount == 1, "First trigger should have fired")
 
-        // Second trigger — well after first delay window
         debouncer.schedule()
-        try await Task.sleep(for: .milliseconds(200))
+        scheduler.advance(by: 0.051)
         #expect(fireCount == 2, "Second trigger should fire independently")
     }
 
@@ -88,20 +169,18 @@ struct DebouncerTests {
 
     @Test("Cancelling prevents a pending callback from firing")
     @MainActor
-    func cancelPreventsFiring() async throws {
+    func cancelPreventsFiring() {
         var fireCount = 0
-        let debouncer = Debouncer(delay: 0.1) {
+        let scheduler = ManualDebouncerScheduler()
+        let debouncer = scheduler.makeDebouncer(delay: 0.1) {
             MainActor.assumeIsolated { fireCount += 1 }
         }
 
         debouncer.schedule()
-        try await Task.sleep(for: .milliseconds(30))
-
-        // Cancel before delay elapses
+        scheduler.advance(by: 0.03)
         debouncer.cancel()
 
-        // Wait 2x past the original delay
-        try await Task.sleep(for: .milliseconds(250))
+        scheduler.advance(by: 1)
         #expect(fireCount == 0, "Cancelled debouncer should not fire")
     }
 
@@ -109,18 +188,18 @@ struct DebouncerTests {
 
     @Test("Calling after cancel schedules a new callback")
     @MainActor
-    func callAfterCancelWorks() async throws {
+    func callAfterCancelWorks() {
         var fireCount = 0
-        let debouncer = Debouncer(delay: 0.05) {
+        let scheduler = ManualDebouncerScheduler()
+        let debouncer = scheduler.makeDebouncer(delay: 0.05) {
             MainActor.assumeIsolated { fireCount += 1 }
         }
 
         debouncer.schedule()
         debouncer.cancel()
 
-        // New call after cancel
         debouncer.schedule()
-        try await Task.sleep(for: .milliseconds(200))
+        scheduler.advance(by: 0.051)
 
         #expect(fireCount == 1, "Call after cancel should fire normally")
     }
@@ -130,7 +209,8 @@ struct DebouncerTests {
     @Test("Calling cancel multiple times does not crash")
     @MainActor
     func multipleCancelsAreSafe() {
-        let debouncer = Debouncer(delay: 0.1) { }
+        let scheduler = ManualDebouncerScheduler()
+        let debouncer = scheduler.makeDebouncer(delay: 0.1) { }
 
         debouncer.cancel()
         debouncer.cancel()
@@ -145,7 +225,8 @@ struct DebouncerTests {
     @Test("Cancelling without a prior call does not crash")
     @MainActor
     func cancelWithoutCallIsSafe() {
-        let debouncer = Debouncer(delay: 0.1) { }
+        let scheduler = ManualDebouncerScheduler()
+        let debouncer = scheduler.makeDebouncer(delay: 0.1) { }
         debouncer.cancel()
         // No crash = pass
     }
@@ -154,29 +235,28 @@ struct DebouncerTests {
 
     @Test("Each call resets the timer, extending the delay")
     @MainActor
-    func callResetsTimer() async throws {
+    func callResetsTimer() {
         var fireCount = 0
-        let debouncer = Debouncer(delay: 0.1) {
+        let scheduler = ManualDebouncerScheduler()
+        let debouncer = scheduler.makeDebouncer(delay: 0.1) {
             MainActor.assumeIsolated { fireCount += 1 }
         }
 
         debouncer.schedule()
-        try await Task.sleep(for: .milliseconds(60))
+        scheduler.advance(by: 0.06)
         #expect(
             fireCount == 0,
             "Should not fire yet — only 60ms of 100ms elapsed"
         )
 
-        // Reset the timer by calling again
         debouncer.schedule()
-        try await Task.sleep(for: .milliseconds(60))
+        scheduler.advance(by: 0.06)
         #expect(
             fireCount == 0,
             "Timer was reset — only 60ms since last call"
         )
 
-        // Now wait past the full delay from the last call
-        try await Task.sleep(for: .milliseconds(150))
+        scheduler.advance(by: 0.041)
         #expect(
             fireCount == 1,
             "Should fire once after delay from last call"
@@ -187,16 +267,15 @@ struct DebouncerTests {
 
     @Test("Zero delay fires promptly")
     @MainActor
-    func zeroDelayFires() async throws {
+    func zeroDelayFires() {
         var fireCount = 0
-        let debouncer = Debouncer(delay: 0) {
+        let scheduler = ManualDebouncerScheduler()
+        let debouncer = scheduler.makeDebouncer(delay: 0) {
             MainActor.assumeIsolated { fireCount += 1 }
         }
 
         debouncer.schedule()
-
-        // Give run loop a chance to process
-        try await Task.sleep(for: .milliseconds(50))
+        scheduler.advance(by: 0)
         #expect(fireCount == 1, "Zero-delay debouncer should fire quickly")
     }
 
@@ -204,9 +283,10 @@ struct DebouncerTests {
 
     @Test("Callback sees the latest state, not stale captured values")
     @MainActor
-    func callbackSeesLatestState() async throws {
+    func callbackSeesLatestState() {
         var value = 0
-        let debouncer = Debouncer(delay: 0.05) {
+        let scheduler = ManualDebouncerScheduler()
+        let debouncer = scheduler.makeDebouncer(delay: 0.05) {
             MainActor.assumeIsolated { value += 10 }
         }
 
@@ -214,8 +294,7 @@ struct DebouncerTests {
         debouncer.schedule()
         value = 20
 
-        try await Task.sleep(for: .milliseconds(200))
-        // value should be 20 + 10 = 30
+        scheduler.advance(by: 0.051)
         #expect(value == 30, "Callback should execute with current state")
     }
 
@@ -223,30 +302,26 @@ struct DebouncerTests {
 
     @Test("Only the last call in a rapid burst matters for timing")
     @MainActor
-    func rapidBurstPreservesLast() async throws {
-        var timestamps: [Date] = []
-        let debouncer = Debouncer(delay: 0.05) {
-            MainActor.assumeIsolated { timestamps.append(Date()) }
+    func rapidBurstPreservesLast() {
+        let scheduler = ManualDebouncerScheduler()
+        var fireTimes: [TimeInterval] = []
+        let debouncer = scheduler.makeDebouncer(delay: 0.05) {
+            MainActor.assumeIsolated { fireTimes.append(scheduler.now) }
         }
 
-        let start = Date()
-
-        // Burst over ~50ms
         for _ in 0..<5 {
             debouncer.schedule()
-            try await Task.sleep(for: .milliseconds(10))
+            scheduler.advance(by: 0.01)
         }
-        // Last call was at ~40ms
 
-        // Wait 3x delay from last call
-        try await Task.sleep(for: .milliseconds(250))
+        scheduler.advance(by: 0.039)
+        #expect(fireTimes.isEmpty, "No callback should fire before the last call's deadline")
 
-        #expect(timestamps.count == 1, "Should fire exactly once")
+        scheduler.advance(by: 0.002)
+        #expect(fireTimes.count == 1, "Should fire exactly once")
 
-        // The fire should happen after last call + delay
-        if let fireTime = timestamps.first {
-            let elapsed = fireTime.timeIntervalSince(start)
-            #expect(elapsed >= 0.07, "Fire should be after last call + delay")
+        if let fireTime = fireTimes.first {
+            #expect(fireTime >= 0.09, "Fire should be after the last call plus its delay")
         }
     }
 
@@ -254,20 +329,18 @@ struct DebouncerTests {
 
     @Test("Debouncer deinit cancels pending callback")
     @MainActor
-    func deinitWithPendingCallback() async throws {
+    func deinitWithPendingCallback() {
         var fireCount = 0
-        var debouncer: Debouncer? = Debouncer(delay: 0.15) {
+        let scheduler = ManualDebouncerScheduler()
+        var debouncer: Debouncer? = scheduler.makeDebouncer(delay: 0.15) {
             MainActor.assumeIsolated { fireCount += 1 }
         }
 
         debouncer?.schedule()
-        try await Task.sleep(for: .milliseconds(30))
+        scheduler.advance(by: 0.03)
 
-        // Release the debouncer while callback is pending
         debouncer = nil
-
-        // Wait 3x past the delay
-        try await Task.sleep(for: .milliseconds(500))
+        scheduler.advance(by: 1)
 
         // deinit calls cancel(), so the callback must not fire
         #expect(fireCount == 0, "Cancelled in deinit — callback should not fire")
@@ -276,20 +349,22 @@ struct DebouncerTests {
     // MARK: - Injectable queue for off-main use
 
     @Test("Debouncer fires callback on an injectable custom queue")
-    func injectableQueueFires() async throws {
-        let didFire = OSAllocatedUnfairLock(initialState: false)
+    func injectableQueueFires() async {
         let queue = DispatchQueue(label: "com.pine.test.custom-queue")
-        let debouncer = Debouncer(delay: 0.05, queue: queue) {
-            didFire.withLock { $0 = true }
+        let (events, eventContinuation) = AsyncStream.makeStream(of: Bool.self)
+        let debouncer = Debouncer(delay: 0, queue: queue) {
+            dispatchPrecondition(condition: .onQueue(queue))
+            eventContinuation.yield(true)
+            eventContinuation.finish()
         }
 
         debouncer.schedule()
 
-        try await Task.sleep(for: .milliseconds(200))
+        var iterator = events.makeAsyncIterator()
+        let didFire = await iterator.next()
+        withExtendedLifetime(debouncer) { }
 
-        #expect(didFire.withLock { $0 }, "Callback should fire on custom queue")
-
-        _ = debouncer
+        #expect(didFire == true, "Callback should fire on custom queue")
     }
 }
 // swiftlint:enable type_body_length

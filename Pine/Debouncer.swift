@@ -19,8 +19,10 @@ import Foundation
 /// Marked `nonisolated` so the class can work with any dispatch queue,
 /// not just the main actor (which is the project-wide default isolation).
 nonisolated final class Debouncer {
+    typealias ScheduleWorkItem = @Sendable (TimeInterval, DispatchWorkItem) -> Void
+
     private let delay: TimeInterval
-    private let queue: DispatchQueue
+    private let scheduleWorkItem: ScheduleWorkItem
     private let action: @Sendable () -> Void
     // nonisolated(unsafe) allows deinit to cancel the pending work item.
     // Debouncer is not Sendable — all methods must be called from the same
@@ -34,7 +36,21 @@ nonisolated final class Debouncer {
     ///   - action: The closure to execute when the debounce fires.
     init(delay: TimeInterval, queue: DispatchQueue = .main, action: @escaping @Sendable () -> Void) {
         self.delay = delay
-        self.queue = queue
+        self.scheduleWorkItem = { delay, workItem in
+            queue.asyncAfter(deadline: .now() + delay, execute: workItem)
+        }
+        self.action = action
+    }
+
+    /// Creates a debouncer with an injectable work-item scheduler.
+    /// Used by tests to advance debounce time deterministically.
+    init(
+        delay: TimeInterval,
+        scheduleWorkItem: @escaping ScheduleWorkItem,
+        action: @escaping @Sendable () -> Void
+    ) {
+        self.delay = delay
+        self.scheduleWorkItem = scheduleWorkItem
         self.action = action
     }
 
@@ -45,7 +61,7 @@ nonisolated final class Debouncer {
         let action = self.action
         let item = DispatchWorkItem { action() }
         workItem = item
-        queue.asyncAfter(deadline: .now() + delay, execute: item)
+        scheduleWorkItem(delay, item)
     }
 
     /// Cancels any pending callback without firing it.

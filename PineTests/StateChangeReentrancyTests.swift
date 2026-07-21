@@ -54,6 +54,18 @@ struct StateChangeReentrancyTests {
         return (scrollView, textView)
     }
 
+    /// Enqueues a barrier after work already submitted to the main queue.
+    /// `reportStateChange` uses `DispatchQueue.main.async`, so crossing this
+    /// barrier deterministically proves that its deferred callback had a
+    /// chance to run without relying on a wall-clock sleep.
+    private func drainMainQueue() async {
+        await withCheckedContinuation { continuation in
+            DispatchQueue.main.async {
+                continuation.resume()
+            }
+        }
+    }
+
     // MARK: - Synchronous delivery is forbidden (the crash contract)
 
     @Test("applyExternalReload does not call onStateChange synchronously (#1032)")
@@ -127,15 +139,7 @@ struct StateChangeReentrancyTests {
         let url = URL(fileURLWithPath: "/tmp/reentrancy-defer-\(UUID().uuidString).txt")
         let (scrollView, textView) = makeTextStack(text: "old")
 
-        actor CallRecorder {
-            var cursor: Int?
-            var scroll: CGFloat?
-            func record(cursor: Int, scroll: CGFloat) {
-                self.cursor = cursor
-                self.scroll = scroll
-            }
-        }
-        let recorder = CallRecorder()
+        var deliveredCursor: Int?
         let view = CodeEditorView(
             text: .constant("old"),
             contentVersion: 0,
@@ -143,7 +147,7 @@ struct StateChangeReentrancyTests {
             fileName: "x.txt",
             fileURL: url,
             foldState: .constant(FoldState()),
-            onStateChange: { c, s in Task { await recorder.record(cursor: c, scroll: s) } }
+            onStateChange: { cursor, _ in deliveredCursor = cursor }
         )
         let coordinator = CodeEditorView.Coordinator(parent: view)
         coordinator.scrollView = scrollView
@@ -151,15 +155,16 @@ struct StateChangeReentrancyTests {
 
         coordinator.applyExternalReload(text: "fresh content")
 
-        // Drain the main runloop so the deferred DispatchQueue.main.async block fires.
-        await Task.yield()
-        try await Task.sleep(for: .milliseconds(50))
+        await drainMainQueue()
+        // The deferred block captures Coordinator weakly. Keep the real
+        // Coordinator alive through the queue barrier so this test exercises
+        // its delivery path instead of accidentally testing deallocation.
+        withExtendedLifetime(coordinator) { }
 
-        let finalCursor = await recorder.cursor
-        #expect(finalCursor != nil,
+        #expect(deliveredCursor != nil,
                 "onStateChange must fire on the next runloop after applyExternalReload")
-        if let finalCursor {
-            #expect(finalCursor == textView.selectedRange().location,
+        if let deliveredCursor {
+            #expect(deliveredCursor == textView.selectedRange().location,
                     "deferred cursor must match the post-reload selection")
         }
     }
@@ -171,12 +176,8 @@ struct StateChangeReentrancyTests {
         let url = URL(fileURLWithPath: "/tmp/reentrancy-coal-\(UUID().uuidString).txt")
         let (scrollView, textView) = makeTextStack(text: "0123456789")
 
-        actor Counter {
-            var count = 0
-            var lastCursor: Int?
-            func record(cursor: Int) { count += 1; lastCursor = cursor }
-        }
-        let counter = Counter()
+        var callCount = 0
+        var lastCursor: Int?
         let view = CodeEditorView(
             text: .constant("0123456789"),
             contentVersion: 0,
@@ -184,7 +185,10 @@ struct StateChangeReentrancyTests {
             fileName: "x.txt",
             fileURL: url,
             foldState: .constant(FoldState()),
-            onStateChange: { c, _ in Task { await counter.record(cursor: c) } }
+            onStateChange: { cursor, _ in
+                callCount += 1
+                lastCursor = cursor
+            }
         )
         let coordinator = CodeEditorView.Coordinator(parent: view)
         coordinator.scrollView = scrollView
@@ -205,12 +209,9 @@ struct StateChangeReentrancyTests {
         textView.setSelectedRange(NSRange(location: 7, length: 0))
         textView.setSelectedRange(NSRange(location: 9, length: 0))
 
-        // Drain the runloop.
-        await Task.yield()
-        try await Task.sleep(for: .milliseconds(50))
+        await drainMainQueue()
+        withExtendedLifetime(coordinator) { }
 
-        let callCount = await counter.count
-        let lastCursor = await counter.lastCursor
         #expect(callCount == 1,
                 "coalescing must collapse 3 rapid reportStateChange calls into 1 onStateChange")
         #expect(lastCursor == 9,
