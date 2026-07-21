@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.33.3](https://github.com/batonogov/pine/compare/v1.33.2...v1.33.3) (2026-07-21)
+
+
+### Bug Fixes
+
+* **editor:** compile notification observers with Xcode 27 ([d900b6a](https://github.com/batonogov/pine/commit/d900b6a5753e3ad501a692c80338de47bd0cd256))
+* **editor:** restore Python declaration highlighting ([#1144](https://github.com/batonogov/pine/issues/1144)) ([3d3d615](https://github.com/batonogov/pine/commit/3d3d615a9225c64e91f298c676b6cd6964433c4c))
+* **lsp:** parse bare code action commands ([#1142](https://github.com/batonogov/pine/issues/1142)) ([8839537](https://github.com/batonogov/pine/commit/883953735ea5bc5c7a608e763e7f513a724fde5a))
+* **lsp:** reject invalid workspace edit ranges ([#1154](https://github.com/batonogov/pine/issues/1154)) ([a119185](https://github.com/batonogov/pine/commit/a11918544d48145a773d47df42f6373346d606bc))
+* **tasks:** close dangerous command validator bypasses ([#1155](https://github.com/batonogov/pine/issues/1155)) ([b9d8fdd](https://github.com/batonogov/pine/commit/b9d8fdd2084ff31334d8c93cb6d334a4f96be154))
+* **terminal:** improve light ANSI palette contrast ([#1153](https://github.com/batonogov/pine/issues/1153)) ([322f598](https://github.com/batonogov/pine/commit/322f598d7116384c2ffb1dedb68508d74f4ee7e8))
+* **terminal:** recover blank tab after delayed first output ([2246ee7](https://github.com/batonogov/pine/commit/2246ee7dffa3418bba04049045d165db4f6f6c8e))
+
 ## [1.33.2](https://github.com/batonogov/pine/compare/v1.33.1...v1.33.2) (2026-07-15)
 
 
