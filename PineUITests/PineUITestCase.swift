@@ -31,10 +31,16 @@ class PineUITestCase: XCTestCase {
     @discardableResult
     func createTempProject(
         files: [String: String] = ["main.swift": "// Hello\n"],
-        directories: [String] = []
+        directories: [String] = [],
+        projectName: String? = nil
     ) throws -> URL {
-        let dir = FileManager.default.temporaryDirectory
+        let baseDirectory = FileManager.default.temporaryDirectory
             .appendingPathComponent("PineUITest-\(UUID().uuidString)")
+        let dir = if let projectName {
+            baseDirectory.appendingPathComponent(projectName, isDirectory: true)
+        } else {
+            baseDirectory
+        }
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
 
         for dirName in directories {
@@ -97,7 +103,12 @@ class PineUITestCase: XCTestCase {
 
     /// Cleans up a temporary project directory.
     func cleanupProject(_ url: URL) {
-        try? FileManager.default.removeItem(at: url)
+        let parent = url.deletingLastPathComponent()
+        if parent.lastPathComponent.hasPrefix("PineUITest-") {
+            try? FileManager.default.removeItem(at: parent)
+        } else {
+            try? FileManager.default.removeItem(at: url)
+        }
     }
 
     // MARK: - Editor Tab Helpers

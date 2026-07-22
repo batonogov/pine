@@ -15,6 +15,9 @@
 # Compatibility:
 #   - Uses `xcresulttool get test-results tests/activities` (Xcode 16+) to
 #     enumerate attachments by name and extract payloads directly.
+#   - Set `PINE_SCREENSHOT_DERIVED_DATA_PATH` to isolate local build artifacts.
+#   - Set `PINE_SCREENSHOT_CODE_SIGNING_ALLOWED=YES` when a local UI-test
+#     runner must be signed to launch; CI remains unsigned by default.
 
 set -uo pipefail
 
@@ -22,6 +25,8 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(dirname "$SCRIPT_DIR")"
 RESULT_PATH="$REPO_ROOT/build/screenshots.xcresult"
 ASSETS_DIR="$REPO_ROOT/assets"
+DERIVED_DATA_PATH="${PINE_SCREENSHOT_DERIVED_DATA_PATH:-}"
+CODE_SIGNING_ALLOWED="${PINE_SCREENSHOT_CODE_SIGNING_ALLOWED:-NO}"
 ## Names that ScreenshotTests is expected to produce. The first group is
 ## REQUIRED — the workflow fails if any of these are missing or empty after
 ## extraction. The second group is optional (newer captures that are not yet
@@ -53,14 +58,22 @@ if [ ! -x "$XCRESULTTOOL" ]; then
 fi
 
 echo "Running screenshot tests (DEVELOPER_DIR=$DEVELOPER_DIR)..."
-xcodebuild test \
-  -project "$REPO_ROOT/Pine.xcodeproj" \
-  -scheme Pine \
-  -destination 'platform=macOS' \
-  -only-testing:PineUITests/ScreenshotTests \
-  -resultBundlePath "$RESULT_PATH" \
-  CODE_SIGN_IDENTITY=- \
-  CODE_SIGNING_ALLOWED=NO \
+xcodebuild_args=(
+  test
+  -project "$REPO_ROOT/Pine.xcodeproj"
+  -scheme Pine
+  -destination 'platform=macOS'
+  -only-testing:PineUITests/ScreenshotTests
+  -resultBundlePath "$RESULT_PATH"
+)
+if [ -n "$DERIVED_DATA_PATH" ]; then
+  xcodebuild_args+=(-derivedDataPath "$DERIVED_DATA_PATH")
+fi
+if [ "$CODE_SIGNING_ALLOWED" = "NO" ]; then
+  xcodebuild_args+=(CODE_SIGN_IDENTITY=- CODE_SIGNING_ALLOWED=NO)
+fi
+
+xcodebuild "${xcodebuild_args[@]}" \
   || echo "Warning: xcodebuild test reported failures; continuing to extract whatever attachments are available..."
 
 if [ ! -d "$RESULT_PATH" ]; then
