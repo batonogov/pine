@@ -1,0 +1,156 @@
+:root {
+    color-scheme: light dark;
+    font: -apple-system-body;
+    background: Canvas;
+    color: CanvasText;
+}
+
+* {
+    box-sizing: border-box;
+}
+
+body {
+    margin: 0;
+    padding: 48px 32px 64px;
+    font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", sans-serif;
+    line-height: 1.45;
+}
+
+main {
+    max-width: 760px;
+    margin: 0 auto;
+}
+
+header {
+    margin-bottom: 36px;
+    text-align: center;
+}
+
+.app-mark {
+    display: grid;
+    width: 72px;
+    height: 72px;
+    margin: 0 auto 18px;
+    place-items: center;
+    border: 1px solid color-mix(in srgb, #0a84ff 30%, transparent);
+    border-radius: 18px;
+    background: linear-gradient(145deg, #64d2ff, #30d158 52%, #0a84ff);
+    box-shadow: 0 10px 30px color-mix(in srgb, #0a84ff 24%, transparent);
+    color: white;
+    font-size: 34px;
+    font-weight: 700;
+    letter-spacing: -2px;
+}
+
+h1 {
+    margin: 0;
+    font-size: 34px;
+    letter-spacing: -0.025em;
+}
+
+.lead {
+    max-width: 560px;
+    margin: 8px auto 0;
+    color: color-mix(in srgb, CanvasText 62%, transparent);
+    font-size: 17px;
+}
+
+h2 {
+    margin: 34px 0 14px;
+    font-size: 20px;
+    letter-spacing: -0.01em;
+}
+
+p {
+    margin: 8px 0;
+}
+
+.steps,
+.shortcut-grid,
+.feature-grid {
+    display: grid;
+    gap: 12px;
+}
+
+.steps,
+.feature-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.shortcut-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.card,
+.shortcut {
+    border: 1px solid color-mix(in srgb, CanvasText 13%, transparent);
+    border-radius: 14px;
+    background: color-mix(in srgb, CanvasText 4%, transparent);
+}
+
+.card {
+    padding: 16px;
+}
+
+.card h3 {
+    margin: 0 0 5px;
+    font-size: 15px;
+}
+
+.card p {
+    color: color-mix(in srgb, CanvasText 66%, transparent);
+    font-size: 14px;
+}
+
+.shortcut {
+    display: flex;
+    min-height: 48px;
+    padding: 10px 12px;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+kbd {
+    min-width: 34px;
+    padding: 3px 7px;
+    border: 1px solid color-mix(in srgb, CanvasText 18%, transparent);
+    border-radius: 6px;
+    background: color-mix(in srgb, CanvasText 7%, transparent);
+    box-shadow: 0 1px 0 color-mix(in srgb, CanvasText 14%, transparent);
+    font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+    font-size: 13px;
+    text-align: center;
+    white-space: nowrap;
+}
+
+.tip {
+    margin-top: 16px;
+    padding: 14px 16px;
+    border-left: 3px solid #0a84ff;
+    border-radius: 4px 12px 12px 4px;
+    background: color-mix(in srgb, #0a84ff 9%, transparent);
+}
+
+.support {
+    margin-top: 36px;
+    padding-top: 22px;
+    border-top: 1px solid color-mix(in srgb, CanvasText 13%, transparent);
+    text-align: center;
+}
+
+a {
+    color: #0a84ff;
+}
+
+@media (max-width: 620px) {
+    body {
+        padding: 32px 20px 48px;
+    }
+
+    .steps,
+    .shortcut-grid,
+    .feature-grid {
+        grid-template-columns: 1fr;
+    }
+}
