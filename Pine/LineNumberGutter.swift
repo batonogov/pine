@@ -24,8 +24,15 @@ final class LineNumberView: NSView {
         editorFont.ascender - gutterFont.ascender
     }
     private let gutterTextColor = NSColor.secondaryLabelColor
-    private let gutterBgColor = NSColor.controlBackgroundColor
     private let separatorColor = NSColor.separatorColor
+
+    /// The gutter is part of the document canvas, so it follows the adjacent
+    /// editor instead of introducing a separate control-background tint.
+    /// Falling back to the semantic text background keeps detached/test views
+    /// appearance-aware as well.
+    var canvasBackgroundColor: NSColor {
+        textView?.backgroundColor ?? .textBackgroundColor
+    }
 
     var gutterWidth: CGFloat = 40
     var lineDiffs: [GitLineDiff] = [] {
@@ -510,15 +517,16 @@ final class LineNumberView: NSView {
     }
 
     override func draw(_ dirtyRect: NSRect) {
+        // Fill even if the weak text-view reference has gone away so the
+        // gutter never exposes a transparent or stale backing layer.
+        canvasBackgroundColor.setFill()
+        bounds.fill()
+
         guard let textView = textView,
               let layoutManager = textView.layoutManager,
               let textContainer = textView.textContainer,
               let scrollView = textView.enclosingScrollView
         else { return }
-
-        // ── Фон ──
-        gutterBgColor.setFill()
-        bounds.fill()
 
         // ── Разделитель ──
         separatorColor.setStroke()
