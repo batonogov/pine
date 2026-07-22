@@ -4,6 +4,10 @@
 <dict>
 	<key>SUPublicEDKey</key>
 	<string>C97qPAp+m7b7yfWfI7dvB5UmnCNWkrgAjeQec5Xr5ZU=</string>
+	<key>CFBundleHelpBookFolder</key>
+	<string>Pine.help</string>
+	<key>CFBundleHelpBookName</key>
+	<string>io.github.batonogov.pine.help</string>
 	<key>CFBundleDocumentTypes</key>
 	<array>
 		<!-- Swift -->
