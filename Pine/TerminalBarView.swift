@@ -63,23 +63,25 @@ struct TerminalNativeTabItem: View {
     let onClose: () -> Void
 
     @State private var isHovering = false
+    @State private var closeGlyphFrame = CGRect.null
 
     var body: some View {
         HStack(spacing: 4) {
             if canClose {
-                Button(action: onClose) {
-                    Image(systemName: "xmark")
-                        .font(.system(size: 7, weight: .bold))
-                        .foregroundStyle(.secondary)
-                        .frame(width: 14, height: 14)
-                        .background(
-                            isHovering ? Color.primary.opacity(0.1) : .clear,
-                            in: Circle()
-                        )
-                }
-                .buttonStyle(.plain)
-                .opacity(isHovering || isActive ? 1 : 0.35)
-                .accessibilityIdentifier("closeTerminalTab_\(tab.stableLabel)")
+                Image(systemName: "xmark")
+                    .font(.system(size: 7, weight: .bold))
+                    .foregroundStyle(.secondary)
+                    .frame(
+                        width: TabSlotHitTesting.closeGlyphSize,
+                        height: TabSlotHitTesting.closeGlyphSize
+                    )
+                    .background(
+                        isHovering ? Color.primary.opacity(0.1) : .clear,
+                        in: Circle()
+                    )
+                    .opacity(isHovering || isActive ? 1 : 0.35)
+                    .allowsHitTesting(false)
+                    .reportsTabCloseGlyphFrame()
             }
 
             Image(systemName: "terminal")
@@ -102,11 +104,41 @@ struct TerminalNativeTabItem: View {
                 : isHovering ? Color.primary.opacity(0.05) : .clear,
             in: Capsule()
         )
-        .contentShape(Capsule())
-        .onTapGesture(perform: onSelect)
+        .frame(height: LayoutMetrics.tabBarHeight)
+        .coordinateSpace(name: TabSlotHitTesting.coordinateSpaceName)
+        .contentShape(.interaction, Rectangle())
+        .contentShape(.dragPreview, Capsule())
+        .gesture(
+            SpatialTapGesture()
+                .onEnded { value in
+                    switch TabSlotHitTesting.target(
+                        at: value.location,
+                        canClose: canClose,
+                        closeGlyphFrame: closeGlyphFrame
+                    ) {
+                    case .select:
+                        onSelect()
+                    case .close:
+                        onClose()
+                    }
+                }
+        )
         .onHover { isHovering = $0 }
-        .accessibilityElement(children: .contain)
-        .accessibilityIdentifier(AccessibilityID.terminalTab(tab.stableLabel))
+        .onPreferenceChange(TabCloseGlyphFramePreferenceKey.self) { frame in
+            closeGlyphFrame = frame
+        }
+        .accessibilityRepresentation {
+            HStack {
+                Button(tab.name, action: onSelect)
+                    .accessibilityIdentifier(AccessibilityID.terminalTab(tab.stableLabel))
+                    .accessibilityAddTraits(isActive ? .isSelected : [])
+                if canClose {
+                    Button(Strings.a11yCloseTabLabel, action: onClose)
+                        .accessibilityHint(Strings.a11yCloseTabHint)
+                        .accessibilityIdentifier("closeTerminalTab_\(tab.stableLabel)")
+                }
+            }
+        }
     }
 }
 

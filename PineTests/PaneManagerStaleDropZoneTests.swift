@@ -69,20 +69,44 @@ struct PaneManagerStaleDropZoneTests {
         let manager = PaneManager()
         manager.dropZones[manager.activePaneID] = .center
         manager.rootDropZone = .left
+        manager.activeDrag = TabDragInfo(
+            paneID: manager.activePaneID.id,
+            tabID: UUID()
+        )
         manager.isMouseButtonPressed = { false }
 
         manager.clearStaleDropZonesIfNoDragActive()
         #expect(manager.hasActiveDropZones == false)
+        #expect(manager.activeDrag == nil)
+    }
+
+    @Test func clearStale_clearsPayloadWithoutOverlayWhenMouseUp() {
+        let manager = PaneManager()
+        manager.activeDrag = TabDragInfo(
+            paneID: manager.activePaneID.id,
+            tabID: UUID()
+        )
+        manager.isMouseButtonPressed = { false }
+
+        manager.clearStaleDropZonesIfNoDragActive()
+
+        #expect(manager.activeDrag == nil)
     }
 
     @Test func clearStale_keepsZonesWhenMouseStillPressed() {
         let manager = PaneManager()
         manager.dropZones[manager.activePaneID] = .center
+        let drag = TabDragInfo(
+            paneID: manager.activePaneID.id,
+            tabID: UUID()
+        )
+        manager.activeDrag = drag
         manager.isMouseButtonPressed = { true }
 
         manager.clearStaleDropZonesIfNoDragActive()
         #expect(manager.dropZones[manager.activePaneID] == .center)
         #expect(manager.hasActiveDropZones == true)
+        #expect(manager.activeDrag?.tabID == drag.tabID)
     }
 
     @Test func clearStale_clearsRootOnlyWhenMouseUp() {
@@ -111,16 +135,27 @@ struct PaneManagerStaleDropZoneTests {
     @Test func startStaleDropPolling_clearsOverlayOnTimerTick() async {
         let manager = PaneManager()
         manager.dropZones[manager.activePaneID] = .center
+        manager.activeDrag = TabDragInfo(
+            paneID: manager.activePaneID.id,
+            tabID: UUID()
+        )
         manager.isMouseButtonPressed = { false }
         #expect(manager.hasActiveDropZones == true)
+        #expect(manager.activeDrag != nil)
 
         manager.startStaleDropPollingIfNeeded()
 
-        // Timer cadence is 0.12s; wait ~250ms to allow at least one fire and
-        // the subsequent self-invalidation pass.
-        try? await Task.sleep(nanoseconds: 250_000_000)
+        // Timer cadence is 0.12s. Poll for the observable outcome instead of
+        // relying on a single tight deadline that can flake on a loaded CI
+        // main loop.
+        let clock = ContinuousClock()
+        let deadline = clock.now.advanced(by: .seconds(2))
+        while manager.hasActiveDropZones, clock.now < deadline {
+            try? await clock.sleep(for: .milliseconds(50))
+        }
 
         #expect(manager.hasActiveDropZones == false)
+        #expect(manager.activeDrag == nil)
     }
 
     // MARK: - Edge cases
