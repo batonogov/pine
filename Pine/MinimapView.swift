@@ -73,13 +73,11 @@ final class MinimapView: NSView {
         return usedRect.height + textView.textContainerOrigin.y + textView.textContainerInset.height
     }
 
-    /// Background color — matches editor background.
-    private let bgColor = NSColor(name: nil) { appearance in
-        if appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua {
-            return NSColor(srgbRed: 0.15, green: 0.15, blue: 0.17, alpha: 1)
-        } else {
-            return NSColor(srgbRed: 0.97, green: 0.97, blue: 0.98, alpha: 1)
-        }
+    /// The minimap is part of the document canvas, so its fill comes from the
+    /// adjacent editor. This avoids a visible seam and automatically follows
+    /// semantic appearance changes without duplicating light/dark RGB values.
+    var canvasBackgroundColor: NSColor {
+        textView?.backgroundColor ?? .textBackgroundColor
     }
 
     /// Viewport indicator fill.
@@ -247,14 +245,15 @@ final class MinimapView: NSView {
     // MARK: - Drawing
 
     override func draw(_ dirtyRect: NSRect) {
+        // Fill even if the weak text-view reference has gone away so the
+        // minimap never exposes a transparent or stale backing layer.
+        canvasBackgroundColor.setFill()
+        bounds.fill()
+
         guard let textView = textView,
               let layoutManager = textView.layoutManager,
               let textContainer = textView.textContainer,
               let textStorage = textView.textStorage else { return }
-
-        // Background
-        bgColor.setFill()
-        bounds.fill()
 
         let source = textView.string as NSString
         guard source.length > 0 else { return }
