@@ -54,11 +54,23 @@ enum PaneDropZone: Equatable, Sendable {
     }
 }
 
+/// The payload category used to route a pane-level drop.
+///
+/// Kept separate from `DropInfo` so maximize routing can be covered without
+/// constructing SwiftUI's opaque drop event type.
+enum PaneDropPayload: Equatable, Sendable {
+    case paneTab
+    case sidebarFile
+    case fileURL
+}
+
 /// Visual overlay that shows the drop zone indicator.
 struct PaneDropOverlay: View {
     let dropZone: PaneDropZone?
 
     var body: some View {
+        // Maximized pane-tab drags are routed to nil, while permitted file
+        // drops are routed to .center and retain their visual feedback.
         if let zone = dropZone {
             GeometryReader { geometry in
                 let rect = dropRect(zone: zone, size: geometry.size)
@@ -109,9 +121,8 @@ struct PaneSplitDropDelegate: DropDelegate {
     let paneSize: CGSize
 
     func validateDrop(info: DropInfo) -> Bool {
-        info.hasItemsConforming(to: [.paneTabDrag])
-            || info.hasItemsConforming(to: [.sidebarFileDrag])
-            || info.hasItemsConforming(to: [.fileURL])
+        guard let payload = payload(for: info) else { return false }
+        return routedDropZone(for: payload, proposedZone: .center) != nil
     }
 
     func dropEntered(info: DropInfo) {
@@ -120,8 +131,11 @@ struct PaneSplitDropDelegate: DropDelegate {
 
     func dropUpdated(info: DropInfo) -> DropProposal? {
         updateDropZone(info: info)
-        let operation: DropOperation = info.hasItemsConforming(to: [.paneTabDrag])
-            ? .move : .copy
+        guard let payload = payload(for: info),
+              routedDropZone(for: payload, proposedZone: .center) != nil else {
+            return nil
+        }
+        let operation: DropOperation = payload == .paneTab ? .move : .copy
         return DropProposal(operation: operation)
     }
 
@@ -130,24 +144,28 @@ struct PaneSplitDropDelegate: DropDelegate {
     }
 
     func performDrop(info: DropInfo) -> Bool {
+        guard let payload = payload(for: info) else { return false }
+
         // Snapshot zone and clear ALL overlays before tree mutations.
         let savedZone = paneManager.dropZones[paneID]
         paneManager.clearAllDropZones()
 
         // Pane tab drag takes priority
-        if info.hasItemsConforming(to: [.paneTabDrag]) {
+        if payload == .paneTab {
             return handlePaneTabDrop(zone: savedZone)
         }
 
         // Sidebar file drag — decode from item providers async
-        if info.hasItemsConforming(to: [.sidebarFileDrag]) {
+        if payload == .sidebarFile {
             let providers = info.itemProviders(for: [.sidebarFileDrag])
-            handleSidebarFileDrop(zone: savedZone, providers: providers)
+            let routedZone = routedDropZone(for: payload, proposedZone: savedZone)
+            guard routedZone != nil else { return false }
+            handleSidebarFileDrop(zone: routedZone, providers: providers)
             return true
         }
 
         // File drop from Finder — open as tab in this pane
-        if info.hasItemsConforming(to: [.fileURL]) {
+        if payload == .fileURL {
             handleFileDrop(providers: info.itemProviders(for: [.fileURL]))
             return true
         }
@@ -188,13 +206,15 @@ struct PaneSplitDropDelegate: DropDelegate {
     }
 
     private func handlePaneTabDrop(zone: PaneDropZone?) -> Bool {
-        guard let zone else { return false }
+        guard let zone = routedDropZone(for: .paneTab, proposedZone: zone) else {
+            return false
+        }
 
         // Use synchronous shared drag state instead of async NSItemProvider
         guard let dragInfo = paneManager.activeDrag else { return false }
-        paneManager.activeDrag = nil
 
         let sourcePaneID = PaneID(id: dragInfo.paneID)
+        let didPerformDrop: Bool
 
         switch zone {
         case .left, .right, .top, .bottom:
@@ -202,28 +222,41 @@ struct PaneSplitDropDelegate: DropDelegate {
             let axis: SplitAxis = (zone == .left || zone == .right) ? .horizontal : .vertical
             let before = (zone == .left || zone == .top)
             if dragInfo.contentType == .terminal {
-                paneManager.splitAndMoveTerminalTab(
+                didPerformDrop = paneManager.splitAndMoveTerminalTab(
                     tabID: dragInfo.tabID,
                     from: sourcePaneID,
                     relativeTo: paneID,
                     axis: axis,
                     insertBefore: before
-                )
+                ) != nil
             } else if let fileURL = dragInfo.fileURL {
-                paneManager.splitPane(
+                didPerformDrop = paneManager.splitPane(
                     paneID,
                     axis: axis,
+                    tabID: dragInfo.tabID,
                     tabURL: fileURL,
                     sourcePane: sourcePaneID,
                     insertBefore: before
-                )
+                ) != nil
+            } else {
+                didPerformDrop = false
             }
         case .center:
             // Center drop: same-type moves into the pane;
             // cross-type triggers an auto-split (issue #714).
-            paneManager.performCenterDrop(dragInfo: dragInfo, targetPaneID: paneID)
+            didPerformDrop = paneManager.performCenterDrop(
+                dragInfo: dragInfo,
+                targetPaneID: paneID
+            )
         }
-        return true
+
+        // Preserve the shared payload when this delegate rejects the drop so
+        // an ancestor/root target can still handle it. Consume it only after
+        // the corresponding model mutation has actually committed.
+        if didPerformDrop {
+            paneManager.activeDrag = nil
+        }
+        return didPerformDrop
     }
 
     private func handleFileDrop(providers: [NSItemProvider]) {
@@ -241,14 +274,62 @@ struct PaneSplitDropDelegate: DropDelegate {
     }
 
     private func updateDropZone(info: DropInfo) {
-        paneManager.dropZones[paneID] = PaneDropZone.zone(for: info.location, in: paneSize)
-        paneManager.startStaleDropPollingIfNeeded()
+        guard let payload = payload(for: info) else {
+            paneManager.dropZones[paneID] = nil
+            return
+        }
+        updateDropZone(for: payload, at: info.location)
+    }
+
+    private func payload(for info: DropInfo) -> PaneDropPayload? {
+        if info.hasItemsConforming(to: [.paneTabDrag]) {
+            return .paneTab
+        }
+        if info.hasItemsConforming(to: [.sidebarFileDrag]) {
+            return .sidebarFile
+        }
+        if info.hasItemsConforming(to: [.fileURL]) {
+            return .fileURL
+        }
+        return nil
     }
 }
 
 // MARK: - Test Support
 
 extension PaneSplitDropDelegate {
+    /// Routes a proposed pane drop through the maximize safety invariant.
+    /// Tab payloads must stay in their local tab-strip delegate while the
+    /// pane is maximized. File payloads remain useful, but are forced to the
+    /// non-structural center action.
+    func routedDropZone(
+        for payload: PaneDropPayload,
+        proposedZone: PaneDropZone?
+    ) -> PaneDropZone? {
+        guard paneManager.isMaximized else { return proposedZone }
+        switch payload {
+        case .paneTab:
+            return nil
+        case .sidebarFile, .fileURL:
+            return .center
+        }
+    }
+
+    /// Testable counterpart of `dropEntered` / `dropUpdated`.
+    @discardableResult
+    func updateDropZone(
+        for payload: PaneDropPayload,
+        at location: CGPoint
+    ) -> PaneDropZone? {
+        let proposedZone = PaneDropZone.zone(for: location, in: paneSize)
+        let zone = routedDropZone(for: payload, proposedZone: proposedZone)
+        paneManager.dropZones[paneID] = zone
+        if zone != nil {
+            paneManager.startStaleDropPollingIfNeeded()
+        }
+        return zone
+    }
+
     /// Testable entry point for the pane-tab branch of `performDrop(info:)`.
     ///
     /// Equivalent to invoking `performDrop` when

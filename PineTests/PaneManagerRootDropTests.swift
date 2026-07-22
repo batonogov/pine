@@ -112,6 +112,8 @@ struct PaneManagerRootDropTests {
         let newState = try #require(manager.terminalState(for: newTerminalPanes[0]))
         #expect(newState.terminalTabs.count == 1)
         #expect(newState.terminalTabs[0].id == tabID)
+        #expect(newState.activeTerminalID == tabID)
+        #expect(newState.pendingFocusTabID == tabID)
     }
 
     @Test func wrapRoot_sourcePaneKeptWhenMultipleTabs() throws {

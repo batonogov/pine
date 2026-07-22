@@ -47,20 +47,28 @@ enum TabCloseHelper {
     static func confirmBulkClose(
         dirtyTabs: [EditorTab],
         in tabManager: TabManager,
-        gitProvider: GitStatusProvider
+        gitProvider: GitStatusProvider,
+        presentAlert: (() -> NSApplication.ModalResponse)? = nil,
+        saveTab: ((Int) -> Bool)? = nil
     ) -> Bool {
         guard !dirtyTabs.isEmpty else { return true }
 
         let fileList = dirtyTabs.map { "  \u{2022} \($0.fileName)" }.joined(separator: "\n")
-        let response = AlertTemplate.unsavedChangesBulk.runModal(
-            messageText: Strings.unsavedChangesTitle,
-            informativeText: Strings.unsavedChangesListMessage(fileList)
-        )
+        let response: NSApplication.ModalResponse
+        if let presentAlert {
+            response = presentAlert()
+        } else {
+            response = AlertTemplate.unsavedChangesBulk.runModal(
+                messageText: Strings.unsavedChangesTitle,
+                informativeText: Strings.unsavedChangesListMessage(fileList)
+            )
+        }
         switch response {
         case .alertFirstButtonReturn:
             for tab in dirtyTabs {
                 guard let index = tabManager.tabs.firstIndex(where: { $0.id == tab.id }) else { continue }
-                guard tabManager.saveTab(at: index) else { return false }
+                let didSave = saveTab?(index) ?? tabManager.saveTab(at: index)
+                guard didSave else { return false }
             }
             Task { await gitProvider.refreshAsync() }
             return true
@@ -72,35 +80,68 @@ enum TabCloseHelper {
     }
 
     /// Closes all tabs except the one with the given ID, with unsaved-changes protection.
+    /// Returns `true` only when the close operation completed.
+    @discardableResult
     static func closeOtherTabs(
         keeping tabID: UUID,
         in tabManager: TabManager,
-        gitProvider: GitStatusProvider
-    ) {
+        gitProvider: GitStatusProvider,
+        presentAlert: (() -> NSApplication.ModalResponse)? = nil,
+        saveTab: ((Int) -> Bool)? = nil
+    ) -> Bool {
         let dirty = tabManager.dirtyTabsForCloseOthers(keeping: tabID)
-        guard confirmBulkClose(dirtyTabs: dirty, in: tabManager, gitProvider: gitProvider) else { return }
+        guard confirmBulkClose(
+            dirtyTabs: dirty,
+            in: tabManager,
+            gitProvider: gitProvider,
+            presentAlert: presentAlert,
+            saveTab: saveTab
+        ) else { return false }
         tabManager.closeOtherTabs(keeping: tabID, force: true)
+        return true
     }
 
     /// Closes all tabs to the right of the given tab, with unsaved-changes protection.
+    /// Returns `true` only when the close operation completed.
+    @discardableResult
     static func closeTabsToTheRight(
         of tabID: UUID,
         in tabManager: TabManager,
-        gitProvider: GitStatusProvider
-    ) {
+        gitProvider: GitStatusProvider,
+        presentAlert: (() -> NSApplication.ModalResponse)? = nil,
+        saveTab: ((Int) -> Bool)? = nil
+    ) -> Bool {
         let dirty = tabManager.dirtyTabsForCloseRight(of: tabID)
-        guard confirmBulkClose(dirtyTabs: dirty, in: tabManager, gitProvider: gitProvider) else { return }
+        guard confirmBulkClose(
+            dirtyTabs: dirty,
+            in: tabManager,
+            gitProvider: gitProvider,
+            presentAlert: presentAlert,
+            saveTab: saveTab
+        ) else { return false }
         tabManager.closeTabsToTheRight(of: tabID, force: true)
+        return true
     }
 
     /// Closes all tabs with unsaved-changes protection.
+    /// Returns `true` only when the close operation completed.
+    @discardableResult
     static func closeAllTabs(
         in tabManager: TabManager,
-        gitProvider: GitStatusProvider
-    ) {
+        gitProvider: GitStatusProvider,
+        presentAlert: (() -> NSApplication.ModalResponse)? = nil,
+        saveTab: ((Int) -> Bool)? = nil
+    ) -> Bool {
         let dirty = tabManager.dirtyTabsForCloseAll()
-        guard confirmBulkClose(dirtyTabs: dirty, in: tabManager, gitProvider: gitProvider) else { return }
+        guard confirmBulkClose(
+            dirtyTabs: dirty,
+            in: tabManager,
+            gitProvider: gitProvider,
+            presentAlert: presentAlert,
+            saveTab: saveTab
+        ) else { return false }
         tabManager.closeAllTabs(force: true)
+        return true
     }
 
     // MARK: - Terminal foreground-process confirmation

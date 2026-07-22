@@ -20,8 +20,9 @@ final class ProjectManager {
     /// Persistent audit log of finished agent sessions for the History &
     /// Undo view (vision #933, Phase 2 — Visibility, issue #1073).
     let agentHistory = AgentHistoryStore()
-    /// The primary TabManager (root editor pane). Owns the recovery wiring and
-    /// editor-context subscription. For the *focused* pane's TabManager, use
+    /// The primary TabManager (initial root editor pane). Project-scoped
+    /// services are wired to every pane-owned manager by `PaneManager`'s
+    /// configurator. For the *focused* pane's TabManager, use
     /// ``activeTabManager`` which delegates to ``PaneManager/activeEditorTabManager``.
     ///
     /// Note: this instance can become an *orphan* — i.e. no pane in the
@@ -30,9 +31,8 @@ final class ProjectManager {
     /// session restore that does not bind it to any leaf. In that state it
     /// is harmless: it holds no tabs, contributes nothing to `allTabs`, and
     /// is recreated as a leaf-bound TabManager via `ensureEditorPane()`
-    /// when the user opens a file again. The reference is kept solely so
-    /// the recovery wiring and editor-context subscription survive across
-    /// such transitions.
+    /// when the user opens a file again. The reference remains as the stable
+    /// fallback used by project-level commands while no editor pane exists.
     let primaryTabManager = TabManager()
     let searchProvider = ProjectSearchProvider()
     let quickOpenProvider = QuickOpenProvider()
@@ -187,8 +187,8 @@ final class ProjectManager {
         }
         workspace.progressTracker = progress
         workspace.gitProvider.progressTracker = progress
-        primaryTabManager.onEditorContextChanged = { [weak self] in
-            self?.updateEditorContext()
+        paneManager.configureEditorTabManager = { [weak self] tabManager in
+            self?.configureEditorTabManager(tabManager)
         }
         // Wire TerminalManager to PaneManager (lazy wiring)
         terminal.paneManager = paneManager
@@ -211,9 +211,23 @@ final class ProjectManager {
         manager.tabsProvider = { [weak self] in
             self?.allTabs ?? []
         }
+        // The primary manager can temporarily be orphaned from the pane tree,
+        // so configure it explicitly as well as every currently visible pane.
         primaryTabManager.recoveryManager = manager
+        for tabManager in paneManager.allTabManagers {
+            tabManager.recoveryManager = manager
+        }
         manager.startPeriodicSnapshots()
         recoveryManager = manager
+    }
+
+    /// Applies project-owned services to every editor group, including groups
+    /// created later by pane splits or session restoration.
+    private func configureEditorTabManager(_ tabManager: TabManager) {
+        tabManager.recoveryManager = recoveryManager
+        tabManager.onEditorContextChanged = { [weak self] in
+            self?.updateEditorContext()
+        }
     }
 
     /// Persists current session (project + open file tabs) to UserDefaults.

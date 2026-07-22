@@ -77,6 +77,17 @@ struct PaneSplitDropIntegrationTests {
         )
     }
 
+    /// Resolves the exact identity carried by production editor-tab drags.
+    /// URL-only fallback is reserved for legacy callers that omit `tabID`.
+    private func editorTabID(
+        for url: URL,
+        in paneID: PaneID,
+        manager: PaneManager
+    ) throws -> UUID {
+        let tabManager = try #require(manager.tabManager(for: paneID))
+        return try #require(tabManager.tabs.first(where: { $0.url == url })?.id)
+    }
+
     /// Two editor panes side-by-side; each pane owns one tab.
     private func managerWithTwoEditorPanes() throws -> TwoEditorPanes {
         let manager = PaneManager()
@@ -173,23 +184,24 @@ struct PaneSplitDropIntegrationTests {
         let paneB = setup.paneB
         let delegate = delegate(for: paneB, on: manager)
         manager.activeDrag = TabDragInfo(
-            paneID: paneA.id, tabID: UUID(), fileURL: fileA, contentType: .editor
+            paneID: paneA.id,
+            tabID: try editorTabID(for: fileA, in: paneA, manager: manager),
+            fileURL: fileA,
+            contentType: .editor
         )
         let beforeLeafCount = manager.root.leafCount
 
         let ok = delegate.performPaneTabDrop(zone: .right)
 
         #expect(ok)
-        // Tree grew by exactly one new editor leaf.
-        #expect(manager.root.leafCount == beforeLeafCount + 1)
-        #expect(manager.root.leafCount(ofType: .editor) == 3)
-        // The new pane is the active pane and sits horizontally after paneB.
+        // The new leaf replaces the now-empty source pane, so total count is
+        // stable. The destination sits horizontally after paneB.
+        #expect(manager.root.leafCount == beforeLeafCount)
+        #expect(manager.root.leafCount(ofType: .editor) == 2)
         if case .split(let axis, let first, let second, _) = manager.root {
             #expect(axis == .horizontal)
-            // The root split is unchanged (paneA | paneB-tree); the new
-            // horizontal split is nested inside the second child.
-            #expect(first.contains(paneA))
-            #expect(second.contains(paneB))
+            #expect(first.contains(paneB))
+            #expect(!second.contains(paneA))
             #expect(manager.activePaneID != paneA && manager.activePaneID != paneB)
         } else {
             Issue.record("Expected root to remain a split after edge drop")
@@ -210,13 +222,17 @@ struct PaneSplitDropIntegrationTests {
         let paneB = setup.paneB
         let delegate = delegate(for: paneB, on: manager)
         manager.activeDrag = TabDragInfo(
-            paneID: paneA.id, tabID: UUID(), fileURL: fileA, contentType: .editor
+            paneID: paneA.id,
+            tabID: try editorTabID(for: fileA, in: paneA, manager: manager),
+            fileURL: fileA,
+            contentType: .editor
         )
 
         let ok = delegate.performPaneTabDrop(zone: .left)
 
         #expect(ok)
-        #expect(manager.root.leafCount(ofType: .editor) == 3)
+        #expect(manager.root.leafCount(ofType: .editor) == 2)
+        #expect(manager.tabManager(for: paneA) == nil)
         // New pane is active and is the first child of paneB's split.
         let newID = manager.activePaneID
         #expect(newID != paneA && newID != paneB)
@@ -233,22 +249,25 @@ struct PaneSplitDropIntegrationTests {
         let paneB = setup.paneB
         let delegate = delegate(for: paneB, on: manager)
         manager.activeDrag = TabDragInfo(
-            paneID: paneA.id, tabID: UUID(), fileURL: fileA, contentType: .editor
+            paneID: paneA.id,
+            tabID: try editorTabID(for: fileA, in: paneA, manager: manager),
+            fileURL: fileA,
+            contentType: .editor
         )
 
         let ok = delegate.performPaneTabDrop(zone: .bottom)
 
         #expect(ok)
-        #expect(manager.root.leafCount(ofType: .editor) == 3)
+        #expect(manager.root.leafCount(ofType: .editor) == 2)
+        #expect(manager.tabManager(for: paneA) == nil)
         let newID = manager.activePaneID
         let newTM = try #require(manager.tabManager(for: newID))
         #expect(newTM.tabs.contains { $0.url == fileA })
         // paneB's split axis is vertical (top/bottom edge → vertical).
-        if case .split(.horizontal, _, let second, _) = manager.root,
-           case .split(let axis, _, _, _) = second {
+        if case .split(let axis, _, _, _) = manager.root {
             #expect(axis == .vertical)
         } else {
-            Issue.record("Expected vertical split under paneB after bottom drop")
+            Issue.record("Expected vertical split around paneB after bottom drop")
         }
     }
 
@@ -261,13 +280,17 @@ struct PaneSplitDropIntegrationTests {
         let paneB = setup.paneB
         let delegate = delegate(for: paneB, on: manager)
         manager.activeDrag = TabDragInfo(
-            paneID: paneA.id, tabID: UUID(), fileURL: fileA, contentType: .editor
+            paneID: paneA.id,
+            tabID: try editorTabID(for: fileA, in: paneA, manager: manager),
+            fileURL: fileA,
+            contentType: .editor
         )
 
         let ok = delegate.performPaneTabDrop(zone: .top)
 
         #expect(ok)
-        #expect(manager.root.leafCount(ofType: .editor) == 3)
+        #expect(manager.root.leafCount(ofType: .editor) == 2)
+        #expect(manager.tabManager(for: paneA) == nil)
         let newID = manager.activePaneID
         let newTM = try #require(manager.tabManager(for: newID))
         #expect(newTM.tabs.contains { $0.url == fileA })
@@ -380,14 +403,18 @@ struct PaneSplitDropIntegrationTests {
 
         let delegate = delegate(for: termID, on: manager)
         manager.activeDrag = TabDragInfo(
-            paneID: editorID.id, tabID: UUID(), fileURL: fileA, contentType: .editor
+            paneID: editorID.id,
+            tabID: try editorTabID(for: fileA, in: editorID, manager: manager),
+            fileURL: fileA,
+            contentType: .editor
         )
 
         let ok = delegate.performPaneTabDrop(zone: .right)
 
         #expect(ok)
-        // A new editor pane was created adjacent to the terminal target.
-        #expect(manager.root.leafCount(ofType: .editor) == beforeEditorCount + 1)
+        // The new editor pane replaces the emptied source pane.
+        #expect(manager.root.leafCount(ofType: .editor) == beforeEditorCount)
+        #expect(manager.tabManager(for: editorID) == nil)
         let newEditorID = try #require(
             manager.root.leafIDs.first {
                 $0 != editorID && manager.root.content(for: $0) == .editor
@@ -435,7 +462,10 @@ struct PaneSplitDropIntegrationTests {
         let paneB = setup.paneB
         let delegate = delegate(for: paneB, on: manager)
         manager.activeDrag = TabDragInfo(
-            paneID: paneA.id, tabID: UUID(), fileURL: fileA, contentType: .editor
+            paneID: paneA.id,
+            tabID: try editorTabID(for: fileA, in: paneA, manager: manager),
+            fileURL: fileA,
+            contentType: .editor
         )
         let beforeLeafCount = manager.root.leafCount
 
@@ -496,7 +526,10 @@ struct PaneSplitDropIntegrationTests {
 
         let delegate = delegate(for: termID, on: manager)
         manager.activeDrag = TabDragInfo(
-            paneID: editorID.id, tabID: UUID(), fileURL: fileA, contentType: .editor
+            paneID: editorID.id,
+            tabID: try editorTabID(for: fileA, in: editorID, manager: manager),
+            fileURL: fileA,
+            contentType: .editor
         )
 
         let ok = delegate.performPaneTabDrop(zone: .center)
@@ -528,7 +561,10 @@ struct PaneSplitDropIntegrationTests {
         let paneB = setup.paneB
         let delegate = delegate(for: paneB, on: manager)
         manager.activeDrag = TabDragInfo(
-            paneID: paneA.id, tabID: UUID(), fileURL: fileA, contentType: .editor
+            paneID: paneA.id,
+            tabID: try editorTabID(for: fileA, in: paneA, manager: manager),
+            fileURL: fileA,
+            contentType: .editor
         )
         let beforeRoot = manager.root
 
@@ -567,11 +603,10 @@ struct PaneSplitDropIntegrationTests {
         #expect(ok == false)
     }
 
-    @Test("Edge drop of editor tab without fileURL is a no-op but returns true")
-    func editorEdgeDrop_withoutFileURL_isNoOp() throws {
+    @Test("Edge drop of editor tab without fileURL is rejected without consuming drag")
+    func editorEdgeDropWithoutFileURLIsRejected() throws {
         // TabDragInfo.contentType == .editor with fileURL == nil cannot
-        // dispatch to splitPane (which needs a URL). The delegate returns
-        // true (drop accepted) but performs no tree mutation.
+        // dispatch to splitPane (which needs a URL).
         let setup = try managerWithTwoEditorPanes()
         let manager = setup.manager
         let paneA = setup.paneA
@@ -584,10 +619,9 @@ struct PaneSplitDropIntegrationTests {
 
         let ok = delegate.performPaneTabDrop(zone: .right)
 
-        #expect(ok == true)
+        #expect(ok == false)
         #expect(manager.root == beforeRoot)
-        // activeDrag was consumed (cleared) even though no mutation happened.
-        #expect(manager.activeDrag == nil)
+        #expect(manager.activeDrag != nil)
     }
 
     // MARK: - State side-effects
@@ -601,7 +635,10 @@ struct PaneSplitDropIntegrationTests {
         let paneB = setup.paneB
         let delegate = delegate(for: paneB, on: manager)
         manager.activeDrag = TabDragInfo(
-            paneID: paneA.id, tabID: UUID(), fileURL: fileA, contentType: .editor
+            paneID: paneA.id,
+            tabID: try editorTabID(for: fileA, in: paneA, manager: manager),
+            fileURL: fileA,
+            contentType: .editor
         )
 
         _ = delegate.performPaneTabDrop(zone: .right)
@@ -618,7 +655,10 @@ struct PaneSplitDropIntegrationTests {
         let paneB = setup.paneB
         let delegate = delegate(for: paneB, on: manager)
         manager.activeDrag = TabDragInfo(
-            paneID: paneA.id, tabID: UUID(), fileURL: fileA, contentType: .editor
+            paneID: paneA.id,
+            tabID: try editorTabID(for: fileA, in: paneA, manager: manager),
+            fileURL: fileA,
+            contentType: .editor
         )
 
         _ = delegate.performPaneTabDrop(zone: .center)
@@ -665,16 +705,19 @@ struct PaneSplitDropIntegrationTests {
         // Drop fileA from paneA onto the right edge of the deeply nested paneD.
         let delegate = delegate(for: paneD, on: manager)
         manager.activeDrag = TabDragInfo(
-            paneID: paneA.id, tabID: UUID(), fileURL: fileA, contentType: .editor
+            paneID: paneA.id,
+            tabID: try editorTabID(for: fileA, in: paneA, manager: manager),
+            fileURL: fileA,
+            contentType: .editor
         )
 
         let ok = delegate.performPaneTabDrop(zone: .right)
 
         #expect(ok)
-        // One new editor leaf created; original 4 panes all still present.
-        #expect(manager.root.leafCount(ofType: .editor) == beforeEditorCount + 1)
+        // The new editor leaf replaces the now-empty source leaf.
+        #expect(manager.root.leafCount(ofType: .editor) == beforeEditorCount)
         let allLeaves = manager.root.leafIDs
-        #expect(allLeaves.contains(paneA))
+        #expect(!allLeaves.contains(paneA))
         #expect(allLeaves.contains(paneB))
         #expect(allLeaves.contains(paneC))
         #expect(allLeaves.contains(paneD))
@@ -741,7 +784,10 @@ struct PaneSplitDropIntegrationTests {
         let paneB = setup.paneB
         let delegate = delegate(for: paneB, on: manager)
         manager.activeDrag = TabDragInfo(
-            paneID: paneA.id, tabID: UUID(), fileURL: fileA, contentType: .editor
+            paneID: paneA.id,
+            tabID: try editorTabID(for: fileA, in: paneA, manager: manager),
+            fileURL: fileA,
+            contentType: .editor
         )
 
         // Cursor in the right edge → zone should be .right.
@@ -752,14 +798,13 @@ struct PaneSplitDropIntegrationTests {
         #expect(ok)
 
         // Right edge → horizontal split with new pane as the second child.
-        // The root split (paneA horizontal paneB-tree) is preserved; the new
-        // horizontal split is nested inside the second child of the root.
-        guard case .split(.horizontal, _, let second, _) = manager.root,
-              case .split(let nestedAxis, _, _, _) = second else {
-            Issue.record("Expected nested horizontal split under paneB")
+        // The empty source is collapsed, promoting paneB's split to root.
+        guard case .split(let axis, let first, _, _) = manager.root else {
+            Issue.record("Expected horizontal split around paneB")
             return
         }
-        #expect(nestedAxis == .horizontal)
+        #expect(axis == .horizontal)
+        #expect(first.contains(paneB))
     }
 
     @Test("Cursor-to-zone-to-mutation end-to-end: bottom edge produces vertical split")
@@ -771,7 +816,10 @@ struct PaneSplitDropIntegrationTests {
         let paneB = setup.paneB
         let delegate = delegate(for: paneB, on: manager)
         manager.activeDrag = TabDragInfo(
-            paneID: paneA.id, tabID: UUID(), fileURL: fileA, contentType: .editor
+            paneID: paneA.id,
+            tabID: try editorTabID(for: fileA, in: paneA, manager: manager),
+            fileURL: fileA,
+            contentType: .editor
         )
 
         let zone = PaneDropZone.zone(for: Cursor.bottom, in: paneSize)
@@ -780,13 +828,14 @@ struct PaneSplitDropIntegrationTests {
         let ok = delegate.performPaneTabDrop(zone: zone)
         #expect(ok)
 
-        // Bottom edge → vertical split.
-        guard case .split(.horizontal, _, let second, _) = manager.root,
-              case .split(let nestedAxis, _, _, _) = second else {
-            Issue.record("Expected nested vertical split under paneB")
+        // Bottom edge → vertical split. The empty source is collapsed,
+        // promoting paneB's split to root.
+        guard case .split(let axis, let first, _, _) = manager.root else {
+            Issue.record("Expected vertical split around paneB")
             return
         }
-        #expect(nestedAxis == .vertical)
+        #expect(axis == .vertical)
+        #expect(first.contains(paneB))
     }
 
     @Test("Cursor-to-zone-to-mutation end-to-end: center triggers same-type move")
@@ -798,7 +847,10 @@ struct PaneSplitDropIntegrationTests {
         let paneB = setup.paneB
         let delegate = delegate(for: paneB, on: manager)
         manager.activeDrag = TabDragInfo(
-            paneID: paneA.id, tabID: UUID(), fileURL: fileA, contentType: .editor
+            paneID: paneA.id,
+            tabID: try editorTabID(for: fileA, in: paneA, manager: manager),
+            fileURL: fileA,
+            contentType: .editor
         )
         let beforeLeafCount = manager.root.leafCount
 

@@ -28,6 +28,9 @@ struct TerminalTabDragBetweenPanesTests {
         let newState = try #require(paneManager.terminalState(for: unwrappedNewPaneID))
         #expect(newState.terminalTabs.count == 1)
         #expect(newState.terminalTabs[0].id == tabToMoveID)
+        #expect(newState.activeTerminalID == tabToMoveID)
+        #expect(newState.pendingFocusTabID == tabToMoveID)
+        #expect(paneManager.activePaneID == unwrappedNewPaneID)
         #expect(termState.terminalTabs.count == 1)
     }
 
@@ -62,10 +65,29 @@ struct TerminalTabDragBetweenPanesTests {
         ))
         let tabToMove = pane1State.terminalTabs[0]
 
-        paneManager.moveTerminalTab(tabToMove.id, from: pane1ID, to: pane2ID)
+        let didMove = paneManager.moveTerminalTab(tabToMove.id, from: pane1ID, to: pane2ID)
 
         let pane2State = try #require(paneManager.terminalState(for: pane2ID))
+        #expect(didMove)
         #expect(pane2State.terminalTabs.contains(where: { $0.id == tabToMove.id }))
+        #expect(pane2State.activeTerminalID == tabToMove.id)
+        #expect(pane2State.pendingFocusTabID == tabToMove.id)
+        #expect(paneManager.activePaneID == pane2ID)
         #expect(pane1State.terminalTabs.count == 1)
+    }
+
+    @Test("moveTerminalTab rejects same-pane moves without mutation")
+    func moveTerminalTabRejectsSamePane() throws {
+        let paneManager = PaneManager()
+        let paneID = paneManager.createTerminalPaneAtBottom(workingDirectory: nil)
+        let state = try #require(paneManager.terminalState(for: paneID))
+        let tabID = try #require(state.terminalTabs.first?.id)
+        let beforeIDs = state.terminalTabs.map(\.id)
+
+        let didMove = paneManager.moveTerminalTab(tabID, from: paneID, to: paneID)
+
+        #expect(!didMove)
+        #expect(state.terminalTabs.map(\.id) == beforeIDs)
+        #expect(paneManager.terminalState(for: paneID) === state)
     }
 }
