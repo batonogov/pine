@@ -22,6 +22,16 @@ final class PaneManager {
     /// Per-pane terminal states, keyed by PaneID.
     private(set) var terminalStates: [PaneID: TerminalPaneState] = [:]
 
+    /// Applies project-scoped services (recovery, editor-context callbacks,
+    /// and similar wiring) to every editor TabManager owned by this pane tree.
+    /// Setting the configurator also updates managers that already exist.
+    var configureEditorTabManager: ((TabManager) -> Void)? {
+        didSet {
+            guard let configureEditorTabManager else { return }
+            tabManagers.values.forEach(configureEditorTabManager)
+        }
+    }
+
     /// Saved root before maximize, for restore.
     private(set) var savedRootBeforeMaximize: PaneNode?
 
@@ -246,12 +256,14 @@ final class PaneManager {
     // MARK: - Split operations
 
     /// Splits a pane by placing a new pane alongside it.
-    /// The tab at the given URL is moved from the source pane to the new one.
+    /// The tab at the given identity (or legacy URL fallback) is moved from
+    /// the source pane to the new one.
     /// If `insertBefore` is true, the new pane is placed before (left/top of) the target.
     @discardableResult
     func splitPane(
         _ targetID: PaneID,
         axis: SplitAxis,
+        tabID: UUID? = nil,
         tabURL: URL? = nil,
         sourcePane: PaneID? = nil,
         insertBefore: Bool = false
@@ -265,28 +277,56 @@ final class PaneManager {
             insertBefore: insertBefore
         ) else { return nil }
 
-        root = newRoot
-        let newTabManager = TabManager()
-        tabManagers[newID] = newTabManager
+        let newTabManager = makeEditorTabManager()
 
-        // Move tab from source to new pane if specified
-        if let url = tabURL, let srcID = sourcePane, let srcTM = tabManagers[srcID] {
-            moveTab(url: url, from: srcTM, to: newTabManager)
+        // Resolve and detach the tab before committing the new tree. If any
+        // transfer precondition fails, no pane is created and the source is
+        // left untouched. Insertion is rollback-safe even if its identity
+        // precondition unexpectedly changes.
+        if tabID != nil || tabURL != nil {
+            guard let sourcePane,
+                  let source = tabManagers[sourcePane],
+                  let resolvedTabID = resolvedEditorTabID(tabID: tabID, url: tabURL, in: source),
+                  let tab = source.tabs.first(where: { $0.id == resolvedTabID }),
+                  newTabManager.canInsertTransferredTab(tab),
+                  let extraction = source.extractTab(id: resolvedTabID) else { return nil }
+
+            guard newTabManager.insertTransferredTab(extraction) else {
+                source.restoreExtractedTab(extraction)
+                return nil
+            }
         }
 
+        root = newRoot
+        tabManagers[newID] = newTabManager
         activePaneID = newID
+        newTabManager.onEditorContextChanged?()
+
+        // An edge/split move must obey the same empty-source invariant as a
+        // center move. The newly created destination is non-empty, so it is
+        // never selected as the pruning victim.
+        if tabID != nil || tabURL != nil {
+            pruneEmptyEditorLeaves()
+        }
         return newID
     }
 
     /// Moves a tab from one pane to another by URL.
-    func moveTabBetweenPanes(tabURL: URL, from sourceID: PaneID, to targetID: PaneID) {
-        guard let srcTM = tabManagers[sourceID],
-              let dstTM = tabManagers[targetID] else { return }
-        moveTab(url: tabURL, from: srcTM, to: dstTM)
-        activePaneID = targetID
+    @discardableResult
+    func moveTabBetweenPanes(tabURL: URL, from sourceID: PaneID, to targetID: PaneID) -> Bool {
+        transferEditorTab(tabID: nil, url: tabURL, from: sourceID, to: targetID)
+    }
 
-        // Clean up empty editor panes (centralized hook).
-        pruneEmptyEditorLeaves()
+    /// Moves the exact tab identity from one editor pane to another. The URL
+    /// is retained only as a compatibility fallback for legacy drag payloads.
+    @discardableResult
+    func moveTabBetweenPanes(
+        tabID: UUID,
+        tabURL: URL? = nil,
+        from sourceID: PaneID,
+        to targetID: PaneID
+    ) -> Bool {
+        transferEditorTab(tabID: tabID, url: tabURL, from: sourceID, to: targetID)
     }
 
     // MARK: - Empty editor leaf pruning
@@ -356,7 +396,7 @@ final class PaneManager {
         if let firstID = root.firstLeafID, let tm = tabManagers[firstID] {
             return tm
         }
-        let fresh = TabManager()
+        let fresh = makeEditorTabManager()
         let newID = PaneID()
         tabManagers[newID] = fresh
         root = .leaf(newID, .editor)
@@ -380,7 +420,7 @@ final class PaneManager {
             tabManagers[paneID] = nil
             terminalStates[paneID] = nil
             let newID = PaneID()
-            tabManagers[newID] = TabManager()
+            tabManagers[newID] = makeEditorTabManager()
             root = .leaf(newID, .editor)
             activePaneID = newID
             return
@@ -461,13 +501,17 @@ final class PaneManager {
         return newID
     }
 
-    func moveTerminalTab(_ tabID: UUID, from sourceID: PaneID, to targetID: PaneID) {
-        guard let srcState = terminalStates[sourceID],
+    @discardableResult
+    func moveTerminalTab(_ tabID: UUID, from sourceID: PaneID, to targetID: PaneID) -> Bool {
+        guard sourceID != targetID,
+              let srcState = terminalStates[sourceID],
               let dstState = terminalStates[targetID],
-              let tab = srcState.terminalTabs.first(where: { $0.id == tabID }) else { return }
+              !dstState.terminalTabs.contains(where: { $0.id == tabID }),
+              let tab = srcState.terminalTabs.first(where: { $0.id == tabID }) else { return false }
 
         dstState.terminalTabs.append(tab)
         dstState.activeTerminalID = tab.id
+        dstState.pendingFocusTabID = tab.id
         srcState.terminalTabs.removeAll { $0.id == tabID }
         if srcState.activeTerminalID == tabID {
             srcState.activeTerminalID = srcState.terminalTabs.last?.id
@@ -476,6 +520,7 @@ final class PaneManager {
         if srcState.terminalTabs.isEmpty {
             removePane(sourceID)
         }
+        return true
     }
 
     /// Splits a pane, creates a new terminal pane, and moves an existing terminal tab into it.
@@ -501,6 +546,7 @@ final class PaneManager {
 
         newState.terminalTabs.append(tab)
         newState.activeTerminalID = tab.id
+        newState.pendingFocusTabID = tab.id
         srcState.terminalTabs.removeAll { $0.id == tabID }
         if srcState.activeTerminalID == tabID {
             srcState.activeTerminalID = srcState.terminalTabs.last?.id
@@ -518,9 +564,14 @@ final class PaneManager {
     /// Wraps the entire root in a new split, creating a full-width/height terminal pane.
     /// Moves the specified terminal tab from the source pane to the new pane.
     /// Removes the source pane if it becomes empty.
-    func wrapRootWithTerminal(at zone: RootDropZone, from sourcePaneID: PaneID, tabID: UUID) {
+    @discardableResult
+    func wrapRootWithTerminal(
+        at zone: RootDropZone,
+        from sourcePaneID: PaneID,
+        tabID: UUID
+    ) -> Bool {
         guard let srcState = terminalStates[sourcePaneID],
-              let tab = srcState.terminalTabs.first(where: { $0.id == tabID }) else { return }
+              let tab = srcState.terminalTabs.first(where: { $0.id == tabID }) else { return false }
 
         // Remove tab from source BEFORE modifying the tree
         srcState.terminalTabs.removeAll { $0.id == tabID }
@@ -551,8 +602,10 @@ final class PaneManager {
         let newState = TerminalPaneState()
         newState.terminalTabs.append(tab)
         newState.activeTerminalID = tab.id
+        newState.pendingFocusTabID = tab.id
         terminalStates[newID] = newState
         activePaneID = newID
+        return true
     }
 
     // MARK: - Maximize
@@ -603,7 +656,7 @@ final class PaneManager {
         for leafID in leafIDs {
             switch node.content(for: leafID) {
             case .editor:
-                newTabManagers[leafID] = TabManager()
+                newTabManagers[leafID] = makeEditorTabManager()
             case .terminal:
                 newTerminalStates[leafID] = TerminalPaneState()
             case nil:
@@ -677,15 +730,14 @@ final class PaneManager {
         if dragInfo.contentType == targetContent {
             // Same-type: plain move.
             if dragInfo.contentType == .terminal {
-                guard terminalStates[sourcePaneID]?.terminalTabs
-                    .contains(where: { $0.id == dragInfo.tabID }) == true else { return false }
-                moveTerminalTab(dragInfo.tabID, from: sourcePaneID, to: targetPaneID)
-                return true
+                return moveTerminalTab(dragInfo.tabID, from: sourcePaneID, to: targetPaneID)
             } else if let fileURL = dragInfo.fileURL {
-                guard tabManagers[sourcePaneID]?.tabs
-                    .contains(where: { $0.url == fileURL }) == true else { return false }
-                moveTabBetweenPanes(tabURL: fileURL, from: sourcePaneID, to: targetPaneID)
-                return true
+                return moveTabBetweenPanes(
+                    tabID: dragInfo.tabID,
+                    tabURL: fileURL,
+                    from: sourcePaneID,
+                    to: targetPaneID
+                )
             }
             return false
         }
@@ -705,11 +757,10 @@ final class PaneManager {
             return newID != nil
         } else if let fileURL = dragInfo.fileURL {
             // Moving an editor tab into a terminal pane.
-            guard tabManagers[sourcePaneID]?.tabs
-                .contains(where: { $0.url == fileURL }) == true else { return false }
             let newID = splitPane(
                 targetPaneID,
                 axis: .vertical,
+                tabID: dragInfo.tabID,
                 tabURL: fileURL,
                 sourcePane: sourcePaneID,
                 insertBefore: false
@@ -727,18 +778,43 @@ final class PaneManager {
 
     // MARK: - Private helpers
 
-    private func moveTab(url: URL, from source: TabManager, to destination: TabManager) {
-        guard let srcIdx = source.tabs.firstIndex(where: { $0.url == url }) ?? source.tabs.firstIndex(where: {
-            $0.url.standardizedFileURL == url.standardizedFileURL
-        }) else { return }
-        // Take a copy of the full tab with all state
-        let tab = source.tabs[srcIdx]
-        // Re-mint identity so the tab is fresh in the destination
-        let movedTab = EditorTab.reidentified(from: tab)
-        // Add to destination FIRST — if this crashes, the tab is still in source
-        destination.tabs.append(movedTab)
-        destination.activeTabID = movedTab.id
-        // Now safe to remove from source (force: skip dirty check — we're moving, not discarding)
-        source.closeTab(id: tab.id, force: true)
+    private func makeEditorTabManager() -> TabManager {
+        let tabManager = TabManager()
+        configureEditorTabManager?(tabManager)
+        return tabManager
+    }
+
+    private func resolvedEditorTabID(tabID: UUID?, url: URL?, in source: TabManager) -> UUID? {
+        if let tabID {
+            return source.tabs.contains(where: { $0.id == tabID }) ? tabID : nil
+        }
+        guard let url else { return nil }
+        return source.tabs.first(where: { $0.url == url })?.id
+            ?? source.tabs.first(where: { $0.url.standardizedFileURL == url.standardizedFileURL })?.id
+    }
+
+    private func transferEditorTab(
+        tabID: UUID?,
+        url: URL?,
+        from sourceID: PaneID,
+        to targetID: PaneID
+    ) -> Bool {
+        guard sourceID != targetID,
+              let source = tabManagers[sourceID],
+              let destination = tabManagers[targetID],
+              let resolvedTabID = resolvedEditorTabID(tabID: tabID, url: url, in: source),
+              let tab = source.tabs.first(where: { $0.id == resolvedTabID }),
+              destination.canInsertTransferredTab(tab),
+              let extraction = source.extractTab(id: resolvedTabID) else { return false }
+
+        guard destination.insertTransferredTab(extraction) else {
+            source.restoreExtractedTab(extraction)
+            return false
+        }
+
+        activePaneID = targetID
+        destination.onEditorContextChanged?()
+        pruneEmptyEditorLeaves()
+        return true
     }
 }

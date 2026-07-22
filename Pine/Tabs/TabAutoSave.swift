@@ -8,7 +8,7 @@
 import Foundation
 
 /// Manages debounced auto-save scheduling for editor tabs.
-/// Tracks a pending work item and fires a save callback after a delay.
+/// Tracks pending work per tab and fires save callbacks after a delay.
 @MainActor
 final class TabAutoSave {
     /// UserDefaults key for the auto-save toggle.
@@ -20,12 +20,25 @@ final class TabAutoSave {
     /// Whether auto-save is currently in progress (for UI indicator).
     private(set) var isSaving = false
 
-    /// Debounce work item.
-    private var workItem: DispatchWorkItem?
+    private struct PendingSave {
+        let generation: UUID
+        let workItem: DispatchWorkItem
+    }
+
+    /// Compatibility key for callers that do not identify a tab.
+    private let defaultKey = UUID()
+
+    /// Independent debounce work per tab. Editing or transferring one tab
+    /// must not cancel a save already scheduled for another tab.
+    private var pendingSaves: [UUID: PendingSave] = [:]
 
     /// Whether a pending auto-save is scheduled (for testing).
     var hasScheduledSave: Bool {
-        workItem != nil
+        !pendingSaves.isEmpty
+    }
+
+    func hasScheduledSave(for key: UUID) -> Bool {
+        pendingSaves[key] != nil
     }
 
     /// Schedules a debounced auto-save. The `saveAction` fires after `delay`
@@ -39,12 +52,24 @@ final class TabAutoSave {
         isStillDirty: @MainActor @escaping () -> Bool,
         saveAction: @MainActor @escaping () throws -> Void
     ) {
-        workItem?.cancel()
+        schedule(for: defaultKey, isStillDirty: isStillDirty, saveAction: saveAction)
+    }
+
+    /// Schedules a debounced save independently for `key`.
+    func schedule(
+        for key: UUID,
+        isStillDirty: @MainActor @escaping () -> Bool,
+        saveAction: @MainActor @escaping () throws -> Void
+    ) {
+        cancel(for: key)
+
+        let generation = UUID()
 
         let item = DispatchWorkItem { [weak self] in
-            guard let self else { return }
+            guard let self,
+                  self.pendingSaves[key]?.generation == generation else { return }
             guard isStillDirty() else {
-                self.workItem = nil
+                self.pendingSaves[key] = nil
                 return
             }
 
@@ -55,16 +80,23 @@ final class TabAutoSave {
                 // Silent failure — auto-save should not show alerts
             }
             self.isSaving = false
-            self.workItem = nil
+            if self.pendingSaves[key]?.generation == generation {
+                self.pendingSaves[key] = nil
+            }
         }
 
-        workItem = item
+        pendingSaves[key] = PendingSave(generation: generation, workItem: item)
         DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: item)
     }
 
-    /// Cancels any pending auto-save.
+    /// Cancels the pending auto-save for one tab without disturbing others.
+    func cancel(for key: UUID) {
+        pendingSaves.removeValue(forKey: key)?.workItem.cancel()
+    }
+
+    /// Cancels every pending auto-save.
     func cancel() {
-        workItem?.cancel()
-        workItem = nil
+        pendingSaves.values.forEach { $0.workItem.cancel() }
+        pendingSaves.removeAll()
     }
 }

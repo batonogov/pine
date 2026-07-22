@@ -503,7 +503,12 @@ struct PaneLeafView: View {
     }
 
     private func closeAllTabsWithConfirmation(tabManager: TabManager) {
-        TabCloseHelper.closeAllTabs(in: tabManager, gitProvider: workspace.gitProvider)
-        paneManager.removePane(paneID)
+        let didClose = TabCloseHelper.closeAllTabs(
+            in: tabManager,
+            gitProvider: workspace.gitProvider
+        )
+        if didClose && tabManager.tabs.isEmpty {
+            paneManager.removePane(paneID)
+        }
     }
 }

@@ -79,6 +79,40 @@ struct TabAutoSaveTests {
         #expect(saveCount == 1)
     }
 
+    @Test("different tab keys save independently while each key still debounces")
+    func keyedSchedulesAreIndependent() async throws {
+        let coordinator = TabAutoSave()
+        coordinator.delay = 0.1
+        let firstKey = UUID()
+        let secondKey = UUID()
+        var firstSaveCount = 0
+        var secondSaveCount = 0
+
+        coordinator.schedule(
+            for: firstKey,
+            isStillDirty: { true },
+            saveAction: { firstSaveCount += 1 }
+        )
+        coordinator.schedule(
+            for: secondKey,
+            isStillDirty: { true },
+            saveAction: { secondSaveCount += 1 }
+        )
+        coordinator.schedule(
+            for: firstKey,
+            isStillDirty: { true },
+            saveAction: { firstSaveCount += 1 }
+        )
+
+        #expect(coordinator.hasScheduledSave(for: firstKey))
+        #expect(coordinator.hasScheduledSave(for: secondKey))
+        try await Task.sleep(for: .milliseconds(300))
+
+        #expect(firstSaveCount == 1)
+        #expect(secondSaveCount == 1)
+        #expect(!coordinator.hasScheduledSave)
+    }
+
     @Test("isSaving is true during save action")
     func isSavingDuringAction() async throws {
         let coordinator = TabAutoSave()

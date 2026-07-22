@@ -18,6 +18,15 @@ import Testing
 @MainActor
 struct CrossTypeCenterDropTests {
 
+    private func editorTabID(
+        for url: URL,
+        in paneID: PaneID,
+        manager: PaneManager
+    ) throws -> UUID {
+        let tabManager = try #require(manager.tabManager(for: paneID))
+        return try #require(tabManager.tabs.first(where: { $0.url == url })?.id)
+    }
+
     // MARK: - Terminal tab → Editor pane center
 
     @Test("terminal tab center-dropped on editor pane creates vertical auto-split")
@@ -102,7 +111,7 @@ struct CrossTypeCenterDropTests {
 
         let drag = TabDragInfo(
             paneID: editorPaneID.id,
-            tabID: UUID(),
+            tabID: try editorTabID(for: fileA, in: editorPaneID, manager: manager),
             fileURL: fileA,
             contentType: .editor
         )
@@ -124,8 +133,8 @@ struct CrossTypeCenterDropTests {
         #expect(newTM.tabs[0].url == fileA)
     }
 
-    @Test("editor tab center-drop on terminal: last tab keeps source editor pane (invariant)")
-    func editorOnTerminalCenter_lastTab_keepsSourceEditor() throws {
+    @Test("editor tab center-drop on terminal prunes its empty source editor")
+    func editorOnTerminalCenterLastTabPrunesSourceEditor() throws {
         let manager = PaneManager()
         let editorPaneID = manager.activePaneID
         let editorTM = try #require(manager.tabManager(for: editorPaneID))
@@ -136,7 +145,7 @@ struct CrossTypeCenterDropTests {
 
         let drag = TabDragInfo(
             paneID: editorPaneID.id,
-            tabID: UUID(),
+            tabID: try editorTabID(for: fileA, in: editorPaneID, manager: manager),
             fileURL: fileA,
             contentType: .editor
         )
@@ -144,23 +153,19 @@ struct CrossTypeCenterDropTests {
         let ok = manager.performCenterDrop(dragInfo: drag, targetPaneID: termPaneID)
 
         #expect(ok)
-        // Invariant: there is always at least one editor pane.
-        let editorLeafCount = manager.root.leafCount(ofType: .editor)
-        #expect(editorLeafCount >= 1)
-        // The auto-split actually happened: a new editor pane was created
-        // (so we now have 2 editor leaves — the original and the new one).
+        // The newly created destination replaces the emptied source editor.
         let editorLeaves = manager.root.leafIDs.filter { manager.root.content(for: $0) == .editor }
-        #expect(editorLeaves.count == 2)
-        // The original editor pane still exists (invariant: never destroy
-        // the last editor pane, even if its last tab was moved out).
-        #expect(editorLeaves.contains(editorPaneID))
-        // fileA lives in the new editor pane (not the source).
-        let newEditor = try #require(editorLeaves.first { $0 != editorPaneID })
+        #expect(editorLeaves.count == 1)
+        #expect(!editorLeaves.contains(editorPaneID))
+        let newEditor = try #require(editorLeaves.first)
         let newTM = try #require(manager.tabManager(for: newEditor))
         #expect(newTM.tabs.count == 1)
         #expect(newTM.tabs[0].url == fileA)
-        // Source editor pane has been emptied (its only tab was moved).
+        #expect(newTM.activeTabID == newTM.tabs[0].id)
+        #expect(manager.activePaneID == newEditor)
+        // The detached manager object is empty, and no longer belongs to a pane.
         #expect(editorTM.tabs.isEmpty)
+        #expect(manager.tabManager(for: editorPaneID) == nil)
         // Terminal pane is still alive.
         #expect(manager.terminalState(for: termPaneID) != nil)
         #expect(manager.root.leafCount(ofType: .terminal) == 1)
@@ -271,7 +276,7 @@ struct CrossTypeCenterDropTests {
 
         let drag = TabDragInfo(
             paneID: paneA.id,
-            tabID: UUID(),
+            tabID: try editorTabID(for: fileA, in: paneA, manager: manager),
             fileURL: fileA,
             contentType: .editor
         )
@@ -322,7 +327,7 @@ struct CrossTypeCenterDropTests {
 
         let drag = TabDragInfo(
             paneID: paneA.id,
-            tabID: UUID(),
+            tabID: try editorTabID(for: fileA, in: paneA, manager: manager),
             fileURL: fileA,
             contentType: .editor
         )
@@ -371,7 +376,7 @@ struct CrossTypeCenterDropTests {
 
         let drag = TabDragInfo(
             paneID: editorPaneID.id,
-            tabID: UUID(),
+            tabID: try editorTabID(for: fileA, in: editorPaneID, manager: manager),
             fileURL: fileA,
             contentType: .editor
         )

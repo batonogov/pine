@@ -61,9 +61,12 @@ enum RootDropZone: Equatable, Sendable {
 /// Visual overlay showing the full-width/height drop zone indicator at window edges.
 struct RootDropOverlay: View {
     let dropZone: RootDropZone?
+    @Environment(PaneManager.self) private var paneManager
 
     var body: some View {
-        if let zone = dropZone {
+        // Root structural drops target the saved layout, never its temporary
+        // single-pane maximized projection.
+        if !paneManager.isMaximized, let zone = dropZone {
             GeometryReader { geometry in
                 let rect = dropRect(zone: zone, size: geometry.size)
                 Rectangle()
@@ -105,9 +108,7 @@ struct RootPaneSplitDropDelegate: DropDelegate {
 
     func validateDrop(info: DropInfo) -> Bool {
         guard info.hasItemsConforming(to: [.paneTabDrag]) else { return false }
-        guard let drag = paneManager.activeDrag,
-              drag.contentType == .terminal else { return false }
-        return paneManager.root.leafCount > 1
+        return canRouteStructuralDrop
     }
 
     func dropEntered(info: DropInfo) {
@@ -115,8 +116,7 @@ struct RootPaneSplitDropDelegate: DropDelegate {
     }
 
     func dropUpdated(info: DropInfo) -> DropProposal? {
-        updateZone(info: info)
-        let zone = RootDropZone.detect(location: info.location, in: containerSize)
+        let zone = updateRootDropZone(at: info.location)
         if zone != nil {
             paneManager.clearLeafDropZones()
             return DropProposal(operation: .move)
@@ -130,22 +130,60 @@ struct RootPaneSplitDropDelegate: DropDelegate {
     }
 
     func performDrop(info: DropInfo) -> Bool {
-        guard let zone = paneManager.rootDropZone else { return false }
-        paneManager.rootDropZone = nil
-        paneManager.clearAllDropZones()
-
-        guard let dragInfo = paneManager.activeDrag,
-              dragInfo.contentType == .terminal else { return false }
-        paneManager.activeDrag = nil
-
-        let sourcePaneID = PaneID(id: dragInfo.paneID)
-        paneManager.wrapRootWithTerminal(at: zone, from: sourcePaneID, tabID: dragInfo.tabID)
-        return true
+        performRootPaneTabDrop(zone: paneManager.rootDropZone)
     }
 
     private func updateZone(info: DropInfo) {
-        paneManager.rootDropZone = RootDropZone.detect(location: info.location, in: containerSize)
-        paneManager.startStaleDropPollingIfNeeded()
+        updateRootDropZone(at: info.location)
+    }
+}
+
+// MARK: - Test Support
+
+extension RootPaneSplitDropDelegate {
+    /// Whether the shared drag can mutate the real root layout.
+    var canRouteStructuralDrop: Bool {
+        guard !paneManager.isMaximized,
+              paneManager.root.leafCount > 1,
+              let drag = paneManager.activeDrag else {
+            return false
+        }
+        return drag.contentType == .terminal
+    }
+
+    /// Testable counterpart of the root delegate's hover routing.
+    @discardableResult
+    func updateRootDropZone(at location: CGPoint) -> RootDropZone? {
+        let zone = canRouteStructuralDrop
+            ? RootDropZone.detect(location: location, in: containerSize)
+            : nil
+        paneManager.rootDropZone = zone
+        if zone != nil {
+            paneManager.startStaleDropPollingIfNeeded()
+        }
+        return zone
+    }
+
+    /// Testable counterpart of `performDrop(info:)`.
+    @discardableResult
+    func performRootPaneTabDrop(zone: RootDropZone?) -> Bool {
+        paneManager.clearAllDropZones()
+        guard canRouteStructuralDrop,
+              let zone,
+              let dragInfo = paneManager.activeDrag else {
+            return false
+        }
+
+        let sourcePaneID = PaneID(id: dragInfo.paneID)
+        let didPerformDrop = paneManager.wrapRootWithTerminal(
+            at: zone,
+            from: sourcePaneID,
+            tabID: dragInfo.tabID
+        )
+        if didPerformDrop {
+            paneManager.activeDrag = nil
+        }
+        return didPerformDrop
     }
 }
 

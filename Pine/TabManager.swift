@@ -61,6 +61,17 @@ final class TabManager {
     var isAutoSaveEnabled: Bool { UserDefaults.standard.bool(forKey: Self.autoSaveKey) }
     var pinnedTabCount: Int { TabPinning.pinnedTabCount(in: tabs) }
 
+    /// A tab temporarily detached from this manager while it is transferred
+    /// to another editor pane. The original position and selection make a
+    /// failed transfer exactly reversible without invoking close/discard
+    /// cleanup (in particular, recovery files remain intact).
+    struct ExtractedTab {
+        let tab: EditorTab
+        fileprivate let originalIndex: Int
+        fileprivate let previousActiveTabID: UUID?
+        fileprivate let shouldResumeAutoSave: Bool
+    }
+
     // MARK: - Open
 
     func openTab(url: URL) {
@@ -91,7 +102,7 @@ final class TabManager {
     func closeTab(id: UUID, force: Bool = false) {
         guard let index = tabs.firstIndex(where: { $0.id == id }) else { return }
         if tabs[index].isPinned && !force { return }
-        cancelAutoSave()
+        cancelAutoSave(for: id)
         recoveryManager?.deleteRecoveryFile(for: id)
         let wasActive = activeTabID == id
         tabs.remove(at: index)
@@ -105,7 +116,6 @@ final class TabManager {
     }
 
     func closeOtherTabs(keeping tabID: UUID, force: Bool) {
-        cancelAutoSave()
         tabs.filter { $0.id != tabID && !$0.isPinned && (force || !$0.isDirty) }
             .map(\.id).forEach { closeTab(id: $0, force: true) }
         activeTabID = tabID
@@ -117,7 +127,6 @@ final class TabManager {
 
     func closeTabsToTheRight(of tabID: UUID, force: Bool) {
         guard let index = tabs.firstIndex(where: { $0.id == tabID }) else { return }
-        cancelAutoSave()
         tabs[(index + 1)...].filter { !$0.isPinned && (force || !$0.isDirty) }
             .reversed().forEach { closeTab(id: $0.id, force: true) }
     }
@@ -125,7 +134,6 @@ final class TabManager {
     func dirtyTabsForCloseAll() -> [EditorTab] { TabCollection.dirtyTabsForCloseAll(in: tabs) }
 
     func closeAllTabs(force: Bool) {
-        cancelAutoSave()
         tabs.filter { force || !$0.isDirty }.map(\.id).forEach { closeTab(id: $0, force: true) }
     }
 
@@ -176,7 +184,7 @@ final class TabManager {
     @discardableResult
     func saveActiveTab() -> Bool {
         guard let index = activeTabIndex else { return false }
-        cancelAutoSave()
+        cancelAutoSave(for: tabs[index].id)
         return saveTab(at: index)
     }
 
@@ -259,6 +267,84 @@ final class TabManager {
     }
 
     // MARK: - Reorder & Pin
+
+    /// Removes a tab for an in-window pane transfer.
+    ///
+    /// Unlike ``closeTab(id:force:)``, extraction does not delete recovery
+    /// data or otherwise treat the tab as discarded. Callers must either
+    /// insert the returned value into another manager or restore it here.
+    func extractTab(id: UUID) -> ExtractedTab? {
+        guard let index = tabs.firstIndex(where: { $0.id == id }) else { return nil }
+
+        let previousActiveTabID = activeTabID
+        let shouldResumeAutoSave = hasScheduledAutoSave(for: id)
+        if shouldResumeAutoSave {
+            cancelAutoSave(for: id)
+        }
+
+        let tab = tabs.remove(at: index)
+        if activeTabID == id {
+            activeTabID = tabs.isEmpty ? nil : tabs[min(index, tabs.count - 1)].id
+        }
+
+        return ExtractedTab(
+            tab: tab,
+            originalIndex: index,
+            previousActiveTabID: previousActiveTabID,
+            shouldResumeAutoSave: shouldResumeAutoSave
+        )
+    }
+
+    /// Whether this manager can accept the exact tab from another pane.
+    /// Duplicate identities and file URLs are rejected so each pane keeps
+    /// the same one-file/one-tab invariant as ``openTab(url:)``.
+    func canInsertTransferredTab(_ tab: EditorTab) -> Bool {
+        !tabs.contains { existing in
+            existing.id == tab.id
+                || existing.url.standardizedFileURL == tab.url.standardizedFileURL
+        }
+    }
+
+    /// Inserts a transferred tab and activates it. Pinned tabs join the end
+    /// of the pinned prefix; regular tabs are appended after that prefix.
+    @discardableResult
+    func insertTransferredTab(_ tab: EditorTab) -> Bool {
+        guard canInsertTransferredTab(tab) else { return false }
+
+        if tab.isPinned {
+            let firstUnpinned = tabs.firstIndex(where: { !$0.isPinned }) ?? tabs.endIndex
+            tabs.insert(tab, at: firstUnpinned)
+        } else {
+            tabs.append(tab)
+        }
+        activeTabID = tab.id
+        return true
+    }
+
+    /// Inserts a detached tab and resumes any auto-save that was pending in
+    /// its source manager. The destination owns the timer after the move, so
+    /// the callback resolves the tab in the manager that now contains it.
+    @discardableResult
+    func insertTransferredTab(_ extraction: ExtractedTab) -> Bool {
+        guard insertTransferredTab(extraction.tab) else { return false }
+        if extraction.shouldResumeAutoSave {
+            scheduleAutoSave(for: extraction.tab.id)
+        }
+        return true
+    }
+
+    /// Restores a failed extraction at its exact previous position and
+    /// selection. This is intentionally separate from normal insertion,
+    /// whose pinned-prefix policy is destination-oriented.
+    func restoreExtractedTab(_ extraction: ExtractedTab) {
+        guard !tabs.contains(where: { $0.id == extraction.tab.id }) else { return }
+        let index = min(extraction.originalIndex, tabs.count)
+        tabs.insert(extraction.tab, at: index)
+        activeTabID = extraction.previousActiveTabID
+        if extraction.shouldResumeAutoSave {
+            scheduleAutoSave(for: extraction.tab.id)
+        }
+    }
 
     func moveTab(fromOffsets source: IndexSet, toOffset destination: Int) {
         tabs.move(fromOffsets: source, toOffset: destination)
@@ -346,10 +432,15 @@ final class TabManager {
     func setAutoSaveDelay(_ delay: TimeInterval) { autoSaveCoordinator.delay = delay }
 
     func scheduleAutoSave() {
-        guard let index = activeTabIndex,
+        guard let tabID = activeTabID else { return }
+        scheduleAutoSave(for: tabID)
+    }
+
+    private func scheduleAutoSave(for tabID: UUID) {
+        guard let index = tabs.firstIndex(where: { $0.id == tabID }),
               FileManager.default.isWritableFile(atPath: tabs[index].url.path) else { return }
-        let tabID = tabs[index].id
         autoSaveCoordinator.schedule(
+            for: tabID,
             isStillDirty: { [weak self] in
                 guard let self, let idx = self.tabs.firstIndex(where: { $0.id == tabID }) else { return false }
                 return self.tabs[idx].isDirty
@@ -362,7 +453,11 @@ final class TabManager {
     }
 
     func cancelAutoSave() { autoSaveCoordinator.cancel() }
+    private func cancelAutoSave(for tabID: UUID) { autoSaveCoordinator.cancel(for: tabID) }
     var hasScheduledAutoSave: Bool { autoSaveCoordinator.hasScheduledSave }
+    func hasScheduledAutoSave(for tabID: UUID) -> Bool {
+        autoSaveCoordinator.hasScheduledSave(for: tabID)
+    }
 
     // MARK: - Markdown preview
 
