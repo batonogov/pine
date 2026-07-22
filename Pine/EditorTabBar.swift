@@ -53,7 +53,6 @@ struct EditorTabBar: View {
     @Environment(PaneManager.self) private var paneManager
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    @State private var draggingTabID: UUID?
     @State private var hoverTargetTabID: UUID?
 
     /// Minimum tab width before scrolling kicks in.
@@ -99,8 +98,13 @@ struct EditorTabBar: View {
                                 pinnedCount: pinnedCount
                             )
                             ForEach(tabManager.tabs) { tab in
+                                let paneID = overridePaneID ?? paneManager.activePaneID
                                 let isActive = tab.id == tabManager.activeTabID
-                                let isDragged = tab.id == draggingTabID
+                                let isDragged = paneManager.activeDrag.map { drag in
+                                    drag.paneID == paneID.id
+                                        && drag.tabID == tab.id
+                                        && drag.contentType == .editor
+                                } ?? false
                                 EditorTabItem(
                                     tab: tab,
                                     isActive: isActive,
@@ -151,8 +155,6 @@ struct EditorTabBar: View {
                                 .transaction { $0.animation = nil }
                                 .id(tab.id)
                                 .onDrag {
-                                    draggingTabID = tab.id
-                                    let paneID = overridePaneID ?? paneManager.activePaneID
                                     let info = TabDragInfo(
                                         paneID: paneID.id,
                                         tabID: tab.id,
@@ -160,21 +162,13 @@ struct EditorTabBar: View {
                                     )
                                     // Store in shared state for synchronous access by drop delegates
                                     paneManager.activeDrag = info
-                                    let provider = NSItemProvider()
-                                    provider.registerDataRepresentation(
-                                        forTypeIdentifier: UTType.paneTabDrag.identifier,
-                                        visibility: .ownProcess
-                                    ) { completion in
-                                        let data = info.encoded.data(using: .utf8) ?? Data()
-                                        completion(data, nil)
-                                        return nil
-                                    }
-                                    return provider
+                                    return info.itemProvider()
                                 }
                                 .onDrop(of: [.paneTabDrag], delegate: TabDropDelegate(
                                     tabManager: tabManager,
+                                    paneManager: paneManager,
+                                    targetPaneID: paneID,
                                     targetTabID: tab.id,
-                                    draggingTabID: $draggingTabID,
                                     hoverTargetTabID: $hoverTargetTabID,
                                     onReorder: onReorder
                                 ))
@@ -278,29 +272,63 @@ struct EditorTabBar: View {
 /// Provides visual feedback via `hoverTargetTabID` and smooth spring animations.
 struct TabDropDelegate: DropDelegate {
     let tabManager: TabManager
+    let paneManager: PaneManager
+    let targetPaneID: PaneID
     let targetTabID: UUID
-    @Binding var draggingTabID: UUID?
     @Binding var hoverTargetTabID: UUID?
     var onReorder: (() -> Void)?
 
     /// Spring animation matching Safari's tab reordering feel.
     private static let reorderAnimation: Animation = .spring(response: 0.3, dampingFraction: 0.8)
 
-    func performDrop(info: DropInfo) -> Bool {
+    /// Resolves whether this item-level delegate should reorder locally or
+    /// leave the drag for the enclosing pane drop delegate.
+    func routingDecision() -> TabItemDropDecision {
+        TabItemDropRouter.decide(
+            drag: paneManager.activeDrag,
+            targetPaneID: targetPaneID,
+            targetContent: .editor
+        )
+    }
+
+    func validateDrop(info: DropInfo) -> Bool {
+        guard info.hasItemsConforming(to: [.paneTabDrag]) else { return false }
+        guard case .localReorder = routingDecision() else { return false }
+        return true
+    }
+
+    /// Applies the local reorder path without requiring a synthetic DropInfo.
+    /// Kept internal so routing and state cleanup can be covered by unit tests.
+    @discardableResult
+    func handleDropEntered(decision: TabItemDropDecision) -> Bool {
+        guard case .localReorder(let draggedTabID) = decision else { return false }
+        guard draggedTabID != targetTabID else { return true }
+        hoverTargetTabID = targetTabID
+        withAnimation(Self.reorderAnimation) {
+            tabManager.reorderTab(draggedID: draggedTabID, targetID: targetTabID)
+        }
+        return true
+    }
+
+    /// Completes a local item-level drop. Deferred pane drops must retain the
+    /// shared drag payload for the enclosing pane delegate.
+    @discardableResult
+    func finishDrop(decision: TabItemDropDecision) -> Bool {
+        guard case .localReorder = decision else { return false }
         withAnimation(Self.reorderAnimation) {
             hoverTargetTabID = nil
-            draggingTabID = nil
         }
+        paneManager.activeDrag = nil
         onReorder?()
         return true
     }
 
+    func performDrop(info: DropInfo) -> Bool {
+        finishDrop(decision: routingDecision())
+    }
+
     func dropEntered(info: DropInfo) {
-        guard let dragging = draggingTabID, dragging != targetTabID else { return }
-        hoverTargetTabID = targetTabID
-        withAnimation(Self.reorderAnimation) {
-            tabManager.reorderTab(draggedID: dragging, targetID: targetTabID)
-        }
+        handleDropEntered(decision: routingDecision())
     }
 
     func dropExited(info: DropInfo) {
@@ -308,7 +336,8 @@ struct TabDropDelegate: DropDelegate {
     }
 
     func dropUpdated(info: DropInfo) -> DropProposal? {
-        DropProposal(operation: .move)
+        guard case .localReorder = routingDecision() else { return nil }
+        return DropProposal(operation: .move)
     }
 }
 
@@ -329,6 +358,7 @@ struct EditorTabItem: View {
     var constrainedWidth: CGFloat?
 
     @State private var isHovering = false
+    @State private var closeGlyphFrame = CGRect.null
 
     var body: some View {
         Group {
@@ -345,10 +375,27 @@ struct EditorTabItem: View {
                 : isHovering ? Color.primary.opacity(0.05) : .clear,
             in: Capsule()
         )
-        .contentShape(Capsule())
+        .frame(height: LayoutMetrics.tabBarHeight)
+        .coordinateSpace(name: TabSlotHitTesting.coordinateSpaceName)
+        .contentShape(.interaction, Rectangle())
+        .contentShape(.dragPreview, Capsule())
         .animation(PineAnimation.quick, value: isActive)
         .animation(PineAnimation.quick, value: isHovering)
-        .onTapGesture(perform: onSelect)
+        .gesture(
+            SpatialTapGesture()
+                .onEnded { value in
+                    switch TabSlotHitTesting.target(
+                        at: value.location,
+                        canClose: !tab.isPinned,
+                        closeGlyphFrame: closeGlyphFrame
+                    ) {
+                    case .close:
+                        onClose()
+                    case .select:
+                        onSelect()
+                    }
+                }
+        )
         .onHover { isHovering = $0 }
         .contextMenu {
             Button {
@@ -424,6 +471,9 @@ struct EditorTabItem: View {
             }
             .accessibilityIdentifier(AccessibilityID.editorTabRevealInFinder(tab.fileName))
         }
+        .onPreferenceChange(TabCloseGlyphFramePreferenceKey.self) { frame in
+            closeGlyphFrame = frame
+        }
         .accessibilityRepresentation {
             HStack {
                 Button(tab.fileName, action: onSelect)
@@ -458,31 +508,28 @@ struct EditorTabItem: View {
     /// Standard unpinned tab with close button and file name.
     private var unpinnedBody: some View {
         HStack(spacing: 4) {
-            // Close button — visible on hover or when active
-            Button(action: onClose) {
-                ZStack {
-                    if tab.isDirty && !isHovering {
-                        // Dirty dot when not hovering
-                        Circle()
-                            .fill(Color.primary.opacity(0.5))
-                            .frame(width: 6, height: 6)
-                    } else {
-                        Image(systemName: "xmark")
-                            .font(.system(size: 7, weight: .bold))
-                            .foregroundStyle(.secondary)
-                    }
+            // Passive close affordance. The full tab slot owns tap-vs-drag
+            // routing so dragging can begin directly over this glyph.
+            ZStack {
+                if tab.isDirty && !isHovering {
+                    // Dirty dot when not hovering
+                    Circle()
+                        .fill(Color.primary.opacity(0.5))
+                        .frame(width: 6, height: 6)
+                } else {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 7, weight: .bold))
+                        .foregroundStyle(.secondary)
                 }
-                .frame(width: 14, height: 14)
-                .background(
-                    isHovering ? Color.primary.opacity(0.1) : .clear,
-                    in: Circle()
-                )
             }
-            .buttonStyle(.plain)
+            .frame(width: 14, height: 14)
+            .background(
+                isHovering ? Color.primary.opacity(0.1) : .clear,
+                in: Circle()
+            )
             .opacity(isHovering || isActive || tab.isDirty ? 1 : 0.35)
-            .accessibilityLabel(Strings.a11yCloseTabLabel)
-            .accessibilityHint(Strings.a11yCloseTabHint)
-            .accessibilityIdentifier(AccessibilityID.editorTabCloseButton(tab.fileName))
+            .allowsHitTesting(false)
+            .reportsTabCloseGlyphFrame()
 
             Image(systemName: FileIconMapper.iconForFile(tab.fileName))
                 .font(.system(size: LayoutMetrics.iconSmallFontSize))

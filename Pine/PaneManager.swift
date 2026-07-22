@@ -39,7 +39,7 @@ final class PaneManager {
     var activePaneID: PaneID
 
     /// Shared drag state for synchronous tab drag between panes.
-    /// Set by EditorTabBar.onDrag, read by drop delegates.
+    /// Set by editor and terminal tab drag sources, read by drop delegates.
     /// Using shared state avoids unreliable async NSItemProvider loading.
     var activeDrag: TabDragInfo?
 
@@ -86,15 +86,17 @@ final class PaneManager {
         !dropZones.isEmpty || rootDropZone != nil
     }
 
-    /// Clears any visible drop zone overlays if the system reports that no
-    /// mouse button is pressed (i.e. there cannot be an active drag session).
+    /// Clears any visible drop zone overlays and the shared payload if the
+    /// system reports that no mouse button is pressed (i.e. there cannot be
+    /// an active drag session).
     /// This is a defensive cleanup hook used by polling and notification
     /// observers in case SwiftUI's `DropDelegate` fails to call `dropExited`
     /// or `performDrop` (issue #710).
     func clearStaleDropZonesIfNoDragActive() {
-        guard hasActiveDropZones else { return }
+        guard hasActiveDropZones || activeDrag != nil else { return }
         if !isMouseButtonPressed() {
             clearAllDropZones()
+            clearStaleDragState()
         }
     }
 
@@ -176,6 +178,7 @@ final class PaneManager {
                 if self.hasActiveDropZones {
                     self.clearAllDropZones()
                 }
+                self.clearStaleDragState()
             }
         }
 
@@ -205,7 +208,10 @@ final class PaneManager {
                 object: nil,
                 queue: .main
             ) { [weak self] _ in
-                self?.clearAllDropZones()
+                DispatchQueue.main.async {
+                    self?.clearAllDropZones()
+                    self?.clearStaleDragState()
+                }
             }
             deactivationObservers.append(observer)
         }

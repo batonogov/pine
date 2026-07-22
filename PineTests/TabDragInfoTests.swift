@@ -171,6 +171,82 @@ struct TabDragInfoTests {
         let decoded = TabDragInfo.decode(from: json)
         #expect(decoded?.contentType == .editor)
     }
+
+    // MARK: - NSItemProvider transport
+
+    @Test func itemProvider_registersPaneTabDragType() {
+        let info = TabDragInfo(paneID: UUID(), tabID: UUID())
+        let provider = info.itemProvider()
+
+        #expect(provider.hasItemConformingToTypeIdentifier(UTType.paneTabDrag.identifier))
+        #expect(provider.registeredTypeIdentifiers.contains(UTType.paneTabDrag.identifier))
+    }
+
+    @Test func itemProvider_editorPayloadRoundtrips() async throws {
+        let paneUUID = UUID()
+        let tabUUID = UUID()
+        let url = URL(fileURLWithPath: "/tmp/Editor File.swift")
+        let info = TabDragInfo(
+            paneID: paneUUID,
+            tabID: tabUUID,
+            fileURL: url,
+            contentType: .editor
+        )
+
+        let decoded = try await loadPayload(from: info.itemProvider())
+
+        #expect(decoded.paneID == paneUUID)
+        #expect(decoded.tabID == tabUUID)
+        #expect(decoded.fileURL == url)
+        #expect(decoded.contentType == .editor)
+    }
+
+    @Test func itemProvider_terminalPayloadRoundtrips() async throws {
+        let paneUUID = UUID()
+        let tabUUID = UUID()
+        let info = TabDragInfo(
+            paneID: paneUUID,
+            tabID: tabUUID,
+            fileURL: nil,
+            contentType: .terminal
+        )
+
+        let decoded = try await loadPayload(from: info.itemProvider())
+
+        #expect(decoded.paneID == paneUUID)
+        #expect(decoded.tabID == tabUUID)
+        #expect(decoded.fileURL == nil)
+        #expect(decoded.contentType == .terminal)
+    }
+
+    private func loadPayload(from provider: NSItemProvider) async throws -> TabDragInfo {
+        let data: Data = try await withCheckedThrowingContinuation { continuation in
+            provider.loadDataRepresentation(
+                forTypeIdentifier: UTType.paneTabDrag.identifier
+            ) { data, error in
+                if let error {
+                    continuation.resume(throwing: error)
+                } else if let data {
+                    continuation.resume(returning: data)
+                } else {
+                    continuation.resume(throwing: ItemProviderTestError.missingData)
+                }
+            }
+        }
+        guard let payload = String(data: data, encoding: .utf8) else {
+            throw ItemProviderTestError.invalidUTF8
+        }
+        guard let decoded = TabDragInfo.decode(from: payload) else {
+            throw ItemProviderTestError.invalidPayload
+        }
+        return decoded
+    }
+
+    private enum ItemProviderTestError: Error {
+        case missingData
+        case invalidUTF8
+        case invalidPayload
+    }
 }
 
 @Suite("PaneDropZone Tests")

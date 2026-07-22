@@ -38,6 +38,22 @@ struct TabDragInfo: Codable, Sendable {
         return try? JSONDecoder().decode(TabDragInfo.self, from: data)
     }
 
+    /// Creates the in-process item provider used by every tab drag source.
+    /// Keeping provider construction next to the payload prevents editor and
+    /// terminal tabs from drifting into subtly different transfer formats.
+    func itemProvider() -> NSItemProvider {
+        let provider = NSItemProvider()
+        let payload = encoded
+        provider.registerDataRepresentation(
+            forTypeIdentifier: UTType.paneTabDrag.identifier,
+            visibility: .ownProcess
+        ) { completion in
+            completion(payload.data(using: .utf8) ?? Data(), nil)
+            return nil
+        }
+        return provider
+    }
+
     init(paneID: UUID, tabID: UUID, fileURL: URL? = nil, contentType: PaneContent = .editor) {
         self.paneID = paneID
         self.tabID = tabID
@@ -58,5 +74,35 @@ struct TabDragInfo: Codable, Sendable {
         tabID = try container.decode(UUID.self, forKey: .tabID)
         fileURL = try container.decodeIfPresent(URL.self, forKey: .fileURL)
         contentType = try container.decodeIfPresent(PaneContent.self, forKey: .contentType) ?? .editor
+    }
+}
+
+/// Routing decision for the drop destination attached to an individual tab.
+/// Cross-pane drags must bypass that nested destination so the surrounding
+/// pane can handle moving or splitting the tab.
+enum TabItemDropDecision: Equatable {
+    case localReorder(draggedTabID: UUID)
+    case deferToPane
+    case reject
+}
+
+/// Pure routing shared by editor and terminal tab drop delegates.
+nonisolated enum TabItemDropRouter {
+    static func decide(
+        drag: TabDragInfo?,
+        targetPaneID: PaneID,
+        targetContent: PaneContent
+    ) -> TabItemDropDecision {
+        guard let drag else { return .reject }
+
+        guard drag.paneID == targetPaneID.id else {
+            return .deferToPane
+        }
+
+        guard drag.contentType == targetContent else {
+            return .reject
+        }
+
+        return .localReorder(draggedTabID: drag.tabID)
     }
 }
