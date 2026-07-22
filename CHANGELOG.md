@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.34.0](https://github.com/batonogov/pine/compare/v1.33.4...v1.34.0) (2026-07-22)
+
+
+### Features
+
+* add native Pine help book ([#1173](https://github.com/batonogov/pine/issues/1173)) ([fbb0d3a](https://github.com/batonogov/pine/commit/fbb0d3a6b05a61cdd288f6611baabe6e3416b361))
+
+
+### Bug Fixes
+
+* **editor:** unify the editor canvas background ([#1166](https://github.com/batonogov/pine/issues/1166)) ([c61d3ef](https://github.com/batonogov/pine/commit/c61d3ef5c476d14af499b9d6872ae7309a1f6f09))
+* preserve tab state across pane interactions ([#1170](https://github.com/batonogov/pine/issues/1170)) ([5e4a936](https://github.com/batonogov/pine/commit/5e4a936af64c119660edebaf6d8a024cc6e85668))
+
 ## [1.33.4](https://github.com/batonogov/pine/compare/v1.33.3...v1.33.4) (2026-07-22)
 
 
