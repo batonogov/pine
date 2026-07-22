@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.33.4](https://github.com/batonogov/pine/compare/v1.33.3...v1.33.4) (2026-07-22)
+
+
+### Bug Fixes
+
+* make tab dragging reliable ([#1162](https://github.com/batonogov/pine/issues/1162)) ([517eef1](https://github.com/batonogov/pine/commit/517eef11d0e453c0d85533801ab3775233ed8325))
+
 ## [1.33.3](https://github.com/batonogov/pine/compare/v1.33.2...v1.33.3) (2026-07-21)
 
 
