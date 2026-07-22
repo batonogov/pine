@@ -73,7 +73,7 @@ final class ScreenshotTests: PineUITestCase {
             "GreetingService.swift": swiftCode,
             "README.md": "# Demo Project\n\nA sample project.\n",
             "main.swift": "// Entry point\nimport Foundation\n"
-        ])
+        ], projectName: "Pine Demo")
         launchWithProject(try XCTUnwrap(projectURL))
 
         let sidebar = app.scrollViews["sidebar"]
@@ -96,7 +96,8 @@ final class ScreenshotTests: PineUITestCase {
     func testCaptureTerminal() throws {
         projectURL = try createTempProject(files: [
             "main.swift": "print(\"Hello, Pine!\")\n"
-        ])
+        ], projectName: "Pine Demo")
+        try configureMarketingShell(for: try XCTUnwrap(projectURL))
         launchWithProject(try XCTUnwrap(projectURL))
 
         let sidebar = app.scrollViews["sidebar"]
@@ -125,6 +126,23 @@ final class ScreenshotTests: PineUITestCase {
         attachScreenshot(screenshot, name: "screenshot-terminal")
     }
 
+    /// Keeps personal dotfiles and temporary paths out of the marketing capture.
+    private func configureMarketingShell(for projectURL: URL) throws {
+        let configURL = projectURL.deletingLastPathComponent()
+            .appendingPathComponent("zsh", isDirectory: true)
+        try FileManager.default.createDirectory(at: configURL, withIntermediateDirectories: true)
+        let configuration = """
+        precmd() { print -Pn '\\e]0;Terminal 1\\a' }
+        PROMPT='%F{green}➜%f  %F{cyan}%1~%f '
+        """
+        try configuration.write(
+            to: configURL.appendingPathComponent(".zshrc"),
+            atomically: true,
+            encoding: .utf8
+        )
+        app.launchEnvironment["ZDOTDIR"] = configURL.path
+    }
+
     // MARK: - Sidebar (file tree)
 
     func testCaptureSidebar() throws {
@@ -142,7 +160,8 @@ final class ScreenshotTests: PineUITestCase {
                 "Sources/Models",
                 "Sources/Views",
                 "Tests"
-            ]
+            ],
+            projectName: "Pine Demo"
         )
         launchWithProject(try XCTUnwrap(projectURL))
 
@@ -193,7 +212,7 @@ final class ScreenshotTests: PineUITestCase {
 
         projectURL = try createTempProject(files: [
             "Calculator.swift": swiftCode
-        ])
+        ], projectName: "Pine Demo")
         launchWithProject(try XCTUnwrap(projectURL))
 
         let sidebar = app.scrollViews["sidebar"]
@@ -221,15 +240,15 @@ final class ScreenshotTests: PineUITestCase {
         let markdown = """
         # Pine Editor
 
-        A **minimal** native macOS code editor built with SwiftUI.
+        A **native** macOS code editor for modern CLI-agent workflows.
 
         ## Features
 
-        - Syntax highlighting for 20+ languages
-        - Built-in terminal emulator
-        - Git integration with blame view
-        - Minimap and code folding
-        - Project-wide search
+        - Syntax highlighting for 37 languages
+        - Split editor and terminal panes
+        - LSP diagnostics and code intelligence
+        - Git context and live agent activity
+        - Minimap, folding, and project search
 
         ## Getting Started
 
@@ -238,12 +257,12 @@ final class ScreenshotTests: PineUITestCase {
         editor.open(project: "~/Code/myapp")
         ```
 
-        > Pine is designed to be fast, lightweight, and beautiful.
+        > Keep the agent in the terminal and the code in view.
         """
 
         projectURL = try createTempProject(files: [
             "README.md": markdown
-        ])
+        ], projectName: "Pine Demo")
         launchWithProject(try XCTUnwrap(projectURL))
 
         let sidebar = app.scrollViews["sidebar"]

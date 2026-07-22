@@ -6,20 +6,23 @@
 [![License: MIT](https://img.shields.io/github/license/batonogov/pine)](https://github.com/batonogov/pine/blob/main/LICENSE)
 [![macOS](https://img.shields.io/badge/macOS-26%2B-blue)](https://github.com/batonogov/pine)
 
-> A minimal native code editor for macOS.
+> A native macOS code editor for CLI-agent workflows.
 
 <p align="center">
   <img src="assets/screenshot-editor.png" width="800" alt="Pine Editor — syntax highlighting, minimap, and Liquid Glass UI">
 </p>
 
-Pine is a code editor for developers who want a fast, native Mac app without the overhead of Electron. Built with SwiftUI and AppKit, designed for macOS 26 Liquid Glass. Opens instantly, stays out of your way.
+Pine keeps CLI agents in the terminal and the code in view. It reflects agent activity, file changes, diagnostics, and Git context across a fast native workspace without turning into another AI dashboard. Built with SwiftUI and AppKit for macOS 26 Liquid Glass — no Electron runtime.
 
 ## Features
 
 - **Native macOS** — SwiftUI + AppKit, Liquid Glass UI, system text handling. No browser engine, no runtime
+- **Agent-aware workflow** — Detects supported CLI agents, marks active terminal tabs and attention states, and provides activity history with undo for agent changes
+- **LSP code intelligence** — Diagnostics, completion, hover, go-to-definition, code actions, rename, and a Problems panel
 - **Syntax highlighting** — 37 languages including Swift, TypeScript, Python, Go, Rust, Java, Kotlin, Ruby, C/C++, and more
 - **Split panes** — Drag tabs to edges to split horizontally or vertically. Drag between panes to move. Resize with divider
-- **Built-in terminal** — Full VT100/xterm emulator via [SwiftTerm](https://github.com/migueldeicaza/SwiftTerm). Terminal panes live in the split layout alongside code. Multiple tabs, maximize, colors, TUI apps, oh-my-zsh
+- **Built-in terminal** — Full VT100/xterm emulator via [SwiftTerm](https://github.com/migueldeicaza/SwiftTerm). Multiple tabs, themes, TUI apps, clickable file and OSC 8 links, send-to-terminal, pane maximize, and a global quick-terminal hotkey
+- **Lightweight extensibility** — User grammars, tasks, and keybindings without an extension marketplace
 - **Git integration** — File status in sidebar, diff markers in gutter, blame view, branch switching from title bar or Git menu
 - **Symbol navigation** — Jump to functions and classes with Cmd+R
 - **Code folding** — Fold/unfold blocks from the gutter or via menu
@@ -32,6 +35,7 @@ Pine is a code editor for developers who want a fast, native Mac app without the
 - **File management** — Reveal in Finder, duplicate files with Finder-like naming
 - **Large file handling** — Progressive loading for 10 MB+ files, optional highlighting disable for 1 MB+
 - **Strip trailing whitespace** — Automatically cleans up on save
+- **Validation & format on save** — YAML, shell, Dockerfile, and Terraform diagnostics with language-aware formatters
 - **Auto-save & session restore** — Picks up where you left off
 - **Auto-updates** — Built-in via [Sparkle](https://sparkle-project.org)
 - **Localized** — English, German, Spanish, French, Japanese, Korean, Portuguese (BR), Russian, Simplified Chinese
