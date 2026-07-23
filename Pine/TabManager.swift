@@ -30,8 +30,17 @@ final class TabManager {
 
     var tabs: [EditorTab] = []
     var activeTabID: UUID? {
-        didSet { if activeTabID != oldValue { onEditorContextChanged?() } }
+        didSet {
+            guard activeTabID != oldValue else { return }
+            if pendingFocusTabID != activeTabID {
+                pendingFocusTabID = nil
+            }
+            onEditorContextChanged?()
+        }
     }
+    /// Set after a drag commit so the destination content can become first
+    /// responder. It remains pending until AppKit confirms the responder.
+    var pendingFocusTabID: UUID?
     var pendingGoToLine: Int?
     var recoveryManager: RecoveryManager?
     var onEditorContextChanged: (() -> Void)?
@@ -60,6 +69,21 @@ final class TabManager {
     var dirtyTabs: [EditorTab] { TabCollection.dirtyTabs(in: tabs) }
     var isAutoSaveEnabled: Bool { UserDefaults.standard.bool(forKey: Self.autoSaveKey) }
     var pinnedTabCount: Int { TabPinning.pinnedTabCount(in: tabs) }
+
+    /// Acknowledges an AppKit focus attempt for the active destination tab.
+    /// Failed, stale, and off-screen attempts deliberately retain the request
+    /// so a later view update or window-attachment callback can retry it.
+    @discardableResult
+    func acknowledgeFocusRequest(for tabID: UUID, succeeded: Bool) -> Bool {
+        guard pendingFocusTabID == tabID else { return false }
+        guard activeTabID == tabID else {
+            pendingFocusTabID = nil
+            return false
+        }
+        guard succeeded else { return false }
+        pendingFocusTabID = nil
+        return true
+    }
 
     /// A tab temporarily detached from this manager while it is transferred
     /// to another editor pane. The original position and selection make a
@@ -299,7 +323,19 @@ final class TabManager {
     /// Duplicate identities and file URLs are rejected so each pane keeps
     /// the same one-file/one-tab invariant as ``openTab(url:)``.
     func canInsertTransferredTab(_ tab: EditorTab) -> Bool {
-        !tabs.contains { existing in
+        canInsertTransferredTab(tab, at: tab.isPinned ? pinnedTabCount : tabs.count)
+    }
+
+    /// Validates an exact destination gap without changing either manager.
+    /// Pinned tabs may only enter the pinned prefix; regular tabs may only
+    /// enter at or after the shared pinned/unpinned boundary.
+    func canInsertTransferredTab(_ tab: EditorTab, at insertionIndex: Int) -> Bool {
+        guard (0...tabs.count).contains(insertionIndex) else { return false }
+        let respectsPinnedBoundary = tab.isPinned
+            ? insertionIndex <= pinnedTabCount
+            : insertionIndex >= pinnedTabCount
+        guard respectsPinnedBoundary else { return false }
+        return !tabs.contains { existing in
             existing.id == tab.id
                 || existing.url.standardizedFileURL == tab.url.standardizedFileURL
         }
@@ -309,15 +345,17 @@ final class TabManager {
     /// of the pinned prefix; regular tabs are appended after that prefix.
     @discardableResult
     func insertTransferredTab(_ tab: EditorTab) -> Bool {
-        guard canInsertTransferredTab(tab) else { return false }
+        let insertionIndex = tab.isPinned ? pinnedTabCount : tabs.count
+        return insertTransferredTab(tab, at: insertionIndex)
+    }
 
-        if tab.isPinned {
-            let firstUnpinned = tabs.firstIndex(where: { !$0.isPinned }) ?? tabs.endIndex
-            tabs.insert(tab, at: firstUnpinned)
-        } else {
-            tabs.append(tab)
-        }
+    /// Inserts at an exact N+1 gap and activates/focuses the transferred tab.
+    @discardableResult
+    func insertTransferredTab(_ tab: EditorTab, at insertionIndex: Int) -> Bool {
+        guard canInsertTransferredTab(tab, at: insertionIndex) else { return false }
+        tabs.insert(tab, at: insertionIndex)
         activeTabID = tab.id
+        pendingFocusTabID = tab.id
         return true
     }
 
@@ -326,7 +364,14 @@ final class TabManager {
     /// the callback resolves the tab in the manager that now contains it.
     @discardableResult
     func insertTransferredTab(_ extraction: ExtractedTab) -> Bool {
-        guard insertTransferredTab(extraction.tab) else { return false }
+        let insertionIndex = extraction.tab.isPinned ? pinnedTabCount : tabs.count
+        return insertTransferredTab(extraction, at: insertionIndex)
+    }
+
+    /// Indexed counterpart used by cross-pane strip drops.
+    @discardableResult
+    func insertTransferredTab(_ extraction: ExtractedTab, at insertionIndex: Int) -> Bool {
+        guard insertTransferredTab(extraction.tab, at: insertionIndex) else { return false }
         if extraction.shouldResumeAutoSave {
             scheduleAutoSave(for: extraction.tab.id)
         }
@@ -352,6 +397,51 @@ final class TabManager {
 
     func reorderTab(draggedID: UUID, targetID: UUID) {
         TabCollection.reorderTab(draggedID: draggedID, targetID: targetID, in: &tabs)
+    }
+
+    /// Moves a tab to one of the strip's N+1 pre-removal gaps.
+    ///
+    /// Gaps immediately before and after the dragged tab are both no-ops.
+    /// Invalid indices and pinned-boundary crossings are rejected.
+    func canMoveTab(id: UUID, toInsertionIndex insertionIndex: Int) -> TabInsertionResult {
+        guard (0...tabs.count).contains(insertionIndex),
+              let sourceIndex = tabs.firstIndex(where: { $0.id == id }) else {
+            return .rejected
+        }
+
+        let tab = tabs[sourceIndex]
+        let respectsPinnedBoundary = tab.isPinned
+            ? insertionIndex <= pinnedTabCount
+            : insertionIndex >= pinnedTabCount
+        guard respectsPinnedBoundary else { return .rejected }
+
+        let destinationIndex = insertionIndex > sourceIndex
+            ? insertionIndex - 1
+            : insertionIndex
+        return destinationIndex == sourceIndex ? .noOp : .moved
+    }
+
+    @discardableResult
+    func moveTab(id: UUID, toInsertionIndex insertionIndex: Int) -> TabInsertionResult {
+        let validation = canMoveTab(id: id, toInsertionIndex: insertionIndex)
+        guard validation != .rejected,
+              let sourceIndex = tabs.firstIndex(where: { $0.id == id }) else {
+            return .rejected
+        }
+        let destinationIndex = insertionIndex > sourceIndex
+            ? insertionIndex - 1
+            : insertionIndex
+        guard validation == .moved else {
+            activeTabID = id
+            pendingFocusTabID = id
+            return .noOp
+        }
+
+        let movedTab = tabs.remove(at: sourceIndex)
+        tabs.insert(movedTab, at: destinationIndex)
+        activeTabID = id
+        pendingFocusTabID = id
+        return .moved
     }
 
     func togglePin(id: UUID) { TabPinning.togglePin(id: id, in: &tabs) }

@@ -127,6 +127,9 @@ struct RootPaneSplitDropDelegate: DropDelegate {
 
     func dropExited(info: DropInfo) {
         paneManager.rootDropZone = nil
+        if case .rootSplit? = paneManager.tabDragCoordinator.previewIntent {
+            paneManager.tabDragCoordinator.clearPreview()
+        }
     }
 
     func performDrop(info: DropInfo) -> Bool {
@@ -154,9 +157,12 @@ extension RootPaneSplitDropDelegate {
     /// Testable counterpart of the root delegate's hover routing.
     @discardableResult
     func updateRootDropZone(at location: CGPoint) -> RootDropZone? {
-        let zone = canRouteStructuralDrop
+        let detectedZone = canRouteStructuralDrop
             ? RootDropZone.detect(location: location, in: containerSize)
             : nil
+        let zone = detectedZone.flatMap { candidate in
+            paneManager.previewRootDrop(zone: candidate) ? candidate : nil
+        }
         paneManager.rootDropZone = zone
         if zone != nil {
             paneManager.startStaleDropPollingIfNeeded()
@@ -167,21 +173,15 @@ extension RootPaneSplitDropDelegate {
     /// Testable counterpart of `performDrop(info:)`.
     @discardableResult
     func performRootPaneTabDrop(zone: RootDropZone?) -> Bool {
-        paneManager.clearAllDropZones()
         guard canRouteStructuralDrop,
               let zone,
-              let dragInfo = paneManager.activeDrag else {
+              paneManager.previewRootDrop(zone: zone) else {
+            paneManager.rootDropZone = nil
             return false
         }
-
-        let sourcePaneID = PaneID(id: dragInfo.paneID)
-        let didPerformDrop = paneManager.wrapRootWithTerminal(
-            at: zone,
-            from: sourcePaneID,
-            tabID: dragInfo.tabID
-        )
+        let didPerformDrop = paneManager.tabDragCoordinator.commitPreview()
         if didPerformDrop {
-            paneManager.activeDrag = nil
+            paneManager.clearAllDropZones()
         }
         return didPerformDrop
     }

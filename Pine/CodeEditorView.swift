@@ -68,6 +68,10 @@ struct CodeEditorView: NSViewRepresentable {
     var cachedHighlightResult: HighlightMatchResult?
     /// When non-nil, the editor scrolls to this offset. The `id` ensures each request is unique.
     var goToOffset: GoToRequest?
+    /// Set by a committed tab drop to explicitly focus the destination editor.
+    var focusRequestTabID: UUID?
+    var canAttemptFocusRequest: ((UUID) -> Bool)?
+    var onFocusRequestResult: ((UUID, Bool) -> Void)?
     /// Indentation style detected for the current file, used for indent guide rendering.
     var indentStyle: IndentationStyle = .spaces(4)
 
@@ -332,6 +336,15 @@ struct CodeEditorView: NSViewRepresentable {
         context.coordinator.parent = self
 
         guard let editorContainer = container as? EditorContainerView else { return }
+
+        let focusTarget = context.coordinator.scrollView?.documentView as? GutterTextView
+        editorContainer.destinationFocusCoordinator.update(
+            requestID: focusRequestTabID,
+            hostView: editorContainer,
+            targetView: focusTarget,
+            canAttempt: canAttemptFocusRequest,
+            onResult: onFocusRequestResult
+        )
 
         // Minimap visibility — triggers relayout via needsLayout
         if let minimapView = context.coordinator.minimapView {

@@ -722,6 +722,7 @@ class TerminalContainerView: NSView {
 
     var terminalPaneState: TerminalPaneState?
     private var currentTabID: UUID?
+    let destinationFocusCoordinator = AppKitFocusRequestCoordinator()
     private let scrollInterceptor = TerminalScrollInterceptor()
     private var scrollMonitor: Any?
     private var accumulatedScrollDelta: CGFloat = 0
@@ -777,6 +778,7 @@ class TerminalContainerView: NSView {
             scrollInterceptor.handleActiveTabChange()
             subviews.forEach { $0.removeFromSuperview() }
             currentTabID = nil
+            destinationFocusCoordinator.cancel()
             scrollInterceptor.terminalView = nil
             scrollInterceptor.workingDirectory = nil
             return
@@ -830,11 +832,24 @@ class TerminalContainerView: NSView {
 
         installScrollMonitor()
 
-        // Focus the terminal view when requested by TerminalPaneState
-        if let pending = terminalPaneState?.pendingFocusTabID, pending == tab.id {
-            terminalPaneState?.pendingFocusTabID = nil
-            focusTerminalView(tab.terminalView)
-        }
+        let focusRequestID = terminalPaneState?.pendingFocusTabID == tab.id
+            ? tab.id
+            : nil
+        destinationFocusCoordinator.update(
+            requestID: focusRequestID,
+            hostView: self,
+            targetView: tab.terminalView,
+            canAttempt: { [weak state = terminalPaneState] tabID in
+                state?.activeTerminalID == tabID
+                    && state?.pendingFocusTabID == tabID
+            },
+            onResult: { [weak state = terminalPaneState] tabID, succeeded in
+                state?.acknowledgeFocusRequest(
+                    for: tabID,
+                    succeeded: succeeded
+                )
+            }
+        )
     }
 
     // MARK: - Scroll event monitor for TUI mouse reporting
@@ -1087,20 +1102,9 @@ class TerminalContainerView: NSView {
         recoveryDebouncer?.schedule()
     }
 
-    /// Requests first responder on the terminal view.
-    /// Always deferred via async dispatch so that the focus request lands
-    /// *after* SwiftUI finishes its layout pass — otherwise SwiftUI can
-    /// restore first-responder to the editor's GutterTextView, undoing
-    /// the terminal focus requested by Cmd+T / Cmd+`.
-    private func focusTerminalView(_ terminalView: LocalProcessTerminalView) {
-        DispatchQueue.main.async { [weak self] in
-            guard let self else { return }
-            self.window?.makeFirstResponder(terminalView)
-        }
-    }
-
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
+        destinationFocusCoordinator.hostDidMoveToWindow(self)
         // AppKit may call this method multiple times for the same window —
         // skip the observer dance when nothing has actually changed.
         guard window !== observedWindow else { return }

@@ -74,6 +74,12 @@ final class EditorContainerView: NSView {
     // Match NSScrollView's flipped coordinate system for correct find bar clipping
     override var isFlipped: Bool { true }
     var minimapWidth: CGFloat = 0
+    let destinationFocusCoordinator = AppKitFocusRequestCoordinator()
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        destinationFocusCoordinator.hostDidMoveToWindow(self)
+    }
 
     override func layout() {
         super.layout()

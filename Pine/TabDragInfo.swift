@@ -16,7 +16,10 @@ extension UTType {
 
 /// Information about a tab being dragged between panes.
 /// JSON-encoded for NSItemProvider transport via custom UTType.
-struct TabDragInfo: Codable, Sendable {
+struct TabDragInfo: Codable, Equatable, Sendable {
+    /// Identifies one drag gesture. A fresh value prevents a delayed hover or
+    /// drop callback from committing a newer drag of the same tab.
+    let dragID: UUID
     let paneID: UUID
     let tabID: UUID
     let fileURL: URL?
@@ -54,7 +57,14 @@ struct TabDragInfo: Codable, Sendable {
         return provider
     }
 
-    init(paneID: UUID, tabID: UUID, fileURL: URL? = nil, contentType: PaneContent = .editor) {
+    init(
+        dragID: UUID = UUID(),
+        paneID: UUID,
+        tabID: UUID,
+        fileURL: URL? = nil,
+        contentType: PaneContent = .editor
+    ) {
+        self.dragID = dragID
         self.paneID = paneID
         self.tabID = tabID
         self.fileURL = fileURL
@@ -62,6 +72,7 @@ struct TabDragInfo: Codable, Sendable {
     }
 
     enum CodingKeys: String, CodingKey {
+        case dragID
         case paneID
         case tabID
         case fileURL
@@ -70,39 +81,10 @@ struct TabDragInfo: Codable, Sendable {
 
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
+        dragID = try container.decodeIfPresent(UUID.self, forKey: .dragID) ?? UUID()
         paneID = try container.decode(UUID.self, forKey: .paneID)
         tabID = try container.decode(UUID.self, forKey: .tabID)
         fileURL = try container.decodeIfPresent(URL.self, forKey: .fileURL)
         contentType = try container.decodeIfPresent(PaneContent.self, forKey: .contentType) ?? .editor
-    }
-}
-
-/// Routing decision for the drop destination attached to an individual tab.
-/// Cross-pane drags must bypass that nested destination so the surrounding
-/// pane can handle moving or splitting the tab.
-enum TabItemDropDecision: Equatable {
-    case localReorder(draggedTabID: UUID)
-    case deferToPane
-    case reject
-}
-
-/// Pure routing shared by editor and terminal tab drop delegates.
-nonisolated enum TabItemDropRouter {
-    static func decide(
-        drag: TabDragInfo?,
-        targetPaneID: PaneID,
-        targetContent: PaneContent
-    ) -> TabItemDropDecision {
-        guard let drag else { return .reject }
-
-        guard drag.paneID == targetPaneID.id else {
-            return .deferToPane
-        }
-
-        guard drag.contentType == targetContent else {
-            return .reject
-        }
-
-        return .localReorder(draggedTabID: drag.tabID)
     }
 }
