@@ -479,6 +479,92 @@ struct TabDragCoordinatorTests {
         #expect(source.terminalTabs.map(\.id) == [kept.id])
     }
 
+    @Test("Strip preview publishes the active drag generation and pointer")
+    func stripPreviewPublishesAutoScrollHover() throws {
+        let setup = try makeEditorPanePair()
+        let dragged = setup.source.tabs[0]
+        let targetIDs = setup.target.tabs.map(\.id)
+        let frames = [
+            targetIDs[0]: CGRect(x: 4, y: 0, width: 80, height: 30),
+            targetIDs[1]: CGRect(x: 86, y: 0, width: 80, height: 30),
+        ]
+        let drag = setup.manager.beginTabDrag(
+            paneID: setup.sourcePaneID,
+            tabID: dragged.id,
+            fileURL: dragged.url,
+            contentType: .editor
+        )
+        var observedDragID: UUID?
+        var observedLocationX: CGFloat?
+        var exitCount = 0
+        let delegate = TabStripDropDelegate(
+            paneID: setup.targetPaneID,
+            contentType: .editor,
+            orderedTabIDs: targetIDs,
+            frames: frames,
+            paneManager: setup.manager,
+            onHover: { dragID, locationX in
+                observedDragID = dragID
+                observedLocationX = locationX
+            },
+            onExit: {
+                exitCount += 1
+            }
+        )
+
+        #expect(delegate.preview(atX: 160))
+        #expect(observedDragID == drag.dragID)
+        #expect(observedLocationX == 160)
+        #expect(exitCount == 0)
+
+        setup.manager.clearStaleDragState()
+        #expect(!delegate.preview(atX: 160))
+        #expect(exitCount == 1)
+    }
+
+    @Test("Drop commits the fresh preview instead of stale delegate geometry")
+    func staleDelegateCannotOverwriteFreshPreview() throws {
+        let setup = try makeEditorPanePair()
+        let dragged = setup.source.tabs[0]
+        let targetIDs = setup.target.tabs.map(\.id)
+        _ = setup.manager.beginTabDrag(
+            paneID: setup.sourcePaneID,
+            tabID: dragged.id,
+            fileURL: dragged.url,
+            contentType: .editor
+        )
+        let staleDelegate = TabStripDropDelegate(
+            paneID: setup.targetPaneID,
+            contentType: .editor,
+            orderedTabIDs: targetIDs,
+            frames: [
+                targetIDs[0]: CGRect(x: 4, y: 0, width: 80, height: 30),
+                targetIDs[1]: CGRect(x: 86, y: 0, width: 80, height: 30),
+            ],
+            paneManager: setup.manager
+        )
+        let freshDelegate = TabStripDropDelegate(
+            paneID: setup.targetPaneID,
+            contentType: .editor,
+            orderedTabIDs: targetIDs,
+            frames: [
+                targetIDs[0]: CGRect(x: -78, y: 0, width: 80, height: 30),
+                targetIDs[1]: CGRect(x: 4, y: 0, width: 80, height: 30),
+            ],
+            paneManager: setup.manager
+        )
+
+        #expect(staleDelegate.preview(atX: 100))
+        #expect(setup.manager.tabDragCoordinator.previewIntent?.insertionIndex == 1)
+        #expect(freshDelegate.preview(atX: 100))
+        #expect(setup.manager.tabDragCoordinator.previewIntent?.insertionIndex == 2)
+
+        #expect(staleDelegate.commitCurrentPreview())
+        #expect(setup.target.tabs.map(\.id) == [
+            targetIDs[0], targetIDs[1], dragged.id,
+        ])
+    }
+
     @Test("Missing backing state does not reserve a dead strip band")
     func missingBackingStateHasNoExcludedInset() {
         #expect(!PaneLeafTabStripComposition.rendersStrip(
