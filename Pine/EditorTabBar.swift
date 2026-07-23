@@ -436,7 +436,6 @@ struct EditorTabItem: View {
             }
         }
         .frame(maxWidth: constrainedWidth)
-        .frame(width: constrainedWidth)
         .background(
             isActive
                 ? Color.primary.opacity(0.12)
