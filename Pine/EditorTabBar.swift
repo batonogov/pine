@@ -435,6 +435,7 @@ struct EditorTabItem: View {
                 unpinnedBody
             }
         }
+        .frame(maxWidth: constrainedWidth)
         .frame(width: constrainedWidth)
         .background(
             isActive
