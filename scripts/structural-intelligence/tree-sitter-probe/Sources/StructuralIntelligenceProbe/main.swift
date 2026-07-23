@@ -102,7 +102,9 @@ private func point(atUTF16Offset offset: Int, in source: NSString) -> Point {
     let lineStart = lastNewline.location == NSNotFound
         ? 0
         : NSMaxRange(lastNewline)
-    return Point(row: row, column: clampedOffset - lineStart)
+    // Tree-sitter Point columns are bytes even when the input encoding is
+    // UTF-16LE, so each Foundation UTF-16 code unit occupies two columns.
+    return Point(row: row, column: (clampedOffset - lineStart) * 2)
 }
 
 private func measureFixture(
@@ -124,19 +126,22 @@ private func measureFixture(
     let rootHasError = root.hasError
 
     let marker = "\n// incremental edit 🌲\n"
-    let editedSource = source + marker
     let sourceNSString = source as NSString
-    let oldEnd = sourceNSString.length
-    let oldEndPoint = point(atUTF16Offset: oldEnd, in: sourceNSString)
-    let newEnd = oldEnd + (marker as NSString).length
+    let insertionOffset = sourceNSString.length
+    let editedSource = source + marker
+    let insertionPoint = point(
+        atUTF16Offset: insertionOffset,
+        in: sourceNSString
+    )
+    let newEnd = insertionOffset + (marker as NSString).length
     let editedNSString = editedSource as NSString
     let newEndPoint = point(atUTF16Offset: newEnd, in: editedNSString)
     let edit = InputEdit(
-        startByte: oldEnd * 2,
-        oldEndByte: oldEnd * 2,
+        startByte: insertionOffset * 2,
+        oldEndByte: insertionOffset * 2,
         newEndByte: newEnd * 2,
-        startPoint: oldEndPoint,
-        oldEndPoint: oldEndPoint,
+        startPoint: insertionPoint,
+        oldEndPoint: insertionPoint,
         newEndPoint: newEndPoint
     )
     initialTree.edit(edit)

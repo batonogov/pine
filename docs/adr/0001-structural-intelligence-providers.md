@@ -119,7 +119,7 @@ Pine's normalized structural coordinate system is UTF-16 `NSRange`, matching
   `Node.range`. The reviewed Swift binding documents `Node.range` as
   `NSRange`; its encoding-dependent `byteRange` must not escape the adapter.
   `InputEdit` is the sole boundary that converts an `NSRange` to UTF-16LE
-  bytes and Tree-sitter points.
+  bytes and Tree-sitter points (rows plus byte-counted columns).
 - Consumers validate every normalized range against the same snapshot before
   applying it. UI code owns only display conversion (for example, 0-based
   normalized lines to `FoldableRange`'s current 1-based lines).
