@@ -374,6 +374,17 @@ if grep -qF "continue-on-error: true" <<< "$coverage_step" || \
 fi
 echo "✓ workflow wires the coverage checker as a blocking step"
 
+unit_test_step="$(
+    sed -n \
+        '/- name: Unit Tests/,/- name: Detect Flaky Tests/p' \
+        "$WORKFLOW"
+)"
+if ! grep -qF -- "-test-timeouts-enabled YES" <<< "$unit_test_step"; then
+    echo "✗ unit test timeout flag is missing its required boolean value"
+    exit 1
+fi
+echo "✓ unit test timeout flag cannot consume the coverage option"
+
 comment_step="$(
     sed -n \
         '/- name: Comment Coverage on PR/,/^  [a-zA-Z0-9_-]*:/p' \

@@ -210,7 +210,7 @@ jobs:
             -skip-testing:PineTests/FuzzConfigValidatorTests \
             -skip-testing:PineTests/FuzzGoToLineParserTests \
             -retry-tests-on-failure \
-            -test-timeouts-enabled \
+            -test-timeouts-enabled YES \
             -enableCodeCoverage YES \
             -resultBundlePath TestResults.xcresult \
             CODE_SIGN_IDENTITY=- \
