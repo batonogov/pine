@@ -9,6 +9,7 @@
 //
 
 import Foundation
+import Observation
 
 /// A single user-defined task loaded from `tasks.json`.
 ///
@@ -108,10 +109,13 @@ nonisolated struct UserTasksDocument: Codable, Sendable, Equatable {
 
 /// Loads and holds the user's task definitions.
 ///
-/// `tasks.json` is optional — a missing or unreadable file yields an empty
-/// registry (no tasks in the menu). The loader is `nonisolated` and can be
-/// queried from any thread; the parsed array is immutable and `Sendable`.
-nonisolated final class UserTaskRegistry: @unchecked Sendable {
+/// `tasks.json` is optional — a missing file yields an empty registry. An
+/// unreadable, malformed, or invalid file is rejected atomically, preserving
+/// the last valid task list. Parsing happens off-main; registry swaps stay on
+/// the main actor so readers never observe a partial update.
+@MainActor
+@Observable
+final class UserTaskRegistry {
     /// Loaded tasks in declaration order.
     private(set) var tasks: [UserTask] = []
 
@@ -119,27 +123,51 @@ nonisolated final class UserTaskRegistry: @unchecked Sendable {
     var count: Int { tasks.count }
 
     /// Loads tasks from `tasks.json` at the given URL.
-    /// A missing file is not an error — it simply means no user tasks.
+    /// A missing file is not an error — it applies an empty task list.
+    /// Invalid files leave the active registry unchanged.
     @discardableResult
-    func load(from url: URL) -> [UserTask] {
-        guard let data = try? Data(contentsOf: url) else {
+    func load(from url: URL) async -> UserConfigurationLoadReport {
+        let candidate = await Self.prepareLoad(from: url)
+        return apply(candidate, from: url)
+    }
+
+    /// Reads, decodes, and validates a candidate without touching actor state.
+    nonisolated static func prepareLoad(
+        from url: URL
+    ) async -> UserConfigurationCandidate<UserTask> {
+        await runOnBackground(qos: .utility) {
+            readCandidate(from: url)
+        }
+    }
+
+    /// Commits a prepared candidate on the main actor.
+    func apply(
+        _ candidate: UserConfigurationCandidate<UserTask>,
+        from url: URL
+    ) -> UserConfigurationLoadReport {
+        let outcome: UserConfigurationLoadOutcome
+        let diagnostics: [UserConfigurationDiagnostic]
+        switch candidate {
+        case .loaded(let decoded):
+            tasks = decoded
+            outcome = .loaded
+            diagnostics = []
+        case .missing:
             tasks = []
-            return []
+            outcome = .missing
+            diagnostics = []
+        case .rejected(let problems):
+            outcome = .rejected
+            diagnostics = problems
         }
 
-        // Try the documented `{"tasks": [...]}` envelope first, then fall back
-        // to a bare top-level array for ergonomics.
-        if let doc = try? JSONDecoder().decode(UserTasksDocument.self, from: data) {
-            tasks = doc.tasks
-            return doc.tasks
-        }
-        if let array = try? JSONDecoder().decode([UserTask].self, from: data) {
-            tasks = array
-            return array
-        }
-
-        tasks = []
-        return []
+        return UserConfigurationLoadReport(
+            file: .tasks,
+            fileURL: url,
+            outcome: outcome,
+            activeEntryCount: tasks.count,
+            diagnostics: diagnostics
+        )
     }
 
     /// Returns the task with the given id, if any.
@@ -148,4 +176,121 @@ nonisolated final class UserTaskRegistry: @unchecked Sendable {
     }
 
     init() {}
+
+    private enum DocumentError: Error {
+        case unsupportedTopLevel
+    }
+
+    nonisolated private static func readCandidate(
+        from url: URL
+    ) -> UserConfigurationCandidate<UserTask> {
+        guard FileManager.default.fileExists(atPath: url.path) else {
+            return .missing
+        }
+
+        let data: Data
+        do {
+            data = try Data(contentsOf: url)
+        } catch {
+            return .rejected([
+                diagnostic(
+                    for: url,
+                    entryNumber: nil,
+                    reason: .unreadable(details: String(describing: error))
+                )
+            ])
+        }
+
+        let decoded: [UserTask]
+        do {
+            decoded = try Self.decodeDocument(from: data)
+        } catch {
+            return .rejected([
+                diagnostic(
+                    for: url,
+                    entryNumber: nil,
+                    reason: .malformedDocument(details: String(describing: error))
+                )
+            ])
+        }
+
+        let diagnostics = Self.validate(decoded, from: url)
+        guard diagnostics.isEmpty else {
+            return .rejected(diagnostics)
+        }
+
+        return .loaded(decoded)
+    }
+
+    nonisolated private static func decodeDocument(from data: Data) throws -> [UserTask] {
+        let object = try JSONSerialization.jsonObject(with: data)
+        let decoder = JSONDecoder()
+        if object is [Any] {
+            return try decoder.decode([UserTask].self, from: data)
+        }
+        if object is [String: Any] {
+            return try decoder.decode(UserTasksDocument.self, from: data).tasks
+        }
+        throw DocumentError.unsupportedTopLevel
+    }
+
+    nonisolated private static func validate(
+        _ decoded: [UserTask],
+        from url: URL
+    ) -> [UserConfigurationDiagnostic] {
+        var diagnostics: [UserConfigurationDiagnostic] = []
+        var firstEntryForID: [String: Int] = [:]
+
+        for (index, task) in decoded.enumerated() {
+            let entryNumber = index + 1
+            if task.id.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                diagnostics.append(diagnostic(
+                    for: url,
+                    entryNumber: entryNumber,
+                    reason: .emptyTaskID
+                ))
+            }
+            if task.label.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                diagnostics.append(diagnostic(
+                    for: url,
+                    entryNumber: entryNumber,
+                    reason: .emptyTaskLabel
+                ))
+            }
+            if task.command.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                diagnostics.append(diagnostic(
+                    for: url,
+                    entryNumber: entryNumber,
+                    reason: .emptyTaskCommand
+                ))
+            }
+
+            if let firstEntryNumber = firstEntryForID[task.id] {
+                diagnostics.append(diagnostic(
+                    for: url,
+                    entryNumber: entryNumber,
+                    reason: .duplicateTaskID(
+                        id: task.id,
+                        firstEntryNumber: firstEntryNumber
+                    )
+                ))
+            } else {
+                firstEntryForID[task.id] = entryNumber
+            }
+        }
+        return diagnostics
+    }
+
+    nonisolated private static func diagnostic(
+        for url: URL,
+        entryNumber: Int?,
+        reason: UserConfigurationDiagnosticReason
+    ) -> UserConfigurationDiagnostic {
+        UserConfigurationDiagnostic(
+            file: .tasks,
+            fileURL: url,
+            entryNumber: entryNumber,
+            reason: reason
+        )
+    }
 }

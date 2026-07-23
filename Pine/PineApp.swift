@@ -527,7 +527,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate {
 
         // Preload user-supplied tasks + keybindings (issue #1009). User
         // grammars are loaded by SyntaxHighlighter.shared above.
-        _ = ExtensibilityManager.shared
+        let extensibilityManager = ExtensibilityManager.shared
+        Task { @MainActor in
+            await extensibilityManager.reload()
+        }
 
         // UI testing support: clear persisted state for a clean launch
         if CommandLine.arguments.contains("--reset-state") {
