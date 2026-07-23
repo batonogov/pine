@@ -4,7 +4,7 @@ Guidance for AI coding agents (Claude Code, pi, and others) working in this repo
 
 ## Project Overview
 
-Pine is a minimal native macOS code editor built with SwiftUI + AppKit. Targets macOS 26 (Tahoe) with Liquid Glass UI.
+Pine is a minimal native macOS code editor built with SwiftUI + AppKit. Its minimum deployment target is macOS 26.0 (Tahoe), and compatibility work must cover both macOS 26 and the current macOS 27 beta.
 
 **Dependencies** (via Xcode SPM):
 - [SwiftTerm](https://github.com/migueldeicaza/SwiftTerm) — terminal emulator
@@ -13,7 +13,9 @@ Pine is a minimal native macOS code editor built with SwiftUI + AppKit. Targets 
 
 ## Build & Run
 
-- **Xcode 26+** required, macOS 26+ deployment target
+- **Xcode 26+** required. Keep `MACOSX_DEPLOYMENT_TARGET` at `26.0`; macOS 27 is an additional compatibility target, not a new minimum requirement
+- Test compatibility-sensitive changes on both macOS 26 and the current macOS 27 beta when those runtimes are available. Do not fix a macOS 27 regression by breaking or raising the macOS 26 baseline
+- For OS- or SDK-specific reports, include the complete output of `sw_vers`, `xcodebuild -version`, `xcrun --sdk macosx --show-sdk-version`, and `xcrun --sdk macosx --show-sdk-build-version`; labels such as "macOS 27" or "Xcode beta" are not precise enough
 - Open `Pine.xcodeproj` in Xcode, build and run (Cmd+R)
 - CLI build: `xcodebuild -project Pine.xcodeproj -scheme Pine build` (requires `sudo xcode-select -s /Applications/Xcode.app/Contents/Developer`)
 - Type-check a single file (no sudo needed): `/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc -typecheck -target arm64-apple-macos26.0 -sdk /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk <file.swift>`
@@ -38,6 +40,7 @@ Pine is a minimal native macOS code editor built with SwiftUI + AppKit. Targets 
 - **Quick terminal:** a system-wide ⌃⌥Space hotkey (`Carbon RegisterEventHotKey`, no Accessibility permission required, works in the App Sandbox) toggles a floating drop-down terminal over any application (#1113). The session is keep-alive — scrollback survives toggles; Esc and ⌘W hide it. The working directory resolves to an open Pine project (current implementation picks `openProjects.keys.first` — Dictionary order, not the key window; key-window resolution is a follow-up), else the most-recent project, else `$HOME`. Disable with `--disable-quick-terminal` or `PINE_DISABLE_QUICK_TERMINAL` (used by UI tests). Agent detection (#950) does NOT cover the quick-terminal tab (it lives outside the pane tree) — a follow-up wires it in. A menu item, Settings UI (custom hotkey, screen edge, height), and per-pane quick terminals are follow-ups — v1 ships the hotkey + window only.
 - **Known issue:** XCUITest launch arguments (`-key YES`) store values as strings in NSArgumentDomain. `UserDefaults.object(forKey:) as? Bool` returns nil for strings. To set boolean UserDefaults for UI tests, use `defaults write <bundle-id> <key> -bool YES` via `Process` in setUp, and `defaults delete` in tearDown
 - **Known issue:** Pine's terminal opts into SwiftTerm's Metal renderer (`setUseMetal(true)`) once the view lands in a window, replacing the layer-backed CoreGraphics raster with a GPU swapchain and eliminating the entire black-screen class (#64, #661, #871, #918, #923, #966, #1094, #1108). On failure (headless CI VM, old GPU, virtual display without a Metal device) it silently falls back to CoreGraphics. UI tests pass `--disable-metal` to pin CoreGraphics on macOS-26 virtual displays; production users can opt out with `--disable-metal` or `PINE_DISABLE_METAL`.
+- **Terminal rendering compatibility:** manually reproduce rendering bugs once through the default path (Metal when available; record any fallback-to-CoreGraphics log) and once after relaunching with `--disable-metal` or `PINE_DISABLE_METAL=1` to force CoreGraphics. Record the effective renderer, Mac model/chip, display configuration, and whether the result differs on macOS 26 versus the current macOS 27 beta
 - To interact with menu items in UI tests, use `app.menuBars.menuBarItems["File"].click()` then `app.menuItems["Item Name"].click()` with English names (locale is forced to `en`)
 - Accessibility identifiers defined in `Pine/AccessibilityIdentifiers.swift` — used by both app views and UI tests
 

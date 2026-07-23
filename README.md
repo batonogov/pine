@@ -68,6 +68,7 @@ brew install --cask pine-editor
 ## Build from Source
 
 Requires macOS 26+ and Xcode 26+.
+Pine keeps a macOS 26.0 deployment target while also checking source compatibility with the current macOS 27 beta SDK.
 
 ```bash
 git clone https://github.com/batonogov/pine.git

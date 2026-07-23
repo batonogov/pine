@@ -65,6 +65,15 @@ jobs:
       - name: Tests for inout-post reentrancy guard
         run: bash scripts/tests/test-check-no-post-under-inout.sh
 
+      - name: Tests for Metal toolchain installer
+        run: bash scripts/tests/test-ensure-metal-toolchain.sh
+
+      - name: Tests for unit-test result validation
+        run: bash scripts/tests/test-validate-test-results.sh
+
+      - name: Tests for xcodebuild CLI options
+        run: bash scripts/tests/test-xcodebuild-cli-options.sh
+
   build:
     name: Build for Testing
     runs-on: macos-26
@@ -75,12 +84,8 @@ jobs:
       - name: Select Xcode
         uses: ./.github/actions/select-xcode
 
-      - name: Download Metal Toolchain
-        run: |
-          # SwiftTerm 1.13+ ships Metal shaders. Xcode 26 beta images on
-          # GitHub Actions runners do not bundle the Metal Toolchain by
-          # default, causing `cannot execute tool 'metal'` build errors.
-          xcodebuild -downloadComponent MetalToolchain
+      - name: Ensure Metal Toolchain
+        run: bash scripts/ensure-metal-toolchain.sh
 
       - name: Cache SPM Dependencies
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
@@ -156,6 +161,138 @@ jobs:
           retention-days: 1
           compression-level: 0
 
+  # Compiler/SDK compatibility lane for the Xcode 27 preview image. The
+  # hosted runner still uses macOS 26, so runtime coverage on macOS 27 must
+  # continue on real hardware. Keep this non-blocking while the image is in
+  # preview; failures should remain visible without becoming required checks.
+  xcode-27-compatibility:
+    name: Xcode 27 Preview Compatibility
+    runs-on: xcode-27
+    continue-on-error: true
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+
+      # Do not use the stable select-xcode helper here: xcode-27 runners
+      # provide the preview Xcode/SDK pair as their active toolchain.
+      - name: Report Preview Environment
+        run: |
+          sw_vers
+          uname -m
+          xcodebuild -version
+          xcode_version="$(xcodebuild -version | awk 'NR == 1 { print $2 }')"
+          sdk_version="$(xcrun --sdk macosx --show-sdk-version)"
+          echo "macOS SDK version: $sdk_version"
+          echo "macOS SDK build: $(xcrun --sdk macosx --show-sdk-build-version)"
+          echo "macOS SDK path: $(xcrun --sdk macosx --show-sdk-path)"
+
+          case "$xcode_version" in
+            27|27.*) ;;
+            *)
+              echo "::error::The xcode-27 lane resolved Xcode $xcode_version"
+              exit 1
+              ;;
+          esac
+
+          case "$sdk_version" in
+            27|27.*) ;;
+            *)
+              echo "::error::The xcode-27 lane resolved macOS SDK $sdk_version"
+              exit 1
+              ;;
+          esac
+
+      - name: Ensure Metal Toolchain
+        run: bash scripts/ensure-metal-toolchain.sh
+
+      - name: Cache SPM Dependencies
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: DerivedData-Xcode27/SourcePackages
+          key: spm-xcode-27-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Pine.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved') }}
+          restore-keys: |
+            spm-xcode-27-${{ runner.os }}-${{ runner.arch }}-
+
+      - name: Verify macOS 26 Deployment Target
+        run: |
+          for configuration in Debug Release; do
+            settings="$(
+              xcodebuild \
+                -project Pine.xcodeproj \
+                -alltargets \
+                -configuration "$configuration" \
+                -showBuildSettings \
+                -json
+            )"
+            target_count="$(jq 'length' <<<"$settings")"
+            if [ "$target_count" -eq 0 ]; then
+              echo "::error::No targets resolved for $configuration"
+              exit 1
+            fi
+
+            invalid="$(
+              jq -r '
+                .[]
+                | select(.buildSettings.MACOSX_DEPLOYMENT_TARGET != "26.0")
+                | "\(.target)=\(.buildSettings.MACOSX_DEPLOYMENT_TARGET // "missing")"
+              ' <<<"$settings"
+            )"
+            if [ -n "$invalid" ]; then
+              echo "::error::Expected MACOSX_DEPLOYMENT_TARGET=26.0 for every $configuration target"
+              echo "$invalid"
+              exit 1
+            fi
+
+            echo "Verified $target_count $configuration target settings at MACOSX_DEPLOYMENT_TARGET=26.0"
+          done
+
+      - name: Build App with Xcode 27
+        run: |
+          xcodebuild build \
+            -project Pine.xcodeproj \
+            -scheme Pine \
+            -destination "platform=macOS" \
+            -derivedDataPath DerivedData-Xcode27 \
+            CODE_SIGN_IDENTITY=- \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO
+
+      - name: Unit Tests with Xcode 27
+        run: |
+          RESULT_BUNDLE="Xcode27TestResults.xcresult"
+          rm -rf "$RESULT_BUNDLE"
+          TEST_STARTED_AT="$(date +%s)"
+
+          set +e
+          xcodebuild test \
+            -project Pine.xcodeproj \
+            -scheme Pine \
+            -destination "platform=macOS" \
+            -derivedDataPath DerivedData-Xcode27 \
+            -only-testing:PineTests \
+            -skip-testing:PineTests/FuzzGitDiffParserTests \
+            -skip-testing:PineTests/FuzzGitBlameParserTests \
+            -skip-testing:PineTests/FuzzGitStatusParserTests \
+            -skip-testing:PineTests/FuzzSyntaxHighlighterTests \
+            -skip-testing:PineTests/FuzzQuickOpenProviderTests \
+            -skip-testing:PineTests/FuzzSymbolParserTests \
+            -skip-testing:PineTests/FuzzConfigValidatorTests \
+            -skip-testing:PineTests/FuzzGoToLineParserTests \
+            -retry-tests-on-failure \
+            -test-timeouts-enabled YES \
+            -resultBundlePath "$RESULT_BUNDLE" \
+            CODE_SIGN_IDENTITY=- \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO
+          TEST_EXIT=$?
+          set -e
+
+          python3 .github/scripts/validate_test_results.py \
+            "$RESULT_BUNDLE" \
+            --xcodebuild-exit "$TEST_EXIT" \
+            --started-at "$TEST_STARTED_AT" \
+            --github-summary
+
   unit-tests:
     name: Unit Tests
     runs-on: macos-26
@@ -191,6 +328,10 @@ jobs:
       # and can be triggered on-demand via the `fuzz` label on a PR.
       - name: Unit Tests
         run: |
+          RESULT_BUNDLE="TestResults.xcresult"
+          rm -rf "$RESULT_BUNDLE"
+          TEST_STARTED_AT="$(date +%s)"
+
           set +e
           xcodebuild test-without-building \
             -project Pine.xcodeproj \
@@ -207,58 +348,19 @@ jobs:
             -skip-testing:PineTests/FuzzConfigValidatorTests \
             -skip-testing:PineTests/FuzzGoToLineParserTests \
             -retry-tests-on-failure \
-            -test-timeouts-enabled \
+            -test-timeouts-enabled YES \
             -enableCodeCoverage YES \
-            -resultBundlePath TestResults.xcresult \
+            -resultBundlePath "$RESULT_BUNDLE" \
             CODE_SIGN_IDENTITY=- \
             CODE_SIGNING_ALLOWED=NO
           TEST_EXIT=$?
           set -e
 
-          if [ "$TEST_EXIT" -eq 0 ]; then
-            echo "xcodebuild exited cleanly"
-            exit 0
-          fi
-
-          echo "::warning::xcodebuild exited with code $TEST_EXIT — checking xcresult for actual failures"
-
-          # When the test host crashes on first launch but all tests pass on
-          # retry, xcodebuild still returns exit code 65. Parse the xcresult
-          # to distinguish "real failures" from "crash-then-retry-all-passed".
-          if [ ! -d "TestResults.xcresult" ]; then
-            echo "::error::No xcresult bundle found and xcodebuild failed"
-            exit "$TEST_EXIT"
-          fi
-
-          FAILED_TESTS=$(xcrun xcresulttool get test-results tests \
-            --path TestResults.xcresult \
-            | python3 -c "
-          import json, sys
-
-          def count_failures(node):
-              node_type = node.get('nodeType', '')
-              result = node.get('result', '')
-              children = node.get('children', [])
-
-              if node_type == 'Test Case':
-                  # A test case that ultimately failed (not retried-and-passed)
-                  return 1 if result == 'Failed' else 0
-
-              return sum(count_failures(c) for c in children)
-
-          data = json.load(sys.stdin)
-          print(count_failures(data))
-          ")
-
-          echo "Failed tests (after retries): $FAILED_TESTS"
-
-          if [ "$FAILED_TESTS" -eq 0 ]; then
-            echo "All tests passed after retries — treating as success despite exit code $TEST_EXIT"
-            exit 0
-          else
-            echo "::error::$FAILED_TESTS test(s) still failing after retries"
-            exit "$TEST_EXIT"
-          fi
+          python3 .github/scripts/validate_test_results.py \
+            "$RESULT_BUNDLE" \
+            --xcodebuild-exit "$TEST_EXIT" \
+            --started-at "$TEST_STARTED_AT" \
+            --github-summary
 
       - name: Detect Flaky Tests
         if: success() || failure()
