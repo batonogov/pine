@@ -38,9 +38,17 @@ final class TabManager {
             onEditorContextChanged?()
         }
     }
-    /// Set after a drag commit so the destination content can become first
-    /// responder. It remains pending until AppKit confirms the responder.
-    var pendingFocusTabID: UUID?
+    /// Set when destination content should explicitly become first responder.
+    /// It remains pending until the bounded AppKit request finishes.
+    var pendingFocusTabID: UUID? {
+        didSet {
+            pendingFocusRequestID = pendingFocusTabID.map { _ in UUID() }
+        }
+    }
+    /// Unique generation for the current request. A repeated request for the
+    /// same tab receives a fresh identity, so a queued completion from an
+    /// earlier drag cannot consume it.
+    private(set) var pendingFocusRequestID: UUID?
     var pendingGoToLine: Int?
     var recoveryManager: RecoveryManager?
     var onEditorContextChanged: (() -> Void)?
@@ -70,19 +78,25 @@ final class TabManager {
     var isAutoSaveEnabled: Bool { UserDefaults.standard.bool(forKey: Self.autoSaveKey) }
     var pinnedTabCount: Int { TabPinning.pinnedTabCount(in: tabs) }
 
-    /// Acknowledges an AppKit focus attempt for the active destination tab.
-    /// Failed, stale, and off-screen attempts deliberately retain the request
-    /// so a later view update or window-attachment callback can retry it.
+    /// Consumes the terminal result of a bounded AppKit focus request.
+    ///
+    /// Retryable lifecycle states are retained inside
+    /// `AppKitFocusRequestCoordinator` and do not call this method. A `false`
+    /// result therefore means the request was cancelled or exhausted.
     @discardableResult
-    func acknowledgeFocusRequest(for tabID: UUID, succeeded: Bool) -> Bool {
+    func acknowledgeFocusRequest(
+        requestID: UUID,
+        for tabID: UUID,
+        succeeded: Bool
+    ) -> Bool {
         guard pendingFocusTabID == tabID else { return false }
+        guard pendingFocusRequestID == requestID else { return false }
         guard activeTabID == tabID else {
             pendingFocusTabID = nil
             return false
         }
-        guard succeeded else { return false }
         pendingFocusTabID = nil
-        return true
+        return succeeded
     }
 
     /// A tab temporarily detached from this manager while it is transferred

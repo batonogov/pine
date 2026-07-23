@@ -68,10 +68,13 @@ struct CodeEditorView: NSViewRepresentable {
     var cachedHighlightResult: HighlightMatchResult?
     /// When non-nil, the editor scrolls to this offset. The `id` ensures each request is unique.
     var goToOffset: GoToRequest?
-    /// Set by a committed tab drop to explicitly focus the destination editor.
-    var focusRequestTabID: UUID?
+    /// Unique request set when the destination editor should become first responder.
+    var focusRequestID: UUID?
     var canAttemptFocusRequest: ((UUID) -> Bool)?
     var onFocusRequestResult: ((UUID, Bool) -> Void)?
+    /// Revalidates the owning pane and tab before the deferred initial focus
+    /// installed by `makeNSView` is allowed to become first responder.
+    var canBecomeInitialFirstResponder: (() -> Bool)?
     /// Indentation style detected for the current file, used for indent guide rendering.
     var indentStyle: IndentationStyle = .spaces(4)
 
@@ -265,9 +268,13 @@ struct CodeEditorView: NSViewRepresentable {
 
         // Minimap redraw and first responder need the view to be in the window
         // hierarchy, so defer only those non-visual operations.
+        let canBecomeInitialFirstResponder = canBecomeInitialFirstResponder
         DispatchQueue.main.async {
             minimapView.needsDisplay = true
-            textView.window?.makeFirstResponder(textView)
+            Self.attemptInitialFocus(
+                on: textView,
+                canAttempt: canBecomeInitialFirstResponder
+            )
         }
 
         // Observe scroll changes to persist scroll offset.
@@ -331,6 +338,24 @@ struct CodeEditorView: NSViewRepresentable {
         return container
     }
 
+    /// Synchronous seam for the deferred `makeNSView` focus request.
+    ///
+    /// The owning pane/tab can change before the next main-queue turn. Always
+    /// revalidate at execution time so creating a background editor cannot
+    /// bypass `AppKitFocusRequestCoordinator` and steal first responder.
+    @discardableResult
+    static func attemptInitialFocus(
+        on targetView: NSView,
+        canAttempt: (() -> Bool)?
+    ) -> Bool {
+        guard canAttempt?() != false,
+              let window = targetView.window else {
+            return false
+        }
+        return window.makeFirstResponder(targetView)
+            && window.firstResponder === targetView
+    }
+
     func updateNSView(_ container: NSView, context: Context) {
         // Обновляем parent, чтобы binding в coordinator был актуальным
         context.coordinator.parent = self
@@ -339,7 +364,7 @@ struct CodeEditorView: NSViewRepresentable {
 
         let focusTarget = context.coordinator.scrollView?.documentView as? GutterTextView
         editorContainer.destinationFocusCoordinator.update(
-            requestID: focusRequestTabID,
+            requestID: focusRequestID,
             hostView: editorContainer,
             targetView: focusTarget,
             canAttempt: canAttemptFocusRequest,

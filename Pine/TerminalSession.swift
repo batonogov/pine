@@ -695,15 +695,18 @@ class TerminalScrollInterceptor: NSView {
 /// Переключение терминальных табов происходит на уровне AppKit.
 struct TerminalContentView: NSViewRepresentable {
     let terminalPaneState: TerminalPaneState
+    let canAttemptFocusRequest: (UUID) -> Bool
 
     func makeNSView(context: Context) -> TerminalContainerView {
         let container = TerminalContainerView()
         container.terminalPaneState = terminalPaneState
+        container.canAttemptFocusRequest = canAttemptFocusRequest
         container.showTab(terminalPaneState.activeTab)
         return container
     }
 
     func updateNSView(_ container: TerminalContainerView, context: Context) {
+        container.canAttemptFocusRequest = canAttemptFocusRequest
         container.showTab(terminalPaneState.activeTab)
     }
 }
@@ -721,6 +724,7 @@ class TerminalContainerView: NSView {
     static let defaultTerminalFrame = NSRect(x: 0, y: 0, width: 800, height: 300)
 
     var terminalPaneState: TerminalPaneState?
+    var canAttemptFocusRequest: ((UUID) -> Bool)?
     private var currentTabID: UUID?
     let destinationFocusCoordinator = AppKitFocusRequestCoordinator()
     private let scrollInterceptor = TerminalScrollInterceptor()
@@ -832,19 +836,23 @@ class TerminalContainerView: NSView {
 
         installScrollMonitor()
 
-        let focusRequestID = terminalPaneState?.pendingFocusTabID == tab.id
-            ? tab.id
+        let tabID = tab.id
+        let focusRequestID = terminalPaneState?.pendingFocusTabID == tabID
+            ? terminalPaneState?.pendingFocusRequestID
             : nil
         destinationFocusCoordinator.update(
             requestID: focusRequestID,
             hostView: self,
             targetView: tab.terminalView,
-            canAttempt: { [weak state = terminalPaneState] tabID in
+            canAttempt: { [weak self, weak state = terminalPaneState] requestID in
                 state?.activeTerminalID == tabID
                     && state?.pendingFocusTabID == tabID
+                    && state?.pendingFocusRequestID == requestID
+                    && self?.canAttemptFocusRequest?(requestID) != false
             },
-            onResult: { [weak state = terminalPaneState] tabID, succeeded in
+            onResult: { [weak state = terminalPaneState] requestID, succeeded in
                 state?.acknowledgeFocusRequest(
+                    requestID: requestID,
                     for: tabID,
                     succeeded: succeeded
                 )

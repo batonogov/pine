@@ -8,7 +8,7 @@ import SwiftUI
 /// Renders Markdown content as a read-only attributed string in a scrollable NSTextView.
 struct MarkdownPreviewView: NSViewRepresentable {
     let content: String
-    var focusRequestTabID: UUID?
+    var focusRequestID: UUID?
     var canAttemptFocusRequest: ((UUID) -> Bool)?
     var onFocusRequestResult: ((UUID, Bool) -> Void)?
 
@@ -36,7 +36,7 @@ struct MarkdownPreviewView: NSViewRepresentable {
         context.coordinator.textView = textView
         context.coordinator.scheduleRender(content: content)
         scrollView.destinationFocusCoordinator.update(
-            requestID: focusRequestTabID,
+            requestID: focusRequestID,
             hostView: scrollView,
             targetView: textView,
             canAttempt: canAttemptFocusRequest,
@@ -49,7 +49,7 @@ struct MarkdownPreviewView: NSViewRepresentable {
     func updateNSView(_ scrollView: MarkdownPreviewScrollView, context: Context) {
         context.coordinator.scheduleRender(content: content)
         scrollView.destinationFocusCoordinator.update(
-            requestID: focusRequestTabID,
+            requestID: focusRequestID,
             hostView: scrollView,
             targetView: context.coordinator.textView,
             canAttempt: canAttemptFocusRequest,

@@ -283,19 +283,24 @@ struct PaneLeafView: View {
 
             if let tab = tabManager.activeTab {
                 Group {
-                    let focusRequestID = tabManager.pendingFocusTabID == tab.id ? tab.id : nil
+                    let focusRequestID = tabManager.pendingFocusTabID == tab.id
+                        ? tabManager.pendingFocusRequestID
+                        : nil
                     switch EditorContentPresentation.resolve(for: tab) {
                     case .quickLook:
                         QuickLookPreviewView(
                             url: tab.url,
-                            focusRequestTabID: focusRequestID,
-                            canAttemptFocusRequest: { tabID in
-                                tabManager.activeTabID == tabID
-                                    && tabManager.pendingFocusTabID == tabID
+                            focusRequestID: focusRequestID,
+                            canAttemptFocusRequest: { requestID in
+                                paneManager.activePaneID == paneID
+                                    && tabManager.activeTabID == tab.id
+                                    && tabManager.pendingFocusTabID == tab.id
+                                    && tabManager.pendingFocusRequestID == requestID
                             },
-                            onFocusRequestResult: { tabID, succeeded in
+                            onFocusRequestResult: { requestID, succeeded in
                                 tabManager.acknowledgeFocusRequest(
-                                    for: tabID,
+                                    requestID: requestID,
+                                    for: tab.id,
                                     succeeded: succeeded
                                 )
                             }
@@ -304,14 +309,17 @@ struct PaneLeafView: View {
                     case .markdownPreview:
                         MarkdownPreviewView(
                             content: tab.content,
-                            focusRequestTabID: focusRequestID,
-                            canAttemptFocusRequest: { tabID in
-                                tabManager.activeTabID == tabID
-                                    && tabManager.pendingFocusTabID == tabID
+                            focusRequestID: focusRequestID,
+                            canAttemptFocusRequest: { requestID in
+                                paneManager.activePaneID == paneID
+                                    && tabManager.activeTabID == tab.id
+                                    && tabManager.pendingFocusTabID == tab.id
+                                    && tabManager.pendingFocusRequestID == requestID
                             },
-                            onFocusRequestResult: { tabID, succeeded in
+                            onFocusRequestResult: { requestID, succeeded in
                                 tabManager.acknowledgeFocusRequest(
-                                    for: tabID,
+                                    requestID: requestID,
+                                    for: tab.id,
                                     succeeded: succeeded
                                 )
                             }
@@ -385,13 +393,25 @@ struct PaneLeafView: View {
             },
             cachedHighlightResult: tab.cachedHighlightResult,
             goToOffset: goToLineOffset,
-            focusRequestTabID: tabManager.pendingFocusTabID == tab.id ? tab.id : nil,
-            canAttemptFocusRequest: { tabID in
-                tabManager.activeTabID == tabID
-                    && tabManager.pendingFocusTabID == tabID
+            focusRequestID: tabManager.pendingFocusTabID == tab.id
+                ? tabManager.pendingFocusRequestID
+                : nil,
+            canAttemptFocusRequest: { requestID in
+                paneManager.activePaneID == paneID
+                    && tabManager.activeTabID == tab.id
+                    && tabManager.pendingFocusTabID == tab.id
+                    && tabManager.pendingFocusRequestID == requestID
             },
-            onFocusRequestResult: { tabID, succeeded in
-                tabManager.acknowledgeFocusRequest(for: tabID, succeeded: succeeded)
+            onFocusRequestResult: { requestID, succeeded in
+                tabManager.acknowledgeFocusRequest(
+                    requestID: requestID,
+                    for: tab.id,
+                    succeeded: succeeded
+                )
+            },
+            canBecomeInitialFirstResponder: {
+                paneManager.activePaneID == paneID
+                    && tabManager.activeTabID == tab.id
             },
             indentStyle: tab.cachedIndentation,
             fontSize: FontSizeSettings.shared.fontSize

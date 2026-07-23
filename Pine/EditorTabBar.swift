@@ -122,7 +122,9 @@ struct EditorTabBar: View {
                                 EditorTabItem(
                                     tab: tab,
                                     isActive: isActive,
-                                    onSelect: { tabManager.activeTabID = tab.id },
+                                    onSelect: {
+                                        paneManager.selectEditorTab(tab.id, in: paneID)
+                                    },
                                     onClose: { onCloseTab(tab) },
                                     onTogglePin: { tabManager.togglePin(id: tab.id) },
                                     onCloseOtherTabs: {
@@ -227,7 +229,7 @@ struct EditorTabBar: View {
                 Menu {
                     ForEach(tabManager.tabs) { tab in
                         Button {
-                            tabManager.activeTabID = tab.id
+                            paneManager.selectEditorTab(tab.id, in: paneID)
                         } label: {
                             Label {
                                 Text(tab.fileName)
