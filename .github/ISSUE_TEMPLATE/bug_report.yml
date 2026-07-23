@@ -1,0 +1,231 @@
+name: Bug report
+description: Report a reproducible problem in Pine
+title: "[Bug]: "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for helping improve Pine. Please include exact version and build numbers so we can distinguish macOS 26 issues from macOS 27 beta regressions.
+
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: Briefly describe the problem and its visible impact.
+      placeholder: A concise description of what is broken.
+    validations:
+      required: true
+
+  - type: input
+    id: pine_version
+    attributes:
+      label: Pine version
+      description: The version shown in Pine > About Pine, or the commit SHA for a source build.
+      placeholder: "1.34.0"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: pine_source
+    attributes:
+      label: Installation source
+      description: Where this Pine build came from.
+      options:
+        - GitHub release
+        - Homebrew
+        - Built from source
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: macos_version
+    attributes:
+      label: macOS version and build
+      description: Paste the complete output of `sw_vers`.
+      placeholder: |
+        ProductName:            macOS
+        ProductVersion:         27.0
+        BuildVersion:           26A5378n
+    validations:
+      required: true
+
+  - type: dropdown
+    id: macos_channel
+    attributes:
+      label: macOS release channel
+      options:
+        - Stable
+        - Developer beta
+        - Public beta
+        - Release candidate
+        - Other or unknown
+    validations:
+      required: true
+
+  - type: textarea
+    id: development_toolchain
+    attributes:
+      label: Xcode and macOS SDK
+      description: For source builds or SDK-specific bugs, paste `xcodebuild -version`, `xcrun --sdk macosx --show-sdk-version`, and `xcrun --sdk macosx --show-sdk-build-version`. For a release build with no local Xcode, write "Not applicable — release build".
+      placeholder: |
+        Xcode 27.0
+        Build version 27A5218g
+        macOS SDK: 27.0 (26A5378i)
+    validations:
+      required: true
+
+  - type: dropdown
+    id: architecture
+    attributes:
+      label: Architecture
+      options:
+        - Apple silicon (arm64)
+        - Intel (x86_64)
+        - Other or unknown
+    validations:
+      required: true
+
+  - type: textarea
+    id: hardware_displays
+    attributes:
+      label: Hardware and displays
+      description: Include the Mac model, chip, memory, and every relevant built-in or external display, resolution/scaling, refresh rate, and HDR setting.
+      placeholder: |
+        MacBook Pro (14-inch, M4 Pro, 24 GB)
+        Built-in Liquid Retina XDR, 3024x1964, ProMotion, HDR enabled
+        External Studio Display, 5120x2880, default scaling, 60 Hz
+    validations:
+      required: true
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Affected area
+      options:
+        - Terminal
+        - Code editor or code rendering
+        - Both terminal and code editor
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Start from launching Pine and list the smallest reliable sequence that triggers the bug.
+      placeholder: |
+        1. Open Pine...
+        2. Open...
+        3. Observe...
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      placeholder: Describe what should happen.
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+      placeholder: Describe what happens instead, including any visible artifacts or error messages.
+    validations:
+      required: true
+
+  - type: textarea
+    id: motivation
+    attributes:
+      label: Motivation
+      description: Explain how the bug affects your workflow, data, readability, or ability to use Pine.
+      placeholder: Why this problem matters in day-to-day use.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: frequency
+    attributes:
+      label: Frequency
+      options:
+        - Every time
+        - Often
+        - Intermittently
+        - Happened once
+    validations:
+      required: true
+
+  - type: dropdown
+    id: regression
+    attributes:
+      label: Regression
+      description: Did the same workflow work correctly on an older Pine or macOS version?
+      options:
+        - "Yes"
+        - "No"
+        - Not sure
+    validations:
+      required: true
+
+  - type: input
+    id: last_known_good
+    attributes:
+      label: Last known working version
+      description: If this is a regression, provide the last working Pine version and macOS version/build.
+      placeholder: "Pine 1.33.4 on macOS 26.5 (25F90)"
+
+  - type: textarea
+    id: terminal_environment
+    attributes:
+      label: Terminal environment
+      description: Required for terminal bugs. Include the shell and version, `$TERM`, the command or TUI application, and whether the session is local, SSH, or another environment.
+      placeholder: |
+        Shell: /bin/zsh 5.9
+        TERM: xterm-256color
+        Command/TUI: vim 9.1
+        Session: local
+
+  - type: textarea
+    id: renderer_comparison
+    attributes:
+      label: Metal and CoreGraphics comparison
+      description: For terminal bugs, reproduce once through the default path (Metal when available; note any fallback log) and once with `--disable-metal` or `PINE_DISABLE_METAL=1` (forced CoreGraphics). If you cannot run one mode, say why.
+      placeholder: |
+        Default path (effective renderer + fallback log):
+        Forced CoreGraphics (--disable-metal):
+        Difference between modes:
+
+  - type: textarea
+    id: implementation_ideas
+    attributes:
+      label: Implementation ideas
+      description: Optional technical clues, suspected causes, or possible fixes.
+      placeholder: Leave blank if you do not have implementation suggestions.
+
+  - type: textarea
+    id: media_logs
+    attributes:
+      label: Screenshots, recordings, and logs
+      description: Drag in screenshots or a screen recording and paste relevant Console output, crash reports, or logs. Remove secrets and personal data first.
+      placeholder: Attach media and logs here, or write "None".
+
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: Final checks
+      options:
+        - label: I searched for an existing issue that describes this problem.
+          required: true
+        - label: I removed passwords, tokens, private paths, and other sensitive information from the report.
+          required: true
+
+  - type: markdown
+    attributes:
+      value: |
+        Maintainers: add the appropriate area and priority labels and assign the issue to the active milestone before implementation begins.
