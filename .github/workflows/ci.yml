@@ -65,6 +65,9 @@ jobs:
       - name: Tests for inout-post reentrancy guard
         run: bash scripts/tests/test-check-no-post-under-inout.sh
 
+      - name: Tests for fail-closed coverage gate
+        run: bash scripts/tests/test-check-coverage.sh
+
   build:
     name: Build for Testing
     runs-on: macos-26
@@ -207,7 +210,7 @@ jobs:
             -skip-testing:PineTests/FuzzConfigValidatorTests \
             -skip-testing:PineTests/FuzzGoToLineParserTests \
             -retry-tests-on-failure \
-            -test-timeouts-enabled \
+            -test-timeouts-enabled YES \
             -enableCodeCoverage YES \
             -resultBundlePath TestResults.xcresult \
             CODE_SIGN_IDENTITY=- \
@@ -267,172 +270,48 @@ jobs:
           python3 .github/scripts/detect_flaky_tests.py \
             TestResults.xcresult --github-summary
 
-      - name: Extract Coverage Report
+      - name: Check Coverage Threshold
         if: success() || failure()
         id: coverage
-        continue-on-error: true
         run: |
-          XCRESULT="TestResults.xcresult"
-          if [ ! -d "$XCRESULT" ]; then
-            echo "No .xcresult bundle found"
-            exit 0
-          fi
-
-          # Get JSON coverage report
-          # On macos-26 / Xcode 26 RC runners, xccov sometimes fails with
-          # "No coverage data in result bundle" even when tests pass (#1060).
-          # Coverage is informational — never block the PR on this.
-          if ! xcrun xccov view --report --json "$XCRESULT" > coverage.json 2>/dev/null; then
-            echo "::warning::Could not extract coverage data from result bundle — skipping coverage check"
-            exit 0
-          fi
-
-          # Extract coverage for Pine target, excluding pure SwiftUI view files
-          # (views are covered by UI tests separately)
-          COVERAGE=$(python3 -c "
-          import json, sys
-          EXCLUDED_VIEWS = {
-              'AccessibilityIdentifiers.swift',
-              'BranchSubtitleClickHandler.swift',
-              'BranchSwitcherView.swift',
-              'CodeEditorView.swift',
-              'ContentView.swift',
-              'ContentView+Helpers.swift',
-              'PaneLeafView.swift',
-              'EditorTabBar.swift',
-              'FileNodeRow.swift',
-              'GitAndNotificationObserver.swift',
-              'MarkdownPreviewView.swift',
-              'QuickLookPreviewView.swift',
-              'QuickOpenView.swift',
-              'RecoveryDialogView.swift',
-              'RepresentedFileTracker.swift',
-              'SearchResultsView.swift',
-              'SidebarView.swift',
-              'SidebarFileTree.swift',
-              'StatusBarView.swift',
-              'PaneTreeView.swift',
-              'TerminalBarView.swift',
-              'TerminalPaneContent.swift',
-              'TerminalPaneTabBar.swift',
-              'TerminalSearchBar.swift',
-              'WelcomeView.swift',
-          }
-          with open('coverage.json') as f:
-              data = json.load(f)
-          for target in data.get('targets', []):
-              if target['name'] == 'Pine.app':
-                  covered = 0
-                  total = 0
-                  for f in target.get('files', []):
-                      if f['name'] in EXCLUDED_VIEWS:
-                          continue
-                      covered += f.get('coveredLines', 0)
-                      total += f.get('executableLines', 0)
-                  pct = (covered / total * 100) if total > 0 else 0
-                  print(f'{pct:.1f}')
-                  sys.exit(0)
-          print('0.0')
-          ")
-
-          echo "coverage=$COVERAGE" >> "$GITHUB_OUTPUT"
-          echo "## Code Coverage: ${COVERAGE}%" >> "$GITHUB_STEP_SUMMARY"
-
-          # Generate per-file breakdown for top/bottom files
-          python3 -c "
-          import json
-          EXCLUDED_VIEWS = {
-              'AccessibilityIdentifiers.swift',
-              'BranchSubtitleClickHandler.swift',
-              'BranchSwitcherView.swift',
-              'CodeEditorView.swift',
-              'ContentView.swift',
-              'ContentView+Helpers.swift',
-              'PaneLeafView.swift',
-              'EditorTabBar.swift',
-              'FileNodeRow.swift',
-              'GitAndNotificationObserver.swift',
-              'MarkdownPreviewView.swift',
-              'QuickLookPreviewView.swift',
-              'QuickOpenView.swift',
-              'RecoveryDialogView.swift',
-              'RepresentedFileTracker.swift',
-              'PaneTreeView.swift',
-              'SearchResultsView.swift',
-              'SidebarView.swift',
-              'SidebarFileTree.swift',
-              'StatusBarView.swift',
-              'TerminalBarView.swift',
-              'TerminalPaneContent.swift',
-              'TerminalPaneTabBar.swift',
-              'TerminalSearchBar.swift',
-              'WelcomeView.swift',
-          }
-          with open('coverage.json') as f:
-              data = json.load(f)
-          for target in data.get('targets', []):
-              if target['name'] != 'Pine.app':
-                  continue
-              files = []
-              excluded = []
-              for f in target.get('files', []):
-                  name = f['name']
-                  pct = f['lineCoverage'] * 100
-                  entry = (name, pct, f.get('coveredLines', 0), f.get('executableLines', 0))
-                  if name in EXCLUDED_VIEWS:
-                      excluded.append(entry)
-                  else:
-                      files.append(entry)
-              files.sort(key=lambda x: x[1])
-
-              print('### Lowest Coverage Files (logic only)')
-              print('| File | Coverage | Lines |')
-              print('|------|----------|-------|')
-              for name, pct, covered, total in files[:10]:
-                  if total > 0:
-                      print(f'| {name} | {pct:.1f}% | {covered}/{total} |')
-
-              print()
-              print('### Highest Coverage Files')
-              print('| File | Coverage | Lines |')
-              print('|------|----------|-------|')
-              for name, pct, covered, total in files[-10:]:
-                  if total > 0:
-                      print(f'| {name} | {pct:.1f}% | {covered}/{total} |')
-
-              if excluded:
-                  excluded_lines = sum(t for _, _, _, t in excluded)
-                  print()
-                  print(f'_Excluded from threshold: {len(excluded)} pure SwiftUI view files ({excluded_lines} lines) — covered by UI tests._')
-          " >> "$GITHUB_STEP_SUMMARY"
-
-      - name: Check Coverage Threshold
-        if: (success() || failure()) && steps.coverage.outputs.coverage != ''
-        run: |
-          COVERAGE="${{ steps.coverage.outputs.coverage }}"
-          THRESHOLD="${{ env.COVERAGE_THRESHOLD }}"
-          echo "Coverage: ${COVERAGE}%, threshold: ${THRESHOLD}%"
-          if python3 -c "exit(0 if float('$COVERAGE') >= float('$THRESHOLD') else 1)"; then
-            echo "✅ Coverage is above threshold"
-          else
-            echo "::error::Coverage ${COVERAGE}% is below ${THRESHOLD}% threshold"
-            exit 1
-          fi
+          python3 .github/scripts/check_coverage.py \
+            TestResults.xcresult \
+            --threshold "$COVERAGE_THRESHOLD" \
+            --github-output "$GITHUB_OUTPUT" \
+            --github-summary "$GITHUB_STEP_SUMMARY"
 
       - name: Comment Coverage on PR
-        if: (success() || failure()) && github.event_name == 'pull_request' && steps.coverage.outputs.coverage != ''
+        if: always() && github.event_name == 'pull_request'
         uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7
         env:
+          COVERAGE_STATUS: ${{ steps.coverage.outputs.status }}
           COVERAGE_VALUE: ${{ steps.coverage.outputs.coverage }}
+          COVERED_LINES: ${{ steps.coverage.outputs.covered-lines }}
+          EXECUTABLE_LINES: ${{ steps.coverage.outputs.executable-lines }}
+          COVERAGE_MESSAGE: ${{ steps.coverage.outputs.message }}
           COVERAGE_MIN: ${{ env.COVERAGE_THRESHOLD }}
           FLAKY_COUNT: ${{ steps.flaky.outputs.flaky-count }}
           FLAKY_TESTS: ${{ steps.flaky.outputs.flaky-tests }}
         with:
           script: |
-            const coverage = process.env.COVERAGE_VALUE;
+            const status = process.env.COVERAGE_STATUS;
+            const coverage = process.env.COVERAGE_VALUE || '';
             const threshold = parseFloat(process.env.COVERAGE_MIN);
-            const passing = parseFloat(coverage) >= threshold;
+            const coveredLines = process.env.COVERED_LINES || '';
+            const executableLines = process.env.EXECUTABLE_LINES || '';
+            const publishedDiagnostic = (process.env.COVERAGE_MESSAGE || '')
+              .replaceAll('`', "'");
+            const passing = status === 'pass';
+            const available = ['pass', 'below-threshold'].includes(status);
+            const diagnostic = publishedDiagnostic || (
+              available
+                ? 'Coverage checker did not publish a diagnostic.'
+                : 'Coverage checker did not publish a valid result.'
+            );
             const icon = passing ? '✅' : '❌';
+            const heading = available
+              ? `${icon} Code Coverage: ${coverage}%`
+              : '❌ Code Coverage unavailable';
 
             const flakyCount = parseInt(process.env.FLAKY_COUNT || '0', 10);
             // FLAKY_TESTS is JSON-encoded by the detection script
@@ -440,11 +319,16 @@ jobs:
             try { flakyTests = JSON.parse(process.env.FLAKY_TESTS || '""'); } catch (e) { flakyTests = process.env.FLAKY_TESTS || ''; }
 
             const lines = [
-              `## ${icon} Code Coverage: ${coverage}%`,
+              '<!-- pine-coverage-report -->',
+              `## ${heading}`,
               '',
               `Threshold: ${threshold}%`,
               '',
-              `${passing ? 'Coverage is above the minimum threshold.' : '**Coverage is below the minimum threshold. This is a blocking check — the PR cannot be merged.**'}`,
+              available
+                ? `Logic-only lines: ${coveredLines}/${executableLines}`
+                : '**Coverage extraction failed. The gate failed closed and did not report a passing result.**',
+              '',
+              diagnostic,
             ];
 
             if (flakyCount > 0) {
@@ -463,7 +347,10 @@ jobs:
               issue_number: context.issue.number,
             });
             const botComment = comments.find(c =>
-              c.user.type === 'Bot' && c.body.includes('Code Coverage:')
+              c.user.type === 'Bot' && (
+                c.body.includes('<!-- pine-coverage-report -->') ||
+                c.body.includes('Code Coverage:')
+              )
             );
 
             if (botComment) {
