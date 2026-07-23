@@ -75,6 +75,8 @@ struct TabStripDropDelegate: DropDelegate {
     let frames: [UUID: CGRect]
     let paneManager: PaneManager
     var onCommit: (() -> Void)?
+    var onHover: ((_ dragID: UUID, _ locationX: CGFloat) -> Void)?
+    var onExit: (() -> Void)?
 
     func validateDrop(info: DropInfo) -> Bool {
         info.hasItemsConforming(to: [.paneTabDrag])
@@ -93,11 +95,29 @@ struct TabStripDropDelegate: DropDelegate {
 
     func dropExited(info: DropInfo) {
         paneManager.tabDragCoordinator.clearPreview(destinationPaneID: paneID)
+        onExit?()
     }
 
-    func performDrop(info: DropInfo) -> Bool {
-        guard preview(atX: info.location.x) else { return false }
+    func performDrop(info _: DropInfo) -> Bool {
+        commitCurrentPreview()
+    }
+
+    /// Commits the preview last derived from current strip frames. SwiftUI may
+    /// retain an older value-type delegate for `performDrop`; recomputing here
+    /// from its captured frames could overwrite a newer post-scroll preview.
+    @discardableResult
+    func commitCurrentPreview() -> Bool {
+        guard let activeDrag = paneManager.activeDrag,
+              activeDrag.contentType == contentType,
+              let intent = paneManager.tabDragCoordinator.previewIntent,
+              intent.destinationPaneID == paneID,
+              intent.insertionIndex != nil,
+              intent.drag.dragID == activeDrag.dragID else {
+            onExit?()
+            return false
+        }
         let committed = paneManager.tabDragCoordinator.commitPreview()
+        onExit?()
         if committed {
             paneManager.clearAllDropZones()
             onCommit?()
@@ -108,7 +128,8 @@ struct TabStripDropDelegate: DropDelegate {
     /// Testable counterpart of hover callbacks.
     @discardableResult
     func preview(atX locationX: CGFloat) -> Bool {
-        guard let insertionIndex = TabStripInsertionGeometry.insertionIndex(
+        guard let activeDrag = paneManager.activeDrag,
+              let insertionIndex = TabStripInsertionGeometry.insertionIndex(
             atX: locationX,
             orderedTabIDs: orderedTabIDs,
             frames: frames
@@ -118,10 +139,12 @@ struct TabStripDropDelegate: DropDelegate {
             insertionIndex: insertionIndex
         ), paneManager.tabDragCoordinator.preview(intent) else {
             paneManager.tabDragCoordinator.clearPreview(destinationPaneID: paneID)
+            onExit?()
             return false
         }
         paneManager.clearLeafDropZones()
         paneManager.rootDropZone = nil
+        onHover?(activeDrag.dragID, locationX)
         return true
     }
 }

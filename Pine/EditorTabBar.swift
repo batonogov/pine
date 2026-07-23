@@ -54,6 +54,7 @@ struct EditorTabBar: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     @State private var tabFrames: [UUID: CGRect] = [:]
+    @State private var autoScrollSession = TabStripAutoScrollSession()
 
     /// Minimum tab width before scrolling kicks in.
     static let minTabWidth: CGFloat = 80
@@ -74,6 +75,13 @@ struct EditorTabBar: View {
     private var paneID: PaneID { overridePaneID ?? paneManager.activePaneID }
     private var coordinateSpaceName: String { "editor-tab-strip-\(paneID.id.uuidString)" }
 
+    private var activeAutoScrollOwner: TabStripAutoScrollOwner? {
+        TabStripAutoScrollOwner.current(
+            activeDrag: paneManager.activeDrag,
+            previewIntent: paneManager.tabDragCoordinator.previewIntent
+        )
+    }
+
     private var insertionIndicatorX: CGFloat? {
         guard let intent = paneManager.tabDragCoordinator.previewIntent,
               intent.destinationPaneID == paneID,
@@ -86,18 +94,90 @@ struct EditorTabBar: View {
         )
     }
 
-    /// Computes tab widths: active tab stays at full width, inactive tabs share the rest.
-    /// Pinned tabs always use `pinnedTabWidth` and are excluded from the dynamic calculation.
-    static func inactiveTabWidth(availableWidth: CGFloat, tabCount: Int, pinnedCount: Int = 0) -> CGFloat {
+    /// Computes one stable width for every unpinned tab. Pinned tabs always
+    /// use `pinnedTabWidth` and are excluded from the dynamic calculation.
+    static func unpinnedTabWidth(
+        availableWidth: CGFloat,
+        tabCount: Int,
+        pinnedCount: Int = 0
+    ) -> CGFloat {
         let unpinnedCount = tabCount - pinnedCount
-        guard unpinnedCount > 1 else { return maxTabWidth }
+        guard unpinnedCount > 0 else { return maxTabWidth }
         let totalPadding: CGFloat = 12 // 4pt leading + 8pt trailing
         let totalSpacing = CGFloat(max(tabCount - 1, 0)) * 2 // 2pt spacing between tabs
         let pinnedSpace = CGFloat(pinnedCount) * pinnedTabWidth
-        let usable = availableWidth - totalPadding - totalSpacing - pinnedSpace - maxTabWidth
-        let inactiveCount = CGFloat(unpinnedCount - 1)
-        let perTab = usable / inactiveCount
+        let usable = availableWidth - totalPadding - totalSpacing - pinnedSpace
+        let perTab = usable / CGFloat(unpinnedCount)
         return min(max(perTab, minTabWidth), maxTabWidth)
+    }
+
+    private func dropDelegate(
+        orderedTabIDs: [UUID],
+        frames: [UUID: CGRect],
+        viewportWidth: CGFloat
+    ) -> TabStripDropDelegate {
+        TabStripDropDelegate(
+            paneID: paneID,
+            contentType: .editor,
+            orderedTabIDs: orderedTabIDs,
+            frames: frames,
+            paneManager: paneManager,
+            onCommit: onReorder,
+            onHover: { dragID, locationX in
+                autoScrollSession.updateHover(
+                    owner: TabStripAutoScrollOwner(
+                        dragID: dragID,
+                        destinationPaneID: paneID.id
+                    ),
+                    locationX: locationX,
+                    viewportWidth: viewportWidth,
+                    orderedTabIDs: orderedTabIDs,
+                    frames: frames
+                )
+            },
+            onExit: {
+                autoScrollSession.end()
+            }
+        )
+    }
+
+    private func refreshPreviewAfterGeometryChange(
+        orderedTabIDs: [UUID],
+        frames: [UUID: CGRect],
+        viewportWidth: CGFloat
+    ) {
+        guard let locationX = autoScrollSession.hoverLocationX,
+              autoScrollSession.hoveredOwner == activeAutoScrollOwner else {
+            autoScrollSession.end()
+            return
+        }
+        _ = dropDelegate(
+            orderedTabIDs: orderedTabIDs,
+            frames: frames,
+            viewportWidth: viewportWidth
+        ).preview(atX: locationX)
+    }
+
+    private func runAutoScroll(
+        request: TabStripAutoScrollRequest,
+        proxy: ScrollViewProxy
+    ) async {
+        while !Task.isCancelled {
+            guard autoScrollSession.request == request,
+                  activeAutoScrollOwner == request.owner,
+                  let targetID = autoScrollSession.targetID else {
+                return
+            }
+            proxy.scrollTo(
+                targetID,
+                anchor: request.direction == .leading ? .leading : .trailing
+            )
+            do {
+                try await Task.sleep(for: TabStripAutoScrollGeometry.stepDelay)
+            } catch {
+                return
+            }
+        }
     }
 
     var body: some View {
@@ -107,7 +187,7 @@ struct EditorTabBar: View {
                     ScrollView(.horizontal, showsIndicators: false) {
                         HStack(spacing: 2) {
                             let pinnedCount = tabManager.pinnedTabCount
-                            let inactiveWidth = Self.inactiveTabWidth(
+                            let unpinnedWidth = Self.unpinnedTabWidth(
                                 availableWidth: geometry.size.width,
                                 tabCount: tabManager.tabs.count,
                                 pinnedCount: pinnedCount
@@ -164,7 +244,7 @@ struct EditorTabBar: View {
                                     },
                                     constrainedWidth: tab.isPinned
                                         ? Self.pinnedTabWidth
-                                        : isActive ? Self.maxTabWidth : inactiveWidth
+                                        : unpinnedWidth
                                 )
                                 .opacity(isDragged ? 0.4 : 1.0)
                                 .scaleEffect(isDragged ? 0.95 : 1.0)
@@ -192,24 +272,57 @@ struct EditorTabBar: View {
                     .frame(maxHeight: .infinity, alignment: .center)
                     .contentShape(Rectangle())
                     .coordinateSpace(name: coordinateSpaceName)
-                    .onPreferenceChange(TabStripFramePreferenceKey.self) { tabFrames = $0 }
+                    .onPreferenceChange(TabStripFramePreferenceKey.self) { frames in
+                        let orderedTabIDs = tabManager.tabs.map(\.id)
+                        tabFrames = frames
+                        autoScrollSession.updateGeometry(
+                            viewportWidth: geometry.size.width,
+                            orderedTabIDs: orderedTabIDs,
+                            frames: frames
+                        )
+                        refreshPreviewAfterGeometryChange(
+                            orderedTabIDs: orderedTabIDs,
+                            frames: frames,
+                            viewportWidth: geometry.size.width
+                        )
+                    }
                     .overlay(alignment: .topLeading) {
                         if let insertionIndicatorX {
                             TabInsertionIndicator(x: insertionIndicatorX)
                         }
                     }
-                    .onDrop(of: [.paneTabDrag], delegate: TabStripDropDelegate(
-                        paneID: paneID,
-                        contentType: .editor,
+                    .onDrop(of: [.paneTabDrag], delegate: dropDelegate(
                         orderedTabIDs: tabManager.tabs.map(\.id),
                         frames: tabFrames,
-                        paneManager: paneManager,
-                        onCommit: onReorder
+                        viewportWidth: geometry.size.width
                     ))
+                    .task(id: autoScrollSession.request) {
+                        guard let request = autoScrollSession.request else { return }
+                        await runAutoScroll(request: request, proxy: proxy)
+                    }
                     .onAppear {
                         if let activeID = tabManager.activeTabID {
                             proxy.scrollTo(activeID, anchor: .center)
                         }
+                    }
+                    .onDisappear {
+                        autoScrollSession.end()
+                    }
+                    .onChange(of: geometry.size.width) { _, width in
+                        let orderedTabIDs = tabManager.tabs.map(\.id)
+                        autoScrollSession.updateGeometry(
+                            viewportWidth: width,
+                            orderedTabIDs: orderedTabIDs,
+                            frames: tabFrames
+                        )
+                        refreshPreviewAfterGeometryChange(
+                            orderedTabIDs: orderedTabIDs,
+                            frames: tabFrames,
+                            viewportWidth: width
+                        )
+                    }
+                    .onChange(of: activeAutoScrollOwner) { _, owner in
+                        autoScrollSession.activeOwnerDidChange(to: owner)
                     }
                     .onChange(of: tabManager.activeTabID) {
                         guard let activeID = tabManager.activeTabID else { return }
@@ -322,7 +435,7 @@ struct EditorTabItem: View {
                 unpinnedBody
             }
         }
-        .frame(maxWidth: constrainedWidth)
+        .frame(width: constrainedWidth)
         .background(
             isActive
                 ? Color.primary.opacity(0.12)

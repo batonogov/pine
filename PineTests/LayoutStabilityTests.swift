@@ -119,23 +119,23 @@ struct LayoutStabilityTests {
 
     @Test("Tab width calculation is deterministic for same inputs")
     func tabWidthDeterministic() {
-        let width1 = EditorTabBar.inactiveTabWidth(availableWidth: 800, tabCount: 5)
-        let width2 = EditorTabBar.inactiveTabWidth(availableWidth: 800, tabCount: 5)
+        let width1 = EditorTabBar.unpinnedTabWidth(availableWidth: 800, tabCount: 5)
+        let width2 = EditorTabBar.unpinnedTabWidth(availableWidth: 800, tabCount: 5)
         #expect(width1 == width2)
     }
 
     @Test("Tab width does not change when switching active tab (count stays same)")
     func tabWidthStableOnSwitch() {
         // Width depends only on available space and count, not which tab is active
-        let widthBefore = EditorTabBar.inactiveTabWidth(availableWidth: 900, tabCount: 4)
-        let widthAfter = EditorTabBar.inactiveTabWidth(availableWidth: 900, tabCount: 4)
+        let widthBefore = EditorTabBar.unpinnedTabWidth(availableWidth: 900, tabCount: 4)
+        let widthAfter = EditorTabBar.unpinnedTabWidth(availableWidth: 900, tabCount: 4)
         #expect(widthBefore == widthAfter)
     }
 
     @Test("Tab width changes smoothly when adding one tab")
     func tabWidthSmoothOnAdd() {
-        let width4 = EditorTabBar.inactiveTabWidth(availableWidth: 800, tabCount: 4)
-        let width5 = EditorTabBar.inactiveTabWidth(availableWidth: 800, tabCount: 5)
+        let width4 = EditorTabBar.unpinnedTabWidth(availableWidth: 800, tabCount: 4)
+        let width5 = EditorTabBar.unpinnedTabWidth(availableWidth: 800, tabCount: 5)
         // Width should decrease, but not jump to min
         #expect(width5 <= width4)
         #expect(width5 >= EditorTabBar.minTabWidth)
