@@ -317,6 +317,122 @@ struct LSPProcessTransportTests {
     }
 
     @Test(
+        "Configured stderr captures child diagnostics",
+        .timeLimit(.minutes(1))
+    )
+    func capturesStandardError() async throws {
+        let captureURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent(
+                "PineLSPStderr-\(UUID().uuidString)"
+            )
+        #expect(
+            FileManager.default.createFile(
+                atPath: captureURL.path,
+                contents: nil
+            )
+        )
+        defer { try? FileManager.default.removeItem(at: captureURL) }
+
+        let captureHandle = try FileHandle(forWritingTo: captureURL)
+        defer { try? captureHandle.close() }
+        let transport = LSPTransport()
+        let recorder = RecordingLSPTransportDelegate()
+        transport.delegate = recorder
+        defer { transport.terminate(timeout: 0.1) }
+
+        #expect(
+            transport.start(
+                command: "/bin/sh",
+                arguments: [
+                    "-c",
+                    "printf 'sourcekit failure' >&2"
+                ],
+                environment: [:],
+                standardError: captureHandle
+            )
+        )
+        #expect(
+            await waitUntil {
+                recorder.terminations.count == 1
+            }
+        )
+        try captureHandle.synchronize()
+
+        let capturedData = try Data(contentsOf: captureURL)
+        #expect(
+            String(data: capturedData, encoding: .utf8)
+                == "sourcekit failure"
+        )
+    }
+
+    @Test(
+        "Configured working directory is applied to the child",
+        .timeLimit(.minutes(1))
+    )
+    func usesConfiguredWorkingDirectory() async throws {
+        let directoryURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent(
+                "PineLSPWorkingDirectory-\(UUID().uuidString)",
+                isDirectory: true
+            )
+        try FileManager.default.createDirectory(
+            at: directoryURL,
+            withIntermediateDirectories: true
+        )
+        defer { try? FileManager.default.removeItem(at: directoryURL) }
+
+        let captureURL = directoryURL.appendingPathComponent("stderr")
+        #expect(
+            FileManager.default.createFile(
+                atPath: captureURL.path,
+                contents: nil
+            )
+        )
+        let captureHandle = try FileHandle(forWritingTo: captureURL)
+        defer { try? captureHandle.close() }
+
+        let transport = LSPTransport()
+        let recorder = RecordingLSPTransportDelegate()
+        transport.delegate = recorder
+        defer { transport.terminate(timeout: 0.1) }
+
+        #expect(
+            transport.start(
+                command: "/bin/sh",
+                arguments: [
+                    "-c",
+                    "printf '%s\\n%s' \"$PWD\" \"$PATH\" >&2"
+                ],
+                environment: ["PATH": "/isolated/bin"],
+                currentDirectoryURL: directoryURL,
+                standardError: captureHandle
+            )
+        )
+        #expect(
+            await waitUntil {
+                recorder.terminations.count == 1
+            }
+        )
+        try captureHandle.synchronize()
+
+        let capturedData = try Data(contentsOf: captureURL)
+        let capturedOutput = try #require(
+            String(data: capturedData, encoding: .utf8)?
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+        )
+        let capturedLines = capturedOutput.split(
+            separator: "\n",
+            omittingEmptySubsequences: false
+        ).map(String.init)
+        try #require(capturedLines.count == 2)
+        #expect(
+            canonicalDarwinPath(capturedLines[0])
+                == canonicalDarwinPath(directoryURL.path)
+        )
+        #expect(capturedLines[1] == "/isolated/bin")
+    }
+
+    @Test(
         "Echo process preserves callback order and terminates once",
         .timeLimit(.minutes(1))
     )
@@ -493,6 +609,265 @@ struct LSPProcessTransportTests {
     }
 
     @Test(
+        "Requests preserve array and null JSON results",
+        .timeLimit(.minutes(1))
+    )
+    func requestPreservesPolymorphicResults() async throws {
+        let client = LSPClient(language: "test")
+        let location: [String: Any] = [
+            "uri": "file:///tmp/Pine.swift",
+            "range": [
+                "start": ["line": 1, "character": 2],
+                "end": ["line": 1, "character": 6]
+            ]
+        ]
+
+        let arrayRequest = Task { @MainActor in
+            let result = try await client.sendRequest(
+                "textDocument/definition",
+                params: [:],
+                timeout: .seconds(2)
+            )
+            return SendableJSONValueBox(result)
+        }
+        try #require(
+            await waitUntil {
+                client.pendingRequestCount == 1
+            }
+        )
+        client.transport(didReceive: [
+            "jsonrpc": "2.0",
+            "id": 1,
+            "result": [location]
+        ])
+
+        let arrayResult = try #require(
+            try await arrayRequest.value.value as? [Any]
+        )
+        let decodedLocation = try #require(
+            arrayResult.first as? [String: Any]
+        )
+        #expect(decodedLocation["uri"] as? String == location["uri"] as? String)
+        #expect(client.pendingRequestCount == 0)
+
+        let nullRequest = Task { @MainActor in
+            let result = try await client.sendRequest(
+                "textDocument/hover",
+                params: [:],
+                timeout: .seconds(2)
+            )
+            return SendableJSONValueBox(result)
+        }
+        try #require(
+            await waitUntil {
+                client.pendingRequestCount == 1
+            }
+        )
+        client.transport(didReceive: [
+            "jsonrpc": "2.0",
+            "id": 2,
+            "result": NSNull()
+        ])
+
+        let nullResult = try await nullRequest.value.value
+        #expect(nullResult is NSNull)
+        #expect(client.pendingRequestCount == 0)
+    }
+
+    @Test(
+        "Cancelling a request clears its pending continuation",
+        .timeLimit(.minutes(1))
+    )
+    func requestCancellationClearsPendingState() async throws {
+        let client = LSPClient(language: "test")
+        let request = Task { @MainActor in
+            let result = try await client.sendRequest(
+                "textDocument/hover",
+                params: [:]
+            )
+            return SendableJSONValueBox(result)
+        }
+
+        try #require(
+            await waitUntil {
+                client.pendingRequestCount == 1
+            }
+        )
+        request.cancel()
+
+        await #expect(throws: CancellationError.self) {
+            _ = try await request.value
+        }
+        #expect(client.pendingRequestCount == 0)
+    }
+
+    @Test(
+        "Graceful shutdown awaits acknowledgement before exit",
+        .timeLimit(.minutes(1))
+    )
+    func gracefulShutdownUsesProtocolOrder() async throws {
+        let logURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent(
+                "PineLSPShutdown-\(UUID().uuidString)"
+            )
+        #expect(
+            FileManager.default.createFile(
+                atPath: logURL.path,
+                contents: nil
+            )
+        )
+        defer { try? FileManager.default.removeItem(at: logURL) }
+
+        let server = """
+        read_message() {
+            IFS= read -r header || exit 21
+            length=$(/usr/bin/printf '%s' "$header" | /usr/bin/tr -cd '0-9')
+            IFS= read -r separator || exit 22
+            body=$(/bin/dd bs=1 count="$length" 2>/dev/null)
+            /usr/bin/printf '%s\\n' "$body" >> "$LOG_PATH"
+        }
+        write_message() {
+            body="$1"
+            /usr/bin/printf 'Content-Length: %s\\r\\n\\r\\n%s' \
+                "${#body}" "$body"
+        }
+        read_message
+        write_message '{"jsonrpc":"2.0","id":1,"result":{"capabilities":{}}}'
+        read_message
+        read_message
+        write_message '{"jsonrpc":"2.0","id":2,"result":null}'
+        read_message
+        """
+
+        let client = LSPClient(language: "test")
+        defer { client.shutdown() }
+        #expect(
+            await client.start(
+                command: "/bin/sh",
+                arguments: ["-c", server],
+                rootURI: nil,
+                environment: ["LOG_PATH": logURL.path]
+            )
+        )
+        #expect(
+            await client.shutdownGracefully(timeout: .seconds(2))
+        )
+        #expect(client.state == .exited)
+        #expect(!client.transport.isRunning)
+
+        let logData = try Data(contentsOf: logURL)
+        let log = try #require(
+            String(data: logData, encoding: .utf8)
+        )
+        let messages = log.split(separator: "\n").map(String.init)
+        try #require(messages.count == 4)
+        #expect(messages[0].contains("\"method\":\"initialize\""))
+        #expect(messages[1].contains("\"method\":\"initialized\""))
+        #expect(messages[2].contains("\"method\":\"shutdown\""))
+        #expect(messages[3].contains("\"method\":\"exit\""))
+    }
+
+    @Test(
+        "Graceful shutdown rejects a nonzero server exit",
+        .timeLimit(.minutes(1))
+    )
+    func gracefulShutdownRejectsCrashExit() async {
+        let server = """
+        read_message() {
+            IFS= read -r header || exit 21
+            length=$(/usr/bin/printf '%s' "$header" | /usr/bin/tr -cd '0-9')
+            IFS= read -r separator || exit 22
+            /bin/dd bs=1 count="$length" of=/dev/null 2>/dev/null
+        }
+        write_message() {
+            body="$1"
+            /usr/bin/printf 'Content-Length: %s\\r\\n\\r\\n%s' \
+                "${#body}" "$body"
+        }
+        read_message
+        write_message '{"jsonrpc":"2.0","id":1,"result":{"capabilities":{}}}'
+        read_message
+        read_message
+        write_message '{"jsonrpc":"2.0","id":2,"result":null}'
+        read_message
+        exit 7
+        """
+
+        let client = LSPClient(language: "test")
+        defer { client.shutdown() }
+        #expect(
+            await client.start(
+                command: "/bin/sh",
+                arguments: ["-c", server],
+                rootURI: nil,
+                environment: [:]
+            )
+        )
+
+        #expect(
+            !(await client.shutdownGracefully(timeout: .seconds(2)))
+        )
+        #expect(client.state == .exited)
+        #expect(!client.transport.isRunning)
+    }
+
+    @Test("Graceful shutdown requires an initialized server")
+    func gracefulShutdownRequiresInitializedServer() async {
+        let client = LSPClient(language: "test")
+
+        #expect(
+            !(await client.shutdownGracefully(
+                timeout: .milliseconds(50)
+            ))
+        )
+        #expect(client.state == .exited)
+    }
+
+    @Test(
+        "Graceful shutdown timeout force-terminates the child",
+        .timeLimit(.minutes(1))
+    )
+    func gracefulShutdownTimeoutIsBounded() async {
+        let server = """
+        IFS= read -r header || exit 21
+        length=$(/usr/bin/printf '%s' "$header" | /usr/bin/tr -cd '0-9')
+        IFS= read -r separator || exit 22
+        /bin/dd bs=1 count="$length" of=/dev/null 2>/dev/null
+        body='{"jsonrpc":"2.0","id":1,"result":{"capabilities":{}}}'
+        /usr/bin/printf 'Content-Length: %s\\r\\n\\r\\n%s' \
+            "${#body}" "$body"
+        exec /bin/sleep 30
+        """
+        let client = LSPClient(language: "test")
+        defer { client.shutdown() }
+        #expect(
+            await client.start(
+                command: "/bin/sh",
+                arguments: ["-c", server],
+                rootURI: nil,
+                environment: [:]
+            )
+        )
+        let processID = client.transport.processIdentifier
+
+        let clock = ContinuousClock()
+        let startedAt = clock.now
+        let didShutDownGracefully = await client.shutdownGracefully(
+            timeout: .milliseconds(100)
+        )
+        #expect(!didShutDownGracefully)
+        let elapsed = startedAt.duration(to: clock.now)
+
+        #expect(elapsed < .seconds(2))
+        #expect(client.state == .exited)
+        #expect(!client.transport.isRunning)
+        #expect(client.pendingRequestCount == 0)
+        if let processID {
+            #expect(!isProcessAlive(processID))
+        }
+    }
+
+    @Test(
         "Termination timeout kills an unresponsive child",
         .timeLimit(.minutes(1))
     )
@@ -615,6 +990,17 @@ private func isProcessAlive(_ processID: pid_t) -> Bool {
         return true
     }
     return errno != ESRCH
+}
+
+private func canonicalDarwinPath(_ path: String) -> String {
+    let standardized = URL(fileURLWithPath: path)
+        .standardizedFileURL
+        .resolvingSymlinksInPath()
+        .path
+    if standardized.hasPrefix("/private/") {
+        return String(standardized.dropFirst("/private".count))
+    }
+    return standardized
 }
 
 private func makeFrame(id: Int, text: String = "") -> Data {

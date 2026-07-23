@@ -110,6 +110,15 @@ nonisolated struct LSPTransportError: LocalizedError, Equatable, Sendable {
     }
 }
 
+/// Error returned when a bounded JSON-RPC request receives no response.
+nonisolated struct LSPRequestTimeoutError: LocalizedError, Equatable, Sendable {
+    let method: String
+
+    var errorDescription: String? {
+        "LSP request timed out: \(method)"
+    }
+}
+
 /// A minimal JSON-RPC 2.0 transport over a `Process`'s stdio.
 ///
 /// Owns the spawned language-server `Process`, writes framed messages to its
@@ -157,12 +166,16 @@ nonisolated final class LSPTransport: @unchecked Sendable {
     ///   - arguments: Arguments to pass to the server.
     ///   - environment: Environment for the spawned process. When nil the
     ///     current process environment is used with common tool paths prepended.
+    ///   - currentDirectoryURL: Optional working directory for the server.
+    ///   - standardError: Destination for server diagnostics.
     /// - Returns: `true` if the process launched successfully.
     @discardableResult
     func start(
         command: String,
         arguments: [String],
-        environment: [String: String]? = nil
+        environment: [String: String]? = nil,
+        currentDirectoryURL: URL? = nil,
+        standardError: FileHandle = .nullDevice
     ) -> Bool {
         ioQueue.sync {
             // Already running — refuse to double-start.
@@ -182,20 +195,29 @@ nonisolated final class LSPTransport: @unchecked Sendable {
             let proc = Process()
             proc.executableURL = URL(fileURLWithPath: command)
             proc.arguments = arguments
+            proc.currentDirectoryURL = currentDirectoryURL
 
-            var env = environment ?? ProcessInfo.processInfo.environment
-            // Ensure common tool paths are discoverable by the server itself
-            // (e.g. sourcekit-lsp locating the toolchain).
-            let extraPaths = ["/usr/local/bin", "/opt/homebrew/bin"]
-            let currentPath = env["PATH"] ?? "/usr/bin:/bin"
-            env["PATH"] = (extraPaths + [currentPath]).joined(separator: ":")
+            var env: [String: String]
+            if let environment {
+                // An explicit environment may intentionally be isolated.
+                // Preserve it exactly instead of adding host-specific paths.
+                env = environment
+            } else {
+                env = ProcessInfo.processInfo.environment
+                // Ensure common tool paths are discoverable by the server
+                // when inheriting Pine's production environment.
+                let extraPaths = ["/usr/local/bin", "/opt/homebrew/bin"]
+                let currentPath = env["PATH"] ?? "/usr/bin:/bin"
+                env["PATH"] = (extraPaths + [currentPath])
+                    .joined(separator: ":")
+            }
             proc.environment = env
 
             let inPipe = Pipe()
             let outPipe = Pipe()
             proc.standardInput = inPipe
             proc.standardOutput = outPipe
-            proc.standardError = FileHandle.nullDevice
+            proc.standardError = standardError
             let stdoutDescriptor = outPipe.fileHandleForReading.fileDescriptor
             guard Self.configureNonBlocking(
                 descriptor: stdoutDescriptor
@@ -346,6 +368,16 @@ nonisolated final class LSPTransport: @unchecked Sendable {
         }
     }
 
+    /// Runs the bounded TERM-to-KILL cleanup away from the caller's actor.
+    func terminateAsync(timeout: TimeInterval = 3.0) async {
+        await withCheckedContinuation { continuation in
+            DispatchQueue.global(qos: .utility).async {
+                self.terminate(timeout: timeout)
+                continuation.resume()
+            }
+        }
+    }
+
     /// Detaches the readability handler so the pipe stops calling back.
     /// Must run before the process is terminated to avoid a dangling handler.
     private func outPipeCleanup() {
@@ -458,15 +490,38 @@ nonisolated final class LSPTransport: @unchecked Sendable {
     }
 
     private func handleEndOfFile() {
-        let reason = pendingExitStatus.map {
-            LSPTransportTermination.processExited(status: $0)
-        } ?? .endOfFile
-        finishTransport(reason: reason)
-        if process?.isRunning == true {
-            stopRunningProcessWithoutWaiting()
-        } else {
+        if let pendingExitStatus {
+            finishTransport(
+                reason: .processExited(status: pendingExitStatus)
+            )
             clearExitedProcess()
+            return
         }
+
+        guard let process else {
+            finishTransport(reason: .endOfFile)
+            return
+        }
+
+        // A normal process exit and stdout EOF race on separate callbacks.
+        // Give the already-terminating process a short chance to publish its
+        // status so callers can distinguish a clean exit from a live server
+        // that merely closed stdout.
+        if process.isRunning {
+            let didExit = processExitSemaphore?.wait(
+                timeout: .now() + .milliseconds(100)
+            ) == .success
+            if !didExit {
+                finishTransport(reason: .endOfFile)
+                stopRunningProcessWithoutWaiting()
+                return
+            }
+        }
+
+        let status = process.terminationStatus
+        pendingExitStatus = status
+        finishTransport(reason: .processExited(status: status))
+        clearExitedProcess()
     }
 
     private func finishTransport(reason: LSPTransportTermination) {
@@ -540,6 +595,16 @@ nonisolated struct SendableJSONBox: @unchecked Sendable {
     init(_ value: [String: Any]) { self.value = value }
 }
 
+/// Boxes a polymorphic JSON-RPC result for a checked continuation.
+///
+/// LSP results may be dictionaries, arrays, scalars, or `null`. The value is
+/// freshly decoded and remains confined to the main-actor client after the
+/// continuation resumes.
+nonisolated struct SendableJSONValueBox: @unchecked Sendable {
+    let value: Any?
+    init(_ value: Any?) { self.value = value }
+}
+
 /// Callback surface for `LSPTransport`.
 @MainActor
 protocol LSPTransportDelegate: AnyObject {
@@ -582,8 +647,13 @@ final class LSPClient {
     /// Monotonic request-id counter for correlating JSON-RPC requests/responses.
     private var nextRequestID: Int = 0
 
+    private struct PendingRequest {
+        let completion: (Result<SendableJSONValueBox, Error>) -> Void
+        let timeoutTask: Task<Void, Never>?
+    }
+
     /// Pending requests awaiting a server response, keyed by request id.
-    private var pending: [Int: (Result<SendableJSONBox, Error>) -> Void] = [:]
+    private var pending: [Int: PendingRequest] = [:]
 
     /// Internal observability for deterministic transport-lifecycle tests.
     var pendingRequestCount: Int {
@@ -595,6 +665,9 @@ final class LSPClient {
 
     /// Current lifecycle state.
     private(set) var state: State = .uninitialized
+
+    /// Most recent terminal transport event for clean-shutdown verification.
+    private var lastTermination: LSPTransportTermination?
 
     /// Open documents tracked by URI, so `didChange`/`didClose` can reference them.
     private var openDocuments: [String: LSPTextDocumentItem] = [:]
@@ -615,12 +688,29 @@ final class LSPClient {
     ///   - command: Absolute path to the server binary.
     ///   - arguments: Arguments for the server binary.
     ///   - rootURI: The workspace root as a URI string (e.g. "file:///path").
+    ///   - environment: Optional isolated environment for the server process.
+    ///   - currentDirectoryURL: Optional working directory for the server.
+    ///   - standardError: Destination for server diagnostics.
     /// - Returns: `true` if the server reached the `.initialized` state.
     @discardableResult
-    func start(command: String, arguments: [String], rootURI: String?) async -> Bool {
+    func start(
+        command: String,
+        arguments: [String],
+        rootURI: String?,
+        environment: [String: String]? = nil,
+        currentDirectoryURL: URL? = nil,
+        standardError: FileHandle = .nullDevice
+    ) async -> Bool {
         guard state == .uninitialized || state == .exited else { return false }
+        lastTermination = nil
 
-        guard transport.start(command: command, arguments: arguments) else {
+        guard transport.start(
+            command: command,
+            arguments: arguments,
+            environment: environment,
+            currentDirectoryURL: currentDirectoryURL,
+            standardError: standardError
+        ) else {
             state = .failed
             return false
         }
@@ -659,8 +749,10 @@ final class LSPClient {
         return true
     }
 
-    /// Performs a graceful `shutdown` → `exit` and terminates the process.
-    /// Safe to call even when the server never started.
+    /// Performs a synchronous best-effort cleanup.
+    ///
+    /// Call `shutdownGracefully(timeout:)` when the caller can await the
+    /// protocol-level `shutdown` response before sending `exit`.
     func shutdown() {
         guard state == .initialized else {
             terminate()
@@ -679,6 +771,64 @@ final class LSPClient {
         state = .shutDown
         terminate()
         state = .exited
+    }
+
+    /// Performs the protocol-level `shutdown` → response → `exit` sequence.
+    ///
+    /// Both the response wait and the server's natural exit are bounded.
+    /// Failure or cancellation falls back to the transport's bounded
+    /// TERM-to-KILL cleanup.
+    /// - Returns: `true` only when the server acknowledged `shutdown` and
+    ///   exited naturally after `exit`.
+    func shutdownGracefully(
+        timeout: Duration = .seconds(3)
+    ) async -> Bool {
+        guard state == .initialized else {
+            await transport.terminateAsync(timeout: 0.5)
+            state = .exited
+            return false
+        }
+
+        do {
+            _ = try await sendRequest(
+                "shutdown",
+                params: [:],
+                timeout: timeout
+            )
+        } catch {
+            state = .shutDown
+            await transport.terminateAsync(timeout: 0.5)
+            state = .exited
+            return false
+        }
+
+        state = .shutDown
+        sendNotification("exit", params: [:])
+
+        let clock = ContinuousClock()
+        let deadline = clock.now.advanced(by: timeout)
+        while lastTermination == nil {
+            if Task.isCancelled || clock.now >= deadline {
+                await transport.terminateAsync(timeout: 0.5)
+                state = .exited
+                return false
+            }
+            do {
+                try await Task.sleep(for: .milliseconds(25))
+            } catch {
+                await transport.terminateAsync(timeout: 0.5)
+                state = .exited
+                return false
+            }
+        }
+
+        let exitedCleanly =
+            lastTermination == .processExited(status: 0)
+        if !exitedCleanly, transport.isRunning {
+            await transport.terminateAsync(timeout: 0.5)
+        }
+        state = .exited
+        return exitedCleanly
     }
 
     /// Force-terminates the transport and marks the client as failed.
@@ -852,7 +1002,7 @@ final class LSPClient {
                 "position": ["line": position.line, "character": position.character],
                 "newName": newName
             ])
-            return LSPWorkspaceEdit(json: result)
+            return LSPWorkspaceEdit(json: result ?? NSNull())
         } catch {
             Logger.lsp.error("LSP rename failed: \(String(describing: error), privacy: .public)")
             return LSPWorkspaceEdit(operatedFiles: [])
@@ -862,27 +1012,64 @@ final class LSPClient {
     // MARK: - JSON-RPC plumbing
 
     /// Sends a JSON-RPC request and awaits the server's response.
-    func sendRequest(_ method: String, params: [String: Any]) async throws -> [String: Any] {
+    func sendRequest(
+        _ method: String,
+        params: [String: Any],
+        timeout: Duration? = nil
+    ) async throws -> Any? {
         let id = allocateRequestID()
-        // Continuation carries SendableJSONBox (not raw [String: Any]) to satisfy
-        // Swift 6 strict concurrency — the continuation crosses actor boundaries.
-        return try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<SendableJSONBox, Error>) in
-            pending[id] = { result in
-                switch result {
-                case .success(let boxed):
-                    continuation.resume(returning: boxed)
-                case .failure(let error):
-                    continuation.resume(throwing: error)
+        // The box satisfies Swift 6 strict concurrency while preserving every
+        // legal JSON result shape.
+        //
+        // A raw Foundation collection cannot cross the continuation boundary.
+        let boxed: SendableJSONValueBox = try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { continuation in
+                let timeoutTask = timeout.map { duration in
+                    Task { @MainActor [weak self] in
+                        do {
+                            try await Task.sleep(for: duration)
+                        } catch {
+                            return
+                        }
+                        self?.completeRequest(
+                            id: id,
+                            with: .failure(
+                                LSPRequestTimeoutError(method: method)
+                            )
+                        )
+                    }
                 }
-            }
+                let completion: (
+                    Result<SendableJSONValueBox, Error>
+                ) -> Void = { result in
+                    switch result {
+                    case .success(let value):
+                        continuation.resume(returning: value)
+                    case .failure(let error):
+                        continuation.resume(throwing: error)
+                    }
+                }
+                pending[id] = PendingRequest(
+                    completion: completion,
+                    timeoutTask: timeoutTask
+                )
 
-            transport.send([
-                "jsonrpc": "2.0",
-                "id": id,
-                "method": method,
-                "params": params
-            ])
-        }.value
+                transport.send([
+                    "jsonrpc": "2.0",
+                    "id": id,
+                    "method": method,
+                    "params": params
+                ])
+            }
+        } onCancel: {
+            Task { @MainActor [weak self] in
+                self?.completeRequest(
+                    id: id,
+                    with: .failure(CancellationError())
+                )
+            }
+        }
+        return boxed.value
     }
 
     /// Sends a JSON-RPC notification (no response expected).
@@ -905,12 +1092,26 @@ final class LSPClient {
 
     /// Resolves a pending request by id, invoking its continuation.
     private func resolveRequest(id: Int, result: Any?, error: [String: Any]?) {
-        guard let handler = pending.removeValue(forKey: id) else { return }
         if let error {
-            handler(.failure(LSPError(error: error)))
+            completeRequest(
+                id: id,
+                with: .failure(LSPError(error: error))
+            )
         } else {
-            handler(.success(SendableJSONBox((result as? [String: Any]) ?? [:])))
+            completeRequest(
+                id: id,
+                with: .success(SendableJSONValueBox(result))
+            )
         }
+    }
+
+    private func completeRequest(
+        id: Int,
+        with result: Result<SendableJSONValueBox, Error>
+    ) {
+        guard let request = pending.removeValue(forKey: id) else { return }
+        request.timeoutTask?.cancel()
+        request.completion(result)
     }
 }
 
@@ -939,11 +1140,13 @@ extension LSPClient: LSPTransportDelegate {
     }
 
     func transportDidTerminate(_ reason: LSPTransportTermination) {
+        lastTermination = reason
         let transportError = LSPTransportError(termination: reason)
-        let pendingHandlers = Array(pending.values)
+        let pendingRequests = Array(pending.values)
         pending.removeAll()
-        for handler in pendingHandlers {
-            handler(.failure(transportError))
+        for request in pendingRequests {
+            request.timeoutTask?.cancel()
+            request.completion(.failure(transportError))
         }
 
         switch state {
