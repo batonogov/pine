@@ -53,7 +53,7 @@ struct EditorTabBar: View {
     @Environment(PaneManager.self) private var paneManager
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    @State private var hoverTargetTabID: UUID?
+    @State private var tabFrames: [UUID: CGRect] = [:]
 
     /// Minimum tab width before scrolling kicks in.
     static let minTabWidth: CGFloat = 80
@@ -70,6 +70,21 @@ struct EditorTabBar: View {
 
     /// Width for pinned tabs — compact, icon-focused.
     static let pinnedTabWidth: CGFloat = 40
+
+    private var paneID: PaneID { overridePaneID ?? paneManager.activePaneID }
+    private var coordinateSpaceName: String { "editor-tab-strip-\(paneID.id.uuidString)" }
+
+    private var insertionIndicatorX: CGFloat? {
+        guard let intent = paneManager.tabDragCoordinator.previewIntent,
+              intent.destinationPaneID == paneID,
+              intent.drag.contentType == .editor,
+              let insertionIndex = intent.insertionIndex else { return nil }
+        return TabStripInsertionGeometry.indicatorX(
+            for: insertionIndex,
+            orderedTabIDs: tabManager.tabs.map(\.id),
+            frames: tabFrames
+        )
+    }
 
     /// Computes tab widths: active tab stays at full width, inactive tabs share the rest.
     /// Pinned tabs always use `pinnedTabWidth` and are excluded from the dynamic calculation.
@@ -98,7 +113,6 @@ struct EditorTabBar: View {
                                 pinnedCount: pinnedCount
                             )
                             ForEach(tabManager.tabs) { tab in
-                                let paneID = overridePaneID ?? paneManager.activePaneID
                                 let isActive = tab.id == tabManager.activeTabID
                                 let isDragged = paneManager.activeDrag.map { drag in
                                     drag.paneID == paneID.id
@@ -154,24 +168,19 @@ struct EditorTabBar: View {
                                 .scaleEffect(isDragged ? 0.95 : 1.0)
                                 .transaction { $0.animation = nil }
                                 .id(tab.id)
+                                .reportTabStripFrame(
+                                    tabID: tab.id,
+                                    coordinateSpace: coordinateSpaceName
+                                )
                                 .onDrag {
-                                    let info = TabDragInfo(
-                                        paneID: paneID.id,
+                                    let info = paneManager.beginTabDrag(
+                                        paneID: paneID,
                                         tabID: tab.id,
-                                        fileURL: tab.url
+                                        fileURL: tab.url,
+                                        contentType: .editor
                                     )
-                                    // Store in shared state for synchronous access by drop delegates
-                                    paneManager.activeDrag = info
                                     return info.itemProvider()
                                 }
-                                .onDrop(of: [.paneTabDrag], delegate: TabDropDelegate(
-                                    tabManager: tabManager,
-                                    paneManager: paneManager,
-                                    targetPaneID: paneID,
-                                    targetTabID: tab.id,
-                                    hoverTargetTabID: $hoverTargetTabID,
-                                    onReorder: onReorder
-                                ))
                             }
 
                         }
@@ -179,6 +188,22 @@ struct EditorTabBar: View {
                         .padding(.trailing, 8)
                     }
                     .frame(maxHeight: .infinity, alignment: .center)
+                    .contentShape(Rectangle())
+                    .coordinateSpace(name: coordinateSpaceName)
+                    .onPreferenceChange(TabStripFramePreferenceKey.self) { tabFrames = $0 }
+                    .overlay(alignment: .topLeading) {
+                        if let insertionIndicatorX {
+                            TabInsertionIndicator(x: insertionIndicatorX)
+                        }
+                    }
+                    .onDrop(of: [.paneTabDrag], delegate: TabStripDropDelegate(
+                        paneID: paneID,
+                        contentType: .editor,
+                        orderedTabIDs: tabManager.tabs.map(\.id),
+                        frames: tabFrames,
+                        paneManager: paneManager,
+                        onCommit: onReorder
+                    ))
                     .onAppear {
                         if let activeID = tabManager.activeTabID {
                             proxy.scrollTo(activeID, anchor: .center)
@@ -265,79 +290,6 @@ struct EditorTabBar: View {
         // propagate to inline buttons (e.g. `markdownPreviewToggle`).
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier(AccessibilityID.editorTabBar)
-    }
-}
-
-/// Handles drag-to-reorder for editor tabs.
-/// Provides visual feedback via `hoverTargetTabID` and smooth spring animations.
-struct TabDropDelegate: DropDelegate {
-    let tabManager: TabManager
-    let paneManager: PaneManager
-    let targetPaneID: PaneID
-    let targetTabID: UUID
-    @Binding var hoverTargetTabID: UUID?
-    var onReorder: (() -> Void)?
-
-    /// Spring animation matching Safari's tab reordering feel.
-    private static let reorderAnimation: Animation = .spring(response: 0.3, dampingFraction: 0.8)
-
-    /// Resolves whether this item-level delegate should reorder locally or
-    /// leave the drag for the enclosing pane drop delegate.
-    func routingDecision() -> TabItemDropDecision {
-        TabItemDropRouter.decide(
-            drag: paneManager.activeDrag,
-            targetPaneID: targetPaneID,
-            targetContent: .editor
-        )
-    }
-
-    func validateDrop(info: DropInfo) -> Bool {
-        guard info.hasItemsConforming(to: [.paneTabDrag]) else { return false }
-        guard case .localReorder = routingDecision() else { return false }
-        return true
-    }
-
-    /// Applies the local reorder path without requiring a synthetic DropInfo.
-    /// Kept internal so routing and state cleanup can be covered by unit tests.
-    @discardableResult
-    func handleDropEntered(decision: TabItemDropDecision) -> Bool {
-        guard case .localReorder(let draggedTabID) = decision else { return false }
-        guard draggedTabID != targetTabID else { return true }
-        hoverTargetTabID = targetTabID
-        withAnimation(Self.reorderAnimation) {
-            tabManager.reorderTab(draggedID: draggedTabID, targetID: targetTabID)
-        }
-        return true
-    }
-
-    /// Completes a local item-level drop. Deferred pane drops must retain the
-    /// shared drag payload for the enclosing pane delegate.
-    @discardableResult
-    func finishDrop(decision: TabItemDropDecision) -> Bool {
-        guard case .localReorder = decision else { return false }
-        withAnimation(Self.reorderAnimation) {
-            hoverTargetTabID = nil
-        }
-        paneManager.activeDrag = nil
-        onReorder?()
-        return true
-    }
-
-    func performDrop(info: DropInfo) -> Bool {
-        finishDrop(decision: routingDecision())
-    }
-
-    func dropEntered(info: DropInfo) {
-        handleDropEntered(decision: routingDecision())
-    }
-
-    func dropExited(info: DropInfo) {
-        hoverTargetTabID = nil
-    }
-
-    func dropUpdated(info: DropInfo) -> DropProposal? {
-        guard case .localReorder = routingDecision() else { return nil }
-        return DropProposal(operation: .move)
     }
 }
 

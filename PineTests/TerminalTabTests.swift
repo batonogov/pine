@@ -388,10 +388,11 @@ struct TerminalTabTests {
         container.showTab(state.activeTab)
         let window = makeWindow(contentView: container)
 
-        // Add tab2 and consume pendingFocus
+        // Add tab2 and confirm focus only after AppKit accepts it.
         let tab2 = state.addTab(workingDirectory: nil)
         container.showTab(state.activeTab)
-        // pendingFocusTabID was consumed by showTab
+        #expect(state.pendingFocusTabID == tab2.id)
+        #expect(container.destinationFocusCoordinator.attemptNow())
         #expect(state.pendingFocusTabID == nil)
 
         // Now switch back to tab1 via activeTerminalID (simulating tab bar click)
@@ -413,7 +414,7 @@ struct TerminalTabTests {
 
     // MARK: - pendingFocusTabID consumption
 
-    @Test @MainActor func showTabConsumesPendingFocus() throws {
+    @Test @MainActor func showTabRetainsFocusUntilResponderIsConfirmed() throws {
         let state = TerminalPaneState()
         state.addTab(workingDirectory: nil)
         state.startTabs(workingDirectory: nil)
@@ -424,6 +425,13 @@ struct TerminalTabTests {
         container.terminalPaneState = state
         container.showTab(newTab)
 
+        #expect(state.pendingFocusTabID == newTab.id)
+        #expect(!container.destinationFocusCoordinator.attemptNow())
+        #expect(state.pendingFocusTabID == newTab.id)
+
+        let window = makeWindow(contentView: container)
+        #expect(container.destinationFocusCoordinator.attemptNow())
+        #expect(window.firstResponder === newTab.terminalView)
         #expect(state.pendingFocusTabID == nil)
     }
 

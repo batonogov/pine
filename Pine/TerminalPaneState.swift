@@ -12,7 +12,14 @@ import SwiftUI
 @Observable
 final class TerminalPaneState {
     var terminalTabs: [TerminalTab] = []
-    var activeTerminalID: UUID?
+    var activeTerminalID: UUID? {
+        didSet {
+            guard activeTerminalID != oldValue else { return }
+            if pendingFocusTabID != activeTerminalID {
+                pendingFocusTabID = nil
+            }
+        }
+    }
     var pendingFocusTabID: UUID?
 
     /// Monotonically increasing counter for unique terminal tab names.
@@ -28,6 +35,20 @@ final class TerminalPaneState {
     }
 
     var tabCount: Int { terminalTabs.count }
+
+    /// Clears a focus request only after AppKit confirms that the active
+    /// terminal view became first responder.
+    @discardableResult
+    func acknowledgeFocusRequest(for tabID: UUID, succeeded: Bool) -> Bool {
+        guard pendingFocusTabID == tabID else { return false }
+        guard activeTerminalID == tabID else {
+            pendingFocusTabID = nil
+            return false
+        }
+        guard succeeded else { return false }
+        pendingFocusTabID = nil
+        return true
+    }
 
     @discardableResult
     func addTab(workingDirectory: URL?) -> TerminalTab {
@@ -58,6 +79,42 @@ final class TerminalPaneState {
             fromOffsets: IndexSet(integer: fromIndex),
             toOffset: toIndex > fromIndex ? toIndex + 1 : toIndex
         )
+    }
+
+    /// Moves a terminal tab to one of the strip's N+1 pre-removal gaps.
+    func canMoveTab(id: UUID, toInsertionIndex insertionIndex: Int) -> TabInsertionResult {
+        guard (0...terminalTabs.count).contains(insertionIndex),
+              let sourceIndex = terminalTabs.firstIndex(where: { $0.id == id }) else {
+            return .rejected
+        }
+        let destinationIndex = insertionIndex > sourceIndex
+            ? insertionIndex - 1
+            : insertionIndex
+        return destinationIndex == sourceIndex ? .noOp : .moved
+    }
+
+    @discardableResult
+    func moveTab(id: UUID, toInsertionIndex insertionIndex: Int) -> TabInsertionResult {
+        let validation = canMoveTab(id: id, toInsertionIndex: insertionIndex)
+        guard validation != .rejected,
+              let sourceIndex = terminalTabs.firstIndex(where: { $0.id == id }) else {
+            return .rejected
+        }
+
+        let destinationIndex = insertionIndex > sourceIndex
+            ? insertionIndex - 1
+            : insertionIndex
+        guard validation == .moved else {
+            activeTerminalID = id
+            pendingFocusTabID = id
+            return .noOp
+        }
+
+        let tab = terminalTabs.remove(at: sourceIndex)
+        terminalTabs.insert(tab, at: destinationIndex)
+        activeTerminalID = id
+        pendingFocusTabID = id
+        return .moved
     }
 
     func startTabs(workingDirectory: URL?) {

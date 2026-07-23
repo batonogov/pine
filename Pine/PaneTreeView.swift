@@ -13,10 +13,19 @@ import SwiftUI
 /// Recursively renders the PaneNode tree as nested split views.
 struct PaneTreeView: View {
     let node: PaneNode
+    var isRoot = true
     @Environment(PaneManager.self) private var paneManager
     @State private var containerSize: CGSize = .zero
 
     var body: some View {
+        if isRoot {
+            rootDropTarget
+        } else {
+            nodeContent
+        }
+    }
+
+    private var rootDropTarget: some View {
         nodeContent
             .overlay {
                 GeometryReader { geometry in
@@ -73,7 +82,7 @@ struct PaneSplitView: View {
 
             if axis == .horizontal {
                 HStack(spacing: 0) {
-                    PaneTreeView(node: first)
+                    PaneTreeView(node: first, isRoot: false)
                         .frame(width: clampedFirstSize)
 
                     PaneDividerView(
@@ -88,12 +97,12 @@ struct PaneSplitView: View {
                         }
                     )
 
-                    PaneTreeView(node: second)
+                    PaneTreeView(node: second, isRoot: false)
                         .frame(maxWidth: .infinity)
                 }
             } else {
                 VStack(spacing: 0) {
-                    PaneTreeView(node: first)
+                    PaneTreeView(node: first, isRoot: false)
                         .frame(height: clampedFirstSize)
 
                     PaneDividerView(
@@ -108,7 +117,7 @@ struct PaneSplitView: View {
                         }
                     )
 
-                    PaneTreeView(node: second)
+                    PaneTreeView(node: second, isRoot: false)
                         .frame(maxHeight: .infinity)
                 }
             }

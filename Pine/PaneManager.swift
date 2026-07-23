@@ -48,10 +48,21 @@ final class PaneManager {
     /// The currently focused pane.
     var activePaneID: PaneID
 
-    /// Shared drag state for synchronous tab drag between panes.
-    /// Set by editor and terminal tab drag sources, read by drop delegates.
-    /// Using shared state avoids unreliable async NSItemProvider loading.
-    var activeDrag: TabDragInfo?
+    /// The single owner of tab-drag session, preview, validation, and commit.
+    let tabDragCoordinator: TabDragCoordinator
+
+    /// Compatibility facade for existing cleanup and diagnostics. New drop
+    /// destinations submit intents through `tabDragCoordinator`.
+    var activeDrag: TabDragInfo? {
+        get { tabDragCoordinator.activeDrag }
+        set {
+            if let newValue {
+                tabDragCoordinator.begin(newValue)
+            } else {
+                tabDragCoordinator.cancel()
+            }
+        }
+    }
 
     /// Active drop zone per pane — centralized to avoid stale @State/@Binding issues.
     var dropZones: [PaneID: PaneDropZone] = [:]
@@ -84,6 +95,7 @@ final class PaneManager {
     func clearAllDropZones() {
         dropZones.removeAll()
         rootDropZone = nil
+        tabDragCoordinator.clearPreview()
     }
 
     /// Clears leaf-level drop zone overlays without touching rootDropZone.
@@ -137,19 +149,25 @@ final class PaneManager {
     /// Creates a PaneManager with a single editor pane.
     init() {
         let initialID = PaneID()
+        let coordinator = TabDragCoordinator()
+        self.tabDragCoordinator = coordinator
         self.root = .leaf(initialID, .editor)
         self.activePaneID = initialID
         let tm = TabManager()
         self.tabManagers[initialID] = tm
+        bindTabDragCoordinator(coordinator)
         installMouseUpMonitor()
     }
 
     /// Creates a PaneManager with an existing TabManager (for migration from single-pane).
     init(existingTabManager: TabManager) {
         let initialID = PaneID()
+        let coordinator = TabDragCoordinator()
+        self.tabDragCoordinator = coordinator
         self.root = .leaf(initialID, .editor)
         self.activePaneID = initialID
         self.tabManagers[initialID] = existingTabManager
+        bindTabDragCoordinator(coordinator)
         installMouseUpMonitor()
     }
 
@@ -329,6 +347,24 @@ final class PaneManager {
         transferEditorTab(tabID: tabID, url: tabURL, from: sourceID, to: targetID)
     }
 
+    /// Indexed cross-pane transfer used by an editor strip insertion intent.
+    @discardableResult
+    func moveTabBetweenPanes(
+        tabID: UUID,
+        tabURL: URL? = nil,
+        from sourceID: PaneID,
+        to targetID: PaneID,
+        at insertionIndex: Int
+    ) -> Bool {
+        transferEditorTab(
+            tabID: tabID,
+            url: tabURL,
+            from: sourceID,
+            to: targetID,
+            insertionIndex: insertionIndex
+        )
+    }
+
     // MARK: - Empty editor leaf pruning
 
     /// Removes any editor leaf whose TabManager has no tabs, collapsing the
@@ -503,13 +539,32 @@ final class PaneManager {
 
     @discardableResult
     func moveTerminalTab(_ tabID: UUID, from sourceID: PaneID, to targetID: PaneID) -> Bool {
+        guard let destination = terminalStates[targetID] else { return false }
+        return moveTerminalTab(
+            tabID,
+            from: sourceID,
+            to: targetID,
+            at: destination.terminalTabs.count
+        )
+    }
+
+    /// Atomically inserts a terminal tab at an exact destination gap. Every
+    /// precondition is checked before either source or destination changes.
+    @discardableResult
+    func moveTerminalTab(
+        _ tabID: UUID,
+        from sourceID: PaneID,
+        to targetID: PaneID,
+        at insertionIndex: Int
+    ) -> Bool {
         guard sourceID != targetID,
               let srcState = terminalStates[sourceID],
               let dstState = terminalStates[targetID],
+              (0...dstState.terminalTabs.count).contains(insertionIndex),
               !dstState.terminalTabs.contains(where: { $0.id == tabID }),
               let tab = srcState.terminalTabs.first(where: { $0.id == tabID }) else { return false }
 
-        dstState.terminalTabs.append(tab)
+        dstState.terminalTabs.insert(tab, at: insertionIndex)
         dstState.activeTerminalID = tab.id
         dstState.pendingFocusTabID = tab.id
         srcState.terminalTabs.removeAll { $0.id == tabID }
@@ -710,6 +765,260 @@ final class PaneManager {
         return newPaneID
     }
 
+    // MARK: - Transactional tab drag
+
+    /// Starts a drag and returns the payload stored in the item provider.
+    @discardableResult
+    func beginTabDrag(
+        paneID: PaneID,
+        tabID: UUID,
+        fileURL: URL?,
+        contentType: PaneContent
+    ) -> TabDragInfo {
+        let drag = TabDragInfo(
+            paneID: paneID.id,
+            tabID: tabID,
+            fileURL: fileURL,
+            contentType: contentType
+        )
+        tabDragCoordinator.begin(drag)
+        return drag
+    }
+
+    /// Builds the typed intent for a same-type strip. Cross-type payloads are
+    /// deliberately rejected here so the strip and pane body never compete.
+    func tabStripIntent(
+        destinationPaneID: PaneID,
+        contentType: PaneContent,
+        insertionIndex: Int
+    ) -> TabDropIntent? {
+        guard let drag = activeDrag,
+              drag.contentType == contentType,
+              root.content(for: destinationPaneID) == contentType else { return nil }
+        let key = TabDragKey(drag)
+        if key.sourcePaneID == destinationPaneID {
+            return .reorder(
+                drag: key,
+                destinationPaneID: destinationPaneID,
+                insertionIndex: insertionIndex
+            )
+        }
+        return .insert(
+            drag: key,
+            destinationPaneID: destinationPaneID,
+            insertionIndex: insertionIndex
+        )
+    }
+
+    /// Previews a pane-body destination and returns the zone that should be
+    /// drawn. A cross-type center drop is represented as the bottom split it
+    /// will actually commit, keeping feedback and mutation identical.
+    @discardableResult
+    func previewPaneDrop(
+        destinationPaneID: PaneID,
+        proposedZone: PaneDropZone
+    ) -> PaneDropZone? {
+        guard let drag = activeDrag,
+              let targetContent = root.content(for: destinationPaneID) else {
+            tabDragCoordinator.clearPreview(destinationPaneID: destinationPaneID)
+            return nil
+        }
+
+        let key = TabDragKey(drag)
+        let intent: TabDropIntent
+        let visualZone: PaneDropZone
+        if proposedZone == .center {
+            if drag.contentType == targetContent {
+                intent = .merge(drag: key, destinationPaneID: destinationPaneID)
+                visualZone = .center
+            } else {
+                intent = .leafSplit(
+                    drag: key,
+                    destinationPaneID: destinationPaneID,
+                    zone: .bottom
+                )
+                visualZone = .bottom
+            }
+        } else {
+            intent = .leafSplit(
+                drag: key,
+                destinationPaneID: destinationPaneID,
+                zone: proposedZone
+            )
+            visualZone = proposedZone
+        }
+
+        return tabDragCoordinator.preview(intent) ? visualZone : nil
+    }
+
+    @discardableResult
+    func previewRootDrop(zone: RootDropZone) -> Bool {
+        guard let drag = activeDrag else { return false }
+        return tabDragCoordinator.preview(.rootSplit(drag: TabDragKey(drag), zone: zone))
+    }
+
+    private func bindTabDragCoordinator(_ coordinator: TabDragCoordinator) {
+        coordinator.validateIntent = { [weak self] intent in
+            self?.canCommitTabDrop(intent) == true
+        }
+        coordinator.commitIntent = { [weak self] intent in
+            self?.commitTabDrop(intent) == true
+        }
+    }
+
+    private func canCommitTabDrop(_ intent: TabDropIntent) -> Bool {
+        let key = intent.drag
+        guard root.content(for: key.sourcePaneID) == key.contentType,
+              sourceContainsDraggedTab(key) else { return false }
+
+        switch intent {
+        case .reorder(_, let destinationPaneID, let insertionIndex):
+            guard destinationPaneID == key.sourcePaneID,
+                  root.content(for: destinationPaneID) == key.contentType else { return false }
+            if key.contentType == .editor {
+                return tabManagers[destinationPaneID]?
+                    .canMoveTab(id: key.tabID, toInsertionIndex: insertionIndex)
+                    .accepted == true
+            }
+            return terminalStates[destinationPaneID]?
+                .canMoveTab(id: key.tabID, toInsertionIndex: insertionIndex)
+                .accepted == true
+
+        case .insert(_, let destinationPaneID, let insertionIndex):
+            guard !isMaximized,
+                  destinationPaneID != key.sourcePaneID,
+                  root.content(for: destinationPaneID) == key.contentType else { return false }
+            if key.contentType == .editor {
+                guard let tab = tabManagers[key.sourcePaneID]?.tabs
+                    .first(where: { $0.id == key.tabID }) else { return false }
+                return tabManagers[destinationPaneID]?
+                    .canInsertTransferredTab(tab, at: insertionIndex) == true
+            }
+            guard let destination = terminalStates[destinationPaneID] else { return false }
+            return (0...destination.terminalTabs.count).contains(insertionIndex)
+                && !destination.terminalTabs.contains(where: { $0.id == key.tabID })
+
+        case .merge(_, let destinationPaneID):
+            guard !isMaximized,
+                  destinationPaneID != key.sourcePaneID,
+                  root.content(for: destinationPaneID) == key.contentType else { return false }
+            if key.contentType == .editor {
+                guard let tab = tabManagers[key.sourcePaneID]?.tabs
+                    .first(where: { $0.id == key.tabID }) else { return false }
+                let destination = tabManagers[destinationPaneID]
+                let index = tab.isPinned
+                    ? destination?.pinnedTabCount
+                    : destination?.tabs.count
+                guard let destination, let index else { return false }
+                return destination.canInsertTransferredTab(tab, at: index)
+            }
+            return terminalStates[destinationPaneID]?
+                .terminalTabs.contains(where: { $0.id == key.tabID }) == false
+
+        case .leafSplit(_, let destinationPaneID, let zone):
+            return !isMaximized
+                && zone != .center
+                && root.content(for: destinationPaneID) != nil
+
+        case .rootSplit:
+            return !isMaximized
+                && root.leafCount > 1
+                && key.contentType == .terminal
+        }
+    }
+
+    private func sourceContainsDraggedTab(_ key: TabDragKey) -> Bool {
+        if key.contentType == .editor {
+            return tabManagers[key.sourcePaneID]?.tabs
+                .contains(where: { $0.id == key.tabID }) == true
+        }
+        return terminalStates[key.sourcePaneID]?.terminalTabs
+            .contains(where: { $0.id == key.tabID }) == true
+    }
+
+    private func commitTabDrop(_ intent: TabDropIntent) -> Bool {
+        guard canCommitTabDrop(intent) else { return false }
+        let key = intent.drag
+
+        switch intent {
+        case .reorder(_, let destinationPaneID, let insertionIndex):
+            let result: TabInsertionResult
+            if key.contentType == .editor {
+                result = tabManagers[destinationPaneID]?.moveTab(
+                    id: key.tabID,
+                    toInsertionIndex: insertionIndex
+                ) ?? .rejected
+            } else {
+                result = terminalStates[destinationPaneID]?.moveTab(
+                    id: key.tabID,
+                    toInsertionIndex: insertionIndex
+                ) ?? .rejected
+            }
+            if result.accepted {
+                activePaneID = destinationPaneID
+            }
+            return result.accepted
+
+        case .insert(_, let destinationPaneID, let insertionIndex):
+            if key.contentType == .editor {
+                return moveTabBetweenPanes(
+                    tabID: key.tabID,
+                    from: key.sourcePaneID,
+                    to: destinationPaneID,
+                    at: insertionIndex
+                )
+            }
+            return moveTerminalTab(
+                key.tabID,
+                from: key.sourcePaneID,
+                to: destinationPaneID,
+                at: insertionIndex
+            )
+
+        case .merge(_, let destinationPaneID):
+            if key.contentType == .editor {
+                return moveTabBetweenPanes(
+                    tabID: key.tabID,
+                    from: key.sourcePaneID,
+                    to: destinationPaneID
+                )
+            }
+            return moveTerminalTab(key.tabID, from: key.sourcePaneID, to: destinationPaneID)
+
+        case .leafSplit(_, let destinationPaneID, let zone):
+            let axis: SplitAxis = (zone == .left || zone == .right)
+                ? .horizontal
+                : .vertical
+            let insertBefore = zone == .left || zone == .top
+            if key.contentType == .editor {
+                guard let tab = tabManagers[key.sourcePaneID]?.tabs
+                    .first(where: { $0.id == key.tabID }) else { return false }
+                return splitPane(
+                    destinationPaneID,
+                    axis: axis,
+                    tabID: key.tabID,
+                    tabURL: tab.url,
+                    sourcePane: key.sourcePaneID,
+                    insertBefore: insertBefore
+                ) != nil
+            }
+            return splitAndMoveTerminalTab(
+                tabID: key.tabID,
+                from: key.sourcePaneID,
+                relativeTo: destinationPaneID,
+                axis: axis,
+                insertBefore: insertBefore
+            ) != nil
+
+        case .rootSplit(_, let zone):
+            return wrapRootWithTerminal(
+                at: zone,
+                from: key.sourcePaneID,
+                tabID: key.tabID
+            )
+        }
+    }
+
     // MARK: - Center drop
 
     /// Handles a center-zone tab drop on `targetPaneID`.
@@ -797,17 +1106,21 @@ final class PaneManager {
         tabID: UUID?,
         url: URL?,
         from sourceID: PaneID,
-        to targetID: PaneID
+        to targetID: PaneID,
+        insertionIndex: Int? = nil
     ) -> Bool {
         guard sourceID != targetID,
               let source = tabManagers[sourceID],
               let destination = tabManagers[targetID],
               let resolvedTabID = resolvedEditorTabID(tabID: tabID, url: url, in: source),
-              let tab = source.tabs.first(where: { $0.id == resolvedTabID }),
-              destination.canInsertTransferredTab(tab),
+              let tab = source.tabs.first(where: { $0.id == resolvedTabID }) else { return false }
+
+        let resolvedInsertionIndex = insertionIndex
+            ?? (tab.isPinned ? destination.pinnedTabCount : destination.tabs.count)
+        guard destination.canInsertTransferredTab(tab, at: resolvedInsertionIndex),
               let extraction = source.extractTab(id: resolvedTabID) else { return false }
 
-        guard destination.insertTransferredTab(extraction) else {
+        guard destination.insertTransferredTab(extraction, at: resolvedInsertionIndex) else {
             source.restoreExtractedTab(extraction)
             return false
         }

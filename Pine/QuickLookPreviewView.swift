@@ -17,15 +17,25 @@ import SwiftUI
 /// embedding the view.
 struct QuickLookPreviewView: NSViewRepresentable {
     let url: URL
+    var focusRequestTabID: UUID?
+    var canAttemptFocusRequest: ((UUID) -> Bool)?
+    var onFocusRequestResult: ((UUID, Bool) -> Void)?
 
     func makeCoordinator() -> Coordinator {
         Coordinator()
     }
 
-    func makeNSView(context: Context) -> QLPreviewView {
+    func makeNSView(context: Context) -> FocusableQuickLookPreviewView {
         // swiftlint:disable:next force_unwrapping
-        let view = QLPreviewView(frame: .zero, style: .normal)!
+        let view = FocusableQuickLookPreviewView(frame: .zero, style: .normal)!
         context.coordinator.currentURL = url
+        view.destinationFocusCoordinator.update(
+            requestID: focusRequestTabID,
+            hostView: view,
+            targetView: view,
+            canAttempt: canAttemptFocusRequest,
+            onResult: onFocusRequestResult
+        )
         // Defer previewItem assignment to the next runloop iteration so the view
         // is fully embedded in the window hierarchy before QuickLookUI attempts
         // its internal overlay/border update (#673).
@@ -38,7 +48,14 @@ struct QuickLookPreviewView: NSViewRepresentable {
         return view
     }
 
-    func updateNSView(_ nsView: QLPreviewView, context: Context) {
+    func updateNSView(_ nsView: FocusableQuickLookPreviewView, context: Context) {
+        nsView.destinationFocusCoordinator.update(
+            requestID: focusRequestTabID,
+            hostView: nsView,
+            targetView: nsView,
+            canAttempt: canAttemptFocusRequest,
+            onResult: onFocusRequestResult
+        )
         // Guard against updating a QLPreviewView that has been closed/deactivated
         // or when the preview item would be nil — prevents crash on tab switching (#618)
         guard nsView.window != nil else { return }
@@ -59,10 +76,27 @@ struct QuickLookPreviewView: NSViewRepresentable {
         }
     }
 
+    static func dismantleNSView(
+        _ nsView: FocusableQuickLookPreviewView,
+        coordinator: Coordinator
+    ) {
+        dismantlePreviewView(nsView, coordinator: coordinator)
+    }
+
+    /// Compatibility overload retained for direct QuickLook lifecycle tests.
     static func dismantleNSView(_ nsView: QLPreviewView, coordinator: Coordinator) {
+        dismantlePreviewView(nsView, coordinator: coordinator)
+    }
+
+    private static func dismantlePreviewView(
+        _ nsView: QLPreviewView,
+        coordinator: Coordinator
+    ) {
         // Increment generation so any pending async blocks from makeNSView/updateNSView
         // see a mismatch and skip the stale previewItem assignment.
         coordinator.generation += 1
+        (nsView as? FocusableQuickLookPreviewView)?
+            .destinationFocusCoordinator.cancel()
         // Clear the preview item before the view is torn down to prevent
         // QuickLookUI from accessing stale internal state during deallocation (#673).
         nsView.previewItem = nil
@@ -75,6 +109,17 @@ struct QuickLookPreviewView: NSViewRepresentable {
     final class Coordinator {
         var currentURL: URL?
         var generation: Int = 0
+    }
+}
+
+final class FocusableQuickLookPreviewView: QLPreviewView {
+    let destinationFocusCoordinator = AppKitFocusRequestCoordinator()
+
+    override var acceptsFirstResponder: Bool { true }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        destinationFocusCoordinator.hostDidMoveToWindow(self)
     }
 }
 

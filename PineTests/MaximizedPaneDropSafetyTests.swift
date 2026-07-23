@@ -147,18 +147,14 @@ struct MaximizedPaneDropSafetyTests {
             fileURL: first.url,
             contentType: .editor
         )
-        let delegate = TabDropDelegate(
-            tabManager: tabManager,
-            paneManager: manager,
-            targetPaneID: paneID,
-            targetTabID: second.id,
-            hoverTargetTabID: .constant(nil)
-        )
-
-        let decision = delegate.routingDecision()
-        #expect(decision == .localReorder(draggedTabID: first.id))
-        #expect(delegate.handleDropEntered(decision: decision))
-        #expect(delegate.finishDrop(decision: decision))
+        let intent = try #require(manager.tabStripIntent(
+            destinationPaneID: paneID,
+            contentType: .editor,
+            insertionIndex: 2
+        ))
+        #expect(manager.tabDragCoordinator.preview(intent))
+        #expect(tabManager.tabs.map(\.id) == [first.id, second.id])
+        #expect(manager.tabDragCoordinator.commitPreview())
         #expect(tabManager.tabs.map(\.id) == [second.id, first.id])
         #expect(manager.activeDrag == nil)
         #expect(manager.isMaximized)
@@ -178,17 +174,14 @@ struct MaximizedPaneDropSafetyTests {
             tabID: firstID,
             contentType: .terminal
         )
-        let delegate = TerminalTabDropDelegate(
-            terminalState: terminalState,
-            targetTabID: secondID,
-            targetPaneID: terminalPaneID,
-            paneManager: manager
-        )
-
-        let decision = delegate.routingDecision()
-        #expect(decision == .localReorder(draggedTabID: firstID))
-        #expect(delegate.handleDropEntered(decision: decision))
-        #expect(delegate.finishDrop(decision: decision))
+        let intent = try #require(manager.tabStripIntent(
+            destinationPaneID: terminalPaneID,
+            contentType: .terminal,
+            insertionIndex: 2
+        ))
+        #expect(manager.tabDragCoordinator.preview(intent))
+        #expect(terminalState.terminalTabs.map(\.id) == [firstID, secondID])
+        #expect(manager.tabDragCoordinator.commitPreview())
         #expect(terminalState.terminalTabs.map(\.id) == [secondID, firstID])
         #expect(manager.activeDrag == nil)
         #expect(manager.isMaximized)

@@ -8,6 +8,64 @@
 import SwiftUI
 import UniformTypeIdentifiers
 
+/// Presentation routing also determines which AppKit content view owns a
+/// pending destination-focus request after a tab drag commits.
+enum EditorContentPresentation: Equatable {
+    case codeEditor
+    case quickLook
+    case markdownPreview
+    case markdownSplit
+
+    static func resolve(for tab: EditorTab) -> EditorContentPresentation {
+        switch tab.kind {
+        case .preview:
+            return .quickLook
+        case .text where tab.isMarkdownFile:
+            switch tab.previewMode {
+            case .source:
+                return .codeEditor
+            case .preview:
+                return .markdownPreview
+            case .split:
+                return .markdownSplit
+            }
+        case .text:
+            return .codeEditor
+        }
+    }
+}
+
+/// Keeps pane-body routing consistent with whether a real tab strip exists.
+/// An optional count distinguishes missing backing state from a valid empty
+/// strip: zero tabs still expose the single N=0 insertion gap.
+nonisolated enum PaneLeafTabStripComposition {
+    static func rendersStrip(
+        content: PaneContent,
+        editorTabCount: Int?,
+        terminalTabCount: Int?
+    ) -> Bool {
+        switch content {
+        case .editor:
+            editorTabCount != nil
+        case .terminal:
+            terminalTabCount != nil
+        }
+    }
+
+    static func excludedTopInset(
+        content: PaneContent,
+        editorTabCount: Int?,
+        terminalTabCount: Int?,
+        tabBarHeight: CGFloat
+    ) -> CGFloat {
+        rendersStrip(
+            content: content,
+            editorTabCount: editorTabCount,
+            terminalTabCount: terminalTabCount
+        ) ? tabBarHeight : 0
+    }
+}
+
 /// A single leaf pane showing the editor area with its own tab bar.
 struct PaneLeafView: View {
     let paneID: PaneID
@@ -45,6 +103,14 @@ struct PaneLeafView: View {
     private var tabManager: TabManager? { paneManager.tabManager(for: paneID) }
     private var terminalState: TerminalPaneState? { paneManager.terminalState(for: paneID) }
     private var isActive: Bool { paneManager.activePaneID == paneID }
+    private var tabStripExcludedTopInset: CGFloat {
+        PaneLeafTabStripComposition.excludedTopInset(
+            content: content,
+            editorTabCount: tabManager?.tabs.count,
+            terminalTabCount: terminalState?.terminalTabs.count,
+            tabBarHeight: LayoutMetrics.tabBarHeight
+        )
+    }
 
     var body: some View {
         Group {
@@ -71,7 +137,8 @@ struct PaneLeafView: View {
         .onDrop(of: [.paneTabDrag, .sidebarFileDrag, .fileURL], delegate: PaneSplitDropDelegate(
             paneID: paneID,
             paneManager: paneManager,
-            paneSize: paneSize
+            paneSize: paneSize,
+            excludedTopInset: tabStripExcludedTopInset
         ))
         .border(
             isActive && paneManager.root.leafCount > 1
@@ -182,29 +249,29 @@ struct PaneLeafView: View {
     @ViewBuilder
     private func editorPaneContent(tabManager: TabManager) -> some View {
         VStack(spacing: 0) {
-            if !tabManager.tabs.isEmpty {
-                EditorTabBar(
-                    tabManager: tabManager,
-                    onCloseTab: { tab in
-                        closeTabWithConfirmation(tab, tabManager: tabManager)
-                    },
-                    onCloseOtherTabs: { tabID in
-                        closeOtherTabsWithConfirmation(keeping: tabID, tabManager: tabManager)
-                    },
-                    onCloseTabsToTheRight: { tabID in
-                        closeTabsToTheRightWithConfirmation(of: tabID, tabManager: tabManager)
-                    },
-                    onCloseAllTabs: {
-                        closeAllTabsWithConfirmation(tabManager: tabManager)
-                    },
-                    isMarkdownFile: tabManager.activeTab?.isMarkdownFile ?? false,
-                    previewMode: tabManager.activeTab?.previewMode ?? .source,
-                    onTogglePreview: {
-                        tabManager.togglePreviewMode()
-                    },
-                    overridePaneID: paneID
-                )
-            }
+            // Keep the strip visible at N=0: its full-width surface is the
+            // one valid insertion gap for a tab dragged from another pane.
+            EditorTabBar(
+                tabManager: tabManager,
+                onCloseTab: { tab in
+                    closeTabWithConfirmation(tab, tabManager: tabManager)
+                },
+                onCloseOtherTabs: { tabID in
+                    closeOtherTabsWithConfirmation(keeping: tabID, tabManager: tabManager)
+                },
+                onCloseTabsToTheRight: { tabID in
+                    closeTabsToTheRightWithConfirmation(of: tabID, tabManager: tabManager)
+                },
+                onCloseAllTabs: {
+                    closeAllTabsWithConfirmation(tabManager: tabManager)
+                },
+                isMarkdownFile: tabManager.activeTab?.isMarkdownFile ?? false,
+                previewMode: tabManager.activeTab?.previewMode ?? .source,
+                onTogglePreview: {
+                    tabManager.togglePreviewMode()
+                },
+                overridePaneID: paneID
+            )
 
             if let tab = tabManager.activeTab, let rootURL = workspace.rootURL {
                 BreadcrumbPathBar(
@@ -216,26 +283,49 @@ struct PaneLeafView: View {
 
             if let tab = tabManager.activeTab {
                 Group {
-                    if tab.kind == .preview {
-                        QuickLookPreviewView(url: tab.url)
+                    let focusRequestID = tabManager.pendingFocusTabID == tab.id ? tab.id : nil
+                    switch EditorContentPresentation.resolve(for: tab) {
+                    case .quickLook:
+                        QuickLookPreviewView(
+                            url: tab.url,
+                            focusRequestTabID: focusRequestID,
+                            canAttemptFocusRequest: { tabID in
+                                tabManager.activeTabID == tabID
+                                    && tabManager.pendingFocusTabID == tabID
+                            },
+                            onFocusRequestResult: { tabID, succeeded in
+                                tabManager.acknowledgeFocusRequest(
+                                    for: tabID,
+                                    succeeded: succeeded
+                                )
+                            }
+                        )
                             .accessibilityIdentifier(AccessibilityID.quickLookPreview)
-                    } else if tab.isMarkdownFile {
-                        switch tab.previewMode {
-                        case .source:
+                    case .markdownPreview:
+                        MarkdownPreviewView(
+                            content: tab.content,
+                            focusRequestTabID: focusRequestID,
+                            canAttemptFocusRequest: { tabID in
+                                tabManager.activeTabID == tabID
+                                    && tabManager.pendingFocusTabID == tabID
+                            },
+                            onFocusRequestResult: { tabID, succeeded in
+                                tabManager.acknowledgeFocusRequest(
+                                    for: tabID,
+                                    succeeded: succeeded
+                                )
+                            }
+                        )
+                        .accessibilityIdentifier(AccessibilityID.markdownPreviewView)
+                    case .markdownSplit:
+                        HSplitView {
                             codeEditorView(for: tab, tabManager: tabManager)
-                        case .preview:
+                                .frame(minWidth: 200)
                             MarkdownPreviewView(content: tab.content)
                                 .accessibilityIdentifier(AccessibilityID.markdownPreviewView)
-                        case .split:
-                            HSplitView {
-                                codeEditorView(for: tab, tabManager: tabManager)
-                                    .frame(minWidth: 200)
-                                MarkdownPreviewView(content: tab.content)
-                                    .accessibilityIdentifier(AccessibilityID.markdownPreviewView)
-                                    .frame(minWidth: 200)
-                            }
+                                .frame(minWidth: 200)
                         }
-                    } else {
+                    case .codeEditor:
                         codeEditorView(for: tab, tabManager: tabManager)
                     }
                 }
@@ -295,6 +385,14 @@ struct PaneLeafView: View {
             },
             cachedHighlightResult: tab.cachedHighlightResult,
             goToOffset: goToLineOffset,
+            focusRequestTabID: tabManager.pendingFocusTabID == tab.id ? tab.id : nil,
+            canAttemptFocusRequest: { tabID in
+                tabManager.activeTabID == tabID
+                    && tabManager.pendingFocusTabID == tabID
+            },
+            onFocusRequestResult: { tabID, succeeded in
+                tabManager.acknowledgeFocusRequest(for: tabID, succeeded: succeeded)
+            },
             indentStyle: tab.cachedIndentation,
             fontSize: FontSizeSettings.shared.fontSize
         )

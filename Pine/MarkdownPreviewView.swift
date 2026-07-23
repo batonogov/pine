@@ -8,9 +8,12 @@ import SwiftUI
 /// Renders Markdown content as a read-only attributed string in a scrollable NSTextView.
 struct MarkdownPreviewView: NSViewRepresentable {
     let content: String
+    var focusRequestTabID: UUID?
+    var canAttemptFocusRequest: ((UUID) -> Bool)?
+    var onFocusRequestResult: ((UUID, Bool) -> Void)?
 
-    func makeNSView(context: Context) -> NSScrollView {
-        let scrollView = NSScrollView()
+    func makeNSView(context: Context) -> MarkdownPreviewScrollView {
+        let scrollView = MarkdownPreviewScrollView()
         scrollView.hasVerticalScroller = true
         scrollView.hasHorizontalScroller = false
         scrollView.autohidesScrollers = true
@@ -32,12 +35,26 @@ struct MarkdownPreviewView: NSViewRepresentable {
         scrollView.documentView = textView
         context.coordinator.textView = textView
         context.coordinator.scheduleRender(content: content)
+        scrollView.destinationFocusCoordinator.update(
+            requestID: focusRequestTabID,
+            hostView: scrollView,
+            targetView: textView,
+            canAttempt: canAttemptFocusRequest,
+            onResult: onFocusRequestResult
+        )
 
         return scrollView
     }
 
-    func updateNSView(_ scrollView: NSScrollView, context: Context) {
+    func updateNSView(_ scrollView: MarkdownPreviewScrollView, context: Context) {
         context.coordinator.scheduleRender(content: content)
+        scrollView.destinationFocusCoordinator.update(
+            requestID: focusRequestTabID,
+            hostView: scrollView,
+            targetView: context.coordinator.textView,
+            canAttempt: canAttemptFocusRequest,
+            onResult: onFocusRequestResult
+        )
     }
 
     func makeCoordinator() -> Coordinator { Coordinator() }
@@ -61,5 +78,14 @@ struct MarkdownPreviewView: NSViewRepresentable {
             renderWorkItem = workItem
             DispatchQueue.main.asyncAfter(deadline: .now() + UITimings.Delay.standard, execute: workItem)
         }
+    }
+}
+
+final class MarkdownPreviewScrollView: NSScrollView {
+    let destinationFocusCoordinator = AppKitFocusRequestCoordinator()
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        destinationFocusCoordinator.hostDidMoveToWindow(self)
     }
 }
