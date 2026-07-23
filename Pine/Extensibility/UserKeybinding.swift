@@ -80,57 +80,214 @@ nonisolated enum UserCommand: String, Sendable, CaseIterable {
         }
     }
 
+    /// Whether this command currently has a production notification observer.
+    var isAvailableForUserKeybinding: Bool {
+        switch self {
+        case .toggleMinimap, .toggleBlame, .togglePreview,
+             .toggleTerminal, .newTerminalTab:
+            false
+        default:
+            true
+        }
+    }
+
     static func from(_ raw: String) -> UserCommand? {
         UserCommand(rawValue: raw)
     }
 }
 
 /// Parsed key chord: modifiers + a single character or special key.
-struct ParsedKeyChord: Equatable, Sendable {
+nonisolated struct ParsedKeyChord: Equatable, Hashable, Sendable {
     let modifiers: NSEvent.ModifierFlags
     /// Lowercased character (e.g. "f", "b"), or a special token ("return",
     /// "up", "down", "left", "right", "tab", "delete", "esc", "space").
     let key: String
+
+    static func == (lhs: ParsedKeyChord, rhs: ParsedKeyChord) -> Bool {
+        lhs.modifiers.rawValue == rhs.modifiers.rawValue && lhs.key == rhs.key
+    }
+
+    func hash(into hasher: inout Hasher) {
+        hasher.combine(modifiers.rawValue)
+        hasher.combine(key)
+    }
+}
+
+/// A validated command/chord pair ready to install in the active registry.
+nonisolated struct ResolvedUserKeybinding: Equatable, Sendable {
+    let command: UserCommand
+    let chord: ParsedKeyChord
 }
 
 /// Loads and parses user keybindings from `keybindings.json`.
-nonisolated final class UserKeybindingRegistry: @unchecked Sendable {
-    /// Parsed entries: (command, chord).
-    private(set) var entries: [(command: UserCommand, chord: ParsedKeyChord)] = []
+@MainActor
+final class UserKeybindingRegistry {
+    /// Parsed entries in declaration order.
+    private(set) var entries: [ResolvedUserKeybinding] = []
 
     var count: Int { entries.count }
     var isEmpty: Bool { entries.isEmpty }
 
     @discardableResult
-    func load(from url: URL) -> [(command: UserCommand, chord: ParsedKeyChord)] {
-        guard let data = try? Data(contentsOf: url) else {
+    func load(from url: URL) async -> UserConfigurationLoadReport {
+        let candidate = await Self.prepareLoad(from: url)
+        return apply(candidate, from: url)
+    }
+
+    /// Reads, decodes, and validates a candidate without touching actor state.
+    nonisolated static func prepareLoad(
+        from url: URL
+    ) async -> UserConfigurationCandidate<ResolvedUserKeybinding> {
+        await runOnBackground(qos: .utility) {
+            readCandidate(from: url)
+        }
+    }
+
+    /// Commits a prepared candidate on the main actor.
+    func apply(
+        _ candidate: UserConfigurationCandidate<ResolvedUserKeybinding>,
+        from url: URL
+    ) -> UserConfigurationLoadReport {
+        let outcome: UserConfigurationLoadOutcome
+        let diagnostics: [UserConfigurationDiagnostic]
+        switch candidate {
+        case .loaded(let parsed):
+            entries = parsed
+            outcome = .loaded
+            diagnostics = []
+        case .missing:
             entries = []
-            return []
+            outcome = .missing
+            diagnostics = []
+        case .rejected(let problems):
+            outcome = .rejected
+            diagnostics = problems
         }
 
-        let docs = try? JSONDecoder().decode(UserKeybindingsDocument.self, from: data)
-        let array = try? JSONDecoder().decode([UserKeybinding].self, from: data)
-        let raw = docs?.keybindings ?? array ?? []
+        return UserConfigurationLoadReport(
+            file: .keybindings,
+            fileURL: url,
+            outcome: outcome,
+            activeEntryCount: entries.count,
+            diagnostics: diagnostics
+        )
+    }
 
-        var parsed: [(UserCommand, ParsedKeyChord)] = []
-        for entry in raw {
-            guard let command = UserCommand.from(entry.command),
-                  let chord = Self.parse(entry.key) else {
-                // Unknown command or unparseable key — skip silently.
+    nonisolated private static func readCandidate(
+        from url: URL
+    ) -> UserConfigurationCandidate<ResolvedUserKeybinding> {
+        guard FileManager.default.fileExists(atPath: url.path) else {
+            return .missing
+        }
+
+        let data: Data
+        do {
+            data = try Data(contentsOf: url)
+        } catch {
+            return .rejected([
+                diagnostic(
+                    for: url,
+                    entryNumber: nil,
+                    reason: .unreadable(details: String(describing: error))
+                )
+            ])
+        }
+
+        let raw: [UserKeybinding]
+        do {
+            raw = try Self.decodeDocument(from: data)
+        } catch {
+            return .rejected([
+                diagnostic(
+                    for: url,
+                    entryNumber: nil,
+                    reason: .malformedDocument(details: String(describing: error))
+                )
+            ])
+        }
+
+        var parsed: [ResolvedUserKeybinding] = []
+        var diagnostics: [UserConfigurationDiagnostic] = []
+        var firstEntryForChord: [ParsedKeyChord: Int] = [:]
+        for (index, entry) in raw.enumerated() {
+            let entryNumber = index + 1
+            let command = UserCommand.from(entry.command)
+            let chord = Self.parse(entry.key)
+
+            if command == nil {
+                diagnostics.append(UserConfigurationDiagnostic(
+                    file: .keybindings,
+                    fileURL: url,
+                    entryNumber: entryNumber,
+                    reason: .unknownCommand(id: entry.command)
+                ))
+            } else if command?.isAvailableForUserKeybinding == false {
+                diagnostics.append(UserConfigurationDiagnostic(
+                    file: .keybindings,
+                    fileURL: url,
+                    entryNumber: entryNumber,
+                    reason: .unavailableCommand(id: entry.command)
+                ))
+            }
+            if chord == nil {
+                diagnostics.append(UserConfigurationDiagnostic(
+                    file: .keybindings,
+                    fileURL: url,
+                    entryNumber: entryNumber,
+                    reason: .invalidChord(value: entry.key)
+                ))
+            } else if let chord, Self.reservedChords.contains(chord) {
+                diagnostics.append(UserConfigurationDiagnostic(
+                    file: .keybindings,
+                    fileURL: url,
+                    entryNumber: entryNumber,
+                    reason: .reservedSystemChord(value: entry.key)
+                ))
+            } else if let chord, !Self.hasDispatchModifier(chord) {
+                diagnostics.append(UserConfigurationDiagnostic(
+                    file: .keybindings,
+                    fileURL: url,
+                    entryNumber: entryNumber,
+                    reason: .textInputChord(value: entry.key)
+                ))
+            }
+
+            guard let command, let chord else {
                 continue
             }
-            parsed.append((command, chord))
+
+            if let firstEntryNumber = firstEntryForChord[chord] {
+                diagnostics.append(UserConfigurationDiagnostic(
+                    file: .keybindings,
+                    fileURL: url,
+                    entryNumber: entryNumber,
+                    reason: .duplicateChord(
+                        value: entry.key,
+                        firstEntryNumber: firstEntryNumber
+                    )
+                ))
+            } else {
+                firstEntryForChord[chord] = entryNumber
+            }
+            parsed.append(ResolvedUserKeybinding(command: command, chord: chord))
         }
-        entries = parsed
-        return parsed
+
+        guard diagnostics.isEmpty else {
+            return .rejected(diagnostics)
+        }
+
+        return .loaded(parsed)
     }
 
     /// Looks up the command matching a key event, if any.
     func command(for event: NSEvent) -> UserCommand? {
-        let mods = KeyboardShortcutMatcher.normalizedModifiers(event.modifierFlags)
-        let chars = event.charactersIgnoringModifiers ?? ""
-        guard let char = chars.lowercased().first else { return nil }
-        let key = String(char)
+        let mods = event.modifierFlags.intersection(Self.dispatchModifierMask)
+        guard let key = Self.keyToken(
+            keyCode: event.keyCode,
+            charactersIgnoringModifiers: event.charactersIgnoringModifiers
+        ) else {
+            return nil
+        }
         for entry in entries where entry.chord.modifiers == mods && entry.chord.key == key {
             return entry.command
         }
@@ -141,16 +298,115 @@ nonisolated final class UserKeybindingRegistry: @unchecked Sendable {
 
     // MARK: - Parsing
 
+    private enum DocumentError: Error {
+        case unsupportedTopLevel
+    }
+
+    nonisolated private static func decodeDocument(
+        from data: Data
+    ) throws -> [UserKeybinding] {
+        let object = try JSONSerialization.jsonObject(with: data)
+        let decoder = JSONDecoder()
+        if object is [Any] {
+            return try decoder.decode([UserKeybinding].self, from: data)
+        }
+        if object is [String: Any] {
+            return try decoder.decode(UserKeybindingsDocument.self, from: data).keybindings
+        }
+        throw DocumentError.unsupportedTopLevel
+    }
+
+    nonisolated private static let dispatchModifierMask: NSEvent.ModifierFlags = [
+        .command,
+        .control,
+        .option,
+        .shift,
+    ]
+
+    nonisolated private static let reservedChords: Set<ParsedKeyChord> = Set(
+        [
+            "cmd+space",
+            "cmd+tab",
+            "cmd+shift+tab",
+            "cmd+option+esc",
+            "cmd+control+q",
+            "ctrl+space",
+            "ctrl+up",
+            "ctrl+down",
+            "ctrl+left",
+            "ctrl+right",
+            "cmd+a",
+            "cmd+c",
+            "cmd+x",
+            "cmd+v",
+            "cmd+z",
+            "cmd+shift+z",
+            "cmd+`",
+            "cmd+q",
+            "cmd+w",
+            "cmd+h",
+            "cmd+m",
+            "option+left",
+            "option+right",
+            "option+shift+left",
+            "option+shift+right"
+        ].compactMap(parse)
+    )
+
+    nonisolated private static func hasDispatchModifier(_ chord: ParsedKeyChord) -> Bool {
+        !chord.modifiers.isDisjoint(with: [.command, .control])
+    }
+
+    /// Resolves AppKit key codes into the canonical tokens accepted by
+    /// `parse`, falling back to printable characters for ordinary keys.
+    nonisolated static func keyToken(
+        keyCode: UInt16,
+        charactersIgnoringModifiers: String?
+    ) -> String? {
+        switch keyCode {
+        case 36, 76: "return"
+        case 48: "tab"
+        case 51, 117: "delete"
+        case 53: "esc"
+        case 49: "space"
+        case 123: "left"
+        case 124: "right"
+        case 125: "down"
+        case 126: "up"
+        default:
+            charactersIgnoringModifiers?
+                .lowercased()
+                .first
+                .map(String.init)
+        }
+    }
+
+    nonisolated private static func diagnostic(
+        for url: URL,
+        entryNumber: Int?,
+        reason: UserConfigurationDiagnosticReason
+    ) -> UserConfigurationDiagnostic {
+        UserConfigurationDiagnostic(
+            file: .keybindings,
+            fileURL: url,
+            entryNumber: entryNumber,
+            reason: reason
+        )
+    }
+
     /// Parses a chord string like `"cmd+shift+f"` into modifiers + key.
     ///
     /// Recognized modifier tokens (case-insensitive): `cmd`/`command`,
     /// `shift`, `alt`/`option`/`opt`, `ctrl`/`control`. The final token is
     /// the key — a single character (lowercased) or a named special key.
-    static func parse(_ chord: String) -> ParsedKeyChord? {
-        let tokens = chord.split(separator: "+").map {
+    nonisolated static func parse(_ chord: String) -> ParsedKeyChord? {
+        let tokens = chord.split(separator: "+", omittingEmptySubsequences: false).map {
             $0.trimmingCharacters(in: .whitespaces).lowercased()
         }
-        guard let last = tokens.last, !last.isEmpty else { return nil }
+        guard !tokens.contains(where: \.isEmpty),
+              let last = tokens.last else {
+            return nil
+        }
 
         var flags: NSEvent.ModifierFlags = []
         for token in tokens.dropLast() {
