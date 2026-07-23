@@ -1,0 +1,166 @@
+{
+  "fixtures": {
+    "large.generated.swift": {
+      "declarations": 2000,
+      "sha256": "6f01e70990c9c799a4bb3c50d67297a4dbc65fa8539100805df81a13a013947a",
+      "utf8_bytes": 644047
+    },
+    "malformed.swift": {
+      "sha256": "5436d2627864fd92e685780372937251326b49209fbbcb70b2908ee985bb1fcc",
+      "utf8_bytes": 411
+    },
+    "valid.swift": {
+      "sha256": "d2ff7a7a27a1e43d4c23dcf092af6d5ae79d8fb72b71b983656934101d02d3fa",
+      "utf8_bytes": 425
+    }
+  },
+  "host": {
+    "machine": "arm64",
+    "platform": "macOS-27.0-arm64-arm-64bit"
+  },
+  "lsp": {
+    "cancellation": {
+      "code": -32800,
+      "message": "request cancelled by client",
+      "outcome": "error"
+    },
+    "capabilities": {
+      "document_symbol_provider": true,
+      "folding_range_provider": true,
+      "position_encoding": "utf-16 (LSP default)"
+    },
+    "fixtures": [
+      {
+        "cold_folding_request_milliseconds": 59.48079100000003,
+        "cold_symbol_request_milliseconds": 2.341291999999995,
+        "fold_count": 13,
+        "incremental_fold_count": 14,
+        "incremental_folding_request_milliseconds": 1.0368330000000148,
+        "incremental_symbol_request_milliseconds": 0.4305830000000399,
+        "incremental_symbols": {
+          "count": 7,
+          "hierarchical": true,
+          "maximum_depth": 3
+        },
+        "lines": 24,
+        "name": "valid",
+        "symbols": {
+          "count": 7,
+          "hierarchical": true,
+          "maximum_depth": 3
+        },
+        "utf16_units": 419,
+        "utf8_bytes": 425
+      },
+      {
+        "cold_folding_request_milliseconds": 2.594625000000017,
+        "cold_symbol_request_milliseconds": 0.5010420000000071,
+        "fold_count": 8,
+        "incremental_fold_count": 9,
+        "incremental_folding_request_milliseconds": 0.5622500000000419,
+        "incremental_symbol_request_milliseconds": 0.33041699999997176,
+        "incremental_symbols": {
+          "count": 6,
+          "hierarchical": true,
+          "maximum_depth": 3
+        },
+        "lines": 16,
+        "name": "malformed",
+        "symbols": {
+          "count": 6,
+          "hierarchical": true,
+          "maximum_depth": 3
+        },
+        "utf16_units": 411,
+        "utf8_bytes": 411
+      },
+      {
+        "cold_folding_request_milliseconds": 139.101125,
+        "cold_symbol_request_milliseconds": 171.03191699999996,
+        "fold_count": 14001,
+        "incremental_fold_count": 14002,
+        "incremental_folding_request_milliseconds": 144.25120800000002,
+        "incremental_symbol_request_milliseconds": 180.93925,
+        "incremental_symbols": {
+          "count": 12001,
+          "hierarchical": true,
+          "maximum_depth": 4
+        },
+        "lines": 32005,
+        "name": "large",
+        "symbols": {
+          "count": 12001,
+          "hierarchical": true,
+          "maximum_depth": 4
+        },
+        "utf16_units": 640047,
+        "utf8_bytes": 644047
+      }
+    ],
+    "initialize_milliseconds": 29.44412499999999,
+    "server_info": null
+  },
+  "measured_at": "2026-07-23T12:25:05.034539+00:00",
+  "repository_commit": "56e1a19222f2cf041d2f1d4d599e5c465576ba83",
+  "schema_version": 1,
+  "toolchain": {
+    "developer_directory": "/Applications/Xcode-beta.app/Contents/Developer",
+    "sourcekit_lsp_binary_bytes": 35848000,
+    "sourcekit_lsp_path": "/Applications/Xcode-beta.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/sourcekit-lsp",
+    "sourcekit_lsp_sha256": "7cc11570a25398b677214cddd0463952b3834788de0f33ee4da7911b89b39582",
+    "swift": "Apple Swift version 6.4 (swiftlang-6.4.0.25.4 clang-2100.3.25.1)\nTarget: arm64-apple-macosx27.0.0",
+    "xcode": "Xcode 27.0\nBuild version 27A5218g"
+  },
+  "tree_sitter": {
+    "fresh_scratch_resolution_and_release_build_milliseconds": 21848.7825,
+    "fixtures": [
+      {
+        "changedRangeCount": 1,
+        "coldParseMilliseconds": 0.944666,
+        "foldCandidateCount": 7,
+        "incrementalParseMilliseconds": 0.026416,
+        "lines": 24,
+        "maximumSymbolDepth": 2,
+        "name": "valid",
+        "nodeCount": 93,
+        "rootHasError": false,
+        "symbolCount": 4,
+        "timeoutCancelled": true,
+        "utf16Units": 419,
+        "utf8Bytes": 425
+      },
+      {
+        "changedRangeCount": 1,
+        "coldParseMilliseconds": 0.293917,
+        "foldCandidateCount": 4,
+        "incrementalParseMilliseconds": 0.100208,
+        "lines": 16,
+        "maximumSymbolDepth": 1,
+        "name": "malformed",
+        "nodeCount": 36,
+        "rootHasError": true,
+        "symbolCount": 2,
+        "timeoutCancelled": true,
+        "utf16Units": 411,
+        "utf8Bytes": 411
+      },
+      {
+        "changedRangeCount": 1,
+        "coldParseMilliseconds": 61.615542,
+        "foldCandidateCount": 10001,
+        "incrementalParseMilliseconds": 0.033916,
+        "lines": 32005,
+        "maximumSymbolDepth": 3,
+        "name": "large",
+        "nodeCount": 82007,
+        "rootHasError": false,
+        "symbolCount": 6001,
+        "timeoutCancelled": true,
+        "utf16Units": 640047,
+        "utf8Bytes": 644047
+      }
+    ],
+    "probe_binary_bytes": 4463240,
+    "scratch_tree_bytes": 262154423
+  }
+}

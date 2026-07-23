@@ -1,0 +1,30 @@
+{
+  "pins" : [
+    {
+      "identity" : "swift-tree-sitter",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/tree-sitter/swift-tree-sitter",
+      "state" : {
+        "revision" : "0f40435cdb41673ce4194d731571cf2a2f7c3285"
+      }
+    },
+    {
+      "identity" : "tree-sitter",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/tree-sitter/tree-sitter",
+      "state" : {
+        "revision" : "da6fe9beb4f7f67beb75914ca8e0d48ae48d6406",
+        "version" : "0.25.10"
+      }
+    },
+    {
+      "identity" : "tree-sitter-swift",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/alex-pinkus/tree-sitter-swift",
+      "state" : {
+        "revision" : "31d17fe7e818a2048c808b5c6fdc2dc792f4f5b5"
+      }
+    }
+  ],
+  "version" : 2
+}
