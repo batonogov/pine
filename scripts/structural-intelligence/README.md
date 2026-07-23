@@ -9,8 +9,8 @@ behavior.
 
 ## Inputs
 
-- `fixtures/valid.swift` contains nested declarations, closures, emoji, and CJK
-  text.
+- `fixtures/valid.swift` contains nested declarations, closures, emoji, CJK
+  text, and the representative document symbol `类型🌲`.
 - `fixtures/malformed.swift` deliberately omits closing braces.
 - `benchmark.py` deterministically generates a 644,047-byte fixture with
   2,000 nested declarations. Its SHA-256 is checked before every run.
@@ -47,6 +47,10 @@ The script records:
 
 - toolchain and executable identity, including the `sourcekit-lsp` SHA-256;
 - advertised LSP capabilities and negotiated position encoding;
+- fail-closed validation of every folding range, document-symbol range, and
+  selection range against the exact UTF-16 snapshot, including selection and
+  parent/child containment, with SHA-256 fingerprints of the canonical range
+  streams;
 - first and post-`didChange` folding/symbol request latency;
 - fold count, symbol count, hierarchy depth, malformed-buffer recovery, and
   `$/cancelRequest` behavior;
@@ -63,6 +67,17 @@ prototype stack, not a promised Pine application-size delta.
 
 The reviewed baseline is
 [`results/2026-07-23-xcode-27-beta.json`](results/2026-07-23-xcode-27-beta.json).
+
+The LSP run accepts only negotiated UTF-16. It checks that every reported
+position lands on a real UTF-16 boundary (never inside a surrogate pair), every
+range is ordered and in bounds, each symbol selection is inside its symbol, and
+each child symbol is inside its parent. The representative `类型🌲` selection
+must be exactly zero-based line 24, UTF-16 characters `7..<11`: the name is 10
+UTF-8 bytes but 4 UTF-16 code units. Both the cold and post-edit evidence are
+stored in the baseline JSON, along with fingerprints that cover every validated
+folding range and every hierarchical symbol range/selection pair.
+`--validate-only` also runs a synthetic surrogate-pair and containment
+self-check without starting a language server.
 
 ## Pinned tooling dependencies
 

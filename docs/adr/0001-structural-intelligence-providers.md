@@ -154,14 +154,14 @@ prototype package is not referenced by `Pine.xcodeproj`. Exact raw results are
 in
 [`2026-07-23-xcode-27-beta.json`](../../scripts/structural-intelligence/results/2026-07-23-xcode-27-beta.json).
 
-The baseline used:
+The measured worktree was based on:
 
-- Pine `56e1a19222f2cf041d2f1d4d599e5c465576ba83`;
+- Pine `f71362b036b72925e074cfd4a064d054110cb313`;
 - macOS 27 arm64, Xcode 27 beta `27A5218g`;
 - Apple Swift `6.4 (swiftlang-6.4.0.25.4)`;
 - SourceKit-LSP executable SHA-256
   `7cc11570a25398b677214cddd0463952b3834788de0f33ee4da7911b89b39582`;
-- a 425-byte valid fixture, a 411-byte malformed fixture, and a deterministic
+- a 526-byte valid fixture, a 411-byte malformed fixture, and a deterministic
   644,047-byte/32,005-line fixture.
 
 ### Latency and recovery
@@ -171,15 +171,26 @@ thresholds.
 
 | Fixture | LSP fold first / after edit | LSP symbols first / after edit | Tree-sitter cold / incremental |
 | --- | ---: | ---: | ---: |
-| Valid, 425 B | 59.48 / 1.04 | 2.34 / 0.43 | 0.94 / 0.03 |
-| Malformed, 411 B | 2.59 / 0.56 | 0.50 / 0.33 | 0.29 / 0.10 |
-| Large, 644 KB | 139.10 / 144.25 | 171.03 / 180.94 | 61.62 / 0.03 |
+| Valid, 526 B | 56.20 / 1.02 | 2.53 / 0.35 | 0.89 / 0.03 |
+| Malformed, 411 B | 2.54 / 0.61 | 0.55 / 0.32 | 0.28 / 0.09 |
+| Large, 644 KB | 133.86 / 132.27 | 176.11 / 207.41 | 58.88 / 0.03 |
 
 SourceKit-LSP advertised both capabilities and returned:
 
-- valid: 13 folds and 7 symbols, nested to depth 3;
+- valid: 16 folds and 9 symbols, nested to depth 3;
 - malformed: 8 folds and 6 symbols, nested to depth 3;
 - large: 14,001 folds and 12,001 symbols, nested to depth 4.
+
+The server omitted `positionEncoding`, so the negotiated LSP default was
+UTF-16. The prototype refuses every other encoding and validates all cold and
+post-edit folding ranges, document-symbol ranges, and selection ranges against
+the exact immutable snapshot. It also verifies selection containment and
+parent/child containment and records SHA-256 fingerprints of all canonical
+validated range streams. As concrete non-ASCII evidence, SourceKit-LSP reported
+the `类型🌲` symbol selection at zero-based line 24, UTF-16 characters `7..<11`
+in both runs. The name occupies 10 UTF-8 bytes and 4 UTF-16 code units, so this
+check would reject byte-counted columns or a position inside the emoji's
+surrogate pair.
 
 The raw Tree-sitter walk returned useful structure despite an error root in the
 malformed fixture (4 fold candidates and 2 declaration symbols). Its
@@ -199,8 +210,8 @@ bundle. The measured Xcode toolchain binary itself was 35,848,000 bytes, but
 Pine does not ship it.
 
 The tooling-only Tree-sitter probe produced a 4,463,240-byte release
-executable. A fresh SwiftPM scratch tree occupied 262,154,423 bytes and
-resolved/built in 21.85 seconds with the machine-wide repository cache warm.
+executable. A fresh SwiftPM scratch tree occupied 262,151,094 bytes and
+resolved/built in 19.65 seconds with the machine-wide repository cache warm.
 This is not an exact Pine bundle delta, but it confirms non-trivial build and
 artifact cost that LSP-first avoids.
 

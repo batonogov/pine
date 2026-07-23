@@ -10,8 +10,8 @@
       "utf8_bytes": 411
     },
     "valid.swift": {
-      "sha256": "d2ff7a7a27a1e43d4c23dcf092af6d5ae79d8fb72b71b983656934101d02d3fa",
-      "utf8_bytes": 425
+      "sha256": "fb3ab0c1cae05e2cc9e48fc0f14cd4f11ac9faee25fe4e2f4fda05383d16fb6e",
+      "utf8_bytes": 526
     }
   },
   "host": {
@@ -27,38 +27,85 @@
     "capabilities": {
       "document_symbol_provider": true,
       "folding_range_provider": true,
-      "position_encoding": "utf-16 (LSP default)"
+      "position_encoding": "utf-16"
     },
     "fixtures": [
       {
-        "cold_folding_request_milliseconds": 59.48079100000003,
-        "cold_symbol_request_milliseconds": 2.341291999999995,
-        "fold_count": 13,
-        "incremental_fold_count": 14,
-        "incremental_folding_request_milliseconds": 1.0368330000000148,
-        "incremental_symbol_request_milliseconds": 0.4305830000000399,
+        "cold_folding_request_milliseconds": 56.20045900000004,
+        "cold_symbol_request_milliseconds": 2.533500000000022,
+        "fold_count": 16,
+        "incremental_fold_count": 17,
+        "incremental_folding_request_milliseconds": 1.0159170000000328,
+        "incremental_symbol_request_milliseconds": 0.35050000000003134,
         "incremental_symbols": {
-          "count": 7,
+          "count": 9,
           "hierarchical": true,
           "maximum_depth": 3
         },
-        "lines": 24,
+        "lines": 30,
         "name": "valid",
+        "range_validation": {
+          "cold": {
+            "document_symbol_ranges": 9,
+            "document_symbol_ranges_sha256": "e293e1e46f396403893a91ba20c761f3dcb643636ab1e06b2c0bdf36974650f1",
+            "document_symbol_selection_ranges": 9,
+            "folding_ranges": 16,
+            "folding_ranges_sha256": "bd95a7ee66dccedd5eeabe9bf3f14861cc68da536de35dd59a3f8284bf203f19",
+            "representative_unicode_symbol": {
+              "name": "\u7c7b\u578b\ud83c\udf32",
+              "selection_range": {
+                "end": {
+                  "character": 11,
+                  "line": 24
+                },
+                "start": {
+                  "character": 7,
+                  "line": 24
+                }
+              },
+              "utf16_units": 4,
+              "utf8_bytes": 10
+            }
+          },
+          "incremental": {
+            "document_symbol_ranges": 9,
+            "document_symbol_ranges_sha256": "e293e1e46f396403893a91ba20c761f3dcb643636ab1e06b2c0bdf36974650f1",
+            "document_symbol_selection_ranges": 9,
+            "folding_ranges": 17,
+            "folding_ranges_sha256": "1aa87912846faf4e330daf55099013f19da9f5cd420a37e6dd7e8ccfef25d54a",
+            "representative_unicode_symbol": {
+              "name": "\u7c7b\u578b\ud83c\udf32",
+              "selection_range": {
+                "end": {
+                  "character": 11,
+                  "line": 24
+                },
+                "start": {
+                  "character": 7,
+                  "line": 24
+                }
+              },
+              "utf16_units": 4,
+              "utf8_bytes": 10
+            }
+          },
+          "position_encoding": "utf-16"
+        },
         "symbols": {
-          "count": 7,
+          "count": 9,
           "hierarchical": true,
           "maximum_depth": 3
         },
-        "utf16_units": 419,
-        "utf8_bytes": 425
+        "utf16_units": 514,
+        "utf8_bytes": 526
       },
       {
-        "cold_folding_request_milliseconds": 2.594625000000017,
-        "cold_symbol_request_milliseconds": 0.5010420000000071,
+        "cold_folding_request_milliseconds": 2.540040999999993,
+        "cold_symbol_request_milliseconds": 0.5539170000000149,
         "fold_count": 8,
         "incremental_fold_count": 9,
-        "incremental_folding_request_milliseconds": 0.5622500000000419,
-        "incremental_symbol_request_milliseconds": 0.33041699999997176,
+        "incremental_folding_request_milliseconds": 0.6087080000000133,
+        "incremental_symbol_request_milliseconds": 0.32162499999999206,
         "incremental_symbols": {
           "count": 6,
           "hierarchical": true,
@@ -66,6 +113,23 @@
         },
         "lines": 16,
         "name": "malformed",
+        "range_validation": {
+          "cold": {
+            "document_symbol_ranges": 6,
+            "document_symbol_ranges_sha256": "bd00da8409f2976f5d1e8cc6714a5f3627e9de1c01ba86ca30ab9d8499c7e88e",
+            "document_symbol_selection_ranges": 6,
+            "folding_ranges": 8,
+            "folding_ranges_sha256": "6b802766d733ebaefd2e1dfdcd288b38ee7677c0f3b6f91d5266db1453529fbc"
+          },
+          "incremental": {
+            "document_symbol_ranges": 6,
+            "document_symbol_ranges_sha256": "bd00da8409f2976f5d1e8cc6714a5f3627e9de1c01ba86ca30ab9d8499c7e88e",
+            "document_symbol_selection_ranges": 6,
+            "folding_ranges": 9,
+            "folding_ranges_sha256": "22d130b585ba4ca0cb66a671a91cb4f29d2603a891466ae92c77c2e7d1bd5b2d"
+          },
+          "position_encoding": "utf-16"
+        },
         "symbols": {
           "count": 6,
           "hierarchical": true,
@@ -75,12 +139,12 @@
         "utf8_bytes": 411
       },
       {
-        "cold_folding_request_milliseconds": 139.101125,
-        "cold_symbol_request_milliseconds": 171.03191699999996,
+        "cold_folding_request_milliseconds": 133.85654200000002,
+        "cold_symbol_request_milliseconds": 176.11437500000005,
         "fold_count": 14001,
         "incremental_fold_count": 14002,
-        "incremental_folding_request_milliseconds": 144.25120800000002,
-        "incremental_symbol_request_milliseconds": 180.93925,
+        "incremental_folding_request_milliseconds": 132.27233299999997,
+        "incremental_symbol_request_milliseconds": 207.40991600000004,
         "incremental_symbols": {
           "count": 12001,
           "hierarchical": true,
@@ -88,6 +152,23 @@
         },
         "lines": 32005,
         "name": "large",
+        "range_validation": {
+          "cold": {
+            "document_symbol_ranges": 12001,
+            "document_symbol_ranges_sha256": "c7953162a92579359edda2a8fa503a06e7d9e1888e5bc55c3fa4652c09c3fcca",
+            "document_symbol_selection_ranges": 12001,
+            "folding_ranges": 14001,
+            "folding_ranges_sha256": "d81d6e77ea0ba46d4b49379e908d2410557b465a1dd411b5d429c7e6ffd837bd"
+          },
+          "incremental": {
+            "document_symbol_ranges": 12001,
+            "document_symbol_ranges_sha256": "c7953162a92579359edda2a8fa503a06e7d9e1888e5bc55c3fa4652c09c3fcca",
+            "document_symbol_selection_ranges": 12001,
+            "folding_ranges": 14002,
+            "folding_ranges_sha256": "7300d1488828766a5b26a690123f53bc12023eb23e61c4115b5223adf11e265c"
+          },
+          "position_encoding": "utf-16"
+        },
         "symbols": {
           "count": 12001,
           "hierarchical": true,
@@ -97,11 +178,11 @@
         "utf8_bytes": 644047
       }
     ],
-    "initialize_milliseconds": 29.44412499999999,
+    "initialize_milliseconds": 25.382875,
     "server_info": null
   },
-  "measured_at": "2026-07-23T12:25:05.034539+00:00",
-  "repository_commit": "56e1a19222f2cf041d2f1d4d599e5c465576ba83",
+  "measured_at": "2026-07-23T13:07:24.283241+00:00",
+  "repository_commit": "f71362b036b72925e074cfd4a064d054110cb313",
   "schema_version": 1,
   "toolchain": {
     "developer_directory": "/Applications/Xcode-beta.app/Contents/Developer",
@@ -112,28 +193,27 @@
     "xcode": "Xcode 27.0\nBuild version 27A5218g"
   },
   "tree_sitter": {
-    "fresh_scratch_resolution_and_release_build_milliseconds": 21848.7825,
     "fixtures": [
       {
         "changedRangeCount": 1,
-        "coldParseMilliseconds": 0.944666,
-        "foldCandidateCount": 7,
-        "incrementalParseMilliseconds": 0.026416,
-        "lines": 24,
+        "coldParseMilliseconds": 0.888,
+        "foldCandidateCount": 10,
+        "incrementalParseMilliseconds": 0.025,
+        "lines": 30,
         "maximumSymbolDepth": 2,
         "name": "valid",
-        "nodeCount": 93,
+        "nodeCount": 104,
         "rootHasError": false,
-        "symbolCount": 4,
+        "symbolCount": 6,
         "timeoutCancelled": true,
-        "utf16Units": 419,
-        "utf8Bytes": 425
+        "utf16Units": 514,
+        "utf8Bytes": 526
       },
       {
         "changedRangeCount": 1,
-        "coldParseMilliseconds": 0.293917,
+        "coldParseMilliseconds": 0.28025,
         "foldCandidateCount": 4,
-        "incrementalParseMilliseconds": 0.100208,
+        "incrementalParseMilliseconds": 0.09425,
         "lines": 16,
         "maximumSymbolDepth": 1,
         "name": "malformed",
@@ -146,9 +226,9 @@
       },
       {
         "changedRangeCount": 1,
-        "coldParseMilliseconds": 61.615542,
+        "coldParseMilliseconds": 58.879417,
         "foldCandidateCount": 10001,
-        "incrementalParseMilliseconds": 0.033916,
+        "incrementalParseMilliseconds": 0.031917,
         "lines": 32005,
         "maximumSymbolDepth": 3,
         "name": "large",
@@ -160,7 +240,8 @@
         "utf8Bytes": 644047
       }
     ],
+    "fresh_scratch_resolution_and_release_build_milliseconds": 19647.2605,
     "probe_binary_bytes": 4463240,
-    "scratch_tree_bytes": 262154423
+    "scratch_tree_bytes": 262151094
   }
 }

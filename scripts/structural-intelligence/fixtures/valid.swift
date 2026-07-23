@@ -21,3 +21,9 @@ func greeting(for name: String) -> String {
     let localized = "你好, \(name)"
     return "\(emoji) \(localized)"
 }
+
+struct 类型🌲 { // swiftlint:disable:this type_name
+    func value() -> Int {
+        1
+    }
+}
