@@ -691,6 +691,7 @@ final class LSPClient {
     ///   - environment: Optional isolated environment for the server process.
     ///   - currentDirectoryURL: Optional working directory for the server.
     ///   - standardError: Destination for server diagnostics.
+    ///   - initializationTimeout: Maximum time to await the initialize response.
     /// - Returns: `true` if the server reached the `.initialized` state.
     @discardableResult
     func start(
@@ -699,7 +700,8 @@ final class LSPClient {
         rootURI: String?,
         environment: [String: String]? = nil,
         currentDirectoryURL: URL? = nil,
-        standardError: FileHandle = .nullDevice
+        standardError: FileHandle = .nullDevice,
+        initializationTimeout: Duration = .seconds(20)
     ) async -> Bool {
         guard state == .uninitialized || state == .exited else { return false }
         lastTermination = nil
@@ -735,11 +737,15 @@ final class LSPClient {
         }
 
         do {
-            _ = try await sendRequest("initialize", params: initParams)
+            _ = try await sendRequest(
+                "initialize",
+                params: initParams,
+                timeout: initializationTimeout
+            )
         } catch {
             Logger.lsp.error("LSP initialize failed: \(String(describing: error), privacy: .public)")
             state = .failed
-            terminate()
+            await transport.terminateAsync(timeout: 0.5)
             return false
         }
 

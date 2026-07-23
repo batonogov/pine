@@ -702,6 +702,94 @@ struct LSPProcessTransportTests {
     }
 
     @Test(
+        "Initialize timeout terminates a real child",
+        .timeLimit(.minutes(1))
+    )
+    func initializeTimeoutTerminatesRealChild() async throws {
+        let client = LSPClient(language: "test")
+        defer { client.shutdown() }
+
+        let clock = ContinuousClock()
+        let startedAt = clock.now
+        let start = Task { @MainActor in
+            await client.start(
+                command: "/bin/sleep",
+                arguments: ["30"],
+                rootURI: nil,
+                environment: [:],
+                initializationTimeout: .milliseconds(100)
+            )
+        }
+
+        try #require(
+            await waitUntil {
+                client.pendingRequestCount == 1
+            }
+        )
+        let processID = try #require(client.transport.processIdentifier)
+        #expect(!(await start.value))
+
+        let elapsed = startedAt.duration(to: clock.now)
+        #expect(elapsed < .seconds(2))
+        #expect(client.state == .failed)
+        #expect(client.pendingRequestCount == 0)
+        #expect(!client.transport.isRunning)
+        #expect(!isProcessAlive(processID))
+    }
+
+    @Test(
+        "Initialize timeout cleanup does not block MainActor",
+        .timeLimit(.minutes(1))
+    )
+    func initializeTimeoutCleanupDoesNotBlockMainActor() async throws {
+        let client = LSPClient(language: "test")
+        defer { client.shutdown() }
+
+        let clock = ContinuousClock()
+        let startedAt = clock.now
+        var didStartReturn = false
+        let start = Task { @MainActor in
+            let result = await client.start(
+                command: "/bin/sh",
+                arguments: [
+                    "-c",
+                    "trap '' TERM; exec /bin/sleep 30"
+                ],
+                rootURI: nil,
+                environment: [:],
+                initializationTimeout: .milliseconds(250)
+            )
+            didStartReturn = true
+            return result
+        }
+
+        try #require(
+            await waitUntil {
+                client.pendingRequestCount == 1
+            }
+        )
+        let processID = try #require(client.transport.processIdentifier)
+
+        // Allow the shell to install its signal disposition and exec the real
+        // sleep process, forcing cleanup through the bounded SIGKILL fallback.
+        try await Task.sleep(for: .milliseconds(100))
+        let heartbeat = Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(350))
+            return !didStartReturn
+        }
+
+        #expect(await heartbeat.value)
+        #expect(!(await start.value))
+
+        let elapsed = startedAt.duration(to: clock.now)
+        #expect(elapsed < .seconds(2))
+        #expect(client.state == .failed)
+        #expect(client.pendingRequestCount == 0)
+        #expect(!client.transport.isRunning)
+        #expect(!isProcessAlive(processID))
+    }
+
+    @Test(
         "Graceful shutdown awaits acknowledgement before exit",
         .timeLimit(.minutes(1))
     )

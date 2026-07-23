@@ -44,7 +44,7 @@ struct SourceKitLSPIntegrationTests {
             )
             let started = try await boundedValue(
                 step: "initialize",
-                timeout: .seconds(20),
+                timeout: .seconds(25),
                 client: client
             ) {
                 await client.start(
@@ -58,7 +58,8 @@ struct SourceKitLSPIntegrationTests {
                     rootURI: fixture.rootURL.absoluteString,
                     environment: fixture.environment,
                     currentDirectoryURL: fixture.rootURL,
-                    standardError: stderrHandle
+                    standardError: stderrHandle,
+                    initializationTimeout: .seconds(20)
                 )
             }
             guard started else {
