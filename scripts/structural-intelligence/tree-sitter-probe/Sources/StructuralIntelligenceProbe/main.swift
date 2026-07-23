@@ -118,6 +118,10 @@ private func measureFixture(
     guard let initialTree, let root = initialTree.rootNode else {
         throw ProbeError.parseFailed(name)
     }
+    // Nodes are invalid after their tree is edited. Capture all full-parse
+    // structure before applying the incremental edit below.
+    let metrics = collectMetrics(from: root)
+    let rootHasError = root.hasError
 
     let marker = "\n// incremental edit 🌲\n"
     let editedSource = source + marker
@@ -145,7 +149,6 @@ private func measureFixture(
     guard let updatedTree else { throw ProbeError.parseFailed(name) }
 
     let changedRanges = initialTree.changedRanges(from: updatedTree)
-    let metrics = collectMetrics(from: root)
 
     parser.timeout = 0.000_001
     let cancelledTree = parser.parse(source)
@@ -165,7 +168,7 @@ private func measureFixture(
         foldCandidateCount: metrics.folds,
         symbolCount: metrics.symbols,
         maximumSymbolDepth: metrics.maximumDepth,
-        rootHasError: root.hasError,
+        rootHasError: rootHasError,
         timeoutCancelled: timeoutCancelled
     )
 }
