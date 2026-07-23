@@ -23,7 +23,12 @@ struct TerminalPaneContent: View {
                 workingDirectory: workspace.rootURL
             )
             TerminalSearchBarContainer(terminalState: terminalState)
-            TerminalContentView(terminalPaneState: terminalState)
+            TerminalContentView(
+                terminalPaneState: terminalState,
+                canAttemptFocusRequest: { _ in
+                    paneManager.activePaneID == paneID
+                }
+            )
         }
         .background(Color(nsColor: .textBackgroundColor))
         .onAppear {

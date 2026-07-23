@@ -56,8 +56,7 @@ struct TerminalPaneTabBar: View {
                                 isActive: isActive,
                                 canClose: true,
                                 onSelect: {
-                                    terminalState.activeTerminalID = tab.id
-                                    terminalState.pendingFocusTabID = tab.id
+                                    paneManager.selectTerminalTab(tab.id, in: paneID)
                                 },
                                 onClose: { closeTerminalTabWithConfirmation(tab) }
                             )
@@ -84,7 +83,10 @@ struct TerminalPaneTabBar: View {
 
                 // New terminal tab button
                 Button {
-                    terminalState.addTab(workingDirectory: workingDirectory)
+                    paneManager.addTerminalTab(
+                        in: paneID,
+                        workingDirectory: workingDirectory
+                    )
                 } label: {
                     Image(systemName: "plus")
                         .font(.system(size: 11, weight: .medium))

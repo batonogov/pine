@@ -17,7 +17,7 @@ import SwiftUI
 /// embedding the view.
 struct QuickLookPreviewView: NSViewRepresentable {
     let url: URL
-    var focusRequestTabID: UUID?
+    var focusRequestID: UUID?
     var canAttemptFocusRequest: ((UUID) -> Bool)?
     var onFocusRequestResult: ((UUID, Bool) -> Void)?
 
@@ -30,7 +30,7 @@ struct QuickLookPreviewView: NSViewRepresentable {
         let view = FocusableQuickLookPreviewView(frame: .zero, style: .normal)!
         context.coordinator.currentURL = url
         view.destinationFocusCoordinator.update(
-            requestID: focusRequestTabID,
+            requestID: focusRequestID,
             hostView: view,
             targetView: view,
             canAttempt: canAttemptFocusRequest,
@@ -50,7 +50,7 @@ struct QuickLookPreviewView: NSViewRepresentable {
 
     func updateNSView(_ nsView: FocusableQuickLookPreviewView, context: Context) {
         nsView.destinationFocusCoordinator.update(
-            requestID: focusRequestTabID,
+            requestID: focusRequestID,
             hostView: nsView,
             targetView: nsView,
             canAttempt: canAttemptFocusRequest,

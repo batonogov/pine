@@ -271,6 +271,21 @@ final class PaneManager {
         Array(tabManagers.values)
     }
 
+    /// Selects an editor tab and makes its owning pane the active focus
+    /// destination. Tab-strip controls use this instead of changing only the
+    /// local selection, which could leave focus routed to another pane.
+    @discardableResult
+    func selectEditorTab(_ tabID: UUID, in paneID: PaneID) -> Bool {
+        guard let tabManager = tabManagers[paneID],
+              tabManager.tabs.contains(where: { $0.id == tabID }) else {
+            return false
+        }
+        activePaneID = paneID
+        tabManager.activeTabID = tabID
+        tabManager.pendingFocusTabID = tabID
+        return true
+    }
+
     // MARK: - Split operations
 
     /// Splits a pane by placing a new pane alongside it.
@@ -493,6 +508,29 @@ final class PaneManager {
 
     func terminalState(for paneID: PaneID) -> TerminalPaneState? {
         terminalStates[paneID]
+    }
+
+    /// Selects a terminal tab, activates its pane, and requests first responder
+    /// for the newly selected terminal content.
+    @discardableResult
+    func selectTerminalTab(_ tabID: UUID, in paneID: PaneID) -> Bool {
+        guard let terminalState = terminalStates[paneID],
+              terminalState.terminalTabs.contains(where: { $0.id == tabID }) else {
+            return false
+        }
+        activePaneID = paneID
+        terminalState.activeTerminalID = tabID
+        terminalState.pendingFocusTabID = tabID
+        return true
+    }
+
+    /// Adds a terminal tab through the pane owner so creation and focus
+    /// routing cannot disagree about the active pane.
+    @discardableResult
+    func addTerminalTab(in paneID: PaneID, workingDirectory: URL?) -> TerminalTab? {
+        guard let terminalState = terminalStates[paneID] else { return nil }
+        activePaneID = paneID
+        return terminalState.addTab(workingDirectory: workingDirectory)
     }
 
     var terminalPaneIDs: [PaneID] {

@@ -20,7 +20,14 @@ final class TerminalPaneState {
             }
         }
     }
-    var pendingFocusTabID: UUID?
+    var pendingFocusTabID: UUID? {
+        didSet {
+            pendingFocusRequestID = pendingFocusTabID.map { _ in UUID() }
+        }
+    }
+    /// Unique generation for the active request, preventing a stale AppKit
+    /// completion from consuming a later request for the same terminal tab.
+    private(set) var pendingFocusRequestID: UUID?
 
     /// Monotonically increasing counter for unique terminal tab names.
     private var nextTabNumber = 1
@@ -36,18 +43,24 @@ final class TerminalPaneState {
 
     var tabCount: Int { terminalTabs.count }
 
-    /// Clears a focus request only after AppKit confirms that the active
-    /// terminal view became first responder.
+    /// Consumes the terminal result of a bounded AppKit focus request.
+    ///
+    /// Retryable lifecycle states stay inside `AppKitFocusRequestCoordinator`;
+    /// `false` means the request was cancelled or exhausted.
     @discardableResult
-    func acknowledgeFocusRequest(for tabID: UUID, succeeded: Bool) -> Bool {
+    func acknowledgeFocusRequest(
+        requestID: UUID,
+        for tabID: UUID,
+        succeeded: Bool
+    ) -> Bool {
         guard pendingFocusTabID == tabID else { return false }
+        guard pendingFocusRequestID == requestID else { return false }
         guard activeTerminalID == tabID else {
             pendingFocusTabID = nil
             return false
         }
-        guard succeeded else { return false }
         pendingFocusTabID = nil
-        return true
+        return succeeded
     }
 
     @discardableResult
