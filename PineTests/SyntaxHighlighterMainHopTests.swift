@@ -8,9 +8,9 @@
 //  `-[__NSDictionaryM setObject:forKey:]` when multiple tabs highlighted
 //  concurrently and NSTextStorage was mutated from a background thread.
 //
-//  The fix routes `applyMatches`/`resetAttributes` through the main thread
-//  via `DispatchQueue.main.sync`. These tests exercise the hop from
-//  deliberately non-main contexts to verify no crash and correct colors.
+//  The fix routes `applyMatches`/`resetAttributes` through the main actor.
+//  These tests exercise the hop from deliberately non-main contexts to
+//  verify no crash, no cooperative-executor starvation, and correct colors.
 //
 
 import Testing
@@ -31,6 +31,29 @@ private final class StorageBox: @unchecked Sendable {
     init(storage: NSTextStorage, font: NSFont) {
         self.storage = storage
         self.font = font
+    }
+}
+
+/// Thread-safe ownership for detached tasks created while the main thread is
+/// deliberately occupied by the starvation regression.
+private final class HighlightTaskStore: @unchecked Sendable {
+    private let lock = NSLock()
+    private var tasks: [Task<Void, Never>] = []
+
+    func replace(with tasks: [Task<Void, Never>]) {
+        lock.withLock {
+            self.tasks = tasks
+        }
+    }
+
+    func append(_ task: Task<Void, Never>) {
+        lock.withLock {
+            tasks.append(task)
+        }
+    }
+
+    func snapshot() -> [Task<Void, Never>] {
+        lock.withLock { tasks }
     }
 }
 
@@ -277,5 +300,74 @@ struct SyntaxHighlighterMainHopTests {
         }.value
 
         #expect(foregroundColor(in: box.storage, at: 0) == keywordColor)
+    }
+
+    // MARK: - 7. Main-actor contention does not starve cooperative tasks
+
+    /// Reproduces issue #1159 without leaving a permanently blocked test
+    /// process. The old `DispatchQueue.main.sync` hop occupied cooperative
+    /// executor threads while the main thread was busy. Enough detached
+    /// highlights could then prevent an unrelated cooperative task from
+    /// running at all.
+    ///
+    /// The main-thread hold and probe wait are both bounded. With an async
+    /// MainActor hop, highlight tasks suspend instead of blocking executor
+    /// threads, so the independent probe completes during the hold.
+    @Test(
+        "Busy main actor does not starve the cooperative executor",
+        .timeLimit(.minutes(1))
+    )
+    @MainActor
+    func busyMainActorDoesNotStarveCooperativeExecutor() async {
+        register()
+        let highlighter = SyntaxHighlighter.shared
+        let taskCount = min(
+            256,
+            max(64, ProcessInfo.processInfo.activeProcessorCount * 4)
+        )
+        let boxes = (0..<taskCount).map { index in
+            StorageBox(
+                storage: NSTextStorage(string: "func contention\(index)() {}"),
+                font: Self.font
+            )
+        }
+        let probeSignal = DispatchSemaphore(value: 0)
+        let taskStore = HighlightTaskStore()
+
+        let probeCompleted: Bool = await withCheckedContinuation { (continuation: CheckedContinuation<Bool, Never>) in
+            DispatchQueue.main.async {
+                let highlightTasks = boxes.map { box in
+                    Task.detached(priority: .high) {
+                        _ = await highlighter.highlightAsync(
+                            textStorage: box.storage,
+                            language: "mhtestswift",
+                            font: box.font
+                        )
+                    }
+                }
+                taskStore.replace(with: highlightTasks)
+
+                // Keep the main thread busy long enough for the detached
+                // highlights to reach their main-actor application step.
+                Thread.sleep(forTimeInterval: 1)
+
+                let probeTask = Task.detached(priority: .high) {
+                    _ = probeSignal.signal()
+                }
+                taskStore.append(probeTask)
+
+                let result = probeSignal.wait(timeout: .now() + 2)
+                continuation.resume(returning: result == .success)
+            }
+        }
+
+        for task in taskStore.snapshot() {
+            await task.value
+        }
+
+        #expect(
+            probeCompleted,
+            "A synchronous main hop starved an unrelated cooperative task"
+        )
     }
 }

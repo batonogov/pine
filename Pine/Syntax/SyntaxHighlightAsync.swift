@@ -67,8 +67,8 @@ nonisolated final class SyntaxHighlightAsync: @unchecked Sendable {
     /// - `textStorage` is exclusively mutated on the main thread.
     /// - `NSFont` is immutable.
     /// - `SyntaxHighlightEngine` is already `@unchecked Sendable`.
-    /// - The box is stack-local and never escapes beyond a single synchronous
-    ///   main-thread call.
+    /// - The box is local to one async hop and only escapes into its single
+    ///   `MainActor.run` operation.
     private struct MainHopBox: @unchecked Sendable {
         let textStorage: NSTextStorage
         let font: NSFont
@@ -124,11 +124,15 @@ nonisolated final class SyntaxHighlightAsync: @unchecked Sendable {
         if let generation, generation.current != gen { return nil }
 
         if let result {
-            self.applyMatchesOnMain(result, to: textStorage, font: font)
+            await self.applyMatchesOnMain(result, to: textStorage, font: font)
             multilineCache.update(key: ObjectIdentifier(textStorage), fingerprint: result.multilineFingerprint)
             return result
         } else {
-            self.resetAttributesOnMain(textStorage: textStorage, range: fullRange, font: font)
+            await self.resetAttributesOnMain(
+                textStorage: textStorage,
+                range: fullRange,
+                font: font
+            )
             return nil
         }
     }
@@ -191,10 +195,14 @@ nonisolated final class SyntaxHighlightAsync: @unchecked Sendable {
 
         let (result, _) = bgResult
         if let result {
-            self.applyMatchesOnMain(result, to: textStorage, font: font)
+            await self.applyMatchesOnMain(result, to: textStorage, font: font)
             multilineCache.update(key: key, fingerprint: result.multilineFingerprint)
         } else {
-            self.resetAttributesOnMain(textStorage: textStorage, range: fullRange, font: font)
+            await self.resetAttributesOnMain(
+                textStorage: textStorage,
+                range: fullRange,
+                font: font
+            )
         }
     }
 
@@ -238,10 +246,14 @@ nonisolated final class SyntaxHighlightAsync: @unchecked Sendable {
         if let generation, generation.current != gen { return }
 
         if let result {
-            self.applyMatchesOnMain(result, to: textStorage, font: font)
+            await self.applyMatchesOnMain(result, to: textStorage, font: font)
             multilineCache.setIfNil(key: key, fingerprint: result.multilineFingerprint)
         } else {
-            self.resetAttributesOnMain(textStorage: textStorage, range: visibleCharRange, font: font)
+            await self.resetAttributesOnMain(
+                textStorage: textStorage,
+                range: visibleCharRange,
+                font: font
+            )
         }
     }
 
@@ -276,47 +288,33 @@ nonisolated final class SyntaxHighlightAsync: @unchecked Sendable {
         return rules
     }
 
-    /// Hops to the main thread (synchronously) to call `applyMatches`.
+    /// Suspends on the main actor to call `applyMatches`.
     ///
     /// Used by the async entry points. `NSTextStorage` and `NSFont` are not
-    /// `Sendable`, so we avoid `MainActor.run { }` (which requires Sendable
-    /// captures under strict concurrency) and instead route through
-    /// `DispatchQueue.main.sync` — classic Apple pattern for bridging
-    /// background GCD work to the main-thread UI.
-    ///
-    /// Safe to call from any non-main thread; falls through directly when
-    /// already on main to avoid a redundant hop.
+    /// `Sendable`, so `MainHopBox` provides an explicit isolation boundary.
+    /// Awaiting `MainActor.run` keeps AppKit mutation on the main thread
+    /// without blocking a cooperative-executor thread while the actor is busy.
     private func applyMatchesOnMain(
         _ result: HighlightMatchResult,
         to textStorage: NSTextStorage,
         font: NSFont
-    ) {
+    ) async {
         let box = MainHopBox(textStorage: textStorage, font: font, engine: engine)
-        if Thread.isMainThread {
+        await MainActor.run {
             box.engine.applyMatches(result, to: box.textStorage, font: box.font)
-        } else {
-            DispatchQueue.main.sync {
-                box.engine.applyMatches(result, to: box.textStorage, font: box.font)
-            }
         }
     }
 
-    /// Hops to the main thread (synchronously) to call `resetAttributes`.
+    /// Suspends on the main actor to call `resetAttributes`.
     /// See `applyMatchesOnMain` for rationale.
     private func resetAttributesOnMain(
         textStorage: NSTextStorage,
         range: NSRange,
         font: NSFont
-    ) {
+    ) async {
         let box = MainHopBox(textStorage: textStorage, font: font, engine: engine)
-        if Thread.isMainThread {
+        await MainActor.run {
             box.engine.resetAttributes(textStorage: box.textStorage, range: range, font: box.font)
-        } else {
-            DispatchQueue.main.sync {
-                box.engine.resetAttributes(
-                    textStorage: box.textStorage, range: range, font: box.font
-                )
-            }
         }
     }
 }
