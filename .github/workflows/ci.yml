@@ -68,6 +68,9 @@ jobs:
       - name: Tests for fail-closed coverage gate
         run: bash scripts/tests/test-check-coverage.sh
 
+      - name: Validate structural-intelligence prototype inputs
+        run: python3 scripts/structural-intelligence/benchmark.py --validate-only
+
   build:
     name: Build for Testing
     runs-on: macos-26
