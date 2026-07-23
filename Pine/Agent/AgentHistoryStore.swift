@@ -107,7 +107,8 @@ final class AgentHistoryStore {
             let data = try Data(contentsOf: logURL)
             // Tolerate an empty file (treat as no entries).
             guard !data.isEmpty else { return }
-            entries = try Self.makeDecoder().decode([AgentHistoryEntry].self, from: data)
+            let decoded = try Self.makeDecoder().decode([AgentHistoryEntry].self, from: data)
+            entries = Self.quarantiningDuplicateIdentities(decoded)
             loggedSessionIDs = Set(entries.map(\.sessionID))
         } catch {
             // Corrupt or unreadable log: never crash — start empty and log.
@@ -137,7 +138,6 @@ final class AgentHistoryStore {
     ) {
         // Avoid double-logging a session finalized twice (detection + termination).
         guard !loggedSessionIDs.contains(session.id) else { return }
-        loggedSessionIDs.insert(session.id)
 
         let safePaths = affectedRelativePaths.filter(Self.isValidRelativePath)
         let entry = AgentHistoryEntry(
@@ -157,12 +157,34 @@ final class AgentHistoryStore {
     /// Appends an entry directly (used by tests and restore), trims to
     /// `maxEntries`, and schedules an asynchronous persist.
     func append(_ entry: AgentHistoryEntry) {
+        guard !loggedSessionIDs.contains(entry.sessionID),
+              !entries.contains(where: { $0.id == entry.id }),
+              !hasPrivateIdentityCollision(entry) else {
+            NSLog("AgentHistoryStore: quarantined duplicate history identity")
+            return
+        }
+
+        loggedSessionIDs.insert(entry.sessionID)
         entries.append(entry)
         if entries.count > maxEntries {
             let surplus = entries.count - maxEntries
             entries.removeFirst(surplus)
         }
         persist()
+    }
+
+    /// Rejects duplicate private identities at append time. A private authority
+    /// record and inverse blob are single-use capabilities; sharing either
+    /// across rows would make a row selection ambiguous at the future mutation
+    /// boundary.
+    private func hasPrivateIdentityCollision(_ candidate: AgentHistoryEntry) -> Bool {
+        guard let changeSet = candidate.verifiedChangeSet else { return false }
+        return entries.contains { existing in
+            guard let existingChangeSet = existing.verifiedChangeSet else { return false }
+            return existingChangeSet.id == changeSet.id
+                || existingChangeSet.authority.recordID == changeSet.authority.recordID
+                || existingChangeSet.inversePayload.blobID == changeSet.inversePayload.blobID
+        }
     }
 
     // MARK: - Revert
@@ -190,10 +212,10 @@ final class AgentHistoryStore {
         let reason: AgentHistoryUndoUnavailableReason
         switch entries[index].undoAvailability {
         case .available:
-            // `.available` is reserved for a future exact inverse-change-set
-            // format. Until its checked apply operation exists, even that
-            // state must fail closed instead of falling back to whole-file git.
-            reason = .missingVerifiedReversibleChangeSet
+            // Until the checked apply operation exists, even an accidentally
+            // exposed future state must fail closed instead of falling back to
+            // whole-file git.
+            reason = .checkedUndoEngineUnavailable
         case .unavailable(let unavailableReason):
             reason = unavailableReason
         }
@@ -239,6 +261,50 @@ final class AgentHistoryStore {
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         encoder.dateEncodingStrategy = .iso8601
         return encoder
+    }
+
+    // MARK: - Identity quarantine
+
+    /// Removes every row participating in an identity collision. Keeping the
+    /// first row would make project-controlled JSON ordering an authority
+    /// decision; quarantining the complete collision set stays fail-closed.
+    private static func quarantiningDuplicateIdentities(
+        _ decoded: [AgentHistoryEntry]
+    ) -> [AgentHistoryEntry] {
+        let changeSets = decoded.compactMap(\.verifiedChangeSet)
+        let duplicateEntryIDs = duplicateValues(decoded.map(\.id))
+        let duplicateSessionIDs = duplicateValues(decoded.map(\.sessionID))
+        let duplicateChangeSetIDs = duplicateValues(changeSets.map(\.id))
+        let duplicateAuthorityIDs = duplicateValues(changeSets.map(\.authority.recordID))
+        let duplicatePayloadIDs = duplicateValues(changeSets.map(\.inversePayload.blobID))
+
+        let filtered = decoded.filter { entry in
+            guard !duplicateEntryIDs.contains(entry.id),
+                  !duplicateSessionIDs.contains(entry.sessionID) else {
+                return false
+            }
+            guard let changeSet = entry.verifiedChangeSet else { return true }
+            return !duplicateChangeSetIDs.contains(changeSet.id)
+                && !duplicateAuthorityIDs.contains(changeSet.authority.recordID)
+                && !duplicatePayloadIDs.contains(changeSet.inversePayload.blobID)
+        }
+
+        if filtered.count != decoded.count {
+            NSLog(
+                "AgentHistoryStore: quarantined \(decoded.count - filtered.count) "
+                    + "entries with duplicate identities"
+            )
+        }
+        return filtered
+    }
+
+    private static func duplicateValues<Value: Hashable>(_ values: [Value]) -> Set<Value> {
+        var seen: Set<Value> = []
+        var duplicates: Set<Value> = []
+        for value in values where !seen.insert(value).inserted {
+            duplicates.insert(value)
+        }
+        return duplicates
     }
 
     // MARK: - Path safety
