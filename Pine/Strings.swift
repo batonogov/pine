@@ -155,6 +155,8 @@ enum Strings {
     static let agentHistoryEmptyMessage: LocalizedStringKey = "agentHistory.emptyMessage"
     static let agentHistoryRevertedBadge: LocalizedStringKey = "agentHistory.revertedBadge"
     static let agentHistoryRevertButton: LocalizedStringKey = "agentHistory.revertButton"
+    static let agentHistoryUndoUnavailable: LocalizedStringKey = "agentHistory.undoUnavailable"
+    static let agentHistoryUndoUnavailableReason: LocalizedStringKey = "agentHistory.undoUnavailableReason"
     static let agentHistoryRevertConfirmTitle: LocalizedStringKey = "agentHistory.revertConfirmTitle"
     static let agentHistoryRevertConfirmAction: LocalizedStringKey = "agentHistory.revertConfirmAction"
     static let agentHistoryRevertConfirmMessage: LocalizedStringKey = "agentHistory.revertConfirmMessage"

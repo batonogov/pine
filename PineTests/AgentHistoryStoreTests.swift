@@ -4,7 +4,7 @@
 //
 //  Unit tests for AgentHistoryStore (issue #1073): round-trip encode/decode,
 //  corrupt-file tolerance, forward-compatible agent types, path validation,
-//  revert semantics, and atomic-write no-clobber under concurrent finalize.
+//  fail-closed undo semantics, and atomic-write no-clobber under finalize.
 //
 
 import Testing
@@ -36,6 +36,7 @@ struct AgentHistoryStoreTests {
         #expect(decoded == [entry])
         #expect(decoded.first?.agentTypeRaw == "claudeCode")
         #expect(decoded.first?.affectedFiles == ["src/a.swift", "README.md"])
+        #expect(decoded.first?.attribution == .heuristic)
     }
 
     @Test func unknownAgentTypeDecodesWithoutThrowing() throws {
@@ -177,23 +178,20 @@ struct AgentHistoryStoreTests {
         defer { try? FileManager.default.removeItem(at: temp) }
 
         let store = AgentHistoryStore(projectRoot: temp)
-        // Entry with no affected files reverts trivially to reverted=true.
         let entry = AgentHistoryEntry(
             sessionID: UUID(),
             agentTypeRaw: "claudeCode",
             startedAt: Date(),
             affectedFiles: [],
-            summary: "0 files"
+            summary: "0 files",
+            reverted: true
         )
         store.append(entry)
 
-        let first = await store.revert(entry: entry)
-        #expect(first.allSucceeded == true)
+        let result = await store.revert(entry: entry)
+        #expect(result.allSucceeded == false)
+        #expect(result.fileResults.isEmpty)
         #expect(store.entries.first?.reverted == true)
-
-        // Second revert on an already-reverted entry is a no-op (allSucceeded false).
-        let second = await store.revert(entry: entry)
-        #expect(second.allSucceeded == false)
     }
 
     // MARK: - Atomic write + flush
@@ -231,11 +229,8 @@ struct AgentHistoryStoreTests {
 
     // MARK: - Revert integration (store → GitFileRevert → real git repo)
 
-    @Test("store.revert restores real files in a temp git repo")
-    func revertRestoresRealFilesInTempGitRepo() async throws {
-        // Integration coverage for the revert wiring flagged as a gap by the
-        // #1075 review (SF-1): store.revert → runOnBackground → GitFileRevert
-        // against a real git repo with real files.
+    @Test("store.revert refuses heuristic entries in a real git repo")
+    func revertRefusesHeuristicEntryInTempGitRepo() async throws {
         let repo = try makeTempGitRepo()
         defer { try? FileManager.default.removeItem(at: repo) }
 
@@ -260,11 +255,14 @@ struct AgentHistoryStoreTests {
         let entry = try #require(store.entries.first)
 
         let result = await store.revert(entry: entry)
-        #expect(result.allSucceeded)
-        #expect(store.entries.first?.reverted == true)
-        // File content actually reverted to HEAD.
-        let restored = try readFromRepo(repo, file: "src/a.swift")
-        #expect(restored == "v1\n")
+        #expect(!result.allSucceeded)
+        #expect(result.fileResults.isEmpty)
+        #expect(result.blockedReason == .heuristicAttribution)
+        #expect(store.entries.first?.reverted == false)
+        // The safety guard runs before GitFileRevert: unrelated working-tree
+        // content remains byte-for-byte intact.
+        let unchanged = try readFromRepo(repo, file: "src/a.swift")
+        #expect(unchanged == "v1\nagent change\n")
     }
 
     // MARK: - Capacity trim

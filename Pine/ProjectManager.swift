@@ -17,8 +17,8 @@ final class ProjectManager {
     /// Structured agent-action feed for the Activity Panel (vision #933,
     /// Phase 2 — Visibility, issue #1072).
     let agentActivity = AgentActivityStore()
-    /// Persistent audit log of finished agent sessions for the History &
-    /// Undo view (vision #933, Phase 2 — Visibility, issue #1073).
+    /// Persistent, review-only history of observed finished-agent activity
+    /// (vision #933, Phase 2 — Visibility, issues #1073 and #1183).
     let agentHistory = AgentHistoryStore()
     /// The primary TabManager (initial root editor pane). Project-scoped
     /// services are wired to every pane-owned manager by `PaneManager`'s
@@ -423,9 +423,10 @@ final class ProjectManager {
 
     /// Finalizes any `.done` agent sessions not yet logged into the durable
     /// `AgentHistoryStore`. Called on app termination (and safe to call
-    /// periodically). Records affected relative paths and a file-count
-    /// summary, so a finished agent run is never lost and can be reverted from
-    /// the history view.
+    /// periodically). Records heuristically attributed relative paths and a
+    /// file-count summary for review. These observations do not authorize
+    /// undo; safe reversal requires exact provenance and an inverse change set
+    /// (#1183).
     ///
     /// The summary is intentionally file-count only (no `+/-` line counts):
     /// `GitStatusProvider.diffForFile` collapses consecutive diff lines into
@@ -443,7 +444,8 @@ final class ProjectManager {
             agentHistory.finalize(
                 session: session,
                 summary: "",
-                affectedRelativePaths: relativePaths
+                affectedRelativePaths: relativePaths,
+                attribution: .heuristic
             )
         }
     }

@@ -2,10 +2,10 @@
 //  AgentHistoryStore.swift
 //  Pine
 //
-//  Owns the persistent, replayable audit log of finished AI-agent sessions
-//  (vision #933, Phase 2 — Visibility, issue #1073). Each finished session
-//  becomes an `AgentHistoryEntry` appended to `.pine/agent-log.json`, so a
-//  user can review what an agent did and revert it long after the process exits.
+//  Owns the persistent history of finished AI-agent sessions (vision #933,
+//  Phase 2 — Visibility, issue #1073). Each finished session becomes an
+//  `AgentHistoryEntry` appended to `.pine/agent-log.json`, so a user can
+//  review observed activity after the process exits.
 //
 //  Architecture: the observable state (`entries`, `projectRoot`) lives on the
 //  main actor so SwiftUI views observe it directly; all disk I/O is delegated
@@ -31,6 +31,18 @@ struct AgentHistoryRevertResult: Sendable, Equatable {
     let allSucceeded: Bool
     /// Per-file results (path + success/error), in entry order.
     let fileResults: [GitFileRevertResult]
+    /// Safety reason when the entry was rejected before any mutation.
+    let blockedReason: AgentHistoryUndoUnavailableReason?
+
+    init(
+        allSucceeded: Bool,
+        fileResults: [GitFileRevertResult],
+        blockedReason: AgentHistoryUndoUnavailableReason? = nil
+    ) {
+        self.allSucceeded = allSucceeded
+        self.fileResults = fileResults
+        self.blockedReason = blockedReason
+    }
 }
 
 /// Persistent, observable log of finished AI-agent sessions, backed by
@@ -120,7 +132,8 @@ final class AgentHistoryStore {
     func finalize(
         session: AgentSession,
         summary: String,
-        affectedRelativePaths: [String]
+        affectedRelativePaths: [String],
+        attribution: AgentHistoryAttribution = .heuristic
     ) {
         // Avoid double-logging a session finalized twice (detection + termination).
         guard !loggedSessionIDs.contains(session.id) else { return }
@@ -133,6 +146,7 @@ final class AgentHistoryStore {
             startedAt: session.startedAt,
             endedAt: Date(),
             affectedFiles: safePaths,
+            attribution: attribution,
             summary: summary.isEmpty
                 ? Self.defaultSummary(fileCount: safePaths.count)
                 : summary
@@ -153,24 +167,18 @@ final class AgentHistoryStore {
 
     // MARK: - Revert
 
-    /// Reverts an entry's affected files to their committed state via
-    /// `git checkout -- <file>`. Does **not** show UI; the caller confirms with
-    /// the user first. A no-op for an already-reverted entry. Mutates the entry
-    /// in place (`reverted = true`) only when every file succeeds.
-    ///
-    /// `async` so the blocking `git checkout` process runs off the main thread
-    /// via `runOnBackground` — a synchronous `git` invocation would freeze the
-    /// UI for up to `GitCommand.defaultTimeout` (30 s) per file (AGENTS.md:
-    /// "Never block main thread with … git process execution").
+    /// Rejects undo until an entry carries a verified, checked inverse change
+    /// set. The current history format stores paths but no such change set, so
+    /// this method has no working-tree mutation path at all (#1183). The guard
+    /// lives here as well as in the UI so a stale row, direct caller, or future
+    /// presentation bug cannot bypass it.
     ///
     /// - Parameter entry: The entry to revert. Compared by `id` against
     ///   `entries`; passing a stale copy is safe (no-op if not found).
-    /// - Returns: Per-file results and whether all succeeded. `.allSucceeded`
-    ///   is `false` if `projectRoot` is nil, no git repo, or any file failed.
+    /// - Returns: A blocked result for every current entry. `fileResults` is
+    ///   empty because no file operation is attempted.
     func revert(entry: AgentHistoryEntry) async -> AgentHistoryRevertResult {
-        guard let projectRoot,
-              let index = entries.firstIndex(where: { $0.id == entry.id })
-        else {
+        guard let index = entries.firstIndex(where: { $0.id == entry.id }) else {
             return AgentHistoryRevertResult(allSucceeded: false, fileResults: [])
         }
 
@@ -179,25 +187,21 @@ final class AgentHistoryStore {
             return AgentHistoryRevertResult(allSucceeded: false, fileResults: [])
         }
 
-        guard !entries[index].affectedFiles.isEmpty else {
-            entries[index].reverted = true
-            persist()
-            return AgentHistoryRevertResult(allSucceeded: true, fileResults: [])
+        let reason: AgentHistoryUndoUnavailableReason
+        switch entries[index].undoAvailability {
+        case .available:
+            // `.available` is reserved for a future exact inverse-change-set
+            // format. Until its checked apply operation exists, even that
+            // state must fail closed instead of falling back to whole-file git.
+            reason = .missingVerifiedReversibleChangeSet
+        case .unavailable(let unavailableReason):
+            reason = unavailableReason
         }
-
-        // Run git off-main; capture immutable values across the await.
-        let paths = entries[index].affectedFiles
-        let root = projectRoot
-        let results = await runOnBackground(qos: .utility) {
-            GitFileRevert.revert(relativePaths: paths, in: root)
-        }
-
-        let allSucceeded = results.allSatisfy(\.success)
-        if allSucceeded {
-            entries[index].reverted = true
-            persist()
-        }
-        return AgentHistoryRevertResult(allSucceeded: allSucceeded, fileResults: results)
+        return AgentHistoryRevertResult(
+            allSucceeded: false,
+            fileResults: [],
+            blockedReason: reason
+        )
     }
 
     // MARK: - Persistence

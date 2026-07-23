@@ -3,7 +3,8 @@
 //  Pine
 //
 //  Reverts individual files to their last-committed (HEAD) state via
-//  `git checkout -- <file>`, used by `AgentHistoryStore.revert` (issue #1073).
+//  `git checkout -- <file>`. Agent History no longer calls this helper because
+//  path-only whole-file restore is not a safe inverse operation (#1183).
 //
 //  This is a standalone helper (not an extension on `GitStatusProvider`) so the
 //  history store can revert using only a project-root URL, without owning a

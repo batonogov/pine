@@ -2,11 +2,11 @@
 //  AgentHistoryEntry.swift
 //  Pine
 //
-//  Persistent audit-log entry for a single AI-agent run (vision #933,
+//  Persistent history entry for a single AI-agent run (vision #933,
 //  Phase 2 — Visibility, issue #1073). Stored as JSON in
-//  `.pine/agent-log.json` by `AgentHistoryStore`. This is the durable,
-//  replayable counterpart to the live `AgentSession`: it captures what the
-//  agent did so a user can review and revert it long after the process exits.
+//  `.pine/agent-log.json` by `AgentHistoryStore`. The current implementation
+//  records observed file paths for review, but does not treat heuristic
+//  attribution as proof that an agent exclusively authored those changes.
 //
 //  `agentTypeRaw` persists `AgentType` via `stableIdentifier` (a plain string)
 //  rather than the enum's associated-value form, so the on-disk file survives
@@ -14,6 +14,46 @@
 //
 
 import Foundation
+
+/// Confidence of the file-to-session attribution stored in a history entry.
+///
+/// This describes attribution only. Even `.verified` is not sufficient for
+/// undo: a safe inverse also requires an exact before/after change set and a
+/// divergence check, neither of which the current history format stores
+/// (#1183).
+enum AgentHistoryAttribution: String, Codable, Sendable {
+    /// Pine inferred the paths from process/file-system activity.
+    case heuristic
+    /// More than one session or writer could have produced the changes.
+    case ambiguous
+    /// Explicit provenance identified the writer. Reserved for a future
+    /// provenance pipeline; it still does not make whole-file checkout safe.
+    case verified
+
+    /// Unknown future values fail closed as `.heuristic`. History files can
+    /// outlive the app version that wrote them, and an older Pine must never
+    /// turn unfamiliar provenance into permission for destructive undo.
+    init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        let rawValue = try container.decode(String.self)
+        self = Self(rawValue: rawValue) ?? .heuristic
+    }
+}
+
+/// Why an Agent History entry cannot currently be undone safely.
+enum AgentHistoryUndoUnavailableReason: Sendable, Equatable {
+    case heuristicAttribution
+    case ambiguousAttribution
+    case missingVerifiedReversibleChangeSet
+}
+
+/// Fail-closed decision used by both the UI and the mutation boundary.
+enum AgentHistoryUndoAvailability: Sendable, Equatable {
+    /// Reserved for a future entry format that carries a checked inverse
+    /// change set. No entry in the current format returns this case.
+    case available
+    case unavailable(AgentHistoryUndoUnavailableReason)
+}
 
 /// A persistent, `Codable` record of one finished AI-agent session, including
 /// the files it touched and whether its changes have been reverted.
@@ -39,6 +79,9 @@ struct AgentHistoryEntry: Codable, Identifiable, Equatable, Sendable {
     let endedAt: Date?
     /// Relative paths (from project root) of files the agent modified.
     let affectedFiles: [String]
+    /// Confidence of the association between this session and `affectedFiles`.
+    /// Legacy entries decode as `.heuristic`.
+    let attribution: AgentHistoryAttribution
     /// Human-readable summary, e.g. "5 files, +142/-38 lines".
     let summary: String
     /// Whether the entry's changes have been reverted via `AgentHistoryStore.revert`.
@@ -51,6 +94,7 @@ struct AgentHistoryEntry: Codable, Identifiable, Equatable, Sendable {
         startedAt: Date,
         endedAt: Date? = nil,
         affectedFiles: [String],
+        attribution: AgentHistoryAttribution = .heuristic,
         summary: String,
         reverted: Bool = false
     ) {
@@ -60,8 +104,24 @@ struct AgentHistoryEntry: Codable, Identifiable, Equatable, Sendable {
         self.startedAt = startedAt
         self.endedAt = endedAt
         self.affectedFiles = affectedFiles
+        self.attribution = attribution
         self.summary = summary
         self.reverted = reverted
+    }
+
+    /// The current history format has no exact before/after patch or content
+    /// identity. Consequently no entry can authorize a working-tree mutation:
+    /// heuristic/ambiguous attribution is unsafe by definition, and verified
+    /// attribution still lacks a checked reversible change set.
+    var undoAvailability: AgentHistoryUndoAvailability {
+        switch attribution {
+        case .heuristic:
+            .unavailable(.heuristicAttribution)
+        case .ambiguous:
+            .unavailable(.ambiguousAttribution)
+        case .verified:
+            .unavailable(.missingVerifiedReversibleChangeSet)
+        }
     }
 
     /// Forward-compatible decoder: an unknown `agentTypeRaw` is preserved as-is
@@ -78,6 +138,13 @@ struct AgentHistoryEntry: Codable, Identifiable, Equatable, Sendable {
         startedAt = try container.decode(Date.self, forKey: .startedAt)
         endedAt = try container.decodeIfPresent(Date.self, forKey: .endedAt)
         affectedFiles = try container.decodeIfPresent([String].self, forKey: .affectedFiles) ?? []
+        // Logs written before #1183 have no attribution field. They contain
+        // only inferred paths, so legacy and malformed/future values must
+        // remain read-only rather than inheriting destructive permissions.
+        attribution = (try? container.decodeIfPresent(
+            AgentHistoryAttribution.self,
+            forKey: .attribution
+        )) ?? .heuristic
         summary = try container.decodeIfPresent(String.self, forKey: .summary) ?? ""
         reverted = try container.decodeIfPresent(Bool.self, forKey: .reverted) ?? false
     }
