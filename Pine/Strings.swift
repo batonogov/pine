@@ -4,6 +4,29 @@ import SwiftUI
 /// Keys use stable dot-separated identifiers; English values live in
 /// Localizable.xcstrings so renaming copy never breaks translation memory.
 enum Strings {
+    // MARK: - Settings
+
+    static let lspSettingsTitle: LocalizedStringKey =
+        "settings.lsp.title"
+    static let lspEnabled: LocalizedStringKey =
+        "settings.lsp.enabled"
+    static let lspEnabledHelp: LocalizedStringKey =
+        "settings.lsp.enabled.help"
+    static let lspLanguages: LocalizedStringKey =
+        "settings.lsp.languages"
+    static let lspExecutablePlaceholder: LocalizedStringKey =
+        "settings.lsp.executable.placeholder"
+    static let lspCustomArguments: LocalizedStringKey =
+        "settings.lsp.arguments.custom"
+    static let lspArgumentsHelp: LocalizedStringKey =
+        "settings.lsp.arguments.help"
+    static let lspDirectLaunchHelp: LocalizedStringKey =
+        "settings.lsp.directLaunch.help"
+    static let lspApply: LocalizedStringKey =
+        "settings.lsp.apply"
+    static let lspReset: LocalizedStringKey =
+        "settings.lsp.reset"
+
     // MARK: - Editor
 
     static let noFileSelected: LocalizedStringKey = "editor.noFileSelected"

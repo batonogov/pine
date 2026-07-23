@@ -11,7 +11,7 @@ import SwiftUI
 /// Each project directory maps to a single ProjectManager instance.
 @MainActor
 @Observable
-final class ProjectRegistry {
+final class ProjectRegistry: LSPSettingsObserver {
     /// Open projects keyed by their root directory URL.
     private(set) var openProjects: [URL: ProjectManager] = [:]
     /// Projects whose window was closed but whose ProjectManager (and terminal processes)
@@ -20,14 +20,24 @@ final class ProjectRegistry {
     /// Recently opened project paths (most recent first), persisted to UserDefaults.
     var recentProjects: [URL] = []
 
+    /// Application-wide LSP preferences shared by every project manager.
+    let lspSettings: LSPSettings
+
     private static let recentProjectsKey = "recentProjectPaths"
     private static let maxRecentProjects = 10
 
-    init() {
+    /// Serializes settings lifecycle changes so rapid Apply/Reset operations
+    /// cannot race each other across projects.
+    @ObservationIgnored
+    private var lspSettingsChangeTask: Task<Void, Never>?
+
+    init(lspSettings: LSPSettings = .shared) {
+        self.lspSettings = lspSettings
         if CommandLine.arguments.contains("--clear-recent-projects") {
             UserDefaults.standard.removeObject(forKey: Self.recentProjectsKey)
         }
         loadRecentProjects()
+        lspSettings.addObserver(self)
     }
 
     /// Returns the ProjectManager for a given project URL, creating one if needed.
@@ -61,7 +71,7 @@ final class ProjectRegistry {
             saveRecentProjects()
             return nil
         }
-        let pm = ProjectManager()
+        let pm = ProjectManager(lspSettings: lspSettings)
         pm.loadDirectory(url: canonical)
         openProjects[canonical] = pm
         addToRecent(canonical)
@@ -100,8 +110,11 @@ final class ProjectRegistry {
 
     /// Fully destroys all project managers. Called during app termination.
     func destroyAllProjects() {
+        lspSettingsChangeTask?.cancel()
+        lspSettingsChangeTask = nil
         for (_, pm) in openProjects {
             pm.terminal.terminateAll()
+            pm.shutdownLanguageServers()
         }
         openProjects.removeAll()
         backgroundProjects.removeAll()
@@ -116,6 +129,28 @@ final class ProjectRegistry {
     /// Checks if a project is already open (including background).
     func isProjectOpen(_ url: URL) -> Bool {
         openProjects[url.resolvingSymlinksInPath()] != nil
+    }
+
+    // MARK: - Language Server Settings
+
+    func lspSettingsDidChange(_ change: LSPSettingsChange) {
+        let previous = lspSettingsChangeTask
+        lspSettingsChangeTask = Task { @MainActor [weak self] in
+            if let previous {
+                await previous.value
+            }
+            guard let self, !Task.isCancelled else { return }
+            let projectManagers = Array(self.openProjects.values)
+            for projectManager in projectManagers {
+                guard !Task.isCancelled else { return }
+                await projectManager.lspManager.applySettingsChange(change)
+            }
+        }
+    }
+
+    /// Test synchronization point for asynchronous graceful restarts.
+    func waitForLSPSettingsChanges() async {
+        await lspSettingsChangeTask?.value
     }
 
     // MARK: - Recent Projects

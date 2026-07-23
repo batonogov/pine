@@ -30,11 +30,17 @@ import os
 @Observable
 final class LSPManager {
 
+    private struct OpenDocument {
+        let url: URL
+        let version: Int
+        let text: String
+    }
+
     /// Per-client state for each active language server.
     struct ServerEntry: Identifiable {
         let id: String // == language id
         let language: String
-        var client: LSPClient
+        var client: any LSPClientProtocol
         var state: LSPClient.State
     }
 
@@ -50,23 +56,61 @@ final class LSPManager {
     /// needed when building the `CodeActionContext.diagnostics` array.
     private var rawDiagnosticsByURI: [String: [LSPDiagnostic]] = [:]
 
-    /// Whether LSP diagnostics are enabled (global toggle). Defaults on.
-    var enabled: Bool = true
+    /// The single persisted source of truth for the global toggle.
+    var enabled: Bool { settings.isEnabled }
 
     /// The workspace root URI (file://...) used for `initialize`.
     private var rootURI: String?
 
     /// Injected resolver — overridable for tests.
-    private let resolver: LanguageServerResolver
+    private let resolver: any LanguageServerResolving
+
+    /// Application-wide persisted settings shared by every project.
+    private let settings: LSPSettings
 
     /// Injectable factory for clients — overridable for tests so a real
     /// `Process` is never spawned in unit tests.
-    private let clientFactory: (String) -> LSPClient
+    private let clientFactory: (String) -> any LSPClientProtocol
+
+    /// Invalidates initialize continuations after disable/reconfiguration.
+    private var serverGenerations: [String: Int] = [:]
+
+    /// Prevents document events from racing a graceful targeted restart.
+    private var restartingLanguages: Set<String> = []
+
+    /// Languages that were active when the global toggle was disabled.
+    private var suspendedLanguages: Set<String> = []
+
+    /// Latest editor buffers, including events received while disabled or
+    /// while a client is restarting. Replays always read this live mirror
+    /// after initialization rather than a pre-shutdown snapshot.
+    private var openDocuments: [URL: OpenDocument] = [:]
+
+    /// Number of visible editor owners for each URL. The same file can be
+    /// open in multiple panes, so only the final balanced close removes it.
+    private var openDocumentOwnerCounts: [URL: Int] = [:]
+
+    /// Documents already announced to the current client generation.
+    /// Prevents duplicate `didOpen` when enabling races a normal editor open.
+    private var openedDocumentsByLanguage: [String: Set<URL>] = [:]
+
+    /// Clients removed from `servers` while graceful shutdown is in flight.
+    /// `shutdownAll()` still needs to terminate them synchronously on quit.
+    private var stoppingClients:
+        [ObjectIdentifier: any LSPClientProtocol] = [:]
+
+    /// Permanently prevents work from relaunching after project destruction.
+    private var isInvalidated = false
+    private var lifecycleEpoch = 0
 
     init(
-        resolver: LanguageServerResolver = .defaultResolver,
-        clientFactory: @escaping (String) -> LSPClient = { LSPClient(language: $0) }
+        settings: LSPSettings = .shared,
+        resolver: any LanguageServerResolving = LanguageServerResolver.defaultResolver,
+        clientFactory: @escaping (String) -> any LSPClientProtocol = {
+            LSPClient(language: $0)
+        }
     ) {
+        self.settings = settings
         self.resolver = resolver
         self.clientFactory = clientFactory
     }
@@ -81,13 +125,74 @@ final class LSPManager {
     /// Shuts down every running server. Called on project close and app
     /// termination so no orphan language-server processes survive.
     func shutdownAll() {
-        for entry in servers.values {
-            entry.client.shutdown()
+        isInvalidated = true
+        lifecycleEpoch &+= 1
+
+        let activeLanguages = Set(servers.keys).union(restartingLanguages)
+        for language in activeLanguages {
+            bumpGeneration(for: language)
         }
+
+        var clients: [ObjectIdentifier: any LSPClientProtocol] =
+            stoppingClients
+        for entry in servers.values {
+            clients[ObjectIdentifier(entry.client)] = entry.client
+        }
+        for client in clients.values {
+            client.shutdown()
+        }
+
         servers.removeAll()
-        // Keep diagnosticsByURI intact across a shutdown? No — when the
-        // project closes the manager is discarded anyway. Clear to be safe.
+        stoppingClients.removeAll()
         diagnosticsByURI = [:]
+        rawDiagnosticsByURI = [:]
+        openDocuments.removeAll()
+        openDocumentOwnerCounts.removeAll()
+        openedDocumentsByLanguage.removeAll()
+        restartingLanguages.removeAll()
+        suspendedLanguages.removeAll()
+    }
+
+    /// Applies one persisted settings change without disturbing unrelated
+    /// language servers. Previously active clients are replayed from current
+    /// editor buffers after the replacement finishes initializing.
+    func applySettingsChange(_ change: LSPSettingsChange) async {
+        guard !isInvalidated, !Task.isCancelled else { return }
+        let epoch = lifecycleEpoch
+
+        switch change {
+        case .enabled(false):
+            suspendedLanguages.formUnion(servers.keys)
+            for language in servers.keys.sorted() {
+                await stopServer(for: language)
+                guard canContinue(epoch: epoch) else { return }
+            }
+            diagnosticsByURI = [:]
+            rawDiagnosticsByURI = [:]
+
+        case .enabled(true):
+            let documentLanguages = openDocuments.values.compactMap {
+                LanguageServerRegistry.server(for: $0.url)?.language
+            }
+            let languages = suspendedLanguages.union(documentLanguages)
+            suspendedLanguages.removeAll()
+            for language in languages.sorted() {
+                await replayDocuments(for: language, epoch: epoch)
+                guard canContinue(epoch: epoch) else { return }
+            }
+
+        case .language(let language):
+            let wasActive = servers[language] != nil
+            if wasActive {
+                await stopServer(for: language)
+                guard canContinue(epoch: epoch) else { return }
+            } else {
+                clearDiagnostics(for: language)
+            }
+            if enabled {
+                await replayDocuments(for: language, epoch: epoch)
+            }
+        }
     }
 
     // MARK: - Document sync
@@ -97,40 +202,68 @@ final class LSPManager {
     /// No-op when LSP is disabled, the file has no configured server, or the
     /// server binary is not installed.
     func didOpen(url: URL, version: Int = 1, text: String) {
+        guard !isInvalidated else { return }
+        openDocumentOwnerCounts[url, default: 0] += 1
+        openDocuments[url] = OpenDocument(
+            url: url,
+            version: version,
+            text: text
+        )
         guard enabled else { return }
         guard let serverConfig = LanguageServerRegistry.server(for: url) else { return }
 
-        let language = serverConfig.language
         Task {
             guard await ensureServer(for: serverConfig) else { return }
-            let uri = url.absoluteString
-            servers[language]?.client.didOpen(
-                uri: uri,
-                language: language,
-                version: version,
-                text: text
-            )
+            sendPendingDidOpen(for: serverConfig.language)
         }
     }
 
     /// Notifies the appropriate language server that a document changed.
     func didChange(url: URL, text: String) {
+        guard !isInvalidated else { return }
+        guard openDocumentOwnerCounts[url, default: 0] > 0 else {
+            return
+        }
+        let version = openDocuments[url]?.version ?? 1
+        openDocuments[url] = OpenDocument(
+            url: url,
+            version: version,
+            text: text
+        )
         guard enabled else { return }
         // Resolve via URL extension so a .ts file reaches the typescript server, etc.
         guard let serverConfig = LanguageServerRegistry.server(for: url) else { return }
+        guard openedDocumentsByLanguage[serverConfig.language]?.contains(
+            url
+        ) == true else {
+            return
+        }
         let uri = url.absoluteString
         servers[serverConfig.language]?.client.didChange(uri: uri, text: text)
     }
 
     /// Notifies the appropriate language server that a document was closed.
     func didClose(url: URL) {
-        guard enabled else { return }
+        guard !isInvalidated else { return }
+        guard let ownerCount = openDocumentOwnerCounts[url] else {
+            return
+        }
+        if ownerCount > 1 {
+            openDocumentOwnerCounts[url] = ownerCount - 1
+            return
+        }
+        openDocumentOwnerCounts[url] = nil
+        openDocuments[url] = nil
         guard let serverConfig = LanguageServerRegistry.server(for: url) else { return }
         let uri = url.absoluteString
-        servers[serverConfig.language]?.client.didClose(uri: uri)
-        // Clear that file's diagnostics immediately so stale markers don't linger.
         diagnosticsByURI[uri] = nil
         rawDiagnosticsByURI[uri] = nil
+        guard openedDocumentsByLanguage[serverConfig.language]?.remove(
+            url
+        ) != nil else {
+            return
+        }
+        servers[serverConfig.language]?.client.didClose(uri: uri)
     }
 
     // MARK: - Phase 2 queries (hover + definition)
@@ -368,32 +501,78 @@ final class LSPManager {
     /// the `initialize` handshake) if it isn't. Returns `false` if the server
     /// binary is missing or the handshake failed.
     private func ensureServer(for config: LanguageServerConfig) async -> Bool {
+        guard enabled, !isInvalidated, !Task.isCancelled else {
+            return false
+        }
+        guard !restartingLanguages.contains(config.language) else {
+            return false
+        }
+
         // Already have an entry for this language?
         if let existing = servers[config.language] {
             return existing.state == .initialized
         }
 
-        // Discover the binary — graceful no-op when absent.
-        guard let path = resolver.resolvePath(for: config) else {
-            Logger.lsp.info("Server binary not installed for \(config.language, privacy: .public): \(config.command, privacy: .public)")
+        let resolution = resolver.resolve(
+            config: config,
+            serverOverride: settings.serverOverride(for: config.language)
+        )
+        guard let launch = resolution.launchConfiguration else {
+            switch resolution {
+            case .notFound(let command):
+                Logger.lsp.info(
+                    "Server binary not installed for \(config.language, privacy: .public): \(command, privacy: .public)"
+                )
+            case .invalidOverride(let error):
+                Logger.lsp.error(
+                    "Invalid server override for \(config.language, privacy: .public): \(String(describing: error), privacy: .public)"
+                )
+            case .resolved:
+                break
+            }
             return false
         }
 
+        let generation = serverGenerations[config.language, default: 0]
+        let epoch = lifecycleEpoch
         let client = clientFactory(config.language)
-        let entry = ServerEntry(id: config.language, language: config.language, client: client, state: .uninitialized)
+        let clientID = ObjectIdentifier(client)
+        let entry = ServerEntry(
+            id: config.language,
+            language: config.language,
+            client: client,
+            state: .uninitialized
+        )
         servers[config.language] = entry
 
         // Wire diagnostics callback before starting so nothing is lost.
-        client.onDiagnostics = { [weak self, weak client] notification in
+        client.onDiagnostics = { [weak self] notification in
             guard let self else { return }
-            self.handleDiagnostics(notification, from: client)
+            self.handleDiagnostics(
+                notification,
+                language: config.language,
+                generation: generation,
+                clientID: clientID
+            )
         }
 
-        let started = await client.start(
-            command: path,
-            arguments: config.arguments,
+        let started = await client.startForManager(
+            command: launch.executablePath,
+            arguments: launch.arguments,
             rootURI: rootURI
         )
+
+        guard enabled,
+              !isInvalidated,
+              !Task.isCancelled,
+              lifecycleEpoch == epoch,
+              !restartingLanguages.contains(config.language),
+              serverGenerations[config.language, default: 0] == generation,
+              let current = servers[config.language],
+              ObjectIdentifier(current.client) == clientID else {
+            client.shutdown()
+            return false
+        }
 
         if started {
             servers[config.language]?.state = .initialized
@@ -406,10 +585,118 @@ final class LSPManager {
     }
 
     /// Receives a `publishDiagnostics` notification and merges it into the store.
-    private func handleDiagnostics(_ notification: LSPDiagnosticsNotification, from client: LSPClient?) {
+    private func handleDiagnostics(
+        _ notification: LSPDiagnosticsNotification,
+        language: String,
+        generation: Int,
+        clientID: ObjectIdentifier
+    ) {
+        guard enabled,
+              serverGenerations[language, default: 0] == generation,
+              let current = servers[language],
+              ObjectIdentifier(current.client) == clientID else {
+            return
+        }
         let mapped = DiagnosticMapper.map(notification)
         diagnosticsByURI[notification.uri] = mapped
         rawDiagnosticsByURI[notification.uri] = notification.diagnostics
+    }
+
+    /// Removes and gracefully terminates one client while blocking lazy
+    /// relaunch until shutdown has completed.
+    private func stopServer(for language: String) async {
+        restartingLanguages.insert(language)
+        bumpGeneration(for: language)
+        let client = servers.removeValue(forKey: language)?.client
+        openedDocumentsByLanguage[language] = nil
+        clearDiagnostics(for: language)
+        if let client {
+            let clientID = ObjectIdentifier(client)
+            stoppingClients[clientID] = client
+            _ = await client.shutdownGracefully(timeout: .seconds(3))
+            stoppingClients[clientID] = nil
+        }
+        restartingLanguages.remove(language)
+    }
+
+    /// Reopens the latest current editor buffers for one language.
+    private func replayDocuments(
+        for language: String,
+        epoch: Int
+    ) async {
+        guard enabled,
+              canContinue(epoch: epoch),
+              let config = LanguageServerRegistry.server(
+                  forLanguage: language
+              ) else {
+            return
+        }
+
+        guard hasOpenDocuments(for: language) else { return }
+        guard await ensureServer(for: config) else { return }
+        guard canContinue(epoch: epoch) else { return }
+        sendPendingDidOpen(for: language)
+    }
+
+    /// Sends every current document not yet opened in this client generation.
+    /// Called only after initialization, so events received during the await
+    /// are included with their latest text.
+    private func sendPendingDidOpen(for language: String) {
+        guard !isInvalidated,
+              servers[language]?.state == .initialized else {
+            return
+        }
+
+        let pending = openDocuments.values
+            .filter {
+                LanguageServerRegistry.server(for: $0.url)?.language
+                    == language
+                    && openedDocumentsByLanguage[language]?.contains(
+                        $0.url
+                    ) != true
+            }
+            .sorted { $0.url.absoluteString < $1.url.absoluteString }
+        for document in pending {
+            openedDocumentsByLanguage[language, default: []].insert(
+                document.url
+            )
+            servers[language]?.client.didOpen(
+                uri: document.url.absoluteString,
+                language: language,
+                version: document.version,
+                text: document.text
+            )
+        }
+    }
+
+    private func hasOpenDocuments(for language: String) -> Bool {
+        openDocuments.values.contains {
+            LanguageServerRegistry.server(for: $0.url)?.language == language
+        }
+    }
+
+    private func canContinue(epoch: Int) -> Bool {
+        !isInvalidated
+            && !Task.isCancelled
+            && lifecycleEpoch == epoch
+    }
+
+    private func clearDiagnostics(for language: String) {
+        diagnosticsByURI = diagnosticsByURI.filter {
+            languageForURI($0.key) != language
+        }
+        rawDiagnosticsByURI = rawDiagnosticsByURI.filter {
+            languageForURI($0.key) != language
+        }
+    }
+
+    private func languageForURI(_ uri: String) -> String? {
+        guard let url = URL(string: uri) else { return nil }
+        return LanguageServerRegistry.server(for: url)?.language
+    }
+
+    private func bumpGeneration(for language: String) {
+        serverGenerations[language, default: 0] &+= 1
     }
 
     // MARK: - Phase 4 helpers

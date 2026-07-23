@@ -629,6 +629,81 @@ protocol LSPTransportDelegate: AnyObject {
 /// callback) drives UI, and the transport already hops inbound messages to the
 /// main thread before delivering them here.
 @MainActor
+protocol LSPClientProtocol: AnyObject {
+    var onDiagnostics: ((LSPDiagnosticsNotification) -> Void)? { get set }
+
+    func startForManager(
+        command: String,
+        arguments: [String],
+        rootURI: String?
+    ) async -> Bool
+
+    func shutdown()
+    func shutdownGracefully(timeout: Duration) async -> Bool
+    func didOpen(uri: String, language: String, version: Int, text: String)
+    func didChange(uri: String, text: String)
+    func didClose(uri: String)
+    func hover(uri: String, position: LSPPosition) async -> LSPHover?
+    func definition(
+        uri: String,
+        position: LSPPosition
+    ) async -> LSPDefinitionResponse
+    func completion(
+        uri: String,
+        position: LSPPosition
+    ) async -> LSPCompletionList
+    func codeAction(
+        uri: String,
+        range: LSPRange,
+        diagnostics: [LSPDiagnostic]
+    ) async -> LSPCodeActionResponse
+    func rename(
+        uri: String,
+        position: LSPPosition,
+        newName: String
+    ) async -> LSPWorkspaceEdit
+}
+
+extension LSPClientProtocol {
+    func hover(
+        uri: String,
+        position: LSPPosition
+    ) async -> LSPHover? {
+        nil
+    }
+
+    func definition(
+        uri: String,
+        position: LSPPosition
+    ) async -> LSPDefinitionResponse {
+        .empty
+    }
+
+    func completion(
+        uri: String,
+        position: LSPPosition
+    ) async -> LSPCompletionList {
+        LSPCompletionList(items: [])
+    }
+
+    func codeAction(
+        uri: String,
+        range: LSPRange,
+        diagnostics: [LSPDiagnostic]
+    ) async -> LSPCodeActionResponse {
+        LSPCodeActionResponse(actions: [])
+    }
+
+    func rename(
+        uri: String,
+        position: LSPPosition,
+        newName: String
+    ) async -> LSPWorkspaceEdit {
+        LSPWorkspaceEdit(operatedFiles: [])
+    }
+}
+
+@MainActor
 final class LSPClient {
 
     /// Server lifecycle state.
@@ -1118,6 +1193,20 @@ final class LSPClient {
         guard let request = pending.removeValue(forKey: id) else { return }
         request.timeoutTask?.cancel()
         request.completion(result)
+    }
+}
+
+extension LSPClient: LSPClientProtocol {
+    func startForManager(
+        command: String,
+        arguments: [String],
+        rootURI: String?
+    ) async -> Bool {
+        await start(
+            command: command,
+            arguments: arguments,
+            rootURI: rootURI
+        )
     }
 }
 
