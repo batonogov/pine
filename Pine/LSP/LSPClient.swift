@@ -15,6 +15,7 @@
 //  actor — they serialise onto a private background queue.
 //
 
+import Darwin
 import Foundation
 import os
 
@@ -48,23 +49,66 @@ nonisolated enum LSPMessageFraming {
     /// Extracts the `Content-Length` value from a header block.
     /// Returns `nil` if the header is absent or unparseable.
     static func contentLength(from header: String) -> Int? {
-        // Case-insensitive search — servers are inconsistent on casing.
-        guard let range = header.range(of: "Content-Length:", options: .caseInsensitive) else {
-            return nil
+        var parsedLength: Int?
+        for line in header.components(separatedBy: "\r\n") {
+            let fields = line.split(
+                separator: ":",
+                maxSplits: 1,
+                omittingEmptySubsequences: false
+            )
+            guard fields.count == 2 else { continue }
+
+            let name = fields[0].trimmingCharacters(
+                in: .whitespaces
+            )
+            guard name.caseInsensitiveCompare("Content-Length")
+                    == .orderedSame else {
+                continue
+            }
+            // Multiple length fields are ambiguous and must fail closed.
+            guard parsedLength == nil else { return nil }
+
+            let value = fields[1].trimmingCharacters(
+                in: .whitespaces
+            )
+            guard !value.isEmpty,
+                  value.utf8.allSatisfy({ (48...57).contains($0) }),
+                  let length = Int(value) else {
+                return nil
+            }
+            parsedLength = length
         }
-        let afterKey = header[range.upperBound...]
-        // Trim leading whitespace then take digits up to the first non-digit.
-        let trimmed = afterKey.drop(while: { $0.isWhitespace })
-        var digits = ""
-        for char in trimmed {
-            guard char.isNumber else { break }
-            digits.append(char)
-        }
-        return Int(digits)
+        return parsedLength
     }
 }
 
 // MARK: - Transport
+
+/// Why an active stdio transport stopped accepting messages.
+nonisolated enum LSPTransportTermination: Equatable, Sendable {
+    case requested
+    case endOfFile
+    case processExited(status: Int32)
+    case protocolViolation(LSPStreamParserError)
+}
+
+/// Error used to fail pending JSON-RPC continuations when stdio ends.
+nonisolated struct LSPTransportError: LocalizedError, Equatable, Sendable {
+    let termination: LSPTransportTermination
+
+    var errorDescription: String? {
+        switch termination {
+        case .requested:
+            return "LSP transport was terminated by the client"
+        case .endOfFile:
+            return "LSP server closed its stdout stream"
+        case .processExited(let status):
+            return "LSP server exited with status \(status)"
+        case .protocolViolation(let error):
+            return "LSP server sent malformed framing: \(error)"
+        }
+    }
+}
 
 /// A minimal JSON-RPC 2.0 transport over a `Process`'s stdio.
 ///
@@ -77,7 +121,6 @@ nonisolated enum LSPMessageFraming {
 /// `ioQueue`. The only cross-thread surface is the delegate callback, which
 /// hops to the main actor at the call site.
 nonisolated final class LSPTransport: @unchecked Sendable {
-
     /// Receives fully-decoded JSON-RPC messages (notifications and responses).
     weak var delegate: LSPTransportDelegate?
 
@@ -90,8 +133,21 @@ nonisolated final class LSPTransport: @unchecked Sendable {
     /// Private serial queue — all reads/writes of mutable state happen here.
     private let ioQueue = DispatchQueue(label: "com.pine.lsp-transport")
 
-    /// Accumulates the raw stdout bytes until a complete message is framed.
-    private var readBuffer = Data()
+    /// Incremental framing state, confined to `ioQueue`.
+    private var streamParser = LSPMessageStreamParser()
+
+    /// Signalled directly by the Process termination callback so bounded
+    /// termination never waits for work that is itself queued on `ioQueue`.
+    private var processExitSemaphore: DispatchSemaphore?
+
+    /// Ignores stale callbacks from a process that was already replaced.
+    private var processGeneration = 0
+
+    /// Process exit can precede the final stdout readability callback.
+    private var pendingExitStatus: Int32?
+
+    /// EOF and Process.terminationHandler can report the same shutdown.
+    private var didDeliverTermination = true
 
     // MARK: - Lifecycle
 
@@ -103,10 +159,25 @@ nonisolated final class LSPTransport: @unchecked Sendable {
     ///     current process environment is used with common tool paths prepended.
     /// - Returns: `true` if the process launched successfully.
     @discardableResult
-    func start(command: String, arguments: [String], environment: [String: String]? = nil) -> Bool {
+    func start(
+        command: String,
+        arguments: [String],
+        environment: [String: String]? = nil
+    ) -> Bool {
         ioQueue.sync {
             // Already running — refuse to double-start.
             if process?.isRunning == true { return false }
+
+            outPipeCleanup()
+            process = nil
+            stdinPipe = nil
+            processExitSemaphore = nil
+
+            processGeneration &+= 1
+            let generation = processGeneration
+            streamParser = LSPMessageStreamParser()
+            pendingExitStatus = nil
+            didDeliverTermination = false
 
             let proc = Process()
             proc.executableURL = URL(fileURLWithPath: command)
@@ -124,23 +195,56 @@ nonisolated final class LSPTransport: @unchecked Sendable {
             let outPipe = Pipe()
             proc.standardInput = inPipe
             proc.standardOutput = outPipe
-            proc.standardError = Pipe() // discard server stderr for now
+            proc.standardError = FileHandle.nullDevice
+            let stdoutDescriptor = outPipe.fileHandleForReading.fileDescriptor
+            guard Self.configureNonBlocking(
+                descriptor: stdoutDescriptor
+            ) else {
+                didDeliverTermination = true
+                Logger.lsp.error(
+                    "Failed to configure nonblocking LSP stdout"
+                )
+                return false
+            }
+
+            let exitSemaphore = DispatchSemaphore(value: 0)
+            processExitSemaphore = exitSemaphore
 
             // Forward stdout data to the framing reader.
-            outPipe.fileHandleForReading.readabilityHandler = { [weak self] handle in
-                let chunk = handle.availableData
-                guard !chunk.isEmpty else { return }
-                self?.ioQueue.async {
-                    self?.appendAndParse(chunk)
+            outPipe.fileHandleForReading.readabilityHandler = { [weak self] _ in
+                self?.ioQueue.async { [weak self] in
+                    self?.drainOutput(
+                        descriptor: stdoutDescriptor,
+                        generation: generation
+                    )
+                }
+            }
+
+            proc.terminationHandler = { [weak self] terminatedProcess in
+                let status = terminatedProcess.terminationStatus
+                exitSemaphore.signal()
+                self?.ioQueue.async { [weak self] in
+                    self?.handleProcessExit(
+                        status: status,
+                        generation: generation,
+                        stdoutDescriptor: stdoutDescriptor
+                    )
                 }
             }
 
             do {
                 try proc.run()
             } catch {
-                Logger.lsp.error("Failed to launch server \(command, privacy: .public): \(String(describing: error), privacy: .public)")
+                outPipe.fileHandleForReading.readabilityHandler = nil
+                proc.terminationHandler = nil
+                didDeliverTermination = true
                 process = nil
                 stdinPipe = nil
+                processExitSemaphore = nil
+                let detail = String(describing: error)
+                Logger.lsp.error(
+                    "Failed to launch server \(command, privacy: .public): \(detail, privacy: .public)"
+                )
                 return false
             }
 
@@ -151,9 +255,34 @@ nonisolated final class LSPTransport: @unchecked Sendable {
         }
     }
 
+    /// Configures a pipe descriptor for nonblocking reads, retrying interrupted
+    /// system calls. Startup fails closed when either operation is rejected.
+    static func configureNonBlocking(descriptor: Int32) -> Bool {
+        var descriptorFlags: Int32
+        repeat {
+            descriptorFlags = Darwin.fcntl(descriptor, F_GETFL)
+        } while descriptorFlags == -1 && errno == EINTR
+        guard descriptorFlags != -1 else { return false }
+
+        var setResult: Int32
+        repeat {
+            setResult = Darwin.fcntl(
+                descriptor,
+                F_SETFL,
+                descriptorFlags | O_NONBLOCK
+            )
+        } while setResult == -1 && errno == EINTR
+        return setResult != -1
+    }
+
     /// Whether the server process is currently running.
     var isRunning: Bool {
         ioQueue.sync { process?.isRunning ?? false }
+    }
+
+    /// Internal observability for process-lifecycle tests.
+    var processIdentifier: pid_t? {
+        ioQueue.sync { process?.processIdentifier }
     }
 
     /// Writes a framed JSON-RPC message to the server's stdin.
@@ -167,7 +296,10 @@ nonisolated final class LSPTransport: @unchecked Sendable {
             do {
                 try pipe.fileHandleForWriting.write(contentsOf: framed)
             } catch {
-                Logger.lsp.error("Failed to write to server stdin: \(String(describing: error), privacy: .public)")
+                let detail = String(describing: error)
+                Logger.lsp.error(
+                    "Failed to write to server stdin: \(detail, privacy: .public)"
+                )
             }
         }
     }
@@ -175,16 +307,42 @@ nonisolated final class LSPTransport: @unchecked Sendable {
     /// Terminates the server process. Sends SIGTERM first, then SIGKILL as a
     /// fallback if the process does not exit within `timeout` seconds.
     func terminate(timeout: TimeInterval = 3.0) {
+        let boundedTimeout = timeout.isFinite ? max(0, timeout) : 3.0
         ioQueue.sync {
             outPipeCleanup()
             guard let proc = process else { return }
+
             if proc.isRunning {
                 proc.terminate()
-                // Give it a moment to exit cleanly.
-                proc.waitUntilExit()
+                let waitResult = processExitSemaphore?.wait(
+                    timeout: .now() + boundedTimeout
+                )
+                if waitResult == .timedOut, proc.isRunning {
+                    let killResult = Darwin.kill(
+                        proc.processIdentifier,
+                        SIGKILL
+                    )
+                    if killResult != 0 {
+                        Logger.lsp.error(
+                            "Failed to SIGKILL unresponsive LSP process"
+                        )
+                    }
+                    _ = processExitSemaphore?.wait(
+                        timeout: .now() + 1.0
+                    )
+                }
             }
-            process = nil
+
+            finishTransport(reason: .requested)
             stdinPipe = nil
+            if proc.isRunning {
+                // Preserve the handle until Process confirms exit. Reporting a
+                // stopped transport must not hide a still-live child.
+                process = proc
+            } else {
+                process = nil
+                processExitSemaphore = nil
+            }
         }
     }
 
@@ -197,57 +355,162 @@ nonisolated final class LSPTransport: @unchecked Sendable {
 
     // MARK: - Framing reader
 
-    /// Appends a stdout chunk and parses as many complete messages as are
-    /// available. Runs on `ioQueue` so the buffer is never accessed
-    /// concurrently.
-    private func appendAndParse(_ chunk: Data) {
-        readBuffer.append(chunk)
+    private func drainOutput(descriptor: Int32, generation: Int) {
+        guard generation == processGeneration,
+              !didDeliverTermination else {
+            return
+        }
 
-        while let (message, consumed) = parseNextMessage() {
-            // Drop the consumed bytes, keeping any partial trailing data.
-            readBuffer.removeFirst(consumed)
-            deliver(message)
+        var storage = [UInt8](repeating: 0, count: 64 * 1024)
+        while !didDeliverTermination {
+            let byteCount = storage.withUnsafeMutableBytes { buffer in
+                Darwin.read(
+                    descriptor,
+                    buffer.baseAddress,
+                    buffer.count
+                )
+            }
+            if byteCount > 0 {
+                appendAndParse(Data(storage.prefix(byteCount)))
+                continue
+            }
+            if byteCount == 0 {
+                handleEndOfFile()
+                return
+            }
+
+            let readError = errno
+            if readError == EINTR {
+                continue
+            }
+            if readError == EAGAIN || readError == EWOULDBLOCK {
+                return
+            }
+
+            Logger.lsp.error(
+                "Failed reading LSP stdout: errno \(readError)"
+            )
+            handleEndOfFile()
+            return
         }
     }
 
-    /// Attempts to parse one complete JSON-RPC message from the head of
-    /// `readBuffer`. Returns the decoded `[String: Any]` and the number of
-    /// bytes consumed (header + payload), or `nil` if more data is needed.
-    private func parseNextMessage() -> (message: [String: Any], consumed: Int)? {
-        // The header is ASCII; look for the `\r\n\r\n` terminator.
-        guard let headerRange = readBuffer.range(of: Data("\r\n\r\n".utf8)) else {
-            return nil // header not yet complete
+    /// Appends a stdout chunk and delivers every complete message in order.
+    private func appendAndParse(_ chunk: Data) {
+        if let error = handleParserEvents(streamParser.append(chunk)) {
+            failTransportForProtocolViolation(error)
+        }
+    }
+
+    @discardableResult
+    private func handleParserEvents(
+        _ events: [LSPStreamParserEvent]
+    ) -> LSPStreamParserError? {
+        for event in events {
+            switch event {
+            case .message(let message):
+                deliver(message)
+            case .malformed(let error):
+                let detail = String(describing: error)
+                Logger.lsp.error(
+                    "Discarded malformed LSP stream input: \(detail, privacy: .public)"
+                )
+                if error.terminatesStream {
+                    return error
+                }
+            }
+        }
+        return nil
+    }
+
+    private func handleProcessExit(
+        status: Int32,
+        generation: Int,
+        stdoutDescriptor: Int32
+    ) {
+        guard generation == processGeneration else { return }
+        pendingExitStatus = status
+        if didDeliverTermination {
+            clearExitedProcess()
+            return
         }
 
-        let headerData = readBuffer[readBuffer.startIndex..<headerRange.lowerBound]
-        guard let header = String(data: headerData, encoding: .utf8) else {
-            // Malformed header — drop everything up to the separator to resync.
-            readBuffer.removeSubrange(readBuffer.startIndex...headerRange.upperBound)
-            return nil
+        // A process can exit before its final readability callback is queued.
+        // Non-blockingly drain bytes already in the pipe before considering
+        // the stream terminated.
+        drainOutput(
+            descriptor: stdoutDescriptor,
+            generation: generation
+        )
+        guard !didDeliverTermination else { return }
+
+        // A descendant may inherit stdout and keep the pipe open after the
+        // server exits. Bound that unusual case without losing available data.
+        ioQueue.asyncAfter(deadline: .now() + .milliseconds(100)) { [weak self] in
+            guard let self,
+                  generation == self.processGeneration,
+                  !self.didDeliverTermination else {
+                return
+            }
+            self.finishTransport(reason: .processExited(status: status))
+            self.clearExitedProcess()
+        }
+    }
+
+    private func handleEndOfFile() {
+        let reason = pendingExitStatus.map {
+            LSPTransportTermination.processExited(status: $0)
+        } ?? .endOfFile
+        finishTransport(reason: reason)
+        if process?.isRunning == true {
+            stopRunningProcessWithoutWaiting()
+        } else {
+            clearExitedProcess()
+        }
+    }
+
+    private func finishTransport(reason: LSPTransportTermination) {
+        guard !didDeliverTermination else { return }
+        didDeliverTermination = true
+        outPipeCleanup()
+        handleParserEvents(streamParser.finish())
+        deliverTermination(reason)
+    }
+
+    private func failTransportForProtocolViolation(
+        _ error: LSPStreamParserError
+    ) {
+        guard !didDeliverTermination else { return }
+        finishTransport(reason: .protocolViolation(error))
+        stopRunningProcessWithoutWaiting()
+    }
+
+    private func stopRunningProcessWithoutWaiting() {
+        stdinPipe = nil
+        guard let proc = process else { return }
+        guard proc.isRunning else {
+            clearExitedProcess()
+            return
         }
 
-        guard let length = LSPMessageFraming.contentLength(from: header) else {
-            readBuffer.removeSubrange(readBuffer.startIndex...headerRange.upperBound)
-            return nil
+        proc.terminate()
+        DispatchQueue.global(qos: .utility).asyncAfter(
+            deadline: .now() + 1.0
+        ) {
+            guard proc.isRunning else { return }
+            if Darwin.kill(proc.processIdentifier, SIGKILL) != 0 {
+                Logger.lsp.error(
+                    "Failed to SIGKILL malformed LSP process"
+                )
+            }
         }
+    }
 
-        let bodyStart = headerRange.upperBound
-        // `Data.index(_:offsetBy:)` traps if it would run past endIndex, so
-        // validate available bytes first and return nil (wait for more) instead.
-        let available = readBuffer.distance(from: bodyStart, to: readBuffer.endIndex)
-        guard available >= length else {
-            return nil // payload not yet complete
-        }
-        let bodyEnd = readBuffer.index(bodyStart, offsetBy: length)
-
-        let bodyData = readBuffer.subdata(in: bodyStart..<bodyEnd)
-        let consumed = readBuffer.distance(from: readBuffer.startIndex, to: bodyEnd)
-
-        guard let json = try? JSONSerialization.jsonObject(with: bodyData) as? [String: Any] else {
-            Logger.lsp.error("Failed to decode LSP JSON payload")
-            return ([:], consumed) // consume to avoid re-parsing a bad message
-        }
-        return (json, consumed)
+    private func clearExitedProcess() {
+        guard process?.isRunning != true else { return }
+        process = nil
+        stdinPipe = nil
+        processExitSemaphore = nil
     }
 
     /// Delivers a decoded message to the delegate on the main thread — the
@@ -259,6 +522,12 @@ nonisolated final class LSPTransport: @unchecked Sendable {
         let box = SendableJSONBox(message)
         DispatchQueue.main.async { [weak self] in
             self?.delegate?.transport(didReceive: box.value)
+        }
+    }
+
+    private func deliverTermination(_ reason: LSPTransportTermination) {
+        DispatchQueue.main.async { [weak self] in
+            self?.delegate?.transportDidTerminate(reason)
         }
     }
 }
@@ -276,6 +545,9 @@ nonisolated struct SendableJSONBox: @unchecked Sendable {
 protocol LSPTransportDelegate: AnyObject {
     /// Called for every complete JSON-RPC message (notification or response).
     func transport(didReceive message: [String: Any])
+
+    /// Called once when an active process or its stdout stream terminates.
+    func transportDidTerminate(_ reason: LSPTransportTermination)
 }
 
 // MARK: - LSPClient
@@ -312,6 +584,11 @@ final class LSPClient {
 
     /// Pending requests awaiting a server response, keyed by request id.
     private var pending: [Int: (Result<SendableJSONBox, Error>) -> Void] = [:]
+
+    /// Internal observability for deterministic transport-lifecycle tests.
+    var pendingRequestCount: Int {
+        pending.count
+    }
 
     /// The language id this client serves (e.g. "swift", "typescript").
     let language: String
@@ -645,7 +922,6 @@ nonisolated struct LSPError: Error {
 // MARK: - LSPTransportDelegate
 
 extension LSPClient: LSPTransportDelegate {
-
     func transport(didReceive message: [String: Any]) {
         // A server-to-client notification (no "id", has "method").
         if let method = message["method"] as? String {
@@ -659,6 +935,26 @@ extension LSPClient: LSPTransportDelegate {
             let result = message["result"]
             let error = message["error"] as? [String: Any]
             resolveRequest(id: id, result: result, error: error)
+        }
+    }
+
+    func transportDidTerminate(_ reason: LSPTransportTermination) {
+        let transportError = LSPTransportError(termination: reason)
+        let pendingHandlers = Array(pending.values)
+        pending.removeAll()
+        for handler in pendingHandlers {
+            handler(.failure(transportError))
+        }
+
+        switch state {
+        case .shutDown, .exited:
+            state = .exited
+        case .uninitialized:
+            break
+        case .initializing, .initialized:
+            state = .failed
+        case .failed:
+            break
         }
     }
 
