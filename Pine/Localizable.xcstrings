@@ -172,55 +172,55 @@
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "Abgeschlossene Agenten-Sitzungen erscheinen hier. Setze die Änderungen eines Durchlaufs mit einem Klick zurück."
+            "value": "Abgeschlossene Agenten-Sitzungen und beobachtete Dateiaktivitäten erscheinen hier. Heuristische Einträge dienen nur zur Überprüfung."
           }
         },
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Finished agent sessions will appear here. Revert any run's changes with one click."
+            "value": "Finished agent sessions and observed file activity will appear here. Heuristic entries are review-only."
           }
         },
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "Las sesiones de agente finalizadas aparecerán aquí. Revierte los cambios de cualquier ejecución con un clic."
+            "value": "Las sesiones de agente finalizadas y la actividad de archivos observada aparecerán aquí. Las entradas heurísticas son solo para revisión."
           }
         },
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Les sessions d'agent terminées apparaîtront ici. Annulez les modifications de n'importe quelle exécution d'un clic."
+            "value": "Les sessions d'agent terminées et l'activité de fichiers observée apparaîtront ici. Les entrées heuristiques sont en lecture seule."
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "終了したエージェントセッションがここに表示されます。実行の変更をワンクリックで取り消せます。"
+            "value": "終了したエージェントセッションと観測されたファイル操作がここに表示されます。推定に基づく項目は確認専用です。"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "완료된 에이전트 세션이 여기에 표시됩니다. 클릭 한 번으로 실행 변경 사항을 되돌릴 수 있습니다."
+            "value": "완료된 에이전트 세션과 관찰된 파일 활동이 여기에 표시됩니다. 휴리스틱 항목은 검토 전용입니다."
           }
         },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
-            "value": "Sessões de agente finalizadas aparecerão aqui. Reverta as alterações de qualquer execução com um clique."
+            "value": "Sessões de agente finalizadas e a atividade de arquivos observada aparecerão aqui. Entradas heurísticas servem apenas para revisão."
           }
         },
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Завершённые сессии агента появятся здесь. Изменения любого запуска можно отменить одним нажатием."
+            "value": "Завершённые сессии агента и наблюдаемая файловая активность появятся здесь. Эвристические записи доступны только для просмотра."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "已完成的智能体会话将显示在此处。一键即可撤销任意运行的更改。"
+            "value": "已完成的智能体会话和观察到的文件活动将显示在此处。启发式条目仅供查看。"
           }
         }
       }
@@ -761,6 +761,126 @@
           "stringUnit": {
             "state": "translated",
             "value": "智能体历史"
+          }
+        }
+      }
+    },
+    "agentHistory.undoUnavailable": {
+      "comment": "Agent History: label shown instead of Undo when an entry cannot be reversed safely (#1183).",
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Rückgängig nicht verfügbar"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Undo unavailable"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Deshacer no disponible"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Annulation indisponible"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "取り消し不可"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "실행 취소 불가"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Desfazer indisponível"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Отмена недоступна"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法撤销"
+          }
+        }
+      }
+    },
+    "agentHistory.undoUnavailableReason": {
+      "comment": "Agent History: safety explanation for entries without a verified reversible change set (#1183).",
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dieser Eintrag enthält keinen verifizierten umkehrbaren Änderungssatz; eine Rücknahme könnte daher fremde Änderungen verwerfen."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This entry has no verified reversible change set, so undo could discard unrelated changes."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Esta entrada no contiene un conjunto de cambios reversible verificado; deshacer podría descartar cambios ajenos."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cette entrée ne contient aucun jeu de modifications réversible vérifié ; l'annulation pourrait supprimer des modifications sans rapport."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この項目には検証済みの可逆変更セットがないため、取り消すと無関係な変更が失われる可能性があります。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이 항목에는 검증된 되돌리기 변경 세트가 없으므로 실행 취소 시 관련 없는 변경이 손실될 수 있습니다."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Esta entrada não contém um conjunto de alterações reversível verificado; desfazer poderia descartar alterações não relacionadas."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "В записи нет проверенного обратимого набора изменений, поэтому отмена может удалить несвязанные правки."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "此条目没有经过验证的可逆更改集，因此撤销操作可能会丢弃无关更改。"
           }
         }
       }

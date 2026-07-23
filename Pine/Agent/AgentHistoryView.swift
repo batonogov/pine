@@ -2,10 +2,10 @@
 //  AgentHistoryView.swift
 //  Pine
 //
-//  Timeline view of finished AI-agent sessions from the persistent audit log
+//  Timeline view of finished AI-agent sessions from persistent history
 //  (vision #933, Phase 2 — Visibility, issue #1073). Each row shows the agent,
-//  time range, change summary, and either a `Reverted` badge or a Revert
-//  button (with confirmation). Toggled via the `showAgentHistory` notification.
+//  time range, observed-change summary, and safe undo availability. Toggled
+//  via the `showAgentHistory` notification.
 //
 //  Rendering is split so snapshot tests need no live store: `AgentHistoryList`
 //  consumes value-type `AgentHistoryRow`s (the same value-type-projection
@@ -28,6 +28,7 @@ struct AgentHistoryRow: Identifiable, Equatable {
     let summary: String
     let affectedFileCount: Int
     let reverted: Bool
+    let undoAvailability: AgentHistoryUndoAvailability
 
     init(from entry: AgentHistoryEntry) {
         id = entry.id
@@ -37,6 +38,7 @@ struct AgentHistoryRow: Identifiable, Equatable {
         summary = entry.summary
         affectedFileCount = entry.affectedFiles.count
         reverted = entry.reverted
+        undoAvailability = entry.undoAvailability
     }
 }
 
@@ -103,13 +105,35 @@ struct AgentHistoryRowView: View {
                     .textCase(.uppercase)
                     .accessibilityIdentifier(AccessibilityID.agentHistoryRevertedBadge)
             } else if row.affectedFileCount > 0 {
-                Button {
-                    onRevert(row)
-                } label: {
-                    Text(Strings.agentHistoryRevertButton)
+                switch row.undoAvailability {
+                case .available:
+                    Button {
+                        onRevert(row)
+                    } label: {
+                        Text(Strings.agentHistoryRevertButton)
+                    }
+                    .controlSize(.small)
+                    .accessibilityIdentifier(AccessibilityID.agentHistoryRevertButton)
+                case .unavailable:
+                    VStack(alignment: .trailing, spacing: 2) {
+                        Label {
+                            Text(Strings.agentHistoryUndoUnavailable)
+                        } icon: {
+                            Image(systemName: "lock.fill")
+                        }
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(.secondary)
+
+                        Text(Strings.agentHistoryUndoUnavailableReason)
+                            .font(.system(size: 9))
+                            .foregroundStyle(.tertiary)
+                            .multilineTextAlignment(.trailing)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    .frame(maxWidth: 190, alignment: .trailing)
+                    .accessibilityElement(children: .combine)
+                    .accessibilityIdentifier(AccessibilityID.agentHistoryUndoUnavailable)
                 }
-                .controlSize(.small)
-                .accessibilityIdentifier(AccessibilityID.agentHistoryRevertButton)
             }
         }
         .padding(.horizontal, 12)
