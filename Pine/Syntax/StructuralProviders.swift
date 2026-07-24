@@ -74,7 +74,7 @@ nonisolated protocol FoldRangeProviding: Sendable {
 /// The editor bumps the generation whenever the document text changes; a
 /// provider result computed against an earlier generation is discarded before
 /// it is applied, so an in-flight LSP reply can never overwrite newer edits.
-nonisolated final class FoldGeneration: @unchecked Sendable {
+nonisolated final class StructuralGeneration: @unchecked Sendable {
     private let lock = NSLock()
     private var value: Int = 0
 
@@ -101,6 +101,175 @@ nonisolated final class FoldGeneration: @unchecked Sendable {
     }
 }
 
+/// Compatibility name retained for the folding slice introduced before the
+/// generation token became shared by every structural feature.
+typealias FoldGeneration = StructuralGeneration
+
+// MARK: - Shared provider deadline
+
+/// Result of racing a structural provider against its interactive deadline.
+nonisolated enum StructuralRaceOutcome<Value: Sendable>: Sendable {
+    case completed(Value)
+    case timedOut
+    case cancelled
+}
+
+/// Timing captured at the instant the one-shot gate resolves. Keeping this
+/// separate from caller resumption makes deadline observability accurate even
+/// when the caller's executor is temporarily saturated.
+nonisolated struct StructuralRaceMeasurement<Value: Sendable>: Sendable {
+    let outcome: StructuralRaceOutcome<Value>
+    let elapsed: Duration
+}
+
+/// Runs a provider without allowing a non-cooperative implementation to extend
+/// Pine's 250 ms structural deadline.
+///
+/// A task group cannot enforce that bound because leaving its scope waits for
+/// every child, including one that ignores cancellation. This one-shot gate
+/// resumes the caller as soon as either the provider, deadline, or parent
+/// cancellation wins, then cancels the remaining tasks.
+nonisolated enum StructuralDeadlineRace {
+    /// Dedicated high-QoS timer queue. A cooperative `Task.sleep` timeout can
+    /// be starved for seconds when thousands of tests or provider tasks fill
+    /// the Swift executor; the UI deadline must remain a wall-clock bound.
+    private static let timerQueue = DispatchQueue(
+        label: "com.pine.structural-deadline",
+        qos: .userInteractive
+    )
+
+    private final class Gate<Value: Sendable>: @unchecked Sendable {
+        private let lock = NSLock()
+        private let clock = ContinuousClock()
+        private let started: ContinuousClock.Instant
+        private var measurement: StructuralRaceMeasurement<Value>?
+        private var continuation:
+            CheckedContinuation<StructuralRaceMeasurement<Value>, Never>?
+        private var queryTask: Task<Void, Never>?
+        private var timeoutWorkItem: DispatchWorkItem?
+
+        init() {
+            started = clock.now
+        }
+
+        func install(
+            _ continuation:
+                CheckedContinuation<StructuralRaceMeasurement<Value>, Never>
+        ) {
+            let completed: StructuralRaceMeasurement<Value>? = lock.withLock {
+                if let measurement {
+                    return measurement
+                }
+                self.continuation = continuation
+                return nil
+            }
+            if let completed {
+                continuation.resume(returning: completed)
+            }
+        }
+
+        func install(
+            queryTask: Task<Void, Never>,
+            timeoutWorkItem: DispatchWorkItem
+        ) {
+            let shouldCancel = lock.withLock {
+                if measurement != nil {
+                    return true
+                }
+                self.queryTask = queryTask
+                self.timeoutWorkItem = timeoutWorkItem
+                return false
+            }
+            if shouldCancel {
+                queryTask.cancel()
+                timeoutWorkItem.cancel()
+            }
+        }
+
+        func resolve(_ outcome: StructuralRaceOutcome<Value>) {
+            let measurement = StructuralRaceMeasurement(
+                outcome: outcome,
+                elapsed: started.duration(to: clock.now)
+            )
+            let completion: (
+                CheckedContinuation<StructuralRaceMeasurement<Value>, Never>?,
+                Task<Void, Never>?,
+                DispatchWorkItem?
+            )? = lock.withLock {
+                guard self.measurement == nil else { return nil }
+                self.measurement = measurement
+                let completion = (
+                    continuation,
+                    queryTask,
+                    timeoutWorkItem
+                )
+                continuation = nil
+                queryTask = nil
+                timeoutWorkItem = nil
+                return completion
+            }
+            guard let completion else { return }
+            completion.1?.cancel()
+            completion.2?.cancel()
+            completion.0?.resume(returning: measurement)
+        }
+    }
+
+    static func run<Value: Sendable>(
+        deadline: Duration,
+        operation: @escaping @Sendable () async -> Value
+    ) async -> StructuralRaceOutcome<Value> {
+        await runMeasured(
+            deadline: deadline,
+            operation: operation
+        ).outcome
+    }
+
+    /// The same race with gate-resolution timing for diagnostics and tests.
+    /// `elapsed` excludes any delay before the caller's executor resumes.
+    static func runMeasured<Value: Sendable>(
+        deadline: Duration,
+        operation: @escaping @Sendable () async -> Value
+    ) async -> StructuralRaceMeasurement<Value> {
+        let gate = Gate<Value>()
+        return await withTaskCancellationHandler {
+            await withCheckedContinuation { continuation in
+                gate.install(continuation)
+                let queryTask = Task.detached(priority: .userInitiated) {
+                    gate.resolve(.completed(await operation()))
+                }
+                let timeoutWorkItem = DispatchWorkItem {
+                    gate.resolve(.timedOut)
+                }
+                gate.install(
+                    queryTask: queryTask,
+                    timeoutWorkItem: timeoutWorkItem
+                )
+                timerQueue.asyncAfter(
+                    deadline: .now() + dispatchInterval(for: deadline),
+                    execute: timeoutWorkItem
+                )
+            }
+        } onCancel: {
+            gate.resolve(.cancelled)
+        }
+    }
+
+    private static func dispatchInterval(
+        for duration: Duration
+    ) -> DispatchTimeInterval {
+        let components = duration.components
+        let nanoseconds =
+            Double(components.seconds) * 1_000_000_000
+            + Double(components.attoseconds) / 1_000_000_000
+        let bounded = min(
+            Double(Int.max),
+            max(0, nanoseconds.rounded(.up))
+        )
+        return .nanoseconds(Int(bounded))
+    }
+}
+
 // MARK: - Coordinator result types
 
 /// Which provider produced a resolved fold set. Used for observability and
@@ -121,17 +290,17 @@ nonisolated enum FoldResolution: Equatable, Sendable {
     case stale
 }
 
-// MARK: - Document symbols (step 4 — model prepared; wiring deferred)
+// MARK: - Document symbols
 
 /// Coarse symbol classification shared by LSP `documentSymbol` and the regex
-/// fallback. The protocol below is defined so the fold and symbol stacks share
-/// one provider/fallback policy; hierarchical Symbol Navigator wiring is
-/// step 4 of #1008 and is deliberately not implemented in this slice.
+/// fallback.
 nonisolated enum SymbolKind: String, Sendable, Equatable {
     case function
     case `class`
     case `struct`
     case `enum`
+    case interface
+    case namespace
     case property
     case variable
     case other
@@ -149,10 +318,38 @@ nonisolated struct DocumentSymbolNode: Sendable, Equatable {
     let children: [DocumentSymbolNode]
 }
 
-/// A symbol provider owns document symbols for one revision. Wiring is step 4
-/// of #1008; the protocol is declared here so fold and symbol providers share
-/// the same fallback semantics once the navigator is made hierarchical.
+/// A symbol provider owns document symbols for one revision.
 nonisolated protocol SymbolProviding: Sendable {
     func canProvide(for snapshot: DocumentSnapshot) -> Bool
     func symbols(for snapshot: DocumentSnapshot) async -> [DocumentSymbolNode]?
+}
+
+/// Which provider produced a resolved symbol tree.
+nonisolated enum SymbolSource: Equatable, Sendable {
+    case regex
+    case lsp
+}
+
+/// The outcome of a structural symbol request.
+nonisolated enum SymbolResolution: Equatable, Sendable {
+    case resolved([DocumentSymbolNode], source: SymbolSource)
+    case stale
+}
+
+// MARK: - Brackets
+
+/// Immutable input for bounded bracket matching. Syntax-derived comment and
+/// string ranges are captured with the same text revision as the cursor.
+nonisolated struct BracketSnapshot: Sendable, Equatable {
+    let document: DocumentSnapshot
+    let cursorPosition: Int
+    let skipRanges: [NSRange]
+}
+
+/// Provider seam for bracket navigation/highlighting. The production provider
+/// remains Pine's bounded local matcher; this seam keeps its coordinates tied
+/// to the same immutable snapshot model as folds and symbols.
+nonisolated protocol BracketProviding: Sendable {
+    func canProvide(for snapshot: DocumentSnapshot) -> Bool
+    func highlight(for snapshot: BracketSnapshot) -> BracketHighlightResult?
 }

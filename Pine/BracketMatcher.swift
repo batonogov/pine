@@ -6,7 +6,7 @@
 import Foundation
 
 /// Результат поиска парной скобки.
-struct BracketMatch: Equatable, Sendable {
+nonisolated struct BracketMatch: Equatable, Sendable {
     /// UTF-16 позиция открывающей скобки
     let opener: Int
     /// UTF-16 позиция закрывающей скобки
@@ -14,7 +14,7 @@ struct BracketMatch: Equatable, Sendable {
 }
 
 /// Результат подсветки скобки: найдена пара или orphan.
-enum BracketHighlightResult: Equatable, Sendable {
+nonisolated enum BracketHighlightResult: Equatable, Sendable {
     /// Скобки совпали — подсветить обе
     case matched(BracketMatch)
     /// Скобка без пары — подсветить как ошибку
@@ -23,7 +23,7 @@ enum BracketHighlightResult: Equatable, Sendable {
 
 /// Алгоритм поиска парных скобок.
 /// Поддерживает `()`, `{}`, `[]`.
-enum BracketMatcher {
+nonisolated enum BracketMatcher {
 
     /// Maximum number of characters to scan in each direction when searching
     /// for a matching bracket. Prevents hangs on very large files.

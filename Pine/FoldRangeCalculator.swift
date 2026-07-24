@@ -27,7 +27,7 @@ nonisolated enum FoldKind: Equatable, Sendable {
 }
 
 /// Вычисляет складываемые регионы по парным скобкам.
-enum FoldRangeCalculator {
+nonisolated enum FoldRangeCalculator {
 
     /// Maximum nesting depth for bracket matching stack.
     /// Prevents unbounded memory growth on pathological input.

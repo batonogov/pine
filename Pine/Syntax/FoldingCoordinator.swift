@@ -38,19 +38,15 @@ nonisolated final class FoldingCoordinator: @unchecked Sendable {
     /// replies are cancelled and discarded.
     static let lspDeadline: Duration = .milliseconds(250)
 
-    private let bracketProvider: BracketFoldProvider
     private let lspProvider: FoldRangeProviding?
     private let generation = FoldGeneration()
 
     /// - Parameters:
-    ///   - bracketProvider: The universal fallback provider.
     ///   - lspProvider: An optional richer provider (LSP `foldingRange`).
     ///     When `nil`, the coordinator resolves to bracket ranges only.
     init(
-        bracketProvider: BracketFoldProvider = BracketFoldProvider(),
         lspProvider: FoldRangeProviding? = nil
     ) {
-        self.bracketProvider = bracketProvider
         self.lspProvider = lspProvider
     }
 
@@ -64,6 +60,12 @@ nonisolated final class FoldingCoordinator: @unchecked Sendable {
     @discardableResult
     func invalidate() -> Int {
         generation.increment()
+    }
+
+    /// Whether work captured for `revision` still belongs to the current
+    /// immutable editor snapshot.
+    func isCurrent(_ revision: DocumentRevision) -> Bool {
+        generation.current == revision.value
     }
 
     // MARK: - Resolution
@@ -90,7 +92,10 @@ nonisolated final class FoldingCoordinator: @unchecked Sendable {
         snapshot: DocumentSnapshot,
         bracketRanges: [FoldableRange]
     ) async -> FoldResolution {
-        let issuedGeneration = generation.current
+        let issuedGeneration = snapshot.revision.value
+        guard generation.current == issuedGeneration else {
+            return .stale
+        }
 
         // Fast path: no richer provider installed — bracket ranges stand.
         guard let lsp = lspProvider, lsp.canProvide(for: snapshot) else {
@@ -107,11 +112,14 @@ nonisolated final class FoldingCoordinator: @unchecked Sendable {
 
         // Race the LSP request against the deadline. The first to complete
         // wins; the other is cancelled.
-        let outcome = await raceLSP(query: query)
+        let outcome = await StructuralDeadlineRace.run(
+            deadline: Self.lspDeadline,
+            operation: query
+        )
 
         // A newer request superseded this revision — discard regardless of
         // the LSP outcome so a stale reply never overwrites newer edits.
-        if generation.isStale(issuedGeneration) {
+        if generation.current != issuedGeneration {
             return .stale
         }
 
@@ -123,113 +131,8 @@ nonisolated final class FoldingCoordinator: @unchecked Sendable {
                 return .resolved(ranges, source: .lsp)
             }
             return .resolved(bracketRanges, source: .bracket)
-        case .timedOut, .cancelled, .declined:
+        case .timedOut, .cancelled:
             return .resolved(bracketRanges, source: .bracket)
-        }
-    }
-
-    // MARK: - LSP race
-
-    /// The outcome of racing an LSP folding request against the deadline.
-    private enum LSPRaceOutcome: Sendable {
-        /// The provider returned a (possibly nil/empty) normalised result.
-        case completed([FoldableRange]?)
-        /// The provider could not serve the document.
-        case declined
-        /// The deadline elapsed before the provider replied.
-        case timedOut
-        /// The race was cancelled (should not occur post-invalidation since
-        /// staleness is checked separately).
-        case cancelled
-    }
-
-    /// One-shot continuation gate used by the unstructured deadline race.
-    /// A task group cannot enforce a hard deadline when a provider ignores
-    /// cancellation because structured concurrency waits for every child
-    /// before returning from the group scope.
-    nonisolated private final class LSPRaceGate: @unchecked Sendable {
-        private let lock = NSLock()
-        private var outcome: LSPRaceOutcome?
-        private var continuation:
-            CheckedContinuation<LSPRaceOutcome, Never>?
-        private var tasks: [Task<Void, Never>] = []
-
-        func install(
-            _ continuation: CheckedContinuation<LSPRaceOutcome, Never>
-        ) {
-            let completedOutcome: LSPRaceOutcome? = lock.withLock {
-                if let outcome {
-                    return outcome
-                }
-                self.continuation = continuation
-                return nil
-            }
-            if let completedOutcome {
-                continuation.resume(returning: completedOutcome)
-            }
-        }
-
-        func install(tasks: [Task<Void, Never>]) {
-            let shouldCancel = lock.withLock {
-                if outcome != nil {
-                    return true
-                }
-                self.tasks = tasks
-                return false
-            }
-            if shouldCancel {
-                tasks.forEach { $0.cancel() }
-            }
-        }
-
-        func resolve(_ outcome: LSPRaceOutcome) {
-            let completion:
-                (
-                    CheckedContinuation<LSPRaceOutcome, Never>?,
-                    [Task<Void, Never>]
-                )? = lock.withLock {
-                    guard self.outcome == nil else { return nil }
-                    self.outcome = outcome
-                    let completion = (continuation, tasks)
-                    continuation = nil
-                    tasks = []
-                    return completion
-                }
-            guard let completion else { return }
-            completion.1.forEach { $0.cancel() }
-            completion.0?.resume(returning: outcome)
-        }
-    }
-
-    /// Runs the provider query and the deadline timer concurrently; the first
-    /// to resolve wins and the other is cancelled. The continuation gate lets
-    /// this method return at the deadline even if a third-party provider does
-    /// not cooperate with cancellation.
-    private func raceLSP(
-        query: @escaping @Sendable () async -> [FoldableRange]?
-    ) async -> LSPRaceOutcome {
-        let gate = LSPRaceGate()
-        return await withTaskCancellationHandler {
-            await withCheckedContinuation { continuation in
-                gate.install(continuation)
-                let queryTask = Task {
-                    let result = await query()
-                    gate.resolve(.completed(result))
-                }
-                let timeoutTask = Task {
-                    do {
-                        try await Task.sleep(
-                            for: FoldingCoordinator.lspDeadline
-                        )
-                    } catch {
-                        return
-                    }
-                    gate.resolve(.timedOut)
-                }
-                gate.install(tasks: [queryTask, timeoutTask])
-            }
-        } onCancel: {
-            gate.resolve(.cancelled)
         }
     }
 

@@ -244,6 +244,32 @@ enum Strings {
     static let symbolNavigatorNoResults: LocalizedStringKey = "symbolNavigator.noResults"
     static let symbolNavigatorPlaceholder: LocalizedStringKey = "symbolNavigator.placeholder"
 
+    static func symbolKindName(
+        _ kind: SymbolKind,
+        locale: Locale = .current
+    ) -> String {
+        switch kind {
+        case .class:
+            String(localized: "symbolKind.class", locale: locale)
+        case .struct:
+            String(localized: "symbolKind.struct", locale: locale)
+        case .enum:
+            String(localized: "symbolKind.enum", locale: locale)
+        case .interface:
+            String(localized: "symbolKind.interface", locale: locale)
+        case .namespace:
+            String(localized: "symbolKind.namespace", locale: locale)
+        case .function:
+            String(localized: "symbolKind.function", locale: locale)
+        case .property:
+            String(localized: "symbolKind.property", locale: locale)
+        case .variable:
+            String(localized: "symbolKind.variable", locale: locale)
+        case .other:
+            String(localized: "symbolKind.symbol", locale: locale)
+        }
+    }
+
     // MARK: - Branch Switcher
 
     static let branchFilterPlaceholder: LocalizedStringKey = "branch.filterPlaceholder"

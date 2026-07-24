@@ -8,12 +8,26 @@
 import Foundation
 
 /// A symbol extracted from source code.
-struct PineSymbol: Identifiable, Equatable, Sendable {
+nonisolated struct PineSymbol: Identifiable, Equatable, Sendable {
     let id = UUID()
     let name: String
     let kind: PineSymbolKind
     /// 1-based line number where the symbol is defined.
     let line: Int
+    /// UTF-16 offset of the declaration name when produced by the parser.
+    let selectionOffset: Int?
+
+    init(
+        name: String,
+        kind: PineSymbolKind,
+        line: Int,
+        selectionOffset: Int? = nil
+    ) {
+        self.name = name
+        self.kind = kind
+        self.line = line
+        self.selectionOffset = selectionOffset
+    }
 
     static func == (lhs: PineSymbol, rhs: PineSymbol) -> Bool {
         lhs.name == rhs.name && lhs.kind == rhs.kind && lhs.line == rhs.line
@@ -21,7 +35,11 @@ struct PineSymbol: Identifiable, Equatable, Sendable {
 }
 
 /// The kind of a document symbol.
-enum PineSymbolKind: String, CaseIterable, Comparable, Sendable {
+nonisolated enum PineSymbolKind:
+    String,
+    CaseIterable,
+    Comparable,
+    Sendable {
     case `class`
     case `struct`
     case `enum`
@@ -74,7 +92,7 @@ enum PineSymbolKind: String, CaseIterable, Comparable, Sendable {
 
 /// Parses source code to extract symbols (functions, classes, structs, etc.).
 /// Uses regex-based extraction and skips symbols inside comments and strings.
-enum SymbolParser {
+nonisolated enum SymbolParser {
 
     // MARK: - Public API
 
@@ -110,7 +128,14 @@ enum SymbolParser {
                 let name = nsContent.substring(with: nameRange)
                 let line = lineNumber(at: nameRange.location, in: content)
 
-                symbols.append(PineSymbol(name: name, kind: rule.kind, line: line))
+                symbols.append(
+                    PineSymbol(
+                        name: name,
+                        kind: rule.kind,
+                        line: line,
+                        selectionOffset: nameRange.location
+                    )
+                )
             }
         }
 
@@ -118,13 +143,35 @@ enum SymbolParser {
         return symbols
     }
 
+    /// Whether the regex fallback has declaration rules for an extension.
+    static func supports(fileExtension: String) -> Bool {
+        !symbolRules(for: fileExtension.lowercased()).isEmpty
+    }
+
     /// Filters symbols using fuzzy subsequence matching (reuses QuickOpenProvider logic).
     static func filter(_ symbols: [PineSymbol], query: String) -> [PineSymbol] {
         guard !query.isEmpty else { return symbols }
         let queryLower = query.lowercased()
         return symbols.filter {
-            QuickOpenProvider.isSubsequence(queryLower, of: $0.name.lowercased())
+            isSubsequence(
+                queryLower,
+                of: $0.name.lowercased()
+            )
         }
+    }
+
+    private static func isSubsequence(
+        _ query: String,
+        of target: String
+    ) -> Bool {
+        var queryIndex = query.startIndex
+        for character in target {
+            guard queryIndex < query.endIndex else { return true }
+            if character == query[queryIndex] {
+                queryIndex = query.index(after: queryIndex)
+            }
+        }
+        return queryIndex == query.endIndex
     }
 
     // MARK: - Symbol Rules

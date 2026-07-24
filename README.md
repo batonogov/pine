@@ -19,7 +19,7 @@ Pine keeps CLI agents in the terminal and the code in view. It reflects agent ac
 - **Native macOS** — SwiftUI + AppKit, Liquid Glass UI, system text handling. No browser engine, no runtime
 - **Agent-aware workflow** — Detects supported CLI agents, marks active terminal tabs and attention states, and provides activity history with undo for agent changes
 - **LSP code intelligence** — Diagnostics, completion, hover, go-to-definition, code actions, rename, and a Problems panel
-- **Syntax highlighting** — 37 languages including Swift, TypeScript, Python, Go, Rust, Java, Kotlin, Ruby, C/C++, and more
+- **Syntax highlighting** — bundled grammars for Swift, TypeScript, Python, Go, Rust, Java, Kotlin, Ruby, C/C++, and more
 - **Split panes** — Drag tabs to edges to split horizontally or vertically. Drag between panes to move. Resize with divider
 - **Built-in terminal** — Full VT100/xterm emulator via [SwiftTerm](https://github.com/migueldeicaza/SwiftTerm). Multiple tabs, themes, TUI apps, clickable file and OSC 8 links, send-to-terminal, pane maximize, and a global quick-terminal hotkey
 - **Lightweight extensibility** — User grammars, tasks, and keybindings without an extension marketplace

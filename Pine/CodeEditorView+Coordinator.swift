@@ -33,11 +33,17 @@ extension CodeEditorView {
         /// Cached foldable ranges for the current text.
         var foldableRanges: [FoldableRange] = []
 
+        /// Snapshot adapter around Pine's bounded bracket matcher (#1008).
+        private let bracketProvider = BoundedBracketProvider()
+        private var bracketRevision = 0
+
         /// Cached line starts for O(log n) line number lookups.
         var lineStartsCache: LineStartsCache?
 
         /// Debounced fold recalculation work item.
         private var foldWorkItem: DispatchWorkItem?
+        /// In-flight immutable fallback calculation and LSP refinement.
+        private var foldCalculationTask: Task<Void, Never>?
 
         /// Last project lifecycle generation consumed for an LSP folding
         /// retry. Initialized from the view so ordinary SwiftUI updates do not
@@ -48,16 +54,6 @@ extension CodeEditorView {
         /// generation token that discards stale in-flight LSP replies.
         private lazy var foldingCoordinator: FoldingCoordinator = {
             FoldingCoordinator(
-                bracketProvider: BracketFoldProvider(skipRanges: { [weak self] text in
-                    // Reuse the highlighter's comment/string skip ranges so
-                    // brackets inside strings/comments are ignored by the
-                    /// fallback calculator too.
-                    SyntaxHighlighter.shared.commentAndStringRanges(
-                        in: text,
-                        language: self?.parent.language ?? "",
-                        fileName: self?.parent.fileName
-                    )
-                }),
                 lspProvider: lspFoldProvider
             )
         }()
@@ -846,11 +842,22 @@ extension CodeEditorView {
                 fileName: parent.fileName
             )
 
-            guard let highlight = BracketMatcher.findHighlight(
-                in: substring,
+            bracketRevision &+= 1
+            let document = DocumentSnapshot(
+                uri: parent.fileURL?.absoluteString ?? "",
+                text: substring,
+                revision: DocumentRevision(bracketRevision)
+            )
+            let request = BracketSnapshot(
+                document: document,
                 cursorPosition: localCursor,
                 skipRanges: skipRanges
-            ) else { return nil }
+            )
+            guard let highlight = bracketProvider.highlight(
+                for: request
+            ) else {
+                return nil
+            }
 
             switch highlight {
             case .matched(let match):
@@ -1055,58 +1062,92 @@ extension CodeEditorView {
 
         // MARK: - Code folding
 
-        /// Recalculates foldable ranges from the current text.
+        /// Recalculates foldable ranges from an immutable text snapshot.
+        /// Syntax-context extraction and the full bracket scan stay off the
+        /// main actor; only current-generation results update AppKit views.
         func recalculateFoldableRanges() {
             guard let sv = scrollView,
                   let textView = sv.documentView as? NSTextView else { return }
-            let text = textView.string
-            // Update cache if not yet initialized (e.g. called from updateNSView on first load)
-            if lineStartsCache == nil {
-                lineStartsCache = LineStartsCache(text: text)
-            }
-            let skipRanges = SyntaxHighlighter.shared.commentAndStringRanges(
-                in: text,
-                language: parent.language,
-                fileName: parent.fileName
-            )
-            foldableRanges = FoldRangeCalculator.calculate(text: text, skipRanges: skipRanges)
-            lineNumberView?.foldableRanges = foldableRanges
-            lineNumberView?.lineStartsCache = lineStartsCache
-            // Kick off the LSP-first structural refine. The bracket ranges
-            // above are shown immediately; if the LSP returns richer ranges
-            // within the 250 ms deadline and the revision is still current,
-            // they supersede the bracket set. On any failure mode (absence,
-            // error, timeout, invalid, stale) the bracket ranges stand.
-            requestStructuralFoldRanges(text: text)
-        }
+            foldCalculationTask?.cancel()
 
-        /// Asks the folding coordinator to refine the current bracket ranges
-        /// with LSP `textDocument/foldingRange`. Runs off the main thread; only
-        /// applies a result when it is for the current revision (stale replies
-        /// are discarded by the coordinator's generation token).
-        private func requestStructuralFoldRanges(text: String) {
-            // Invalidate any in-flight request so a stale LSP reply for older
-            // text can never overwrite these bracket ranges.
-            let revision = DocumentRevision(foldingCoordinator.invalidate())
+            let text = textView.string
+            let language = parent.language
+            let fileName = parent.fileName
+            let revision = DocumentRevision(
+                foldingCoordinator.invalidate()
+            )
             let snapshot = DocumentSnapshot(
                 uri: parent.fileURL?.absoluteString ?? "",
                 text: text,
                 revision: revision
             )
-            // Capture the bracket ranges and the coordinator (both Sendable)
-            // before leaving the main actor so the task never touches
-            // MainActor-isolated state directly.
-            let bracketRanges = foldableRanges
             let coordinator = foldingCoordinator
-            Task { [weak self] in
+            let highlighter = SyntaxHighlighter.shared
+            let bracketProvider = BracketFoldProvider { snapshotText in
+                highlighter.commentAndStringRanges(
+                    in: snapshotText,
+                    language: language,
+                    fileName: fileName
+                )
+            }
+            let needsLineStarts = lineStartsCache == nil
+
+            foldCalculationTask = Task { @MainActor [weak self] in
+                async let fallback = bracketProvider.foldRanges(
+                    for: snapshot
+                )
+                let computedLineStarts: LineStartsCache?
+                if needsLineStarts {
+                    computedLineStarts = await Task.detached(
+                        priority: .userInitiated
+                    ) {
+                        LineStartsCache(text: text)
+                    }.value
+                } else {
+                    computedLineStarts = nil
+                }
+                let bracketRanges = await fallback ?? []
+
+                guard let self,
+                      !Task.isCancelled,
+                      coordinator.isCurrent(revision),
+                      self.isCurrentFoldSnapshot(snapshot) else {
+                    return
+                }
+                if let computedLineStarts {
+                    self.lineStartsCache = computedLineStarts
+                }
+                self.foldableRanges = bracketRanges
+                self.lineNumberView?.foldableRanges = bracketRanges
+                self.lineNumberView?.lineStartsCache =
+                    self.lineStartsCache
+
+                // The local fallback is visible before LSP refinement. A
+                // valid, current response replaces it; every failure mode
+                // leaves this bracket set intact.
                 let resolution = await coordinator.refine(
                     snapshot: snapshot,
                     bracketRanges: bracketRanges
                 )
-                await MainActor.run {
-                    self?.applyFoldingResolution(resolution)
+                guard !Task.isCancelled,
+                      coordinator.isCurrent(revision),
+                      self.isCurrentFoldSnapshot(snapshot) else {
+                    return
                 }
+                self.applyFoldingResolution(resolution)
             }
+        }
+
+        private func isCurrentFoldSnapshot(
+            _ snapshot: DocumentSnapshot
+        ) -> Bool {
+            guard let textView =
+                scrollView?.documentView as? NSTextView else {
+                return false
+            }
+            return textView.string == snapshot.text
+                && (parent.fileURL?.absoluteString ?? "")
+                    == snapshot.uri
         }
 
         /// Retries structural folding when the owning project has announced
@@ -1117,11 +1158,13 @@ extension CodeEditorView {
         func refreshStructuralFoldRangesIfNeeded(generation: Int) {
             guard generation != lastLSPFoldRefreshGeneration else { return }
             lastLSPFoldRefreshGeneration = generation
-            guard let textView =
-                scrollView?.documentView as? NSTextView else {
+            guard scrollView?.documentView is NSTextView else {
                 return
             }
-            requestStructuralFoldRanges(text: textView.string)
+            // Re-run the immutable fallback as well. If server readiness
+            // races the initial calculation, this newest generation must own
+            // both providers so neither path can invalidate the other.
+            recalculateFoldableRanges()
         }
 
         /// Applies a structural folding resolution on the main thread.

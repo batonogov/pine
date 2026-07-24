@@ -607,8 +607,8 @@ nonisolated struct SendableJSONBox: @unchecked Sendable {
 /// Boxes a polymorphic JSON-RPC result for a checked continuation.
 ///
 /// LSP results may be dictionaries, arrays, scalars, or `null`. The value is
-/// freshly decoded and remains confined to the main-actor client after the
-/// continuation resumes.
+/// freshly decoded and treated as immutable; selected structural decoders may
+/// carry the box to a detached task to keep large response walks off main.
 nonisolated struct SendableJSONValueBox: @unchecked Sendable {
     let value: Any?
     init(_ value: Any?) { self.value = value }
@@ -678,6 +678,12 @@ protocol LSPClientProtocol: AnyObject {
     /// Sends `textDocument/foldingRange` and returns the decoded ranges
     /// (#1008). Returns an empty list when unsupported or unavailable.
     func foldingRange(uri: String) async -> [LSPFoldingRange]
+
+    /// Whether the server advertises hierarchical document symbols (#1008).
+    var supportsDocumentSymbols: Bool { get }
+
+    /// Sends `textDocument/documentSymbol` and returns its recursive result.
+    func documentSymbols(uri: String) async -> [LSPDocumentSymbol]
 }
 
 extension LSPClientProtocol {
@@ -707,6 +713,11 @@ extension LSPClientProtocol {
 
     /// Default: no folding ranges (defer to the bracket fallback).
     func foldingRange(uri: String) async -> [LSPFoldingRange] { [] }
+
+    /// Default: no document-symbol capability or result.
+    var supportsDocumentSymbols: Bool { false }
+
+    func documentSymbols(uri: String) async -> [LSPDocumentSymbol] { [] }
 
     func codeAction(
         uri: String,
@@ -769,6 +780,11 @@ final class LSPClient {
     /// `true` when the server advertises `textDocument/foldingRange`.
     var supportsFoldingRange: Bool {
         serverCapabilities?.foldingRangeProvider == true
+    }
+
+    /// `true` when the server advertises `textDocument/documentSymbol`.
+    var supportsDocumentSymbols: Bool {
+        serverCapabilities?.documentSymbolProvider == true
     }
 
     /// Current lifecycle state.
@@ -836,6 +852,9 @@ final class LSPClient {
                         "didOpen": true,
                         "didChange": true,
                         "didClose": true
+                    ],
+                    "documentSymbol": [
+                        "hierarchicalDocumentSymbolSupport": true
                     ]
                 ]
             ]
@@ -1067,6 +1086,38 @@ final class LSPClient {
         }
     }
 
+    /// Sends `textDocument/documentSymbol` and decodes the recursive
+    /// `DocumentSymbol[]` result. Empty, invalid, unsupported, cancelled, and
+    /// timed-out results defer to the regex symbol provider.
+    func documentSymbols(uri: String) async -> [LSPDocumentSymbol] {
+        guard state == .initialized, supportsDocumentSymbols else { return [] }
+        do {
+            let result = try await sendRequest(
+                "textDocument/documentSymbol",
+                params: ["textDocument": ["uri": uri]],
+                timeout: SymbolCoordinator.lspDeadline
+            )
+            let encoding = serverCapabilities?.positionEncoding ?? .utf16
+            let resultBox = SendableJSONValueBox(result)
+            return await Task.detached {
+                guard let array = resultBox.value as? [Any] else {
+                    return []
+                }
+                return array.compactMap {
+                    LSPDocumentSymbol(
+                        json: $0,
+                        positionEncoding: encoding
+                    )
+                }
+            }.value
+        } catch {
+            Logger.lsp.error(
+                "LSP documentSymbol failed: \(String(describing: error), privacy: .public)"
+            )
+            return []
+        }
+    }
+
     // MARK: - Phase 3 requests (completion)
 
     /// Sends `textDocument/completion` and returns the decoded list, or an
@@ -1183,11 +1234,9 @@ final class LSPClient {
                         } catch {
                             return
                         }
-                        self?.completeRequest(
+                        self?.cancelPendingRequest(
                             id: id,
-                            with: .failure(
-                                LSPRequestTimeoutError(method: method)
-                            )
+                            error: LSPRequestTimeoutError(method: method)
                         )
                     }
                 }
@@ -1215,9 +1264,9 @@ final class LSPClient {
             }
         } onCancel: {
             Task { @MainActor [weak self] in
-                self?.completeRequest(
+                self?.cancelPendingRequest(
                     id: id,
-                    with: .failure(CancellationError())
+                    error: CancellationError()
                 )
             }
         }
@@ -1264,6 +1313,24 @@ final class LSPClient {
         guard let request = pending.removeValue(forKey: id) else { return }
         request.timeoutTask?.cancel()
         request.completion(result)
+    }
+
+    /// Cancels both sides of an outstanding JSON-RPC request. Removing only
+    /// Pine's continuation leaves a language server doing obsolete structural
+    /// work, which can backlog newer interactive requests.
+    private func cancelPendingRequest(
+        id: Int,
+        error: Error
+    ) {
+        guard pending[id] != nil else { return }
+        sendNotification(
+            "$/cancelRequest",
+            params: ["id": id]
+        )
+        completeRequest(
+            id: id,
+            with: .failure(error)
+        )
     }
 }
 

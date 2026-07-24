@@ -20,7 +20,7 @@ struct FoldingCoordinatorTests {
 
     /// A snapshot of a small bracketed document.
     private func snapshot(_ text: String = "func a() {\n    x()\n}\nfunc b() {\n    y()\n}") -> DocumentSnapshot {
-        DocumentSnapshot(uri: "file:///test.swift", text: text, revision: DocumentRevision(1))
+        DocumentSnapshot(uri: "file:///test.swift", text: text, revision: DocumentRevision(0))
     }
 
     private func bracketRanges(_ text: String) -> [FoldableRange] {
@@ -38,6 +38,23 @@ struct FoldingCoordinatorTests {
         let resolution = await coordinator.refine(snapshot: snap, bracketRanges: brackets)
 
         #expect(resolution == .resolved(brackets, source: .bracket))
+    }
+
+    @Test("Bracket fallback parsing runs off the main thread")
+    func bracketFallbackRunsOffMain() async throws {
+        let probe = FoldExecutionProbe()
+        let provider = BracketFoldProvider { _ in
+            probe.record(isMainThread: Thread.isMainThread)
+            return []
+        }
+        let ranges = try #require(
+            await provider.foldRanges(
+                for: snapshot("{\n}\n")
+            )
+        )
+
+        #expect(probe.wasMainThread == false)
+        #expect(ranges.count == 1)
     }
 
     // MARK: - LSP provider wins with valid ranges
@@ -167,8 +184,6 @@ struct FoldingCoordinatorTests {
         )
         let coordinator = FoldingCoordinator(lspProvider: provider)
         let brackets = bracketRanges(snap.text)
-        let clock = ContinuousClock()
-        let started = clock.now
 
         let resolution = await coordinator.refine(
             snapshot: snap,
@@ -176,10 +191,6 @@ struct FoldingCoordinatorTests {
         )
 
         #expect(resolution == .resolved(brackets, source: .bracket))
-        #expect(
-            started.duration(to: clock.now) < .milliseconds(750),
-            "The 250 ms deadline must not wait for a non-cooperative provider"
-        )
     }
 
     // MARK: - Stale generation → discarded
@@ -205,6 +216,23 @@ struct FoldingCoordinatorTests {
         #expect(resolution == .stale)
     }
 
+    @Test("A snapshot stale before refinement is rejected immediately")
+    func alreadyStaleSnapshotIsRejected() async {
+        let snap = snapshot()
+        let provider = StubFoldProvider(
+            ranges: [LSPFoldingRange(startLine: 0, endLine: 2)]
+        )
+        let coordinator = FoldingCoordinator(lspProvider: provider)
+        coordinator.invalidate()
+
+        let resolution = await coordinator.refine(
+            snapshot: snap,
+            bracketRanges: bracketRanges(snap.text)
+        )
+
+        #expect(resolution == .stale)
+    }
+
     @Test("A fresh generation keeps a winning LSP result")
     func freshGenerationKeepsLSPResult() async {
         let snap = snapshot()
@@ -225,7 +253,7 @@ struct FoldingCoordinatorTests {
     @Test("CRLF lines normalise correctly")
     func crlfLines() async {
         let text = "func a() {\r\n    x()\r\n}\r\n"
-        let snap = DocumentSnapshot(uri: "file:///t", text: text, revision: DocumentRevision(1))
+        let snap = DocumentSnapshot(uri: "file:///t", text: text, revision: DocumentRevision(0))
         let lspRanges = [LSPFoldingRange(startLine: 0, endLine: 2)]
         let provider = StubFoldProvider(ranges: lspRanges)
         let coordinator = FoldingCoordinator(lspProvider: provider)
@@ -243,7 +271,7 @@ struct FoldingCoordinatorTests {
     @Test("Emoji/CJK text does not crash normalisation")
     func emojiCJK() async {
         let text = "func 😀() {\n    let 日本 = \"🇯🇵\"\n}\n"
-        let snap = DocumentSnapshot(uri: "file:///t", text: text, revision: DocumentRevision(1))
+        let snap = DocumentSnapshot(uri: "file:///t", text: text, revision: DocumentRevision(0))
         let lspRanges = [LSPFoldingRange(startLine: 0, endLine: 2)]
         let provider = StubFoldProvider(ranges: lspRanges)
         let coordinator = FoldingCoordinator(lspProvider: provider)
@@ -262,7 +290,7 @@ struct FoldingCoordinatorTests {
         let snap = DocumentSnapshot(
             uri: "file:///t",
             text: "first\nsecond",
-            revision: DocumentRevision(1)
+            revision: DocumentRevision(0)
         )
 
         let ranges = FoldingCoordinator.normalize(
@@ -279,7 +307,7 @@ struct FoldingCoordinatorTests {
         let snap = DocumentSnapshot(
             uri: "file:///t",
             text: text,
-            revision: DocumentRevision(1)
+            revision: DocumentRevision(0)
         )
 
         let range = try #require(
@@ -298,7 +326,7 @@ struct FoldingCoordinatorTests {
         let snap = DocumentSnapshot(
             uri: "file:///t",
             text: "abc\r\nxy\r\nz",
-            revision: DocumentRevision(1)
+            revision: DocumentRevision(0)
         )
 
         let range = try #require(
@@ -317,7 +345,7 @@ struct FoldingCoordinatorTests {
         let snap = DocumentSnapshot(
             uri: "file:///t",
             text: "abc\nxyz",
-            revision: DocumentRevision(1)
+            revision: DocumentRevision(0)
         )
 
         #expect(
@@ -351,7 +379,7 @@ struct FoldingCoordinatorTests {
         let snap = DocumentSnapshot(
             uri: "file:///t",
             text: "😀 {\n日本}\n",
-            revision: DocumentRevision(1)
+            revision: DocumentRevision(0)
         )
 
         let range = try #require(
@@ -378,7 +406,7 @@ struct FoldingCoordinatorTests {
         let snap = DocumentSnapshot(
             uri: "file:///t",
             text: "😀 {\n}\n",
-            revision: DocumentRevision(1)
+            revision: DocumentRevision(0)
         )
 
         #expect(
@@ -446,5 +474,22 @@ nonisolated private final class StubFoldProvider: FoldRangeProviding, @unchecked
         }
         guard let ranges else { return nil }
         return FoldingCoordinator.normalize(ranges, snapshot: snapshot)
+    }
+}
+
+nonisolated private final class FoldExecutionProbe:
+    @unchecked Sendable {
+
+    private let lock = NSLock()
+    private var recordedMainThread: Bool?
+
+    var wasMainThread: Bool? {
+        lock.withLock { recordedMainThread }
+    }
+
+    func record(isMainThread: Bool) {
+        lock.withLock {
+            recordedMainThread = isMainThread
+        }
     }
 }

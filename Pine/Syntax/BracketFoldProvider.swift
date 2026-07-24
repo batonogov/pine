@@ -17,21 +17,22 @@ import Foundation
 /// available — no capability gate — so it is the terminal fallback in the
 /// provider chain.
 ///
-/// Computation hops to the main actor: `FoldRangeCalculator.calculate` is
-/// MainActor-isolated under the project default, and the calculation is fast
-/// (it is the synchronous fallback Pine already ships). The heavier LSP
-/// request — whose transport I/O is already off-main — is the work the
-/// coordinator races against the deadline.
-nonisolated final class BracketFoldProvider: FoldRangeProviding, @unchecked Sendable {
+/// Both syntax-context extraction and bracket scanning run on a detached task
+/// against immutable text, so the universal fallback never blocks AppKit.
+nonisolated struct BracketFoldProvider: FoldRangeProviding {
 
     /// Supplies comment/string skip ranges for the snapshot text so brackets
     /// inside strings and comments are ignored. Captured at request time
     /// against the snapshot's immutable text.
-    private let skipRangesProvider: (String) -> [NSRange]
+    private let skipRangesProvider:
+        @Sendable (String) -> [NSRange]
 
     /// - Parameter skipRanges: Returns the comment/string `NSRange`s to skip
     ///   for a given text. Defaults to no skip ranges.
-    init(skipRanges: @escaping (String) -> [NSRange] = { _ in [] }) {
+    init(
+        skipRanges:
+            @Sendable @escaping (String) -> [NSRange] = { _ in [] }
+    ) {
         self.skipRangesProvider = skipRanges
     }
 
@@ -42,12 +43,22 @@ nonisolated final class BracketFoldProvider: FoldRangeProviding, @unchecked Send
     }
 
     func foldRanges(for snapshot: DocumentSnapshot) async -> [FoldableRange]? {
-        // `FoldRangeCalculator.calculate` is MainActor-isolated; hop to the
-        // main actor for the (fast, pure) computation.
         let text = snapshot.text
-        let skipRanges = skipRangesProvider(text)
-        return await MainActor.run {
-            FoldRangeCalculator.calculate(text: text, skipRanges: skipRanges)
+        let skipRangesProvider = skipRangesProvider
+        let task = Task.detached(priority: .userInitiated) {
+            () -> [FoldableRange]? in
+            guard !Task.isCancelled else { return nil }
+            let skipRanges = skipRangesProvider(text)
+            guard !Task.isCancelled else { return nil }
+            return FoldRangeCalculator.calculate(
+                text: text,
+                skipRanges: skipRanges
+            )
+        }
+        return await withTaskCancellationHandler {
+            await task.value
+        } onCancel: {
+            task.cancel()
         }
     }
 }
