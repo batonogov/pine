@@ -3,7 +3,7 @@
 //  Pine
 //
 //  Lightweight extensibility (issue #1009): user-defined external commands
-//  ("tasks") invokable on the active file or project, bindable to shortcuts.
+//  ("tasks") invokable on the active file or project.
 //  Generalizes the format-on-save mechanism (ExternalFileFormatter) into a
 //  configurable, user-facing commands system.
 //
@@ -18,7 +18,7 @@ import Observation
 /// through a shell; `workingDirectoryScope` and `stdinScope` decide where it
 /// runs and what it receives on stdin.
 nonisolated struct UserTask: Codable, Sendable, Identifiable, Equatable {
-    /// Stable identifier used by keybindings (e.g. `"format-terraform"`).
+    /// Stable identifier used to look up and report the task.
     let id: String
     /// Human-readable label shown in the Tasks menu.
     let label: String
@@ -26,9 +26,9 @@ nonisolated struct UserTask: Codable, Sendable, Identifiable, Equatable {
     let command: String
     /// Where the command runs.
     var scope: Scope = .activeFile
-    /// Whether the command's stdout replaces the active file's content.
-    /// When `false` (default), the command output is shown in a toast but the
-    /// file is left untouched.
+    /// Whether active-file content is sent to the command's standard input.
+    /// Command output is reported to the user; it does not currently replace
+    /// the file.
     var replacesFileContent: Bool = false
     /// Whether the user must confirm before the task runs.
     ///

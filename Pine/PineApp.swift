@@ -571,115 +571,23 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate {
             )
         }
 
-        // Intercept Cmd+W before the system "Close" menu item.
-        // For project windows: close active tab (or close window if no tabs).
-        // For other windows: pass through to default behavior.
-        // Uses physical key code so it works on all keyboard layouts (e.g. Russian).
-        NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
-            guard KeyboardShortcutMatcher.matches(
-                      keyCode: KeyboardShortcutMatcher.PhysicalKey.w,
-                      modifiers: .command,
-                      in: event),
-                  let window = NSApp.keyWindow,
-                  let closeDelegate = window.delegate as? CloseDelegate else {
-                return event
-            }
-            if closeDelegate.projectManager.activeTabManager.activeTab != nil {
-                closeDelegate.closeActiveTab()
-            } else {
-                window.performClose(nil)
-            }
-            return nil // consume event
-        }
-
-        // Intercept Cmd+F when a terminal view is the first responder.
-        // When the terminal is focused, Cmd+F opens terminal search instead of editor find.
-        // Uses physical key code so it works on all keyboard layouts.
-        NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
-            guard KeyboardShortcutMatcher.matches(
-                      keyCode: KeyboardShortcutMatcher.PhysicalKey.f,
-                      modifiers: .command,
-                      in: event),
-                  let responder = NSApp.keyWindow?.firstResponder as? NSView,
-                  responder.className.contains("TerminalView") else {
-                return event
-            }
-            NotificationCenter.default.post(name: .findInTerminal, object: nil)
-            return nil // consume event
-        }
-
-        // Intercept Cmd+Shift+B by physical keyCode so branch switching works
-        // across keyboard layouts while the menu item remains discoverable.
-        NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
-            guard KeyboardShortcutMatcher.matches(
-                      keyCode: KeyboardShortcutMatcher.PhysicalKey.b,
-                      modifiers: [.command, .shift],
-                      in: event),
-                  let window = NSApp.keyWindow,
-                  let closeDelegate = window.delegate as? CloseDelegate,
-                  closeDelegate.projectManager.workspace.gitProvider.isGitRepository else {
-                return event
-            }
-            NotificationCenter.default.post(
-                name: .showBranchSwitcher,
-                object: closeDelegate.projectManager
-            )
-            return nil // consume event
-        }
-
-        // Intercept Ctrl+Tab and Ctrl+Shift+Tab for tab cycling.
-        // Tab key generates keyCode 48. Must intercept via event monitor
-        // because SwiftUI's keyboardShortcut doesn't support the Tab key.
-        NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
-            guard event.keyCode == 48, // Tab key
-                  let window = NSApp.keyWindow,
-                  let closeDelegate = window.delegate as? CloseDelegate else {
-                return event
-            }
-            let mods = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
-            if mods == .control {
-                closeDelegate.projectManager.paneManager.switchToNextTabGlobally()
-                return nil
-            } else if mods == [.control, .shift] {
-                closeDelegate.projectManager.paneManager.switchToPreviousTabGlobally()
-                return nil
-            }
-            return event
-        }
-
-        // Intercept Cmd+1..9 for tab selection by index.
-        // Cmd+1..8 select tab at that position, Cmd+9 selects the last tab
-        // (matching Safari/Chrome behavior).
-        // Uses physical key codes so digits work on all keyboard layouts.
-        NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
-            guard let digit = KeyboardShortcutMatcher.digit(from: event, modifiers: .command),
-                  let window = NSApp.keyWindow,
-                  let closeDelegate = window.delegate as? CloseDelegate else {
-                return event
-            }
-            let activeTM = closeDelegate.projectManager.activeTabManager
-            guard !activeTM.tabs.isEmpty else { return event }
-
-            if digit == 9 {
-                activeTM.selectLastTab()
-            } else {
-                activeTM.selectTab(at: digit - 1)
-            }
-            return nil // consume event
-        }
-
-        // User-defined keybindings (issue #1009). Loaded from
-        // keybindings.json; each entry maps a chord to a built-in command,
-        // posted via NotificationCenter. Checked last so built-in menu
-        // shortcuts and physical-key monitors take precedence.
+        // A single key-down monitor owns precedence. User overrides are routed
+        // first, followed by Pine's physical-key handlers; NSMenu and the
+        // responder chain see only events neither layer consumed. Keeping this
+        // in one monitor avoids AppKit's unspecified ordering among monitors.
         NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
             let registry = ExtensibilityManager.shared.keybindings
-            guard !registry.isEmpty,
-                  let command = registry.command(for: event) else {
-                return event
-            }
-            NotificationCenter.default.post(name: Notification.Name(command.notificationKey), object: nil)
-            return nil // consume event
+            return UserKeybindingDispatcher.route(
+                event,
+                registry: registry,
+                dispatchUserCommand: { command in
+                    NotificationCenter.default.post(
+                        name: Notification.Name(command.notificationKey),
+                        object: nil
+                    )
+                },
+                dispatchBuiltIn: Self.handleBuiltInKeyDown
+            )
         }
 
         // Ensure Welcome is visible if SwiftUI didn't present it automatically
@@ -705,6 +613,92 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate {
                 }
             }
         }
+    }
+
+    /// Handles Pine shortcuts that require physical key codes or focused
+    /// AppKit state. Called only after user overrides decline the event.
+    /// Returns `true` when the event was consumed.
+    private static func handleBuiltInKeyDown(_ event: NSEvent) -> Bool {
+        // Cmd+W closes the active editor tab (or the project window when no
+        // editor tab remains). The physical key code is layout-independent.
+        if KeyboardShortcutMatcher.matches(
+            keyCode: KeyboardShortcutMatcher.PhysicalKey.w,
+            modifiers: .command,
+            in: event
+        ),
+           let window = NSApp.keyWindow,
+           let closeDelegate = window.delegate as? CloseDelegate {
+            if closeDelegate.projectManager.activeTabManager.activeTab != nil {
+                closeDelegate.closeActiveTab()
+            } else {
+                window.performClose(nil)
+            }
+            return true
+        }
+
+        // Cmd+F opens terminal search while a terminal owns first responder.
+        if KeyboardShortcutMatcher.matches(
+            keyCode: KeyboardShortcutMatcher.PhysicalKey.f,
+            modifiers: .command,
+            in: event
+        ),
+           let responder = NSApp.keyWindow?.firstResponder as? NSView,
+           responder.className.contains("TerminalView") {
+            NotificationCenter.default.post(name: .findInTerminal, object: nil)
+            return true
+        }
+
+        // Cmd+Shift+B opens branch switching only for Git projects.
+        if KeyboardShortcutMatcher.matches(
+            keyCode: KeyboardShortcutMatcher.PhysicalKey.b,
+            modifiers: [.command, .shift],
+            in: event
+        ),
+           let window = NSApp.keyWindow,
+           let closeDelegate = window.delegate as? CloseDelegate,
+           closeDelegate.projectManager.workspace.gitProvider.isGitRepository {
+            NotificationCenter.default.post(
+                name: .showBranchSwitcher,
+                object: closeDelegate.projectManager
+            )
+            return true
+        }
+
+        // Ctrl+Tab / Ctrl+Shift+Tab cycle editor tabs.
+        if event.keyCode == 48,
+           let window = NSApp.keyWindow,
+           let closeDelegate = window.delegate as? CloseDelegate {
+            let modifiers = event.modifierFlags.intersection(
+                .deviceIndependentFlagsMask
+            )
+            if modifiers == .control {
+                closeDelegate.projectManager.paneManager.switchToNextTabGlobally()
+                return true
+            }
+            if modifiers == [.control, .shift] {
+                closeDelegate.projectManager.paneManager.switchToPreviousTabGlobally()
+                return true
+            }
+        }
+
+        // Cmd+1...8 select a tab by index; Cmd+9 selects the last tab.
+        if let digit = KeyboardShortcutMatcher.digit(
+            from: event,
+            modifiers: .command
+        ),
+           let window = NSApp.keyWindow,
+           let closeDelegate = window.delegate as? CloseDelegate {
+            let activeTabManager = closeDelegate.projectManager.activeTabManager
+            guard !activeTabManager.tabs.isEmpty else { return false }
+            if digit == 9 {
+                activeTabManager.selectLastTab()
+            } else {
+                activeTabManager.selectTab(at: digit - 1)
+            }
+            return true
+        }
+
+        return false
     }
 
     /// Called when the user clicks the dock icon with no visible windows.

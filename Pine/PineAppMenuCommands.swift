@@ -565,16 +565,99 @@ struct PineAppMenuCommands: Commands {
                     Label(task.label, systemImage: MenuIcons.tasks)
                 }
             }
+
+            Divider()
+
+            // Issue #1117: edit and reload user configuration (keybindings.json
+            // and tasks.json) without restarting Pine. Starter files are
+            // created on first open; reload surfaces validation errors.
+            Button {
+                Task { @MainActor in
+                    await UserConfigurationEditor.openKeybindings()
+                }
+            } label: {
+                Label(Strings.menuEditKeybindings, systemImage: MenuIcons.editKeybindings)
+            }
+            Button {
+                Task { @MainActor in
+                    await UserConfigurationEditor.openTasks()
+                }
+            } label: {
+                Label(Strings.menuEditTasks, systemImage: MenuIcons.editTasks)
+            }
+            Button {
+                Task { @MainActor in
+                    await Self.reloadAndPresentConfigurationDiagnostics()
+                }
+            } label: {
+                Label(Strings.menuReloadUserConfiguration, systemImage: MenuIcons.reloadUserConfiguration)
+            }
         }
 
-        // Cmd+W is intercepted by AppDelegate's local event monitor
-        // to close the active tab. The close button goes through
-        // windowShouldClose which closes the entire window.
-        // Cmd+1..9 and Ctrl+Tab/Ctrl+Shift+Tab are also intercepted
-        // via local event monitors in applicationDidFinishLaunching.
+        // AppDelegate's single key-down router handles physical shortcuts
+        // after consulting user overrides.
     }
 
     // MARK: - Task outcome presentation
+
+    /// Issue #1117: reloads user configuration (keybindings.json + tasks.json)
+    /// and presents any validation diagnostics. A clean reload confirms
+    /// success; a rejected file keeps the last valid registry (atomic) and
+    /// lists every problem with file, entry, and localized reason so the
+    /// user can fix the file and reload again — all without restarting Pine.
+    @MainActor
+    static func reloadAndPresentConfigurationDiagnostics(
+        manager: ExtensibilityManager = .shared,
+        alertPresenter: any UserConfigurationAlertPresenting =
+            AppKitUserConfigurationAlertPresenter()
+    ) async {
+        let report = await manager.reload()
+        guard let report else { return }
+        alertPresenter.present(reloadAlert(for: report))
+    }
+
+    static func reloadAlert(
+        for report: ExtensibilityReloadReport
+    ) -> UserConfigurationAlertDescriptor {
+        let buttonTitle = NSLocalizedString(
+            "userConfig.ok",
+            value: "OK",
+            comment: "Dismiss button"
+        )
+        guard !report.diagnostics.isEmpty else {
+            return UserConfigurationAlertDescriptor(
+                style: .informational,
+                messageText: String(
+                    localized: "userConfig.reloadSuccess.title",
+                    defaultValue: "Configuration reloaded"
+                ),
+                informativeText: String(
+                    localized: "userConfig.reloadSuccess.message",
+                    defaultValue: "\(report.tasks.activeEntryCount) tasks and \(report.keybindings.activeEntryCount) keybindings active."
+                ),
+                buttonTitle: buttonTitle
+            )
+        }
+
+        // Atomic reload is per file: every rejected file keeps its previous
+        // valid registry while valid sibling files may still be applied.
+        let header = String(
+            localized: "userConfig.reloadRejected.header",
+            defaultValue: "Some entries were rejected. Each rejected file kept its previous valid configuration. Fix the file and reload again."
+        )
+        let details = report.diagnostics
+            .map { "• \($0.fileURL.lastPathComponent): \($0.localizedMessage)" }
+            .joined(separator: "\n")
+        return UserConfigurationAlertDescriptor(
+            style: .warning,
+            messageText: String(
+                localized: "userConfig.reloadRejected.title",
+                defaultValue: "Configuration problems found"
+            ),
+            informativeText: header + "\n\n" + details,
+            buttonTitle: buttonTitle
+        )
+    }
 
     /// Runs a user task via `UserTaskRunner` and presents the outcome.
     /// Extracted so the confirmation alert and the non-confirmation path
