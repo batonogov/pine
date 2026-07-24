@@ -1,5 +1,34 @@
 # Changelog
 
+## [1.35.0](https://github.com/batonogov/pine/compare/v1.34.0...v1.35.0) (2026-07-24)
+
+
+### Features
+
+* add exact tab insertion targets ([#1186](https://github.com/batonogov/pine/issues/1186)) ([2806efc](https://github.com/batonogov/pine/commit/2806efc8136093be9d3e6ad79ef981c996663700))
+* **lsp:** add language server settings ([#1198](https://github.com/batonogov/pine/issues/1198)) ([d3e4920](https://github.com/batonogov/pine/commit/d3e49200db61c82c37d9b36dbcd65f7fff426238))
+* **tabs:** stabilize drag geometry and auto-scroll ([#1199](https://github.com/batonogov/pine/issues/1199)) ([acb6720](https://github.com/batonogov/pine/commit/acb67209acfbe161a608c5375e14043a55116cdc))
+
+
+### Bug Fixes
+
+* avoid synchronous main hops in syntax highlighting ([#1184](https://github.com/batonogov/pine/issues/1184)) ([577ec84](https://github.com/batonogov/pine/commit/577ec84d314cb99a20c65c04fc7eeef59e07e061))
+* disable unsafe heuristic agent history undo ([#1187](https://github.com/batonogov/pine/issues/1187)) ([5cc0334](https://github.com/batonogov/pine/commit/5cc03348a6da92bafcfd87daf2fa363093324cb0))
+* **extensibility:** validate configuration reloads atomically ([#1192](https://github.com/batonogov/pine/issues/1192)) ([a23b644](https://github.com/batonogov/pine/commit/a23b6440eb69535f311071db5b20092e0cb3e5b2))
+* **lsp:** harden streaming transport framing ([#1188](https://github.com/batonogov/pine/issues/1188)) ([349e071](https://github.com/batonogov/pine/commit/349e071baebd6988a983a9fc0c98a2174f06aa93))
+* **tabs:** bound destination focus retries ([#1190](https://github.com/batonogov/pine/issues/1190)) ([56e1a19](https://github.com/batonogov/pine/commit/56e1a19222f2cf041d2f1d4d599e5c465576ba83))
+
+
+### Code Refactoring
+
+* **agent:** define verified undo authority contract ([#1194](https://github.com/batonogov/pine/issues/1194)) ([7f35e69](https://github.com/batonogov/pine/commit/7f35e69d19be221614c2ee003e0b9b1138625358))
+
+
+### Documentation
+
+* choose structural intelligence providers ([#1193](https://github.com/batonogov/pine/issues/1193)) ([f6bb2f2](https://github.com/batonogov/pine/commit/f6bb2f2e28559f71566186e9f5badd53ac7138c2))
+* refresh landing page positioning ([#1175](https://github.com/batonogov/pine/issues/1175)) ([2510af9](https://github.com/batonogov/pine/commit/2510af905ee5aebfb95d9d61449690b6128cb87a))
+
 ## [1.34.0](https://github.com/batonogov/pine/compare/v1.33.4...v1.34.0) (2026-07-22)
 
 
