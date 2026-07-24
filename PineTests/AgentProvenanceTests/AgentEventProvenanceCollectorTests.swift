@@ -7,12 +7,11 @@
 //
 
 import Foundation
-import os
 import Testing
 
 @testable import Pine
 
-struct AgentEventProvenanceCollectorTests {
+nonisolated struct AgentEventProvenanceCollectorTests {
 
     private func makeEnvelope() -> AgentEventEnvelope {
         AgentEventEnvelope(
@@ -45,32 +44,35 @@ struct AgentEventProvenanceCollectorTests {
         #expect(true)
     }
 
-    @Test func customCollector_canCaptureRecordedEnvelopes() async {
-        // A test collector proving the seam is adoptable and observable.
+    @Test func actorCollector_canCaptureAcrossIsolationDomains() async {
+        // An actor is the natural serialization boundary for a provenance
+        // stream. Recording from a detached task proves the protocol and its
+        // Sendable envelope are not accidentally MainActor-isolated.
         let collector = CapturingCollector()
         let first = makeEnvelope()
         let second = makeEnvelope()
-        await collector.record(first)
-        await collector.record(second)
-        #expect(collector.recorded.count == 2)
-        #expect(collector.recorded[0] == first)
-        #expect(collector.recorded[1] == second)
+        await Task.detached {
+            await collector.record(first)
+            await collector.record(second)
+        }.value
+
+        let recorded = await collector.snapshot()
+        #expect(recorded.count == 2)
+        #expect(recorded[0] == first)
+        #expect(recorded[1] == second)
     }
 }
 
-/// A thread-safe collector used to verify the seam captures envelopes.
-///
-/// Mirrors the production `NullAgentEventProvenanceCollector`: a `Sendable`
-/// final class guarded by an unfair lock. An `actor` cannot conform to a
-/// plain `Sendable` protocol under strict concurrency, so the test uses the
-/// same lock-based shape production adopters will.
-final class CapturingCollector: AgentEventProvenanceCollector, @unchecked Sendable {
-    private let lock = OSAllocatedUnfairLock(initialState: [AgentEventEnvelope]())
+/// An actor-backed collector proving the seam supports serialized persistence
+/// without unchecked Sendable conformance.
+actor CapturingCollector: AgentEventProvenanceCollector {
+    private var recorded: [AgentEventEnvelope] = []
 
     func record(_ envelope: AgentEventEnvelope) async {
-        lock.withLock { state in state.append(envelope) }
+        recorded.append(envelope)
     }
 
-    /// The envelopes recorded so far, in insertion order.
-    var recorded: [AgentEventEnvelope] { lock.withLock { $0 } }
+    func snapshot() -> [AgentEventEnvelope] {
+        recorded
+    }
 }

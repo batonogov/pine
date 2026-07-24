@@ -25,7 +25,7 @@ import Foundation
 /// - Important: Recording an envelope is metadata only. It must not perform
 ///   any working-tree mutation, and it must not authorize an undo — those
 ///   are separate, #1183-gated operations.
-protocol AgentEventProvenanceCollector: Sendable {
+nonisolated protocol AgentEventProvenanceCollector: Sendable {
     /// Records a trusted (or explicitly heuristic) agent event.
     ///
     /// - Parameter envelope: The provenance envelope to store/index.
@@ -37,9 +37,7 @@ protocol AgentEventProvenanceCollector: Sendable {
 /// Drops every recorded envelope. Pine can hold an instance as the default
 /// collector until a real provenance pipeline is wired in (later slice), so
 /// call sites never deal with optionality.
-final class NullAgentEventProvenanceCollector: AgentEventProvenanceCollector, @unchecked Sendable {
-    init() {}
-
+nonisolated struct NullAgentEventProvenanceCollector: AgentEventProvenanceCollector {
     func record(_ envelope: AgentEventEnvelope) async {
         // Intentionally empty: provenance recording is disabled.
     }

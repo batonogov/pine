@@ -31,7 +31,7 @@ import Foundation
 /// Ordered weakest-to-strongest: `observed` < `inferred` < `verified`.
 /// Temporal correlation alone can never reach `.verified` (#933); only an
 /// explicit structured report can.
-enum TrustLevel: String, Codable, Sendable, Equatable, CaseIterable {
+nonisolated enum TrustLevel: String, Codable, Sendable, Equatable, CaseIterable {
     /// A terminal/process was observed to be present or active, but no
     /// specific action was attributed (e.g. an agent was detected running).
     case observed
@@ -65,7 +65,7 @@ enum TrustLevel: String, Codable, Sendable, Equatable, CaseIterable {
 
 /// What produced an event. Used together with `TrustLevel` to describe both
 /// the origin and the reliability of an observation.
-enum EventSource: Sendable, Equatable {
+nonisolated enum EventSource: Sendable, Equatable {
     /// A terminal process was detected (presence/lifecycle).
     case terminalProcess
     /// File-system observation (FSEvents refresh).
@@ -92,6 +92,15 @@ enum EventSource: Sendable, Equatable {
         }
     }
 
+    /// Only an explicit structured agent event can establish verified agent
+    /// attribution. Every other source remains observational or heuristic.
+    var canEstablishVerifiedTrust: Bool {
+        if case .explicitAgentEvent = self {
+            return true
+        }
+        return false
+    }
+
     /// Reconstructs a source from its `stableIdentifier`. Returns `nil` for an
     /// unrecognised identifier so decoding stays forward-compatible.
     init?(stableIdentifier: String) {
@@ -111,25 +120,68 @@ enum EventSource: Sendable, Equatable {
     case unknown(raw: String)
 }
 
-extension EventSource: Codable {
+nonisolated extension EventSource: Codable {
+    private enum CodingKeys: String, CodingKey {
+        case kind, raw
+    }
+
     init(from decoder: Decoder) throws {
-        let container = try decoder.singleValueContainer()
-        let raw = try container.decode(String.self)
-        if let known = EventSource(stableIdentifier: raw) {
-            self = known
-        } else {
-            self = .unknown(raw: raw)
+        // Known values and legacy unknown values use the original single-string
+        // representation. New unknown values use a tagged representation so an
+        // unknown raw value that aliases a known identifier cannot become a
+        // trusted source after an encode/decode round-trip.
+        if let raw = try? decoder.singleValueContainer().decode(String.self) {
+            self = EventSource(stableIdentifier: raw) ?? .unknown(raw: raw)
+            return
         }
+
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let kind = try container.decode(String.self, forKey: .kind)
+        guard kind == "unknown" else {
+            throw DecodingError.dataCorruptedError(
+                forKey: .kind,
+                in: container,
+                debugDescription: "Unsupported EventSource representation"
+            )
+        }
+        self = .unknown(raw: try container.decode(String.self, forKey: .raw))
     }
 
     func encode(to encoder: Encoder) throws {
-        var container = encoder.singleValueContainer()
-        try container.encode(stableIdentifier)
+        switch self {
+        case .unknown(let raw):
+            var container = encoder.container(keyedBy: CodingKeys.self)
+            try container.encode("unknown", forKey: .kind)
+            try container.encode(raw, forKey: .raw)
+        default:
+            var container = encoder.singleValueContainer()
+            try container.encode(stableIdentifier)
+        }
+    }
+}
+
+nonisolated extension TrustLevel {
+    /// Returns the effective trust after applying the source and provenance
+    /// invariants. A caller or persisted record may request `.verified`, but it
+    /// is granted only to a complete explicit structured event.
+    static func effective(
+        requested: TrustLevel,
+        source: EventSource,
+        provenanceIsComplete: Bool,
+        payloadIsValid: Bool = true
+    ) -> TrustLevel {
+        guard requested == .verified else { return requested }
+        guard source.canEstablishVerifiedTrust,
+              provenanceIsComplete,
+              payloadIsValid else {
+            return .inferred
+        }
+        return .verified
     }
 }
 
 /// Identifies the agent process that produced an event.
-struct AgentProcessIdentity: Codable, Sendable, Equatable {
+nonisolated struct AgentProcessIdentity: Codable, Sendable, Equatable {
     /// Stable identifier of the terminal tab hosting the agent.
     let terminalID: UUID
     /// Monotonic generation of the process within that terminal. A new shell
@@ -139,7 +191,7 @@ struct AgentProcessIdentity: Codable, Sendable, Equatable {
 }
 
 /// Where an agent event occurred.
-struct AgentEventLocation: Codable, Sendable, Equatable {
+nonisolated struct AgentEventLocation: Codable, Sendable, Equatable {
     /// The git worktree root path at event time. Disambiguates nested
     /// worktrees sharing one project (#1183). Stored as a path string because
     /// worktrees may live outside the project root.
@@ -149,7 +201,7 @@ struct AgentEventLocation: Codable, Sendable, Equatable {
 }
 
 /// The result of an observed command, carried as optional evidence.
-struct AgentCommandResult: Codable, Sendable, Equatable {
+nonisolated struct AgentCommandResult: Codable, Sendable, Equatable {
     /// The command line that was observed (e.g. `git commit -m "..."`).
     let command: String
     /// The process exit status (`0` on success).
@@ -161,7 +213,7 @@ struct AgentCommandResult: Codable, Sendable, Equatable {
 /// `before` is `nil` for a newly created file. Both identities are content
 /// fingerprints: a future safe-undo path can detect divergence by re-hashing
 /// the current file and comparing it to `after` (#1183).
-struct AgentFileChange: Codable, Sendable, Equatable {
+nonisolated struct AgentFileChange: Codable, Sendable, Equatable {
     /// Relative path from the project root. Never absolute, never content.
     let relativePath: String
     /// Identity of the content before the change; `nil` for a new file.
@@ -171,7 +223,7 @@ struct AgentFileChange: Codable, Sendable, Equatable {
 }
 
 /// Optional evidence carried by an event. A presence-only event carries `.none`.
-enum AgentEventPayload: Codable, Sendable, Equatable {
+nonisolated enum AgentEventPayload: Codable, Sendable, Equatable {
     /// No structured payload; the event records presence/observation only.
     case none
     /// A command was observed to complete with this result.
@@ -229,7 +281,7 @@ enum AgentEventPayload: Codable, Sendable, Equatable {
 /// is the unit a provenance pipeline records so that the UI and a future
 /// safe-undo path can answer "what did this verified agent actually do?"
 /// without relying on temporal correlation alone (#933).
-struct AgentEventEnvelope: Codable, Identifiable, Sendable, Equatable {
+nonisolated struct AgentEventEnvelope: Codable, Identifiable, Sendable, Equatable {
     /// Stable identifier for this envelope.
     let id: UUID
     /// Identifier of the Pine project the event occurred in.
@@ -267,6 +319,36 @@ struct AgentEventEnvelope: Codable, Identifiable, Sendable, Equatable {
         trustLevel: TrustLevel,
         payload: AgentEventPayload = .none
     ) {
+        self.init(
+            id: id,
+            projectID: projectID,
+            sessionID: sessionID,
+            agentTypeRaw: agentTypeRaw,
+            process: process,
+            location: location,
+            cursorValue: cursorValue,
+            timestamp: timestamp,
+            source: source,
+            requestedTrustLevel: trustLevel,
+            payload: payload,
+            payloadIsValid: true
+        )
+    }
+
+    private init(
+        id: UUID,
+        projectID: UUID,
+        sessionID: UUID,
+        agentTypeRaw: String,
+        process: AgentProcessIdentity,
+        location: AgentEventLocation,
+        cursorValue: UInt64,
+        timestamp: Date,
+        source: EventSource,
+        requestedTrustLevel: TrustLevel,
+        payload: AgentEventPayload,
+        payloadIsValid: Bool
+    ) {
         self.id = id
         self.projectID = projectID
         self.sessionID = sessionID
@@ -276,8 +358,24 @@ struct AgentEventEnvelope: Codable, Identifiable, Sendable, Equatable {
         self.cursorValue = cursorValue
         self.timestamp = timestamp
         self.source = source
-        self.trustLevel = trustLevel
         self.payload = payload
+        self.trustLevel = TrustLevel.effective(
+            requested: requestedTrustLevel,
+            source: source,
+            provenanceIsComplete: Self.provenanceIsComplete(
+                ProvenanceValidationInput(
+                    id: id,
+                    projectID: projectID,
+                    sessionID: sessionID,
+                    agentTypeRaw: agentTypeRaw,
+                    process: process,
+                    location: location,
+                    cursorValue: cursorValue,
+                    timestamp: timestamp
+                )
+            ),
+            payloadIsValid: payloadIsValid
+        )
     }
 
     /// Forward-compatible decoder. Missing or unrecognised values fail closed
@@ -285,21 +383,96 @@ struct AgentEventEnvelope: Codable, Identifiable, Sendable, Equatable {
     /// newer or older Pine always loads as read-only provenance.
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
-        id = try container.decode(UUID.self, forKey: .id)
-        projectID = try container.decode(UUID.self, forKey: .projectID)
-        sessionID = try container.decode(UUID.self, forKey: .sessionID)
-        agentTypeRaw = try container.decodeIfPresent(String.self, forKey: .agentTypeRaw) ?? "generic:Unknown"
-        process = try container.decodeIfPresent(AgentProcessIdentity.self, forKey: .process)
-            ?? AgentProcessIdentity(terminalID: UUID(), processGeneration: 0)
-        location = try container.decodeIfPresent(AgentEventLocation.self, forKey: .location)
+        let id = try container.decode(UUID.self, forKey: .id)
+        let projectID = try container.decode(UUID.self, forKey: .projectID)
+        let sessionID = try container.decode(UUID.self, forKey: .sessionID)
+        let agentTypeRaw = try container.decodeIfPresent(
+            String.self,
+            forKey: .agentTypeRaw
+        ) ?? "generic:Unknown"
+        let process = try container.decodeIfPresent(
+            AgentProcessIdentity.self,
+            forKey: .process
+        ) ?? AgentProcessIdentity(terminalID: Self.zeroUUID, processGeneration: 0)
+        let location = try container.decodeIfPresent(AgentEventLocation.self, forKey: .location)
             ?? AgentEventLocation(worktreePath: "", cwd: "")
-        cursorValue = try container.decodeIfPresent(UInt64.self, forKey: .cursorValue) ?? 0
-        timestamp = try container.decodeIfPresent(Date.self, forKey: .timestamp) ?? Date(timeIntervalSince1970: 0)
-        source = (try? container.decodeIfPresent(EventSource.self, forKey: .source)) ?? .unknown(raw: "")
+        let cursorValue = try container.decodeIfPresent(UInt64.self, forKey: .cursorValue) ?? 0
+        let timestamp = try container.decodeIfPresent(Date.self, forKey: .timestamp)
+            ?? Date(timeIntervalSince1970: 0)
+        let source = (try? container.decodeIfPresent(
+            EventSource.self,
+            forKey: .source
+        )) ?? .unknown(raw: "")
         // Unknown / missing trust levels decode as `.inferred` (the strongest
         // level correlation can reach, still non-verified) so provenance never
         // silently upgrades into `.verified`.
-        trustLevel = (try? container.decodeIfPresent(TrustLevel.self, forKey: .trustLevel)) ?? .inferred
-        payload = (try? container.decodeIfPresent(AgentEventPayload.self, forKey: .payload)) ?? .none
+        let requestedTrustLevel = (try? container.decodeIfPresent(
+            TrustLevel.self,
+            forKey: .trustLevel
+        )) ?? .inferred
+
+        let payload: AgentEventPayload
+        let payloadIsValid: Bool
+        do {
+            payload = try container.decodeIfPresent(
+                AgentEventPayload.self,
+                forKey: .payload
+            ) ?? .none
+            payloadIsValid = true
+        } catch {
+            payload = .none
+            payloadIsValid = false
+        }
+
+        self.init(
+            id: id,
+            projectID: projectID,
+            sessionID: sessionID,
+            agentTypeRaw: agentTypeRaw,
+            process: process,
+            location: location,
+            cursorValue: cursorValue,
+            timestamp: timestamp,
+            source: source,
+            requestedTrustLevel: requestedTrustLevel,
+            payload: payload,
+            payloadIsValid: payloadIsValid
+        )
+    }
+
+    private static func provenanceIsComplete(
+        _ input: ProvenanceValidationInput
+    ) -> Bool {
+        let timestampSeconds = input.timestamp.timeIntervalSince1970
+        return input.id != zeroUUID
+            && input.projectID != zeroUUID
+            && input.sessionID != zeroUUID
+            && !input.agentTypeRaw.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            && input.process.terminalID != zeroUUID
+            && input.process.processGeneration > 0
+            && isAbsoluteMetadataPath(input.location.worktreePath)
+            && isAbsoluteMetadataPath(input.location.cwd)
+            && input.cursorValue > 0
+            && timestampSeconds.isFinite
+            && timestampSeconds != 0
+    }
+
+    private static func isAbsoluteMetadataPath(_ path: String) -> Bool {
+        !path.isEmpty && path.hasPrefix("/") && !path.utf8.contains(0)
+    }
+
+    private static let zeroUUID = UUID(
+        uuid: (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
+    )
+
+    private struct ProvenanceValidationInput {
+        let id: UUID
+        let projectID: UUID
+        let sessionID: UUID
+        let agentTypeRaw: String
+        let process: AgentProcessIdentity
+        let location: AgentEventLocation
+        let cursorValue: UInt64
+        let timestamp: Date
     }
 }

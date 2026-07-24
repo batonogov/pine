@@ -27,6 +27,7 @@ struct AgentEventEnvelopeTests {
 
     private func sampleEnvelope(
         trustLevel: TrustLevel = .inferred,
+        source: EventSource = .explicitAgentEvent,
         payload: AgentEventPayload = .none
     ) -> AgentEventEnvelope {
         AgentEventEnvelope(
@@ -40,7 +41,7 @@ struct AgentEventEnvelopeTests {
             location: AgentEventLocation(worktreePath: "/proj", cwd: "/proj/src"),
             cursorValue: 42,
             timestamp: Date(timeIntervalSince1970: 1_700_000_000),
-            source: .explicitAgentEvent,
+            source: source,
             trustLevel: trustLevel,
             payload: payload
         )
@@ -122,6 +123,14 @@ struct AgentEventEnvelopeTests {
         let data = try JSONEncoder().encode(source)
         let decoded = try JSONDecoder().decode(EventSource.self, from: data)
         #expect(decoded == source)
+    }
+
+    @Test func eventSource_unknownAliasingKnownValue_staysUnknownAfterRoundTrip() throws {
+        let source = EventSource.unknown(raw: "explicitAgentEvent")
+        let data = try JSONEncoder().encode(source)
+        let decoded = try JSONDecoder().decode(EventSource.self, from: data)
+        #expect(decoded == source)
+        #expect(decoded.canEstablishVerifiedTrust == false)
     }
 
     @Test func eventSource_stableIdentifier_resolvesKnownOnly() {
@@ -221,6 +230,36 @@ struct AgentEventEnvelopeTests {
         #expect(decoded.trustLevel.isVerified == false)
     }
 
+    @Test func envelope_verifiedWithMissingProvenance_failsClosedToInferred() throws {
+        let json: [String: Any] = [
+            "id": "00000000-0000-0000-0000-000000000009",
+            "projectID": "00000000-0000-0000-0000-000000000001",
+            "sessionID": "00000000-0000-0000-0000-000000000002",
+            "trustLevel": "verified",
+        ]
+        let decoded = try decode(json)
+        #expect(decoded.trustLevel == .inferred)
+        #expect(decoded.trustLevel.isVerified == false)
+    }
+
+    @Test func envelope_heuristicSourcesCannotClaimVerifiedTrust() {
+        let sources: [EventSource] = [
+            .terminalProcess,
+            .fileSystemObservation,
+            .gitCorrelation,
+            .userAction,
+            .unknown(raw: "futureSource"),
+        ]
+
+        for source in sources {
+            let envelope = sampleEnvelope(
+                trustLevel: .verified,
+                source: source
+            )
+            #expect(envelope.trustLevel == .inferred)
+        }
+    }
+
     @Test func envelope_missingOptionalFields_useSafeDefaults() throws {
         // A minimal envelope from an older format must still decode.
         let json: [String: Any] = [
@@ -234,6 +273,7 @@ struct AgentEventEnvelopeTests {
         #expect(decoded.payload == .none)
         #expect(decoded.trustLevel == .inferred)
         #expect(decoded.location.worktreePath == "")
+        #expect(decoded.process.terminalID == known("00000000-0000-0000-0000-000000000000"))
     }
 
     @Test func envelope_unknownSource_isPreserved() throws {
@@ -257,5 +297,34 @@ struct AgentEventEnvelopeTests {
         let envelope = sampleEnvelope(trustLevel: .verified, payload: .none)
         #expect(envelope.trustLevel.isVerified)
         #expect(envelope.payload == .none)
+    }
+
+    @Test func envelope_malformedNestedContentIdentity_dropsPayloadAndTrust() throws {
+        let json: [String: Any] = [
+            "id": "00000000-0000-0000-0000-000000000009",
+            "projectID": "00000000-0000-0000-0000-000000000001",
+            "sessionID": "00000000-0000-0000-0000-000000000002",
+            "agentTypeRaw": "claudeCode",
+            "process": [
+                "terminalID": "00000000-0000-0000-0000-000000000003",
+                "processGeneration": 1,
+            ],
+            "location": ["worktreePath": "/proj", "cwd": "/proj"],
+            "cursorValue": 1,
+            "timestamp": 1_000,
+            "source": "explicitAgentEvent",
+            "trustLevel": "verified",
+            "payload": [
+                "kind": "fileChange",
+                "fileChange": [
+                    "relativePath": "src/app.swift",
+                    "after": ["sha256Hex": "not-a-digest", "byteCount": -1],
+                ],
+            ],
+        ]
+
+        let decoded = try decode(json)
+        #expect(decoded.payload == .none)
+        #expect(decoded.trustLevel == .inferred)
     }
 }

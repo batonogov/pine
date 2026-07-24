@@ -10,7 +10,7 @@ import Testing
 
 @testable import Pine
 
-struct ContentIdentityTests {
+nonisolated struct ContentIdentityTests {
 
     // MARK: - Hashing determinism
 
@@ -100,5 +100,35 @@ struct ContentIdentityTests {
         let data = try JSONEncoder().encode(original)
         let decoded = try JSONDecoder().decode(ContentIdentity.self, from: data)
         #expect(decoded == original)
+    }
+
+    @Test func codable_rejectsInvalidDigest() throws {
+        let data = try JSONSerialization.data(withJSONObject: [
+            "sha256Hex": "not-a-digest",
+            "byteCount": 12,
+        ])
+
+        #expect(throws: (any Error).self) {
+            try JSONDecoder().decode(ContentIdentity.self, from: data)
+        }
+    }
+
+    @Test func codable_rejectsNegativeByteCount() throws {
+        let data = try JSONSerialization.data(withJSONObject: [
+            "sha256Hex": String(repeating: "a", count: 64),
+            "byteCount": -1,
+        ])
+
+        #expect(throws: (any Error).self) {
+            try JSONDecoder().decode(ContentIdentity.self, from: data)
+        }
+    }
+
+    @Test func hashingIsAvailableFromDetachedTask() async {
+        let identity = await Task.detached {
+            ContentIdentity(content: Data("background".utf8))
+        }.value
+
+        #expect(identity.byteCount == 10)
     }
 }

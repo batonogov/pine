@@ -28,13 +28,17 @@ import Foundation
 /// digest and byte count match, which is how a verified event can detect that
 /// the working tree has diverged from its expected after-state before any
 /// inverse operation runs (#1183).
-struct ContentIdentity: Codable, Sendable, Equatable, Hashable {
+nonisolated struct ContentIdentity: Codable, Sendable, Equatable, Hashable {
     /// Lowercase hex encoding of the SHA-256 digest (exactly 64 characters).
     let sha256Hex: String
     /// Number of bytes that were hashed. Stored alongside the digest so a
     /// digest collision between inputs of different lengths cannot be treated
     /// as a match.
     let byteCount: Int
+
+    private enum CodingKeys: String, CodingKey {
+        case sha256Hex, byteCount
+    }
 
     /// Computes the identity of the given data without retaining it.
     ///
@@ -52,22 +56,47 @@ struct ContentIdentity: Codable, Sendable, Equatable, Hashable {
     /// and `byteCount` is non-negative. This keeps a corrupted or tampered
     /// store from loading an identity that could authorize a rollback.
     init?(sha256Hex: String, byteCount: Int) {
-        guard byteCount >= 0,
-              sha256Hex.count == 64,
-              sha256Hex.allSatisfy({ $0.isHexDigit }),
-              sha256Hex == sha256Hex.lowercased()
-        else { return nil }
+        guard Self.isValid(sha256Hex: sha256Hex, byteCount: byteCount) else {
+            return nil
+        }
         self.sha256Hex = sha256Hex
         self.byteCount = byteCount
+    }
+
+    /// Validates persisted components instead of allowing synthesized
+    /// `Decodable` to bypass the reconstruction invariant.
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let sha256Hex = try container.decode(String.self, forKey: .sha256Hex)
+        let byteCount = try container.decode(Int.self, forKey: .byteCount)
+
+        guard let validated = Self(
+            sha256Hex: sha256Hex,
+            byteCount: byteCount
+        ) else {
+            throw DecodingError.dataCorruptedError(
+                forKey: .sha256Hex,
+                in: container,
+                debugDescription: "ContentIdentity requires lowercase SHA-256 and nonnegative byte count"
+            )
+        }
+        self = validated
     }
 
     /// The identity of empty content. Useful as a "before" identity for a
     /// newly created file, and as a safe fallback that matches nothing but
     /// other empty content.
     static let empty = ContentIdentity(content: Data())
+
+    private static func isValid(sha256Hex: String, byteCount: Int) -> Bool {
+        byteCount >= 0
+            && sha256Hex.count == 64
+            && sha256Hex.allSatisfy(\.isHexDigit)
+            && sha256Hex == sha256Hex.lowercased()
+    }
 }
 
-private extension Character {
+nonisolated private extension Character {
     /// `true` for characters legal in a lowercase hex string (`0`–`9`, `a`–`f`).
     var isHexDigit: Bool {
         ("0"..."9").contains(self) || ("a"..."f").contains(self)
