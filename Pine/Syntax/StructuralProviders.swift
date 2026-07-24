@@ -42,12 +42,6 @@ nonisolated struct DocumentSnapshot: Sendable, Equatable {
     /// Monotonic revision; consumers compare this against the current
     /// generation before applying results.
     let revision: DocumentRevision
-
-    init(uri: String, text: String, revision: DocumentRevision) {
-        self.uri = uri
-        self.text = text
-        self.revision = revision
-    }
 }
 
 // MARK: - Fold provider protocol

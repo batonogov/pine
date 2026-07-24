@@ -237,7 +237,7 @@ struct FoldingCoordinatorTests {
 
 /// A controllable fold provider for coordinator tests. Returns a fixed result
 /// after an optional delay.
-private nonisolated final class StubFoldProvider: FoldRangeProviding, @unchecked Sendable {
+nonisolated private final class StubFoldProvider: FoldRangeProviding, @unchecked Sendable {
     private let ranges: [LSPFoldingRange]?
     private let delaySeconds: TimeInterval
 
