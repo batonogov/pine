@@ -24,6 +24,10 @@ struct AgentActivityStoreTests {
         store.record(makeAction(sessionID: sessionA, summary: "Wrote a.swift"))
         #expect(store.actions.count == 1)
         #expect(store.actions.first?.summary == "Wrote a.swift")
+        #expect(
+            store.actions.first?.attribution
+                == .session(candidate(sessionID: sessionA, agentType: .claudeCode))
+        )
     }
 
     @Test func dedupeCollapsesIdenticalConsecutiveWithinWindow() {
@@ -48,6 +52,26 @@ struct AgentActivityStoreTests {
         let base = Date()
         store.record(makeAction(sessionID: sessionA, timestamp: base, summary: "Wrote a.swift"))
         store.record(makeAction(sessionID: sessionB, timestamp: base, summary: "Wrote a.swift"))
+        #expect(store.actions.count == 2)
+    }
+
+    @Test func dedupeDoesNotCollapseDifferentAttributionStrength() {
+        let store = AgentActivityStore()
+        let base = Date()
+        let candidate = candidate(sessionID: sessionA, agentType: .claudeCode)
+        store.record(AgentAction(
+            attribution: .session(candidate),
+            kind: .fileWrite,
+            timestamp: base,
+            summary: "File changed: a.swift"
+        ))
+        store.record(AgentAction(
+            attribution: .inferred(candidate),
+            kind: .fileWrite,
+            timestamp: base.addingTimeInterval(0.1),
+            summary: "File changed: a.swift"
+        ))
+
         #expect(store.actions.count == 2)
     }
 
@@ -87,6 +111,26 @@ struct AgentActivityStoreTests {
 
         #expect(store.actions(forSession: sessionA).count == 2)
         #expect(store.actions(forSession: sessionB).count == 1)
+        #expect(store.actions(forSession: UUID()).isEmpty)
+    }
+
+    @Test func actionsForSessionIncludesAmbiguousCandidateWithoutClaimingOwnership() throws {
+        let store = AgentActivityStore()
+        let candidates = [
+            candidate(sessionID: sessionA, agentType: .claudeCode),
+            candidate(sessionID: sessionB, agentType: .codex)
+        ]
+        store.record(AgentAction(
+            attribution: .ambiguous(candidates: candidates),
+            kind: .fileWrite,
+            summary: "File changed: a.swift"
+        ))
+
+        let actionA = try #require(store.actions(forSession: sessionA).first)
+        let actionB = try #require(store.actions(forSession: sessionB).first)
+        #expect(actionA == actionB)
+        #expect(actionA.sessionID == nil)
+        #expect(actionA.agentType == nil)
         #expect(store.actions(forSession: UUID()).isEmpty)
     }
 
@@ -145,12 +189,17 @@ struct AgentActivityStoreTests {
         let action = try #require(store.actions.first)
         #expect(action.sessionID == sessionA)
         #expect(action.agentType == .claudeCode)
+        #expect(
+            action.attribution
+                == .inferred(candidate(sessionID: sessionA, agentType: .claudeCode))
+        )
         #expect(action.kind == .fileWrite)
         #expect(action.fileURL?.lastPathComponent == "a.swift")
-        #expect(!action.summary.contains("ambiguous"))
+        #expect(action.summary == Strings.agentActivityFileChanged("a.swift"))
+        #expect(!action.summary.contains("Wrote"))
     }
 
-    @Test func noteFileSystemChange_multipleActiveAttributesToMostRecentWithMarker() throws {
+    @Test func noteFileSystemChange_multipleActivePreservesCandidatesWithoutOwner() throws {
         let store = AgentActivityStore()
         let older = AgentSession(
             id: sessionA,
@@ -168,10 +217,105 @@ struct AgentActivityStoreTests {
 
         #expect(store.actions.count == 1)
         let action = try #require(store.actions.first)
-        // Most-recently-active (by startedAt) wins.
-        #expect(action.sessionID == sessionB)
-        // Ambiguous attribution is flagged in the summary.
-        #expect(action.summary.contains("ambiguous"))
+        #expect(action.sessionID == nil)
+        #expect(action.agentType == nil)
+        #expect(
+            action.attribution
+                == .ambiguous(candidates: [
+                    candidate(sessionID: sessionA, agentType: .claudeCode),
+                    candidate(sessionID: sessionB, agentType: .codex)
+                ])
+        )
+        #expect(action.summary == Strings.agentActivityFileChanged("a.swift"))
+    }
+
+    @Test func noteFileSystemChange_candidateOrderIsDeterministicAndDedupeSafe() {
+        let store = AgentActivityStore()
+        let first = AgentSession(id: sessionA, agentType: .claudeCode, state: .executing)
+        let second = AgentSession(id: sessionB, agentType: .codex, state: .thinking)
+
+        store.noteFileSystemChange(
+            at: url("a.swift"),
+            activeSessions: [second, first]
+        )
+        store.noteFileSystemChange(
+            at: url("a.swift"),
+            activeSessions: [first, second]
+        )
+
+        #expect(store.actions.count == 1)
+        #expect(
+            store.actions[0].attribution.candidates.map(\.sessionID)
+                == [sessionA, sessionB].sorted { $0.uuidString < $1.uuidString }
+        )
+    }
+
+    @Test func noteFileSystemChange_duplicateSnapshotSessionIsNotAmbiguous() throws {
+        let store = AgentActivityStore()
+        let session = AgentSession(
+            id: sessionA,
+            agentType: .claudeCode,
+            state: .executing
+        )
+
+        store.noteFileSystemChange(
+            at: url("a.swift"),
+            activeSessions: [session, session]
+        )
+
+        let action = try #require(store.actions.first)
+        #expect(
+            action.attribution
+                == .inferred(candidate(sessionID: sessionA, agentType: .claudeCode))
+        )
+    }
+
+    @Test func noteFileSystemChange_conflictingDuplicateIdentityFailsAmbiguous() throws {
+        let store = AgentActivityStore()
+        let claude = AgentSession(
+            id: sessionA,
+            agentType: .claudeCode,
+            state: .executing
+        )
+        let codex = AgentSession(
+            id: sessionA,
+            agentType: .codex,
+            state: .thinking
+        )
+
+        store.noteFileSystemChange(
+            at: url("a.swift"),
+            activeSessions: [codex, claude]
+        )
+
+        let action = try #require(store.actions.first)
+        #expect(action.sessionID == nil)
+        #expect(action.attribution.candidates.count == 2)
+    }
+
+    @Test func noteFileSystemChange_doneCandidatesDoNotCreateFalseAmbiguity() throws {
+        let store = AgentActivityStore()
+        let live = AgentSession(
+            id: sessionA,
+            agentType: .claudeCode,
+            state: .executing
+        )
+        let done = AgentSession(
+            id: sessionB,
+            agentType: .codex,
+            state: .done
+        )
+
+        store.noteFileSystemChange(
+            at: url("a.swift"),
+            activeSessions: [done, live]
+        )
+
+        let action = try #require(store.actions.first)
+        #expect(
+            action.attribution
+                == .inferred(candidate(sessionID: sessionA, agentType: .claudeCode))
+        )
     }
 
     @Test func noteFileSystemChange_appliesDedupe() {
@@ -217,6 +361,13 @@ struct AgentActivityStoreTests {
             timestamp: timestamp,
             summary: summary
         )
+    }
+
+    private func candidate(
+        sessionID: UUID,
+        agentType: AgentType
+    ) -> AgentActionCandidate {
+        AgentActionCandidate(sessionID: sessionID, agentType: agentType)
     }
 
     private func url(_ name: String) -> URL {

@@ -28,20 +28,47 @@ struct AgentActivityViewSnapshotTests {
     /// stable across runs and machines — a near-now timestamp would drift the
     /// rendered text between snapshot capture and comparison.
     private static let stableTimestamp = Date(timeIntervalSinceReferenceDate: 0)
+    private static let sessionA = UUID(
+        uuid: (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1)
+    )
+    private static let sessionB = UUID(
+        uuid: (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2)
+    )
 
     private func populatedRows() -> [AgentActivityRow] {
         [
             AgentAction(
-                sessionID: UUID(),
-                agentType: .claudeCode,
+                attribution: .inferred(
+                    AgentActionCandidate(
+                        sessionID: Self.sessionA,
+                        agentType: .claudeCode
+                    )
+                ),
                 kind: .fileWrite,
                 status: .completed,
                 timestamp: Self.stableTimestamp,
                 fileURL: URL(fileURLWithPath: "/p/src/a.swift"),
-                summary: "Wrote a.swift"
+                summary: Strings.agentActivityFileChanged("a.swift")
             ),
             AgentAction(
-                sessionID: UUID(),
+                attribution: .ambiguous(candidates: [
+                    AgentActionCandidate(
+                        sessionID: Self.sessionA,
+                        agentType: .claudeCode
+                    ),
+                    AgentActionCandidate(
+                        sessionID: Self.sessionB,
+                        agentType: .codex
+                    )
+                ]),
+                kind: .fileWrite,
+                status: .completed,
+                timestamp: Self.stableTimestamp,
+                fileURL: URL(fileURLWithPath: "/p/src/shared.swift"),
+                summary: Strings.agentActivityFileChanged("shared.swift")
+            ),
+            AgentAction(
+                sessionID: Self.sessionB,
                 agentType: .codex,
                 kind: .command,
                 status: .completed,
@@ -49,7 +76,7 @@ struct AgentActivityViewSnapshotTests {
                 summary: "ran npm test"
             ),
             AgentAction(
-                sessionID: UUID(),
+                sessionID: Self.sessionA,
                 agentType: .claudeCode,
                 kind: .toolCall,
                 status: .failed,

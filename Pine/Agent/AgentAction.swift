@@ -56,20 +56,65 @@ enum AgentActionStatus: Sendable, Equatable, CaseIterable {
     }
 }
 
+/// One live agent session that may be associated with an activity row.
+///
+/// This is deliberately smaller than the trusted provenance envelope from
+/// #933: the Activity panel only needs enough identity to avoid assigning a
+/// heuristic file-system observation to the wrong agent. It grants no trust
+/// or mutation authority.
+struct AgentActionCandidate: Equatable, Sendable {
+    let sessionID: UUID
+    let agentType: AgentType
+}
+
+/// How an Activity action is associated with live agent sessions.
+///
+/// Directly recorded actions retain the legacy single-session association.
+/// File-system correlation is always explicit about its weaker evidence:
+/// `.inferred` when one live session is a candidate, and `.ambiguous` when
+/// several sessions could have caused the same observation. An ambiguous
+/// action intentionally has no selected owner.
+enum AgentActionAttribution: Equatable, Sendable {
+    case session(AgentActionCandidate)
+    case inferred(AgentActionCandidate)
+    case ambiguous(candidates: [AgentActionCandidate])
+
+    /// Every session that could be associated with the action.
+    var candidates: [AgentActionCandidate] {
+        switch self {
+        case .session(let candidate), .inferred(let candidate):
+            [candidate]
+        case .ambiguous(let candidates):
+            candidates
+        }
+    }
+
+    /// The single associated session, or `nil` when ownership is ambiguous.
+    var unambiguousCandidate: AgentActionCandidate? {
+        switch self {
+        case .session(let candidate), .inferred(let candidate):
+            candidate
+        case .ambiguous:
+            nil
+        }
+    }
+
+    func contains(sessionID: UUID) -> Bool {
+        candidates.contains { $0.sessionID == sessionID }
+    }
+}
+
 /// A single structured action attributed to an AI agent session.
 ///
-/// Links to `AgentSession` via `sessionID` (the stable session UUID). Being a
-/// value type keeps the store and views free of live-terminal coupling —
-/// matching the `AgentStatusSummary` projection pattern used by the status-bar
-/// item (#952).
+/// Links to one or more `AgentSession` candidates via ``attribution``. Being
+/// a value type keeps the store and views free of live-terminal coupling —
+/// matching the `AgentStatusSummary` projection pattern used by the
+/// status-bar item (#952).
 struct AgentAction: Identifiable, Equatable, Sendable {
     /// Stable identifier for this action.
     let id: UUID
-    /// The agent session this action belongs to (`AgentSession.id`).
-    let sessionID: UUID
-    /// Which agent type performed the action (snapshot for display even after
-    /// the session ends, so the panel can color-code finished runs).
-    let agentType: AgentType
+    /// The candidate session association and its correlation strength.
+    let attribution: AgentActionAttribution
     /// Kind of operation.
     let kind: AgentActionKind
     /// Lifecycle status.
@@ -82,6 +127,18 @@ struct AgentAction: Identifiable, Equatable, Sendable {
     /// Human-readable one-line summary (file name, command text, …).
     let summary: String
 
+    /// Backwards-compatible single-session accessor. Returns `nil` for an
+    /// ambiguous action instead of selecting one candidate as the owner.
+    var sessionID: UUID? {
+        attribution.unambiguousCandidate?.sessionID
+    }
+
+    /// Backwards-compatible single-agent accessor. Returns `nil` for an
+    /// ambiguous action so the UI cannot color it as one candidate's work.
+    var agentType: AgentType? {
+        attribution.unambiguousCandidate?.agentType
+    }
+
     init(
         id: UUID = UUID(),
         sessionID: UUID,
@@ -93,8 +150,27 @@ struct AgentAction: Identifiable, Equatable, Sendable {
         summary: String
     ) {
         self.id = id
-        self.sessionID = sessionID
-        self.agentType = agentType
+        self.attribution = .session(
+            AgentActionCandidate(sessionID: sessionID, agentType: agentType)
+        )
+        self.kind = kind
+        self.status = status
+        self.timestamp = timestamp
+        self.fileURL = fileURL
+        self.summary = summary
+    }
+
+    init(
+        id: UUID = UUID(),
+        attribution: AgentActionAttribution,
+        kind: AgentActionKind,
+        status: AgentActionStatus = .completed,
+        timestamp: Date = Date(),
+        fileURL: URL? = nil,
+        summary: String
+    ) {
+        self.id = id
+        self.attribution = attribution
         self.kind = kind
         self.status = status
         self.timestamp = timestamp
