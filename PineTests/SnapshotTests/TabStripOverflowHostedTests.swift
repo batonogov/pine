@@ -52,6 +52,10 @@ struct TabStripOverflowHostedTests {
     }
 
     private static let renderSize = NSSize(width: 360, height: 30)
+    // macOS 26 and 27 rasterize the terminal SF Symbol slightly differently.
+    // Keep the hosted layout snapshot strict enough to catch structural drift
+    // while allowing that bounded cross-OS glyph delta in the preview lane.
+    private static let terminalCrossVersionTolerance = 0.02
 
     @Test("Overflowing editor strip snapshots pinned, preview, active, and indicator states")
     func editorOverflow() throws {
@@ -100,7 +104,8 @@ struct TabStripOverflowHostedTests {
                 ),
                 size: Self.renderSize,
                 appearance: appearance,
-                named: "TabStrip.terminalOverflow.\(appearance.suffix)"
+                named: "TabStrip.terminalOverflow.\(appearance.suffix)",
+                tolerance: Self.terminalCrossVersionTolerance
             )
         }
     }
