@@ -143,14 +143,15 @@ nonisolated struct LSPFoldingRange: Equatable, Sendable {
 /// The closure is supplied by `PaneLeafView` (mirroring the hover/definition
 /// endpoint pattern) so this type stays free of project-state references and
 /// is testable in isolation.
-final class LSPFoldProvider: FoldRangeProviding, @unchecked Sendable {
+nonisolated final class LSPFoldProvider: FoldRangeProviding, @unchecked Sendable {
 
     /// Requests LSP folding ranges for a document. Returns the raw
     /// `LSPFoldingRange` list, or `nil` when LSP is disabled, the file has no
-    /// server, or the request fails.
-    private let requester: (DocumentSnapshot) async -> [LSPFoldingRange]?
+    /// server, or the request fails. `@Sendable` so it can be captured by the
+    /// coordinator's `TaskGroup` race.
+    private let requester: @Sendable (DocumentSnapshot) async -> [LSPFoldingRange]?
 
-    init(requester: @escaping (DocumentSnapshot) async -> [LSPFoldingRange]?) {
+    init(requester: @Sendable @escaping (DocumentSnapshot) async -> [LSPFoldingRange]?) {
         self.requester = requester
     }
 

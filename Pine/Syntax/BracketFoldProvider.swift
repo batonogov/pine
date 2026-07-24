@@ -17,9 +17,11 @@ import Foundation
 /// available — no capability gate — so it is the terminal fallback in the
 /// provider chain.
 ///
-/// Computation runs off the main thread: the calculator is pure and
-/// thread-safe (it never touches `NSTextStorage`), so dispatching it keeps the
-/// main thread free for the 120 Hz scroll budget.
+/// Computation hops to the main actor: `FoldRangeCalculator.calculate` is
+/// MainActor-isolated under the project default, and the calculation is fast
+/// (it is the synchronous fallback Pine already ships). The heavier LSP
+/// request — whose transport I/O is already off-main — is the work the
+/// coordinator races against the deadline.
 nonisolated final class BracketFoldProvider: FoldRangeProviding, @unchecked Sendable {
 
     /// Supplies comment/string skip ranges for the snapshot text so brackets
@@ -40,11 +42,12 @@ nonisolated final class BracketFoldProvider: FoldRangeProviding, @unchecked Send
     }
 
     func foldRanges(for snapshot: DocumentSnapshot) async -> [FoldableRange]? {
+        // `FoldRangeCalculator.calculate` is MainActor-isolated; hop to the
+        // main actor for the (fast, pure) computation.
         let text = snapshot.text
         let skipRanges = skipRangesProvider(text)
-        // Pure, thread-safe computation — run off the main thread.
-        return await Task.detached(priority: .userInitiated) {
+        return await MainActor.run {
             FoldRangeCalculator.calculate(text: text, skipRanges: skipRanges)
-        }.value
+        }
     }
 }

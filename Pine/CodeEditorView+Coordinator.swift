@@ -62,14 +62,23 @@ extension CodeEditorView {
         /// never recalculated.
         private lazy var lspFoldProvider: LSPFoldProvider = {
             LSPFoldProvider { [weak self] snapshot in
-                guard let self,
-                      let url = self.parent.fileURL else { return nil }
-                return await LSPUIEndpoint.shared.foldRanges(
-                    url: url,
-                    text: snapshot.text
-                )
+                await self?.requestLSPFoldRanges(snapshot: snapshot) ?? nil
             }
         }()
+
+        /// Reads the current file URL on the main actor and issues the LSP
+        /// folding request through the shared UI endpoint. Returns `nil` to
+        /// defer to the bracket fallback when there is no file or no server.
+        @MainActor
+        private func requestLSPFoldRanges(
+            snapshot: DocumentSnapshot
+        ) async -> [LSPFoldingRange]? {
+            guard let url = parent.fileURL else { return nil }
+            return await LSPUIEndpoint.shared.foldRanges(
+                url: url,
+                text: snapshot.text
+            )
+        }
 
         /// Последние язык/имя файла — для обнаружения смены грамматики
         /// при одинаковом содержимом файлов
@@ -1076,17 +1085,18 @@ extension CodeEditorView {
                 text: text,
                 revision: revision
             )
-            // Capture the bracket ranges as they stand now; the coordinator
-            // returns them unchanged on every fallback path.
+            // Capture the bracket ranges and the coordinator (both Sendable)
+            // before leaving the main actor so the task never touches
+            // MainActor-isolated state directly.
             let bracketRanges = foldableRanges
+            let coordinator = foldingCoordinator
             Task { [weak self] in
-                guard let self else { return }
-                let resolution = await self.foldingCoordinator.refine(
+                let resolution = await coordinator.refine(
                     snapshot: snapshot,
                     bracketRanges: bracketRanges
                 )
                 await MainActor.run {
-                    self.applyFoldingResolution(resolution)
+                    self?.applyFoldingResolution(resolution)
                 }
             }
         }

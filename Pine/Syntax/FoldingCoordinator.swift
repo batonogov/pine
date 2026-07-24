@@ -28,8 +28,10 @@ import os
 /// reply or the timeout resolves, bounding main-thread impact.
 ///
 /// Marked `@unchecked Sendable`: the only mutable state is `generation`,
-/// which is internally locked. Provider queries run off the main actor.
-final class FoldingCoordinator: @unchecked Sendable {
+/// which is internally locked. The coordinator and its providers are
+/// `nonisolated` so provider queries never need a main-actor hop (the off-main
+/// work is the LSP transport I/O handled below this seam).
+nonisolated final class FoldingCoordinator: @unchecked Sendable {
 
     /// Deadline for an LSP folding request before the local bracket fallback
     /// wins. Chosen by ADR 0001 (#1182) as the p95 latency budget; slower
@@ -95,9 +97,17 @@ final class FoldingCoordinator: @unchecked Sendable {
             return .resolved(bracketRanges, source: .bracket)
         }
 
+        // Bind the provider query to a sendable closure before the race so
+        // the task-group body never references the protocol existential
+        // directly (the type checker cannot always resolve an existential
+        // method call inside `addTask`).
+        let query: @Sendable () async -> [FoldableRange]? = {
+            await lsp.foldRanges(for: snapshot)
+        }
+
         // Race the LSP request against the deadline. The first to complete
         // wins; the other is cancelled.
-        let outcome = await raceLSP(provider: lsp, snapshot: snapshot)
+        let outcome = await raceLSP(query: query)
 
         // A newer request superseded this revision — discard regardless of
         // the LSP outcome so a stale reply never overwrites newer edits.
@@ -107,10 +117,10 @@ final class FoldingCoordinator: @unchecked Sendable {
 
         switch outcome {
         case .completed(let lspRanges):
-            // Normalise + validate; fall back to bracket on any invalidity.
-            if let normalized = Self.normalize(lspRanges, snapshot: snapshot),
-               !normalized.isEmpty {
-                return .resolved(normalized, source: .lsp)
+            // The provider already normalised its result; fall back to
+            // bracket on any invalidity/emptiness.
+            if let ranges = lspRanges, !ranges.isEmpty {
+                return .resolved(ranges, source: .lsp)
             }
             return .resolved(bracketRanges, source: .bracket)
         case .timedOut, .cancelled, .declined:
@@ -122,8 +132,8 @@ final class FoldingCoordinator: @unchecked Sendable {
 
     /// The outcome of racing an LSP folding request against the deadline.
     private enum LSPRaceOutcome: Sendable {
-        /// The provider returned a (possibly empty/nil) result.
-        case completed([LSPFoldingRange])
+        /// The provider returned a (possibly nil/empty) normalised result.
+        case completed([FoldableRange]?)
         /// The provider could not serve the document.
         case declined
         /// The deadline elapsed before the provider replied.
@@ -136,13 +146,12 @@ final class FoldingCoordinator: @unchecked Sendable {
     /// Runs the provider query and the deadline timer concurrently; the first
     /// to resolve wins and the other is cancelled.
     private func raceLSP(
-        provider: FoldRangeProviding,
-        snapshot: DocumentSnapshot
+        query: @escaping @Sendable () async -> [FoldableRange]?
     ) async -> LSPRaceOutcome {
         await withTaskGroup(of: LSPRaceOutcome.self) { group in
             group.addTask {
-                let ranges = await provider.foldRanges(for: snapshot)
-                return .completed(ranges ?? [])
+                let result = await query()
+                return .completed(result)
             }
             group.addTask {
                 try? await Task.sleep(for: FoldingCoordinator.lspDeadline)

@@ -68,9 +68,9 @@ struct LSPFoldingRangeTests {
 
     @Test("Decodes boolean foldingRangeProvider")
     func decodeBoolCapability() {
-        let caps = LSPServerCapabilities(json: [
-            "capabilities": ["foldingRangeProvider": true]
-        ])
+        // LSPServerCapabilities takes the capabilities object directly (the
+        // value of `result["capabilities"]`, extracted by LSPClient).
+        let caps = LSPServerCapabilities(json: ["foldingRangeProvider": true])
         #expect(caps.foldingRangeProvider == true)
         #expect(caps.documentSymbolProvider == false)
     }
@@ -78,23 +78,21 @@ struct LSPFoldingRangeTests {
     @Test("Decodes object foldingRangeProvider as supported")
     func decodeObjectCapability() {
         let caps = LSPServerCapabilities(json: [
-            "capabilities": ["foldingRangeProvider": ["workDoneProgress": false]]
+            "foldingRangeProvider": ["workDoneProgress": false]
         ])
         #expect(caps.foldingRangeProvider == true)
     }
 
     @Test("Absence means unsupported")
     func absenceMeansUnsupported() {
-        let caps = LSPServerCapabilities(json: ["capabilities": [:]])
+        let caps = LSPServerCapabilities(json: [:])
         #expect(caps.foldingRangeProvider == false)
         #expect(caps.documentSymbolProvider == false)
     }
 
     @Test("Explicit false means unsupported")
     func explicitFalseUnsupported() {
-        let caps = LSPServerCapabilities(json: [
-            "capabilities": ["foldingRangeProvider": false]
-        ])
+        let caps = LSPServerCapabilities(json: ["foldingRangeProvider": false])
         #expect(caps.foldingRangeProvider == false)
     }
 

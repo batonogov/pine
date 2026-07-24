@@ -671,6 +671,13 @@ protocol LSPClientProtocol: AnyObject {
         position: LSPPosition,
         newName: String
     ) async -> LSPWorkspaceEdit
+
+    /// Whether the server advertises `textDocument/foldingRange` (#1008).
+    var supportsFoldingRange: Bool { get }
+
+    /// Sends `textDocument/foldingRange` and returns the decoded ranges
+    /// (#1008). Returns an empty list when unsupported or unavailable.
+    func foldingRange(uri: String) async -> [LSPFoldingRange]
 }
 
 extension LSPClientProtocol {
@@ -694,6 +701,12 @@ extension LSPClientProtocol {
     ) async -> LSPCompletionList {
         LSPCompletionList(items: [])
     }
+
+    /// Default: no folding capability until a concrete client overrides it.
+    var supportsFoldingRange: Bool { false }
+
+    /// Default: no folding ranges (defer to the bracket fallback).
+    func foldingRange(uri: String) async -> [LSPFoldingRange] { [] }
 
     func codeAction(
         uri: String,
@@ -841,8 +854,9 @@ final class LSPClient {
             // documentSymbolProvider, positionEncoding) so structural requests
             // can short-circuit unsupported features without a round trip
             // (#1008).
+            let capsDict = initResult as? [String: Any] ?? [:]
             serverCapabilities = LSPServerCapabilities(
-                json: initResult["capabilities"] ?? [:]
+                json: capsDict["capabilities"] ?? [:]
             )
         } catch {
             Logger.lsp.error("LSP initialize failed: \(String(describing: error), privacy: .public)")

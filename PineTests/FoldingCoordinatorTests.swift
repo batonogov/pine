@@ -163,15 +163,17 @@ struct FoldingCoordinatorTests {
     func staleDiscardsLSPResult() async {
         let snap = snapshot()
         let lspRanges = [LSPFoldingRange(startLine: 0, endLine: 2)]
-        let provider = StubFoldProvider(ranges: lspRanges, delaySeconds: 0.05)
+        let provider = StubFoldProvider(ranges: lspRanges, delaySeconds: 0.1)
         let coordinator = FoldingCoordinator(lspProvider: provider)
         let brackets = bracketRanges(snap.text)
 
-        // Invalidate mid-flight so the reply is stale by the time it lands.
+        // Start refine; it captures its generation and enters the race.
         let resolutionTask = Task {
             await coordinator.refine(snapshot: snap, bracketRanges: brackets)
         }
-        // Bump the generation before the LSP reply resolves.
+        // Let refine capture its generation and enter the race before we
+        // invalidate (the provider's delay keeps the race pending).
+        try? await Task.sleep(for: .milliseconds(20))
         coordinator.invalidate()
         let resolution = await resolutionTask.value
 
@@ -235,7 +237,7 @@ struct FoldingCoordinatorTests {
 
 /// A controllable fold provider for coordinator tests. Returns a fixed result
 /// after an optional delay.
-private final class StubFoldProvider: FoldRangeProviding, @unchecked Sendable {
+private nonisolated final class StubFoldProvider: FoldRangeProviding, @unchecked Sendable {
     private let ranges: [LSPFoldingRange]?
     private let delaySeconds: TimeInterval
 
