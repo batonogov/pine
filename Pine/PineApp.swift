@@ -638,10 +638,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate {
             }
             let mods = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
             if mods == .control {
-                closeDelegate.projectManager.activeTabManager.selectNextTab()
+                closeDelegate.projectManager.paneManager.switchToNextTabGlobally()
                 return nil
             } else if mods == [.control, .shift] {
-                closeDelegate.projectManager.activeTabManager.selectPreviousTab()
+                closeDelegate.projectManager.paneManager.switchToPreviousTabGlobally()
                 return nil
             }
             return event

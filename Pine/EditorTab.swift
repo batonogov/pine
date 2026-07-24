@@ -83,6 +83,15 @@ struct EditorTab: Identifiable, Hashable {
     /// Whether this tab is pinned (always visible at the left, protected from close).
     var isPinned: Bool = false
 
+    /// Whether this tab is a transient preview opened via single-click navigation.
+    /// A transient preview is replaced (not stacked) when another file is opened
+    /// as a preview in the same pane. It is promoted to a permanent tab on
+    /// edit, pin, explicit open, or move.
+    ///
+    /// Unrelated to `kind == .preview` (Quick Look binary preview), which is a
+    /// permanent read-only representation of non-text files.
+    var isTransientPreview: Bool = false
+
     /// Cached syntax highlight matches — applied synchronously on tab switch
     /// to eliminate the flash of unhighlighted text.
     /// Not included in Hashable/Equatable (which use id only).

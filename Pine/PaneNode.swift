@@ -25,6 +25,16 @@ enum PaneContent: String, Hashable, Codable, Sendable {
     case terminal
 }
 
+/// A tab identity scoped to a specific pane, used by the all-pane MRU
+/// switcher. Combining pane + tab identity lets the switcher distinguish
+/// the same logical tab in different panes and route activation correctly
+/// for both editor and terminal content.
+struct GlobalTabIdentity: Hashable, Sendable {
+    let paneID: PaneID
+    let tabID: UUID
+    let contentType: PaneContent
+}
+
 /// Split direction for a non-leaf pane.
 enum SplitAxis: String, Codable, Sendable {
     case horizontal // side by side (left | right)

@@ -48,6 +48,136 @@ final class PaneManager {
     /// The currently focused pane.
     var activePaneID: PaneID
 
+    /// Global most-recently-used tab switch order across ALL panes. This is
+    /// independent of each pane's local active-tab selection
+    /// (`TabManager.activeTabID` / `TerminalPaneState.activeTerminalID`). It
+    /// powers the all-pane tab switcher (Ctrl+Tab / Ctrl+Shift+Tab).
+    ///
+    /// The most recently activated tab is at index 0. Closed or stale
+    /// identities are filtered out lazily at switch time via
+    /// ``validGlobalTabSwitchOrder()``.
+    private(set) var globalTabSwitchOrder: [GlobalTabIdentity] = []
+
+    /// Prevents the activation callbacks owned by pane-local managers from
+    /// reordering the MRU list while a keyboard cycle is in progress.
+    private var isPerformingGlobalTabSwitch = false
+
+    /// Records a tab activation in the global MRU switch order. Called by
+    /// every path that activates an editor or terminal tab: selection, open,
+    /// transfer, and split. Move-to-front with dedup so each identity appears
+    /// at most once and the newest activation is always first.
+    func recordTabActivation(
+        paneID: PaneID,
+        tabID: UUID,
+        contentType: PaneContent
+    ) {
+        let identity = GlobalTabIdentity(paneID: paneID, tabID: tabID, contentType: contentType)
+        globalTabSwitchOrder.removeAll { $0 == identity }
+        globalTabSwitchOrder.insert(identity, at: 0)
+    }
+
+    /// Returns the global switch order with closed/stale identities removed.
+    /// A stale identity is one whose pane no longer exists in the tree or
+    /// whose tab no longer exists in the pane's manager. This lazy filter
+    /// makes restoration deterministic without requiring explicit cleanup
+    /// on every structural mutation.
+    func validGlobalTabSwitchOrder() -> [GlobalTabIdentity] {
+        globalTabSwitchOrder.filter { identity in
+            guard let content = root.content(for: identity.paneID),
+                  content == identity.contentType else { return false }
+            if identity.contentType == .editor {
+                return tabManagers[identity.paneID]?.tabs
+                    .contains(where: { $0.id == identity.tabID }) == true
+            }
+            return terminalStates[identity.paneID]?.terminalTabs
+                .contains(where: { $0.id == identity.tabID }) == true
+        }
+    }
+
+    /// The identity of the currently active tab in the active pane, if any.
+    /// Used as the anchor for forward/backward MRU cycling.
+    private func currentGlobalTabIdentity() -> GlobalTabIdentity? {
+        let paneID = activePaneID
+        guard let content = root.content(for: paneID) else { return nil }
+        let tabID: UUID?
+        if content == .editor {
+            tabID = tabManagers[paneID]?.activeTabID
+        } else {
+            tabID = terminalStates[paneID]?.activeTerminalID
+        }
+        guard let tabID else { return nil }
+        return GlobalTabIdentity(paneID: paneID, tabID: tabID, contentType: content)
+    }
+
+    /// Cycles to the next tab in global MRU order (Ctrl+Tab). Wraps around.
+    /// Returns `true` if a switch occurred.
+    @discardableResult
+    func switchToNextTabGlobally() -> Bool {
+        switchGlobalTab(offset: 1)
+    }
+
+    /// Cycles to the previous tab in global MRU order (Ctrl+Shift+Tab).
+    /// Wraps around. Returns `true` if a switch occurred.
+    @discardableResult
+    func switchToPreviousTabGlobally() -> Bool {
+        switchGlobalTab(offset: -1)
+    }
+
+    /// Core MRU cycling logic. The current tab is found in the valid order;
+    /// `offset` (+1 forward, −1 backward) selects the neighbour with wraparound.
+    /// If the current tab is not in the order (e.g. freshly opened), cycling
+    /// starts from the head.
+    @discardableResult
+    private func switchGlobalTab(offset: Int) -> Bool {
+        let order = validGlobalTabSwitchOrder()
+        guard order.count >= 2 else { return false }
+
+        let currentIndex = currentGlobalTabIdentity().flatMap { current in
+            order.firstIndex(of: current)
+        }
+
+        let startIndex: Int
+        if let currentIndex {
+            startIndex = (currentIndex + offset + order.count) % order.count
+        } else {
+            startIndex = offset > 0 ? 0 : order.count - 1
+        }
+
+        let target = order[startIndex]
+        // Activate WITHOUT recording: the switcher must not re-order the MRU
+        // list, otherwise each press chases the tab it just promoted and the
+        // cycle never reaches older entries. Only organic interactions
+        // (click, open, edit) re-order the list.
+        isPerformingGlobalTabSwitch = true
+        defer { isPerformingGlobalTabSwitch = false }
+        return activateGlobalTab(target)
+    }
+
+    /// Sets the active pane and tab for a global-switch target WITHOUT
+    /// recording it in the MRU order. Used by the switcher so cycling does
+    /// not pollute the switch order.
+    @discardableResult
+    private func activateGlobalTab(_ identity: GlobalTabIdentity) -> Bool {
+        if identity.contentType == .editor {
+            guard let tabManager = tabManagers[identity.paneID],
+                  tabManager.tabs.contains(where: { $0.id == identity.tabID }) else {
+                return false
+            }
+            activePaneID = identity.paneID
+            tabManager.activeTabID = identity.tabID
+            tabManager.pendingFocusTabID = identity.tabID
+            return true
+        }
+        guard let terminalState = terminalStates[identity.paneID],
+              terminalState.terminalTabs.contains(where: { $0.id == identity.tabID }) else {
+            return false
+        }
+        activePaneID = identity.paneID
+        terminalState.activeTerminalID = identity.tabID
+        terminalState.pendingFocusTabID = identity.tabID
+        return true
+    }
+
     /// The single owner of tab-drag session, preview, validation, and commit.
     let tabDragCoordinator: TabDragCoordinator
 
@@ -155,6 +285,7 @@ final class PaneManager {
         self.activePaneID = initialID
         let tm = TabManager()
         self.tabManagers[initialID] = tm
+        trackEditorActivations(in: tm, paneID: initialID)
         bindTabDragCoordinator(coordinator)
         installMouseUpMonitor()
     }
@@ -167,6 +298,7 @@ final class PaneManager {
         self.root = .leaf(initialID, .editor)
         self.activePaneID = initialID
         self.tabManagers[initialID] = existingTabManager
+        trackEditorActivations(in: existingTabManager, paneID: initialID)
         bindTabDragCoordinator(coordinator)
         installMouseUpMonitor()
     }
@@ -283,6 +415,7 @@ final class PaneManager {
         activePaneID = paneID
         tabManager.activeTabID = tabID
         tabManager.pendingFocusTabID = tabID
+        recordTabActivation(paneID: paneID, tabID: tabID, contentType: .editor)
         return true
     }
 
@@ -310,7 +443,7 @@ final class PaneManager {
             insertBefore: insertBefore
         ) else { return nil }
 
-        let newTabManager = makeEditorTabManager()
+        let newTabManager = makeEditorTabManager(for: newID)
 
         // Resolve and detach the tab before committing the new tree. If any
         // transfer precondition fails, no pane is created and the source is
@@ -340,6 +473,13 @@ final class PaneManager {
         // never selected as the pruning victim.
         if tabID != nil || tabURL != nil {
             pruneEmptyEditorLeaves()
+            if let activeTabID = newTabManager.activeTabID {
+                recordTabActivation(
+                    paneID: newID,
+                    tabID: activeTabID,
+                    contentType: .editor
+                )
+            }
         }
         return newID
     }
@@ -447,8 +587,8 @@ final class PaneManager {
         if let firstID = root.firstLeafID, let tm = tabManagers[firstID] {
             return tm
         }
-        let fresh = makeEditorTabManager()
         let newID = PaneID()
+        let fresh = makeEditorTabManager(for: newID)
         tabManagers[newID] = fresh
         root = .leaf(newID, .editor)
         activePaneID = newID
@@ -471,7 +611,7 @@ final class PaneManager {
             tabManagers[paneID] = nil
             terminalStates[paneID] = nil
             let newID = PaneID()
-            tabManagers[newID] = makeEditorTabManager()
+            tabManagers[newID] = makeEditorTabManager(for: newID)
             root = .leaf(newID, .editor)
             activePaneID = newID
             return
@@ -521,6 +661,7 @@ final class PaneManager {
         activePaneID = paneID
         terminalState.activeTerminalID = tabID
         terminalState.pendingFocusTabID = tabID
+        recordTabActivation(paneID: paneID, tabID: tabID, contentType: .terminal)
         return true
     }
 
@@ -530,7 +671,9 @@ final class PaneManager {
     func addTerminalTab(in paneID: PaneID, workingDirectory: URL?) -> TerminalTab? {
         guard let terminalState = terminalStates[paneID] else { return nil }
         activePaneID = paneID
-        return terminalState.addTab(workingDirectory: workingDirectory)
+        let tab = terminalState.addTab(workingDirectory: workingDirectory)
+        recordTabActivation(paneID: paneID, tabID: tab.id, contentType: .terminal)
+        return tab
     }
 
     var terminalPaneIDs: [PaneID] {
@@ -553,10 +696,10 @@ final class PaneManager {
         ) else { return nil }
 
         root = newRoot
-        let state = TerminalPaneState()
-        state.addTab(workingDirectory: workingDirectory)
+        let state = makeTerminalPaneState(for: newID)
         terminalStates[newID] = state
         activePaneID = newID
+        state.addTab(workingDirectory: workingDirectory)
         return newID
     }
 
@@ -568,10 +711,10 @@ final class PaneManager {
         let terminalLeaf = PaneNode.leaf(newID, .terminal)
         root = .split(.vertical, first: root, second: terminalLeaf, ratio: 0.6)
 
-        let state = TerminalPaneState()
-        state.addTab(workingDirectory: workingDirectory)
+        let state = makeTerminalPaneState(for: newID)
         terminalStates[newID] = state
         activePaneID = newID
+        state.addTab(workingDirectory: workingDirectory)
         return newID
     }
 
@@ -613,6 +756,7 @@ final class PaneManager {
         if srcState.terminalTabs.isEmpty {
             removePane(sourceID)
         }
+        recordTabActivation(paneID: targetID, tabID: tabID, contentType: .terminal)
         return true
     }
 
@@ -634,7 +778,7 @@ final class PaneManager {
         ) else { return nil }
 
         root = newRoot
-        let newState = TerminalPaneState()
+        let newState = makeTerminalPaneState(for: newID)
         terminalStates[newID] = newState
 
         newState.terminalTabs.append(tab)
@@ -651,6 +795,7 @@ final class PaneManager {
             removePane(sourceID)
         }
 
+        recordTabActivation(paneID: newID, tabID: tab.id, contentType: .terminal)
         return newID
     }
 
@@ -692,12 +837,13 @@ final class PaneManager {
             root = .split(.horizontal, first: terminalLeaf, second: root, ratio: 0.3)
         }
 
-        let newState = TerminalPaneState()
+        let newState = makeTerminalPaneState(for: newID)
+        terminalStates[newID] = newState
         newState.terminalTabs.append(tab)
         newState.activeTerminalID = tab.id
         newState.pendingFocusTabID = tab.id
-        terminalStates[newID] = newState
         activePaneID = newID
+        recordTabActivation(paneID: newID, tabID: tab.id, contentType: .terminal)
         return true
     }
 
@@ -749,9 +895,9 @@ final class PaneManager {
         for leafID in leafIDs {
             switch node.content(for: leafID) {
             case .editor:
-                newTabManagers[leafID] = makeEditorTabManager()
+                newTabManagers[leafID] = makeEditorTabManager(for: leafID)
             case .terminal:
-                newTerminalStates[leafID] = TerminalPaneState()
+                newTerminalStates[leafID] = makeTerminalPaneState(for: leafID)
             case nil:
                 break
             }
@@ -786,6 +932,9 @@ final class PaneManager {
         }
         tabManager.openTab(url: url)
         activePaneID = paneID
+        if let activeID = tabManager.activeTabID {
+            recordTabActivation(paneID: paneID, tabID: activeID, contentType: .editor)
+        }
     }
 
     /// Splits a pane and opens a file in the new pane.
@@ -1125,10 +1274,50 @@ final class PaneManager {
 
     // MARK: - Private helpers
 
-    private func makeEditorTabManager() -> TabManager {
+    private func makeEditorTabManager(for paneID: PaneID) -> TabManager {
         let tabManager = TabManager()
         configureEditorTabManager?(tabManager)
+        trackEditorActivations(in: tabManager, paneID: paneID)
         return tabManager
+    }
+
+    private func makeTerminalPaneState(for paneID: PaneID) -> TerminalPaneState {
+        let terminalState = TerminalPaneState()
+        trackTerminalActivations(in: terminalState, paneID: paneID)
+        return terminalState
+    }
+
+    private func trackEditorActivations(in tabManager: TabManager, paneID: PaneID) {
+        tabManager.onActiveTabChanged = { [weak self, weak tabManager] tabID in
+            guard let self,
+                  let tabManager,
+                  self.tabManagers[paneID] === tabManager,
+                  !self.isPerformingGlobalTabSwitch,
+                  let tabID else { return }
+            self.recordTabActivation(
+                paneID: paneID,
+                tabID: tabID,
+                contentType: .editor
+            )
+        }
+    }
+
+    private func trackTerminalActivations(
+        in terminalState: TerminalPaneState,
+        paneID: PaneID
+    ) {
+        terminalState.onActiveTabChanged = { [weak self, weak terminalState] tabID in
+            guard let self,
+                  let terminalState,
+                  self.terminalStates[paneID] === terminalState,
+                  !self.isPerformingGlobalTabSwitch,
+                  let tabID else { return }
+            self.recordTabActivation(
+                paneID: paneID,
+                tabID: tabID,
+                contentType: .terminal
+            )
+        }
     }
 
     private func resolvedEditorTabID(tabID: UUID?, url: URL?, in source: TabManager) -> UUID? {
@@ -1166,6 +1355,7 @@ final class PaneManager {
         activePaneID = targetID
         destination.onEditorContextChanged?()
         pruneEmptyEditorLeaves()
+        recordTabActivation(paneID: targetID, tabID: resolvedTabID, contentType: .editor)
         return true
     }
 }
