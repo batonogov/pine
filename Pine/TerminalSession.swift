@@ -1320,6 +1320,7 @@ final class TerminalTab: Identifiable, Hashable {
 
     private let delegate: TerminalTabDelegate
     private let shellSettings: ShellSettings
+    private let agentHandoffSettings: AgentHandoffSettings
     private var processStarted = false
     private var workingDirectory: URL?
 
@@ -1327,10 +1328,15 @@ final class TerminalTab: Identifiable, Hashable {
     /// palette and background when the user switches between light/dark mode.
     private var appearanceObservation: NSKeyValueObservation?
 
-    init(name: String, shellSettings: ShellSettings = .shared) {
+    init(
+        name: String,
+        shellSettings: ShellSettings = .shared,
+        agentHandoffSettings: AgentHandoffSettings = .shared
+    ) {
         self.name = name
         self.stableLabel = name
         self.shellSettings = shellSettings
+        self.agentHandoffSettings = agentHandoffSettings
         self.terminalView = PineTerminalView(frame: TerminalContainerView.defaultTerminalFrame)
         self.delegate = TerminalTabDelegate()
         self.delegate.tab = self
@@ -1407,7 +1413,9 @@ final class TerminalTab: Identifiable, Hashable {
     func buildEnvironment() -> [String: String] {
         Self.normalizedEnvironment(
             from: ProcessInfo.processInfo.environment,
-            workingDirectory: workingDirectory
+            workingDirectory: workingDirectory,
+            readOnlyContextEnabled: agentHandoffSettings
+                .isReadOnlyContextEnabled
         )
     }
 
@@ -1421,7 +1429,8 @@ final class TerminalTab: Identifiable, Hashable {
     /// feature paths that do not apply inside Pine.
     static func normalizedEnvironment(
         from baseEnvironment: [String: String],
-        workingDirectory: URL?
+        workingDirectory: URL?,
+        readOnlyContextEnabled: Bool = false
     ) -> [String: String] {
         var env = baseEnvironment
 
@@ -1432,15 +1441,23 @@ final class TerminalTab: Identifiable, Hashable {
         env["PINE_TERMINAL"] = "1"
         env["TERM"] = "xterm-256color"
         env["COLORTERM"] = "truecolor"
+        // Never inherit a handoff capability or project scope from the
+        // process that launched Pine. This terminal gets only its own scope.
+        env.removeValue(forKey: "PINE_CONTEXT_FILE")
+        env.removeValue(forKey: "PINE_PROJECT_ROOT")
 
         if let wd = workingDirectory {
             env["PINE_PROJECT_ROOT"] = wd.path
-            let hash = ContextFileWriter.hashedFileName(for: wd)
-            let contextsDir = FileManager.default
-                .urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-                .appendingPathComponent(ContextFileWriter.contextsDirName)
-            env["PINE_CONTEXT_FILE"] = contextsDir
-                .appendingPathComponent(hash).path
+            if readOnlyContextEnabled {
+                let hash = ContextFileWriter.hashedFileName(for: wd)
+                let contextsDir = FileManager.default
+                    .urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+                    .appendingPathComponent(ContextFileWriter.contextsDirName)
+                env["PINE_CONTEXT_FILE"] = contextsDir
+                    .appendingPathComponent(hash).path
+            } else {
+                env.removeValue(forKey: "PINE_CONTEXT_FILE")
+            }
         }
 
         return env

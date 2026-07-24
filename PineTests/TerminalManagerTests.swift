@@ -14,6 +14,19 @@ import Testing
 
 @Suite("TerminalManager Tests")
 struct TerminalManagerTests {
+    @MainActor
+    private func makeHandoffSettings(
+        enabled: Bool
+    ) -> AgentHandoffSettings {
+        let name = "TerminalManagerTests-handoff-\(UUID().uuidString)"
+        guard let defaults = UserDefaults(suiteName: name) else {
+            fatalError("Failed to create isolated defaults")
+        }
+        defaults.removePersistentDomain(forName: name)
+        let settings = AgentHandoffSettings(defaults: defaults)
+        settings.setReadOnlyContextEnabled(enabled)
+        return settings
+    }
 
     @Test("Initial state has no paneManager and empty tabs")
     func initialState() {
@@ -886,7 +899,11 @@ struct TerminalManagerTests {
     @Test("normalizedEnvironment sets PINE_CONTEXT_FILE when workingDirectory is provided")
     func normalizedEnvironmentSetsContextFile() {
         let url = URL(fileURLWithPath: "/Users/test/myproject")
-        let env = TerminalTab.normalizedEnvironment(from: [:], workingDirectory: url)
+        let env = TerminalTab.normalizedEnvironment(
+            from: [:],
+            workingDirectory: url,
+            readOnlyContextEnabled: true
+        )
         let contextFile = env["PINE_CONTEXT_FILE"]
         #expect(contextFile != nil)
         #expect(contextFile?.contains("Pine/contexts") == true)
@@ -914,17 +931,52 @@ struct TerminalManagerTests {
 
     @Test("buildEnvironment with workingDirectory sets project root")
     func buildEnvironmentWithWorkingDirectory() {
-        let tab = TerminalTab(name: "test")
+        let tab = TerminalTab(
+            name: "test",
+            agentHandoffSettings: makeHandoffSettings(enabled: false)
+        )
         tab.configure(workingDirectory: URL(fileURLWithPath: "/tmp/project"))
         let env = tab.buildEnvironment()
+        #expect(env["PINE_PROJECT_ROOT"] == "/tmp/project")
+        #expect(env["PINE_CONTEXT_FILE"] == nil)
+    }
+
+    @Test("buildEnvironment exposes context only after explicit opt-in")
+    func buildEnvironmentWithReadOnlyContextEnabled() {
+        let tab = TerminalTab(
+            name: "test",
+            agentHandoffSettings: makeHandoffSettings(enabled: true)
+        )
+        tab.configure(workingDirectory: URL(fileURLWithPath: "/tmp/project"))
+
+        let env = tab.buildEnvironment()
+
         #expect(env["PINE_PROJECT_ROOT"] == "/tmp/project")
         #expect(env["PINE_CONTEXT_FILE"] != nil)
     }
 
     @Test("buildEnvironment without workingDirectory has no project root")
     func buildEnvironmentWithoutWorkingDirectory() {
-        let tab = TerminalTab(name: "test")
+        let tab = TerminalTab(
+            name: "test",
+            agentHandoffSettings: makeHandoffSettings(enabled: true)
+        )
         let env = tab.buildEnvironment()
+        #expect(env["PINE_PROJECT_ROOT"] == nil)
+        #expect(env["PINE_CONTEXT_FILE"] == nil)
+    }
+
+    @Test("normalizedEnvironment strips inherited handoff scope")
+    func normalizedEnvironmentStripsInheritedHandoffScope() {
+        let env = TerminalTab.normalizedEnvironment(
+            from: [
+                "PINE_PROJECT_ROOT": "/other/project",
+                "PINE_CONTEXT_FILE": "/other/context.json",
+            ],
+            workingDirectory: nil,
+            readOnlyContextEnabled: true
+        )
+
         #expect(env["PINE_PROJECT_ROOT"] == nil)
         #expect(env["PINE_CONTEXT_FILE"] == nil)
     }

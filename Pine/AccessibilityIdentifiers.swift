@@ -6,6 +6,11 @@
 //
 
 nonisolated enum AccessibilityID {
+    // MARK: - Settings
+    static let agentHandoffReadOnlyContextToggle =
+        "agentHandoffReadOnlyContextToggle"
+    static let agentHandoffStatus = "agentHandoffStatus"
+
     // MARK: - Welcome window
     static let welcomeOpenFolderButton = "welcomeOpenFolderButton"
     static let welcomeRecentProjectsList = "welcomeRecentProjectsList"

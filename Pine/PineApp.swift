@@ -41,7 +41,10 @@ struct PineApp: App {
         .defaultLaunchBehavior(.presented)
 
         Settings {
-            LSPSettingsView(settings: registry.lspSettings)
+            PineSettingsView(
+                lspSettings: registry.lspSettings,
+                handoffSettings: .shared
+            )
         }
     }
 }

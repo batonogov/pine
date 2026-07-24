@@ -388,7 +388,7 @@ final class ProjectManager {
         workspace.loadDirectory(url: url)
         setupRecovery(projectURL: url)
         agentHistory.updateProjectRoot(url)
-        Task { await contextFileWriter.setProjectRoot(url) }
+        synchronizeAgentHandoff(projectRoot: url)
         lspManager.setWorkspaceRoot(url)
     }
 
@@ -534,8 +534,12 @@ final class ProjectManager {
             fileURL: tab?.url,
             rootURL: rootURL
         )
+        let openFiles = allTabs.compactMap {
+            ContextFileWriter.relativePath(fileURL: $0.url, rootURL: rootURL)
+        }
         Task {
             await contextFileWriter.update(
+                openFiles: openFiles,
                 currentFile: relativePath,
                 cursorLine: tab?.cursorLine,
                 cursorColumn: tab?.cursorColumn
@@ -547,6 +551,22 @@ final class ProjectManager {
     func cleanupEditorContext() {
         Task {
             await contextFileWriter.cleanup()
+        }
+    }
+
+    /// Applies the global opt-in to this project and immediately publishes or
+    /// revokes its bounded read-only snapshot.
+    func synchronizeAgentHandoff(projectRoot: URL? = nil) {
+        let rootURL = projectRoot ?? workspace.rootURL
+        let isEnabled = AgentHandoffSettings.shared.isReadOnlyContextEnabled
+        Task {
+            if let rootURL {
+                await contextFileWriter.setProjectRoot(rootURL)
+            }
+            await contextFileWriter.setReadOnlySharingEnabled(isEnabled)
+            if isEnabled {
+                self.updateEditorContext()
+            }
         }
     }
 

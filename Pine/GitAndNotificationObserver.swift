@@ -148,6 +148,16 @@ struct GitAndNotificationObserver: ViewModifier {
             .onReceive(NotificationCenter.default.publisher(for: .inlineDiffAction)) { notification in
                 handleInlineDiffAction(notification)
             }
+            .onReceive(NotificationCenter.default.publisher(
+                for: .agentHandoffSettingsChanged
+            )) { _ in
+                // Settings notifications are synchronous. Defer observable
+                // reads and the project refresh until the toggle action has
+                // unwound, matching the reentrancy-safe handlers below.
+                DispatchQueue.main.async {
+                    projectManager.synchronizeAgentHandoff()
+                }
+            }
     }
 
     // MARK: - Notification handlers (deferred to break reentrancy, #1051)
