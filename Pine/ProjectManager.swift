@@ -41,7 +41,7 @@ final class ProjectManager {
     /// Language Server Protocol manager — owns per-language server processes
     /// and aggregates diagnostics (#1010, parent #994). Spawned lazily on the
     /// first open of a matching file; shut down on project close / app quit.
-    let lspManager = LSPManager()
+    let lspManager: LSPManager
     @ObservationIgnored
     private(set) lazy var paneManager = PaneManager(existingTabManager: primaryTabManager)
 
@@ -176,7 +176,8 @@ final class ProjectManager {
     // nonisolated access point, and it runs after the last reference is dropped.
     nonisolated(unsafe) private(set) var recoveryManager: RecoveryManager?
 
-    init() {
+    init(lspSettings: LSPSettings = .shared) {
+        self.lspManager = LSPManager(settings: lspSettings)
         workspace.setOnRootNodesChanged { [weak self] nodes in
             guard let self, let rootURL = self.workspace.rootURL else { return }
             self.quickOpenProvider.rebuildIndex(from: nodes, rootURL: rootURL)

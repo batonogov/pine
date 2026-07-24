@@ -89,12 +89,26 @@ nonisolated enum LanguageServerRegistry {
 /// PATH + well-known-location logic as formatters/validators.
 ///
 /// `nonisolated` + `Sendable` so it can be used from background tasks.
-nonisolated final class LanguageServerResolver: Sendable {
+nonisolated protocol LanguageServerResolving: Sendable {
+    func resolve(
+        config: LanguageServerConfig,
+        serverOverride: LanguageServerOverride?
+    ) -> LanguageServerResolution
+}
+
+nonisolated final class LanguageServerResolver:
+    LanguageServerResolving,
+    @unchecked Sendable {
 
     private let resolver: ExternalToolResolver
+    private let fileManager: FileManager
 
-    init(resolver: ExternalToolResolver) {
+    init(
+        resolver: ExternalToolResolver,
+        fileManager: FileManager = .default
+    ) {
         self.resolver = resolver
+        self.fileManager = fileManager
     }
 
     /// Convenience default resolver using the current process PATH.
@@ -111,5 +125,48 @@ nonisolated final class LanguageServerResolver: Sendable {
     /// Returns `true` if the server binary for `config` is installed.
     func isInstalled(_ config: LanguageServerConfig) -> Bool {
         resolvePath(for: config) != nil
+    }
+
+    /// Resolves the effective direct-launch configuration.
+    ///
+    /// A custom executable always has precedence. If it later becomes invalid
+    /// it fails closed instead of silently falling back to a different binary.
+    func resolve(
+        config: LanguageServerConfig,
+        serverOverride: LanguageServerOverride?
+    ) -> LanguageServerResolution {
+        if let serverOverride {
+            do {
+                try LSPSettingsValidator.validate(
+                    serverOverride,
+                    fileManager: fileManager
+                )
+            } catch let error as LSPSettingsValidationError {
+                return .invalidOverride(error)
+            } catch {
+                return .invalidOverride(.pathDoesNotExist)
+            }
+        }
+
+        let arguments = serverOverride?.arguments ?? config.arguments
+
+        if let customPath = serverOverride?.executablePath {
+            return .resolved(
+                LanguageServerLaunchConfiguration(
+                    executablePath: customPath,
+                    arguments: arguments
+                )
+            )
+        }
+
+        guard let path = resolvePath(for: config) else {
+            return .notFound(command: config.command)
+        }
+        return .resolved(
+            LanguageServerLaunchConfiguration(
+                executablePath: path,
+                arguments: arguments
+            )
+        )
     }
 }
