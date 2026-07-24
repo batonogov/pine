@@ -139,22 +139,19 @@ struct LoadContextLifetimeTests {
         )
 
         let urls = [dirA, dirB, dirC]
-        let results = UnsafeMutableBufferPointer<FileNode?>.allocate(capacity: urls.count)
-        results.initialize(repeating: nil)
-        defer { results.deallocate() }
+        let results = ConcurrentFileNodeBuffer(count: urls.count)
 
         DispatchQueue.concurrentPerform(iterations: urls.count) { index in
-            results[index] = FileNode(
+            let node = FileNode(
                 url: urls[index], projectRoot: tempDir, ignoredPaths: []
             )
+            results.store(node, at: index)
         }
 
-        for idx in 0..<urls.count {
-            let node = results[idx]
-            #expect(node != nil)
-            #expect(node?.isDirectory == true)
-            #expect(node?.children?.isEmpty == false)
-        }
+        let nodes = results.compacted()
+        #expect(nodes.count == urls.count)
+        #expect(nodes.allSatisfy { $0.isDirectory })
+        #expect(nodes.allSatisfy { $0.children?.isEmpty == false })
     }
 
     // MARK: - Stale results / generation token correctness

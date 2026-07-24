@@ -8,13 +8,29 @@
 import os
 import SwiftUI
 
-/// A mutable buffer shared across `DispatchQueue.concurrentPerform` iterations
-/// in `WorkspaceManager.loadTopLevelInParallel`. `@unchecked Sendable` documents
-/// that each index is written by exactly one iteration, so indexed writes need
-/// no synchronization. Declared at file scope so it stays nonisolated (the
-/// enclosing `WorkspaceManager` is `@MainActor` under default actor isolation.
-nonisolated struct ConcurrentWriteBuffer<Element>: @unchecked Sendable {
-    let storage: UnsafeMutableBufferPointer<Element>
+/// Thread-safe result storage for parallel top-level `FileNode` construction.
+///
+/// The specialized API keeps mutable storage behind a lock, so callers cannot
+/// access or outlive a raw pointer. Node construction remains parallel; only
+/// the short indexed assignment is serialized.
+nonisolated final class ConcurrentFileNodeBuffer: Sendable {
+    private let nodes: OSAllocatedUnfairLock<[FileNode?]>
+
+    init(count: Int) {
+        nodes = OSAllocatedUnfairLock(initialState: Array(repeating: nil, count: count))
+    }
+
+    func store(_ node: FileNode, at index: Int) {
+        nodes.withLock { values in
+            values[index] = node
+        }
+    }
+
+    func compacted() -> [FileNode] {
+        nodes.withLock { values in
+            values.compactMap { $0 }
+        }
+    }
 }
 
 /// Manages the project file tree, root directory, and git integration.
@@ -38,9 +54,7 @@ final class WorkspaceManager {
     let gitProvider = GitStatusProvider()
     /// Shared progress tracker — set by ProjectManager after init.
     weak var progressTracker: ProgressTracker?
-    /// File-watcher lifecycle is driven on the main actor. The only nonisolated
-    /// access is `deinit`, which asserts main-actor isolation via
-    /// `MainActor.assumeIsolated` before touching the watcher.
+    /// File-watcher lifecycle is driven on the main actor.
     /// `FileSystemWatcher.stop()` is itself thread-safe (uses queue.sync).
     private var fileWatcher: FileSystemWatcher?
 
@@ -129,10 +143,8 @@ final class WorkspaceManager {
         rootNodesChangedDebouncer?.schedule()
     }
 
-    deinit {
-        MainActor.assumeIsolated {
-            fileWatcher?.stop()
-        }
+    isolated deinit {
+        fileWatcher?.stop()
     }
 
     /// Suspends until the current load completes (`isLoading` becomes `false`).
@@ -408,24 +420,17 @@ final class WorkspaceManager {
         let filtered = topContents.filter { !hiddenNames.contains($0.lastPathComponent) }
         guard !filtered.isEmpty else { return [] }
 
-        // Pre-allocate buffer for thread-safe indexed writes.
-        // Each index is written by exactly one iteration — no synchronization needed.
-        // Wrapped in ConcurrentWriteBuffer (@unchecked Sendable) to satisfy the
-        // @Sendable requirement of the concurrentPerform closure.
-        let results = ConcurrentWriteBuffer(
-            storage: UnsafeMutableBufferPointer<FileNode?>.allocate(capacity: filtered.count)
-        )
-        results.storage.initialize(repeating: nil)
-        defer { results.storage.deallocate() }
+        let results = ConcurrentFileNodeBuffer(count: filtered.count)
 
         DispatchQueue.concurrentPerform(iterations: filtered.count) { index in
             let childURL = filtered[index]
-            results.storage[index] = FileNode(
+            let node = FileNode(
                 url: childURL, projectRoot: url, ignoredPaths: ignoredPaths
             )
+            results.store(node, at: index)
         }
 
-        let nodes = (0..<filtered.count).compactMap { results.storage[$0] }
+        let nodes = results.compacted()
 
         return nodes.sorted { lhs, rhs in
             if lhs.isDirectory == rhs.isDirectory {
