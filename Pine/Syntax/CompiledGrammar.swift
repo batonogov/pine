@@ -36,7 +36,7 @@ nonisolated final class CompiledGrammarCache: @unchecked Sendable {
 
     /// Removes compiled rules for a grammar name.
     func removeRules(for grammarName: String) {
-        lock.withLock { compiledRules.removeValue(forKey: grammarName) }
+        lock.withLock { _ = compiledRules.removeValue(forKey: grammarName) }
     }
 }
 

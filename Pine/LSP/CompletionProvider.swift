@@ -368,7 +368,7 @@ nonisolated struct LSPSnippet: Equatable, Sendable {
                 }
 
                 // `$n` — simple tab stop with no placeholder.
-                if let digit = next.wholeNumberValue {
+                if next.wholeNumberValue != nil {
                     let start = output.count
                     // Look ahead for more digits: `$10` is tab stop 10.
                     var j = i + 1
