@@ -133,6 +133,64 @@ final class TabManager {
         }
     }
 
+    // MARK: - Transient preview tabs
+
+    /// Opens a file as a transient preview. If the currently active tab is an
+    /// un-promoted transient preview, it is replaced in place instead of
+    /// stacking a second preview — so a pane holds at most one transient
+    /// preview at a time. If the same file is already open as a permanent
+    /// tab, it is simply activated without creating a preview.
+    ///
+    /// Promotion triggers (defined in ``promoteTransientPreview``) upgrade a
+    /// transient preview to a permanent tab.
+    func openTabAsPreview(url: URL) {
+        // If the file is already open as a permanent tab, just activate it.
+        if let existing = tabs.first(where: { $0.url.standardizedFileURL == url.standardizedFileURL }),
+           !existing.isTransientPreview {
+            activeTabID = existing.id
+            return
+        }
+
+        let decision = TabPersistence.resolveOpen(url: url, existingTabs: tabs, syntaxHighlightingDisabled: nil)
+        switch decision {
+        case .activateExisting(let id):
+            activeTabID = id
+        case .cancel:
+            break
+        case .openNew(var tab):
+            tab.isTransientPreview = true
+            // Replace the active un-promoted transient preview in place.
+            if let activeID = activeTabID,
+               let activeIndex = tabs.firstIndex(where: { $0.id == activeID }),
+               tabs[activeIndex].isTransientPreview {
+                tabs[activeIndex] = tab
+            } else {
+                tabs.append(tab)
+            }
+            activeTabID = tab.id
+        }
+    }
+
+    /// Promotes a transient preview tab to a permanent tab by clearing the
+    /// transient flag. This is the single transition point; every promotion
+    /// trigger funnels through here so the rules are centralized and testable.
+    ///
+    /// Promotion triggers:
+    ///   - **edit**: `updateContent` promotes the active tab.
+    ///   - **pin**: `togglePin` promotes the pinned tab.
+    ///   - **explicit open**: a double-click or menu "Open" promotes the tab.
+    ///   - **move**: `extractTab` promotes the moved tab before transfer.
+    func promoteTransientPreview(tabID: UUID) {
+        guard let index = tabs.firstIndex(where: { $0.id == tabID }) else { return }
+        tabs[index].isTransientPreview = false
+    }
+
+    /// Convenience: promotes the active tab if it is a transient preview.
+    func promoteActiveTransientPreview() {
+        guard let activeID = activeTabID else { return }
+        promoteTransientPreview(tabID: activeID)
+    }
+
     typealias LargeFileAlertResult = TabPersistence.LargeFileAlertResult
 
     // MARK: - Close
@@ -179,6 +237,11 @@ final class TabManager {
 
     func updateContent(_ newContent: String) {
         guard let index = activeTabIndex, tabs[index].kind == .text else { return }
+        // Promotion trigger: edit. Any content change promotes a transient
+        // preview to a permanent tab.
+        if tabs[index].isTransientPreview {
+            tabs[index].isTransientPreview = false
+        }
         tabs[index].content = newContent
         tabs[index].cachedHighlightResult = nil
         tabs[index].recomputeContentCaches()
@@ -320,7 +383,11 @@ final class TabManager {
             cancelAutoSave(for: id)
         }
 
-        let tab = tabs.remove(at: index)
+        // Promotion trigger: move. A transient preview that is dragged or
+        // transferred to another pane is promoted to a permanent tab before
+        // it leaves this manager.
+        var tab = tabs.remove(at: index)
+        tab.isTransientPreview = false
         if activeTabID == id {
             activeTabID = tabs.isEmpty ? nil : tabs[min(index, tabs.count - 1)].id
         }
@@ -458,7 +525,13 @@ final class TabManager {
         return .moved
     }
 
-    func togglePin(id: UUID) { TabPinning.togglePin(id: id, in: &tabs) }
+    func togglePin(id: UUID) {
+        TabPinning.togglePin(id: id, in: &tabs)
+        // Promotion trigger: pin. Pinning a transient preview promotes it.
+        // Called after the `inout` scope of `TabPinning.togglePin` has ended
+        // so no exclusivity conflict arises.
+        promoteTransientPreview(tabID: id)
+    }
 
     func restorePinnedState(pinnedPaths: Set<String>) {
         TabPinning.restorePinnedState(pinnedPaths: pinnedPaths, in: &tabs)
