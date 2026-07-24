@@ -46,7 +46,7 @@ final class InlineRenameAlignmentTests: PineUITestCase {
     private static let maxLeadingDelta: CGFloat = 2.0
 
     private func siblingMinX(_ identifier: String = "fileNode_inside.swift") -> CGFloat {
-        let sibling = app.staticTexts[identifier]
+        let sibling = app.sidebarNodes[identifier]
         XCTAssertTrue(waitForExistence(sibling, timeout: 10), "Sibling row \(identifier) should exist")
         return sibling.frame.minX
     }
@@ -73,7 +73,7 @@ final class InlineRenameAlignmentTests: PineUITestCase {
     private func openContextMenuOnNestedFolder() {
         let sidebar = app.scrollViews["sidebar"]
         XCTAssertTrue(waitForExistence(sidebar, timeout: 10))
-        let anchor = app.staticTexts["fileNode_nested"]
+        let anchor = app.sidebarNodes["fileNode_nested"]
         XCTAssertTrue(waitForExistence(anchor, timeout: 10))
         anchor.rightClick()
     }
@@ -121,11 +121,11 @@ final class InlineRenameAlignmentTests: PineUITestCase {
 
     /// Expands the `nested` folder so its child rows are visible.
     private func expandNestedFolder() {
-        let nestedFolder = app.staticTexts["fileNode_nested"]
+        let nestedFolder = app.sidebarNodes["fileNode_nested"]
         XCTAssertTrue(waitForExistence(nestedFolder, timeout: 10))
         nestedFolder.click()
         app.typeKey(.rightArrow, modifierFlags: [])
-        let child = app.staticTexts["fileNode_inside.swift"]
+        let child = app.sidebarNodes["fileNode_inside.swift"]
         XCTAssertTrue(waitForExistence(child, timeout: 10), "Nested child must be visible")
     }
 
@@ -153,7 +153,7 @@ final class InlineRenameAlignmentTests: PineUITestCase {
 
     func testRenameExistingFileMatchesSiblingIndent() throws {
         launchWithProject(projectURL)
-        let target = app.staticTexts["fileNode_beta.swift"]
+        let target = app.sidebarNodes["fileNode_beta.swift"]
         XCTAssertTrue(waitForExistence(target, timeout: 10))
         target.rightClick()
         clickContextItem("pencil")
@@ -167,7 +167,7 @@ final class InlineRenameAlignmentTests: PineUITestCase {
 
     func testRenameExistingFolderMatchesSiblingIndent() throws {
         launchWithProject(projectURL)
-        let target = app.staticTexts["fileNode_nested"]
+        let target = app.sidebarNodes["fileNode_nested"]
         XCTAssertTrue(waitForExistence(target, timeout: 10))
         target.rightClick()
         clickContextItem("pencil")

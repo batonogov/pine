@@ -47,7 +47,7 @@ final class MinimapTests: PineUITestCase {
         launchWithProject(projectURL)
 
         // Open a file to show the editor
-        let fileRow = app.staticTexts["fileNode_main.swift"]
+        let fileRow = app.sidebarNodes["fileNode_main.swift"]
         guard waitForExistence(fileRow, timeout: 10) else {
             XCTFail("main.swift should appear in the sidebar")
             return
@@ -65,7 +65,7 @@ final class MinimapTests: PineUITestCase {
         launchWithProject(projectURL)
 
         // Open a file
-        let fileRow = app.staticTexts["fileNode_main.swift"]
+        let fileRow = app.sidebarNodes["fileNode_main.swift"]
         guard waitForExistence(fileRow, timeout: 10) else {
             XCTFail("main.swift should appear in the sidebar")
             return

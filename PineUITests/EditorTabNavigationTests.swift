@@ -104,6 +104,59 @@ final class EditorTabNavigationTests: PineUITestCase {
         XCTAssertTrue(editorTab("notes.txt").exists, "notes.txt tab should survive switching")
     }
 
+    // MARK: - Sidebar preview lifecycle
+
+    func testSingleClickPreviewIsReplacedInPlace() throws {
+        launchWithProject(projectURL)
+
+        previewFile("main.swift")
+        XCTAssertEqual(editorTab("main.swift").value as? String, "Preview")
+
+        previewFile("utils.swift")
+
+        XCTAssertTrue(
+            editorTab("main.swift").waitForNonExistence(timeout: 5),
+            "A second sidebar single-click should replace the old transient preview"
+        )
+        XCTAssertTrue(editorTab("utils.swift").exists)
+        XCTAssertEqual(editorTab("utils.swift").value as? String, "Preview")
+    }
+
+    func testDoubleClickPromotesPreviewBeforeNextSingleClick() throws {
+        launchWithProject(projectURL)
+
+        previewFile("main.swift")
+        app.sidebarNodes["fileNode_main.swift"].doubleClick()
+        previewFile("utils.swift")
+
+        XCTAssertTrue(
+            editorTab("main.swift").exists,
+            "Explicit double-click should promote the preview to a durable tab"
+        )
+        XCTAssertTrue(editorTab("utils.swift").exists)
+    }
+
+    func testMoveTabCommandsAreKeyboardAccessibleFromViewMenu() throws {
+        launchWithProject(projectURL)
+        openFile("main.swift")
+        openFile("utils.swift")
+
+        editorTab("main.swift").click()
+        clickMenuBarItem("View")
+
+        let moveRight = app.menuItems["Move Tab Right"]
+        XCTAssertTrue(
+            moveRight.waitForExistence(timeout: 3),
+            "Pointer-free tab movement should be present in the View menu"
+        )
+        XCTAssertTrue(moveRight.isEnabled)
+        moveRight.click()
+
+        XCTAssertTrue(editorTab("main.swift").exists)
+        XCTAssertTrue(editorTab("utils.swift").exists)
+        XCTAssertTrue(editorTab("main.swift").isSelected)
+    }
+
     // MARK: - Close middle tab activates neighbor
 
     func testCloseMiddleTabActivatesNeighbor() throws {

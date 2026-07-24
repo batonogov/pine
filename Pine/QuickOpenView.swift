@@ -154,7 +154,7 @@ struct QuickOpenView: View {
 
     private func openFile(_ url: URL) {
         provider.recordOpened(url: url)
-        projectManager.paneManager.ensureEditorPane().openTab(url: url)
+        projectManager.paneManager.openFileInActiveEditor(url: url)
         isPresented = false
     }
 }

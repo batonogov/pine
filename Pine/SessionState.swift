@@ -8,6 +8,36 @@
 import Foundation
 import os
 
+/// Stable, portable identity for a tab in the global session MRU order.
+///
+/// Runtime tab UUIDs are intentionally not persisted: editor tabs are
+/// recreated from their project-scoped file path and terminal processes are
+/// recreated from their pane-local ordinal on every launch.
+struct SessionTabReference: Codable, Equatable, Sendable {
+    let paneID: String
+    let contentType: PaneContent
+    let editorFilePath: String?
+    let terminalTabIndex: Int?
+
+    static func editor(paneID: PaneID, filePath: String) -> Self {
+        Self(
+            paneID: paneID.id.uuidString,
+            contentType: .editor,
+            editorFilePath: filePath,
+            terminalTabIndex: nil
+        )
+    }
+
+    static func terminal(paneID: PaneID, tabIndex: Int) -> Self {
+        Self(
+            paneID: paneID.id.uuidString,
+            contentType: .terminal,
+            editorFilePath: nil,
+            terminalTabIndex: tabIndex
+        )
+    }
+}
+
 /// Persists and restores per-project editor tab state (open files + active tab).
 /// Sessions are preserved across window close and app quit so that reopening
 /// a project from Welcome or Open Recent restores its last workspace state.
@@ -36,6 +66,14 @@ struct SessionState: Codable, Sendable {
     var paneTabAssignments: [String: [String]]?
     /// The active pane leaf ID (UUID string).
     var activePaneID: String?
+    /// Active editor file in every editor pane, keyed by pane UUID.
+    var paneActiveEditorPaths: [String: String]?
+    /// Ordered pinned group in every editor pane, keyed by pane UUID.
+    var panePinnedPaths: [String: [String]]?
+    /// At most one transient preview file per editor pane, keyed by pane UUID.
+    var paneTransientPreviewPaths: [String: String]?
+    /// Global editor/terminal MRU order expressed through stable references.
+    var globalTabSwitchOrder: [SessionTabReference]?
 
     // MARK: - Terminal state (optional for backwards compatibility)
 
@@ -92,6 +130,10 @@ struct SessionState: Codable, Sendable {
         paneLayoutData: Data? = nil,
         paneTabAssignments: [String: [String]]? = nil,
         activePaneID: String? = nil,
+        paneActiveEditorPaths: [String: String]? = nil,
+        panePinnedPaths: [String: [String]]? = nil,
+        paneTransientPreviewPaths: [String: String]? = nil,
+        globalTabSwitchOrder: [SessionTabReference]? = nil,
         defaults: UserDefaults = .standard
     ) {
         let state = SessionState(
@@ -105,6 +147,10 @@ struct SessionState: Codable, Sendable {
             paneLayoutData: paneLayoutData,
             paneTabAssignments: paneTabAssignments,
             activePaneID: activePaneID,
+            paneActiveEditorPaths: paneActiveEditorPaths,
+            panePinnedPaths: panePinnedPaths,
+            paneTransientPreviewPaths: paneTransientPreviewPaths,
+            globalTabSwitchOrder: globalTabSwitchOrder,
             terminalPaneTabCounts: terminalPaneTabCounts,
             terminalPaneActiveIndices: terminalPaneActiveIndices
         )

@@ -128,6 +128,7 @@ final class SidebarEditState {
 
 struct SidebarView: View {
     @Binding var selectedFile: FileNode?
+    let onFileOpen: (FileNode, SidebarFileOpenDisposition) -> Void
     @Environment(WorkspaceManager.self) private var workspace
     @Environment(ProjectRegistry.self) private var registry
     @Environment(\.openWindow) var openWindow
@@ -175,7 +176,8 @@ struct SidebarView: View {
                             SidebarFileTree(
                                 nodes: workspace.rootNodes,
                                 treeRevision: workspace.rootNodesRevision,
-                                selection: $selectedFile
+                                selection: $selectedFile,
+                                onFileOpen: onFileOpen
                             )
                         }
                         .padding(.vertical, 4)
@@ -188,13 +190,28 @@ struct SidebarView: View {
                         // (e.g. after delete) so the set stays bounded.
                         expansion.prune(toMatch: workspace.rootNodes)
                     }
-                    .onKeyPress(.return) {
+                    .onKeyPress(.return, phases: .down) { press in
+                        if press.modifiers.contains(.command),
+                           let selected = selectedFile,
+                           !selected.isDirectory {
+                            onFileOpen(selected, .permanent)
+                            return .handled
+                        }
                         // Finder-style: Enter on a selected sidebar item starts inline rename.
                         // No-op (and pass through) if nothing is selected or rename is already in progress.
-                        guard editState.renamingURL == nil, let selected = selectedFile else {
+                        guard press.modifiers.isEmpty,
+                              editState.renamingURL == nil,
+                              let selected = selectedFile else {
                             return .ignored
                         }
                         editState.startRename(for: selected)
+                        return .handled
+                    }
+                    .onKeyPress(.space) {
+                        guard let selected = selectedFile, !selected.isDirectory else {
+                            return .ignored
+                        }
+                        onFileOpen(selected, .transientPreview)
                         return .handled
                     }
                     .contextMenu {
@@ -272,6 +289,7 @@ struct SidebarView: View {
 /// updates reliably when text is entered via XCUITest synthetic events into `NSSearchToolbarItem`.
 struct SidebarSearchableContent: View {
     @Binding var selectedNode: FileNode?
+    let onFileOpen: (FileNode, SidebarFileOpenDisposition) -> Void
     @Environment(ProjectManager.self) private var projectManager
 
     var body: some View {
@@ -279,7 +297,10 @@ struct SidebarSearchableContent: View {
             if !projectManager.searchProvider.query.isEmpty {
                 SearchResultsView()
             } else {
-                SidebarView(selectedFile: $selectedNode)
+                SidebarView(
+                    selectedFile: $selectedNode,
+                    onFileOpen: onFileOpen
+                )
             }
         }
         .onKeyPress(.escape) {

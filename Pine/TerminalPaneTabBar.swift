@@ -136,7 +136,59 @@ struct TerminalPaneTabBar: View {
                                         onSelect: {
                                             paneManager.selectTerminalTab(tab.id, in: paneID)
                                         },
-                                        onClose: { closeTerminalTabWithConfirmation(tab) }
+                                        onClose: { closeTerminalTabWithConfirmation(tab) },
+                                        onMoveLeading: paneManager.canMoveTab(
+                                            tab.id,
+                                            from: paneID,
+                                            contentType: .terminal,
+                                            action: .leading
+                                        ) ? {
+                                            paneManager.moveTab(
+                                                tab.id,
+                                                from: paneID,
+                                                contentType: .terminal,
+                                                action: .leading
+                                            )
+                                        } : nil,
+                                        onMoveTrailing: paneManager.canMoveTab(
+                                            tab.id,
+                                            from: paneID,
+                                            contentType: .terminal,
+                                            action: .trailing
+                                        ) ? {
+                                            paneManager.moveTab(
+                                                tab.id,
+                                                from: paneID,
+                                                contentType: .terminal,
+                                                action: .trailing
+                                            )
+                                        } : nil,
+                                        onMoveToPreviousPane: paneManager.canMoveTab(
+                                            tab.id,
+                                            from: paneID,
+                                            contentType: .terminal,
+                                            action: .previousPane
+                                        ) ? {
+                                            paneManager.moveTab(
+                                                tab.id,
+                                                from: paneID,
+                                                contentType: .terminal,
+                                                action: .previousPane
+                                            )
+                                        } : nil,
+                                        onMoveToNextPane: paneManager.canMoveTab(
+                                            tab.id,
+                                            from: paneID,
+                                            contentType: .terminal,
+                                            action: .nextPane
+                                        ) ? {
+                                            paneManager.moveTab(
+                                                tab.id,
+                                                from: paneID,
+                                                contentType: .terminal,
+                                                action: .nextPane
+                                            )
+                                        } : nil
                                     )
                                     .opacity(isDragged ? 0.4 : 1.0)
                                     .scaleEffect(isDragged ? 0.95 : 1.0)

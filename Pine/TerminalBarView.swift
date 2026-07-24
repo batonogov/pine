@@ -61,6 +61,10 @@ struct TerminalNativeTabItem: View {
     let canClose: Bool
     let onSelect: () -> Void
     let onClose: () -> Void
+    var onMoveLeading: (() -> Void)?
+    var onMoveTrailing: (() -> Void)?
+    var onMoveToPreviousPane: (() -> Void)?
+    var onMoveToNextPane: (() -> Void)?
 
     @State private var isHovering = false
     @State private var closeGlyphFrame = CGRect.null
@@ -124,6 +128,36 @@ struct TerminalNativeTabItem: View {
                 }
         )
         .onHover { isHovering = $0 }
+        .contextMenu {
+            Button(Strings.tabMoveLeading) {
+                onMoveLeading?()
+            }
+            .disabled(onMoveLeading == nil)
+
+            Button(Strings.tabMoveTrailing) {
+                onMoveTrailing?()
+            }
+            .disabled(onMoveTrailing == nil)
+
+            Button(Strings.tabMoveToPreviousPane) {
+                onMoveToPreviousPane?()
+            }
+            .disabled(onMoveToPreviousPane == nil)
+
+            Button(Strings.tabMoveToNextPane) {
+                onMoveToNextPane?()
+            }
+            .disabled(onMoveToNextPane == nil)
+
+            Divider()
+
+            Button(role: .destructive) {
+                onClose()
+            } label: {
+                Label(Strings.a11yCloseTabLabel, systemImage: "xmark")
+            }
+            .disabled(!canClose)
+        }
         .onPreferenceChange(TabCloseGlyphFramePreferenceKey.self) { frame in
             closeGlyphFrame = frame
         }
@@ -132,6 +166,26 @@ struct TerminalNativeTabItem: View {
                 Button(tab.name, action: onSelect)
                     .accessibilityIdentifier(AccessibilityID.terminalTab(tab.stableLabel))
                     .accessibilityAddTraits(isActive ? .isSelected : [])
+                    .accessibilityActions {
+                        if let onMoveLeading {
+                            Button(Strings.tabMoveLeading, action: onMoveLeading)
+                        }
+                        if let onMoveTrailing {
+                            Button(Strings.tabMoveTrailing, action: onMoveTrailing)
+                        }
+                        if let onMoveToPreviousPane {
+                            Button(
+                                Strings.tabMoveToPreviousPane,
+                                action: onMoveToPreviousPane
+                            )
+                        }
+                        if let onMoveToNextPane {
+                            Button(
+                                Strings.tabMoveToNextPane,
+                                action: onMoveToNextPane
+                            )
+                        }
+                    }
                 if canClose {
                     Button(Strings.a11yCloseTabLabel, action: onClose)
                         .accessibilityHint(Strings.a11yCloseTabHint)

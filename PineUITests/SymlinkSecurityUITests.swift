@@ -58,14 +58,14 @@ final class SymlinkSecurityUITests: PineUITestCase {
         XCTAssertTrue(waitForExistence(sidebar, timeout: 10))
 
         // The symlink node should appear in the sidebar
-        let externalNode = app.staticTexts["fileNode_external"]
+        let externalNode = app.sidebarNodes["fileNode_external"]
         XCTAssertTrue(
             waitForExistence(externalNode, timeout: 5),
             "Symlink 'external' should be visible in the sidebar"
         )
 
         // The secret file inside the symlink target should NOT appear
-        let secretNode = app.staticTexts["fileNode_secret.txt"]
+        let secretNode = app.sidebarNodes["fileNode_secret.txt"]
         XCTAssertFalse(
             secretNode.waitForExistence(timeout: 2),
             "Files inside outside-root symlink should not be visible"
@@ -81,14 +81,14 @@ final class SymlinkSecurityUITests: PineUITestCase {
         XCTAssertTrue(waitForExistence(sidebar, timeout: 10))
 
         // The cycle symlink should appear
-        let loopNode = app.staticTexts["fileNode_loop"]
+        let loopNode = app.sidebarNodes["fileNode_loop"]
         XCTAssertTrue(
             waitForExistence(loopNode, timeout: 5),
             "Symlink 'loop' should be visible in the sidebar"
         )
 
         // The normal file should also be visible (app didn't hang loading the tree)
-        let normalNode = app.staticTexts["fileNode_normal.swift"]
+        let normalNode = app.sidebarNodes["fileNode_normal.swift"]
         XCTAssertTrue(
             waitForExistence(normalNode, timeout: 5),
             "Normal file should be visible — app did not hang on cycle"
@@ -103,7 +103,7 @@ final class SymlinkSecurityUITests: PineUITestCase {
         let sidebar = app.scrollViews["sidebar"]
         XCTAssertTrue(waitForExistence(sidebar, timeout: 10))
 
-        let externalNode = app.staticTexts["fileNode_external"]
+        let externalNode = app.sidebarNodes["fileNode_external"]
         XCTAssertTrue(waitForExistence(externalNode, timeout: 5))
 
         // Right-click to open context menu and select Delete (use SF Symbol to avoid
@@ -130,7 +130,7 @@ final class SymlinkSecurityUITests: PineUITestCase {
         XCTAssertTrue(waitForExistence(sidebar, timeout: 10))
 
         // The outside symlink is a directory node — its context menu should have New File
-        let externalNode = app.staticTexts["fileNode_external"]
+        let externalNode = app.sidebarNodes["fileNode_external"]
         XCTAssertTrue(waitForExistence(externalNode, timeout: 5))
 
         externalNode.rightClick()
@@ -155,7 +155,7 @@ final class SymlinkSecurityUITests: PineUITestCase {
         let sidebar = app.scrollViews["sidebar"]
         XCTAssertTrue(waitForExistence(sidebar, timeout: 10))
 
-        let externalNode = app.staticTexts["fileNode_external"]
+        let externalNode = app.sidebarNodes["fileNode_external"]
         XCTAssertTrue(waitForExistence(externalNode, timeout: 5))
 
         // Right-click and select Rename
@@ -181,7 +181,7 @@ final class SymlinkSecurityUITests: PineUITestCase {
         let sidebar = app.scrollViews["sidebar"]
         XCTAssertTrue(waitForExistence(sidebar, timeout: 10))
 
-        let externalNode = app.staticTexts["fileNode_external"]
+        let externalNode = app.sidebarNodes["fileNode_external"]
         XCTAssertTrue(waitForExistence(externalNode, timeout: 5))
 
         // Right-click to open context menu and select Duplicate (use SF Symbol to avoid

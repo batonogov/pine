@@ -37,11 +37,11 @@ final class SidebarFolderClickTests: PineUITestCase {
         let sidebar = app.scrollViews["sidebar"]
         XCTAssertTrue(waitForExistence(sidebar, timeout: 10))
 
-        let alphaFolder = app.staticTexts["fileNode_alpha"]
+        let alphaFolder = app.sidebarNodes["fileNode_alpha"]
         XCTAssertTrue(waitForExistence(alphaFolder, timeout: 5))
 
         // Child should NOT be visible before expanding.
-        let alphaChild = app.staticTexts["fileNode_inside-alpha.swift"]
+        let alphaChild = app.sidebarNodes["fileNode_inside-alpha.swift"]
         XCTAssertFalse(alphaChild.exists, "Folder child should be hidden when collapsed")
 
         // Click the folder row (not the chevron) — should expand it.
@@ -65,7 +65,7 @@ final class SidebarFolderClickTests: PineUITestCase {
         let sidebar = app.scrollViews["sidebar"]
         XCTAssertTrue(waitForExistence(sidebar, timeout: 10))
 
-        let emptyFolder = app.staticTexts["fileNode_empty-folder"]
+        let emptyFolder = app.sidebarNodes["fileNode_empty-folder"]
         XCTAssertTrue(waitForExistence(emptyFolder, timeout: 5))
 
         // Click should not crash; folder is empty so no children appear,
@@ -74,7 +74,7 @@ final class SidebarFolderClickTests: PineUITestCase {
         emptyFolder.click()
 
         // App still responsive — sidebar still there and we can find the root file.
-        XCTAssertTrue(app.staticTexts["fileNode_root-file.swift"].exists)
+        XCTAssertTrue(app.sidebarNodes["fileNode_root-file.swift"].exists)
     }
 
     // MARK: - Click on file row opens tab (does not toggle anything)
@@ -85,7 +85,7 @@ final class SidebarFolderClickTests: PineUITestCase {
         let sidebar = app.scrollViews["sidebar"]
         XCTAssertTrue(waitForExistence(sidebar, timeout: 10))
 
-        let rootFile = app.staticTexts["fileNode_root-file.swift"]
+        let rootFile = app.sidebarNodes["fileNode_root-file.swift"]
         XCTAssertTrue(waitForExistence(rootFile, timeout: 5))
         rootFile.click()
 
@@ -104,11 +104,11 @@ final class SidebarFolderClickTests: PineUITestCase {
         let sidebar = app.scrollViews["sidebar"]
         XCTAssertTrue(waitForExistence(sidebar, timeout: 10))
 
-        let betaFolder = app.staticTexts["fileNode_beta"]
+        let betaFolder = app.sidebarNodes["fileNode_beta"]
         XCTAssertTrue(waitForExistence(betaFolder, timeout: 5))
 
         // Folder is collapsed; child should be hidden.
-        let betaChild = app.staticTexts["fileNode_inside-beta.txt"]
+        let betaChild = app.sidebarNodes["fileNode_inside-beta.txt"]
         XCTAssertFalse(betaChild.exists)
 
         betaFolder.rightClick()

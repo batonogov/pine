@@ -32,7 +32,7 @@ final class DuplicateTests: PineUITestCase {
 
     /// Right-clicks a sidebar node and selects "Duplicate" from context menu.
     private func duplicateViaSidebar(_ nodeName: String) {
-        let node = app.staticTexts["fileNode_\(nodeName)"]
+        let node = app.sidebarNodes["fileNode_\(nodeName)"]
         XCTAssertTrue(waitForExistence(node, timeout: 5), "\(nodeName) should appear in sidebar")
         node.rightClick()
 
@@ -69,7 +69,7 @@ final class DuplicateTests: PineUITestCase {
         app.typeKey(.escape, modifierFlags: [])
         sleep(1)
 
-        let copyNode = app.staticTexts["fileNode_hello copy.swift"]
+        let copyNode = app.sidebarNodes["fileNode_hello copy.swift"]
         XCTAssertTrue(
             waitForExistence(copyNode, timeout: 5),
             "hello copy.swift should appear in sidebar after duplicating"
@@ -111,7 +111,7 @@ final class DuplicateTests: PineUITestCase {
         app.typeKey(.escape, modifierFlags: [])
         sleep(1)
 
-        let copyNode = app.staticTexts["fileNode_docs copy"]
+        let copyNode = app.sidebarNodes["fileNode_docs copy"]
         XCTAssertTrue(
             waitForExistence(copyNode, timeout: 5),
             "docs copy should appear in sidebar after duplicating"
@@ -143,7 +143,7 @@ final class DuplicateTests: PineUITestCase {
         app.typeKey(.escape, modifierFlags: [])
         sleep(1)
 
-        let copy2Node = app.staticTexts["fileNode_hello copy 2.swift"]
+        let copy2Node = app.sidebarNodes["fileNode_hello copy 2.swift"]
         XCTAssertTrue(
             waitForExistence(copy2Node, timeout: 5),
             "hello copy 2.swift should appear in sidebar"
@@ -158,7 +158,7 @@ final class DuplicateTests: PineUITestCase {
         let sidebar = app.scrollViews["sidebar"]
         XCTAssertTrue(waitForExistence(sidebar, timeout: 10))
 
-        let fileNode = app.staticTexts["fileNode_hello.swift"]
+        let fileNode = app.sidebarNodes["fileNode_hello.swift"]
         XCTAssertTrue(waitForExistence(fileNode, timeout: 5))
         fileNode.rightClick()
 
@@ -177,7 +177,7 @@ final class DuplicateTests: PineUITestCase {
         let sidebar = app.scrollViews["sidebar"]
         XCTAssertTrue(waitForExistence(sidebar, timeout: 10))
 
-        let dirNode = app.staticTexts["fileNode_docs"]
+        let dirNode = app.sidebarNodes["fileNode_docs"]
         XCTAssertTrue(waitForExistence(dirNode, timeout: 5))
         dirNode.rightClick()
 

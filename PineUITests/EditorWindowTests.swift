@@ -35,7 +35,7 @@ final class EditorWindowTests: PineUITestCase {
         let sidebar = app.scrollViews["sidebar"]
         XCTAssertTrue(waitForExistence(sidebar, timeout: 10), "Sidebar should appear")
 
-        let fileRow = app.staticTexts["fileNode_main.swift"]
+        let fileRow = app.sidebarNodes["fileNode_main.swift"]
         guard waitForExistence(fileRow, timeout: 5) else {
             XCTFail("main.swift should appear in the sidebar")
             return
@@ -46,17 +46,17 @@ final class EditorWindowTests: PineUITestCase {
         XCTAssertTrue(waitForExistence(tab, timeout: 5), "Editor tab for main.swift should appear")
     }
 
-    func testOpenMultipleFilesCreatesTabs() throws {
+    func testDoubleClickingMultipleFilesCreatesTabs() throws {
         launchWithProject(projectURL)
 
         let sidebar = app.scrollViews["sidebar"]
         XCTAssertTrue(waitForExistence(sidebar, timeout: 10))
 
-        let mainFile = app.staticTexts["fileNode_main.swift"]
-        if waitForExistence(mainFile, timeout: 5) { mainFile.click() }
+        let mainFile = app.sidebarNodes["fileNode_main.swift"]
+        if waitForExistence(mainFile, timeout: 5) { mainFile.doubleClick() }
 
-        let utilsFile = app.staticTexts["fileNode_utils.swift"]
-        if waitForExistence(utilsFile, timeout: 5) { utilsFile.click() }
+        let utilsFile = app.sidebarNodes["fileNode_utils.swift"]
+        if waitForExistence(utilsFile, timeout: 5) { utilsFile.doubleClick() }
 
         XCTAssertTrue(waitForExistence(editorTab("main.swift")), "main.swift tab should exist")
         XCTAssertTrue(waitForExistence(editorTab("utils.swift")), "utils.swift tab should exist")
@@ -71,10 +71,10 @@ final class EditorWindowTests: PineUITestCase {
         XCTAssertTrue(waitForExistence(sidebar, timeout: 10))
 
         // Open two files
-        let mainFile = app.staticTexts["fileNode_main.swift"]
-        if waitForExistence(mainFile, timeout: 5) { mainFile.click() }
-        let utilsFile = app.staticTexts["fileNode_utils.swift"]
-        if waitForExistence(utilsFile, timeout: 5) { utilsFile.click() }
+        let mainFile = app.sidebarNodes["fileNode_main.swift"]
+        if waitForExistence(mainFile, timeout: 5) { mainFile.doubleClick() }
+        let utilsFile = app.sidebarNodes["fileNode_utils.swift"]
+        if waitForExistence(utilsFile, timeout: 5) { utilsFile.doubleClick() }
 
         // Both tabs should exist
         let mainTab = editorTab("main.swift")
@@ -103,13 +103,13 @@ final class EditorWindowTests: PineUITestCase {
         XCTAssertTrue(waitForExistence(sidebar, timeout: 10), "Sidebar should appear")
 
         // Open two files
-        let mainFile = app.staticTexts["fileNode_main.swift"]
+        let mainFile = app.sidebarNodes["fileNode_main.swift"]
         XCTAssertTrue(waitForExistence(mainFile, timeout: 5))
-        mainFile.click()
+        mainFile.doubleClick()
 
-        let utilsFile = app.staticTexts["fileNode_utils.swift"]
+        let utilsFile = app.sidebarNodes["fileNode_utils.swift"]
         XCTAssertTrue(waitForExistence(utilsFile, timeout: 5))
-        utilsFile.click()
+        utilsFile.doubleClick()
 
         // Both tabs should exist
         let mainTab = editorTab("main.swift")
@@ -149,7 +149,7 @@ final class EditorWindowTests: PineUITestCase {
         XCTAssertTrue(waitForExistence(sidebar, timeout: 10))
 
         // Open a file
-        let mainFile = app.staticTexts["fileNode_main.swift"]
+        let mainFile = app.sidebarNodes["fileNode_main.swift"]
         XCTAssertTrue(waitForExistence(mainFile, timeout: 5))
         mainFile.click()
 
@@ -178,7 +178,7 @@ final class EditorWindowTests: PineUITestCase {
         XCTAssertTrue(waitForExistence(sidebar, timeout: 10))
 
         // Open a file so Save All menu item is relevant
-        let mainFile = app.staticTexts["fileNode_main.swift"]
+        let mainFile = app.sidebarNodes["fileNode_main.swift"]
         XCTAssertTrue(waitForExistence(mainFile, timeout: 5))
         mainFile.click()
 
@@ -208,7 +208,7 @@ final class EditorWindowTests: PineUITestCase {
         XCTAssertTrue(waitForExistence(sidebar, timeout: 10))
 
         // Open a file to create a session
-        let mainFile = app.staticTexts["fileNode_main.swift"]
+        let mainFile = app.sidebarNodes["fileNode_main.swift"]
         XCTAssertTrue(waitForExistence(mainFile, timeout: 5))
         mainFile.click()
 
@@ -242,7 +242,7 @@ final class EditorWindowTests: PineUITestCase {
         // is visible in the new ScrollView-based sidebar. There is no
         // native selection trait anymore, so selection is implicitly
         // verified by the restored tab.
-        let mainRow = app.staticTexts["fileNode_main.swift"]
+        let mainRow = app.sidebarNodes["fileNode_main.swift"]
         XCTAssertTrue(waitForExistence(mainRow, timeout: 15), "main.swift row should exist in sidebar")
     }
 
@@ -260,7 +260,7 @@ final class EditorWindowTests: PineUITestCase {
         let sidebar = app.scrollViews["sidebar"]
         XCTAssertTrue(waitForExistence(sidebar, timeout: 10), "Sidebar should appear")
 
-        let fileRow = app.staticTexts["fileNode_main.go"]
+        let fileRow = app.sidebarNodes["fileNode_main.go"]
         guard waitForExistence(fileRow, timeout: 5) else {
             XCTFail("main.go should appear in the sidebar")
             return
@@ -299,7 +299,7 @@ final class EditorWindowTests: PineUITestCase {
         launchWithProject(projectURL)
 
         // Open a file so "Reveal File in Finder" is enabled
-        let mainFile = app.staticTexts["fileNode_main.swift"]
+        let mainFile = app.sidebarNodes["fileNode_main.swift"]
         XCTAssertTrue(waitForExistence(mainFile, timeout: 10))
         mainFile.click()
         XCTAssertTrue(waitForExistence(editorTab("main.swift"), timeout: 5))

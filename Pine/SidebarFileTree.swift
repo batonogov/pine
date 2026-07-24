@@ -34,14 +34,25 @@ enum SidebarRowMetrics {
     static let rowVerticalPadding: CGFloat = 6
 }
 
+enum SidebarFileOpenDisposition: Equatable, Sendable {
+    case transientPreview
+    case permanent
+}
+
 struct SidebarFileTree: View {
     let nodes: [FileNode]
     let treeRevision: Int
     @Binding var selection: FileNode?
+    let onFileOpen: (FileNode, SidebarFileOpenDisposition) -> Void
 
     var body: some View {
         ForEach(nodes) { node in
-            SidebarFileTreeNode(node: node, treeRevision: treeRevision, selection: $selection)
+            SidebarFileTreeNode(
+                node: node,
+                treeRevision: treeRevision,
+                selection: $selection,
+                onFileOpen: onFileOpen
+            )
         }
     }
 }
@@ -51,6 +62,7 @@ private struct SidebarFileTreeNode: View {
     let node: FileNode
     let treeRevision: Int
     @Binding var selection: FileNode?
+    let onFileOpen: (FileNode, SidebarFileOpenDisposition) -> Void
     @Environment(SidebarExpansionState.self) private var expansion
     @Environment(SidebarEditState.self) private var editState
     @State private var fontSettings = FontSizeSettings.shared
@@ -84,7 +96,8 @@ private struct SidebarFileTreeNode: View {
                             SidebarFileTreeNode(
                                 node: child,
                                 treeRevision: treeRevision,
-                                selection: $selection
+                                selection: $selection,
+                                onFileOpen: onFileOpen
                             )
                         }
                     }
@@ -137,7 +150,7 @@ private struct SidebarFileTreeNode: View {
         let fontSize = fontSettings.fontSize
         let isSelected = selection?.id == node.id
         let rowHeight = max(SidebarRowMetrics.minRowHeight, fontSize + SidebarRowMetrics.rowVerticalPadding)
-        FileNodeRow(node: node)
+        let rowContent = FileNodeRow(node: node)
             .font(.system(size: fontSize))
             .frame(maxWidth: .infinity, alignment: .leading)
             .frame(height: rowHeight)
@@ -148,11 +161,36 @@ private struct SidebarFileTreeNode: View {
                     .padding(.horizontal, SidebarRowMetrics.selectionHorizontalInset)
             )
             .contentShape(Rectangle())
-            .onTapGesture {
-                handleTap(isFolder: isFolder)
-            }
             .accessibilityAddTraits(isSelected ? .isSelected : [])
             .id(node.id)
+
+        if isFolder {
+            rowContent.onTapGesture {
+                handleFolderTap()
+            }
+        } else {
+            rowContent
+                .onTapGesture(count: 2) {
+                    openFile(.permanent)
+                }
+                .onTapGesture(count: 1) {
+                    openFile(.transientPreview)
+                }
+                // Expose one labeled element with a stable identifier.
+                // The default action deliberately gives file rows an
+                // actionable accessibility role, while the named action
+                // keeps transient preview available to VoiceOver users.
+                .accessibilityElement(children: .combine)
+                .accessibilityLabel(Text(node.name))
+                .accessibilityIdentifier(AccessibilityID.fileNode(node.name))
+                .accessibilityHint(Strings.a11ySidebarFileOpenHint)
+                .accessibilityAction(.default) {
+                    openFile(.permanent)
+                }
+                .accessibilityAction(named: Text(Strings.a11ySidebarOpenPreview)) {
+                    openFile(.transientPreview)
+                }
+        }
     }
 
     private var isRenamingThisNode: Bool {
@@ -167,15 +205,19 @@ private struct SidebarFileTreeNode: View {
     /// because the debounce lives on the @Observable state object it
     /// survives view re-renders triggered by async git status / file
     /// watcher updates that previously reset a row-local `@State`.
-    private func handleTap(isFolder: Bool) {
+    private func handleFolderTap() {
         guard !isRenamingThisNode else { return }
         selection = node
-        if isFolder {
-            if !expansion.isExpanded(node.url) {
-                loadDeferredChildrenIfNeeded()
-            }
-            expansion.toggleDebounced(node.url)
+        if !expansion.isExpanded(node.url) {
+            loadDeferredChildrenIfNeeded()
         }
+        expansion.toggleDebounced(node.url)
+    }
+
+    private func openFile(_ disposition: SidebarFileOpenDisposition) {
+        guard !isRenamingThisNode else { return }
+        selection = node
+        onFileOpen(node, disposition)
     }
 
     private func loadDeferredChildrenIfNeeded() {

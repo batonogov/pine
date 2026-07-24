@@ -286,18 +286,44 @@ final class ProjectManager {
         var paneLayoutData: Data?
         var paneTabAssignments: [String: [String]]?
         var activePaneIDString: String?
+        var paneActiveEditorPaths: [String: String]?
+        var panePinnedPaths: [String: [String]]?
+        var paneTransientPreviewPaths: [String: String]?
+        var globalTabSwitchOrder: [SessionTabReference]?
         var terminalPaneTabCounts: [String: Int]?
         var terminalPaneActiveIndices: [String: Int]?
 
         paneLayoutData = try? JSONEncoder().encode(paneManager.persistableRoot)
         var assignments: [String: [String]] = [:]
+        var activeEditorPaths: [String: String] = [:]
+        var pinnedPathsByPane: [String: [String]] = [:]
+        var transientPreviewPaths: [String: String] = [:]
         for (paneID, tm) in paneManager.tabManagers {
+            let paneKey = paneID.id.uuidString
             let paths = tm.tabs.map(\.url.path).filter { $0.hasPrefix(rootPath) }
             if !paths.isEmpty {
-                assignments[paneID.id.uuidString] = paths
+                assignments[paneKey] = paths
+            }
+            if let activePath = tm.activeTab?.url.path,
+               activePath.hasPrefix(rootPath) {
+                activeEditorPaths[paneKey] = activePath
+            }
+            let panePins = tm.tabs
+                .filter { $0.isPinned && $0.url.path.hasPrefix(rootPath) }
+                .map(\.url.path)
+            if !panePins.isEmpty {
+                pinnedPathsByPane[paneKey] = panePins
+            }
+            if let previewPath = tm.tabs.first(where: {
+                $0.isTransientPreview && $0.url.path.hasPrefix(rootPath)
+            })?.url.path {
+                transientPreviewPaths[paneKey] = previewPath
             }
         }
         paneTabAssignments = assignments.isEmpty ? nil : assignments
+        paneActiveEditorPaths = activeEditorPaths.isEmpty ? nil : activeEditorPaths
+        panePinnedPaths = pinnedPathsByPane.isEmpty ? nil : pinnedPathsByPane
+        paneTransientPreviewPaths = transientPreviewPaths.isEmpty ? nil : transientPreviewPaths
         activePaneIDString = paneManager.activePaneID.id.uuidString
 
         // Terminal pane state
@@ -312,6 +338,23 @@ final class ProjectManager {
         }
         terminalPaneTabCounts = tpCounts.isEmpty ? nil : tpCounts
         terminalPaneActiveIndices = tpActiveIndices.isEmpty ? nil : tpActiveIndices
+        let persistedSwitchOrder: [SessionTabReference] = paneManager
+            .validGlobalTabSwitchOrder().compactMap { identity -> SessionTabReference? in
+            switch identity.contentType {
+            case .editor:
+                guard let path = paneManager.tabManager(for: identity.paneID)?.tabs
+                    .first(where: { $0.id == identity.tabID })?.url.path,
+                      path.hasPrefix(rootPath) else { return nil }
+                return SessionTabReference.editor(paneID: identity.paneID, filePath: path)
+            case .terminal:
+                guard let index = paneManager.terminalState(for: identity.paneID)?
+                    .terminalTabs.firstIndex(where: { $0.id == identity.tabID }) else {
+                    return nil
+                }
+                return SessionTabReference.terminal(paneID: identity.paneID, tabIndex: index)
+            }
+        }
+        globalTabSwitchOrder = persistedSwitchOrder.isEmpty ? nil : persistedSwitchOrder
 
         SessionState.save(
             projectURL: rootURL,
@@ -325,7 +368,11 @@ final class ProjectManager {
             terminalPaneActiveIndices: terminalPaneActiveIndices,
             paneLayoutData: paneLayoutData,
             paneTabAssignments: paneTabAssignments,
-            activePaneID: activePaneIDString
+            activePaneID: activePaneIDString,
+            paneActiveEditorPaths: paneActiveEditorPaths,
+            panePinnedPaths: panePinnedPaths,
+            paneTransientPreviewPaths: paneTransientPreviewPaths,
+            globalTabSwitchOrder: globalTabSwitchOrder
         )
     }
 

@@ -34,7 +34,7 @@ final class DeleteTests: PineUITestCase {
 
     /// Right-clicks a sidebar node and selects "Delete" from context menu.
     private func deleteViaSidebar(_ nodeName: String) {
-        let node = app.staticTexts["fileNode_\(nodeName)"]
+        let node = app.sidebarNodes["fileNode_\(nodeName)"]
         XCTAssertTrue(waitForExistence(node, timeout: 5), "\(nodeName) should appear in sidebar")
         node.rightClick()
 
@@ -52,7 +52,7 @@ final class DeleteTests: PineUITestCase {
         XCTAssertTrue(waitForExistence(sidebar, timeout: 10))
 
         // Verify file exists before deletion
-        let fileNode = app.staticTexts["fileNode_delete-me.swift"]
+        let fileNode = app.sidebarNodes["fileNode_delete-me.swift"]
         XCTAssertTrue(waitForExistence(fileNode, timeout: 5))
 
         deleteViaSidebar("delete-me.swift")
@@ -64,7 +64,7 @@ final class DeleteTests: PineUITestCase {
         )
 
         // Other files should still be there
-        let keepNode = app.staticTexts["fileNode_keep.swift"]
+        let keepNode = app.sidebarNodes["fileNode_keep.swift"]
         XCTAssertTrue(keepNode.exists, "Other files should remain after deletion")
 
         // File should be removed from disk (moved to Trash)
@@ -82,7 +82,7 @@ final class DeleteTests: PineUITestCase {
         let sidebar = app.scrollViews["sidebar"]
         XCTAssertTrue(waitForExistence(sidebar, timeout: 10))
 
-        let folderNode = app.staticTexts["fileNode_subfolder"]
+        let folderNode = app.sidebarNodes["fileNode_subfolder"]
         XCTAssertTrue(waitForExistence(folderNode, timeout: 5))
 
         deleteViaSidebar("subfolder")
@@ -116,7 +116,7 @@ final class DeleteTests: PineUITestCase {
         XCTAssertTrue(waitForExistence(sidebar, timeout: 10))
 
         // Open file in editor
-        let fileNode = app.staticTexts["fileNode_delete-me.swift"]
+        let fileNode = app.sidebarNodes["fileNode_delete-me.swift"]
         XCTAssertTrue(waitForExistence(fileNode, timeout: 5))
         fileNode.click()
 
@@ -145,14 +145,14 @@ final class DeleteTests: PineUITestCase {
         XCTAssertTrue(waitForExistence(sidebar, timeout: 10))
 
         // Expand subfolder by clicking the disclosure triangle, then open nested file
-        let folderNode = app.staticTexts["fileNode_subfolder"]
+        let folderNode = app.sidebarNodes["fileNode_subfolder"]
         XCTAssertTrue(waitForExistence(folderNode, timeout: 5))
 
         // The ScrollView-based sidebar toggles folder expansion on a single tap.
         folderNode.click()
         sleep(1)
 
-        let nestedFile = app.staticTexts["fileNode_nested.txt"]
+        let nestedFile = app.sidebarNodes["fileNode_nested.txt"]
         XCTAssertTrue(waitForExistence(nestedFile, timeout: 5), "nested.txt should appear after expanding subfolder")
         nestedFile.click()
 
@@ -204,7 +204,7 @@ final class DeleteTests: PineUITestCase {
         )
 
         // Surviving file should still be there
-        let survivor = app.staticTexts["fileNode_survivor.swift"]
+        let survivor = app.sidebarNodes["fileNode_survivor.swift"]
         XCTAssertTrue(
             waitForExistence(survivor, timeout: 5),
             "Non-deleted file should remain in sidebar"
@@ -223,7 +223,7 @@ final class DeleteTests: PineUITestCase {
         let sidebar = app.scrollViews["sidebar"]
         XCTAssertTrue(waitForExistence(sidebar, timeout: 10))
 
-        let fileNode = app.staticTexts["fileNode_keep.swift"]
+        let fileNode = app.sidebarNodes["fileNode_keep.swift"]
         XCTAssertTrue(waitForExistence(fileNode, timeout: 5))
         fileNode.rightClick()
 
@@ -243,7 +243,7 @@ final class DeleteTests: PineUITestCase {
         let sidebar = app.scrollViews["sidebar"]
         XCTAssertTrue(waitForExistence(sidebar, timeout: 10))
 
-        let fileNode = app.staticTexts["fileNode_keep.swift"]
+        let fileNode = app.sidebarNodes["fileNode_keep.swift"]
         XCTAssertTrue(waitForExistence(fileNode, timeout: 5))
         fileNode.rightClick()
 
@@ -261,7 +261,7 @@ final class DeleteTests: PineUITestCase {
         let sidebar = app.scrollViews["sidebar"]
         XCTAssertTrue(waitForExistence(sidebar, timeout: 10))
 
-        let dirNode = app.staticTexts["fileNode_subfolder"]
+        let dirNode = app.sidebarNodes["fileNode_subfolder"]
         XCTAssertTrue(waitForExistence(dirNode, timeout: 5))
         dirNode.rightClick()
 

@@ -337,7 +337,7 @@ final class GoToLineTabOverflowExternalChangesUITests: PineUITestCase {
         try "// New file\n".write(to: newFileURL, atomically: true, encoding: .utf8)
 
         // Wait for FileSystemWatcher to pick up the change
-        let newNode = app.staticTexts["fileNode_newfile.swift"]
+        let newNode = app.sidebarNodes["fileNode_newfile.swift"]
         XCTAssertTrue(
             waitForExistence(newNode, timeout: 10),
             "Externally created file should appear in the sidebar"
@@ -353,7 +353,7 @@ final class GoToLineTabOverflowExternalChangesUITests: PineUITestCase {
         XCTAssertTrue(waitForExistence(sidebar, timeout: 10))
 
         // Verify the file is in the sidebar first
-        let styleNode = app.staticTexts["fileNode_style.css"]
+        let styleNode = app.sidebarNodes["fileNode_style.css"]
         XCTAssertTrue(waitForExistence(styleNode, timeout: 5), "style.css should be in sidebar")
 
         // Delete the file externally

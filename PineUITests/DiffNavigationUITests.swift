@@ -75,7 +75,7 @@ final class DiffNavigationUITests: PineUITestCase {
         XCTAssertTrue(waitForExistence(sidebar, timeout: 10))
 
         // Open the file
-        let fileRow = app.staticTexts["fileNode_test.swift"]
+        let fileRow = app.sidebarNodes["fileNode_test.swift"]
         guard waitForExistence(fileRow, timeout: 5) else {
             XCTFail("test.swift should appear in sidebar")
             return
@@ -120,7 +120,7 @@ final class DiffNavigationUITests: PineUITestCase {
         let sidebar = app.scrollViews["sidebar"]
         XCTAssertTrue(waitForExistence(sidebar, timeout: 10))
 
-        let fileRow = app.staticTexts["fileNode_test.swift"]
+        let fileRow = app.sidebarNodes["fileNode_test.swift"]
         guard waitForExistence(fileRow, timeout: 5) else {
             XCTFail("test.swift should appear in sidebar")
             return

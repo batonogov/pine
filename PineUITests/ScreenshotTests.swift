@@ -80,9 +80,9 @@ final class ScreenshotTests: PineUITestCase {
         XCTAssertTrue(waitForExistence(sidebar, timeout: 10), "Sidebar should appear")
 
         // Open the main file
-        let fileRow = app.staticTexts["fileNode_GreetingService.swift"]
+        let fileRow = app.sidebarNodes["fileNode_GreetingService.swift"]
         XCTAssertTrue(waitForExistence(fileRow, timeout: 5), "File should appear in sidebar")
-        fileRow.click()
+        fileRow.doubleClick()
 
         // Wait for syntax highlighting to settle
         Thread.sleep(forTimeInterval: 2.0)
@@ -104,8 +104,8 @@ final class ScreenshotTests: PineUITestCase {
         XCTAssertTrue(waitForExistence(sidebar, timeout: 10), "Sidebar should appear")
 
         // Open a file first
-        let fileRow = app.staticTexts["fileNode_main.swift"]
-        if waitForExistence(fileRow, timeout: 5) { fileRow.click() }
+        let fileRow = app.sidebarNodes["fileNode_main.swift"]
+        if waitForExistence(fileRow, timeout: 5) { fileRow.doubleClick() }
 
         // Show terminal via status bar toggle
         let toggle = app.descendants(matching: .any)["terminalToggleButton"].firstMatch
@@ -178,7 +178,7 @@ final class ScreenshotTests: PineUITestCase {
 
         // Expand folders to show the tree structure
         for folderName in ["Sources", "Models", "Views", "Tests"] {
-            let folderRow = app.staticTexts["fileNode_\(folderName)"]
+            let folderRow = app.sidebarNodes["fileNode_\(folderName)"]
             if waitForExistence(folderRow, timeout: 3) {
                 expandFolder(folderRow, in: sidebar)
             }
@@ -224,9 +224,9 @@ final class ScreenshotTests: PineUITestCase {
         XCTAssertTrue(waitForExistence(sidebar, timeout: 10), "Sidebar should appear")
 
         // Open the file
-        let fileRow = app.staticTexts["fileNode_Calculator.swift"]
+        let fileRow = app.sidebarNodes["fileNode_Calculator.swift"]
         XCTAssertTrue(waitForExistence(fileRow, timeout: 5), "File should appear in sidebar")
-        fileRow.click()
+        fileRow.doubleClick()
 
         // Minimap should be visible by default
         let minimap = app.groups["minimap"]
@@ -273,9 +273,9 @@ final class ScreenshotTests: PineUITestCase {
         let sidebar = app.scrollViews["sidebar"]
         XCTAssertTrue(waitForExistence(sidebar, timeout: 10), "Sidebar should appear")
 
-        let fileRow = app.staticTexts["fileNode_README.md"]
+        let fileRow = app.sidebarNodes["fileNode_README.md"]
         XCTAssertTrue(waitForExistence(fileRow, timeout: 5), "README.md should appear")
-        fileRow.click()
+        fileRow.doubleClick()
 
         // Wait for the editor tab to confirm the file opened.
         let editorTab = app.descendants(matching: .any)["editorTab_README.md"].firstMatch

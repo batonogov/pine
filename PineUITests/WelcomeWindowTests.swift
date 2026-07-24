@@ -250,9 +250,9 @@ final class WelcomeWindowTests: PineUITestCase {
         let sidebar = app.scrollViews["sidebar"]
         XCTAssertTrue(waitForExistence(sidebar, timeout: 10), "Project should open")
 
-        let mainFile = app.staticTexts["fileNode_main.swift"]
+        let mainFile = app.sidebarNodes["fileNode_main.swift"]
         if waitForExistence(mainFile, timeout: 5) { mainFile.click() }
-        let utilsFile = app.staticTexts["fileNode_utils.swift"]
+        let utilsFile = app.sidebarNodes["fileNode_utils.swift"]
         if waitForExistence(utilsFile, timeout: 5) { utilsFile.click() }
 
         app.windows.firstMatch.buttons[XCUIIdentifierCloseWindow].click()
@@ -276,9 +276,9 @@ final class WelcomeWindowTests: PineUITestCase {
             "Project should reopen from Welcome"
         )
 
-        let mainFile2 = app.staticTexts["fileNode_main.swift"]
+        let mainFile2 = app.sidebarNodes["fileNode_main.swift"]
         if waitForExistence(mainFile2, timeout: 5) { mainFile2.click() }
-        let utilsFile2 = app.staticTexts["fileNode_utils.swift"]
+        let utilsFile2 = app.sidebarNodes["fileNode_utils.swift"]
         if waitForExistence(utilsFile2, timeout: 5) { utilsFile2.click() }
 
         app.windows.firstMatch.buttons[XCUIIdentifierCloseWindow].click()
