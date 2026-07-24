@@ -184,8 +184,8 @@ struct AgentHistoryUndoSafetyTests {
         #expect(try readFromRepo(repo, file: "tracked.txt") == unrelatedWork)
     }
 
-    @Test("A structurally complete contract stays locked until checked apply exists")
-    func completeContractCannotMutateWorkingTreeYet() async throws {
+    @Test("A structurally complete contract without an owner-private authority cannot mutate")
+    func completeContractWithoutAuthorityCannotMutate() async throws {
         let repo = try makeTempGitRepo()
         defer { try? FileManager.default.removeItem(at: repo) }
         try writeToRepo(repo, file: "tracked.txt", contents: "committed\n")
@@ -225,7 +225,10 @@ struct AgentHistoryUndoSafetyTests {
 
         #expect(!result.allSucceeded)
         #expect(result.fileResults.isEmpty)
-        #expect(result.blockedReason == .checkedUndoEngineUnavailable)
+        // The checked engine now exists: a structurally-ready entry with no
+        // owner-private authority record is blocked because the authority is
+        // missing, not because the engine is unavailable (#1183).
+        #expect(result.blockedReason == .authorityRecordMissing)
         #expect(store.entries.first?.reverted == false)
         #expect(try readFromRepo(repo, file: "tracked.txt") == unrelatedWork)
     }

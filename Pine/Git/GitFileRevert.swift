@@ -15,7 +15,7 @@
 import Foundation
 
 /// Result of reverting a single file: either restored to HEAD or failed.
-struct GitFileRevertResult: Sendable, Equatable {
+nonisolated struct GitFileRevertResult: Sendable, Equatable {
     let relativePath: String
     let success: Bool
     let errorOutput: String

@@ -210,6 +210,27 @@ enum Strings {
     static let agentHistoryRevertConfirmMessage: LocalizedStringKey = "agentHistory.revertConfirmMessage"
     static let agentHistoryRevertSuccess: LocalizedStringKey = "agentHistory.revertSuccess"
     static let agentHistoryRevertPartialFailure: LocalizedStringKey = "agentHistory.revertPartialFailure"
+    // Checked (verified) undo — #1183.
+    static let agentHistoryCheckedRevertConfirmMessage: LocalizedStringKey = "agentHistory.checkedRevertConfirmMessage"
+    static let agentHistoryCheckedRevertSuccess: LocalizedStringKey = "agentHistory.checkedRevertSuccess"
+    static let agentHistoryRecoveryNoticeTitle: LocalizedStringKey =
+        "agentHistory.recoveryNoticeTitle"
+    static let agentHistoryRecoveryNoticeInstruction: LocalizedStringKey =
+        "agentHistory.recoveryNoticeInstruction"
+    static let agentHistoryRecoveryNoticePrepared: LocalizedStringKey =
+        "agentHistory.recoveryNoticePrepared"
+    static let agentHistoryRecoveryAuthorityConsumed: LocalizedStringKey =
+        "agentHistory.recoveryNoticeAuthorityConsumed"
+    static let agentHistoryRecoveryNoticeFinalized: LocalizedStringKey =
+        "agentHistory.recoveryNoticeFinalized"
+    static let agentHistoryRecoveryNoticeCorrupt: LocalizedStringKey =
+        "agentHistory.recoveryNoticeCorrupt"
+    static func agentHistoryRecoveryBackup(_ path: String) -> String {
+        String(localized: "agentHistory.recoveryBackup \(path)")
+    }
+    static func agentHistoryRetainedRecoveryFile(_ path: String) -> String {
+        String(localized: "agentHistory.retainedRecoveryFile \(path)")
+    }
 
     // MARK: - Menu Commands
 

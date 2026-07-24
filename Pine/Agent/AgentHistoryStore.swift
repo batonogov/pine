@@ -26,23 +26,49 @@
 import Foundation
 
 /// Outcome of a revert operation for a single history entry.
-struct AgentHistoryRevertResult: Sendable, Equatable {
+nonisolated struct AgentHistoryRevertResult: Sendable, Equatable {
     /// Whether every affected file was restored to HEAD.
     let allSucceeded: Bool
-    /// Per-file results (path + success/error), in entry order.
+    /// Per-file results (path + success/error), in entry order. Populated for
+    /// the legacy whole-file refusal path; empty for checked-undo outcomes,
+    /// which are carried in `checkedOutcomes`.
     let fileResults: [GitFileRevertResult]
     /// Safety reason when the entry was rejected before any mutation.
     let blockedReason: AgentHistoryUndoUnavailableReason?
+    /// Per-file outcomes of a checked inverse apply (verified entries).
+    /// Empty unless a verified change set reached the apply step.
+    let checkedOutcomes: [AgentHistoryFileUndoOutcome]
+    /// Owner-private backup retained for manual recovery after an incomplete
+    /// rollback/cleanup. `nil` when no durable recovery artifact remains.
+    let recoveryBackupPath: String?
+    /// Retained workspace files that preserve original inodes against late
+    /// writes through descriptors opened before the checked undo.
+    let recoveryQuarantinePaths: [String]
 
     init(
         allSucceeded: Bool,
         fileResults: [GitFileRevertResult],
-        blockedReason: AgentHistoryUndoUnavailableReason? = nil
+        blockedReason: AgentHistoryUndoUnavailableReason? = nil,
+        checkedOutcomes: [AgentHistoryFileUndoOutcome] = [],
+        recoveryBackupPath: String? = nil,
+        recoveryQuarantinePaths: [String] = []
     ) {
         self.allSucceeded = allSucceeded
         self.fileResults = fileResults
         self.blockedReason = blockedReason
+        self.checkedOutcomes = checkedOutcomes
+        self.recoveryBackupPath = recoveryBackupPath
+        self.recoveryQuarantinePaths = recoveryQuarantinePaths
     }
+}
+
+nonisolated private struct AgentHistoryCaptureRequest: Sendable {
+    let agentTypeIdentifier: String
+    let changes: [AgentHistoryRecordedFileChange]
+    let beforeContents: [String: Data]
+    let provenance: AgentHistoryWriterProvenance
+    let workspace: AgentHistoryWorkspaceIdentity
+    let root: URL
 }
 
 /// Persistent, observable log of finished AI-agent sessions, backed by
@@ -72,13 +98,37 @@ final class AgentHistoryStore {
     /// (see class doc). The store only hands it value-type snapshots.
     private let writer = AgentHistoryLogWriter()
 
+    /// Owner-private store for checked-undo authority manifests and inverse
+    /// payload blobs (#1183). Defaults to real Application Support; tests inject
+    /// a temporary base directory via `init(privateStore:)`.
+    private let privateStore: AgentHistoryPrivateStore
+    /// Runtime authority availability, refreshed off-main. Rendering consults
+    /// this cache and therefore never performs private-store I/O on MainActor.
+    private var checkedUndoAvailabilityByEntryID:
+        [UUID: AgentHistoryUndoAvailability] = [:]
+
+    /// Durable checked-undo transactions that survived cleanup or were
+    /// interrupted. These are display-only notices: discovery never restores
+    /// bytes or grants mutation authority.
+    private(set) var recoveryNotices: [AgentHistoryRecoveryRecord] = []
+    private var recoveryRefreshGeneration = 0
+
     /// Cap on retained entries to bound `.pine/agent-log.json` growth. Older
     /// entries are trimmed first (FIFO) on append.
     private let maxEntries = 500
 
-    init(projectRoot: URL? = nil) {
+    init(
+        projectRoot: URL? = nil,
+        privateStore: AgentHistoryPrivateStore = AgentHistoryPrivateStore()
+    ) {
         self.projectRoot = projectRoot
+        self.privateStore = privateStore
         loadFromDisk()
+        Task {
+            async let availability: Void = refreshCheckedUndoAvailability()
+            async let recovery: Void = refreshRecoveryNotices()
+            _ = await (availability, recovery)
+        }
     }
 
     // MARK: - Project root / loading
@@ -91,7 +141,15 @@ final class AgentHistoryStore {
         projectRoot = root
         entries = []
         loggedSessionIDs = []
+        checkedUndoAvailabilityByEntryID = [:]
+        recoveryNotices = []
+        recoveryRefreshGeneration &+= 1
         loadFromDisk()
+        Task {
+            async let availability: Void = refreshCheckedUndoAvailability()
+            async let recovery: Void = refreshRecoveryNotices()
+            _ = await (availability, recovery)
+        }
     }
 
     /// Loads `.pine/agent-log.json` if present and valid. Tolerates a missing
@@ -187,18 +245,383 @@ final class AgentHistoryStore {
         }
     }
 
+    // MARK: - Checked undo engine integration
+
+    /// The owner-private store backing verified change sets. Exposed read-only
+    /// so capture paths (and tests) can write authority/payload pairs.
+    var checkedUndoPrivateStore: AgentHistoryPrivateStore { privateStore }
+
+    /// Test-only: replaces the in-store entry with a matching id without
+    /// going through `append`. Used to inject tampered projections and
+    /// corrupted payload references for the #1183 safety tests. Not for
+    /// production use.
+    func replaceEntryForTesting(_ entry: AgentHistoryEntry) {
+        if let index = entries.firstIndex(where: { $0.id == entry.id }) {
+            entries[index] = entry
+        }
+    }
+
+    /// Effective undo availability for an entry, consulting the owner-private
+    /// authority. The UI reads this rather than the pure
+    /// `entry.undoAvailability`, because confirming the engine can act requires
+    /// filesystem access the entry does not have.
+    ///
+    /// Returns `.available` only for a verified entry whose change set passes
+    /// the pure preflight AND owns an unconsumed authority record bound to the
+    /// current workspace. The per-file content divergence check still runs at
+    /// `revert` time and may refuse an `.available` entry.
+    func effectiveUndoAvailability(for entry: AgentHistoryEntry) -> AgentHistoryUndoAvailability {
+        switch entry.undoAvailability {
+        case .available:
+            return .available
+        case .unavailable(.checkedUndoEngineUnavailable):
+            return checkedUndoAvailabilityByEntryID[entry.id]
+                ?? .unavailable(.checkedUndoEngineUnavailable)
+        case .unavailable(let reason):
+            return .unavailable(reason)
+        }
+    }
+
+    /// Refreshes owner-private authority state without blocking MainActor.
+    /// Safe to call when presenting Agent History and after tests deliberately
+    /// mutate the injected private store.
+    func refreshCheckedUndoAvailability() async {
+        guard let root = projectRoot else {
+            checkedUndoAvailabilityByEntryID = [:]
+            return
+        }
+        let candidates = entries.compactMap { entry -> (UUID, VerifiedAgentChangeSet)? in
+            guard case .unavailable(.checkedUndoEngineUnavailable) = entry.undoAvailability,
+                  let changeSet = entry.verifiedChangeSet else {
+                return nil
+            }
+            return (entry.id, changeSet)
+        }
+        let privateStore = privateStore
+        let refreshed = await runOnBackground(qos: .utility) {
+            Dictionary(uniqueKeysWithValues: candidates.map { entryID, changeSet in
+                let availability: AgentHistoryUndoAvailability
+                if let manifest = privateStore.loadAuthority(
+                    recordID: changeSet.authority.recordID
+                ) {
+                    if manifest.consumed {
+                        availability = .unavailable(.authorityConsumed)
+                    } else if AgentHistoryContentHash.canonicalRootPath(root)
+                        == manifest.resolvedRootPath,
+                        let identity = AgentHistoryContentHash.rootIdentity(root),
+                        identity.device == manifest.rootDevice,
+                        identity.inode == manifest.rootInode {
+                        availability = .available
+                    } else {
+                        availability = .unavailable(.checkedUndoEngineUnavailable)
+                    }
+                } else {
+                    availability = .unavailable(.authorityRecordMissing)
+                }
+                return (entryID, availability)
+            })
+        }
+        checkedUndoAvailabilityByEntryID = refreshed
+    }
+
+    /// Discovers owner-private recovery directories off-main and publishes
+    /// only records related to this project. Corrupt records have no trusted
+    /// identity, so they stay visible rather than being silently filtered.
+    func refreshRecoveryNotices() async {
+        let generation = recoveryRefreshGeneration
+        guard let root = projectRoot else {
+            recoveryNotices = []
+            return
+        }
+
+        let canonicalRootPath = AgentHistoryContentHash.canonicalRootPath(root)
+        let rootIdentity = AgentHistoryContentHash.rootIdentity(root)
+        let historyEntryIDs = Set(entries.map(\.id))
+        let changeSets = entries.compactMap(\.verifiedChangeSet)
+        let changeSetIDs = Set(changeSets.map(\.id))
+        let authorityRecordIDs = Set(
+            changeSets.map(\.authority.recordID)
+        )
+        let privateStore = privateStore
+        let discovered = await runOnBackground(qos: .utility) {
+            privateStore.discoverRecoveryRecords()
+        }
+
+        guard generation == recoveryRefreshGeneration else { return }
+        recoveryNotices = discovered
+            .filter { record in
+                guard let manifest = record.manifest else {
+                    // There is no trusted metadata to attribute a corrupt
+                    // directory. Keeping it visible is the fail-closed choice.
+                    return true
+                }
+                let matchesRoot = manifest.resolvedRootPath
+                        == canonicalRootPath
+                    && rootIdentity?.device == manifest.rootDevice
+                    && rootIdentity?.inode == manifest.rootInode
+                return matchesRoot
+                    || historyEntryIDs.contains(manifest.historyEntryID)
+                    || changeSetIDs.contains(manifest.changeSetID)
+                    || authorityRecordIDs.contains(manifest.authorityRecordID)
+            }
+            .sorted { first, second in
+                let firstDate = first.manifest?.createdAt ?? .distantFuture
+                let secondDate = second.manifest?.createdAt ?? .distantFuture
+                if firstDate != secondDate {
+                    return firstDate > secondDate
+                }
+                return first.directoryName < second.directoryName
+            }
+    }
+
+    // MARK: - Capture (verified change sets)
+
+    /// Captures a verified change set: writes the owner-private authority
+    /// manifest and inverse payload, then appends a verified entry to the
+    /// project log. This is the entry point a future trusted provenance
+    /// pipeline (and tests) use to make an entry reversible.
+    ///
+    /// `beforeContents` maps each modified/deleted path to its exact pre-write
+    /// bytes; created files omit an entry (their inverse is deletion).
+    func recordVerifiedChangeSet(
+        agentType: AgentType,
+        changes: [AgentHistoryRecordedFileChange],
+        beforeContents: [String: Data],
+        provenance: AgentHistoryWriterProvenance,
+        workspace: AgentHistoryWorkspaceIdentity
+    ) async throws -> AgentHistoryEntry {
+        let sessionID = provenance.sessionID
+        guard let root = projectRoot else {
+            throw AgentHistoryCaptureError.projectRootUnavailable
+        }
+        guard !loggedSessionIDs.contains(sessionID) else {
+            throw AgentHistoryCaptureError.identityCollision
+        }
+        let privateStore = privateStore
+        let agentTypeIdentifier = agentType.stableIdentifier
+        let request = AgentHistoryCaptureRequest(
+            agentTypeIdentifier: agentTypeIdentifier,
+            changes: changes,
+            beforeContents: beforeContents,
+            provenance: provenance,
+            workspace: workspace,
+            root: root
+        )
+        let entry = try await runOnBackground {
+            try Self.captureVerifiedEntry(
+                request: request,
+                privateStore: privateStore
+            )
+        }
+
+        // Another capture for the same identity may have completed while the
+        // background validation was running. Never orphan private authority.
+        guard !loggedSessionIDs.contains(sessionID),
+              !entries.contains(where: { $0.id == entry.id }),
+              !hasPrivateIdentityCollision(entry) else {
+            if let changeSet = entry.verifiedChangeSet {
+                await runOnBackground(qos: .utility) {
+                    privateStore.removeAuthority(recordID: changeSet.authority.recordID)
+                    privateStore.removePayload(blobID: changeSet.inversePayload.blobID)
+                }
+            }
+            throw AgentHistoryCaptureError.identityCollision
+        }
+        append(entry)
+        checkedUndoAvailabilityByEntryID[entry.id] = .available
+        return entry
+    }
+
+    nonisolated private static func captureVerifiedEntry(
+        request: AgentHistoryCaptureRequest,
+        privateStore: AgentHistoryPrivateStore
+    ) throws -> AgentHistoryEntry {
+        let agentTypeIdentifier = request.agentTypeIdentifier
+        let changes = request.changes
+        let beforeContents = request.beforeContents
+        let provenance = request.provenance
+        let workspace = request.workspace
+        let root = request.root
+        let expectedBeforePaths = Set(changes.compactMap { change in
+            switch change.operation {
+            case .modify, .delete: change.relativePath
+            case .create, .rename, .symlink, .unsupported: nil
+            }
+        })
+        guard Set(beforeContents.keys) == expectedBeforePaths else {
+            throw AgentHistoryCaptureError.invalidContract
+        }
+        for change in changes {
+            switch change.operation {
+            case .modify, .delete:
+                guard let before = change.before,
+                      let bytes = beforeContents[change.relativePath],
+                      UInt64(bytes.count) == before.byteCount,
+                      AgentHistoryContentHash.sha256Hex(bytes) == before.contentSHA256 else {
+                    throw AgentHistoryCaptureError.invalidContract
+                }
+            case .create:
+                guard change.before == nil else {
+                    throw AgentHistoryCaptureError.invalidContract
+                }
+            case .rename, .symlink, .unsupported:
+                throw AgentHistoryCaptureError.invalidContract
+            }
+        }
+
+        let currentHead = AgentHistoryContentHash.headOID(in: root)
+        let currentIndex = AgentHistoryContentHash.indexSHA256(in: root)
+        guard currentHead == workspace.headOID,
+              currentIndex == workspace.indexSHA256,
+              let rootIdentity = AgentHistoryContentHash.rootIdentity(root) else {
+            throw AgentHistoryCaptureError.workspaceChanged
+        }
+        let safeWorkspace = try AgentHistorySafeWorkspace(
+            root: root,
+            expectedDevice: rootIdentity.device,
+            expectedInode: rootIdentity.inode
+        )
+        for change in changes {
+            guard try safeWorkspace.matchesCurrentState(change: change) else {
+                throw AgentHistoryCaptureError.currentContentMismatch
+            }
+        }
+
+        let entryID = UUID()
+        let changeSetID = UUID()
+        let recordID = UUID()
+        let blobID = UUID()
+        let capturedAt = Date()
+        let payload = AgentHistoryInversePayload(
+            formatVersion: AgentHistoryInversePayload.currentFormatVersion,
+            entries: changes.map {
+                AgentHistoryInverseFileEntry(
+                    relativePath: $0.relativePath,
+                    operation: $0.operation,
+                    beforeContent: beforeContents[$0.relativePath],
+                    permissions: $0.before?.permissions
+                )
+            }
+        )
+        let encodedPayload = try privateStore.encodePayload(payload)
+        let payloadReference = AgentHistoryInversePayloadReference(
+            storage: .applicationSupport,
+            blobID: blobID,
+            formatVersion: AgentHistoryInversePayloadReference.currentFormatVersion,
+            byteCount: UInt64(encodedPayload.count),
+            sha256: AgentHistoryContentHash.sha256Hex(encodedPayload)
+        )
+        let digestPlaceholder = String(repeating: "0", count: 64)
+        let provisional = VerifiedAgentChangeSet(
+            id: changeSetID,
+            historyEntryID: entryID,
+            schemaVersion: VerifiedAgentChangeSet.currentSchemaVersion,
+            capturedAt: capturedAt,
+            provenance: provenance,
+            workspace: workspace,
+            changes: changes,
+            authority: AgentHistoryPrivateAuthorityReference(
+                storage: .applicationSupport,
+                recordID: recordID,
+                manifestFormatVersion:
+                    AgentHistoryPrivateAuthorityReference.currentManifestFormatVersion,
+                canonicalContractSHA256: digestPlaceholder
+            ),
+            inversePayload: payloadReference
+        )
+        let digest = AgentHistoryCheckedUndoEngine.canonicalProjectionDigest(of: provisional)
+        let changeSet = VerifiedAgentChangeSet(
+            id: provisional.id,
+            historyEntryID: provisional.historyEntryID,
+            schemaVersion: provisional.schemaVersion,
+            capturedAt: provisional.capturedAt,
+            provenance: provisional.provenance,
+            workspace: provisional.workspace,
+            changes: provisional.changes,
+            authority: AgentHistoryPrivateAuthorityReference(
+                storage: .applicationSupport,
+                recordID: recordID,
+                manifestFormatVersion:
+                    AgentHistoryPrivateAuthorityReference.currentManifestFormatVersion,
+                canonicalContractSHA256: digest
+            ),
+            inversePayload: payloadReference
+        )
+        let entry = AgentHistoryEntry(
+            id: entryID,
+            sessionID: provenance.sessionID,
+            agentTypeRaw: agentTypeIdentifier,
+            startedAt: provenance.firstEventSequence > 0
+                ? Date(timeIntervalSince1970: TimeInterval(provenance.firstEventSequence))
+                : capturedAt,
+            endedAt: capturedAt,
+            affectedFiles: changes.map(\.relativePath),
+            attribution: .verified,
+            verifiedChangeSet: changeSet,
+            summary: changes.count == 1 ? "1 file" : "\(changes.count) files"
+        )
+        guard AgentHistoryUndoPreflight.evaluate(entry)
+            == .readyForPrivateAuthorityValidation else {
+            throw AgentHistoryCaptureError.invalidContract
+        }
+
+        let payloadInfo = try privateStore.writePayload(payload, blobID: blobID)
+        guard payloadInfo.sha256 == payloadReference.sha256,
+              payloadInfo.byteCount == payloadReference.byteCount else {
+            privateStore.removePayload(blobID: blobID)
+            throw AgentHistoryCaptureError.invalidContract
+        }
+        let manifest = AgentHistoryAuthorityManifest(
+            recordID: recordID,
+            manifestFormatVersion: AgentHistoryAuthorityManifest.currentManifestFormatVersion,
+            changeSetID: changeSetID,
+            historyEntryID: entryID,
+            sessionID: provenance.sessionID,
+            privateWorkspaceID: workspace.privateWorkspaceID,
+            resolvedRootPath: AgentHistoryContentHash.canonicalRootPath(root),
+            rootDevice: rootIdentity.device,
+            rootInode: rootIdentity.inode,
+            capturedHeadOID: currentHead,
+            capturedIndexSHA256: currentIndex,
+            canonicalContractSHA256: digest,
+            consumed: false,
+            capturedAt: capturedAt
+        )
+        do {
+            try privateStore.writeAuthority(manifest)
+        } catch {
+            privateStore.removePayload(blobID: blobID)
+            throw error
+        }
+        do {
+            guard AgentHistoryContentHash.headOID(in: root) == currentHead,
+                  AgentHistoryContentHash.indexSHA256(in: root) == currentIndex else {
+                throw AgentHistoryCaptureError.workspaceChanged
+            }
+            for change in changes {
+                guard try safeWorkspace.matchesCurrentState(change: change) else {
+                    throw AgentHistoryCaptureError.currentContentMismatch
+                }
+            }
+        } catch {
+            privateStore.removeAuthority(recordID: recordID)
+            privateStore.removePayload(blobID: blobID)
+            throw error
+        }
+        return entry
+    }
+
     // MARK: - Revert
 
-    /// Rejects undo until an entry carries a verified, checked inverse change
-    /// set. The current history format stores paths but no such change set, so
-    /// this method has no working-tree mutation path at all (#1183). The guard
-    /// lives here as well as in the UI so a stale row, direct caller, or future
-    /// presentation bug cannot bypass it.
+    /// Safely reverts an entry. Heuristic/ambiguous entries and verified
+    /// entries without a checked inverse change set are refused before any
+    /// mutation. Verified entries that pass the engine (private authority,
+    /// projection integrity, workspace-state, and per-file divergence checks)
+    /// have only their recorded before-bytes restored, leaving unrelated edits
+    /// byte-for-byte intact. A partial apply is rolled back from a backup.
     ///
     /// - Parameter entry: The entry to revert. Compared by `id` against
     ///   `entries`; passing a stale copy is safe (no-op if not found).
-    /// - Returns: A blocked result for every current entry. `fileResults` is
-    ///   empty because no file operation is attempted.
     func revert(entry: AgentHistoryEntry) async -> AgentHistoryRevertResult {
         guard let index = entries.firstIndex(where: { $0.id == entry.id }) else {
             return AgentHistoryRevertResult(allSucceeded: false, fileResults: [])
@@ -209,21 +632,143 @@ final class AgentHistoryStore {
             return AgentHistoryRevertResult(allSucceeded: false, fileResults: [])
         }
 
-        let reason: AgentHistoryUndoUnavailableReason
         switch entries[index].undoAvailability {
         case .available:
-            // Until the checked apply operation exists, even an accidentally
-            // exposed future state must fail closed instead of falling back to
-            // whole-file git.
-            reason = .checkedUndoEngineUnavailable
-        case .unavailable(let unavailableReason):
-            reason = unavailableReason
+            // Defend in depth: the pure property should never return this.
+            return AgentHistoryRevertResult(
+                allSucceeded: false,
+                fileResults: [],
+                blockedReason: .checkedUndoEngineUnavailable
+            )
+        case .unavailable(.checkedUndoEngineUnavailable):
+            // Structurally ready — attempt the checked engine path.
+            return await runCheckedUndo(at: index)
+        case .unavailable(let reason):
+            return AgentHistoryRevertResult(
+                allSucceeded: false,
+                fileResults: [],
+                blockedReason: reason
+            )
         }
-        return AgentHistoryRevertResult(
-            allSucceeded: false,
-            fileResults: [],
-            blockedReason: reason
-        )
+    }
+
+    /// Runs the checked undo engine for a structurally-ready entry and applies
+    /// the result to the entry/log.
+    private func runCheckedUndo(at index: Int) async -> AgentHistoryRevertResult {
+        let entry = entries[index]
+        guard let changeSet = entry.verifiedChangeSet,
+              let root = projectRoot else {
+            return AgentHistoryRevertResult(
+                allSucceeded: false,
+                fileResults: [],
+                blockedReason: .checkedUndoEngineUnavailable
+            )
+        }
+        let privateStore = privateStore
+        let result = await runOnBackground {
+            do {
+                return try privateStore.withAuthorityLock(
+                    recordID: changeSet.authority.recordID
+                ) {
+                    guard let manifest = privateStore.loadAuthority(
+                        recordID: changeSet.authority.recordID
+                    ) else {
+                        return AgentHistoryRevertResult(
+                            allSucceeded: false,
+                            fileResults: [],
+                            blockedReason: .authorityRecordMissing
+                        )
+                    }
+                    if let blocked = AgentHistoryCheckedUndoEngine.preflight(
+                        entry: entry,
+                        changeSet: changeSet,
+                        currentRoot: root,
+                        manifest: manifest
+                    ) {
+                        return AgentHistoryRevertResult(
+                            allSucceeded: false,
+                            fileResults: [],
+                            blockedReason: Self.mapEngineBlock(blocked)
+                        )
+                    }
+                    guard let payload = privateStore.loadPayload(
+                        blobID: changeSet.inversePayload.blobID,
+                        expectedSHA256: changeSet.inversePayload.sha256,
+                        expectedByteCount: changeSet.inversePayload.byteCount,
+                        expectedFormatVersion: changeSet.inversePayload.formatVersion
+                    ) else {
+                        return AgentHistoryRevertResult(
+                            allSucceeded: false,
+                            fileResults: [],
+                            blockedReason: .inversePayloadMissing
+                        )
+                    }
+                    guard let backup = try? privateStore.createRecoveryBackup(
+                        recordID: changeSet.authority.recordID
+                    ) else {
+                        return AgentHistoryRevertResult(
+                            allSucceeded: false,
+                            fileResults: [],
+                            blockedReason: .checkedUndoEngineUnavailable
+                        )
+                    }
+                    let checked = AgentHistoryCheckedUndoEngine.apply(
+                        changeSet: changeSet,
+                        payload: payload,
+                        context: AgentHistoryCheckedUndoContext(
+                            root: root,
+                            backup: backup,
+                            manifest: manifest,
+                            privateStore: privateStore
+                        )
+                    )
+                    return AgentHistoryRevertResult(
+                        allSucceeded: checked.allSucceeded,
+                        fileResults: [],
+                        blockedReason: checked.blockedReason.map(Self.mapEngineBlock),
+                        checkedOutcomes: checked.outcomes,
+                        recoveryBackupPath: checked.recoveryBackupPath,
+                        recoveryQuarantinePaths:
+                            checked.recoveryQuarantinePaths
+                    )
+                }
+            } catch {
+                return AgentHistoryRevertResult(
+                    allSucceeded: false,
+                    fileResults: [],
+                    blockedReason: .checkedUndoEngineUnavailable
+                )
+            }
+        }
+
+        // The background transaction is single-use under the private lock. Only
+        // its successful caller may update the observable projection.
+        if result.allSucceeded,
+           let currentIndex = entries.firstIndex(where: { $0.id == entry.id }),
+           !entries[currentIndex].reverted {
+            entries[currentIndex].reverted = true
+            checkedUndoAvailabilityByEntryID[entry.id] = .unavailable(.authorityConsumed)
+            persist()
+        } else if let blockedReason = result.blockedReason {
+            checkedUndoAvailabilityByEntryID[entry.id] = .unavailable(blockedReason)
+        }
+        await refreshRecoveryNotices()
+        return result
+    }
+
+    /// Maps an engine block reason to the public UI-level unavailable reason.
+    nonisolated private static func mapEngineBlock(
+        _ reason: AgentHistoryEngineBlockReason
+    ) -> AgentHistoryUndoUnavailableReason {
+        switch reason {
+        case .authorityRecordMissing: .authorityRecordMissing
+        case .authorityConsumed: .authorityConsumed
+        case .workspaceRootMismatch, .workspaceGitStateChanged: .workspaceChanged
+        case .projectionTampered: .invalidVerifiedReversibleChangeSet
+        case .currentContentDiverged: .currentContentDiverged
+        case .inversePayloadMissing: .inversePayloadMissing
+        case .fileSystemError, .applyFailed: .currentContentDiverged
+        }
     }
 
     // MARK: - Persistence
