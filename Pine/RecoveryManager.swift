@@ -250,8 +250,12 @@ final class RecoveryManager {
             withTimeInterval: Self.periodicInterval,
             repeats: true
         ) { [weak self] _ in
-            guard let self, let tabs = self.tabsProvider?() else { return }
-            self.snapshotDirtyTabs(tabs)
+            // Timer.scheduledTimer fires on the main run loop; assert main
+            // actor isolation to cross the @Sendable timer boundary.
+            MainActor.assumeIsolated {
+                guard let self, let tabs = self.tabsProvider?() else { return }
+                self.snapshotDirtyTabs(tabs)
+            }
         }
     }
 

@@ -8,6 +8,15 @@
 import os
 import SwiftUI
 
+/// A mutable buffer shared across `DispatchQueue.concurrentPerform` iterations
+/// in `WorkspaceManager.loadTopLevelInParallel`. `@unchecked Sendable` documents
+/// that each index is written by exactly one iteration, so indexed writes need
+/// no synchronization. Declared at file scope so it stays nonisolated (the
+/// enclosing `WorkspaceManager` is `@MainActor` under default actor isolation.
+nonisolated struct ConcurrentWriteBuffer<Element>: @unchecked Sendable {
+    let storage: UnsafeMutableBufferPointer<Element>
+}
+
 /// Manages the project file tree, root directory, and git integration.
 ///
 /// All public/internal methods and property access must happen on the
@@ -29,9 +38,11 @@ final class WorkspaceManager {
     let gitProvider = GitStatusProvider()
     /// Shared progress tracker — set by ProjectManager after init.
     weak var progressTracker: ProgressTracker?
-    // nonisolated(unsafe) allows deinit to access fileWatcher.
-    // FileSystemWatcher.stop() is thread-safe (uses queue.sync internally).
-    nonisolated(unsafe) private var fileWatcher: FileSystemWatcher?
+    /// File-watcher lifecycle is driven on the main actor. The only nonisolated
+    /// access is `deinit`, which asserts main-actor isolation via
+    /// `MainActor.assumeIsolated` before touching the watcher.
+    /// `FileSystemWatcher.stop()` is itself thread-safe (uses queue.sync).
+    private var fileWatcher: FileSystemWatcher?
 
     /// Incremented on every file-watcher event so ContentView can trigger
     /// external change detection on open tabs.
@@ -119,7 +130,9 @@ final class WorkspaceManager {
     }
 
     deinit {
-        fileWatcher?.stop()
+        MainActor.assumeIsolated {
+            fileWatcher?.stop()
+        }
     }
 
     /// Suspends until the current load completes (`isLoading` becomes `false`).
@@ -395,20 +408,24 @@ final class WorkspaceManager {
         let filtered = topContents.filter { !hiddenNames.contains($0.lastPathComponent) }
         guard !filtered.isEmpty else { return [] }
 
-        // Pre-allocate array for thread-safe indexed writes.
+        // Pre-allocate buffer for thread-safe indexed writes.
         // Each index is written by exactly one iteration — no synchronization needed.
-        let results = UnsafeMutableBufferPointer<FileNode?>.allocate(capacity: filtered.count)
-        results.initialize(repeating: nil)
-        defer { results.deallocate() }
+        // Wrapped in ConcurrentWriteBuffer (@unchecked Sendable) to satisfy the
+        // @Sendable requirement of the concurrentPerform closure.
+        let results = ConcurrentWriteBuffer(
+            storage: UnsafeMutableBufferPointer<FileNode?>.allocate(capacity: filtered.count)
+        )
+        results.storage.initialize(repeating: nil)
+        defer { results.storage.deallocate() }
 
         DispatchQueue.concurrentPerform(iterations: filtered.count) { index in
             let childURL = filtered[index]
-            results[index] = FileNode(
+            results.storage[index] = FileNode(
                 url: childURL, projectRoot: url, ignoredPaths: ignoredPaths
             )
         }
 
-        let nodes = (0..<filtered.count).compactMap { results[$0] }
+        let nodes = (0..<filtered.count).compactMap { results.storage[$0] }
 
         return nodes.sorted { lhs, rhs in
             if lhs.isDirectory == rhs.isDirectory {
