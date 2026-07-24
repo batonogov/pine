@@ -297,7 +297,7 @@ final class PineTerminalView: LocalProcessTerminalView {
     /// unknown schemes → ignore. The implicit `path:line` path (#949) is
     /// resolved earlier by `TerminalScrollInterceptor.handleFileLinkClick`
     /// on `mouseDown` and does not flow through here.
-    func requestOpenLink(source: TerminalView, link: String, params: [String: String]) {
+    override func requestOpenLink(source: TerminalView, link: String, params: [String: String]) {
         guard let action = TerminalLinkOpener.action(for: link) else { return }
         switch action {
         case .revealInFinder(let url):
