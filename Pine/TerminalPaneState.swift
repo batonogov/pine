@@ -18,6 +18,7 @@ final class TerminalPaneState {
             if pendingFocusTabID != activeTerminalID {
                 pendingFocusTabID = nil
             }
+            onActiveTabChanged?(activeTerminalID)
         }
     }
     var pendingFocusTabID: UUID? {
@@ -28,6 +29,7 @@ final class TerminalPaneState {
     /// Unique generation for the active request, preventing a stale AppKit
     /// completion from consuming a later request for the same terminal tab.
     private(set) var pendingFocusRequestID: UUID?
+    var onActiveTabChanged: ((UUID?) -> Void)?
 
     /// Monotonically increasing counter for unique terminal tab names.
     private var nextTabNumber = 1

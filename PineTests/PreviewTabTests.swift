@@ -63,6 +63,22 @@ struct PreviewTabTests {
         #expect(newPreview.url.lastPathComponent == "peek_b.swift")
     }
 
+    @Test("A preview is replaced even after a permanent tab becomes active")
+    func inactivePreviewIsStillReplaced() throws {
+        let tm = makeTabManager(count: 1)
+        let permanentID = tm.tabs[0].id
+        tm.openTabAsPreview(url: makePreviewURL("a"))
+        let firstPreviewID = try #require(tm.activeTab).id
+
+        tm.activeTabID = permanentID
+        tm.openTabAsPreview(url: makePreviewURL("b"))
+
+        #expect(tm.tabs.count == 2)
+        #expect(tm.tabs.contains(where: { $0.id == firstPreviewID }) == false)
+        #expect(tm.tabs.filter(\.isTransientPreview).count == 1)
+        #expect(try #require(tm.activeTab).url.lastPathComponent == "peek_b.swift")
+    }
+
     @Test("openTabAsPreview appends when active tab is a permanent tab")
     func previewAppendsAfterPermanent() throws {
         let tm = makeTabManager(count: 2)
@@ -124,6 +140,20 @@ struct PreviewTabTests {
         tm.promoteTransientPreview(tabID: previewID)
         let tab = try #require(tm.tabs.first(where: { $0.id == previewID }))
         #expect(tab.isTransientPreview == false)
+    }
+
+    @Test("Opening a preview normally promotes the existing tab")
+    func normalOpenPromotesPreview() throws {
+        let tm = makeTabManager(count: 1)
+        let previewURL = makePreviewURL("a")
+        tm.openTabAsPreview(url: previewURL)
+        let previewID = try #require(tm.activeTab).id
+
+        tm.openTab(url: previewURL)
+
+        #expect(tm.tabs.count == 2)
+        let promoted = try #require(tm.tabs.first(where: { $0.id == previewID }))
+        #expect(promoted.isTransientPreview == false)
     }
 
     @Test("promoteTransientPreview is a no-op for a permanent tab")

@@ -36,6 +36,7 @@ final class TabManager {
                 pendingFocusTabID = nil
             }
             onEditorContextChanged?()
+            onActiveTabChanged?(activeTabID)
         }
     }
     /// Set when destination content should explicitly become first responder.
@@ -52,6 +53,7 @@ final class TabManager {
     var pendingGoToLine: Int?
     var recoveryManager: RecoveryManager?
     var onEditorContextChanged: (() -> Void)?
+    var onActiveTabChanged: ((UUID?) -> Void)?
     var editorSettings: EditorSettings = .shared
     var fileFormatters: FileFormatterRegistry = .default
 
@@ -127,7 +129,11 @@ final class TabManager {
 
     private func applyOpenDecision(_ decision: TabPersistence.OpenDecision) {
         switch decision {
-        case .activateExisting(let id): activeTabID = id
+        case .activateExisting(let id):
+            // A normal open is explicit. If the file was previously shown as
+            // a transient preview, opening it normally promotes it in place.
+            promoteTransientPreview(tabID: id)
+            activeTabID = id
         case .openNew(let tab): tabs.append(tab); activeTabID = tab.id
         case .cancel: break
         }
@@ -135,11 +141,11 @@ final class TabManager {
 
     // MARK: - Transient preview tabs
 
-    /// Opens a file as a transient preview. If the currently active tab is an
-    /// un-promoted transient preview, it is replaced in place instead of
-    /// stacking a second preview — so a pane holds at most one transient
-    /// preview at a time. If the same file is already open as a permanent
-    /// tab, it is simply activated without creating a preview.
+    /// Opens a file as a transient preview. If the pane already contains an
+    /// un-promoted transient preview, it is replaced in place even when a
+    /// different permanent tab is currently active. A pane therefore holds
+    /// at most one transient preview at a time. If the same file is already
+    /// open as a permanent tab, it is simply activated without duplication.
     ///
     /// Promotion triggers (defined in ``promoteTransientPreview``) upgrade a
     /// transient preview to a permanent tab.
@@ -159,11 +165,11 @@ final class TabManager {
             break
         case .openNew(var tab):
             tab.isTransientPreview = true
-            // Replace the active un-promoted transient preview in place.
-            if let activeID = activeTabID,
-               let activeIndex = tabs.firstIndex(where: { $0.id == activeID }),
-               tabs[activeIndex].isTransientPreview {
-                tabs[activeIndex] = tab
+            // Replacement is pane-scoped, not selection-scoped. A user may
+            // leave the preview, select a permanent tab, then preview another
+            // file; that must still reuse the existing preview slot.
+            if let previewIndex = tabs.firstIndex(where: \.isTransientPreview) {
+                tabs[previewIndex] = tab
             } else {
                 tabs.append(tab)
             }

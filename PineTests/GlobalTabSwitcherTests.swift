@@ -84,6 +84,20 @@ struct GlobalTabSwitcherTests {
         #expect(count == 1)
     }
 
+    @Test("Direct TabManager activations are tracked by their owning pane")
+    func directEditorActivationIsTracked() throws {
+        let pm = PaneManager()
+        let paneID = pm.activePaneID
+        let tabManager = try #require(pm.tabManager(for: paneID))
+        let url = URL(fileURLWithPath: "/tmp/global-mru-direct.swift")
+
+        tabManager.openTab(url: url)
+
+        #expect(pm.globalTabSwitchOrder.first?.paneID == paneID)
+        #expect(pm.globalTabSwitchOrder.first?.tabID == tabManager.activeTabID)
+        #expect(pm.globalTabSwitchOrder.first?.contentType == .editor)
+    }
+
     // MARK: - Separation from per-pane active history
 
     @Test("Global switch order is separate from per-pane active tab")
@@ -218,9 +232,7 @@ struct GlobalTabSwitcherTests {
         let termTabID = try #require(termState.activeTerminalID)
 
         s.manager.selectEditorTab(s.leftTM.tabs[0].id, in: s.leftPane)
-        s.manager.recordTabActivation(
-            paneID: termPane, tabID: termTabID, contentType: .terminal
-        )
+        termState.activeTerminalID = termTabID
 
         let order = s.manager.validGlobalTabSwitchOrder()
         #expect(order.count == 2)
@@ -251,6 +263,28 @@ struct GlobalTabSwitcherTests {
         let pm = PaneManager()
         let result = pm.switchToNextTabGlobally()
         #expect(result == false)
+    }
+
+    @Test("Cycling without a recorded current tab starts at the MRU head")
+    func switchWithoutRecordedCurrentStartsAtHead() throws {
+        let pm = PaneManager()
+        let paneID = pm.activePaneID
+        let tabManager = try #require(pm.tabManager(for: paneID))
+        let first = EditorTab(
+            url: URL(fileURLWithPath: "/tmp/unrecorded-first.swift"),
+            content: "", savedContent: ""
+        )
+        let head = EditorTab(
+            url: URL(fileURLWithPath: "/tmp/unrecorded-head.swift"),
+            content: "", savedContent: ""
+        )
+        tabManager.tabs = [first, head]
+        pm.recordTabActivation(paneID: paneID, tabID: first.id, contentType: .editor)
+        pm.recordTabActivation(paneID: paneID, tabID: head.id, contentType: .editor)
+
+        #expect(tabManager.activeTabID == nil)
+        #expect(pm.switchToNextTabGlobally())
+        #expect(tabManager.activeTabID == head.id)
     }
 
     @Test("switchToNextTabGlobally is deterministic across repeated calls")
