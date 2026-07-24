@@ -166,6 +166,30 @@ enum Strings {
     static let agentActivityTitle: LocalizedStringKey = "agentActivity.title"
     static let agentActivityClose: LocalizedStringKey = "agentActivity.close"
     static let agentActivityEmpty: LocalizedStringKey = "agentActivity.empty"
+    static var agentActivityAttributionInferred: String {
+        String(localized: "agentActivity.attribution.inferred", defaultValue: "Inferred")
+    }
+    static var agentActivityAttributionAmbiguous: String {
+        String(localized: "agentActivity.attribution.ambiguous", defaultValue: "Ambiguous")
+    }
+    static var agentActivityInferredHint: String {
+        String(
+            localized: "agentActivity.attribution.inferredHint",
+            defaultValue: "Inferred from file-system timing; no verified agent event is available"
+        )
+    }
+    static var agentActivityAmbiguousHint: String {
+        String(
+            localized: "agentActivity.attribution.ambiguousHint",
+            defaultValue: "Multiple active sessions could match; no agent is identified as the owner"
+        )
+    }
+    static func agentActivityPossibleSessions(_ count: Int) -> String {
+        String(localized: "agentActivity.possibleSessions \(count)")
+    }
+    static func agentActivityFileChanged(_ name: String) -> String {
+        String(localized: "agentActivity.fileChanged \(name)")
+    }
 
     // MARK: - Agent Attention overlay (#1112)
     static let agentAttentionTitle: LocalizedStringKey = "agentAttention.title"

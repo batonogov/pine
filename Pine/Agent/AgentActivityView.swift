@@ -20,8 +20,8 @@ import SwiftUI
 struct AgentActivityRow: Identifiable, Equatable {
     /// Stable identifier — equal to the underlying `AgentAction.id`.
     let id: UUID
-    /// Which agent performed the action (for the color dot).
-    let agentType: AgentType
+    /// Candidate session association, preserving inferred/ambiguous evidence.
+    let attribution: AgentActionAttribution
     /// Kind of operation (for the row icon).
     let kind: AgentActionKind
     /// Lifecycle status (for the status badge).
@@ -35,12 +35,57 @@ struct AgentActivityRow: Identifiable, Equatable {
 
     init(_ action: AgentAction) {
         self.id = action.id
-        self.agentType = action.agentType
+        self.attribution = action.attribution
         self.kind = action.kind
         self.status = action.status
         self.fileURL = action.fileURL
         self.summary = action.summary
         self.timestamp = action.timestamp
+    }
+}
+
+/// Localized rendering projection for one action's attribution. Keeping this
+/// separate from the SwiftUI hierarchy makes the fail-closed presentation
+/// directly testable without constructing an accessibility tree.
+struct AgentActivityAttributionPresentation: Equatable {
+    let badgeLabel: String?
+    let detail: String
+    let accessibilityHint: String?
+    let markerAgentType: AgentType?
+
+    var isAmbiguous: Bool { markerAgentType == nil && badgeLabel != nil }
+
+    var accessibilityValue: String {
+        guard let badgeLabel else { return detail }
+        return "\(badgeLabel), \(detail)"
+    }
+}
+
+extension AgentActionAttribution {
+    var activityPresentation: AgentActivityAttributionPresentation {
+        switch self {
+        case .session(let candidate):
+            AgentActivityAttributionPresentation(
+                badgeLabel: nil,
+                detail: candidate.agentType.displayName,
+                accessibilityHint: nil,
+                markerAgentType: candidate.agentType
+            )
+        case .inferred(let candidate):
+            AgentActivityAttributionPresentation(
+                badgeLabel: Strings.agentActivityAttributionInferred,
+                detail: candidate.agentType.displayName,
+                accessibilityHint: Strings.agentActivityInferredHint,
+                markerAgentType: candidate.agentType
+            )
+        case .ambiguous(let candidates):
+            AgentActivityAttributionPresentation(
+                badgeLabel: Strings.agentActivityAttributionAmbiguous,
+                detail: Strings.agentActivityPossibleSessions(candidates.count),
+                accessibilityHint: Strings.agentActivityAmbiguousHint,
+                markerAgentType: nil
+            )
+        }
     }
 }
 
@@ -175,12 +220,14 @@ struct AgentActivityRowView: View {
         return formatter
     }()
 
+    private var attribution: AgentActivityAttributionPresentation {
+        row.attribution.activityPresentation
+    }
+
     var body: some View {
         Button(action: onClick) {
             HStack(spacing: 10) {
-                Circle()
-                    .fill(Color(nsColor: row.agentType.color))
-                    .frame(width: 8, height: 8)
+                attributionMarker
 
                 Image(systemName: row.kind.systemImage)
                     .foregroundStyle(.secondary)
@@ -190,7 +237,7 @@ struct AgentActivityRowView: View {
                     Text(verbatim: row.summary)
                         .font(.system(size: 13))
                         .lineLimit(1)
-                    Text(verbatim: "\(row.agentType.displayName) · \(relativeTime)")
+                    Text(verbatim: "\(attribution.detail) · \(relativeTime)")
                         .font(.system(size: 11))
                         .foregroundStyle(.tertiary)
                         .lineLimit(1)
@@ -198,6 +245,12 @@ struct AgentActivityRowView: View {
 
                 Spacer()
 
+                if let badgeLabel = attribution.badgeLabel {
+                    AttributionBadge(
+                        label: badgeLabel,
+                        isAmbiguous: attribution.isAmbiguous
+                    )
+                }
                 StatusBadge(status: row.status)
             }
             .padding(.horizontal, 12)
@@ -207,6 +260,24 @@ struct AgentActivityRowView: View {
         .buttonStyle(.plain)
         .disabled(row.fileURL == nil)
         .accessibilityIdentifier("\(AccessibilityID.agentActivityRow)_\(row.id)")
+        .accessibilityValue(Text(verbatim: attribution.accessibilityValue))
+        .accessibilityHint(Text(verbatim: attribution.accessibilityHint ?? ""))
+    }
+
+    @ViewBuilder
+    private var attributionMarker: some View {
+        if let agentType = attribution.markerAgentType {
+            Circle()
+                .fill(Color(nsColor: agentType.color))
+                .frame(width: 8, height: 8)
+                .frame(width: 12)
+        } else {
+            Image(systemName: "person.2.fill")
+                .font(.system(size: 10))
+                .foregroundStyle(.orange)
+                .frame(width: 12)
+                .accessibilityHidden(true)
+        }
     }
 
     private var relativeTime: String {
@@ -215,6 +286,26 @@ struct AgentActivityRowView: View {
 }
 
 // MARK: - Subviews
+
+/// Evidence pill for heuristic Activity rows. Directly associated rows retain
+/// the existing uncluttered presentation; inferred and ambiguous rows cannot
+/// be mistaken for verified attribution.
+struct AttributionBadge: View {
+    let label: String
+    let isAmbiguous: Bool
+
+    var body: some View {
+        Text(verbatim: label)
+            .font(.system(size: 10))
+            .foregroundStyle(isAmbiguous ? Color.orange : Color.blue)
+            .padding(.horizontal, 6)
+            .padding(.vertical, 2)
+            .background(
+                (isAmbiguous ? Color.orange : Color.blue).opacity(0.12)
+            )
+            .clipShape(Capsule())
+    }
+}
 
 /// Rounded filter chip with a selected state.
 struct FilterChip: View {

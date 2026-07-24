@@ -11,10 +11,11 @@
 //  `maxActions`, and provides a minimal real data source: correlating
 //  `FileSystemWatcher` change signals with active agent sessions.
 //
-//  Precise attribution (parsing terminal output to know exactly which agent
-//  wrote which file) is intentionally out of scope (#1072 Out of scope). The
-//  conservative heuristic here attributes a file change to the single active
-//  agent when unambiguous, and to the most-recently-active session otherwise.
+//  Precise attribution requires explicit structured provenance. The
+//  conservative heuristic here marks a file change as inferred when exactly
+//  one live session could match and preserves every candidate when several
+//  sessions make ownership ambiguous. It never selects one candidate as the
+//  owner of overlapping work.
 //
 
 import Foundation
@@ -49,7 +50,7 @@ final class AgentActivityStore {
     /// dedupe-relevant field and happened within `dedupeWindow`.
     private func isDuplicateOfLast(_ action: AgentAction) -> Bool {
         guard let last = actions.last else { return false }
-        guard last.sessionID == action.sessionID,
+        guard last.attribution == action.attribution,
               last.kind == action.kind,
               last.fileURL == action.fileURL,
               last.summary == action.summary else { return false }
@@ -65,9 +66,13 @@ final class AgentActivityStore {
 
     // MARK: - Queries
 
-    /// Actions belonging to the given session, in chronological order.
+    /// Actions associated with the given session, in chronological order.
+    ///
+    /// Ambiguous actions are returned for every candidate session. Callers
+    /// must inspect `action.attribution` rather than treating this query as
+    /// proof that the requested session owns the action.
     func actions(forSession sessionID: UUID) -> [AgentAction] {
-        actions.filter { $0.sessionID == sessionID }
+        actions.filter { $0.attribution.contains(sessionID: sessionID) }
     }
 
     /// Actions filtered by an optional kind and/or status.
@@ -89,12 +94,11 @@ final class AgentActivityStore {
     /// active agent session.
     ///
     /// Attribution heuristic (deliberately conservative — precise attribution
-    /// requires terminal-output parsing, out of scope for #1072):
+    /// requires explicit structured provenance):
     /// - **No active session** → ignored (return).
-    /// - **Exactly one active session** → attributed to it.
-    /// - **Multiple active sessions** → attributed to the most-recently-active
-    ///   session (by `startedAt`). This is an approximation; the action's
-    ///   summary is suffixed with an ambiguity marker.
+    /// - **Exactly one candidate session** → marked as inferred.
+    /// - **Multiple candidate sessions** → recorded as ambiguous with every
+    ///   candidate, in deterministic order. No owner is selected.
     ///
     /// - Parameters:
     ///   - url: The file URL reported by the file-system watcher.
@@ -103,34 +107,65 @@ final class AgentActivityStore {
     func noteFileSystemChange(at url: URL, activeSessions: [AgentSession]) {
         // attribution-heuristic: only attribute to live (non-.done) sessions.
         let live = activeSessions.filter { $0.state != .done }
-        guard let target = resolveAttribution(in: live) else { return }
+        guard let attribution = resolveAttribution(in: live) else { return }
 
         record(
             AgentAction(
-                sessionID: target.id,
-                agentType: target.agentType,
+                attribution: attribution,
                 kind: .fileWrite,
                 status: .completed,
                 fileURL: url,
-                summary: summary(for: url, ambiguous: live.count > 1)
+                summary: Strings.agentActivityFileChanged(url.lastPathComponent)
             )
         )
     }
 
-    /// Picks the session to attribute a change to, or `nil` when there is no
-    /// active session. With exactly one session attribution is unambiguous;
-    /// with several, the most-recently-started wins.
-    private func resolveAttribution(in sessions: [AgentSession]) -> AgentSession? {
-        guard let first = sessions.first else { return nil }
-        guard sessions.count > 1 else { return first }
-        // attribution-heuristic (ambiguous): most-recently-active by startedAt.
-        return sessions.max(by: { $0.startedAt < $1.startedAt })
+    /// Produces a stable, duplicate-free candidate set. Stable ordering makes
+    /// dedupe independent of detector enumeration order. A malformed snapshot
+    /// that repeats one UUID with conflicting agent types remains ambiguous
+    /// rather than arbitrarily choosing either representation.
+    private func resolveAttribution(
+        in sessions: [AgentSession]
+    ) -> AgentActionAttribution? {
+        let sorted = sessions.sorted { lhs, rhs in
+            let lhsID = lhs.id.uuidString
+            let rhsID = rhs.id.uuidString
+            if lhsID != rhsID { return lhsID < rhsID }
+            return stableAgentTypeKey(lhs.agentType) < stableAgentTypeKey(rhs.agentType)
+        }
+
+        var candidates: [AgentActionCandidate] = []
+        for session in sorted {
+            let candidate = AgentActionCandidate(
+                sessionID: session.id,
+                agentType: session.agentType
+            )
+            if !candidates.contains(candidate) {
+                candidates.append(candidate)
+            }
+        }
+
+        guard let onlyCandidate = candidates.first else { return nil }
+        if candidates.count == 1 {
+            return .inferred(onlyCandidate)
+        }
+        return .ambiguous(candidates: candidates)
     }
 
-    /// One-line summary for a file-write action. The file name keeps the row
-    /// readable; the ambiguity marker flags heuristic attribution.
-    private func summary(for url: URL, ambiguous: Bool) -> String {
-        let name = url.lastPathComponent
-        return ambiguous ? "Wrote \(name) (ambiguous)" : "Wrote \(name)"
+    private func stableAgentTypeKey(_ agentType: AgentType) -> String {
+        switch agentType {
+        case .claudeCode:
+            "claude-code"
+        case .codex:
+            "codex"
+        case .aider:
+            "aider"
+        case .copilot:
+            "copilot"
+        case .pi:
+            "pi"
+        case .generic(let name):
+            "generic:\(name)"
+        }
     }
 }
