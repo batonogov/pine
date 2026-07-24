@@ -138,9 +138,11 @@ struct AgentStatusBarItem: View {
     /// "N agent[s] active" with correct singular/plural form.
     private var countLabel: Text {
         if summaries.count == 1 {
-            Text(verbatim: "1 ") + Text(Strings.statusbarAgentActive)
+            Text("\(Text(verbatim: "1 "))\(Text(Strings.statusbarAgentActive))")
         } else {
-            Text(verbatim: "\(summaries.count) ") + Text(Strings.statusbarAgentsActive)
+            Text(
+                "\(Text(verbatim: "\(summaries.count) "))\(Text(Strings.statusbarAgentsActive))"
+            )
         }
     }
 

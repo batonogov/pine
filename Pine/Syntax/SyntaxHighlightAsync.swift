@@ -29,7 +29,7 @@ nonisolated final class MultilineMatchCache: @unchecked Sendable {
     }
 
     func remove(key: ObjectIdentifier) {
-        lock.withLock { cache.removeValue(forKey: key) }
+        lock.withLock { _ = cache.removeValue(forKey: key) }
     }
 
     func removeAll() {

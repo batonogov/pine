@@ -149,7 +149,7 @@ struct SyntaxHighlightEngineTests {
         #expect(color != keywordColor)
     }
 
-    @Test func applyMatches_doesNotRegisterUndoActions() {
+    @Test func applyAndReset_doNotRegisterUndoActionsAndRestoreRegistration() {
         let text = "func hello() /* comment */"
         let storage = NSTextStorage(string: text)
         let layoutManager = NSLayoutManager()
@@ -182,11 +182,25 @@ struct SyntaxHighlightEngineTests {
         )
 
         #expect(textView.undoManager?.canUndo == false)
+        #expect(textView.undoManager?.isUndoRegistrationEnabled == true)
 
         engine.applyMatches(result, to: storage, font: font)
 
         #expect(textView.undoManager?.canUndo == false,
                 "applyMatches must not register undo actions")
+        #expect(textView.undoManager?.isUndoRegistrationEnabled == true,
+                "applyMatches must restore undo registration")
+
+        engine.resetAttributes(
+            textStorage: storage,
+            range: NSRange(location: 0, length: storage.length),
+            font: font
+        )
+
+        #expect(textView.undoManager?.canUndo == false,
+                "resetAttributes must not register undo actions")
+        #expect(textView.undoManager?.isUndoRegistrationEnabled == true,
+                "resetAttributes must restore undo registration")
     }
 
     // MARK: - resetAttributes

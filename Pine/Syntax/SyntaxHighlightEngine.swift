@@ -54,6 +54,17 @@ struct SyncContext: Sendable {
 /// Thread safety: `computeMatches`/`computeMatchesWithRules` are pure computation
 /// (thread-safe). `applyMatches`/`resetAttributes` MUST be called on the main thread.
 nonisolated final class SyntaxHighlightEngine: @unchecked Sendable {
+    /// Carries AppKit values across the compiler's nonisolated-to-main-actor
+    /// boundary without claiming that the values are generally thread-safe.
+    ///
+    /// The box is created and consumed synchronously by methods whose public
+    /// contract requires the main thread. `MainActor.assumeIsolated` validates
+    /// that contract before either value is accessed.
+    private struct MainActorMutationBox: @unchecked Sendable {
+        let textStorage: NSTextStorage
+        let font: NSFont
+    }
+
     /// Number of context lines around edited region for incremental highlighting.
     let contextLines = 20
 
@@ -339,59 +350,65 @@ nonisolated final class SyntaxHighlightEngine: @unchecked Sendable {
         to textStorage: NSTextStorage,
         font: NSFont
     ) {
-        let currentLength = textStorage.length
-        guard result.repaintRange.location + result.repaintRange.length <= currentLength else {
-            return
+        let box = MainActorMutationBox(textStorage: textStorage, font: font)
+        MainActor.assumeIsolated {
+            let currentLength = box.textStorage.length
+            guard result.repaintRange.location + result.repaintRange.length <= currentLength else {
+                return
+            }
+
+            let undoManager = box.textStorage.layoutManagers.first?.firstTextView?.undoManager
+
+            if undoManager?.isUndoing == true || undoManager?.isRedoing == true {
+                return
+            }
+
+            undoManager?.disableUndoRegistration()
+            defer { undoManager?.enableUndoRegistration() }
+
+            box.textStorage.beginEditing()
+            box.textStorage.addAttributes([
+                .foregroundColor: NSColor.textColor,
+                .font: box.font
+            ], range: result.repaintRange)
+
+            for match in result.matches {
+                guard match.range.location + match.range.length <= currentLength else { continue }
+                guard let color = theme.color(for: match.scope) else { continue }
+                box.textStorage.addAttribute(.foregroundColor, value: color, range: match.range)
+            }
+
+            box.textStorage.endEditing()
         }
-
-        let undoManager = textStorage.layoutManagers.first?.firstTextView?.undoManager
-
-        if undoManager?.isUndoing == true || undoManager?.isRedoing == true {
-            return
-        }
-
-        undoManager?.disableUndoRegistration()
-        defer { undoManager?.enableUndoRegistration() }
-
-        textStorage.beginEditing()
-        textStorage.addAttributes([
-            .foregroundColor: NSColor.textColor,
-            .font: font
-        ], range: result.repaintRange)
-
-        for match in result.matches {
-            guard match.range.location + match.range.length <= currentLength else { continue }
-            guard let color = theme.color(for: match.scope) else { continue }
-            textStorage.addAttribute(.foregroundColor, value: color, range: match.range)
-        }
-
-        textStorage.endEditing()
     }
 
     /// Resets attributes to base style (no grammar). Main thread only.
     func resetAttributes(textStorage: NSTextStorage, range: NSRange, font: NSFont) {
-        let currentLength = textStorage.length
-        guard currentLength > 0 else { return }
-        let safeRange = NSRange(
-            location: min(range.location, currentLength),
-            length: min(range.length, currentLength - min(range.location, currentLength))
-        )
-        guard safeRange.length > 0 else { return }
+        let box = MainActorMutationBox(textStorage: textStorage, font: font)
+        MainActor.assumeIsolated {
+            let currentLength = box.textStorage.length
+            guard currentLength > 0 else { return }
+            let safeRange = NSRange(
+                location: min(range.location, currentLength),
+                length: min(range.length, currentLength - min(range.location, currentLength))
+            )
+            guard safeRange.length > 0 else { return }
 
-        let undoManager = textStorage.layoutManagers.first?.firstTextView?.undoManager
+            let undoManager = box.textStorage.layoutManagers.first?.firstTextView?.undoManager
 
-        if undoManager?.isUndoing == true || undoManager?.isRedoing == true {
-            return
+            if undoManager?.isUndoing == true || undoManager?.isRedoing == true {
+                return
+            }
+
+            undoManager?.disableUndoRegistration()
+            defer { undoManager?.enableUndoRegistration() }
+            box.textStorage.beginEditing()
+            box.textStorage.addAttributes([
+                .foregroundColor: NSColor.textColor,
+                .font: box.font
+            ], range: safeRange)
+            box.textStorage.endEditing()
         }
-
-        undoManager?.disableUndoRegistration()
-        defer { undoManager?.enableUndoRegistration() }
-        textStorage.beginEditing()
-        textStorage.addAttributes([
-            .foregroundColor: NSColor.textColor,
-            .font: font
-        ], range: safeRange)
-        textStorage.endEditing()
     }
 
     // MARK: - Range helpers
