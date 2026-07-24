@@ -17,6 +17,7 @@ nonisolated enum MenuIcons {
     static let smartListContinuation = "list.bullet"
 
     static let quickOpen = "doc.text.magnifyingglass"
+    static let commandPalette = "command"
     static let installCLI = "terminal"
 
     // MARK: - Edit menu

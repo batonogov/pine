@@ -47,6 +47,7 @@ nonisolated enum UserCommand: String, Sendable, CaseIterable {
     case goToLine
     case symbolNavigator
     case quickOpen
+    case commandPalette
     case openFolder
     case showBranchSwitcher
     case toggleWordWrap
@@ -69,6 +70,7 @@ nonisolated enum UserCommand: String, Sendable, CaseIterable {
         case .goToLine: "goToLine"
         case .symbolNavigator: "showSymbolNavigator"
         case .quickOpen: "showQuickOpen"
+        case .commandPalette: "showCommandPalette"
         case .openFolder: "openFolder"
         case .showBranchSwitcher: "showBranchSwitcher"
         case .toggleWordWrap: "toggleWordWrap"
@@ -83,11 +85,7 @@ nonisolated enum UserCommand: String, Sendable, CaseIterable {
     /// Whether this command currently has a production notification observer.
     var isAvailableForUserKeybinding: Bool {
         switch self {
-        case .toggleMinimap, .toggleBlame, .togglePreview,
-             .toggleTerminal, .newTerminalTab:
-            false
-        default:
-            true
+        default: true
         }
     }
 

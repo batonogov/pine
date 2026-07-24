@@ -229,6 +229,33 @@ enum Strings {
     static let menuEditKeybindings: LocalizedStringKey = "menu.editKeybindings"
     static let menuEditTasks: LocalizedStringKey = "menu.editTasks"
     static let menuReloadUserConfiguration: LocalizedStringKey = "menu.reloadUserConfiguration"
+    static let menuCommandPalette: LocalizedStringKey = "menu.commandPalette"
+
+    static func userTaskConfirmationTitle(_ label: String) -> String {
+        String(
+            localized: "userTask.confirmation.title",
+            defaultValue: "Run task “\(label)”?"
+        )
+    }
+
+    static func userTaskConfirmationMessage(_ command: String) -> String {
+        String(
+            localized: "userTask.confirmation.message",
+            defaultValue: "This task will execute the following command:\n\(command)"
+        )
+    }
+
+    static var userTaskRun: String {
+        String(localized: "userTask.run")
+    }
+
+    static var userTaskOutputConflictTitle: String {
+        String(localized: "userTask.outputConflict.title")
+    }
+
+    static var userTaskOutputConflictMessage: String {
+        String(localized: "userTask.outputConflict.message")
+    }
 
     // MARK: - Quick Open
 

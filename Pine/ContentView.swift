@@ -41,6 +41,7 @@ struct ContentView: View {
     @State var showRecoveryDialog = false
     @State var isDragTargeted = false
     @State var isQuickOpenPresented = false
+    @State var isCommandPalettePresented = false
     @State var isSymbolNavigatorPresented = false
     @State var isBranchSwitcherPresented = false
     @State var showGoToLine = false
@@ -132,6 +133,29 @@ struct ContentView: View {
             // exclusivity abort.
             DispatchQueue.main.async {
                 isQuickOpenPresented = true
+            }
+        }
+        .sheet(isPresented: $isCommandPalettePresented) {
+            CommandPaletteView(
+                isPresented: $isCommandPalettePresented,
+                items: CommandPaletteCatalog.makeItems(
+                    tasks: ExtensibilityManager.shared.tasks.tasks,
+                    keybindings: ExtensibilityManager.shared.keybindings,
+                    context: UserCommandInvocationRouter.context(
+                        for: projectManager
+                    )
+                ),
+                onInvoke: invokeCommandPaletteItem
+            )
+        }
+        .onReceive(
+            NotificationCenter.default.publisher(for: .showCommandPalette)
+        ) { _ in
+            // Notification delivery is synchronous. Defer the @State write
+            // to avoid re-entering SwiftUI storage from a menu/keybinding
+            // dispatch call stack (the #1051 exclusivity-abort family).
+            DispatchQueue.main.async {
+                isCommandPalettePresented = true
             }
         }
         .sheet(isPresented: $isSymbolNavigatorPresented) {
@@ -352,6 +376,24 @@ struct ContentView: View {
         guard let notificationObject else { return isKeyWindow }
         guard let targetProject = notificationObject as? ProjectManager else { return false }
         return targetProject === currentProject
+    }
+
+    private func invokeCommandPaletteItem(_ item: CommandPaletteItem) {
+        switch item.id {
+        case .builtIn(let command):
+            UserCommandInvocationRouter.dispatch(
+                command,
+                projectManager: projectManager
+            )
+        case .task(let id):
+            guard let task = ExtensibilityManager.shared.tasks.task(forID: id) else {
+                return
+            }
+            UserTaskInvocationController.invoke(
+                task,
+                projectManager: projectManager
+            )
+        }
     }
 
     // MARK: - Subview builders
