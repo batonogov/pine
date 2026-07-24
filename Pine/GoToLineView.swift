@@ -81,7 +81,7 @@ struct GoToLineView: View {
     /// Posts a VoiceOver announcement so the invalid-input state is audible.
     private func announceAccessibility(message: String) {
         NSAccessibility.post(
-            element: NSApp.mainWindow ?? NSApp,
+            element: NSApp.mainWindow ?? NSApplication.shared,
             notification: .announcementRequested,
             userInfo: [.announcement: message]
         )

@@ -1926,8 +1926,7 @@ extension CodeEditorView {
         private func performRename(
             url: URL, offset: Int, text: String, newName: String
         ) {
-            Task { @MainActor [weak self] in
-                guard let self else { return }
+            Task { @MainActor in
                 let edit = await LSPUIEndpoint.shared.rename(
                     url: url, offset: offset, text: text, newName: newName
                 )

@@ -615,7 +615,11 @@ class TerminalScrollInterceptor: NSView {
                 object: win,
                 queue: .main
             ) { [weak self] _ in
-                self?.handleWindowResignKey()
+                // `queue: .main` guarantees main-thread delivery; assert main
+                // actor isolation to cross the @Sendable observer boundary.
+                MainActor.assumeIsolated {
+                    self?.handleWindowResignKey()
+                }
             }
         }
     }
@@ -1123,7 +1127,9 @@ class TerminalContainerView: NSView {
             object: win,
             queue: .main
         ) { [weak self] _ in
-            self?.refreshActiveTerminalAfterReparent()
+            MainActor.assumeIsolated {
+                self?.refreshActiveTerminalAfterReparent()
+            }
         }
         // Re-render when the window moves to a different screen — the backing
         // scale factor may differ, invalidating the layer's contents (issue #1094).
@@ -1132,7 +1138,9 @@ class TerminalContainerView: NSView {
             object: win,
             queue: .main
         ) { [weak self] _ in
-            self?.refreshActiveTerminalAfterReparent()
+            MainActor.assumeIsolated {
+                self?.refreshActiveTerminalAfterReparent()
+            }
         }
         // Defensive repaint when the window becomes visible again after being
         // fully occluded. macOS suppresses (not purges) drawing for occluded
@@ -1147,9 +1155,11 @@ class TerminalContainerView: NSView {
             object: win,
             queue: .main
         ) { [weak self, weak win] _ in
-            guard let win,
-                  Self.shouldRecoverAfterOcclusionChange(occlusionState: win.occlusionState) else { return }
-            self?.scheduleCoalescedRecovery()
+            MainActor.assumeIsolated {
+                guard let win,
+                      Self.shouldRecoverAfterOcclusionChange(occlusionState: win.occlusionState) else { return }
+                self?.scheduleCoalescedRecovery()
+            }
         }
         // Defensive repaint on app reactivation (Cmd+H hide → reveal, Spaces /
         // Mission Control return). `didBecomeKey` does NOT fire if the window
@@ -1162,7 +1172,9 @@ class TerminalContainerView: NSView {
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            self?.scheduleCoalescedRecovery()
+            MainActor.assumeIsolated {
+                self?.scheduleCoalescedRecovery()
+            }
         }
         // Defensive repaint when the window is restored from the Dock, in case
         // the cached frame is stale after minimization. Low-frequency, so kept
@@ -1172,7 +1184,9 @@ class TerminalContainerView: NSView {
             object: win,
             queue: .main
         ) { [weak self] _ in
-            self?.refreshActiveTerminalAfterReparent()
+            MainActor.assumeIsolated {
+                self?.refreshActiveTerminalAfterReparent()
+            }
         }
         observedWindow = win
         // First repaint after attaching to the window — `displayIfNeeded`

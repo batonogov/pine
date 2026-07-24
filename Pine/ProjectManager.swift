@@ -171,10 +171,8 @@ final class ProjectManager {
     }
 
     let toastManager = ToastManager()
-    // nonisolated(unsafe) allows deinit to call stopPeriodicSnapshots().
-    // RecoveryManager is only mutated on @MainActor; deinit is the only
-    // nonisolated access point, and it runs after the last reference is dropped.
-    nonisolated(unsafe) private(set) var recoveryManager: RecoveryManager?
+    /// Recovery snapshots and their lifecycle are owned by the main actor.
+    private(set) var recoveryManager: RecoveryManager?
 
     init(lspSettings: LSPSettings = .shared) {
         self.lspManager = LSPManager(settings: lspSettings)
@@ -195,13 +193,8 @@ final class ProjectManager {
         terminal.paneManager = paneManager
     }
 
-    deinit {
-        // Safe: ProjectManager is @MainActor, so deinit runs on main thread
-        // when the last reference is dropped from a MainActor context.
-        // recoveryManager is nonisolated(unsafe) to allow this access.
-        MainActor.assumeIsolated {
-            recoveryManager?.stopPeriodicSnapshots()
-        }
+    isolated deinit {
+        recoveryManager?.stopPeriodicSnapshots()
     }
 
     /// Sets up crash recovery for the given project directory.

@@ -590,7 +590,11 @@ struct PineAppMenuCommands: Commands {
             projectRootURL: projectManager.workspace.rootURL,
             fileContent: activeTab?.content
         ) { outcome in
-            Self.presentTaskOutcome(outcome, task: task, projectManager: projectManager)
+            // Completion is invoked on the main thread (per UserTaskRunner.run);
+            // assert main actor isolation to cross the @Sendable boundary.
+            MainActor.assumeIsolated {
+                Self.presentTaskOutcome(outcome, task: task, projectManager: projectManager)
+            }
         }
     }
 

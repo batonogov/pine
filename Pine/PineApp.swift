@@ -695,10 +695,14 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate {
         NotificationCenter.default.addObserver(
             forName: .openFolder, object: nil, queue: .main
         ) { [weak self] _ in
-            guard NSApp.windows.allSatisfy({ !$0.isVisible }) else { return }
-            guard let self else { return }
-            if let url = self.registry.openProjectViaPanel() {
-                self.openProjectWindow?(url)
+            // `queue: .main` guarantees main-thread delivery; assert main
+            // actor isolation to cross the @Sendable observer boundary.
+            MainActor.assumeIsolated {
+                guard NSApp.windows.allSatisfy({ !$0.isVisible }) else { return }
+                guard let self else { return }
+                if let url = self.registry.openProjectViaPanel() {
+                    self.openProjectWindow?(url)
+                }
             }
         }
     }
