@@ -80,6 +80,20 @@ final class LSPUIEndpoint {
         return await handler(url, offset, text, newName)
     }
 
+    // MARK: - Folding (#1008)
+
+    /// Called by the editor coordinator to request LSP fold ranges for a
+    /// document. Returns the raw `LSPFoldingRange` list, or `nil` when LSP
+    /// is disabled, the file has no server, or the request fails.
+    var foldRangesHandler: ((URL, String) async -> [LSPFoldingRange]?)?
+
+    /// Convenience wrapper that returns `nil` (defer to bracket fallback)
+    /// when no handler is installed.
+    func foldRanges(url: URL, text: String) async -> [LSPFoldingRange]? {
+        guard let handler = foldRangesHandler else { return nil }
+        return await handler(url, text)
+    }
+
     // MARK: - Workspace edit application
 
     /// Called by the coordinator to apply a `WorkspaceEdit` (from code action

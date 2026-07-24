@@ -300,6 +300,32 @@ final class LSPManager {
         return await servers[language]?.client.definition(uri: uri, position: position) ?? .empty
     }
 
+    // MARK: - Structural queries (folding — #1008)
+
+    /// Requests LSP fold ranges for the file at `url`. Returns the decoded
+    /// `LSPFoldingRange` list, or `nil` when LSP is disabled, the file has no
+    /// server, the server lacks `foldingRange` capability, or the request
+    /// fails. A `nil` return tells `FoldingCoordinator` to defer to the
+    /// bracket fallback.
+    ///
+    /// `text` is the current document content, captured so the caller can
+    /// validate/normalise positions against the exact revision the server
+    /// analysed.
+    func foldingRanges(url: URL, text: String) async -> [LSPFoldingRange]? {
+        guard enabled else { return nil }
+        guard let serverConfig = LanguageServerRegistry.server(for: url) else { return nil }
+        let language = serverConfig.language
+        guard await ensureServer(for: serverConfig) else { return nil }
+        guard servers[language]?.state == .initialized else { return nil }
+        guard servers[language]?.client.supportsFoldingRange == true else { return nil }
+        let uri = url.absoluteString
+        let ranges = await servers[language]?.client.foldingRange(uri: uri) ?? []
+        // An empty list means "no ranges / unsupported" — surface as nil so
+        // the provider defers to the bracket fallback rather than blanking
+        // all structure.
+        return ranges.isEmpty ? nil : ranges
+    }
+
     // MARK: - Phase 3 queries (completion)
 
     /// The idle delay after the user stops typing before a completion request

@@ -39,6 +39,38 @@ extension CodeEditorView {
         /// Debounced fold recalculation work item.
         private var foldWorkItem: DispatchWorkItem?
 
+        /// LSP-first structural folding orchestrator (#1008). Owns the
+        /// generation token that discards stale in-flight LSP replies.
+        private lazy var foldingCoordinator: FoldingCoordinator = {
+            FoldingCoordinator(
+                bracketProvider: BracketFoldProvider(skipRanges: { [weak self] text in
+                    // Reuse the highlighter's comment/string skip ranges so
+                    // brackets inside strings/comments are ignored by the
+                    /// fallback calculator too.
+                    SyntaxHighlighter.shared.commentAndStringRanges(
+                        in: text,
+                        language: self?.parent.language ?? "",
+                        fileName: self?.parent.fileName
+                    )
+                }),
+                lspProvider: lspFoldProvider
+            )
+        }()
+
+        /// LSP fold provider wired to the shared UI endpoint. Lazily created
+        /// so the coordinator never touches the LSP stack for files that are
+        /// never recalculated.
+        private lazy var lspFoldProvider: LSPFoldProvider = {
+            LSPFoldProvider { [weak self] snapshot in
+                guard let self,
+                      let url = self.parent.fileURL else { return nil }
+                return await LSPUIEndpoint.shared.foldRanges(
+                    url: url,
+                    text: snapshot.text
+                )
+            }
+        }()
+
         /// Последние язык/имя файла — для обнаружения смены грамматики
         /// при одинаковом содержимом файлов
         var lastLanguage: String = ""
@@ -1023,6 +1055,58 @@ extension CodeEditorView {
             foldableRanges = FoldRangeCalculator.calculate(text: text, skipRanges: skipRanges)
             lineNumberView?.foldableRanges = foldableRanges
             lineNumberView?.lineStartsCache = lineStartsCache
+            // Kick off the LSP-first structural refine. The bracket ranges
+            // above are shown immediately; if the LSP returns richer ranges
+            // within the 250 ms deadline and the revision is still current,
+            // they supersede the bracket set. On any failure mode (absence,
+            // error, timeout, invalid, stale) the bracket ranges stand.
+            requestStructuralFoldRanges(text: text)
+        }
+
+        /// Asks the folding coordinator to refine the current bracket ranges
+        /// with LSP `textDocument/foldingRange`. Runs off the main thread; only
+        /// applies a result when it is for the current revision (stale replies
+        /// are discarded by the coordinator's generation token).
+        private func requestStructuralFoldRanges(text: String) {
+            // Invalidate any in-flight request so a stale LSP reply for older
+            // text can never overwrite these bracket ranges.
+            let revision = DocumentRevision(foldingCoordinator.invalidate())
+            let snapshot = DocumentSnapshot(
+                uri: parent.fileURL?.absoluteString ?? "",
+                text: text,
+                revision: revision
+            )
+            // Capture the bracket ranges as they stand now; the coordinator
+            // returns them unchanged on every fallback path.
+            let bracketRanges = foldableRanges
+            Task { [weak self] in
+                guard let self else { return }
+                let resolution = await self.foldingCoordinator.refine(
+                    snapshot: snapshot,
+                    bracketRanges: bracketRanges
+                )
+                await MainActor.run {
+                    self.applyFoldingResolution(resolution)
+                }
+            }
+        }
+
+        /// Applies a structural folding resolution on the main thread.
+        private func applyFoldingResolution(_ resolution: FoldResolution) {
+            switch resolution {
+            case .resolved(let ranges, source: .lsp):
+                // The LSP provider won for the current revision — replace the
+                // visible bracket ranges and refresh the gutter.
+                foldableRanges = ranges
+                lineNumberView?.foldableRanges = foldableRanges
+            case .resolved(_, source: .bracket):
+                // Bracket ranges already visible; nothing to update.
+                break
+            case .stale:
+                // A newer request superseded this revision; keep the current
+                // display and let the newer request resolve.
+                break
+            }
         }
 
         /// Schedules a debounced fold recalculation.

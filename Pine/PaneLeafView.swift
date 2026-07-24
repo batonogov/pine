@@ -455,6 +455,9 @@ struct PaneLeafView: View {
         LSPUIEndpoint.shared.renameHandler = { url, offset, text, newName in
             await lspManager.rename(url: url, offset: offset, text: text, newName: newName)
         }
+        LSPUIEndpoint.shared.foldRangesHandler = { url, text in
+            await lspManager.foldingRanges(url: url, text: text)
+        }
         LSPUIEndpoint.shared.applyEditHandler = { edit in
             lspManager.applyWorkspaceEdit(
                 edit,
@@ -478,6 +481,7 @@ struct PaneLeafView: View {
         LSPUIEndpoint.shared.definitionHandler = nil
         LSPUIEndpoint.shared.codeActionHandler = nil
         LSPUIEndpoint.shared.renameHandler = nil
+        LSPUIEndpoint.shared.foldRangesHandler = nil
         LSPUIEndpoint.shared.applyEditHandler = nil
         LSPUIEndpoint.shared.openFileAtLineHandler = nil
     }

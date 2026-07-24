@@ -747,6 +747,17 @@ final class LSPClient {
     /// The language id this client serves (e.g. "swift", "typescript").
     let language: String
 
+    /// Server capabilities decoded from the `initialize` result. `nil` until
+    /// the handshake completes; `.none` (empty) means no structural features.
+    /// Consulted per request so unsupported features short-circuit to the
+    /// local fallback without a round trip (#1008).
+    private(set) var serverCapabilities: LSPServerCapabilities?
+
+    /// `true` when the server advertises `textDocument/foldingRange`.
+    var supportsFoldingRange: Bool {
+        serverCapabilities?.foldingRangeProvider == true
+    }
+
     /// Current lifecycle state.
     private(set) var state: State = .uninitialized
 
@@ -821,10 +832,17 @@ final class LSPClient {
         }
 
         do {
-            _ = try await sendRequest(
+            let initResult = try await sendRequest(
                 "initialize",
                 params: initParams,
                 timeout: initializationTimeout
+            )
+            // Capture advertised capabilities (foldingRangeProvider,
+            // documentSymbolProvider, positionEncoding) so structural requests
+            // can short-circuit unsupported features without a round trip
+            // (#1008).
+            serverCapabilities = LSPServerCapabilities(
+                json: initResult["capabilities"] ?? [:]
             )
         } catch {
             Logger.lsp.error("LSP initialize failed: \(String(describing: error), privacy: .public)")
@@ -1002,6 +1020,33 @@ final class LSPClient {
         } catch {
             Logger.lsp.error("LSP definition failed: \(String(describing: error), privacy: .public)")
             return .empty
+        }
+    }
+
+    // MARK: - Structural requests (folding — #1008)
+
+    /// Sends `textDocument/foldingRange` and returns the decoded ranges, or an
+    /// empty list when the server reports no ranges, the feature is
+    /// unsupported, or the request fails.
+    ///
+    /// The result is a `FoldingRange[] | null`; both `null` and an empty array
+    /// yield `[]`, which `FoldingCoordinator` treats as "defer to the bracket
+    /// fallback".
+    func foldingRange(uri: String) async -> [LSPFoldingRange] {
+        guard state == .initialized, supportsFoldingRange else { return [] }
+        do {
+            let result = try await sendRequest(
+                "textDocument/foldingRange",
+                params: ["textDocument": ["uri": uri]],
+                timeout: FoldingCoordinator.lspDeadline
+            )
+            guard let array = result as? [Any] else { return [] }
+            return array.compactMap { LSPFoldingRange(json: $0) }
+        } catch {
+            Logger.lsp.error(
+                "LSP foldingRange failed: \(String(describing: error), privacy: .public)"
+            )
+            return []
         }
     }
 
