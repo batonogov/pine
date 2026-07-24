@@ -577,6 +577,45 @@ struct LSPProcessTransportTests {
     }
 
     @Test(
+        "EOF cleanup survives shared utility-queue starvation",
+        .timeLimit(.minutes(1))
+    )
+    func endOfFileCleanupSurvivesUtilityStarvation() async throws {
+        let saturation = UtilityQueueSaturation()
+        defer { saturation.release() }
+        await saturation.waitUntilSaturated()
+
+        let transport = LSPTransport()
+        let recorder = RecordingLSPTransportDelegate()
+        transport.delegate = recorder
+        defer { transport.terminate(timeout: 0) }
+
+        #expect(
+            transport.start(
+                command: "/bin/sh",
+                arguments: [
+                    "-c",
+                    "trap '' TERM; exec 1>&-; exec /bin/sleep 30"
+                ],
+                environment: [:]
+            )
+        )
+        let processID = try #require(transport.processIdentifier)
+        #expect(
+            await waitUntil {
+                recorder.terminations == [.endOfFile]
+            }
+        )
+        #expect(
+            await waitUntil {
+                !isProcessAlive(processID)
+            }
+        )
+        #expect(!transport.isRunning)
+        #expect(recorder.terminations.count == 1)
+    }
+
+    @Test(
         "Pending request fails when transport terminates",
         .timeLimit(.minutes(1))
     )
@@ -989,6 +1028,39 @@ struct LSPProcessTransportTests {
     }
 
     @Test(
+        "Async termination survives shared utility-queue starvation",
+        .timeLimit(.minutes(1))
+    )
+    func asyncTerminationSurvivesUtilityStarvation() async throws {
+        let transport = LSPTransport()
+        defer { transport.terminate(timeout: 0) }
+        #expect(
+            transport.start(
+                command: "/bin/sleep",
+                arguments: ["30"],
+                environment: [:]
+            )
+        )
+        let processID = try #require(transport.processIdentifier)
+
+        let saturation = UtilityQueueSaturation()
+        defer { saturation.release() }
+        await saturation.waitUntilSaturated()
+        // Keeps the pre-fix implementation from hanging indefinitely while
+        // its terminate block waits behind the saturated utility queue.
+        saturation.release(after: 2.25)
+
+        let clock = ContinuousClock()
+        let startedAt = clock.now
+        await transport.terminateAsync(timeout: 0.1)
+        let elapsed = startedAt.duration(to: clock.now)
+
+        #expect(elapsed < .seconds(2))
+        #expect(!transport.isRunning)
+        #expect(!isProcessAlive(processID))
+    }
+
+    @Test(
         "Malformed framing terminates the stream and child process",
         .timeLimit(.minutes(1))
     )
@@ -1078,6 +1150,58 @@ private func isProcessAlive(_ processID: pid_t) -> Bool {
         return true
     }
     return errno != ESRCH
+}
+
+nonisolated private final class UtilityQueueSaturation:
+    @unchecked Sendable {
+    private static let releaseQueue = DispatchQueue(
+        label: "com.pine.tests.utility-saturation-release",
+        qos: .userInitiated
+    )
+
+    private let blockerCount: Int
+    private let gate = DispatchSemaphore(value: 0)
+    private let group = DispatchGroup()
+    private let lock = NSLock()
+    private var isReleased = false
+
+    init(blockerCount: Int = 256) {
+        self.blockerCount = blockerCount
+        for _ in 0..<blockerCount {
+            group.enter()
+            DispatchQueue.global(qos: .utility).async { [gate, group] in
+                gate.wait()
+                group.leave()
+            }
+        }
+    }
+
+    func waitUntilSaturated() async {
+        try? await Task.sleep(for: .milliseconds(300))
+    }
+
+    func release(after delay: TimeInterval) {
+        Self.releaseQueue.asyncAfter(deadline: .now() + delay) { [self] in
+            release()
+        }
+    }
+
+    func release() {
+        let shouldRelease = lock.withLock {
+            guard !isReleased else { return false }
+            isReleased = true
+            return true
+        }
+        guard shouldRelease else { return }
+        for _ in 0..<blockerCount {
+            gate.signal()
+        }
+        group.wait()
+    }
+
+    deinit {
+        release()
+    }
 }
 
 private func canonicalDarwinPath(_ path: String) -> String {
