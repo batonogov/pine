@@ -169,11 +169,64 @@ struct AgentHistoryUndoSafetyTests {
             startedAt: storedEntry.startedAt,
             affectedFiles: storedEntry.affectedFiles,
             attribution: .verified,
+            verifiedChangeSet: AgentHistoryChangeSetFixtures.changeSet(
+                historyEntryID: storedEntry.id,
+                sessionID: storedEntry.sessionID,
+                changes: [
+                    AgentHistoryChangeSetFixtures.modifyChange(path: "tracked.txt"),
+                ]
+            ),
             summary: storedEntry.summary
         )
         let result = await store.revert(entry: callerCopy)
 
         #expect(result.blockedReason == .heuristicAttribution)
+        #expect(try readFromRepo(repo, file: "tracked.txt") == unrelatedWork)
+    }
+
+    @Test("A structurally complete contract stays locked until checked apply exists")
+    func completeContractCannotMutateWorkingTreeYet() async throws {
+        let repo = try makeTempGitRepo()
+        defer { try? FileManager.default.removeItem(at: repo) }
+        try writeToRepo(repo, file: "tracked.txt", contents: "committed\n")
+        try gitInRepo(repo, ["add", "tracked.txt"])
+        try gitInRepo(repo, ["commit", "-m", "initial"])
+        let unrelatedWork = "committed\nnew human edit\n"
+        try writeToRepo(repo, file: "tracked.txt", contents: unrelatedWork)
+
+        let sessionID = UUID()
+        let entryID = UUID()
+        let change = AgentHistoryChangeSetFixtures.modifyChange(path: "tracked.txt")
+        let entry = AgentHistoryEntry(
+            id: entryID,
+            sessionID: sessionID,
+            agentTypeRaw: "codex",
+            startedAt: Date(),
+            affectedFiles: ["tracked.txt"],
+            attribution: .verified,
+            verifiedChangeSet: AgentHistoryChangeSetFixtures.changeSet(
+                historyEntryID: entryID,
+                sessionID: sessionID,
+                changes: [change]
+            ),
+            summary: "1 file"
+        )
+        let store = AgentHistoryStore(projectRoot: repo)
+        store.append(entry)
+        store.flush()
+
+        #expect(
+            AgentHistoryUndoPreflight.evaluate(entry)
+                == .readyForPrivateAuthorityValidation
+        )
+        #expect(entry.undoAvailability == .unavailable(.checkedUndoEngineUnavailable))
+
+        let result = await store.revert(entry: entry)
+
+        #expect(!result.allSucceeded)
+        #expect(result.fileResults.isEmpty)
+        #expect(result.blockedReason == .checkedUndoEngineUnavailable)
+        #expect(store.entries.first?.reverted == false)
         #expect(try readFromRepo(repo, file: "tracked.txt") == unrelatedWork)
     }
 

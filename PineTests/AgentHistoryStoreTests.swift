@@ -227,6 +227,67 @@ struct AgentHistoryStoreTests {
         #expect(reloaded.entries.last?.summary == "entry \(count - 1)")
     }
 
+    // MARK: - Identity quarantine
+
+    @Test("Loading quarantines every row in an identity collision")
+    func loadQuarantinesDuplicateIdentities() throws {
+        let temp = try makeTempProject()
+        defer { try? FileManager.default.removeItem(at: temp) }
+
+        let duplicateEntryID = UUID()
+        let duplicateSessionID = UUID()
+        let duplicateChangeSetID = UUID()
+        let duplicateAuthorityID = UUID()
+        let duplicatePayloadID = UUID()
+        let entries = [
+            AgentHistoryChangeSetFixtures.entry(id: duplicateEntryID),
+            AgentHistoryChangeSetFixtures.entry(id: duplicateEntryID),
+            AgentHistoryChangeSetFixtures.entry(sessionID: duplicateSessionID),
+            AgentHistoryChangeSetFixtures.entry(sessionID: duplicateSessionID),
+            AgentHistoryChangeSetFixtures.entry(changeSetID: duplicateChangeSetID),
+            AgentHistoryChangeSetFixtures.entry(changeSetID: duplicateChangeSetID),
+            AgentHistoryChangeSetFixtures.entry(authorityRecordID: duplicateAuthorityID),
+            AgentHistoryChangeSetFixtures.entry(authorityRecordID: duplicateAuthorityID),
+            AgentHistoryChangeSetFixtures.entry(payloadBlobID: duplicatePayloadID),
+            AgentHistoryChangeSetFixtures.entry(payloadBlobID: duplicatePayloadID),
+        ]
+        let safeEntry = AgentHistoryChangeSetFixtures.entry()
+        let data = try AgentHistoryStore.makeEncoder().encode(entries + [safeEntry])
+        try writeLog(in: temp, contents: data)
+
+        let store = AgentHistoryStore(projectRoot: temp)
+
+        #expect(store.entries == [safeEntry])
+    }
+
+    @Test("Appending rejects entry, session, and private-capability collisions")
+    func appendRejectsDuplicateIdentities() throws {
+        let store = AgentHistoryStore(projectRoot: nil)
+        let first = AgentHistoryChangeSetFixtures.entry()
+        let changeSet = try #require(first.verifiedChangeSet)
+        store.append(first)
+
+        store.append(AgentHistoryChangeSetFixtures.entry(id: first.id))
+        store.append(AgentHistoryChangeSetFixtures.entry(sessionID: first.sessionID))
+        store.append(
+            AgentHistoryChangeSetFixtures.entry(
+                changeSetID: changeSet.id
+            )
+        )
+        store.append(
+            AgentHistoryChangeSetFixtures.entry(
+                authorityRecordID: changeSet.authority.recordID
+            )
+        )
+        store.append(
+            AgentHistoryChangeSetFixtures.entry(
+                payloadBlobID: changeSet.inversePayload.blobID
+            )
+        )
+
+        #expect(store.entries == [first])
+    }
+
     // MARK: - Revert integration (store → GitFileRevert → real git repo)
 
     @Test("store.revert refuses heuristic entries in a real git repo")

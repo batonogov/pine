@@ -21,7 +21,7 @@ import Foundation
 /// undo: a safe inverse also requires an exact before/after change set and a
 /// divergence check, neither of which the current history format stores
 /// (#1183).
-enum AgentHistoryAttribution: String, Codable, Sendable {
+nonisolated enum AgentHistoryAttribution: String, Codable, Sendable {
     /// Pine inferred the paths from process/file-system activity.
     case heuristic
     /// More than one session or writer could have produced the changes.
@@ -41,14 +41,16 @@ enum AgentHistoryAttribution: String, Codable, Sendable {
 }
 
 /// Why an Agent History entry cannot currently be undone safely.
-enum AgentHistoryUndoUnavailableReason: Sendable, Equatable {
+nonisolated enum AgentHistoryUndoUnavailableReason: Sendable, Equatable {
     case heuristicAttribution
     case ambiguousAttribution
     case missingVerifiedReversibleChangeSet
+    case invalidVerifiedReversibleChangeSet
+    case checkedUndoEngineUnavailable
 }
 
 /// Fail-closed decision used by both the UI and the mutation boundary.
-enum AgentHistoryUndoAvailability: Sendable, Equatable {
+nonisolated enum AgentHistoryUndoAvailability: Sendable, Equatable {
     /// Reserved for a future entry format that carries a checked inverse
     /// change set. No entry in the current format returns this case.
     case available
@@ -63,7 +65,7 @@ enum AgentHistoryUndoAvailability: Sendable, Equatable {
 /// never leaks file contents. Decoding is forward-compatible: an unknown
 /// `agentTypeRaw` decodes into a generic entry instead of throwing, because the
 /// log file outlives individual app versions.
-struct AgentHistoryEntry: Codable, Identifiable, Equatable, Sendable {
+nonisolated struct AgentHistoryEntry: Codable, Identifiable, Equatable, Sendable {
     /// Stable identifier for this log entry.
     let id: UUID
     /// Identifier of the `AgentSession` this entry records. Lets the UI and
@@ -82,6 +84,10 @@ struct AgentHistoryEntry: Codable, Identifiable, Equatable, Sendable {
     /// Confidence of the association between this session and `affectedFiles`.
     /// Legacy entries decode as `.heuristic`.
     let attribution: AgentHistoryAttribution
+    /// Content-free, versioned contract from a trusted provenance pipeline.
+    /// Current heuristic recording never supplies one. Patch/content bytes
+    /// live outside the project and are referenced opaquely by this value.
+    let verifiedChangeSet: VerifiedAgentChangeSet?
     /// Human-readable summary, e.g. "5 files, +142/-38 lines".
     let summary: String
     /// Whether the entry's changes have been reverted via `AgentHistoryStore.revert`.
@@ -95,6 +101,7 @@ struct AgentHistoryEntry: Codable, Identifiable, Equatable, Sendable {
         endedAt: Date? = nil,
         affectedFiles: [String],
         attribution: AgentHistoryAttribution = .heuristic,
+        verifiedChangeSet: VerifiedAgentChangeSet? = nil,
         summary: String,
         reverted: Bool = false
     ) {
@@ -105,22 +112,31 @@ struct AgentHistoryEntry: Codable, Identifiable, Equatable, Sendable {
         self.endedAt = endedAt
         self.affectedFiles = affectedFiles
         self.attribution = attribution
+        self.verifiedChangeSet = verifiedChangeSet
         self.summary = summary
         self.reverted = reverted
     }
 
-    /// The current history format has no exact before/after patch or content
-    /// identity. Consequently no entry can authorize a working-tree mutation:
-    /// heuristic/ambiguous attribution is unsafe by definition, and verified
-    /// attribution still lacks a checked reversible change set.
+    /// No current entry can authorize a working-tree mutation. Heuristic and
+    /// ambiguous attribution are unsafe by definition. Verified entries must
+    /// pass the pure change-set preflight, and even structurally complete
+    /// records remain locked until runtime divergence checks and a checked,
+    /// atomic apply engine exist.
     var undoAvailability: AgentHistoryUndoAvailability {
         switch attribution {
         case .heuristic:
-            .unavailable(.heuristicAttribution)
+            return .unavailable(.heuristicAttribution)
         case .ambiguous:
-            .unavailable(.ambiguousAttribution)
+            return .unavailable(.ambiguousAttribution)
         case .verified:
-            .unavailable(.missingVerifiedReversibleChangeSet)
+            switch AgentHistoryUndoPreflight.evaluate(self) {
+            case .readyForPrivateAuthorityValidation:
+                return .unavailable(.checkedUndoEngineUnavailable)
+            case .blocked(.missingChangeSet):
+                return .unavailable(.missingVerifiedReversibleChangeSet)
+            case .blocked:
+                return .unavailable(.invalidVerifiedReversibleChangeSet)
+            }
         }
     }
 
@@ -145,6 +161,12 @@ struct AgentHistoryEntry: Codable, Identifiable, Equatable, Sendable {
             AgentHistoryAttribution.self,
             forKey: .attribution
         )) ?? .heuristic
+        // Missing/invalid future contracts fail closed without making the
+        // entire long-lived history log unreadable.
+        verifiedChangeSet = try? container.decodeIfPresent(
+            VerifiedAgentChangeSet.self,
+            forKey: .verifiedChangeSet
+        )
         summary = try container.decodeIfPresent(String.self, forKey: .summary) ?? ""
         reverted = try container.decodeIfPresent(Bool.self, forKey: .reverted) ?? false
     }
