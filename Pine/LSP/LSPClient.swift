@@ -142,6 +142,15 @@ nonisolated final class LSPTransport: @unchecked Sendable {
     /// Private serial queue — all reads/writes of mutable state happen here.
     private let ioQueue = DispatchQueue(label: "com.pine.lsp-transport")
 
+    /// Keeps process cleanup responsive when background utility work is busy.
+    ///
+    /// Termination is correctness-critical and can be awaited by the main
+    /// actor, so it must not depend on the shared utility worker pool.
+    private let lifecycleQueue = DispatchQueue(
+        label: "com.pine.lsp-transport.lifecycle",
+        qos: .userInitiated
+    )
+
     /// Incremental framing state, confined to `ioQueue`.
     private var streamParser = LSPMessageStreamParser()
 
@@ -371,7 +380,7 @@ nonisolated final class LSPTransport: @unchecked Sendable {
     /// Runs the bounded TERM-to-KILL cleanup away from the caller's actor.
     func terminateAsync(timeout: TimeInterval = 3.0) async {
         await withCheckedContinuation { continuation in
-            DispatchQueue.global(qos: .utility).async {
+            lifecycleQueue.async {
                 self.terminate(timeout: timeout)
                 continuation.resume()
             }
@@ -549,7 +558,7 @@ nonisolated final class LSPTransport: @unchecked Sendable {
         }
 
         proc.terminate()
-        DispatchQueue.global(qos: .utility).asyncAfter(
+        lifecycleQueue.asyncAfter(
             deadline: .now() + 1.0
         ) {
             guard proc.isRunning else { return }

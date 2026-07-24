@@ -48,6 +48,27 @@ xcodebuild -project Pine.xcodeproj -scheme Pine build
 
 New `.swift` files placed in `Pine/`, `PineTests/`, or `PineUITests/` are automatically picked up by Xcode (the project uses `PBXFileSystemSynchronizedRootGroup`). No manual `project.pbxproj` edits needed.
 
+## macOS Compatibility
+
+Pine's minimum deployment target remains macOS 26.0. The current macOS 27 beta is an additional compatibility target, so compatibility fixes must preserve macOS 26 support rather than raising the deployment target.
+
+For OS-, SDK-, or rendering-specific bug reports and pull requests, capture the exact environment:
+
+```bash
+sw_vers
+xcodebuild -version
+xcrun --sdk macosx --show-sdk-version
+xcrun --sdk macosx --show-sdk-build-version
+```
+
+Include the complete output, the Mac model/chip, and the display configuration. When both runtimes are available, state the result separately for macOS 26 and the current macOS 27 beta; use `not tested` where a runtime was unavailable.
+
+For terminal rendering bugs, perform a manual comparison after each code change:
+
+1. Launch normally to exercise the default path (Metal when available), and note any fallback-to-CoreGraphics message in Console.
+2. Quit Pine completely, then relaunch with the `--disable-metal` argument or `PINE_DISABLE_METAL=1` environment variable to force CoreGraphics.
+3. Report the effective renderer that reproduces the problem and whether behavior differs between macOS 26 and macOS 27 beta.
+
 ## Running Tests
 
 ### Unit tests
