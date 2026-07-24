@@ -61,6 +61,76 @@ struct UserKeybindingDispatcherTests {
         #expect(UserKeybindingDispatcher.command(for: pEvent, in: registry) != .findInFile)
     }
 
+    @Test("User override wins before a conflicting built-in handler")
+    func userOverridePrecedesBuiltIn() async throws {
+        let registry = try await makeRegistry(chords: [
+            ("quickOpen", "cmd+shift+b"),
+        ])
+        let event = try makeCmdEvent(
+            key: "b",
+            modifiers: [.command, .shift]
+        )
+        var dispatchedCommands: [UserCommand] = []
+        var builtInCallCount = 0
+
+        let routed = UserKeybindingDispatcher.route(
+            event,
+            registry: registry,
+            dispatchUserCommand: { dispatchedCommands.append($0) },
+            dispatchBuiltIn: { _ in
+                builtInCallCount += 1
+                return true
+            }
+        )
+
+        #expect(routed == nil)
+        #expect(dispatchedCommands == [.quickOpen])
+        #expect(builtInCallCount == 0)
+    }
+
+    @Test("Built-in handler runs once when no user override matches")
+    func builtInRunsAfterUserMiss() async throws {
+        let registry = try await makeRegistry(chords: [
+            ("quickOpen", "cmd+p"),
+        ])
+        let event = try makeCmdEvent(key: "f")
+        var userDispatchCount = 0
+        var builtInCallCount = 0
+
+        let routed = UserKeybindingDispatcher.route(
+            event,
+            registry: registry,
+            dispatchUserCommand: { _ in userDispatchCount += 1 },
+            dispatchBuiltIn: { _ in
+                builtInCallCount += 1
+                return true
+            }
+        )
+
+        #expect(routed == nil)
+        #expect(userDispatchCount == 0)
+        #expect(builtInCallCount == 1)
+    }
+
+    @Test("Unhandled event reaches menu, text, or terminal unchanged")
+    func unhandledEventFallsThrough() async throws {
+        let registry = try await makeRegistry(chords: [
+            ("quickOpen", "cmd+p"),
+        ])
+        let event = try makeCmdEvent(key: "x")
+        var dispatchCount = 0
+
+        let routed = UserKeybindingDispatcher.route(
+            event,
+            registry: registry,
+            dispatchUserCommand: { _ in dispatchCount += 1 },
+            dispatchBuiltIn: { _ in false }
+        )
+
+        #expect(routed === event)
+        #expect(dispatchCount == 0)
+    }
+
     @Test("Reload that keeps the registry does not silently drop overrides")
     func rejectedReloadKeepsOverridesActive() async throws {
         // Precedence invariant must survive a rejected reload: the last valid

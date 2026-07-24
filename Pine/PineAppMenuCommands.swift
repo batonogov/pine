@@ -572,12 +572,16 @@ struct PineAppMenuCommands: Commands {
             // and tasks.json) without restarting Pine. Starter files are
             // created on first open; reload surfaces validation errors.
             Button {
-                UserConfigurationEditor.openKeybindings()
+                Task { @MainActor in
+                    await UserConfigurationEditor.openKeybindings()
+                }
             } label: {
                 Label(Strings.menuEditKeybindings, systemImage: MenuIcons.editKeybindings)
             }
             Button {
-                UserConfigurationEditor.openTasks()
+                Task { @MainActor in
+                    await UserConfigurationEditor.openTasks()
+                }
             } label: {
                 Label(Strings.menuEditTasks, systemImage: MenuIcons.editTasks)
             }
@@ -590,11 +594,8 @@ struct PineAppMenuCommands: Commands {
             }
         }
 
-        // Cmd+W is intercepted by AppDelegate's local event monitor
-        // to close the active tab. The close button goes through
-        // windowShouldClose which closes the entire window.
-        // Cmd+1..9 and Ctrl+Tab/Ctrl+Shift+Tab are also intercepted
-        // via local event monitors in applicationDidFinishLaunching.
+        // AppDelegate's single key-down router handles physical shortcuts
+        // after consulting user overrides.
     }
 
     // MARK: - Task outcome presentation
@@ -605,58 +606,57 @@ struct PineAppMenuCommands: Commands {
     /// lists every problem with file, entry, and localized reason so the
     /// user can fix the file and reload again — all without restarting Pine.
     @MainActor
-    static func reloadAndPresentConfigurationDiagnostics() async {
-        let report = await ExtensibilityManager.shared.reload()
+    static func reloadAndPresentConfigurationDiagnostics(
+        manager: ExtensibilityManager = .shared,
+        alertPresenter: any UserConfigurationAlertPresenting =
+            AppKitUserConfigurationAlertPresenter()
+    ) async {
+        let report = await manager.reload()
         guard let report else { return }
-        if report.diagnostics.isEmpty {
-            presentReloadSuccess(report)
-        } else {
-            presentReloadDiagnostics(report)
-        }
+        alertPresenter.present(reloadAlert(for: report))
     }
 
-    private static func presentReloadSuccess(_ report: ExtensibilityReloadReport) {
-        let alert = NSAlert()
-        alert.alertStyle = .informational
-        alert.messageText = String(
-            localized: "userConfig.reloadSuccess.title",
-            defaultValue: "Configuration reloaded"
-        )
-        alert.informativeText = String(
-            localized: "userConfig.reloadSuccess.message",
-            defaultValue: "\(report.tasks.activeEntryCount) tasks and \(report.keybindings.activeEntryCount) keybindings active."
-        )
-        alert.addButton(withTitle: NSLocalizedString(
+    static func reloadAlert(
+        for report: ExtensibilityReloadReport
+    ) -> UserConfigurationAlertDescriptor {
+        let buttonTitle = NSLocalizedString(
             "userConfig.ok",
             value: "OK",
             comment: "Dismiss button"
-        ))
-        alert.runModal()
-    }
-
-    private static func presentReloadDiagnostics(_ report: ExtensibilityReloadReport) {
-        let alert = NSAlert()
-        alert.alertStyle = .warning
-        alert.messageText = String(
-            localized: "userConfig.reloadRejected.title",
-            defaultValue: "Configuration problems found"
         )
-        // Atomic reload: the last valid registry is kept, so explain that the
-        // rejected file did not replace the active configuration.
+        guard !report.diagnostics.isEmpty else {
+            return UserConfigurationAlertDescriptor(
+                style: .informational,
+                messageText: String(
+                    localized: "userConfig.reloadSuccess.title",
+                    defaultValue: "Configuration reloaded"
+                ),
+                informativeText: String(
+                    localized: "userConfig.reloadSuccess.message",
+                    defaultValue: "\(report.tasks.activeEntryCount) tasks and \(report.keybindings.activeEntryCount) keybindings active."
+                ),
+                buttonTitle: buttonTitle
+            )
+        }
+
+        // Atomic reload is per file: every rejected file keeps its previous
+        // valid registry while valid sibling files may still be applied.
         let header = String(
             localized: "userConfig.reloadRejected.header",
-            defaultValue: "Some entries were rejected. The previous valid configuration is still active. Fix the file and reload again."
+            defaultValue: "Some entries were rejected. Each rejected file kept its previous valid configuration. Fix the file and reload again."
         )
         let details = report.diagnostics
             .map { "• \($0.fileURL.lastPathComponent): \($0.localizedMessage)" }
             .joined(separator: "\n")
-        alert.informativeText = header + "\n\n" + details
-        alert.addButton(withTitle: NSLocalizedString(
-            "userConfig.ok",
-            value: "OK",
-            comment: "Dismiss button"
-        ))
-        alert.runModal()
+        return UserConfigurationAlertDescriptor(
+            style: .warning,
+            messageText: String(
+                localized: "userConfig.reloadRejected.title",
+                defaultValue: "Configuration problems found"
+            ),
+            informativeText: header + "\n\n" + details,
+            buttonTitle: buttonTitle
+        )
     }
 
     /// Runs a user task via `UserTaskRunner` and presents the outcome.

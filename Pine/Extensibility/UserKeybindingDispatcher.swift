@@ -13,18 +13,16 @@ import Foundation
 /// Resolves whether a key event is claimed by a user keybinding override.
 ///
 /// Precedence (highest first), evaluated for each `keyDown` event:
-/// 1. **user overrides** — this dispatcher. A match *consumes* the event so
+/// 1. **user overrides** — this router. A match *consumes* the event so
 ///    no later handler can also act on it.
-/// 2. **built-in menu equivalents** — SwiftUI `.keyboardShortcut` / `NSMenu`
-///    key equivalents.
-/// 3. **text input** — the responder chain.
-/// 4. **terminal input** — the focused terminal.
+/// 2. **built-in physical-key handling** — Cmd+W, terminal find, branch
+///    switching, and tab navigation.
+/// 3. **built-in menu equivalents** — SwiftUI `.keyboardShortcut` / `NSMenu`.
+/// 4. **text and terminal input** — the responder chain.
 ///
-/// Because a user match returns the event to the monitor as `nil`
-/// (consumed), a built-in shortcut for the *same chord* never also fires —
-/// there is no double-dispatch. When no user override matches, the event
-/// falls through unchanged to built-in shortcuts, text input, and terminal
-/// input in their usual order.
+/// AppDelegate installs exactly one key-down monitor and delegates both user
+/// and built-in routing here. The precedence therefore does not depend on
+/// AppKit's unspecified ordering between multiple local event monitors.
 @MainActor
 enum UserKeybindingDispatcher {
     /// Returns the user command to dispatch for `event`, or `nil` when the
@@ -41,5 +39,24 @@ enum UserKeybindingDispatcher {
         // text input keep working untouched — the common case at first launch.
         guard !registry.isEmpty else { return nil }
         return registry.command(for: event)
+    }
+
+    /// Routes one event through user overrides and then Pine's physical-key
+    /// handlers. Returning `nil` consumes the event; returning the original
+    /// event lets NSMenu and the responder chain continue.
+    static func route(
+        _ event: NSEvent,
+        registry: UserKeybindingRegistry,
+        dispatchUserCommand: (UserCommand) -> Void,
+        dispatchBuiltIn: (NSEvent) -> Bool
+    ) -> NSEvent? {
+        if let userCommand = command(for: event, in: registry) {
+            dispatchUserCommand(userCommand)
+            return nil
+        }
+        if dispatchBuiltIn(event) {
+            return nil
+        }
+        return event
     }
 }
