@@ -565,6 +565,29 @@ struct PineAppMenuCommands: Commands {
                     Label(task.label, systemImage: MenuIcons.tasks)
                 }
             }
+
+            Divider()
+
+            // Issue #1117: edit and reload user configuration (keybindings.json
+            // and tasks.json) without restarting Pine. Starter files are
+            // created on first open; reload surfaces validation errors.
+            Button {
+                UserConfigurationEditor.openKeybindings()
+            } label: {
+                Label(Strings.menuEditKeybindings, systemImage: MenuIcons.editKeybindings)
+            }
+            Button {
+                UserConfigurationEditor.openTasks()
+            } label: {
+                Label(Strings.menuEditTasks, systemImage: MenuIcons.editTasks)
+            }
+            Button {
+                Task { @MainActor in
+                    await Self.reloadAndPresentConfigurationDiagnostics()
+                }
+            } label: {
+                Label(Strings.menuReloadUserConfiguration, systemImage: MenuIcons.reloadUserConfiguration)
+            }
         }
 
         // Cmd+W is intercepted by AppDelegate's local event monitor
@@ -575,6 +598,66 @@ struct PineAppMenuCommands: Commands {
     }
 
     // MARK: - Task outcome presentation
+
+    /// Issue #1117: reloads user configuration (keybindings.json + tasks.json)
+    /// and presents any validation diagnostics. A clean reload confirms
+    /// success; a rejected file keeps the last valid registry (atomic) and
+    /// lists every problem with file, entry, and localized reason so the
+    /// user can fix the file and reload again — all without restarting Pine.
+    @MainActor
+    static func reloadAndPresentConfigurationDiagnostics() async {
+        let report = await ExtensibilityManager.shared.reload()
+        guard let report else { return }
+        if report.diagnostics.isEmpty {
+            presentReloadSuccess(report)
+        } else {
+            presentReloadDiagnostics(report)
+        }
+    }
+
+    private static func presentReloadSuccess(_ report: ExtensibilityReloadReport) {
+        let alert = NSAlert()
+        alert.alertStyle = .informational
+        alert.messageText = String(
+            localized: "userConfig.reloadSuccess.title",
+            defaultValue: "Configuration reloaded"
+        )
+        alert.informativeText = String(
+            localized: "userConfig.reloadSuccess.message",
+            defaultValue: "\(report.tasks.activeEntryCount) tasks and \(report.keybindings.activeEntryCount) keybindings active."
+        )
+        alert.addButton(withTitle: NSLocalizedString(
+            "userConfig.ok",
+            value: "OK",
+            comment: "Dismiss button"
+        ))
+        alert.runModal()
+    }
+
+    private static func presentReloadDiagnostics(_ report: ExtensibilityReloadReport) {
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = String(
+            localized: "userConfig.reloadRejected.title",
+            defaultValue: "Configuration problems found"
+        )
+        // Atomic reload: the last valid registry is kept, so explain that the
+        // rejected file did not replace the active configuration.
+        let header = String(
+            localized: "userConfig.reloadRejected.header",
+            defaultValue: "Some entries were rejected. The previous valid configuration is still active. Fix the file and reload again."
+        )
+        let details = report.diagnostics
+            .map { "• \($0.fileURL.lastPathComponent): \($0.localizedMessage)" }
+            .joined(separator: "\n")
+        alert.informativeText = header + "\n\n" + details
+        alert.addButton(withTitle: NSLocalizedString(
+            "userConfig.ok",
+            value: "OK",
+            comment: "Dismiss button"
+        ))
+        alert.runModal()
+    }
 
     /// Runs a user task via `UserTaskRunner` and presents the outcome.
     /// Extracted so the confirmation alert and the non-confirmation path

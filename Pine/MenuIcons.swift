@@ -60,6 +60,11 @@ nonisolated enum MenuIcons {
     // MARK: - Tasks menu (issue #1009)
     static let tasks = "wrench.and.screwdriver"
 
+    // MARK: - User configuration (issue #1117)
+    static let editKeybindings = "keyboard"
+    static let editTasks = "doc.text"
+    static let reloadUserConfiguration = "arrow.clockwise"
+
     // MARK: - Agent Activity Panel (#1072)
     static let agentActivity = "list.bullet.rectangle"
 

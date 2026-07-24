@@ -668,18 +668,25 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate {
             return nil // consume event
         }
 
-        // User-defined keybindings (issue #1009). Loaded from
+        // User-defined keybindings (issues #1009, #1117). Loaded from
         // keybindings.json; each entry maps a chord to a built-in command,
-        // posted via NotificationCenter. Checked last so built-in menu
-        // shortcuts and physical-key monitors take precedence.
+        // posted via NotificationCenter. A match CONSUMES the event so any
+        // built-in menu equivalent for the same chord is suppressed — one
+        // event never triggers two handlers (override precedence). The
+        // lookup is delegated to `UserKeybindingDispatcher` so the precedence
+        // rule is unit-tested rather than buried in a monitor closure.
         NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
             let registry = ExtensibilityManager.shared.keybindings
-            guard !registry.isEmpty,
-                  let command = registry.command(for: event) else {
+            guard let command = UserKeybindingDispatcher.command(
+                for: event,
+                in: registry
+            ) else {
+                // No user override claims this event: let built-in menu
+                // shortcuts, text input, and terminal input handle it.
                 return event
             }
             NotificationCenter.default.post(name: Notification.Name(command.notificationKey), object: nil)
-            return nil // consume event
+            return nil // consume → suppresses any built-in shortcut for this event
         }
 
         // Ensure Welcome is visible if SwiftUI didn't present it automatically
