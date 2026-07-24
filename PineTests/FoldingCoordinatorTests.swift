@@ -35,15 +35,15 @@ struct FoldingCoordinatorTests {
         let snap = snapshot()
         let brackets = bracketRanges(snap.text)
 
-        let resolution = await coordinator.refine(snapshot: snap, bracketRanges: brackets)
+        let resolution = await coordinator.refine(snapshot: snap, fallbackRanges: brackets)
 
-        #expect(resolution == .resolved(brackets, source: .bracket))
+        #expect(resolution == .resolved(brackets, source: .local))
     }
 
     @Test("Bracket fallback parsing runs off the main thread")
     func bracketFallbackRunsOffMain() async throws {
         let probe = FoldExecutionProbe()
-        let provider = BracketFoldProvider { _ in
+        let provider = LocalFoldProvider(language: "swift") { _ in
             probe.record(isMainThread: Thread.isMainThread)
             return []
         }
@@ -70,7 +70,7 @@ struct FoldingCoordinatorTests {
         let coordinator = FoldingCoordinator(lspProvider: provider)
         let brackets = bracketRanges(snap.text)
 
-        let resolution = await coordinator.refine(snapshot: snap, bracketRanges: brackets)
+        let resolution = await coordinator.refine(snapshot: snap, fallbackRanges: brackets)
 
         guard case .resolved(let ranges, .lsp) = resolution else {
             Issue.record("Expected .lsp resolution, got \(resolution)")
@@ -93,9 +93,9 @@ struct FoldingCoordinatorTests {
         let coordinator = FoldingCoordinator(lspProvider: provider)
         let brackets = bracketRanges(snap.text)
 
-        let resolution = await coordinator.refine(snapshot: snap, bracketRanges: brackets)
+        let resolution = await coordinator.refine(snapshot: snap, fallbackRanges: brackets)
 
-        #expect(resolution == .resolved(brackets, source: .bracket))
+        #expect(resolution == .resolved(brackets, source: .local))
     }
 
     @Test("LSP returning empty list falls back to bracket")
@@ -105,9 +105,9 @@ struct FoldingCoordinatorTests {
         let coordinator = FoldingCoordinator(lspProvider: provider)
         let brackets = bracketRanges(snap.text)
 
-        let resolution = await coordinator.refine(snapshot: snap, bracketRanges: brackets)
+        let resolution = await coordinator.refine(snapshot: snap, fallbackRanges: brackets)
 
-        #expect(resolution == .resolved(brackets, source: .bracket))
+        #expect(resolution == .resolved(brackets, source: .local))
     }
 
     // MARK: - Invalid LSP ranges → bracket fallback
@@ -120,9 +120,9 @@ struct FoldingCoordinatorTests {
         let coordinator = FoldingCoordinator(lspProvider: provider)
         let brackets = bracketRanges(snap.text)
 
-        let resolution = await coordinator.refine(snapshot: snap, bracketRanges: brackets)
+        let resolution = await coordinator.refine(snapshot: snap, fallbackRanges: brackets)
 
-        #expect(resolution == .resolved(brackets, source: .bracket))
+        #expect(resolution == .resolved(brackets, source: .local))
     }
 
     @Test("LSP single-line ranges are skipped; all-invalid falls back")
@@ -133,9 +133,9 @@ struct FoldingCoordinatorTests {
         let coordinator = FoldingCoordinator(lspProvider: provider)
         let brackets = bracketRanges(snap.text)
 
-        let resolution = await coordinator.refine(snapshot: snap, bracketRanges: brackets)
+        let resolution = await coordinator.refine(snapshot: snap, fallbackRanges: brackets)
 
-        #expect(resolution == .resolved(brackets, source: .bracket))
+        #expect(resolution == .resolved(brackets, source: .local))
     }
 
     @Test("Mixed valid/invalid LSP ranges keep only valid ones")
@@ -149,7 +149,7 @@ struct FoldingCoordinatorTests {
         let coordinator = FoldingCoordinator(lspProvider: provider)
         let brackets = bracketRanges(snap.text)
 
-        let resolution = await coordinator.refine(snapshot: snap, bracketRanges: brackets)
+        let resolution = await coordinator.refine(snapshot: snap, fallbackRanges: brackets)
 
         guard case .resolved(let ranges, .lsp) = resolution else {
             Issue.record("Expected .lsp, got \(resolution)")
@@ -169,9 +169,9 @@ struct FoldingCoordinatorTests {
         let coordinator = FoldingCoordinator(lspProvider: provider)
         let brackets = bracketRanges(snap.text)
 
-        let resolution = await coordinator.refine(snapshot: snap, bracketRanges: brackets)
+        let resolution = await coordinator.refine(snapshot: snap, fallbackRanges: brackets)
 
-        #expect(resolution == .resolved(brackets, source: .bracket))
+        #expect(resolution == .resolved(brackets, source: .local))
     }
 
     @Test("Deadline is bounded when a provider ignores cancellation")
@@ -187,10 +187,10 @@ struct FoldingCoordinatorTests {
 
         let resolution = await coordinator.refine(
             snapshot: snap,
-            bracketRanges: brackets
+            fallbackRanges: brackets
         )
 
-        #expect(resolution == .resolved(brackets, source: .bracket))
+        #expect(resolution == .resolved(brackets, source: .local))
     }
 
     // MARK: - Stale generation → discarded
@@ -205,7 +205,7 @@ struct FoldingCoordinatorTests {
 
         // Start refine; it captures its generation and enters the race.
         let resolutionTask = Task {
-            await coordinator.refine(snapshot: snap, bracketRanges: brackets)
+            await coordinator.refine(snapshot: snap, fallbackRanges: brackets)
         }
         // Let refine capture its generation and enter the race before we
         // invalidate (the provider's delay keeps the race pending).
@@ -227,7 +227,7 @@ struct FoldingCoordinatorTests {
 
         let resolution = await coordinator.refine(
             snapshot: snap,
-            bracketRanges: bracketRanges(snap.text)
+            fallbackRanges: bracketRanges(snap.text)
         )
 
         #expect(resolution == .stale)
@@ -241,7 +241,7 @@ struct FoldingCoordinatorTests {
         let coordinator = FoldingCoordinator(lspProvider: provider)
         let brackets = bracketRanges(snap.text)
 
-        let resolution = await coordinator.refine(snapshot: snap, bracketRanges: brackets)
+        let resolution = await coordinator.refine(snapshot: snap, fallbackRanges: brackets)
 
         if case .stale = resolution {
             Issue.record("Should not be stale for a current generation")
@@ -258,7 +258,7 @@ struct FoldingCoordinatorTests {
         let provider = StubFoldProvider(ranges: lspRanges)
         let coordinator = FoldingCoordinator(lspProvider: provider)
 
-        let resolution = await coordinator.refine(snapshot: snap, bracketRanges: [])
+        let resolution = await coordinator.refine(snapshot: snap, fallbackRanges: [])
 
         guard case .resolved(let ranges, .lsp) = resolution else {
             Issue.record("Expected .lsp, got \(resolution)")
@@ -276,7 +276,7 @@ struct FoldingCoordinatorTests {
         let provider = StubFoldProvider(ranges: lspRanges)
         let coordinator = FoldingCoordinator(lspProvider: provider)
 
-        let resolution = await coordinator.refine(snapshot: snap, bracketRanges: [])
+        let resolution = await coordinator.refine(snapshot: snap, fallbackRanges: [])
 
         guard case .resolved(let ranges, .lsp) = resolution else {
             Issue.record("Expected .lsp, got \(resolution)")

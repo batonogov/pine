@@ -145,6 +145,55 @@ nonisolated struct LSPFoldingRange: Equatable, Sendable {
     }
 }
 
+// MARK: - Off-main response decoder
+
+/// Decodes a raw JSON-RPC folding response away from Pine's default
+/// MainActor isolation.
+///
+/// A large SourceKit-LSP fixture can contain tens of thousands of ranges.
+/// Walking that polymorphic `[Any]` on the UI actor violates the structural
+/// provider contract even though transport I/O itself is asynchronous. The
+/// unchecked JSON box is immutable after transport decoding; this boundary
+/// owns the detached walk and cooperatively stops after cancellation.
+nonisolated enum LSPFoldingRangeDecoder {
+    static func decode(
+        _ result: SendableJSONValueBox,
+        positionEncoding: LSPPositionEncoding,
+        beforeDecode:
+            (@Sendable () async -> Void)? = nil
+    ) async -> [LSPFoldingRange] {
+        let task = Task.detached(priority: .userInitiated) {
+            () -> [LSPFoldingRange] in
+            await beforeDecode?()
+            guard !Task.isCancelled,
+                  let array = result.value as? [Any] else {
+                return []
+            }
+
+            var ranges: [LSPFoldingRange] = []
+            ranges.reserveCapacity(array.count)
+            for (index, value) in array.enumerated() {
+                if index.isMultiple(of: 256),
+                   Task.isCancelled {
+                    return []
+                }
+                if let range = LSPFoldingRange(
+                    json: value,
+                    positionEncoding: positionEncoding
+                ) {
+                    ranges.append(range)
+                }
+            }
+            return Task.isCancelled ? [] : ranges
+        }
+        return await withTaskCancellationHandler {
+            await task.value
+        } onCancel: {
+            task.cancel()
+        }
+    }
+}
+
 // MARK: - LSP fold provider adapter
 
 /// Adapts an LSP `textDocument/foldingRange` request to the

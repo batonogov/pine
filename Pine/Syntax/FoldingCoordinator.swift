@@ -5,13 +5,13 @@
 //  Issue #1008, steps 1–3 — the LSP-first structural folding orchestrator.
 //
 //  Enforces the deterministic layered model from ADR 0001 (#1182):
-//    • folding: LSP `textDocument/foldingRange`, then the bracket calculator;
+//    • folding: LSP `textDocument/foldingRange`, then the local provider;
 //    • one provider owns folding for a single immutable document revision;
 //    • successful results are never merged across providers;
 //    • empty / unavailable / timed-out / cancelled / invalid / stale LSP
-//      results fall back to the bracket calculator.
+//      results fall back to the local provider.
 //
-//  The caller shows the bracket ranges immediately (they are always
+//  The caller shows local ranges immediately (they are always
 //  available); `refine` races the LSP request against a 250 ms deadline and
 //  returns the LSP result only when it wins and is not stale.
 //
@@ -20,7 +20,7 @@ import Foundation
 import os
 
 /// Orchestrates LSP-first fold resolution with deterministic fallback to the
-/// bracket calculator.
+/// local provider.
 ///
 /// Owns a ``FoldGeneration`` so a stale in-flight LSP reply (computed against
 /// older text) is discarded before it can overwrite newer edits. The LSP
@@ -33,7 +33,7 @@ import os
 /// work is the LSP transport I/O handled below this seam).
 nonisolated final class FoldingCoordinator: @unchecked Sendable {
 
-    /// Deadline for an LSP folding request before the local bracket fallback
+    /// Deadline for an LSP folding request before the local fallback
     /// wins. Chosen by ADR 0001 (#1182) as the p95 latency budget; slower
     /// replies are cancelled and discarded.
     static let lspDeadline: Duration = .milliseconds(250)
@@ -43,7 +43,7 @@ nonisolated final class FoldingCoordinator: @unchecked Sendable {
 
     /// - Parameters:
     ///   - lspProvider: An optional richer provider (LSP `foldingRange`).
-    ///     When `nil`, the coordinator resolves to bracket ranges only.
+    ///     When `nil`, the coordinator resolves to local ranges only.
     init(
         lspProvider: FoldRangeProviding? = nil
     ) {
@@ -56,7 +56,8 @@ nonisolated final class FoldingCoordinator: @unchecked Sendable {
     var generationValue: Int { generation.current }
 
     /// Invalidates every in-flight request: any result issued before this call
-    /// is stale and will be discarded by ``refine(snapshot:bracketRanges:)``.
+    /// is stale and will be discarded by
+    /// ``refine(snapshot:fallbackRanges:)``.
     @discardableResult
     func invalidate() -> Int {
         generation.increment()
@@ -72,34 +73,34 @@ nonisolated final class FoldingCoordinator: @unchecked Sendable {
 
     /// Refines fold ranges using the LSP-first layered model.
     ///
-    /// `bracketRanges` are the ranges the caller already computed and shows
-    /// immediately (the bracket calculator result for the current text). This
+    /// `fallbackRanges` are the ranges the caller already computed and shows
+    /// immediately (the local-provider result for the current text). This
     /// method returns:
     ///   - `.resolved(_, .lsp)` — the LSP provider returned valid ranges
     ///     within the deadline and the revision is still current;
-    ///   - `.resolved(bracketRanges, .bracket)` — the LSP provider was
+    ///   - `.resolved(fallbackRanges, .local)` — the LSP provider was
     ///     absent, declined, errored, timed out, or returned invalid/empty
-    ///     ranges, so the bracket ranges stand;
+    ///     ranges, so the local ranges stand;
     ///   - `.stale` — a newer request superseded this revision; the caller
     ///     discards the result and keeps its current display.
     ///
     /// - Parameters:
     ///   - snapshot: The immutable document snapshot to resolve against.
-    ///   - bracketRanges: The already-computed bracket fallback for the same
+    ///   - fallbackRanges: The already-computed local fallback for the same
     ///     text. Shown immediately by the caller; returned as the fallback.
     /// - Returns: The resolution for this revision.
     func refine(
         snapshot: DocumentSnapshot,
-        bracketRanges: [FoldableRange]
+        fallbackRanges: [FoldableRange]
     ) async -> FoldResolution {
         let issuedGeneration = snapshot.revision.value
         guard generation.current == issuedGeneration else {
             return .stale
         }
 
-        // Fast path: no richer provider installed — bracket ranges stand.
+        // Fast path: no richer provider installed — local ranges stand.
         guard let lsp = lspProvider, lsp.canProvide(for: snapshot) else {
-            return .resolved(bracketRanges, source: .bracket)
+            return .resolved(fallbackRanges, source: .local)
         }
 
         // Bind the provider query to a sendable closure before the race so
@@ -126,13 +127,13 @@ nonisolated final class FoldingCoordinator: @unchecked Sendable {
         switch outcome {
         case .completed(let lspRanges):
             // The provider already normalised its result; fall back to
-            // bracket on any invalidity/emptiness.
+            // local on any invalidity/emptiness.
             if let ranges = lspRanges, !ranges.isEmpty {
                 return .resolved(ranges, source: .lsp)
             }
-            return .resolved(bracketRanges, source: .bracket)
+            return .resolved(fallbackRanges, source: .local)
         case .timedOut, .cancelled:
-            return .resolved(bracketRanges, source: .bracket)
+            return .resolved(fallbackRanges, source: .local)
         }
     }
 

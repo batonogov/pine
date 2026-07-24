@@ -1083,7 +1083,9 @@ extension CodeEditorView {
             )
             let coordinator = foldingCoordinator
             let highlighter = SyntaxHighlighter.shared
-            let bracketProvider = BracketFoldProvider { snapshotText in
+            let fallbackProvider = LocalFoldProvider(
+                language: language
+            ) { snapshotText in
                 highlighter.commentAndStringRanges(
                     in: snapshotText,
                     language: language,
@@ -1093,7 +1095,7 @@ extension CodeEditorView {
             let needsLineStarts = lineStartsCache == nil
 
             foldCalculationTask = Task { @MainActor [weak self] in
-                async let fallback = bracketProvider.foldRanges(
+                async let fallback = fallbackProvider.foldRanges(
                     for: snapshot
                 )
                 let computedLineStarts: LineStartsCache?
@@ -1106,7 +1108,7 @@ extension CodeEditorView {
                 } else {
                     computedLineStarts = nil
                 }
-                let bracketRanges = await fallback ?? []
+                let fallbackRanges = await fallback ?? []
 
                 guard let self,
                       !Task.isCancelled,
@@ -1117,17 +1119,17 @@ extension CodeEditorView {
                 if let computedLineStarts {
                     self.lineStartsCache = computedLineStarts
                 }
-                self.foldableRanges = bracketRanges
-                self.lineNumberView?.foldableRanges = bracketRanges
+                self.foldableRanges = fallbackRanges
+                self.lineNumberView?.foldableRanges = fallbackRanges
                 self.lineNumberView?.lineStartsCache =
                     self.lineStartsCache
 
                 // The local fallback is visible before LSP refinement. A
                 // valid, current response replaces it; every failure mode
-                // leaves this bracket set intact.
+                // leaves this local set intact.
                 let resolution = await coordinator.refine(
                     snapshot: snapshot,
-                    bracketRanges: bracketRanges
+                    fallbackRanges: fallbackRanges
                 )
                 guard !Task.isCancelled,
                       coordinator.isCurrent(revision),
@@ -1172,11 +1174,11 @@ extension CodeEditorView {
             switch resolution {
             case .resolved(let ranges, source: .lsp):
                 // The LSP provider won for the current revision — replace the
-                // visible bracket ranges and refresh the gutter.
+                // visible local ranges and refresh the gutter.
                 foldableRanges = ranges
                 lineNumberView?.foldableRanges = foldableRanges
-            case .resolved(_, source: .bracket):
-                // Bracket ranges already visible; nothing to update.
+            case .resolved(_, source: .local):
+                // Local ranges already visible; nothing to update.
                 break
             case .stale:
                 // A newer request superseded this revision; keep the current

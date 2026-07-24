@@ -1073,11 +1073,11 @@ final class LSPClient {
                 params: ["textDocument": ["uri": uri]],
                 timeout: FoldingCoordinator.lspDeadline
             )
-            guard let array = result as? [Any] else { return [] }
             let encoding = serverCapabilities?.positionEncoding ?? .utf16
-            return array.compactMap {
-                LSPFoldingRange(json: $0, positionEncoding: encoding)
-            }
+            return await LSPFoldingRangeDecoder.decode(
+                SendableJSONValueBox(result),
+                positionEncoding: encoding
+            )
         } catch {
             Logger.lsp.error(
                 "LSP foldingRange failed: \(String(describing: error), privacy: .public)"

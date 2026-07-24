@@ -121,6 +121,89 @@ struct LSPFoldingRangeTests {
         #expect(LSPPositionEncoding(encoding: "weird") == .unknown)
     }
 
+    // MARK: - Detached response decoding
+
+    @Test("Folding response parsing runs off the main thread")
+    func responseParsingRunsOffMain() async {
+        let gate = FoldingDecodeGate()
+        let task = Task {
+            await LSPFoldingRangeDecoder.decode(
+                foldingResponse(count: 1_024),
+                positionEncoding: .utf16,
+                beforeDecode: {
+                    await gate.pause(
+                        observedMainThread: currentThreadIsMain()
+                    )
+                }
+            )
+        }
+
+        await gate.waitUntilStarted()
+        #expect(await gate.observedMainThread == false)
+        await gate.release()
+        #expect(await task.value.count == 1_024)
+    }
+
+    @Test("Cancelling folding response parsing returns no partial result")
+    func responseParsingHonorsCancellation() async {
+        let gate = FoldingDecodeGate()
+        let task = Task {
+            await LSPFoldingRangeDecoder.decode(
+                foldingResponse(count: 4_096),
+                positionEncoding: .utf16,
+                beforeDecode: {
+                    await gate.pause(
+                        observedMainThread: currentThreadIsMain()
+                    )
+                }
+            )
+        }
+
+        await gate.waitUntilStarted()
+        task.cancel()
+        await gate.release()
+
+        #expect(await task.value.isEmpty)
+        #expect(await gate.observedMainThread == false)
+    }
+
+    @Test("A decoded response is stale after its revision is invalidated")
+    func decodedResponseStillHonorsGeneration() async {
+        let gate = FoldingDecodeGate()
+        let response = foldingResponse(count: 1)
+        let provider = LSPFoldProvider { _ in
+            await LSPFoldingRangeDecoder.decode(
+                response,
+                positionEncoding: .utf16,
+                beforeDecode: {
+                    await gate.pause(
+                        observedMainThread: currentThreadIsMain()
+                    )
+                }
+            )
+        }
+        let coordinator = FoldingCoordinator(
+            lspProvider: provider
+        )
+        let snapshot = DocumentSnapshot(
+            uri: "file:///stale.swift",
+            text: "func stale() {\n}\n",
+            revision: DocumentRevision(0)
+        )
+        let refinement = Task {
+            await coordinator.refine(
+                snapshot: snapshot,
+                fallbackRanges: []
+            )
+        }
+
+        await gate.waitUntilStarted()
+        coordinator.invalidate()
+        await gate.release()
+
+        #expect(await refinement.value == .stale)
+    }
+
     // MARK: - LSPFoldProvider adapter
 
     @Test("LSPFoldProvider defers on nil request result")
@@ -247,6 +330,61 @@ struct LSPFoldingRangeTests {
             await Task.yield()
         }
         Issue.record("Timed out waiting for structural folding request")
+    }
+
+    private func foldingResponse(
+        count: Int
+    ) -> SendableJSONValueBox {
+        SendableJSONValueBox(
+            (0..<count).map { index in
+                [
+                    "startLine": index * 2,
+                    "endLine": index * 2 + 1
+                ] as [String: Any]
+            }
+        )
+    }
+}
+
+/// `Thread.isMainThread` is intentionally unavailable directly in an async
+/// context. Keep the platform query in a synchronous helper so the detached
+/// decoder test can observe its executor without introducing actor isolation.
+nonisolated private func currentThreadIsMain() -> Bool {
+    Thread.isMainThread
+}
+
+private actor FoldingDecodeGate {
+    private(set) var observedMainThread: Bool?
+    private var started = false
+    private var startedWaiters: [
+        CheckedContinuation<Void, Never>
+    ] = []
+    private var releaseContinuation:
+        CheckedContinuation<Void, Never>?
+
+    func pause(observedMainThread: Bool) async {
+        self.observedMainThread = observedMainThread
+        started = true
+        let waiters = startedWaiters
+        startedWaiters.removeAll()
+        for waiter in waiters {
+            waiter.resume()
+        }
+        await withCheckedContinuation { continuation in
+            releaseContinuation = continuation
+        }
+    }
+
+    func waitUntilStarted() async {
+        guard !started else { return }
+        await withCheckedContinuation { continuation in
+            startedWaiters.append(continuation)
+        }
+    }
+
+    func release() {
+        releaseContinuation?.resume()
+        releaseContinuation = nil
     }
 }
 

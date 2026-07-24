@@ -275,8 +275,9 @@ nonisolated enum StructuralDeadlineRace {
 /// Which provider produced a resolved fold set. Used for observability and
 /// tests; never affects behaviour after resolution.
 nonisolated enum FoldSource: Equatable, Sendable {
-    /// The universal bracket-pair calculator (always available).
-    case bracket
+    /// The universal local provider: bracket pairs for every language and
+    /// language-aware indentation suites where required.
+    case local
     /// A richer structural provider (LSP `textDocument/foldingRange`).
     case lsp
 }
