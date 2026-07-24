@@ -25,6 +25,7 @@ nonisolated enum UserConfigurationDiagnosticReason: Sendable, Equatable {
     case textInputChord(value: String)
     case reservedSystemChord(value: String)
     case duplicateChord(value: String, firstEntryNumber: Int)
+    case duplicateCommand(id: String, firstEntryNumber: Int)
     case duplicateTaskID(id: String, firstEntryNumber: Int)
     case emptyTaskID
     case emptyTaskLabel
@@ -49,6 +50,8 @@ nonisolated enum UserConfigurationDiagnosticReason: Sendable, Equatable {
             "key chord '\(value)' is reserved by macOS or text editing"
         case .duplicateChord(let value, let firstEntryNumber):
             "key chord '\(value)' duplicates entry \(firstEntryNumber)"
+        case .duplicateCommand(let id, let firstEntryNumber):
+            "command id '\(id)' duplicates entry \(firstEntryNumber)"
         case .duplicateTaskID(let id, let firstEntryNumber):
             "task id '\(id)' duplicates entry \(firstEntryNumber)"
         case .emptyTaskID:

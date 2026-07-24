@@ -26,6 +26,7 @@ struct UserConfigDiagnosticLocalizedTests {
             .textInputChord(value: "f"),
             .reservedSystemChord(value: "cmd+c"),
             .duplicateChord(value: "cmd+p", firstEntryNumber: 2),
+            .duplicateCommand(id: "quickOpen", firstEntryNumber: 1),
             .duplicateTaskID(id: "lint", firstEntryNumber: 1),
             .emptyTaskID,
             .emptyTaskLabel,

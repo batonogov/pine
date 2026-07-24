@@ -26,7 +26,7 @@ nonisolated enum CommandPaletteCategory: String, Sendable, CaseIterable {
         case .edit:
             String(localized: "commandPalette.category.edit")
         case .view:
-            String(localized: "commandPalette.category.view")
+            String(localized: "menu.view")
         case .git:
             String(localized: "menu.git")
         case .terminal:
@@ -41,6 +41,7 @@ nonisolated enum CommandAvailabilityRequirement: Sendable {
     case always
     case project
     case activeFile
+    case activeFileAndTerminal
     case gitRepository
     case terminal
 }
@@ -66,6 +67,8 @@ nonisolated struct CommandPaletteContext: Sendable, Equatable {
             hasProject
         case .activeFile:
             hasActiveFile
+        case .activeFileAndTerminal:
+            hasActiveFile && hasTerminal
         case .gitRepository:
             isGitRepository
         case .terminal:
@@ -128,12 +131,16 @@ enum CommandPaletteCatalog {
         context: CommandPaletteContext
     ) -> [CommandPaletteItem] {
         let userEntries = keybindings.entries
-        let entryByCommand = Dictionary(
-            uniqueKeysWithValues: userEntries.map { ($0.command, $0.chord) }
-        )
-        let commandByClaimedChord = Dictionary(
-            uniqueKeysWithValues: userEntries.map { ($0.chord, $0.command) }
-        )
+        var entryByCommand: [UserCommand: ParsedKeyChord] = [:]
+        var commandByClaimedChord: [ParsedKeyChord: UserCommand] = [:]
+        for entry in userEntries {
+            if entryByCommand[entry.command] == nil {
+                entryByCommand[entry.command] = entry.chord
+            }
+            if commandByClaimedChord[entry.chord] == nil {
+                commandByClaimedChord[entry.chord] = entry.command
+            }
+        }
 
         let builtIns = UserCommand.allCases.map { command in
             let shortcut = shortcutPresentation(

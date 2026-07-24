@@ -226,10 +226,10 @@ enum Strings {
     static let menuRevealProjectInFinder: LocalizedStringKey = "menu.revealProjectInFinder"
     static let menuTasks: LocalizedStringKey = "menu.tasks"
     static let menuTasksEmpty: LocalizedStringKey = "menu.tasksEmpty"
+    static let menuCommandPalette: LocalizedStringKey = "menu.commandPalette"
     static let menuEditKeybindings: LocalizedStringKey = "menu.editKeybindings"
     static let menuEditTasks: LocalizedStringKey = "menu.editTasks"
     static let menuReloadUserConfiguration: LocalizedStringKey = "menu.reloadUserConfiguration"
-    static let menuCommandPalette: LocalizedStringKey = "menu.commandPalette"
 
     static func userTaskConfirmationTitle(_ label: String) -> String {
         String(
@@ -255,6 +255,14 @@ enum Strings {
 
     static var userTaskOutputConflictMessage: String {
         String(localized: "userTask.outputConflict.message")
+    }
+
+    static var userTaskMissingFileTitle: String {
+        String(localized: "userTask.missingFile.title")
+    }
+
+    static var userTaskMissingFileMessage: String {
+        String(localized: "userTask.missingFile.message")
     }
 
     // MARK: - Quick Open

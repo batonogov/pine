@@ -53,6 +53,11 @@ extension UserConfigurationDiagnosticReason {
                 localized: "userConfig.diagnostic.duplicateChord",
                 defaultValue: "“\(value)” duplicates entry \(firstEntryNumber)."
             )
+        case .duplicateCommand(let id, let firstEntryNumber):
+            String(
+                localized: "userConfig.diagnostic.duplicateCommand",
+                defaultValue: "Command id “\(id)” duplicates entry \(firstEntryNumber)."
+            )
         case .duplicateTaskID(let id, let firstEntryNumber):
             String(
                 localized: "userConfig.diagnostic.duplicateTaskID",

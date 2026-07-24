@@ -1,0 +1,164 @@
+//
+//  CommandPaletteHostedInteractionTests.swift
+//  PineTests
+//
+
+import AppKit
+import SwiftUI
+import Testing
+
+@testable import Pine
+
+@Suite("Command palette hosted keyboard interaction")
+@MainActor
+struct CommandPaletteHostedInteractionTests {
+    @Test("Arrow navigation and Return invoke the selected row")
+    func arrowAndReturn() throws {
+        let state = HostedState()
+        let hosted = hostPalette(state: state, items: makeItems())
+        let field = try #require(findTextField(in: hosted))
+        let coordinator = try #require(
+            field.delegate as? QuickOpenSearchField.Coordinator
+        )
+        let editor = NSTextView()
+
+        #expect(coordinator.control(
+            field,
+            textView: editor,
+            doCommandBy: #selector(NSResponder.moveDown(_:))
+        ))
+        #expect(coordinator.control(
+            field,
+            textView: editor,
+            doCommandBy: #selector(NSResponder.insertNewline(_:))
+        ))
+        drainMainRunLoop()
+
+        #expect(state.invoked == [.task("second")])
+        #expect(state.isPresented == false)
+    }
+
+    @Test("Escape dismisses without invoking a command")
+    func escapeDismisses() throws {
+        let state = HostedState()
+        let hosted = hostPalette(state: state, items: makeItems())
+        let field = try #require(findTextField(in: hosted))
+        let coordinator = try #require(
+            field.delegate as? QuickOpenSearchField.Coordinator
+        )
+
+        #expect(coordinator.control(
+            field,
+            textView: NSTextView(),
+            doCommandBy: #selector(NSResponder.cancelOperation(_:))
+        ))
+        drainMainRunLoop()
+
+        #expect(state.isPresented == false)
+        #expect(state.invoked.isEmpty)
+    }
+
+    @Test("Return does not invoke a disabled row")
+    func disabledRowDoesNotInvoke() throws {
+        let state = HostedState()
+        var items = makeItems()
+        items[0] = CommandPaletteItem(
+            id: items[0].id,
+            title: items[0].title,
+            subtitle: items[0].subtitle,
+            searchTerms: items[0].searchTerms,
+            iconName: items[0].iconName,
+            shortcut: items[0].shortcut,
+            isEnabled: false
+        )
+        let hosted = hostPalette(state: state, items: items)
+        let field = try #require(findTextField(in: hosted))
+        let coordinator = try #require(
+            field.delegate as? QuickOpenSearchField.Coordinator
+        )
+
+        #expect(coordinator.control(
+            field,
+            textView: NSTextView(),
+            doCommandBy: #selector(NSResponder.insertNewline(_:))
+        ))
+        drainMainRunLoop()
+
+        #expect(state.isPresented)
+        #expect(state.invoked.isEmpty)
+    }
+
+    private func makeItems() -> [CommandPaletteItem] {
+        [
+            makeItem(id: .builtIn(.quickOpen), title: "Quick Open"),
+            makeItem(id: .task("second"), title: "Second Task"),
+            makeItem(id: .builtIn(.findInFile), title: "Find"),
+        ]
+    }
+
+    private func makeItem(
+        id: CommandPaletteItemID,
+        title: String
+    ) -> CommandPaletteItem {
+        CommandPaletteItem(
+            id: id,
+            title: title,
+            subtitle: "Test",
+            searchTerms: [title],
+            iconName: "command",
+            shortcut: CommandShortcutPresentation(chord: nil, state: .none),
+            isEnabled: true
+        )
+    }
+
+    private func hostPalette(
+        state: HostedState,
+        items: [CommandPaletteItem]
+    ) -> NSHostingView<HostedHarness> {
+        let harness = HostedHarness(state: state, items: items)
+        let hosted = NSHostingView(rootView: harness)
+        hosted.frame = NSRect(x: 0, y: 0, width: 560, height: 400)
+        hosted.layoutSubtreeIfNeeded()
+        drainMainRunLoop()
+        hosted.layoutSubtreeIfNeeded()
+        return hosted
+    }
+
+    private func findTextField(in view: NSView) -> NSTextField? {
+        if let field = view as? NSTextField {
+            return field
+        }
+        for subview in view.subviews {
+            if let field = findTextField(in: subview) {
+                return field
+            }
+        }
+        return nil
+    }
+
+    private func drainMainRunLoop() {
+        RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.02))
+    }
+}
+
+@MainActor
+private final class HostedState {
+    var isPresented = true
+    var invoked: [CommandPaletteItemID] = []
+}
+
+private struct HostedHarness: View {
+    let state: HostedState
+    let items: [CommandPaletteItem]
+
+    var body: some View {
+        CommandPaletteView(
+            isPresented: Binding(
+                get: { state.isPresented },
+                set: { state.isPresented = $0 }
+            ),
+            items: items,
+            onInvoke: { state.invoked.append($0.id) }
+        )
+    }
+}

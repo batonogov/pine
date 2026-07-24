@@ -24,7 +24,10 @@ nonisolated struct UserConfigurationEditorTests {
         let object = try JSONSerialization.jsonObject(with: data)
         let dict = try #require(object as? [String: Any])
         // ...document guidance lives in a `_comment` field...
-        #expect(dict["_comment"] is String)
+        let comment = try #require(dict["_comment"] as? String)
+        for command in UserCommand.allCases {
+            #expect(comment.contains(command.rawValue))
+        }
         // ...and the `keybindings` array is empty (no accidental bindings).
         let entries = try #require(dict["keybindings"] as? [Any])
         #expect(entries.isEmpty)
@@ -36,7 +39,9 @@ nonisolated struct UserConfigurationEditorTests {
         let data = Data(content.utf8)
         let object = try JSONSerialization.jsonObject(with: data)
         let dict = try #require(object as? [String: Any])
-        #expect(dict["_comment"] is String)
+        let comment = try #require(dict["_comment"] as? String)
+        #expect(comment.contains("replaces_file_content"))
+        #expect(!comment.contains("stdout does not currently replace"))
         let entries = try #require(dict["tasks"] as? [Any])
         #expect(entries.isEmpty)
     }

@@ -12,7 +12,7 @@ import Foundation
 import os
 
 /// Outcome of running a user task.
-struct UserTaskOutcome: Sendable, Equatable {
+nonisolated struct UserTaskOutcome: Sendable, Equatable {
     let taskID: String
     /// Captured stdout (UTF-8). Empty on error or no output.
     let stdout: String

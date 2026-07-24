@@ -15650,55 +15650,55 @@
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "Pine-Tastaturkurzbefehle. Fügen Sie unten Einträge zum Array \"keybindings\" hinzu. Jeder Eintrag ordnet eine Befehlskennung einer Tastenkombination zu. Befehlskennungen: quickOpen, findInFile, findAndReplace, findNext, findPrevious, findInProject, goToLine, symbolNavigator, toggleComment, toggleWordWrap, openFolder, showBranchSwitcher. Tastenkombinationen verwenden kleingeschriebene, durch '+' verbundene Modifikatoren: cmd (oder command), shift, alt (oder option/opt), ctrl (oder control) und eine Taste (zum Beispiel 'f', 'return' oder 'up'). Ein Dispatch-Modifikator (cmd oder ctrl) ist erforderlich. Reservierte Systemkombinationen und normale Texteingaben werden abgelehnt."
+            "value": "Pine-Tastaturkurzbefehle. Fügen Sie unten Einträge zum Array \"keybindings\" hinzu. Jeder Eintrag ordnet eine Befehlskennung einer Tastenkombination zu. Die unterstützten Befehlskennungen folgen nach diesem Hinweis. Tastenkombinationen verwenden kleingeschriebene, durch '+' verbundene Modifikatoren: cmd (oder command), shift, alt (oder option/opt), ctrl (oder control) und eine Taste (zum Beispiel 'f', 'return' oder 'up'). Ein Dispatch-Modifikator (cmd oder ctrl) ist erforderlich. Reservierte Systemkombinationen und normale Texteingaben werden abgelehnt."
           }
         },
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Pine keybindings. Add entries to the \"keybindings\" array below. Each entry maps a command id to a key chord. Command ids: quickOpen, findInFile, findAndReplace, findNext, findPrevious, findInProject, goToLine, symbolNavigator, toggleComment, toggleWordWrap, openFolder, showBranchSwitcher. Chords use lowercase modifiers joined by '+': cmd (or command), shift, alt (or option/opt), ctrl (or control), plus one key (for example 'f', 'return', or 'up'). A dispatch modifier (cmd or ctrl) is required. Reserved system chords and plain text input are rejected."
+            "value": "Pine keybindings. Add entries to the \"keybindings\" array below. Each entry maps a command id to a key chord. Supported command ids are listed after this guidance. Chords use lowercase modifiers joined by '+': cmd (or command), shift, alt (or option/opt), ctrl (or control), plus one key (for example 'f', 'return', or 'up'). A dispatch modifier (cmd or ctrl) is required. Reserved system chords and plain text input are rejected."
           }
         },
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "Atajos de Pine. Añada entradas al array \"keybindings\" de abajo. Cada entrada asocia un id de comando con una combinación de teclas. Id. de comando: quickOpen, findInFile, findAndReplace, findNext, findPrevious, findInProject, goToLine, symbolNavigator, toggleComment, toggleWordWrap, openFolder, showBranchSwitcher. Las combinaciones usan modificadores en minúsculas unidos por '+': cmd (o command), shift, alt (u option/opt), ctrl (o control), más una tecla (por ejemplo, 'f', 'return' o 'up'). Se requiere un modificador de despacho (cmd o ctrl). Se rechazan las combinaciones reservadas del sistema y la entrada de texto normal."
+            "value": "Atajos de Pine. Añada entradas al array \"keybindings\" de abajo. Cada entrada asocia un id de comando con una combinación de teclas. Los id. de comando compatibles aparecen después de esta guía. Las combinaciones usan modificadores en minúsculas unidos por '+': cmd (o command), shift, alt (u option/opt), ctrl (o control), más una tecla (por ejemplo, 'f', 'return' o 'up'). Se requiere un modificador de despacho (cmd o ctrl). Se rechazan las combinaciones reservadas del sistema y la entrada de texto normal."
           }
         },
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Raccourcis clavier de Pine. Ajoutez des entrées au tableau \"keybindings\" ci-dessous. Chaque entrée associe un identifiant de commande à une combinaison de touches. Identifiants de commande : quickOpen, findInFile, findAndReplace, findNext, findPrevious, findInProject, goToLine, symbolNavigator, toggleComment, toggleWordWrap, openFolder, showBranchSwitcher. Les combinaisons utilisent des modificateurs en minuscules reliés par '+' : cmd (ou command), shift, alt (ou option/opt), ctrl (ou control), plus une touche (par exemple 'f', 'return' ou 'up'). Un modificateur de répartition (cmd ou ctrl) est requis. Les combinaisons système réservées et la saisie de texte normale sont rejetées."
+            "value": "Raccourcis clavier de Pine. Ajoutez des entrées au tableau \"keybindings\" ci-dessous. Chaque entrée associe un identifiant de commande à une combinaison de touches. Les identifiants pris en charge suivent ces instructions. Les combinaisons utilisent des modificateurs en minuscules reliés par '+' : cmd (ou command), shift, alt (ou option/opt), ctrl (ou control), plus une touche (par exemple 'f', 'return' ou 'up'). Un modificateur de répartition (cmd ou ctrl) est requis. Les combinaisons système réservées et la saisie de texte normale sont rejetées."
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "Pine のキーバインド。下の \"keybindings\" 配列にエントリを追加してください。各エントリはコマンド ID をキーの組み合わせに割り当てます。コマンド ID: quickOpen, findInFile, findAndReplace, findNext, findPrevious, findInProject, goToLine, symbolNavigator, toggleComment, toggleWordWrap, openFolder, showBranchSwitcher。キーの組み合わせは小文字の修飾キーを '+' で連結します: cmd (または command)、shift、alt (または option/opt)、ctrl (または control) と 1 つのキー (例: 'f'、'return'、'up')。ディスパッチ修飾キー (cmd または ctrl) が必要です。システムで予約された組み合わせと通常のテキスト入力は拒否されます。"
+            "value": "Pine のキーバインド。下の \"keybindings\" 配列にエントリを追加してください。各エントリはコマンド ID をキーの組み合わせに割り当てます。対応するコマンド ID はこの説明の後に一覧表示されます。キーの組み合わせは小文字の修飾キーを '+' で連結します: cmd (または command)、shift、alt (または option/opt)、ctrl (または control) と 1 つのキー (例: 'f'、'return'、'up')。ディスパッチ修飾キー (cmd または ctrl) が必要です。システムで予約された組み合わせと通常のテキスト入力は拒否されます。"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "Pine 단축키. 아래 \"keybindings\" 배열에 항목을 추가하세요. 각 항목은 명령 ID를 키 조합에 연결합니다. 명령 ID: quickOpen, findInFile, findAndReplace, findNext, findPrevious, findInProject, goToLine, symbolNavigator, toggleComment, toggleWordWrap, openFolder, showBranchSwitcher. 키 조합은 소문자 보조 키를 '+'로 연결합니다: cmd(또는 command), shift, alt(또는 option/opt), ctrl(또는 control)과 하나의 키(예: 'f', 'return', 'up'). 디스패치 보조 키(cmd 또는 ctrl)가 필요합니다. 시스템 예약 조합과 일반 텍스트 입력은 거부됩니다."
+            "value": "Pine 단축키. 아래 \"keybindings\" 배열에 항목을 추가하세요. 각 항목은 명령 ID를 키 조합에 연결합니다. 지원되는 명령 ID는 이 안내 뒤에 나열됩니다. 키 조합은 소문자 보조 키를 '+'로 연결합니다: cmd(또는 command), shift, alt(또는 option/opt), ctrl(또는 control)과 하나의 키(예: 'f', 'return', 'up'). 디스패치 보조 키(cmd 또는 ctrl)가 필요합니다. 시스템 예약 조합과 일반 텍스트 입력은 거부됩니다."
           }
         },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
-            "value": "Atalhos de teclado do Pine. Adicione entradas ao array \"keybindings\" abaixo. Cada entrada associa um id de comando a uma combinação de teclas. IDs de comando: quickOpen, findInFile, findAndReplace, findNext, findPrevious, findInProject, goToLine, symbolNavigator, toggleComment, toggleWordWrap, openFolder, showBranchSwitcher. As combinações usam modificadores em minúsculas unidos por '+': cmd (ou command), shift, alt (ou option/opt), ctrl (ou control), mais uma tecla (por exemplo, 'f', 'return' ou 'up'). Um modificador de despacho (cmd ou ctrl) é obrigatório. Combinações reservadas do sistema e entrada de texto normal são rejeitadas."
+            "value": "Atalhos de teclado do Pine. Adicione entradas ao array \"keybindings\" abaixo. Cada entrada associa um id de comando a uma combinação de teclas. Os IDs de comando compatíveis aparecem após estas instruções. As combinações usam modificadores em minúsculas unidos por '+': cmd (ou command), shift, alt (ou option/opt), ctrl (ou control), mais uma tecla (por exemplo, 'f', 'return' ou 'up'). Um modificador de despacho (cmd ou ctrl) é obrigatório. Combinações reservadas do sistema e entrada de texto normal são rejeitadas."
           }
         },
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Сочетания клавиш Pine. Добавляйте записи в массив \"keybindings\" ниже. Каждая запись связывает идентификатор команды с сочетанием клавиш. Идентификаторы команд: quickOpen, findInFile, findAndReplace, findNext, findPrevious, findInProject, goToLine, symbolNavigator, toggleComment, toggleWordWrap, openFolder, showBranchSwitcher. В сочетаниях используются строчные модификаторы, соединённые знаком '+': cmd (или command), shift, alt (или option/opt), ctrl (или control) и одна клавиша (например, 'f', 'return' или 'up'). Требуется модификатор диспетчеризации (cmd или ctrl). Зарезервированные системные сочетания и обычный текстовый ввод отклоняются."
+            "value": "Сочетания клавиш Pine. Добавляйте записи в массив \"keybindings\" ниже. Каждая запись связывает идентификатор команды с сочетанием клавиш. Поддерживаемые идентификаторы команд перечислены после этой подсказки. В сочетаниях используются строчные модификаторы, соединённые знаком '+': cmd (или command), shift, alt (или option/opt), ctrl (или control) и одна клавиша (например, 'f', 'return' или 'up'). Требуется модификатор диспетчеризации (cmd или ctrl). Зарезервированные системные сочетания и обычный текстовый ввод отклоняются."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "Pine 快捷键。请在下面的 \"keybindings\" 数组中添加条目。每个条目将命令 ID 映射到按键组合。命令 ID：quickOpen、findInFile、findAndReplace、findNext、findPrevious、findInProject、goToLine、symbolNavigator、toggleComment、toggleWordWrap、openFolder、showBranchSwitcher。按键组合使用以 '+' 连接的小写修饰键：cmd（或 command）、shift、alt（或 option/opt）、ctrl（或 control），再加一个按键（例如 'f'、'return' 或 'up'）。必须包含分派修饰键（cmd 或 ctrl）。系统保留的组合和普通文本输入会被拒绝。"
+            "value": "Pine 快捷键。请在下面的 \"keybindings\" 数组中添加条目。每个条目将命令 ID 映射到按键组合。支持的命令 ID 会列在本说明之后。按键组合使用以 '+' 连接的小写修饰键：cmd（或 command）、shift、alt（或 option/opt）、ctrl（或 control），再加一个按键（例如 'f'、'return' 或 'up'）。必须包含分派修饰键（cmd 或 ctrl）。系统保留的组合和普通文本输入会被拒绝。"
           }
         }
       }
@@ -15709,55 +15709,55 @@
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "Pine-Aufgaben. Fügen Sie unten Einträge zum Array \"tasks\" hinzu. Jede Aufgabe führt einen Shell-Befehl aus. Felder: id (eindeutig), label (Menütext), command (Shell-Zeichenfolge), scope (activeFile oder project; Standard activeFile), replaces_file_content (Standard false; bei true im Bereich activeFile sendet Pine den aktuellen Dateiinhalt an stdin; stdout ersetzt die Datei derzeit nicht), require_confirmation (Standard automatisch; destruktive Befehle wie rm, chmod, dd und diskutil verlangen eine Bestätigung)."
+            "value": "Pine-Aufgaben. Fügen Sie unten Einträge zum Array \"tasks\" hinzu. Jede Aufgabe führt einen Shell-Befehl aus. Felder: id (eindeutig), label (Menütext), command (Shell-Zeichenfolge), scope (activeFile oder project; Standard activeFile), replaces_file_content (Standard false; bei true im Bereich activeFile sendet Pine den aktuellen Dateiinhalt an stdin und übernimmt stdout nur, wenn derselbe Editorpuffer unverändert ist), require_confirmation (Standard automatisch; destruktive Befehle wie rm, chmod, dd und diskutil verlangen eine Bestätigung)."
           }
         },
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Pine tasks. Add entries to the \"tasks\" array below. Each task runs a shell command. Fields: id (unique), label (menu text), command (shell string), scope (activeFile or project; default activeFile), replaces_file_content (default false; when true in activeFile scope, Pine sends the current file content to stdin; stdout does not currently replace the file), require_confirmation (default auto; destructive commands such as rm, chmod, dd, and diskutil prompt for confirmation)."
+            "value": "Pine tasks. Add entries to the \"tasks\" array below. Each task runs a shell command. Fields: id (unique), label (menu text), command (shell string), scope (activeFile or project; default activeFile), replaces_file_content (default false; when true in activeFile scope, Pine sends the current file content to stdin and applies stdout only if the same editor buffer is still unchanged), require_confirmation (default auto; destructive commands such as rm, chmod, dd, and diskutil prompt for confirmation)."
           }
         },
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "Tareas de Pine. Añada entradas al array \"tasks\" de abajo. Cada tarea ejecuta un comando de shell. Campos: id (único), label (texto del menú), command (cadena de shell), scope (activeFile o project; predeterminado activeFile), replaces_file_content (predeterminado false; cuando es true con ámbito activeFile, Pine envía el contenido actual del archivo a stdin; actualmente stdout no reemplaza el archivo), require_confirmation (predeterminado automático; los comandos destructivos como rm, chmod, dd y diskutil solicitan confirmación)."
+            "value": "Tareas de Pine. Añada entradas al array \"tasks\" de abajo. Cada tarea ejecuta un comando de shell. Campos: id (único), label (texto del menú), command (cadena de shell), scope (activeFile o project; predeterminado activeFile), replaces_file_content (predeterminado false; cuando es true con ámbito activeFile, Pine envía el contenido actual a stdin y aplica stdout solo si el mismo búfer sigue sin cambios), require_confirmation (predeterminado automático; los comandos destructivos como rm, chmod, dd y diskutil solicitan confirmación)."
           }
         },
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Tâches Pine. Ajoutez des entrées au tableau \"tasks\" ci-dessous. Chaque tâche exécute une commande shell. Champs : id (unique), label (texte du menu), command (chaîne shell), scope (activeFile ou project ; activeFile par défaut), replaces_file_content (false par défaut ; avec true et la portée activeFile, Pine envoie le contenu actuel du fichier à stdin ; stdout ne remplace pas encore le fichier), require_confirmation (automatique par défaut ; les commandes destructrices telles que rm, chmod, dd et diskutil demandent une confirmation)."
+            "value": "Tâches Pine. Ajoutez des entrées au tableau \"tasks\" ci-dessous. Chaque tâche exécute une commande shell. Champs : id (unique), label (texte du menu), command (chaîne shell), scope (activeFile ou project ; activeFile par défaut), replaces_file_content (false par défaut ; avec true et la portée activeFile, Pine envoie le contenu actuel à stdin et applique stdout uniquement si le même tampon est resté inchangé), require_confirmation (automatique par défaut ; les commandes destructrices telles que rm, chmod, dd et diskutil demandent une confirmation)."
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "Pine のタスク。下の \"tasks\" 配列にエントリを追加してください。各タスクはシェルコマンドを実行します。フィールド: id (一意)、label (メニューのテキスト)、command (シェル文字列)、scope (activeFile または project、デフォルトは activeFile)、replaces_file_content (デフォルトは false。activeFile スコープで true の場合、Pine は現在のファイル内容を stdin に送信します。現在、stdout はファイルを置き換えません)、require_confirmation (デフォルトは自動。rm、chmod、dd、diskutil などの破壊的なコマンドでは確認を求めます)。"
+            "value": "Pine のタスク。下の \"tasks\" 配列にエントリを追加してください。各タスクはシェルコマンドを実行します。フィールド: id (一意)、label (メニューのテキスト)、command (シェル文字列)、scope (activeFile または project、デフォルトは activeFile)、replaces_file_content (デフォルトは false。activeFile スコープで true の場合、現在の内容を stdin に送り、同じエディターバッファーが未変更のときだけ stdout を適用します)、require_confirmation (デフォルトは自動。rm、chmod、dd、diskutil などの破壊的なコマンドでは確認を求めます)。"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "Pine 작업. 아래 \"tasks\" 배열에 항목을 추가하세요. 각 작업은 셸 명령을 실행합니다. 필드: id(고유), label(메뉴 텍스트), command(셸 문자열), scope(activeFile 또는 project, 기본값 activeFile), replaces_file_content(기본값 false, activeFile 범위에서 true이면 Pine이 현재 파일 내용을 stdin으로 보내며 현재 stdout은 파일을 바꾸지 않음), require_confirmation(기본값 자동, rm, chmod, dd, diskutil 같은 파괴적 명령은 확인을 요청함)."
+            "value": "Pine 작업. 아래 \"tasks\" 배열에 항목을 추가하세요. 각 작업은 셸 명령을 실행합니다. 필드: id(고유), label(메뉴 텍스트), command(셸 문자열), scope(activeFile 또는 project, 기본값 activeFile), replaces_file_content(기본값 false, activeFile 범위에서 true이면 현재 내용을 stdin으로 보내고 같은 편집기 버퍼가 변경되지 않았을 때만 stdout을 적용함), require_confirmation(기본값 자동, rm, chmod, dd, diskutil 같은 파괴적 명령은 확인을 요청함)."
           }
         },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
-            "value": "Tarefas do Pine. Adicione entradas ao array \"tasks\" abaixo. Cada tarefa executa um comando de shell. Campos: id (único), label (texto do menu), command (string de shell), scope (activeFile ou project; padrão activeFile), replaces_file_content (padrão false; quando true no escopo activeFile, o Pine envia o conteúdo atual do arquivo para stdin; atualmente stdout não substitui o arquivo), require_confirmation (padrão automático; comandos destrutivos como rm, chmod, dd e diskutil solicitam confirmação)."
+            "value": "Tarefas do Pine. Adicione entradas ao array \"tasks\" abaixo. Cada tarefa executa um comando de shell. Campos: id (único), label (texto do menu), command (string de shell), scope (activeFile ou project; padrão activeFile), replaces_file_content (padrão false; quando true no escopo activeFile, o Pine envia o conteúdo atual para stdin e aplica stdout apenas se o mesmo buffer continuar inalterado), require_confirmation (padrão automático; comandos destrutivos como rm, chmod, dd e diskutil solicitam confirmação)."
           }
         },
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Задачи Pine. Добавляйте записи в массив \"tasks\" ниже. Каждая задача выполняет команду оболочки. Поля: id (уникальный), label (текст меню), command (строка оболочки), scope (activeFile или project; по умолчанию activeFile), replaces_file_content (по умолчанию false; при true и области activeFile Pine передаёт текущее содержимое файла в stdin; в текущей реализации stdout не заменяет файл), require_confirmation (по умолчанию автоматически; разрушительные команды, например rm, chmod, dd и diskutil, требуют подтверждения)."
+            "value": "Задачи Pine. Добавляйте записи в массив \"tasks\" ниже. Каждая задача выполняет команду оболочки. Поля: id (уникальный), label (текст меню), command (строка оболочки), scope (activeFile или project; по умолчанию activeFile), replaces_file_content (по умолчанию false; при true и области activeFile Pine передаёт текущее содержимое в stdin и применяет stdout, только если тот же буфер редактора не изменился), require_confirmation (по умолчанию автоматически; разрушительные команды, например rm, chmod, dd и diskutil, требуют подтверждения)."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "Pine 任务。请在下面的 \"tasks\" 数组中添加条目。每个任务运行一条 shell 命令。字段：id（唯一）、label（菜单文本）、command（shell 字符串）、scope（activeFile 或 project；默认为 activeFile）、replaces_file_content（默认为 false；在 activeFile 范围内设为 true 时，Pine 会将当前文件内容发送到 stdin；stdout 目前不会替换文件）、require_confirmation（默认为自动；rm、chmod、dd 和 diskutil 等破坏性命令会请求确认）。"
+            "value": "Pine 任务。请在下面的 \"tasks\" 数组中添加条目。每个任务运行一条 shell 命令。字段：id（唯一）、label（菜单文本）、command（shell 字符串）、scope（activeFile 或 project；默认为 activeFile）、replaces_file_content（默认为 false；在 activeFile 范围内设为 true 时，将当前内容发送到 stdin，并且仅在同一编辑器缓冲区仍未更改时应用 stdout）、require_confirmation（默认为自动；rm、chmod、dd 和 diskutil 等破坏性命令会请求确认）。"
           }
         }
       }
@@ -16291,6 +16291,231 @@
             "value": "“%1$@” 与条目 %2$lld 重复。"
           }
         }
+      }
+    },
+    "commandPalette.category.file": {
+      "comment": "Command palette category for file and workspace commands.",
+      "extractionState": "manual",
+      "localizations": {
+        "de": { "stringUnit": { "state": "translated", "value": "Datei" } },
+        "en": { "stringUnit": { "state": "translated", "value": "File" } },
+        "es": { "stringUnit": { "state": "translated", "value": "Archivo" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Fichier" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "ファイル" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "파일" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Arquivo" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Файл" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "文件" } }
+      }
+    },
+    "commandPalette.category.edit": {
+      "comment": "Command palette category for editor commands.",
+      "extractionState": "manual",
+      "localizations": {
+        "de": { "stringUnit": { "state": "translated", "value": "Bearbeiten" } },
+        "en": { "stringUnit": { "state": "translated", "value": "Edit" } },
+        "es": { "stringUnit": { "state": "translated", "value": "Edición" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Édition" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "編集" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "편집" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Editar" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Правка" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "编辑" } }
+      }
+    },
+    "menu.commandPalette": {
+      "comment": "Menu command that opens the searchable command palette.",
+      "extractionState": "manual",
+      "localizations": {
+        "de": { "stringUnit": { "state": "translated", "value": "Befehlspalette…" } },
+        "en": { "stringUnit": { "state": "translated", "value": "Command Palette…" } },
+        "es": { "stringUnit": { "state": "translated", "value": "Paleta de comandos…" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Palette de commandes…" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "コマンドパレット…" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "명령 팔레트…" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Paleta de comandos…" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Палитра команд…" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "命令面板…" } }
+      }
+    },
+    "commandPalette.placeholder": {
+      "comment": "Placeholder in the command palette search field.",
+      "extractionState": "manual",
+      "localizations": {
+        "de": { "stringUnit": { "state": "translated", "value": "Befehle und Aufgaben suchen" } },
+        "en": { "stringUnit": { "state": "translated", "value": "Search commands and tasks" } },
+        "es": { "stringUnit": { "state": "translated", "value": "Buscar comandos y tareas" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Rechercher des commandes et des tâches" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "コマンドとタスクを検索" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "명령 및 작업 검색" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Buscar comandos e tarefas" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Поиск команд и задач" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "搜索命令和任务" } }
+      }
+    },
+    "commandPalette.noResults": {
+      "comment": "Empty state when the command palette search has no matches.",
+      "extractionState": "manual",
+      "localizations": {
+        "de": { "stringUnit": { "state": "translated", "value": "Keine passenden Befehle oder Aufgaben" } },
+        "en": { "stringUnit": { "state": "translated", "value": "No matching commands or tasks" } },
+        "es": { "stringUnit": { "state": "translated", "value": "No hay comandos ni tareas coincidentes" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Aucune commande ou tâche correspondante" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "一致するコマンドまたはタスクはありません" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "일치하는 명령 또는 작업 없음" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Nenhum comando ou tarefa correspondente" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Подходящие команды и задачи не найдены" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "没有匹配的命令或任务" } }
+      }
+    },
+    "commandPalette.shortcutOverride": {
+      "comment": "Badge for a command whose shortcut is a user override.",
+      "extractionState": "manual",
+      "localizations": {
+        "de": { "stringUnit": { "state": "translated", "value": "Benutzerdefiniert" } },
+        "en": { "stringUnit": { "state": "translated", "value": "User override" } },
+        "es": { "stringUnit": { "state": "translated", "value": "Personalizado" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Personnalisé" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "ユーザー設定" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "사용자 지정" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Personalizado" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Пользовательское" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "用户覆盖" } }
+      }
+    },
+    "commandPalette.shortcutConflict": {
+      "comment": "Badge for a built-in shortcut shadowed by another user binding.",
+      "extractionState": "manual",
+      "localizations": {
+        "de": { "stringUnit": { "state": "translated", "value": "Belegt" } },
+        "en": { "stringUnit": { "state": "translated", "value": "Overridden" } },
+        "es": { "stringUnit": { "state": "translated", "value": "Reemplazado" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Remplacé" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "上書き済み" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "재정의됨" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Substituído" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Переопределено" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "已被覆盖" } }
+      }
+    },
+    "userTask.confirmation.title": {
+      "comment": "Confirmation title before running a task. %@ is the task label.",
+      "extractionState": "manual",
+      "localizations": {
+        "de": { "stringUnit": { "state": "translated", "value": "Aufgabe „%@“ ausführen?" } },
+        "en": { "stringUnit": { "state": "translated", "value": "Run task “%@”?" } },
+        "es": { "stringUnit": { "state": "translated", "value": "¿Ejecutar la tarea «%@»?" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Exécuter la tâche « %@ » ?" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "タスク「%@」を実行しますか？" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "“%@” 작업을 실행할까요?" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Executar a tarefa “%@”?" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Выполнить задачу «%@»?" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "运行任务“%@”吗？" } }
+      }
+    },
+    "userTask.confirmation.message": {
+      "comment": "Confirmation body before running a task. %@ is the exact shell command.",
+      "extractionState": "manual",
+      "localizations": {
+        "de": { "stringUnit": { "state": "translated", "value": "Diese Aufgabe führt den folgenden Befehl aus:\n%@" } },
+        "en": { "stringUnit": { "state": "translated", "value": "This task will execute the following command:\n%@" } },
+        "es": { "stringUnit": { "state": "translated", "value": "Esta tarea ejecutará el siguiente comando:\n%@" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Cette tâche exécutera la commande suivante :\n%@" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "このタスクは次のコマンドを実行します:\n%@" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "이 작업은 다음 명령을 실행합니다:\n%@" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Esta tarefa executará o seguinte comando:\n%@" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Задача выполнит следующую команду:\n%@" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "此任务将执行以下命令：\n%@" } }
+      }
+    },
+    "userTask.run": {
+      "comment": "Button that confirms running a user task.",
+      "extractionState": "manual",
+      "localizations": {
+        "de": { "stringUnit": { "state": "translated", "value": "Ausführen" } },
+        "en": { "stringUnit": { "state": "translated", "value": "Run" } },
+        "es": { "stringUnit": { "state": "translated", "value": "Ejecutar" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Exécuter" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "実行" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "실행" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Executar" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Выполнить" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "运行" } }
+      }
+    },
+    "userTask.outputConflict.title": {
+      "comment": "Title shown when task output cannot safely replace an edited buffer.",
+      "extractionState": "manual",
+      "localizations": {
+        "de": { "stringUnit": { "state": "translated", "value": "Aufgabenausgabe nicht angewendet" } },
+        "en": { "stringUnit": { "state": "translated", "value": "Task output wasn’t applied" } },
+        "es": { "stringUnit": { "state": "translated", "value": "No se aplicó la salida de la tarea" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "La sortie de la tâche n’a pas été appliquée" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "タスク出力は適用されませんでした" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "작업 출력을 적용하지 않음" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "A saída da tarefa não foi aplicada" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Вывод задачи не применён" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "未应用任务输出" } }
+      }
+    },
+    "userTask.outputConflict.message": {
+      "comment": "Explains that a task output replacement was blocked to preserve newer edits.",
+      "extractionState": "manual",
+      "localizations": {
+        "de": { "stringUnit": { "state": "translated", "value": "Die aktive Datei oder ihr Inhalt hat sich während der Aufgabe geändert. Die neueren Änderungen wurden beibehalten." } },
+        "en": { "stringUnit": { "state": "translated", "value": "The active file or its content changed while the task was running. Pine preserved the newer edits." } },
+        "es": { "stringUnit": { "state": "translated", "value": "El archivo activo o su contenido cambió durante la tarea. Pine conservó los cambios más recientes." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Le fichier actif ou son contenu a changé pendant la tâche. Pine a conservé les modifications récentes." } },
+        "ja": { "stringUnit": { "state": "translated", "value": "タスクの実行中にアクティブなファイルまたは内容が変更されました。新しい編集内容は保持されました。" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "작업 실행 중 활성 파일 또는 내용이 변경되었습니다. Pine이 최신 편집 내용을 유지했습니다." } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "O arquivo ativo ou seu conteúdo mudou durante a tarefa. O Pine preservou as edições mais recentes." } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Активный файл или его содержимое изменились во время выполнения задачи. Pine сохранил более новые правки." } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "任务运行期间，活动文件或其内容已更改。Pine 保留了较新的编辑。" } }
+      }
+    },
+    "userTask.missingFile.title": {
+      "comment": "Title shown when an active-file task has no active file.",
+      "extractionState": "manual",
+      "localizations": {
+        "de": { "stringUnit": { "state": "translated", "value": "Keine aktive Datei" } },
+        "en": { "stringUnit": { "state": "translated", "value": "No active file" } },
+        "es": { "stringUnit": { "state": "translated", "value": "No hay ningún archivo activo" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Aucun fichier actif" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "アクティブなファイルがありません" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "활성 파일 없음" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Nenhum arquivo ativo" } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Нет активного файла" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "没有活动文件" } }
+      }
+    },
+    "userTask.missingFile.message": {
+      "comment": "Explains why an active-file task cannot run.",
+      "extractionState": "manual",
+      "localizations": {
+        "de": { "stringUnit": { "state": "translated", "value": "Öffnen Sie eine Datei, bevor Sie diese Aufgabe ausführen." } },
+        "en": { "stringUnit": { "state": "translated", "value": "Open a file before running this task." } },
+        "es": { "stringUnit": { "state": "translated", "value": "Abra un archivo antes de ejecutar esta tarea." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Ouvrez un fichier avant d’exécuter cette tâche." } },
+        "ja": { "stringUnit": { "state": "translated", "value": "このタスクを実行する前にファイルを開いてください。" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "이 작업을 실행하기 전에 파일을 여세요." } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Abra um arquivo antes de executar esta tarefa." } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Перед выполнением задачи откройте файл." } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "运行此任务前请先打开文件。" } }
+      }
+    },
+    "userConfig.diagnostic.duplicateCommand": {
+      "comment": "Diagnostic: duplicate command id. %1$@ is the id, %2$lld is the first entry number.",
+      "extractionState": "manual",
+      "localizations": {
+        "de": { "stringUnit": { "state": "translated", "value": "Befehlskennung „%1$@“ dupliziert Eintrag %2$lld." } },
+        "en": { "stringUnit": { "state": "translated", "value": "Command id “%1$@” duplicates entry %2$lld." } },
+        "es": { "stringUnit": { "state": "translated", "value": "El id. de comando «%1$@» duplica la entrada %2$lld." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "L’identifiant de commande « %1$@ » duplique l’entrée %2$lld." } },
+        "ja": { "stringUnit": { "state": "translated", "value": "コマンド ID「%1$@」はエントリ %2$lld と重複しています。" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "명령 ID “%1$@”이(가) 항목 %2$lld와 중복됩니다." } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "O ID de comando “%1$@” duplica a entrada %2$lld." } },
+        "ru": { "stringUnit": { "state": "translated", "value": "Идентификатор команды «%1$@» дублирует запись %2$lld." } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "命令 ID“%1$@”与条目 %2$lld 重复。" } }
       }
     },
     "userConfig.diagnostic.duplicateTaskID": {

@@ -265,20 +265,22 @@ enum UserConfigurationEditor {
     }
 
     nonisolated private static var keybindingsComment: String {
-        String(
+        let guidance = String(
             localized: "userConfig.starter.keybindingsComment",
             defaultValue: """
             Pine keybindings. Add entries to the "keybindings" array below. \
-            Each entry maps a command id to a key chord. Command ids: \
-            quickOpen, findInFile, findAndReplace, findNext, findPrevious, \
-            findInProject, goToLine, symbolNavigator, toggleComment, \
-            toggleWordWrap, openFolder, showBranchSwitcher. Chords use \
-            lowercase modifiers joined by '+': cmd (or command), shift, alt \
-            (or option/opt), ctrl (or control), plus one key (for example \
-            'f', 'return', or 'up'). A dispatch modifier (cmd or ctrl) is \
-            required. Reserved system chords and plain text input are rejected.
+            Each entry maps a command id to a key chord. Supported command \
+            ids are listed after this guidance. Chords use lowercase modifiers \
+            joined by '+': cmd (or command), shift, alt (or option/opt), ctrl \
+            (or control), plus one key (for example 'f', 'return', or 'up'). \
+            A dispatch modifier (cmd or ctrl) is required. Reserved system \
+            chords and plain text input are rejected.
             """
         )
+        let commandIDs = UserCommand.allCases
+            .map(\.rawValue)
+            .joined(separator: ", ")
+        return "\(guidance) \(commandIDs)."
     }
 
     nonisolated private static var tasksComment: String {
@@ -289,10 +291,10 @@ enum UserConfigurationEditor {
             a shell command. Fields: id (unique), label (menu text), command \
             (shell string), scope (activeFile or project; default activeFile), \
             replaces_file_content (default false; when true in activeFile \
-            scope, Pine sends the current file content to stdin; stdout does \
-            not currently replace the file), require_confirmation (default \
-            auto; destructive commands such as rm, chmod, dd, and diskutil \
-            prompt for confirmation).
+            scope, Pine sends the current file content to stdin and applies \
+            stdout only if the same editor buffer is still unchanged), \
+            require_confirmation (default auto; destructive commands such as \
+            rm, chmod, dd, and diskutil prompt for confirmation).
             """
         )
     }

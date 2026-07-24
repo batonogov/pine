@@ -135,29 +135,12 @@ struct ContentView: View {
                 isQuickOpenPresented = true
             }
         }
-        .sheet(isPresented: $isCommandPalettePresented) {
-            CommandPaletteView(
-                isPresented: $isCommandPalettePresented,
-                items: CommandPaletteCatalog.makeItems(
-                    tasks: ExtensibilityManager.shared.tasks.tasks,
-                    keybindings: ExtensibilityManager.shared.keybindings,
-                    context: UserCommandInvocationRouter.context(
-                        for: projectManager
-                    )
-                ),
-                onInvoke: invokeCommandPaletteItem
-            )
-        }
-        .onReceive(
-            NotificationCenter.default.publisher(for: .showCommandPalette)
-        ) { _ in
-            // Notification delivery is synchronous. Defer the @State write
-            // to avoid re-entering SwiftUI storage from a menu/keybinding
-            // dispatch call stack (the #1051 exclusivity-abort family).
-            DispatchQueue.main.async {
-                isCommandPalettePresented = true
-            }
-        }
+        .modifier(CommandPalettePresenter(
+            isPresented: $isCommandPalettePresented,
+            projectManager: projectManager,
+            isKeyWindow: controlActiveState == .key,
+            onInvoke: invokeCommandPaletteItem
+        ))
         .sheet(isPresented: $isSymbolNavigatorPresented) {
             SymbolNavigatorView(isPresented: $isSymbolNavigatorPresented)
                 .environment(projectManager)
@@ -378,6 +361,18 @@ struct ContentView: View {
         return targetProject === currentProject
     }
 
+    static func shouldHandleTargetedCommand(
+        notificationObject: Any?,
+        currentProject: ProjectManager,
+        isKeyWindow: Bool
+    ) -> Bool {
+        guard let notificationObject else { return isKeyWindow }
+        guard let targetProject = notificationObject as? ProjectManager else {
+            return false
+        }
+        return targetProject === currentProject
+    }
+
     private func invokeCommandPaletteItem(_ item: CommandPaletteItem) {
         switch item.id {
         case .builtIn(let command):
@@ -403,6 +398,49 @@ struct ContentView: View {
         PaneTreeView(node: paneManager.root)
     }
 
+}
+
+private struct CommandPalettePresenter: ViewModifier {
+    @Binding var isPresented: Bool
+    let projectManager: ProjectManager
+    let isKeyWindow: Bool
+    let onInvoke: (CommandPaletteItem) -> Void
+
+    func body(content: Content) -> some View {
+        content
+            .sheet(isPresented: $isPresented) {
+                CommandPaletteView(
+                    isPresented: $isPresented,
+                    items: CommandPaletteCatalog.makeItems(
+                        tasks: ExtensibilityManager.shared.tasks.tasks,
+                        keybindings: ExtensibilityManager.shared.keybindings,
+                        context: UserCommandInvocationRouter.context(
+                            for: projectManager
+                        )
+                    ),
+                    onInvoke: onInvoke
+                )
+            }
+            .onReceive(
+                NotificationCenter.default.publisher(
+                    for: .showCommandPalette
+                )
+            ) { notification in
+                guard ContentView.shouldHandleTargetedCommand(
+                    notificationObject: notification.object,
+                    currentProject: projectManager,
+                    isKeyWindow: isKeyWindow
+                ) else {
+                    return
+                }
+                // Notification delivery is synchronous. Defer the @State
+                // write to avoid re-entering SwiftUI storage from a
+                // menu/keybinding dispatch call stack (#1051 family).
+                DispatchQueue.main.async {
+                    isPresented = true
+                }
+            }
+    }
 }
 
 // MARK: - Preview

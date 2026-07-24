@@ -18,13 +18,18 @@ enum UserTaskInvocationController {
         _ task: UserTask,
         projectManager: ProjectManager
     ) {
+        let tabManager = projectManager.activeTabManager
+        let activeTab = tabManager.activeTab
+        if task.scope == .activeFile, activeTab == nil {
+            presentMissingActiveFile()
+            return
+        }
+
         if task.effectiveRequireConfirmation(),
            !presentConfirmation(for: task) {
             return
         }
 
-        let tabManager = projectManager.activeTabManager
-        let activeTab = tabManager.activeTab
         let capturedTabID = activeTab?.id
         let capturedContent = activeTab?.content
 
@@ -34,13 +39,15 @@ enum UserTaskInvocationController {
             projectRootURL: projectManager.workspace.rootURL,
             fileContent: capturedContent
         ) { outcome in
-            presentOutcome(
-                outcome,
-                task: task,
-                projectManager: projectManager,
-                capturedTabID: capturedTabID,
-                capturedContent: capturedContent
-            )
+            Task { @MainActor in
+                presentOutcome(
+                    outcome,
+                    task: task,
+                    projectManager: projectManager,
+                    capturedTabID: capturedTabID,
+                    capturedContent: capturedContent
+                )
+            }
         }
     }
 
@@ -77,14 +84,27 @@ enum UserTaskInvocationController {
         // process ran. Applying stdout to a different/newer buffer would lose
         // unrelated work and violate the task's active-file contract.
         let tabManager = projectManager.activeTabManager
-        guard let capturedTabID,
-              let capturedContent,
-              tabManager.activeTab?.id == capturedTabID,
-              tabManager.activeTab?.content == capturedContent else {
+        guard canApplyReplacement(
+            capturedTabID: capturedTabID,
+            capturedContent: capturedContent,
+            currentTabID: tabManager.activeTab?.id,
+            currentContent: tabManager.activeTab?.content
+        ) else {
             presentReplacementConflict()
             return
         }
         tabManager.updateContent(outcome.stdout)
+    }
+
+    nonisolated static func canApplyReplacement(
+        capturedTabID: UUID?,
+        capturedContent: String?,
+        currentTabID: UUID?,
+        currentContent: String?
+    ) -> Bool {
+        guard let capturedTabID, let capturedContent else { return false }
+        return currentTabID == capturedTabID
+            && currentContent == capturedContent
     }
 
     private static func presentReplacementConflict() {
@@ -92,6 +112,15 @@ enum UserTaskInvocationController {
         alert.alertStyle = .warning
         alert.messageText = Strings.userTaskOutputConflictTitle
         alert.informativeText = Strings.userTaskOutputConflictMessage
+        alert.addButton(withTitle: Strings.dialogOK)
+        alert.runModal()
+    }
+
+    private static func presentMissingActiveFile() {
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = Strings.userTaskMissingFileTitle
+        alert.informativeText = Strings.userTaskMissingFileMessage
         alert.addButton(withTitle: Strings.dialogOK)
         alert.runModal()
     }
