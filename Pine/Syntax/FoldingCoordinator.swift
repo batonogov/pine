@@ -143,24 +143,93 @@ nonisolated final class FoldingCoordinator: @unchecked Sendable {
         case cancelled
     }
 
+    /// One-shot continuation gate used by the unstructured deadline race.
+    /// A task group cannot enforce a hard deadline when a provider ignores
+    /// cancellation because structured concurrency waits for every child
+    /// before returning from the group scope.
+    nonisolated private final class LSPRaceGate: @unchecked Sendable {
+        private let lock = NSLock()
+        private var outcome: LSPRaceOutcome?
+        private var continuation:
+            CheckedContinuation<LSPRaceOutcome, Never>?
+        private var tasks: [Task<Void, Never>] = []
+
+        func install(
+            _ continuation: CheckedContinuation<LSPRaceOutcome, Never>
+        ) {
+            let completedOutcome: LSPRaceOutcome? = lock.withLock {
+                if let outcome {
+                    return outcome
+                }
+                self.continuation = continuation
+                return nil
+            }
+            if let completedOutcome {
+                continuation.resume(returning: completedOutcome)
+            }
+        }
+
+        func install(tasks: [Task<Void, Never>]) {
+            let shouldCancel = lock.withLock {
+                if outcome != nil {
+                    return true
+                }
+                self.tasks = tasks
+                return false
+            }
+            if shouldCancel {
+                tasks.forEach { $0.cancel() }
+            }
+        }
+
+        func resolve(_ outcome: LSPRaceOutcome) {
+            let completion:
+                (
+                    CheckedContinuation<LSPRaceOutcome, Never>?,
+                    [Task<Void, Never>]
+                )? = lock.withLock {
+                    guard self.outcome == nil else { return nil }
+                    self.outcome = outcome
+                    let completion = (continuation, tasks)
+                    continuation = nil
+                    tasks = []
+                    return completion
+                }
+            guard let completion else { return }
+            completion.1.forEach { $0.cancel() }
+            completion.0?.resume(returning: outcome)
+        }
+    }
+
     /// Runs the provider query and the deadline timer concurrently; the first
-    /// to resolve wins and the other is cancelled.
+    /// to resolve wins and the other is cancelled. The continuation gate lets
+    /// this method return at the deadline even if a third-party provider does
+    /// not cooperate with cancellation.
     private func raceLSP(
         query: @escaping @Sendable () async -> [FoldableRange]?
     ) async -> LSPRaceOutcome {
-        await withTaskGroup(of: LSPRaceOutcome.self) { group in
-            group.addTask {
-                let result = await query()
-                return .completed(result)
+        let gate = LSPRaceGate()
+        return await withTaskCancellationHandler {
+            await withCheckedContinuation { continuation in
+                gate.install(continuation)
+                let queryTask = Task {
+                    let result = await query()
+                    gate.resolve(.completed(result))
+                }
+                let timeoutTask = Task {
+                    do {
+                        try await Task.sleep(
+                            for: FoldingCoordinator.lspDeadline
+                        )
+                    } catch {
+                        return
+                    }
+                    gate.resolve(.timedOut)
+                }
+                gate.install(tasks: [queryTask, timeoutTask])
             }
-            group.addTask {
-                try? await Task.sleep(for: FoldingCoordinator.lspDeadline)
-                return .timedOut
-            }
-            // The first child to finish decides; cancel the sibling.
-            let first = await group.next() ?? .timedOut
-            group.cancelAll()
-            return first
+        } onCancel: {
+            gate.resolve(.cancelled)
         }
     }
 
@@ -180,14 +249,18 @@ nonisolated final class FoldingCoordinator: @unchecked Sendable {
     ) -> [FoldableRange]? {
         guard !ranges.isEmpty else { return nil }
 
-        let ns = snapshot.text as NSString
-        let lineStarts = Self.lineStartOffsets(in: ns)
+        let source = snapshot.text as NSString
+        let lines = Self.lineBounds(in: source)
 
         var normalized: [FoldableRange] = []
         normalized.reserveCapacity(ranges.count)
 
         for range in ranges {
-            guard let foldable = convert(range, lineStarts: lineStarts, totalLength: ns.length) else {
+            guard let foldable = convert(
+                range,
+                lines: lines,
+                source: source
+            ) else {
                 // Skip invalid ranges but keep going — one bad range must not
                 // blank all structure.
                 continue
@@ -196,16 +269,36 @@ nonisolated final class FoldingCoordinator: @unchecked Sendable {
         }
 
         guard !normalized.isEmpty else { return nil }
-        normalized.sort { $0.startLine < $1.startLine }
-        return normalized
+        normalized.sort {
+            if $0.startLine != $1.startLine {
+                return $0.startLine < $1.startLine
+            }
+            if $0.endLine != $1.endLine {
+                return $0.endLine < $1.endLine
+            }
+            if $0.startCharIndex != $1.startCharIndex {
+                return $0.startCharIndex < $1.startCharIndex
+            }
+            return $0.endCharIndex < $1.endCharIndex
+        }
+        return normalized.enumerated().compactMap { index, range in
+            index == 0 || range != normalized[index - 1] ? range : nil
+        }
+    }
+
+    private struct LineBounds {
+        let start: Int
+        /// Offset immediately after the final content code unit, excluding
+        /// `\n`, `\r\n`, or `\r`.
+        let contentEnd: Int
     }
 
     /// Converts a single LSP folding range to a `FoldableRange`, rejecting
     /// anything that is out of bounds, inverted, or single-line.
     private static func convert(
         _ range: LSPFoldingRange,
-        lineStarts: [Int],
-        totalLength: Int
+        lines: [LineBounds],
+        source: NSString
     ) -> FoldableRange? {
         let startLine = range.startLine
         let endLine = range.endLine
@@ -213,7 +306,7 @@ nonisolated final class FoldingCoordinator: @unchecked Sendable {
         // LSP lines are 0-based; Pine lines are 1-based.
         guard startLine >= 0,
               endLine >= startLine,
-              endLine < lineStarts.count else {
+              endLine < lines.count else {
             return nil
         }
 
@@ -223,38 +316,24 @@ nonisolated final class FoldingCoordinator: @unchecked Sendable {
         // Only multi-line regions are foldable.
         guard endLinePine > startLinePine else { return nil }
 
-        let lineStartOffset = lineStarts[startLine]
-        let endLineStart = lineStarts[endLine]
-        let endLineEnd: Int
-        if endLine + 1 < lineStarts.count {
-            endLineEnd = lineStarts[endLine + 1]
-        } else {
-            endLineEnd = totalLength
-        }
-
-        // Optional character offsets within their lines; clamp to the line.
-        let startCharIndex: Int
-        if let startChar = range.startCharacter, startChar >= 0 {
-            let lineLen = lineStarts[startLine + 1] - lineStartOffset
-            startCharIndex = lineStartOffset + min(startChar, lineLen)
-        } else {
-            startCharIndex = lineStartOffset
-        }
-
-        let endCharIndex: Int
-        if let endChar = range.endCharacter, endChar >= 0 {
-            let lineLen = endLineEnd - endLineStart
-            endCharIndex = endLineStart + min(endChar, lineLen)
-        } else {
-            // Default the end to the end of the line (before any trailing
-            // newline), mirroring how the bracket calculator places the close
-            // bracket offset.
-            endCharIndex = max(endLineStart, endLineEnd - 1)
+        guard let startCharIndex = characterOffset(
+            range.startCharacter,
+            in: lines[startLine],
+            source: source,
+            encoding: range.positionEncoding
+        ),
+        let endCharIndex = characterOffset(
+            range.endCharacter,
+            in: lines[endLine],
+            source: source,
+            encoding: range.positionEncoding
+        ) else {
+            return nil
         }
 
         guard startCharIndex >= 0,
               endCharIndex >= startCharIndex,
-              endCharIndex <= totalLength else {
+              endCharIndex <= source.length else {
             return nil
         }
 
@@ -267,6 +346,54 @@ nonisolated final class FoldingCoordinator: @unchecked Sendable {
         )
     }
 
+    /// Converts one negotiated LSP line-relative offset to Pine's UTF-16
+    /// document offset. Missing offsets default to the content length of the
+    /// line as required by `FoldingRange`; invalid, unsupported, or
+    /// mid-scalar UTF-8 offsets are rejected.
+    private static func characterOffset(
+        _ encodedOffset: Int?,
+        in line: LineBounds,
+        source: NSString,
+        encoding: LSPPositionEncoding
+    ) -> Int? {
+        if case .unknown = encoding {
+            return nil
+        }
+
+        guard let encodedOffset else { return line.contentEnd }
+        guard encodedOffset >= 0 else { return nil }
+
+        let utf16Length = line.contentEnd - line.start
+        switch encoding {
+        case .utf16:
+            guard encodedOffset <= utf16Length else { return nil }
+            return line.start + encodedOffset
+        case .utf8:
+            let lineText = source.substring(
+                with: NSRange(location: line.start, length: utf16Length)
+            )
+            let utf8 = lineText.utf8
+            guard encodedOffset <= utf8.count,
+                  let utf8Index = utf8.index(
+                    utf8.startIndex,
+                    offsetBy: encodedOffset,
+                    limitedBy: utf8.endIndex
+                  ),
+                  let utf16Index = utf8Index.samePosition(
+                    in: lineText.utf16
+                  ) else {
+                return nil
+            }
+            let converted = lineText.utf16.distance(
+                from: lineText.utf16.startIndex,
+                to: utf16Index
+            )
+            return line.start + converted
+        case .unknown:
+            return nil
+        }
+    }
+
     /// Maps an LSP folding `kind` string to a `FoldKind`. LSP kinds are
     /// advisory (comment/imports/region); Pine folds them all the same way, so
     /// they default to `.braces` (the most common structural kind).
@@ -277,16 +404,40 @@ nonisolated final class FoldingCoordinator: @unchecked Sendable {
         .braces
     }
 
-    /// Returns the UTF-16 offset of the start of every line (0-based index →
-    /// offset). Index `i` is the offset where line `i` begins; the final entry
-    /// is `length` for boundary math.
-    private static func lineStartOffsets(in source: NSString) -> [Int] {
-        var starts: [Int] = [0]
+    /// Splits a snapshot using the three LSP line endings. The final empty
+    /// line is represented only when the document actually ends in a line
+    /// terminator, so a plain document never gains a phantom line at EOF.
+    private static func lineBounds(in source: NSString) -> [LineBounds] {
+        var lines: [LineBounds] = []
         let length = source.length
-        for i in 0..<length where source.character(at: i) == ASCII.newline {
-            starts.append(i + 1)
+        var lineStart = 0
+        var index = 0
+
+        while index < length {
+            let character = source.character(at: index)
+            if character == ASCII.carriageReturn {
+                lines.append(
+                    LineBounds(start: lineStart, contentEnd: index)
+                )
+                if index + 1 < length,
+                   source.character(at: index + 1) == ASCII.newline {
+                    index += 2
+                } else {
+                    index += 1
+                }
+                lineStart = index
+            } else if character == ASCII.newline {
+                lines.append(
+                    LineBounds(start: lineStart, contentEnd: index)
+                )
+                index += 1
+                lineStart = index
+            } else {
+                index += 1
+            }
         }
-        starts.append(length)
-        return starts
+
+        lines.append(LineBounds(start: lineStart, contentEnd: length))
+        return lines
     }
 }

@@ -1055,7 +1055,10 @@ final class LSPClient {
                 timeout: FoldingCoordinator.lspDeadline
             )
             guard let array = result as? [Any] else { return [] }
-            return array.compactMap { LSPFoldingRange(json: $0) }
+            let encoding = serverCapabilities?.positionEncoding ?? .utf16
+            return array.compactMap {
+                LSPFoldingRange(json: $0, positionEncoding: encoding)
+            }
         } catch {
             Logger.lsp.error(
                 "LSP foldingRange failed: \(String(describing: error), privacy: .public)"

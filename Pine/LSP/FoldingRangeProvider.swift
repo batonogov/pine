@@ -27,18 +27,21 @@ nonisolated enum LSPPositionEncoding: Sendable, Equatable {
     case unknown
 
     /// Initialises from the raw `positionEncoding` string of an
-    /// `initialize` result. Unknown values (including an empty string) map to
-    /// the spec default, UTF-16.
+    /// `initialize` result. Absence maps to the spec default, UTF-16;
+    /// advertised encodings Pine does not understand remain unknown so range
+    /// conversion fails closed.
     init(encoding raw: String?) {
-        switch (raw ?? "").lowercased() {
+        guard let raw else {
+            self = .utf16
+            return
+        }
+        switch raw.lowercased() {
         case "utf-16", "utf16":
             self = .utf16
         case "utf-8", "utf8":
             self = .utf8
         default:
-            // Per the LSP spec, a server that does not advertise
-            // positionEncoding defaults to UTF-16.
-            self = .utf16
+            self = .unknown
         }
     }
 }
@@ -101,11 +104,17 @@ nonisolated struct LSPFoldingRange: Equatable, Sendable {
     let startCharacter: Int?
     let endCharacter: Int?
     let kind: String?
+    /// Encoding negotiated for the client generation that produced this
+    /// range. Character offsets cannot be normalized safely without it.
+    let positionEncoding: LSPPositionEncoding
 
     /// Initialises from one element of a `textDocument/foldingRange` result.
     /// Returns `nil` when the required `startLine`/`endLine` fields are
     /// missing or non-integer.
-    init?(json: Any) {
+    init?(
+        json: Any,
+        positionEncoding: LSPPositionEncoding = .utf16
+    ) {
         guard let dict = json as? [String: Any] else { return nil }
         guard let startLine = dict["startLine"] as? Int,
               let endLine = dict["endLine"] as? Int else {
@@ -116,6 +125,7 @@ nonisolated struct LSPFoldingRange: Equatable, Sendable {
         self.startCharacter = dict["startCharacter"] as? Int
         self.endCharacter = dict["endCharacter"] as? Int
         self.kind = dict["kind"] as? String
+        self.positionEncoding = positionEncoding
     }
 
     init(
@@ -123,13 +133,15 @@ nonisolated struct LSPFoldingRange: Equatable, Sendable {
         endLine: Int,
         startCharacter: Int? = nil,
         endCharacter: Int? = nil,
-        kind: String? = nil
+        kind: String? = nil,
+        positionEncoding: LSPPositionEncoding = .utf16
     ) {
         self.startLine = startLine
         self.endLine = endLine
         self.startCharacter = startCharacter
         self.endCharacter = endCharacter
         self.kind = kind
+        self.positionEncoding = positionEncoding
     }
 }
 

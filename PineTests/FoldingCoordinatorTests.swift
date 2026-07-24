@@ -157,6 +157,31 @@ struct FoldingCoordinatorTests {
         #expect(resolution == .resolved(brackets, source: .bracket))
     }
 
+    @Test("Deadline is bounded when a provider ignores cancellation")
+    func nonCooperativeProviderCannotExtendDeadline() async {
+        let snap = snapshot()
+        let provider = StubFoldProvider(
+            ranges: [LSPFoldingRange(startLine: 0, endLine: 2)],
+            delaySeconds: 1,
+            ignoresCancellation: true
+        )
+        let coordinator = FoldingCoordinator(lspProvider: provider)
+        let brackets = bracketRanges(snap.text)
+        let clock = ContinuousClock()
+        let started = clock.now
+
+        let resolution = await coordinator.refine(
+            snapshot: snap,
+            bracketRanges: brackets
+        )
+
+        #expect(resolution == .resolved(brackets, source: .bracket))
+        #expect(
+            started.duration(to: clock.now) < .milliseconds(750),
+            "The 250 ms deadline must not wait for a non-cooperative provider"
+        )
+    }
+
     // MARK: - Stale generation → discarded
 
     @Test("Stale generation discards a winning LSP result")
@@ -231,6 +256,157 @@ struct FoldingCoordinatorTests {
         }
         #expect(ranges.count == 1)
     }
+
+    @Test("A non-terminated document has no phantom EOF line")
+    func rejectsPhantomEOFLine() {
+        let snap = DocumentSnapshot(
+            uri: "file:///t",
+            text: "first\nsecond",
+            revision: DocumentRevision(1)
+        )
+
+        let ranges = FoldingCoordinator.normalize(
+            [LSPFoldingRange(startLine: 0, endLine: 2)],
+            snapshot: snap
+        )
+
+        #expect(ranges == nil)
+    }
+
+    @Test("A trailing terminator creates a real final empty line")
+    func acceptsRealTrailingEmptyLine() throws {
+        let text = "first\nsecond\n"
+        let snap = DocumentSnapshot(
+            uri: "file:///t",
+            text: text,
+            revision: DocumentRevision(1)
+        )
+
+        let range = try #require(
+            FoldingCoordinator.normalize(
+                [LSPFoldingRange(startLine: 0, endLine: 2)],
+                snapshot: snap
+            )?.first
+        )
+
+        #expect(range.endLine == 3)
+        #expect(range.endCharIndex == (text as NSString).length)
+    }
+
+    @Test("Missing characters default to content ends for CRLF lines")
+    func characterDefaultsExcludeCRLF() throws {
+        let snap = DocumentSnapshot(
+            uri: "file:///t",
+            text: "abc\r\nxy\r\nz",
+            revision: DocumentRevision(1)
+        )
+
+        let range = try #require(
+            FoldingCoordinator.normalize(
+                [LSPFoldingRange(startLine: 0, endLine: 1)],
+                snapshot: snap
+            )?.first
+        )
+
+        #expect(range.startCharIndex == 3)
+        #expect(range.endCharIndex == 7)
+    }
+
+    @Test("Negative and out-of-line character offsets are invalid")
+    func rejectsInvalidCharacterOffsets() {
+        let snap = DocumentSnapshot(
+            uri: "file:///t",
+            text: "abc\nxyz",
+            revision: DocumentRevision(1)
+        )
+
+        #expect(
+            FoldingCoordinator.normalize(
+                [
+                    LSPFoldingRange(
+                        startLine: 0,
+                        endLine: 1,
+                        startCharacter: -1
+                    )
+                ],
+                snapshot: snap
+            ) == nil
+        )
+        #expect(
+            FoldingCoordinator.normalize(
+                [
+                    LSPFoldingRange(
+                        startLine: 0,
+                        endLine: 1,
+                        endCharacter: 4
+                    )
+                ],
+                snapshot: snap
+            ) == nil
+        )
+    }
+
+    @Test("UTF-8 character offsets convert to UTF-16 document offsets")
+    func convertsUTF8Offsets() throws {
+        let snap = DocumentSnapshot(
+            uri: "file:///t",
+            text: "😀 {\n日本}\n",
+            revision: DocumentRevision(1)
+        )
+
+        let range = try #require(
+            FoldingCoordinator.normalize(
+                [
+                    LSPFoldingRange(
+                        startLine: 0,
+                        endLine: 1,
+                        startCharacter: 4,
+                        endCharacter: 6,
+                        positionEncoding: .utf8
+                    )
+                ],
+                snapshot: snap
+            )?.first
+        )
+
+        #expect(range.startCharIndex == 2)
+        #expect(range.endCharIndex == 7)
+    }
+
+    @Test("Mid-scalar UTF-8 and unknown encodings fail closed")
+    func rejectsUnconvertibleEncodings() {
+        let snap = DocumentSnapshot(
+            uri: "file:///t",
+            text: "😀 {\n}\n",
+            revision: DocumentRevision(1)
+        )
+
+        #expect(
+            FoldingCoordinator.normalize(
+                [
+                    LSPFoldingRange(
+                        startLine: 0,
+                        endLine: 1,
+                        startCharacter: 1,
+                        positionEncoding: .utf8
+                    )
+                ],
+                snapshot: snap
+            ) == nil
+        )
+        #expect(
+            FoldingCoordinator.normalize(
+                [
+                    LSPFoldingRange(
+                        startLine: 0,
+                        endLine: 1,
+                        positionEncoding: .unknown
+                    )
+                ],
+                snapshot: snap
+            ) == nil
+        )
+    }
 }
 
 // MARK: - Test doubles
@@ -240,17 +416,33 @@ struct FoldingCoordinatorTests {
 nonisolated private final class StubFoldProvider: FoldRangeProviding, @unchecked Sendable {
     private let ranges: [LSPFoldingRange]?
     private let delaySeconds: TimeInterval
+    private let ignoresCancellation: Bool
 
-    init(ranges: [LSPFoldingRange]?, delaySeconds: TimeInterval = 0) {
+    init(
+        ranges: [LSPFoldingRange]?,
+        delaySeconds: TimeInterval = 0,
+        ignoresCancellation: Bool = false
+    ) {
         self.ranges = ranges
         self.delaySeconds = delaySeconds
+        self.ignoresCancellation = ignoresCancellation
     }
 
     func canProvide(for snapshot: DocumentSnapshot) -> Bool { true }
 
     func foldRanges(for snapshot: DocumentSnapshot) async -> [FoldableRange]? {
         if delaySeconds > 0 {
-            try? await Task.sleep(for: .seconds(delaySeconds))
+            if ignoresCancellation {
+                await withCheckedContinuation { continuation in
+                    DispatchQueue.global().asyncAfter(
+                        deadline: .now() + delaySeconds
+                    ) {
+                        continuation.resume()
+                    }
+                }
+            } else {
+                try? await Task.sleep(for: .seconds(delaySeconds))
+            }
         }
         guard let ranges else { return nil }
         return FoldingCoordinator.normalize(ranges, snapshot: snapshot)

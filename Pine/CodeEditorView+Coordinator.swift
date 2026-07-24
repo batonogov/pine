@@ -39,6 +39,11 @@ extension CodeEditorView {
         /// Debounced fold recalculation work item.
         private var foldWorkItem: DispatchWorkItem?
 
+        /// Last project lifecycle generation consumed for an LSP folding
+        /// retry. Initialized from the view so ordinary SwiftUI updates do not
+        /// issue duplicate structural requests.
+        private(set) var lastLSPFoldRefreshGeneration: Int
+
         /// LSP-first structural folding orchestrator (#1008). Owns the
         /// generation token that discards stale in-flight LSP replies.
         private lazy var foldingCoordinator: FoldingCoordinator = {
@@ -57,27 +62,28 @@ extension CodeEditorView {
             )
         }()
 
-        /// LSP fold provider wired to the shared UI endpoint. Lazily created
-        /// so the coordinator never touches the LSP stack for files that are
-        /// never recalculated.
+        /// LSP fold provider wired to this editor's owning project. Lazily
+        /// created so files that are never recalculated do not touch the LSP
+        /// stack.
         private lazy var lspFoldProvider: LSPFoldProvider = {
             LSPFoldProvider { [weak self] snapshot in
                 await self?.requestLSPFoldRanges(snapshot: snapshot) ?? nil
             }
         }()
 
-        /// Reads the current file URL on the main actor and issues the LSP
-        /// folding request through the shared UI endpoint. Returns `nil` to
-        /// defer to the bracket fallback when there is no file or no server.
+        /// Reads the current file URL on the main actor and issues the request
+        /// through the closure injected into this specific editor. A shared
+        /// endpoint is unsafe here: inactive panes also refresh folds and
+        /// could otherwise query another window's project.
         @MainActor
-        private func requestLSPFoldRanges(
+        func requestLSPFoldRanges(
             snapshot: DocumentSnapshot
         ) async -> [LSPFoldingRange]? {
-            guard let url = parent.fileURL else { return nil }
-            return await LSPUIEndpoint.shared.foldRanges(
-                url: url,
-                text: snapshot.text
-            )
+            guard let url = parent.fileURL,
+                  let requester = parent.lspFoldRangeRequester else {
+                return nil
+            }
+            return await requester(url, snapshot.text)
         }
 
         /// Последние язык/имя файла — для обнаружения смены грамматики
@@ -204,6 +210,8 @@ extension CodeEditorView {
 
         init(parent: CodeEditorView) {
             self.parent = parent
+            self.lastLSPFoldRefreshGeneration =
+                parent.lspFoldRefreshGeneration
             // Initialize language/fileName to match the initial view,
             // preventing a false languageChanged detection on the first
             // updateNSView call (issue #556).
@@ -1099,6 +1107,21 @@ extension CodeEditorView {
                     self?.applyFoldingResolution(resolution)
                 }
             }
+        }
+
+        /// Retries structural folding when the owning project has announced
+        /// one or more pending documents to an initialized LSP generation.
+        /// `makeNSView` precedes SwiftUI's `onAppear`, so the first request can
+        /// legitimately run before `didOpen`; this lifecycle token supplies
+        /// the deterministic retry once the document is queryable.
+        func refreshStructuralFoldRangesIfNeeded(generation: Int) {
+            guard generation != lastLSPFoldRefreshGeneration else { return }
+            lastLSPFoldRefreshGeneration = generation
+            guard let textView =
+                scrollView?.documentView as? NSTextView else {
+                return
+            }
+            requestStructuralFoldRanges(text: textView.string)
         }
 
         /// Applies a structural folding resolution on the main thread.

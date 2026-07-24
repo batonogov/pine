@@ -385,6 +385,14 @@ struct PaneLeafView: View {
             initialCursorPosition: goToLineOffset?.offset ?? tab.cursorPosition,
             initialScrollOffset: goToLineOffset != nil ? 0 : tab.scrollOffset,
             definitionQuickPickController: definitionQuickPickController,
+            lspFoldRangeRequester: { url, text in
+                await projectManager.lspManager.foldingRanges(
+                    url: url,
+                    text: text
+                )
+            },
+            lspFoldRefreshGeneration:
+                projectManager.lspManager.foldingRefreshGeneration,
             onStateChange: { cursor, scroll in
                 tabManager.updateEditorState(cursorPosition: cursor, scrollOffset: scroll)
             },
@@ -455,9 +463,6 @@ struct PaneLeafView: View {
         LSPUIEndpoint.shared.renameHandler = { url, offset, text, newName in
             await lspManager.rename(url: url, offset: offset, text: text, newName: newName)
         }
-        LSPUIEndpoint.shared.foldRangesHandler = { url, text in
-            await lspManager.foldingRanges(url: url, text: text)
-        }
         LSPUIEndpoint.shared.applyEditHandler = { edit in
             lspManager.applyWorkspaceEdit(
                 edit,
@@ -481,7 +486,6 @@ struct PaneLeafView: View {
         LSPUIEndpoint.shared.definitionHandler = nil
         LSPUIEndpoint.shared.codeActionHandler = nil
         LSPUIEndpoint.shared.renameHandler = nil
-        LSPUIEndpoint.shared.foldRangesHandler = nil
         LSPUIEndpoint.shared.applyEditHandler = nil
         LSPUIEndpoint.shared.openFileAtLineHandler = nil
     }

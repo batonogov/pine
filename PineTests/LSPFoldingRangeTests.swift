@@ -6,7 +6,9 @@
 //  decoding, and position-encoding parsing.
 //
 
+import AppKit
 import Foundation
+import SwiftUI
 import Testing
 
 @testable import Pine
@@ -32,6 +34,7 @@ struct LSPFoldingRangeTests {
         #expect(range?.startCharacter == 2)
         #expect(range?.endCharacter == 1)
         #expect(range?.kind == "region")
+        #expect(range?.positionEncoding == .utf16)
     }
 
     @Test("Decodes a minimal FoldingRange (lines only)")
@@ -111,11 +114,11 @@ struct LSPFoldingRangeTests {
         #expect(LSPPositionEncoding(encoding: "utf8") == .utf8)
     }
 
-    @Test("Missing/unknown encoding defaults to UTF-16")
-    func unknownDefaultsToUTF16() {
+    @Test("Missing encoding defaults to UTF-16; invalid values stay unknown")
+    func missingDefaultsButUnknownFailsClosed() {
         #expect(LSPPositionEncoding(encoding: nil) == .utf16)
-        #expect(LSPPositionEncoding(encoding: "") == .utf16)
-        #expect(LSPPositionEncoding(encoding: "weird") == .utf16)
+        #expect(LSPPositionEncoding(encoding: "") == .unknown)
+        #expect(LSPPositionEncoding(encoding: "weird") == .unknown)
     }
 
     // MARK: - LSPFoldProvider adapter
@@ -146,5 +149,118 @@ struct LSPFoldingRangeTests {
         let result = await provider.foldRanges(for: snap)
         #expect(result?.count == 1)
         #expect(result?[0].startLine == 1 && result?[0].endLine == 3)
+    }
+
+    @Test("Editors use their own project-scoped folding requesters")
+    func editorRequestersRemainScoped() async throws {
+        let firstURL = URL(fileURLWithPath: "/first/App.swift")
+        let secondURL = URL(fileURLWithPath: "/second/App.swift")
+        let firstRecorder = FoldRequestRecorder(
+            ranges: [LSPFoldingRange(startLine: 0, endLine: 1)]
+        )
+        let secondRecorder = FoldRequestRecorder(
+            ranges: [LSPFoldingRange(startLine: 1, endLine: 2)]
+        )
+        let firstView = CodeEditorView(
+            text: .constant("a {\n}"),
+            language: "swift",
+            fileURL: firstURL,
+            foldState: .constant(FoldState()),
+            lspFoldRangeRequester: { url, text in
+                firstRecorder.request(url: url, text: text)
+            }
+        )
+        let secondView = CodeEditorView(
+            text: .constant("b {\n\n}"),
+            language: "swift",
+            fileURL: secondURL,
+            foldState: .constant(FoldState()),
+            lspFoldRangeRequester: { url, text in
+                secondRecorder.request(url: url, text: text)
+            }
+        )
+        let snapshot = DocumentSnapshot(
+            uri: firstURL.absoluteString,
+            text: "snapshot",
+            revision: DocumentRevision(1)
+        )
+
+        let firstResult = await CodeEditorView.Coordinator(
+            parent: firstView
+        ).requestLSPFoldRanges(snapshot: snapshot)
+        let secondResult = await CodeEditorView.Coordinator(
+            parent: secondView
+        ).requestLSPFoldRanges(snapshot: snapshot)
+
+        #expect(try #require(firstResult).first?.startLine == 0)
+        #expect(try #require(secondResult).first?.startLine == 1)
+        #expect(firstRecorder.requests.count == 1)
+        #expect(firstRecorder.requests.first?.0 == firstURL)
+        #expect(firstRecorder.requests.first?.1 == "snapshot")
+        #expect(secondRecorder.requests.count == 1)
+        #expect(secondRecorder.requests.first?.0 == secondURL)
+        #expect(secondRecorder.requests.first?.1 == "snapshot")
+    }
+
+    @Test("Editor retries folding after its document reaches the LSP")
+    func editorRetriesAfterDocumentAnnouncement() async {
+        let url = URL(fileURLWithPath: "/project/App.swift")
+        let recorder = FoldRequestRecorder(
+            ranges: [LSPFoldingRange(startLine: 0, endLine: 1)]
+        )
+        let view = CodeEditorView(
+            text: .constant("a {\n}"),
+            language: "swift",
+            fileURL: url,
+            foldState: .constant(FoldState()),
+            lspFoldRangeRequester: { requestURL, text in
+                recorder.request(url: requestURL, text: text)
+            },
+            lspFoldRefreshGeneration: 4
+        )
+        let coordinator = CodeEditorView.Coordinator(parent: view)
+        let textView = NSTextView()
+        textView.string = "a {\n}"
+        let scrollView = NSScrollView()
+        scrollView.documentView = textView
+        coordinator.scrollView = scrollView
+
+        coordinator.refreshStructuralFoldRangesIfNeeded(generation: 4)
+        await Task.yield()
+        #expect(recorder.requests.isEmpty)
+
+        coordinator.refreshStructuralFoldRangesIfNeeded(generation: 5)
+        await waitUntil { recorder.requests.count == 1 }
+        #expect(recorder.requests.first?.0 == url)
+        #expect(recorder.requests.first?.1 == "a {\n}")
+
+        coordinator.refreshStructuralFoldRangesIfNeeded(generation: 5)
+        await Task.yield()
+        #expect(recorder.requests.count == 1)
+    }
+
+    private func waitUntil(
+        _ condition: @escaping @MainActor () -> Bool
+    ) async {
+        for _ in 0..<100 {
+            if condition() { return }
+            await Task.yield()
+        }
+        Issue.record("Timed out waiting for structural folding request")
+    }
+}
+
+@MainActor
+private final class FoldRequestRecorder {
+    let ranges: [LSPFoldingRange]
+    private(set) var requests: [(URL, String)] = []
+
+    init(ranges: [LSPFoldingRange]) {
+        self.ranges = ranges
+    }
+
+    func request(url: URL, text: String) -> [LSPFoldingRange] {
+        requests.append((url, text))
+        return ranges
     }
 }

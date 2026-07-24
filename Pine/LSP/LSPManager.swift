@@ -56,6 +56,11 @@ final class LSPManager {
     /// needed when building the `CodeActionContext.diagnostics` array.
     private var rawDiagnosticsByURI: [String: [LSPDiagnostic]] = [:]
 
+    /// Advances whenever pending editor buffers are announced to an
+    /// initialized client generation. Editors observe this to retry the
+    /// structural request that can precede SwiftUI's `onAppear`/`didOpen`.
+    private(set) var foldingRefreshGeneration = 0
+
     /// The single persisted source of truth for the global toggle.
     var enabled: Bool { settings.isEnabled }
 
@@ -308,18 +313,47 @@ final class LSPManager {
     /// fails. A `nil` return tells `FoldingCoordinator` to defer to the
     /// bracket fallback.
     ///
-    /// `text` is the current document content, captured so the caller can
-    /// validate/normalise positions against the exact revision the server
-    /// analysed.
+    /// `text` is the immutable editor snapshot this request must match. The
+    /// request fails closed unless that exact text is already synchronized to
+    /// the current client generation; a structural query must never roll the
+    /// server back to an older snapshot merely to satisfy itself.
     func foldingRanges(url: URL, text: String) async -> [LSPFoldingRange]? {
         guard enabled else { return nil }
         guard let serverConfig = LanguageServerRegistry.server(for: url) else { return nil }
         let language = serverConfig.language
+        guard openDocumentOwnerCounts[url, default: 0] > 0,
+              openDocuments[url]?.text == text else {
+            return nil
+        }
         guard await ensureServer(for: serverConfig) else { return nil }
         guard servers[language]?.state == .initialized else { return nil }
-        guard servers[language]?.client.supportsFoldingRange == true else { return nil }
+        // `ensureServer` can suspend while edits, closes, or a settings
+        // restart advance the document/client generation. Revalidate before
+        // announcing or querying anything.
+        guard openDocumentOwnerCounts[url, default: 0] > 0,
+              openDocuments[url]?.text == text else {
+            return nil
+        }
+        sendPendingDidOpen(for: language)
+        guard openedDocumentsByLanguage[language]?.contains(url) == true,
+              let client = servers[language]?.client,
+              client.supportsFoldingRange else {
+            return nil
+        }
+
+        let clientID = ObjectIdentifier(client)
+        let serverGeneration = serverGenerations[language, default: 0]
         let uri = url.absoluteString
-        let ranges = await servers[language]?.client.foldingRange(uri: uri) ?? []
+        let ranges = await client.foldingRange(uri: uri)
+        guard !Task.isCancelled,
+              serverGenerations[language, default: 0] == serverGeneration,
+              let currentClient = servers[language]?.client,
+              ObjectIdentifier(currentClient) == clientID,
+              openedDocumentsByLanguage[language]?.contains(url) == true,
+              openDocumentOwnerCounts[url, default: 0] > 0,
+              openDocuments[url]?.text == text else {
+            return nil
+        }
         // An empty list means "no ranges / unsupported" — surface as nil so
         // the provider defers to the bracket fallback rather than blanking
         // all structure.
@@ -682,6 +716,7 @@ final class LSPManager {
                     ) != true
             }
             .sorted { $0.url.absoluteString < $1.url.absoluteString }
+        guard !pending.isEmpty else { return }
         for document in pending {
             openedDocumentsByLanguage[language, default: []].insert(
                 document.url
@@ -693,6 +728,7 @@ final class LSPManager {
                 text: document.text
             )
         }
+        foldingRefreshGeneration &+= 1
     }
 
     private func hasOpenDocuments(for language: String) -> Bool {
