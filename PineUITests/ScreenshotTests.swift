@@ -140,6 +140,11 @@ final class ScreenshotTests: PineUITestCase {
             atomically: true,
             encoding: .utf8
         )
+        // GitHub's macOS runner account still defaults to bash, which ignores
+        // ZDOTDIR and exposes its generated hostname in the prompt. Override
+        // the persisted shell for this launch so every capture uses the
+        // deterministic zsh fixture above on local machines and CI alike.
+        app.launchArguments += ["-terminalShellPath", "/bin/zsh"]
         app.launchEnvironment["ZDOTDIR"] = configURL.path
     }
 
