@@ -2,40 +2,244 @@
 //  VerifiedTextPatch.swift
 //  Pine
 //
-//  Deterministic line diff and checked inverse-hunk application for #933.
+//  Bounded deterministic diff and conservative positional three-way merge.
 //
 
 import Foundation
 
+nonisolated struct VerifiedTextPatchPlan: Sendable, Equatable {
+    let hunks: [VerifiedTextPatchHunk]
+    let lcsCellCount: Int
+}
+
+nonisolated struct VerifiedPreparedTextResult: Sendable, Equatable {
+    let content: Data
+    let hunks: [VerifiedPreparedTextHunk]
+    let lcsCellCount: Int
+}
+
+/// Text patching never searches globally for a matching block.
+///
+/// Preparation diffs the captured after-state against the supplied current
+/// state, rejects any human edit intersecting a captured hunk plus two exact
+/// guard lines, and maps the original range only by the bounded edit deltas
+/// before it. It then verifies the complete guarded region at that resolved
+/// position. A deleted/moved original block therefore conflicts even if
+/// identical bytes appear elsewhere.
 nonisolated enum VerifiedTextPatch {
-    static let maximumLineCount = 4_096
-    static let maximumDiffCellCount = 4_000_000
     private static let contextLineCount = 2
 
-    static func canDiff(before: Data, after: Data) -> Bool {
-        guard isText(before),
-              isText(after) else {
-            return false
-        }
-        let beforeLines = lines(in: before)
-        let afterLines = lines(in: after)
-        guard beforeLines.count <= maximumLineCount,
-              afterLines.count <= maximumLineCount else {
-            return false
-        }
-        let cellCount = (beforeLines.count + 1)
-            .multipliedReportingOverflow(by: afterLines.count + 1)
-        return !cellCount.overflow
-            && cellCount.partialValue <= maximumDiffCellCount
-    }
-
-    static func makeHunks(
+    static func plan(
         before: Data,
         after: Data
-    ) -> [VerifiedTextPatchHunk] {
+    ) -> VerifiedTextPatchPlan? {
+        guard isText(before), isText(after) else {
+            return nil
+        }
         let beforeLines = lines(in: before)
         let afterLines = lines(in: after)
+        guard let cellCount = lcsCellCount(
+            lhsCount: beforeLines.count,
+            rhsCount: afterLines.count
+        ) else {
+            return nil
+        }
         let steps = diffSteps(before: beforeLines, after: afterLines)
+        let hunks = makeHunks(
+            steps: steps,
+            afterLines: afterLines
+        )
+        guard !hunks.isEmpty,
+              hunks.count <= VerifiedPatchLimits.maximumHunkCount else {
+            return nil
+        }
+        return VerifiedTextPatchPlan(
+            hunks: hunks,
+            lcsCellCount: cellCount
+        )
+    }
+
+    static func estimatedLCSCellCount(
+        before: Data,
+        after: Data
+    ) -> Int? {
+        guard isText(before),
+              isText(after) else {
+            return nil
+        }
+        return lcsCellCount(
+            lhsCount: lines(in: before).count,
+            rhsCount: lines(in: after).count
+        )
+    }
+
+    static func prepareInverse(
+        hunks: [VerifiedTextPatchHunk],
+        capturedAfter: Data,
+        current: Data
+    ) -> Result<VerifiedPreparedTextResult, VerifiedPatchConflictReason> {
+        guard isText(capturedAfter),
+              isText(current) else {
+            return .failure(.currentContentIsNotText)
+        }
+        guard hunks.count <= VerifiedPatchLimits.maximumHunkCount else {
+            return .failure(.resourceLimitExceeded)
+        }
+
+        let afterLines = lines(in: capturedAfter)
+        let currentLines = lines(in: current)
+        guard let cellCount = lcsCellCount(
+            lhsCount: afterLines.count,
+            rhsCount: currentLines.count
+        ) else {
+            return .failure(.resourceLimitExceeded)
+        }
+        let humanEdits = lineEdits(
+            from: afterLines,
+            to: currentLines
+        )
+        var resolved: [VerifiedPreparedTextHunk] = []
+
+        for (index, hunk) in hunks.enumerated() {
+            guard let capturedRange = checkedRange(
+                start: hunk.afterStartLine,
+                count: hunk.afterLineCount,
+                upperBound: afterLines.count
+            ) else {
+                return .failure(.mappedRegionMismatch(hunkIndex: index))
+            }
+            let guardStart = hunk.afterStartLine
+                - hunk.prefixContext.count
+            guard guardStart >= 0,
+                  let coreAndSuffixCount = checkedAdd(
+                    hunk.afterLineCount,
+                    hunk.suffixContext.count
+                  ),
+                  let guardEnd = checkedAdd(
+                    hunk.afterStartLine,
+                    coreAndSuffixCount
+                  ),
+                  guardEnd <= afterLines.count else {
+                return .failure(.mappedRegionMismatch(hunkIndex: index))
+            }
+            let guardedRange = guardStart..<guardEnd
+            guard !humanEdits.contains(where: {
+                touches($0, guardedRange: guardedRange)
+            }) else {
+                return .failure(
+                    .humanEditOverlapsAgentRegion(hunkIndex: index)
+                )
+            }
+
+            guard let delta = positionalDelta(
+                before: guardStart,
+                edits: humanEdits
+            ),
+            let resolvedGuardStart = checkedOffset(
+                guardStart,
+                by: delta
+            ),
+            let resolvedCoreStart = checkedOffset(
+                hunk.afterStartLine,
+                by: delta
+            ),
+            let resolvedGuardEnd = checkedAdd(
+                resolvedGuardStart,
+                guardedRange.count
+            ),
+            resolvedGuardStart >= 0,
+            resolvedGuardEnd <= currentLines.count,
+            let resolvedCoreRange = checkedRange(
+                start: resolvedCoreStart,
+                count: capturedRange.count,
+                upperBound: currentLines.count
+            ) else {
+                return .failure(.mappedRegionMismatch(hunkIndex: index))
+            }
+
+            let expectedGuard = Array(afterLines[guardedRange])
+            let actualGuard = Array(
+                currentLines[resolvedGuardStart..<resolvedGuardEnd]
+            )
+            guard expectedGuard == actualGuard else {
+                return .failure(.mappedRegionMismatch(hunkIndex: index))
+            }
+            resolved.append(VerifiedPreparedTextHunk(
+                capturedAfterRange: capturedRange,
+                resolvedCurrentRange: resolvedCoreRange,
+                replacementLines: hunk.beforeLines
+            ))
+        }
+
+        guard !hasOverlap(resolved) else {
+            return .failure(.overlappingResolvedHunks)
+        }
+        var result = currentLines
+        for hunk in resolved.sorted(by: descendingOrder) {
+            result.replaceSubrange(
+                hunk.resolvedCurrentRange,
+                with: hunk.replacementLines
+            )
+        }
+        return .success(VerifiedPreparedTextResult(
+            content: result.reduce(into: Data()) { $0.append($1) },
+            hunks: resolved,
+            lcsCellCount: cellCount
+        ))
+    }
+
+    static func isText(_ data: Data) -> Bool {
+        !data.contains(0) && String(data: data, encoding: .utf8) != nil
+    }
+
+    static func lines(in data: Data) -> [Data] {
+        guard !data.isEmpty else { return [] }
+        var result: [Data] = []
+        var lineStart = data.startIndex
+        var index = lineStart
+        while index < data.endIndex {
+            if data[index] == 0x0A {
+                let next = data.index(after: index)
+                result.append(Data(data[lineStart..<next]))
+                lineStart = next
+            }
+            index = data.index(after: index)
+        }
+        if lineStart < data.endIndex {
+            result.append(Data(data[lineStart..<data.endIndex]))
+        }
+        return result
+    }
+
+    private static func lcsCellCount(
+        lhsCount: Int,
+        rhsCount: Int
+    ) -> Int? {
+        guard lhsCount <= VerifiedPatchLimits.maximumLineCount,
+              rhsCount <= VerifiedPatchLimits.maximumLineCount else {
+            return nil
+        }
+        let lhs = lhsCount.addingReportingOverflow(1)
+        let rhs = rhsCount.addingReportingOverflow(1)
+        guard !lhs.overflow,
+              !rhs.overflow else {
+            return nil
+        }
+        let cells = lhs.partialValue.multipliedReportingOverflow(
+            by: rhs.partialValue
+        )
+        guard !cells.overflow,
+              cells.partialValue
+                <= VerifiedPatchLimits.maximumLCSCellCountPerDiff else {
+            return nil
+        }
+        return cells.partialValue
+    }
+
+    private static func makeHunks(
+        steps: [DiffStep],
+        afterLines: [Data]
+    ) -> [VerifiedTextPatchHunk] {
         var hunks: [VerifiedTextPatchHunk] = []
         var beforeIndex = 0
         var afterIndex = 0
@@ -97,78 +301,44 @@ nonisolated enum VerifiedTextPatch {
         return hunks
     }
 
-    static func applyInverse(
-        hunks: [VerifiedTextPatchHunk],
-        to current: Data
-    ) -> Result<Data, VerifiedPatchConflictReason> {
-        guard isText(current) else {
-            return .failure(.currentContentIsNotText)
-        }
-        let currentLines = lines(in: current)
-        var resolutions: [ResolvedHunk] = []
+    private static func lineEdits(
+        from before: [Data],
+        to after: [Data]
+    ) -> [LineEdit] {
+        let steps = diffSteps(before: before, after: after)
+        var edits: [LineEdit] = []
+        var beforeIndex = 0
+        var activeStart: Int?
+        var removedCount = 0
+        var replacement: [Data] = []
 
-        for (index, hunk) in hunks.enumerated() {
-            let pattern = hunk.prefixContext
-                + hunk.afterLines
-                + hunk.suffixContext
-            guard !pattern.isEmpty else {
-                return .failure(.ambiguousTextContext(hunkIndex: index))
-            }
-            let occurrences = occurrenceStarts(
-                of: pattern,
-                in: currentLines
-            )
-            guard !occurrences.isEmpty else {
-                return .failure(.textContextMissing(hunkIndex: index))
-            }
-            guard occurrences.count == 1,
-                  let occurrence = occurrences.first else {
-                return .failure(.ambiguousTextContext(hunkIndex: index))
-            }
-            let coreStart = occurrence + hunk.prefixContext.count
-            let coreEnd = coreStart + hunk.afterLines.count
-            resolutions.append(ResolvedHunk(
-                originalIndex: index,
-                range: coreStart..<coreEnd,
-                replacement: hunk.beforeLines
+        func finishEdit() {
+            guard let start = activeStart else { return }
+            edits.append(LineEdit(
+                baseRange: start..<(start + removedCount),
+                replacement: replacement
             ))
+            activeStart = nil
+            removedCount = 0
+            replacement = []
         }
 
-        guard !hasOverlap(resolutions) else {
-            return .failure(.overlappingResolvedHunks)
-        }
-
-        var result = currentLines
-        for resolution in resolutions.sorted(by: descendingResolutionOrder) {
-            result.replaceSubrange(
-                resolution.range,
-                with: resolution.replacement
-            )
-        }
-        return .success(result.reduce(into: Data()) { $0.append($1) })
-    }
-
-    static func isText(_ data: Data) -> Bool {
-        !data.contains(0) && String(data: data, encoding: .utf8) != nil
-    }
-
-    static func lines(in data: Data) -> [Data] {
-        guard !data.isEmpty else { return [] }
-        var result: [Data] = []
-        var lineStart = data.startIndex
-        var index = lineStart
-        while index < data.endIndex {
-            if data[index] == 0x0A {
-                let next = data.index(after: index)
-                result.append(Data(data[lineStart..<next]))
-                lineStart = next
+        for step in steps {
+            switch step {
+            case .equal:
+                finishEdit()
+                beforeIndex += 1
+            case .remove:
+                if activeStart == nil { activeStart = beforeIndex }
+                removedCount += 1
+                beforeIndex += 1
+            case .add(let line):
+                if activeStart == nil { activeStart = beforeIndex }
+                replacement.append(line)
             }
-            index = data.index(after: index)
         }
-        if lineStart < data.endIndex {
-            result.append(Data(data[lineStart..<data.endIndex]))
-        }
-        return result
+        finishEdit()
+        return edits
     }
 
     private static func diffSteps(
@@ -236,15 +406,12 @@ nonisolated enum VerifiedTextPatch {
                 beforeIndex += 1
                 continue
             }
-
             let removeLength = lengths[
                 (beforeIndex + 1) * columnCount + afterIndex
             ]
             let addLength = lengths[
                 beforeIndex * columnCount + afterIndex + 1
             ]
-            // Stable tie-break: removals precede additions. This makes patch
-            // bytes independent of dictionary order, locale, or hash seeds.
             if removeLength >= addLength {
                 steps.append(.remove(before[beforeIndex]))
                 beforeIndex += 1
@@ -256,37 +423,67 @@ nonisolated enum VerifiedTextPatch {
         return steps
     }
 
-    private static func occurrenceStarts(
-        of pattern: [Data],
-        in lines: [Data]
-    ) -> [Int] {
-        guard pattern.count <= lines.count else { return [] }
-        if pattern.isEmpty {
-            return Array(0...lines.count)
+    private static func touches(
+        _ edit: LineEdit,
+        guardedRange: Range<Int>
+    ) -> Bool {
+        if edit.baseRange.isEmpty {
+            return edit.baseRange.lowerBound >= guardedRange.lowerBound
+                && edit.baseRange.lowerBound <= guardedRange.upperBound
         }
-        var result: [Int] = []
-        for start in 0...(lines.count - pattern.count)
-        where Array(lines[start..<(start + pattern.count)]) == pattern {
-            result.append(start)
-            if result.count > 1 {
-                return result
-            }
+        return edit.baseRange.overlaps(guardedRange)
+    }
+
+    private static func positionalDelta(
+        before position: Int,
+        edits: [LineEdit]
+    ) -> Int? {
+        var result = 0
+        for edit in edits where edit.baseRange.upperBound <= position {
+            let delta = edit.replacement.count
+                .subtractingReportingOverflow(edit.baseRange.count)
+            guard !delta.overflow else { return nil }
+            let sum = result.addingReportingOverflow(delta.partialValue)
+            guard !sum.overflow else { return nil }
+            result = sum.partialValue
         }
         return result
     }
 
-    private static func hasOverlap(_ resolutions: [ResolvedHunk]) -> Bool {
-        let ordered = resolutions.sorted {
-            if $0.range.lowerBound != $1.range.lowerBound {
-                return $0.range.lowerBound < $1.range.lowerBound
-            }
-            return $0.originalIndex < $1.originalIndex
+    private static func checkedRange(
+        start: Int,
+        count: Int,
+        upperBound: Int
+    ) -> Range<Int>? {
+        guard start >= 0,
+              count >= 0,
+              let end = checkedAdd(start, count),
+              end <= upperBound else {
+            return nil
         }
-        for lhsIndex in ordered.indices {
-            for rhsIndex in ordered.indices where rhsIndex > lhsIndex {
+        return start..<end
+    }
+
+    private static func checkedAdd(_ lhs: Int, _ rhs: Int) -> Int? {
+        let result = lhs.addingReportingOverflow(rhs)
+        return result.overflow ? nil : result.partialValue
+    }
+
+    private static func checkedOffset(
+        _ value: Int,
+        by offset: Int
+    ) -> Int? {
+        checkedAdd(value, offset)
+    }
+
+    private static func hasOverlap(
+        _ hunks: [VerifiedPreparedTextHunk]
+    ) -> Bool {
+        for lhsIndex in hunks.indices {
+            for rhsIndex in hunks.indices where rhsIndex > lhsIndex {
                 if rangesOverlap(
-                    ordered[lhsIndex].range,
-                    ordered[rhsIndex].range
+                    hunks[lhsIndex].resolvedCurrentRange,
+                    hunks[rhsIndex].resolvedCurrentRange
                 ) {
                     return true
                 }
@@ -313,14 +510,12 @@ nonisolated enum VerifiedTextPatch {
         return lhs.overlaps(rhs)
     }
 
-    private static func descendingResolutionOrder(
-        _ lhs: ResolvedHunk,
-        _ rhs: ResolvedHunk
+    private static func descendingOrder(
+        _ lhs: VerifiedPreparedTextHunk,
+        _ rhs: VerifiedPreparedTextHunk
     ) -> Bool {
-        if lhs.range.lowerBound != rhs.range.lowerBound {
-            return lhs.range.lowerBound > rhs.range.lowerBound
-        }
-        return lhs.originalIndex > rhs.originalIndex
+        lhs.resolvedCurrentRange.lowerBound
+            > rhs.resolvedCurrentRange.lowerBound
     }
 
     private enum DiffStep {
@@ -329,9 +524,8 @@ nonisolated enum VerifiedTextPatch {
         case add(Data)
     }
 
-    private struct ResolvedHunk {
-        let originalIndex: Int
-        let range: Range<Int>
+    private struct LineEdit {
+        let baseRange: Range<Int>
         let replacement: [Data]
     }
 }

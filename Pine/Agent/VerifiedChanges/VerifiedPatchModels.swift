@@ -2,200 +2,288 @@
 //  VerifiedPatchModels.swift
 //  Pine
 //
-//  Pure, owner-private patch contracts for verified agent events (#933).
-//  These values perform no file-system I/O and grant no mutation authority.
+//  Bounded, pure simulation contracts for verified-change review (#933).
 //
 
 import Foundation
 
-/// One exact content transition reported by a verified event.
+/// Aggregate limits applied at every construction and preparation boundary.
 ///
-/// The transition contains identities only. Patch bytes are supplied
-/// separately to `VerifiedPatchEngine.makePatch` and must match these values.
-nonisolated struct VerifiedPatchContentTransition: Sendable, Equatable, Hashable {
+/// These are correctness limits, not tuning hints. Inputs above a limit fail
+/// closed before allocating a quadratic table or retaining attacker-sized
+/// content. The final descriptor transaction remains owned by #1207.
+nonisolated enum VerifiedPatchLimits {
+    static let maximumEventCount = 512
+    static let maximumTransitionCount = 1_024
+    static let maximumOperationCount = 256
+    static let maximumVersionPatchCount = 128
+    static let maximumVersionNodeCount = 1_024
+    static let maximumFileByteCount = 4 * 1_024 * 1_024
+    static let maximumCapturedByteCount = 16 * 1_024 * 1_024
+    static let maximumSnapshotFileCount = 4_096
+    static let maximumSnapshotByteCount = 32 * 1_024 * 1_024
+    static let maximumSnapshotPathByteCount = 4 * 1_024 * 1_024
+    static let maximumEventMetadataByteCount = 64 * 1_024
+    static let maximumAggregateEventMetadataByteCount = 1 * 1_024 * 1_024
+    static let maximumLineCount = 4_096
+    static let maximumLCSCellCountPerDiff = 2_000_000
+    static let maximumAggregateLCSCellCount = 8_000_000
+    static let maximumHunkCount = 1_024
+    static let maximumPathByteCount = 4_096
+}
+
+/// Canonical owner-private workspace identity supplied by an ingress receipt.
+///
+/// This value is still data, not authority. A final #1207 coordinator must
+/// load it from the owner-private store and recheck root device/inode, HEAD,
+/// and index state through its descriptor transaction.
+nonisolated struct VerifiedPatchWorkspaceIdentity:
+    Sendable,
+    Equatable,
+    Hashable {
+    let privateWorkspaceID: UUID
+    let canonicalRootPath: String
+    let rootDevice: UInt64
+    let rootInode: UInt64
+    let capturedHeadOID: String
+    let capturedIndexSHA256: String
+}
+
+nonisolated enum VerifiedPatchFileKind: String, Sendable, Equatable, Hashable {
+    case regularFile
+    case symbolicLink
+}
+
+/// File bytes plus regular-file metadata used by the pure simulator.
+///
+/// The initializer always recomputes the content identity, so an identity
+/// cannot be paired with different bytes inside this model.
+nonisolated struct VerifiedPatchFileState: Sendable, Equatable {
+    let identity: ContentIdentity
+    let kind: VerifiedPatchFileKind
+    let posixMode: UInt16
+    let content: Data
+
+    init(
+        content: Data,
+        kind: VerifiedPatchFileKind = .regularFile,
+        posixMode: UInt16 = 0o644
+    ) {
+        self.identity = ContentIdentity(content: content)
+        self.kind = kind
+        self.posixMode = posixMode
+        self.content = content
+    }
+
+    var stateIdentity: VerifiedPatchStateIdentity {
+        VerifiedPatchStateIdentity(
+            contentIdentity: identity,
+            kind: kind,
+            posixMode: posixMode
+        )
+    }
+}
+
+/// Content plus metadata identity retained in accepted transition receipts.
+nonisolated struct VerifiedPatchStateIdentity:
+    Sendable,
+    Equatable,
+    Hashable {
+    let contentIdentity: ContentIdentity
+    let kind: VerifiedPatchFileKind
+    let posixMode: UInt16
+}
+
+/// One transition asserted by owner-private capture evidence.
+nonisolated struct VerifiedPatchContentTransition:
+    Sendable,
+    Equatable,
+    Hashable {
     let sourcePath: String
     let destinationPath: String?
-    let beforeIdentity: ContentIdentity?
-    let afterIdentity: ContentIdentity?
+    let before: VerifiedPatchStateIdentity?
+    let after: VerifiedPatchStateIdentity?
 
     init(
         sourcePath: String,
         destinationPath: String? = nil,
-        beforeIdentity: ContentIdentity?,
-        afterIdentity: ContentIdentity?
+        before: VerifiedPatchStateIdentity?,
+        after: VerifiedPatchStateIdentity?
     ) {
         self.sourcePath = sourcePath
         self.destinationPath = destinationPath
-        self.beforeIdentity = beforeIdentity
-        self.afterIdentity = afterIdentity
+        self.before = before
+        self.after = after
     }
 }
 
-/// A verified envelope and the exact file transitions it carries.
-nonisolated struct VerifiedPatchEventReference: Sendable, Equatable {
+/// Collision-free address of one transition in one full event envelope.
+nonisolated struct VerifiedPatchTransitionID:
+    Sendable,
+    Equatable,
+    Hashable {
     let envelopeID: UUID
-    let cursorValue: UInt64
+    let ordinal: Int
+}
+
+/// Durable journal evidence adapted from `AgentEventJournalReceipt`.
+///
+/// The surrounding scope is repeated deliberately. Ingress must prove that
+/// the compact journal receipt belongs to this exact envelope and stream; the
+/// final authority coordinator must query the owner-private journal again
+/// using every field before it may consume #1207 authority.
+nonisolated struct VerifiedPatchDurableEventIdentity:
+    Sendable,
+    Equatable,
+    Hashable {
+    let projectID: UUID
+    let canonicalWorktreePath: String
+    let sessionID: UUID
+    let terminalID: UUID
+    let processGeneration: UInt64
+    let eventCursor: UInt64
+    let envelopeID: UUID
+    let journalSequence: UInt64
+}
+
+/// Owner-private journal seam used by the future authority coordinator.
+///
+/// A conformer must query durable records and compare the complete envelope,
+/// not merely confirm that a sequence number exists.
+nonisolated protocol VerifiedPatchJournalRevalidating: Sendable {
+    func revalidateDurableEvents(
+        _ identities: [VerifiedPatchDurableEventIdentity]
+    ) async throws
+}
+
+/// Owner-private proof that Pine itself applied this exact transition batch.
+///
+/// This is intentionally separate from authenticated agent-event evidence.
+/// The nested durable event is audit context only: file authorship/preimages
+/// come from a Pine-owned descriptor CAS performed after explicit user
+/// approval. Constructed values are still untrusted until the final
+/// coordinator revalidates them against its private writer-receipt store.
+nonisolated struct PineMediatedWriterReceipt: Sendable, Equatable, Hashable {
+    let receiptID: UUID
+    let userApprovalID: UUID
+    let descriptorTransactionID: UUID
+    let descriptorCASSequence: UInt64
+    let workspace: VerifiedPatchWorkspaceIdentity
+    let auditEvent: VerifiedPatchDurableEventIdentity
     let transitions: [VerifiedPatchContentTransition]
 }
 
-/// Complete provenance scope for one patch.
+/// Store seam that establishes mutation authorship for a prepared inverse.
 ///
-/// Events are normalized into cursor order and must form one contiguous,
-/// replay-free range. A future live bridge creates this value only after the
-/// corresponding envelopes have been durably accepted by the provenance
-/// store.
-nonisolated struct VerifiedPatchEventBinding: Sendable, Equatable {
-    let projectID: UUID
-    let worktreePath: String
-    let sessionID: UUID
-    let process: AgentProcessIdentity
-    let events: [VerifiedPatchEventReference]
-
-    var envelopeIDs: [UUID] { events.map(\.envelopeID) }
-    var firstCursorValue: UInt64 { events[0].cursorValue }
-    var lastCursorValue: UInt64 { events[events.count - 1].cursorValue }
-
-    init(
-        projectID: UUID,
-        worktreePath: String,
-        sessionID: UUID,
-        process: AgentProcessIdentity,
-        events: [VerifiedPatchEventReference]
-    ) throws {
-        guard projectID != Self.zeroUUID,
-              sessionID != Self.zeroUUID,
-              process.terminalID != Self.zeroUUID,
-              process.processGeneration > 0,
-              Self.isSafeAbsolutePath(worktreePath),
-              !events.isEmpty else {
-            throw VerifiedPatchValidationError.invalidBinding
-        }
-
-        let ordered = events.sorted {
-            if $0.cursorValue != $1.cursorValue {
-                return $0.cursorValue < $1.cursorValue
-            }
-            return $0.envelopeID.uuidString < $1.envelopeID.uuidString
-        }
-        var seenEnvelopeIDs: Set<UUID> = []
-        for (index, event) in ordered.enumerated() {
-            guard event.envelopeID != Self.zeroUUID,
-                  event.cursorValue > 0,
-                  !event.transitions.isEmpty else {
-                throw VerifiedPatchValidationError.invalidBinding
-            }
-            guard seenEnvelopeIDs.insert(event.envelopeID).inserted else {
-                throw VerifiedPatchValidationError.duplicateEnvelope(
-                    event.envelopeID
-                )
-            }
-            for transition in event.transitions {
-                try Self.validate(transition)
-            }
-            guard index > 0 else { continue }
-            let previous = ordered[index - 1].cursorValue
-            if event.cursorValue == previous {
-                throw VerifiedPatchValidationError.cursorReplay(previous)
-            }
-            guard previous < UInt64.max else {
-                throw VerifiedPatchValidationError.cursorGap(
-                    expected: UInt64.max,
-                    actual: event.cursorValue
-                )
-            }
-            let expected = previous + 1
-            guard event.cursorValue == expected else {
-                throw VerifiedPatchValidationError.cursorGap(
-                    expected: expected,
-                    actual: event.cursorValue
-                )
-            }
-        }
-
-        self.projectID = projectID
-        self.worktreePath = worktreePath
-        self.sessionID = sessionID
-        self.process = process
-        self.events = ordered
-    }
-
-    static func isSafeRelativePath(_ path: String) -> Bool {
-        guard !path.isEmpty,
-              !path.hasPrefix("/"),
-              !path.utf8.contains(0),
-              path.utf8.count <= 4_096 else {
-            return false
-        }
-        let components = path.split(
-            separator: "/",
-            omittingEmptySubsequences: false
-        )
-        return !components.isEmpty
-            && components.allSatisfy {
-                !$0.isEmpty && $0 != "." && $0 != ".."
-            }
-    }
-
-    private static func validate(
-        _ transition: VerifiedPatchContentTransition
-    ) throws {
-        guard isSafeRelativePath(transition.sourcePath),
-              transition.beforeIdentity != nil
-                || transition.afterIdentity != nil else {
-            throw VerifiedPatchValidationError.invalidTransition
-        }
-        if let destinationPath = transition.destinationPath {
-            guard isSafeRelativePath(destinationPath),
-                  destinationPath != transition.sourcePath,
-                  transition.beforeIdentity != nil,
-                  transition.afterIdentity != nil else {
-                throw VerifiedPatchValidationError.invalidTransition
-            }
-        }
-    }
-
-    private static func isSafeAbsolutePath(_ path: String) -> Bool {
-        guard path.hasPrefix("/"),
-              path != "/",
-              !path.utf8.contains(0),
-              path.utf8.count <= 4_096 else {
-            return false
-        }
-        let components = path.split(
-            separator: "/",
-            omittingEmptySubsequences: false
-        )
-        return components.first?.isEmpty == true
-            && components.dropFirst().allSatisfy {
-                !$0.isEmpty && $0 != "." && $0 != ".."
-            }
-    }
-
-    private static let zeroUUID = UUID(
-        uuid: (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
-    )
+/// Journal revalidation alone is never an implementation of this protocol.
+/// A production conformer must load owner-private receipts created only after
+/// Pine completed the descriptor CAS and bound the user approval.
+nonisolated protocol PineMediatedWriterReceiptRevalidating: Sendable {
+    func revalidateMediatedWriterReceipts(
+        _ receipts: [PineMediatedWriterReceipt]
+    ) async throws
 }
 
-/// Exact bytes supplied by a trusted capture boundary.
-nonisolated struct VerifiedPatchSourceOperation: Sendable, Equatable {
-    let eventEnvelopeID: UUID
-    let sourcePath: String
-    let destinationPath: String?
-    let beforeContent: Data?
-    let afterContent: Data?
+/// Combined read-only authority-evidence seam.
+///
+/// Code preparing a #1207 mutation must use this combined contract, so a
+/// journal-only implementation cannot accidentally satisfy the boundary.
+nonisolated protocol PatchAuthorityEvidenceRevalidator:
+    VerifiedPatchJournalRevalidating,
+    PineMediatedWriterReceiptRevalidating {}
+
+/// Untrusted DTO presented to the ingress coordinator.
+///
+/// It deliberately carries the complete envelope, including source and
+/// effective trust, plus durable journal evidence. All public simulation
+/// boundaries revalidate this DTO even though its value types are constructible
+/// inside the module.
+nonisolated struct VerifiedPatchUntrustedEventRecord: Sendable, Equatable {
+    let envelope: AgentEventEnvelope
+    let durableIdentity: VerifiedPatchDurableEventIdentity
+    let mediatedWriterReceipt: PineMediatedWriterReceipt?
+    let transitions: [VerifiedPatchContentTransition]
+}
+
+/// One accepted envelope retained by a revalidated ingress receipt.
+nonisolated struct VerifiedPatchAcceptedEvent: Sendable, Equatable {
+    let envelope: AgentEventEnvelope
+    let durableIdentity: VerifiedPatchDurableEventIdentity
+    let mediatedWriterReceipt: PineMediatedWriterReceipt?
+    let transitions: [VerifiedPatchContentTransition]
+}
+
+/// Coordinator-issued evidence that full envelopes passed pure ingress checks.
+///
+/// This receipt proves only that the in-memory DTO was internally consistent
+/// with durable audit and Pine-mediated writer receipt fields. It does not
+/// authorize undo. The live coordinator must revalidate the writer receipts
+/// in its private store, query the journal for nested audit identities, source
+/// content from #1207's owner-private store, and perform final root/Git/index
+/// checks.
+nonisolated struct VerifiedPatchIngressReceipt: Sendable, Equatable {
+    let receiptID: UUID
+    let workspace: VerifiedPatchWorkspaceIdentity
+    let projectID: UUID
+    let sessionID: UUID
+    let process: AgentProcessIdentity
+    let events: [VerifiedPatchAcceptedEvent]
+
+    var envelopeIDs: [UUID] { events.map(\.envelope.id) }
+    var durableEventIdentities: [VerifiedPatchDurableEventIdentity] {
+        events.map(\.durableIdentity)
+    }
+    var mediatedWriterReceipts: [PineMediatedWriterReceipt] {
+        events.compactMap(\.mediatedWriterReceipt)
+    }
+    var firstCursorValue: UInt64 { events[0].envelope.cursorValue }
+    var lastCursorValue: UInt64 {
+        events[events.count - 1].envelope.cursorValue
+    }
+    var firstJournalSequence: UInt64 {
+        events[0].durableIdentity.journalSequence
+    }
+    var lastJournalSequence: UInt64 {
+        events[events.count - 1].durableIdentity.journalSequence
+    }
 
     init(
-        eventEnvelopeID: UUID,
+        receiptID: UUID,
+        workspace: VerifiedPatchWorkspaceIdentity,
+        projectID: UUID,
+        sessionID: UUID,
+        process: AgentProcessIdentity,
+        events: [VerifiedPatchAcceptedEvent]
+    ) {
+        self.receiptID = receiptID
+        self.workspace = workspace
+        self.projectID = projectID
+        self.sessionID = sessionID
+        self.process = process
+        self.events = events
+    }
+}
+
+/// Exact captured bytes supplied for one accepted transition.
+nonisolated struct VerifiedPatchSourceOperation: Sendable, Equatable {
+    let transitionID: VerifiedPatchTransitionID
+    let sourcePath: String
+    let destinationPath: String?
+    let before: VerifiedPatchFileState?
+    let after: VerifiedPatchFileState?
+
+    init(
+        transitionID: VerifiedPatchTransitionID,
         sourcePath: String,
         destinationPath: String? = nil,
-        beforeContent: Data?,
-        afterContent: Data?
+        before: VerifiedPatchFileState?,
+        after: VerifiedPatchFileState?
     ) {
-        self.eventEnvelopeID = eventEnvelopeID
+        self.transitionID = transitionID
         self.sourcePath = sourcePath
         self.destinationPath = destinationPath
-        self.beforeContent = beforeContent
-        self.afterContent = afterContent
+        self.before = before
+        self.after = after
     }
 }
 
@@ -206,22 +294,19 @@ nonisolated enum VerifiedPatchOperationKind: String, Sendable, Equatable {
     case rename
 }
 
-/// One exact file state retained only in the owner-private patch payload.
-nonisolated struct VerifiedPatchFileState: Sendable, Equatable {
-    let identity: ContentIdentity
-    let content: Data
-
-    init(content: Data) {
-        self.identity = ContentIdentity(content: content)
-        self.content = content
-    }
+/// Structured operation identity; no delimiter-based path concatenation.
+nonisolated struct VerifiedPatchOperationID:
+    Sendable,
+    Equatable,
+    Hashable {
+    let patchID: UUID
+    let transitionIDs: [VerifiedPatchTransitionID]
 }
 
-/// One deterministic line hunk for a text modification.
+/// Deterministic line hunk from captured before bytes to captured after bytes.
 ///
-/// Lines retain their original newline bytes, including CRLF. Context is
-/// deliberately exact and bounded; inverse application requires a unique
-/// context match in the current text.
+/// Lines include their newline bytes, preserving CRLF and missing final
+/// newlines exactly.
 nonisolated struct VerifiedTextPatchHunk: Sendable, Equatable {
     let beforeStartLine: Int
     let beforeLineCount: Int
@@ -234,39 +319,19 @@ nonisolated struct VerifiedTextPatchHunk: Sendable, Equatable {
 }
 
 nonisolated enum VerifiedPatchApplicationStrategy: Sendable, Equatable {
-    /// Checked, uniquely matched text hunks.
-    case text(hunks: [VerifiedTextPatchHunk])
-    /// Exact-state replacement/removal only.
+    case text(hunks: [VerifiedTextPatchHunk], lcsCellCount: Int)
     case exactState
 }
 
-/// One validated operation in a verified patch set.
+/// One collapsed transition chain in a pure patch simulation.
 nonisolated struct VerifiedPatchOperation: Sendable, Equatable {
-    let eventEnvelopeID: UUID
+    let id: VerifiedPatchOperationID
     let kind: VerifiedPatchOperationKind
     let sourcePath: String
     let destinationPath: String?
     let before: VerifiedPatchFileState?
     let after: VerifiedPatchFileState?
     let strategy: VerifiedPatchApplicationStrategy
-
-    var operationKey: String {
-        [
-            eventEnvelopeID.uuidString,
-            kind.rawValue,
-            sourcePath,
-            destinationPath ?? ""
-        ].joined(separator: ":")
-    }
-
-    var transition: VerifiedPatchContentTransition {
-        VerifiedPatchContentTransition(
-            sourcePath: sourcePath,
-            destinationPath: destinationPath,
-            beforeIdentity: before?.identity,
-            afterIdentity: after?.identity
-        )
-    }
 
     var touchedPaths: [String] {
         if let destinationPath {
@@ -276,19 +341,23 @@ nonisolated struct VerifiedPatchOperation: Sendable, Equatable {
     }
 }
 
-/// A deterministic patch tied to an exact verified event range.
+/// Pure simulation model tied to an accepted ingress receipt.
+///
+/// This type grants no mutation authority. Only #1207's final coordinator may
+/// interpret a prepared result after revalidating private authority, root,
+/// file descriptors, HEAD, index state, and authority consumption.
 nonisolated struct VerifiedPatchSet: Sendable, Equatable, Identifiable {
     let id: UUID
-    let binding: VerifiedPatchEventBinding
+    let receipt: VerifiedPatchIngressReceipt
     let operations: [VerifiedPatchOperation]
 }
 
 nonisolated enum VerifiedInversePreviewKind: String, Sendable, Equatable {
     case applyTextHunks
-    case restoreExactBytes
+    case restoreExactFile
     case removeCreatedFile
     case restoreDeletedFile
-    case restoreRenamedFile
+    case simulateRenamedFile
 }
 
 nonisolated enum VerifiedInversePreviewLineKind: String, Sendable, Equatable {
@@ -303,44 +372,134 @@ nonisolated struct VerifiedInversePreviewLine: Sendable, Equatable {
 }
 
 nonisolated struct VerifiedInverseHunkPreview: Sendable, Equatable {
+    let capturedAfterStartLine: Int
+    let resolvedCurrentStartLine: Int?
     let header: String
     let lines: [VerifiedInversePreviewLine]
 }
 
-/// Structured, deterministic preview for every inverse operation.
+/// Structured preview. Prepared previews describe resolved current ranges;
+/// nominal previews have `resolvedCurrentStartLine == nil`.
 nonisolated struct VerifiedInverseOperationPreview: Sendable, Equatable {
-    let operationKey: String
-    let eventEnvelopeID: UUID
+    let operationID: VerifiedPatchOperationID
     let kind: VerifiedInversePreviewKind
     let sourcePath: String
     let destinationPath: String?
-    let expectedCurrentIdentity: ContentIdentity?
-    let resultIdentity: ContentIdentity?
+    let expectedCurrent: VerifiedPatchStateIdentity?
+    let result: VerifiedPatchStateIdentity?
     let hunks: [VerifiedInverseHunkPreview]
 }
 
-/// In-memory workspace state consumed and returned by the pure engine.
+/// In-memory current state supplied by the future descriptor coordinator.
 nonisolated struct VerifiedPatchWorkspaceSnapshot: Sendable, Equatable {
-    let files: [String: Data]
+    let files: [String: VerifiedPatchFileState]
 }
 
 nonisolated enum VerifiedPatchConflictReason: Error, Sendable, Equatable {
     case expectedFileMissing
     case unexpectedFilePresent
     case exactStateDiverged
+    case unsupportedCurrentFileKind
     case currentContentIsNotText
-    case textContextMissing(hunkIndex: Int)
-    case ambiguousTextContext(hunkIndex: Int)
+    case humanEditOverlapsAgentRegion(hunkIndex: Int)
+    case mappedRegionMismatch(hunkIndex: Int)
     case overlappingResolvedHunks
+    case snapshotChangedAfterPreparation
+    case invalidCurrentSnapshot
+    case resourceLimitExceeded
 }
 
-nonisolated struct VerifiedPatchConflict: Sendable, Equatable {
-    let operationKey: String
-    let path: String
+nonisolated struct VerifiedPatchConflict: Error, Sendable, Equatable {
+    let operationID: VerifiedPatchOperationID?
+    let path: String?
     let reason: VerifiedPatchConflictReason
 }
 
-/// Atomic result: conflicts expose no partially transformed snapshot.
+nonisolated enum VerifiedPatchPreparedMode: Sendable, Equatable {
+    case checkedText
+    case exactState
+}
+
+nonisolated struct VerifiedPreparedPathExpectation: Sendable, Equatable {
+    let path: String
+    let state: VerifiedPatchFileState?
+}
+
+nonisolated struct VerifiedPreparedPathResult: Sendable, Equatable {
+    let path: String
+    let state: VerifiedPatchFileState?
+}
+
+nonisolated struct VerifiedPreparedTextHunk: Sendable, Equatable {
+    let capturedAfterRange: Range<Int>
+    let resolvedCurrentRange: Range<Int>
+    let replacementLines: [Data]
+}
+
+nonisolated struct VerifiedPreparedInverseOperation: Sendable, Equatable {
+    let operationID: VerifiedPatchOperationID
+    let kind: VerifiedPatchOperationKind
+    let mode: VerifiedPatchPreparedMode
+    let expectations: [VerifiedPreparedPathExpectation]
+    let results: [VerifiedPreparedPathResult]
+    let resolvedTextHunks: [VerifiedPreparedTextHunk]
+    let preview: VerifiedInverseOperationPreview
+}
+
+/// Values the final coordinator must revalidate before any disk mutation.
+nonisolated struct VerifiedPatchCoordinatorExpectations:
+    Sendable,
+    Equatable {
+    let privateWorkspaceID: UUID
+    let canonicalRootPath: String
+    let rootDevice: UInt64
+    let rootInode: UInt64
+    let capturedHeadOID: String
+    let capturedIndexSHA256: String
+    let durableEvents: [VerifiedPatchDurableEventIdentity]
+    let mediatedWriterReceipts: [PineMediatedWriterReceipt]
+}
+
+/// Fully resolved pure inverse plan.
+///
+/// `applyPrepared` revalidates every value-level expectation, so synthesized or
+/// stale values cannot bypass the prepare/apply boundary. This still grants no
+/// authority: the final coordinator must call
+/// `revalidateAuthorityEvidence`, then perform #1207's
+/// descriptor/root/Git/index checks and consume its separate authority.
+nonisolated struct PreparedInverse: Sendable, Equatable {
+    let patch: VerifiedPatchSet
+    let coordinatorExpectations: VerifiedPatchCoordinatorExpectations
+    let operations: [VerifiedPreparedInverseOperation]
+    let previews: [VerifiedInverseOperationPreview]
+
+    var patchID: UUID { patch.id }
+
+    init(
+        patch: VerifiedPatchSet,
+        coordinatorExpectations: VerifiedPatchCoordinatorExpectations,
+        operations: [VerifiedPreparedInverseOperation]
+    ) {
+        self.patch = patch
+        self.coordinatorExpectations = coordinatorExpectations
+        self.operations = operations
+        self.previews = operations.map(\.preview)
+    }
+}
+
+nonisolated enum VerifiedPatchPreparationFailure:
+    Error,
+    Sendable,
+    Equatable {
+    case invalidPatch(VerifiedPatchValidationError)
+    case conflicts([VerifiedPatchConflict])
+    case unsupportedOperation(
+        VerifiedPatchOperationID,
+        VerifiedPatchOperationKind
+    )
+}
+
+/// Atomic result: a conflict never exposes a partially transformed snapshot.
 nonisolated enum VerifiedCheckedInverseResult: Sendable, Equatable {
     case applied(
         snapshot: VerifiedPatchWorkspaceSnapshot,
@@ -350,18 +509,40 @@ nonisolated enum VerifiedCheckedInverseResult: Sendable, Equatable {
 }
 
 nonisolated enum VerifiedPatchValidationError: Error, Sendable, Equatable {
-    case invalidBinding
+    case invalidWorkspaceIdentity
+    case invalidReceipt
+    case invalidEnvelope(UUID)
+    case eventMetadataTooLarge
+    case unverifiedEnvelope(UUID)
     case duplicateEnvelope(UUID)
+    case invalidDurableEvent(UUID)
+    case duplicateJournalSequence(UInt64)
+    case journalOrderMismatch(previous: UInt64, actual: UInt64)
+    case missingMediatedWriterReceipt(UUID)
+    case invalidMediatedWriterReceipt(UUID)
+    case duplicateMediatedWriterReceipt(UUID)
     case cursorReplay(UInt64)
     case cursorGap(expected: UInt64, actual: UInt64)
-    case invalidTransition
+    case tooManyEvents
+    case tooManyTransitions
+    case invalidTransition(VerifiedPatchTransitionID?)
     case invalidPatchID
     case noOperations
-    case invalidOperation
+    case tooManyOperations
+    case invalidOperation(VerifiedPatchTransitionID?)
     case invalidPath(String)
-    case duplicateTouchedPath(String)
-    case duplicateBoundTransition
-    case unboundOperation
-    case unusedBoundTransition
+    case protectedPath(String)
+    case aliasedPath(String)
+    case duplicateTransition(VerifiedPatchTransitionID)
+    case unboundOperation(VerifiedPatchTransitionID)
+    case unusedTransition(VerifiedPatchTransitionID)
+    case transitionChainMismatch(String)
     case contentTooLarge
+    case aggregateContentTooLarge
+    case tooManyHunks
+    case lcsBudgetExceeded
+    case invalidSnapshot
+    case tooManyVersionPatches
+    case tooManyVersionNodes
+    case duplicatePatchID(UUID)
 }

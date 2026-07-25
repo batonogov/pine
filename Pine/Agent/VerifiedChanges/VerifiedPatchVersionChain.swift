@@ -2,23 +2,53 @@
 //  VerifiedPatchVersionChain.swift
 //  Pine
 //
-//  Pure overlap and version-chain analysis for verified agent patches (#933).
+//  Bounded multi-agent overlap and exact content-chain analysis (#933).
 //
 
 import Foundation
 
 nonisolated enum VerifiedPatchVersionConflictReason: Sendable, Equatable {
+    case invalidPatch(UUID)
+    case duplicatePatchID(UUID)
+    case resourceLimitExceeded
     case replayedEnvelope(UUID)
+    case journalSequenceCollision(UInt64)
+    case journalOrderMismatch(previous: UInt64, actual: UInt64)
     case cursorOverlap
     case cursorGap(expected: UInt64, actual: UInt64)
     case ambiguousVersionChain
     case cursorOrderMismatch
 }
 
-nonisolated struct VerifiedPatchPathScope: Sendable, Equatable, Hashable {
-    let projectID: UUID
-    let worktreePath: String
-    let relativePath: String
+/// Workspace identity plus a conservative normalization/case alias key.
+///
+/// Equality deliberately ignores display spelling, so `File.swift`,
+/// `file.swift`, and canonically equivalent spellings cannot split overlap
+/// analysis even if the current volume happens to be case-sensitive.
+nonisolated struct VerifiedPatchPathScope: Sendable, Hashable {
+    let privateWorkspaceID: UUID
+    let rootDevice: UInt64
+    let rootInode: UInt64
+    let conservativeRelativePath: String
+    let displayRelativePath: String
+
+    static func == (
+        lhs: VerifiedPatchPathScope,
+        rhs: VerifiedPatchPathScope
+    ) -> Bool {
+        lhs.privateWorkspaceID == rhs.privateWorkspaceID
+            && lhs.rootDevice == rhs.rootDevice
+            && lhs.rootInode == rhs.rootInode
+            && lhs.conservativeRelativePath
+                == rhs.conservativeRelativePath
+    }
+
+    func hash(into hasher: inout Hasher) {
+        hasher.combine(privateWorkspaceID)
+        hasher.combine(rootDevice)
+        hasher.combine(rootInode)
+        hasher.combine(conservativeRelativePath)
+    }
 }
 
 nonisolated struct VerifiedPatchVersionConflict: Sendable, Equatable {
@@ -27,11 +57,10 @@ nonisolated struct VerifiedPatchVersionConflict: Sendable, Equatable {
     let sessionIDs: [UUID]
     let reason: VerifiedPatchVersionConflictReason
 
-    var path: String? { pathScope?.relativePath }
+    var path: String? { pathScope?.displayRelativePath }
 }
 
 nonisolated struct VerifiedPatchVersionChainReport: Sendable, Equatable {
-    /// Exact identity order for every scoped path touched more than once.
     let orderedPatchIDsByPath: [VerifiedPatchPathScope: [UUID]]
 }
 
@@ -40,19 +69,59 @@ nonisolated enum VerifiedPatchVersionChainResult: Sendable, Equatable {
     case conflicted([VerifiedPatchVersionConflict])
 }
 
-/// Detects cursor replay/gaps and divergent multi-agent file versions.
 nonisolated enum VerifiedPatchVersionChainDetector {
     static func analyze(
         _ patches: [VerifiedPatchSet]
     ) -> VerifiedPatchVersionChainResult {
+        guard patches.count
+                <= VerifiedPatchLimits.maximumVersionPatchCount else {
+            return .conflicted([VerifiedPatchVersionConflict(
+                pathScope: nil,
+                patchIDs: [],
+                sessionIDs: [],
+                reason: .resourceLimitExceeded
+            )])
+        }
+
+        var seenPatchIDs: Set<UUID> = []
+        for patch in patches {
+            guard seenPatchIDs.insert(patch.id).inserted else {
+                return .conflicted([VerifiedPatchVersionConflict(
+                    pathScope: nil,
+                    patchIDs: [patch.id],
+                    sessionIDs: [patch.receipt.sessionID],
+                    reason: .duplicatePatchID(patch.id)
+                )])
+            }
+            do {
+                try VerifiedPatchEngine.revalidate(patch)
+            } catch {
+                return .conflicted([VerifiedPatchVersionConflict(
+                    pathScope: nil,
+                    patchIDs: [patch.id],
+                    sessionIDs: [patch.receipt.sessionID],
+                    reason: .invalidPatch(patch.id)
+                )])
+            }
+        }
+
         let orderedPatches = patches.sorted {
             $0.id.uuidString < $1.id.uuidString
         }
         var conflicts: [VerifiedPatchVersionConflict] = []
         detectEnvelopeReplay(orderedPatches, conflicts: &conflicts)
+        detectJournalReplay(orderedPatches, conflicts: &conflicts)
         detectCursorConflicts(orderedPatches, conflicts: &conflicts)
 
-        let nodesByPath = makeNodesByPath(orderedPatches)
+        guard let nodesByPath = makeNodesByPath(orderedPatches) else {
+            conflicts.append(VerifiedPatchVersionConflict(
+                pathScope: nil,
+                patchIDs: [],
+                sessionIDs: [],
+                reason: .resourceLimitExceeded
+            ))
+            return .conflicted(conflicts)
+        }
         var chains: [VerifiedPatchPathScope: [UUID]] = [:]
         for pathScope in nodesByPath.keys.sorted(by: pathScopeOrder) {
             guard let nodes = nodesByPath[pathScope],
@@ -93,14 +162,14 @@ nonisolated enum VerifiedPatchVersionChainDetector {
     ) {
         var owners: [UUID: VerifiedPatchSet] = [:]
         for patch in patches {
-            for envelopeID in patch.binding.envelopeIDs {
+            for envelopeID in patch.receipt.envelopeIDs {
                 if let existing = owners[envelopeID] {
                     conflicts.append(VerifiedPatchVersionConflict(
                         pathScope: nil,
                         patchIDs: sortedUUIDs([existing.id, patch.id]),
                         sessionIDs: sortedUUIDs([
-                            existing.binding.sessionID,
-                            patch.binding.sessionID
+                            existing.receipt.sessionID,
+                            patch.receipt.sessionID
                         ]),
                         reason: .replayedEnvelope(envelopeID)
                     ))
@@ -122,50 +191,63 @@ nonisolated enum VerifiedPatchVersionChainDetector {
                 continue
             }
             let ordered = group.sorted {
-                if $0.binding.firstCursorValue
-                    != $1.binding.firstCursorValue {
-                    return $0.binding.firstCursorValue
-                        < $1.binding.firstCursorValue
+                if $0.receipt.firstCursorValue
+                    != $1.receipt.firstCursorValue {
+                    return $0.receipt.firstCursorValue
+                        < $1.receipt.firstCursorValue
                 }
                 return $0.id.uuidString < $1.id.uuidString
             }
             for index in ordered.indices.dropFirst() {
                 let previous = ordered[index - 1]
                 let current = ordered[index]
-                if current.binding.firstCursorValue
-                    <= previous.binding.lastCursorValue {
+                if current.receipt.firstCursorValue
+                    <= previous.receipt.lastCursorValue {
                     conflicts.append(VerifiedPatchVersionConflict(
                         pathScope: nil,
                         patchIDs: [previous.id, current.id],
                         sessionIDs: sortedUUIDs([
-                            previous.binding.sessionID,
-                            current.binding.sessionID
+                            previous.receipt.sessionID,
+                            current.receipt.sessionID
                         ]),
                         reason: .cursorOverlap
                     ))
                     continue
                 }
-                guard previous.binding.lastCursorValue < UInt64.max else {
+                if current.receipt.firstJournalSequence
+                    <= previous.receipt.lastJournalSequence {
                     conflicts.append(VerifiedPatchVersionConflict(
                         pathScope: nil,
                         patchIDs: [previous.id, current.id],
-                        sessionIDs: [current.binding.sessionID],
-                        reason: .cursorGap(
-                            expected: UInt64.max,
-                            actual: current.binding.firstCursorValue
+                        sessionIDs: [current.receipt.sessionID],
+                        reason: .journalOrderMismatch(
+                            previous: previous.receipt.lastJournalSequence,
+                            actual: current.receipt.firstJournalSequence
                         )
                     ))
                     continue
                 }
-                let expected = previous.binding.lastCursorValue + 1
-                if current.binding.firstCursorValue != expected {
+                guard previous.receipt.lastCursorValue < UInt64.max else {
                     conflicts.append(VerifiedPatchVersionConflict(
                         pathScope: nil,
                         patchIDs: [previous.id, current.id],
-                        sessionIDs: [current.binding.sessionID],
+                        sessionIDs: [current.receipt.sessionID],
+                        reason: .cursorGap(
+                            expected: UInt64.max,
+                            actual: current.receipt.firstCursorValue
+                        )
+                    ))
+                    continue
+                }
+                let expected = previous.receipt.lastCursorValue + 1
+                if current.receipt.firstCursorValue != expected {
+                    conflicts.append(VerifiedPatchVersionConflict(
+                        pathScope: nil,
+                        patchIDs: [previous.id, current.id],
+                        sessionIDs: [current.receipt.sessionID],
                         reason: .cursorGap(
                             expected: expected,
-                            actual: current.binding.firstCursorValue
+                            actual: current.receipt.firstCursorValue
                         )
                     ))
                 }
@@ -173,67 +255,128 @@ nonisolated enum VerifiedPatchVersionChainDetector {
         }
     }
 
+    private static func detectJournalReplay(
+        _ patches: [VerifiedPatchSet],
+        conflicts: inout [VerifiedPatchVersionConflict]
+    ) {
+        var owners: [JournalSequenceScope: VerifiedPatchSet] = [:]
+        for patch in patches {
+            let workspace = patch.receipt.workspace
+            for event in patch.receipt.durableEventIdentities {
+                let scope = JournalSequenceScope(
+                    privateWorkspaceID: workspace.privateWorkspaceID,
+                    rootDevice: workspace.rootDevice,
+                    rootInode: workspace.rootInode,
+                    journalSequence: event.journalSequence
+                )
+                if let existing = owners[scope] {
+                    conflicts.append(VerifiedPatchVersionConflict(
+                        pathScope: nil,
+                        patchIDs: sortedUUIDs([existing.id, patch.id]),
+                        sessionIDs: sortedUUIDs([
+                            existing.receipt.sessionID,
+                            patch.receipt.sessionID
+                        ]),
+                        reason: .journalSequenceCollision(
+                            event.journalSequence
+                        )
+                    ))
+                } else {
+                    owners[scope] = patch
+                }
+            }
+        }
+    }
+
     private static func makeNodesByPath(
         _ patches: [VerifiedPatchSet]
-    ) -> [VerifiedPatchPathScope: [VersionNode]] {
+    ) -> [VerifiedPatchPathScope: [VersionNode]]? {
         var result: [VerifiedPatchPathScope: [VersionNode]] = [:]
+        var nodeCount = 0
         for patch in patches {
             for operation in patch.operations {
                 let common = (
                     patchID: patch.id,
-                    sessionID: patch.binding.sessionID,
+                    sessionID: patch.receipt.sessionID,
                     stream: StreamIdentity(patch),
-                    firstCursor: patch.binding.firstCursorValue
+                    firstCursor: patch.receipt.firstCursorValue
                 )
                 if operation.kind == .rename,
                    let destinationPath = operation.destinationPath {
-                    let sourceScope = pathScope(
-                        patch,
-                        relativePath: operation.sourcePath
-                    )
-                    let destinationScope = pathScope(
-                        patch,
-                        relativePath: destinationPath
-                    )
-                    result[sourceScope, default: []].append(
+                    guard appendNode(
                         VersionNode(
                             patchID: common.patchID,
                             sessionID: common.sessionID,
                             stream: common.stream,
                             firstCursor: common.firstCursor,
-                            before: operation.before?.identity,
+                            before: operation.before?.stateIdentity,
                             after: nil
-                        )
-                    )
-                    result[destinationScope, default: []].append(
+                        ),
+                        scope: pathScope(
+                            patch,
+                            relativePath: operation.sourcePath
+                        ),
+                        result: &result,
+                        count: &nodeCount
+                    ),
+                    appendNode(
                         VersionNode(
                             patchID: common.patchID,
                             sessionID: common.sessionID,
                             stream: common.stream,
                             firstCursor: common.firstCursor,
                             before: nil,
-                            after: operation.after?.identity
-                        )
-                    )
+                            after: operation.after?.stateIdentity
+                        ),
+                        scope: pathScope(
+                            patch,
+                            relativePath: destinationPath
+                        ),
+                        result: &result,
+                        count: &nodeCount
+                    ) else {
+                        return nil
+                    }
                 } else {
-                    let scope = pathScope(
-                        patch,
-                        relativePath: operation.sourcePath
-                    )
-                    result[scope, default: []].append(
+                    guard appendNode(
                         VersionNode(
                             patchID: common.patchID,
                             sessionID: common.sessionID,
                             stream: common.stream,
                             firstCursor: common.firstCursor,
-                            before: operation.before?.identity,
-                            after: operation.after?.identity
-                        )
-                    )
+                            before: operation.before?.stateIdentity,
+                            after: operation.after?.stateIdentity
+                        ),
+                        scope: pathScope(
+                            patch,
+                            relativePath: operation.sourcePath
+                        ),
+                        result: &result,
+                        count: &nodeCount
+                    ) else {
+                        return nil
+                    }
                 }
             }
         }
         return result
+    }
+
+    private static func appendNode(
+        _ node: VersionNode,
+        scope: VerifiedPatchPathScope,
+        result: inout [VerifiedPatchPathScope: [VersionNode]],
+        count: inout Int
+    ) -> Bool {
+        let updated = count.addingReportingOverflow(1)
+        guard !updated.overflow,
+              updated.partialValue
+                <= VerifiedPatchLimits.maximumVersionNodeCount else {
+            return false
+        }
+        count = updated.partialValue
+        result[scope, default: []].append(node)
+        return true
     }
 
     private static func linearChain(
@@ -250,7 +393,6 @@ nonisolated enum VerifiedPatchVersionChainDetector {
                 }
             }
         }
-
         guard successors.values.allSatisfy({ $0.count <= 1 }),
               predecessors.values.allSatisfy({ $0.count <= 1 }) else {
             return .failure(.ambiguous)
@@ -312,15 +454,55 @@ nonisolated enum VerifiedPatchVersionChainDetector {
         }
     }
 
+    private static func pathScope(
+        _ patch: VerifiedPatchSet,
+        relativePath: String
+    ) -> VerifiedPatchPathScope {
+        let workspace = patch.receipt.workspace
+        return VerifiedPatchPathScope(
+            privateWorkspaceID: workspace.privateWorkspaceID,
+            rootDevice: workspace.rootDevice,
+            rootInode: workspace.rootInode,
+            conservativeRelativePath: VerifiedPatchIngressCoordinator
+                .conservativePathKey(relativePath),
+            displayRelativePath: relativePath
+        )
+    }
+
+    private static func pathScopeOrder(
+        _ lhs: VerifiedPatchPathScope,
+        _ rhs: VerifiedPatchPathScope
+    ) -> Bool {
+        if lhs.privateWorkspaceID != rhs.privateWorkspaceID {
+            return lhs.privateWorkspaceID.uuidString
+                < rhs.privateWorkspaceID.uuidString
+        }
+        if lhs.rootDevice != rhs.rootDevice {
+            return lhs.rootDevice < rhs.rootDevice
+        }
+        if lhs.rootInode != rhs.rootInode {
+            return lhs.rootInode < rhs.rootInode
+        }
+        return lhs.conservativeRelativePath
+            < rhs.conservativeRelativePath
+    }
+
     private static func streamOrder(
         _ lhs: StreamIdentity,
         _ rhs: StreamIdentity
     ) -> Bool {
+        if lhs.privateWorkspaceID != rhs.privateWorkspaceID {
+            return lhs.privateWorkspaceID.uuidString
+                < rhs.privateWorkspaceID.uuidString
+        }
+        if lhs.rootDevice != rhs.rootDevice {
+            return lhs.rootDevice < rhs.rootDevice
+        }
+        if lhs.rootInode != rhs.rootInode {
+            return lhs.rootInode < rhs.rootInode
+        }
         if lhs.projectID != rhs.projectID {
             return lhs.projectID.uuidString < rhs.projectID.uuidString
-        }
-        if lhs.worktreePath != rhs.worktreePath {
-            return lhs.worktreePath < rhs.worktreePath
         }
         if lhs.sessionID != rhs.sessionID {
             return lhs.sessionID.uuidString < rhs.sessionID.uuidString
@@ -331,44 +513,31 @@ nonisolated enum VerifiedPatchVersionChainDetector {
         return lhs.processGeneration < rhs.processGeneration
     }
 
-    private static func pathScope(
-        _ patch: VerifiedPatchSet,
-        relativePath: String
-    ) -> VerifiedPatchPathScope {
-        VerifiedPatchPathScope(
-            projectID: patch.binding.projectID,
-            worktreePath: patch.binding.worktreePath,
-            relativePath: relativePath
-        )
-    }
-
-    private static func pathScopeOrder(
-        _ lhs: VerifiedPatchPathScope,
-        _ rhs: VerifiedPatchPathScope
-    ) -> Bool {
-        if lhs.projectID != rhs.projectID {
-            return lhs.projectID.uuidString < rhs.projectID.uuidString
-        }
-        if lhs.worktreePath != rhs.worktreePath {
-            return lhs.worktreePath < rhs.worktreePath
-        }
-        return lhs.relativePath < rhs.relativePath
-    }
-
     private struct StreamIdentity: Hashable {
+        let privateWorkspaceID: UUID
+        let rootDevice: UInt64
+        let rootInode: UInt64
         let projectID: UUID
-        let worktreePath: String
         let sessionID: UUID
         let terminalID: UUID
         let processGeneration: UInt64
 
         init(_ patch: VerifiedPatchSet) {
-            projectID = patch.binding.projectID
-            worktreePath = patch.binding.worktreePath
-            sessionID = patch.binding.sessionID
-            terminalID = patch.binding.process.terminalID
-            processGeneration = patch.binding.process.processGeneration
+            privateWorkspaceID = patch.receipt.workspace.privateWorkspaceID
+            rootDevice = patch.receipt.workspace.rootDevice
+            rootInode = patch.receipt.workspace.rootInode
+            projectID = patch.receipt.projectID
+            sessionID = patch.receipt.sessionID
+            terminalID = patch.receipt.process.terminalID
+            processGeneration = patch.receipt.process.processGeneration
         }
+    }
+
+    private struct JournalSequenceScope: Hashable {
+        let privateWorkspaceID: UUID
+        let rootDevice: UInt64
+        let rootInode: UInt64
+        let journalSequence: UInt64
     }
 
     private struct VersionNode {
@@ -376,8 +545,8 @@ nonisolated enum VerifiedPatchVersionChainDetector {
         let sessionID: UUID
         let stream: StreamIdentity
         let firstCursor: UInt64
-        let before: ContentIdentity?
-        let after: ContentIdentity?
+        let before: VerifiedPatchStateIdentity?
+        let after: VerifiedPatchStateIdentity?
     }
 
     private enum ChainFailure: Error {

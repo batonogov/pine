@@ -178,7 +178,7 @@ nonisolated enum AgentHistoryUndoPreflight {
     /// resolve beneath a root directory descriptor without following links,
     /// compare device/inode/link-count identities, and revalidate immediately
     /// before the atomic apply.
-    private static func isCanonicalRelativePath(_ path: String) -> Bool {
+    static func isCanonicalRelativePath(_ path: String) -> Bool {
         let normalizedPath = path.precomposedStringWithCanonicalMapping
         guard !path.isEmpty,
               path.utf8.elementsEqual(normalizedPath.utf8),
@@ -207,7 +207,7 @@ nonisolated enum AgentHistoryUndoPreflight {
     /// normalization-insensitive volumes. Refusing two legitimate paths on a
     /// case-sensitive volume is safer than applying an inverse to the wrong
     /// object after a project moves to a different volume.
-    private static func conservativePathKey(_ path: String) -> String {
+    static func conservativePathKey(_ path: String) -> String {
         path.precomposedStringWithCanonicalMapping.folding(
             options: [.caseInsensitive, .diacriticInsensitive, .widthInsensitive],
             locale: Locale(identifier: "en_US_POSIX")
