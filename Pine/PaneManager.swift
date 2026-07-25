@@ -570,7 +570,13 @@ final class PaneManager {
     /// guarded by re-using the existing root leaf as a last resort.
     @discardableResult
     func ensureEditorPane() -> TabManager {
-        if let tm = activeEditorTabManager { return tm }
+        if let tm = tabManagers[activePaneID] { return tm }
+        if let editorPaneID = root.leafIDs.first(where: {
+            root.content(for: $0) == .editor
+        }), let tm = tabManagers[editorPaneID] {
+            activePaneID = editorPaneID
+            return tm
+        }
 
         // No editor leaf exists — create one by splitting the first terminal
         // pane (insertBefore = true puts the new editor above the terminal).
@@ -593,6 +599,23 @@ final class PaneManager {
         root = .leaf(newID, .editor)
         activePaneID = newID
         return fresh
+    }
+
+    /// Opens a file into the usable editor destination and routes pane/tab
+    /// activation plus first-responder focus through the same path as a tab
+    /// click. Sidebar previews, explicit opens, Quick Open, and Activity Panel
+    /// navigation use this instead of mutating a pane-local manager directly.
+    @discardableResult
+    func openFileInActiveEditor(url: URL, asTransientPreview: Bool = false) -> Bool {
+        let tabManager = ensureEditorPane()
+        let paneID = activePaneID
+        if asTransientPreview {
+            tabManager.openTabAsPreview(url: url)
+        } else {
+            tabManager.openTab(url: url)
+        }
+        guard let tabID = tabManager.activeTabID else { return false }
+        return selectEditorTab(tabID, in: paneID)
     }
 
     /// Removes a pane and promotes its sibling. When the very last leaf in
@@ -663,6 +686,214 @@ final class PaneManager {
         terminalState.pendingFocusTabID = tabID
         recordTabActivation(paneID: paneID, tabID: tabID, contentType: .terminal)
         return true
+    }
+
+    // MARK: - Pointer-free tab movement
+
+    /// Whether the currently active editor or terminal tab can perform a
+    /// keyboard/VoiceOver movement command without violating pinned
+    /// boundaries, hidden-layout guards, or content-type routing.
+    func canMoveActiveTab(_ action: TabMoveAction) -> Bool {
+        guard let contentType = root.content(for: activePaneID) else { return false }
+        let tabID: UUID?
+        switch contentType {
+        case .editor:
+            tabID = tabManagers[activePaneID]?.activeTabID
+        case .terminal:
+            tabID = terminalStates[activePaneID]?.activeTerminalID
+        }
+        guard let tabID else { return false }
+        return canMoveTab(
+            tabID,
+            from: activePaneID,
+            contentType: contentType,
+            action: action
+        )
+    }
+
+    /// Moves the active tab through the same transactional primitives used by
+    /// drag-and-drop. This gives keyboard and assistive-technology users the
+    /// exact same pinned-boundary, focus, pruning, and rollback semantics.
+    @discardableResult
+    func moveActiveTab(_ action: TabMoveAction) -> Bool {
+        guard let contentType = root.content(for: activePaneID) else { return false }
+        let tabID: UUID?
+        switch contentType {
+        case .editor:
+            tabID = tabManagers[activePaneID]?.activeTabID
+        case .terminal:
+            tabID = terminalStates[activePaneID]?.activeTerminalID
+        }
+        guard let tabID else { return false }
+        return moveTab(
+            tabID,
+            from: activePaneID,
+            contentType: contentType,
+            action: action
+        )
+    }
+
+    func canMoveTab(
+        _ tabID: UUID,
+        from paneID: PaneID,
+        contentType: PaneContent,
+        action: TabMoveAction
+    ) -> Bool {
+        guard root.content(for: paneID) == contentType else { return false }
+        switch action {
+        case .leading, .trailing:
+            guard let insertionIndex = adjacentInsertionIndex(
+                tabID: tabID,
+                paneID: paneID,
+                contentType: contentType,
+                action: action
+            ) else { return false }
+            switch contentType {
+            case .editor:
+                return tabManagers[paneID]?.canMoveTab(
+                    id: tabID,
+                    toInsertionIndex: insertionIndex
+                ) == .moved
+            case .terminal:
+                return terminalStates[paneID]?.canMoveTab(
+                    id: tabID,
+                    toInsertionIndex: insertionIndex
+                ) == .moved
+            }
+        case .previousPane, .nextPane:
+            guard !isMaximized,
+                  let destinationPaneID = adjacentPane(
+                    to: paneID,
+                    contentType: contentType,
+                    action: action
+                  ) else { return false }
+            switch contentType {
+            case .editor:
+                guard let tab = tabManagers[paneID]?.tabs.first(where: { $0.id == tabID }),
+                      let destination = tabManagers[destinationPaneID] else { return false }
+                let insertionIndex = tab.isPinned
+                    ? destination.pinnedTabCount
+                    : destination.tabs.count
+                return destination.canInsertTransferredTab(tab, at: insertionIndex)
+            case .terminal:
+                return terminalStates[destinationPaneID]?
+                    .terminalTabs.contains(where: { $0.id == tabID }) == false
+            }
+        }
+    }
+
+    @discardableResult
+    func moveTab(
+        _ tabID: UUID,
+        from paneID: PaneID,
+        contentType: PaneContent,
+        action: TabMoveAction
+    ) -> Bool {
+        guard canMoveTab(
+            tabID,
+            from: paneID,
+            contentType: contentType,
+            action: action
+        ) else { return false }
+
+        switch action {
+        case .leading, .trailing:
+            guard let insertionIndex = adjacentInsertionIndex(
+                tabID: tabID,
+                paneID: paneID,
+                contentType: contentType,
+                action: action
+            ) else { return false }
+            let result: TabInsertionResult
+            switch contentType {
+            case .editor:
+                result = tabManagers[paneID]?.moveTab(
+                    id: tabID,
+                    toInsertionIndex: insertionIndex
+                ) ?? .rejected
+            case .terminal:
+                result = terminalStates[paneID]?.moveTab(
+                    id: tabID,
+                    toInsertionIndex: insertionIndex
+                ) ?? .rejected
+            }
+            guard result == .moved else { return false }
+            activePaneID = paneID
+            recordTabActivation(paneID: paneID, tabID: tabID, contentType: contentType)
+            return true
+        case .previousPane, .nextPane:
+            guard let destinationPaneID = adjacentPane(
+                to: paneID,
+                contentType: contentType,
+                action: action
+            ) else { return false }
+            switch contentType {
+            case .editor:
+                guard let tab = tabManagers[paneID]?.tabs.first(where: { $0.id == tabID }),
+                      let destination = tabManagers[destinationPaneID] else { return false }
+                let insertionIndex = tab.isPinned
+                    ? destination.pinnedTabCount
+                    : destination.tabs.count
+                return moveTabBetweenPanes(
+                    tabID: tabID,
+                    tabURL: tab.url,
+                    from: paneID,
+                    to: destinationPaneID,
+                    at: insertionIndex
+                )
+            case .terminal:
+                guard let destination = terminalStates[destinationPaneID] else { return false }
+                return moveTerminalTab(
+                    tabID,
+                    from: paneID,
+                    to: destinationPaneID,
+                    at: destination.terminalTabs.count
+                )
+            }
+        }
+    }
+
+    private func adjacentInsertionIndex(
+        tabID: UUID,
+        paneID: PaneID,
+        contentType: PaneContent,
+        action: TabMoveAction
+    ) -> Int? {
+        let ids: [UUID]
+        switch contentType {
+        case .editor:
+            ids = tabManagers[paneID]?.tabs.map(\.id) ?? []
+        case .terminal:
+            ids = terminalStates[paneID]?.terminalTabs.map(\.id) ?? []
+        }
+        guard let sourceIndex = ids.firstIndex(of: tabID) else { return nil }
+        switch action {
+        case .leading:
+            return sourceIndex > 0 ? sourceIndex - 1 : nil
+        case .trailing:
+            return sourceIndex + 1 < ids.count ? sourceIndex + 2 : nil
+        case .previousPane, .nextPane:
+            return nil
+        }
+    }
+
+    private func adjacentPane(
+        to paneID: PaneID,
+        contentType: PaneContent,
+        action: TabMoveAction
+    ) -> PaneID? {
+        let matchingPaneIDs = root.leafIDs.filter {
+            root.content(for: $0) == contentType
+        }
+        guard let index = matchingPaneIDs.firstIndex(of: paneID) else { return nil }
+        switch action {
+        case .previousPane:
+            return index > 0 ? matchingPaneIDs[index - 1] : nil
+        case .nextPane:
+            return index + 1 < matchingPaneIDs.count ? matchingPaneIDs[index + 1] : nil
+        case .leading, .trailing:
+            return nil
+        }
     }
 
     /// Adds a terminal tab through the pane owner so creation and focus
@@ -883,19 +1114,39 @@ final class PaneManager {
     /// Restores a previously saved pane layout.
     /// Creates TabManagers for each leaf and returns the paneID-to-TabManager mapping
     /// so the caller can populate tabs.
+    @discardableResult
     func restoreLayout(
         from node: PaneNode,
         activePaneUUID: UUID?
-    ) {
+    ) -> Bool {
         // Collect all leaf IDs from the restored tree
         let leafIDs = node.leafIDs
+        guard !leafIDs.isEmpty,
+              node.depth <= paneMaxDepth,
+              Set(leafIDs).count == leafIDs.count else {
+            return false
+        }
 
         var newTabManagers: [PaneID: TabManager] = [:]
         var newTerminalStates: [PaneID: TerminalPaneState] = [:]
+        let reusableSingleEditorManager: TabManager? = {
+            guard leafIDs.count == 1,
+                  node.content(for: leafIDs[0]) == .editor,
+                  root.leafCount == 1,
+                  let currentID = root.firstLeafID,
+                  root.content(for: currentID) == .editor else { return nil }
+            return tabManagers[currentID]
+        }()
         for leafID in leafIDs {
             switch node.content(for: leafID) {
             case .editor:
-                newTabManagers[leafID] = makeEditorTabManager(for: leafID)
+                if let reusableSingleEditorManager {
+                    configureEditorTabManager?(reusableSingleEditorManager)
+                    trackEditorActivations(in: reusableSingleEditorManager, paneID: leafID)
+                    newTabManagers[leafID] = reusableSingleEditorManager
+                } else {
+                    newTabManagers[leafID] = makeEditorTabManager(for: leafID)
+                }
             case .terminal:
                 newTerminalStates[leafID] = makeTerminalPaneState(for: leafID)
             case nil:
@@ -907,6 +1158,7 @@ final class PaneManager {
         root = node
         tabManagers = newTabManagers
         terminalStates = newTerminalStates
+        globalTabSwitchOrder = []
 
         // Restore active pane
         if let uuid = activePaneUUID,
@@ -914,6 +1166,92 @@ final class PaneManager {
             activePaneID = paneID
         } else if let firstLeaf = root.firstLeafID {
             activePaneID = firstLeaf
+        }
+        return true
+    }
+
+    /// Re-applies a persisted active pane after empty-leaf pruning and terminal
+    /// recreation. Invalid or stale UUIDs fail closed to the first surviving
+    /// leaf in deterministic tree order.
+    func restoreActivePane(uuid: UUID?) {
+        if let uuid,
+           let paneID = root.leafIDs.first(where: { $0.id == uuid }) {
+            activePaneID = paneID
+        } else if !root.leafIDs.contains(activePaneID),
+                  let firstLeaf = root.firstLeafID {
+            activePaneID = firstLeaf
+        }
+    }
+
+    /// Restores the global switch order after runtime tab UUIDs have been
+    /// recreated. Stale/duplicate identities are discarded. Any tabs omitted
+    /// by an older or partially stale session are appended in stable
+    /// pane-order/tab-order so the switcher always has a complete,
+    /// deterministic cycle.
+    func restoreGlobalTabSwitchOrder(_ restored: [GlobalTabIdentity]) {
+        var result: [GlobalTabIdentity] = []
+        var seen = Set<GlobalTabIdentity>()
+
+        func appendIfValid(_ identity: GlobalTabIdentity) {
+            guard seen.insert(identity).inserted,
+                  isValidGlobalTabIdentity(identity) else { return }
+            result.append(identity)
+        }
+
+        restored.forEach(appendIfValid)
+
+        let deterministicOrder = deterministicGlobalTabOrder()
+        if result.isEmpty, let current = currentGlobalTabIdentity() {
+            appendIfValid(current)
+        }
+        deterministicOrder.forEach(appendIfValid)
+        globalTabSwitchOrder = result
+    }
+
+    /// Requests usable content focus for the restored active pane. The normal
+    /// bounded AppKit retry coordinator consumes this request once the
+    /// destination view has entered a window.
+    func requestFocusForActivePane() {
+        switch root.content(for: activePaneID) {
+        case .editor:
+            guard let manager = tabManagers[activePaneID],
+                  let tabID = manager.activeTabID else { return }
+            manager.pendingFocusTabID = tabID
+        case .terminal:
+            guard let state = terminalStates[activePaneID],
+                  let tabID = state.activeTerminalID else { return }
+            state.pendingFocusTabID = tabID
+        case nil:
+            break
+        }
+    }
+
+    private func deterministicGlobalTabOrder() -> [GlobalTabIdentity] {
+        root.leafIDs.flatMap { paneID -> [GlobalTabIdentity] in
+            switch root.content(for: paneID) {
+            case .editor:
+                return tabManagers[paneID]?.tabs.map {
+                    GlobalTabIdentity(paneID: paneID, tabID: $0.id, contentType: .editor)
+                } ?? []
+            case .terminal:
+                return terminalStates[paneID]?.terminalTabs.map {
+                    GlobalTabIdentity(paneID: paneID, tabID: $0.id, contentType: .terminal)
+                } ?? []
+            case nil:
+                return []
+            }
+        }
+    }
+
+    private func isValidGlobalTabIdentity(_ identity: GlobalTabIdentity) -> Bool {
+        guard root.content(for: identity.paneID) == identity.contentType else { return false }
+        switch identity.contentType {
+        case .editor:
+            return tabManagers[identity.paneID]?.tabs
+                .contains(where: { $0.id == identity.tabID }) == true
+        case .terminal:
+            return terminalStates[identity.paneID]?.terminalTabs
+                .contains(where: { $0.id == identity.tabID }) == true
         }
     }
 

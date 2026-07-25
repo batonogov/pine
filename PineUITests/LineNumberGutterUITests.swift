@@ -31,7 +31,7 @@ final class LineNumberGutterUITests: PineUITestCase {
     private func openFileAndGetElements() throws -> (editor: XCUIElement, gutter: XCUIElement) {
         launchWithProject(projectURL)
 
-        let fileRow = app.staticTexts["fileNode_main.swift"]
+        let fileRow = app.sidebarNodes["fileNode_main.swift"]
         guard waitForExistence(fileRow, timeout: 10) else {
             XCTFail("main.swift should appear in the sidebar")
             return (app.textViews["codeEditor"].firstMatch,

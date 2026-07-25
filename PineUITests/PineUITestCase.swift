@@ -123,9 +123,27 @@ class PineUITestCase: XCTestCase {
         app.buttons["editorTabClose_\(fileName)"].firstMatch
     }
 
-    /// Opens a file from the sidebar and waits for the editor tab to appear.
+    /// Permanently opens a file from the sidebar and waits for its editor tab.
+    /// Sidebar single-clicks intentionally create replaceable preview tabs;
+    /// double-click is the explicit-open gesture used by tests that need
+    /// several durable tabs.
     func openFile(_ name: String) {
-        let fileNode = app.staticTexts["fileNode_\(name)"]
+        let fileNode = app.sidebarNodes["fileNode_\(name)"]
+        XCTAssertTrue(
+            waitForExistence(fileNode, timeout: 10),
+            "\(name) should appear in the sidebar"
+        )
+        fileNode.doubleClick()
+        XCTAssertTrue(
+            waitForExistence(editorTab(name), timeout: 5),
+            "\(name) tab should appear"
+        )
+    }
+
+    /// Opens a replaceable transient preview through the real single-click
+    /// sidebar interaction.
+    func previewFile(_ name: String) {
+        let fileNode = app.sidebarNodes["fileNode_\(name)"]
         XCTAssertTrue(
             waitForExistence(fileNode, timeout: 10),
             "\(name) should appear in the sidebar"
@@ -133,7 +151,16 @@ class PineUITestCase: XCTestCase {
         fileNode.click()
         XCTAssertTrue(
             waitForExistence(editorTab(name), timeout: 5),
-            "\(name) tab should appear"
+            "\(name) preview tab should appear"
         )
+    }
+}
+
+extension XCUIApplication {
+    /// Sidebar folders remain static text while actionable file rows expose
+    /// a button role. Querying by identifier across roles keeps interaction
+    /// tests aligned with the semantic accessibility hierarchy.
+    var sidebarNodes: XCUIElementQuery {
+        descendants(matching: .any)
     }
 }

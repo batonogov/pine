@@ -64,7 +64,10 @@ struct ContentView: View {
     var body: some View {
         NavigationSplitView(columnVisibility: $columnVisibility) {
             SidebarSearchableContent(
-                selectedNode: $selectedNode
+                selectedNode: $selectedNode,
+                onFileOpen: { node, disposition in
+                    handleFileSelection(node, disposition: disposition)
+                }
             )
             .accessibilityIdentifier(AccessibilityID.sidebar)
             .navigationSplitViewColumnWidth(min: 200, ideal: 240, max: 400)
@@ -202,10 +205,6 @@ struct ContentView: View {
             isPresented: $isAgentHistoryPresented,
             store: projectManager.agentHistory
         ))
-        .onChange(of: selectedNode) { _, newNode in
-            guard let node = newNode, !node.isDirectory else { return }
-            handleFileSelection(node)
-        }
         .onChange(of: workspace.rootURL) { _, _ in
             lineDiffs = []
             projectManager.quickOpenProvider.invalidateIndex()

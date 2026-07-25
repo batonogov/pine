@@ -46,7 +46,7 @@ final class SidebarFileOperationsTests: PineUITestCase {
 
     /// Right-clicks on a specific node in the sidebar.
     private func rightClickNode(_ nodeName: String) {
-        let node = app.staticTexts["fileNode_\(nodeName)"]
+        let node = app.sidebarNodes["fileNode_\(nodeName)"]
         XCTAssertTrue(waitForExistence(node, timeout: 5), "\(nodeName) should exist in sidebar")
         node.rightClick()
     }

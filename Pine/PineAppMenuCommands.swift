@@ -431,6 +431,40 @@ struct PineAppMenuCommands: Commands {
             Divider()
 
             Button {
+                focusedProject?.paneManager.moveActiveTab(.leading)
+            } label: {
+                Label(Strings.tabMoveLeading, systemImage: "arrow.left")
+            }
+            .keyboardShortcut(.leftArrow, modifiers: [.command, .control])
+            .disabled(focusedProject?.paneManager.canMoveActiveTab(.leading) != true)
+
+            Button {
+                focusedProject?.paneManager.moveActiveTab(.trailing)
+            } label: {
+                Label(Strings.tabMoveTrailing, systemImage: "arrow.right")
+            }
+            .keyboardShortcut(.rightArrow, modifiers: [.command, .control])
+            .disabled(focusedProject?.paneManager.canMoveActiveTab(.trailing) != true)
+
+            Button {
+                focusedProject?.paneManager.moveActiveTab(.previousPane)
+            } label: {
+                Label(Strings.tabMoveToPreviousPane, systemImage: "rectangle.leadinghalf.inset.filled")
+            }
+            .keyboardShortcut(.leftArrow, modifiers: [.command, .control, .shift])
+            .disabled(focusedProject?.paneManager.canMoveActiveTab(.previousPane) != true)
+
+            Button {
+                focusedProject?.paneManager.moveActiveTab(.nextPane)
+            } label: {
+                Label(Strings.tabMoveToNextPane, systemImage: "rectangle.trailinghalf.inset.filled")
+            }
+            .keyboardShortcut(.rightArrow, modifiers: [.command, .control, .shift])
+            .disabled(focusedProject?.paneManager.canMoveActiveTab(.nextPane) != true)
+
+            Divider()
+
+            Button {
                 guard let pm = focusedProject,
                       let url = pm.activeTabManager.activeTab?.url else { return }
                 NSWorkspace.shared.activateFileViewerSelecting([url])

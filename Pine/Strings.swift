@@ -300,6 +300,10 @@ enum Strings {
     static let tabRevealInSidebar: LocalizedStringKey = "tab.revealInSidebar"
     static let tabRevealInFinder: LocalizedStringKey = "tab.revealInFinder"
     static let tabCloseTabDisabledPinned: LocalizedStringKey = "tab.closeTabDisabledPinned"
+    static let tabMoveLeading: LocalizedStringKey = "tab.moveLeading"
+    static let tabMoveTrailing: LocalizedStringKey = "tab.moveTrailing"
+    static let tabMoveToPreviousPane: LocalizedStringKey = "tab.moveToPreviousPane"
+    static let tabMoveToNextPane: LocalizedStringKey = "tab.moveToNextPane"
 
     // MARK: - Unsaved Changes Dialog (AppKit)
 
@@ -615,6 +619,17 @@ enum Strings {
         String(localized: "a11y.editorTab.close.label", defaultValue: "Close tab")
     static let a11yCloseTabHint: String =
         String(localized: "a11y.editorTab.close.hint", defaultValue: "Closes this editor tab")
+    static let a11yTransientPreviewTab: String =
+        String(localized: "a11y.editorTab.preview.value", defaultValue: "Preview")
+
+    // Sidebar file activation
+    static let a11ySidebarFileOpenHint: String =
+        String(
+            localized: "a11y.sidebar.file.open.hint",
+            defaultValue: "Double-click or press Command-Return to keep this file open"
+        )
+    static let a11ySidebarOpenPreview: String =
+        String(localized: "a11y.sidebar.file.preview.action", defaultValue: "Open Preview")
 
     // Pane divider
     static let a11yPaneDividerLabel: String =

@@ -71,7 +71,7 @@ final class TerminalTests: PineUITestCase {
     /// Opens main.swift from the sidebar so the editor leaf has a tab and
     /// won't be auto-pruned when a terminal pane is created next to it.
     private func openMainSwiftFromSidebar() {
-        let mainFile = app.staticTexts["fileNode_main.swift"]
+        let mainFile = app.sidebarNodes["fileNode_main.swift"]
         XCTAssertTrue(
             waitForExistence(mainFile, timeout: 10),
             "main.swift should appear in the sidebar"
@@ -551,7 +551,7 @@ final class TerminalTests: PineUITestCase {
         launchAndWaitForLoad()
 
         // Open a file via sidebar
-        let mainFile = app.staticTexts["fileNode_main.swift"]
+        let mainFile = app.sidebarNodes["fileNode_main.swift"]
         guard waitForExistence(mainFile, timeout: 10) else {
             XCTFail("main.swift should appear in the sidebar")
             return
@@ -674,7 +674,7 @@ final class TerminalTests: PineUITestCase {
 
         // Click a file in the sidebar — a new editor pane should be created
         // on demand above the terminal and open the file inside it.
-        let mainFile = app.staticTexts["fileNode_main.swift"]
+        let mainFile = app.sidebarNodes["fileNode_main.swift"]
         XCTAssertTrue(
             waitForExistence(mainFile, timeout: 10),
             "main.swift should be visible in the sidebar"

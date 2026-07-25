@@ -35,7 +35,7 @@ final class FontSizeTests: PineUITestCase {
 
     /// Opens a file in the editor so font size changes are visible.
     private func openFileInEditor() {
-        let fileRow = app.staticTexts["fileNode_main.swift"]
+        let fileRow = app.sidebarNodes["fileNode_main.swift"]
         guard waitForExistence(fileRow, timeout: 5) else { return }
         fileRow.click()
         let tab = app.buttons["editorTab_main.swift"].firstMatch

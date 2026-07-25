@@ -21,7 +21,8 @@ struct EditorTabItemSnapshotTests {
     private func makeTab(
         fileName: String = "main.swift",
         isDirty: Bool = false,
-        isPinned: Bool = false
+        isPinned: Bool = false,
+        isTransientPreview: Bool = false
     ) -> EditorTab {
         var tab = EditorTab(
             url: URL(fileURLWithPath: "/test/\(fileName)"),
@@ -29,6 +30,7 @@ struct EditorTabItemSnapshotTests {
             savedContent: "original"
         )
         tab.isPinned = isPinned
+        tab.isTransientPreview = isTransientPreview
         return tab
     }
 
@@ -193,6 +195,30 @@ struct EditorTabItemSnapshotTests {
             size: NSSize(width: 60, height: 40),
             appearance: .dark,
             named: "EditorTabItem.pinnedInactive.dark"
+        )
+    }
+
+    // MARK: - Transient preview
+
+    @Test("Transient preview renders in light appearance")
+    func transientPreviewLight() throws {
+        let tab = makeTab(isTransientPreview: true)
+        try assertSnapshot(
+            of: Harness(tab: tab, isActive: true, constrainedWidth: 180),
+            size: Self.tabSize,
+            appearance: .light,
+            named: "EditorTabItem.preview.light"
+        )
+    }
+
+    @Test("Transient preview renders in dark appearance")
+    func transientPreviewDark() throws {
+        let tab = makeTab(isTransientPreview: true)
+        try assertSnapshot(
+            of: Harness(tab: tab, isActive: true, constrainedWidth: 180),
+            size: Self.tabSize,
+            appearance: .dark,
+            named: "EditorTabItem.preview.dark"
         )
     }
 }

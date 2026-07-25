@@ -35,6 +35,15 @@ struct GlobalTabIdentity: Hashable, Sendable {
     let contentType: PaneContent
 }
 
+/// Pointer-free tab movement exposed through menus, keyboard shortcuts, and
+/// VoiceOver custom actions.
+enum TabMoveAction: Sendable {
+    case leading
+    case trailing
+    case previousPane
+    case nextPane
+}
+
 /// Split direction for a non-leaf pane.
 enum SplitAxis: String, Codable, Sendable {
     case horizontal // side by side (left | right)

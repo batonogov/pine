@@ -74,14 +74,14 @@ final class GitignoreFilterTests: PineUITestCase {
         XCTAssertTrue(waitForExistence(sidebar, timeout: 10), "Sidebar should appear")
 
         // main.swift should be visible
-        let mainFile = app.staticTexts["fileNode_main.swift"]
+        let mainFile = app.sidebarNodes["fileNode_main.swift"]
         XCTAssertTrue(
             waitForExistence(mainFile, timeout: 5),
             "main.swift should appear in sidebar"
         )
 
         // node_modules directory should be visible (gitignored but shown dimmed)
-        let nodeModules = app.staticTexts["fileNode_node_modules"]
+        let nodeModules = app.sidebarNodes["fileNode_node_modules"]
         XCTAssertTrue(
             waitForExistence(nodeModules, timeout: 5),
             "node_modules should appear in sidebar (gitignored directories are visible but dimmed)"
@@ -95,7 +95,7 @@ final class GitignoreFilterTests: PineUITestCase {
         XCTAssertTrue(waitForExistence(sidebar, timeout: 10), "Sidebar should appear")
 
         // .claude directory should be visible (gitignored but shown dimmed)
-        let claudeDir = app.staticTexts["fileNode_.claude"]
+        let claudeDir = app.sidebarNodes["fileNode_.claude"]
         XCTAssertTrue(
             waitForExistence(claudeDir, timeout: 5),
             ".claude should appear in sidebar (gitignored directories are visible but dimmed)"
@@ -109,7 +109,7 @@ final class GitignoreFilterTests: PineUITestCase {
         XCTAssertTrue(waitForExistence(sidebar, timeout: 10), "Sidebar should appear")
 
         // .env should be visible (gitignored file, not directory)
-        let envFile = app.staticTexts["fileNode_.env"]
+        let envFile = app.sidebarNodes["fileNode_.env"]
         XCTAssertTrue(
             waitForExistence(envFile, timeout: 5),
             ".env should remain visible in sidebar (gitignored files are kept)"
@@ -123,7 +123,7 @@ final class GitignoreFilterTests: PineUITestCase {
         XCTAssertTrue(waitForExistence(sidebar, timeout: 10), "Sidebar should appear")
 
         // node_modules should be visible
-        let nodeModules = app.staticTexts["fileNode_node_modules"]
+        let nodeModules = app.sidebarNodes["fileNode_node_modules"]
         XCTAssertTrue(
             waitForExistence(nodeModules, timeout: 5),
             "node_modules should appear in sidebar"
@@ -134,7 +134,7 @@ final class GitignoreFilterTests: PineUITestCase {
         expandFolder(nodeModules, in: sidebar)
 
         // Child directory "express" should appear after expanding
-        let express = app.staticTexts["fileNode_express"]
+        let express = app.sidebarNodes["fileNode_express"]
         XCTAssertTrue(
             waitForExistence(express, timeout: 5),
             "express should appear inside expanded node_modules (gitignored dirs are expandable)"
@@ -148,7 +148,7 @@ final class GitignoreFilterTests: PineUITestCase {
         XCTAssertTrue(waitForExistence(sidebar, timeout: 10), "Sidebar should appear")
 
         // .claude should be visible
-        let claudeDir = app.staticTexts["fileNode_.claude"]
+        let claudeDir = app.sidebarNodes["fileNode_.claude"]
         XCTAssertTrue(
             waitForExistence(claudeDir, timeout: 5),
             ".claude should appear in sidebar"
@@ -157,7 +157,7 @@ final class GitignoreFilterTests: PineUITestCase {
         expandFolder(claudeDir, in: sidebar)
 
         // Child file "settings.json" should appear after expanding
-        let settingsFile = app.staticTexts["fileNode_settings.json"]
+        let settingsFile = app.sidebarNodes["fileNode_settings.json"]
         XCTAssertTrue(
             waitForExistence(settingsFile, timeout: 5),
             "settings.json should appear inside expanded .claude (gitignored dirs are expandable)"
@@ -179,7 +179,7 @@ final class GitignoreFilterTests: PineUITestCase {
         XCTAssertTrue(waitForExistence(sidebar, timeout: 10), "Sidebar should appear")
 
         // .gitignore should be visible
-        let gitignore = app.staticTexts["fileNode_.gitignore"]
+        let gitignore = app.sidebarNodes["fileNode_.gitignore"]
         XCTAssertTrue(
             waitForExistence(gitignore, timeout: 5),
             ".gitignore should appear in sidebar"

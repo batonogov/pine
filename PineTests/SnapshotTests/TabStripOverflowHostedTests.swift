@@ -19,6 +19,7 @@ struct TabStripOverflowHostedTests {
         let paneManager: PaneManager
         let paneID: PaneID
         let tabManager: TabManager
+        var indicatorX: CGFloat = 164
 
         var body: some View {
             EditorTabBar(
@@ -28,7 +29,7 @@ struct TabStripOverflowHostedTests {
             )
             .environment(paneManager)
             .overlay(alignment: .topLeading) {
-                TabInsertionIndicator(x: 164)
+                TabInsertionIndicator(x: indicatorX)
             }
         }
     }
@@ -51,8 +52,12 @@ struct TabStripOverflowHostedTests {
     }
 
     private static let renderSize = NSSize(width: 360, height: 30)
+    // macOS 26 and 27 rasterize the terminal SF Symbol slightly differently.
+    // Keep the hosted layout snapshot strict enough to catch structural drift
+    // while allowing that bounded cross-OS glyph delta in the preview lane.
+    private static let terminalCrossVersionTolerance = 0.02
 
-    @Test("Overflowing editor strip hosts in light and dark appearances")
+    @Test("Overflowing editor strip snapshots pinned, preview, active, and indicator states")
     func editorOverflow() throws {
         let paneManager = PaneManager()
         let paneID = paneManager.activePaneID
@@ -64,55 +69,65 @@ struct TabStripOverflowHostedTests {
                 savedContent: ""
             )
         }
+        tabManager.tabs[0].isPinned = true
+        tabManager.tabs[1].isTransientPreview = true
         tabManager.activeTabID = tabManager.tabs[3].id
 
         for appearance in [SnapshotAppearance.light, .dark] {
-            try assertHostedRender(
-                EditorHarness(
+            try assertSnapshot(
+                of: EditorHarness(
                     paneManager: paneManager,
                     paneID: paneID,
                     tabManager: tabManager
                 ),
-                appearance: appearance
+                size: Self.renderSize,
+                appearance: appearance,
+                named: "TabStrip.editorOverflow.\(appearance.suffix)"
             )
         }
     }
 
-    @Test("Overflowing terminal strip hosts in light and dark appearances")
+    @Test("Overflowing terminal strip snapshots active and indicator states")
     func terminalOverflow() throws {
         let paneManager = PaneManager()
         let paneID = paneManager.createTerminalPaneAtBottom(workingDirectory: nil)
         let terminalState = try #require(paneManager.terminalState(for: paneID))
-        for _ in 0..<7 {
-            terminalState.addTab(workingDirectory: nil)
-        }
+        terminalState.terminalTabs = (1...7).map { TerminalTab(name: "Terminal \($0)") }
         terminalState.activeTerminalID = terminalState.terminalTabs[3].id
 
         for appearance in [SnapshotAppearance.light, .dark] {
-            try assertHostedRender(
-                TerminalHarness(
+            try assertSnapshot(
+                of: TerminalHarness(
                     paneManager: paneManager,
                     paneID: paneID,
                     terminalState: terminalState
                 ),
-                appearance: appearance
+                size: Self.renderSize,
+                appearance: appearance,
+                named: "TabStrip.terminalOverflow.\(appearance.suffix)",
+                tolerance: Self.terminalCrossVersionTolerance
             )
         }
     }
 
-    private func assertHostedRender<Content: View>(
-        _ view: Content,
-        appearance: SnapshotAppearance
-    ) throws {
-        guard !SnapshotHarness.isHeadless else { return }
-        let bitmap = try SnapshotHarness.render(
-            view: view,
-            size: Self.renderSize,
-            appearance: appearance
-        )
-        #expect(bitmap.pixelsWide == Int(Self.renderSize.width))
-        #expect(bitmap.pixelsHigh == Int(Self.renderSize.height))
-        let png = try #require(bitmap.representation(using: .png, properties: [:]))
-        #expect(png.count > 500)
+    @Test("Empty editor strip snapshots its sole insertion gap")
+    func emptyEditorStrip() throws {
+        let paneManager = PaneManager()
+        let paneID = paneManager.activePaneID
+        let tabManager = try #require(paneManager.tabManager(for: paneID))
+
+        for appearance in [SnapshotAppearance.light, .dark] {
+            try assertSnapshot(
+                of: EditorHarness(
+                    paneManager: paneManager,
+                    paneID: paneID,
+                    tabManager: tabManager,
+                    indicatorX: 4
+                ),
+                size: Self.renderSize,
+                appearance: appearance,
+                named: "TabStrip.editorEmpty.\(appearance.suffix)"
+            )
+        }
     }
 }

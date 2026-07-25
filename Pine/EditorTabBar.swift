@@ -242,6 +242,58 @@ struct EditorTabBar: View {
                                             [tab.url]
                                         )
                                     },
+                                    onMoveLeading: paneManager.canMoveTab(
+                                        tab.id,
+                                        from: paneID,
+                                        contentType: .editor,
+                                        action: .leading
+                                    ) ? {
+                                        paneManager.moveTab(
+                                            tab.id,
+                                            from: paneID,
+                                            contentType: .editor,
+                                            action: .leading
+                                        )
+                                    } : nil,
+                                    onMoveTrailing: paneManager.canMoveTab(
+                                        tab.id,
+                                        from: paneID,
+                                        contentType: .editor,
+                                        action: .trailing
+                                    ) ? {
+                                        paneManager.moveTab(
+                                            tab.id,
+                                            from: paneID,
+                                            contentType: .editor,
+                                            action: .trailing
+                                        )
+                                    } : nil,
+                                    onMoveToPreviousPane: paneManager.canMoveTab(
+                                        tab.id,
+                                        from: paneID,
+                                        contentType: .editor,
+                                        action: .previousPane
+                                    ) ? {
+                                        paneManager.moveTab(
+                                            tab.id,
+                                            from: paneID,
+                                            contentType: .editor,
+                                            action: .previousPane
+                                        )
+                                    } : nil,
+                                    onMoveToNextPane: paneManager.canMoveTab(
+                                        tab.id,
+                                        from: paneID,
+                                        contentType: .editor,
+                                        action: .nextPane
+                                    ) ? {
+                                        paneManager.moveTab(
+                                            tab.id,
+                                            from: paneID,
+                                            contentType: .editor,
+                                            action: .nextPane
+                                        )
+                                    } : nil,
                                     constrainedWidth: tab.isPinned
                                         ? Self.pinnedTabWidth
                                         : unpinnedWidth
@@ -422,6 +474,10 @@ struct EditorTabItem: View {
     var onCopyRelativePath: (() -> Void)?
     var onRevealInSidebar: (() -> Void)?
     var onRevealInFinder: (() -> Void)?
+    var onMoveLeading: (() -> Void)?
+    var onMoveTrailing: (() -> Void)?
+    var onMoveToPreviousPane: (() -> Void)?
+    var onMoveToNextPane: (() -> Void)?
     var constrainedWidth: CGFloat?
 
     @State private var isHovering = false
@@ -482,6 +538,28 @@ struct EditorTabItem: View {
             }
             .disabled(tab.isPinned)
             .help(tab.isPinned ? Strings.tabCloseTabDisabledPinned : "")
+
+            Divider()
+
+            Button(Strings.tabMoveLeading) {
+                onMoveLeading?()
+            }
+            .disabled(onMoveLeading == nil)
+
+            Button(Strings.tabMoveTrailing) {
+                onMoveTrailing?()
+            }
+            .disabled(onMoveTrailing == nil)
+
+            Button(Strings.tabMoveToPreviousPane) {
+                onMoveToPreviousPane?()
+            }
+            .disabled(onMoveToPreviousPane == nil)
+
+            Button(Strings.tabMoveToNextPane) {
+                onMoveToNextPane?()
+            }
+            .disabled(onMoveToNextPane == nil)
 
             Divider()
 
@@ -546,6 +624,29 @@ struct EditorTabItem: View {
                 Button(tab.fileName, action: onSelect)
                     .accessibilityIdentifier(AccessibilityID.editorTab(tab.fileName))
                     .accessibilityAddTraits(isActive ? .isSelected : [])
+                    .accessibilityValue(
+                        tab.isTransientPreview ? Strings.a11yTransientPreviewTab : ""
+                    )
+                    .accessibilityActions {
+                        if let onMoveLeading {
+                            Button(Strings.tabMoveLeading, action: onMoveLeading)
+                        }
+                        if let onMoveTrailing {
+                            Button(Strings.tabMoveTrailing, action: onMoveTrailing)
+                        }
+                        if let onMoveToPreviousPane {
+                            Button(
+                                Strings.tabMoveToPreviousPane,
+                                action: onMoveToPreviousPane
+                            )
+                        }
+                        if let onMoveToNextPane {
+                            Button(
+                                Strings.tabMoveToNextPane,
+                                action: onMoveToNextPane
+                            )
+                        }
+                    }
                 if !tab.isPinned {
                     Button("Close", action: onClose)
                         .accessibilityIdentifier(AccessibilityID.editorTabCloseButton(tab.fileName))
@@ -604,6 +705,7 @@ struct EditorTabItem: View {
 
             Text(tab.fileName)
                 .font(.system(size: LayoutMetrics.bodySmallFontSize))
+                .italic(tab.isTransientPreview)
                 .lineLimit(1)
                 .truncationMode(.middle)
         }

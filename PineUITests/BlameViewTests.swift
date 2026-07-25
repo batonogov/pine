@@ -56,7 +56,7 @@ final class BlameViewTests: PineUITestCase {
         launchWithProject(projectURL)
 
         // Open file to get editor visible
-        let fileRow = app.staticTexts["fileNode_main.swift"]
+        let fileRow = app.sidebarNodes["fileNode_main.swift"]
         guard waitForExistence(fileRow, timeout: 10) else {
             XCTFail("main.swift should appear in the sidebar")
             return

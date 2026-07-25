@@ -44,7 +44,7 @@ final class SidebarRenameTests: PineUITestCase {
     /// dedicated `testEnterTriggersRename` case below, which degrades
     /// gracefully when the synthetic `onKeyPress` path does not fire.
     private func openRenameViaContextMenu(on nodeID: String) {
-        let node = app.staticTexts[nodeID]
+        let node = app.sidebarNodes[nodeID]
         XCTAssertTrue(waitForExistence(node, timeout: 10), "Node \(nodeID) should exist")
         // Click first to scroll the row into view and give it selection,
         // then right-click to open the context menu. Without the preceding
@@ -141,7 +141,7 @@ final class SidebarRenameTests: PineUITestCase {
             throw XCTSkip("SwiftUI .focused() TextField binding did not receive typed text under XCUITest (macOS 26 field-editor race, see #737)")
         }
 
-        let renamedRow = app.staticTexts["fileNode_renamed.swift"]
+        let renamedRow = app.sidebarNodes["fileNode_renamed.swift"]
         XCTAssertTrue(waitForExistence(renamedRow, timeout: 10),
                       "Renamed file row should appear in the sidebar")
 
@@ -180,7 +180,7 @@ final class SidebarRenameTests: PineUITestCase {
         app.typeKey(.escape, modifierFlags: [])
 
         // Wait for the inline editor to disappear (more reliable than sleep).
-        let originalRow = app.staticTexts["fileNode_notes.txt"]
+        let originalRow = app.sidebarNodes["fileNode_notes.txt"]
         XCTAssertTrue(waitForExistence(originalRow, timeout: 10),
                       "Original row should reappear after Escape")
 
@@ -211,7 +211,7 @@ final class SidebarRenameTests: PineUITestCase {
             throw XCTSkip("SwiftUI .focused() TextField binding did not receive typed text under XCUITest (macOS 26 field-editor race, see #737)")
         }
 
-        let renamedRow = app.staticTexts["fileNode_documents"]
+        let renamedRow = app.sidebarNodes["fileNode_documents"]
         XCTAssertTrue(waitForExistence(renamedRow, timeout: 10),
                       "Renamed folder row should appear in the sidebar")
 
@@ -249,7 +249,7 @@ final class SidebarRenameTests: PineUITestCase {
         let sidebar = app.scrollViews["sidebar"]
         XCTAssertTrue(waitForExistence(sidebar, timeout: 10))
 
-        let fileNode = app.staticTexts["fileNode_hello.swift"]
+        let fileNode = app.sidebarNodes["fileNode_hello.swift"]
         XCTAssertTrue(waitForExistence(fileNode, timeout: 5))
         fileNode.click()
 

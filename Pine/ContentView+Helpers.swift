@@ -26,96 +26,16 @@ extension ContentView {
 
         guard let session = SessionState.load(for: rootURL) else { return false }
 
-        var didRestoreTabs = false
-
-        // Restore editor tabs only if PM has no tabs (fresh or after restart)
-        if primaryTabManager.tabs.isEmpty {
-            let disabledSet = Set(session.existingHighlightingDisabledPaths ?? [])
-            let previewModes = session.existingPreviewModes
-            let editorStates = session.existingEditorStates
-            let pinnedSet = session.existingPinnedPaths
-
-            // Try to restore pane layout if available
-            if let layoutData = session.paneLayoutData,
-               let restoredNode = try? JSONDecoder().decode(PaneNode.self, from: layoutData),
-               let assignments = session.paneTabAssignments,
-               restoredNode.leafCount > 1 {
-                let activePaneUUID = session.activePaneID.flatMap { UUID(uuidString: $0) }
-                paneManager.restoreLayout(from: restoredNode, activePaneUUID: activePaneUUID)
-
-                // Populate tabs into each pane's TabManager
-                for (paneID, tm) in paneManager.tabManagers {
-                    guard let paths = assignments[paneID.id.uuidString] else { continue }
-                    for path in paths {
-                        let url = URL(fileURLWithPath: path)
-                        guard FileManager.default.fileExists(atPath: path) else { continue }
-                        let disabled = disabledSet.contains(path)
-                        tm.openTab(url: url, syntaxHighlightingDisabled: disabled)
-                    }
-                    Self.applyTabState(to: tm, previewModes: previewModes,
-                                       editorStates: editorStates, pinnedPaths: pinnedSet)
-                }
-            } else {
-                // Single-pane restore (backwards compatible)
-                for url in session.existingFileURLs {
-                    let disabled = disabledSet.contains(url.path)
-                    primaryTabManager.openTab(url: url, syntaxHighlightingDisabled: disabled)
-                }
-                Self.applyTabState(to: primaryTabManager, previewModes: previewModes,
-                                   editorStates: editorStates, pinnedPaths: pinnedSet)
-            }
-
-            if let activeURL = session.activeFileURL,
-               let tab = primaryTabManager.tab(for: activeURL) {
-                primaryTabManager.activeTabID = tab.id
-            }
-
-            // Collapse any restored editor leaves that ended up with no tabs
-            // (e.g., persisted empty placeholders next to terminal panes).
-            paneManager.pruneEmptyEditorLeaves()
-
-            didRestoreTabs = !projectManager.allTabs.isEmpty
-        }
-
-        // Restore terminal tabs for terminal pane leaves
-        if let tpCounts = session.terminalPaneTabCounts {
-            for (paneIDStr, count) in tpCounts {
-                guard let uuid = UUID(uuidString: paneIDStr),
-                      let paneID = paneManager.root.leafIDs.first(where: { $0.id == uuid }),
-                      let state = paneManager.terminalState(for: paneID) else { continue }
-                // State was created with no tabs by restoreLayout; add the saved count
-                let needed = max(0, count - state.tabCount)
-                for _ in 0..<needed {
-                    state.addTab(workingDirectory: rootURL)
-                }
-                if let activeIndices = session.terminalPaneActiveIndices,
-                   let activeIdx = activeIndices[paneIDStr],
-                   activeIdx < state.terminalTabs.count {
-                    state.activeTerminalID = state.terminalTabs[activeIdx].id
-                }
-            }
-        }
-
-        // Legacy: migrate old single-terminal sessions to pane-based
-        if session.terminalPaneTabCounts == nil,
-           let visible = session.isTerminalVisible, visible,
-           let count = session.terminalTabCount, count >= 1 {
-            // Create a terminal pane with the right number of tabs
-            terminal.createTerminalTab(
-                relativeTo: paneManager.activePaneID,
-                workingDirectory: rootURL
-            )
-            if count > 1, let tpID = terminal.lastActiveTerminalPaneID,
-               let state = paneManager.terminalState(for: tpID) {
-                for _ in 1..<count {
-                    state.addTab(workingDirectory: rootURL)
-                }
-                if let activeIdx = session.activeTerminalIndex,
-                   activeIdx < state.terminalTabs.count {
-                    state.activeTerminalID = state.terminalTabs[activeIdx].id
-                }
-            }
-        }
+        // A partially populated pane tree must never be overlaid with a saved
+        // session. This can occur when a delayed file-tree callback races with
+        // an explicit open during launch.
+        guard projectManager.allTabs.isEmpty,
+              projectManager.allTerminalTabs.isEmpty else { return false }
+        let result = ProjectSessionRestorer.restore(
+            session,
+            into: projectManager,
+            rootURL: rootURL
+        )
 
         // Boot agent detection if any terminal panes were restored. The
         // primary restore path (terminalPaneTabCounts) creates tabs via
@@ -124,33 +44,11 @@ extension ContentView {
         // be booted explicitly here (vision #933, #951). Idempotent: a no-op
         // if already started (e.g. the legacy path above called
         // `createTerminalTab`).
-        if !paneManager.terminalPaneIDs.isEmpty {
+        if result.restoredTerminalPanes {
             terminal.ensureAgentDetectionStarted()
         }
 
-        return didRestoreTabs
-    }
-
-    /// Applies preview modes, editor states, and pinned status to a TabManager's tabs.
-    private static func applyTabState(
-        to tm: TabManager,
-        previewModes: [String: String]?,
-        editorStates: [String: PerTabEditorState]?,
-        pinnedPaths: Set<String>?
-    ) {
-        for index in tm.tabs.indices {
-            let path = tm.tabs[index].url.path
-            if let rawMode = previewModes?[path],
-               let mode = MarkdownPreviewMode(rawValue: rawMode) {
-                tm.tabs[index].previewMode = mode
-            }
-            if let state = editorStates?[path] {
-                state.apply(to: &tm.tabs[index])
-            }
-            if pinnedPaths?.contains(path) == true {
-                tm.tabs[index].isPinned = true
-            }
-        }
+        return result.didRestoreEditorTabs
     }
 
     func checkForRecovery() {
@@ -209,15 +107,19 @@ extension ContentView {
         openWindow(value: url)
     }
 
-    func handleFileSelection(_ node: FileNode) {
-        // Open into the active editor pane, creating one on demand if the
-        // user has pruned all editor panes (e.g. terminals-only layout).
-        paneManager.ensureEditorPane().openTab(url: node.url)
+    func handleFileSelection(
+        _ node: FileNode,
+        disposition: SidebarFileOpenDisposition
+    ) {
+        paneManager.openFileInActiveEditor(
+            url: node.url,
+            asTransientPreview: disposition == .transientPreview
+        )
     }
 
     /// Opens a file from the Agent Activity Panel (#1072).
     func openFileFromActivity(_ url: URL) {
-        paneManager.ensureEditorPane().openTab(url: url)
+        paneManager.openFileInActiveEditor(url: url)
     }
 
     /// Syncs sidebar selection to match the active editor tab.

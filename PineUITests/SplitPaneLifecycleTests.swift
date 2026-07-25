@@ -253,13 +253,13 @@ final class SplitPaneLifecycleTests: PineUITestCase {
         XCTAssertTrue(waitForExistence(sidebar, timeout: 10))
 
         // Verify all files appear in sidebar
-        let mainNode = app.staticTexts["fileNode_main.swift"]
+        let mainNode = app.sidebarNodes["fileNode_main.swift"]
         XCTAssertTrue(waitForExistence(mainNode, timeout: 5), "main.swift should appear")
 
-        let testNode = app.staticTexts["fileNode_test.swift"]
+        let testNode = app.sidebarNodes["fileNode_test.swift"]
         XCTAssertTrue(waitForExistence(testNode, timeout: 5), "test.swift should appear")
 
-        let configNode = app.staticTexts["fileNode_config.json"]
+        let configNode = app.sidebarNodes["fileNode_config.json"]
         XCTAssertTrue(waitForExistence(configNode, timeout: 5), "config.json should appear")
 
         // Close and reopen
@@ -279,15 +279,15 @@ final class SplitPaneLifecycleTests: PineUITestCase {
         XCTAssertTrue(waitForExistence(sidebarAfter, timeout: 15))
 
         XCTAssertTrue(
-            waitForExistence(app.staticTexts["fileNode_main.swift"], timeout: 10),
+            waitForExistence(app.sidebarNodes["fileNode_main.swift"], timeout: 10),
             "main.swift should appear after reopen"
         )
         XCTAssertTrue(
-            waitForExistence(app.staticTexts["fileNode_test.swift"], timeout: 10),
+            waitForExistence(app.sidebarNodes["fileNode_test.swift"], timeout: 10),
             "test.swift should appear after reopen"
         )
         XCTAssertTrue(
-            waitForExistence(app.staticTexts["fileNode_config.json"], timeout: 10),
+            waitForExistence(app.sidebarNodes["fileNode_config.json"], timeout: 10),
             "config.json should appear after reopen"
         )
     }

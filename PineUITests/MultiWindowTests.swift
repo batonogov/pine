@@ -46,7 +46,7 @@ final class MultiWindowTests: PineUITestCase {
         let sidebar = app.scrollViews["sidebar"]
         XCTAssertTrue(waitForExistence(sidebar, timeout: 10))
 
-        let fileNode = app.staticTexts["fileNode_a.swift"]
+        let fileNode = app.sidebarNodes["fileNode_a.swift"]
         XCTAssertTrue(waitForExistence(fileNode, timeout: 5), "a.swift should appear in sidebar")
     }
 
@@ -80,7 +80,7 @@ final class MultiWindowTests: PineUITestCase {
         XCTAssertTrue(waitForExistence(sidebar, timeout: 10))
 
         // Open a file to create a tab
-        let fileNode = app.staticTexts["fileNode_a.swift"]
+        let fileNode = app.sidebarNodes["fileNode_a.swift"]
         XCTAssertTrue(waitForExistence(fileNode, timeout: 5))
         fileNode.click()
 
@@ -108,7 +108,7 @@ final class MultiWindowTests: PineUITestCase {
         XCTAssertTrue(waitForExistence(sidebar, timeout: 10))
 
         // Open a file to create a tab
-        let fileNode = app.staticTexts["fileNode_a.swift"]
+        let fileNode = app.sidebarNodes["fileNode_a.swift"]
         XCTAssertTrue(waitForExistence(fileNode, timeout: 5))
         fileNode.click()
 
