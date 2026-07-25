@@ -76,7 +76,8 @@ nonisolated enum VerifiedPatchVersionChainResult: Sendable, Equatable {
 
 nonisolated enum VerifiedPatchVersionChainDetector {
     static func analyze(
-        _ patches: [VerifiedPatchSet]
+        _ patches: [VerifiedPatchSet],
+        planningObserver: (() -> Void)? = nil
     ) -> VerifiedPatchVersionChainResult {
         guard patches.count
                 <= VerifiedPatchLimits.maximumVersionPatchCount else {
@@ -97,7 +98,10 @@ nonisolated enum VerifiedPatchVersionChainDetector {
                 )])
             }
             do {
-                try VerifiedPatchEngine.revalidate(patch)
+                try VerifiedPatchEngine.revalidate(
+                    patch,
+                    planningObserver: planningObserver
+                )
             } catch {
                 return .conflicted([VerifiedPatchVersionConflict(
                     pathScope: nil,
@@ -180,6 +184,7 @@ nonisolated enum VerifiedPatchVersionChainDetector {
         var pathBytes = 0
         var eventMetadataBytes = 0
         var lcsCells = 0
+        var attemptedPlanningCells = 0
         var hunkCount = 0
 
         for patch in patches {
@@ -223,7 +228,9 @@ nonisolated enum VerifiedPatchVersionChainDetector {
                 }
                 for state in [operation.before, operation.after]
                     .compactMap({ $0 }) {
-                    guard accumulate(
+                    guard state.content.count <= VerifiedPatchLimits
+                            .maximumFileByteCount,
+                          accumulate(
                         state.content.count,
                         into: &capturedBytes,
                         maximum: VerifiedPatchLimits
@@ -231,6 +238,22 @@ nonisolated enum VerifiedPatchVersionChainDetector {
                     ) else {
                         return false
                     }
+                }
+                if operation.kind == .modify,
+                   let before = operation.before,
+                   let after = operation.after,
+                   before.content != after.content,
+                   let estimate = VerifiedTextPatch.estimatedLCSCellCount(
+                        before: before.content,
+                        after: after.content
+                    ),
+                   !accumulate(
+                    estimate,
+                    into: &attemptedPlanningCells,
+                    maximum: VerifiedPatchLimits
+                        .maximumVersionLCSCellCount
+                   ) {
+                    return false
                 }
                 if case .text(let hunks, let declaredCells)
                         = operation.strategy {

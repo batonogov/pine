@@ -1067,13 +1067,17 @@ nonisolated enum VerifiedPatchEngine {
         }
     }
 
-    static func revalidate(_ patch: VerifiedPatchSet) throws {
+    static func revalidate(
+        _ patch: VerifiedPatchSet,
+        planningObserver: (() -> Void)? = nil
+    ) throws {
         guard patch.id != zeroUUID,
               !patch.operations.isEmpty,
               patch.operations.count
                 <= VerifiedPatchLimits.maximumOperationCount else {
             throw VerifiedPatchValidationError.invalidPatchID
         }
+        try preflightPatchShape(patch)
         let receipt = try VerifiedPatchIngressCoordinator.revalidate(
             patch.receipt
         )
@@ -1083,9 +1087,7 @@ nonisolated enum VerifiedPatchEngine {
         var capturedBytes = 0
         var planningBudget = PatchPlanningBudget()
 
-        guard patch.operations == patch.operations.sorted(
-            by: operationOrder
-        ) else {
+        guard hasCanonicalOperationOrder(patch.operations) else {
             throw VerifiedPatchValidationError.invalidOperation(nil)
         }
         for operation in patch.operations {
@@ -1189,7 +1191,7 @@ nonisolated enum VerifiedPatchEngine {
                 before: operation.before,
                 after: operation.after,
                 budget: &planningBudget,
-                planningObserver: nil
+                planningObserver: planningObserver
             )
             guard operation.strategy == canonical else {
                 throw VerifiedPatchValidationError.invalidOperation(
@@ -1593,6 +1595,12 @@ nonisolated enum VerifiedPatchEngine {
     private static func preflightPatchShape(
         _ patch: VerifiedPatchSet
     ) throws {
+        guard patch.operations.count
+                <= VerifiedPatchLimits.maximumOperationCount,
+              patch.receipt.events.count
+                <= VerifiedPatchLimits.maximumEventCount else {
+            throw VerifiedPatchValidationError.invalidOperation(nil)
+        }
         var transitionCount = 0
         var receiptTransitionCount = 0
         var receiptPathBytes = 0
@@ -1658,19 +1666,43 @@ nonisolated enum VerifiedPatchEngine {
         var hunkLineCount = 0
         var hunkByteCount = 0
         var capturedBytes = 0
+        var operationPathBytes = 0
+        var lcsCells = 0
         for operation in patch.operations {
-            guard let newTransitionCount = checkedAdd(
-                operationTransitionCount,
-                operation.id.transitionIDs.count
-            ),
-            newTransitionCount
-                <= VerifiedPatchLimits.maximumTransitionCount else {
+            guard !operation.id.transitionIDs.isEmpty,
+                  operation.id.transitionIDs.count
+                    <= VerifiedPatchLimits.maximumTransitionCount,
+                  operation.sourcePath.utf8.count
+                    <= VerifiedPatchLimits.maximumPathByteCount,
+                  (operation.destinationPath?.utf8.count ?? 0)
+                    <= VerifiedPatchLimits.maximumPathByteCount,
+                  operation.destinationPath == nil
+                    || operation.id.transitionIDs.count == 1,
+                  let sourcePathBytes = checkedAdd(
+                    operationPathBytes,
+                    operation.sourcePath.utf8.count
+                  ),
+                  let updatedPathBytes = checkedAdd(
+                    sourcePathBytes,
+                    operation.destinationPath?.utf8.count ?? 0
+                  ),
+                  updatedPathBytes <= VerifiedPatchLimits
+                    .maximumSnapshotPathByteCount,
+                  let newTransitionCount = checkedAdd(
+                    operationTransitionCount,
+                    operation.id.transitionIDs.count
+                  ),
+                  newTransitionCount
+                    <= VerifiedPatchLimits.maximumTransitionCount else {
                 throw VerifiedPatchValidationError.tooManyTransitions
             }
+            operationPathBytes = updatedPathBytes
             operationTransitionCount = newTransitionCount
             for state in [operation.before, operation.after]
                 .compactMap({ $0 }) {
-                guard state.content.count
+                guard state.kind == .regularFile,
+                      state.posixMode <= 0o7777,
+                      state.content.count
                         <= VerifiedPatchLimits.maximumFileByteCount,
                       let updated = checkedAdd(
                         capturedBytes,
@@ -1683,19 +1715,36 @@ nonisolated enum VerifiedPatchEngine {
                 }
                 capturedBytes = updated
             }
-            guard case .text(let hunks, _) = operation.strategy else {
+            guard case .text(let hunks, let declaredCells)
+                    = operation.strategy else {
                 continue
+            }
+            guard declaredCells >= 0,
+                  declaredCells <= VerifiedPatchLimits
+                    .maximumLCSCellCountPerDiff,
+                  let updatedLCSCells = checkedAdd(
+                    lcsCells,
+                    declaredCells
+                  ),
+                  updatedLCSCells <= VerifiedPatchLimits
+                    .maximumAggregateLCSCellCount else {
+                throw VerifiedPatchValidationError.invalidOperation(nil)
             }
             guard let updated = checkedAdd(hunkCount, hunks.count),
                   updated <= VerifiedPatchLimits.maximumHunkCount else {
                 throw VerifiedPatchValidationError.tooManyHunks
             }
+            lcsCells = updatedLCSCells
             hunkCount = updated
             for hunk in hunks {
                 guard hunk.beforeStartLine >= 0,
                       hunk.beforeLineCount >= 0,
                       hunk.afterStartLine >= 0,
                       hunk.afterLineCount >= 0,
+                      hunk.beforeLines.count == hunk.beforeLineCount,
+                      hunk.afterLines.count == hunk.afterLineCount,
+                      hunk.prefixContext.count <= 2,
+                      hunk.suffixContext.count <= 2,
                       let beforeEnd = checkedAdd(
                         hunk.beforeStartLine,
                         hunk.beforeLineCount
@@ -1965,7 +2014,16 @@ nonisolated enum VerifiedPatchEngine {
                 before: before.content,
                 after: after.content
               ),
-              let remainingCells = checkedSubtract(
+              let attemptedCells = checkedAdd(
+                budget.attemptedLCSCells,
+                estimate
+              ),
+              attemptedCells <= VerifiedPatchLimits
+                .maximumAggregateLCSCellCount else {
+            return .exactState
+        }
+        budget.attemptedLCSCells = attemptedCells
+        guard let remainingCells = checkedSubtract(
                 VerifiedPatchLimits.maximumAggregateLCSCellCount,
                 budget.lcsCells
               ),
@@ -2137,6 +2195,20 @@ nonisolated enum VerifiedPatchEngine {
         }
     }
 
+    private static func hasCanonicalOperationOrder(
+        _ operations: [VerifiedPatchOperation]
+    ) -> Bool {
+        for index in operations.indices.dropFirst() {
+            guard operationOrder(
+                operations[index - 1],
+                operations[index]
+            ) else {
+                return false
+            }
+        }
+        return true
+    }
+
     private static func sourceOrder(
         _ lhs: OrderedSource,
         _ rhs: OrderedSource
@@ -2177,6 +2249,7 @@ nonisolated enum VerifiedPatchEngine {
 
     private struct PatchPlanningBudget {
         var lcsCells = 0
+        var attemptedLCSCells = 0
         var hunks = 0
     }
 

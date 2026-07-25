@@ -1176,6 +1176,106 @@ struct VerifiedPatchBudgetTests {
         }
     }
 
+    @Test("Failed hunk plans still consume the attempted cell budget")
+    func attemptedPlanningBudget() throws {
+        var planningCount = 0
+        let patch = try hunkExhaustionPatch(
+            patchID: id(11_600),
+            envelopeSeed: 11_610,
+            candidateCount: 20,
+            planningObserver: {
+                planningCount += 1
+            }
+        )
+        let textHunkCount = patch.operations.reduce(into: 0) {
+            if case .text(let hunks, _) = $1.strategy {
+                $0 += hunks.count
+            }
+        }
+        let exactCount = patch.operations.filter {
+            $0.strategy == .exactState
+        }.count
+
+        #expect(textHunkCount == 1_023)
+        #expect(exactCount == 20)
+        #expect(planningCount == 5)
+    }
+
+    @Test("Revalidation preflights sorted oversized paths and hunks")
+    func revalidationShapePreflight() throws {
+        let state = file("x")
+        let records = ["a.txt", "b.txt"].enumerated().map { index, path in
+            record(
+                envelopeID: id(11_700 + index),
+                cursor: UInt64(index + 1),
+                journalSequence: UInt64(index + 1),
+                changes: [change(path, nil, state)]
+            )
+        }
+        let patch = try makePatch(
+            patchID: id(11_710),
+            receipt: try receipt(records),
+            sources: records.map {
+                source($0, ordinal: 0, before: nil, after: state)
+            }
+        )
+        let first = patch.operations[0]
+        let second = patch.operations[1]
+        let oversizedPath = String(
+            repeating: "z",
+            count: VerifiedPatchLimits.maximumPathByteCount + 1
+        )
+        let pathOperation = VerifiedPatchOperation(
+            id: second.id,
+            kind: second.kind,
+            sourcePath: oversizedPath,
+            destinationPath: second.destinationPath,
+            before: second.before,
+            after: second.after,
+            strategy: second.strategy
+        )
+        #expect(throws: VerifiedPatchValidationError.self) {
+            try VerifiedPatchEngine.revalidate(VerifiedPatchSet(
+                id: patch.id,
+                receipt: patch.receipt,
+                operations: [first, pathOperation]
+            ))
+        }
+
+        let emptyHunk = VerifiedTextPatchHunk(
+            beforeStartLine: 0,
+            beforeLineCount: 0,
+            afterStartLine: 0,
+            afterLineCount: 0,
+            prefixContext: [],
+            afterLines: [],
+            beforeLines: [],
+            suffixContext: []
+        )
+        let hunkOperation = VerifiedPatchOperation(
+            id: second.id,
+            kind: second.kind,
+            sourcePath: second.sourcePath,
+            destinationPath: second.destinationPath,
+            before: second.before,
+            after: second.after,
+            strategy: .text(
+                hunks: Array(
+                    repeating: emptyHunk,
+                    count: VerifiedPatchLimits.maximumHunkCount + 1
+                ),
+                lcsCellCount: 1
+            )
+        )
+        #expect(throws: VerifiedPatchValidationError.self) {
+            try VerifiedPatchEngine.revalidate(VerifiedPatchSet(
+                id: patch.id,
+                receipt: patch.receipt,
+                operations: [first, hunkOperation]
+            ))
+        }
+    }
+
     @Test("Snapshot file-count limit accepts limit and rejects +1")
     func snapshotFileLimit() throws {
         let after = file("after")
@@ -1946,6 +2046,47 @@ struct VerifiedPatchVersionChainTests {
         } == true)
     }
 
+    @Test("Version budget rejects prospective plans before revalidation")
+    func versionProspectivePlanningBudget() throws {
+        let base = try hunkExhaustionPatch(
+            patchID: id(15_100),
+            envelopeSeed: 15_110,
+            candidateCount: 1
+        )
+        let patches = (0..<3).map { index in
+            let patchID = id(15_120 + index)
+            return VerifiedPatchSet(
+                id: patchID,
+                receipt: base.receipt,
+                operations: base.operations.map { operation in
+                    VerifiedPatchOperation(
+                        id: VerifiedPatchOperationID(
+                            patchID: patchID,
+                            transitionIDs: operation.id.transitionIDs
+                        ),
+                        kind: operation.kind,
+                        sourcePath: operation.sourcePath,
+                        destinationPath: operation.destinationPath,
+                        before: operation.before,
+                        after: operation.after,
+                        strategy: operation.strategy
+                    )
+                }
+            )
+        }
+        var planningCount = 0
+
+        #expect(versionConflicts(
+            VerifiedPatchVersionChainDetector.analyze(
+                patches,
+                planningObserver: {
+                    planningCount += 1
+                }
+            )
+        )?.first?.reason == .resourceLimitExceeded)
+        #expect(planningCount == 0)
+    }
+
     @Test("Private workspace and physical root identities are bijective")
     func workspaceIdentityBijection() throws {
         let before = file("base")
@@ -2343,6 +2484,89 @@ private func makePatch(
     )
 }
 
+private func hunkExhaustionPatch(
+    patchID: UUID,
+    envelopeSeed: Int,
+    candidateCount: Int,
+    planningObserver: (() -> Void)? = nil
+) throws -> VerifiedPatchSet {
+    var states: [(
+        path: String,
+        before: VerifiedPatchFileState,
+        after: VerifiedPatchFileState
+    )] = []
+    for (index, hunkCount) in [512, 511].enumerated() {
+        let contents = separatedInsertionContents(
+            hunkCount: hunkCount
+        )
+        states.append((
+            path: "budget/0\(index)-hunks.txt",
+            before: file(contents.before),
+            after: file(contents.after)
+        ))
+    }
+    let candidateBefore = file(editedStableLines(
+        count: 1_413,
+        replacements: [:]
+    ))
+    let candidateAfter = file(editedStableLines(
+        count: 1_413,
+        replacements: [
+            400: "agent-first",
+            1_000: "agent-second"
+        ]
+    ))
+    for index in 0..<candidateCount {
+        states.append((
+            path: "budget/1-candidate-\(index).txt",
+            before: candidateBefore,
+            after: candidateAfter
+        ))
+    }
+    let records = states.enumerated().map { index, value in
+        record(
+            envelopeID: id(envelopeSeed + index),
+            cursor: UInt64(index + 1),
+            journalSequence: UInt64(index + 1),
+            changes: [change(
+                value.path,
+                value.before,
+                value.after
+            )]
+        )
+    }
+    return try makePatch(
+        patchID: patchID,
+        receipt: try receipt(records),
+        sources: records.enumerated().map { index, value in
+            source(
+                value,
+                ordinal: 0,
+                before: states[index].before,
+                after: states[index].after
+            )
+        },
+        planningObserver: planningObserver
+    )
+}
+
+private func separatedInsertionContents(
+    hunkCount: Int
+) -> (before: Data, after: Data) {
+    precondition(hunkCount > 0)
+    var before = ""
+    var after = ""
+    for index in 0..<hunkCount {
+        after += "agent-\(index)\n"
+        if index < hunkCount - 1 {
+            let stable = "stable-\(index)\n"
+            before += stable
+            after += stable
+        }
+    }
+    return (Data(before.utf8), Data(after.utf8))
+}
+
 private func receipt(
     _ records: [VerifiedPatchUntrustedEventRecord],
     workspace: VerifiedPatchWorkspaceIdentity = workspace()
@@ -2666,6 +2890,16 @@ private func singleEditLines(
             return "\(replacement)\n"
         }
         return "stable-\(index)\n"
+    }.joined()
+    return Data(value.utf8)
+}
+
+private func editedStableLines(
+    count: Int,
+    replacements: [Int: String]
+) -> Data {
+    let value = (0..<count).map { index in
+        "\(replacements[index] ?? "stable-\(index)")\n"
     }.joined()
     return Data(value.utf8)
 }
