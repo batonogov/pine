@@ -168,6 +168,12 @@ private struct SidebarFileTreeNode: View {
             rowContent.onTapGesture {
                 handleFolderTap()
             }
+        } else if isRenamingThisNode {
+            // Keep the inline TextField as its own accessibility element.
+            // Combining the row's children is useful for a normal file row,
+            // but while renaming it hides `inlineRenameTextField` from
+            // VoiceOver and XCUITest and makes the editor unreachable.
+            rowContent
         } else {
             rowContent
                 .onTapGesture(count: 2) {
