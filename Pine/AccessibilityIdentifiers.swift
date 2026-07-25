@@ -88,6 +88,14 @@ nonisolated enum AccessibilityID {
     static let quickOpenResultsList = "quickOpenResultsList"
     static func quickOpenItem(_ name: String) -> String { "quickOpenItem_\(name)" }
 
+    // MARK: - Command Palette
+    static let commandPaletteOverlay = "commandPaletteOverlay"
+    static let commandPaletteSearchField = "commandPaletteSearchField"
+    static let commandPaletteResultsList = "commandPaletteResultsList"
+    static func commandPaletteItem(_ id: String) -> String {
+        "commandPaletteItem_\(id)"
+    }
+
     // MARK: - Symbol Navigator
     static let symbolNavigatorOverlay = "symbolNavigatorOverlay"
     static let symbolSearchField = "symbolSearchField"

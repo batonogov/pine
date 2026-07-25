@@ -54,6 +54,11 @@ enum UserKeybindingDispatcher {
             dispatchUserCommand(userCommand)
             return nil
         }
+        // A user override replaces the built-in key equivalent; its former
+        // chord must not leak through to NSMenu as a second active shortcut.
+        if registry.suppressesBuiltInShortcut(for: event) {
+            return nil
+        }
         if dispatchBuiltIn(event) {
             return nil
         }

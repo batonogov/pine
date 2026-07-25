@@ -100,7 +100,37 @@ struct UserConfigurationReloadTests {
         #expect(registry.entries.map { $0.command } == [.quickOpen])
     }
 
-    @Test func unavailableUnsafeAndReservedBindingsAreRejected() async throws {
+    @Test func duplicateCommandBindingsRejectAtomically() async throws {
+        let directory = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let file = directory.appendingPathComponent("keybindings.json")
+        let registry = UserKeybindingRegistry()
+
+        try write(
+            #"[{"command": "findInFile", "key": "cmd+f"}]"#,
+            to: file
+        )
+        #expect((await registry.load(from: file)).outcome == .loaded)
+
+        try write(
+            """
+            [
+              {"command": "quickOpen", "key": "cmd+k"},
+              {"command": "quickOpen", "key": "cmd+option+k"}
+            ]
+            """,
+            to: file
+        )
+        let report = await registry.load(from: file)
+
+        #expect(report.outcome == .rejected)
+        #expect(report.diagnostics.map(\.reason).contains(
+            .duplicateCommand(id: "quickOpen", firstEntryNumber: 1)
+        ))
+        #expect(registry.entries.map(\.command) == [.findInFile])
+    }
+
+    @Test func safeDirectCommandsLoadWhileUnsafeChordsAreRejected() async throws {
         let directory = try makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
         let file = directory.appendingPathComponent("keybindings.json")
@@ -119,7 +149,7 @@ struct UserConfigurationReloadTests {
         let report = await registry.load(from: file)
 
         #expect(report.outcome == .rejected)
-        #expect(report.diagnostics.map(\.reason).contains(
+        #expect(!report.diagnostics.map(\.reason).contains(
             .unavailableCommand(id: "toggleMinimap")
         ))
         #expect(report.diagnostics.map(\.reason).contains(

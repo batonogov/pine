@@ -575,15 +575,15 @@ class AppDelegate: NSObject, NSApplicationDelegate, SPUUpdaterDelegate {
         // first, followed by Pine's physical-key handlers; NSMenu and the
         // responder chain see only events neither layer consumed. Keeping this
         // in one monitor avoids AppKit's unspecified ordering among monitors.
-        NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+        NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
             let registry = ExtensibilityManager.shared.keybindings
             return UserKeybindingDispatcher.route(
                 event,
                 registry: registry,
                 dispatchUserCommand: { command in
-                    NotificationCenter.default.post(
-                        name: Notification.Name(command.notificationKey),
-                        object: nil
+                    UserCommandInvocationRouter.dispatch(
+                        command,
+                        projectManager: self?.activeProjectManager()
                     )
                 },
                 dispatchBuiltIn: Self.handleBuiltInKeyDown

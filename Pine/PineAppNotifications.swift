@@ -15,6 +15,7 @@ extension Notification.Name {
     static let openFolder = Notification.Name("openFolder")
     static let closeTab = Notification.Name("closeTab")
     static let showQuickOpen = Notification.Name("showQuickOpen")
+    static let showCommandPalette = Notification.Name("showCommandPalette")
     /// userInfo: ["oldURL": URL, "newURL": URL]
     static let fileRenamed = Notification.Name("fileRenamed")
     /// userInfo: ["url": URL]

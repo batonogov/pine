@@ -18,7 +18,6 @@
 //
 
 import AppKit
-import os
 import SwiftUI
 
 /// Top-level `Commands` struct containing every `CommandGroup` / `CommandMenu`
@@ -78,6 +77,20 @@ struct PineAppMenuCommands: Commands {
             .disabled(focusedProject?.workspace.rootURL == nil)
 
             Button {
+                NotificationCenter.default.post(
+                    name: .showCommandPalette,
+                    object: focusedProject
+                )
+            } label: {
+                Label(
+                    Strings.menuCommandPalette,
+                    systemImage: MenuIcons.commandPalette
+                )
+            }
+            .keyboardShortcut("p", modifiers: [.command, .option])
+            .disabled(focusedProject?.workspace.rootURL == nil)
+
+            Button {
                 NotificationCenter.default.post(name: .showSymbolNavigator, object: nil)
             } label: {
                 Label(Strings.menuSymbolNavigator, systemImage: MenuIcons.symbolNavigator)
@@ -113,33 +126,10 @@ struct PineAppMenuCommands: Commands {
 
             Button {
                 guard let pm = focusedProject else { return }
-                guard pm.activeTabManager.activeTab != nil else { return }
-                let panel = NSSavePanel()
-                panel.title = Strings.saveAsPanelTitle
-                panel.nameFieldStringValue = pm.activeTabManager.activeTab?.fileName ?? ""
-                if let dir = pm.activeTabManager.activeTab?.url.deletingLastPathComponent() {
-                    panel.directoryURL = dir
-                }
-                guard panel.runModal() == .OK, let url = panel.url else { return }
-                // Defer the save + refresh to break reentrancy (#1058):
-                // saveActiveTabAs mutates @Observable tab state synchronously
-                // when format-on-save changes content; doing that inside the
-                // ButtonAction callstack triggers an exclusivity abort on
-                // macOS 26.5.1. The panel stays synchronous (user interaction).
-                DispatchQueue.main.async {
-                    do {
-                        try pm.activeTabManager.saveActiveTabAs(to: url)
-                        Task {
-                            await pm.workspace.gitProvider.refreshAsync()
-                            NotificationCenter.default.post(name: .refreshLineDiffs, object: nil)
-                        }
-                    } catch {
-                        AlertTemplate.fileOperationErrorCritical.runModal(
-                            messageText: Strings.fileOperationErrorTitle,
-                            informativeText: error.localizedDescription
-                        )
-                    }
-                }
+                UserCommandInvocationRouter.dispatch(
+                    .saveAs,
+                    projectManager: pm
+                )
             } label: {
                 Label(Strings.menuSaveAs, systemImage: MenuIcons.saveAs)
             }
@@ -565,7 +555,7 @@ struct PineAppMenuCommands: Commands {
         // MARK: - Tasks menu (issue #1009)
         // User-defined external commands loaded from tasks.json. Dynamically
         // populated from ExtensibilityManager; each item runs its task via
-        // UserTaskRunner and reports the outcome in a toast.
+        // the shared safety-preserving invocation controller.
         CommandMenu(Strings.menuTasks) {
             let taskList = ExtensibilityManager.shared.tasks.tasks
             if taskList.isEmpty {
@@ -575,29 +565,20 @@ struct PineAppMenuCommands: Commands {
             ForEach(taskList) { task in
                 Button {
                     guard let pm = focusedProject else { return }
-                    let activeTab = pm.activeTabManager.activeTab
-
-                    // Security: require confirmation for destructive commands
-                    // (milestone #1088, item 4).
-                    if task.effectiveRequireConfirmation() {
-                        let alert = NSAlert()
-                        alert.messageText = "Run task \"\(task.label)\"?"
-                        alert.informativeText = """
-                            This task will execute the following command:
-                            \(task.command)
-                            """
-                        alert.alertStyle = .warning
-                        alert.addButton(withTitle: "Run")
-                        alert.addButton(withTitle: "Cancel")
-                        if alert.runModal() == .alertFirstButtonReturn {
-                            Self.runUserTask(task, activeTab: activeTab, projectManager: pm)
-                        }
-                    } else {
-                        Self.runUserTask(task, activeTab: activeTab, projectManager: pm)
-                    }
+                    UserTaskInvocationController.invoke(
+                        task,
+                        projectManager: pm
+                    )
                 } label: {
                     Label(task.label, systemImage: MenuIcons.tasks)
                 }
+                .disabled(
+                    focusedProject == nil
+                        || (
+                            task.scope == .activeFile
+                                && focusedProject?.activeTabManager.activeTab == nil
+                        )
+                )
             }
 
             Divider()
@@ -693,43 +674,4 @@ struct PineAppMenuCommands: Commands {
         )
     }
 
-    /// Runs a user task via `UserTaskRunner` and presents the outcome.
-    /// Extracted so the confirmation alert and the non-confirmation path
-    /// share a single execution point.
-    private static func runUserTask(
-        _ task: UserTask,
-        activeTab: EditorTab?,
-        projectManager: ProjectManager
-    ) {
-        UserTaskRunner.shared.run(
-            task: task,
-            fileURL: activeTab?.url,
-            projectRootURL: projectManager.workspace.rootURL,
-            fileContent: activeTab?.content
-        ) { outcome in
-            // Completion is invoked on the main thread (per UserTaskRunner.run);
-            // assert main actor isolation to cross the @Sendable boundary.
-            MainActor.assumeIsolated {
-                Self.presentTaskOutcome(outcome, task: task, projectManager: projectManager)
-            }
-        }
-    }
-
-    /// Shows a brief toast/alert for a completed user task.
-    private static func presentTaskOutcome(
-        _ outcome: UserTaskOutcome,
-        task: UserTask,
-        projectManager: ProjectManager
-    ) {
-        // For now: log the outcome. A proper toast UI can be added later.
-        if outcome.exitCode == 0 {
-            Logger.extensibility.info(
-                "Task '\(task.label)' completed successfully"
-            )
-        } else {
-            Logger.extensibility.error(
-                "Task '\(task.label)' failed (exit \(outcome.exitCode)): \(outcome.stderr)"
-            )
-        }
-    }
 }

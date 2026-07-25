@@ -227,9 +227,44 @@ enum Strings {
     static let menuRevealProjectInFinder: LocalizedStringKey = "menu.revealProjectInFinder"
     static let menuTasks: LocalizedStringKey = "menu.tasks"
     static let menuTasksEmpty: LocalizedStringKey = "menu.tasksEmpty"
+    static let menuCommandPalette: LocalizedStringKey = "menu.commandPalette"
     static let menuEditKeybindings: LocalizedStringKey = "menu.editKeybindings"
     static let menuEditTasks: LocalizedStringKey = "menu.editTasks"
     static let menuReloadUserConfiguration: LocalizedStringKey = "menu.reloadUserConfiguration"
+
+    static func userTaskConfirmationTitle(_ label: String) -> String {
+        String(
+            localized: "userTask.confirmation.title",
+            defaultValue: "Run task “\(label)”?"
+        )
+    }
+
+    static func userTaskConfirmationMessage(_ command: String) -> String {
+        String(
+            localized: "userTask.confirmation.message",
+            defaultValue: "This task will execute the following command:\n\(command)"
+        )
+    }
+
+    static var userTaskRun: String {
+        String(localized: "userTask.run")
+    }
+
+    static var userTaskOutputConflictTitle: String {
+        String(localized: "userTask.outputConflict.title")
+    }
+
+    static var userTaskOutputConflictMessage: String {
+        String(localized: "userTask.outputConflict.message")
+    }
+
+    static var userTaskMissingFileTitle: String {
+        String(localized: "userTask.missingFile.title")
+    }
+
+    static var userTaskMissingFileMessage: String {
+        String(localized: "userTask.missingFile.message")
+    }
 
     // MARK: - Quick Open
 

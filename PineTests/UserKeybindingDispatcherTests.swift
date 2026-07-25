@@ -112,6 +112,55 @@ struct UserKeybindingDispatcherTests {
         #expect(builtInCallCount == 1)
     }
 
+    @Test("Rebinding a command suppresses its former built-in shortcut")
+    func reboundCommandSuppressesOldShortcut() async throws {
+        let registry = try await makeRegistry(chords: [
+            ("quickOpen", "cmd+k"),
+        ])
+        let formerShortcut = try makeCmdEvent(key: "p")
+        var userDispatchCount = 0
+        var builtInCallCount = 0
+
+        let routed = UserKeybindingDispatcher.route(
+            formerShortcut,
+            registry: registry,
+            dispatchUserCommand: { _ in userDispatchCount += 1 },
+            dispatchBuiltIn: { _ in
+                builtInCallCount += 1
+                return true
+            }
+        )
+
+        #expect(routed == nil)
+        #expect(userDispatchCount == 0)
+        #expect(builtInCallCount == 0)
+        #expect(registry.suppressesBuiltInShortcut(for: formerShortcut))
+    }
+
+    @Test("A different user command may claim a built-in shortcut")
+    func userCommandClaimsAnotherBuiltInShortcut() async throws {
+        let registry = try await makeRegistry(chords: [
+            ("toggleComment", "cmd+p"),
+        ])
+        let event = try makeCmdEvent(key: "p")
+        var dispatchedCommands: [UserCommand] = []
+        var builtInCallCount = 0
+
+        let routed = UserKeybindingDispatcher.route(
+            event,
+            registry: registry,
+            dispatchUserCommand: { dispatchedCommands.append($0) },
+            dispatchBuiltIn: { _ in
+                builtInCallCount += 1
+                return true
+            }
+        )
+
+        #expect(routed == nil)
+        #expect(dispatchedCommands == [.toggleComment])
+        #expect(builtInCallCount == 0)
+    }
+
     @Test("Unhandled event reaches menu, text, or terminal unchanged")
     func unhandledEventFallsThrough() async throws {
         let registry = try await makeRegistry(chords: [

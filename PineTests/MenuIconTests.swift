@@ -17,6 +17,7 @@ struct MenuIconTests {
 
     @Test(arguments: [
         (MenuIcons.openFolder, "Open Folder"),
+        (MenuIcons.commandPalette, "Command Palette"),
         (MenuIcons.save, "Save"),
         (MenuIcons.saveAll, "Save All"),
         (MenuIcons.saveAs, "Save As"),

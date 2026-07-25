@@ -38,56 +38,111 @@ nonisolated struct UserKeybindingsDocument: Codable, Sendable, Equatable {
 /// pressed. This keeps the keybinding surface fully decoupled from the rest
 /// of the app — no protocol surface to maintain.
 nonisolated enum UserCommand: String, Sendable, CaseIterable {
+    case save
+    case saveAll
+    case saveAs
+    case duplicate
+    case toggleAutoSave
+    case toggleFormatOnSave
+    case toggleSmartListContinuation
     case toggleComment
     case findInFile
     case findAndReplace
     case findNext
     case findPrevious
+    case useSelectionForFind
     case findInProject
     case goToLine
+    case nextChange
+    case previousChange
+    case acceptChange
+    case revertChange
+    case acceptAllChanges
+    case revertAllChanges
+    case foldCode
+    case unfoldCode
+    case foldAll
+    case unfoldAll
     case symbolNavigator
     case quickOpen
+    case commandPalette
     case openFolder
     case showBranchSwitcher
+    case increaseFontSize
+    case decreaseFontSize
+    case resetFontSize
     case toggleWordWrap
     case toggleMinimap
     case toggleBlame
     case togglePreview
+    case revealFileInFinder
+    case revealProjectInFinder
+    case showAgentActivity
+    case showAgentHistory
     case toggleTerminal
     case newTerminalTab
+    case findInTerminal
+    case sendToTerminal
+    case toggleTerminalZoom
+    case editKeybindings
+    case editTasks
+    case reloadUserConfiguration
 
     /// The string key for the `Notification.Name` posted when this command fires.
     /// Use `Notification.Name(rawValue:)` on the MainActor side to convert.
     var notificationKey: String {
         switch self {
+        case .save: "user.save"
+        case .saveAll: "user.saveAll"
+        case .saveAs: "user.saveAs"
+        case .duplicate: "user.duplicate"
+        case .toggleAutoSave: "user.toggleAutoSave"
+        case .toggleFormatOnSave: "user.toggleFormatOnSave"
+        case .toggleSmartListContinuation: "user.toggleSmartListContinuation"
         case .toggleComment: "toggleComment"
         case .findInFile: "findInFile"
         case .findAndReplace: "findAndReplace"
         case .findNext: "findNext"
         case .findPrevious: "findPrevious"
+        case .useSelectionForFind: "useSelectionForFind"
         case .findInProject: "showProjectSearch"
         case .goToLine: "goToLine"
+        case .nextChange, .previousChange: "navigateChange"
+        case .acceptChange, .revertChange,
+             .acceptAllChanges, .revertAllChanges:
+            "inlineDiffAction"
+        case .foldCode, .unfoldCode, .foldAll, .unfoldAll: "foldCode"
         case .symbolNavigator: "showSymbolNavigator"
         case .quickOpen: "showQuickOpen"
+        case .commandPalette: "showCommandPalette"
         case .openFolder: "openFolder"
         case .showBranchSwitcher: "showBranchSwitcher"
+        case .increaseFontSize: "user.increaseFontSize"
+        case .decreaseFontSize: "user.decreaseFontSize"
+        case .resetFontSize: "user.resetFontSize"
         case .toggleWordWrap: "toggleWordWrap"
         case .toggleMinimap: "user.toggleMinimap"
         case .toggleBlame: "user.toggleBlame"
         case .togglePreview: "user.togglePreview"
+        case .revealFileInFinder: "user.revealFileInFinder"
+        case .revealProjectInFinder: "user.revealProjectInFinder"
+        case .showAgentActivity: "showAgentActivity"
+        case .showAgentHistory: "showAgentHistory"
         case .toggleTerminal: "user.toggleTerminal"
         case .newTerminalTab: "user.newTerminalTab"
+        case .findInTerminal: "findInTerminal"
+        case .sendToTerminal: "sendToTerminal"
+        case .toggleTerminalZoom: "user.toggleTerminalZoom"
+        case .editKeybindings: "user.editKeybindings"
+        case .editTasks: "user.editTasks"
+        case .reloadUserConfiguration: "user.reloadUserConfiguration"
         }
     }
 
     /// Whether this command currently has a production notification observer.
     var isAvailableForUserKeybinding: Bool {
         switch self {
-        case .toggleMinimap, .toggleBlame, .togglePreview,
-             .toggleTerminal, .newTerminalTab:
-            false
-        default:
-            true
+        default: true
         }
     }
 
@@ -209,6 +264,7 @@ final class UserKeybindingRegistry {
         var parsed: [ResolvedUserKeybinding] = []
         var diagnostics: [UserConfigurationDiagnostic] = []
         var firstEntryForChord: [ParsedKeyChord: Int] = [:]
+        var firstEntryForCommand: [UserCommand: Int] = [:]
         for (index, entry) in raw.enumerated() {
             let entryNumber = index + 1
             let command = UserCommand.from(entry.command)
@@ -256,6 +312,20 @@ final class UserKeybindingRegistry {
                 continue
             }
 
+            if let firstEntryNumber = firstEntryForCommand[command] {
+                diagnostics.append(UserConfigurationDiagnostic(
+                    file: .keybindings,
+                    fileURL: url,
+                    entryNumber: entryNumber,
+                    reason: .duplicateCommand(
+                        id: command.rawValue,
+                        firstEntryNumber: firstEntryNumber
+                    )
+                ))
+            } else {
+                firstEntryForCommand[command] = entryNumber
+            }
+
             if let firstEntryNumber = firstEntryForChord[chord] {
                 diagnostics.append(UserConfigurationDiagnostic(
                     file: .keybindings,
@@ -281,17 +351,27 @@ final class UserKeybindingRegistry {
 
     /// Looks up the command matching a key event, if any.
     func command(for event: NSEvent) -> UserCommand? {
-        let mods = event.modifierFlags.intersection(Self.dispatchModifierMask)
-        guard let key = Self.keyToken(
-            keyCode: event.keyCode,
-            charactersIgnoringModifiers: event.charactersIgnoringModifiers
-        ) else {
-            return nil
-        }
-        for entry in entries where entry.chord.modifiers == mods && entry.chord.key == key {
+        guard let chord = Self.chord(for: event) else { return nil }
+        for entry in entries where entry.chord == chord {
             return entry.command
         }
         return nil
+    }
+
+    /// Whether a user entry replaces `command`'s built-in shortcut.
+    func hasOverride(for command: UserCommand) -> Bool {
+        entries.contains { $0.command == command }
+    }
+
+    /// Returns `true` when `event` is the old built-in shortcut of a command
+    /// that has been rebound by the user. The unified event router consumes
+    /// such an event before NSMenu sees it, making a user binding a true
+    /// replacement instead of an additional shortcut.
+    func suppressesBuiltInShortcut(for event: NSEvent) -> Bool {
+        guard let chord = Self.chord(for: event) else { return false }
+        return UserCommand.allCases.contains { command in
+            command.defaultChord == chord && hasOverride(for: command)
+        }
     }
 
     init() {}
@@ -322,6 +402,21 @@ final class UserKeybindingRegistry {
         .option,
         .shift,
     ]
+
+    nonisolated private static func chord(
+        for event: NSEvent
+    ) -> ParsedKeyChord? {
+        guard let key = keyToken(
+            keyCode: event.keyCode,
+            charactersIgnoringModifiers: event.charactersIgnoringModifiers
+        ) else {
+            return nil
+        }
+        return ParsedKeyChord(
+            modifiers: event.modifierFlags.intersection(dispatchModifierMask),
+            key: key
+        )
+    }
 
     nonisolated private static let reservedChords: Set<ParsedKeyChord> = Set(
         [
