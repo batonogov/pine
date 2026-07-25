@@ -281,6 +281,30 @@ struct VerifiedPatchIngressTests {
             try receipt([overLimit])
         }
     }
+
+    @Test("Synthesized empty receipt accessors fail safely")
+    func emptyReceiptAccessors() {
+        let empty = VerifiedPatchIngressReceipt(
+            receiptID: id(1),
+            workspace: workspace(),
+            projectID: id(2),
+            sessionID: id(3),
+            process: AgentProcessIdentity(
+                terminalID: id(4),
+                processGeneration: 1
+            ),
+            events: []
+        )
+
+        #expect(empty.firstCursorValue == 0)
+        #expect(empty.lastCursorValue == 0)
+        #expect(empty.firstJournalSequence == 0)
+        #expect(empty.lastJournalSequence == 0)
+        #expect(empty.durableEventExpectations.isEmpty)
+        #expect(throws: VerifiedPatchValidationError.invalidReceipt) {
+            try VerifiedPatchIngressCoordinator.revalidate(empty)
+        }
+    }
 }
 
 @Suite("Verified Patch Preparation")
@@ -310,7 +334,7 @@ struct VerifiedPatchPreparationTests {
         #expect(preview.expectedCurrent == current.stateIdentity)
         #expect(
             prepared.coordinatorExpectations.durableEvents
-                == patch.receipt.durableEventIdentities
+                == patch.receipt.durableEventExpectations
         )
         #expect(
             prepared.coordinatorExpectations.capturedHeadOID
@@ -523,6 +547,20 @@ struct VerifiedPatchPreparationTests {
         let counts = await revalidator.counts()
         #expect(counts.writer == 1)
         #expect(counts.audit == 1)
+        let auditExpectations = await revalidator.auditExpectations()
+        let journalExpectation = try #require(auditExpectations.first)
+        #expect(journalExpectation.envelope == patch.receipt.events[0].envelope)
+        #expect(
+            journalExpectation.durableIdentity
+                == patch.receipt.events[0].durableIdentity
+        )
+        #expect(journalExpectation.envelope.agentTypeRaw == "generic:test")
+        #expect(
+            journalExpectation.envelope.location.cwd
+                == "/private/tmp/project"
+        )
+        #expect(journalExpectation.envelope.source == .explicitAgentEvent)
+        #expect(journalExpectation.envelope.trustLevel == .verified)
     }
 
     @Test("Same-path chains collapse while retaining every durable reference")
@@ -679,7 +717,7 @@ struct VerifiedPatchPreparationTests {
             )]
         )
 
-        #expect(VerifiedPatchEngine.previewInverse(patch).first?.kind
+        #expect(try VerifiedPatchEngine.previewInverse(patch).first?.kind
             == .simulateRenamedFile)
         let preparation = VerifiedPatchEngine.prepareCheckedInverse(
             patch,
@@ -691,6 +729,177 @@ struct VerifiedPatchPreparationTests {
             return
         }
         #expect(operationID == patch.operations[0].id)
+    }
+
+    @Test("Content-preserving rename is valid but no-op modify is rejected")
+    func contentPreservingRenameAndNoOpModify() throws {
+        let state = file("same")
+        let noOp = record(
+            envelopeID: id(10),
+            cursor: 1,
+            journalSequence: 1,
+            changes: [change("same.txt", state, state)]
+        )
+        #expect(throws: VerifiedPatchValidationError.self) {
+            try makePatch(
+                patchID: id(11),
+                receipt: try receipt([noOp]),
+                sources: [source(
+                    noOp,
+                    ordinal: 0,
+                    before: state,
+                    after: state
+                )]
+            )
+        }
+
+        let rename = record(
+            envelopeID: id(12),
+            cursor: 1,
+            journalSequence: 2,
+            changes: [change(
+                "old.txt",
+                state,
+                state,
+                destination: "new.txt"
+            )]
+        )
+        let patch = try makePatch(
+            patchID: id(13),
+            receipt: try receipt([rename]),
+            sources: [source(
+                rename,
+                ordinal: 0,
+                before: state,
+                after: state
+            )]
+        )
+        let preview = try #require(
+            try VerifiedPatchEngine.previewInverse(patch).first
+        )
+        #expect(patch.operations[0].kind == .rename)
+        #expect(preview.kind == .simulateRenamedFile)
+        #expect(preview.sourcePath == "old.txt")
+        #expect(preview.destinationPath == "new.txt")
+        #expect(preview.expectedCurrent == state.stateIdentity)
+        #expect(preview.result == state.stateIdentity)
+    }
+
+    @Test("Rename cannot smuggle a same-source transition chain")
+    func renameChainParity() throws {
+        let before = file("before")
+        let middle = file("middle")
+        let after = file("after")
+        let rename = record(
+            envelopeID: id(30),
+            cursor: 1,
+            journalSequence: 30,
+            changes: [change(
+                "old.txt",
+                before,
+                middle,
+                destination: "new.txt"
+            )]
+        )
+        let followup = record(
+            envelopeID: id(31),
+            cursor: 2,
+            journalSequence: 31,
+            changes: [change("old.txt", middle, after)]
+        )
+        let accepted = try receipt([rename, followup])
+        let sources = [
+            source(rename, ordinal: 0, before: before, after: middle),
+            source(followup, ordinal: 0, before: middle, after: after)
+        ]
+        #expect(throws: VerifiedPatchValidationError.self) {
+            try makePatch(
+                patchID: id(32),
+                receipt: accepted,
+                sources: sources
+            )
+        }
+
+        let forged = VerifiedPatchSet(
+            id: id(33),
+            receipt: accepted,
+            operations: [VerifiedPatchOperation(
+                id: VerifiedPatchOperationID(
+                    patchID: id(33),
+                    transitionIDs: [
+                        transitionID(rename, 0),
+                        transitionID(followup, 0)
+                    ]
+                ),
+                kind: .rename,
+                sourcePath: "old.txt",
+                destinationPath: "new.txt",
+                before: before,
+                after: after,
+                strategy: .exactState
+            )]
+        )
+        #expect(throws: VerifiedPatchValidationError.self) {
+            try VerifiedPatchEngine.revalidate(forged)
+        }
+    }
+
+    @Test("Nominal preview revalidates canonical strategy and arithmetic")
+    func previewRejectsForgedStrategyAndRanges() throws {
+        let patch = try singlePatch(
+            before: file("a\nold\n"),
+            after: file("a\nagent\n")
+        )
+        let original = patch.operations[0]
+        guard case .text(let hunks, let cells) = original.strategy,
+              let firstHunk = hunks.first else {
+            Issue.record("Fixture must produce a canonical text patch")
+            return
+        }
+
+        let downgraded = VerifiedPatchSet(
+            id: patch.id,
+            receipt: patch.receipt,
+            operations: [VerifiedPatchOperation(
+                id: original.id,
+                kind: original.kind,
+                sourcePath: original.sourcePath,
+                destinationPath: original.destinationPath,
+                before: original.before,
+                after: original.after,
+                strategy: .exactState
+            )]
+        )
+        #expect(throws: VerifiedPatchValidationError.self) {
+            try VerifiedPatchEngine.previewInverse(downgraded)
+        }
+
+        let malformed = VerifiedTextPatchHunk(
+            beforeStartLine: firstHunk.beforeStartLine,
+            beforeLineCount: firstHunk.beforeLineCount,
+            afterStartLine: Int.max,
+            afterLineCount: firstHunk.afterLineCount,
+            prefixContext: firstHunk.prefixContext,
+            afterLines: firstHunk.afterLines,
+            beforeLines: firstHunk.beforeLines,
+            suffixContext: firstHunk.suffixContext
+        )
+        let forgedRange = VerifiedPatchSet(
+            id: patch.id,
+            receipt: patch.receipt,
+            operations: [VerifiedPatchOperation(
+                id: original.id,
+                kind: original.kind,
+                sourcePath: original.sourcePath,
+                destinationPath: original.destinationPath,
+                before: original.before,
+                after: original.after,
+                strategy: .text(hunks: [malformed], lcsCellCount: cells)
+            )]
+        )
+        #expect(throws: VerifiedPatchValidationError.self) {
+            try VerifiedPatchEngine.previewInverse(forgedRange)
+        }
     }
 
     @Test("Synthesized patch and prepared values are revalidated")
@@ -953,6 +1162,213 @@ struct VerifiedPatchBudgetTests {
         )
         #expect(preparationConflicts(outcome) != nil)
     }
+
+    @Test("Prepared DTO preflight enforces shape, arithmetic, and aggregates")
+    func preparedDTOPreflight() throws {
+        let patch = try singlePatch(before: file("before"), after: nil)
+        let prepared = try requirePrepared(patch, files: [:])
+        let maximumState = file(Data(
+            repeating: 0x61,
+            count: VerifiedPatchLimits.maximumFileByteCount
+        ))
+
+        let boundaryOperations = (0..<8).map {
+            shapedDeleteOperation(
+                patchID: patch.id,
+                ordinal: $0,
+                path: "restored-\($0).txt",
+                result: maximumState
+            )
+        }
+        let boundary = PreparedInverse(
+            patch: patch,
+            coordinatorExpectations: prepared.coordinatorExpectations,
+            operations: boundaryOperations
+        )
+        try VerifiedPatchEngine.preflightPreparedShape(boundary)
+
+        let aggregateOverflow = PreparedInverse(
+            patch: patch,
+            coordinatorExpectations: prepared.coordinatorExpectations,
+            operations: boundaryOperations + [shapedDeleteOperation(
+                patchID: patch.id,
+                ordinal: 8,
+                path: "overflow.txt",
+                result: file("x")
+            )]
+        )
+        #expect(throws: VerifiedPatchValidationError.self) {
+            try VerifiedPatchEngine.preflightPreparedShape(aggregateOverflow)
+        }
+
+        let original = try #require(prepared.operations.first)
+        let duplicateExpectation = VerifiedPreparedInverseOperation(
+            operationID: original.operationID,
+            kind: original.kind,
+            mode: original.mode,
+            expectations: original.expectations + original.expectations,
+            results: original.results,
+            resolvedTextHunks: original.resolvedTextHunks,
+            preview: original.preview
+        )
+        #expect(throws: VerifiedPatchValidationError.self) {
+            try VerifiedPatchEngine.preflightPreparedShape(PreparedInverse(
+                patch: patch,
+                coordinatorExpectations: prepared.coordinatorExpectations,
+                operations: [duplicateExpectation]
+            ))
+        }
+
+        let textPatch = try singlePatch(
+            patchID: id(20),
+            envelopeID: id(21),
+            before: file("old\n"),
+            after: file("agent\n")
+        )
+        let textPrepared = try requirePrepared(
+            textPatch,
+            files: ["file.txt": file("agent\n")]
+        )
+        let textOperation = try #require(textPrepared.operations.first)
+        let textHunk = try #require(textOperation.resolvedTextHunks.first)
+        let previewHunk = try #require(textOperation.preview.hunks.first)
+        let overflowHunk = VerifiedPreparedTextHunk(
+            capturedAfterRange: Int.max..<Int.max,
+            resolvedCurrentRange: Int.max..<Int.max,
+            replacementLines: textHunk.replacementLines
+        )
+        let overflowPreviewHunk = VerifiedInverseHunkPreview(
+            capturedAfterStartLine: Int.max,
+            resolvedCurrentStartLine: Int.max,
+            header: previewHunk.header,
+            lines: previewHunk.lines
+        )
+        let arithmeticOverflow = VerifiedPreparedInverseOperation(
+            operationID: textOperation.operationID,
+            kind: textOperation.kind,
+            mode: textOperation.mode,
+            expectations: textOperation.expectations,
+            results: textOperation.results,
+            resolvedTextHunks: [overflowHunk],
+            preview: VerifiedInverseOperationPreview(
+                operationID: textOperation.preview.operationID,
+                kind: textOperation.preview.kind,
+                sourcePath: textOperation.preview.sourcePath,
+                destinationPath: textOperation.preview.destinationPath,
+                expectedCurrent: textOperation.preview.expectedCurrent,
+                result: textOperation.preview.result,
+                hunks: [overflowPreviewHunk]
+            )
+        )
+        #expect(throws: VerifiedPatchValidationError.self) {
+            try VerifiedPatchEngine.preflightPreparedShape(PreparedInverse(
+                patch: textPatch,
+                coordinatorExpectations: textPrepared
+                    .coordinatorExpectations,
+                operations: [arithmeticOverflow]
+            ))
+        }
+    }
+
+    @Test("Projected and final snapshots enforce all aggregate limits")
+    func projectedAndFinalSnapshotLimits() throws {
+        let restored = file("x")
+        let patch = try singlePatch(before: restored, after: nil)
+
+        let byteBoundaryFiles = byteSizedSnapshotFiles(
+            totalBytes: VerifiedPatchLimits.maximumSnapshotByteCount - 1
+        )
+        _ = try requirePrepared(patch, files: byteBoundaryFiles)
+
+        let byteOverflowFiles = byteSizedSnapshotFiles(
+            totalBytes: VerifiedPatchLimits.maximumSnapshotByteCount
+        )
+        #expect(
+            preparationConflicts(
+                VerifiedPatchEngine.prepareCheckedInverse(
+                    patch,
+                    currentSnapshot: snapshot(byteOverflowFiles)
+                )
+            )?.first?.reason == .resourceLimitExceeded
+        )
+
+        var fileBoundary: [String: VerifiedPatchFileState] = [:]
+        for index in 0..<(VerifiedPatchLimits.maximumSnapshotFileCount - 1) {
+            fileBoundary["empty/\(index)"] = file(Data())
+        }
+        _ = try requirePrepared(patch, files: fileBoundary)
+        fileBoundary["empty/overflow"] = file(Data())
+        #expect(
+            preparationConflicts(
+                VerifiedPatchEngine.prepareCheckedInverse(
+                    patch,
+                    currentSnapshot: snapshot(fileBoundary)
+                )
+            )?.first?.reason == .resourceLimitExceeded
+        )
+
+        let pathBoundary = pathSizedSnapshotFiles(
+            totalPathBytes: VerifiedPatchLimits
+                .maximumSnapshotPathByteCount - "file.txt".utf8.count
+        )
+        _ = try requirePrepared(patch, files: pathBoundary)
+        var pathOverflow = pathBoundary
+        pathOverflow["z"] = file(Data())
+        #expect(
+            preparationConflicts(
+                VerifiedPatchEngine.prepareCheckedInverse(
+                    patch,
+                    currentSnapshot: snapshot(pathOverflow)
+                )
+            )?.first?.reason == .resourceLimitExceeded
+        )
+
+        let prepared = try requirePrepared(patch, files: [:])
+        let finalOverflow = VerifiedPatchEngine.applyPrepared(
+            prepared,
+            currentSnapshot: snapshot(byteOverflowFiles)
+        )
+        #expect(conflicts(finalOverflow)?.first?.reason
+            == .resourceLimitExceeded)
+    }
+
+    @Test("Merged text respects per-file boundary and rejects +1")
+    func projectedMergedFileLimit() throws {
+        let stableSuffix = "\ns1\ns2\ns3\n"
+        let beforePayloadCount = 2 * 1_024 * 1_024
+            - stableSuffix.utf8.count
+        let beforeText = String(repeating: "b", count: beforePayloadCount)
+            + stableSuffix
+        let afterText = "agent" + stableSuffix
+        let patch = try singlePatch(
+            before: file(beforeText),
+            after: file(afterText)
+        )
+        let boundaryHumanBytes = VerifiedPatchLimits.maximumFileByteCount
+            - beforeText.utf8.count
+        let boundaryCurrent = file(
+            afterText + String(repeating: "h", count: boundaryHumanBytes)
+        )
+        _ = try requirePrepared(
+            patch,
+            files: ["file.txt": boundaryCurrent]
+        )
+
+        let overflowCurrent = file(
+            afterText
+                + String(repeating: "h", count: boundaryHumanBytes + 1)
+        )
+        #expect(
+            preparationConflicts(
+                VerifiedPatchEngine.prepareCheckedInverse(
+                    patch,
+                    currentSnapshot: snapshot([
+                        "file.txt": overflowCurrent
+                    ])
+                )
+            )?.first?.reason == .resourceLimitExceeded
+        )
+    }
 }
 
 @Suite("Verified Patch Version Chains")
@@ -1033,6 +1449,98 @@ struct VerifiedPatchVersionChainTests {
         #expect(versionConflicts(
             VerifiedPatchVersionChainDetector.analyze([first, second])
         )?.contains { $0.reason == .journalSequenceCollision(10) } == true)
+    }
+
+    @Test("Writer authority replay is workspace-scoped across disjoint paths")
+    func mediatedWriterReplayAcrossPaths() throws {
+        let writerID = id(501)
+        let transactionID = id(502)
+        let casSequence: UInt64 = 900
+        let firstRecord = record(
+            envelopeID: id(510),
+            cursor: 1,
+            journalSequence: 10,
+            sessionID: id(511),
+            terminalID: id(512),
+            writerReceiptID: writerID,
+            descriptorTransactionID: transactionID,
+            descriptorCASSequence: casSequence,
+            changes: [change("one.txt", file("a"), file("b"))]
+        )
+        let secondRecord = record(
+            envelopeID: id(520),
+            cursor: 1,
+            journalSequence: 20,
+            sessionID: id(521),
+            terminalID: id(522),
+            writerReceiptID: writerID,
+            descriptorTransactionID: transactionID,
+            descriptorCASSequence: casSequence,
+            changes: [change("two.txt", file("c"), file("d"))]
+        )
+        let first = try makePatch(
+            patchID: id(530),
+            receipt: try receipt([firstRecord]),
+            sources: [source(
+                firstRecord,
+                ordinal: 0,
+                before: file("a"),
+                after: file("b")
+            )]
+        )
+        let second = try makePatch(
+            patchID: id(531),
+            receipt: try receipt([secondRecord]),
+            sources: [source(
+                secondRecord,
+                ordinal: 0,
+                before: file("c"),
+                after: file("d")
+            )]
+        )
+
+        let reasons = versionConflicts(
+            VerifiedPatchVersionChainDetector.analyze([first, second])
+        )?.map(\.reason) ?? []
+        #expect(reasons.contains(.writerReceiptReplay(writerID)))
+        #expect(reasons.contains(.descriptorTransactionReplay(transactionID)))
+        #expect(
+            reasons.contains(.descriptorCASSequenceCollision(casSequence))
+        )
+
+        let otherWorkspace = workspace(
+            privateID: id(540),
+            rootDevice: 33,
+            rootInode: 44
+        )
+        let otherRecord = record(
+            envelopeID: id(541),
+            cursor: 1,
+            journalSequence: 30,
+            sessionID: id(542),
+            terminalID: id(543),
+            writerReceiptID: writerID,
+            descriptorTransactionID: transactionID,
+            descriptorCASSequence: casSequence,
+            writerWorkspace: otherWorkspace,
+            changes: [change("three.txt", file("e"), file("f"))]
+        )
+        let other = try makePatch(
+            patchID: id(544),
+            receipt: try receipt([otherRecord], workspace: otherWorkspace),
+            sources: [source(
+                otherRecord,
+                ordinal: 0,
+                before: file("e"),
+                after: file("f")
+            )]
+        )
+        guard case .valid =
+                VerifiedPatchVersionChainDetector.analyze([first, other])
+        else {
+            Issue.record("Distinct private workspaces may reuse local IDs")
+            return
+        }
     }
 
     @Test("Root path aliases cannot split a shared private workspace")
@@ -1587,10 +2095,13 @@ private func record(
     projectID: UUID = id(400),
     rootPath: String = "/private/tmp/project",
     workspaceIdentity: VerifiedPatchWorkspaceIdentity? = nil,
-    descriptorCASSequence: UInt64? = nil,
     source eventSource: EventSource = .explicitAgentEvent,
     payload: AgentEventPayload? = nil,
     mediatedByPine: Bool = true,
+    writerReceiptID: UUID? = nil,
+    descriptorTransactionID: UUID? = nil,
+    descriptorCASSequence: UInt64? = nil,
+    writerWorkspace: VerifiedPatchWorkspaceIdentity? = nil,
     changes: [VerifiedPatchContentTransition]
 ) -> VerifiedPatchUntrustedEventRecord {
     let selectedWorkspace = workspaceIdentity
@@ -1636,12 +2147,12 @@ private func record(
     let writerReceipt: PineMediatedWriterReceipt?
     if mediatedByPine, !changes.isEmpty {
         writerReceipt = PineMediatedWriterReceipt(
-            receiptID: UUID(),
+            receiptID: writerReceiptID ?? UUID(),
             userApprovalID: UUID(),
-            descriptorTransactionID: UUID(),
+            descriptorTransactionID: descriptorTransactionID ?? UUID(),
             descriptorCASSequence: descriptorCASSequence
                 ?? journalSequence,
-            workspace: selectedWorkspace,
+            workspace: writerWorkspace ?? selectedWorkspace,
             auditEvent: auditIdentity,
             transitions: changes
         )
@@ -1780,6 +2291,90 @@ private func versionConflicts(
     return conflicts
 }
 
+private func shapedDeleteOperation(
+    patchID: UUID,
+    ordinal: Int,
+    path: String,
+    result state: VerifiedPatchFileState
+) -> VerifiedPreparedInverseOperation {
+    let operationID = VerifiedPatchOperationID(
+        patchID: patchID,
+        transitionIDs: [VerifiedPatchTransitionID(
+            envelopeID: id(20_000 + ordinal),
+            ordinal: 0
+        )]
+    )
+    return VerifiedPreparedInverseOperation(
+        operationID: operationID,
+        kind: .delete,
+        mode: .exactState,
+        expectations: [VerifiedPreparedPathExpectation(
+            path: path,
+            state: nil
+        )],
+        results: [VerifiedPreparedPathResult(path: path, state: state)],
+        resolvedTextHunks: [],
+        preview: VerifiedInverseOperationPreview(
+            operationID: operationID,
+            kind: .restoreDeletedFile,
+            sourcePath: path,
+            destinationPath: nil,
+            expectedCurrent: nil,
+            result: state.stateIdentity,
+            hunks: []
+        )
+    )
+}
+
+private func byteSizedSnapshotFiles(
+    totalBytes: Int
+) -> [String: VerifiedPatchFileState] {
+    var files: [String: VerifiedPatchFileState] = [:]
+    var remaining = totalBytes
+    var index = 0
+    let maximumState = file(Data(
+        repeating: 0x62,
+        count: VerifiedPatchLimits.maximumFileByteCount
+    ))
+    while remaining > 0 {
+        let count = min(
+            remaining,
+            VerifiedPatchLimits.maximumFileByteCount
+        )
+        files["bytes-\(index).bin"] = count
+            == VerifiedPatchLimits.maximumFileByteCount
+            ? maximumState
+            : file(Data(repeating: 0x62, count: count))
+        remaining -= count
+        index += 1
+    }
+    return files
+}
+
+private func pathSizedSnapshotFiles(
+    totalPathBytes: Int
+) -> [String: VerifiedPatchFileState] {
+    var files: [String: VerifiedPatchFileState] = [:]
+    var remaining = totalPathBytes
+    var index = 0
+    while remaining > 0 {
+        let length = min(
+            remaining,
+            VerifiedPatchLimits.maximumPathByteCount
+        )
+        let suffix = "-\(index)"
+        precondition(length >= suffix.utf8.count)
+        let path = String(
+            repeating: "p",
+            count: length - suffix.utf8.count
+        ) + suffix
+        files[path] = file(Data())
+        remaining -= length
+        index += 1
+    }
+    return files
+}
+
 private func alternatingLines(
     count: Int,
     replacement: String? = nil
@@ -1841,6 +2436,7 @@ private actor AuthorityEvidenceRecorder:
     PatchAuthorityEvidenceRevalidator {
     private var writerReceiptCount = 0
     private var auditEventCount = 0
+    private var expectations: [VerifiedPatchDurableEventExpectation] = []
 
     func revalidateMediatedWriterReceipts(
         _ receipts: [PineMediatedWriterReceipt]
@@ -1849,12 +2445,17 @@ private actor AuthorityEvidenceRecorder:
     }
 
     func revalidateDurableEvents(
-        _ identities: [VerifiedPatchDurableEventIdentity]
+        _ expectations: [VerifiedPatchDurableEventExpectation]
     ) {
-        auditEventCount += identities.count
+        auditEventCount += expectations.count
+        self.expectations.append(contentsOf: expectations)
     }
 
     func counts() -> (writer: Int, audit: Int) {
         (writerReceiptCount, auditEventCount)
+    }
+
+    func auditExpectations() -> [VerifiedPatchDurableEventExpectation] {
+        expectations
     }
 }

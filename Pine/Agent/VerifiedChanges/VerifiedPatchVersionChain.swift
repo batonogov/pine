@@ -13,6 +13,8 @@ nonisolated enum VerifiedPatchVersionConflictReason: Sendable, Equatable {
     case resourceLimitExceeded
     case replayedEnvelope(UUID)
     case journalSequenceCollision(UInt64)
+    case writerReceiptReplay(UUID)
+    case descriptorTransactionReplay(UUID)
     case descriptorCASSequenceCollision(UInt64)
     case journalOrderMismatch(previous: UInt64, actual: UInt64)
     case descriptorCASOrderMismatch(previous: UInt64, actual: UInt64)
@@ -115,7 +117,7 @@ nonisolated enum VerifiedPatchVersionChainDetector {
         var conflicts: [VerifiedPatchVersionConflict] = []
         detectEnvelopeReplay(orderedPatches, conflicts: &conflicts)
         detectJournalReplay(orderedPatches, conflicts: &conflicts)
-        detectDescriptorCASReplay(orderedPatches, conflicts: &conflicts)
+        detectMediatedWriterReplay(orderedPatches, conflicts: &conflicts)
         detectCursorConflicts(orderedPatches, conflicts: &conflicts)
 
         guard let nodesByPath = makeNodesByPath(orderedPatches) else {
@@ -566,37 +568,86 @@ nonisolated enum VerifiedPatchVersionChainDetector {
         }
     }
 
-    private static func detectDescriptorCASReplay(
+    private static func detectMediatedWriterReplay(
         _ patches: [VerifiedPatchSet],
         conflicts: inout [VerifiedPatchVersionConflict]
     ) {
-        var owners: [DescriptorCASSequenceScope: VerifiedPatchSet] = [:]
+        var receiptOwners: [WorkspaceUUIDScope: VerifiedPatchSet] = [:]
+        var transactionOwners: [WorkspaceUUIDScope: VerifiedPatchSet] = [:]
+        var sequenceOwners: [WorkspaceSequenceScope: VerifiedPatchSet] = [:]
+
         for patch in patches {
             let workspace = patch.receipt.workspace
             for receipt in patch.receipt.mediatedWriterReceipts {
-                let scope = DescriptorCASSequenceScope(
+                let receiptScope = WorkspaceUUIDScope(
                     privateWorkspaceID: workspace.privateWorkspaceID,
                     rootDevice: workspace.rootDevice,
                     rootInode: workspace.rootInode,
-                    sequence: receipt.descriptorCASSequence
+                    value: receipt.receiptID
                 )
-                if let existing = owners[scope] {
-                    conflicts.append(VerifiedPatchVersionConflict(
-                        pathScope: nil,
-                        patchIDs: sortedUUIDs([existing.id, patch.id]),
-                        sessionIDs: sortedUUIDs([
-                            existing.receipt.sessionID,
-                            patch.receipt.sessionID
-                        ]),
+                if let existing = receiptOwners[receiptScope] {
+                    conflicts.append(replayConflict(
+                        existing: existing,
+                        current: patch,
+                        reason: .writerReceiptReplay(receipt.receiptID)
+                    ))
+                } else {
+                    receiptOwners[receiptScope] = patch
+                }
+
+                let transactionScope = WorkspaceUUIDScope(
+                    privateWorkspaceID: workspace.privateWorkspaceID,
+                    rootDevice: workspace.rootDevice,
+                    rootInode: workspace.rootInode,
+                    value: receipt.descriptorTransactionID
+                )
+                if let existing = transactionOwners[transactionScope] {
+                    conflicts.append(replayConflict(
+                        existing: existing,
+                        current: patch,
+                        reason: .descriptorTransactionReplay(
+                            receipt.descriptorTransactionID
+                        )
+                    ))
+                } else {
+                    transactionOwners[transactionScope] = patch
+                }
+
+                let sequenceScope = WorkspaceSequenceScope(
+                    privateWorkspaceID: workspace.privateWorkspaceID,
+                    rootDevice: workspace.rootDevice,
+                    rootInode: workspace.rootInode,
+                    value: receipt.descriptorCASSequence
+                )
+                if let existing = sequenceOwners[sequenceScope] {
+                    conflicts.append(replayConflict(
+                        existing: existing,
+                        current: patch,
                         reason: .descriptorCASSequenceCollision(
                             receipt.descriptorCASSequence
                         )
                     ))
                 } else {
-                    owners[scope] = patch
+                    sequenceOwners[sequenceScope] = patch
                 }
             }
         }
+    }
+
+    private static func replayConflict(
+        existing: VerifiedPatchSet,
+        current: VerifiedPatchSet,
+        reason: VerifiedPatchVersionConflictReason
+    ) -> VerifiedPatchVersionConflict {
+        VerifiedPatchVersionConflict(
+            pathScope: nil,
+            patchIDs: sortedUUIDs([existing.id, current.id]),
+            sessionIDs: sortedUUIDs([
+                existing.receipt.sessionID,
+                current.receipt.sessionID
+            ]),
+            reason: reason
+        )
     }
 
     private static func makeNodesByPath(
@@ -949,13 +1000,6 @@ nonisolated enum VerifiedPatchVersionChainDetector {
         let journalSequence: UInt64
     }
 
-    private struct DescriptorCASSequenceScope: Hashable {
-        let privateWorkspaceID: UUID
-        let rootDevice: UInt64
-        let rootInode: UInt64
-        let sequence: UInt64
-    }
-
     private struct PhysicalRoot: Hashable {
         let device: UInt64
         let inode: UInt64
@@ -980,6 +1024,20 @@ nonisolated enum VerifiedPatchVersionChainDetector {
         var lastJournalSequence: UInt64
         var firstDescriptorCASSequence: UInt64
         var lastDescriptorCASSequence: UInt64
+    }
+
+    private struct WorkspaceUUIDScope: Hashable {
+        let privateWorkspaceID: UUID
+        let rootDevice: UInt64
+        let rootInode: UInt64
+        let value: UUID
+    }
+
+    private struct WorkspaceSequenceScope: Hashable {
+        let privateWorkspaceID: UUID
+        let rootDevice: UInt64
+        let rootInode: UInt64
+        let value: UInt64
     }
 
     private struct VersionNode {

@@ -39,6 +39,8 @@ nonisolated enum VerifiedPatchLimits {
     static let maximumAggregateMappingCellCount = 8_000_000
     static let maximumHunkCount = 1_024
     static let maximumPathByteCount = 4_096
+    static let maximumPreparedHunkByteCount = 64 * 1_024 * 1_024
+    static let maximumPreparedLineReferenceCount = 2_097_152
 }
 
 /// Canonical owner-private workspace identity supplied by an ingress receipt.
@@ -161,8 +163,21 @@ nonisolated struct VerifiedPatchDurableEventIdentity:
 /// not merely confirm that a sequence number exists.
 nonisolated protocol VerifiedPatchJournalRevalidating: Sendable {
     func revalidateDurableEvents(
-        _ identities: [VerifiedPatchDurableEventIdentity]
+        _ expectations: [VerifiedPatchDurableEventExpectation]
     ) async throws
+}
+
+/// Complete record a journal verifier must match against durable storage.
+///
+/// A compact identity is not enough to establish that the journal retained
+/// the expected source, trust, cwd, timestamp, payload, or agent type. Keeping
+/// the full envelope at this boundary lets a store compare every attribution
+/// field before the event is used as nested audit evidence.
+nonisolated struct VerifiedPatchDurableEventExpectation:
+    Sendable,
+    Equatable {
+    let envelope: AgentEventEnvelope
+    let durableIdentity: VerifiedPatchDurableEventIdentity
 }
 
 /// Owner-private proof that Pine itself applied this exact transition batch.
@@ -242,18 +257,28 @@ nonisolated struct VerifiedPatchIngressReceipt: Sendable, Equatable {
     var durableEventIdentities: [VerifiedPatchDurableEventIdentity] {
         events.map(\.durableIdentity)
     }
+    var durableEventExpectations: [VerifiedPatchDurableEventExpectation] {
+        events.map {
+            VerifiedPatchDurableEventExpectation(
+                envelope: $0.envelope,
+                durableIdentity: $0.durableIdentity
+            )
+        }
+    }
     var mediatedWriterReceipts: [PineMediatedWriterReceipt] {
         events.compactMap(\.mediatedWriterReceipt)
     }
-    var firstCursorValue: UInt64 { events[0].envelope.cursorValue }
+    var firstCursorValue: UInt64 {
+        events.first?.envelope.cursorValue ?? 0
+    }
     var lastCursorValue: UInt64 {
-        events[events.count - 1].envelope.cursorValue
+        events.last?.envelope.cursorValue ?? 0
     }
     var firstJournalSequence: UInt64 {
-        events[0].durableIdentity.journalSequence
+        events.first?.durableIdentity.journalSequence ?? 0
     }
     var lastJournalSequence: UInt64 {
-        events[events.count - 1].durableIdentity.journalSequence
+        events.last?.durableIdentity.journalSequence ?? 0
     }
 
     init(
@@ -466,7 +491,7 @@ nonisolated struct VerifiedPatchCoordinatorExpectations:
     let rootInode: UInt64
     let capturedHeadOID: String
     let capturedIndexSHA256: String
-    let durableEvents: [VerifiedPatchDurableEventIdentity]
+    let durableEvents: [VerifiedPatchDurableEventExpectation]
     let mediatedWriterReceipts: [PineMediatedWriterReceipt]
 }
 

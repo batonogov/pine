@@ -534,14 +534,20 @@ nonisolated enum VerifiedPatchEngine {
     /// not imply the inverse can be applied to a current snapshot.
     static func previewInverse(
         _ patch: VerifiedPatchSet
-    ) -> [VerifiedInverseOperationPreview] {
-        patch.operations.map { operation in
-            preview(
+    ) throws -> [VerifiedInverseOperationPreview] {
+        try revalidate(patch)
+        return try patch.operations.map { operation in
+            guard let operationPreview = preview(
                 operation,
                 expectedCurrent: operation.after,
                 result: operation.before,
                 resolvedHunks: nil
-            )
+            ) else {
+                throw VerifiedPatchValidationError.invalidOperation(
+                    operation.id.transitionIDs.first
+                )
+            }
+            return operationPreview
         }
     }
 
@@ -584,6 +590,16 @@ nonisolated enum VerifiedPatchEngine {
                 return .failure(.conflicts([conflict]))
             }
         }
+        guard projectedSnapshot(
+            from: currentSnapshot,
+            applying: prepared
+        ) != nil else {
+            return .failure(.conflicts([VerifiedPatchConflict(
+                operationID: nil,
+                path: nil,
+                reason: .resourceLimitExceeded
+            )]))
+        }
         let workspace = patch.receipt.workspace
         return .success(PreparedInverse(
             patch: patch,
@@ -594,7 +610,7 @@ nonisolated enum VerifiedPatchEngine {
                 rootInode: workspace.rootInode,
                 capturedHeadOID: workspace.capturedHeadOID,
                 capturedIndexSHA256: workspace.capturedIndexSHA256,
-                durableEvents: patch.receipt.durableEventIdentities,
+                durableEvents: patch.receipt.durableEventExpectations,
                 mediatedWriterReceipts: patch.receipt
                     .mediatedWriterReceipts
             ),
@@ -641,8 +657,20 @@ nonisolated enum VerifiedPatchEngine {
                 transformed[result.path] = result.state
             }
         }
+        let finalSnapshot = VerifiedPatchWorkspaceSnapshot(
+            files: transformed
+        )
+        do {
+            try validateSnapshot(finalSnapshot)
+        } catch {
+            return .conflicted([VerifiedPatchConflict(
+                operationID: nil,
+                path: nil,
+                reason: .resourceLimitExceeded
+            )])
+        }
         return .applied(
-            snapshot: VerifiedPatchWorkspaceSnapshot(files: transformed),
+            snapshot: finalSnapshot,
             previews: prepared.previews
         )
     }
@@ -815,12 +843,19 @@ nonisolated enum VerifiedPatchEngine {
                 kind: .regularFile,
                 posixMode: before.posixMode
             )
-            let operationPreview = preview(
+            guard merged.content.count
+                    <= VerifiedPatchLimits.maximumFileByteCount,
+                  let operationPreview = preview(
                 operation,
                 expectedCurrent: current,
                 result: merged,
                 resolvedHunks: textResult.hunks
-            )
+                  ) else {
+                return .failure(conflict(
+                    operation,
+                    .resourceLimitExceeded
+                ))
+            }
             return .success(VerifiedPreparedInverseOperation(
                 operationID: operation.id,
                 kind: operation.kind,
@@ -863,6 +898,14 @@ nonisolated enum VerifiedPatchEngine {
             }
             resolvedHunks = checkedHunks
         }
+        guard let operationPreview = preview(
+            operation,
+            expectedCurrent: expectations.first?.state,
+            result: results.first?.state,
+            resolvedHunks: resolvedHunks
+        ) else {
+            return nil
+        }
         return VerifiedPreparedInverseOperation(
             operationID: operation.id,
             kind: operation.kind,
@@ -870,12 +913,7 @@ nonisolated enum VerifiedPatchEngine {
             expectations: expectations,
             results: results,
             resolvedTextHunks: resolvedHunks,
-            preview: preview(
-                operation,
-                expectedCurrent: expectations.first?.state,
-                result: results.first?.state,
-                resolvedHunks: resolvedHunks
-            )
+            preview: operationPreview
         )
     }
 
@@ -927,7 +965,7 @@ nonisolated enum VerifiedPatchEngine {
 
             let before = first.before
             let after = last.after
-            guard before != after else {
+            guard first.destinationPath != nil || before != after else {
                 throw VerifiedPatchValidationError.invalidOperation(
                     first.transitionID
                 )
@@ -938,37 +976,13 @@ nonisolated enum VerifiedPatchEngine {
                 after: after,
                 transitionID: first.transitionID
             )
-            var strategy: VerifiedPatchApplicationStrategy = .exactState
-            if kind == .modify,
-               let before,
-               let after,
-               before.content != after.content,
-               let estimate = VerifiedTextPatch.estimatedLCSCellCount(
-                before: before.content,
-                after: after.content
-               ),
-               let estimatedAggregate = checkedAdd(
-                aggregateLCSCells,
-                estimate
-               ),
-               estimatedAggregate
-                <= VerifiedPatchLimits.maximumAggregateLCSCellCount,
-               let plan = VerifiedTextPatch.plan(
-                before: before.content,
-                after: after.content
-               ),
-               let hunkAggregate = checkedAdd(
-                aggregateHunks,
-                plan.hunks.count
-               ),
-               hunkAggregate <= VerifiedPatchLimits.maximumHunkCount {
-                aggregateLCSCells = estimatedAggregate
-                aggregateHunks = hunkAggregate
-                strategy = .text(
-                    hunks: plan.hunks,
-                    lcsCellCount: plan.lcsCellCount
-                )
-            }
+            let strategy = canonicalStrategy(
+                kind: kind,
+                before: before,
+                after: after,
+                aggregateLCSCells: &aggregateLCSCells,
+                aggregateHunks: &aggregateHunks
+            )
             let operation = VerifiedPatchOperation(
                 id: VerifiedPatchOperationID(
                     patchID: patchID,
@@ -1060,7 +1074,9 @@ nonisolated enum VerifiedPatchEngine {
 
         for operation in patch.operations {
             guard operation.id.patchID == patch.id,
-                  !operation.id.transitionIDs.isEmpty else {
+                  !operation.id.transitionIDs.isEmpty,
+                  operation.destinationPath == nil
+                    || operation.id.transitionIDs.count == 1 else {
                 throw VerifiedPatchValidationError.invalidOperation(nil)
             }
             var priorAfter: VerifiedPatchStateIdentity?
@@ -1107,13 +1123,16 @@ nonisolated enum VerifiedPatchEngine {
                 priorCursor = bound.cursor
                 priorOrdinal = transitionID.ordinal
             }
-            guard priorAfter == operation.after?.stateIdentity,
-                  try operationKind(
+            let canonicalKind = try operationKind(
                     destinationPath: operation.destinationPath,
                     before: operation.before,
                     after: operation.after,
                     transitionID: operation.id.transitionIDs[0]
-                  ) == operation.kind else {
+                  )
+            guard priorAfter == operation.after?.stateIdentity,
+                  canonicalKind == operation.kind,
+                  operation.kind != .modify
+                    || operation.before != operation.after else {
                 throw VerifiedPatchValidationError.invalidOperation(
                     operation.id.transitionIDs[0]
                 )
@@ -1149,29 +1168,17 @@ nonisolated enum VerifiedPatchEngine {
                 }
                 capturedBytes = updated
             }
-            switch operation.strategy {
-            case .exactState:
-                break
-            case .text(let hunks, let cells):
-                guard operation.kind == .modify,
-                      let before = operation.before,
-                      let after = operation.after,
-                      let recomputed = VerifiedTextPatch.plan(
-                        before: before.content,
-                        after: after.content
-                      ),
-                      recomputed.hunks == hunks,
-                      recomputed.lcsCellCount == cells,
-                      let newHunks = checkedAdd(hunkCount, hunks.count),
-                      newHunks
-                        <= VerifiedPatchLimits.maximumHunkCount,
-                      let newCells = checkedAdd(lcsCells, cells),
-                      newCells <= VerifiedPatchLimits
-                        .maximumAggregateLCSCellCount else {
-                    throw VerifiedPatchValidationError.lcsBudgetExceeded
-                }
-                hunkCount = newHunks
-                lcsCells = newCells
+            let canonical = canonicalStrategy(
+                kind: canonicalKind,
+                before: operation.before,
+                after: operation.after,
+                aggregateLCSCells: &lcsCells,
+                aggregateHunks: &hunkCount
+            )
+            guard operation.strategy == canonical else {
+                throw VerifiedPatchValidationError.invalidOperation(
+                    operation.id.transitionIDs[0]
+                )
             }
         }
         guard transitionIDs.count == transitions.count else {
@@ -1233,9 +1240,29 @@ nonisolated enum VerifiedPatchEngine {
         }
     }
 
+    private static func projectedSnapshot(
+        from snapshot: VerifiedPatchWorkspaceSnapshot,
+        applying operations: [VerifiedPreparedInverseOperation]
+    ) -> VerifiedPatchWorkspaceSnapshot? {
+        var files = snapshot.files
+        for operation in operations {
+            for result in operation.results {
+                files[result.path] = result.state
+            }
+        }
+        let projected = VerifiedPatchWorkspaceSnapshot(files: files)
+        do {
+            try validateSnapshot(projected)
+            return projected
+        } catch {
+            return nil
+        }
+    }
+
     private static func validatePrepared(
         _ prepared: PreparedInverse
     ) throws {
+        try preflightPreparedShape(prepared)
         try revalidate(prepared.patch)
         let workspace = prepared.patch.receipt.workspace
         let expectedCoordinator = VerifiedPatchCoordinatorExpectations(
@@ -1245,15 +1272,13 @@ nonisolated enum VerifiedPatchEngine {
             rootInode: workspace.rootInode,
             capturedHeadOID: workspace.capturedHeadOID,
             capturedIndexSHA256: workspace.capturedIndexSHA256,
-            durableEvents: prepared.patch.receipt.durableEventIdentities,
+            durableEvents: prepared.patch.receipt
+                .durableEventExpectations,
             mediatedWriterReceipts: prepared.patch.receipt
                 .mediatedWriterReceipts
         )
         guard prepared.patchID != zeroUUID,
               prepared.coordinatorExpectations == expectedCoordinator,
-              !prepared.operations.isEmpty,
-              prepared.operations.count
-                <= VerifiedPatchLimits.maximumOperationCount,
               prepared.previews == prepared.operations.map(\.preview),
               VerifiedPatchIngressCoordinator.isValidWorkspace(
                 VerifiedPatchWorkspaceIdentity(
@@ -1319,8 +1344,476 @@ nonisolated enum VerifiedPatchEngine {
         }
     }
 
+    /// Rejects attacker-shaped DTOs before content hashing, canonical diff
+    /// recomputation, or deep receipt/preview equality.
+    static func preflightPreparedShape(
+        _ prepared: PreparedInverse
+    ) throws {
+        guard prepared.patchID != zeroUUID,
+              !prepared.operations.isEmpty,
+              prepared.operations.count
+                <= VerifiedPatchLimits.maximumOperationCount,
+              prepared.previews.count == prepared.operations.count,
+              prepared.patch.operations.count
+                <= VerifiedPatchLimits.maximumOperationCount,
+              prepared.patch.receipt.events.count
+                <= VerifiedPatchLimits.maximumEventCount,
+              prepared.coordinatorExpectations.durableEvents.count
+                <= VerifiedPatchLimits.maximumEventCount,
+              prepared.coordinatorExpectations.mediatedWriterReceipts.count
+                <= VerifiedPatchLimits.maximumEventCount else {
+            throw VerifiedPatchValidationError.invalidOperation(nil)
+        }
+
+        try preflightPatchShape(prepared.patch)
+        try preflightCoordinatorShape(
+            prepared.coordinatorExpectations,
+            patch: prepared.patch
+        )
+        var expectationBytes = 0
+        var resultBytes = 0
+        var expectationPathBytes = 0
+        var resultPathBytes = 0
+        var hunkCount = 0
+        var hunkLineCount = 0
+        var hunkByteCount = 0
+        var operationTransitionIDCount = 0
+        var previewTransitionIDCount = 0
+
+        for operation in prepared.operations {
+            guard let updatedOperationTransitionIDCount = checkedAdd(
+                operationTransitionIDCount,
+                operation.operationID.transitionIDs.count
+            ),
+            updatedOperationTransitionIDCount
+                <= VerifiedPatchLimits.maximumTransitionCount,
+            let updatedPreviewTransitionIDCount = checkedAdd(
+                previewTransitionIDCount,
+                operation.preview.operationID.transitionIDs.count
+            ),
+            updatedPreviewTransitionIDCount
+                <= VerifiedPatchLimits.maximumTransitionCount else {
+                throw VerifiedPatchValidationError.invalidOperation(nil)
+            }
+            operationTransitionIDCount = updatedOperationTransitionIDCount
+            previewTransitionIDCount = updatedPreviewTransitionIDCount
+
+            guard operation.operationID.patchID == prepared.patchID,
+                  operation.kind != .rename,
+                  operation.expectations.count == 1,
+                  operation.results.count == 1,
+                  operation.resolvedTextHunks.count
+                    <= VerifiedPatchLimits.maximumHunkCount,
+                  operation.preview.operationID == operation.operationID,
+                  operation.preview.hunks.count
+                    == operation.resolvedTextHunks.count,
+                  operation.preview.sourcePath.utf8.count
+                    <= VerifiedPatchLimits.maximumPathByteCount,
+                  (operation.preview.destinationPath?.utf8.count ?? 0)
+                    <= VerifiedPatchLimits.maximumPathByteCount else {
+                throw VerifiedPatchValidationError.invalidOperation(nil)
+            }
+            try preflightPreparedModeShape(operation)
+
+            guard let expectation = operation.expectations.first,
+                  let result = operation.results.first,
+                  expectation.path.utf8.count
+                    <= VerifiedPatchLimits.maximumPathByteCount,
+                  result.path.utf8.count
+                    <= VerifiedPatchLimits.maximumPathByteCount,
+                  expectation.path == result.path,
+                  expectation.path == operation.preview.sourcePath,
+                  let newExpectationPathBytes = checkedAdd(
+                    expectationPathBytes,
+                    expectation.path.utf8.count
+                  ),
+                  newExpectationPathBytes <= VerifiedPatchLimits
+                    .maximumSnapshotPathByteCount,
+                  let newResultPathBytes = checkedAdd(
+                    resultPathBytes,
+                    result.path.utf8.count
+                  ),
+                  newResultPathBytes <= VerifiedPatchLimits
+                    .maximumSnapshotPathByteCount else {
+                throw VerifiedPatchValidationError.invalidOperation(nil)
+            }
+            expectationPathBytes = newExpectationPathBytes
+            resultPathBytes = newResultPathBytes
+
+            if let state = expectation.state {
+                guard state.content.count
+                        <= VerifiedPatchLimits.maximumFileByteCount,
+                      let updated = checkedAdd(
+                    expectationBytes,
+                    state.content.count
+                      ),
+                      updated <= VerifiedPatchLimits
+                        .maximumSnapshotByteCount else {
+                    throw VerifiedPatchValidationError.invalidOperation(nil)
+                }
+                expectationBytes = updated
+            }
+            if let state = result.state {
+                guard state.content.count
+                        <= VerifiedPatchLimits.maximumFileByteCount,
+                      let updated = checkedAdd(
+                    resultBytes,
+                    state.content.count
+                      ),
+                      updated <= VerifiedPatchLimits
+                        .maximumSnapshotByteCount else {
+                    throw VerifiedPatchValidationError.invalidOperation(nil)
+                }
+                resultBytes = updated
+            }
+
+            for (index, hunk) in operation.resolvedTextHunks.enumerated() {
+                guard hunk.capturedAfterRange.lowerBound >= 0,
+                      hunk.capturedAfterRange.upperBound
+                        <= VerifiedPatchLimits.maximumLineCount,
+                      hunk.resolvedCurrentRange.lowerBound >= 0,
+                      hunk.resolvedCurrentRange.upperBound
+                        <= VerifiedPatchLimits.maximumLineCount,
+                      let newHunkCount = checkedAdd(hunkCount, 1),
+                      newHunkCount
+                        <= VerifiedPatchLimits.maximumHunkCount else {
+                    throw VerifiedPatchValidationError.invalidOperation(nil)
+                }
+                hunkCount = newHunkCount
+                try accumulatePreparedLines(
+                    hunk.replacementLines,
+                    lineCount: &hunkLineCount,
+                    byteCount: &hunkByteCount
+                )
+
+                let previewHunk = operation.preview.hunks[index]
+                guard previewHunk.capturedAfterStartLine >= 0,
+                      previewHunk.capturedAfterStartLine
+                        <= VerifiedPatchLimits.maximumLineCount,
+                      (previewHunk.resolvedCurrentStartLine.map {
+                        $0 >= 0
+                            && $0 <= VerifiedPatchLimits.maximumLineCount
+                      } ?? true),
+                      previewHunk.header.utf8.count
+                        <= VerifiedPatchLimits.maximumPathByteCount else {
+                    throw VerifiedPatchValidationError.invalidOperation(nil)
+                }
+                try accumulatePreparedLines(
+                    previewHunk.lines.map(\.bytes),
+                    lineCount: &hunkLineCount,
+                    byteCount: &hunkByteCount
+                )
+            }
+        }
+    }
+
+    private static func preflightCoordinatorShape(
+        _ coordinator: VerifiedPatchCoordinatorExpectations,
+        patch: VerifiedPatchSet
+    ) throws {
+        let expectedWriterCount = patch.receipt.events.reduce(into: 0) {
+            if $1.mediatedWriterReceipt != nil {
+                $0 += 1
+            }
+        }
+        guard coordinator.canonicalRootPath.utf8.count
+                <= VerifiedPatchLimits.maximumPathByteCount,
+              coordinator.capturedHeadOID.utf8.count <= 64,
+              coordinator.capturedIndexSHA256.utf8.count <= 64,
+              coordinator.durableEvents.count
+                == patch.receipt.events.count,
+              coordinator.mediatedWriterReceipts.count
+                == expectedWriterCount else {
+            throw VerifiedPatchValidationError.invalidReceipt
+        }
+
+        var metadataBytes = 0
+        for expectation in coordinator.durableEvents {
+            let envelope = expectation.envelope
+            guard let eventBytes = preparedMetadataByteCount(envelope),
+                  eventBytes <= VerifiedPatchLimits
+                    .maximumEventMetadataByteCount,
+                  expectation.durableIdentity.canonicalWorktreePath
+                    .utf8.count <= VerifiedPatchLimits.maximumPathByteCount,
+                  let updated = checkedAdd(metadataBytes, eventBytes),
+                  updated <= VerifiedPatchLimits
+                    .maximumAggregateEventMetadataByteCount else {
+                throw VerifiedPatchValidationError.eventMetadataTooLarge
+            }
+            metadataBytes = updated
+        }
+
+        var transitionCount = 0
+        var pathBytes = 0
+        for receipt in coordinator.mediatedWriterReceipts {
+            guard receipt.workspace.canonicalRootPath.utf8.count
+                    <= VerifiedPatchLimits.maximumPathByteCount,
+                  receipt.workspace.capturedHeadOID.utf8.count <= 64,
+                  receipt.workspace.capturedIndexSHA256.utf8.count <= 64,
+                  let updatedTransitionCount = checkedAdd(
+                    transitionCount,
+                    receipt.transitions.count
+                  ),
+                  updatedTransitionCount <= VerifiedPatchLimits
+                    .maximumTransitionCount else {
+                throw VerifiedPatchValidationError.tooManyTransitions
+            }
+            transitionCount = updatedTransitionCount
+            for transition in receipt.transitions {
+                guard let sourceBytes = checkedAdd(
+                    pathBytes,
+                    transition.sourcePath.utf8.count
+                ),
+                let destinationBytes = checkedAdd(
+                    sourceBytes,
+                    transition.destinationPath?.utf8.count ?? 0
+                ),
+                destinationBytes <= VerifiedPatchLimits
+                    .maximumSnapshotPathByteCount else {
+                    throw VerifiedPatchValidationError.invalidReceipt
+                }
+                pathBytes = destinationBytes
+            }
+        }
+    }
+
+    private static func preflightPatchShape(
+        _ patch: VerifiedPatchSet
+    ) throws {
+        var transitionCount = 0
+        var receiptTransitionCount = 0
+        var receiptPathBytes = 0
+        var metadataBytes = 0
+        for event in patch.receipt.events {
+            guard let updated = checkedAdd(
+                transitionCount,
+                event.transitions.count
+            ),
+            updated <= VerifiedPatchLimits.maximumTransitionCount else {
+                throw VerifiedPatchValidationError.tooManyTransitions
+            }
+            transitionCount = updated
+
+            guard let eventBytes = preparedMetadataByteCount(
+                event.envelope
+            ),
+            eventBytes <= VerifiedPatchLimits.maximumEventMetadataByteCount,
+            let updatedMetadataBytes = checkedAdd(
+                metadataBytes,
+                eventBytes
+            ),
+            updatedMetadataBytes <= VerifiedPatchLimits
+                .maximumAggregateEventMetadataByteCount else {
+                throw VerifiedPatchValidationError.eventMetadataTooLarge
+            }
+            metadataBytes = updatedMetadataBytes
+
+            if let receipt = event.mediatedWriterReceipt {
+                guard receipt.workspace.canonicalRootPath.utf8.count
+                        <= VerifiedPatchLimits.maximumPathByteCount,
+                      receipt.workspace.capturedHeadOID.utf8.count <= 64,
+                      receipt.workspace.capturedIndexSHA256.utf8.count <= 64,
+                      let updatedReceiptTransitionCount = checkedAdd(
+                        receiptTransitionCount,
+                        receipt.transitions.count
+                      ),
+                      updatedReceiptTransitionCount <= VerifiedPatchLimits
+                        .maximumTransitionCount else {
+                    throw VerifiedPatchValidationError.invalidReceipt
+                }
+                receiptTransitionCount = updatedReceiptTransitionCount
+                for transition in receipt.transitions {
+                    guard let sourceBytes = checkedAdd(
+                        receiptPathBytes,
+                        transition.sourcePath.utf8.count
+                    ),
+                    let destinationBytes = checkedAdd(
+                        sourceBytes,
+                        transition.destinationPath?.utf8.count ?? 0
+                    ),
+                    destinationBytes <= VerifiedPatchLimits
+                        .maximumSnapshotPathByteCount else {
+                        throw VerifiedPatchValidationError.invalidReceipt
+                    }
+                    receiptPathBytes = destinationBytes
+                }
+            }
+        }
+
+        var operationTransitionCount = 0
+        var hunkCount = 0
+        var hunkLineCount = 0
+        var hunkByteCount = 0
+        var capturedBytes = 0
+        for operation in patch.operations {
+            guard let newTransitionCount = checkedAdd(
+                operationTransitionCount,
+                operation.id.transitionIDs.count
+            ),
+            newTransitionCount
+                <= VerifiedPatchLimits.maximumTransitionCount else {
+                throw VerifiedPatchValidationError.tooManyTransitions
+            }
+            operationTransitionCount = newTransitionCount
+            for state in [operation.before, operation.after]
+                .compactMap({ $0 }) {
+                guard state.content.count
+                        <= VerifiedPatchLimits.maximumFileByteCount,
+                      let updated = checkedAdd(
+                        capturedBytes,
+                        state.content.count
+                      ),
+                      updated <= VerifiedPatchLimits
+                        .maximumCapturedByteCount else {
+                    throw VerifiedPatchValidationError
+                        .aggregateContentTooLarge
+                }
+                capturedBytes = updated
+            }
+            guard case .text(let hunks, _) = operation.strategy else {
+                continue
+            }
+            guard let updated = checkedAdd(hunkCount, hunks.count),
+                  updated <= VerifiedPatchLimits.maximumHunkCount else {
+                throw VerifiedPatchValidationError.tooManyHunks
+            }
+            hunkCount = updated
+            for hunk in hunks {
+                guard hunk.beforeStartLine >= 0,
+                      hunk.beforeLineCount >= 0,
+                      hunk.afterStartLine >= 0,
+                      hunk.afterLineCount >= 0,
+                      let beforeEnd = checkedAdd(
+                        hunk.beforeStartLine,
+                        hunk.beforeLineCount
+                      ),
+                      beforeEnd <= VerifiedPatchLimits.maximumLineCount,
+                      let afterEnd = checkedAdd(
+                        hunk.afterStartLine,
+                        hunk.afterLineCount
+                      ),
+                      afterEnd <= VerifiedPatchLimits.maximumLineCount else {
+                    throw VerifiedPatchValidationError.invalidOperation(nil)
+                }
+                try accumulatePreparedLines(
+                    hunk.prefixContext,
+                    lineCount: &hunkLineCount,
+                    byteCount: &hunkByteCount
+                )
+                try accumulatePreparedLines(
+                    hunk.afterLines,
+                    lineCount: &hunkLineCount,
+                    byteCount: &hunkByteCount
+                )
+                try accumulatePreparedLines(
+                    hunk.beforeLines,
+                    lineCount: &hunkLineCount,
+                    byteCount: &hunkByteCount
+                )
+                try accumulatePreparedLines(
+                    hunk.suffixContext,
+                    lineCount: &hunkLineCount,
+                    byteCount: &hunkByteCount
+                )
+            }
+        }
+    }
+
+    private static func preparedMetadataByteCount(
+        _ envelope: AgentEventEnvelope
+    ) -> Int? {
+        let strings: [String] = switch envelope.payload {
+        case .none:
+            [
+                envelope.agentTypeRaw,
+                envelope.location.worktreePath,
+                envelope.location.cwd
+            ]
+        case .commandResult(let result):
+            [
+                envelope.agentTypeRaw,
+                envelope.location.worktreePath,
+                envelope.location.cwd,
+                result.command
+            ]
+        case .fileChange(let change):
+            [
+                envelope.agentTypeRaw,
+                envelope.location.worktreePath,
+                envelope.location.cwd,
+                change.relativePath
+            ]
+        }
+        var result = 0
+        for string in strings {
+            guard let updated = checkedAdd(result, string.utf8.count) else {
+                return nil
+            }
+            result = updated
+        }
+        return result
+    }
+
+    private static func preflightPreparedModeShape(
+        _ operation: VerifiedPreparedInverseOperation
+    ) throws {
+        guard let expectation = operation.expectations.first,
+              let result = operation.results.first else {
+            throw VerifiedPatchValidationError.invalidOperation(nil)
+        }
+        let validStateShape: Bool = switch operation.kind {
+        case .modify:
+            expectation.state != nil && result.state != nil
+        case .create:
+            expectation.state != nil && result.state == nil
+        case .delete:
+            expectation.state == nil && result.state != nil
+        case .rename:
+            false
+        }
+        let validModeShape: Bool = switch operation.mode {
+        case .checkedText:
+            operation.kind == .modify
+                && !operation.resolvedTextHunks.isEmpty
+                && operation.preview.kind == .applyTextHunks
+        case .exactState:
+            operation.resolvedTextHunks.isEmpty
+                == operation.preview.hunks.isEmpty
+        }
+        guard validStateShape, validModeShape else {
+            throw VerifiedPatchValidationError.invalidOperation(nil)
+        }
+    }
+
+    private static func accumulatePreparedLines(
+        _ lines: [Data],
+        lineCount: inout Int,
+        byteCount: inout Int
+    ) throws {
+        guard let updatedLineCount = checkedAdd(lineCount, lines.count),
+              updatedLineCount
+                <= VerifiedPatchLimits
+                    .maximumPreparedLineReferenceCount else {
+            throw VerifiedPatchValidationError.invalidOperation(nil)
+        }
+        lineCount = updatedLineCount
+        for line in lines {
+            guard line.count <= VerifiedPatchLimits.maximumFileByteCount,
+                  let updatedByteCount = checkedAdd(
+                    byteCount,
+                    line.count
+                  ),
+                  updatedByteCount
+                    <= VerifiedPatchLimits
+                        .maximumPreparedHunkByteCount else {
+                throw VerifiedPatchValidationError.invalidOperation(nil)
+            }
+            byteCount = updatedByteCount
+        }
+    }
+
     private static func validateDurableExpectations(
-        _ events: [VerifiedPatchDurableEventIdentity],
+        _ events: [VerifiedPatchDurableEventExpectation],
         workspace: VerifiedPatchCoordinatorExpectations
     ) -> Bool {
         guard !events.isEmpty,
@@ -1330,16 +1823,31 @@ nonisolated enum VerifiedPatchEngine {
         }
         var envelopeIDs: Set<UUID> = []
         var journalSequences: Set<UInt64> = []
-        for (index, event) in events.enumerated() {
-            guard event.projectID == first.projectID,
+        for (index, expectation) in events.enumerated() {
+            let envelope = expectation.envelope
+            let event = expectation.durableIdentity
+            guard event.projectID == first.durableIdentity.projectID,
                   event.canonicalWorktreePath
                     == workspace.canonicalRootPath,
-                  event.sessionID == first.sessionID,
-                  event.terminalID == first.terminalID,
-                  event.processGeneration == first.processGeneration,
+                  event.sessionID == first.durableIdentity.sessionID,
+                  event.terminalID == first.durableIdentity.terminalID,
+                  event.processGeneration
+                    == first.durableIdentity.processGeneration,
                   event.eventCursor > 0,
                   event.envelopeID != zeroUUID,
                   event.journalSequence > 0,
+                  envelope.id == event.envelopeID,
+                  envelope.projectID == event.projectID,
+                  envelope.sessionID == event.sessionID,
+                  envelope.process.terminalID == event.terminalID,
+                  envelope.process.processGeneration
+                    == event.processGeneration,
+                  envelope.location.worktreePath
+                    == event.canonicalWorktreePath,
+                  envelope.cursorValue == event.eventCursor,
+                  envelope.source == .explicitAgentEvent,
+                  envelope.trustLevel == .verified,
+                  envelope.timestamp.timeIntervalSinceReferenceDate.isFinite,
                   envelopeIDs.insert(event.envelopeID).inserted,
                   journalSequences.insert(
                     event.journalSequence
@@ -1347,7 +1855,7 @@ nonisolated enum VerifiedPatchEngine {
                 return false
             }
             guard index > 0 else { continue }
-            let previous = events[index - 1]
+            let previous = events[index - 1].durableIdentity
             guard previous.eventCursor < UInt64.max,
                   event.eventCursor == previous.eventCursor + 1,
                   event.journalSequence > previous.journalSequence else {
@@ -1403,12 +1911,48 @@ nonisolated enum VerifiedPatchEngine {
         }
     }
 
+    private static func canonicalStrategy(
+        kind: VerifiedPatchOperationKind,
+        before: VerifiedPatchFileState?,
+        after: VerifiedPatchFileState?,
+        aggregateLCSCells: inout Int,
+        aggregateHunks: inout Int
+    ) -> VerifiedPatchApplicationStrategy {
+        guard kind == .modify,
+              let before,
+              let after,
+              before.content != after.content,
+              let plan = VerifiedTextPatch.plan(
+                before: before.content,
+                after: after.content
+              ),
+              let updatedCells = checkedAdd(
+                aggregateLCSCells,
+                plan.lcsCellCount
+              ),
+              updatedCells
+                <= VerifiedPatchLimits.maximumAggregateLCSCellCount,
+              let updatedHunks = checkedAdd(
+                aggregateHunks,
+                plan.hunks.count
+              ),
+              updatedHunks <= VerifiedPatchLimits.maximumHunkCount else {
+            return .exactState
+        }
+        aggregateLCSCells = updatedCells
+        aggregateHunks = updatedHunks
+        return .text(
+            hunks: plan.hunks,
+            lcsCellCount: plan.lcsCellCount
+        )
+    }
+
     private static func preview(
         _ operation: VerifiedPatchOperation,
         expectedCurrent: VerifiedPatchFileState?,
         result: VerifiedPatchFileState?,
         resolvedHunks: [VerifiedPreparedTextHunk]?
-    ) -> VerifiedInverseOperationPreview {
+    ) -> VerifiedInverseOperationPreview? {
         let previewKind: VerifiedInversePreviewKind = switch operation.kind {
         case .modify:
             if case .text = operation.strategy {
@@ -1425,12 +1969,17 @@ nonisolated enum VerifiedPatchEngine {
         case .exactState:
             hunkPreviews = []
         case .text(let hunks, _):
-            hunkPreviews = hunks.enumerated().map { index, hunk in
-                hunkPreview(
+            var values: [VerifiedInverseHunkPreview] = []
+            for (index, hunk) in hunks.enumerated() {
+                guard let value = hunkPreview(
                     hunk,
                     resolved: resolvedHunks?[safe: index]
-                )
+                ) else {
+                    return nil
+                }
+                values.append(value)
             }
+            hunkPreviews = values
         }
         return VerifiedInverseOperationPreview(
             operationID: operation.id,
@@ -1446,7 +1995,7 @@ nonisolated enum VerifiedPatchEngine {
     private static func hunkPreview(
         _ hunk: VerifiedTextPatchHunk,
         resolved: VerifiedPreparedTextHunk?
-    ) -> VerifiedInverseHunkPreview {
+    ) -> VerifiedInverseHunkPreview? {
         var lines: [VerifiedInversePreviewLine] = []
         lines.append(contentsOf: hunk.prefixContext.map {
             VerifiedInversePreviewLine(kind: .context, bytes: $0)
@@ -1461,7 +2010,12 @@ nonisolated enum VerifiedPatchEngine {
             VerifiedInversePreviewLine(kind: .context, bytes: $0)
         })
         let currentStart = resolved?.resolvedCurrentRange.lowerBound
-        let headerStart = (currentStart ?? hunk.afterStartLine) + 1
+        guard let headerStart = checkedAdd(
+            currentStart ?? hunk.afterStartLine,
+            1
+        ) else {
+            return nil
+        }
         return VerifiedInverseHunkPreview(
             capturedAfterStartLine: hunk.afterStartLine,
             resolvedCurrentStartLine: currentStart,
