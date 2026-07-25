@@ -585,6 +585,606 @@
         }
       }
     },
+    "agentHistory.checkedRevertConfirmMessage": {
+      "comment": "Agent History: confirmation for a verified, checked undo that restores the recorded before-state (#1183).",
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dadurch wird der genaue Zustand vor den Änderungen des Agenten wiederhergestellt. Danach bearbeitete Dateien bleiben unangetastet. Dies kann nicht rückgängig gemacht werden."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This restores the exact state recorded before the agent's changes. Files edited since the agent ran are left untouched. This cannot be undone."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Esto restaura el estado exacto registrado antes de los cambios del agente. Los archivos editados desde la ejecución del agente no se modifican. No se puede deshacer."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cela restaure l'état exact enregistré avant les modifications de l'agent. Les fichiers modifiés depuis l'exécution de l'agent ne sont pas touchés. Action irréversible."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "エージェントの変更前の正確な記録状態を復元します。エージェント実行後に編集されたファイルはそのまま残ります。この操作は取り消せません。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "에이전트 변경 전에 기록된 정확한 상태로 복원합니다. 에이전트 실행 이후에 편집된 파일은 그대로 유지됩니다. 이 작업은 되돌릴 수 없습니다."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Isso restaura o estado exato registrado antes das alterações do agente. Arquivos editados desde a execução do agente não são modificados. Isso não pode ser desfeito."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Это восстанавливает точное состояние, записанное до изменений агента. Файлы, изменённые после запуска агента, остаются нетронутыми. Действие необратимо."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这将恢复代理更改之前记录的确切状态。代理运行后编辑的文件保持不变。此操作无法撤销。"
+          }
+        }
+      }
+    },
+    "agentHistory.checkedRevertSuccess": {
+      "comment": "Agent History: banner shown after a successful checked undo (#1183).",
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Agentur-Änderungen wurden auf den aufgezeichneten Vorher-Zustand zurückgesetzt."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Agent changes reverted to their recorded before-state."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Los cambios del agente se revirtieron a su estado anterior registrado."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Les modifications de l'agent ont été rétablies à leur état antérieur enregistré."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "エージェントの変更を記録された以前の状態に戻しました。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "에이전트 변경 사항이 기록된 이전 상태로 되돌려졌습니다."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "As alterações do agente foram revertidas ao estado anterior registrado."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Изменения агента отменены до записанного предыдущего состояния."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "代理更改已恢复到记录的之前状态。"
+          }
+        }
+      }
+    },
+    "agentHistory.recoveryNoticeAuthorityConsumed": {
+      "comment": "Agent History recovery notice: the checked-undo authority was durably consumed before recovery data was removed.",
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Undo-Berechtigung verbraucht"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Undo authority consumed"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Autorización de deshacer consumida"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Autorisation d’annulation consommée"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "元に戻す権限を使用済み"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "실행 취소 권한 사용됨"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Autorização de desfazer consumida"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Разрешение на отмену использовано"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "撤销授权已使用"
+          }
+        }
+      }
+    },
+    "agentHistory.recoveryNoticeCorrupt": {
+      "comment": "Agent History recovery notice: recovery data failed descriptor-safe validation and must not be trusted.",
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Beschädigte oder nicht vertrauenswürdige Wiederherstellungsdaten"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Corrupt or untrusted recovery data"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Datos de recuperación dañados o no fiables"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Données de récupération endommagées ou non fiables"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "破損または信頼できない復旧データ"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "손상되었거나 신뢰할 수 없는 복구 데이터"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dados de recuperação corrompidos ou não confiáveis"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Повреждённые или недоверенные данные восстановления"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "损坏或不可信的恢复数据"
+          }
+        }
+      }
+    },
+    "agentHistory.recoveryNoticeFinalized": {
+      "comment": "Agent History recovery notice: the checked undo finalized but durable recovery data remains.",
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Abgeschlossene Transaktion"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Finalized transaction"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Transacción finalizada"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Transaction finalisée"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "完了したトランザクション"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "완료된 트랜잭션"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Transação finalizada"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Завершённая транзакция"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已完成的事务"
+          }
+        }
+      }
+    },
+    "agentHistory.recoveryNoticeInstruction": {
+      "comment": "Agent History recovery notice: explains that recovery discovery is read-only and requires manual review.",
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pine stellt diese Daten niemals automatisch wieder her. Prüfen Sie die aufgeführten privaten Sicherungen, bevor Sie sie entfernen."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pine never restores this data automatically. Inspect the listed private backups before removing them."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pine nunca restaura estos datos automáticamente. Revisa las copias privadas indicadas antes de eliminarlas."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pine ne restaure jamais ces données automatiquement. Vérifiez les sauvegardes privées indiquées avant de les supprimer."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pine がこのデータを自動的に復元することはありません。削除する前に、表示されたプライベートバックアップを確認してください。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pine은 이 데이터를 자동으로 복원하지 않습니다. 삭제하기 전에 표시된 비공개 백업을 검토하세요."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "O Pine nunca restaura estes dados automaticamente. Inspecione os backups privados listados antes de removê-los."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pine никогда не восстанавливает эти данные автоматически. Проверьте указанные приватные резервные копии перед удалением."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pine 绝不会自动恢复这些数据。请在移除前检查列出的私有备份。"
+          }
+        }
+      }
+    },
+    "agentHistory.recoveryNoticePrepared": {
+      "comment": "Agent History recovery notice: the backup was prepared before the checked-undo authority was consumed.",
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Vorbereitete Transaktion"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Prepared transaction"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Transacción preparada"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Transaction préparée"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "準備済みのトランザクション"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "준비된 트랜잭션"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Transação preparada"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Подготовленная транзакция"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已准备的事务"
+          }
+        }
+      }
+    },
+    "agentHistory.recoveryNoticeTitle": {
+      "comment": "Agent History warning title shown when durable checked-undo recovery data requires manual review.",
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Wiederherstellungsdaten müssen geprüft werden"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Recovery data needs review"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Los datos de recuperación requieren revisión"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Les données de récupération doivent être vérifiées"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "復旧データの確認が必要です"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "복구 데이터를 검토해야 합니다"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Os dados de recuperação precisam ser revisados"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Данные восстановления требуют проверки"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "恢复数据需要检查"
+          }
+        }
+      }
+    },
+    "agentHistory.recoveryBackup %@": {
+      "comment": "Agent History: path of a retained owner-private backup after checked undo could not prove complete recovery (#1183).",
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Wiederherstellungssicherung: %@"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Recovery backup: %@"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Copia de recuperación: %@"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sauvegarde de récupération : %@"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "復旧用バックアップ: %@"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "복구 백업: %@"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Backup de recuperação: %@"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Резервная копия для восстановления: %@"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "恢复备份：%@"
+          }
+        }
+      }
+    },
+    "agentHistory.retainedRecoveryFile %@": {
+      "comment": "Agent History: workspace file retained to preserve late writes through an old file descriptor during checked undo (#1183).",
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Beibehaltene Wiederherstellungsdatei: %@"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Retained recovery file: %@"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Archivo de recuperación conservado: %@"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Fichier de récupération conservé : %@"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "保持された復旧ファイル: %@"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "보존된 복구 파일: %@"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Arquivo de recuperação preservado: %@"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Сохранённый файл восстановления: %@"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "保留的恢复文件：%@"
+          }
+        }
+      }
+    },
     "agentHistory.revertSuccess": {
       "comment": "Agent History: banner shown after a successful revert (#1073).",
       "extractionState": "manual",

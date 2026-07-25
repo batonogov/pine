@@ -41,18 +41,40 @@ nonisolated enum AgentHistoryAttribution: String, Codable, Sendable {
 }
 
 /// Why an Agent History entry cannot currently be undone safely.
+///
+/// The first five cases are structural and computable from the stored entry
+/// alone. The remaining cases are runtime refusals surfaced by the checked
+/// undo engine after consulting the owner-private authority and the live
+/// workspace; `effectiveUndoAvailability` on `AgentHistoryStore` reports them.
 nonisolated enum AgentHistoryUndoUnavailableReason: Sendable, Equatable {
     case heuristicAttribution
     case ambiguousAttribution
     case missingVerifiedReversibleChangeSet
     case invalidVerifiedReversibleChangeSet
     case checkedUndoEngineUnavailable
+    // Runtime refusals from the checked undo engine (#1183).
+    /// No owner-private authority record exists for this entry's change set.
+    case authorityRecordMissing
+    /// The authority was already consumed by a previous undo (single-use).
+    case authorityConsumed
+    /// The workspace root, HEAD, or git index changed since capture.
+    case workspaceChanged
+    /// A recorded file's current content no longer matches its recorded
+    /// after-state; reverting could discard unrelated post-capture edits.
+    case currentContentDiverged
+    /// The inverse payload blob is missing or failed its integrity check.
+    case inversePayloadMissing
 }
 
 /// Fail-closed decision used by both the UI and the mutation boundary.
 nonisolated enum AgentHistoryUndoAvailability: Sendable, Equatable {
-    /// Reserved for a future entry format that carries a checked inverse
-    /// change set. No entry in the current format returns this case.
+    /// The entry has a verified, structurally complete change set. This pure
+    /// property never returns `.available` by itself — it returns
+    /// `.checkedUndoEngineUnavailable` for structurally ready entries because
+    /// confirming the owner-private authority requires filesystem access.
+    /// `AgentHistoryStore.effectiveUndoAvailability(for:)` is the source the UI
+    /// reads; it returns `.available` only after the engine confirms the
+    /// authority exists and is unconsumed.
     case available
     case unavailable(AgentHistoryUndoUnavailableReason)
 }
@@ -117,11 +139,11 @@ nonisolated struct AgentHistoryEntry: Codable, Identifiable, Equatable, Sendable
         self.reverted = reverted
     }
 
-    /// No current entry can authorize a working-tree mutation. Heuristic and
-    /// ambiguous attribution are unsafe by definition. Verified entries must
-    /// pass the pure change-set preflight, and even structurally complete
-    /// records remain locked until runtime divergence checks and a checked,
-    /// atomic apply engine exist.
+    /// Heuristic and ambiguous attribution can never authorize a working-tree
+    /// mutation. Verified entries must pass the pure change-set preflight;
+    /// structurally complete records remain locked here until
+    /// `AgentHistoryStore.effectiveUndoAvailability(for:)` confirms their
+    /// owner-private authority and the checked engine validates live state.
     var undoAvailability: AgentHistoryUndoAvailability {
         switch attribution {
         case .heuristic:

@@ -203,7 +203,7 @@ nonisolated extension AgentHistoryPrivateStorage: Codable {
 /// compare the complete canonical projection, and honor private consumed/
 /// in-flight state before performing any runtime validation.
 nonisolated struct AgentHistoryPrivateAuthorityReference: Codable, Equatable, Sendable {
-    static let currentManifestFormatVersion = 1
+    static let currentManifestFormatVersion = 2
 
     let storage: AgentHistoryPrivateStorage
     let recordID: UUID
