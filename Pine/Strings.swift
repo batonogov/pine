@@ -7,6 +7,29 @@ import SwiftUI
 enum Strings {
     // MARK: - Settings
 
+    static let settingsLanguageServersTab: LocalizedStringKey =
+        "settings.tab.languageServers"
+    static let settingsAgentHandoffTab: LocalizedStringKey =
+        "settings.tab.agentHandoff"
+    static let agentHandoffSettingsTitle: LocalizedStringKey =
+        "settings.agentHandoff.title"
+    static let agentHandoffReadOnlyContext: LocalizedStringKey =
+        "settings.agentHandoff.readOnlyContext"
+    static let agentHandoffReadOnlyContextHelp: LocalizedStringKey =
+        "settings.agentHandoff.readOnlyContext.help"
+    static let agentHandoffSecurityBoundary: LocalizedStringKey =
+        "settings.agentHandoff.securityBoundary"
+    static let agentHandoffMetadataOnly: LocalizedStringKey =
+        "settings.agentHandoff.metadataOnly"
+    static let agentHandoffNoMutation: LocalizedStringKey =
+        "settings.agentHandoff.noMutation"
+    static let agentHandoffNewTerminals: LocalizedStringKey =
+        "settings.agentHandoff.newTerminals"
+    static let agentHandoffStatusEnabled: LocalizedStringKey =
+        "settings.agentHandoff.status.enabled"
+    static let agentHandoffStatusDisabled: LocalizedStringKey =
+        "settings.agentHandoff.status.disabled"
+
     static let lspSettingsTitle: LocalizedStringKey =
         "settings.lsp.title"
     static let lspEnabled: LocalizedStringKey =

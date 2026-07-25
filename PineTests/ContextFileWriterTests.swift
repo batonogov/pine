@@ -25,6 +25,7 @@ struct ContextFileWriterTests {
         let writer = ContextFileWriter()
         await writer.setContextsDirectory(contextsDir)
         await writer.setProjectRoot(projectRoot)
+        await writer.setReadOnlySharingEnabled(true)
         await writer.setDebounceInterval(0.01)
         return writer
     }
@@ -103,6 +104,105 @@ struct ContextFileWriterTests {
         #expect(result == payload)
     }
 
+    // MARK: - Explicit permission
+
+    @Test func sharingDefaultsOffAndPublishesNothing() async throws {
+        let tmpDir = try makeTmpDir()
+        let contextsDir = tmpDir.appendingPathComponent("contexts")
+        let projectRoot = tmpDir.appendingPathComponent("project")
+        try FileManager.default.createDirectory(
+            at: projectRoot,
+            withIntermediateDirectories: true
+        )
+        defer { try? FileManager.default.removeItem(at: tmpDir) }
+
+        let writer = ContextFileWriter()
+        await writer.setContextsDirectory(contextsDir)
+        await writer.setProjectRoot(projectRoot)
+        await writer.setDebounceInterval(0.01)
+
+        #expect(await !writer.isReadOnlySharingEnabled)
+        await writer.update(
+            currentFile: "secret.swift",
+            cursorLine: 1,
+            cursorColumn: 1
+        )
+        try await Task.sleep(for: .milliseconds(50))
+
+        #expect(!FileManager.default.fileExists(atPath: contextsDir.path))
+        #expect(await !writer.hasPendingWrite)
+    }
+
+    @Test func disablingRevokesPublishedAndPendingContext() async throws {
+        let tmpDir = try makeTmpDir()
+        let contextsDir = tmpDir.appendingPathComponent("contexts")
+        let projectRoot = tmpDir.appendingPathComponent("project")
+        try FileManager.default.createDirectory(
+            at: projectRoot,
+            withIntermediateDirectories: true
+        )
+        defer { try? FileManager.default.removeItem(at: tmpDir) }
+
+        let writer = await makeWriter(
+            projectRoot: projectRoot,
+            contextsDir: contextsDir
+        )
+        await writer.update(
+            currentFile: "first.swift",
+            cursorLine: 1,
+            cursorColumn: 1
+        )
+        try await Task.sleep(for: .milliseconds(50))
+
+        let fileURL = contextFileURL(
+            projectRoot: projectRoot,
+            contextsDir: contextsDir
+        )
+        #expect(FileManager.default.fileExists(atPath: fileURL.path))
+
+        await writer.setDebounceInterval(10)
+        await writer.update(
+            currentFile: "pending.swift",
+            cursorLine: 2,
+            cursorColumn: 2
+        )
+        #expect(await writer.hasPendingWrite)
+
+        await writer.setReadOnlySharingEnabled(false)
+
+        #expect(await !writer.isReadOnlySharingEnabled)
+        #expect(await !writer.hasPendingWrite)
+        #expect(!FileManager.default.fileExists(atPath: fileURL.path))
+    }
+
+    @Test func disabledStartupRemovesAStaleSnapshot() async throws {
+        let tmpDir = try makeTmpDir()
+        let contextsDir = tmpDir.appendingPathComponent("contexts")
+        let projectRoot = tmpDir.appendingPathComponent("project")
+        try FileManager.default.createDirectory(
+            at: projectRoot,
+            withIntermediateDirectories: true
+        )
+        try FileManager.default.createDirectory(
+            at: contextsDir,
+            withIntermediateDirectories: true
+        )
+        defer { try? FileManager.default.removeItem(at: tmpDir) }
+
+        let fileURL = contextFileURL(
+            projectRoot: projectRoot,
+            contextsDir: contextsDir
+        )
+        try Data("stale".utf8).write(to: fileURL)
+
+        let writer = ContextFileWriter()
+        await writer.setContextsDirectory(contextsDir)
+        await writer.setProjectRoot(projectRoot)
+        await writer.setReadOnlySharingEnabled(false)
+
+        #expect(!FileManager.default.fileExists(atPath: fileURL.path))
+    }
+
     // MARK: - File writing
 
     @Test func writesContextFileToApplicationSupport() async throws {
@@ -118,6 +218,11 @@ struct ContextFileWriterTests {
         try await Task.sleep(for: .milliseconds(50))
 
         let decoded = try readPayload(projectRoot: projectRoot, contextsDir: contextsDir)
+        #expect(decoded.schemaVersion == 1)
+        #expect(
+            decoded.projectIdentity
+                == ContextFileWriter.projectIdentity(for: projectRoot)
+        )
         #expect(decoded.currentFile == "Sources/App.swift")
         #expect(decoded.cursorLine == 10)
         #expect(decoded.cursorColumn == 5)
@@ -238,6 +343,7 @@ struct ContextFileWriterTests {
         let writer = ContextFileWriter()
         await writer.setContextsDirectory(contextsDir)
         await writer.setProjectRoot(projectRoot)
+        await writer.setReadOnlySharingEnabled(true)
         await writer.setDebounceInterval(1.0) // Long debounce
 
         await writer.update(currentFile: "test.swift", cursorLine: 1, cursorColumn: 1)
@@ -276,6 +382,7 @@ struct ContextFileWriterTests {
     @Test func updateWithNilProjectRootDoesNotCrash() async throws {
         let writer = ContextFileWriter()
         // No project root set — should be a no-op
+        await writer.setReadOnlySharingEnabled(true)
         await writer.setDebounceInterval(0.01)
         await writer.update(currentFile: "test.swift", cursorLine: 1, cursorColumn: 1)
         try await Task.sleep(for: .milliseconds(50))
@@ -341,6 +448,182 @@ struct ContextFileWriterTests {
         #expect(decoded.currentFile == "test.swift")
     }
 
+    @Test func symlinkedContextsDirectoryFailsClosed() async throws {
+        let tmpDir = try makeTmpDir()
+        let victimDir = tmpDir.appendingPathComponent("victim")
+        let contextsDir = tmpDir.appendingPathComponent("contexts")
+        let projectRoot = tmpDir.appendingPathComponent("project")
+        try FileManager.default.createDirectory(
+            at: victimDir,
+            withIntermediateDirectories: true
+        )
+        try FileManager.default.createDirectory(
+            at: projectRoot,
+            withIntermediateDirectories: true
+        )
+        try FileManager.default.createSymbolicLink(
+            at: contextsDir,
+            withDestinationURL: victimDir
+        )
+        defer { try? FileManager.default.removeItem(at: tmpDir) }
+
+        let writer = ContextFileWriter()
+        await writer.setContextsDirectory(contextsDir)
+        await writer.setProjectRoot(projectRoot)
+        await writer.setReadOnlySharingEnabled(true)
+        await writer.setDebounceInterval(0.01)
+        await writer.update(
+            currentFile: "secret.swift",
+            cursorLine: 1,
+            cursorColumn: 1
+        )
+        try await Task.sleep(for: .milliseconds(50))
+
+        let victimFile = victimDir.appendingPathComponent(
+            ContextFileWriter.hashedFileName(for: projectRoot)
+        )
+        #expect(!FileManager.default.fileExists(atPath: victimFile.path))
+        #expect(await !writer.hasPendingWrite)
+        let values = try contextsDir.resourceValues(
+            forKeys: [.isSymbolicLinkKey]
+        )
+        #expect(values.isSymbolicLink == true)
+    }
+
+    @Test func projectRescopeInvalidatesPendingSnapshot() async throws {
+        let tmpDir = try makeTmpDir()
+        let contextsDir = tmpDir.appendingPathComponent("contexts")
+        let oldRoot = tmpDir.appendingPathComponent("old-project")
+        let newRoot = tmpDir.appendingPathComponent("new-project")
+        try FileManager.default.createDirectory(
+            at: oldRoot,
+            withIntermediateDirectories: true
+        )
+        try FileManager.default.createDirectory(
+            at: newRoot,
+            withIntermediateDirectories: true
+        )
+        defer { try? FileManager.default.removeItem(at: tmpDir) }
+
+        let writer = ContextFileWriter()
+        await writer.setContextsDirectory(contextsDir)
+        await writer.setProjectRoot(oldRoot)
+        await writer.setReadOnlySharingEnabled(true)
+        await writer.setDebounceInterval(0.1)
+        await writer.update(
+            currentFile: "Old.swift",
+            cursorLine: 1,
+            cursorColumn: 1
+        )
+
+        await writer.setProjectRoot(newRoot)
+        try await Task.sleep(for: .milliseconds(150))
+
+        #expect(
+            !FileManager.default.fileExists(
+                atPath: contextFileURL(
+                    projectRoot: oldRoot,
+                    contextsDir: contextsDir
+                ).path
+            )
+        )
+        #expect(
+            !FileManager.default.fileExists(
+                atPath: contextFileURL(
+                    projectRoot: newRoot,
+                    contextsDir: contextsDir
+                ).path
+            )
+        )
+
+        await writer.setDebounceInterval(0.01)
+        await writer.update(
+            currentFile: "New.swift",
+            cursorLine: 2,
+            cursorColumn: 3
+        )
+        try await Task.sleep(for: .milliseconds(50))
+
+        let payload = try readPayload(
+            projectRoot: newRoot,
+            contextsDir: contextsDir
+        )
+        #expect(payload.currentFile == "New.swift")
+        #expect(
+            payload.projectIdentity
+                == ContextFileWriter.projectIdentity(for: newRoot)
+        )
+    }
+
+    @Test func payloadBoundsAndNormalizesRelativePaths() async throws {
+        let tmpDir = try makeTmpDir()
+        let contextsDir = tmpDir.appendingPathComponent("contexts")
+        let projectRoot = tmpDir.appendingPathComponent("project")
+        try FileManager.default.createDirectory(
+            at: projectRoot,
+            withIntermediateDirectories: true
+        )
+        defer { try? FileManager.default.removeItem(at: tmpDir) }
+
+        let writer = await makeWriter(
+            projectRoot: projectRoot,
+            contextsDir: contextsDir
+        )
+        let valid = (0..<ContextFileWriter.maximumOpenFiles)
+            .map { "Sources/File\($0).swift" }
+        await writer.update(
+            openFiles: [
+                "Sources/App.swift",
+                "Sources/App.swift",
+                "../outside.swift",
+                "/absolute.swift",
+            ] + valid,
+            currentFile: "../outside.swift",
+            cursorLine: -1,
+            cursorColumn: ContextFileWriter.maximumCoordinate + 1
+        )
+        try await Task.sleep(for: .milliseconds(50))
+
+        let decoded = try readPayload(
+            projectRoot: projectRoot,
+            contextsDir: contextsDir
+        )
+        #expect(decoded.openFiles.count <= ContextFileWriter.maximumOpenFiles)
+        #expect(decoded.openFiles.first == "Sources/App.swift")
+        #expect(!decoded.openFiles.contains("../outside.swift"))
+        #expect(!decoded.openFiles.contains("/absolute.swift"))
+        #expect(decoded.currentFile == nil)
+        #expect(decoded.cursorLine == nil)
+        #expect(decoded.cursorColumn == nil)
+    }
+
+    @Test func atomicWriteLeavesNoTemporaryArtifacts() async throws {
+        let tmpDir = try makeTmpDir()
+        let contextsDir = tmpDir.appendingPathComponent("contexts")
+        let projectRoot = tmpDir.appendingPathComponent("project")
+        try FileManager.default.createDirectory(
+            at: projectRoot,
+            withIntermediateDirectories: true
+        )
+        defer { try? FileManager.default.removeItem(at: tmpDir) }
+
+        let writer = await makeWriter(
+            projectRoot: projectRoot,
+            contextsDir: contextsDir
+        )
+        await writer.update(
+            currentFile: "App.swift",
+            cursorLine: 1,
+            cursorColumn: 1
+        )
+        try await Task.sleep(for: .milliseconds(50))
+
+        let names = try FileManager.default.contentsOfDirectory(
+            atPath: contextsDir.path
+        )
+        #expect(names == [ContextFileWriter.hashedFileName(for: projectRoot)])
+    }
+
     // MARK: - Relative path calculation
 
     @Test func relativePathFromProjectRoot() {
@@ -354,7 +637,19 @@ struct ContextFileWriterTests {
         let rootURL = URL(fileURLWithPath: "/Users/test/project")
         let fileURL = URL(fileURLWithPath: "/Users/test/other/file.swift")
         let result = ContextFileWriter.relativePath(fileURL: fileURL, rootURL: rootURL)
-        #expect(result == "file.swift")
+        #expect(result == nil)
+    }
+
+    @Test func relativePathTraversalOutsideProjectIsOmitted() {
+        let rootURL = URL(fileURLWithPath: "/Users/test/project")
+        let fileURL = URL(
+            fileURLWithPath: "/Users/test/project/../other/private.swift"
+        )
+        let result = ContextFileWriter.relativePath(
+            fileURL: fileURL,
+            rootURL: rootURL
+        )
+        #expect(result == nil)
     }
 
     @Test func relativePathWithTrailingSlashInRoot() {
@@ -601,6 +896,14 @@ struct ContextFileWriterTests {
         let permissions = (attrs[.posixPermissions] as? NSNumber)?.uint16Value
         // 0o600 = 384 decimal = owner rw only
         #expect(permissions == 0o600)
+
+        let directoryAttributes = try FileManager.default.attributesOfItem(
+            atPath: contextsDir.path
+        )
+        let directoryPermissions = (
+            directoryAttributes[.posixPermissions] as? NSNumber
+        )?.uint16Value
+        #expect(directoryPermissions == 0o700)
     }
 
     // MARK: - Concurrent writes (thread safety via actor)

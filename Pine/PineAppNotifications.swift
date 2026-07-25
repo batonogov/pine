@@ -76,6 +76,12 @@ extension Notification.Name {
     /// Shows the persistent agent-history timeline sheet.
     static let showAgentHistory = Notification.Name("showAgentHistory")
 
+    // MARK: - Agent handoff (#933)
+    /// Posted after the user changes the read-only editor-context permission.
+    static let agentHandoffSettingsChanged = Notification.Name(
+        "agentHandoffSettingsChanged"
+    )
+
     // MARK: - Git
     static let showBranchSwitcher = Notification.Name("showBranchSwitcher")
     static let refreshLineDiffs = Notification.Name("refreshLineDiffs")
