@@ -359,8 +359,89 @@ struct VerifiedPatchPreparationTests {
         )
     }
 
-    @Test("Overlap and moved-region duplicates both conflict")
-    func overlapAndMovedDuplicateConflict() throws {
+    @Test("Deleting the first of two equal after-blocks is ambiguous")
+    func duplicateAfterBlockDeletionConflicts() throws {
+        let before = file(
+            "p0\np1\nold\ns0\ns1\n"
+                + "p0\np1\nagent\ns0\ns1\n"
+        )
+        let after = file(
+            "p0\np1\nagent\ns0\ns1\n"
+                + "p0\np1\nagent\ns0\ns1\n"
+        )
+        let patch = try singlePatch(before: before, after: after)
+        let outcome = VerifiedPatchEngine.prepareCheckedInverse(
+            patch,
+            currentSnapshot: snapshot([
+                "file.txt": file("p0\np1\nagent\ns0\ns1\n")
+            ])
+        )
+
+        #expect(preparationConflicts(outcome)?.first?.reason
+            == .ambiguousCurrentMapping(hunkIndex: 0))
+    }
+
+    @Test("Moved or reordered duplicate after-blocks conflict")
+    func duplicateAfterBlockMovementConflicts() throws {
+        let block = "p0\np1\nagent\ns0\ns1\n"
+        let before = file(
+            "p0\np1\nold\ns0\ns1\n"
+                + "unique-u\n"
+                + block
+                + "unique-v\n"
+        )
+        let after = file(
+            block
+                + "unique-u\n"
+                + block
+                + "unique-v\n"
+        )
+        let patch = try singlePatch(before: before, after: after)
+        let currentValues = [
+            "unique-u\n" + block + "unique-v\n" + block,
+            block + "unique-v\n" + block + "unique-u\n"
+        ]
+
+        for current in currentValues {
+            let outcome = VerifiedPatchEngine.prepareCheckedInverse(
+                patch,
+                currentSnapshot: snapshot([
+                    "file.txt": file(current)
+                ])
+            )
+            #expect(preparationConflicts(outcome)?.first?.reason
+                == .ambiguousCurrentMapping(hunkIndex: 0))
+        }
+    }
+
+    @Test("Duplicate blocks remain safe with one unique optimal mapping")
+    func duplicateAfterBlocksWithUniqueMapping() throws {
+        let block = "p0\np1\nagent\ns0\ns1\n"
+        let before = file(
+            "p0\np1\nold\ns0\ns1\n"
+                + "unique\n"
+                + block
+        )
+        let after = file(block + "unique\n" + block)
+        let current = file("human\n" + text(after))
+        let patch = try singlePatch(before: before, after: after)
+
+        let prepared = try requirePrepared(
+            patch,
+            files: ["file.txt": current]
+        )
+        let result = VerifiedPatchEngine.applyPrepared(
+            prepared,
+            currentSnapshot: snapshot(["file.txt": current])
+        )
+        let applied = try #require(appliedSnapshot(result))
+
+        #expect(text(try #require(applied.files["file.txt"]))
+            == "human\n" + text(before))
+    }
+
+    @Test("A human edit inside the guarded region conflicts")
+    func overlappingHumanEditConflicts() throws {
         let before = file("a\nb\nold\nc\nd\n")
         let after = file("a\nb\nagent\nc\nd\n")
         let patch = try singlePatch(before: before, after: after)
@@ -372,18 +453,6 @@ struct VerifiedPatchPreparationTests {
             ])
         )
         #expect(preparationConflicts(overlap)?.first?.reason
-            == .humanEditOverlapsAgentRegion(hunkIndex: 0))
-
-        let moved = VerifiedPatchEngine.prepareCheckedInverse(
-            patch,
-            currentSnapshot: snapshot([
-                "file.txt": file(
-                    "human-replaced-original\n"
-                        + "a\nb\nagent\nc\nd\n"
-                )
-            ])
-        )
-        #expect(preparationConflicts(moved)?.first?.reason
             == .humanEditOverlapsAgentRegion(hunkIndex: 0))
     }
 
@@ -818,6 +887,53 @@ struct VerifiedPatchBudgetTests {
         ) == nil)
     }
 
+    @Test("Positional mapping work accepts boundary and rejects +1")
+    func positionalMappingBudget() throws {
+        let before = Data(
+            "human-old\nstable-a\nstable-b\nold\nstable-c\nstable-d\n"
+                .utf8
+        )
+        let after = Data(
+            "human-old\nstable-a\nstable-b\nagent\nstable-c\nstable-d\n"
+                .utf8
+        )
+        let current = Data(
+            "human-new\nstable-a\nstable-b\nagent\nstable-c\nstable-d\n"
+                .utf8
+        )
+        let plan = try #require(VerifiedTextPatch.plan(
+            before: before,
+            after: after
+        ))
+        let tableCells = try #require(
+            VerifiedTextPatch.estimatedLCSCellCount(
+                before: after,
+                after: current
+            )
+        )
+        let mappingCells = tableCells * plan.hunks.count
+
+        guard case .success = VerifiedTextPatch.prepareInverse(
+            hunks: plan.hunks,
+            capturedAfter: after,
+            current: current,
+            mappingCellBudget: mappingCells
+        ) else {
+            Issue.record("Exact mapping budget must be accepted")
+            return
+        }
+        guard case .failure(.resourceLimitExceeded) =
+                VerifiedTextPatch.prepareInverse(
+            hunks: plan.hunks,
+            capturedAfter: after,
+            current: current,
+            mappingCellBudget: mappingCells - 1
+        ) else {
+            Issue.record("Mapping budget +1 must fail closed")
+            return
+        }
+    }
+
     @Test("Repeated alternating input remains bounded and conservative")
     func adversarialRepeatedInput() throws {
         let before = file(
@@ -945,6 +1061,416 @@ struct VerifiedPatchVersionChainTests {
         )?.contains { $0.reason == .ambiguousVersionChain } == true)
     }
 
+    @Test("Interleaved streams cannot hide reverse cursor order")
+    func interleavedStreamCursorOrder() throws {
+        let stateA = file("a")
+        let stateB = file("b")
+        let stateC = file("c")
+        let stateD = file("d")
+        let lateInContent = try singlePatch(
+            patchID: id(1),
+            envelopeID: id(11),
+            cursor: 1,
+            journalSequence: 1,
+            before: stateC,
+            after: stateD,
+            sessionID: id(100),
+            terminalID: id(200)
+        )
+        let middle = try singlePatch(
+            patchID: id(2),
+            envelopeID: id(12),
+            cursor: 1,
+            journalSequence: 2,
+            before: stateB,
+            after: stateC,
+            sessionID: id(101),
+            terminalID: id(201)
+        )
+        let earlyInContent = try singlePatch(
+            patchID: id(3),
+            envelopeID: id(13),
+            cursor: 2,
+            journalSequence: 3,
+            before: stateA,
+            after: stateB,
+            sessionID: id(100),
+            terminalID: id(200)
+        )
+
+        #expect(versionConflicts(
+            VerifiedPatchVersionChainDetector.analyze([
+                lateInContent,
+                middle,
+                earlyInContent
+            ])
+        )?.contains { $0.reason == .cursorOrderMismatch } == true)
+    }
+
+    @Test("Content chains preserve workspace journal and CAS order")
+    func workspaceEvidenceOrder() throws {
+        let stateA = file("a")
+        let stateB = file("b")
+        let stateC = file("c")
+        let journalLate = try singlePatch(
+            patchID: id(1),
+            envelopeID: id(11),
+            journalSequence: 2,
+            before: stateA,
+            after: stateB,
+            sessionID: id(101),
+            terminalID: id(201)
+        )
+        let journalEarly = try singlePatch(
+            patchID: id(2),
+            envelopeID: id(12),
+            journalSequence: 1,
+            before: stateB,
+            after: stateC,
+            sessionID: id(102),
+            terminalID: id(202)
+        )
+        #expect(versionConflicts(
+            VerifiedPatchVersionChainDetector.analyze([
+                journalLate,
+                journalEarly
+            ])
+        )?.contains {
+            $0.reason == .journalOrderMismatch(previous: 2, actual: 1)
+        } == true)
+
+        let casLate = try singlePatch(
+            patchID: id(3),
+            envelopeID: id(13),
+            journalSequence: 3,
+            before: stateA,
+            after: stateB,
+            sessionID: id(103),
+            terminalID: id(203),
+            descriptorCASSequence: 4
+        )
+        let casEarly = try singlePatch(
+            patchID: id(4),
+            envelopeID: id(14),
+            journalSequence: 4,
+            before: stateB,
+            after: stateC,
+            sessionID: id(104),
+            terminalID: id(204),
+            descriptorCASSequence: 3
+        )
+        #expect(versionConflicts(
+            VerifiedPatchVersionChainDetector.analyze([
+                casLate,
+                casEarly
+            ])
+        )?.contains {
+            $0.reason == .descriptorCASOrderMismatch(
+                previous: 4,
+                actual: 3
+            )
+        } == true)
+    }
+
+    @Test("Private workspace and physical root identities are bijective")
+    func workspaceIdentityBijection() throws {
+        let before = file("base")
+        let samePhysicalFirst = try singlePatch(
+            patchID: id(1),
+            envelopeID: id(11),
+            before: before,
+            after: file("one"),
+            privateID: id(700)
+        )
+        let samePhysicalSecond = try singlePatch(
+            patchID: id(2),
+            envelopeID: id(12),
+            journalSequence: 2,
+            before: before,
+            after: file("two"),
+            sessionID: id(201),
+            terminalID: id(301),
+            privateID: id(701)
+        )
+        #expect(versionConflicts(
+            VerifiedPatchVersionChainDetector.analyze([
+                samePhysicalFirst,
+                samePhysicalSecond
+            ])
+        )?.first?.reason == .workspaceIdentityMismatch)
+
+        let samePrivateFirst = try singlePatch(
+            patchID: id(3),
+            envelopeID: id(13),
+            before: before,
+            after: file("three"),
+            privateID: id(702),
+            rootDevice: 30,
+            rootInode: 40
+        )
+        let samePrivateSecond = try singlePatch(
+            patchID: id(4),
+            envelopeID: id(14),
+            journalSequence: 2,
+            before: before,
+            after: file("four"),
+            sessionID: id(202),
+            terminalID: id(302),
+            privateID: id(702),
+            rootDevice: 31,
+            rootInode: 41
+        )
+        #expect(versionConflicts(
+            VerifiedPatchVersionChainDetector.analyze([
+                samePrivateFirst,
+                samePrivateSecond
+            ])
+        )?.first?.reason == .workspaceIdentityMismatch)
+    }
+
+    @Test("Version operation and node budget accepts boundary and rejects +1")
+    func versionOperationAndNodeBudget() throws {
+        let base = try singlePatch(
+            before: file("before"),
+            after: file("after")
+        )
+        let operation = try #require(base.operations.first)
+        let atLimit = VerifiedPatchSet(
+            id: base.id,
+            receipt: base.receipt,
+            operations: Array(
+                repeating: operation,
+                count: VerifiedPatchLimits.maximumVersionOperationCount
+            )
+        )
+        #expect(versionConflicts(
+            VerifiedPatchVersionChainDetector.analyze([atLimit])
+        )?.first?.reason == .invalidPatch(base.id))
+
+        let overLimit = VerifiedPatchSet(
+            id: base.id,
+            receipt: base.receipt,
+            operations: atLimit.operations + [operation]
+        )
+        #expect(versionConflicts(
+            VerifiedPatchVersionChainDetector.analyze([overLimit])
+        )?.first?.reason == .resourceLimitExceeded)
+    }
+
+    @Test("Version declared LCS budget accepts boundary and rejects +1")
+    func versionDeclaredLCSBudget() throws {
+        let base = try singlePatch(
+            before: file("before\n"),
+            after: file("after\n")
+        )
+        let operation = try #require(base.operations.first)
+        guard case .text(let hunks, _) = operation.strategy else {
+            Issue.record("Fixture must use a text strategy")
+            return
+        }
+        func replacingCells(_ cells: Int) -> VerifiedPatchSet {
+            VerifiedPatchSet(
+                id: base.id,
+                receipt: base.receipt,
+                operations: [VerifiedPatchOperation(
+                    id: operation.id,
+                    kind: operation.kind,
+                    sourcePath: operation.sourcePath,
+                    destinationPath: operation.destinationPath,
+                    before: operation.before,
+                    after: operation.after,
+                    strategy: .text(
+                        hunks: hunks,
+                        lcsCellCount: cells
+                    )
+                )]
+            )
+        }
+
+        #expect(versionConflicts(
+            VerifiedPatchVersionChainDetector.analyze([
+                replacingCells(
+                    VerifiedPatchLimits.maximumVersionLCSCellCount
+                )
+            ])
+        )?.first?.reason == .invalidPatch(base.id))
+        #expect(versionConflicts(
+            VerifiedPatchVersionChainDetector.analyze([
+                replacingCells(
+                    VerifiedPatchLimits.maximumVersionLCSCellCount + 1
+                )
+            ])
+        )?.first?.reason == .resourceLimitExceeded)
+    }
+
+    @Test("Version captured-content budget accepts boundary and rejects +1")
+    func versionCapturedContentBudget() throws {
+        let base = try singlePatch(
+            before: file("before"),
+            after: file("after")
+        )
+        let operation = try #require(base.operations.first)
+        let large = file(Data(
+            repeating: 0x61,
+            count: VerifiedPatchLimits.maximumFileByteCount
+        ))
+        let largeOperation = VerifiedPatchOperation(
+            id: operation.id,
+            kind: .modify,
+            sourcePath: operation.sourcePath,
+            destinationPath: nil,
+            before: large,
+            after: large,
+            strategy: .exactState
+        )
+        let statesPerOperation = 2
+        let operationCount = VerifiedPatchLimits
+            .maximumVersionCapturedByteCount
+            / VerifiedPatchLimits.maximumFileByteCount
+            / statesPerOperation
+        let atLimit = VerifiedPatchSet(
+            id: base.id,
+            receipt: base.receipt,
+            operations: Array(
+                repeating: largeOperation,
+                count: operationCount
+            )
+        )
+        #expect(versionConflicts(
+            VerifiedPatchVersionChainDetector.analyze([atLimit])
+        )?.first?.reason == .invalidPatch(base.id))
+
+        let oneMoreByte = VerifiedPatchOperation(
+            id: operation.id,
+            kind: .delete,
+            sourcePath: operation.sourcePath,
+            destinationPath: nil,
+            before: file("x"),
+            after: nil,
+            strategy: .exactState
+        )
+        let overLimit = VerifiedPatchSet(
+            id: base.id,
+            receipt: base.receipt,
+            operations: atLimit.operations + [oneMoreByte]
+        )
+        #expect(versionConflicts(
+            VerifiedPatchVersionChainDetector.analyze([overLimit])
+        )?.first?.reason == .resourceLimitExceeded)
+    }
+
+    @Test("Version path budget accepts boundary and rejects +1")
+    func versionPathBudget() throws {
+        let base = try singlePatch(
+            before: file("before"),
+            after: file("after")
+        )
+        let operation = try #require(base.operations.first)
+        let rootByteCount = base.receipt.workspace
+            .canonicalRootPath.utf8.count
+        let transitionPathByteCount = operation.sourcePath.utf8.count
+        let retainedPathByteCount = 4 * rootByteCount
+            + 2 * transitionPathByteCount
+        let boundaryPath = String(
+            repeating: "x",
+            count: VerifiedPatchLimits.maximumVersionPathByteCount
+                - retainedPathByteCount
+        )
+        func replacingPath(_ path: String) -> VerifiedPatchSet {
+            VerifiedPatchSet(
+                id: base.id,
+                receipt: base.receipt,
+                operations: [VerifiedPatchOperation(
+                    id: operation.id,
+                    kind: operation.kind,
+                    sourcePath: path,
+                    destinationPath: operation.destinationPath,
+                    before: operation.before,
+                    after: operation.after,
+                    strategy: operation.strategy
+                )]
+            )
+        }
+
+        #expect(versionConflicts(
+            VerifiedPatchVersionChainDetector.analyze([
+                replacingPath(boundaryPath)
+            ])
+        )?.first?.reason == .invalidPatch(base.id))
+        #expect(versionConflicts(
+            VerifiedPatchVersionChainDetector.analyze([
+                replacingPath(boundaryPath + "x")
+            ])
+        )?.first?.reason == .resourceLimitExceeded)
+    }
+
+    @Test("Version event-metadata budget accepts boundary and rejects +1")
+    func versionEventMetadataBudget() throws {
+        let base = try singlePatch(
+            before: file("before"),
+            after: file("after")
+        )
+        let accepted = try #require(base.receipt.events.first)
+        let envelope = accepted.envelope
+        let fixedMetadataBytes = envelope.agentTypeRaw.utf8.count
+            + envelope.location.worktreePath.utf8.count
+            + envelope.location.cwd.utf8.count
+        let command = String(
+            repeating: "x",
+            count: VerifiedPatchLimits
+                .maximumVersionEventMetadataByteCount
+                - fixedMetadataBytes
+        )
+        func replacingCommand(_ value: String) -> VerifiedPatchSet {
+            let forgedEnvelope = AgentEventEnvelope(
+                id: envelope.id,
+                projectID: envelope.projectID,
+                sessionID: envelope.sessionID,
+                agentTypeRaw: envelope.agentTypeRaw,
+                process: envelope.process,
+                location: envelope.location,
+                cursorValue: envelope.cursorValue,
+                timestamp: envelope.timestamp,
+                source: envelope.source,
+                trustLevel: envelope.trustLevel,
+                payload: .commandResult(AgentCommandResult(
+                    command: value,
+                    exitStatus: 0
+                ))
+            )
+            let forgedEvent = VerifiedPatchAcceptedEvent(
+                envelope: forgedEnvelope,
+                durableIdentity: accepted.durableIdentity,
+                mediatedWriterReceipt: accepted.mediatedWriterReceipt,
+                transitions: accepted.transitions
+            )
+            let forgedReceipt = VerifiedPatchIngressReceipt(
+                receiptID: base.receipt.receiptID,
+                workspace: base.receipt.workspace,
+                projectID: base.receipt.projectID,
+                sessionID: base.receipt.sessionID,
+                process: base.receipt.process,
+                events: [forgedEvent]
+            )
+            return VerifiedPatchSet(
+                id: base.id,
+                receipt: forgedReceipt,
+                operations: base.operations
+            )
+        }
+
+        #expect(versionConflicts(
+            VerifiedPatchVersionChainDetector.analyze([
+                replacingCommand(command)
+            ])
+        )?.first?.reason == .invalidPatch(base.id))
+        #expect(versionConflicts(
+            VerifiedPatchVersionChainDetector.analyze([
+                replacingCommand(command + "x")
+            ])
+        )?.first?.reason == .resourceLimitExceeded)
+    }
+
     @Test("Version patch-count limit accepts limit and rejects +1")
     func patchCountLimit() throws {
         let patches = try (0..<VerifiedPatchLimits.maximumVersionPatchCount)
@@ -992,22 +1518,33 @@ private func singlePatch(
     after: VerifiedPatchFileState?,
     sessionID: UUID = id(200),
     terminalID: UUID = id(300),
-    rootPath: String = "/private/tmp/project"
+    rootPath: String = "/private/tmp/project",
+    privateID: UUID = id(700),
+    rootDevice: UInt64 = 11,
+    rootInode: UInt64 = 22,
+    descriptorCASSequence: UInt64? = nil
 ) throws -> VerifiedPatchSet {
+    let workspaceIdentity = workspace(
+        rootPath: rootPath,
+        privateID: privateID,
+        rootDevice: rootDevice,
+        rootInode: rootInode
+    )
     let value = record(
         envelopeID: envelopeID,
         cursor: cursor,
         journalSequence: journalSequence,
         sessionID: sessionID,
         terminalID: terminalID,
-        rootPath: rootPath,
+        workspaceIdentity: workspaceIdentity,
+        descriptorCASSequence: descriptorCASSequence,
         changes: [change(path, before, after)]
     )
     return try makePatch(
         patchID: patchID,
         receipt: try receipt(
             [value],
-            workspace: workspace(rootPath: rootPath)
+            workspace: workspaceIdentity
         ),
         sources: [source(
             value,
@@ -1049,11 +1586,16 @@ private func record(
     terminalID: UUID = id(300),
     projectID: UUID = id(400),
     rootPath: String = "/private/tmp/project",
+    workspaceIdentity: VerifiedPatchWorkspaceIdentity? = nil,
+    descriptorCASSequence: UInt64? = nil,
     source eventSource: EventSource = .explicitAgentEvent,
     payload: AgentEventPayload? = nil,
     mediatedByPine: Bool = true,
     changes: [VerifiedPatchContentTransition]
 ) -> VerifiedPatchUntrustedEventRecord {
+    let selectedWorkspace = workspaceIdentity
+        ?? workspace(rootPath: rootPath)
+    let selectedRootPath = selectedWorkspace.canonicalRootPath
     let selectedPayload: AgentEventPayload
     if let payload {
         selectedPayload = payload
@@ -1078,8 +1620,8 @@ private func record(
             processGeneration: 1
         ),
         location: AgentEventLocation(
-            worktreePath: rootPath,
-            cwd: rootPath
+            worktreePath: selectedRootPath,
+            cwd: selectedRootPath
         ),
         cursorValue: cursor,
         timestamp: Date(timeIntervalSince1970: 1_000 + Double(cursor)),
@@ -1097,8 +1639,9 @@ private func record(
             receiptID: UUID(),
             userApprovalID: UUID(),
             descriptorTransactionID: UUID(),
-            descriptorCASSequence: journalSequence,
-            workspace: workspace(rootPath: rootPath),
+            descriptorCASSequence: descriptorCASSequence
+                ?? journalSequence,
+            workspace: selectedWorkspace,
             auditEvent: auditIdentity,
             transitions: changes
         )

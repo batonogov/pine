@@ -564,6 +564,7 @@ nonisolated enum VerifiedPatchEngine {
 
         var prepared: [VerifiedPreparedInverseOperation] = []
         var aggregateLCSCells = 0
+        var aggregateMappingCells = 0
         for operation in patch.operations {
             if operation.kind == .rename {
                 return .failure(.unsupportedOperation(
@@ -574,7 +575,8 @@ nonisolated enum VerifiedPatchEngine {
             switch prepare(
                 operation,
                 snapshot: currentSnapshot,
-                aggregateLCSCells: &aggregateLCSCells
+                aggregateLCSCells: &aggregateLCSCells,
+                aggregateMappingCells: &aggregateMappingCells
             ) {
             case .success(let value):
                 prepared.append(value)
@@ -671,14 +673,16 @@ nonisolated enum VerifiedPatchEngine {
     private static func prepare(
         _ operation: VerifiedPatchOperation,
         snapshot: VerifiedPatchWorkspaceSnapshot,
-        aggregateLCSCells: inout Int
+        aggregateLCSCells: inout Int,
+        aggregateMappingCells: inout Int
     ) -> Result<VerifiedPreparedInverseOperation, VerifiedPatchConflict> {
         switch operation.kind {
         case .modify:
             return prepareModify(
                 operation,
                 snapshot: snapshot,
-                aggregateLCSCells: &aggregateLCSCells
+                aggregateLCSCells: &aggregateLCSCells,
+                aggregateMappingCells: &aggregateMappingCells
             )
         case .create:
             guard let after = operation.after else {
@@ -732,7 +736,8 @@ nonisolated enum VerifiedPatchEngine {
     private static func prepareModify(
         _ operation: VerifiedPatchOperation,
         snapshot: VerifiedPatchWorkspaceSnapshot,
-        aggregateLCSCells: inout Int
+        aggregateLCSCells: inout Int,
+        aggregateMappingCells: inout Int
     ) -> Result<VerifiedPreparedInverseOperation, VerifiedPatchConflict> {
         guard let before = operation.before,
               let after = operation.after else {
@@ -775,19 +780,36 @@ nonisolated enum VerifiedPatchEngine {
                 estimate
               ),
               newAggregate
-                <= VerifiedPatchLimits.maximumAggregateLCSCellCount else {
+                <= VerifiedPatchLimits.maximumAggregateLCSCellCount,
+              aggregateMappingCells <= VerifiedPatchLimits
+                .maximumAggregateMappingCellCount else {
             return .failure(conflict(operation, .resourceLimitExceeded))
         }
-        aggregateLCSCells = newAggregate
+        let remainingMappingCells = VerifiedPatchLimits
+            .maximumAggregateMappingCellCount - aggregateMappingCells
 
         switch VerifiedTextPatch.prepareInverse(
             hunks: hunks,
             capturedAfter: after.content,
-            current: current.content
+            current: current.content,
+            mappingCellBudget: remainingMappingCells
         ) {
         case .failure(let reason):
             return .failure(conflict(operation, reason))
         case .success(let textResult):
+            guard textResult.lcsCellCount == estimate,
+                  let newMappingAggregate = checkedAdd(
+                    aggregateMappingCells,
+                    textResult.mappingCellCount
+                  ),
+                  newMappingAggregate <= VerifiedPatchLimits
+                    .maximumAggregateMappingCellCount else {
+                return .failure(
+                    conflict(operation, .resourceLimitExceeded)
+                )
+            }
+            aggregateLCSCells = newAggregate
+            aggregateMappingCells = newMappingAggregate
             let merged = VerifiedPatchFileState(
                 content: textResult.content,
                 kind: .regularFile,

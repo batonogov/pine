@@ -17,7 +17,15 @@ nonisolated enum VerifiedPatchLimits {
     static let maximumTransitionCount = 1_024
     static let maximumOperationCount = 256
     static let maximumVersionPatchCount = 128
+    static let maximumVersionOperationCount = 1_024
     static let maximumVersionNodeCount = 1_024
+    static let maximumVersionEventCount = 4_096
+    static let maximumVersionTransitionCount = 4_096
+    static let maximumVersionCapturedByteCount = 64 * 1_024 * 1_024
+    static let maximumVersionPathByteCount = 4 * 1_024 * 1_024
+    static let maximumVersionEventMetadataByteCount = 4 * 1_024 * 1_024
+    static let maximumVersionLCSCellCount = 8_000_000
+    static let maximumVersionHunkCount = 4_096
     static let maximumFileByteCount = 4 * 1_024 * 1_024
     static let maximumCapturedByteCount = 16 * 1_024 * 1_024
     static let maximumSnapshotFileCount = 4_096
@@ -28,6 +36,7 @@ nonisolated enum VerifiedPatchLimits {
     static let maximumLineCount = 4_096
     static let maximumLCSCellCountPerDiff = 2_000_000
     static let maximumAggregateLCSCellCount = 8_000_000
+    static let maximumAggregateMappingCellCount = 8_000_000
     static let maximumHunkCount = 1_024
     static let maximumPathByteCount = 4_096
 }
@@ -402,6 +411,7 @@ nonisolated enum VerifiedPatchConflictReason: Error, Sendable, Equatable {
     case unsupportedCurrentFileKind
     case currentContentIsNotText
     case humanEditOverlapsAgentRegion(hunkIndex: Int)
+    case ambiguousCurrentMapping(hunkIndex: Int)
     case mappedRegionMismatch(hunkIndex: Int)
     case overlappingResolvedHunks
     case snapshotChangedAfterPreparation
