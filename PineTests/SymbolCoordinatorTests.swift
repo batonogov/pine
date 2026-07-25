@@ -482,20 +482,28 @@ struct SymbolCoordinatorTests {
         #expect(!coordinator.isCurrent(entry.snapshot.revision))
     }
 
-    @Test("New symbol kinds use localized labels")
-    func symbolKindLabelsAreLocalized() {
+    @Test("Every symbol kind uses the requested language and English fallback", arguments: [
+        (SymbolKind.class, "Класс", "Class"),
+        (SymbolKind.struct, "Структура", "Struct"),
+        (SymbolKind.enum, "Перечисление", "Enum"),
+        (SymbolKind.interface, "Интерфейс", "Interface"),
+        (SymbolKind.namespace, "Пространство имён", "Namespace"),
+        (SymbolKind.function, "Функция", "Function"),
+        (SymbolKind.property, "Свойство", "Property"),
+        (SymbolKind.variable, "Переменная", "Variable"),
+        (SymbolKind.other, "Символ", "Symbol"),
+    ])
+    func symbolKindLabelsAreLocalized(
+        kind: SymbolKind,
+        russianLabel: String,
+        fallbackLabel: String
+    ) {
         let russian = Locale(identifier: "ru")
+        let unsupported = Locale(identifier: "zz-ZZ")
+
+        #expect(Strings.symbolKindName(kind, locale: russian) == russianLabel)
         #expect(
-            Strings.symbolKindName(.namespace, locale: russian)
-                == "Пространство имён"
-        )
-        #expect(
-            Strings.symbolKindName(.variable, locale: russian)
-                == "Переменная"
-        )
-        #expect(
-            Strings.symbolKindName(.other, locale: russian)
-                == "Символ"
+            Strings.symbolKindName(kind, locale: unsupported) == fallbackLabel
         )
     }
 

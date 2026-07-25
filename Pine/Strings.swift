@@ -1,3 +1,4 @@
+import Foundation
 import SwiftUI
 
 /// Centralized UI strings for Pine.
@@ -248,26 +249,86 @@ enum Strings {
         _ kind: SymbolKind,
         locale: Locale = .current
     ) -> String {
+        let localization: (key: String, fallback: String)
         switch kind {
         case .class:
-            String(localized: "symbolKind.class", locale: locale)
+            localization = ("symbolKind.class", "Class")
         case .struct:
-            String(localized: "symbolKind.struct", locale: locale)
+            localization = ("symbolKind.struct", "Struct")
         case .enum:
-            String(localized: "symbolKind.enum", locale: locale)
+            localization = ("symbolKind.enum", "Enum")
         case .interface:
-            String(localized: "symbolKind.interface", locale: locale)
+            localization = ("symbolKind.interface", "Interface")
         case .namespace:
-            String(localized: "symbolKind.namespace", locale: locale)
+            localization = ("symbolKind.namespace", "Namespace")
         case .function:
-            String(localized: "symbolKind.function", locale: locale)
+            localization = ("symbolKind.function", "Function")
         case .property:
-            String(localized: "symbolKind.property", locale: locale)
+            localization = ("symbolKind.property", "Property")
         case .variable:
-            String(localized: "symbolKind.variable", locale: locale)
+            localization = ("symbolKind.variable", "Variable")
         case .other:
-            String(localized: "symbolKind.symbol", locale: locale)
+            localization = ("symbolKind.symbol", "Symbol")
         }
+        return localizedString(
+            forKey: localization.key,
+            fallback: localization.fallback,
+            locale: locale
+        )
+    }
+
+    private static func localizedString(
+        forKey key: String,
+        fallback: String,
+        locale: Locale,
+        bundle: Bundle = .main
+    ) -> String {
+        // `String(localized:locale:)` uses `locale` only to format
+        // interpolated values; it does not select a localized resource.
+        // Resolve the requested language explicitly, then look up the key in
+        // that language's sub-bundle so previews and tests are deterministic.
+        let localeIdentifier = locale.identifier
+            .split(separator: "@", maxSplits: 1)
+            .first
+            .map(String.init) ?? locale.identifier
+        let requestedLocalization = localeIdentifier
+            .replacingOccurrences(of: "_", with: "-")
+        let developmentLocalization = bundle.developmentLocalization ?? "en"
+        let preferredLocalization = Bundle.preferredLocalizations(
+            from: bundle.localizations,
+            forPreferences: [
+                requestedLocalization,
+                developmentLocalization,
+            ]
+        ).first ?? developmentLocalization
+
+        func languageBundle(for localization: String) -> Bundle? {
+            guard let path = bundle.path(
+                forResource: localization,
+                ofType: "lproj"
+            ) else {
+                return nil
+            }
+            return Bundle(path: path)
+        }
+
+        let developmentValue = languageBundle(
+            for: developmentLocalization
+        )?.localizedString(
+            forKey: key,
+            value: fallback,
+            table: nil
+        ) ?? fallback
+        guard let preferredBundle = languageBundle(
+            for: preferredLocalization
+        ) else {
+            return developmentValue
+        }
+        return preferredBundle.localizedString(
+            forKey: key,
+            value: developmentValue,
+            table: nil
+        )
     }
 
     // MARK: - Branch Switcher
