@@ -197,22 +197,24 @@ struct CoordinatorExtendedTests {
 
     // MARK: - Fold operations
 
-    @Test func recalculateFoldableRanges_findsRanges() {
+    @Test func recalculateFoldableRanges_findsRanges() async {
         let text = "func test() {\n    print(\"hello\")\n}\n"
         let (coordinator, _, _) = makeCoordinator(text: text, language: "swift")
 
         coordinator.recalculateFoldableRanges()
+        await waitForFoldCalculation(coordinator)
         #expect(!coordinator.foldableRanges.isEmpty)
         #expect(coordinator.lineStartsCache != nil)
     }
 
-    @Test func recalculateFoldableRanges_emptyTextHasNoRanges() {
+    @Test func recalculateFoldableRanges_emptyTextHasNoRanges() async {
         let (coordinator, _, _) = makeCoordinator(text: "")
         coordinator.recalculateFoldableRanges()
+        await waitForFoldCalculation(coordinator)
         #expect(coordinator.foldableRanges.isEmpty)
     }
 
-    @Test func handleFoldToggle_togglesFoldState() {
+    @Test func handleFoldToggle_togglesFoldState() async {
         let text = "func test() {\n    print(\"hello\")\n}\n"
         var foldState = FoldState()
         let editorView = CodeEditorView(
@@ -230,6 +232,7 @@ struct CoordinatorExtendedTests {
         coordinator.scrollView = scrollView
         coordinator.syncContentVersion()
         coordinator.recalculateFoldableRanges()
+        await waitForFoldCalculation(coordinator)
 
         guard let range = coordinator.foldableRanges.first else {
             #expect(Bool(false), "Should have at least one foldable range")
@@ -238,6 +241,15 @@ struct CoordinatorExtendedTests {
 
         coordinator.handleFoldToggle(range)
         #expect(foldState.isFolded(range))
+    }
+
+    private func waitForFoldCalculation(
+        _ coordinator: CodeEditorView.Coordinator
+    ) async {
+        for _ in 0..<100 where coordinator.lineStartsCache == nil {
+            try? await Task.sleep(for: .milliseconds(10))
+        }
+        #expect(coordinator.lineStartsCache != nil)
     }
 
     // MARK: - Bracket matching with nested brackets

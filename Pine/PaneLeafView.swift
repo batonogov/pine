@@ -385,6 +385,14 @@ struct PaneLeafView: View {
             initialCursorPosition: goToLineOffset?.offset ?? tab.cursorPosition,
             initialScrollOffset: goToLineOffset != nil ? 0 : tab.scrollOffset,
             definitionQuickPickController: definitionQuickPickController,
+            lspFoldRangeRequester: { url, text in
+                await projectManager.lspManager.foldingRanges(
+                    url: url,
+                    text: text
+                )
+            },
+            lspFoldRefreshGeneration:
+                projectManager.lspManager.foldingRefreshGeneration,
             onStateChange: { cursor, scroll in
                 tabManager.updateEditorState(cursorPosition: cursor, scrollOffset: scroll)
             },

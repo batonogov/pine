@@ -22,6 +22,14 @@
             "baseline_seconds": 0.015,
             "description": "1000 blocks x 5 lines each"
         },
+        "StructuralProviderPerformanceTests/testLargeRegexSymbolSnapshot": {
+            "baseline_seconds": 0.850,
+            "description": "Regex symbol fallback over a 5000-line Swift snapshot"
+        },
+        "StructuralProviderPerformanceTests/testRegexSymbolSnapshotAfterIncrementalEdit": {
+            "baseline_seconds": 0.145,
+            "description": "Regex symbol fallback after a small edit in a 2000-line Swift snapshot"
+        },
         "SyntaxHighlighterPerformanceTests/testFullHighlight500Lines": {
             "baseline_seconds": 0.010,
             "description": "Full syntax highlight of 500-line Swift file"

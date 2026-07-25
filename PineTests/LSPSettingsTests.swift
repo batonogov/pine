@@ -286,6 +286,12 @@ private class RecordingLSPClient: LSPClientProtocol {
     private(set) var closes: [String] = []
     private(set) var shutdownCount = 0
     private(set) var gracefulShutdownCount = 0
+    var foldingSupported = false
+    var foldingRangesResult: [LSPFoldingRange] = []
+    private(set) var foldingRequests: [String] = []
+    var documentSymbolsSupported = false
+    var documentSymbolsResult: [LSPDocumentSymbol] = []
+    private(set) var documentSymbolRequests: [String] = []
 
     func startForManager(
         command: String,
@@ -333,6 +339,24 @@ private class RecordingLSPClient: LSPClientProtocol {
 
     func didClose(uri: String) {
         closes.append(uri)
+    }
+
+    var supportsFoldingRange: Bool {
+        foldingSupported
+    }
+
+    func foldingRange(uri: String) async -> [LSPFoldingRange] {
+        foldingRequests.append(uri)
+        return foldingRangesResult
+    }
+
+    var supportsDocumentSymbols: Bool {
+        documentSymbolsSupported
+    }
+
+    func documentSymbols(uri: String) async -> [LSPDocumentSymbol] {
+        documentSymbolRequests.append(uri)
+        return documentSymbolsResult
     }
 }
 
@@ -762,6 +786,125 @@ struct LSPSettingsLifecycleTests {
         )
         manager.didChange(url: secondURL, text: "must be ignored")
         #expect(replacement.changes.isEmpty)
+    }
+
+    @Test("Folding query requires the exact synchronized document snapshot")
+    func foldingRequiresExactSynchronizedSnapshot() async {
+        let settings = makeSettings()
+        let client = RecordingLSPClient()
+        client.foldingSupported = true
+        client.foldingRangesResult = [
+            LSPFoldingRange(startLine: 0, endLine: 1)
+        ]
+        let manager = LSPManager(
+            settings: settings,
+            resolver: TestLSPResolver(executablePath: "/bin/echo")
+        ) { _ in client }
+        let url = URL(fileURLWithPath: "/project/App.swift")
+
+        manager.didOpen(url: url, text: "func old() {\n}")
+        await waitUntil {
+            manager.servers["swift"]?.state == .initialized
+                && client.opens.count == 1
+        }
+        #expect(manager.foldingRefreshGeneration == 1)
+
+        let initial = await manager.foldingRanges(
+            url: url,
+            text: "func old() {\n}"
+        )
+        #expect(initial?.count == 1)
+        #expect(client.foldingRequests == [url.absoluteString])
+
+        let unsynchronized = await manager.foldingRanges(
+            url: url,
+            text: "func new() {\n}"
+        )
+        #expect(unsynchronized == nil)
+        #expect(client.foldingRequests == [url.absoluteString])
+        #expect(client.changes.isEmpty)
+
+        manager.didChange(url: url, text: "func new() {\n}")
+        let synchronized = await manager.foldingRanges(
+            url: url,
+            text: "func new() {\n}"
+        )
+        #expect(synchronized?.count == 1)
+        #expect(client.changes.last?.text == "func new() {\n}")
+        #expect(
+            client.foldingRequests
+                == [url.absoluteString, url.absoluteString]
+        )
+
+        manager.didClose(url: url)
+        let closed = await manager.foldingRanges(
+            url: url,
+            text: "func new() {\n}"
+        )
+        #expect(closed == nil)
+        #expect(client.foldingRequests.count == 2)
+    }
+
+    @Test("Document symbols require the exact synchronized snapshot")
+    func symbolsRequireExactSynchronizedSnapshot() async {
+        let settings = makeSettings()
+        let client = RecordingLSPClient()
+        client.documentSymbolsSupported = true
+        client.documentSymbolsResult = [
+            LSPDocumentSymbol(
+                name: "old",
+                kind: 12,
+                range: LSPRange(
+                    start: LSPPosition(line: 0, character: 0),
+                    end: LSPPosition(line: 0, character: 13)
+                ),
+                selectionRange: LSPRange(
+                    start: LSPPosition(line: 0, character: 5),
+                    end: LSPPosition(line: 0, character: 8)
+                )
+            )
+        ]
+        let manager = LSPManager(
+            settings: settings,
+            resolver: TestLSPResolver(executablePath: "/bin/echo")
+        ) { _ in client }
+        let url = URL(fileURLWithPath: "/project/App.swift")
+
+        manager.didOpen(url: url, text: "func old() {}")
+        await waitUntil {
+            manager.servers["swift"]?.state == .initialized
+                && client.opens.count == 1
+        }
+
+        let initial = await manager.documentSymbols(
+            url: url,
+            text: "func old() {}"
+        )
+        #expect(initial?.map(\.name) == ["old"])
+        #expect(client.documentSymbolRequests == [url.absoluteString])
+
+        let unsynchronized = await manager.documentSymbols(
+            url: url,
+            text: "func new() {}"
+        )
+        #expect(unsynchronized == nil)
+        #expect(client.documentSymbolRequests == [url.absoluteString])
+
+        manager.didChange(url: url, text: "func new() {}")
+        let synchronized = await manager.documentSymbols(
+            url: url,
+            text: "func new() {}"
+        )
+        #expect(synchronized?.map(\.name) == ["old"])
+        #expect(client.documentSymbolRequests.count == 2)
+
+        manager.didClose(url: url)
+        let closed = await manager.documentSymbols(
+            url: url,
+            text: "func new() {}"
+        )
+        #expect(closed == nil)
+        #expect(client.documentSymbolRequests.count == 2)
     }
 
     private func waitUntil(

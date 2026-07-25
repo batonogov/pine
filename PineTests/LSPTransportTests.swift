@@ -714,11 +714,28 @@ struct LSPProcessTransportTests {
     }
 
     @Test(
-        "Cancelling a request clears its pending continuation",
+        "Cancelling a request clears local state and notifies the server",
         .timeLimit(.minutes(1))
     )
     func requestCancellationClearsPendingState() async throws {
+        let captureURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: captureURL) }
+
         let client = LSPClient(language: "test")
+        defer { client.transport.terminate(timeout: 0.1) }
+        #expect(
+            client.transport.start(
+                command: "/bin/sh",
+                arguments: [
+                    "-c",
+                    "/bin/cat > \"$PINE_LSP_CAPTURE\""
+                ],
+                environment: [
+                    "PINE_LSP_CAPTURE": captureURL.path
+                ]
+            )
+        )
         let request = Task { @MainActor in
             let result = try await client.sendRequest(
                 "textDocument/hover",
@@ -738,6 +755,39 @@ struct LSPProcessTransportTests {
             _ = try await request.value
         }
         #expect(client.pendingRequestCount == 0)
+
+        try #require(
+            await waitUntil {
+                guard let data = try? Data(contentsOf: captureURL) else {
+                    return false
+                }
+                var parser = LSPMessageStreamParser()
+                return parser.append(data).contains { event in
+                    guard case .message(let message) = event else {
+                        return false
+                    }
+                    return message["method"] as? String
+                        == "$/cancelRequest"
+                }
+            }
+        )
+        var parser = LSPMessageStreamParser()
+        let events = parser.append(try Data(contentsOf: captureURL))
+        let messages = events.compactMap { event in
+            if case .message(let message) = event {
+                return message
+            }
+            return nil
+        }
+        let cancellation = try #require(
+            messages.first {
+                $0["method"] as? String == "$/cancelRequest"
+            }
+        )
+        let params = try #require(
+            cancellation["params"] as? [String: Any]
+        )
+        #expect(params["id"] as? Int == 1)
     }
 
     @Test(
@@ -889,6 +939,11 @@ struct LSPProcessTransportTests {
         let messages = log.split(separator: "\n").map(String.init)
         try #require(messages.count == 4)
         #expect(messages[0].contains("\"method\":\"initialize\""))
+        #expect(
+            messages[0].contains(
+                "\"hierarchicalDocumentSymbolSupport\":true"
+            )
+        )
         #expect(messages[1].contains("\"method\":\"initialized\""))
         #expect(messages[2].contains("\"method\":\"shutdown\""))
         #expect(messages[3].contains("\"method\":\"exit\""))

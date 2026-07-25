@@ -6,7 +6,7 @@
 import Foundation
 
 /// Описание складываемого региона кода.
-struct FoldableRange: Equatable, Sendable {
+nonisolated struct FoldableRange: Equatable, Sendable {
     /// 1-based номер строки с открывающей скобкой
     let startLine: Int
     /// 1-based номер строки с закрывающей скобкой
@@ -20,14 +20,14 @@ struct FoldableRange: Equatable, Sendable {
 }
 
 /// Тип складываемого региона.
-enum FoldKind: Equatable, Sendable {
+nonisolated enum FoldKind: Equatable, Sendable {
     case braces       // { }
     case brackets     // [ ]
     case parentheses  // ( )
 }
 
 /// Вычисляет складываемые регионы по парным скобкам.
-enum FoldRangeCalculator {
+nonisolated enum FoldRangeCalculator {
 
     /// Maximum nesting depth for bracket matching stack.
     /// Prevents unbounded memory growth on pathological input.

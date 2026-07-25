@@ -33,11 +33,54 @@ extension CodeEditorView {
         /// Cached foldable ranges for the current text.
         var foldableRanges: [FoldableRange] = []
 
+        /// Snapshot adapter around Pine's bounded bracket matcher (#1008).
+        private let bracketProvider = BoundedBracketProvider()
+        private var bracketRevision = 0
+
         /// Cached line starts for O(log n) line number lookups.
         var lineStartsCache: LineStartsCache?
 
         /// Debounced fold recalculation work item.
         private var foldWorkItem: DispatchWorkItem?
+        /// In-flight immutable fallback calculation and LSP refinement.
+        private var foldCalculationTask: Task<Void, Never>?
+
+        /// Last project lifecycle generation consumed for an LSP folding
+        /// retry. Initialized from the view so ordinary SwiftUI updates do not
+        /// issue duplicate structural requests.
+        private(set) var lastLSPFoldRefreshGeneration: Int
+
+        /// LSP-first structural folding orchestrator (#1008). Owns the
+        /// generation token that discards stale in-flight LSP replies.
+        private lazy var foldingCoordinator: FoldingCoordinator = {
+            FoldingCoordinator(
+                lspProvider: lspFoldProvider
+            )
+        }()
+
+        /// LSP fold provider wired to this editor's owning project. Lazily
+        /// created so files that are never recalculated do not touch the LSP
+        /// stack.
+        private lazy var lspFoldProvider: LSPFoldProvider = {
+            LSPFoldProvider { [weak self] snapshot in
+                await self?.requestLSPFoldRanges(snapshot: snapshot) ?? nil
+            }
+        }()
+
+        /// Reads the current file URL on the main actor and issues the request
+        /// through the closure injected into this specific editor. A shared
+        /// endpoint is unsafe here: inactive panes also refresh folds and
+        /// could otherwise query another window's project.
+        @MainActor
+        func requestLSPFoldRanges(
+            snapshot: DocumentSnapshot
+        ) async -> [LSPFoldingRange]? {
+            guard let url = parent.fileURL,
+                  let requester = parent.lspFoldRangeRequester else {
+                return nil
+            }
+            return await requester(url, snapshot.text)
+        }
 
         /// Последние язык/имя файла — для обнаружения смены грамматики
         /// при одинаковом содержимом файлов
@@ -163,6 +206,8 @@ extension CodeEditorView {
 
         init(parent: CodeEditorView) {
             self.parent = parent
+            self.lastLSPFoldRefreshGeneration =
+                parent.lspFoldRefreshGeneration
             // Initialize language/fileName to match the initial view,
             // preventing a false languageChanged detection on the first
             // updateNSView call (issue #556).
@@ -797,11 +842,22 @@ extension CodeEditorView {
                 fileName: parent.fileName
             )
 
-            guard let highlight = BracketMatcher.findHighlight(
-                in: substring,
+            bracketRevision &+= 1
+            let document = DocumentSnapshot(
+                uri: parent.fileURL?.absoluteString ?? "",
+                text: substring,
+                revision: DocumentRevision(bracketRevision)
+            )
+            let request = BracketSnapshot(
+                document: document,
                 cursorPosition: localCursor,
                 skipRanges: skipRanges
-            ) else { return nil }
+            )
+            guard let highlight = bracketProvider.highlight(
+                for: request
+            ) else {
+                return nil
+            }
 
             switch highlight {
             case .matched(let match):
@@ -1006,23 +1062,129 @@ extension CodeEditorView {
 
         // MARK: - Code folding
 
-        /// Recalculates foldable ranges from the current text.
+        /// Recalculates foldable ranges from an immutable text snapshot.
+        /// Syntax-context extraction and the full bracket scan stay off the
+        /// main actor; only current-generation results update AppKit views.
         func recalculateFoldableRanges() {
             guard let sv = scrollView,
                   let textView = sv.documentView as? NSTextView else { return }
+            foldCalculationTask?.cancel()
+
             let text = textView.string
-            // Update cache if not yet initialized (e.g. called from updateNSView on first load)
-            if lineStartsCache == nil {
-                lineStartsCache = LineStartsCache(text: text)
-            }
-            let skipRanges = SyntaxHighlighter.shared.commentAndStringRanges(
-                in: text,
-                language: parent.language,
-                fileName: parent.fileName
+            let language = parent.language
+            let fileName = parent.fileName
+            let revision = DocumentRevision(
+                foldingCoordinator.invalidate()
             )
-            foldableRanges = FoldRangeCalculator.calculate(text: text, skipRanges: skipRanges)
-            lineNumberView?.foldableRanges = foldableRanges
-            lineNumberView?.lineStartsCache = lineStartsCache
+            let snapshot = DocumentSnapshot(
+                uri: parent.fileURL?.absoluteString ?? "",
+                text: text,
+                revision: revision
+            )
+            let coordinator = foldingCoordinator
+            let highlighter = SyntaxHighlighter.shared
+            let fallbackProvider = LocalFoldProvider(
+                language: language
+            ) { snapshotText in
+                highlighter.commentAndStringRanges(
+                    in: snapshotText,
+                    language: language,
+                    fileName: fileName
+                )
+            }
+            let needsLineStarts = lineStartsCache == nil
+
+            foldCalculationTask = Task { @MainActor [weak self] in
+                async let fallback = fallbackProvider.foldRanges(
+                    for: snapshot
+                )
+                let computedLineStarts: LineStartsCache?
+                if needsLineStarts {
+                    computedLineStarts = await Task.detached(
+                        priority: .userInitiated
+                    ) {
+                        LineStartsCache(text: text)
+                    }.value
+                } else {
+                    computedLineStarts = nil
+                }
+                let fallbackRanges = await fallback ?? []
+
+                guard let self,
+                      !Task.isCancelled,
+                      coordinator.isCurrent(revision),
+                      self.isCurrentFoldSnapshot(snapshot) else {
+                    return
+                }
+                if let computedLineStarts {
+                    self.lineStartsCache = computedLineStarts
+                }
+                self.foldableRanges = fallbackRanges
+                self.lineNumberView?.foldableRanges = fallbackRanges
+                self.lineNumberView?.lineStartsCache =
+                    self.lineStartsCache
+
+                // The local fallback is visible before LSP refinement. A
+                // valid, current response replaces it; every failure mode
+                // leaves this local set intact.
+                let resolution = await coordinator.refine(
+                    snapshot: snapshot,
+                    fallbackRanges: fallbackRanges
+                )
+                guard !Task.isCancelled,
+                      coordinator.isCurrent(revision),
+                      self.isCurrentFoldSnapshot(snapshot) else {
+                    return
+                }
+                self.applyFoldingResolution(resolution)
+            }
+        }
+
+        private func isCurrentFoldSnapshot(
+            _ snapshot: DocumentSnapshot
+        ) -> Bool {
+            guard let textView =
+                scrollView?.documentView as? NSTextView else {
+                return false
+            }
+            return textView.string == snapshot.text
+                && (parent.fileURL?.absoluteString ?? "")
+                    == snapshot.uri
+        }
+
+        /// Retries structural folding when the owning project has announced
+        /// one or more pending documents to an initialized LSP generation.
+        /// `makeNSView` precedes SwiftUI's `onAppear`, so the first request can
+        /// legitimately run before `didOpen`; this lifecycle token supplies
+        /// the deterministic retry once the document is queryable.
+        func refreshStructuralFoldRangesIfNeeded(generation: Int) {
+            guard generation != lastLSPFoldRefreshGeneration else { return }
+            lastLSPFoldRefreshGeneration = generation
+            guard scrollView?.documentView is NSTextView else {
+                return
+            }
+            // Re-run the immutable fallback as well. If server readiness
+            // races the initial calculation, this newest generation must own
+            // both providers so neither path can invalidate the other.
+            recalculateFoldableRanges()
+        }
+
+        /// Applies a structural folding resolution on the main thread.
+        private func applyFoldingResolution(_ resolution: FoldResolution) {
+            switch resolution {
+            case .resolved(let ranges, source: .lsp):
+                // The LSP provider won for the current revision — replace the
+                // visible local ranges and refresh the gutter.
+                foldableRanges = ranges
+                lineNumberView?.foldableRanges = foldableRanges
+            case .resolved(_, source: .local):
+                // Local ranges already visible; nothing to update.
+                break
+            case .stale:
+                // A newer request superseded this revision; keep the current
+                // display and let the newer request resolve.
+                break
+            }
         }
 
         /// Schedules a debounced fold recalculation.

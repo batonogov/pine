@@ -7,7 +7,7 @@ import Foundation
 
 /// Кэш позиций начала строк для быстрого определения номера строки по символьному смещению.
 /// Использует binary search — O(log n) вместо линейного сканирования O(n).
-struct LineStartsCache {
+nonisolated struct LineStartsCache: Sendable {
     /// Массив UTF-16 смещений начала каждой строки. Первый элемент всегда 0.
     private var lineStarts: [Int]
 

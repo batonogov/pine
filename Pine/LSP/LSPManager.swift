@@ -56,6 +56,14 @@ final class LSPManager {
     /// needed when building the `CodeActionContext.diagnostics` array.
     private var rawDiagnosticsByURI: [String: [LSPDiagnostic]] = [:]
 
+    /// Advances whenever pending editor buffers are announced to an
+    /// initialized client generation. Structural consumers observe this to
+    /// retry requests that can precede SwiftUI's `onAppear`/`didOpen`.
+    ///
+    /// The compatibility name originated with folding; it now drives symbols
+    /// as well.
+    private(set) var foldingRefreshGeneration = 0
+
     /// The single persisted source of truth for the global toggle.
     var enabled: Bool { settings.isEnabled }
 
@@ -298,6 +306,110 @@ final class LSPManager {
         let uri = url.absoluteString
         let position = LSPPositionConverter.lspPosition(utf16Offset: offset, in: text)
         return await servers[language]?.client.definition(uri: uri, position: position) ?? .empty
+    }
+
+    // MARK: - Structural queries (folding — #1008)
+
+    /// Requests LSP fold ranges for the file at `url`. Returns the decoded
+    /// `LSPFoldingRange` list, or `nil` when LSP is disabled, the file has no
+    /// server, the server lacks `foldingRange` capability, or the request
+    /// fails. A `nil` return tells `FoldingCoordinator` to defer to the
+    /// bracket fallback.
+    ///
+    /// `text` is the immutable editor snapshot this request must match. The
+    /// request fails closed unless that exact text is already synchronized to
+    /// the current client generation; a structural query must never roll the
+    /// server back to an older snapshot merely to satisfy itself.
+    func foldingRanges(url: URL, text: String) async -> [LSPFoldingRange]? {
+        guard enabled else { return nil }
+        guard let serverConfig = LanguageServerRegistry.server(for: url) else { return nil }
+        let language = serverConfig.language
+        guard openDocumentOwnerCounts[url, default: 0] > 0,
+              openDocuments[url]?.text == text else {
+            return nil
+        }
+        guard await ensureServer(for: serverConfig) else { return nil }
+        guard servers[language]?.state == .initialized else { return nil }
+        // `ensureServer` can suspend while edits, closes, or a settings
+        // restart advance the document/client generation. Revalidate before
+        // announcing or querying anything.
+        guard openDocumentOwnerCounts[url, default: 0] > 0,
+              openDocuments[url]?.text == text else {
+            return nil
+        }
+        sendPendingDidOpen(for: language)
+        guard openedDocumentsByLanguage[language]?.contains(url) == true,
+              let client = servers[language]?.client,
+              client.supportsFoldingRange else {
+            return nil
+        }
+
+        let clientID = ObjectIdentifier(client)
+        let serverGeneration = serverGenerations[language, default: 0]
+        let uri = url.absoluteString
+        let ranges = await client.foldingRange(uri: uri)
+        guard !Task.isCancelled,
+              serverGenerations[language, default: 0] == serverGeneration,
+              let currentClient = servers[language]?.client,
+              ObjectIdentifier(currentClient) == clientID,
+              openedDocumentsByLanguage[language]?.contains(url) == true,
+              openDocumentOwnerCounts[url, default: 0] > 0,
+              openDocuments[url]?.text == text else {
+            return nil
+        }
+        // An empty list means "no ranges / unsupported" — surface as nil so
+        // the provider defers to the bracket fallback rather than blanking
+        // all structure.
+        return ranges.isEmpty ? nil : ranges
+    }
+
+    /// Requests hierarchical LSP document symbols for an exact synchronized
+    /// snapshot. Every lifecycle check mirrors folding: no server,
+    /// unsupported capability, stale text, client replacement, cancellation,
+    /// and empty results all defer to the regex provider.
+    func documentSymbols(
+        url: URL,
+        text: String
+    ) async -> [LSPDocumentSymbol]? {
+        guard enabled else { return nil }
+        guard let serverConfig = LanguageServerRegistry.server(for: url) else {
+            return nil
+        }
+        let language = serverConfig.language
+        guard openDocumentOwnerCounts[url, default: 0] > 0,
+              openDocuments[url]?.text == text else {
+            return nil
+        }
+        guard await ensureServer(for: serverConfig),
+              servers[language]?.state == .initialized else {
+            return nil
+        }
+        guard openDocumentOwnerCounts[url, default: 0] > 0,
+              openDocuments[url]?.text == text else {
+            return nil
+        }
+        sendPendingDidOpen(for: language)
+        guard openedDocumentsByLanguage[language]?.contains(url) == true,
+              let client = servers[language]?.client,
+              client.supportsDocumentSymbols else {
+            return nil
+        }
+
+        let clientID = ObjectIdentifier(client)
+        let serverGeneration = serverGenerations[language, default: 0]
+        let symbols = await client.documentSymbols(
+            uri: url.absoluteString
+        )
+        guard !Task.isCancelled,
+              serverGenerations[language, default: 0] == serverGeneration,
+              let currentClient = servers[language]?.client,
+              ObjectIdentifier(currentClient) == clientID,
+              openedDocumentsByLanguage[language]?.contains(url) == true,
+              openDocumentOwnerCounts[url, default: 0] > 0,
+              openDocuments[url]?.text == text else {
+            return nil
+        }
+        return symbols.isEmpty ? nil : symbols
     }
 
     // MARK: - Phase 3 queries (completion)
@@ -656,6 +768,7 @@ final class LSPManager {
                     ) != true
             }
             .sorted { $0.url.absoluteString < $1.url.absoluteString }
+        guard !pending.isEmpty else { return }
         for document in pending {
             openedDocumentsByLanguage[language, default: []].insert(
                 document.url
@@ -667,6 +780,7 @@ final class LSPManager {
                 text: document.text
             )
         }
+        foldingRefreshGeneration &+= 1
     }
 
     private func hasOpenDocuments(for language: String) -> Bool {

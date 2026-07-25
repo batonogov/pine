@@ -59,6 +59,16 @@ struct CodeEditorView: NSViewRepresentable {
     /// Definition quick-pick controller, passed from PaneLeafView so the
     /// overlay and the coordinator share the same observable instance.
     var definitionQuickPickController: DefinitionQuickPickController?
+    /// Project-scoped structural folding request. This is injected per editor
+    /// instead of routed through the process-wide UI endpoint because folding
+    /// runs automatically in every visible pane, not only in the first
+    /// responder.
+    var lspFoldRangeRequester:
+        (@MainActor @Sendable (URL, String) async -> [LSPFoldingRange]?)? = nil
+    /// Advances after this editor's project announces pending documents to
+    /// an initialized language server. A changed value retries structural
+    /// folding for the current immutable buffer without waiting for an edit.
+    var lspFoldRefreshGeneration: Int = 0
     /// Called when cursor position or scroll offset changes, so the caller can persist them.
     var onStateChange: ((Int, CGFloat) -> Void)?
     /// Called when a new syntax highlight result is computed, so the caller can cache it in the tab.
@@ -442,6 +452,9 @@ struct CodeEditorView: NSViewRepresentable {
             language: language,
             fileName: fileName,
             font: editorFont
+        )
+        context.coordinator.refreshStructuralFoldRangesIfNeeded(
+            generation: lspFoldRefreshGeneration
         )
 
         // Обновляем шрифт при изменении размера (Cmd+Plus/Minus)
