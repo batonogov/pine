@@ -219,12 +219,13 @@ struct AgentActivityStoreTests {
         let action = try #require(store.actions.first)
         #expect(action.sessionID == nil)
         #expect(action.agentType == nil)
+        let expectedCandidates = [
+            candidate(sessionID: sessionA, agentType: .claudeCode),
+            candidate(sessionID: sessionB, agentType: .codex)
+        ].sorted { $0.sessionID.uuidString < $1.sessionID.uuidString }
         #expect(
             action.attribution
-                == .ambiguous(candidates: [
-                    candidate(sessionID: sessionA, agentType: .claudeCode),
-                    candidate(sessionID: sessionB, agentType: .codex)
-                ])
+                == .ambiguous(candidates: expectedCandidates)
         )
         #expect(action.summary == Strings.agentActivityFileChanged("a.swift"))
     }
