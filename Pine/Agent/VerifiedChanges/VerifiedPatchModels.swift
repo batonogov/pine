@@ -39,8 +39,10 @@ nonisolated enum VerifiedPatchLimits {
     static let maximumAggregateMappingCellCount = 8_000_000
     static let maximumHunkCount = 1_024
     static let maximumPathByteCount = 4_096
+    static let maximumPreviewLineCountPerHunk = 2 * maximumLineCount + 4
     static let maximumPreparedHunkByteCount = 64 * 1_024 * 1_024
     static let maximumPreparedLineReferenceCount = 2_097_152
+    static let maximumLineComparisonByteCount = 32 * 1_024 * 1_024
 }
 
 /// Canonical owner-private workspace identity supplied by an ingress receipt.

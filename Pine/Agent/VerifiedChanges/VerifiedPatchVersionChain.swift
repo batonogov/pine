@@ -507,6 +507,20 @@ nonisolated enum VerifiedPatchVersionChainDetector {
                     ))
                     continue
                 }
+                if let previousRange = descriptorCASRange(previous),
+                   let currentRange = descriptorCASRange(current),
+                   currentRange.lowerBound <= previousRange.upperBound {
+                    conflicts.append(VerifiedPatchVersionConflict(
+                        pathScope: nil,
+                        patchIDs: [previous.id, current.id],
+                        sessionIDs: [current.receipt.sessionID],
+                        reason: .descriptorCASOrderMismatch(
+                            previous: previousRange.upperBound,
+                            actual: currentRange.lowerBound
+                        )
+                    ))
+                    continue
+                }
                 guard previous.receipt.lastCursorValue < UInt64.max else {
                     conflicts.append(VerifiedPatchVersionConflict(
                         pathScope: nil,
@@ -533,6 +547,22 @@ nonisolated enum VerifiedPatchVersionChainDetector {
                 }
             }
         }
+    }
+
+    private static func descriptorCASRange(
+        _ patch: VerifiedPatchSet
+    ) -> ClosedRange<UInt64>? {
+        let receipts = patch.receipt.mediatedWriterReceipts
+        guard let first = receipts.first else {
+            return nil
+        }
+        var lowerBound = first.descriptorCASSequence
+        var upperBound = first.descriptorCASSequence
+        for receipt in receipts.dropFirst() {
+            lowerBound = min(lowerBound, receipt.descriptorCASSequence)
+            upperBound = max(upperBound, receipt.descriptorCASSequence)
+        }
+        return lowerBound...upperBound
     }
 
     private static func detectJournalReplay(

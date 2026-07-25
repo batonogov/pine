@@ -1060,6 +1060,122 @@ struct VerifiedPatchBudgetTests {
         }
     }
 
+    @Test("Operation overflow is rejected before any text planning")
+    func operationOverflowPrecedesPlanning() throws {
+        let before = file(alternatingLines(
+            count: 1_413,
+            replacement: "old\n"
+        ))
+        let after = file(alternatingLines(
+            count: 1_413,
+            replacement: "new\n"
+        ))
+        let records = (0...VerifiedPatchLimits.maximumOperationCount)
+            .map { index in
+                record(
+                    envelopeID: id(index + 10_000),
+                    cursor: UInt64(index + 1),
+                    journalSequence: UInt64(index + 1),
+                    changes: [change(
+                        "adversarial/\(index).txt",
+                        before,
+                        after
+                    )]
+                )
+            }
+        let accepted = try receipt(records)
+        var planningCount = 0
+
+        #expect(throws: VerifiedPatchValidationError.tooManyOperations) {
+            try makePatch(
+                patchID: id(10_500),
+                receipt: accepted,
+                sources: records.map {
+                    source(
+                        $0,
+                        ordinal: 0,
+                        before: before,
+                        after: after
+                    )
+                },
+                planningObserver: {
+                    planningCount += 1
+                }
+            )
+        }
+        #expect(planningCount == 0)
+    }
+
+    @Test("Canonical case ordering controls aggregate planning exhaustion")
+    func canonicalOrderControlsPlanningBudget() throws {
+        let before = file(singleEditLines(
+            count: 1_413,
+            replacementIndex: nil,
+            replacement: ""
+        ))
+        let paths = [
+            "Zeta.txt",
+            "alpha.txt",
+            "Beta.txt",
+            "delta.txt",
+            "charlie.txt"
+        ]
+        let records = paths.enumerated().map { index, path in
+            let after = file(singleEditLines(
+                count: 1_413,
+                replacementIndex: 700,
+                replacement: "agent-\(index)"
+            ))
+            return record(
+                envelopeID: id(index + 11_000),
+                cursor: UInt64(index + 1),
+                journalSequence: UInt64(index + 1),
+                changes: [change(path, before, after)]
+            )
+        }
+        let sources = records.enumerated().map { index, value in
+            source(
+                value,
+                ordinal: 0,
+                before: before,
+                after: file(singleEditLines(
+                    count: 1_413,
+                    replacementIndex: 700,
+                    replacement: "agent-\(index)"
+                ))
+            )
+        }
+        let patch = try makePatch(
+            patchID: id(11_500),
+            receipt: try receipt(records),
+            sources: Array(sources.reversed())
+        )
+
+        #expect(patch.operations.map(\.sourcePath) == [
+            "alpha.txt",
+            "Beta.txt",
+            "charlie.txt",
+            "delta.txt",
+            "Zeta.txt"
+        ])
+        for operation in patch.operations.dropLast() {
+            guard case .text = operation.strategy else {
+                Issue.record("First four canonical operations must use text")
+                return
+            }
+        }
+        #expect(patch.operations.last?.strategy == .exactState)
+
+        let forged = VerifiedPatchSet(
+            id: patch.id,
+            receipt: patch.receipt,
+            operations: Array(patch.operations.reversed())
+        )
+        #expect(throws: VerifiedPatchValidationError.self) {
+            try VerifiedPatchEngine.revalidate(forged)
+        }
+    }
+
     @Test("Snapshot file-count limit accepts limit and rejects +1")
     func snapshotFileLimit() throws {
         let after = file("after")
@@ -1094,6 +1210,56 @@ struct VerifiedPatchBudgetTests {
             before: overLimit,
             after: overLimit
         ) == nil)
+    }
+
+    @Test("Long common-prefix lines use the exact estimated cell budget")
+    func longLineComparisonBudget() throws {
+        let before = longPrefixLines(
+            count: 400,
+            replacementIndex: nil,
+            replacement: ""
+        )
+        let after = longPrefixLines(
+            count: 400,
+            replacementIndex: 200,
+            replacement: "changed"
+        )
+        let estimate = try #require(
+            VerifiedTextPatch.estimatedLCSCellCount(
+                before: before,
+                after: after
+            )
+        )
+        let plan = try #require(VerifiedTextPatch.plan(
+            before: before,
+            after: after
+        ))
+
+        #expect(estimate == 160_801)
+        #expect(plan.lcsCellCount == estimate)
+        #expect(plan.hunks.count == 1)
+    }
+
+    @Test("Digest collisions are split by exact line equality")
+    func lineDigestCollisionSafety() throws {
+        let before = Data("alpha\nbravo\nomega\n".utf8)
+        let after = Data("alpha\ndelta\nomega\n".utf8)
+        let collision = try #require(ContentIdentity(
+            sha256Hex: String(repeating: "0", count: 64),
+            byteCount: 0
+        ))
+        let plan = try #require(VerifiedTextPatch.plan(
+            before: before,
+            after: after,
+            lcsCellBudget: VerifiedPatchLimits
+                .maximumLCSCellCountPerDiff,
+            hunkBudget: VerifiedPatchLimits.maximumHunkCount,
+            lineIdentityProvider: { _ in collision }
+        ))
+        let hunk = try #require(plan.hunks.first)
+
+        #expect(hunk.beforeLines == [Data("bravo\n".utf8)])
+        #expect(hunk.afterLines == [Data("delta\n".utf8)])
     }
 
     @Test("Positional mapping work accepts boundary and rejects +1")
@@ -1266,6 +1432,72 @@ struct VerifiedPatchBudgetTests {
                 coordinatorExpectations: textPrepared
                     .coordinatorExpectations,
                 operations: [arithmeticOverflow]
+            ))
+        }
+
+        func operationWithPreviewLines(
+            _ lines: [VerifiedInversePreviewLine]
+        ) -> VerifiedPreparedInverseOperation {
+            let forgedPreviewHunk = VerifiedInverseHunkPreview(
+                capturedAfterStartLine: previewHunk
+                    .capturedAfterStartLine,
+                resolvedCurrentStartLine: previewHunk
+                    .resolvedCurrentStartLine,
+                header: previewHunk.header,
+                lines: lines
+            )
+            return VerifiedPreparedInverseOperation(
+                operationID: textOperation.operationID,
+                kind: textOperation.kind,
+                mode: textOperation.mode,
+                expectations: textOperation.expectations,
+                results: textOperation.results,
+                resolvedTextHunks: textOperation.resolvedTextHunks,
+                preview: VerifiedInverseOperationPreview(
+                    operationID: textOperation.preview.operationID,
+                    kind: textOperation.preview.kind,
+                    sourcePath: textOperation.preview.sourcePath,
+                    destinationPath: textOperation.preview.destinationPath,
+                    expectedCurrent: textOperation.preview.expectedCurrent,
+                    result: textOperation.preview.result,
+                    hunks: [forgedPreviewHunk]
+                )
+            )
+        }
+
+        let excessiveLineCount = Array(
+            repeating: VerifiedInversePreviewLine(
+                kind: .context,
+                bytes: Data()
+            ),
+            count: VerifiedPatchLimits.maximumPreviewLineCountPerHunk + 1
+        )
+        #expect(throws: VerifiedPatchValidationError.self) {
+            try VerifiedPatchEngine.preflightPreparedShape(PreparedInverse(
+                patch: textPatch,
+                coordinatorExpectations: textPrepared
+                    .coordinatorExpectations,
+                operations: [
+                    operationWithPreviewLines(excessiveLineCount)
+                ]
+            ))
+        }
+
+        let excessiveLineBytes = VerifiedInversePreviewLine(
+            kind: .context,
+            bytes: Data(
+                repeating: 0x61,
+                count: VerifiedPatchLimits.maximumFileByteCount + 1
+            )
+        )
+        #expect(throws: VerifiedPatchValidationError.self) {
+            try VerifiedPatchEngine.preflightPreparedShape(PreparedInverse(
+                patch: textPatch,
+                coordinatorExpectations: textPrepared
+                    .coordinatorExpectations,
+                operations: [
+                    operationWithPreviewLines([excessiveLineBytes])
+                ]
             ))
         }
     }
@@ -1680,6 +1912,40 @@ struct VerifiedPatchVersionChainTests {
         } == true)
     }
 
+    @Test("One stream enforces CAS order across disjoint paths")
+    func streamCASOrderAcrossPaths() throws {
+        let first = try singlePatch(
+            patchID: id(15_001),
+            envelopeID: id(15_011),
+            cursor: 1,
+            journalSequence: 10,
+            path: "one.txt",
+            before: file("one-before"),
+            after: file("one-after"),
+            descriptorCASSequence: 4
+        )
+        let second = try singlePatch(
+            patchID: id(15_002),
+            envelopeID: id(15_012),
+            cursor: 2,
+            journalSequence: 20,
+            path: "two.txt",
+            before: file("two-before"),
+            after: file("two-after"),
+            descriptorCASSequence: 3
+        )
+
+        #expect(versionConflicts(
+            VerifiedPatchVersionChainDetector.analyze([second, first])
+        )?.contains {
+            $0.pathScope == nil
+                && $0.reason == .descriptorCASOrderMismatch(
+                    previous: 4,
+                    actual: 3
+                )
+        } == true)
+    }
+
     @Test("Private workspace and physical root identities are bijective")
     func workspaceIdentityBijection() throws {
         let before = file("base")
@@ -2066,12 +2332,14 @@ private func singlePatch(
 private func makePatch(
     patchID: UUID,
     receipt: VerifiedPatchIngressReceipt,
-    sources: [VerifiedPatchSourceOperation]
+    sources: [VerifiedPatchSourceOperation],
+    planningObserver: (() -> Void)? = nil
 ) throws -> VerifiedPatchSet {
     try VerifiedPatchEngine.makePatch(
         id: patchID,
         receipt: receipt,
-        operations: sources
+        operations: sources,
+        planningObserver: planningObserver
     )
 }
 
@@ -2384,6 +2652,35 @@ private func alternatingLines(
             return replacement ?? "a\n"
         }
         return "b\n"
+    }.joined()
+    return Data(value.utf8)
+}
+
+private func singleEditLines(
+    count: Int,
+    replacementIndex: Int?,
+    replacement: String
+) -> Data {
+    let value = (0..<count).map { index in
+        if index == replacementIndex {
+            return "\(replacement)\n"
+        }
+        return "stable-\(index)\n"
+    }.joined()
+    return Data(value.utf8)
+}
+
+private func longPrefixLines(
+    count: Int,
+    replacementIndex: Int?,
+    replacement: String
+) -> Data {
+    let prefix = String(repeating: "p", count: 3 * 1_024)
+    let value = (0..<count).map { index in
+        let suffix = index == replacementIndex
+            ? replacement
+            : "stable-\(index)"
+        return "\(prefix)\(suffix)\n"
     }.joined()
     return Data(value.utf8)
 }

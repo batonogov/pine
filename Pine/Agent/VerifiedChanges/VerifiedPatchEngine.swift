@@ -455,7 +455,8 @@ nonisolated enum VerifiedPatchEngine {
     static func makePatch(
         id: UUID,
         receipt: VerifiedPatchIngressReceipt,
-        operations sources: [VerifiedPatchSourceOperation]
+        operations sources: [VerifiedPatchSourceOperation],
+        planningObserver: (() -> Void)? = nil
     ) throws -> VerifiedPatchSet {
         guard id != zeroUUID else {
             throw VerifiedPatchValidationError.invalidPatchID
@@ -512,7 +513,8 @@ nonisolated enum VerifiedPatchEngine {
 
         let collapsed = try collapse(
             validatedSources,
-            patchID: id
+            patchID: id,
+            planningObserver: planningObserver
         )
         guard !collapsed.isEmpty else {
             throw VerifiedPatchValidationError.noOperations
@@ -524,7 +526,7 @@ nonisolated enum VerifiedPatchEngine {
         let patch = VerifiedPatchSet(
             id: id,
             receipt: validatedReceipt,
-            operations: collapsed.sorted(by: operationOrder)
+            operations: collapsed
         )
         try revalidate(patch)
         return patch
@@ -919,7 +921,8 @@ nonisolated enum VerifiedPatchEngine {
 
     private static func collapse(
         _ orderedSources: [OrderedSource],
-        patchID: UUID
+        patchID: UUID,
+        planningObserver: (() -> Void)?
     ) throws -> [VerifiedPatchOperation] {
         let sorted = orderedSources.sorted(by: sourceOrder)
         var groups: [String: [VerifiedPatchSourceOperation]] = [:]
@@ -938,12 +941,21 @@ nonisolated enum VerifiedPatchEngine {
             spellings[key] = source.sourcePath
             groups[key, default: []].append(source)
         }
+        guard groups.count
+                <= VerifiedPatchLimits.maximumOperationCount else {
+            throw VerifiedPatchValidationError.tooManyOperations
+        }
 
         var operations: [VerifiedPatchOperation] = []
         var occupiedPathKeys: Set<String> = []
-        var aggregateLCSCells = 0
-        var aggregateHunks = 0
-        for key in groups.keys.sorted() {
+        var planningBudget = PatchPlanningBudget()
+        let canonicalPaths = spellings.values.sorted(
+            by: canonicalPathOrder
+        )
+        for sourcePath in canonicalPaths {
+            let key = VerifiedPatchIngressCoordinator.conservativePathKey(
+                sourcePath
+            )
             guard let chain = groups[key],
                   let first = chain.first,
                   let last = chain.last else {
@@ -980,8 +992,8 @@ nonisolated enum VerifiedPatchEngine {
                 kind: kind,
                 before: before,
                 after: after,
-                aggregateLCSCells: &aggregateLCSCells,
-                aggregateHunks: &aggregateHunks
+                budget: &planningBudget,
+                planningObserver: planningObserver
             )
             let operation = VerifiedPatchOperation(
                 id: VerifiedPatchOperationID(
@@ -1069,9 +1081,13 @@ nonisolated enum VerifiedPatchEngine {
         var transitionIDs: Set<VerifiedPatchTransitionID> = []
         var pathKeys: Set<String> = []
         var capturedBytes = 0
-        var hunkCount = 0
-        var lcsCells = 0
+        var planningBudget = PatchPlanningBudget()
 
+        guard patch.operations == patch.operations.sorted(
+            by: operationOrder
+        ) else {
+            throw VerifiedPatchValidationError.invalidOperation(nil)
+        }
         for operation in patch.operations {
             guard operation.id.patchID == patch.id,
                   !operation.id.transitionIDs.isEmpty,
@@ -1172,8 +1188,8 @@ nonisolated enum VerifiedPatchEngine {
                 kind: canonicalKind,
                 before: operation.before,
                 after: operation.after,
-                aggregateLCSCells: &lcsCells,
-                aggregateHunks: &hunkCount
+                budget: &planningBudget,
+                planningObserver: nil
             )
             guard operation.strategy == canonical else {
                 throw VerifiedPatchValidationError.invalidOperation(
@@ -1189,11 +1205,6 @@ nonisolated enum VerifiedPatchEngine {
                 throw VerifiedPatchValidationError.unusedTransition(unused)
             }
             throw VerifiedPatchValidationError.invalidReceipt
-        }
-        guard patch.operations == patch.operations.sorted(
-            by: operationOrder
-        ) else {
-            throw VerifiedPatchValidationError.invalidOperation(nil)
         }
     }
 
@@ -1495,11 +1506,13 @@ nonisolated enum VerifiedPatchEngine {
                             && $0 <= VerifiedPatchLimits.maximumLineCount
                       } ?? true),
                       previewHunk.header.utf8.count
-                        <= VerifiedPatchLimits.maximumPathByteCount else {
+                        <= VerifiedPatchLimits.maximumPathByteCount,
+                      previewHunk.lines.count <= VerifiedPatchLimits
+                        .maximumPreviewLineCountPerHunk else {
                     throw VerifiedPatchValidationError.invalidOperation(nil)
                 }
-                try accumulatePreparedLines(
-                    previewHunk.lines.map(\.bytes),
+                try accumulatePreparedPreviewLines(
+                    previewHunk.lines,
                     lineCount: &hunkLineCount,
                     byteCount: &hunkByteCount
                 )
@@ -1812,6 +1825,32 @@ nonisolated enum VerifiedPatchEngine {
         }
     }
 
+    private static func accumulatePreparedPreviewLines(
+        _ lines: [VerifiedInversePreviewLine],
+        lineCount: inout Int,
+        byteCount: inout Int
+    ) throws {
+        guard let updatedLineCount = checkedAdd(lineCount, lines.count),
+              updatedLineCount <= VerifiedPatchLimits
+                .maximumPreparedLineReferenceCount else {
+            throw VerifiedPatchValidationError.invalidOperation(nil)
+        }
+        lineCount = updatedLineCount
+        for line in lines {
+            guard line.bytes.count
+                    <= VerifiedPatchLimits.maximumFileByteCount,
+                  let updatedByteCount = checkedAdd(
+                    byteCount,
+                    line.bytes.count
+                  ),
+                  updatedByteCount <= VerifiedPatchLimits
+                    .maximumPreparedHunkByteCount else {
+                throw VerifiedPatchValidationError.invalidOperation(nil)
+            }
+            byteCount = updatedByteCount
+        }
+    }
+
     private static func validateDurableExpectations(
         _ events: [VerifiedPatchDurableEventExpectation],
         workspace: VerifiedPatchCoordinatorExpectations
@@ -1915,32 +1954,52 @@ nonisolated enum VerifiedPatchEngine {
         kind: VerifiedPatchOperationKind,
         before: VerifiedPatchFileState?,
         after: VerifiedPatchFileState?,
-        aggregateLCSCells: inout Int,
-        aggregateHunks: inout Int
+        budget: inout PatchPlanningBudget,
+        planningObserver: (() -> Void)?
     ) -> VerifiedPatchApplicationStrategy {
         guard kind == .modify,
               let before,
               let after,
               before.content != after.content,
-              let plan = VerifiedTextPatch.plan(
+              let estimate = VerifiedTextPatch.estimatedLCSCellCount(
                 before: before.content,
                 after: after.content
               ),
+              let remainingCells = checkedSubtract(
+                VerifiedPatchLimits.maximumAggregateLCSCellCount,
+                budget.lcsCells
+              ),
+              estimate <= remainingCells,
+              let remainingHunks = checkedSubtract(
+                VerifiedPatchLimits.maximumHunkCount,
+                budget.hunks
+              ),
+              remainingHunks > 0 else {
+            return .exactState
+        }
+        planningObserver?()
+        guard let plan = VerifiedTextPatch.plan(
+                before: before.content,
+                after: after.content,
+                lcsCellBudget: remainingCells,
+                hunkBudget: remainingHunks
+              ),
+              plan.lcsCellCount == estimate,
               let updatedCells = checkedAdd(
-                aggregateLCSCells,
+                budget.lcsCells,
                 plan.lcsCellCount
               ),
               updatedCells
                 <= VerifiedPatchLimits.maximumAggregateLCSCellCount,
               let updatedHunks = checkedAdd(
-                aggregateHunks,
+                budget.hunks,
                 plan.hunks.count
               ),
               updatedHunks <= VerifiedPatchLimits.maximumHunkCount else {
             return .exactState
         }
-        aggregateLCSCells = updatedCells
-        aggregateHunks = updatedHunks
+        budget.lcsCells = updatedCells
+        budget.hunks = updatedHunks
         return .text(
             hunks: plan.hunks,
             lcsCellCount: plan.lcsCellCount
@@ -2056,17 +2115,26 @@ nonisolated enum VerifiedPatchEngine {
         _ rhs: VerifiedPatchOperation
     ) -> Bool {
         if lhs.sourcePath != rhs.sourcePath {
-            return lhs.sourcePath < rhs.sourcePath
+            return canonicalPathOrder(lhs.sourcePath, rhs.sourcePath)
         }
         let lhsDestination = lhs.destinationPath ?? ""
         let rhsDestination = rhs.destinationPath ?? ""
         if lhsDestination != rhsDestination {
-            return lhsDestination < rhsDestination
+            return canonicalPathOrder(lhsDestination, rhsDestination)
         }
-        return transitionIDOrder(
-            lhs.id.transitionIDs[0],
-            rhs.id.transitionIDs[0]
-        )
+        switch (
+            lhs.id.transitionIDs.first,
+            rhs.id.transitionIDs.first
+        ) {
+        case (.none, .none):
+            return false
+        case (.none, .some):
+            return true
+        case (.some, .none):
+            return false
+        case (.some(let lhsID), .some(let rhsID)):
+            return transitionIDOrder(lhsID, rhsID)
+        }
     }
 
     private static func sourceOrder(
@@ -2090,9 +2158,26 @@ nonisolated enum VerifiedPatchEngine {
         return lhs.ordinal < rhs.ordinal
     }
 
+    private static func canonicalPathOrder(
+        _ lhs: String,
+        _ rhs: String
+    ) -> Bool {
+        let lhsKey = VerifiedPatchIngressCoordinator.conservativePathKey(lhs)
+        let rhsKey = VerifiedPatchIngressCoordinator.conservativePathKey(rhs)
+        if lhsKey != rhsKey {
+            return lhsKey < rhsKey
+        }
+        return lhs < rhs
+    }
+
     private struct BoundTransition {
         let cursor: UInt64
         let transition: VerifiedPatchContentTransition
+    }
+
+    private struct PatchPlanningBudget {
+        var lcsCells = 0
+        var hunks = 0
     }
 
     private struct OrderedSource {
@@ -2114,6 +2199,15 @@ nonisolated private func checkedAdd(
 ) -> Int? {
     let result = lhs.addingReportingOverflow(rhs)
     return result.overflow ? nil : result.partialValue
+}
+
+nonisolated private func checkedSubtract(
+    _ lhs: Int,
+    _ rhs: Int
+) -> Int? {
+    let result = lhs.subtractingReportingOverflow(rhs)
+    guard !result.overflow, result.partialValue >= 0 else { return nil }
+    return result.partialValue
 }
 
 nonisolated private let zeroUUID = UUID(

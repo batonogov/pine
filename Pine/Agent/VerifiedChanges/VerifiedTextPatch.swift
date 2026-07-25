@@ -33,22 +33,57 @@ nonisolated enum VerifiedTextPatch {
 
     static func plan(
         before: Data,
-        after: Data
+        after: Data,
+        lcsCellBudget: Int = VerifiedPatchLimits.maximumLCSCellCountPerDiff,
+        hunkBudget: Int = VerifiedPatchLimits.maximumHunkCount
     ) -> VerifiedTextPatchPlan? {
-        guard isText(before), isText(after) else {
+        plan(
+            before: before,
+            after: after,
+            lcsCellBudget: lcsCellBudget,
+            hunkBudget: hunkBudget,
+            lineIdentityProvider: { ContentIdentity(content: $0) }
+        )
+    }
+
+    static func plan(
+        before: Data,
+        after: Data,
+        lcsCellBudget: Int,
+        hunkBudget: Int,
+        lineIdentityProvider: @escaping (Data) -> ContentIdentity
+    ) -> VerifiedTextPatchPlan? {
+        guard before != after,
+              isText(before),
+              isText(after) else {
             return nil
         }
         let beforeLines = lines(in: before)
         let afterLines = lines(in: after)
-        guard let table = makeLCSTable(
-            before: beforeLines,
-            after: afterLines
-        ) else {
+        guard lcsCellBudget >= 0,
+              hunkBudget > 0,
+              let estimate = lcsCellCount(
+                lhsCount: beforeLines.count,
+                rhsCount: afterLines.count
+              ),
+              estimate <= lcsCellBudget,
+              let interned = internLines(
+                before: beforeLines,
+                after: afterLines,
+                lineIdentityProvider: lineIdentityProvider
+              ) else {
             return nil
         }
+        let table = makeLCSTable(
+            before: interned.before,
+            after: interned.after,
+            cellCount: estimate
+        )
         let steps = diffSteps(
             before: beforeLines,
             after: afterLines,
+            beforeTokens: interned.before,
+            afterTokens: interned.after,
             table: table
         )
         let hunks = makeHunks(
@@ -56,7 +91,9 @@ nonisolated enum VerifiedTextPatch {
             afterLines: afterLines
         )
         guard !hunks.isEmpty,
-              hunks.count <= VerifiedPatchLimits.maximumHunkCount else {
+              hunks.count <= hunkBudget,
+              hunks.count <= VerifiedPatchLimits.maximumHunkCount,
+              table.cellCount == estimate else {
             return nil
         }
         return VerifiedTextPatchPlan(
@@ -96,22 +133,36 @@ nonisolated enum VerifiedTextPatch {
         let afterLines = lines(in: capturedAfter)
         let currentLines = lines(in: current)
         guard mappingCellBudget >= 0,
-              let table = makeLCSTable(
-                before: afterLines,
-                after: currentLines
+              let estimate = lcsCellCount(
+                lhsCount: afterLines.count,
+                rhsCount: currentLines.count
               ) else {
             return .failure(.resourceLimitExceeded)
         }
-        let mappingCells = table.cellCount.multipliedReportingOverflow(
+        let mappingCells = estimate.multipliedReportingOverflow(
             by: hunks.count
         )
         guard !mappingCells.overflow,
-              mappingCells.partialValue <= mappingCellBudget else {
+              mappingCells.partialValue <= mappingCellBudget,
+              let interned = internLines(
+                before: afterLines,
+                after: currentLines,
+                lineIdentityProvider: {
+                    ContentIdentity(content: $0)
+                }
+              ) else {
             return .failure(.resourceLimitExceeded)
         }
+        let table = makeLCSTable(
+            before: interned.before,
+            after: interned.after,
+            cellCount: estimate
+        )
         let steps = diffSteps(
             before: afterLines,
             after: currentLines,
+            beforeTokens: interned.before,
+            afterTokens: interned.after,
             table: table
         )
         let humanEdits = lineEdits(steps: steps)
@@ -152,12 +203,12 @@ nonisolated enum VerifiedTextPatch {
                     .humanEditOverlapsAgentRegion(hunkIndex: index)
                 )
             }
-            let expectedGuard = Array(afterLines[guardedRange])
+            let expectedGuard = Array(interned.before[guardedRange])
 
             guard let resolvedGuardStart = uniqueOptimalMapping(
                 guardedRange: guardedRange,
-                before: afterLines,
-                after: currentLines,
+                before: interned.before,
+                after: interned.after,
                 table: table
             ) else {
                 return .failure(
@@ -185,8 +236,8 @@ nonisolated enum VerifiedTextPatch {
             guard duplicateMappingIsStable(
                 capturedRange: guardedRange,
                 resolvedStart: resolvedGuardStart,
-                capturedLines: afterLines,
-                currentLines: currentLines,
+                capturedLines: interned.before,
+                currentLines: interned.after,
                 humanEdits: humanEdits
             ) else {
                 return .failure(
@@ -194,7 +245,7 @@ nonisolated enum VerifiedTextPatch {
                 )
             }
             let actualGuard = Array(
-                currentLines[resolvedGuardStart..<resolvedGuardEnd]
+                interned.after[resolvedGuardStart..<resolvedGuardEnd]
             )
             guard expectedGuard == actualGuard else {
                 return .failure(.mappedRegionMismatch(hunkIndex: index))
@@ -270,6 +321,36 @@ nonisolated enum VerifiedTextPatch {
             return nil
         }
         return cells.partialValue
+    }
+
+    private static func internLines(
+        before: [Data],
+        after: [Data],
+        lineIdentityProvider: @escaping (Data) -> ContentIdentity
+    ) -> InternedLinePair? {
+        var interner = LineInterner(
+            identityProvider: lineIdentityProvider
+        )
+        var beforeTokens: [Int] = []
+        beforeTokens.reserveCapacity(before.count)
+        for line in before {
+            guard let token = interner.intern(line) else {
+                return nil
+            }
+            beforeTokens.append(token)
+        }
+        var afterTokens: [Int] = []
+        afterTokens.reserveCapacity(after.count)
+        for line in after {
+            guard let token = interner.intern(line) else {
+                return nil
+            }
+            afterTokens.append(token)
+        }
+        return InternedLinePair(
+            before: beforeTokens,
+            after: afterTokens
+        )
     }
 
     private static func makeHunks(
@@ -376,15 +457,10 @@ nonisolated enum VerifiedTextPatch {
     }
 
     private static func makeLCSTable(
-        before: [Data],
-        after: [Data]
-    ) -> LCSTable? {
-        guard let cellCount = lcsCellCount(
-            lhsCount: before.count,
-            rhsCount: after.count
-        ) else {
-            return nil
-        }
+        before: [Int],
+        after: [Int],
+        cellCount: Int
+    ) -> LCSTable {
         let columnCount = after.count + 1
         var lengths = [Int](repeating: 0, count: cellCount)
         if !before.isEmpty, !after.isEmpty {
@@ -429,6 +505,8 @@ nonisolated enum VerifiedTextPatch {
     private static func diffSteps(
         before: [Data],
         after: [Data],
+        beforeTokens: [Int],
+        afterTokens: [Int],
         table: LCSTable
     ) -> [DiffStep] {
         var steps: [DiffStep] = []
@@ -437,7 +515,7 @@ nonisolated enum VerifiedTextPatch {
         while beforeIndex < before.count || afterIndex < after.count {
             if beforeIndex < before.count,
                afterIndex < after.count,
-               before[beforeIndex] == after[afterIndex] {
+               beforeTokens[beforeIndex] == afterTokens[afterIndex] {
                 steps.append(.equal)
                 beforeIndex += 1
                 afterIndex += 1
@@ -480,8 +558,8 @@ nonisolated enum VerifiedTextPatch {
     /// track all starts used by paths that preserve the whole guard.
     private static func uniqueOptimalMapping(
         guardedRange: Range<Int>,
-        before: [Data],
-        after: [Data],
+        before: [Int],
+        after: [Int],
         table: LCSTable
     ) -> Int? {
         guard !guardedRange.isEmpty,
@@ -607,8 +685,8 @@ nonisolated enum VerifiedTextPatch {
     private static func duplicateMappingIsStable(
         capturedRange: Range<Int>,
         resolvedStart: Int,
-        capturedLines: [Data],
-        currentLines: [Data],
+        capturedLines: [Int],
+        currentLines: [Int],
         humanEdits: [LineEdit]
     ) -> Bool {
         let pattern = Array(capturedLines[capturedRange])
@@ -654,8 +732,8 @@ nonisolated enum VerifiedTextPatch {
     }
 
     private static func occurrenceStarts(
-        of pattern: [Data],
-        in lines: [Data]
+        of pattern: [Int],
+        in lines: [Int]
     ) -> [Int] {
         guard !pattern.isEmpty,
               pattern.count <= lines.count else {
@@ -765,6 +843,71 @@ nonisolated enum VerifiedTextPatch {
     ) -> Bool {
         lhs.resolvedCurrentRange.lowerBound
             > rhs.resolvedCurrentRange.lowerBound
+    }
+
+    private struct InternedLinePair {
+        let before: [Int]
+        let after: [Int]
+    }
+
+    private struct LineBucketKey: Hashable {
+        let identity: ContentIdentity
+        let byteCount: Int
+    }
+
+    private struct InternedLine {
+        let bytes: Data
+        let token: Int
+    }
+
+    private struct LineInterner {
+        var buckets: [LineBucketKey: [InternedLine]] = [:]
+        var nextToken = 0
+        var byteWork = 0
+        let identityProvider: (Data) -> ContentIdentity
+
+        mutating func intern(_ line: Data) -> Int? {
+            guard consumeByteWork(line.count) else {
+                return nil
+            }
+            let key = LineBucketKey(
+                identity: identityProvider(line),
+                byteCount: line.count
+            )
+            if let candidates = buckets[key] {
+                for candidate in candidates {
+                    guard consumeByteWork(line.count) else {
+                        return nil
+                    }
+                    if candidate.bytes == line {
+                        return candidate.token
+                    }
+                }
+            }
+            let token = nextToken
+            let incremented = nextToken.addingReportingOverflow(1)
+            guard !incremented.overflow else {
+                return nil
+            }
+            nextToken = incremented.partialValue
+            buckets[key, default: []].append(InternedLine(
+                bytes: line,
+                token: token
+            ))
+            return token
+        }
+
+        private mutating func consumeByteWork(_ count: Int) -> Bool {
+            guard count >= 0 else { return false }
+            let updated = byteWork.addingReportingOverflow(count)
+            guard !updated.overflow,
+                  updated.partialValue <= VerifiedPatchLimits
+                    .maximumLineComparisonByteCount else {
+                return false
+            }
+            byteWork = updated.partialValue
+            return true
+        }
     }
 
     private enum DiffStep {
