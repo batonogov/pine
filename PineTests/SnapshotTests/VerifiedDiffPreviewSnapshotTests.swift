@@ -46,7 +46,9 @@ struct VerifiedDiffPreviewSnapshotTests {
         )
     }
 
-    @Test("Engine-backed fixtures retain truthful mode and state semantics")
+    @Test(
+        "Engine-backed fixtures retain truthful mode, state, and rendered copy"
+    )
     func semantics() throws {
         let exact = try makeModel(.exactMetadata)
         let exactRow = try #require(exact.rows.first)
@@ -59,6 +61,14 @@ struct VerifiedDiffPreviewSnapshotTests {
         #expect(exactRow.results.first?.identity?.posixMode == 0o755)
         #expect(exactRow.expectations.first?.identity?.kind == .regularFile)
         #expect(exactRow.results.first?.identity?.kind == .regularFile)
+        #expect(
+            exactRow.operationDetail(locale: Self.english)
+                == "Restores the complete captured file state."
+        )
+        #expect(
+            exactRow.metadataBadge(locale: Self.english)
+                == "Metadata-only change"
+        )
 
         let checked = try makeModel(.checkedText)
         let checkedRow = try #require(checked.rows.first)
@@ -67,6 +77,7 @@ struct VerifiedDiffPreviewSnapshotTests {
         #expect(checkedRow.previewKind == .applyTextHunks)
         #expect(!checkedRow.isMetadataOnly)
         #expect(!checkedRow.hasMetadataChange)
+        #expect(checkedRow.metadataBadge(locale: Self.english) == nil)
         let endings = Set(
             checkedRow.hunks.flatMap(\.lines).map(\.lineEnding)
         )
@@ -85,6 +96,14 @@ struct VerifiedDiffPreviewSnapshotTests {
         #expect(
             checkedMetadataRow.results.first?.identity?.posixMode
                 == 0o600
+        )
+        #expect(
+            checkedMetadataRow.operationDetail(locale: Self.english)
+                == "Applies only the resolved inverse hunks."
+        )
+        #expect(
+            checkedMetadataRow.metadataBadge(locale: Self.english)
+                == "File metadata also changes"
         )
     }
 

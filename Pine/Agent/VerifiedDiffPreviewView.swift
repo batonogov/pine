@@ -339,6 +339,23 @@ extension VerifiedInversePreviewKind {
     }
 }
 
+@MainActor
+extension VerifiedDiffPreviewRow {
+    func operationDetail(locale: Locale) -> String {
+        presentationKind.operationDetail(locale: locale)
+    }
+
+    func metadataBadge(locale: Locale) -> String? {
+        if isMetadataOnly {
+            return Strings.verifiedDiffMetadataOnly(locale: locale)
+        }
+        if hasMetadataChange {
+            return Strings.verifiedDiffMetadataAlsoChanges(locale: locale)
+        }
+        return nil
+    }
+}
+
 private struct VerifiedDiffLineEndingLabels {
     let lf: String
     let crlf: String
@@ -481,22 +498,12 @@ struct VerifiedDiffOperationView: View {
     private var operationSummary: some View {
         VStack(alignment: .leading, spacing: 3) {
             Text(
-                verbatim: row.presentationKind.operationDetail(locale: locale)
+                verbatim: row.operationDetail(locale: locale)
             )
                 .font(.system(size: 11))
                 .foregroundStyle(.secondary)
-            if row.isMetadataOnly {
-                Text(
-                    verbatim: Strings.verifiedDiffMetadataOnly(locale: locale)
-                )
-                .font(.system(size: 10, weight: .semibold))
-                .foregroundStyle(.orange)
-            } else if row.hasMetadataChange {
-                Text(
-                    verbatim: Strings.verifiedDiffMetadataAlsoChanges(
-                        locale: locale
-                    )
-                )
+            if let metadataBadge = row.metadataBadge(locale: locale) {
+                Text(verbatim: metadataBadge)
                 .font(.system(size: 10, weight: .semibold))
                 .foregroundStyle(.orange)
             }
