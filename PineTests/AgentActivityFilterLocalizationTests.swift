@@ -46,8 +46,6 @@ struct AgentActivityFilterLocalizationTests {
         "verifiedDiff.kind.simulateRenamedFile",
         "verifiedDiff.result",
         "verifiedDiff.stalenessNotice",
-        "verifiedDiff.operationCount %lld",
-        "verifiedDiff.byteCount %lld",
         "verifiedDiff.metadataAlsoChanges",
         "verifiedDiff.metadataOnly",
         "verifiedDiff.fileKind.regularFile",
