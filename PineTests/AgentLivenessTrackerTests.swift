@@ -30,7 +30,7 @@ struct AgentLivenessTrackerTests {
 
         let checks = tracker.checkStaleness(
             of: [session],
-            at: baseline.addingTimeInterval(299)
+            observation: stamp(wallOffset: 299, uptime: 399, sequence: 2)
         )
 
         #expect(checks == [
@@ -50,7 +50,7 @@ struct AgentLivenessTrackerTests {
 
         tracker.checkStaleness(
             of: [session],
-            at: baseline.addingTimeInterval(300)
+            observation: stamp(wallOffset: 300, uptime: 400, sequence: 2)
         )
 
         #expect(session.liveness == .stale)
@@ -66,7 +66,7 @@ struct AgentLivenessTrackerTests {
 
         tracker.checkStaleness(
             of: [session],
-            at: baseline.addingTimeInterval(301)
+            observation: stamp(wallOffset: 301, uptime: 401, sequence: 2)
         )
 
         #expect(session.liveness == .stale)
@@ -80,7 +80,14 @@ struct AgentLivenessTrackerTests {
         )
         let observedAt = baseline.addingTimeInterval(400)
 
-        tracker.recordObservation(of: session, at: observedAt)
+        tracker.recordObservation(
+            of: session,
+            observation: stamp(
+                wallOffset: 400,
+                uptime: 500,
+                sequence: 2
+            )
+        )
 
         #expect(session.liveness == .live)
         #expect(session.lastObservedAt == observedAt)
@@ -93,7 +100,7 @@ struct AgentLivenessTrackerTests {
 
         tracker.checkStaleness(
             of: [session],
-            at: baseline.addingTimeInterval(1_000)
+            observation: stamp(wallOffset: 1_000, uptime: 1_100, sequence: 2)
         )
 
         #expect(session.liveness == .terminated)
@@ -111,7 +118,7 @@ struct AgentLivenessTrackerTests {
 
         tracker.recordObservation(
             of: newSession,
-            at: baseline.addingTimeInterval(2)
+            observation: stamp(wallOffset: 2, uptime: 102, sequence: 2)
         )
 
         #expect(oldSession.liveness == .terminated)
@@ -123,7 +130,8 @@ struct AgentLivenessTrackerTests {
         let stale = makeSession(lastObservedAt: baseline)
         let fresh = makeSession(
             id: UUID(),
-            lastObservedAt: baseline.addingTimeInterval(250)
+            lastObservedAt: baseline.addingTimeInterval(250),
+            uptime: 350
         )
         let terminated = makeSession(
             id: UUID(),
@@ -133,29 +141,121 @@ struct AgentLivenessTrackerTests {
 
         let checks = tracker.checkStaleness(
             of: [stale, fresh, terminated],
-            at: baseline.addingTimeInterval(500)
+            observation: stamp(wallOffset: 500, uptime: 600, sequence: 2)
         )
 
         #expect(checks.map(\.sessionID) == [stale.id, fresh.id, terminated.id])
         #expect(checks.map(\.liveness) == [.stale, .live, .terminated])
     }
 
-    @Test func futureObservationDoesNotBecomeStaleAfterClockMovesBackward() {
+    @Test func wallClockRollbackDoesNotHideMonotonicStaleness() {
         let tracker = AgentSessionLivenessTracker(staleAfter: 300)
         let session = makeSession(
             lastObservedAt: baseline.addingTimeInterval(60)
         )
 
-        tracker.checkStaleness(of: [session], at: baseline)
+        tracker.checkStaleness(
+            of: [session],
+            observation: stamp(
+                wallOffset: 0,
+                uptime: 400,
+                sequence: 2
+            )
+        )
+
+        #expect(session.liveness == .stale)
+        #expect(session.lastObservedAt == baseline.addingTimeInterval(60))
+    }
+
+    @Test func failedClockRollbackNeverRevivesStaleSession() {
+        let tracker = AgentSessionLivenessTracker(staleAfter: 300)
+        let session = makeSession(
+            liveness: .stale,
+            lastObservedAt: baseline
+        )
+
+        tracker.checkStaleness(
+            of: [session],
+            observation: stamp(
+                wallOffset: -500,
+                uptime: 500,
+                sequence: 2
+            )
+        )
+
+        #expect(session.liveness == .stale)
+        #expect(session.lastObservedAt == baseline)
+    }
+
+    @Test func outOfOrderSuccessfulEvidenceCannotReviveStaleSession() {
+        let tracker = AgentSessionLivenessTracker(staleAfter: 300)
+        let session = makeSession(
+            liveness: .stale,
+            lastObservedAt: baseline,
+            uptime: 500,
+            generation: 2,
+            sequence: 5
+        )
+
+        let accepted = tracker.recordObservation(
+            of: session,
+            observation: stamp(
+                wallOffset: 1_000,
+                uptime: 700,
+                generation: 2,
+                sequence: 4
+            )
+        )
+
+        #expect(!accepted)
+        #expect(session.liveness == .stale)
+        #expect(session.lastObservedAt == baseline)
+    }
+
+    @Test func outOfOrderFailedCheckCannotStaleNewerEvidence() {
+        let tracker = AgentSessionLivenessTracker(staleAfter: 300)
+        let session = makeSession(
+            lastObservedAt: baseline,
+            uptime: 500,
+            generation: 2,
+            sequence: 5
+        )
+
+        tracker.checkStaleness(
+            of: [session],
+            observation: stamp(
+                wallOffset: 1_000,
+                uptime: 1_500,
+                generation: 2,
+                sequence: 4
+            )
+        )
 
         #expect(session.liveness == .live)
+    }
+
+    @Test func newerSuccessfulEvidenceCannotReviveTerminatedSession() {
+        let tracker = AgentSessionLivenessTracker(staleAfter: 300)
+        let session = makeSession(lastObservedAt: baseline)
+        tracker.recordTermination(of: session)
+
+        let accepted = tracker.recordObservation(
+            of: session,
+            observation: stamp(wallOffset: 1, uptime: 101, sequence: 2)
+        )
+
+        #expect(!accepted)
+        #expect(session.liveness == .terminated)
     }
 
     private func makeSession(
         id: UUID = UUID(),
         state: AgentState = .idle,
         liveness: AgentLiveness = .live,
-        lastObservedAt: Date
+        lastObservedAt: Date,
+        uptime: TimeInterval = 100,
+        generation: UInt64 = 1,
+        sequence: UInt64 = 1
     ) -> AgentSession {
         AgentSession(
             id: id,
@@ -163,7 +263,24 @@ struct AgentLivenessTrackerTests {
             state: state,
             startedAt: baseline.addingTimeInterval(-1_000),
             liveness: liveness,
-            lastObservedAt: lastObservedAt
+            lastObservedAt: lastObservedAt,
+            lastObservedUptime: uptime,
+            observationGeneration: generation,
+            observationSequence: sequence
+        )
+    }
+
+    private func stamp(
+        wallOffset: TimeInterval,
+        uptime: TimeInterval,
+        generation: UInt64 = 1,
+        sequence: UInt64
+    ) -> AgentObservationStamp {
+        AgentObservationStamp(
+            wallTime: baseline.addingTimeInterval(wallOffset),
+            uptime: uptime,
+            generation: generation,
+            sequence: sequence
         )
     }
 }

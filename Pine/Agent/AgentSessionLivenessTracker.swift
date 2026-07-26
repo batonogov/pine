@@ -7,6 +7,46 @@
 
 import Foundation
 
+/// Ordered process-evidence timestamp.
+///
+/// `wallTime` is presentation metadata only. Freshness uses `uptime`, while
+/// `generation` + `sequence` provide a total order across coordinator
+/// stop/restart cycles and individual polls. This prevents wall-clock changes
+/// and delayed results from moving a session backwards through its lifecycle.
+nonisolated struct AgentObservationStamp: Sendable, Equatable, Comparable {
+    let wallTime: Date
+    let uptime: TimeInterval
+    let generation: UInt64
+    let sequence: UInt64
+
+    init(
+        wallTime: Date,
+        uptime: TimeInterval,
+        generation: UInt64 = 0,
+        sequence: UInt64
+    ) {
+        precondition(
+            uptime.isFinite && uptime >= 0,
+            "Agent observation uptime must be finite and non-negative"
+        )
+        self.wallTime = wallTime
+        self.uptime = uptime
+        self.generation = generation
+        self.sequence = sequence
+    }
+
+    static func == (lhs: AgentObservationStamp, rhs: AgentObservationStamp) -> Bool {
+        lhs.generation == rhs.generation && lhs.sequence == rhs.sequence
+    }
+
+    static func < (lhs: AgentObservationStamp, rhs: AgentObservationStamp) -> Bool {
+        if lhs.generation != rhs.generation {
+            return lhs.generation < rhs.generation
+        }
+        return lhs.sequence < rhs.sequence
+    }
+}
+
 /// Immutable projection of one liveness assessment.
 nonisolated struct AgentLivenessCheck: Sendable, Equatable {
     let sessionID: UUID
@@ -35,8 +75,15 @@ final class AgentSessionLivenessTracker {
     }
 
     /// Records that a successful full process snapshot contained `session`.
-    func recordObservation(of session: AgentSession, at date: Date) {
-        session.recordObservation(at: date)
+    ///
+    /// Returns `false` for out-of-order evidence and for a terminated session;
+    /// neither may be revived in place.
+    @discardableResult
+    func recordObservation(
+        of session: AgentSession,
+        observation: AgentObservationStamp
+    ) -> Bool {
+        session.recordObservation(observation)
     }
 
     /// Records authoritative absence from a successful full process snapshot.
@@ -51,18 +98,24 @@ final class AgentSessionLivenessTracker {
     @discardableResult
     func checkStaleness(
         of sessions: [AgentSession],
-        at now: Date
+        observation: AgentObservationStamp
     ) -> [AgentLivenessCheck] {
         sessions.map { session in
-            if session.liveness != .terminated {
-                let evidenceAge = now.timeIntervalSince(session.lastObservedAt)
-                session.applyLiveness(evidenceAge >= staleAfter ? .stale : .live)
+            if session.liveness == .live,
+               observation > session.lastObservationStamp {
+                let evidenceAge = max(
+                    0,
+                    observation.uptime - session.lastObservationStamp.uptime
+                )
+                if evidenceAge >= staleAfter {
+                    session.applyLiveness(.stale)
+                }
             }
             return AgentLivenessCheck(
                 sessionID: session.id,
                 liveness: session.liveness,
                 lastObservedAt: session.lastObservedAt,
-                checkedAt: now
+                checkedAt: observation.wallTime
             )
         }
     }

@@ -204,4 +204,196 @@ struct AgentStatusSummaryTests {
         #expect(summaries.first?.tabID == activeTab.id)
         #expect(summaries.first?.agentType == .claudeCode)
     }
+
+    @Test func countStringsUseExactFormsForEverySupportedLocale() {
+        let expectations: [
+            (
+                localeID: String,
+                active: [(Int, String)],
+                sessions: [(Int, String)]
+            )
+        ] = [
+            (
+                "en",
+                [(1, "1 agent active"), (2, "2 agents active")],
+                [(1, "1 agent session"), (2, "2 agent sessions")]
+            ),
+            (
+                "de",
+                [(1, "1 Agent aktiv"), (2, "2 Agenten aktiv")],
+                [(1, "1 Agent-Sitzung"), (2, "2 Agent-Sitzungen")]
+            ),
+            (
+                "es",
+                [(1, "1 agente activo"), (2, "2 agentes activos")],
+                [(1, "1 sesión de agente"), (2, "2 sesiones de agentes")]
+            ),
+            (
+                "fr",
+                [(1, "1 agent actif"), (2, "2 agents actifs")],
+                [(1, "1 session d’agent"), (2, "2 sessions d’agents")]
+            ),
+            (
+                "ja",
+                [(1, "1 エージェント稼働中"), (2, "2 エージェント稼働中")],
+                [
+                    (1, "1 件のエージェントセッション"),
+                    (2, "2 件のエージェントセッション"),
+                ]
+            ),
+            (
+                "ko",
+                [(1, "에이전트 1개 활성"), (2, "에이전트 2개 활성")],
+                [(1, "에이전트 세션 1개"), (2, "에이전트 세션 2개")]
+            ),
+            (
+                "pt-BR",
+                [(1, "1 agente ativo"), (2, "2 agentes ativos")],
+                [(1, "1 sessão de agente"), (2, "2 sessões de agentes")]
+            ),
+            (
+                "ru",
+                [
+                    (1, "1 агент активен"),
+                    (2, "2 агента активны"),
+                    (5, "5 агентов активны"),
+                ],
+                [
+                    (21, "21 сессия агента"),
+                    (22, "22 сессии агентов"),
+                    (25, "25 сессий агентов"),
+                ]
+            ),
+            (
+                "zh-Hans",
+                [(1, "1 个代理活动中"), (2, "2 个代理活动中")],
+                [(1, "1 个代理会话"), (2, "2 个代理会话")]
+            ),
+        ]
+
+        for expectation in expectations {
+            let locale = Locale(identifier: expectation.localeID)
+            for (count, expected) in expectation.active {
+                #expect(
+                    Strings.statusbarActiveAgentCount(
+                        count,
+                        locale: locale
+                    ) == expected
+                )
+            }
+            for (count, expected) in expectation.sessions {
+                #expect(
+                    Strings.statusbarAgentSessionCount(
+                        count,
+                        locale: locale
+                    ) == expected
+                )
+            }
+        }
+    }
+
+    @Test func presentationHonorsExplicitLocaleForCountAndLiveness() {
+        let stale = statusSummary(
+            agentType: .claudeCode,
+            state: .waitingInput,
+            liveness: .stale
+        )
+
+        let english = AgentStatusBarPresentation(
+            summaries: [stale],
+            locale: Locale(identifier: "en")
+        )
+        let russian = AgentStatusBarPresentation(
+            summaries: [stale],
+            locale: Locale(identifier: "ru")
+        )
+
+        #expect(english.countText == "1 agent session")
+        #expect(english.detailTexts == ["Claude Code: Waiting for input — Stale"])
+        #expect(russian.countText == "1 сессия агента")
+        #expect(
+            russian.detailTexts
+                == ["Claude Code: Waiting for input — Устарела"]
+        )
+    }
+
+    @Test func staleAndTerminatedAccessibilityLabelsStateUncertainty() {
+        let stale = statusSummary(
+            agentType: .claudeCode,
+            state: .waitingInput,
+            liveness: .stale
+        )
+        let terminated = statusSummary(
+            agentType: .codex,
+            state: .done,
+            liveness: .terminated
+        )
+
+        let stalePresentation = AgentStatusBarPresentation(summaries: [stale])
+        let terminatedPresentation = AgentStatusBarPresentation(
+            summaries: [terminated]
+        )
+
+        #expect(
+            stalePresentation.accessibilityLabel
+                .contains(AgentLiveness.stale.displayName)
+        )
+        #expect(
+            terminatedPresentation.accessibilityLabel
+                .contains(AgentLiveness.terminated.displayName)
+        )
+        #expect(
+            stalePresentation.accessibilityLabel
+                .contains(Strings.statusbarAgentSessionCount(1))
+        )
+    }
+
+    @Test func mixedAccessibilityLabelAnnouncesCountAndEverySession() {
+        let summaries = [
+            statusSummary(agentType: .claudeCode, state: .executing),
+            statusSummary(
+                agentType: .codex,
+                state: .waitingInput,
+                liveness: .stale
+            ),
+            statusSummary(
+                agentType: .pi,
+                state: .done,
+                liveness: .terminated
+            ),
+        ]
+
+        let presentation = AgentStatusBarPresentation(summaries: summaries)
+
+        #expect(
+            presentation.accessibilityLabel
+                .contains(Strings.statusbarAgentSessionCount(3))
+        )
+        #expect(presentation.accessibilityLabel.contains("Claude Code"))
+        #expect(presentation.accessibilityLabel.contains("Codex"))
+        #expect(presentation.accessibilityLabel.contains("Pi"))
+        #expect(
+            presentation.accessibilityLabel
+                .contains(AgentLiveness.stale.displayName)
+        )
+        #expect(
+            presentation.accessibilityLabel
+                .contains(AgentLiveness.terminated.displayName)
+        )
+    }
+
+    private func statusSummary(
+        agentType: AgentType,
+        state: AgentState,
+        liveness: AgentLiveness = .live
+    ) -> AgentStatusSummary {
+        AgentStatusSummary(
+            id: UUID(),
+            agentType: agentType,
+            state: state,
+            liveness: liveness,
+            paneID: PaneID(),
+            tabID: UUID()
+        )
+    }
 }

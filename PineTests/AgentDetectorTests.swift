@@ -370,6 +370,162 @@ struct AgentDetectorTests {
         #expect(allClaude[0].state == .done)
     }
 
+    @Test func samePidCpuRegressionCreatesFreshSession() throws {
+        let detector = AgentDetector()
+        detector.processSnapshotDidUpdate([
+            DetectedProcess(pid: 510, command: "claude", cpuTime: 100),
+        ])
+        let original = try #require(detector.session(forPID: 510))
+
+        let terminated = detector.processSnapshotDidUpdate([
+            DetectedProcess(pid: 510, command: "claude", cpuTime: 2),
+        ])
+
+        let replacement = try #require(detector.session(forPID: 510))
+        #expect(terminated == [original.id])
+        #expect(original.state == .done)
+        #expect(original.liveness == .terminated)
+        #expect(replacement !== original)
+        #expect(replacement.state == .idle)
+    }
+
+    @Test func changedProcessStartIdentifierCreatesFreshSession() throws {
+        let detector = AgentDetector()
+        detector.processSnapshotDidUpdate([
+            DetectedProcess(
+                pid: 511,
+                command: "codex",
+                cpuTime: 10,
+                startIdentifier: "Mon Jul 20 10:00:00 2026"
+            ),
+        ])
+        let original = try #require(detector.session(forPID: 511))
+
+        detector.processSnapshotDidUpdate([
+            DetectedProcess(
+                pid: 511,
+                command: "codex",
+                cpuTime: 11,
+                startIdentifier: "Tue Jul 21 10:00:00 2026"
+            ),
+        ])
+
+        let replacement = try #require(detector.session(forPID: 511))
+        #expect(original.state == .done)
+        #expect(replacement !== original)
+    }
+
+    @Test func stableProcessStartIdentifierKeepsSessionIdentity() throws {
+        let detector = AgentDetector()
+        let start = "Mon Jul 20 10:00:00 2026"
+        detector.processSnapshotDidUpdate([
+            DetectedProcess(
+                pid: 512,
+                command: "pi",
+                cpuTime: 10,
+                startIdentifier: start
+            ),
+        ])
+        let original = try #require(detector.session(forPID: 512))
+
+        detector.processSnapshotDidUpdate([
+            DetectedProcess(
+                pid: 512,
+                command: "pi",
+                cpuTime: 11,
+                startIdentifier: start
+            ),
+        ])
+
+        #expect(detector.session(forPID: 512) === original)
+        #expect(detector.detectedSessions == [original])
+    }
+
+    @Test func olderSuccessfulSnapshotCannotTerminateNewerEvidence() throws {
+        let detector = AgentDetector()
+        let baseline = Date(timeIntervalSince1970: 6_000)
+        detector.processSnapshotDidUpdate(
+            [DetectedProcess(pid: 513, command: "aider")],
+            observation: stamp(
+                baseline,
+                uptime: 200,
+                generation: 2,
+                sequence: 2
+            )
+        )
+        let session = try #require(detector.session(forPID: 513))
+
+        let terminated = detector.processSnapshotDidUpdate(
+            [],
+            observation: stamp(
+                baseline.addingTimeInterval(100),
+                uptime: 300,
+                generation: 2,
+                sequence: 1
+            )
+        )
+
+        #expect(terminated.isEmpty)
+        #expect(detector.session(forPID: 513) === session)
+        #expect(session.liveness == .live)
+    }
+
+    @Test func duplicateOrderedSnapshotCannotTerminateExistingEvidence() throws {
+        let detector = AgentDetector()
+        let baseline = Date(timeIntervalSince1970: 6_500)
+        detector.processSnapshotDidUpdate(
+            [DetectedProcess(pid: 515, command: "aider")],
+            observation: stamp(
+                baseline,
+                uptime: 200,
+                generation: 2,
+                sequence: 3
+            )
+        )
+        let session = try #require(detector.session(forPID: 515))
+
+        let terminated = detector.processSnapshotDidUpdate(
+            [],
+            observation: stamp(
+                baseline.addingTimeInterval(100),
+                uptime: 300,
+                generation: 2,
+                sequence: 3
+            )
+        )
+
+        #expect(terminated.isEmpty)
+        #expect(detector.session(forPID: 515) === session)
+        #expect(session.liveness == .live)
+    }
+
+    @Test func olderFailedSnapshotCannotStaleNewerEvidence() throws {
+        let detector = AgentDetector(staleAfter: 1)
+        let baseline = Date(timeIntervalSince1970: 7_000)
+        detector.processSnapshotDidUpdate(
+            [DetectedProcess(pid: 514, command: "claude")],
+            observation: stamp(
+                baseline,
+                uptime: 200,
+                generation: 3,
+                sequence: 2
+            )
+        )
+        let session = try #require(detector.session(forPID: 514))
+
+        let checks = detector.processSnapshotDidFail(
+            observation: stamp(
+                baseline.addingTimeInterval(100),
+                uptime: 400,
+                generation: 3,
+                sequence: 1
+            )
+        )
+
+        #expect(checks.isEmpty)
+        #expect(session.liveness == .live)
+    }
+
     // MARK: - Mixed snapshot: agents + non-agents
 
     @Test func mixedSnapshotDetectsOnlyAgents() {
@@ -429,12 +585,22 @@ struct AgentDetectorTests {
         let detector = AgentDetector(staleAfter: 300)
         detector.processSnapshotDidUpdate(
             [DetectedProcess(pid: 810, command: "claude")],
-            observedAt: baseline
+            observation: stamp(
+                baseline,
+                uptime: 100,
+                generation: 1,
+                sequence: 1
+            )
         )
         let session = try #require(detector.session(forPID: 810))
 
         detector.processSnapshotDidFail(
-            at: baseline.addingTimeInterval(299)
+            observation: stamp(
+                baseline.addingTimeInterval(299),
+                uptime: 399,
+                generation: 1,
+                sequence: 2
+            )
         )
 
         #expect(detector.session(forPID: 810) === session)
@@ -448,12 +614,22 @@ struct AgentDetectorTests {
         let detector = AgentDetector(staleAfter: 300)
         detector.processSnapshotDidUpdate(
             [DetectedProcess(pid: 811, command: "codex")],
-            observedAt: baseline
+            observation: stamp(
+                baseline,
+                uptime: 100,
+                generation: 1,
+                sequence: 1
+            )
         )
         let session = try #require(detector.session(forPID: 811))
 
         detector.processSnapshotDidFail(
-            at: baseline.addingTimeInterval(300)
+            observation: stamp(
+                baseline.addingTimeInterval(300),
+                uptime: 400,
+                generation: 1,
+                sequence: 2
+            )
         )
 
         #expect(detector.session(forPID: 811) === session)
@@ -468,12 +644,35 @@ struct AgentDetectorTests {
         let revivedAt = baseline.addingTimeInterval(400)
         let detector = AgentDetector(staleAfter: 300)
         let snapshot = [DetectedProcess(pid: 812, command: "aider")]
-        detector.processSnapshotDidUpdate(snapshot, observedAt: baseline)
+        detector.processSnapshotDidUpdate(
+            snapshot,
+            observation: stamp(
+                baseline,
+                uptime: 100,
+                generation: 1,
+                sequence: 1
+            )
+        )
         let session = try #require(detector.session(forPID: 812))
-        detector.processSnapshotDidFail(at: revivedAt)
+        detector.processSnapshotDidFail(
+            observation: stamp(
+                revivedAt,
+                uptime: 500,
+                generation: 1,
+                sequence: 2
+            )
+        )
         #expect(session.liveness == .stale)
 
-        detector.processSnapshotDidUpdate(snapshot, observedAt: revivedAt)
+        detector.processSnapshotDidUpdate(
+            snapshot,
+            observation: stamp(
+                revivedAt,
+                uptime: 500,
+                generation: 1,
+                sequence: 3
+            )
+        )
 
         #expect(detector.session(forPID: 812) === session)
         #expect(session.liveness == .live)
@@ -486,13 +685,23 @@ struct AgentDetectorTests {
         let detector = AgentDetector()
         detector.processSnapshotDidUpdate(
             [DetectedProcess(pid: 813, command: "pi")],
-            observedAt: baseline
+            observation: stamp(
+                baseline,
+                uptime: 100,
+                generation: 1,
+                sequence: 1
+            )
         )
         let session = try #require(detector.session(forPID: 813))
 
         detector.processSnapshotDidUpdate(
             [],
-            observedAt: baseline.addingTimeInterval(1)
+            observation: stamp(
+                baseline.addingTimeInterval(1),
+                uptime: 101,
+                generation: 1,
+                sequence: 2
+            )
         )
 
         #expect(detector.session(forPID: 813) == nil)
@@ -506,13 +715,23 @@ struct AgentDetectorTests {
         let detector = AgentDetector()
         detector.processSnapshotDidUpdate(
             [DetectedProcess(pid: 814, command: "claude")],
-            observedAt: baseline
+            observation: stamp(
+                baseline,
+                uptime: 100,
+                generation: 1,
+                sequence: 1
+            )
         )
         let oldSession = try #require(detector.session(forPID: 814))
 
         detector.processSnapshotDidUpdate(
             [DetectedProcess(pid: 814, command: "codex")],
-            observedAt: baseline.addingTimeInterval(1)
+            observation: stamp(
+                baseline.addingTimeInterval(1),
+                uptime: 101,
+                generation: 1,
+                sequence: 2
+            )
         )
 
         let newSession = try #require(detector.session(forPID: 814))
@@ -618,5 +837,19 @@ struct AgentDetectorTests {
 
         // History preserves all three.
         #expect(detector.detectedSessions.count == 3)
+    }
+
+    private func stamp(
+        _ wallTime: Date,
+        uptime: TimeInterval,
+        generation: UInt64,
+        sequence: UInt64
+    ) -> AgentObservationStamp {
+        AgentObservationStamp(
+            wallTime: wallTime,
+            uptime: uptime,
+            generation: generation,
+            sequence: sequence
+        )
     }
 }

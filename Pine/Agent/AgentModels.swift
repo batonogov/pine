@@ -103,10 +103,17 @@ nonisolated enum AgentLiveness: Sendable, Equatable {
     /// Localized label for badges and accessibility.
     @MainActor
     var displayName: String {
+        displayName(locale: .current)
+    }
+
+    /// Localized label in an explicitly selected language. Used by stable
+    /// snapshots and previews that must not inherit the host's preferences.
+    @MainActor
+    func displayName(locale: Locale) -> String {
         switch self {
-        case .live: Strings.agentLivenessLive
-        case .stale: Strings.agentLivenessStale
-        case .terminated: Strings.agentLivenessTerminated
+        case .live: Strings.agentLivenessLive(locale: locale)
+        case .stale: Strings.agentLivenessStale(locale: locale)
+        case .terminated: Strings.agentLivenessTerminated(locale: locale)
         }
     }
 
@@ -195,8 +202,13 @@ final class AgentSession: Identifiable {
 
     /// Most recent successful process-list observation containing this
     /// session. Staleness is measured from this timestamp, never from
-    /// `startedAt`.
+    /// `startedAt`. This wall-clock value is display metadata; liveness aging
+    /// uses `lastObservationStamp.uptime`.
     private(set) var lastObservedAt: Date
+
+    /// Monotonic and ordered metadata for the latest accepted observation.
+    /// Owned by `AgentSessionLivenessTracker`.
+    private(set) var lastObservationStamp: AgentObservationStamp
 
     /// When the session started.
     let startedAt: Date
@@ -217,16 +229,26 @@ final class AgentSession: Identifiable {
         startedAt: Date = Date(),
         liveness: AgentLiveness = .live,
         lastObservedAt: Date? = nil,
+        lastObservedUptime: TimeInterval = 0,
+        observationGeneration: UInt64 = 0,
+        observationSequence: UInt64 = 0,
         currentTask: String? = nil,
         filesModified: [URL] = [],
         filesRead: [URL] = []
     ) {
+        let observedAt = lastObservedAt ?? startedAt
         self.id = id
         self.agentType = agentType
         self.state = state
         self.startedAt = startedAt
         self.liveness = liveness
-        self.lastObservedAt = lastObservedAt ?? startedAt
+        self.lastObservedAt = observedAt
+        self.lastObservationStamp = AgentObservationStamp(
+            wallTime: observedAt,
+            uptime: lastObservedUptime,
+            generation: observationGeneration,
+            sequence: observationSequence
+        )
         self.currentTask = currentTask
         self.filesModified = filesModified
         self.filesRead = filesRead
@@ -234,9 +256,16 @@ final class AgentSession: Identifiable {
 
     /// Records a successful observation. Kept internal to centralize mutable
     /// liveness state on the session while allowing the tracker to own policy.
-    func recordObservation(at date: Date) {
-        lastObservedAt = date
+    @discardableResult
+    func recordObservation(_ observation: AgentObservationStamp) -> Bool {
+        guard liveness != .terminated,
+              observation > lastObservationStamp else {
+            return false
+        }
+        lastObservationStamp = observation
+        lastObservedAt = observation.wallTime
         liveness = .live
+        return true
     }
 
     /// Applies a tracker assessment without exposing a public setter.
