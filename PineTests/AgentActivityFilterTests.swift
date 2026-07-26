@@ -1,0 +1,354 @@
+//
+//  AgentActivityFilterTests.swift
+//  PineTests
+//
+//  Attribution-evidence and conjunctive filtering tests for the Agent
+//  Activity Panel (epic #933).
+//
+
+import Foundation
+import Testing
+
+@testable import Pine
+
+@Suite("Agent Activity Filters")
+@MainActor
+struct AgentActivityFilterTests {
+    private let sessionA = UUID(
+        uuid: (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1)
+    )
+    private let sessionB = UUID(
+        uuid: (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2)
+    )
+
+    private var sessionCandidate: AgentActionCandidate {
+        AgentActionCandidate(sessionID: sessionA, agentType: .claudeCode)
+    }
+
+    private var otherCandidate: AgentActionCandidate {
+        AgentActionCandidate(sessionID: sessionB, agentType: .codex)
+    }
+
+    private var attributions: [AgentActionAttribution] {
+        [
+            .session(sessionCandidate),
+            .inferred(sessionCandidate),
+            .ambiguous(candidates: [sessionCandidate, otherCandidate])
+        ]
+    }
+
+    @Test("Evidence categories have a stable, non-authoritative order")
+    func categoryOrder() {
+        #expect(
+            ActivityAttributionFilter.allCases
+                == [.sessionLinked, .inferred, .ambiguous]
+        )
+    }
+
+    @Test(
+        "Each evidence category matches exactly its corresponding attribution",
+        arguments: ActivityAttributionFilter.allCases
+    )
+    func categoryMatchesExactly(_ category: ActivityAttributionFilter) {
+        let matchedIndices = attributions.indices.filter {
+            category.matches(attributions[$0])
+        }
+
+        switch category {
+        case .sessionLinked:
+            #expect(matchedIndices == [0])
+        case .inferred:
+            #expect(matchedIndices == [1])
+        case .ambiguous:
+            #expect(matchedIndices == [2])
+        }
+    }
+
+    @Test("Only represented evidence categories are offered")
+    func availableCategories() {
+        let available = ActivityAttributionFilter.available(
+            in: [
+                .ambiguous(candidates: [sessionCandidate, otherCandidate]),
+                .inferred(sessionCandidate),
+                .inferred(sessionCandidate)
+            ]
+        )
+
+        #expect(available == [.inferred, .ambiguous])
+        #expect(ActivityAttributionFilter.available(in: []).isEmpty)
+    }
+
+    @Test("A selected category remains available after its rows disappear")
+    func selectedCategoryRemainsClearable() {
+        let available = ActivityAttributionFilter.available(
+            in: [.inferred(sessionCandidate)],
+            retaining: .sessionLinked
+        )
+
+        #expect(available == [.sessionLinked, .inferred])
+    }
+
+    @Test("An empty filter accepts every evidence, kind, and status")
+    func emptyFilterMatchesEverything() {
+        let filter = AgentActivityFilter()
+
+        #expect(!filter.isActive)
+        for attribution in attributions {
+            #expect(
+                filter.matches(
+                    kind: .toolCall,
+                    status: .failed,
+                    attribution: attribution
+                )
+            )
+        }
+    }
+
+    @Test("Kind, status, and evidence conditions are conjunctive")
+    func dimensionsAreConjunctive() {
+        let filter = AgentActivityFilter(
+            kind: .fileWrite,
+            status: .completed,
+            attribution: .inferred
+        )
+
+        #expect(filter.isActive)
+        #expect(
+            filter.matches(
+                kind: .fileWrite,
+                status: .completed,
+                attribution: .inferred(sessionCandidate)
+            )
+        )
+        #expect(
+            !filter.matches(
+                kind: .command,
+                status: .completed,
+                attribution: .inferred(sessionCandidate)
+            )
+        )
+        #expect(
+            !filter.matches(
+                kind: .fileWrite,
+                status: .failed,
+                attribution: .inferred(sessionCandidate)
+            )
+        )
+        #expect(
+            !filter.matches(
+                kind: .fileWrite,
+                status: .completed,
+                attribution: .session(sessionCandidate)
+            )
+        )
+    }
+
+    @Test("Store queries and row projections use identical semantics")
+    func storeAndRowsStayInSync() {
+        let store = AgentActivityStore()
+        let actions = [
+            AgentAction(
+                attribution: .session(sessionCandidate),
+                kind: .fileWrite,
+                status: .completed,
+                summary: "session"
+            ),
+            AgentAction(
+                attribution: .inferred(sessionCandidate),
+                kind: .fileWrite,
+                status: .completed,
+                summary: "inferred"
+            ),
+            AgentAction(
+                attribution: .ambiguous(
+                    candidates: [sessionCandidate, otherCandidate]
+                ),
+                kind: .fileWrite,
+                status: .failed,
+                summary: "ambiguous"
+            )
+        ]
+        actions.forEach(store.record)
+        let filter = AgentActivityFilter(
+            kind: .fileWrite,
+            status: .completed,
+            attribution: .inferred
+        )
+
+        let storedIDs = store.filtered(using: filter).map(\.id)
+        let rowIDs = actions.map(AgentActivityRow.init).filter { row in
+            filter.matches(
+                kind: row.kind,
+                status: row.status,
+                attribution: row.attribution
+            )
+        }
+        .map(\.id)
+
+        #expect(storedIDs == rowIDs)
+        #expect(storedIDs == [actions[1].id])
+    }
+
+    @Test("Every optional filter combination has conjunctive store/UI semantics")
+    func allFilterCombinations() {
+        let store = AgentActivityStore()
+        let kinds = AgentActionKind.allCases
+        let statuses = AgentActionStatus.allCases
+        let evidence = attributions
+        var actions: [AgentAction] = []
+
+        for (evidenceIndex, attribution) in evidence.enumerated() {
+            for (kindIndex, kind) in kinds.enumerated() {
+                for (statusIndex, status) in statuses.enumerated() {
+                    let action = AgentAction(
+                        attribution: attribution,
+                        kind: kind,
+                        status: status,
+                        summary: "\(evidenceIndex)-\(kindIndex)-\(statusIndex)"
+                    )
+                    actions.append(action)
+                    store.record(action)
+                }
+            }
+        }
+
+        let optionalKinds: [AgentActionKind?] = [nil] + kinds.map(Optional.some)
+        let optionalStatuses: [AgentActionStatus?] =
+            [nil] + statuses.map(Optional.some)
+        let optionalEvidence: [ActivityAttributionFilter?] =
+            [nil] + ActivityAttributionFilter.allCases.map(Optional.some)
+
+        for kind in optionalKinds {
+            for status in optionalStatuses {
+                for attribution in optionalEvidence {
+                    let filter = AgentActivityFilter(
+                        kind: kind,
+                        status: status,
+                        attribution: attribution
+                    )
+                    let expectedIDs = actions.filter { action in
+                        (kind == nil || action.kind == kind)
+                            && (status == nil || action.status == status)
+                            && (
+                                attribution == nil
+                                    || attribution?.matches(action.attribution) == true
+                            )
+                    }
+                    .map(\.id)
+                    let storeIDs = store.filtered(using: filter).map(\.id)
+                    let rowIDs = actions.map(AgentActivityRow.init).filter { row in
+                        filter.matches(
+                            kind: row.kind,
+                            status: row.status,
+                            attribution: row.attribution
+                        )
+                    }
+                    .map(\.id)
+
+                    #expect(storeIDs == expectedIDs)
+                    #expect(rowIDs == expectedIDs)
+                }
+            }
+        }
+    }
+
+    @Test("Dynamic evidence scope retains a selected zero-match category")
+    func dynamicEvidenceScopeRetainsSelectedCategory() {
+        let actions = [
+            AgentAction(
+                attribution: .inferred(sessionCandidate),
+                kind: .fileWrite,
+                status: .completed,
+                summary: "inferred"
+            ),
+            AgentAction(
+                attribution: .ambiguous(
+                    candidates: [sessionCandidate, otherCandidate]
+                ),
+                kind: .fileWrite,
+                status: .failed,
+                summary: "ambiguous"
+            )
+        ]
+        let filter = AgentActivityFilter(
+            kind: .fileWrite,
+            status: .failed,
+            attribution: .inferred
+        )
+
+        #expect(
+            filter.availableAttributionFilters(
+                in: actions,
+                kind: \.kind,
+                status: \.status,
+                attribution: \.attribution
+            ) == [.inferred, .ambiguous]
+        )
+    }
+
+    @Test("Capacity eviction updates available evidence categories")
+    func capacityEvictionUpdatesAvailableEvidence() {
+        let store = AgentActivityStore()
+        let base = Date(timeIntervalSinceReferenceDate: 0)
+        store.record(
+            AgentAction(
+                attribution: .session(sessionCandidate),
+                kind: .command,
+                timestamp: base,
+                summary: "old session link"
+            )
+        )
+        for index in 1..<AgentActivityStore.maxActions {
+            store.record(
+                AgentAction(
+                    attribution: .inferred(sessionCandidate),
+                    kind: .fileWrite,
+                    timestamp: base.addingTimeInterval(Double(index) * 2),
+                    summary: "inferred \(index)"
+                )
+            )
+        }
+        let filter = AgentActivityFilter()
+        let availableBeforeEviction = filter.availableAttributionFilters(
+            in: store.actions,
+            kind: \.kind,
+            status: \.status,
+            attribution: \.attribution
+        )
+
+        store.record(
+            AgentAction(
+                attribution: .ambiguous(
+                    candidates: [sessionCandidate, otherCandidate]
+                ),
+                kind: .toolCall,
+                timestamp: base.addingTimeInterval(
+                    Double(AgentActivityStore.maxActions) * 2
+                ),
+                summary: "new ambiguous action"
+            )
+        )
+        let availableAfterEviction = filter.availableAttributionFilters(
+            in: store.actions,
+            kind: \.kind,
+            status: \.status,
+            attribution: \.attribution
+        )
+
+        #expect(store.actions.count == AgentActivityStore.maxActions)
+        #expect(availableBeforeEviction == [.sessionLinked, .inferred])
+        #expect(availableAfterEviction == [.inferred, .ambiguous])
+    }
+
+    @Test("Localized category labels are distinct and non-empty")
+    func categoryLabels() {
+        let labels = ActivityAttributionFilter.allCases.map(\.filterLabel)
+
+        #expect(labels.allSatisfy { !$0.isEmpty })
+        #expect(Set(labels).count == labels.count)
+        #expect(
+            ActivityAttributionFilter.sessionLinked.filterLabel
+                == Strings.agentActivityAttributionSessionLinked
+        )
+    }
+}
