@@ -211,7 +211,12 @@ struct TerminalManagerCoordinatorTests {
         // full boot -> coordinator -> runner -> detector wiring through the
         // new `createTerminalTab` boot path.
         let terminal = TerminalManager(agentDetectionProcessRunner: { _, _, _, _ in
-            ProcessRunResult(stdout: "100 claude", stderr: "", exitCode: 0, timedOut: false)
+            ProcessRunResult(
+                stdout: completeClaudePsSnapshot(),
+                stderr: "",
+                exitCode: 0,
+                timedOut: false
+            )
         })
         terminal.paneManager = paneManager
 
@@ -228,4 +233,16 @@ struct TerminalManagerCoordinatorTests {
         #expect(terminal.agentDetector.detectedSessions.count == 1)
         #expect(terminal.agentDetector.detectedSessions.first?.agentType == .claudeCode)
     }
+}
+
+nonisolated private func completeClaudePsSnapshot() -> String {
+    [
+        "1 Wed Jul 22 15:08:40 2026 0:12.45 /sbin/launchd",
+        "100 Wed Jul 22 15:08:40 2026 0:12.45 claude",
+        """
+        99999 Wed Jul 22 15:08:40 2026 0:12.45 \
+        /bin/ps -eo pid=,lstart=,cputime=,command=
+        """,
+        AgentDetectionCoordinator.psCompletionMarker,
+    ].joined(separator: "\n")
 }
