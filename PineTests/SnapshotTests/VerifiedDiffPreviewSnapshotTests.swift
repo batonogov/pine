@@ -2,7 +2,7 @@
 //  VerifiedDiffPreviewSnapshotTests.swift
 //  PineTests
 //
-//  Exact-state and checked-text visual coverage for prepared inverse review.
+//  Exact-state, checked-text, and mixed-metadata visual coverage for review.
 //
 
 import AppKit
@@ -21,12 +21,14 @@ struct VerifiedDiffPreviewSnapshotTests {
     private static let english = Locale(identifier: "en")
 
     @Test(
-        "Prepared inverse modes render in light and dark appearances",
+        "Prepared inverse modes and mixed metadata render in both appearances",
         arguments: [
             (Fixture.exactMetadata, SnapshotAppearance.light),
             (Fixture.exactMetadata, SnapshotAppearance.dark),
             (Fixture.checkedText, SnapshotAppearance.light),
             (Fixture.checkedText, SnapshotAppearance.dark),
+            (Fixture.checkedTextAndMetadata, SnapshotAppearance.light),
+            (Fixture.checkedTextAndMetadata, SnapshotAppearance.dark),
         ]
     )
     func visual(
