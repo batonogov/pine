@@ -73,8 +73,16 @@ final class AgentActivityFilterUITests: PineUITestCase {
         launchActivityPanel()
 
         inferredChip.click()
+        XCTAssertTrue(
+            inferredChip.isSelected,
+            "The active evidence chip should expose the selected AX trait"
+        )
         XCTAssertTrue(commandsChip.waitForExistence(timeout: 3))
         commandsChip.click()
+        XCTAssertTrue(
+            commandsChip.isSelected,
+            "The active kind chip should expose the selected AX trait"
+        )
 
         XCTAssertTrue(
             noMatchesState.waitForExistence(timeout: 3),
@@ -86,10 +94,6 @@ final class AgentActivityFilterUITests: PineUITestCase {
             "A selected evidence chip must remain available so it can be cleared"
         )
         XCTAssertTrue(inferredChip.isSelected)
-        XCTAssertTrue(
-            commandsChip.isSelected,
-            "The active kind chip should expose the selected AX trait"
-        )
     }
 
     private func launchActivityPanel() {
@@ -143,10 +147,13 @@ final class AgentActivityFilterUITests: PineUITestCase {
     }
 
     private var noMatchesState: XCUIElement {
-        app.staticTexts["agentActivityNoMatches"].firstMatch
+        // SwiftUI does not reliably preserve a conditional Text's identifier
+        // in the macOS 26 accessibility tree. The UI-test locale is forced to
+        // English, so its visible label is the stable end-to-end contract.
+        app.staticTexts["No matching activity"].firstMatch
     }
 
     private var emptyFeedState: XCUIElement {
-        app.staticTexts["agentActivityEmpty"].firstMatch
+        app.staticTexts["No Active Agents"].firstMatch
     }
 }
