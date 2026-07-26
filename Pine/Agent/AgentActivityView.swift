@@ -270,13 +270,13 @@ struct AgentActivityView: View {
             Text(rows.isEmpty ? Strings.agentActivityEmpty : Strings.agentActivityNoMatches)
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
+                .accessibilityIdentifier(
+                    rows.isEmpty
+                        ? AccessibilityID.agentActivityEmpty
+                        : AccessibilityID.agentActivityNoMatches
+                )
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .accessibilityIdentifier(
-            rows.isEmpty
-                ? AccessibilityID.agentActivityEmpty
-                : AccessibilityID.agentActivityNoMatches
-        )
     }
 }
 

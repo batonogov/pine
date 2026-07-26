@@ -143,10 +143,10 @@ final class AgentActivityFilterUITests: PineUITestCase {
     }
 
     private var noMatchesState: XCUIElement {
-        app.descendants(matching: .any)["agentActivityNoMatches"].firstMatch
+        app.staticTexts["agentActivityNoMatches"].firstMatch
     }
 
     private var emptyFeedState: XCUIElement {
-        app.descendants(matching: .any)["agentActivityEmpty"].firstMatch
+        app.staticTexts["agentActivityEmpty"].firstMatch
     }
 }
