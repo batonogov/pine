@@ -13,16 +13,20 @@ import Testing
 @Suite("AgentDetectionCoordinator Tests")
 struct AgentDetectionCoordinatorTests {
 
-    @Test func parsePsOutputExtractsPidAndCommand() {
+    @Test func legacyTestParserExtractsPidAndCommand() {
         let output = "1234 /bin/bash\n5678 claude --verbose\n9012 codex"
-        let processes = AgentDetectionCoordinator.parsePsOutput(output)
+        let processes = AgentDetectionCoordinator.parseLegacyPsOutputForTesting(
+            output
+        )
         #expect(processes.count == 3)
         #expect(processes[0].pid == 1234)
         #expect(processes[1].command == "claude --verbose")
     }
 
-    @Test func parsePsOutputSkipsNonNumericLines() {
-        let processes = AgentDetectionCoordinator.parsePsOutput("PID COMMAND\n42 claude")
+    @Test func legacyTestParserSkipsNonNumericLines() {
+        let processes = AgentDetectionCoordinator.parseLegacyPsOutputForTesting(
+            "PID COMMAND\n42 claude"
+        )
         #expect(processes.count == 1)
         #expect(processes[0].pid == 42)
     }
@@ -34,7 +38,16 @@ struct AgentDetectionCoordinatorTests {
     @Test func coordinatorFeedsSnapshotsToDetector() {
         let detector = AgentDetector()
         let runner: ProcessRunner = { _, _, _, _ in
-            ProcessRunResult(stdout: "100 claude\n200 codex\n300 bash", stderr: "", exitCode: 0, timedOut: false)
+            ProcessRunResult(
+                stdout: completePsOutput(
+                    (100, "claude"),
+                    (200, "codex"),
+                    (300, "bash")
+                ),
+                stderr: "",
+                exitCode: 0,
+                timedOut: false
+            )
         }
         let coordinator = AgentDetectionCoordinator(detector: detector, terminalManager: nil, processRunner: runner, pollInterval: 0.05)
         coordinator.runSnapshotForTesting()
@@ -49,7 +62,7 @@ struct AgentDetectionCoordinatorTests {
         // mutable value without capturing a mutable local (strict
         // concurrency forbids capturing `var` in @Sendable closures).
         nonisolated final class MockOutput: @unchecked Sendable { var value: String; init(_ v: String) { value = v } }
-        let mockOutput = MockOutput("100 claude")
+        let mockOutput = MockOutput(completePsOutput((100, "claude")))
         let runner: ProcessRunner = { _, _, _, _ in
             ProcessRunResult(stdout: mockOutput.value, stderr: "", exitCode: 0, timedOut: false)
         }
@@ -58,7 +71,7 @@ struct AgentDetectionCoordinatorTests {
         #expect(detector.activeCount == 1)
         // A valid non-agent row represents an authoritative full snapshot
         // containing no agents.
-        mockOutput.value = "1 /sbin/launchd"
+        mockOutput.value = completePsOutput()
         coordinator.runSnapshotForTesting()
         #expect(detector.detectedSessions[0].state == .done)
         #expect(detector.activeCount == 0)
@@ -66,7 +79,7 @@ struct AgentDetectionCoordinatorTests {
 
     @Test func emptyExitZeroPollIsFailedEvidenceNotTermination() throws {
         nonisolated final class MockOutput: @unchecked Sendable {
-            var value = "100 claude"
+            var value = completePsOutput((100, "claude"))
         }
         let detector = AgentDetector(staleAfter: 0)
         let output = MockOutput()
@@ -95,7 +108,7 @@ struct AgentDetectionCoordinatorTests {
 
     @Test func whollyMalformedExitZeroPollIsFailedEvidenceNotTermination() throws {
         nonisolated final class MockOutput: @unchecked Sendable {
-            var value = "100 claude"
+            var value = completePsOutput((100, "claude"))
         }
         let detector = AgentDetector(staleAfter: 0)
         let output = MockOutput()
@@ -124,7 +137,7 @@ struct AgentDetectionCoordinatorTests {
 
     @Test func partiallyMalformedExitZeroPollIsFailedEvidenceNotTermination() throws {
         nonisolated final class MockOutput: @unchecked Sendable {
-            var value = "100 claude"
+            var value = completePsOutput((100, "claude"))
         }
         let detector = AgentDetector(staleAfter: 0)
         let output = MockOutput()
@@ -143,10 +156,79 @@ struct AgentDetectionCoordinatorTests {
         coordinator.runSnapshotForTesting()
         let session = try #require(detector.session(forPID: 100))
 
-        output.value = "1 /sbin/launchd\nnot-a-pid claude"
+        output.value = completePsOutput() + "\nnot-a-pid claude"
         coordinator.runSnapshotForTesting()
 
         #expect(detector.session(forPID: 100) === session)
+        #expect(session.state != .done)
+        #expect(session.liveness == .stale)
+    }
+
+    @Test func missingWeekdayExitZeroPollIsFailedEvidenceNotTermination() throws {
+        nonisolated final class MockOutput: @unchecked Sendable {
+            var value = completePsOutput((100, "claude"))
+        }
+        let detector = AgentDetector(staleAfter: 0)
+        let output = MockOutput()
+        let coordinator = AgentDetectionCoordinator(
+            detector: detector,
+            terminalManager: nil,
+            processRunner: { _, _, _, _ in
+                ProcessRunResult(
+                    stdout: output.value,
+                    stderr: "",
+                    exitCode: 0,
+                    timedOut: false
+                )
+            }
+        )
+        coordinator.runSnapshotForTesting()
+        let session = try #require(detector.session(forPID: 100))
+
+        output.value = completePsOutput()
+            + "\n100 Jul 22 15:08:40 2026 0:12.45 claude"
+        coordinator.runSnapshotForTesting()
+
+        #expect(detector.session(forPID: 100) === session)
+        #expect(session.state != .done)
+        #expect(session.liveness == .stale)
+    }
+
+    @Test func cleanLineBoundaryTruncationIsFailedEvidence() throws {
+        nonisolated final class MockOutput: @unchecked Sendable {
+            var value = completePsOutput((100, "claude"))
+        }
+        let detector = AgentDetector(staleAfter: 0)
+        let output = MockOutput()
+        let coordinator = AgentDetectionCoordinator(
+            detector: detector,
+            terminalManager: nil,
+            processRunner: { _, _, _, _ in
+                ProcessRunResult(
+                    stdout: output.value,
+                    stderr: "",
+                    exitCode: 0,
+                    timedOut: false
+                )
+            }
+        )
+        coordinator.runSnapshotForTesting()
+        let session = try #require(detector.session(forPID: 100))
+
+        // Every row is individually valid and PID 1 is present, but the ps
+        // wrapper's end marker is missing.
+        output.value = [
+            psRow(pid: 1, command: "/sbin/launchd"),
+            psRow(pid: 200, command: "codex"),
+            psRow(
+                pid: 99_999,
+                command: "/bin/ps -eo pid=,lstart=,cputime=,command="
+            ),
+        ].joined(separator: "\n")
+        coordinator.runSnapshotForTesting()
+
+        #expect(detector.session(forPID: 100) === session)
+        #expect(detector.session(forPID: 200) == nil)
         #expect(session.state != .done)
         #expect(session.liveness == .stale)
     }
@@ -159,7 +241,7 @@ struct AgentDetectionCoordinatorTests {
         let detector = AgentDetector(staleAfter: 0)
         let result = MockResult(
             ProcessRunResult(
-                stdout: "100 claude",
+                stdout: completePsOutput((100, "claude")),
                 stderr: "",
                 exitCode: 0,
                 timedOut: false
@@ -198,7 +280,7 @@ struct AgentDetectionCoordinatorTests {
         let detector = AgentDetector(staleAfter: 60)
         let result = MockResult(
             ProcessRunResult(
-                stdout: "100 claude",
+                stdout: completePsOutput((100, "claude")),
                 stderr: "",
                 exitCode: 0,
                 timedOut: false
@@ -215,7 +297,7 @@ struct AgentDetectionCoordinatorTests {
         let session = try #require(detector.session(forPID: 100))
 
         result.value = ProcessRunResult(
-            stdout: "200 codex",
+            stdout: completePsOutput((200, "codex")),
             stderr: "",
             exitCode: 0,
             timedOut: true
@@ -322,12 +404,66 @@ struct AgentDetectionCoordinatorTests {
     @Test func coordinatorDoesNotDoubleCount() {
         let detector = AgentDetector()
         let runner: ProcessRunner = { _, _, _, _ in
-            ProcessRunResult(stdout: "100 claude", stderr: "", exitCode: 0, timedOut: false)
+            ProcessRunResult(
+                stdout: completePsOutput((100, "claude")),
+                stderr: "",
+                exitCode: 0,
+                timedOut: false
+            )
         }
         let coordinator = AgentDetectionCoordinator(detector: detector, terminalManager: nil, processRunner: runner, pollInterval: 0.05)
         coordinator.runSnapshotForTesting()
         coordinator.runSnapshotForTesting()
         #expect(detector.detectedSessions.count == 1)
+    }
+
+    @Test func coordinatorRunsPsWithFixedUTCAndCLocale() {
+        nonisolated final class Invocation: @unchecked Sendable {
+            private let lock = NSLock()
+            private var executable = ""
+            private var arguments: [String] = []
+
+            func record(executable: String, arguments: [String]) {
+                lock.lock()
+                self.executable = executable
+                self.arguments = arguments
+                lock.unlock()
+            }
+
+            var captured: (String, [String]) {
+                lock.lock()
+                defer { lock.unlock() }
+                return (executable, arguments)
+            }
+        }
+
+        let invocation = Invocation()
+        let coordinator = AgentDetectionCoordinator(
+            detector: AgentDetector(),
+            terminalManager: nil,
+            processRunner: { executable, arguments, _, _ in
+                invocation.record(
+                    executable: executable,
+                    arguments: arguments
+                )
+                return ProcessRunResult(
+                    stdout: completePsOutput(),
+                    stderr: "",
+                    exitCode: 0,
+                    timedOut: false
+                )
+            }
+        )
+
+        coordinator.runSnapshotForTesting()
+
+        let captured = invocation.captured
+        #expect(captured.0 == "/bin/sh")
+        #expect(captured.1.first == "-c")
+        let command = captured.1.last ?? ""
+        #expect(command.contains("TZ=UTC LC_ALL=C /bin/ps"))
+        #expect(command.contains("pid=,lstart=,cputime=,command="))
+        #expect(command.contains(AgentDetectionCoordinator.psCompletionMarker))
     }
 
     @Test func startStopIsIdempotent() {
@@ -380,7 +516,12 @@ struct AgentDetectionCoordinatorTests {
         let fires = FireCounter()
         let runner: ProcessRunner = { _, _, _, _ in
             fires.increment()
-            return ProcessRunResult(stdout: "100 claude", stderr: "", exitCode: 0, timedOut: false)
+            return ProcessRunResult(
+                stdout: completePsOutput((100, "claude")),
+                stderr: "",
+                exitCode: 0,
+                timedOut: false
+            )
         }
         let coordinator = AgentDetectionCoordinator(
             detector: detector, terminalManager: nil,
@@ -419,7 +560,7 @@ struct AgentDetectionCoordinatorTests {
                 }
                 condition.unlock()
                 return ProcessRunResult(
-                    stdout: "100 claude",
+                    stdout: completePsOutput((100, "claude")),
                     stderr: "",
                     exitCode: 0,
                     timedOut: false
@@ -482,7 +623,9 @@ struct AgentDetectionCoordinatorTests {
                     }
                 }
                 condition.unlock()
-                let output = call == 1 ? "100 claude" : "1 /sbin/launchd"
+                let output = call == 1
+                    ? completePsOutput((100, "claude"))
+                    : completePsOutput((200, "codex"))
                 return ProcessRunResult(
                     stdout: output,
                     stderr: "",
@@ -503,6 +646,12 @@ struct AgentDetectionCoordinatorTests {
                 condition.broadcast()
                 condition.unlock()
             }
+
+            var calls: Int {
+                condition.lock()
+                defer { condition.unlock() }
+                return callCount
+            }
         }
 
         let runner = RestartRunner()
@@ -522,11 +671,19 @@ struct AgentDetectionCoordinatorTests {
         coordinator.stop()
         coordinator.start()
         runner.releaseFirst()
-        try await Task.sleep(for: .milliseconds(150))
+        for _ in 0..<100 where runner.calls < 2 {
+            try await Task.sleep(for: .milliseconds(5))
+        }
+        for _ in 0..<100 where detector.session(forPID: 200) == nil {
+            try await Task.sleep(for: .milliseconds(5))
+        }
         coordinator.stop()
 
         #expect(didStart)
-        #expect(detector.detectedSessions.isEmpty)
+        #expect(runner.calls >= 2)
+        #expect(detector.detectedSessions.count == 1)
+        #expect(detector.session(forPID: 100) == nil)
+        #expect(detector.session(forPID: 200)?.agentType == .codex)
     }
 
     @Test func sessionForPIDReturnsActiveSession() {
@@ -591,6 +748,16 @@ struct AgentDetectionCoordinatorTests {
         #expect(AgentDetectionCoordinator.parseCpuTime("") == nil)
     }
 
+    @Test func parseCpuTimeRejectsInvalidRangesAndShapes() {
+        #expect(AgentDetectionCoordinator.parseCpuTime("1:60") == nil)
+        #expect(AgentDetectionCoordinator.parseCpuTime("24:00:00") == nil)
+        #expect(AgentDetectionCoordinator.parseCpuTime("1:60:00") == nil)
+        #expect(AgentDetectionCoordinator.parseCpuTime("1-24:00:00") == nil)
+        #expect(AgentDetectionCoordinator.parseCpuTime("1-23:00") == nil)
+        #expect(AgentDetectionCoordinator.parseCpuTime("0:00.1") == nil)
+        #expect(AgentDetectionCoordinator.parseCpuTime("0:00.123") == nil)
+    }
+
     @Test func parsePsOutputExtractsCpuTimeFromThreeColumnForm() {
         // Realistic `ps -eo pid=,command=,cputime=` output: multi-word
         // command followed by an `MM:SS.cc` cputime.
@@ -598,7 +765,9 @@ struct AgentDetectionCoordinatorTests {
           1234 /usr/local/bin/claude 0:12.45
           5678 node /opt/homebrew/bin/pi 1:23:01
           """
-        let processes = AgentDetectionCoordinator.parsePsOutput(output)
+        let processes = AgentDetectionCoordinator.parseLegacyPsOutputForTesting(
+            output
+        )
         #expect(processes.count == 2)
         #expect(processes[0].pid == 1234)
         #expect(processes[0].command == "/usr/local/bin/claude")
@@ -628,13 +797,62 @@ struct AgentDetectionCoordinatorTests {
         #expect(AgentDetectionCoordinator.parsePsOutput(output).isEmpty)
     }
 
-    @Test func parsePsOutputDoesNotCorruptCommandEndingInNumericArg() {
+    @Test func parsePsOutputRejectsMissingWeekdayAndBadMonth() {
+        #expect(
+            AgentDetectionCoordinator.parsePsOutput(
+                "1234 Jul 22 15:08:40 2026 0:12.45 claude"
+            ).isEmpty
+        )
+        #expect(
+            AgentDetectionCoordinator.parsePsOutput(
+                "1234 Wed Xxx 22 15:08:40 2026 0:12.45 claude"
+            ).isEmpty
+        )
+    }
+
+    @Test func parsePsOutputRejectsInvalidDateTimeAndWeekday() {
+        let malformedRows = [
+            "1234 Thu Jul 22 15:08:40 2026 0:12.45 claude",
+            "1234 Wed Feb 30 15:08:40 2026 0:12.45 claude",
+            "1234 Wed Jul 22 24:08:40 2026 0:12.45 claude",
+            "1234 Wed Jul 22 15:60:40 2026 0:12.45 claude",
+            "1234 Wed Jul 22 15:08:60 2026 0:12.45 claude",
+            "1234 Wed Jul 22 15:08:40 1969 0:12.45 claude",
+            "1234 Wed Jul 22 15:08:40 2026 0:60.00 claude",
+        ]
+        for row in malformedRows {
+            #expect(AgentDetectionCoordinator.parsePsOutput(row).isEmpty)
+        }
+    }
+
+    @Test func legacyTestParserDoesNotCorruptCommandEndingInNumericArg() {
         // `claude --port 8080` — the trailing `8080` is a command arg, not a
         // cputime value (no colon). Must stay in the command string.
         let output = "  1234 claude --port 8080\n"
-        let processes = AgentDetectionCoordinator.parsePsOutput(output)
+        let processes = AgentDetectionCoordinator.parseLegacyPsOutputForTesting(
+            output
+        )
         #expect(processes.count == 1)
         #expect(processes[0].command == "claude --port 8080")
         #expect(processes[0].cpuTime == nil)
     }
+}
+
+nonisolated private func completePsOutput(
+    _ rows: (pid: Int32, command: String)...
+) -> String {
+    var output = [psRow(pid: 1, command: "/sbin/launchd")]
+    output.append(contentsOf: rows.map { psRow(pid: $0.pid, command: $0.command) })
+    output.append(
+        psRow(
+            pid: 99_999,
+            command: "/bin/ps -eo pid=,lstart=,cputime=,command="
+        )
+    )
+    output.append(AgentDetectionCoordinator.psCompletionMarker)
+    return output.joined(separator: "\n")
+}
+
+nonisolated private func psRow(pid: Int32, command: String) -> String {
+    "\(pid) Wed Jul 22 15:08:40 2026 0:12.45 \(command)"
 }

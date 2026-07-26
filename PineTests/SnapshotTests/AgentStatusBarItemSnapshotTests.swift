@@ -90,7 +90,7 @@ struct AgentStatusBarItemSnapshotTests {
 
     @Test("Single agent renders in light appearance")
     func singleAgentLight() throws {
-        let view = AgentStatusBarItem(summaries: [singleAgentSummary()]) { _, _ in }
+        let view = englishView(summaries: [singleAgentSummary()])
         try assertSnapshot(
             of: view,
             size: Self.itemSize,
@@ -102,7 +102,7 @@ struct AgentStatusBarItemSnapshotTests {
 
     @Test("Single agent renders in dark appearance")
     func singleAgentDark() throws {
-        let view = AgentStatusBarItem(summaries: [singleAgentSummary()]) { _, _ in }
+        let view = englishView(summaries: [singleAgentSummary()])
         try assertSnapshot(
             of: view,
             size: Self.itemSize,
@@ -116,7 +116,7 @@ struct AgentStatusBarItemSnapshotTests {
 
     @Test("Multiple agents render in light appearance")
     func multipleAgentsLight() throws {
-        let view = AgentStatusBarItem(summaries: twoAgentSummaries()) { _, _ in }
+        let view = englishView(summaries: twoAgentSummaries())
         try assertSnapshot(
             of: view,
             size: Self.itemSize,
@@ -128,7 +128,7 @@ struct AgentStatusBarItemSnapshotTests {
 
     @Test("Multiple agents render in dark appearance")
     func multipleAgentsDark() throws {
-        let view = AgentStatusBarItem(summaries: twoAgentSummaries()) { _, _ in }
+        let view = englishView(summaries: twoAgentSummaries())
         try assertSnapshot(
             of: view,
             size: Self.itemSize,
@@ -142,7 +142,7 @@ struct AgentStatusBarItemSnapshotTests {
 
     @Test("Stale agent renders in light appearance")
     func staleAgentLight() throws {
-        let view = AgentStatusBarItem(summaries: [staleAgentSummary()]) { _, _ in }
+        let view = englishView(summaries: [staleAgentSummary()])
         try assertSnapshot(
             of: view,
             size: Self.itemSize,
@@ -154,7 +154,7 @@ struct AgentStatusBarItemSnapshotTests {
 
     @Test("Stale agent renders in dark appearance")
     func staleAgentDark() throws {
-        let view = AgentStatusBarItem(summaries: [staleAgentSummary()]) { _, _ in }
+        let view = englishView(summaries: [staleAgentSummary()])
         try assertSnapshot(
             of: view,
             size: Self.itemSize,
@@ -166,9 +166,7 @@ struct AgentStatusBarItemSnapshotTests {
 
     @Test("Terminated agent renders in light appearance")
     func terminatedAgentLight() throws {
-        let view = AgentStatusBarItem(
-            summaries: [terminatedAgentSummary()]
-        ) { _, _ in }
+        let view = englishView(summaries: [terminatedAgentSummary()])
         try assertSnapshot(
             of: view,
             size: Self.itemSize,
@@ -180,9 +178,7 @@ struct AgentStatusBarItemSnapshotTests {
 
     @Test("Terminated agent renders in dark appearance")
     func terminatedAgentDark() throws {
-        let view = AgentStatusBarItem(
-            summaries: [terminatedAgentSummary()]
-        ) { _, _ in }
+        let view = englishView(summaries: [terminatedAgentSummary()])
         try assertSnapshot(
             of: view,
             size: Self.itemSize,
@@ -194,9 +190,7 @@ struct AgentStatusBarItemSnapshotTests {
 
     @Test("Mixed liveness agents render in light appearance")
     func mixedLivenessLight() throws {
-        let view = AgentStatusBarItem(
-            summaries: mixedLivenessSummaries()
-        ) { _, _ in }
+        let view = englishView(summaries: mixedLivenessSummaries())
         try assertSnapshot(
             of: view,
             size: Self.mixedItemSize,
@@ -208,9 +202,7 @@ struct AgentStatusBarItemSnapshotTests {
 
     @Test("Mixed liveness agents render in dark appearance")
     func mixedLivenessDark() throws {
-        let view = AgentStatusBarItem(
-            summaries: mixedLivenessSummaries()
-        ) { _, _ in }
+        let view = englishView(summaries: mixedLivenessSummaries())
         try assertSnapshot(
             of: view,
             size: Self.mixedItemSize,
@@ -218,5 +210,12 @@ struct AgentStatusBarItemSnapshotTests {
             named: "AgentStatusBarItem.mixedLiveness.dark",
             tolerance: Self.tolerance
         )
+    }
+
+    private func englishView(
+        summaries: [AgentStatusSummary]
+    ) -> some View {
+        AgentStatusBarItem(summaries: summaries) { _, _ in }
+            .environment(\.locale, Locale(identifier: "en"))
     }
 }

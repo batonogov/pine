@@ -134,8 +134,8 @@ nonisolated final class AgentDetectionCoordinator {
     nonisolated private func captureSnapshot(run: AgentPollingRun) {
         let sequence = run.nextSequence()
         let result = processRunner(
-            "/bin/ps",
-            ["-eo", "pid=,lstart=,cputime=,command="],
+            "/bin/sh",
+            ["-c", Self.psSnapshotCommand],
             "",
             3.0
         )
@@ -172,57 +172,154 @@ nonisolated final class AgentDetectionCoordinator {
     /// via `captureSnapshot`. Relies on `DetectedProcess` being `nonisolated`
     /// so its init is reachable from here.
     ///
-    /// macOS `lstart=` is a fixed five-token value (`Wed Jul 22 15:08:40
+    /// macOS `lstart=` is a fixed five-token UTC value (`Wed Jul 22 15:08:40
     /// 2026`), followed by cputime and then the unbounded command. Keeping
     /// command last makes parsing unambiguous and supplies a stable start
-    /// discriminator for same-pid reuse. The legacy `pid,command,cputime`
-    /// injected-test form remains supported.
+    /// discriminator for same-pid reuse.
+    ///
+    /// Every fixed field is validated. A row that does not match the exact
+    /// production shape is omitted, causing ``makeSnapshot`` to reject the
+    /// entire poll rather than treating damaged output as absence evidence.
     nonisolated static func parsePsOutput(_ output: String) -> [DetectedProcess] {
         var processes: [DetectedProcess] = []
         for line in output.split(separator: "\n", omittingEmptySubsequences: true) {
             let trimmed = line.trimmingCharacters(in: .whitespaces)
             let tokens = trimmed.split(separator: " ", omittingEmptySubsequences: true)
-            guard tokens.count >= 2 else { continue }
-            guard let pid = Int32(tokens[0]) else { continue }
-
-            let looksLikeLongStart = Self.psWeekdays.contains(String(tokens[1]))
-                || (tokens.count >= 5 && tokens[4].filter { $0 == ":" }.count == 2)
-            if looksLikeLongStart {
-                guard tokens.count >= 8,
-                      tokens[4].filter({ $0 == ":" }).count == 2,
-                      Int(tokens[5]) != nil,
-                      let cpuTime = parseCpuTime(String(tokens[6])) else {
-                    continue
-                }
-                let command = tokens[7...].joined(separator: " ")
-                guard !command.isEmpty else { continue }
-                let startIdentifier = tokens[1...5].joined(separator: " ")
-                processes.append(
-                    DetectedProcess(
-                        pid: pid,
-                        command: command,
-                        cpuTime: cpuTime,
-                        startIdentifier: startIdentifier
-                    )
-                )
+            guard tokens.count >= 8,
+                  let pid = Int32(tokens[0]),
+                  validLongStart(tokens[1...5]),
+                  let cpuTime = parseCpuTime(String(tokens[6])) else {
                 continue
             }
-
-            // Last token is cumulative CPU time (ps cputime=) when it parses
-            // as one — see ``parseCpuTime(_:)``.
-            let last = String(tokens[tokens.count - 1])
-            let cpuTime = parseCpuTime(last)
-            let commandEnd = cpuTime != nil ? tokens.count - 1 : tokens.count
-            guard commandEnd > 1 else { continue }
-            let command = tokens[1..<commandEnd].joined(separator: " ")
-            processes.append(DetectedProcess(pid: pid, command: command, cpuTime: cpuTime))
+            let command = tokens[7...].joined(separator: " ")
+            guard !command.isEmpty else { continue }
+            processes.append(
+                DetectedProcess(
+                    pid: pid,
+                    command: command,
+                    cpuTime: cpuTime,
+                    startIdentifier: tokens[1...5].joined(separator: " ")
+                )
+            )
         }
         return processes
     }
 
-    nonisolated private static let psWeekdays: Set<String> = [
-        "Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun",
+    #if DEBUG
+    /// Parses the historical injected-test `pid command [cputime]` shape.
+    ///
+    /// Production evidence never passes through this seam: accepting a short
+    /// row from the real long-form command would turn truncated output into
+    /// authoritative absence.
+    nonisolated static func parseLegacyPsOutputForTesting(
+        _ output: String
+    ) -> [DetectedProcess] {
+        var processes: [DetectedProcess] = []
+        for line in output.split(separator: "\n", omittingEmptySubsequences: true) {
+            let tokens = line.split(
+                separator: " ",
+                omittingEmptySubsequences: true
+            )
+            guard tokens.count >= 2, let pid = Int32(tokens[0]) else { continue }
+            let cpuTime = parseCpuTime(String(tokens[tokens.count - 1]))
+            let commandEnd = cpuTime == nil ? tokens.count : tokens.count - 1
+            guard commandEnd > 1 else { continue }
+            processes.append(
+                DetectedProcess(
+                    pid: pid,
+                    command: tokens[1..<commandEnd].joined(separator: " "),
+                    cpuTime: cpuTime
+                )
+            )
+        }
+        return processes
+    }
+    #endif
+
+    nonisolated private static let psMonths: [String: Int] = [
+        "Jan": 1, "Feb": 2, "Mar": 3, "Apr": 4, "May": 5, "Jun": 6,
+        "Jul": 7, "Aug": 8, "Sep": 9, "Oct": 10, "Nov": 11, "Dec": 12,
     ]
+
+    /// Calendar weekday values use Sunday == 1.
+    nonisolated private static let psWeekdays: [String: Int] = [
+        "Sun": 1, "Mon": 2, "Tue": 3, "Wed": 4,
+        "Thu": 5, "Fri": 6, "Sat": 7,
+    ]
+
+    /// A marker written by the wrapper only after `ps` has closed its output.
+    /// Unlike any particular process row, this is guaranteed to be last.
+    nonisolated static let psCompletionMarker = "__PINE_PS_SNAPSHOT_COMPLETE__"
+
+    nonisolated private static let psSnapshotCommand = [
+        "TZ=UTC LC_ALL=C /bin/ps -eo pid=,lstart=,cputime=,command=;",
+        "status=$?;",
+        "printf '\\n\(psCompletionMarker)\\n';",
+        "exit \"$status\"",
+    ].joined(separator: " ")
+
+    /// Validates the five fixed UTC `lstart` tokens, including the actual
+    /// Gregorian date and matching weekday. This rejects values such as
+    /// `Wed Xxx 99 25:80:80 2026` that merely occupy the expected columns.
+    nonisolated private static func validLongStart(
+        _ tokens: ArraySlice<Substring>
+    ) -> Bool {
+        guard tokens.count == 5 else { return false }
+        let values = Array(tokens)
+        guard let expectedWeekday = psWeekdays[String(values[0])],
+              let month = psMonths[String(values[1])],
+              let day = Int(values[2]),
+              let year = Int(values[4]),
+              (1970...9999).contains(year),
+              let clock = parseClock(String(values[3])) else {
+            return false
+        }
+
+        var calendar = Calendar(identifier: .gregorian)
+        guard let utc = TimeZone(secondsFromGMT: 0) else { return false }
+        calendar.timeZone = utc
+        var components = DateComponents()
+        components.calendar = calendar
+        components.timeZone = utc
+        components.year = year
+        components.month = month
+        components.day = day
+        components.hour = clock.hour
+        components.minute = clock.minute
+        components.second = clock.second
+        guard let date = calendar.date(from: components) else { return false }
+        let resolved = calendar.dateComponents(
+            [.year, .month, .day, .hour, .minute, .second, .weekday],
+            from: date
+        )
+        return resolved.year == year
+            && resolved.month == month
+            && resolved.day == day
+            && resolved.hour == clock.hour
+            && resolved.minute == clock.minute
+            && resolved.second == clock.second
+            && resolved.weekday == expectedWeekday
+    }
+
+    nonisolated private static func parseClock(
+        _ value: String
+    ) -> (hour: Int, minute: Int, second: Int)? {
+        let fields = value.split(
+            separator: ":",
+            omittingEmptySubsequences: false
+        )
+        guard fields.count == 3,
+              fields.allSatisfy({ !$0.isEmpty && $0.allSatisfy(\.isNumber) }),
+              let hour = Int(fields[0]),
+              let minute = Int(fields[1]),
+              let second = Int(fields[2]),
+              (0..<24).contains(hour),
+              (0..<60).contains(minute),
+              (0..<60).contains(second) else {
+            return nil
+        }
+        return (hour, minute, second)
+    }
 
     /// Parses a macOS `ps cputime=` value (`[[DD-]HH:]MM:SS[.cc]`, always
     /// containing a colon) into cumulative whole seconds. Returns `nil` for
@@ -233,23 +330,81 @@ nonisolated final class AgentDetectionCoordinator {
     ///
     /// `nonisolated` so it is reachable from the nonisolated parser above.
     nonisolated static func parseCpuTime(_ value: String) -> Int? {
-        // macOS `ps` always emits at least `MM:SS[.cc]`; a colon must be
-        // present. Reject bare integers (command args) explicitly.
-        guard value.contains(":") else { return nil }
-        // Strip a leading day field (`DD-HH:MM:SS` → `DD:HH:MM:SS`) and the
-        // optional centisecond suffix (`.cc`).
-        let withoutDays = value.replacingOccurrences(of: "-", with: ":")
-        let withoutCenti = withoutDays.split(separator: ".").first.map(String.init) ?? withoutDays
-        let parts = withoutCenti.split(separator: ":").compactMap { Int($0) }
-        // parts is [SS], [MM, SS], [HH, MM, SS], or [DD, HH, MM, SS]. Must
-        // match the segment count exactly (a stray non-numeric segment means
-        // this was not really a cputime value). Days are base-24, the rest
-        // base-60, so pad to a fixed [DD, HH, MM, SS] and apply positional
-        // multipliers (a naive `*60` fold mis-counts day fields).
-        let expectedSegments = withoutCenti.filter { $0 == ":" }.count + 1
-        guard parts.count == expectedSegments, (1...4).contains(parts.count) else { return nil }
-        let padded = [Int](repeating: 0, count: 4 - parts.count) + parts
-        return padded[0] * 86_400 + padded[1] * 3_600 + padded[2] * 60 + padded[3]
+        let fractionParts = value.split(
+            separator: ".",
+            omittingEmptySubsequences: false
+        )
+        guard (1...2).contains(fractionParts.count),
+              fractionParts.count == 1
+                || (fractionParts[1].count == 2
+                    && fractionParts[1].allSatisfy(\.isNumber)) else {
+            return nil
+        }
+
+        let dayParts = fractionParts[0].split(
+            separator: "-",
+            omittingEmptySubsequences: false
+        )
+        guard (1...2).contains(dayParts.count) else { return nil }
+        let clockFields = dayParts[dayParts.count - 1].split(
+            separator: ":",
+            omittingEmptySubsequences: false
+        )
+        guard (2...3).contains(clockFields.count),
+              clockFields.allSatisfy({
+                  !$0.isEmpty && $0.allSatisfy(\.isNumber)
+              }) else {
+            return nil
+        }
+        if dayParts.count == 2, clockFields.count != 3 {
+            return nil
+        }
+
+        let days: Int
+        if dayParts.count == 2 {
+            guard !dayParts[0].isEmpty,
+                  dayParts[0].allSatisfy(\.isNumber),
+                  let parsedDays = Int(dayParts[0]) else {
+                return nil
+            }
+            days = parsedDays
+        } else {
+            days = 0
+        }
+
+        let values = clockFields.compactMap { Int($0) }
+        guard values.count == clockFields.count else { return nil }
+        let hours = values.count == 3 ? values[0] : 0
+        let minutes = values[values.count - 2]
+        let seconds = values[values.count - 1]
+        guard (0..<24).contains(hours),
+              minutes >= 0,
+              (0..<60).contains(seconds),
+              values.count == 2 || minutes < 60 else {
+            return nil
+        }
+
+        let (daySeconds, dayOverflow) = days.multipliedReportingOverflow(
+            by: 86_400
+        )
+        let (hourSeconds, hourOverflow) = hours.multipliedReportingOverflow(
+            by: 3_600
+        )
+        let (minuteSeconds, minuteOverflow) = minutes.multipliedReportingOverflow(
+            by: 60
+        )
+        guard !dayOverflow, !hourOverflow, !minuteOverflow else { return nil }
+        let (dayAndHour, firstOverflow) = daySeconds.addingReportingOverflow(
+            hourSeconds
+        )
+        let (throughMinutes, secondOverflow) = dayAndHour.addingReportingOverflow(
+            minuteSeconds
+        )
+        let (total, thirdOverflow) = throughMinutes.addingReportingOverflow(
+            seconds
+        )
+        guard !firstOverflow, !secondOverflow, !thirdOverflow else { return nil }
+        return total
     }
 
     /// Classifies a process-run result without conflating empty, partial, or
@@ -263,13 +418,19 @@ nonisolated final class AgentDetectionCoordinator {
         guard result.exitCode == 0, !result.timedOut else {
             return .failed(observation: observation)
         }
-        let processes = parsePsOutput(result.stdout)
-        let reportedRowCount = result.stdout.split(
+        let outputLines = result.stdout.split(
             separator: "\n",
             omittingEmptySubsequences: true
-        ).count
+        )
+        guard outputLines.last == Substring(psCompletionMarker) else {
+            return .failed(observation: observation)
+        }
+        let processLines = outputLines.dropLast()
+        let processOutput = processLines.joined(separator: "\n")
+        let processes = parsePsOutput(processOutput)
         guard !processes.isEmpty,
-              processes.count == reportedRowCount else {
+              processes.count == processLines.count,
+              processes.contains(where: { $0.pid == 1 }) else {
             return .failed(observation: observation)
         }
         return .success(processes: processes, observation: observation)
@@ -361,8 +522,8 @@ nonisolated final class AgentDetectionCoordinator {
     /// `parsePsOutput`, then calls `applySnapshot` directly on the main actor.
     @MainActor internal func runSnapshotForTesting() {
         let result = processRunner(
-            "/bin/ps",
-            ["-eo", "pid=,lstart=,cputime=,command="],
+            "/bin/sh",
+            ["-c", Self.psSnapshotCommand],
             "",
             3.0
         )

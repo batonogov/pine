@@ -205,47 +205,116 @@ struct AgentStatusSummaryTests {
         #expect(summaries.first?.agentType == .claudeCode)
     }
 
-    @Test func countStringsUseLocaleSpecificPluralForms() {
-        let russian = Locale(identifier: "ru")
-        #expect(
-            Strings.statusbarActiveAgentCount(1, locale: russian)
-                == "1 агент активен"
-        )
-        #expect(
-            Strings.statusbarActiveAgentCount(2, locale: russian)
-                == "2 агента активны"
-        )
-        #expect(
-            Strings.statusbarActiveAgentCount(5, locale: russian)
-                == "5 агентов активны"
-        )
-        #expect(
-            Strings.statusbarAgentSessionCount(21, locale: russian)
-                == "21 сессия агента"
-        )
-        #expect(
-            Strings.statusbarAgentSessionCount(22, locale: russian)
-                == "22 сессии агентов"
-        )
-        #expect(
-            Strings.statusbarAgentSessionCount(25, locale: russian)
-                == "25 сессий агентов"
-        )
+    @Test func countStringsUseExactFormsForEverySupportedLocale() {
+        let expectations: [
+            (
+                localeID: String,
+                active: [(Int, String)],
+                sessions: [(Int, String)]
+            )
+        ] = [
+            (
+                "en",
+                [(1, "1 agent active"), (2, "2 agents active")],
+                [(1, "1 agent session"), (2, "2 agent sessions")]
+            ),
+            (
+                "de",
+                [(1, "1 Agent aktiv"), (2, "2 Agenten aktiv")],
+                [(1, "1 Agent-Sitzung"), (2, "2 Agent-Sitzungen")]
+            ),
+            (
+                "es",
+                [(1, "1 agente activo"), (2, "2 agentes activos")],
+                [(1, "1 sesión de agente"), (2, "2 sesiones de agentes")]
+            ),
+            (
+                "fr",
+                [(1, "1 agent actif"), (2, "2 agents actifs")],
+                [(1, "1 session d’agent"), (2, "2 sessions d’agents")]
+            ),
+            (
+                "ja",
+                [(1, "1 エージェント稼働中"), (2, "2 エージェント稼働中")],
+                [
+                    (1, "1 件のエージェントセッション"),
+                    (2, "2 件のエージェントセッション"),
+                ]
+            ),
+            (
+                "ko",
+                [(1, "에이전트 1개 활성"), (2, "에이전트 2개 활성")],
+                [(1, "에이전트 세션 1개"), (2, "에이전트 세션 2개")]
+            ),
+            (
+                "pt-BR",
+                [(1, "1 agente ativo"), (2, "2 agentes ativos")],
+                [(1, "1 sessão de agente"), (2, "2 sessões de agentes")]
+            ),
+            (
+                "ru",
+                [
+                    (1, "1 агент активен"),
+                    (2, "2 агента активны"),
+                    (5, "5 агентов активны"),
+                ],
+                [
+                    (21, "21 сессия агента"),
+                    (22, "22 сессии агентов"),
+                    (25, "25 сессий агентов"),
+                ]
+            ),
+            (
+                "zh-Hans",
+                [(1, "1 个代理活动中"), (2, "2 个代理活动中")],
+                [(1, "1 个代理会话"), (2, "2 个代理会话")]
+            ),
+        ]
+
+        for expectation in expectations {
+            let locale = Locale(identifier: expectation.localeID)
+            for (count, expected) in expectation.active {
+                #expect(
+                    Strings.statusbarActiveAgentCount(
+                        count,
+                        locale: locale
+                    ) == expected
+                )
+            }
+            for (count, expected) in expectation.sessions {
+                #expect(
+                    Strings.statusbarAgentSessionCount(
+                        count,
+                        locale: locale
+                    ) == expected
+                )
+            }
+        }
     }
 
-    @Test func countStringsAreResolvedForEverySupportedLocale() {
-        let localeIDs = [
-            "en", "de", "es", "fr", "ja", "ko", "pt-BR", "ru", "zh-Hans",
-        ]
-        for localeID in localeIDs {
-            let locale = Locale(identifier: localeID)
-            let active = Strings.statusbarActiveAgentCount(2, locale: locale)
-            let sessions = Strings.statusbarAgentSessionCount(5, locale: locale)
-            #expect(active.contains("2"))
-            #expect(sessions.contains("5"))
-            #expect(!active.contains("statusbar."))
-            #expect(!sessions.contains("statusbar."))
-        }
+    @Test func presentationHonorsExplicitLocaleForCountAndLiveness() {
+        let stale = statusSummary(
+            agentType: .claudeCode,
+            state: .waitingInput,
+            liveness: .stale
+        )
+
+        let english = AgentStatusBarPresentation(
+            summaries: [stale],
+            locale: Locale(identifier: "en")
+        )
+        let russian = AgentStatusBarPresentation(
+            summaries: [stale],
+            locale: Locale(identifier: "ru")
+        )
+
+        #expect(english.countText == "1 agent session")
+        #expect(english.detailTexts == ["Claude Code: Waiting for input — Stale"])
+        #expect(russian.countText == "1 сессия агента")
+        #expect(
+            russian.detailTexts
+                == ["Claude Code: Waiting for input — Устарела"]
+        )
     }
 
     @Test func staleAndTerminatedAccessibilityLabelsStateUncertainty() {

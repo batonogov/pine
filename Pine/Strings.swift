@@ -186,8 +186,10 @@ enum Strings {
         _ count: Int,
         locale: Locale = .current
     ) -> String {
-        String(
-            localized: "statusbar.activeAgentCount \(count)",
+        localizedPluralString(
+            forKey: "statusbar.activeAgentCount %lld",
+            fallback: "%lld agents active",
+            count: count,
             locale: locale
         )
     }
@@ -196,8 +198,10 @@ enum Strings {
         _ count: Int,
         locale: Locale = .current
     ) -> String {
-        String(
-            localized: "statusbar.agentSessionCount \(count)",
+        localizedPluralString(
+            forKey: "statusbar.agentSessionCount %lld",
+            fallback: "%lld agent sessions",
+            count: count,
             locale: locale
         )
     }
@@ -205,15 +209,39 @@ enum Strings {
     // MARK: - Agent liveness (#933)
 
     static var agentLivenessLive: String {
-        String(localized: "agent.liveness.live")
+        agentLivenessLive(locale: .current)
     }
 
     static var agentLivenessStale: String {
-        String(localized: "agent.liveness.stale")
+        agentLivenessStale(locale: .current)
     }
 
     static var agentLivenessTerminated: String {
-        String(localized: "agent.liveness.terminated")
+        agentLivenessTerminated(locale: .current)
+    }
+
+    static func agentLivenessLive(locale: Locale) -> String {
+        localizedString(
+            forKey: "agent.liveness.live",
+            fallback: "Live",
+            locale: locale
+        )
+    }
+
+    static func agentLivenessStale(locale: Locale) -> String {
+        localizedString(
+            forKey: "agent.liveness.stale",
+            fallback: "Stale",
+            locale: locale
+        )
+    }
+
+    static func agentLivenessTerminated(locale: Locale) -> String {
+        localizedString(
+            forKey: "agent.liveness.terminated",
+            fallback: "Terminated",
+            locale: locale
+        )
     }
 
     // MARK: - Agent Activity Panel (#1072)
@@ -525,6 +553,32 @@ enum Strings {
             forKey: key,
             value: developmentValue,
             table: nil
+        )
+    }
+
+    /// Resolves a plural format from the requested language's `.lproj`, then
+    /// applies that locale's numeric and plural formatting rules.
+    ///
+    /// `String(localized:locale:)` cannot be used for deterministic language
+    /// selection: its `locale` parameter formats substitutions but resource
+    /// lookup still follows the process's preferred application language.
+    private static func localizedPluralString(
+        forKey key: String,
+        fallback: String,
+        count: Int,
+        locale: Locale,
+        bundle: Bundle = .main
+    ) -> String {
+        let format = localizedString(
+            forKey: key,
+            fallback: fallback,
+            locale: locale,
+            bundle: bundle
+        )
+        return String(
+            format: format,
+            locale: locale,
+            arguments: [count]
         )
     }
 

@@ -116,9 +116,13 @@ struct AgentStatusSummary: Identifiable, Equatable {
 struct AgentStatusBarItem: View {
     let summaries: [AgentStatusSummary]
     let onSelect: (PaneID, UUID) -> Void
+    @Environment(\.locale) private var locale
 
     var body: some View {
-        let presentation = AgentStatusBarPresentation(summaries: summaries)
+        let presentation = AgentStatusBarPresentation(
+            summaries: summaries,
+            locale: locale
+        )
         if summaries.count == 1, let only = summaries.first {
             Button {
                 onSelect(only.paneID, only.tabID)
@@ -137,7 +141,9 @@ struct AgentStatusBarItem: View {
                         HStack(spacing: 4) {
                             Image(systemName: "circle.fill")
                                 .foregroundStyle(Color(nsColor: summary.agentType.color))
-                            Text(verbatim: summary.detailText)
+                            Text(
+                                verbatim: summary.detailText(locale: locale)
+                            )
                         }
                     }
                 }
@@ -159,13 +165,14 @@ struct AgentStatusBarItem: View {
         HStack(spacing: 4) {
             Text(verbatim: presentation.countText)
 
-            ForEach(summaries) { summary in
+            ForEach(summaries.indices, id: \.self) { index in
+                let summary = summaries[index]
                 divider
                 HStack(spacing: 3) {
                     Circle()
                         .fill(Color(nsColor: summary.agentType.color))
                         .frame(width: 7, height: 7)
-                    Text(verbatim: summary.detailText)
+                    Text(verbatim: presentation.detailTexts[index])
                 }
                 .opacity(summary.liveness == .live ? 1 : 0.65)
             }
@@ -188,14 +195,23 @@ struct AgentStatusBarPresentation: Equatable {
     let detailTexts: [String]
 
     @MainActor
-    init(summaries: [AgentStatusSummary]) {
+    init(
+        summaries: [AgentStatusSummary],
+        locale: Locale = .current
+    ) {
         let hasUncertainEvidence = summaries.contains {
             $0.liveness != .live
         }
         countText = hasUncertainEvidence
-            ? Strings.statusbarAgentSessionCount(summaries.count)
-            : Strings.statusbarActiveAgentCount(summaries.count)
-        detailTexts = summaries.map(\.detailText)
+            ? Strings.statusbarAgentSessionCount(
+                summaries.count,
+                locale: locale
+            )
+            : Strings.statusbarActiveAgentCount(
+                summaries.count,
+                locale: locale
+            )
+        detailTexts = summaries.map { $0.detailText(locale: locale) }
     }
 
     var accessibilityLabel: String {
@@ -206,8 +222,13 @@ struct AgentStatusBarPresentation: Equatable {
 extension AgentStatusSummary {
     @MainActor
     var detailText: String {
+        detailText(locale: .current)
+    }
+
+    @MainActor
+    func detailText(locale: Locale) -> String {
         let stateText = "\(agentType.displayName): \(state.displayName)"
         guard liveness != .live else { return stateText }
-        return "\(stateText) — \(liveness.displayName)"
+        return "\(stateText) — \(liveness.displayName(locale: locale))"
     }
 }

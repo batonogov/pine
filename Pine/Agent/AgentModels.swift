@@ -103,10 +103,17 @@ nonisolated enum AgentLiveness: Sendable, Equatable {
     /// Localized label for badges and accessibility.
     @MainActor
     var displayName: String {
+        displayName(locale: .current)
+    }
+
+    /// Localized label in an explicitly selected language. Used by stable
+    /// snapshots and previews that must not inherit the host's preferences.
+    @MainActor
+    func displayName(locale: Locale) -> String {
         switch self {
-        case .live: Strings.agentLivenessLive
-        case .stale: Strings.agentLivenessStale
-        case .terminated: Strings.agentLivenessTerminated
+        case .live: Strings.agentLivenessLive(locale: locale)
+        case .stale: Strings.agentLivenessStale(locale: locale)
+        case .terminated: Strings.agentLivenessTerminated(locale: locale)
         }
     }
 
