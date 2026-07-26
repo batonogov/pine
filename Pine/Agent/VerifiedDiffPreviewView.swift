@@ -31,17 +31,28 @@ nonisolated struct VerifiedDiffPreviewModel: Equatable, Sendable {
     let rows: [VerifiedDiffPreviewRow]
 
     init(prepared: PreparedInverse) throws {
-        let previews = try VerifiedPatchEngine.preparedPreviewForReview(
+        let review = try VerifiedPatchEngine.preparedPreviewForReview(
             prepared
         )
-        patchID = prepared.patchID
-        rows = try previews.enumerated().map { operationIndex, preview in
+        patchID = review.patchID
+        rows = try review.operations.enumerated().map { operationIndex, operation in
             try VerifiedDiffPreviewRow(
                 operationIndex: operationIndex,
-                from: preview
+                from: operation
             )
         }
     }
+}
+
+nonisolated enum VerifiedDiffLineEnding: Sendable, Equatable, Hashable {
+    case lf
+    case crlf
+    case noFinalNewline
+}
+
+nonisolated struct VerifiedDiffSanitizedLine: Sendable, Equatable {
+    let text: String
+    let lineEnding: VerifiedDiffLineEnding
 }
 
 nonisolated struct VerifiedDiffPreviewLineRow:
@@ -51,6 +62,7 @@ nonisolated struct VerifiedDiffPreviewLineRow:
     let id: Int
     let kind: VerifiedInversePreviewLineKind
     let text: String
+    let lineEnding: VerifiedDiffLineEnding
 
     fileprivate init(
         id: Int,
@@ -69,7 +81,8 @@ nonisolated struct VerifiedDiffPreviewLineRow:
                 lineIndex: id
             )
         }
-        text = decoded
+        text = decoded.text
+        lineEnding = decoded.lineEnding
     }
 }
 
@@ -101,6 +114,18 @@ nonisolated struct VerifiedDiffHunkRow:
     }
 }
 
+nonisolated struct VerifiedDiffPathStateRow: Sendable, Equatable {
+    let path: String
+    let identity: VerifiedPatchStateIdentity?
+
+    fileprivate init(from state: VerifiedPreparedReviewPathState) {
+        path = VerifiedDiffDisplaySanitizer.escapeUnsafeScalars(
+            in: state.path
+        )
+        identity = state.identity
+    }
+}
+
 nonisolated struct VerifiedDiffPreviewRow:
     Identifiable,
     Equatable,
@@ -115,15 +140,48 @@ nonisolated struct VerifiedDiffPreviewRow:
     }
 
     let id: RowID
-    let kind: VerifiedInversePreviewKind
+    let operationKind: VerifiedPatchOperationKind
+    let preparedMode: VerifiedPatchPreparedMode
+    let previewKind: VerifiedInversePreviewKind
     let sourcePath: String
     let destinationPath: String?
-    let expectedCurrent: VerifiedPatchStateIdentity?
-    let result: VerifiedPatchStateIdentity?
+    let expectations: [VerifiedDiffPathStateRow]
+    let results: [VerifiedDiffPathStateRow]
     let hunks: [VerifiedDiffHunkRow]
 
     var displayPath: String {
         destinationPath ?? sourcePath
+    }
+
+    /// Presentation follows the prepared application mode, not the shape of
+    /// the optional visual hunks.
+    var presentationKind: VerifiedInversePreviewKind {
+        switch preparedMode {
+        case .checkedText:
+            .applyTextHunks
+        case .exactState:
+            switch operationKind {
+            case .modify:
+                .restoreExactFile
+            case .create:
+                .removeCreatedFile
+            case .delete:
+                .restoreDeletedFile
+            case .rename:
+                .simulateRenamedFile
+            }
+        }
+    }
+
+    var isMetadataOnly: Bool {
+        guard expectations.count == 1,
+              results.count == 1,
+              let expected = expectations[0].identity,
+              let result = results[0].identity else {
+            return false
+        }
+        return expected.contentIdentity == result.contentIdentity
+            && expected != result
     }
 
     var addedLineCount: Int {
@@ -140,25 +198,29 @@ nonisolated struct VerifiedDiffPreviewRow:
 
     fileprivate init(
         operationIndex: Int,
-        from preview: VerifiedInverseOperationPreview
+        from operation: VerifiedPreparedInverseReviewOperation
     ) throws {
         id = RowID(
-            operationID: preview.operationID,
+            operationID: operation.operationID,
             operationIndex: operationIndex
         )
-        kind = preview.kind
+        operationKind = operation.operationKind
+        preparedMode = operation.preparedMode
+        previewKind = operation.previewKind
         sourcePath = VerifiedDiffDisplaySanitizer.escapeUnsafeScalars(
-            in: preview.sourcePath
+            in: operation.sourcePath
         )
-        destinationPath = preview.destinationPath.map {
+        destinationPath = operation.destinationPath.map {
             VerifiedDiffDisplaySanitizer.escapeUnsafeScalars(in: $0)
         }
-        expectedCurrent = preview.expectedCurrent
-        result = preview.result
-        hunks = try preview.hunks.enumerated().map { hunkIndex, hunk in
+        expectations = operation.expectations.map(
+            VerifiedDiffPathStateRow.init
+        )
+        results = operation.results.map(VerifiedDiffPathStateRow.init)
+        hunks = try operation.hunks.enumerated().map { hunkIndex, hunk in
             try VerifiedDiffHunkRow(
                 index: hunkIndex,
-                operationID: preview.operationID,
+                operationID: operation.operationID,
                 from: hunk
             )
         }
@@ -166,32 +228,38 @@ nonisolated struct VerifiedDiffPreviewRow:
 }
 
 nonisolated enum VerifiedDiffDisplaySanitizer {
-    /// Planner lines include their terminator bytes. Remove exactly one LF
-    /// and its optional CR instead of Unicode trimming, which could hide
-    /// additional leading/trailing controls from a security review.
-    static func sanitizedLine(_ bytes: Data) -> String? {
+    /// Planner lines include their terminator bytes. Preserve the exact
+    /// terminator as display data instead of trimming it into the same visual
+    /// form. A line without a terminator is the final line without a newline.
+    static func sanitizedLine(_ bytes: Data) -> VerifiedDiffSanitizedLine? {
         var content = bytes
-        if content.last == 0x0A {
+        let lineEnding: VerifiedDiffLineEnding
+        if content.suffix(2).elementsEqual([0x0D, 0x0A]) {
+            content.removeLast(2)
+            lineEnding = .crlf
+        } else if content.last == 0x0A {
             content.removeLast()
-            if content.last == 0x0D {
-                content.removeLast()
-            }
+            lineEnding = .lf
+        } else {
+            lineEnding = .noFinalNewline
         }
         guard let decoded = String(data: content, encoding: .utf8) else {
             return nil
         }
-        return escapeUnsafeScalars(in: decoded)
+        return VerifiedDiffSanitizedLine(
+            text: escapeUnsafeScalars(in: decoded),
+            lineEnding: lineEnding
+        )
     }
 
-    /// Escapes every Unicode control/format scalar and visual line separator.
-    /// This includes tabs, bidi marks/overrides/isolates, zero-width format
-    /// characters, BOM, and C0/C1 controls. Review text therefore cannot forge
-    /// rows, indentation, or visual ordering.
+    /// Escapes backslashes plus every Unicode control/format scalar and visual
+    /// line separator. Escaping the escape introducer makes the mapping
+    /// injective: a literal `\u{202E}` cannot collide with an actual U+202E.
     static func escapeUnsafeScalars(in value: String) -> String {
         var result = ""
         result.reserveCapacity(value.utf8.count)
         for scalar in value.unicodeScalars {
-            if isUnsafe(scalar) {
+            if scalar.value == 0x5C || isUnsafe(scalar) {
                 let hexadecimal = String(
                     scalar.value,
                     radix: 16,
@@ -229,38 +297,39 @@ extension VerifiedInversePreviewKind {
         }
     }
 
-    var displayName: String {
+    func displayName(locale: Locale) -> String {
         switch self {
         case .applyTextHunks:
-            Strings.verifiedDiffKindApplyTextHunks
+            Strings.verifiedDiffKindApplyTextHunks(locale: locale)
         case .restoreExactFile:
-            Strings.verifiedDiffKindRestoreExactFile
+            Strings.verifiedDiffKindRestoreExactFile(locale: locale)
         case .removeCreatedFile:
-            Strings.verifiedDiffKindRemoveCreatedFile
+            Strings.verifiedDiffKindRemoveCreatedFile(locale: locale)
         case .restoreDeletedFile:
-            Strings.verifiedDiffKindRestoreDeletedFile
+            Strings.verifiedDiffKindRestoreDeletedFile(locale: locale)
         case .simulateRenamedFile:
-            Strings.verifiedDiffKindSimulateRenamedFile
+            Strings.verifiedDiffKindSimulateRenamedFile(locale: locale)
         }
     }
 
-    var operationDetail: String {
+    func operationDetail(locale: Locale) -> String {
         switch self {
         case .applyTextHunks:
-            Strings.verifiedDiffDetailApplyTextHunks
+            Strings.verifiedDiffDetailApplyTextHunks(locale: locale)
         case .restoreExactFile:
-            Strings.verifiedDiffDetailRestoreExactFile
+            Strings.verifiedDiffDetailRestoreExactFile(locale: locale)
         case .removeCreatedFile:
-            Strings.verifiedDiffDetailRemoveCreatedFile
+            Strings.verifiedDiffDetailRemoveCreatedFile(locale: locale)
         case .restoreDeletedFile:
-            Strings.verifiedDiffDetailRestoreDeletedFile
+            Strings.verifiedDiffDetailRestoreDeletedFile(locale: locale)
         case .simulateRenamedFile:
-            Strings.verifiedDiffDetailSimulateRenamedFile
+            Strings.verifiedDiffDetailSimulateRenamedFile(locale: locale)
         }
     }
 }
 
 private struct VerifiedDiffLineView: View {
+    @Environment(\.locale) private var locale
     let line: VerifiedDiffPreviewLineRow
 
     private var prefix: String {
@@ -286,11 +355,32 @@ private struct VerifiedDiffLineView: View {
                 .accessibilityHidden(true)
             Text(verbatim: line.text)
                 .foregroundStyle(color)
+            Text(verbatim: lineEndingMarker)
+                .font(.system(size: 9, design: .monospaced))
+                .foregroundStyle(.tertiary)
+                .padding(.leading, 6)
         }
         .font(.system(size: 12, design: .monospaced))
         .fixedSize(horizontal: false, vertical: true)
         .textSelection(.enabled)
-        .accessibilityLabel(Text(verbatim: prefix + line.text))
+        .accessibilityLabel(
+            Text(verbatim: prefix + line.text + ", " + lineEndingName)
+        )
+    }
+
+    private var lineEndingMarker: String {
+        switch line.lineEnding {
+        case .lf:
+            Strings.verifiedDiffLineEndingLF(locale: locale)
+        case .crlf:
+            Strings.verifiedDiffLineEndingCRLF(locale: locale)
+        case .noFinalNewline:
+            Strings.verifiedDiffNoFinalNewline(locale: locale)
+        }
+    }
+
+    private var lineEndingName: String {
+        lineEndingMarker
     }
 }
 
@@ -312,14 +402,14 @@ struct VerifiedDiffHunkView: View {
 }
 
 struct VerifiedDiffOperationView: View {
+    @Environment(\.locale) private var locale
     let row: VerifiedDiffPreviewRow
 
     var body: some View {
         VStack(alignment: .leading, spacing: 7) {
             header
-            if row.hunks.isEmpty {
-                exactOperationSummary
-            } else {
+            operationSummary
+            if !row.hunks.isEmpty {
                 ForEach(row.hunks) { hunk in
                     VerifiedDiffHunkView(hunk: hunk)
                 }
@@ -336,11 +426,13 @@ struct VerifiedDiffOperationView: View {
 
     private var header: some View {
         HStack(spacing: 6) {
-            Image(systemName: row.kind.systemImage)
+            Image(systemName: row.presentationKind.systemImage)
                 .foregroundStyle(.secondary)
                 .font(.system(size: 12))
                 .accessibilityHidden(true)
-            Text(verbatim: row.kind.displayName)
+            Text(
+                verbatim: row.presentationKind.displayName(locale: locale)
+            )
                 .font(.system(size: 11, weight: .semibold))
                 .foregroundStyle(.secondary)
             Text(verbatim: row.displayPath)
@@ -357,21 +449,36 @@ struct VerifiedDiffOperationView: View {
         }
     }
 
-    private var exactOperationSummary: some View {
+    private var operationSummary: some View {
         VStack(alignment: .leading, spacing: 3) {
-            Text(verbatim: row.kind.operationDetail)
+            Text(
+                verbatim: row.presentationKind.operationDetail(locale: locale)
+            )
                 .font(.system(size: 11))
                 .foregroundStyle(.secondary)
-            if let expectedCurrent = row.expectedCurrent {
+            if row.isMetadataOnly {
+                Text(
+                    verbatim: Strings.verifiedDiffMetadataOnly(locale: locale)
+                )
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(.orange)
+            }
+            ForEach(
+                Array(row.expectations.enumerated()),
+                id: \.offset
+            ) { _, state in
                 identityRow(
-                    label: Strings.verifiedDiffExpectedCurrent,
-                    identity: expectedCurrent
+                    label: Strings.verifiedDiffExpectedCurrent(locale: locale),
+                    state: state
                 )
             }
-            if let result = row.result {
+            ForEach(
+                Array(row.results.enumerated()),
+                id: \.offset
+            ) { _, state in
                 identityRow(
-                    label: Strings.verifiedDiffResult,
-                    identity: result
+                    label: Strings.verifiedDiffResult(locale: locale),
+                    state: state
                 )
             }
         }
@@ -380,13 +487,24 @@ struct VerifiedDiffOperationView: View {
 
     private func identityRow(
         label: String,
-        identity: VerifiedPatchStateIdentity
+        state: VerifiedDiffPathStateRow
     ) -> some View {
-        Text(verbatim: Strings.verifiedDiffIdentity(
-            label: label,
-            byteCount: identity.contentIdentity.byteCount,
-            sha256: identity.contentIdentity.sha256Hex
-        ))
+        Group {
+            if let identity = state.identity {
+                Text(verbatim: Strings.verifiedDiffIdentity(
+                    label: label,
+                    path: state.path,
+                    identity: identity,
+                    locale: locale
+                ))
+            } else {
+                Text(verbatim: Strings.verifiedDiffAbsentIdentity(
+                    label: label,
+                    path: state.path,
+                    locale: locale
+                ))
+            }
+        }
         .font(.system(size: 10, design: .monospaced))
         .foregroundStyle(.tertiary)
         .textSelection(.enabled)
@@ -407,6 +525,7 @@ struct VerifiedDiffOperationView: View {
 /// the safety contract: preparation describes one snapshot and does not prove
 /// that the workspace still matches when a future caller chooses to apply.
 struct VerifiedDiffPreviewView: View {
+    @Environment(\.locale) private var locale
     let model: VerifiedDiffPreviewModel
 
     var body: some View {
@@ -440,13 +559,14 @@ struct VerifiedDiffPreviewView: View {
                 .foregroundStyle(.secondary)
                 .font(.system(size: 13))
                 .accessibilityHidden(true)
-            Text(verbatim: Strings.verifiedDiffTitle)
+            Text(verbatim: Strings.verifiedDiffTitle(locale: locale))
                 .font(.system(size: 13, weight: .semibold))
             Spacer(minLength: 4)
             Text(verbatim: Strings.verifiedDiffSummary(
                 operationCount: model.rows.count,
                 addedLineCount: totalAdded,
-                removedLineCount: totalRemoved
+                removedLineCount: totalRemoved,
+                locale: locale
             ))
             .font(.system(size: 11, design: .monospaced))
             .foregroundStyle(.tertiary)
@@ -457,7 +577,9 @@ struct VerifiedDiffPreviewView: View {
 
     private var stalenessNotice: some View {
         Label {
-            Text(verbatim: Strings.verifiedDiffStalenessNotice)
+            Text(
+                verbatim: Strings.verifiedDiffStalenessNotice(locale: locale)
+            )
                 .fixedSize(horizontal: false, vertical: true)
         } icon: {
             Image(systemName: "checkmark.shield")

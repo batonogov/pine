@@ -632,9 +632,34 @@ nonisolated enum VerifiedPatchEngine {
     /// current file identities immediately before applying anything.
     static func preparedPreviewForReview(
         _ prepared: PreparedInverse
-    ) throws -> [VerifiedInverseOperationPreview] {
+    ) throws -> VerifiedPreparedInverseReview {
         try validatePrepared(prepared)
-        return prepared.previews
+        return VerifiedPreparedInverseReview(
+            patchID: prepared.patchID,
+            operations: prepared.operations.map { operation in
+                VerifiedPreparedInverseReviewOperation(
+                    operationID: operation.operationID,
+                    operationKind: operation.kind,
+                    preparedMode: operation.mode,
+                    previewKind: operation.preview.kind,
+                    sourcePath: operation.preview.sourcePath,
+                    destinationPath: operation.preview.destinationPath,
+                    expectations: operation.expectations.map {
+                        VerifiedPreparedReviewPathState(
+                            path: $0.path,
+                            identity: $0.state?.stateIdentity
+                        )
+                    },
+                    results: operation.results.map {
+                        VerifiedPreparedReviewPathState(
+                            path: $0.path,
+                            identity: $0.state?.stateIdentity
+                        )
+                    },
+                    hunks: operation.preview.hunks
+                )
+            }
+        )
     }
 
     /// Rechecks exact prepared expectations against a fresh in-memory snapshot.

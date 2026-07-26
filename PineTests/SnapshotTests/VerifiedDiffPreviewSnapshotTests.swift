@@ -2,86 +2,129 @@
 //  VerifiedDiffPreviewSnapshotTests.swift
 //  PineTests
 //
-//  Light/dark visual coverage for the read-only prepared inverse preview.
+//  Exact-state and checked-text visual coverage for prepared inverse review.
 //
 
 import AppKit
 import Foundation
+import SwiftUI
 import Testing
 
 @testable import Pine
 
-@Suite("Prepared Inverse Preview Snapshots")
+@Suite("Prepared Inverse Preview Snapshots", .serialized)
 @MainActor
 struct VerifiedDiffPreviewSnapshotTests {
-    private static let panelSize = NSSize(width: 620, height: 300)
-    private static let tolerance = 0.05
+    private static let panelSize = NSSize(width: 760, height: 390)
+    private static let tolerance = 0.005
+    private static let english = Locale(identifier: "en")
 
-    @Test("Prepared inverse preview renders in light appearance")
-    func light() throws {
+    @Test(
+        "Prepared inverse modes render in light and dark appearances",
+        arguments: [
+            (Fixture.exactMetadata, SnapshotAppearance.light),
+            (Fixture.exactMetadata, SnapshotAppearance.dark),
+            (Fixture.checkedText, SnapshotAppearance.light),
+            (Fixture.checkedText, SnapshotAppearance.dark),
+        ]
+    )
+    func visual(
+        fixture: Fixture,
+        appearance: SnapshotAppearance
+    ) throws {
         try assertSnapshot(
-            of: makeView(),
+            of: makeView(fixture),
             size: Self.panelSize,
-            appearance: .light,
-            named: "VerifiedDiffPreview.prepared.light",
+            appearance: appearance,
+            named: "VerifiedDiffPreview.\(fixture.rawValue)."
+                + appearance.suffix,
             tolerance: Self.tolerance
         )
     }
 
-    @Test("Prepared inverse preview renders in dark appearance")
-    func dark() throws {
-        try assertSnapshot(
-            of: makeView(),
+    @Test("Engine-backed fixtures retain truthful mode and state semantics")
+    func semantics() throws {
+        let exact = try makeModel(.exactMetadata)
+        let exactRow = try #require(exact.rows.first)
+        #expect(exactRow.preparedMode == .exactState)
+        #expect(exactRow.presentationKind == .restoreExactFile)
+        #expect(exactRow.previewKind == .restoreExactFile)
+        #expect(exactRow.isMetadataOnly)
+        #expect(exactRow.expectations.first?.identity?.posixMode == 0o644)
+        #expect(exactRow.results.first?.identity?.posixMode == 0o755)
+        #expect(exactRow.expectations.first?.identity?.kind == .regularFile)
+        #expect(exactRow.results.first?.identity?.kind == .regularFile)
+
+        let checked = try makeModel(.checkedText)
+        let checkedRow = try #require(checked.rows.first)
+        #expect(checkedRow.preparedMode == .checkedText)
+        #expect(checkedRow.presentationKind == .applyTextHunks)
+        #expect(checkedRow.previewKind == .applyTextHunks)
+        #expect(!checkedRow.isMetadataOnly)
+        let endings = Set(
+            checkedRow.hunks.flatMap(\.lines).map(\.lineEnding)
+        )
+        #expect(endings == [.lf, .crlf, .noFinalNewline])
+    }
+
+    @Test("Strict tolerance rejects a completely blank preview")
+    func blankViewExceedsTolerance() throws {
+        guard !SnapshotHarness.isHeadless else { return }
+        let preview = try SnapshotHarness.render(
+            view: makeView(.checkedText),
             size: Self.panelSize,
-            appearance: .dark,
-            named: "VerifiedDiffPreview.prepared.dark",
-            tolerance: Self.tolerance
+            appearance: .light
         )
+        let blank = try SnapshotHarness.render(
+            view: Color.clear,
+            size: Self.panelSize,
+            appearance: .light
+        )
+        let previewPNG = try #require(
+            preview.representation(using: .png, properties: [:])
+        )
+        let blankPNG = try #require(
+            blank.representation(using: .png, properties: [:])
+        )
+        let diff = try SnapshotHarness.meanAbsoluteDiff(
+            actualPNG: blankPNG,
+            referencePNG: previewPNG
+        )
+        #expect(diff > Self.tolerance)
     }
 
-    private func makeView() throws -> VerifiedDiffPreviewView {
-        VerifiedDiffPreviewView(model: try makeModel())
+    private func makeView(
+        _ fixture: Fixture
+    ) throws -> some View {
+        VerifiedDiffPreviewView(model: try makeModel(fixture))
+            .environment(\.locale, Self.english)
     }
 
-    /// Builds the visual fixture through the same checked preparation and
-    /// complete engine revalidation required by a production caller.
-    private func makeModel() throws -> VerifiedDiffPreviewModel {
-        let patchID = id(121)
-        let envelopeID = id(122)
-        let receiptID = id(123)
-        let projectID = id(124)
-        let sessionID = id(125)
-        let terminalID = id(126)
-        let privateWorkspaceID = id(127)
-        let before = file(
-            """
-            func greeting() {
-                print("before")
-            }
-
-            """
-        )
-        let after = file(
-            """
-            func greeting() {
-                print("agent edit")
-            }
-
-            """
-        )
+    /// Builds every visual fixture through checked preparation and complete
+    /// engine revalidation, never from a hand-built display row.
+    private func makeModel(
+        _ fixture: Fixture
+    ) throws -> VerifiedDiffPreviewModel {
+        let states = fixture.states
+        let patchID = id(fixture.baseID)
+        let envelopeID = id(fixture.baseID + 1)
+        let receiptID = id(fixture.baseID + 2)
+        let projectID = id(fixture.baseID + 3)
+        let sessionID = id(fixture.baseID + 4)
+        let terminalID = id(fixture.baseID + 5)
         let workspace = VerifiedPatchWorkspaceIdentity(
-            privateWorkspaceID: privateWorkspaceID,
+            privateWorkspaceID: id(fixture.baseID + 6),
             canonicalRootPath: "/private/tmp/Pine-Diff-Preview",
             rootDevice: 11,
             rootInode: 22,
             capturedHeadOID: String(repeating: "a", count: 40),
             capturedIndexSHA256: String(repeating: "b", count: 64)
         )
+        let path = "Sources/Greeting.swift"
         let transition = VerifiedPatchContentTransition(
-            sourcePath: "Sources/Greeting.swift",
-            destinationPath: nil,
-            before: before.stateIdentity,
-            after: after.stateIdentity
+            sourcePath: path,
+            before: states.before.stateIdentity,
+            after: states.after.stateIdentity
         )
         let envelope = AgentEventEnvelope(
             id: envelopeID,
@@ -101,9 +144,9 @@ struct VerifiedDiffPreviewSnapshotTests {
             source: .explicitAgentEvent,
             trustLevel: .verified,
             payload: .fileChange(AgentFileChange(
-                relativePath: transition.sourcePath,
-                before: before.stateIdentity.contentIdentity,
-                after: after.stateIdentity.contentIdentity
+                relativePath: path,
+                before: states.before.stateIdentity.contentIdentity,
+                after: states.after.stateIdentity.contentIdentity
             ))
         )
         let durableIdentity = VerifiedPatchDurableEventIdentity(
@@ -120,9 +163,9 @@ struct VerifiedDiffPreviewSnapshotTests {
             envelope: envelope,
             durableIdentity: durableIdentity,
             mediatedWriterReceipt: PineMediatedWriterReceipt(
-                receiptID: id(128),
-                userApprovalID: id(129),
-                descriptorTransactionID: id(130),
+                receiptID: id(fixture.baseID + 7),
+                userApprovalID: id(fixture.baseID + 8),
+                descriptorTransactionID: id(fixture.baseID + 9),
                 descriptorCASSequence: 1,
                 workspace: workspace,
                 auditEvent: durableIdentity,
@@ -143,17 +186,17 @@ struct VerifiedDiffPreviewSnapshotTests {
                     envelopeID: envelopeID,
                     ordinal: 0
                 ),
-                sourcePath: transition.sourcePath,
+                sourcePath: path,
                 destinationPath: nil,
-                before: before,
-                after: after
+                before: states.before,
+                after: states.after
             )]
         )
 
         switch VerifiedPatchEngine.prepareCheckedInverse(
             patch,
             currentSnapshot: VerifiedPatchWorkspaceSnapshot(
-                files: [transition.sourcePath: after]
+                files: [path: states.current]
             )
         ) {
         case .success(let prepared):
@@ -161,14 +204,6 @@ struct VerifiedDiffPreviewSnapshotTests {
         case .failure(let failure):
             throw SnapshotFixtureError.preparation(failure)
         }
-    }
-
-    private func file(_ value: String) -> VerifiedPatchFileState {
-        VerifiedPatchFileState(
-            content: Data(value.utf8),
-            kind: .regularFile,
-            posixMode: 0o644
-        )
     }
 
     private func id(_ value: Int) -> UUID {
@@ -180,6 +215,51 @@ struct VerifiedDiffPreviewSnapshotTests {
             UInt8((value >> 8) & 0xFF),
             UInt8(value & 0xFF)
         ))
+    }
+}
+
+enum Fixture: String, CaseIterable, Sendable {
+    case exactMetadata = "exact"
+    case checkedText = "checked"
+
+    var baseID: Int {
+        switch self {
+        case .exactMetadata: 200
+        case .checkedText: 220
+        }
+    }
+
+    var states: (
+        before: VerifiedPatchFileState,
+        after: VerifiedPatchFileState,
+        current: VerifiedPatchFileState
+    ) {
+        switch self {
+        case .exactMetadata:
+            let content = Data("#!/bin/sh\r\necho Pine\r\n".utf8)
+            return (
+                file(content, mode: 0o755),
+                file(content, mode: 0o644),
+                file(content, mode: 0o644)
+            )
+        case .checkedText:
+            return (
+                file(Data("header\nagent before\r\nfooter".utf8)),
+                file(Data("header\r\nagent after\nfooter".utf8)),
+                file(Data("human note\nheader\r\nagent after\nfooter".utf8))
+            )
+        }
+    }
+
+    private func file(
+        _ content: Data,
+        mode: UInt16 = 0o644
+    ) -> VerifiedPatchFileState {
+        VerifiedPatchFileState(
+            content: content,
+            kind: .regularFile,
+            posixMode: mode
+        )
     }
 }
 
