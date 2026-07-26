@@ -62,6 +62,147 @@ struct AgentDetectionCoordinatorTests {
         #expect(detector.activeCount == 0)
     }
 
+    @Test func nonzeroPollPreservesSessionAsUncertain() throws {
+        nonisolated final class MockResult: @unchecked Sendable {
+            var value: ProcessRunResult
+            init(_ value: ProcessRunResult) { self.value = value }
+        }
+        let detector = AgentDetector(staleAfter: 0)
+        let result = MockResult(
+            ProcessRunResult(
+                stdout: "100 claude",
+                stderr: "",
+                exitCode: 0,
+                timedOut: false
+            )
+        )
+        let runner: ProcessRunner = { _, _, _, _ in result.value }
+        let coordinator = AgentDetectionCoordinator(
+            detector: detector,
+            terminalManager: nil,
+            processRunner: runner,
+            pollInterval: 0.05
+        )
+        coordinator.runSnapshotForTesting()
+        let session = try #require(detector.session(forPID: 100))
+        let lastObservedAt = session.lastObservedAt
+
+        result.value = ProcessRunResult(
+            stdout: "",
+            stderr: "ps failed",
+            exitCode: 1,
+            timedOut: false
+        )
+        coordinator.runSnapshotForTesting()
+
+        #expect(detector.session(forPID: 100) === session)
+        #expect(session.state == .idle)
+        #expect(session.liveness == .stale)
+        #expect(session.lastObservedAt == lastObservedAt)
+    }
+
+    @Test func timedOutPollDoesNotTreatPartialOutputAsAuthoritative() throws {
+        nonisolated final class MockResult: @unchecked Sendable {
+            var value: ProcessRunResult
+            init(_ value: ProcessRunResult) { self.value = value }
+        }
+        let detector = AgentDetector(staleAfter: 60)
+        let result = MockResult(
+            ProcessRunResult(
+                stdout: "100 claude",
+                stderr: "",
+                exitCode: 0,
+                timedOut: false
+            )
+        )
+        let runner: ProcessRunner = { _, _, _, _ in result.value }
+        let coordinator = AgentDetectionCoordinator(
+            detector: detector,
+            terminalManager: nil,
+            processRunner: runner,
+            pollInterval: 0.05
+        )
+        coordinator.runSnapshotForTesting()
+        let session = try #require(detector.session(forPID: 100))
+
+        result.value = ProcessRunResult(
+            stdout: "200 codex",
+            stderr: "",
+            exitCode: 0,
+            timedOut: true
+        )
+        coordinator.runSnapshotForTesting()
+
+        #expect(detector.session(forPID: 100) === session)
+        #expect(detector.detectedSessions.count == 1)
+        #expect(detector.detectedSessions.first?.agentType == .claudeCode)
+    }
+
+    @Test func newlyTerminatedTabSessionIsRetainedForOneSuccessfulPoll() throws {
+        let detector = AgentDetector()
+        detector.processSnapshotDidUpdate([
+            DetectedProcess(pid: 500, command: "claude"),
+        ])
+        let previous = try #require(detector.session(forPID: 500))
+
+        detector.processSnapshotDidUpdate([])
+        let retained = AgentDetectionCoordinator.reconciledSession(
+            previous: previous,
+            foregroundPID: 0,
+            detector: detector,
+            terminatedBeforeSnapshot: []
+        )
+
+        #expect(previous.state == .done)
+        #expect(previous.liveness == .terminated)
+        #expect(retained === previous)
+    }
+
+    @Test func previouslyTerminatedTabSessionIsRemovedOnNextSuccessfulPoll() throws {
+        let detector = AgentDetector()
+        detector.processSnapshotDidUpdate([
+            DetectedProcess(pid: 501, command: "codex"),
+        ])
+        let previous = try #require(detector.session(forPID: 501))
+        detector.processSnapshotDidUpdate([])
+
+        let reconciled = AgentDetectionCoordinator.reconciledSession(
+            previous: previous,
+            foregroundPID: 0,
+            detector: detector,
+            terminatedBeforeSnapshot: [previous.id]
+        )
+
+        #expect(reconciled == nil)
+    }
+
+    @Test func failedPollExpiryRuleOnlyRemovesTerminatedAssociation() {
+        let live = AgentSession(agentType: .claudeCode)
+        let stale = AgentSession(
+            agentType: .codex,
+            state: .executing,
+            liveness: .stale
+        )
+        let terminated = AgentSession(
+            agentType: .pi,
+            state: .done,
+            liveness: .terminated
+        )
+
+        #expect(
+            AgentDetectionCoordinator.shouldExpireAfterFailedSnapshot(live)
+                == false
+        )
+        #expect(
+            AgentDetectionCoordinator.shouldExpireAfterFailedSnapshot(stale)
+                == false
+        )
+        #expect(
+            AgentDetectionCoordinator.shouldExpireAfterFailedSnapshot(terminated)
+                == true
+        )
+    }
+
     @Test func coordinatorDoesNotDoubleCount() {
         let detector = AgentDetector()
         let runner: ProcessRunner = { _, _, _, _ in

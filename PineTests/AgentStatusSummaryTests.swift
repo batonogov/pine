@@ -57,6 +57,7 @@ struct AgentStatusSummaryTests {
         #expect(summary.id == session.id)
         #expect(summary.agentType == .claudeCode)
         #expect(summary.state == .thinking)
+        #expect(summary.liveness == .live)
         #expect(summary.paneID == paneID)
         #expect(summary.tabID == tab.id)
     }
@@ -73,6 +74,77 @@ struct AgentStatusSummaryTests {
         let (paneManager, _, state) = try makeManagerWithTerminalPane()
         state.terminalTabs[0].agentSession = AgentSession(agentType: .pi, state: .idle)
         #expect(AgentStatusSummary.activeSummaries(in: paneManager).count == 1)
+    }
+
+    @Test func staleSessionRemainsVisibleWithoutFalseAttention() throws {
+        let (paneManager, _, state) = try makeManagerWithTerminalPane()
+        state.terminalTabs[0].agentSession = AgentSession(
+            agentType: .codex,
+            state: .waitingInput,
+            liveness: .stale
+        )
+
+        let summary = try #require(
+            AgentStatusSummary.activeSummaries(in: paneManager).first
+        )
+
+        #expect(summary.liveness == .stale)
+        #expect(!summary.needsAttention)
+        #expect(!summary.isActivelyWorking)
+    }
+
+    @Test func staleExecutingSessionDoesNotPretendToBeActive() {
+        let summary = AgentStatusSummary(
+            id: UUID(),
+            agentType: .claudeCode,
+            state: .executing,
+            liveness: .stale,
+            paneID: PaneID(),
+            tabID: UUID()
+        )
+
+        #expect(!summary.needsAttention)
+        #expect(!summary.isActivelyWorking)
+    }
+
+    @Test func liveStateStillDrivesAttentionAndActivity() {
+        let paneID = PaneID()
+        let waiting = AgentStatusSummary(
+            id: UUID(),
+            agentType: .claudeCode,
+            state: .waitingInput,
+            paneID: paneID,
+            tabID: UUID()
+        )
+        let executing = AgentStatusSummary(
+            id: UUID(),
+            agentType: .codex,
+            state: .executing,
+            paneID: paneID,
+            tabID: UUID()
+        )
+
+        #expect(waiting.needsAttention)
+        #expect(!waiting.isActivelyWorking)
+        #expect(!executing.needsAttention)
+        #expect(executing.isActivelyWorking)
+    }
+
+    @Test func retainedTerminatedSessionRemainsVisibleForExitFeedback() throws {
+        let (paneManager, _, state) = try makeManagerWithTerminalPane()
+        state.terminalTabs[0].agentSession = AgentSession(
+            agentType: .pi,
+            state: .done,
+            liveness: .terminated
+        )
+
+        let summary = try #require(
+            AgentStatusSummary.activeSummaries(in: paneManager).first
+        )
+        #expect(summary.state == .done)
+        #expect(summary.liveness == .terminated)
+        #expect(!summary.needsAttention)
+        #expect(!summary.isActivelyWorking)
     }
 
     @Test func multipleAgentsAcrossPanesHaveCorrectLocations() throws {

@@ -144,6 +144,8 @@ struct AgentModelsTests {
         let session = AgentSession(agentType: .claudeCode)
         #expect(session.agentType == .claudeCode)
         #expect(session.state == .idle)
+        #expect(session.liveness == .live)
+        #expect(session.lastObservedAt == session.startedAt)
         #expect(session.currentTask == nil)
         #expect(session.filesModified.isEmpty)
         #expect(session.filesRead.isEmpty)
@@ -152,6 +154,7 @@ struct AgentModelsTests {
     @Test func agentSession_acceptsInitializerValues() {
         let id = UUID()
         let date = Date(timeIntervalSince1970: 1_000_000)
+        let observedAt = date.addingTimeInterval(30)
         let modified = [URL(fileURLWithPath: "/tmp/a.swift")]
         let read = [URL(fileURLWithPath: "/tmp/b.swift")]
         let session = AgentSession(
@@ -159,6 +162,8 @@ struct AgentModelsTests {
             agentType: .codex,
             state: .executing,
             startedAt: date,
+            liveness: .stale,
+            lastObservedAt: observedAt,
             currentTask: "fix bug",
             filesModified: modified,
             filesRead: read
@@ -167,6 +172,8 @@ struct AgentModelsTests {
         #expect(session.agentType == .codex)
         #expect(session.state == .executing)
         #expect(session.startedAt == date)
+        #expect(session.liveness == .stale)
+        #expect(session.lastObservedAt == observedAt)
         #expect(session.currentTask == "fix bug")
         #expect(session.filesModified == modified)
         #expect(session.filesRead == read)

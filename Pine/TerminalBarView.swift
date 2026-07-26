@@ -21,20 +21,25 @@ import SwiftUI
 /// - otherwise the agent's colored dot, pulsing for active states
 ///   (`.thinking` / `.executing`) (#1048).
 ///
-/// `.done` is intentionally not given its own glyph here: the moment a
-/// session goes `.done` it is detached from its tab (`session(forPID:)`
-/// returns nil for done), so this view stops rendering entirely. A visible
-/// "completed" indicator would require retaining the session briefly —
-/// tracked as a follow-up to #1112.
+/// Stale evidence replaces the logical-state glyph with a clock. A newly
+/// terminated session is retained by the polling coordinator for one
+/// polling interval and shown with an xmark before the badge is removed.
 struct AgentTabBadge: View {
     let session: AgentSession
     @State private var pulse = false
 
-    private var isActive: Bool { session.state.isActive }
+    private var isActive: Bool {
+        session.liveness == .live && session.state.isActive
+    }
 
     var body: some View {
         Group {
-            if session.state == .waitingInput {
+            if let livenessGlyph = session.liveness.glyphName {
+                Image(systemName: livenessGlyph)
+                    .foregroundStyle(
+                        session.liveness == .stale ? .orange : .secondary
+                    )
+            } else if session.state == .waitingInput {
                 Image(systemName: "exclamationmark.circle.fill")
                     .foregroundStyle(.orange)
             } else {
@@ -49,7 +54,14 @@ struct AgentTabBadge: View {
             }
         }
         .font(.system(size: 10))
-        .help("\(session.agentType.displayName) — \(session.state.displayName)")
+        .help(helpText)
+        .accessibilityLabel(helpText)
+    }
+
+    private var helpText: String {
+        let state = "\(session.agentType.displayName) — \(session.state.displayName)"
+        guard session.liveness != .live else { return state }
+        return "\(state) — \(session.liveness.displayName)"
     }
 }
 
