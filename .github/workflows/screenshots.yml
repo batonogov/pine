@@ -3,8 +3,6 @@ name: Update Screenshots
 
 on:
   workflow_dispatch:
-  release:
-    types: [published]
 
 # contents: write -> the Commit screenshots step creates a branch and pushes
 #   it. pull-requests: write -> the same step opens a PR against main.
