@@ -15,7 +15,7 @@
 import AppKit
 import SwiftUI
 
-/// Snapshot of one active AI agent for the status bar.
+/// Snapshot of one visible AI-agent session for the status bar.
 ///
 /// A value-type projection of an `AgentSession` plus the terminal location
 /// (`paneID` / `tabID`) needed to navigate to it. Built by
@@ -29,17 +29,47 @@ struct AgentStatusSummary: Identifiable, Equatable {
     let agentType: AgentType
     /// Current lifecycle state of the agent session.
     let state: AgentState
+    /// Freshness of Pine's process evidence for the session.
+    let liveness: AgentLiveness
     /// Terminal pane hosting this agent's tab (for click-to-navigate).
     let paneID: PaneID
     /// Terminal tab hosting this agent (for click-to-navigate).
     let tabID: UUID
 
-    /// Aggregates active (non-`.done`) agent sessions from every terminal pane
-    /// into value-type summaries.
+    /// A stale waiting-input heuristic must not demand user attention: Pine
+    /// no longer has current evidence that the session is still waiting.
+    var needsAttention: Bool {
+        liveness == .live && state.needsAttention
+    }
+
+    /// Active-work indication is likewise gated by fresh process evidence.
+    var isActivelyWorking: Bool {
+        liveness == .live && state.isActive
+    }
+
+    init(
+        id: UUID,
+        agentType: AgentType,
+        state: AgentState,
+        liveness: AgentLiveness = .live,
+        paneID: PaneID,
+        tabID: UUID
+    ) {
+        self.id = id
+        self.agentType = agentType
+        self.state = state
+        self.liveness = liveness
+        self.paneID = paneID
+        self.tabID = tabID
+    }
+
+    /// Aggregates visible agent sessions from every terminal pane into
+    /// value-type summaries.
     ///
     /// Walks `paneManager.terminalPaneIDs` → `terminalState(for:)` →
-    /// `terminalTabs`, including any tab whose `agentSession` is present and
-    /// not `.done`. Order follows pane order then tab order within a pane.
+    /// `terminalTabs`, including live/stale non-done sessions and the bounded
+    /// terminated session retained by the coordinator for exit feedback.
+    /// Order follows pane order then tab order within a pane.
     ///
     /// `@MainActor` because it reads `PaneManager` / `TerminalPaneState` /
     /// `TerminalTab.agentSession`, all of which are main-actor state.
@@ -49,12 +79,16 @@ struct AgentStatusSummary: Identifiable, Equatable {
         for paneID in paneManager.terminalPaneIDs {
             guard let paneState = paneManager.terminalState(for: paneID) else { continue }
             for tab in paneState.terminalTabs {
-                guard let session = tab.agentSession, session.state != .done else { continue }
+                guard let session = tab.agentSession,
+                      session.state != .done || session.liveness == .terminated else {
+                    continue
+                }
                 summaries.append(
                     AgentStatusSummary(
                         id: session.id,
                         agentType: session.agentType,
                         state: session.state,
+                        liveness: session.liveness,
                         paneID: paneID,
                         tabID: tab.id
                     )
@@ -101,7 +135,7 @@ struct AgentStatusBarItem: View {
                         HStack(spacing: 4) {
                             Image(systemName: "circle.fill")
                                 .foregroundStyle(Color(nsColor: summary.agentType.color))
-                            Text(verbatim: "\(summary.agentType.displayName): \(summary.state.displayName)")
+                            Text(verbatim: summary.detailText)
                         }
                     }
                 }
@@ -126,8 +160,9 @@ struct AgentStatusBarItem: View {
                     Circle()
                         .fill(Color(nsColor: summary.agentType.color))
                         .frame(width: 7, height: 7)
-                    Text(verbatim: "\(summary.agentType.displayName): \(summary.state.displayName)")
+                    Text(verbatim: summary.detailText)
                 }
+                .opacity(summary.liveness == .live ? 1 : 0.65)
             }
         }
         .font(.system(size: LayoutMetrics.bodySmallFontSize))
@@ -137,10 +172,19 @@ struct AgentStatusBarItem: View {
 
     /// "N agent[s] active" with correct singular/plural form.
     private var countLabel: Text {
-        if summaries.count == 1 {
-            Text("\(Text(verbatim: "1 "))\(Text(Strings.statusbarAgentActive))")
+        let hasUncertainEvidence = summaries.contains {
+            $0.liveness != .live
+        }
+        if summaries.count == 1, hasUncertainEvidence {
+            return Text("\(Text(verbatim: "1 "))\(Text(Strings.statusbarAgentSession))")
+        } else if hasUncertainEvidence {
+            return Text(
+                "\(Text(verbatim: "\(summaries.count) "))\(Text(Strings.statusbarAgentSessions))"
+            )
+        } else if summaries.count == 1 {
+            return Text("\(Text(verbatim: "1 "))\(Text(Strings.statusbarAgentActive))")
         } else {
-            Text(
+            return Text(
                 "\(Text(verbatim: "\(summaries.count) "))\(Text(Strings.statusbarAgentsActive))"
             )
         }
@@ -150,5 +194,14 @@ struct AgentStatusBarItem: View {
         Text(verbatim: "·")
             .font(.system(size: LayoutMetrics.bodySmallFontSize))
             .foregroundStyle(.quaternary)
+    }
+}
+
+private extension AgentStatusSummary {
+    @MainActor
+    var detailText: String {
+        let stateText = "\(agentType.displayName): \(state.displayName)"
+        guard liveness != .live else { return stateText }
+        return "\(stateText) — \(liveness.displayName)"
     }
 }

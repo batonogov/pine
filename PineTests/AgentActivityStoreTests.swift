@@ -180,6 +180,22 @@ struct AgentActivityStoreTests {
         #expect(store.actions.isEmpty)
     }
 
+    @Test func noteFileSystemChange_ignoredWhenProcessEvidenceIsStale() {
+        let store = AgentActivityStore()
+        let stale = AgentSession(
+            agentType: .claudeCode,
+            state: .executing,
+            liveness: .stale
+        )
+
+        store.noteFileSystemChange(
+            at: url("a.swift"),
+            activeSessions: [stale]
+        )
+
+        #expect(store.actions.isEmpty)
+    }
+
     @Test func noteFileSystemChange_attributedToSingleActiveSession() throws {
         let store = AgentActivityStore()
         let session = AgentSession(id: sessionA, agentType: .claudeCode, state: .executing)

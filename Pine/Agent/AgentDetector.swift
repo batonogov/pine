@@ -87,14 +87,27 @@ final class AgentDetector {
     /// once its pid is no longer observed.
     private var sessionsByPID: [Int32: AgentSession] = [:]
 
+    /// Applies process-evidence observations directly to `AgentSession`, the
+    /// single observable source of truth consumed by the UI.
+    private let livenessTracker: AgentSessionLivenessTracker
+
     /// Last cumulative CPU time (seconds) seen for each tracked pid, used by
     /// `processSnapshotDidUpdate(_:)` to refine state. Cleared in `markDone`
     /// so pid reuse starts a fresh baseline (#1112).
     private var lastCpuTimeByPID: [Int32: Int] = [:]
 
-    /// Sessions whose state is not `.done`.
+    init(staleAfter: TimeInterval = 300) {
+        livenessTracker = AgentSessionLivenessTracker(staleAfter: staleAfter)
+    }
+
+    /// Sessions that are logically active and backed by fresh process
+    /// evidence. Stale sessions stay in `detectedSessions` and on their
+    /// terminal tab for honest UI presentation, but are excluded from
+    /// activity attribution.
     var activeSessions: [AgentSession] {
-        detectedSessions.filter { $0.state != .done }
+        detectedSessions.filter {
+            $0.state != .done && $0.liveness == .live
+        }
     }
 
     /// Returns the active (non-`.done`) session tracking the given pid, or
@@ -119,8 +132,11 @@ final class AgentDetector {
     ///
     /// - Parameter processes: the full process list as captured by the
     ///   caller (e.g. via `ps -eo pid=,command=`). Order is not significant.
-    func processSnapshotDidUpdate(_ processes: [DetectedProcess]) {
-        let snapshotPIDs = Set(processes.map(\.pid))
+    func processSnapshotDidUpdate(
+        _ processes: [DetectedProcess],
+        observedAt: Date = Date()
+    ) {
+        var observedAgentPIDs: Set<Int32> = []
 
         // 1. Detect + refine: recognise new agent pids, and refine the state
         //    of already-tracked sessions from their cumulative CPU time.
@@ -134,8 +150,26 @@ final class AgentDetector {
             let executableName = Self.extractExecutableName(from: process.command)
             guard let resolved = AgentType.resolve(fromProcessName: executableName),
                   !Self.isGeneric(resolved) else { continue }
+            observedAgentPIDs.insert(process.pid)
 
             if let existing = sessionsByPID[process.pid] {
+                // A process can exec a different program without changing
+                // pid. Do not silently carry the old agent identity into the
+                // new process generation.
+                if existing.agentType != resolved {
+                    markDone(pid: process.pid)
+                    startSession(
+                        for: process,
+                        agentType: resolved,
+                        observedAt: observedAt
+                    )
+                    continue
+                }
+
+                livenessTracker.recordObservation(
+                    of: existing,
+                    at: observedAt
+                )
                 // State refinement (issue #1112): compare cumulative CPU time
                 // against the previous snapshot. CPU time is unavailable in
                 // some test/legacy snapshots → leave the state untouched.
@@ -148,16 +182,32 @@ final class AgentDetector {
                 continue
             }
 
-            // Newly recognised agent — start in `.idle`; the first CPU sample
-            // is the baseline, the next snapshot begins refinement.
-            let session = AgentSession(agentType: resolved, state: .idle)
-            sessionsByPID[process.pid] = session
-            detectedSessions.append(session)
-            if let cpu = process.cpuTime { lastCpuTimeByPID[process.pid] = cpu }
+            startSession(
+                for: process,
+                agentType: resolved,
+                observedAt: observedAt
+            )
         }
 
         // 2. Reconcile: mark sessions for pids no longer present as done.
-        reconcile(activePIDs: snapshotPIDs)
+        // Reconcile against recognised agent processes, not every pid in the
+        // system: a tracked pid that execs an unrelated program is no longer
+        // evidence for the prior agent session.
+        reconcile(activePIDs: observedAgentPIDs)
+    }
+
+    /// Preserves tracked sessions after a failed/unavailable process poll and
+    /// marks their evidence stale once the last successful observation ages
+    /// past the configured threshold. A failed poll is not proof of process
+    /// termination and therefore never reconciles sessions.
+    @discardableResult
+    func processSnapshotDidFail(
+        at checkedAt: Date = Date()
+    ) -> [AgentLivenessCheck] {
+        livenessTracker.checkStaleness(
+            of: Array(sessionsByPID.values),
+            at: checkedAt
+        )
     }
 
     /// Marks every tracked session whose pid is not in `activePIDs` as
@@ -187,7 +237,27 @@ final class AgentDetector {
     private func markDone(pid: Int32) {
         guard let session = sessionsByPID.removeValue(forKey: pid) else { return }
         lastCpuTimeByPID.removeValue(forKey: pid)
+        livenessTracker.recordTermination(of: session)
         session.state = .done
+    }
+
+    /// Creates a new logical/process session for a recognised agent.
+    private func startSession(
+        for process: DetectedProcess,
+        agentType: AgentType,
+        observedAt: Date
+    ) {
+        let session = AgentSession(
+            agentType: agentType,
+            state: .idle,
+            startedAt: observedAt,
+            lastObservedAt: observedAt
+        )
+        sessionsByPID[process.pid] = session
+        detectedSessions.append(session)
+        if let cpu = process.cpuTime {
+            lastCpuTimeByPID[process.pid] = cpu
+        }
     }
 
     /// Returns true if `type` is the `.generic` case.

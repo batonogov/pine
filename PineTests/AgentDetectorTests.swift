@@ -5,6 +5,7 @@
 //  Tests for AgentDetector (vision #933, Phase 1 — process-name detection).
 //
 
+import Foundation
 import Testing
 @testable import Pine
 
@@ -421,6 +422,121 @@ struct AgentDetectorTests {
         #expect(detector.detectedSessions.count == 2)
         #expect(detector.activeSessions.count == 1)
         #expect(detector.activeSessions[0].agentType == .pi)
+    }
+
+    @Test func failedSnapshotDoesNotReconcileTrackedSession() throws {
+        let baseline = Date(timeIntervalSince1970: 1_000)
+        let detector = AgentDetector(staleAfter: 300)
+        detector.processSnapshotDidUpdate(
+            [DetectedProcess(pid: 810, command: "claude")],
+            observedAt: baseline
+        )
+        let session = try #require(detector.session(forPID: 810))
+
+        detector.processSnapshotDidFail(
+            at: baseline.addingTimeInterval(299)
+        )
+
+        #expect(detector.session(forPID: 810) === session)
+        #expect(session.state == .idle)
+        #expect(session.liveness == .live)
+        #expect(session.lastObservedAt == baseline)
+    }
+
+    @Test func failedSnapshotMakesOldEvidenceStaleAndExcludesAttribution() throws {
+        let baseline = Date(timeIntervalSince1970: 2_000)
+        let detector = AgentDetector(staleAfter: 300)
+        detector.processSnapshotDidUpdate(
+            [DetectedProcess(pid: 811, command: "codex")],
+            observedAt: baseline
+        )
+        let session = try #require(detector.session(forPID: 811))
+
+        detector.processSnapshotDidFail(
+            at: baseline.addingTimeInterval(300)
+        )
+
+        #expect(detector.session(forPID: 811) === session)
+        #expect(session.state == .idle)
+        #expect(session.liveness == .stale)
+        #expect(detector.activeSessions.isEmpty)
+        #expect(detector.activeCount == 0)
+    }
+
+    @Test func successfulObservationRevivesStaleTrackedSession() throws {
+        let baseline = Date(timeIntervalSince1970: 3_000)
+        let revivedAt = baseline.addingTimeInterval(400)
+        let detector = AgentDetector(staleAfter: 300)
+        let snapshot = [DetectedProcess(pid: 812, command: "aider")]
+        detector.processSnapshotDidUpdate(snapshot, observedAt: baseline)
+        let session = try #require(detector.session(forPID: 812))
+        detector.processSnapshotDidFail(at: revivedAt)
+        #expect(session.liveness == .stale)
+
+        detector.processSnapshotDidUpdate(snapshot, observedAt: revivedAt)
+
+        #expect(detector.session(forPID: 812) === session)
+        #expect(session.liveness == .live)
+        #expect(session.lastObservedAt == revivedAt)
+        #expect(detector.activeSessions == [session])
+    }
+
+    @Test func successfulEmptySnapshotAuthoritativelyTerminatesSession() throws {
+        let baseline = Date(timeIntervalSince1970: 4_000)
+        let detector = AgentDetector()
+        detector.processSnapshotDidUpdate(
+            [DetectedProcess(pid: 813, command: "pi")],
+            observedAt: baseline
+        )
+        let session = try #require(detector.session(forPID: 813))
+
+        detector.processSnapshotDidUpdate(
+            [],
+            observedAt: baseline.addingTimeInterval(1)
+        )
+
+        #expect(detector.session(forPID: 813) == nil)
+        #expect(session.state == .done)
+        #expect(session.liveness == .terminated)
+        #expect(session.lastObservedAt == baseline)
+    }
+
+    @Test func trackedPidExecutingDifferentAgentStartsNewSession() throws {
+        let baseline = Date(timeIntervalSince1970: 5_000)
+        let detector = AgentDetector()
+        detector.processSnapshotDidUpdate(
+            [DetectedProcess(pid: 814, command: "claude")],
+            observedAt: baseline
+        )
+        let oldSession = try #require(detector.session(forPID: 814))
+
+        detector.processSnapshotDidUpdate(
+            [DetectedProcess(pid: 814, command: "codex")],
+            observedAt: baseline.addingTimeInterval(1)
+        )
+
+        let newSession = try #require(detector.session(forPID: 814))
+        #expect(oldSession.state == .done)
+        #expect(oldSession.liveness == .terminated)
+        #expect(newSession !== oldSession)
+        #expect(newSession.agentType == .codex)
+        #expect(detector.detectedSessions == [oldSession, newSession])
+    }
+
+    @Test func trackedPidExecutingNonAgentTerminatesOldSession() throws {
+        let detector = AgentDetector()
+        detector.processSnapshotDidUpdate([
+            DetectedProcess(pid: 815, command: "claude"),
+        ])
+        let session = try #require(detector.session(forPID: 815))
+
+        detector.processSnapshotDidUpdate([
+            DetectedProcess(pid: 815, command: "bash"),
+        ])
+
+        #expect(detector.session(forPID: 815) == nil)
+        #expect(session.state == .done)
+        #expect(session.liveness == .terminated)
     }
 
     // MARK: - extractExecutableName helper

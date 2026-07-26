@@ -83,6 +83,48 @@ enum AgentType: Equatable, Sendable {
     }
 }
 
+/// Liveness of an agent session — whether the backing terminal process
+/// is still observed, its evidence is stale, or it has terminated (vision
+/// #933, Phase 4 — Multi-agent UX).
+///
+/// `AgentState` tracks the agent's *logical* lifecycle (idle/thinking/…);
+/// `AgentLiveness` describes the freshness of Pine's process evidence. It
+/// deliberately does not claim that a process is responsive: a successful
+/// `ps` observation can prove presence, not application-level health.
+nonisolated enum AgentLiveness: Sendable, Equatable {
+    /// The backing process was present in a recent successful observation.
+    case live
+    /// Pine has not completed a successful process observation recently.
+    /// The process may still exist; the UI must present this as uncertainty.
+    case stale
+    /// A successful process observation established that the process ended.
+    case terminated
+
+    /// Localized label for badges and accessibility.
+    @MainActor
+    var displayName: String {
+        switch self {
+        case .live: Strings.agentLivenessLive
+        case .stale: Strings.agentLivenessStale
+        case .terminated: Strings.agentLivenessTerminated
+        }
+    }
+
+    /// SF Symbol name for the evidence indicator, or `nil` while live.
+    var glyphName: String? {
+        switch self {
+        case .live: nil
+        case .stale: "clock"
+        case .terminated: "xmark"
+        }
+    }
+
+    /// `true` when current process presence is no longer established.
+    var isStale: Bool {
+        self == .stale || self == .terminated
+    }
+}
+
 /// Lifecycle state of an agent session within a terminal tab.
 enum AgentState: Equatable, Sendable {
     case idle
@@ -146,6 +188,16 @@ final class AgentSession: Identifiable {
     /// Current lifecycle state of the session.
     var state: AgentState
 
+    /// Freshness of Pine's evidence for the backing process. This property is
+    /// the single source of truth consumed by terminal and status-bar UI.
+    /// Mutations are owned by `AgentSessionLivenessTracker`.
+    private(set) var liveness: AgentLiveness
+
+    /// Most recent successful process-list observation containing this
+    /// session. Staleness is measured from this timestamp, never from
+    /// `startedAt`.
+    private(set) var lastObservedAt: Date
+
     /// When the session started.
     let startedAt: Date
 
@@ -163,6 +215,8 @@ final class AgentSession: Identifiable {
         agentType: AgentType,
         state: AgentState = .idle,
         startedAt: Date = Date(),
+        liveness: AgentLiveness = .live,
+        lastObservedAt: Date? = nil,
         currentTask: String? = nil,
         filesModified: [URL] = [],
         filesRead: [URL] = []
@@ -171,9 +225,23 @@ final class AgentSession: Identifiable {
         self.agentType = agentType
         self.state = state
         self.startedAt = startedAt
+        self.liveness = liveness
+        self.lastObservedAt = lastObservedAt ?? startedAt
         self.currentTask = currentTask
         self.filesModified = filesModified
         self.filesRead = filesRead
+    }
+
+    /// Records a successful observation. Kept internal to centralize mutable
+    /// liveness state on the session while allowing the tracker to own policy.
+    func recordObservation(at date: Date) {
+        lastObservedAt = date
+        liveness = .live
+    }
+
+    /// Applies a tracker assessment without exposing a public setter.
+    func applyLiveness(_ value: AgentLiveness) {
+        liveness = value
     }
 }
 

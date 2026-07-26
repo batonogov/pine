@@ -102,11 +102,14 @@ final class AgentActivityStore {
     ///
     /// - Parameters:
     ///   - url: The file URL reported by the file-system watcher.
-    ///   - activeSessions: Non-`.done` agent sessions, typically
+    ///   - activeSessions: Live non-`.done` agent sessions, typically
     ///     `TerminalManager.agentDetector.activeSessions`.
     func noteFileSystemChange(at url: URL, activeSessions: [AgentSession]) {
-        // attribution-heuristic: only attribute to live (non-.done) sessions.
-        let live = activeSessions.filter { $0.state != .done }
+        // Attribution requires fresh process evidence. A stale session is
+        // visible uncertainty, never a candidate owner for a new file event.
+        let live = activeSessions.filter {
+            $0.state != .done && $0.liveness == .live
+        }
         guard let attribution = resolveAttribution(in: live) else { return }
 
         record(

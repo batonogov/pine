@@ -184,6 +184,22 @@ enum Strings {
 
     static let statusbarAgentActive: LocalizedStringKey = "statusbar.agentActive"
     static let statusbarAgentsActive: LocalizedStringKey = "statusbar.agentsActive"
+    static let statusbarAgentSession: LocalizedStringKey = "statusbar.agentSession"
+    static let statusbarAgentSessions: LocalizedStringKey = "statusbar.agentSessions"
+
+    // MARK: - Agent liveness (#933)
+
+    static var agentLivenessLive: String {
+        String(localized: "agent.liveness.live")
+    }
+
+    static var agentLivenessStale: String {
+        String(localized: "agent.liveness.stale")
+    }
+
+    static var agentLivenessTerminated: String {
+        String(localized: "agent.liveness.terminated")
+    }
 
     // MARK: - Agent Activity Panel (#1072)
     static let menuAgentActivity: LocalizedStringKey = "menu.agentActivity"
