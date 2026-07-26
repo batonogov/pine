@@ -121,13 +121,7 @@ struct AgentActivityViewSnapshotTests {
             )
             verifySnapshotIsNotBlank(bitmap)
         }
-        let referenceURL = SnapshotHarness.referenceURL(
-            for: Self.populatedDarkSnapshotName,
-            testFile: #filePath
-        )
-        let captureMissingMacOS26Reference =
-            ProcessInfo.processInfo.operatingSystemVersion.majorVersion == 26
-            && !FileManager.default.fileExists(atPath: referenceURL.path)
+        verifyReferenceIsNotBlank(named: Self.populatedDarkSnapshotName)
         try assertSnapshot(
             of: view,
             size: Self.panelSize,
@@ -135,13 +129,6 @@ struct AgentActivityViewSnapshotTests {
             named: Self.populatedDarkSnapshotName,
             tolerance: Self.tolerance
         )
-        if captureMissingMacOS26Reference,
-           let referenceData = try? Data(contentsOf: referenceURL) {
-            print(
-                "PINE_MACOS26_ACTIVITY_DARK_BASE64:"
-                    + referenceData.base64EncodedString()
-            )
-        }
     }
 
     @Test("AgentActivityView renders empty state in light appearance")
@@ -175,6 +162,19 @@ struct AgentActivityViewSnapshotTests {
         #expect(rows.count == 4)
         #expect(available == [.sessionLinked, .inferred, .ambiguous])
         #expect(rows.filter { $0.attribution.unambiguousCandidate == nil }.count == 1)
+    }
+
+    private func verifyReferenceIsNotBlank(named name: String) {
+        let referenceURL = SnapshotHarness.referenceURL(
+            for: name,
+            testFile: #filePath
+        )
+        guard let referenceData = try? Data(contentsOf: referenceURL),
+              let bitmap = NSBitmapImageRep(data: referenceData) else {
+            Issue.record("Populated dark reference is missing or is not a valid PNG")
+            return
+        }
+        verifySnapshotIsNotBlank(bitmap)
     }
 
     /// A platform-specific reference must not turn a blank render into a valid
