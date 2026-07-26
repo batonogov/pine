@@ -184,6 +184,22 @@ enum Strings {
 
     static let statusbarAgentActive: LocalizedStringKey = "statusbar.agentActive"
     static let statusbarAgentsActive: LocalizedStringKey = "statusbar.agentsActive"
+    static let statusbarAgentSession: LocalizedStringKey = "statusbar.agentSession"
+    static let statusbarAgentSessions: LocalizedStringKey = "statusbar.agentSessions"
+
+    // MARK: - Agent liveness (#933)
+
+    static var agentLivenessLive: String {
+        String(localized: "agent.liveness.live")
+    }
+
+    static var agentLivenessStale: String {
+        String(localized: "agent.liveness.stale")
+    }
+
+    static var agentLivenessTerminated: String {
+        String(localized: "agent.liveness.terminated")
+    }
 
     // MARK: - Agent Activity Panel (#1072)
     static let menuAgentActivity: LocalizedStringKey = "menu.agentActivity"
@@ -271,6 +287,93 @@ enum Strings {
     }
     static func agentHistoryRetainedRecoveryFile(_ path: String) -> String {
         String(localized: "agentHistory.retainedRecoveryFile \(path)")
+    }
+
+    // MARK: - Prepared inverse review (#933)
+
+    static var verifiedDiffTitle: String {
+        String(
+            localized: "verifiedDiff.title",
+            defaultValue: "Prepared Undo Preview"
+        )
+    }
+    static var verifiedDiffStalenessNotice: String {
+        String(
+            localized: "verifiedDiff.stalenessNotice",
+            defaultValue: """
+            Checked against one workspace snapshot. Pine must revalidate \
+            authority and current files immediately before applying.
+            """
+        )
+    }
+    static func verifiedDiffSummary(
+        operationCount: Int,
+        addedLineCount: Int,
+        removedLineCount: Int
+    ) -> String {
+        String(
+            localized: """
+            verifiedDiff.summary \(operationCount) \(addedLineCount) \
+            \(removedLineCount)
+            """
+        )
+    }
+    static let verifiedDiffKindApplyTextHunks = String(
+        localized: "verifiedDiff.kind.applyTextHunks",
+        defaultValue: "Checked hunks"
+    )
+    static let verifiedDiffKindRestoreExactFile = String(
+        localized: "verifiedDiff.kind.restoreExactFile",
+        defaultValue: "Exact restore"
+    )
+    static let verifiedDiffKindRemoveCreatedFile = String(
+        localized: "verifiedDiff.kind.removeCreatedFile",
+        defaultValue: "Remove created file"
+    )
+    static let verifiedDiffKindRestoreDeletedFile = String(
+        localized: "verifiedDiff.kind.restoreDeletedFile",
+        defaultValue: "Restore deleted file"
+    )
+    static let verifiedDiffKindSimulateRenamedFile = String(
+        localized: "verifiedDiff.kind.simulateRenamedFile",
+        defaultValue: "Rename simulation"
+    )
+    static let verifiedDiffDetailApplyTextHunks = String(
+        localized: "verifiedDiff.detail.applyTextHunks",
+        defaultValue: "Applies only the resolved inverse hunks."
+    )
+    static let verifiedDiffDetailRestoreExactFile = String(
+        localized: "verifiedDiff.detail.restoreExactFile",
+        defaultValue: "Replaces the entire file with captured contents."
+    )
+    static let verifiedDiffDetailRemoveCreatedFile = String(
+        localized: "verifiedDiff.detail.removeCreatedFile",
+        defaultValue: "Deletes the file created by the prepared change."
+    )
+    static let verifiedDiffDetailRestoreDeletedFile = String(
+        localized: "verifiedDiff.detail.restoreDeletedFile",
+        defaultValue: "Recreates the file with captured contents."
+    )
+    static let verifiedDiffDetailSimulateRenamedFile = String(
+        localized: "verifiedDiff.detail.simulateRenamedFile",
+        defaultValue: "Shows a rename simulation; applying rename is unsupported."
+    )
+    static let verifiedDiffExpectedCurrent = String(
+        localized: "verifiedDiff.expectedCurrent",
+        defaultValue: "Expected current"
+    )
+    static let verifiedDiffResult = String(
+        localized: "verifiedDiff.result",
+        defaultValue: "Result"
+    )
+    static func verifiedDiffIdentity(
+        label: String,
+        byteCount: Int,
+        sha256: String
+    ) -> String {
+        String(
+            localized: "verifiedDiff.identity \(label) \(byteCount) \(sha256)"
+        )
     }
 
     // MARK: - Menu Commands

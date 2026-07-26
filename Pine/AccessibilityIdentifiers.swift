@@ -168,4 +168,12 @@ nonisolated enum AccessibilityID {
     static func agentHistoryRecoveryRevealPath(_ path: String) -> String {
         "agentHistoryRecoveryRevealPath_\(path)"
     }
+
+    // MARK: - Prepared inverse review (#933)
+    static let verifiedDiffPreview = "verifiedDiffPreview"
+    static let verifiedDiffStalenessNotice =
+        "verifiedDiffStalenessNotice"
+    static func verifiedDiffOperation(_ index: Int) -> String {
+        "verifiedDiffOperation_\(index)"
+    }
 }

@@ -119,14 +119,27 @@ nonisolated final class AgentDetectionCoordinator {
     /// concurrency "sending 'self' risks causing data races" error.
     nonisolated private func captureSnapshot() {
         let result = processRunner("/bin/ps", ["-eo", "pid=,command=,cputime="], "", 3.0)
-        let processes = Self.parsePsOutput(result.stdout)
+        let checkedAt = Date()
+        let snapshot: AgentProcessSnapshot
+        if result.exitCode == 0, !result.timedOut {
+            snapshot = .success(
+                processes: Self.parsePsOutput(result.stdout),
+                observedAt: checkedAt
+            )
+        } else {
+            snapshot = .failed(checkedAt: checkedAt)
+        }
         // Extract references before the hop — the DispatchWorkItem closure
         // must not capture `self` (nonisolated, non-Sendable).
         let detector = self.detector
         let termManager = self.terminalManager
         let work = DispatchWorkItem {
             MainActor.assumeIsolated {
-                Self.applySnapshot(processes, detector: detector, terminalManager: termManager)
+                Self.applySnapshot(
+                    snapshot,
+                    detector: detector,
+                    terminalManager: termManager
+                )
             }
         }
         DispatchQueue.main.async(execute: work)
@@ -200,16 +213,80 @@ nonisolated final class AgentDetectionCoordinator {
     /// references before a main-actor hop can invoke it without capturing
     /// `self` (which is nonisolated and non-Sendable).
     @MainActor private static func applySnapshot(
-        _ processes: [DetectedProcess],
+        _ snapshot: AgentProcessSnapshot,
         detector: AgentDetector,
         terminalManager: TerminalManager?
     ) {
-        detector.processSnapshotDidUpdate(processes)
-        guard let terminalManager else { return }
-        for tab in terminalManager.allTerminalTabs {
-            let fgPid = tab.foregroundProcessID
-            tab.agentSession = fgPid > 0 ? detector.session(forPID: fgPid) : nil
+        switch snapshot {
+        case .failed(let checkedAt):
+            // An unavailable process list is uncertainty, not evidence that
+            // every agent exited. Keep tab associations and age their last
+            // successful observations instead of reconciling against [].
+            detector.processSnapshotDidFail(at: checkedAt)
+            // Termination was already established by an earlier successful
+            // snapshot, so its one-interval exit badge can expire even though
+            // this poll failed. Live/stale associations remain untouched.
+            guard let terminalManager else { return }
+            for tab in terminalManager.allTerminalTabs
+            where shouldExpireAfterFailedSnapshot(tab.agentSession) {
+                tab.agentSession = nil
+            }
+
+        case .success(let processes, let observedAt):
+            // Remember sessions that had already been shown as terminated.
+            // A newly terminated session is retained on its tab for exactly
+            // one polling interval, giving the UI a bounded exit
+            // indication without leaving a dead badge indefinitely.
+            let previouslyTerminated = Set(
+                detector.detectedSessions
+                    .filter { $0.liveness == .terminated }
+                    .map(\.id)
+            )
+            detector.processSnapshotDidUpdate(
+                processes,
+                observedAt: observedAt
+            )
+            guard let terminalManager else { return }
+            for tab in terminalManager.allTerminalTabs {
+                tab.agentSession = reconciledSession(
+                    previous: tab.agentSession,
+                    foregroundPID: tab.foregroundProcessID,
+                    detector: detector,
+                    terminatedBeforeSnapshot: previouslyTerminated
+                )
+            }
         }
+    }
+
+    /// Resolves one terminal tab association after a successful snapshot.
+    ///
+    /// Internal for deterministic unit coverage without launching a real PTY.
+    @MainActor
+    static func reconciledSession(
+        previous: AgentSession?,
+        foregroundPID: Int32,
+        detector: AgentDetector,
+        terminatedBeforeSnapshot: Set<UUID>
+    ) -> AgentSession? {
+        if foregroundPID > 0, let current = detector.session(forPID: foregroundPID) {
+            return current
+        }
+        guard let previous,
+              previous.liveness == .terminated,
+              !terminatedBeforeSnapshot.contains(previous.id) else {
+            return nil
+        }
+        return previous
+    }
+
+    /// A failed poll cannot detach a session whose process evidence is merely
+    /// uncertain. It may only expire exit feedback whose termination was
+    /// already established by an earlier successful snapshot.
+    @MainActor
+    static func shouldExpireAfterFailedSnapshot(
+        _ session: AgentSession?
+    ) -> Bool {
+        session?.liveness == .terminated
     }
 
     @MainActor private func clearAllTabSessions() {
@@ -224,8 +301,30 @@ nonisolated final class AgentDetectionCoordinator {
     /// `parsePsOutput`, then calls `applySnapshot` directly on the main actor.
     @MainActor internal func runSnapshotForTesting() {
         let result = processRunner("/bin/ps", ["-eo", "pid=,command=,cputime="], "", 3.0)
-        let processes = Self.parsePsOutput(result.stdout)
-        Self.applySnapshot(processes, detector: detector, terminalManager: terminalManager)
+        let checkedAt = Date()
+        let snapshot: AgentProcessSnapshot
+        if result.exitCode == 0, !result.timedOut {
+            snapshot = .success(
+                processes: Self.parsePsOutput(result.stdout),
+                observedAt: checkedAt
+            )
+        } else {
+            snapshot = .failed(checkedAt: checkedAt)
+        }
+        Self.applySnapshot(
+            snapshot,
+            detector: detector,
+            terminalManager: terminalManager
+        )
     }
     #endif
+}
+
+/// Result of one attempt to capture the complete process list.
+///
+/// Keeping failure distinct from a successful empty list is essential:
+/// absence in the latter is termination evidence; the former is uncertainty.
+nonisolated private enum AgentProcessSnapshot: Sendable {
+    case success(processes: [DetectedProcess], observedAt: Date)
+    case failed(checkedAt: Date)
 }

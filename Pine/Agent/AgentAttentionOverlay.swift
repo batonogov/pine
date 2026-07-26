@@ -24,28 +24,40 @@ struct AgentAttentionOverlay: View {
     let summaries: [AgentStatusSummary]
     let onNavigate: (PaneID, UUID) -> Void
 
-    /// Blocked first, then active, then done; idle last (normally hidden
-    /// upstream, but kept defensive).
+    /// Live blocked sessions come first, then live active work. Uncertain and
+    /// terminated evidence is demoted below actionable rows so stale logical
+    /// state never masquerades as a current request for attention.
     private var ranked: [AgentStatusSummary] {
-        summaries.sorted { Self.rank($0.state) < Self.rank($1.state) }
+        summaries.sorted { Self.rank($0) < Self.rank($1) }
     }
 
-    private static func rank(_ state: AgentState) -> Int {
-        switch state {
-        case .waitingInput: 0
-        case .thinking, .executing: 1
-        case .done: 2
-        case .idle: 3
+    private static func rank(_ summary: AgentStatusSummary) -> Int {
+        switch summary.liveness {
+        case .stale: return 2
+        case .terminated: return 3
+        case .live: break
+        }
+        switch summary.state {
+        case .waitingInput: return 0
+        case .thinking, .executing: return 1
+        case .done: return 3
+        case .idle: return 4
         }
     }
 
-    /// SF Symbol for a row's state.
-    private func glyph(_ state: AgentState) -> String {
-        switch state {
-        case .waitingInput: "exclamationmark.circle.fill"
-        case .thinking, .executing: "ellipsis.circle.fill"
-        case .done: "checkmark.circle.fill"
-        case .idle: "circle"
+    /// SF Symbol for the freshest available evidence, falling back to the
+    /// logical activity state only while process presence is established.
+    private func glyph(_ summary: AgentStatusSummary) -> String {
+        switch summary.liveness {
+        case .stale: return "clock"
+        case .terminated: return "xmark.circle.fill"
+        case .live: break
+        }
+        switch summary.state {
+        case .waitingInput: return "exclamationmark.circle.fill"
+        case .thinking, .executing: return "ellipsis.circle.fill"
+        case .done: return "checkmark.circle.fill"
+        case .idle: return "circle"
         }
     }
 
@@ -53,11 +65,17 @@ struct AgentAttentionOverlay: View {
     /// the per-agent identity (Claude Code orange, Codex green, …) is still
     /// readable inside the attention list.
     private func color(for summary: AgentStatusSummary) -> Color {
+        switch summary.liveness {
+        case .stale: return .orange
+        case .terminated: return .secondary
+        case .live: break
+        }
         switch summary.state {
-        case .waitingInput: .orange
-        case .done: .green
-        case .idle: .secondary
-        case .thinking, .executing: Color(nsColor: summary.agentType.color)
+        case .waitingInput: return .orange
+        case .done: return .green
+        case .idle: return .secondary
+        case .thinking, .executing:
+            return Color(nsColor: summary.agentType.color)
         }
     }
 
@@ -82,13 +100,13 @@ struct AgentAttentionOverlay: View {
                                 onNavigate(summary.paneID, summary.tabID)
                             } label: {
                                 HStack(spacing: 8) {
-                                    Image(systemName: glyph(summary.state))
+                                    Image(systemName: glyph(summary))
                                         .foregroundStyle(color(for: summary))
                                         .frame(width: 16)
                                     Text(verbatim: summary.agentType.displayName)
                                         .lineLimit(1)
                                     Spacer()
-                                    Text(verbatim: summary.state.displayName)
+                                    Text(verbatim: detailText(for: summary))
                                         .foregroundStyle(.secondary)
                                         .font(.system(size: LayoutMetrics.bodySmallFontSize))
                                 }
@@ -106,5 +124,11 @@ struct AgentAttentionOverlay: View {
         .padding(16)
         .frame(width: 380, height: 320)
         .accessibilityIdentifier(AccessibilityID.agentAttentionOverlay)
+    }
+
+    private func detailText(for summary: AgentStatusSummary) -> String {
+        summary.liveness == .live
+            ? summary.state.displayName
+            : summary.liveness.displayName
     }
 }

@@ -70,13 +70,10 @@ struct StatusBarView: View {
             // when agents are merely active, hidden when none are running or
             // every agent is idle. Clicking opens the attention-list overlay.
             //
-            // `.done` sessions are intentionally excluded: a session is moved
-            // to `.done` and immediately detached from its tab
-            // (`session(forPID:)` returns nil), so a done summary can never
-            // reach the status bar. Surfacing "done" on the bell is tracked
-            // as a follow-up (would need retaining the session briefly).
-            let waitingCount = summaries.filter { $0.state.needsAttention }.count
-            let hasActive = summaries.contains(where: { $0.state.isActive })
+            // Stale and terminated summaries remain visible in the adjacent
+            // session item, but never drive this actionable attention signal.
+            let waitingCount = summaries.filter(\.needsAttention).count
+            let hasActive = summaries.contains(where: \.isActivelyWorking)
             if waitingCount > 0 || hasActive {
                 Button {
                     onShowAttention?()
