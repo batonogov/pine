@@ -90,7 +90,7 @@ extension AgentActionAttribution {
 }
 
 /// Collapsible Activity Panel listing agent actions in reverse-chronological
-/// order with kind/status filter chips.
+/// order with kind/status/attribution filter chips.
 ///
 /// Rendered as a sheet from `ContentView` via the `showAgentActivity`
 /// notification. Clicking a row whose action has a `fileURL` opens that file
@@ -104,13 +104,16 @@ struct AgentActivityView: View {
 
     @State private var kindFilter: AgentActionKind?
     @State private var statusFilter: AgentActionStatus?
+    @State private var attributionFilter: ActivityAttributionFilter?
 
     /// Rows after filtering, newest-first.
     private var visibleRows: [AgentActivityRow] {
         rows
             .filter { row in
-                (kindFilter == nil || row.kind == kindFilter)
-                    && (statusFilter == nil || row.status == statusFilter)
+                guard kindFilter == nil || row.kind == kindFilter else { return false }
+                guard statusFilter == nil || row.status == statusFilter else { return false }
+                guard let attributionFilter else { return true }
+                return attributionFilter.matches(row.attribution)
             }
             .reversed()
     }
@@ -148,28 +151,54 @@ struct AgentActivityView: View {
     // MARK: - Filters
 
     private var filterChips: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 6) {
-                ForEach(AgentActionKind.allCases, id: \.self) { kind in
-                    FilterChip(
-                        label: kind.filterLabel,
-                        isSelected: kindFilter == kind
-                    ) {
-                        kindFilter = kindFilter == kind ? nil : kind
+        VStack(spacing: 0) {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 6) {
+                    ForEach(AgentActionKind.allCases, id: \.self) { kind in
+                        FilterChip(
+                            label: kind.filterLabel,
+                            isSelected: kindFilter == kind
+                        ) {
+                            kindFilter = kindFilter == kind ? nil : kind
+                        }
                     }
-                }
-                Divider().frame(height: 16).padding(.horizontal, 2)
-                ForEach(AgentActionStatus.allCases, id: \.self) { status in
-                    FilterChip(
-                        label: status.displayName,
-                        isSelected: statusFilter == status
-                    ) {
-                        statusFilter = statusFilter == status ? nil : status
+                    Divider().frame(height: 16).padding(.horizontal, 2)
+                    ForEach(AgentActionStatus.allCases, id: \.self) { status in
+                        FilterChip(
+                            label: status.displayName,
+                            isSelected: statusFilter == status
+                        ) {
+                            statusFilter = statusFilter == status ? nil : status
+                        }
                     }
                 }
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
+            Divider().opacity(0.3)
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 6) {
+                    ForEach(
+                        ActivityAttributionFilter.allCases, id: \.self
+                    ) { filter in
+                        FilterChip(
+                            label: filter.filterLabel,
+                            isSelected: attributionFilter == filter
+                        ) {
+                            attributionFilter = attributionFilter == filter ? nil : filter
+                        }
+                        .accessibilityIdentifier(attributionChipID(filter))
+                    }
+                }
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+    }
+
+    private func attributionChipID(_ filter: ActivityAttributionFilter) -> String {
+        switch filter {
+        case .direct: AccessibilityID.agentActivityFilterDirect
+        case .inferred: AccessibilityID.agentActivityFilterInferred
+        case .ambiguous: AccessibilityID.agentActivityFilterAmbiguous
         }
     }
 

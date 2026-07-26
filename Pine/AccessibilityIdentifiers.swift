@@ -147,6 +147,9 @@ nonisolated enum AccessibilityID {
     // MARK: - Agent Activity Panel (#1072)
     static let agentActivityPanel = "agentActivityPanel"
     static let agentActivityRow = "agentActivityRow"
+    static let agentActivityFilterDirect = "agentActivityFilterDirect"
+    static let agentActivityFilterInferred = "agentActivityFilterInferred"
+    static let agentActivityFilterAmbiguous = "agentActivityFilterAmbiguous"
 
     // MARK: - Agent History & Undo (#1073)
     static let agentHistoryPanel = "agentHistoryPanel"

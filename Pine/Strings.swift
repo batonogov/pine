@@ -193,6 +193,9 @@ enum Strings {
     static var agentActivityAttributionInferred: String {
         String(localized: "agentActivity.attribution.inferred", defaultValue: "Inferred")
     }
+    static var agentActivityAttributionDirect: String {
+        String(localized: "agentActivity.attribution.direct", defaultValue: "Direct")
+    }
     static var agentActivityAttributionAmbiguous: String {
         String(localized: "agentActivity.attribution.ambiguous", defaultValue: "Ambiguous")
     }

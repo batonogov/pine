@@ -20,6 +20,38 @@
 
 import Foundation
 
+/// Attribution-level filter for the Activity Panel. Lets users narrow the
+/// feed to directly recorded (`.direct` / `.session`), heuristic
+/// (`.inferred`), or unresolved (`.ambiguous`) actions — making trust level
+/// and ambiguity visible (#933 §4).
+nonisolated enum ActivityAttributionFilter: Sendable, Equatable, CaseIterable {
+    /// Actions directly recorded from a verified agent session.
+    case direct
+    /// Actions inferred from file-system timing (single candidate).
+    case inferred
+    /// Actions whose ownership is ambiguous (multiple candidates).
+    case ambiguous
+
+    /// Short label for the filter chip.
+    var filterLabel: String {
+        switch self {
+        case .direct: Strings.agentActivityAttributionDirect
+        case .inferred: Strings.agentActivityAttributionInferred
+        case .ambiguous: Strings.agentActivityAttributionAmbiguous
+        }
+    }
+
+    /// Returns `true` when `attribution` belongs to this filter category.
+    func matches(_ attribution: AgentActionAttribution) -> Bool {
+        switch (self, attribution) {
+        case (.direct, .session): true
+        case (.inferred, .inferred): true
+        case (.ambiguous, .ambiguous): true
+        default: false
+        }
+    }
+}
+
 @MainActor
 @Observable
 final class AgentActivityStore {
@@ -80,6 +112,22 @@ final class AgentActivityStore {
         actions.filter { action in
             (kind == nil || action.kind == kind)
                 && (status == nil || action.status == status)
+        }
+    }
+
+    /// Actions filtered by kind, status, and/or attribution trust level.
+    func filteredActions(
+        kind: AgentActionKind? = nil,
+        status: AgentActionStatus? = nil,
+        attributionFilter: ActivityAttributionFilter? = nil
+    ) -> [AgentAction] {
+        guard let attributionFilter else {
+            return filtered(kind: kind, status: status)
+        }
+        return actions.filter { action in
+            (kind == nil || action.kind == kind)
+                && (status == nil || action.status == status)
+                && attributionFilter.matches(action.attribution)
         }
     }
 
