@@ -2,21 +2,48 @@
 //  VerifiedDiffPreviewView.swift
 //  Pine
 //
-//  Renders verified before/after diff previews for Agent History entries
-//  (vision #933 §2 — Reviewable changes). The models exist in
-//  VerifiedPatchModels.swift but no UI renders them — this view closes that gap.
-//
-//  Follows the value-type-projection pattern from AgentHistoryRow /
-//  AgentActivityRow: display projections decode raw Data bytes to String so
-//  the view and its snapshot tests need no live store or disk access.
+//  Display-only rendering for checked inverse plans from VerifiedPatchEngine.
+//  The component intentionally has no apply/undo action and is not wired to
+//  Agent History: a prepared value can become stale, and only the future
+//  descriptor coordinator may revalidate authority and mutate the workspace.
 //
 
+import Foundation
 import SwiftUI
 
-// MARK: - Value-type projections
+// MARK: - Display projection
 
-/// Display projection of a single diff preview line. Decodes the raw UTF-8
-/// bytes from `VerifiedInversePreviewLine` into a display-ready String.
+nonisolated enum VerifiedDiffPreviewProjectionError:
+    Error,
+    Equatable,
+    Sendable {
+    case invalidUTF8Line(
+        operationID: VerifiedPatchOperationID,
+        hunkIndex: Int,
+        lineIndex: Int
+    )
+}
+
+/// A projection created only after `VerifiedPatchEngine` has revalidated a
+/// complete `PreparedInverse`. It is display data, never mutation authority.
+nonisolated struct VerifiedDiffPreviewModel: Equatable, Sendable {
+    let patchID: UUID
+    let rows: [VerifiedDiffPreviewRow]
+
+    init(prepared: PreparedInverse) throws {
+        let previews = try VerifiedPatchEngine.preparedPreviewForReview(
+            prepared
+        )
+        patchID = prepared.patchID
+        rows = try previews.enumerated().map { operationIndex, preview in
+            try VerifiedDiffPreviewRow(
+                operationIndex: operationIndex,
+                from: preview
+            )
+        }
+    }
+}
+
 nonisolated struct VerifiedDiffPreviewLineRow:
     Sendable,
     Equatable,
@@ -25,18 +52,27 @@ nonisolated struct VerifiedDiffPreviewLineRow:
     let kind: VerifiedInversePreviewLineKind
     let text: String
 
-    init(id: Int, from line: VerifiedInversePreviewLine) {
+    fileprivate init(
+        id: Int,
+        operationID: VerifiedPatchOperationID,
+        hunkIndex: Int,
+        from line: VerifiedInversePreviewLine
+    ) throws {
         self.id = id
-        self.kind = line.kind
-        if let decoded = String(data: line.bytes, encoding: .utf8) {
-            self.text = decoded.trimmingCharacters(in: .newlines)
-        } else {
-            self.text = ""
+        kind = line.kind
+        guard let decoded = VerifiedDiffDisplaySanitizer.sanitizedLine(
+            line.bytes
+        ) else {
+            throw VerifiedDiffPreviewProjectionError.invalidUTF8Line(
+                operationID: operationID,
+                hunkIndex: hunkIndex,
+                lineIndex: id
+            )
         }
+        text = decoded
     }
 }
 
-/// Display projection of a hunk: the `@@ ... @@` header plus decoded lines.
 nonisolated struct VerifiedDiffHunkRow:
     Sendable,
     Equatable,
@@ -45,66 +81,144 @@ nonisolated struct VerifiedDiffHunkRow:
     let header: String
     let lines: [VerifiedDiffPreviewLineRow]
 
-    init(index: Int, from hunk: VerifiedInverseHunkPreview) {
-        self.id = index
-        self.header = hunk.header
-        self.lines = hunk.lines.enumerated().map { offset, line in
-            VerifiedDiffPreviewLineRow(id: offset, from: line)
+    fileprivate init(
+        index: Int,
+        operationID: VerifiedPatchOperationID,
+        from hunk: VerifiedInverseHunkPreview
+    ) throws {
+        id = index
+        header = VerifiedDiffDisplaySanitizer.escapeUnsafeScalars(
+            in: hunk.header
+        )
+        lines = try hunk.lines.enumerated().map { lineIndex, line in
+            try VerifiedDiffPreviewLineRow(
+                id: lineIndex,
+                operationID: operationID,
+                hunkIndex: index,
+                from: line
+            )
         }
     }
 }
 
-/// Value-type projection wrapping `VerifiedInverseOperationPreview` for
-/// display. Extracts Decodable Data lines to String and provides a stable
-/// identifier for SwiftUI `ForEach` / `LazyVStack` usage.
 nonisolated struct VerifiedDiffPreviewRow:
     Identifiable,
     Equatable,
     Sendable {
-    let id: String
+    /// The operation index is part of the ID because a verified operation ID
+    /// is semantic identity, while SwiftUI also requires uniqueness if a
+    /// malformed in-memory value repeats one. Engine revalidation rejects the
+    /// malformed value before production projection.
+    struct RowID: Hashable, Sendable {
+        let operationID: VerifiedPatchOperationID
+        let operationIndex: Int
+    }
+
+    let id: RowID
     let kind: VerifiedInversePreviewKind
     let sourcePath: String
     let destinationPath: String?
+    let expectedCurrent: VerifiedPatchStateIdentity?
+    let result: VerifiedPatchStateIdentity?
     let hunks: [VerifiedDiffHunkRow]
 
-    /// Path shown in the operation header — destination for renames,
-    /// source for everything else.
     var displayPath: String {
         destinationPath ?? sourcePath
     }
 
     var addedLineCount: Int {
         hunks.reduce(0) { total, hunk in
-            total + hunk.lines.filter { $0.kind == .add }.count
+            total + hunk.lines.lazy.filter { $0.kind == .add }.count
         }
     }
 
     var removedLineCount: Int {
         hunks.reduce(0) { total, hunk in
-            total + hunk.lines.filter { $0.kind == .remove }.count
+            total + hunk.lines.lazy.filter { $0.kind == .remove }.count
         }
     }
 
-    init(from preview: VerifiedInverseOperationPreview) {
-        let patchID = preview.operationID.patchID
-        if let firstTransition = preview.operationID.transitionIDs.first {
-            self.id = "\(patchID)_\(firstTransition.envelopeID)_\(firstTransition.ordinal)"
-        } else {
-            self.id = "\(patchID)"
+    fileprivate init(
+        operationIndex: Int,
+        from preview: VerifiedInverseOperationPreview
+    ) throws {
+        id = RowID(
+            operationID: preview.operationID,
+            operationIndex: operationIndex
+        )
+        kind = preview.kind
+        sourcePath = VerifiedDiffDisplaySanitizer.escapeUnsafeScalars(
+            in: preview.sourcePath
+        )
+        destinationPath = preview.destinationPath.map {
+            VerifiedDiffDisplaySanitizer.escapeUnsafeScalars(in: $0)
         }
-        self.kind = preview.kind
-        self.sourcePath = preview.sourcePath
-        self.destinationPath = preview.destinationPath
-        self.hunks = preview.hunks.enumerated().map { offset, hunk in
-            VerifiedDiffHunkRow(index: offset, from: hunk)
+        expectedCurrent = preview.expectedCurrent
+        result = preview.result
+        hunks = try preview.hunks.enumerated().map { hunkIndex, hunk in
+            try VerifiedDiffHunkRow(
+                index: hunkIndex,
+                operationID: preview.operationID,
+                from: hunk
+            )
         }
     }
 }
 
-// MARK: - Kind presentation
+nonisolated enum VerifiedDiffDisplaySanitizer {
+    /// Planner lines include their terminator bytes. Remove exactly one LF
+    /// and its optional CR instead of Unicode trimming, which could hide
+    /// additional leading/trailing controls from a security review.
+    static func sanitizedLine(_ bytes: Data) -> String? {
+        var content = bytes
+        if content.last == 0x0A {
+            content.removeLast()
+            if content.last == 0x0D {
+                content.removeLast()
+            }
+        }
+        guard let decoded = String(data: content, encoding: .utf8) else {
+            return nil
+        }
+        return escapeUnsafeScalars(in: decoded)
+    }
 
-nonisolated extension VerifiedInversePreviewKind {
-    /// SF Symbol name for the operation kind.
+    /// Escapes every Unicode control/format scalar and visual line separator.
+    /// This includes tabs, bidi marks/overrides/isolates, zero-width format
+    /// characters, BOM, and C0/C1 controls. Review text therefore cannot forge
+    /// rows, indentation, or visual ordering.
+    static func escapeUnsafeScalars(in value: String) -> String {
+        var result = ""
+        result.reserveCapacity(value.utf8.count)
+        for scalar in value.unicodeScalars {
+            if isUnsafe(scalar) {
+                let hexadecimal = String(
+                    scalar.value,
+                    radix: 16,
+                    uppercase: true
+                )
+                result += "\\u{\(hexadecimal)}"
+            } else {
+                result.unicodeScalars.append(scalar)
+            }
+        }
+        return result
+    }
+
+    private static func isUnsafe(_ scalar: Unicode.Scalar) -> Bool {
+        switch scalar.properties.generalCategory {
+        case .control, .format, .lineSeparator, .paragraphSeparator:
+            true
+        default:
+            false
+        }
+    }
+}
+
+// MARK: - Presentation
+
+@MainActor
+extension VerifiedInversePreviewKind {
     var systemImage: String {
         switch self {
         case .applyTextHunks: "doc.text"
@@ -115,42 +229,37 @@ nonisolated extension VerifiedInversePreviewKind {
         }
     }
 
-    /// Short localized label for the operation kind.
     var displayName: String {
         switch self {
         case .applyTextHunks:
-            String(
-                localized: "verifiedDiff.kind.applyTextHunks",
-                defaultValue: "Edit"
-            )
+            Strings.verifiedDiffKindApplyTextHunks
         case .restoreExactFile:
-            String(
-                localized: "verifiedDiff.kind.restoreExactFile",
-                defaultValue: "Restore"
-            )
+            Strings.verifiedDiffKindRestoreExactFile
         case .removeCreatedFile:
-            String(
-                localized: "verifiedDiff.kind.removeCreatedFile",
-                defaultValue: "Remove"
-            )
+            Strings.verifiedDiffKindRemoveCreatedFile
         case .restoreDeletedFile:
-            String(
-                localized: "verifiedDiff.kind.restoreDeletedFile",
-                defaultValue: "Restore"
-            )
+            Strings.verifiedDiffKindRestoreDeletedFile
         case .simulateRenamedFile:
-            String(
-                localized: "verifiedDiff.kind.simulateRenamedFile",
-                defaultValue: "Rename"
-            )
+            Strings.verifiedDiffKindSimulateRenamedFile
+        }
+    }
+
+    var operationDetail: String {
+        switch self {
+        case .applyTextHunks:
+            Strings.verifiedDiffDetailApplyTextHunks
+        case .restoreExactFile:
+            Strings.verifiedDiffDetailRestoreExactFile
+        case .removeCreatedFile:
+            Strings.verifiedDiffDetailRemoveCreatedFile
+        case .restoreDeletedFile:
+            Strings.verifiedDiffDetailRestoreDeletedFile
+        case .simulateRenamedFile:
+            Strings.verifiedDiffDetailSimulateRenamedFile
         }
     }
 }
 
-// MARK: - Line view
-
-/// Renders a single diff line colored by kind with the standard prefix:
-/// context = space, remove = `-`, add = `+`.
 private struct VerifiedDiffLineView: View {
     let line: VerifiedDiffPreviewLineRow
 
@@ -171,23 +280,20 @@ private struct VerifiedDiffLineView: View {
     }
 
     var body: some View {
-        HStack(spacing: 0) {
+        HStack(alignment: .firstTextBaseline, spacing: 0) {
             Text(verbatim: prefix)
                 .foregroundStyle(color)
+                .accessibilityHidden(true)
             Text(verbatim: line.text)
                 .foregroundStyle(color)
         }
         .font(.system(size: 12, design: .monospaced))
         .fixedSize(horizontal: false, vertical: true)
         .textSelection(.enabled)
+        .accessibilityLabel(Text(verbatim: prefix + line.text))
     }
 }
 
-// MARK: - Hunk view
-
-/// Renders one `VerifiedInverseHunkPreview`: the `@@ ... @@` header line,
-/// then lines colored by kind — context = secondary, remove = red with `-`
-/// prefix, add = green with `+` prefix. Monospace font (system size 12).
 struct VerifiedDiffHunkView: View {
     let hunk: VerifiedDiffHunkRow
 
@@ -201,26 +307,31 @@ struct VerifiedDiffHunkView: View {
                 VerifiedDiffLineView(line: line)
             }
         }
-        .accessibilityElement(children: .combine)
+        .accessibilityElement(children: .contain)
     }
 }
 
-// MARK: - Operation view
-
-/// Shows the operation kind icon + file path header, then the list of hunk
-/// views for a single `VerifiedInverseOperationPreview`.
 struct VerifiedDiffOperationView: View {
     let row: VerifiedDiffPreviewRow
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: 7) {
             header
-            ForEach(row.hunks) { hunk in
-                VerifiedDiffHunkView(hunk: hunk)
+            if row.hunks.isEmpty {
+                exactOperationSummary
+            } else {
+                ForEach(row.hunks) { hunk in
+                    VerifiedDiffHunkView(hunk: hunk)
+                }
             }
         }
-        .padding(.vertical, 6)
+        .padding(.vertical, 8)
         .accessibilityElement(children: .contain)
+        .accessibilityIdentifier(
+            AccessibilityID.verifiedDiffOperation(
+                row.id.operationIndex
+            )
+        )
     }
 
     private var header: some View {
@@ -228,6 +339,10 @@ struct VerifiedDiffOperationView: View {
             Image(systemName: row.kind.systemImage)
                 .foregroundStyle(.secondary)
                 .font(.system(size: 12))
+                .accessibilityHidden(true)
+            Text(verbatim: row.kind.displayName)
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(.secondary)
             Text(verbatim: row.displayPath)
                 .font(.system(size: 12, weight: .medium, design: .monospaced))
                 .lineLimit(1)
@@ -242,42 +357,72 @@ struct VerifiedDiffOperationView: View {
         }
     }
 
+    private var exactOperationSummary: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text(verbatim: row.kind.operationDetail)
+                .font(.system(size: 11))
+                .foregroundStyle(.secondary)
+            if let expectedCurrent = row.expectedCurrent {
+                identityRow(
+                    label: Strings.verifiedDiffExpectedCurrent,
+                    identity: expectedCurrent
+                )
+            }
+            if let result = row.result {
+                identityRow(
+                    label: Strings.verifiedDiffResult,
+                    identity: result
+                )
+            }
+        }
+        .padding(.leading, 18)
+    }
+
+    private func identityRow(
+        label: String,
+        identity: VerifiedPatchStateIdentity
+    ) -> some View {
+        Text(verbatim: Strings.verifiedDiffIdentity(
+            label: label,
+            byteCount: identity.contentIdentity.byteCount,
+            sha256: identity.contentIdentity.sha256Hex
+        ))
+        .font(.system(size: 10, design: .monospaced))
+        .foregroundStyle(.tertiary)
+        .textSelection(.enabled)
+        .fixedSize(horizontal: false, vertical: true)
+    }
+
     private var changeSummary: String {
         guard row.addedLineCount > 0 || row.removedLineCount > 0 else {
             return ""
         }
-        return "+\(row.addedLineCount) -\(row.removedLineCount)"
+        return "+\(row.addedLineCount) −\(row.removedLineCount)"
     }
 }
 
-// MARK: - Top-level preview
-
-/// Scrollable diff preview for a set of verified inverse operations.
+/// A read-only view of a prepared checked inverse.
 ///
-/// Renders a `ScrollView` + `LazyVStack` of `VerifiedDiffOperationView`,
-/// with a summary header showing the affected file count and total added /
-/// removed line counts.
+/// The view deliberately provides no mutation action. Its warning is part of
+/// the safety contract: preparation describes one snapshot and does not prove
+/// that the workspace still matches when a future caller chooses to apply.
 struct VerifiedDiffPreviewView: View {
-    let rows: [VerifiedDiffPreviewRow]
-
-    init(rows: [VerifiedDiffPreviewRow]) {
-        self.rows = rows
-    }
-
-    /// Convenience initializer that projects raw preview models.
-    init(previews: [VerifiedInverseOperationPreview]) {
-        self.rows = previews.map { VerifiedDiffPreviewRow(from: $0) }
-    }
+    let model: VerifiedDiffPreviewModel
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             summaryHeader
             Divider()
+            stalenessNotice
+            Divider()
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 0) {
-                    ForEach(rows) { row in
+                    ForEach(
+                        Array(model.rows.enumerated()),
+                        id: \.element.id
+                    ) { index, row in
                         VerifiedDiffOperationView(row: row)
-                        if row.id != rows.last?.id {
+                        if index < model.rows.count - 1 {
                             Divider().opacity(0.3)
                         }
                     }
@@ -286,44 +431,51 @@ struct VerifiedDiffPreviewView: View {
                 .padding(.vertical, 4)
             }
         }
-        .accessibilityIdentifier("verifiedDiffPreview")
+        .accessibilityIdentifier(AccessibilityID.verifiedDiffPreview)
     }
-
-    // MARK: - Summary
 
     private var summaryHeader: some View {
         HStack(spacing: 8) {
             Image(systemName: "eye")
                 .foregroundStyle(.secondary)
                 .font(.system(size: 13))
-            Text(
-                String(
-                    localized: "verifiedDiff.title",
-                    defaultValue: "Verified Changes"
-                )
-            )
-            .font(.system(size: 13, weight: .semibold))
+                .accessibilityHidden(true)
+            Text(verbatim: Strings.verifiedDiffTitle)
+                .font(.system(size: 13, weight: .semibold))
             Spacer(minLength: 4)
-            Text(verbatim: summaryText)
-                .font(.system(size: 11, design: .monospaced))
-                .foregroundStyle(.tertiary)
+            Text(verbatim: Strings.verifiedDiffSummary(
+                operationCount: model.rows.count,
+                addedLineCount: totalAdded,
+                removedLineCount: totalRemoved
+            ))
+            .font(.system(size: 11, design: .monospaced))
+            .foregroundStyle(.tertiary)
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
     }
 
-    private var summaryText: String {
-        let fileCount = rows.count
-        let added = totalAdded
-        let removed = totalRemoved
-        return "\(fileCount) files  +\(added) -\(removed)"
+    private var stalenessNotice: some View {
+        Label {
+            Text(verbatim: Strings.verifiedDiffStalenessNotice)
+                .fixedSize(horizontal: false, vertical: true)
+        } icon: {
+            Image(systemName: "checkmark.shield")
+        }
+        .font(.system(size: 11))
+        .foregroundStyle(.secondary)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 7)
+        .accessibilityIdentifier(
+            AccessibilityID.verifiedDiffStalenessNotice
+        )
     }
 
     private var totalAdded: Int {
-        rows.reduce(0) { $0 + $1.addedLineCount }
+        model.rows.reduce(0) { $0 + $1.addedLineCount }
     }
 
     private var totalRemoved: Int {
-        rows.reduce(0) { $0 + $1.removedLineCount }
+        model.rows.reduce(0) { $0 + $1.removedLineCount }
     }
 }
