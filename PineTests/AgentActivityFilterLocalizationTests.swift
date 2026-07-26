@@ -37,7 +37,8 @@ struct AgentActivityFilterLocalizationTests {
         "verifiedDiff.detail.restoreExactFile",
         "verifiedDiff.detail.simulateRenamedFile",
         "verifiedDiff.expectedCurrent",
-        "verifiedDiff.identity %@ %lld %@",
+        "verifiedDiff.identity %@ %@ %@ %@ %@ %@",
+        "verifiedDiff.identity.absent %@ %@",
         "verifiedDiff.kind.applyTextHunks",
         "verifiedDiff.kind.removeCreatedFile",
         "verifiedDiff.kind.restoreDeletedFile",
@@ -45,7 +46,13 @@ struct AgentActivityFilterLocalizationTests {
         "verifiedDiff.kind.simulateRenamedFile",
         "verifiedDiff.result",
         "verifiedDiff.stalenessNotice",
-        "verifiedDiff.summary %lld %lld %lld",
+        "verifiedDiff.metadataAlsoChanges",
+        "verifiedDiff.metadataOnly",
+        "verifiedDiff.fileKind.regularFile",
+        "verifiedDiff.fileKind.symbolicLink",
+        "verifiedDiff.lineEnding.crlf",
+        "verifiedDiff.lineEnding.lf",
+        "verifiedDiff.lineEnding.noFinalNewline",
         "verifiedDiff.title"
     ]
 

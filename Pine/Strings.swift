@@ -334,88 +334,280 @@ enum Strings {
 
     // MARK: - Prepared inverse review (#933)
 
-    static var verifiedDiffTitle: String {
-        String(
-            localized: "verifiedDiff.title",
-            defaultValue: "Prepared Undo Preview"
+    static func verifiedDiffTitle(
+        locale: Locale = .current
+    ) -> String {
+        localizedString(
+            forKey: "verifiedDiff.title",
+            fallback: "Prepared Undo Preview",
+            locale: locale
         )
     }
-    static var verifiedDiffStalenessNotice: String {
-        String(
-            localized: "verifiedDiff.stalenessNotice",
-            defaultValue: """
+    static func verifiedDiffStalenessNotice(
+        locale: Locale = .current
+    ) -> String {
+        localizedString(
+            forKey: "verifiedDiff.stalenessNotice",
+            fallback: """
             Checked against one workspace snapshot. Pine must revalidate \
             authority and current files immediately before applying.
-            """
+            """,
+            locale: locale
         )
     }
     static func verifiedDiffSummary(
         operationCount: Int,
         addedLineCount: Int,
-        removedLineCount: Int
+        removedLineCount: Int,
+        locale: Locale = .current
     ) -> String {
-        String(
-            localized: """
-            verifiedDiff.summary \(operationCount) \(addedLineCount) \
-            \(removedLineCount)
-            """
+        let operations = verifiedDiffOperationCount(
+            operationCount,
+            locale: locale
+        )
+        return "\(operations) · +\(addedLineCount) −\(removedLineCount)"
+    }
+
+    static func verifiedDiffOperationCount(
+        _ count: Int,
+        locale: Locale = .current
+    ) -> String {
+        localizedPluralString(
+            forKey: "verifiedDiff.operationCount %lld",
+            fallback: count == 1 ? "%lld operation" : "%lld operations",
+            count: count,
+            locale: locale
         )
     }
-    static let verifiedDiffKindApplyTextHunks = String(
-        localized: "verifiedDiff.kind.applyTextHunks",
-        defaultValue: "Checked hunks"
-    )
-    static let verifiedDiffKindRestoreExactFile = String(
-        localized: "verifiedDiff.kind.restoreExactFile",
-        defaultValue: "Exact restore"
-    )
-    static let verifiedDiffKindRemoveCreatedFile = String(
-        localized: "verifiedDiff.kind.removeCreatedFile",
-        defaultValue: "Remove created file"
-    )
-    static let verifiedDiffKindRestoreDeletedFile = String(
-        localized: "verifiedDiff.kind.restoreDeletedFile",
-        defaultValue: "Restore deleted file"
-    )
-    static let verifiedDiffKindSimulateRenamedFile = String(
-        localized: "verifiedDiff.kind.simulateRenamedFile",
-        defaultValue: "Rename simulation"
-    )
-    static let verifiedDiffDetailApplyTextHunks = String(
-        localized: "verifiedDiff.detail.applyTextHunks",
-        defaultValue: "Applies only the resolved inverse hunks."
-    )
-    static let verifiedDiffDetailRestoreExactFile = String(
-        localized: "verifiedDiff.detail.restoreExactFile",
-        defaultValue: "Replaces the entire file with captured contents."
-    )
-    static let verifiedDiffDetailRemoveCreatedFile = String(
-        localized: "verifiedDiff.detail.removeCreatedFile",
-        defaultValue: "Deletes the file created by the prepared change."
-    )
-    static let verifiedDiffDetailRestoreDeletedFile = String(
-        localized: "verifiedDiff.detail.restoreDeletedFile",
-        defaultValue: "Recreates the file with captured contents."
-    )
-    static let verifiedDiffDetailSimulateRenamedFile = String(
-        localized: "verifiedDiff.detail.simulateRenamedFile",
-        defaultValue: "Shows a rename simulation; applying rename is unsupported."
-    )
-    static let verifiedDiffExpectedCurrent = String(
-        localized: "verifiedDiff.expectedCurrent",
-        defaultValue: "Expected current"
-    )
-    static let verifiedDiffResult = String(
-        localized: "verifiedDiff.result",
-        defaultValue: "Result"
-    )
+
+    static func verifiedDiffByteCount(
+        _ count: Int,
+        locale: Locale = .current
+    ) -> String {
+        localizedPluralString(
+            forKey: "verifiedDiff.byteCount %lld",
+            fallback: count == 1 ? "%lld byte" : "%lld bytes",
+            count: count,
+            locale: locale
+        )
+    }
+
+    static func verifiedDiffKindApplyTextHunks(
+        locale: Locale = .current
+    ) -> String {
+        localizedString(
+            forKey: "verifiedDiff.kind.applyTextHunks",
+            fallback: "Checked hunks",
+            locale: locale
+        )
+    }
+    static func verifiedDiffKindRestoreExactFile(
+        locale: Locale = .current
+    ) -> String {
+        localizedString(
+            forKey: "verifiedDiff.kind.restoreExactFile",
+            fallback: "Exact restore",
+            locale: locale
+        )
+    }
+    static func verifiedDiffKindRemoveCreatedFile(
+        locale: Locale = .current
+    ) -> String {
+        localizedString(
+            forKey: "verifiedDiff.kind.removeCreatedFile",
+            fallback: "Remove created file",
+            locale: locale
+        )
+    }
+    static func verifiedDiffKindRestoreDeletedFile(
+        locale: Locale = .current
+    ) -> String {
+        localizedString(
+            forKey: "verifiedDiff.kind.restoreDeletedFile",
+            fallback: "Restore deleted file",
+            locale: locale
+        )
+    }
+    static func verifiedDiffKindSimulateRenamedFile(
+        locale: Locale = .current
+    ) -> String {
+        localizedString(
+            forKey: "verifiedDiff.kind.simulateRenamedFile",
+            fallback: "Rename simulation",
+            locale: locale
+        )
+    }
+    static func verifiedDiffDetailApplyTextHunks(
+        locale: Locale = .current
+    ) -> String {
+        localizedString(
+            forKey: "verifiedDiff.detail.applyTextHunks",
+            fallback: "Applies only the resolved inverse hunks.",
+            locale: locale
+        )
+    }
+    static func verifiedDiffDetailRestoreExactFile(
+        locale: Locale = .current
+    ) -> String {
+        localizedString(
+            forKey: "verifiedDiff.detail.restoreExactFile",
+            fallback: "Restores the complete captured file state.",
+            locale: locale
+        )
+    }
+    static func verifiedDiffDetailRemoveCreatedFile(
+        locale: Locale = .current
+    ) -> String {
+        localizedString(
+            forKey: "verifiedDiff.detail.removeCreatedFile",
+            fallback: "Deletes the file created by the prepared change.",
+            locale: locale
+        )
+    }
+    static func verifiedDiffDetailRestoreDeletedFile(
+        locale: Locale = .current
+    ) -> String {
+        localizedString(
+            forKey: "verifiedDiff.detail.restoreDeletedFile",
+            fallback: "Recreates the file with captured contents.",
+            locale: locale
+        )
+    }
+    static func verifiedDiffDetailSimulateRenamedFile(
+        locale: Locale = .current
+    ) -> String {
+        localizedString(
+            forKey: "verifiedDiff.detail.simulateRenamedFile",
+            fallback: """
+            Shows a rename simulation; applying rename is unsupported.
+            """,
+            locale: locale
+        )
+    }
+    static func verifiedDiffExpectedCurrent(
+        locale: Locale = .current
+    ) -> String {
+        localizedString(
+            forKey: "verifiedDiff.expectedCurrent",
+            fallback: "Expected current",
+            locale: locale
+        )
+    }
+    static func verifiedDiffResult(
+        locale: Locale = .current
+    ) -> String {
+        localizedString(
+            forKey: "verifiedDiff.result",
+            fallback: "Result",
+            locale: locale
+        )
+    }
+    static func verifiedDiffMetadataOnly(
+        locale: Locale = .current
+    ) -> String {
+        localizedString(
+            forKey: "verifiedDiff.metadataOnly",
+            fallback: "Metadata-only change",
+            locale: locale
+        )
+    }
+    static func verifiedDiffMetadataAlsoChanges(
+        locale: Locale = .current
+    ) -> String {
+        localizedString(
+            forKey: "verifiedDiff.metadataAlsoChanges",
+            fallback: "File metadata also changes",
+            locale: locale
+        )
+    }
+    static func verifiedDiffLineEndingLF(
+        locale: Locale = .current
+    ) -> String {
+        localizedString(
+            forKey: "verifiedDiff.lineEnding.lf",
+            fallback: "[LF]",
+            locale: locale
+        )
+    }
+    static func verifiedDiffLineEndingCRLF(
+        locale: Locale = .current
+    ) -> String {
+        localizedString(
+            forKey: "verifiedDiff.lineEnding.crlf",
+            fallback: "[CRLF]",
+            locale: locale
+        )
+    }
+    static func verifiedDiffNoFinalNewline(
+        locale: Locale = .current
+    ) -> String {
+        localizedString(
+            forKey: "verifiedDiff.lineEnding.noFinalNewline",
+            fallback: "[No final newline]",
+            locale: locale
+        )
+    }
+    static func verifiedDiffFileKind(
+        _ kind: VerifiedPatchFileKind,
+        locale: Locale = .current
+    ) -> String {
+        switch kind {
+        case .regularFile:
+            localizedString(
+                forKey: "verifiedDiff.fileKind.regularFile",
+                fallback: "regular file",
+                locale: locale
+            )
+        case .symbolicLink:
+            localizedString(
+                forKey: "verifiedDiff.fileKind.symbolicLink",
+                fallback: "symbolic link",
+                locale: locale
+            )
+        }
+    }
     static func verifiedDiffIdentity(
         label: String,
-        byteCount: Int,
-        sha256: String
+        path: String,
+        identity: VerifiedPatchStateIdentity,
+        locale: Locale = .current
     ) -> String {
-        String(
-            localized: "verifiedDiff.identity \(label) \(byteCount) \(sha256)"
+        let format = localizedString(
+            forKey: "verifiedDiff.identity %@ %@ %@ %@ %@ %@",
+            fallback: """
+            %@ · %@ · %@ · mode %@ · %@ · SHA-256 %@
+            """,
+            locale: locale
+        )
+        return String(
+            format: format,
+            locale: locale,
+            label,
+            path,
+            verifiedDiffFileKind(identity.kind, locale: locale),
+            String(format: "%04o", Int(identity.posixMode)),
+            verifiedDiffByteCount(
+                identity.contentIdentity.byteCount,
+                locale: locale
+            ),
+            identity.contentIdentity.sha256Hex
+        )
+    }
+    static func verifiedDiffAbsentIdentity(
+        label: String,
+        path: String,
+        locale: Locale = .current
+    ) -> String {
+        let format = localizedString(
+            forKey: "verifiedDiff.identity.absent %@ %@",
+            fallback: "%@ · %@ · absent",
+            locale: locale
+        )
+        return String(
+            format: format,
+            locale: locale,
+            label,
+            path
         )
     }
 

@@ -12,12 +12,28 @@ import Testing
 
 @Suite("Prepared Inverse Preview Projection")
 struct VerifiedDiffPreviewProjectionTests {
-    @Test("A single CRLF terminator is removed without trimming content")
-    func exactLineTerminatorRemoval() {
-        #expect(sanitizedLine("visible\r\n") == "visible")
-        #expect(sanitizedLine("visible\r\r\n") == "visible\\u{D}")
-        #expect(sanitizedLine("visible") == "visible")
-        #expect(sanitizedLine("\n\n") == "\\u{A}")
+    @Test("LF, CRLF, and missing final newline remain distinct")
+    func exactLineTerminatorsArePreserved() {
+        #expect(sanitizedLine("visible\n") == VerifiedDiffSanitizedLine(
+            text: "visible",
+            lineEnding: .lf
+        ))
+        #expect(sanitizedLine("visible\r\n") == VerifiedDiffSanitizedLine(
+            text: "visible",
+            lineEnding: .crlf
+        ))
+        #expect(sanitizedLine("visible") == VerifiedDiffSanitizedLine(
+            text: "visible",
+            lineEnding: .noFinalNewline
+        ))
+        #expect(sanitizedLine("visible\r\r\n") == VerifiedDiffSanitizedLine(
+            text: "visible\\u{D}",
+            lineEnding: .crlf
+        ))
+        #expect(sanitizedLine("\n\n") == VerifiedDiffSanitizedLine(
+            text: "\\u{A}",
+            lineEnding: .lf
+        ))
     }
 
     @Test("Invalid UTF-8 fails closed instead of rendering an empty line")
@@ -73,7 +89,28 @@ struct VerifiedDiffPreviewProjectionTests {
         )
     }
 
-    private func sanitizedLine(_ value: String) -> String? {
+    @Test("Literal escape syntax cannot collide with unsafe scalars")
+    func escapingIsInjectiveForLinesAndPaths() {
+        let literalLine = sanitizedLine("\\u{202E}\n")
+        let scalarLine = sanitizedLine("\u{202E}\n")
+        #expect(literalLine?.text == "\\u{5C}u{202E}")
+        #expect(scalarLine?.text == "\\u{202E}")
+        #expect(literalLine != scalarLine)
+
+        let literalPath = "Sources/\\u{202E}.swift"
+        let scalarPath = "Sources/\u{202E}.swift"
+        let escapedLiteralPath = VerifiedDiffDisplaySanitizer
+            .escapeUnsafeScalars(in: literalPath)
+        let escapedScalarPath = VerifiedDiffDisplaySanitizer
+            .escapeUnsafeScalars(in: scalarPath)
+        #expect(escapedLiteralPath == "Sources/\\u{5C}u{202E}.swift")
+        #expect(escapedScalarPath == "Sources/\\u{202E}.swift")
+        #expect(escapedLiteralPath != escapedScalarPath)
+    }
+
+    private func sanitizedLine(
+        _ value: String
+    ) -> VerifiedDiffSanitizedLine? {
         VerifiedDiffDisplaySanitizer.sanitizedLine(Data(value.utf8))
     }
 }

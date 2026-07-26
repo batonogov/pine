@@ -953,13 +953,43 @@ struct VerifiedPatchPreparationTests {
             patch,
             files: ["file.txt": file("after")]
         )
+        let review = try VerifiedPatchEngine.preparedPreviewForReview(prepared)
+        #expect(review.patchID == prepared.patchID)
+        #expect(review.operations.count == prepared.operations.count)
         #expect(
-            try VerifiedPatchEngine.preparedPreviewForReview(prepared)
-                == prepared.previews
+            review.operations.map(\.preparedMode)
+                == prepared.operations.map(\.mode)
+        )
+        #expect(
+            review.operations.map(\.expectations)
+                == prepared.operations.map { operation in
+                    operation.expectations.map {
+                        VerifiedPreparedReviewPathState(
+                            path: $0.path,
+                            identity: $0.state?.stateIdentity
+                        )
+                    }
+                }
+        )
+        #expect(
+            review.operations.map(\.results)
+                == prepared.operations.map { operation in
+                    operation.results.map {
+                        VerifiedPreparedReviewPathState(
+                            path: $0.path,
+                            identity: $0.state?.stateIdentity
+                        )
+                    }
+                }
         )
         let model = try VerifiedDiffPreviewModel(prepared: prepared)
         #expect(model.patchID == prepared.patchID)
         #expect(model.rows.count == prepared.operations.count)
+        let row = try #require(model.rows.first)
+        #expect(row.preparedMode == .exactState)
+        #expect(row.previewKind == .applyTextHunks)
+        #expect(!row.hunks.isEmpty)
+        #expect(row.presentationKind == .restoreExactFile)
         let forgedExpectations = VerifiedPatchCoordinatorExpectations(
             privateWorkspaceID: prepared.coordinatorExpectations
                 .privateWorkspaceID,

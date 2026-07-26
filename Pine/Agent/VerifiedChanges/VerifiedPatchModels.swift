@@ -483,6 +483,49 @@ nonisolated struct VerifiedPreparedInverseOperation: Sendable, Equatable {
     let preview: VerifiedInverseOperationPreview
 }
 
+/// One path state exposed by the validated, display-only review boundary.
+///
+/// A `nil` identity is significant: it describes an absent file, rather than
+/// an omitted field. The review DTO retains that distinction so create/delete
+/// operations remain truthful without exposing file bytes or mutation
+/// authority.
+nonisolated struct VerifiedPreparedReviewPathState:
+    Sendable,
+    Equatable {
+    let path: String
+    let identity: VerifiedPatchStateIdentity?
+}
+
+/// One revalidated operation projected for read-only review.
+///
+/// `preparedMode` is deliberately independent from `previewKind`: an exact
+/// whole-file replacement may still carry text-like hunks as useful visual
+/// context, but the UI must never describe that replacement as checked-text
+/// application.
+nonisolated struct VerifiedPreparedInverseReviewOperation:
+    Sendable,
+    Equatable {
+    let operationID: VerifiedPatchOperationID
+    let operationKind: VerifiedPatchOperationKind
+    let preparedMode: VerifiedPatchPreparedMode
+    let previewKind: VerifiedInversePreviewKind
+    let sourcePath: String
+    let destinationPath: String?
+    let expectations: [VerifiedPreparedReviewPathState]
+    let results: [VerifiedPreparedReviewPathState]
+    let hunks: [VerifiedInverseHunkPreview]
+}
+
+/// Validated display data for a complete prepared inverse.
+///
+/// Construction is owned by `VerifiedPatchEngine.preparedPreviewForReview`,
+/// which revalidates the complete `PreparedInverse` before returning this
+/// value. It remains stale-able review data and grants no mutation authority.
+nonisolated struct VerifiedPreparedInverseReview: Sendable, Equatable {
+    let patchID: UUID
+    let operations: [VerifiedPreparedInverseReviewOperation]
+}
+
 /// Values the final coordinator must revalidate before any disk mutation.
 nonisolated struct VerifiedPatchCoordinatorExpectations:
     Sendable,
