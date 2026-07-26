@@ -390,6 +390,9 @@ final class ProjectManager {
         agentHistory.updateProjectRoot(url)
         synchronizeAgentHandoff(projectRoot: url)
         lspManager.setWorkspaceRoot(url)
+        #if DEBUG
+        seedAgentActivityUITestFixture(projectURL: url)
+        #endif
     }
 
     // MARK: - Agent activity file-system correlation (#1072)
@@ -402,6 +405,74 @@ final class ProjectManager {
     /// modifications since an agent became active. Cleared when no agent is
     /// active, so a fresh run attributes only files changed *during* it.
     private var agentActivitySeeded = false
+
+    #if DEBUG
+    /// Seeds deterministic rows only when an explicit UI-test launch argument
+    /// is present. Production builds contain no fixture path.
+    private func seedAgentActivityUITestFixture(projectURL: URL) {
+        let arguments = ProcessInfo.processInfo.arguments
+        let seedAll = arguments.contains("--ui-test-agent-activity-all")
+        let seedHeuristic = arguments.contains(
+            "--ui-test-agent-activity-heuristic"
+        )
+        guard seedAll || seedHeuristic, agentActivity.actions.isEmpty else {
+            return
+        }
+
+        let firstSession = UUID(
+            uuid: (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1)
+        )
+        let secondSession = UUID(
+            uuid: (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2)
+        )
+        let mainFile = projectURL.appendingPathComponent("main.swift")
+
+        if seedAll {
+            agentActivity.record(
+                AgentAction(
+                    sessionID: firstSession,
+                    agentType: .claudeCode,
+                    kind: .command,
+                    status: .completed,
+                    fileURL: mainFile,
+                    summary: "UI fixture: session-linked"
+                )
+            )
+        }
+        agentActivity.record(
+            AgentAction(
+                attribution: .inferred(
+                    AgentActionCandidate(
+                        sessionID: firstSession,
+                        agentType: .claudeCode
+                    )
+                ),
+                kind: .fileWrite,
+                status: .completed,
+                fileURL: mainFile,
+                summary: "UI fixture: inferred"
+            )
+        )
+        agentActivity.record(
+            AgentAction(
+                attribution: .ambiguous(candidates: [
+                    AgentActionCandidate(
+                        sessionID: firstSession,
+                        agentType: .claudeCode
+                    ),
+                    AgentActionCandidate(
+                        sessionID: secondSession,
+                        agentType: .codex
+                    )
+                ]),
+                kind: .fileWrite,
+                status: .failed,
+                fileURL: mainFile,
+                summary: "UI fixture: ambiguous"
+            )
+        )
+    }
+    #endif
 
     /// Minimal real data source for the Activity Panel (#1072): attributes
     /// file-tree refreshes to the active agent session(s). The

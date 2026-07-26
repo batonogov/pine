@@ -66,9 +66,9 @@ extension AgentActionAttribution {
         switch self {
         case .session(let candidate):
             AgentActivityAttributionPresentation(
-                badgeLabel: nil,
+                badgeLabel: Strings.agentActivityAttributionSessionLinked,
                 detail: candidate.agentType.displayName,
-                accessibilityHint: nil,
+                accessibilityHint: Strings.agentActivitySessionLinkedHint,
                 markerAgentType: candidate.agentType
             )
         case .inferred(let candidate):
@@ -90,7 +90,7 @@ extension AgentActionAttribution {
 }
 
 /// Collapsible Activity Panel listing agent actions in reverse-chronological
-/// order with kind/status/attribution filter chips.
+/// order with kind/status/attribution-evidence filter chips.
 ///
 /// Rendered as a sheet from `ContentView` via the `showAgentActivity`
 /// notification. Clicking a row whose action has a `fileURL` opens that file
@@ -102,20 +102,39 @@ struct AgentActivityView: View {
     /// Called when the user dismisses the panel.
     let onClose: () -> Void
 
-    @State private var kindFilter: AgentActionKind?
-    @State private var statusFilter: AgentActionStatus?
-    @State private var attributionFilter: ActivityAttributionFilter?
+    @State private var filter = AgentActivityFilter()
 
     /// Rows after filtering, newest-first.
     private var visibleRows: [AgentActivityRow] {
-        rows
-            .filter { row in
-                guard kindFilter == nil || row.kind == kindFilter else { return false }
-                guard statusFilter == nil || row.status == statusFilter else { return false }
-                guard let attributionFilter else { return true }
-                return attributionFilter.matches(row.attribution)
-            }
-            .reversed()
+        rows.filter { row in
+            filter.matches(
+                kind: row.kind,
+                status: row.status,
+                attribution: row.attribution
+            )
+        }
+        .reversed()
+    }
+
+    /// Expose only categories represented after applying the current
+    /// non-attribution dimensions. Retaining the selected category keeps its
+    /// chip available to clear when another filter removes its last row.
+    private var availableAttributionFilters: [ActivityAttributionFilter] {
+        let nonAttributionFilter = AgentActivityFilter(
+            kind: filter.kind,
+            status: filter.status
+        )
+        let scopedAttributions = rows.compactMap { row in
+            nonAttributionFilter.matches(
+                kind: row.kind,
+                status: row.status,
+                attribution: row.attribution
+            ) ? row.attribution : nil
+        }
+        return ActivityAttributionFilter.available(
+            in: scopedAttributions,
+            retaining: filter.attribution
+        )
     }
 
     var body: some View {
@@ -157,37 +176,47 @@ struct AgentActivityView: View {
                     ForEach(AgentActionKind.allCases, id: \.self) { kind in
                         FilterChip(
                             label: kind.filterLabel,
-                            isSelected: kindFilter == kind
+                            isSelected: filter.kind == kind
                         ) {
-                            kindFilter = kindFilter == kind ? nil : kind
+                            filter.kind = filter.kind == kind ? nil : kind
                         }
                     }
                     Divider().frame(height: 16).padding(.horizontal, 2)
                     ForEach(AgentActionStatus.allCases, id: \.self) { status in
                         FilterChip(
                             label: status.displayName,
-                            isSelected: statusFilter == status
+                            isSelected: filter.status == status
                         ) {
-                            statusFilter = statusFilter == status ? nil : status
+                            filter.status = filter.status == status ? nil : status
                         }
                     }
                 }
             }
-            Divider().opacity(0.3)
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 6) {
-                    ForEach(
-                        ActivityAttributionFilter.allCases, id: \.self
-                    ) { filter in
-                        FilterChip(
-                            label: filter.filterLabel,
-                            isSelected: attributionFilter == filter
-                        ) {
-                            attributionFilter = attributionFilter == filter ? nil : filter
+            if !availableAttributionFilters.isEmpty {
+                Divider().opacity(0.3)
+                HStack(spacing: 8) {
+                    Text(Strings.agentActivityAttributionFilterLabel)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .accessibilityHidden(true)
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 6) {
+                            ForEach(availableAttributionFilters, id: \.self) { category in
+                                FilterChip(
+                                    label: category.filterLabel,
+                                    isSelected: filter.attribution == category
+                                ) {
+                                    filter.attribution = filter.attribution == category
+                                        ? nil
+                                        : category
+                                }
+                                .accessibilityIdentifier(attributionChipID(category))
+                            }
                         }
-                        .accessibilityIdentifier(attributionChipID(filter))
                     }
                 }
+                .accessibilityElement(children: .contain)
+                .accessibilityLabel(Strings.agentActivityAttributionFilterLabel)
             }
         }
         .padding(.horizontal, 12)
@@ -196,7 +225,7 @@ struct AgentActivityView: View {
 
     private func attributionChipID(_ filter: ActivityAttributionFilter) -> String {
         switch filter {
-        case .direct: AccessibilityID.agentActivityFilterDirect
+        case .sessionLinked: AccessibilityID.agentActivityFilterSessionLinked
         case .inferred: AccessibilityID.agentActivityFilterInferred
         case .ambiguous: AccessibilityID.agentActivityFilterAmbiguous
         }
@@ -227,11 +256,16 @@ struct AgentActivityView: View {
             Image(systemName: "sparkles")
                 .font(.system(size: 32))
                 .foregroundStyle(.secondary)
-            Text(Strings.agentActivityEmpty)
+            Text(rows.isEmpty ? Strings.agentActivityEmpty : Strings.agentActivityNoMatches)
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .accessibilityIdentifier(
+            rows.isEmpty
+                ? AccessibilityID.agentActivityEmpty
+                : AccessibilityID.agentActivityNoMatches
+        )
     }
 }
 
@@ -316,9 +350,9 @@ struct AgentActivityRowView: View {
 
 // MARK: - Subviews
 
-/// Evidence pill for heuristic Activity rows. Directly associated rows retain
-/// the existing uncluttered presentation; inferred and ambiguous rows cannot
-/// be mistaken for verified attribution.
+/// Evidence pill for Activity rows. Every category is explicit so a legacy
+/// session link or heuristic candidate cannot be mistaken for verified
+/// provenance.
 struct AttributionBadge: View {
     let label: String
     let isAmbiguous: Bool
@@ -353,6 +387,7 @@ struct FilterChip: View {
                 .overlay(Capsule().stroke(.tertiary, lineWidth: 0.5))
         }
         .buttonStyle(.plain)
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 }
 

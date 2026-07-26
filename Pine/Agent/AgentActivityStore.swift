@@ -20,34 +20,115 @@
 
 import Foundation
 
-/// Attribution-level filter for the Activity Panel. Lets users narrow the
-/// feed to directly recorded (`.direct` / `.session`), heuristic
-/// (`.inferred`), or unresolved (`.ambiguous`) actions — making trust level
-/// and ambiguity visible (#933 §4).
+/// Attribution-evidence filter for the Activity Panel.
+///
+/// This deliberately does not model provenance trust. In particular,
+/// `.session` is the Activity model's legacy session link, not a verified
+/// `AgentEventEnvelope`, so its label must not imply proof or authority.
 nonisolated enum ActivityAttributionFilter: Sendable, Equatable, CaseIterable {
-    /// Actions directly recorded from a verified agent session.
-    case direct
+    /// Actions carrying the legacy one-session association.
+    case sessionLinked
     /// Actions inferred from file-system timing (single candidate).
     case inferred
     /// Actions whose ownership is ambiguous (multiple candidates).
     case ambiguous
 
-    /// Short label for the filter chip.
+    /// Returns `true` when `attribution` belongs to this evidence category.
+    func matches(_ attribution: AgentActionAttribution) -> Bool {
+        switch (self, attribution) {
+        case (.sessionLinked, .session): true
+        case (.inferred, .inferred): true
+        case (.ambiguous, .ambiguous): true
+        default: false
+        }
+    }
+
+    /// Categories represented by at least one attribution, in stable UI order.
+    ///
+    /// A selected category is retained after live rows change so its chip
+    /// remains available to clear even when it no longer matches any row.
+    static func available(
+        in attributions: [AgentActionAttribution],
+        retaining selected: Self? = nil
+    ) -> [Self] {
+        allCases.filter { filter in
+            filter == selected || attributions.contains(where: filter.matches)
+        }
+    }
+}
+
+@MainActor
+extension ActivityAttributionFilter {
+    /// Short localized label for the filter chip.
+    ///
+    /// Localization access is main-actor isolated under Pine's Swift 6 build
+    /// settings. Keeping that UI concern out of the `nonisolated` enum lets
+    /// its matching semantics remain safe to use from pure model code.
     var filterLabel: String {
         switch self {
-        case .direct: Strings.agentActivityAttributionDirect
+        case .sessionLinked: Strings.agentActivityAttributionSessionLinked
         case .inferred: Strings.agentActivityAttributionInferred
         case .ambiguous: Strings.agentActivityAttributionAmbiguous
         }
     }
+}
 
-    /// Returns `true` when `attribution` belongs to this filter category.
-    func matches(_ attribution: AgentActionAttribution) -> Bool {
-        switch (self, attribution) {
-        case (.direct, .session): true
-        case (.inferred, .inferred): true
-        case (.ambiguous, .ambiguous): true
-        default: false
+/// One conjunctive Activity Panel filter shared by store queries and row
+/// projections. Keeping the predicate here prevents the UI and model from
+/// drifting as filter dimensions evolve.
+nonisolated struct AgentActivityFilter: Sendable {
+    var kind: AgentActionKind?
+    var status: AgentActionStatus?
+    var attribution: ActivityAttributionFilter?
+
+    init(
+        kind: AgentActionKind? = nil,
+        status: AgentActionStatus? = nil,
+        attribution: ActivityAttributionFilter? = nil
+    ) {
+        self.kind = kind
+        self.status = status
+        self.attribution = attribution
+    }
+
+    var isActive: Bool {
+        kind != nil || status != nil || attribution != nil
+    }
+
+    func matches(
+        kind candidateKind: AgentActionKind,
+        status candidateStatus: AgentActionStatus,
+        attribution candidateAttribution: AgentActionAttribution
+    ) -> Bool {
+        guard matchesKind(candidateKind) else { return false }
+        guard matchesStatus(candidateStatus) else { return false }
+        guard let attribution else { return true }
+        return attribution.matches(candidateAttribution)
+    }
+
+    private func matchesKind(_ candidate: AgentActionKind) -> Bool {
+        guard let kind else { return true }
+        return switch (kind, candidate) {
+        case (.fileWrite, .fileWrite),
+             (.fileRead, .fileRead),
+             (.command, .command),
+             (.toolCall, .toolCall):
+            true
+        default:
+            false
+        }
+    }
+
+    private func matchesStatus(_ candidate: AgentActionStatus) -> Bool {
+        guard let status else { return true }
+        return switch (status, candidate) {
+        case (.pending, .pending),
+             (.inProgress, .inProgress),
+             (.completed, .completed),
+             (.failed, .failed):
+            true
+        default:
+            false
         }
     }
 }
@@ -108,26 +189,21 @@ final class AgentActivityStore {
     }
 
     /// Actions filtered by an optional kind and/or status.
-    func filtered(kind: AgentActionKind? = nil, status: AgentActionStatus? = nil) -> [AgentAction] {
-        actions.filter { action in
-            (kind == nil || action.kind == kind)
-                && (status == nil || action.status == status)
-        }
+    func filtered(
+        kind: AgentActionKind? = nil,
+        status: AgentActionStatus? = nil
+    ) -> [AgentAction] {
+        filtered(using: AgentActivityFilter(kind: kind, status: status))
     }
 
-    /// Actions filtered by kind, status, and/or attribution trust level.
-    func filteredActions(
-        kind: AgentActionKind? = nil,
-        status: AgentActionStatus? = nil,
-        attributionFilter: ActivityAttributionFilter? = nil
-    ) -> [AgentAction] {
-        guard let attributionFilter else {
-            return filtered(kind: kind, status: status)
-        }
+    /// Actions accepted by the same conjunctive predicate used by the view.
+    func filtered(using filter: AgentActivityFilter) -> [AgentAction] {
         return actions.filter { action in
-            (kind == nil || action.kind == kind)
-                && (status == nil || action.status == status)
-                && attributionFilter.matches(action.attribution)
+            filter.matches(
+                kind: action.kind,
+                status: action.status,
+                attribution: action.attribution
+            )
         }
     }
 

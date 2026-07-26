@@ -17,8 +17,8 @@ struct AgentActivityAttributionTests {
     private let sessionA = UUID(uuid: (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1))
     private let sessionB = UUID(uuid: (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2))
 
-    @Test("Direct session association exposes one unambiguous candidate")
-    func directSessionAssociation() {
+    @Test("Legacy session link exposes one unambiguous candidate")
+    func legacySessionAssociation() {
         let candidate = AgentActionCandidate(
             sessionID: sessionA,
             agentType: .claudeCode
@@ -31,7 +31,7 @@ struct AgentActivityAttributionTests {
         #expect(!attribution.contains(sessionID: sessionB))
     }
 
-    @Test("Inferred session remains distinguishable from a direct association")
+    @Test("Inferred session remains distinguishable from a legacy session link")
     func inferredSessionAssociation() {
         let candidate = AgentActionCandidate(
             sessionID: sessionA,
@@ -84,17 +84,28 @@ struct AgentActivityAttributionTests {
         #expect(AgentActivityRow(action).attribution == action.attribution)
     }
 
-    @Test("Direct presentation keeps the existing agent identity without a trust claim")
-    func directPresentation() {
+    @Test("Session-linked presentation explicitly avoids a verified trust claim")
+    func sessionLinkedPresentation() {
         let presentation = AgentActionAttribution.session(
             AgentActionCandidate(sessionID: sessionA, agentType: .claudeCode)
         ).activityPresentation
 
-        #expect(presentation.badgeLabel == nil)
+        #expect(
+            presentation.badgeLabel
+                == Strings.agentActivityAttributionSessionLinked
+        )
         #expect(presentation.detail == AgentType.claudeCode.displayName)
-        #expect(presentation.accessibilityHint == nil)
+        #expect(
+            presentation.accessibilityHint
+                == Strings.agentActivitySessionLinkedHint
+        )
         #expect(presentation.markerAgentType == .claudeCode)
         #expect(!presentation.isAmbiguous)
+        #expect(
+            presentation.accessibilityValue.contains(
+                Strings.agentActivityAttributionSessionLinked
+            )
+        )
     }
 
     @Test("Inferred presentation identifies the heuristic without hiding the candidate")
