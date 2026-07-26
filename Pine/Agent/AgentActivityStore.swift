@@ -106,6 +106,33 @@ nonisolated struct AgentActivityFilter: Sendable {
         return attribution.matches(candidateAttribution)
     }
 
+    /// Evidence categories represented after applying the current kind and
+    /// status dimensions. The selected evidence category is retained so a
+    /// live update cannot remove the control needed to clear it.
+    func availableAttributionFilters<C: Collection>(
+        in candidates: C,
+        kind: (C.Element) -> AgentActionKind,
+        status: (C.Element) -> AgentActionStatus,
+        attribution: (C.Element) -> AgentActionAttribution
+    ) -> [ActivityAttributionFilter] {
+        let nonAttributionFilter = AgentActivityFilter(
+            kind: self.kind,
+            status: self.status
+        )
+        let scopedAttributions = candidates.compactMap { candidate in
+            let candidateAttribution = attribution(candidate)
+            return nonAttributionFilter.matches(
+                kind: kind(candidate),
+                status: status(candidate),
+                attribution: candidateAttribution
+            ) ? candidateAttribution : nil
+        }
+        return ActivityAttributionFilter.available(
+            in: scopedAttributions,
+            retaining: self.attribution
+        )
+    }
+
     private func matchesKind(_ candidate: AgentActionKind) -> Bool {
         guard let kind else { return true }
         return switch (kind, candidate) {

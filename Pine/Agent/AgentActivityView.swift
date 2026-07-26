@@ -120,20 +120,11 @@ struct AgentActivityView: View {
     /// non-attribution dimensions. Retaining the selected category keeps its
     /// chip available to clear when another filter removes its last row.
     private var availableAttributionFilters: [ActivityAttributionFilter] {
-        let nonAttributionFilter = AgentActivityFilter(
-            kind: filter.kind,
-            status: filter.status
-        )
-        let scopedAttributions = rows.compactMap { row in
-            nonAttributionFilter.matches(
-                kind: row.kind,
-                status: row.status,
-                attribution: row.attribution
-            ) ? row.attribution : nil
-        }
-        return ActivityAttributionFilter.available(
-            in: scopedAttributions,
-            retaining: filter.attribution
+        filter.availableAttributionFilters(
+            in: rows,
+            kind: \.kind,
+            status: \.status,
+            attribution: \.attribution
         )
     }
 
@@ -180,6 +171,7 @@ struct AgentActivityView: View {
                         ) {
                             filter.kind = filter.kind == kind ? nil : kind
                         }
+                        .accessibilityIdentifier(kindChipID(kind))
                     }
                     Divider().frame(height: 16).padding(.horizontal, 2)
                     ForEach(AgentActionStatus.allCases, id: \.self) { status in
@@ -189,6 +181,7 @@ struct AgentActivityView: View {
                         ) {
                             filter.status = filter.status == status ? nil : status
                         }
+                        .accessibilityIdentifier(statusChipID(status))
                     }
                 }
             }
@@ -228,6 +221,24 @@ struct AgentActivityView: View {
         case .sessionLinked: AccessibilityID.agentActivityFilterSessionLinked
         case .inferred: AccessibilityID.agentActivityFilterInferred
         case .ambiguous: AccessibilityID.agentActivityFilterAmbiguous
+        }
+    }
+
+    private func kindChipID(_ kind: AgentActionKind) -> String {
+        switch kind {
+        case .fileWrite: AccessibilityID.agentActivityFilterWrites
+        case .fileRead: AccessibilityID.agentActivityFilterReads
+        case .command: AccessibilityID.agentActivityFilterCommands
+        case .toolCall: AccessibilityID.agentActivityFilterTools
+        }
+    }
+
+    private func statusChipID(_ status: AgentActionStatus) -> String {
+        switch status {
+        case .pending: AccessibilityID.agentActivityFilterPending
+        case .inProgress: AccessibilityID.agentActivityFilterInProgress
+        case .completed: AccessibilityID.agentActivityFilterCompleted
+        case .failed: AccessibilityID.agentActivityFilterFailed
         }
     }
 
@@ -322,7 +333,7 @@ struct AgentActivityRowView: View {
         }
         .buttonStyle(.plain)
         .disabled(row.fileURL == nil)
-        .accessibilityIdentifier("\(AccessibilityID.agentActivityRow)_\(row.id)")
+        .accessibilityIdentifier(AccessibilityID.agentActivityRow(row.id))
         .accessibilityValue(Text(verbatim: attribution.accessibilityValue))
         .accessibilityHint(Text(verbatim: attribution.accessibilityHint ?? ""))
     }

@@ -270,24 +270,74 @@ struct AgentActivityFilterTests {
                 summary: "ambiguous"
             )
         ]
-        let nonAttributionFilter = AgentActivityFilter(
+        let filter = AgentActivityFilter(
             kind: .fileWrite,
-            status: .failed
+            status: .failed,
+            attribution: .inferred
         )
-        let scopedAttributions = actions.compactMap { action in
-            nonAttributionFilter.matches(
-                kind: action.kind,
-                status: action.status,
-                attribution: action.attribution
-            ) ? action.attribution : nil
-        }
 
         #expect(
-            ActivityAttributionFilter.available(
-                in: scopedAttributions,
-                retaining: .inferred
+            filter.availableAttributionFilters(
+                in: actions,
+                kind: \.kind,
+                status: \.status,
+                attribution: \.attribution
             ) == [.inferred, .ambiguous]
         )
+    }
+
+    @Test("Capacity eviction updates available evidence categories")
+    func capacityEvictionUpdatesAvailableEvidence() {
+        let store = AgentActivityStore()
+        let base = Date(timeIntervalSinceReferenceDate: 0)
+        store.record(
+            AgentAction(
+                attribution: .session(sessionCandidate),
+                kind: .command,
+                timestamp: base,
+                summary: "old session link"
+            )
+        )
+        for index in 1..<AgentActivityStore.maxActions {
+            store.record(
+                AgentAction(
+                    attribution: .inferred(sessionCandidate),
+                    kind: .fileWrite,
+                    timestamp: base.addingTimeInterval(Double(index) * 2),
+                    summary: "inferred \(index)"
+                )
+            )
+        }
+        let filter = AgentActivityFilter()
+        let availableBeforeEviction = filter.availableAttributionFilters(
+            in: store.actions,
+            kind: \.kind,
+            status: \.status,
+            attribution: \.attribution
+        )
+
+        store.record(
+            AgentAction(
+                attribution: .ambiguous(
+                    candidates: [sessionCandidate, otherCandidate]
+                ),
+                kind: .toolCall,
+                timestamp: base.addingTimeInterval(
+                    Double(AgentActivityStore.maxActions) * 2
+                ),
+                summary: "new ambiguous action"
+            )
+        )
+        let availableAfterEviction = filter.availableAttributionFilters(
+            in: store.actions,
+            kind: \.kind,
+            status: \.status,
+            attribution: \.attribution
+        )
+
+        #expect(store.actions.count == AgentActivityStore.maxActions)
+        #expect(availableBeforeEviction == [.sessionLinked, .inferred])
+        #expect(availableAfterEviction == [.inferred, .ambiguous])
     }
 
     @Test("Localized category labels are distinct and non-empty")

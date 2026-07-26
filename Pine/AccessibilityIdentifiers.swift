@@ -5,6 +5,8 @@
 //  Shared accessibility identifiers used by both app code and UI tests.
 //
 
+import Foundation
+
 nonisolated enum AccessibilityID {
     // MARK: - Settings
     static let agentHandoffReadOnlyContextToggle =
@@ -149,9 +151,20 @@ nonisolated enum AccessibilityID {
     static let agentActivityRow = "agentActivityRow"
     static let agentActivityEmpty = "agentActivityEmpty"
     static let agentActivityNoMatches = "agentActivityNoMatches"
+    static let agentActivityFilterWrites = "agentActivityFilterWrites"
+    static let agentActivityFilterReads = "agentActivityFilterReads"
+    static let agentActivityFilterCommands = "agentActivityFilterCommands"
+    static let agentActivityFilterTools = "agentActivityFilterTools"
+    static let agentActivityFilterPending = "agentActivityFilterPending"
+    static let agentActivityFilterInProgress = "agentActivityFilterInProgress"
+    static let agentActivityFilterCompleted = "agentActivityFilterCompleted"
+    static let agentActivityFilterFailed = "agentActivityFilterFailed"
     static let agentActivityFilterSessionLinked = "agentActivityFilterSessionLinked"
     static let agentActivityFilterInferred = "agentActivityFilterInferred"
     static let agentActivityFilterAmbiguous = "agentActivityFilterAmbiguous"
+    static func agentActivityRow(_ id: UUID) -> String {
+        "agentActivityRow_\(id.uuidString)"
+    }
 
     // MARK: - Agent History & Undo (#1073)
     static let agentHistoryPanel = "agentHistoryPanel"

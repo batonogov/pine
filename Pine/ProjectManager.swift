@@ -425,11 +425,21 @@ final class ProjectManager {
         let secondSession = UUID(
             uuid: (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2)
         )
+        let sessionLinkedActionID = UUID(
+            uuid: (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1)
+        )
+        let inferredActionID = UUID(
+            uuid: (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 2)
+        )
+        let ambiguousActionID = UUID(
+            uuid: (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 3)
+        )
         let mainFile = projectURL.appendingPathComponent("main.swift")
 
         if seedAll {
             agentActivity.record(
                 AgentAction(
+                    id: sessionLinkedActionID,
                     sessionID: firstSession,
                     agentType: .claudeCode,
                     kind: .command,
@@ -441,6 +451,7 @@ final class ProjectManager {
         }
         agentActivity.record(
             AgentAction(
+                id: inferredActionID,
                 attribution: .inferred(
                     AgentActionCandidate(
                         sessionID: firstSession,
@@ -455,6 +466,7 @@ final class ProjectManager {
         )
         agentActivity.record(
             AgentAction(
+                id: ambiguousActionID,
                 attribution: .ambiguous(candidates: [
                     AgentActionCandidate(
                         sessionID: firstSession,

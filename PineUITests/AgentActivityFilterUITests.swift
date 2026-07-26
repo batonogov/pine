@@ -73,9 +73,8 @@ final class AgentActivityFilterUITests: PineUITestCase {
         launchActivityPanel()
 
         inferredChip.click()
-        let failedChip = app.buttons["Failed"].firstMatch
-        XCTAssertTrue(failedChip.waitForExistence(timeout: 3))
-        failedChip.click()
+        XCTAssertTrue(commandsChip.waitForExistence(timeout: 3))
+        commandsChip.click()
 
         XCTAssertTrue(
             noMatchesState.waitForExistence(timeout: 3),
@@ -87,6 +86,10 @@ final class AgentActivityFilterUITests: PineUITestCase {
             "A selected evidence chip must remain available so it can be cleared"
         )
         XCTAssertTrue(inferredChip.isSelected)
+        XCTAssertTrue(
+            commandsChip.isSelected,
+            "The active kind chip should expose the selected AX trait"
+        )
     }
 
     private func launchActivityPanel() {
@@ -117,16 +120,26 @@ final class AgentActivityFilterUITests: PineUITestCase {
         app.buttons["agentActivityFilterAmbiguous"].firstMatch
     }
 
+    private var commandsChip: XCUIElement {
+        app.buttons["agentActivityFilterCommands"].firstMatch
+    }
+
     private var sessionLinkedRow: XCUIElement {
-        app.staticTexts["UI fixture: session-linked"].firstMatch
+        app.buttons[
+            "agentActivityRow_00000000-0000-0000-0000-000000000101"
+        ].firstMatch
     }
 
     private var inferredRow: XCUIElement {
-        app.staticTexts["UI fixture: inferred"].firstMatch
+        app.buttons[
+            "agentActivityRow_00000000-0000-0000-0000-000000000102"
+        ].firstMatch
     }
 
     private var ambiguousRow: XCUIElement {
-        app.staticTexts["UI fixture: ambiguous"].firstMatch
+        app.buttons[
+            "agentActivityRow_00000000-0000-0000-0000-000000000103"
+        ].firstMatch
     }
 
     private var noMatchesState: XCUIElement {
