@@ -106,10 +106,91 @@ struct VerifiedDiffLocalizationTests {
             )
         }
     }
+
+    @Test("Metadata wording covers every supported locale")
+    func localizedMetadataWording() {
+        let expectations: [MetadataExpectation] = [
+            MetadataExpectation(
+                locale: "de",
+                metadataAlsoChanges:
+                    "Dateimetadaten werden ebenfalls geändert",
+                exactRestore:
+                    "Stellt den vollständig erfassten Dateizustand wieder her."
+            ),
+            MetadataExpectation(
+                locale: "en",
+                metadataAlsoChanges: "File metadata also changes",
+                exactRestore: "Restores the complete captured file state."
+            ),
+            MetadataExpectation(
+                locale: "es",
+                metadataAlsoChanges:
+                    "Los metadatos del archivo también cambian",
+                exactRestore:
+                    "Restaura el estado completo capturado del archivo."
+            ),
+            MetadataExpectation(
+                locale: "fr",
+                metadataAlsoChanges:
+                    "Les métadonnées du fichier changent également",
+                exactRestore:
+                    "Restaure l’état complet capturé du fichier."
+            ),
+            MetadataExpectation(
+                locale: "ja",
+                metadataAlsoChanges:
+                    "ファイルのメタデータも変更されます",
+                exactRestore:
+                    "キャプチャされた完全なファイル状態を復元します。"
+            ),
+            MetadataExpectation(
+                locale: "ko",
+                metadataAlsoChanges: "파일 메타데이터도 변경됩니다",
+                exactRestore: "캡처된 전체 파일 상태를 복원합니다."
+            ),
+            MetadataExpectation(
+                locale: "pt-BR",
+                metadataAlsoChanges:
+                    "Os metadados do arquivo também são alterados",
+                exactRestore:
+                    "Restaura o estado completo capturado do arquivo."
+            ),
+            MetadataExpectation(
+                locale: "ru",
+                metadataAlsoChanges:
+                    "Метаданные файла также изменяются",
+                exactRestore:
+                    "Восстанавливает полное зафиксированное состояние файла."
+            ),
+            MetadataExpectation(
+                locale: "zh-Hans",
+                metadataAlsoChanges: "文件元数据也会更改",
+                exactRestore: "恢复已捕获的完整文件状态。"
+            ),
+        ]
+
+        for expectation in expectations {
+            let locale = Locale(identifier: expectation.locale)
+            #expect(
+                Strings.verifiedDiffMetadataAlsoChanges(locale: locale)
+                    == expectation.metadataAlsoChanges
+            )
+            #expect(
+                Strings.verifiedDiffDetailRestoreExactFile(locale: locale)
+                    == expectation.exactRestore
+            )
+        }
+    }
 }
 
 private struct PluralExpectation {
     let locale: String
     let operations: [String]
     let bytes: [String]
+}
+
+private struct MetadataExpectation {
+    let locale: String
+    let metadataAlsoChanges: String
+    let exactRestore: String
 }

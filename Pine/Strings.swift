@@ -451,7 +451,7 @@ enum Strings {
     ) -> String {
         localizedString(
             forKey: "verifiedDiff.detail.restoreExactFile",
-            fallback: "Replaces the entire file with captured contents.",
+            fallback: "Restores the complete captured file state.",
             locale: locale
         )
     }
@@ -508,6 +508,15 @@ enum Strings {
         localizedString(
             forKey: "verifiedDiff.metadataOnly",
             fallback: "Metadata-only change",
+            locale: locale
+        )
+    }
+    static func verifiedDiffMetadataAlsoChanges(
+        locale: Locale = .current
+    ) -> String {
+        localizedString(
+            forKey: "verifiedDiff.metadataAlsoChanges",
+            fallback: "File metadata also changes",
             locale: locale
         )
     }

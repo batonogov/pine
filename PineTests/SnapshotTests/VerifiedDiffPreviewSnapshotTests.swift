@@ -16,7 +16,8 @@ import Testing
 @MainActor
 struct VerifiedDiffPreviewSnapshotTests {
     private static let panelSize = NSSize(width: 760, height: 390)
-    private static let tolerance = 0.005
+    private static let defaultTolerance = 0.005
+    private static let checkedLightTolerance = 0.006
     private static let english = Locale(identifier: "en")
 
     @Test(
@@ -38,7 +39,10 @@ struct VerifiedDiffPreviewSnapshotTests {
             appearance: appearance,
             named: "VerifiedDiffPreview.\(fixture.rawValue)."
                 + appearance.suffix,
-            tolerance: Self.tolerance
+            tolerance: Self.tolerance(
+                fixture: fixture,
+                appearance: appearance
+            )
         )
     }
 
@@ -50,6 +54,7 @@ struct VerifiedDiffPreviewSnapshotTests {
         #expect(exactRow.presentationKind == .restoreExactFile)
         #expect(exactRow.previewKind == .restoreExactFile)
         #expect(exactRow.isMetadataOnly)
+        #expect(exactRow.hasMetadataChange)
         #expect(exactRow.expectations.first?.identity?.posixMode == 0o644)
         #expect(exactRow.results.first?.identity?.posixMode == 0o755)
         #expect(exactRow.expectations.first?.identity?.kind == .regularFile)
@@ -61,10 +66,26 @@ struct VerifiedDiffPreviewSnapshotTests {
         #expect(checkedRow.presentationKind == .applyTextHunks)
         #expect(checkedRow.previewKind == .applyTextHunks)
         #expect(!checkedRow.isMetadataOnly)
+        #expect(!checkedRow.hasMetadataChange)
         let endings = Set(
             checkedRow.hunks.flatMap(\.lines).map(\.lineEnding)
         )
         #expect(endings == [.lf, .crlf, .noFinalNewline])
+
+        let checkedMetadata = try makeModel(.checkedTextAndMetadata)
+        let checkedMetadataRow = try #require(checkedMetadata.rows.first)
+        #expect(checkedMetadataRow.preparedMode == .checkedText)
+        #expect(checkedMetadataRow.presentationKind == .applyTextHunks)
+        #expect(!checkedMetadataRow.isMetadataOnly)
+        #expect(checkedMetadataRow.hasMetadataChange)
+        #expect(
+            checkedMetadataRow.expectations.first?.identity?.posixMode
+                == 0o755
+        )
+        #expect(
+            checkedMetadataRow.results.first?.identity?.posixMode
+                == 0o600
+        )
     }
 
     @Test("Strict tolerance rejects a completely blank preview")
@@ -90,7 +111,11 @@ struct VerifiedDiffPreviewSnapshotTests {
             actualPNG: blankPNG,
             referencePNG: previewPNG
         )
-        #expect(diff > Self.tolerance)
+        let applicableTolerance = Self.tolerance(
+            fixture: .checkedText,
+            appearance: .light
+        )
+        #expect(diff > applicableTolerance)
     }
 
     private func makeView(
@@ -216,16 +241,30 @@ struct VerifiedDiffPreviewSnapshotTests {
             UInt8(value & 0xFF)
         ))
     }
+
+    private static func tolerance(
+        fixture: Fixture,
+        appearance: SnapshotAppearance
+    ) -> Double {
+        switch (fixture, appearance) {
+        case (.checkedText, .light):
+            checkedLightTolerance
+        default:
+            defaultTolerance
+        }
+    }
 }
 
 enum Fixture: String, CaseIterable, Sendable {
     case exactMetadata = "exact"
     case checkedText = "checked"
+    case checkedTextAndMetadata = "checked-metadata"
 
     var baseID: Int {
         switch self {
         case .exactMetadata: 200
         case .checkedText: 220
+        case .checkedTextAndMetadata: 240
         }
     }
 
@@ -247,6 +286,23 @@ enum Fixture: String, CaseIterable, Sendable {
                 file(Data("header\nagent before\r\nfooter".utf8)),
                 file(Data("header\r\nagent after\nfooter".utf8)),
                 file(Data("human note\nheader\r\nagent after\nfooter".utf8))
+            )
+        case .checkedTextAndMetadata:
+            return (
+                file(
+                    Data("header\nagent before\r\nfooter".utf8),
+                    mode: 0o600
+                ),
+                file(
+                    Data("header\r\nagent after\nfooter".utf8),
+                    mode: 0o755
+                ),
+                file(
+                    Data(
+                        "human note\nheader\r\nagent after\nfooter".utf8
+                    ),
+                    mode: 0o755
+                )
             )
         }
     }

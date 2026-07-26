@@ -21419,55 +21419,55 @@
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "Ersetzt die gesamte Datei durch den erfassten Inhalt."
+            "value": "Stellt den vollständig erfassten Dateizustand wieder her."
           }
         },
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Replaces the entire file with captured contents."
+            "value": "Restores the complete captured file state."
           }
         },
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "Reemplaza todo el archivo con el contenido capturado."
+            "value": "Restaura el estado completo capturado del archivo."
           }
         },
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Remplace le fichier entier par le contenu capturé."
+            "value": "Restaure l’état complet capturé du fichier."
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "ファイル全体をキャプチャ済みの内容で置き換えます。"
+            "value": "キャプチャされた完全なファイル状態を復元します。"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "전체 파일을 캡처된 내용으로 바꿉니다."
+            "value": "캡처된 전체 파일 상태를 복원합니다."
           }
         },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
-            "value": "Substitui o arquivo inteiro pelo conteúdo capturado."
+            "value": "Restaura o estado completo capturado do arquivo."
           }
         },
         "ru": {
           "stringUnit": {
             "state": "translated",
-            "value": "Заменяет весь файл сохранённым содержимым."
+            "value": "Восстанавливает полное зафиксированное состояние файла."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "使用捕获的内容替换整个文件。"
+            "value": "恢复已捕获的完整文件状态。"
           }
         }
       }
@@ -21828,6 +21828,66 @@
           "stringUnit": {
             "state": "translated",
             "value": "仅元数据更改"
+          }
+        }
+      }
+    },
+    "verifiedDiff.metadataAlsoChanges": {
+      "comment": "Badge for a prepared operation that changes file content and metadata.",
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dateimetadaten werden ebenfalls geändert"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "File metadata also changes"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Los metadatos del archivo también cambian"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Les métadonnées du fichier changent également"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ファイルのメタデータも変更されます"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "파일 메타데이터도 변경됩니다"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Os metadados do arquivo também são alterados"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Метаданные файла также изменяются"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "文件元数据也会更改"
           }
         }
       }

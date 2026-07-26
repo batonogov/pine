@@ -181,7 +181,18 @@ nonisolated struct VerifiedDiffPreviewRow:
             return false
         }
         return expected.contentIdentity == result.contentIdentity
-            && expected != result
+            && hasMetadataChange
+    }
+
+    var hasMetadataChange: Bool {
+        guard expectations.count == 1,
+              results.count == 1,
+              let expected = expectations[0].identity,
+              let result = results[0].identity else {
+            return false
+        }
+        return expected.kind != result.kind
+            || expected.posixMode != result.posixMode
     }
 
     var addedLineCount: Int {
@@ -328,9 +339,32 @@ extension VerifiedInversePreviewKind {
     }
 }
 
+private struct VerifiedDiffLineEndingLabels {
+    let lf: String
+    let crlf: String
+    let noFinalNewline: String
+
+    init(locale: Locale) {
+        lf = Strings.verifiedDiffLineEndingLF(locale: locale)
+        crlf = Strings.verifiedDiffLineEndingCRLF(locale: locale)
+        noFinalNewline = Strings.verifiedDiffNoFinalNewline(locale: locale)
+    }
+
+    func label(for lineEnding: VerifiedDiffLineEnding) -> String {
+        switch lineEnding {
+        case .lf:
+            lf
+        case .crlf:
+            crlf
+        case .noFinalNewline:
+            noFinalNewline
+        }
+    }
+}
+
 private struct VerifiedDiffLineView: View {
-    @Environment(\.locale) private var locale
     let line: VerifiedDiffPreviewLineRow
+    let lineEndingLabel: String
 
     private var prefix: String {
         switch line.kind {
@@ -355,7 +389,7 @@ private struct VerifiedDiffLineView: View {
                 .accessibilityHidden(true)
             Text(verbatim: line.text)
                 .foregroundStyle(color)
-            Text(verbatim: lineEndingMarker)
+            Text(verbatim: lineEndingLabel)
                 .font(.system(size: 9, design: .monospaced))
                 .foregroundStyle(.tertiary)
                 .padding(.leading, 6)
@@ -364,28 +398,14 @@ private struct VerifiedDiffLineView: View {
         .fixedSize(horizontal: false, vertical: true)
         .textSelection(.enabled)
         .accessibilityLabel(
-            Text(verbatim: prefix + line.text + ", " + lineEndingName)
+            Text(verbatim: prefix + line.text + ", " + lineEndingLabel)
         )
-    }
-
-    private var lineEndingMarker: String {
-        switch line.lineEnding {
-        case .lf:
-            Strings.verifiedDiffLineEndingLF(locale: locale)
-        case .crlf:
-            Strings.verifiedDiffLineEndingCRLF(locale: locale)
-        case .noFinalNewline:
-            Strings.verifiedDiffNoFinalNewline(locale: locale)
-        }
-    }
-
-    private var lineEndingName: String {
-        lineEndingMarker
     }
 }
 
 struct VerifiedDiffHunkView: View {
     let hunk: VerifiedDiffHunkRow
+    fileprivate let lineEndingLabels: VerifiedDiffLineEndingLabels
 
     var body: some View {
         VStack(alignment: .leading, spacing: 1) {
@@ -394,7 +414,12 @@ struct VerifiedDiffHunkView: View {
                 .foregroundStyle(.secondary)
                 .textSelection(.enabled)
             ForEach(hunk.lines) { line in
-                VerifiedDiffLineView(line: line)
+                VerifiedDiffLineView(
+                    line: line,
+                    lineEndingLabel: lineEndingLabels.label(
+                        for: line.lineEnding
+                    )
+                )
             }
         }
         .accessibilityElement(children: .contain)
@@ -404,6 +429,7 @@ struct VerifiedDiffHunkView: View {
 struct VerifiedDiffOperationView: View {
     @Environment(\.locale) private var locale
     let row: VerifiedDiffPreviewRow
+    fileprivate let lineEndingLabels: VerifiedDiffLineEndingLabels
 
     var body: some View {
         VStack(alignment: .leading, spacing: 7) {
@@ -411,7 +437,10 @@ struct VerifiedDiffOperationView: View {
             operationSummary
             if !row.hunks.isEmpty {
                 ForEach(row.hunks) { hunk in
-                    VerifiedDiffHunkView(hunk: hunk)
+                    VerifiedDiffHunkView(
+                        hunk: hunk,
+                        lineEndingLabels: lineEndingLabels
+                    )
                 }
             }
         }
@@ -459,6 +488,14 @@ struct VerifiedDiffOperationView: View {
             if row.isMetadataOnly {
                 Text(
                     verbatim: Strings.verifiedDiffMetadataOnly(locale: locale)
+                )
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(.orange)
+            } else if row.hasMetadataChange {
+                Text(
+                    verbatim: Strings.verifiedDiffMetadataAlsoChanges(
+                        locale: locale
+                    )
                 )
                 .font(.system(size: 10, weight: .semibold))
                 .foregroundStyle(.orange)
@@ -529,6 +566,7 @@ struct VerifiedDiffPreviewView: View {
     let model: VerifiedDiffPreviewModel
 
     var body: some View {
+        let lineEndingLabels = VerifiedDiffLineEndingLabels(locale: locale)
         VStack(alignment: .leading, spacing: 0) {
             summaryHeader
             Divider()
@@ -540,7 +578,10 @@ struct VerifiedDiffPreviewView: View {
                         Array(model.rows.enumerated()),
                         id: \.element.id
                     ) { index, row in
-                        VerifiedDiffOperationView(row: row)
+                        VerifiedDiffOperationView(
+                            row: row,
+                            lineEndingLabels: lineEndingLabels
+                        )
                         if index < model.rows.count - 1 {
                             Divider().opacity(0.3)
                         }
