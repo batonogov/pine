@@ -13,7 +13,7 @@ struct AgentActivityFilterLocalizationTests {
     private static let languages = [
         "en", "de", "es", "fr", "ja", "ko", "pt-BR", "ru", "zh-Hans"
     ]
-    private static let keys = [
+    private static let activityKeys = [
         "agentActivity.noMatches",
         "agentActivity.attribution.filterLabel",
         "agentActivity.attribution.sessionLinked",
@@ -22,6 +22,31 @@ struct AgentActivityFilterLocalizationTests {
         "agentActivity.attribution.inferredHint",
         "agentActivity.attribution.ambiguous",
         "agentActivity.attribution.ambiguousHint"
+    ]
+    /// Unrelated manual entries that must survive an xcstrings `ours` merge
+    /// when this feature branch is brought up to date with main.
+    private static let mergePreservedKeys = [
+        "agent.liveness.live",
+        "agent.liveness.stale",
+        "agent.liveness.terminated",
+        "statusbar.agentSession",
+        "statusbar.agentSessions",
+        "verifiedDiff.detail.applyTextHunks",
+        "verifiedDiff.detail.removeCreatedFile",
+        "verifiedDiff.detail.restoreDeletedFile",
+        "verifiedDiff.detail.restoreExactFile",
+        "verifiedDiff.detail.simulateRenamedFile",
+        "verifiedDiff.expectedCurrent",
+        "verifiedDiff.identity %@ %lld %@",
+        "verifiedDiff.kind.applyTextHunks",
+        "verifiedDiff.kind.removeCreatedFile",
+        "verifiedDiff.kind.restoreDeletedFile",
+        "verifiedDiff.kind.restoreExactFile",
+        "verifiedDiff.kind.simulateRenamedFile",
+        "verifiedDiff.result",
+        "verifiedDiff.stalenessNotice",
+        "verifiedDiff.summary %lld %lld %lld",
+        "verifiedDiff.title"
     ]
 
     private func stringsCatalog() throws -> [String: Any] {
@@ -41,8 +66,26 @@ struct AgentActivityFilterLocalizationTests {
     @Test("Every filter string is translated in all supported languages")
     func allLanguagesPresent() throws {
         let catalog = try stringsCatalog()
+        try expectCompleteTranslations(
+            for: Self.activityKeys,
+            in: catalog
+        )
+    }
 
-        for key in Self.keys {
+    @Test("Merging Activity strings preserves existing agent and undo copy")
+    func unrelatedAgentAndUndoStringsRemainTranslated() throws {
+        let catalog = try stringsCatalog()
+        try expectCompleteTranslations(
+            for: Self.mergePreservedKeys,
+            in: catalog
+        )
+    }
+
+    private func expectCompleteTranslations(
+        for keys: [String],
+        in catalog: [String: Any]
+    ) throws {
+        for key in keys {
             let entry = try #require(catalog[key] as? [String: Any])
             let localizations = try #require(
                 entry["localizations"] as? [String: Any]
@@ -58,7 +101,11 @@ struct AgentActivityFilterLocalizationTests {
                 )
                 #expect(unit["state"] as? String == "translated")
                 let value = try #require(unit["value"] as? String)
-                #expect(!value.trimmingCharacters(in: .whitespaces).isEmpty)
+                #expect(
+                    !value.trimmingCharacters(
+                        in: .whitespacesAndNewlines
+                    ).isEmpty
+                )
             }
         }
     }

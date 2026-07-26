@@ -494,9 +494,9 @@ final class ProjectManager {
     /// Conservative heuristic: ignored when no agent is active; the first
     /// refresh after an agent appears seeds the seen-set with whatever was
     /// already changed (so pre-existing changes aren't misattributed), and
-    /// only subsequently-changed files are recorded. With several active
-    /// sessions attribution falls back to the most-recently-active (see
-    /// `AgentActivityStore`).
+    /// only subsequently-changed files are recorded. With several live
+    /// sessions the action retains every candidate as ambiguous and selects
+    /// no owner (see `AgentActivityStore`).
     ///
     /// "Changed" covers every working-tree state except `.deleted` — agents
     /// routinely create brand-new files (` .untracked`), `git add` files
