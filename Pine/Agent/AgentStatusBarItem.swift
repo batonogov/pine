@@ -118,14 +118,16 @@ struct AgentStatusBarItem: View {
     let onSelect: (PaneID, UUID) -> Void
 
     var body: some View {
+        let presentation = AgentStatusBarPresentation(summaries: summaries)
         if summaries.count == 1, let only = summaries.first {
             Button {
                 onSelect(only.paneID, only.tabID)
             } label: {
-                label
+                label(presentation: presentation)
             }
             .buttonStyle(.plain)
             .accessibilityIdentifier(AccessibilityID.agentStatusBarItem)
+            .accessibilityLabel(Text(verbatim: presentation.accessibilityLabel))
         } else {
             Menu {
                 ForEach(summaries) { summary in
@@ -140,19 +142,22 @@ struct AgentStatusBarItem: View {
                     }
                 }
             } label: {
-                label
+                label(presentation: presentation)
             }
             .menuStyle(.borderlessButton)
             .fixedSize()
             .accessibilityIdentifier(AccessibilityID.agentStatusBarMenu)
+            .accessibilityLabel(Text(verbatim: presentation.accessibilityLabel))
         }
     }
 
     /// Shared visual label for both the single-agent button and the
     /// multi-agent menu: count + per-agent colored dot and name/state.
-    private var label: some View {
+    private func label(
+        presentation: AgentStatusBarPresentation
+    ) -> some View {
         HStack(spacing: 4) {
-            countLabel
+            Text(verbatim: presentation.countText)
 
             ForEach(summaries) { summary in
                 divider
@@ -170,26 +175,6 @@ struct AgentStatusBarItem: View {
         .lineLimit(1)
     }
 
-    /// "N agent[s] active" with correct singular/plural form.
-    private var countLabel: Text {
-        let hasUncertainEvidence = summaries.contains {
-            $0.liveness != .live
-        }
-        if summaries.count == 1, hasUncertainEvidence {
-            return Text("\(Text(verbatim: "1 "))\(Text(Strings.statusbarAgentSession))")
-        } else if hasUncertainEvidence {
-            return Text(
-                "\(Text(verbatim: "\(summaries.count) "))\(Text(Strings.statusbarAgentSessions))"
-            )
-        } else if summaries.count == 1 {
-            return Text("\(Text(verbatim: "1 "))\(Text(Strings.statusbarAgentActive))")
-        } else {
-            return Text(
-                "\(Text(verbatim: "\(summaries.count) "))\(Text(Strings.statusbarAgentsActive))"
-            )
-        }
-    }
-
     private var divider: some View {
         Text(verbatim: "·")
             .font(.system(size: LayoutMetrics.bodySmallFontSize))
@@ -197,7 +182,28 @@ struct AgentStatusBarItem: View {
     }
 }
 
-private extension AgentStatusSummary {
+/// Localized, testable text projection used by both rendering and VoiceOver.
+struct AgentStatusBarPresentation: Equatable {
+    let countText: String
+    let detailTexts: [String]
+
+    @MainActor
+    init(summaries: [AgentStatusSummary]) {
+        let hasUncertainEvidence = summaries.contains {
+            $0.liveness != .live
+        }
+        countText = hasUncertainEvidence
+            ? Strings.statusbarAgentSessionCount(summaries.count)
+            : Strings.statusbarActiveAgentCount(summaries.count)
+        detailTexts = summaries.map(\.detailText)
+    }
+
+    var accessibilityLabel: String {
+        ([countText] + detailTexts).joined(separator: ", ")
+    }
+}
+
+extension AgentStatusSummary {
     @MainActor
     var detailText: String {
         let stateText = "\(agentType.displayName): \(state.displayName)"

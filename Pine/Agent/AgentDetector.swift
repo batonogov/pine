@@ -37,19 +37,28 @@ nonisolated struct DetectedProcess: Sendable, Equatable {
     /// Working directory of the process, if known. Reserved for Phase 2
     /// (file-system correlation); not consulted for matching in this PR.
     let cwd: URL?
-    /// Cumulative CPU time in seconds (from `ps -eo ... times=`). Used by
+    /// Cumulative CPU time in seconds (from `ps -eo ... cputime=`). Used by
     /// `AgentDetector.processSnapshotDidUpdate(_:)` to refine
     /// `.idle` → `.executing` / `.waitingInput`: a session whose CPU time
     /// stopped advancing between two snapshots is idle at a prompt (#1112).
     /// `nil` when the snapshot did not carry CPU time (legacy parse path,
     /// unit tests) — the detector leaves the state untouched in that case.
     let cpuTime: Int?
+    /// Stable process-start discriminator from `ps lstart=`.
+    let startIdentifier: String?
 
-    init(pid: Int32, command: String, cwd: URL? = nil, cpuTime: Int? = nil) {
+    init(
+        pid: Int32,
+        command: String,
+        cwd: URL? = nil,
+        cpuTime: Int? = nil,
+        startIdentifier: String? = nil
+    ) {
         self.pid = pid
         self.command = command
         self.cwd = cwd
         self.cpuTime = cpuTime
+        self.startIdentifier = startIdentifier
     }
 }
 
@@ -96,8 +105,24 @@ final class AgentDetector {
     /// so pid reuse starts a fresh baseline (#1112).
     private var lastCpuTimeByPID: [Int32: Int] = [:]
 
-    init(staleAfter: TimeInterval = 300) {
+    /// Stable process-start value seen for each tracked pid.
+    private var startIdentifierByPID: [Int32: String] = [:]
+
+    /// Supplies monotonic process uptime. Injected for deterministic tests.
+    private let uptimeProvider: @Sendable () -> TimeInterval
+
+    /// Latest accepted poll, successful or failed. Older whole snapshots are
+    /// discarded before they can refine, revive, or terminate sessions.
+    private var latestSnapshotStamp: AgentObservationStamp?
+
+    init(
+        staleAfter: TimeInterval = 300,
+        uptimeProvider: @escaping @Sendable () -> TimeInterval = {
+            ProcessInfo.processInfo.systemUptime
+        }
+    ) {
         livenessTracker = AgentSessionLivenessTracker(staleAfter: staleAfter)
+        self.uptimeProvider = uptimeProvider
     }
 
     /// Sessions that are logically active and backed by fresh process
@@ -131,21 +156,34 @@ final class AgentDetector {
     /// which is a no-op when nothing changed.
     ///
     /// - Parameter processes: the full process list as captured by the
-    ///   caller (e.g. via `ps -eo pid=,command=`). Order is not significant.
+    ///   caller (e.g. via `ps -eo pid=,lstart=,cputime=,command=`). Order is
+    ///   not significant.
+    @discardableResult
     func processSnapshotDidUpdate(
         _ processes: [DetectedProcess],
         observedAt: Date = Date()
-    ) {
+    ) -> Set<UUID> {
+        processSnapshotDidUpdate(
+            processes,
+            observation: nextLocalObservation(at: observedAt)
+        )
+    }
+
+    /// Applies a successful snapshot with an explicit ordered monotonic stamp.
+    ///
+    /// Returns the ids terminated by this exact reconciliation so UI badge
+    /// retention never depends on the detector's historical session array.
+    @discardableResult
+    func processSnapshotDidUpdate(
+        _ processes: [DetectedProcess],
+        observation: AgentObservationStamp
+    ) -> Set<UUID> {
+        guard accepts(observation) else { return [] }
         var observedAgentPIDs: Set<Int32> = []
+        var newlyTerminated: Set<UUID> = []
 
         // 1. Detect + refine: recognise new agent pids, and refine the state
         //    of already-tracked sessions from their cumulative CPU time.
-        //    CPU time advancing between snapshots → the agent is doing work
-        //    (.executing); stalled → it is idle at a prompt, waiting for
-        //    input (.waitingInput). This is a coarse, agent-agnostic
-        //    heuristic — output-pattern / hook-based detection (Claude Code
-        //    Stop/Notification, Codex lifecycle) is tracked as a follow-up
-        //    to #1112 for higher fidelity.
         for process in processes {
             let executableName = Self.extractExecutableName(from: process.command)
             guard let resolved = AgentType.resolve(fromProcessName: executableName),
@@ -153,29 +191,50 @@ final class AgentDetector {
             observedAgentPIDs.insert(process.pid)
 
             if let existing = sessionsByPID[process.pid] {
-                // A process can exec a different program without changing
-                // pid. Do not silently carry the old agent identity into the
-                // new process generation.
-                if existing.agentType != resolved {
-                    markDone(pid: process.pid)
+                let previousCPU = lastCpuTimeByPID[process.pid]
+                let cpuRegressed = if let cpu = process.cpuTime,
+                                      let previousCPU {
+                    cpu < previousCPU
+                } else {
+                    false
+                }
+                let startChanged = if let previousStart = startIdentifierByPID[process.pid],
+                                      let currentStart = process.startIdentifier {
+                    previousStart != currentStart
+                } else {
+                    false
+                }
+
+                // A pid may exec another agent or be recycled for the same
+                // command. A changed lstart value proves a new generation;
+                // cumulative CPU regression is the conservative fallback.
+                if existing.agentType != resolved || startChanged || cpuRegressed {
+                    if let terminatedID = markDone(pid: process.pid) {
+                        newlyTerminated.insert(terminatedID)
+                    }
                     startSession(
                         for: process,
                         agentType: resolved,
-                        observedAt: observedAt
+                        observation: observation
                     )
                     continue
                 }
 
-                livenessTracker.recordObservation(
+                let accepted = livenessTracker.recordObservation(
                     of: existing,
-                    at: observedAt
+                    observation: observation
                 )
-                // State refinement (issue #1112): compare cumulative CPU time
-                // against the previous snapshot. CPU time is unavailable in
-                // some test/legacy snapshots → leave the state untouched.
+                guard accepted else { continue }
+
+                if startIdentifierByPID[process.pid] == nil,
+                   let startIdentifier = process.startIdentifier {
+                    startIdentifierByPID[process.pid] = startIdentifier
+                }
                 if let cpu = process.cpuTime {
-                    if let prev = lastCpuTimeByPID[process.pid], existing.state != .done {
-                        existing.state = (cpu > prev) ? .executing : .waitingInput
+                    if let previousCPU, existing.state != .done {
+                        existing.state = cpu > previousCPU
+                            ? .executing
+                            : .waitingInput
                     }
                     lastCpuTimeByPID[process.pid] = cpu
                 }
@@ -185,15 +244,15 @@ final class AgentDetector {
             startSession(
                 for: process,
                 agentType: resolved,
-                observedAt: observedAt
+                observation: observation
             )
         }
 
-        // 2. Reconcile: mark sessions for pids no longer present as done.
-        // Reconcile against recognised agent processes, not every pid in the
-        // system: a tracked pid that execs an unrelated program is no longer
-        // evidence for the prior agent session.
-        reconcile(activePIDs: observedAgentPIDs)
+        // 2. Reconcile against recognised agent processes. A valid full
+        // snapshot that contains only non-agents authoritatively terminates
+        // every previously tracked agent.
+        newlyTerminated.formUnion(reconcile(activePIDs: observedAgentPIDs))
+        return newlyTerminated
     }
 
     /// Preserves tracked sessions after a failed/unavailable process poll and
@@ -204,9 +263,20 @@ final class AgentDetector {
     func processSnapshotDidFail(
         at checkedAt: Date = Date()
     ) -> [AgentLivenessCheck] {
-        livenessTracker.checkStaleness(
+        processSnapshotDidFail(
+            observation: nextLocalObservation(at: checkedAt)
+        )
+    }
+
+    /// Applies a failed poll only when it is newer than every accepted poll.
+    @discardableResult
+    func processSnapshotDidFail(
+        observation: AgentObservationStamp
+    ) -> [AgentLivenessCheck] {
+        guard accepts(observation) else { return [] }
+        return livenessTracker.checkStaleness(
             of: Array(sessionsByPID.values),
-            at: checkedAt
+            observation: observation
         )
     }
 
@@ -216,11 +286,16 @@ final class AgentDetector {
     /// Also called internally by `processSnapshotDidUpdate(_:)`. Exposed so a
     /// caller that receives a single process-exit signal (e.g. `SIGCHLD`)
     /// can reconcile without producing a full snapshot.
-    func reconcile(activePIDs: Set<Int32>) {
+    @discardableResult
+    func reconcile(activePIDs: Set<Int32>) -> Set<UUID> {
         let trackedPIDs = Array(sessionsByPID.keys)
+        var terminated: Set<UUID> = []
         for pid in trackedPIDs where !activePIDs.contains(pid) {
-            markDone(pid: pid)
+            if let sessionID = markDone(pid: pid) {
+                terminated.insert(sessionID)
+            }
         }
+        return terminated
     }
 
     /// Removes all `.done` sessions from `detectedSessions`, freeing memory.
@@ -234,30 +309,59 @@ final class AgentDetector {
 
     /// Transitions the session for `pid` to `.done` and removes the pid
     /// mapping so that pid reuse later creates a fresh session.
-    private func markDone(pid: Int32) {
-        guard let session = sessionsByPID.removeValue(forKey: pid) else { return }
+    private func markDone(pid: Int32) -> UUID? {
+        guard let session = sessionsByPID.removeValue(forKey: pid) else { return nil }
         lastCpuTimeByPID.removeValue(forKey: pid)
+        startIdentifierByPID.removeValue(forKey: pid)
         livenessTracker.recordTermination(of: session)
         session.state = .done
+        return session.id
     }
 
     /// Creates a new logical/process session for a recognised agent.
     private func startSession(
         for process: DetectedProcess,
         agentType: AgentType,
-        observedAt: Date
+        observation: AgentObservationStamp
     ) {
         let session = AgentSession(
             agentType: agentType,
             state: .idle,
-            startedAt: observedAt,
-            lastObservedAt: observedAt
+            startedAt: observation.wallTime,
+            lastObservedAt: observation.wallTime,
+            lastObservedUptime: observation.uptime,
+            observationGeneration: observation.generation,
+            observationSequence: observation.sequence
         )
         sessionsByPID[process.pid] = session
         detectedSessions.append(session)
         if let cpu = process.cpuTime {
             lastCpuTimeByPID[process.pid] = cpu
         }
+        if let startIdentifier = process.startIdentifier {
+            startIdentifierByPID[process.pid] = startIdentifier
+        }
+    }
+
+    /// Produces a stamp newer than any explicit coordinator stamp already
+    /// accepted, preserving the convenient direct API for in-process callers.
+    private func nextLocalObservation(at wallTime: Date) -> AgentObservationStamp {
+        AgentObservationStamp(
+            wallTime: wallTime,
+            uptime: uptimeProvider(),
+            generation: latestSnapshotStamp?.generation ?? 0,
+            sequence: (latestSnapshotStamp?.sequence ?? 0) &+ 1
+        )
+    }
+
+    /// Claims a poll stamp before any detector mutation.
+    private func accepts(_ observation: AgentObservationStamp) -> Bool {
+        if let latestSnapshotStamp,
+           observation <= latestSnapshotStamp {
+            return false
+        }
+        latestSnapshotStamp = observation
+        return true
     }
 
     /// Returns true if `type` is the `.generic` case.

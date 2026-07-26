@@ -56,10 +56,99 @@ struct AgentDetectionCoordinatorTests {
         let coordinator = AgentDetectionCoordinator(detector: detector, terminalManager: nil, processRunner: runner, pollInterval: 0.05)
         coordinator.runSnapshotForTesting()
         #expect(detector.activeCount == 1)
-        mockOutput.value = ""
+        // A valid non-agent row represents an authoritative full snapshot
+        // containing no agents.
+        mockOutput.value = "1 /sbin/launchd"
         coordinator.runSnapshotForTesting()
         #expect(detector.detectedSessions[0].state == .done)
         #expect(detector.activeCount == 0)
+    }
+
+    @Test func emptyExitZeroPollIsFailedEvidenceNotTermination() throws {
+        nonisolated final class MockOutput: @unchecked Sendable {
+            var value = "100 claude"
+        }
+        let detector = AgentDetector(staleAfter: 0)
+        let output = MockOutput()
+        let coordinator = AgentDetectionCoordinator(
+            detector: detector,
+            terminalManager: nil,
+            processRunner: { _, _, _, _ in
+                ProcessRunResult(
+                    stdout: output.value,
+                    stderr: "",
+                    exitCode: 0,
+                    timedOut: false
+                )
+            }
+        )
+        coordinator.runSnapshotForTesting()
+        let session = try #require(detector.session(forPID: 100))
+
+        output.value = ""
+        coordinator.runSnapshotForTesting()
+
+        #expect(detector.session(forPID: 100) === session)
+        #expect(session.state != .done)
+        #expect(session.liveness == .stale)
+    }
+
+    @Test func whollyMalformedExitZeroPollIsFailedEvidenceNotTermination() throws {
+        nonisolated final class MockOutput: @unchecked Sendable {
+            var value = "100 claude"
+        }
+        let detector = AgentDetector(staleAfter: 0)
+        let output = MockOutput()
+        let coordinator = AgentDetectionCoordinator(
+            detector: detector,
+            terminalManager: nil,
+            processRunner: { _, _, _, _ in
+                ProcessRunResult(
+                    stdout: output.value,
+                    stderr: "",
+                    exitCode: 0,
+                    timedOut: false
+                )
+            }
+        )
+        coordinator.runSnapshotForTesting()
+        let session = try #require(detector.session(forPID: 100))
+
+        output.value = "PID COMMAND\nnot-a-pid claude"
+        coordinator.runSnapshotForTesting()
+
+        #expect(detector.session(forPID: 100) === session)
+        #expect(session.state != .done)
+        #expect(session.liveness == .stale)
+    }
+
+    @Test func partiallyMalformedExitZeroPollIsFailedEvidenceNotTermination() throws {
+        nonisolated final class MockOutput: @unchecked Sendable {
+            var value = "100 claude"
+        }
+        let detector = AgentDetector(staleAfter: 0)
+        let output = MockOutput()
+        let coordinator = AgentDetectionCoordinator(
+            detector: detector,
+            terminalManager: nil,
+            processRunner: { _, _, _, _ in
+                ProcessRunResult(
+                    stdout: output.value,
+                    stderr: "",
+                    exitCode: 0,
+                    timedOut: false
+                )
+            }
+        )
+        coordinator.runSnapshotForTesting()
+        let session = try #require(detector.session(forPID: 100))
+
+        output.value = "1 /sbin/launchd\nnot-a-pid claude"
+        coordinator.runSnapshotForTesting()
+
+        #expect(detector.session(forPID: 100) === session)
+        #expect(session.state != .done)
+        #expect(session.liveness == .stale)
     }
 
     @Test func nonzeroPollPreservesSessionAsUncertain() throws {
@@ -150,7 +239,7 @@ struct AgentDetectionCoordinatorTests {
             previous: previous,
             foregroundPID: 0,
             detector: detector,
-            terminatedBeforeSnapshot: []
+            newlyTerminated: [previous.id]
         )
 
         #expect(previous.state == .done)
@@ -170,10 +259,37 @@ struct AgentDetectionCoordinatorTests {
             previous: previous,
             foregroundPID: 0,
             detector: detector,
-            terminatedBeforeSnapshot: [previous.id]
+            newlyTerminated: []
         )
 
         #expect(reconciled == nil)
+    }
+
+    @Test func badgeRetentionSurvivesDetectorHistoryCleanup() throws {
+        let detector = AgentDetector()
+        detector.processSnapshotDidUpdate([
+            DetectedProcess(pid: 502, command: "claude"),
+        ])
+        let previous = try #require(detector.session(forPID: 502))
+        let newlyTerminated = detector.processSnapshotDidUpdate([])
+        detector.clearFinishedSessions()
+
+        let retained = AgentDetectionCoordinator.reconciledSession(
+            previous: previous,
+            foregroundPID: 0,
+            detector: detector,
+            newlyTerminated: newlyTerminated
+        )
+        let dismissed = AgentDetectionCoordinator.reconciledSession(
+            previous: retained,
+            foregroundPID: 0,
+            detector: detector,
+            newlyTerminated: []
+        )
+
+        #expect(retained === previous)
+        #expect(dismissed == nil)
+        #expect(detector.detectedSessions.isEmpty)
     }
 
     @Test func failedPollExpiryRuleOnlyRemovesTerminatedAssociation() {
@@ -288,6 +404,131 @@ struct AgentDetectionCoordinatorTests {
         #expect(!coordinator.isRunning)
     }
 
+    @Test func stoppedLifecycleDiscardsBlockedInFlightResult() async throws {
+        nonisolated final class BlockingRunner: @unchecked Sendable {
+            private let condition = NSCondition()
+            private var started = false
+            private var released = false
+
+            func run() -> ProcessRunResult {
+                condition.lock()
+                started = true
+                condition.broadcast()
+                while !released {
+                    condition.wait()
+                }
+                condition.unlock()
+                return ProcessRunResult(
+                    stdout: "100 claude",
+                    stderr: "",
+                    exitCode: 0,
+                    timedOut: false
+                )
+            }
+
+            var hasStarted: Bool {
+                condition.lock()
+                defer { condition.unlock() }
+                return started
+            }
+
+            func release() {
+                condition.lock()
+                released = true
+                condition.broadcast()
+                condition.unlock()
+            }
+        }
+
+        let blocked = BlockingRunner()
+        let detector = AgentDetector()
+        let coordinator = AgentDetectionCoordinator(
+            detector: detector,
+            terminalManager: nil,
+            processRunner: { _, _, _, _ in blocked.run() },
+            pollInterval: 0.01
+        )
+        coordinator.start()
+        for _ in 0..<100 where !blocked.hasStarted {
+            try await Task.sleep(for: .milliseconds(5))
+        }
+        let didStart = blocked.hasStarted
+
+        coordinator.stop()
+        blocked.release()
+        try await Task.sleep(for: .milliseconds(100))
+
+        #expect(didStart)
+        #expect(!coordinator.isRunning)
+        #expect(detector.detectedSessions.isEmpty)
+    }
+
+    @Test func restartedLifecycleRejectsPriorBlockedGeneration() async throws {
+        nonisolated final class RestartRunner: @unchecked Sendable {
+            private let condition = NSCondition()
+            private var callCount = 0
+            private var firstStarted = false
+            private var firstReleased = false
+
+            func run() -> ProcessRunResult {
+                condition.lock()
+                callCount += 1
+                let call = callCount
+                if call == 1 {
+                    firstStarted = true
+                    condition.broadcast()
+                    while !firstReleased {
+                        condition.wait()
+                    }
+                }
+                condition.unlock()
+                let output = call == 1 ? "100 claude" : "1 /sbin/launchd"
+                return ProcessRunResult(
+                    stdout: output,
+                    stderr: "",
+                    exitCode: 0,
+                    timedOut: false
+                )
+            }
+
+            var hasStarted: Bool {
+                condition.lock()
+                defer { condition.unlock() }
+                return firstStarted
+            }
+
+            func releaseFirst() {
+                condition.lock()
+                firstReleased = true
+                condition.broadcast()
+                condition.unlock()
+            }
+        }
+
+        let runner = RestartRunner()
+        let detector = AgentDetector()
+        let coordinator = AgentDetectionCoordinator(
+            detector: detector,
+            terminalManager: nil,
+            processRunner: { _, _, _, _ in runner.run() },
+            pollInterval: 0.01
+        )
+        coordinator.start()
+        for _ in 0..<100 where !runner.hasStarted {
+            try await Task.sleep(for: .milliseconds(5))
+        }
+        let didStart = runner.hasStarted
+
+        coordinator.stop()
+        coordinator.start()
+        runner.releaseFirst()
+        try await Task.sleep(for: .milliseconds(150))
+        coordinator.stop()
+
+        #expect(didStart)
+        #expect(detector.detectedSessions.isEmpty)
+    }
+
     @Test func sessionForPIDReturnsActiveSession() {
         let detector = AgentDetector()
         detector.processSnapshotDidUpdate([DetectedProcess(pid: 500, command: "claude")])
@@ -365,6 +606,26 @@ struct AgentDetectionCoordinatorTests {
         #expect(processes[1].pid == 5678)
         #expect(processes[1].command == "node /opt/homebrew/bin/pi")
         #expect(processes[1].cpuTime == 4981)
+    }
+
+    @Test func parsePsOutputExtractsStableStartIdentifier() throws {
+        let output = """
+            1234 Wed Jul 22 15:08:40 2026 0:12.45 /usr/local/bin/claude --verbose
+            5678 Wed Jul 22 15:09:39 2026 1:23.01 /sbin/launchd
+            """
+
+        let processes = AgentDetectionCoordinator.parsePsOutput(output)
+        let claude = try #require(processes.first)
+        #expect(processes.count == 2)
+        #expect(claude.pid == 1234)
+        #expect(claude.command == "/usr/local/bin/claude --verbose")
+        #expect(claude.cpuTime == 12)
+        #expect(claude.startIdentifier == "Wed Jul 22 15:08:40 2026")
+    }
+
+    @Test func parsePsOutputRejectsMalformedLongStartRow() {
+        let output = "1234 Wed Jul 22 not-a-time 2026 0:12.45 claude"
+        #expect(AgentDetectionCoordinator.parsePsOutput(output).isEmpty)
     }
 
     @Test func parsePsOutputDoesNotCorruptCommandEndingInNumericArg() {

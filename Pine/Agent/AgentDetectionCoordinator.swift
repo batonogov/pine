@@ -46,7 +46,10 @@ nonisolated final class AgentDetectionCoordinator {
     weak var terminalManager: TerminalManager?
     private let processRunner: ProcessRunner
     private let pollInterval: TimeInterval
+    private let uptimeProvider: @Sendable () -> TimeInterval
     private let pollQueue = DispatchQueue(label: "com.pine.agent-detection", qos: .utility)
+    private let lifecycleGate = AgentPollingLifecycleGate()
+    private let testingRun = AgentPollingRun(generation: 0)
     private var timer: DispatchSourceTimer?
 
     /// Whether polling is active. Read/written only from `@MainActor` methods
@@ -57,24 +60,29 @@ nonisolated final class AgentDetectionCoordinator {
         detector: AgentDetector,
         terminalManager: TerminalManager?,
         processRunner: @escaping ProcessRunner = runRealProcess,
-        pollInterval: TimeInterval = 2.0
+        pollInterval: TimeInterval = 2.0,
+        uptimeProvider: @escaping @Sendable () -> TimeInterval = {
+            ProcessInfo.processInfo.systemUptime
+        }
     ) {
         self.detector = detector
         self.terminalManager = terminalManager
         self.processRunner = processRunner
         self.pollInterval = pollInterval
+        self.uptimeProvider = uptimeProvider
     }
 
     @MainActor func start() {
         guard !isRunning else { return }
         isRunning = true
+        let run = AgentPollingRun(generation: lifecycleGate.begin())
         let timer = DispatchSource.makeTimerSource(queue: pollQueue)
         timer.schedule(deadline: .now() + pollInterval, repeating: pollInterval)
         // Build the handler via the nonisolated makePollHandler(): a closure
         // literal written here (inside the @MainActor start()) would inherit
         // MainActor isolation and trap when the source invokes it on
         // pollQueue — see the class doc and the release 1.31.1 crash fix.
-        timer.setEventHandler(handler: makePollHandler())
+        timer.setEventHandler(handler: makePollHandler(run: run))
         timer.resume()
         self.timer = timer
     }
@@ -88,19 +96,25 @@ nonisolated final class AgentDetectionCoordinator {
     /// itself `nonisolated`, so a nonisolated handler can call it directly.
     /// Returns `() -> Void` (not `@Sendable`) so the closure may capture the
     /// non-Sendable `self` without a strict-concurrency violation.
-    nonisolated private func makePollHandler() -> () -> Void {
-        { [weak self] in self?.captureSnapshot() }
+    nonisolated private func makePollHandler(
+        run: AgentPollingRun
+    ) -> () -> Void {
+        { [weak self] in self?.captureSnapshot(run: run) }
     }
 
     @MainActor func stop() {
         guard isRunning else { return }
         isRunning = false
+        lifecycleGate.end()
         timer?.cancel()
         timer = nil
         clearAllTabSessions()
     }
 
-    deinit { timer?.cancel() }
+    deinit {
+        lifecycleGate.end()
+        timer?.cancel()
+    }
 
     /// Runs on `pollQueue`: captures the process list, parses it, then hops
     /// to main to apply the snapshot. `nonisolated` so the nonisolated timer
@@ -117,24 +131,32 @@ nonisolated final class AgentDetectionCoordinator {
     /// references are extracted to locals BEFORE the hop so the
     /// `@MainActor` closure never captures `self`, avoiding the strict-
     /// concurrency "sending 'self' risks causing data races" error.
-    nonisolated private func captureSnapshot() {
-        let result = processRunner("/bin/ps", ["-eo", "pid=,command=,cputime="], "", 3.0)
-        let checkedAt = Date()
-        let snapshot: AgentProcessSnapshot
-        if result.exitCode == 0, !result.timedOut {
-            snapshot = .success(
-                processes: Self.parsePsOutput(result.stdout),
-                observedAt: checkedAt
-            )
-        } else {
-            snapshot = .failed(checkedAt: checkedAt)
-        }
+    nonisolated private func captureSnapshot(run: AgentPollingRun) {
+        let sequence = run.nextSequence()
+        let result = processRunner(
+            "/bin/ps",
+            ["-eo", "pid=,lstart=,cputime=,command="],
+            "",
+            3.0
+        )
+        let observation = AgentObservationStamp(
+            wallTime: Date(),
+            uptime: uptimeProvider(),
+            generation: run.generation,
+            sequence: sequence
+        )
+        let snapshot = Self.makeSnapshot(
+            from: result,
+            observation: observation
+        )
         // Extract references before the hop — the DispatchWorkItem closure
         // must not capture `self` (nonisolated, non-Sendable).
         let detector = self.detector
         let termManager = self.terminalManager
+        let lifecycleGate = self.lifecycleGate
         let work = DispatchWorkItem {
             MainActor.assumeIsolated {
+                guard lifecycleGate.accepts(run.generation) else { return }
                 Self.applySnapshot(
                     snapshot,
                     detector: detector,
@@ -145,21 +167,16 @@ nonisolated final class AgentDetectionCoordinator {
         DispatchQueue.main.async(execute: work)
     }
 
-    /// Parses raw `ps -eo pid=,command=,cputime=` output into `[DetectedProcess]`.
+    /// Parses raw `ps -eo pid=,lstart=,cputime=,command=` output.
     /// `nonisolated` so it is callable from the background polling queue
     /// via `captureSnapshot`. Relies on `DetectedProcess` being `nonisolated`
     /// so its init is reachable from here.
     ///
-    /// The format is `<pid> <command...> <cputime>`: `pid` is the first
-    /// whitespace-delimited token, `cputime` the last (formatted as
-    /// `[[DD-]HH:]MM:SS[.cc]` — always containing a colon), and `command`
-    /// everything in between (commands contain spaces). A trailing token is
-    /// treated as cputime only when ``parseCpuTime(_:)`` accepts it; this
-    /// guards against a command line whose final argv is numeric
-    /// (e.g. `claude --port 8080`) being misread as CPU seconds (#1112).
-    /// When the trailing token is not a cputime value the line is treated as
-    /// the legacy two-column `pid=,command=` form — `cpuTime` stays `nil`
-    /// and state refinement is skipped.
+    /// macOS `lstart=` is a fixed five-token value (`Wed Jul 22 15:08:40
+    /// 2026`), followed by cputime and then the unbounded command. Keeping
+    /// command last makes parsing unambiguous and supplies a stable start
+    /// discriminator for same-pid reuse. The legacy `pid,command,cputime`
+    /// injected-test form remains supported.
     nonisolated static func parsePsOutput(_ output: String) -> [DetectedProcess] {
         var processes: [DetectedProcess] = []
         for line in output.split(separator: "\n", omittingEmptySubsequences: true) {
@@ -167,16 +184,45 @@ nonisolated final class AgentDetectionCoordinator {
             let tokens = trimmed.split(separator: " ", omittingEmptySubsequences: true)
             guard tokens.count >= 2 else { continue }
             guard let pid = Int32(tokens[0]) else { continue }
+
+            let looksLikeLongStart = Self.psWeekdays.contains(String(tokens[1]))
+                || (tokens.count >= 5 && tokens[4].filter { $0 == ":" }.count == 2)
+            if looksLikeLongStart {
+                guard tokens.count >= 8,
+                      tokens[4].filter({ $0 == ":" }).count == 2,
+                      Int(tokens[5]) != nil,
+                      let cpuTime = parseCpuTime(String(tokens[6])) else {
+                    continue
+                }
+                let command = tokens[7...].joined(separator: " ")
+                guard !command.isEmpty else { continue }
+                let startIdentifier = tokens[1...5].joined(separator: " ")
+                processes.append(
+                    DetectedProcess(
+                        pid: pid,
+                        command: command,
+                        cpuTime: cpuTime,
+                        startIdentifier: startIdentifier
+                    )
+                )
+                continue
+            }
+
             // Last token is cumulative CPU time (ps cputime=) when it parses
             // as one — see ``parseCpuTime(_:)``.
             let last = String(tokens[tokens.count - 1])
             let cpuTime = parseCpuTime(last)
             let commandEnd = cpuTime != nil ? tokens.count - 1 : tokens.count
+            guard commandEnd > 1 else { continue }
             let command = tokens[1..<commandEnd].joined(separator: " ")
             processes.append(DetectedProcess(pid: pid, command: command, cpuTime: cpuTime))
         }
         return processes
     }
+
+    nonisolated private static let psWeekdays: Set<String> = [
+        "Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun",
+    ]
 
     /// Parses a macOS `ps cputime=` value (`[[DD-]HH:]MM:SS[.cc]`, always
     /// containing a colon) into cumulative whole seconds. Returns `nil` for
@@ -206,6 +252,29 @@ nonisolated final class AgentDetectionCoordinator {
         return padded[0] * 86_400 + padded[1] * 3_600 + padded[2] * 60 + padded[3]
     }
 
+    /// Classifies a process-run result without conflating empty, partial, or
+    /// malformed exit-zero stdout with an authoritative full process list.
+    /// A valid non-agent row still yields a non-empty parsed list and is
+    /// therefore authoritative absence for tracked agents.
+    nonisolated private static func makeSnapshot(
+        from result: ProcessRunResult,
+        observation: AgentObservationStamp
+    ) -> AgentProcessSnapshot {
+        guard result.exitCode == 0, !result.timedOut else {
+            return .failed(observation: observation)
+        }
+        let processes = parsePsOutput(result.stdout)
+        let reportedRowCount = result.stdout.split(
+            separator: "\n",
+            omittingEmptySubsequences: true
+        ).count
+        guard !processes.isEmpty,
+              processes.count == reportedRowCount else {
+            return .failed(observation: observation)
+        }
+        return .success(processes: processes, observation: observation)
+    }
+
     /// Feeds the process snapshot to the detector and reconciles terminal
     /// tabs. `@MainActor` because it touches `AgentDetector` (main state)
     /// and `TerminalManager` / `TerminalTab.agentSession` (main state).
@@ -218,11 +287,11 @@ nonisolated final class AgentDetectionCoordinator {
         terminalManager: TerminalManager?
     ) {
         switch snapshot {
-        case .failed(let checkedAt):
+        case .failed(let observation):
             // An unavailable process list is uncertainty, not evidence that
             // every agent exited. Keep tab associations and age their last
             // successful observations instead of reconciling against [].
-            detector.processSnapshotDidFail(at: checkedAt)
+            detector.processSnapshotDidFail(observation: observation)
             // Termination was already established by an earlier successful
             // snapshot, so its one-interval exit badge can expire even though
             // this poll failed. Live/stale associations remain untouched.
@@ -232,19 +301,10 @@ nonisolated final class AgentDetectionCoordinator {
                 tab.agentSession = nil
             }
 
-        case .success(let processes, let observedAt):
-            // Remember sessions that had already been shown as terminated.
-            // A newly terminated session is retained on its tab for exactly
-            // one polling interval, giving the UI a bounded exit
-            // indication without leaving a dead badge indefinitely.
-            let previouslyTerminated = Set(
-                detector.detectedSessions
-                    .filter { $0.liveness == .terminated }
-                    .map(\.id)
-            )
-            detector.processSnapshotDidUpdate(
+        case .success(let processes, let observation):
+            let newlyTerminated = detector.processSnapshotDidUpdate(
                 processes,
-                observedAt: observedAt
+                observation: observation
             )
             guard let terminalManager else { return }
             for tab in terminalManager.allTerminalTabs {
@@ -252,7 +312,7 @@ nonisolated final class AgentDetectionCoordinator {
                     previous: tab.agentSession,
                     foregroundPID: tab.foregroundProcessID,
                     detector: detector,
-                    terminatedBeforeSnapshot: previouslyTerminated
+                    newlyTerminated: newlyTerminated
                 )
             }
         }
@@ -266,14 +326,14 @@ nonisolated final class AgentDetectionCoordinator {
         previous: AgentSession?,
         foregroundPID: Int32,
         detector: AgentDetector,
-        terminatedBeforeSnapshot: Set<UUID>
+        newlyTerminated: Set<UUID>
     ) -> AgentSession? {
         if foregroundPID > 0, let current = detector.session(forPID: foregroundPID) {
             return current
         }
         guard let previous,
               previous.liveness == .terminated,
-              !terminatedBeforeSnapshot.contains(previous.id) else {
+              newlyTerminated.contains(previous.id) else {
             return nil
         }
         return previous
@@ -300,17 +360,22 @@ nonisolated final class AgentDetectionCoordinator {
     /// returns. Uses the injected `processRunner` (mock in tests), parses via
     /// `parsePsOutput`, then calls `applySnapshot` directly on the main actor.
     @MainActor internal func runSnapshotForTesting() {
-        let result = processRunner("/bin/ps", ["-eo", "pid=,command=,cputime="], "", 3.0)
-        let checkedAt = Date()
-        let snapshot: AgentProcessSnapshot
-        if result.exitCode == 0, !result.timedOut {
-            snapshot = .success(
-                processes: Self.parsePsOutput(result.stdout),
-                observedAt: checkedAt
-            )
-        } else {
-            snapshot = .failed(checkedAt: checkedAt)
-        }
+        let result = processRunner(
+            "/bin/ps",
+            ["-eo", "pid=,lstart=,cputime=,command="],
+            "",
+            3.0
+        )
+        let observation = AgentObservationStamp(
+            wallTime: Date(),
+            uptime: uptimeProvider(),
+            generation: testingRun.generation,
+            sequence: testingRun.nextSequence()
+        )
+        let snapshot = Self.makeSnapshot(
+            from: result,
+            observation: observation
+        )
         Self.applySnapshot(
             snapshot,
             detector: detector,
@@ -325,6 +390,59 @@ nonisolated final class AgentDetectionCoordinator {
 /// Keeping failure distinct from a successful empty list is essential:
 /// absence in the latter is termination evidence; the former is uncertainty.
 nonisolated private enum AgentProcessSnapshot: Sendable {
-    case success(processes: [DetectedProcess], observedAt: Date)
-    case failed(checkedAt: Date)
+    case success(
+        processes: [DetectedProcess],
+        observation: AgentObservationStamp
+    )
+    case failed(observation: AgentObservationStamp)
+}
+
+/// One immutable start/stop lifecycle plus its ordered poll sequence.
+///
+/// The lock keeps the testing path and dispatch timer path race-free without
+/// imposing actor isolation on the timer handler.
+nonisolated private final class AgentPollingRun: @unchecked Sendable {
+    let generation: UInt64
+    private let lock = NSLock()
+    private var sequence: UInt64 = 0
+
+    init(generation: UInt64) {
+        self.generation = generation
+    }
+
+    func nextSequence() -> UInt64 {
+        lock.lock()
+        defer { lock.unlock() }
+        sequence &+= 1
+        return sequence
+    }
+}
+
+/// Thread-safe acceptance gate for results crossing the background-to-main
+/// dispatch boundary. `stop()` invalidates the active generation before
+/// cancelling the timer, so a runner already blocked in `ps` cannot apply.
+nonisolated private final class AgentPollingLifecycleGate: @unchecked Sendable {
+    private let lock = NSLock()
+    private var nextGeneration: UInt64 = 0
+    private var activeGeneration: UInt64?
+
+    func begin() -> UInt64 {
+        lock.lock()
+        defer { lock.unlock() }
+        nextGeneration &+= 1
+        activeGeneration = nextGeneration
+        return nextGeneration
+    }
+
+    func end() {
+        lock.lock()
+        activeGeneration = nil
+        lock.unlock()
+    }
+
+    func accepts(_ generation: UInt64) -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return activeGeneration == generation
+    }
 }

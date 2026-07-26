@@ -182,10 +182,25 @@ enum Strings {
 
     // MARK: - Status bar (agent awareness, #952)
 
-    static let statusbarAgentActive: LocalizedStringKey = "statusbar.agentActive"
-    static let statusbarAgentsActive: LocalizedStringKey = "statusbar.agentsActive"
-    static let statusbarAgentSession: LocalizedStringKey = "statusbar.agentSession"
-    static let statusbarAgentSessions: LocalizedStringKey = "statusbar.agentSessions"
+    static func statusbarActiveAgentCount(
+        _ count: Int,
+        locale: Locale = .current
+    ) -> String {
+        String(
+            localized: "statusbar.activeAgentCount \(count)",
+            locale: locale
+        )
+    }
+
+    static func statusbarAgentSessionCount(
+        _ count: Int,
+        locale: Locale = .current
+    ) -> String {
+        String(
+            localized: "statusbar.agentSessionCount \(count)",
+            locale: locale
+        )
+    }
 
     // MARK: - Agent liveness (#933)
 
