@@ -620,6 +620,23 @@ nonisolated enum VerifiedPatchEngine {
         ))
     }
 
+    /// Returns display-only inverse operations after revalidating the complete
+    /// prepared value.
+    ///
+    /// This is deliberately narrower than accepting an arbitrary preview
+    /// array. A caller must carry a `PreparedInverse` produced by checked
+    /// preparation, and every embedded operation/preview binding is checked
+    /// again before the UI may describe it as prepared. The result remains
+    /// stale-able display data: the mutation coordinator must still revalidate
+    /// private authority, root identity, HEAD, index state, descriptors, and
+    /// current file identities immediately before applying anything.
+    static func preparedPreviewForReview(
+        _ prepared: PreparedInverse
+    ) throws -> [VerifiedInverseOperationPreview] {
+        try validatePrepared(prepared)
+        return prepared.previews
+    }
+
     /// Rechecks exact prepared expectations against a fresh in-memory snapshot.
     ///
     /// The final coordinator must still perform the equivalent checks through

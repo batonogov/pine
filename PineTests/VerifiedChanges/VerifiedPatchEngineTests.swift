@@ -953,6 +953,13 @@ struct VerifiedPatchPreparationTests {
             patch,
             files: ["file.txt": file("after")]
         )
+        #expect(
+            try VerifiedPatchEngine.preparedPreviewForReview(prepared)
+                == prepared.previews
+        )
+        let model = try VerifiedDiffPreviewModel(prepared: prepared)
+        #expect(model.patchID == prepared.patchID)
+        #expect(model.rows.count == prepared.operations.count)
         let forgedExpectations = VerifiedPatchCoordinatorExpectations(
             privateWorkspaceID: prepared.coordinatorExpectations
                 .privateWorkspaceID,
@@ -973,6 +980,14 @@ struct VerifiedPatchPreparationTests {
             coordinatorExpectations: forgedExpectations,
             operations: prepared.operations
         )
+        #expect(throws: VerifiedPatchValidationError.self) {
+            try VerifiedPatchEngine.preparedPreviewForReview(
+                forgedPrepared
+            )
+        }
+        #expect(throws: VerifiedPatchValidationError.self) {
+            try VerifiedDiffPreviewModel(prepared: forgedPrepared)
+        }
         #expect(conflicts(VerifiedPatchEngine.applyPrepared(
             forgedPrepared,
             currentSnapshot: snapshot(["file.txt": file("after")])
@@ -996,6 +1011,12 @@ struct VerifiedPatchPreparationTests {
             coordinatorExpectations: prepared.coordinatorExpectations,
             operations: [forgedOperation]
         )
+        #expect(throws: VerifiedPatchValidationError.self) {
+            try VerifiedPatchEngine.preparedPreviewForReview(forgedResult)
+        }
+        #expect(throws: VerifiedPatchValidationError.self) {
+            try VerifiedDiffPreviewModel(prepared: forgedResult)
+        }
         #expect(conflicts(VerifiedPatchEngine.applyPrepared(
             forgedResult,
             currentSnapshot: snapshot(["file.txt": file("after")])
