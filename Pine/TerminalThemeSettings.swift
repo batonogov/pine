@@ -91,9 +91,11 @@ final class TerminalThemeSettings {
         self.defaults = defaults
 
         let storedID = defaults.string(forKey: Keys.themeID)
-        self.selectedThemeID = storedID?.isEmpty == false
-            ? storedID!
-            : TerminalTheme.defaultID
+        if let storedID, !storedID.isEmpty {
+            self.selectedThemeID = storedID
+        } else {
+            self.selectedThemeID = TerminalTheme.defaultID
+        }
 
         if let storedPolicy = defaults.string(forKey: Keys.appearancePolicy),
            let policy = TerminalAppearancePolicy(rawValue: storedPolicy) {

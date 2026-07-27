@@ -1645,7 +1645,12 @@ final class TerminalTab: Identifiable, Hashable {
     /// Observer for `terminalThemeChanged` — re-applies the selected theme's
     /// colors immediately when the user picks a new theme or appearance
     /// policy in Settings (issue #1244). Lives for the tab's lifetime.
-    private var themeChangeObserver: NSObjectProtocol?
+    ///
+    /// `nonisolated(unsafe)`: the token is set once during `init` (on the main
+    /// actor) and read only in `deinit`, which is implicitly `nonisolated` and
+    /// therefore cannot touch a MainActor-isolated stored property. The token
+    /// itself is a plain `NSObjectProtocol` value with no actor affinity.
+    nonisolated(unsafe) private var themeChangeObserver: NSObjectProtocol?
 
     /// The theme/appearance settings source. Defaults to the shared singleton
     /// but is injectable so unit tests can drive resolution deterministically.

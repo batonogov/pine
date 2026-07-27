@@ -180,7 +180,8 @@ private extension NSColor {
     var suColor: Color {
         let resolved = usingColorSpace(.sRGB) ?? self
         return Color(
-            srgbRed: resolved.redComponent,
+            .sRGB,
+            red: resolved.redComponent,
             green: resolved.greenComponent,
             blue: resolved.blueComponent,
             opacity: resolved.alphaComponent

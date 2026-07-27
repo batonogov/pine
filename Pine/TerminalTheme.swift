@@ -28,7 +28,7 @@ import SwiftTerm
 /// `[black, red, green, yellow, blue, magenta, cyan, white,
 ///  brightBlack, brightRed, brightGreen, brightYellow,
 ///  brightBlue, brightMagenta, brightCyan, brightWhite]`.
-struct TerminalColorScheme: Equatable, Sendable {
+struct TerminalColorScheme: Equatable, Hashable, Sendable {
     /// Exactly 16 ANSI color entries.
     let ansiColors: [TerminalPaletteEntry]
     /// Default terminal background.
