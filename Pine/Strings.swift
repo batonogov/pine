@@ -46,8 +46,8 @@ enum Strings {
         "settings.lsp.arguments.help"
     static let lspDirectLaunchHelp: LocalizedStringKey =
         "settings.lsp.directLaunch.help"
-    static let lspApply: LocalizedStringKey =
-        "settings.lsp.apply"
+    static let lspChooseExecutable: LocalizedStringKey =
+        "settings.lsp.executable.choose"
     static let lspReset: LocalizedStringKey =
         "settings.lsp.reset"
 

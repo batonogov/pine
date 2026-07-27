@@ -101,6 +101,15 @@ nonisolated enum UITimings {
         /// during a brief typing pause.
         static let configValidation: TimeInterval = 0.3
 
+        /// LSP settings debounce. The per-language override fields are
+        /// validated (filesystem + argument checks) and persisted the
+        /// instant they become valid; this trailing-edge delay coalesces
+        /// rapid typing into a single validation pass so a partially
+        /// typed absolute path doesn't flash an inline error on every
+        /// keystroke. Matches `configValidation` since both perform
+        /// synchronous filesystem probes. Issue #1242.
+        static let lspSettings: TimeInterval = 0.3
+
         /// Terminal backing-store recovery repaint coalesce. The burst-prone
         /// observer triggers (window occlusion toggling during Mission Control /
         /// Stage Manager, app reactivation) each perform a synchronous
