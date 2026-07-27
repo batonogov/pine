@@ -106,10 +106,18 @@ struct ContentView: View {
             RepresentedFileTracker(url: activeTab?.url ?? workspace.rootURL)
         }
         .task {
-            if restoreSessionIfNeeded() {
+            let disposition = restoreSessionIfNeeded()
+            if case .restored(let result) = disposition, result.didRestoreEditorTabs {
                 refreshLineDiffs()
             }
             checkForRecovery()
+            // #1251: a project with no saved session and no pending recovery
+            // opens directly into a focused terminal rooted in the project,
+            // instead of an empty editor canvas. This runs only after session
+            // restoration and recovery discovery so it never clobbers real
+            // restored content. `deferred` (no rootURL yet) and `skipped`
+            // (content already present) do nothing.
+            seedInitialTerminalIfNeeded(disposition: disposition)
             syncSidebarSelection()
             applySearchQueryFromEnvironment()
             refreshBlame()
@@ -229,10 +237,16 @@ struct ContentView: View {
             onRefresh: { refreshBlame() }
         ))
         .onChange(of: workspace.rootNodes) { _, _ in
-            if restoreSessionIfNeeded() {
+            let disposition = restoreSessionIfNeeded()
+            if case .restored(let result) = disposition, result.didRestoreEditorTabs {
                 refreshLineDiffs()
                 refreshBlame()
             }
+            // Seed an initial terminal for a no-session project once the file
+            // tree is ready. The `rootNodes` change is the deferred-retry
+            // signal: when the initial `.task` returned `.deferred` (rootURL
+            // not yet set), this is where restoration finally succeeds.
+            seedInitialTerminalIfNeeded(disposition: disposition)
             syncSidebarSelection()
         }
         .onChange(of: primaryTabManager.tabs.count) { _, _ in
