@@ -37,7 +37,7 @@ struct ToastItem: Identifiable, Equatable {
 /// Posts a VoiceOver/screen-reader announcement. Extracted as a typealias so
 /// tests can inject a recorder without reaching into `NSAccessibility` (which
 /// is a no-op outside an app process). Always invoked on the main actor.
-typealias ToastAnnouncer = (String) -> Void
+typealias ToastAnnouncer = @Sendable (String) -> Void
 
 /// Manages a FIFO queue of toast notifications with auto-dismiss.
 @MainActor

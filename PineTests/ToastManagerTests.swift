@@ -159,13 +159,14 @@ struct ToastManagerTests {
         manager.show(ToastItem(message: "Saved"))
 
         #expect(announcements.count == 1)
-        #expect(announcements[0].hasPrefix("Notification:") || announcements[0].contains("Saved"))
+        #expect(announcements[0] == "Notification: Saved")
     }
 
     @Test("No announcement when queueing a toast behind a visible one")
     func noAnnouncementWhileQueued() {
         let manager = ToastManager()
         manager.dismissDelay = 10  // Prevent auto-dismiss during test
+        manager.prefixesAnnouncements = false
         var announcements: [String] = []
         manager.announce = { announcements.append($0) }
 
@@ -174,7 +175,7 @@ struct ToastManagerTests {
 
         // Only the visible toast announces; the queued one is silent until
         // it is actually presented.
-        #expect(announcements == ["Notification: First"])
+        #expect(announcements == ["First"])
     }
 
     // MARK: - Queue / overlap behavior (#1247)
