@@ -90,6 +90,7 @@ struct PerTabEditorState: Codable, Equatable, Sendable {
         case .braces: "braces"
         case .brackets: "brackets"
         case .parentheses: "parentheses"
+        case .indentation: "indentation"
         }
     }
 
@@ -100,6 +101,7 @@ struct PerTabEditorState: Codable, Equatable, Sendable {
         case "braces": return .braces
         case "brackets": return .brackets
         case "parentheses": return .parentheses
+        case "indentation": return .indentation
         default:
             logger.warning("Unknown fold kind '\(string)', defaulting to .braces")
             return .braces

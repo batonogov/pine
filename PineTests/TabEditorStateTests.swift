@@ -81,15 +81,22 @@ struct TabEditorStateTests {
             startCharIndex: 300, endCharIndex: 400,
             kind: .brackets
         ))
+        foldState.fold(FoldableRange(
+            startLine: 30, endLine: 32,
+            startCharIndex: 500, endCharIndex: 550,
+            kind: .indentation
+        ))
 
         let serializable = PerTabEditorState.serializableFoldRanges(from: foldState)
 
-        #expect(serializable.count == 2)
+        #expect(serializable.count == 3)
         #expect(serializable[0].startLine == 5)
         #expect(serializable[0].endLine == 15)
         #expect(serializable[0].kind == "braces")
         #expect(serializable[1].startLine == 20)
         #expect(serializable[1].kind == "brackets")
+        #expect(serializable[2].startLine == 30)
+        #expect(serializable[2].kind == "indentation")
     }
 
     @Test("Serializable fold ranges restore to FoldState")
@@ -104,21 +111,30 @@ struct TabEditorStateTests {
                 startLine: 20, endLine: 25,
                 startCharIndex: 300, endCharIndex: 400,
                 kind: "parentheses"
+            ),
+            PerTabEditorState.SerializableFoldRange(
+                startLine: 30, endLine: 32,
+                startCharIndex: 500, endCharIndex: 550,
+                kind: "indentation"
             )
         ]
 
         let foldState = PerTabEditorState.restoreFoldState(from: ranges)
 
-        #expect(foldState.foldedRanges.count == 2)
+        #expect(foldState.foldedRanges.count == 3)
         #expect(foldState.foldedRanges[0].startLine == 5)
         #expect(foldState.foldedRanges[0].endLine == 15)
         #expect(foldState.foldedRanges[0].kind == .braces)
         #expect(foldState.foldedRanges[1].startLine == 20)
         #expect(foldState.foldedRanges[1].kind == .parentheses)
+        #expect(foldState.foldedRanges[2].startLine == 30)
+        #expect(foldState.foldedRanges[2].kind == .indentation)
         #expect(foldState.isLineHidden(6))
         #expect(foldState.isLineHidden(14))
         #expect(!foldState.isLineHidden(5))
         #expect(!foldState.isLineHidden(15))
+        #expect(foldState.isLineHidden(32))
+        #expect(!foldState.isLineHidden(33))
     }
 
     @Test("Empty fold state produces empty serializable ranges")
