@@ -541,6 +541,15 @@ extension ContentView {
               !text.isEmpty else { return nil }
         return text
     }
+
+    // MARK: - Problems panel navigation (#1236)
+
+    /// Opens the file at the given URL and navigates to the diagnostic's line
+    /// in the focused editor pane. Routes through `pendingGoToLine` so the
+    /// focused `PaneLeafView` performs the actual scroll/caret move.
+    func navigateToDiagnostic(url: URL, line: Int) {
+        activeTabManager.openTabAndGoToLine(url: url, line: line)
+    }
 }
 
 // MARK: - Agent Activity presenter (#1072)

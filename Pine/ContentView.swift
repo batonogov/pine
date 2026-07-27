@@ -257,6 +257,11 @@ struct ContentView: View {
             // backward compatibility.
             projectManager.saveSession()
         }
+        .onChange(of: projectManager.lspManager.diagnosticsGeneration) { _, _ in
+            // Refresh the Problems panel when LSP diagnostics change so stale
+            // cached state (selection, summary) is invalidated (issue #1236).
+            projectManager.problemsController.refreshFromLSPDiagnostics()
+        }
         .modifier(GitAndNotificationObserver(
             lineDiffs: $lineDiffs,
             columnVisibility: $columnVisibility,
@@ -282,20 +287,39 @@ struct ContentView: View {
         }
     }
 
-    /// Detail pane content: editor area + status bar. Broken out into its
-    /// own computed property because the `StatusBarView(…)` initializer with
-    /// its multi-line terminal-toggle closure pushes the `body` modifier
-    /// chain past the SwiftUI type-checker's budget (#1112).
+    /// Detail pane content: editor area + Problems panel + status bar. Broken
+    /// out into its own computed property because the `StatusBarView(…)`
+    /// initializer with its multi-line terminal-toggle closure pushes the
+    /// `body` modifier chain past the SwiftUI type-checker's budget (#1112).
     @ViewBuilder
     private var detailContent: some View {
         VStack(spacing: 0) {
             editorArea
                 .frame(maxHeight: .infinity)
+            // Collapsible Problems panel (#1236): a bottom pane between the
+            // editor area and the status bar, driven by the project-scoped
+            // `ProblemsPanelController`. Previously dead code — never rendered.
+            if projectManager.problemsController.isPanelVisible {
+                ProblemsPanelChrome(
+                    controller: projectManager.problemsController,
+                    onSelect: { url, line in
+                        navigateToDiagnostic(url: url, line: line)
+                    },
+                    onClose: {
+                        projectManager.problemsController.isPanelVisible = false
+                    }
+                )
+                .frame(height: LayoutMetrics.problemsPanelHeight)
+            }
             StatusBarView(
                 gitProvider: workspace.gitProvider,
                 paneManager: paneManager,
                 tabManager: activeTabManager,
                 progress: projectManager.progress,
+                diagnosticsSummary: projectManager.problemsController.summary,
+                onToggleProblems: {
+                    projectManager.problemsController.togglePanel()
+                },
                 onToggleTerminal: {
                     if paneManager.terminalPaneIDs.isEmpty {
                         terminal.focusOrCreateTerminal(
@@ -322,6 +346,45 @@ struct ContentView: View {
                     }
                 }
             )
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .showProblems)) { notification in
+            guard Self.shouldHandleTargetedCommand(
+                notificationObject: notification.object,
+                currentProject: projectManager,
+                isKeyWindow: controlActiveState == .key
+            ) else { return }
+            // Defer to break reentrancy (#1051): mutating @Observable state
+            // synchronously from a menu→notification callstack collides with
+            // the button-action's exclusive access to SwiftUI storage.
+            DispatchQueue.main.async {
+                projectManager.problemsController.togglePanel()
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .nextDiagnostic)) { notification in
+            guard Self.shouldHandleTargetedCommand(
+                notificationObject: notification.object,
+                currentProject: projectManager,
+                isKeyWindow: controlActiveState == .key
+            ) else { return }
+            DispatchQueue.main.async {
+                if let diag = projectManager.problemsController.nextDiagnostic(),
+                   let url = URL(string: diag.uri) {
+                    self.navigateToDiagnostic(url: url, line: diag.diagnostic.line)
+                }
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .previousDiagnostic)) { notification in
+            guard Self.shouldHandleTargetedCommand(
+                notificationObject: notification.object,
+                currentProject: projectManager,
+                isKeyWindow: controlActiveState == .key
+            ) else { return }
+            DispatchQueue.main.async {
+                if let diag = projectManager.problemsController.previousDiagnostic(),
+                   let url = URL(string: diag.uri) {
+                    self.navigateToDiagnostic(url: url, line: diag.diagnostic.line)
+                }
+            }
         }
     }
 

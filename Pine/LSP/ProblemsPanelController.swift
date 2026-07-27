@@ -54,18 +54,26 @@ final class ProblemsPanelController {
 
     // MARK: - Generation guard
 
-    /// Bumped whenever config diagnostics are pushed. `mergedDiagnostics()`
-    /// records the generation it last computed with; if it hasn't changed,
-    /// the (potentially expensive) merge is skipped.
-    private var configGeneration: UInt64 = 0
-    private var lastMergedGeneration: UInt64 = 0
-    private var cachedFlat: [ProblemsFlatDiagnostic] = []
+    /// Bumped whenever config diagnostics are pushed (or when LSP diagnostics
+    /// change, via `.onChange(of: lspManager.allDiagnostics)` in the host view).
+    /// `mergedDiagnostics()` records the generation it last computed with; if
+    /// it hasn't changed, the (potentially expensive) merge is skipped.
+    private(set) var configGeneration: UInt64 = 0
 
     // MARK: - Navigation
 
     /// Index of the currently-selected diagnostic in `flatDiagnostics`, or
     /// `nil` when nothing is selected.
     private(set) var selectionIndex: Int?
+
+    /// Marks the diagnostics set as changed so observers (and the selection
+    /// validity check) refresh. Called by the host view when LSP diagnostics
+    /// change (`.onChange(of: lspManager.allDiagnostics)`) so stale cached
+    /// state is invalidated.
+    func refreshFromLSPDiagnostics() {
+        configGeneration &+= 1
+        clearSelectionIfInvalidated()
+    }
 
     // MARK: - Panel visibility
 
@@ -134,19 +142,15 @@ final class ProblemsPanelController {
     }
 
     /// All diagnostics flattened into a single array (for navigation).
+    /// Computed live from `groupedDiagnostics` so LSP diagnostic changes are
+    /// always reflected (the previous cached copy could go stale when only
+    /// `lspManager.allDiagnostics` changed — see issue #1236).
     var flatDiagnostics: [ProblemsFlatDiagnostic] {
-        // Generation guard: skip the rebuild if nothing changed.
-        if configGeneration == lastMergedGeneration {
-            return cachedFlat
-        }
-        lastMergedGeneration = configGeneration
-        cachedFlat = groupedDiagnostics.flatMap { group in
+        groupedDiagnostics.flatMap { group in
             group.diagnostics.map { diagnostic in
                 ProblemsFlatDiagnostic(uri: group.uri, diagnostic: diagnostic)
             }
         }
-        clearSelectionIfInvalidated()
-        return cachedFlat
     }
 
     /// Severity summary for the status bar indicator.

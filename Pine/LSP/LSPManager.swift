@@ -64,6 +64,13 @@ final class LSPManager {
     /// as well.
     private(set) var foldingRefreshGeneration = 0
 
+    /// Advances whenever `diagnosticsByURI` changes. The Problems panel
+    /// observes this (Equatable `Int`) via `.onChange` to invalidate stale
+    /// selection/navigation state and refresh the summary — the diagnostics
+    /// dictionary itself is not `Equatable` and tuples are not, so this token
+    /// is the reliable change signal (issue #1236).
+    private(set) var diagnosticsGeneration = 0
+
     /// The single persisted source of truth for the global toggle.
     var enabled: Bool { settings.isEnabled }
 
@@ -154,6 +161,7 @@ final class LSPManager {
         stoppingClients.removeAll()
         diagnosticsByURI = [:]
         rawDiagnosticsByURI = [:]
+        bumpDiagnosticsGeneration()
         openDocuments.removeAll()
         openDocumentOwnerCounts.removeAll()
         openedDocumentsByLanguage.removeAll()
@@ -177,6 +185,7 @@ final class LSPManager {
             }
             diagnosticsByURI = [:]
             rawDiagnosticsByURI = [:]
+            bumpDiagnosticsGeneration()
 
         case .enabled(true):
             let documentLanguages = openDocuments.values.compactMap {
@@ -266,6 +275,7 @@ final class LSPManager {
         let uri = url.absoluteString
         diagnosticsByURI[uri] = nil
         rawDiagnosticsByURI[uri] = nil
+        bumpDiagnosticsGeneration()
         guard openedDocumentsByLanguage[serverConfig.language]?.remove(
             url
         ) != nil else {
@@ -712,6 +722,7 @@ final class LSPManager {
         let mapped = DiagnosticMapper.map(notification)
         diagnosticsByURI[notification.uri] = mapped
         rawDiagnosticsByURI[notification.uri] = notification.diagnostics
+        bumpDiagnosticsGeneration()
     }
 
     /// Removes and gracefully terminates one client while blocking lazy
@@ -795,6 +806,12 @@ final class LSPManager {
             && lifecycleEpoch == epoch
     }
 
+    /// Advances `diagnosticsGeneration` so the Problems panel (and any other
+    /// observer) refreshes after a `diagnosticsByURI` mutation.
+    private func bumpDiagnosticsGeneration() {
+        diagnosticsGeneration &+= 1
+    }
+
     private func clearDiagnostics(for language: String) {
         diagnosticsByURI = diagnosticsByURI.filter {
             languageForURI($0.key) != language
@@ -802,6 +819,7 @@ final class LSPManager {
         rawDiagnosticsByURI = rawDiagnosticsByURI.filter {
             languageForURI($0.key) != language
         }
+        bumpDiagnosticsGeneration()
     }
 
     private func languageForURI(_ uri: String) -> String? {
