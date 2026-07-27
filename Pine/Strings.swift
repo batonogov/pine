@@ -1255,9 +1255,6 @@ enum Strings {
     static func globalTabSwitcherAnnouncement(
         title: String, paneContext: String, position: Int, total: Int
     ) -> String {
-        String(
-            localized: "globalTabSwitcher.announcement \(title) \(paneContext) \(position) \(total)",
-            defaultValue: "\(title), \(paneContext), \(position) of \(total)"
-        )
+        "\(title), \(paneContext), \(position) of \(total)"
     }
 }
