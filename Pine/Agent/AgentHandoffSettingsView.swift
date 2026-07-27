@@ -15,7 +15,7 @@ struct PineSettingsView: View {
     let editorSettings: EditorSettings
 
     /// Persists the last-selected pane across sessions (issue #337).
-    @AppStorage(Self.selectedPaneKey) private var selectedPane: SettingsPane.ID = .general
+    @AppStorage(Self.selectedPaneKey) private var selectedPane: SettingsPane.SettingsPaneID = .general
 
     var body: some View {
         TabView(selection: $selectedPane) {
@@ -26,13 +26,13 @@ struct PineSettingsView: View {
             .tabItem {
                 Label(Strings.settingsTabGeneral, systemImage: "gearshape")
             }
-            .tag(SettingsPane.ID.general)
+            .tag(SettingsPane.SettingsPaneID.general)
 
             TerminalSettingsView(shell: shellSettings)
             .tabItem {
                 Label(Strings.settingsTabTerminal, systemImage: "terminal")
             }
-            .tag(SettingsPane.ID.terminal)
+            .tag(SettingsPane.SettingsPaneID.terminal)
 
             LSPSettingsView(settings: lspSettings)
                 .tabItem {
@@ -41,7 +41,7 @@ struct PineSettingsView: View {
                         systemImage: "server.rack"
                     )
                 }
-                .tag(SettingsPane.ID.languages)
+                .tag(SettingsPane.SettingsPaneID.languages)
 
             AgentHandoffSettingsView(settings: handoffSettings)
                 .tabItem {
@@ -50,7 +50,7 @@ struct PineSettingsView: View {
                         systemImage: "lock.shield"
                     )
                 }
-                .tag(SettingsPane.ID.agents)
+                .tag(SettingsPane.SettingsPaneID.agents)
 
             KeyBindingsTasksSettingsView()
                 .tabItem {
@@ -59,7 +59,7 @@ struct PineSettingsView: View {
                         systemImage: "keyboard"
                     )
                 }
-                .tag(SettingsPane.ID.keyBindings)
+                .tag(SettingsPane.SettingsPaneID.keyBindings)
         }
         .frame(width: 720, height: 540)
     }
@@ -70,7 +70,7 @@ struct PineSettingsView: View {
 /// Identifiers for the Settings scene panes (issue #337). The raw value is
 /// persisted so the last-selected pane is restored on reopen.
 enum SettingsPane {
-    enum ID: String, CaseIterable {
+    enum SettingsPaneID: String, CaseIterable {
         case general
         case terminal
         case languages

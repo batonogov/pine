@@ -111,7 +111,7 @@ struct KeyBindingsTasksSettingsView: View {
             } else {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 4) {
-                        ForEach(entries, id: \.self) { entry in
+                        ForEach(Array(entries.enumerated()), id: \.offset) { _, entry in
                             HStack {
                                 Text(entry.command.localizedTitle)
                                     .lineLimit(1)
@@ -141,16 +141,10 @@ struct KeyBindingsTasksSettingsView: View {
     private static func reloadSummaryText() -> String {
         let report = ExtensibilityManager.shared.lastReloadReport
         if let report, report.diagnostics.isEmpty {
-            return String(
-                localized: "settings.keyBindings.reloadSuccess \\\(report.tasks.activeEntryCount) \\\(report.keybindings.activeEntryCount)",
-                defaultValue: "Reloaded: \(report.tasks.activeEntryCount) tasks, \(report.keybindings.activeEntryCount) keybindings."
-            )
+            return "Reloaded: \(report.tasks.activeEntryCount) tasks, \(report.keybindings.activeEntryCount) keybindings."
         }
         if let report, !report.diagnostics.isEmpty {
-            return String(
-                localized: "settings.keyBindings.reloadHadProblems \\\(report.diagnostics.count)",
-                defaultValue: "Reloaded with \(report.diagnostics.count) problem(s)."
-            )
+            return "Reloaded with \(report.diagnostics.count) problem(s)."
         }
         return ""
     }
