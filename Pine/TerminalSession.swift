@@ -1642,15 +1642,26 @@ final class TerminalTab: Identifiable, Hashable {
     /// palette and background when the user switches between light/dark mode.
     private var appearanceObservation: NSKeyValueObservation?
 
+    /// Observer for `terminalThemeChanged` — re-applies the selected theme's
+    /// colors immediately when the user picks a new theme or appearance
+    /// policy in Settings (issue #1244). Lives for the tab's lifetime.
+    private var themeChangeObserver: NSObjectProtocol?
+
+    /// The theme/appearance settings source. Defaults to the shared singleton
+    /// but is injectable so unit tests can drive resolution deterministically.
+    private let themeSettings: TerminalThemeSettings
+
     init(
         name: String,
         shellSettings: ShellSettings = .shared,
-        agentHandoffSettings: AgentHandoffSettings = .shared
+        agentHandoffSettings: AgentHandoffSettings = .shared,
+        themeSettings: TerminalThemeSettings = .shared
     ) {
         self.name = name
         self.stableLabel = name
         self.shellSettings = shellSettings
         self.agentHandoffSettings = agentHandoffSettings
+        self.themeSettings = themeSettings
         self.terminalView = PineTerminalView(frame: TerminalContainerView.defaultTerminalFrame)
         self.terminalView.setAccessibilityElement(true)
         self.terminalView.setAccessibilityRole(.textArea)
@@ -1672,25 +1683,55 @@ final class TerminalTab: Identifiable, Hashable {
         applyCurrentTerminalAppearance(forceRedraw: false)
 
         // Re-apply palette and background when system appearance changes.
+        // Only the "Follow System" policy responds to this; Always Light /
+        // Always Dark are independent of the system appearance (#1244).
         appearanceObservation = NSApp.observe(\.effectiveAppearance, options: .new) { [weak self] _, _ in
+            Task { @MainActor [weak self] in
+                self?.applyCurrentTerminalAppearance(forceRedraw: true)
+            }
+        }
+
+        // Re-apply colors immediately when the user changes the selected
+        // theme or appearance policy in Settings → Terminal (issue #1244).
+        themeChangeObserver = NotificationCenter.default.addObserver(
+            forName: .terminalThemeChanged,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
             Task { @MainActor [weak self] in
                 self?.applyCurrentTerminalAppearance(forceRedraw: true)
             }
         }
     }
 
-    /// Applies Pine's appearance-aware terminal colors and keeps SwiftTerm's
+    deinit {
+        if let themeChangeObserver {
+            NotificationCenter.default.removeObserver(themeChangeObserver)
+        }
+    }
+
+    /// Applies the terminal's appearance-aware colors and keeps SwiftTerm's
     /// layer background in sync with the terminal model. SwiftTerm only sets
     /// `layer.backgroundColor` during initial setup, so Pine must refresh it
     /// when the app moves between light and dark appearances.
+    ///
+    /// Resolves the active color scheme from `TerminalThemeSettings` (the
+    /// selected theme + appearance policy vs. the system's effective
+    /// appearance) and applies every slot: background, foreground, cursor,
+    /// selection, link, and the 16 ANSI colors (issue #1244).
     ///
     /// `internal` (not `private`) so unit tests can pin the invariant that
     /// this method does NOT clear `layer.contents` without a synchronous
     /// repaint (issue #1107).
     internal func applyCurrentTerminalAppearance(forceRedraw: Bool) {
-        let background = TerminalPalette.currentBackgroundColor()
-        terminalView.nativeForegroundColor = .textColor
+        let scheme = themeSettings.currentScheme()
+        let background = scheme.backgroundColor()
+
+        terminalView.nativeForegroundColor = scheme.foregroundColor()
         terminalView.nativeBackgroundColor = background
+        terminalView.caretColor = scheme.cursorColor()
+        terminalView.selectedTextBackgroundColor = scheme.selectionColor()
+
         // Sync the layer's background colour WITHOUT clearing `contents`.
         // `prepareLayerForRedraw()` nils `layer.contents`, which is only safe
         // from `forceFullRedraw()` — where the nil is immediately followed by
@@ -1704,11 +1745,12 @@ final class TerminalTab: Identifiable, Hashable {
         // and redundant on the `forceRedraw == true` path.
         terminalView.layer?.backgroundColor = background.cgColor
 
-        // Apply Pine's terminal palette (issue #816, #931).
-        // Centralised in `TerminalPalette` so it can be unit-tested
-        // independently of the SwiftTerm view and kept as a single source of
-        // truth. The palette adapts to the current system appearance.
-        TerminalPalette.install(on: terminalView)
+        // Install the theme's 16 ANSI colors (issue #816, #931, #1244).
+        // The palette is resolved from the theme so the user's selection
+        // takes effect immediately without restarting the shell or losing
+        // scrollback. True-color `\e[38;2;R;G;Bm` output and TUI-owned colors
+        // are untouched — only the 16 ANSI slots are replaced.
+        TerminalPalette.install(palette: scheme.ansiColors, on: terminalView)
 
         if forceRedraw {
             forceFullRedraw()

@@ -11,9 +11,28 @@ import SwiftUI
 struct PineSettingsView: View {
     let lspSettings: LSPSettings
     let handoffSettings: AgentHandoffSettings
+    let terminalThemeSettings: TerminalThemeSettings
+
+    init(
+        lspSettings: LSPSettings,
+        handoffSettings: AgentHandoffSettings,
+        terminalThemeSettings: TerminalThemeSettings = .shared
+    ) {
+        self.lspSettings = lspSettings
+        self.handoffSettings = handoffSettings
+        self.terminalThemeSettings = terminalThemeSettings
+    }
 
     var body: some View {
         TabView {
+            TerminalSettingsView(settings: terminalThemeSettings)
+                .tabItem {
+                    Label(
+                        Strings.settingsTerminalTab,
+                        systemImage: "terminal"
+                    )
+                }
+
             LSPSettingsView(settings: lspSettings)
                 .tabItem {
                     Label(
