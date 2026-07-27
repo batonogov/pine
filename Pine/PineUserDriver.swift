@@ -77,8 +77,8 @@ final class PineUserDriver: NSObject, SPUUserDriver {
 
     // MARK: - No update found / errors
 
-    func showUpdateNotFound(
-        withError error: Error,
+    func showUpdateNotFoundWithError(
+        _ error: Error,
         acknowledgement: @escaping () -> Void
     ) {
         coordinator.handleShowUpdateNotFound(
