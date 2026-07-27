@@ -300,10 +300,8 @@ final class SidebarTreeNavigation {
         }
         let targetDepth = rows[nodeIndex].depth - 1
         guard targetDepth >= 0 else { return nil }
-        for index in stride(from: nodeIndex - 1, through: 0, by: -1) {
-            if rows[index].depth == targetDepth {
-                return rows[index].node
-            }
+        for index in stride(from: nodeIndex - 1, through: 0, by: -1) where rows[index].depth == targetDepth {
+            return rows[index].node
         }
         return nil
     }

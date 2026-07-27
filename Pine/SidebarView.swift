@@ -213,6 +213,55 @@ struct SidebarKeyboardFocusBridge: NSViewRepresentable {
 
 // MARK: - Sidebar
 
+
+private struct SidebarKeyboardNavigationModifier: ViewModifier {
+    var onUp: () -> Void
+    var onDown: () -> Void
+    var onLeft: () -> Void
+    var onRight: () -> Void
+    var onHome: () -> Void
+    var onEnd: () -> Void
+    var onPageUp: () -> Void
+    var onPageDown: () -> Void
+    var onCharacters: (String) -> Void
+
+    func body(content: Content) -> some View {
+        content
+            .onKeyPress(.upArrow) { onUp(); return .handled }
+            .onKeyPress(.downArrow) { onDown(); return .handled }
+            .onKeyPress(.leftArrow) { onLeft(); return .handled }
+            .onKeyPress(.rightArrow) { onRight(); return .handled }
+            .onKeyPress(.home) { onHome(); return .handled }
+            .onKeyPress(.end) { onEnd(); return .handled }
+            .onKeyPress(.pageUp) { onPageUp(); return .handled }
+            .onKeyPress(.pageDown) { onPageDown(); return .handled }
+            .onKeyPress(.characters) { press in
+                onCharacters(press.characters)
+                return .handled
+            }
+    }
+}
+
+extension View {
+    func sidebarKeyboardNavigation(
+        onUp: @escaping () -> Void,
+        onDown: @escaping () -> Void,
+        onLeft: @escaping () -> Void,
+        onRight: @escaping () -> Void,
+        onHome: @escaping () -> Void,
+        onEnd: @escaping () -> Void,
+        onPageUp: @escaping () -> Void,
+        onPageDown: @escaping () -> Void,
+        onCharacters: @escaping (String) -> Void
+    ) -> some View {
+        modifier(SidebarKeyboardNavigationModifier(
+            onUp: onUp, onDown: onDown, onLeft: onLeft, onRight: onRight,
+            onHome: onHome, onEnd: onEnd, onPageUp: onPageUp, onPageDown: onPageDown,
+            onCharacters: onCharacters
+        ))
+    }
+}
+
 struct SidebarView: View {
     @Binding var selectedFile: FileNode?
     let onFileOpen: (FileNode, SidebarFileOpenDisposition) -> Void
@@ -316,41 +365,17 @@ struct SidebarView: View {
                             }
                         }
                     }
-                    .onKeyPress(.upArrow) {
-                        handleArrow(delta: -1)
-                        return .handled
-                    }
-                    .onKeyPress(.downArrow) {
-                        handleArrow(delta: 1)
-                        return .handled
-                    }
-                    .onKeyPress(.leftArrow) {
-                        handleLeftArrow()
-                        return .handled
-                    }
-                    .onKeyPress(.rightArrow) {
-                        handleRightArrow()
-                        return .handled
-                    }
-                    .onKeyPress(.home) {
-                        handleHome()
-                        return .handled
-                    }
-                    .onKeyPress(.end) {
-                        handleEnd()
-                        return .handled
-                    }
-                    .onKeyPress(.pageUp) {
-                        handlePageUp()
-                        return .handled
-                    }
-                    .onKeyPress(.pageDown) {
-                        handlePageDown()
-                        return .handled
-                    }
-                    .onKeyPress(.characters) { press in
-                        handleTypedCharacters(press.characters)
-                        return .handled
+                    .sidebarKeyboardNavigation(
+                        onUp: { handleArrow(delta: -1) },
+                        onDown: { handleArrow(delta: 1) },
+                        onLeft: { handleLeftArrow() },
+                        onRight: { handleRightArrow() },
+                        onHome: { handleHome() },
+                        onEnd: { handleEnd() },
+                        onPageUp: { handlePageUp() },
+                        onPageDown: { handlePageDown() },
+                        onCharacters: { handleTypedCharacters($0) }
+                    )
                     }
                     .onKeyPress(.return, phases: .down) { press in
                         handleSidebarReturn(
