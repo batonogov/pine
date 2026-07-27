@@ -1,5 +1,49 @@
 # Changelog
 
+## [1.36.0](https://github.com/batonogov/pine/compare/v1.35.0...v1.36.0) (2026-07-26)
+
+
+### Features
+
+* **agent:** add opt-in read-only context handoff ([34b195d](https://github.com/batonogov/pine/commit/34b195dc564f00e0e47d991b0d434ca66cdf92d1))
+* **agent:** add opt-in read-only context handoff ([30953ed](https://github.com/batonogov/pine/commit/30953edd848e1854bd7ad42c01bbc16860d3da8f))
+* **agent:** add secure provenance event store ([3e05bda](https://github.com/batonogov/pine/commit/3e05bda4a601780720d11fac68064ed2919bb2e0))
+* **agent:** add secure provenance event store ([585d016](https://github.com/batonogov/pine/commit/585d016d517093310a9a2331dc327ce0ae6ba5af))
+* **agent:** add trusted event provenance envelope ([#1204](https://github.com/batonogov/pine/issues/1204)) ([f714704](https://github.com/batonogov/pine/commit/f714704b20bbd5ca96b62d2613b2d189f1893cc5))
+* **agent:** add verified patch core ([32e58d8](https://github.com/batonogov/pine/commit/32e58d8f9da15a7c8bebe3d7e1af9ad45ec59b36))
+* **agent:** add verified patch engine ([ef2817b](https://github.com/batonogov/pine/commit/ef2817b5bac72406b707943817baa5e97f9c1ac1))
+* **agent:** filter Activity Panel by attribution evidence ([#933](https://github.com/batonogov/pine/issues/933)) ([#1220](https://github.com/batonogov/pine/issues/1220)) ([96169a8](https://github.com/batonogov/pine/commit/96169a889c869838fcd1d3edf886fa7dabc16d4f))
+* **agent:** session staleness tracking ([#933](https://github.com/batonogov/pine/issues/933)) ([#1218](https://github.com/batonogov/pine/issues/1218)) ([eec518f](https://github.com/batonogov/pine/commit/eec518fd347b50df4c091a72485810f219884a3b))
+* **agent:** verified diff preview UI for Agent History ([#933](https://github.com/batonogov/pine/issues/933)) ([#1219](https://github.com/batonogov/pine/issues/1219)) ([d6e2cc1](https://github.com/batonogov/pine/commit/d6e2cc1f696028222bc01ef9ab20fbc436fd0ef6))
+* **editor:** complete structural intelligence providers ([39519e0](https://github.com/batonogov/pine/commit/39519e0c69ac1c510c2813b6b689c2e1dc27e7d4))
+* **editor:** LSP-first structural folding ([8d3a618](https://github.com/batonogov/pine/commit/8d3a618e59f96317859fc8ca7ad0c18bff8fb57d))
+* **editor:** LSP-first structural folding ([2e8ad65](https://github.com/batonogov/pine/commit/2e8ad65233d484aba146254a84cd8f479b23b960)), closes [#1008](https://github.com/batonogov/pine/issues/1008)
+* **extensibility:** add command palette foundation ([34ebb93](https://github.com/batonogov/pine/commit/34ebb931677df2a5fbe12ae94b655abd9a92e329))
+* **extensibility:** complete command palette and registry ([a954b6d](https://github.com/batonogov/pine/commit/a954b6d6bdcfeafc422682e9881f86e27df6aca9))
+* **extensibility:** complete command palette and registry ([#1117](https://github.com/batonogov/pine/issues/1117)) ([b21d5ed](https://github.com/batonogov/pine/commit/b21d5edd724534f5d42c0cb0fc5a50b7df814529))
+* **extensibility:** keybinding override suppression, config reload, and error UI ([#1117](https://github.com/batonogov/pine/issues/1117) slice) ([#1203](https://github.com/batonogov/pine/issues/1203)) ([99c4236](https://github.com/batonogov/pine/commit/99c4236dcc1eed1eb005ee807637562133589d26))
+* **tabs:** complete unified interaction restoration ([#1210](https://github.com/batonogov/pine/issues/1210)) ([cea2560](https://github.com/batonogov/pine/commit/cea2560e72b303e5431f9e0a0f70cce148421df0))
+* **tabs:** transient preview tabs and MRU switcher ([#1202](https://github.com/batonogov/pine/issues/1202)) ([406ad62](https://github.com/batonogov/pine/commit/406ad623929f0e11d429e2454c8c4c188b755f20))
+
+
+### Bug Fixes
+
+* **agent:** bound verified patch planning ([31160dc](https://github.com/batonogov/pine/commit/31160dcdf9cc91784ca5c8d7ba21f9697d3f4a2a))
+* **agent:** cap patch revalidation work ([6b51f09](https://github.com/batonogov/pine/commit/6b51f0933b87881a21efe8437447f919a5dde896))
+* **agent:** checked undo engine for verified Agent History entries ([#1183](https://github.com/batonogov/pine/issues/1183)) ([5cc6d75](https://github.com/batonogov/pine/commit/5cc6d759b6bbc10328d8e81267227a6a882cf04e))
+* **agent:** harden patch mapping and version chains ([eeb4365](https://github.com/batonogov/pine/commit/eeb43659ca479242210955adc9e82bd8ff8d6754))
+* **agent:** harden session liveness polling ([#1224](https://github.com/batonogov/pine/issues/1224)) ([684bb86](https://github.com/batonogov/pine/commit/684bb869a17bddbfb3371f0db635fc4f2c4b41a2))
+* **agent:** harden verified checked undo ([#1183](https://github.com/batonogov/pine/issues/1183)) ([241ef53](https://github.com/batonogov/pine/commit/241ef53dd6e88dca9aad0becdc941dd63f545d7d))
+* **agent:** harden verified patch boundaries ([e858c7d](https://github.com/batonogov/pine/commit/e858c7defdc0f489f99f2833637e72b494b02c80))
+* **agent:** harden verified patch preparation ([a88fb76](https://github.com/batonogov/pine/commit/a88fb76cdb9ce2141c096753d99f63159101ec2c))
+* **agent:** keep ambiguous activity unattributed ([#1208](https://github.com/batonogov/pine/issues/1208)) ([3ba521e](https://github.com/batonogov/pine/commit/3ba521e89be7b9dea0f0e9a3756a7d50c6e70ac5))
+* **agent:** make prepared undo previews byte- and mode-truthful ([#1223](https://github.com/batonogov/pine/issues/1223)) ([e95796a](https://github.com/batonogov/pine/commit/e95796a4f1fff6bd4babc3a3f102a541b87acaec))
+* **concurrency:** clear residual Xcode warnings ([#1212](https://github.com/batonogov/pine/issues/1212)) ([8714697](https://github.com/batonogov/pine/commit/87146977c9f9a10bf726b0e25b0bcc2fdb9014e9))
+* **editor:** complete structural folding fallbacks ([184601c](https://github.com/batonogov/pine/commit/184601c9b403f3c8a666524735a5eb9bf4074988))
+* **editor:** make LSP folding revision-safe ([66c8285](https://github.com/batonogov/pine/commit/66c8285a7374006d95ecc82a4dbef2db4e800a27))
+* **isolation:** align structural providers with MainActor default ([4caa81c](https://github.com/batonogov/pine/commit/4caa81ced9f7d949d3b23448eb8ded33bba71466))
+* **localization:** make symbol labels locale-deterministic ([bc1983c](https://github.com/batonogov/pine/commit/bc1983c3dc81366e76e55b892fb889678a530a55))
+
 ## [1.35.0](https://github.com/batonogov/pine/compare/v1.34.0...v1.35.0) (2026-07-24)
 
 
