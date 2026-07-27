@@ -10,6 +10,35 @@ import Testing
 
 @testable import Pine
 
+/// Thread-safe mutable container so tests can append to a collection from a
+/// `@Sendable` closure without triggering Swift 6's "mutation of captured var"
+/// diagnostic. The toast `announce` hook is `@Sendable` and may be invoked
+/// concurrently, so captured `var` mutations are unsafe.
+final class AnnouncementBox {
+    private let lock = NSLock()
+    private var storage: [String] = []
+
+    func append(_ message: String) {
+        lock.lock()
+        defer { lock.unlock() }
+        storage.append(message)
+    }
+
+    var values: [String] {
+        lock.lock()
+        defer { lock.unlock() }
+        return storage
+    }
+}
+
+/// Thread-safe box for capturing announcements in tests.
+final class AnnouncementBox: @unchecked Sendable {
+    private let lock = NSLock()
+    private var storage: [String] = []
+    func append(_ s: String) { lock.lock(); defer { lock.unlock() }; storage.append(s) }
+    var values: [String] { lock.lock(); defer { lock.unlock() }; return storage }
+}
+
 @Suite("ToastManager Tests")
 @MainActor
 struct ToastManagerTests {
@@ -142,24 +171,24 @@ struct ToastManagerTests {
     func announcementPostedOnShow() {
         let manager = ToastManager()
         manager.prefixesAnnouncements = false
-        var announcements: [String] = []
+        let announcements = AnnouncementBox()
         manager.announce = { announcements.append($0) }
 
         manager.show(ToastItem(message: "Hello"))
 
-        #expect(announcements == ["Hello"])
+        #expect(announcements.values == ["Hello"])
     }
 
     @Test("Announcement includes localized prefix by default")
     func announcementIncludesPrefix() {
         let manager = ToastManager()
-        var announcements: [String] = []
+        let announcements = AnnouncementBox()
         manager.announce = { announcements.append($0) }
 
         manager.show(ToastItem(message: "Saved"))
 
-        #expect(announcements.count == 1)
-        #expect(announcements[0] == "Notification: Saved")
+        #expect(announcements.values.count == 1)
+        #expect(announcements.values[0] == "Notification: Saved")
     }
 
     @Test("No announcement when queueing a toast behind a visible one")
@@ -167,7 +196,7 @@ struct ToastManagerTests {
         let manager = ToastManager()
         manager.dismissDelay = 10  // Prevent auto-dismiss during test
         manager.prefixesAnnouncements = false
-        var announcements: [String] = []
+        let announcements = AnnouncementBox()
         manager.announce = { announcements.append($0) }
 
         manager.show(ToastItem(message: "First"))
@@ -175,7 +204,7 @@ struct ToastManagerTests {
 
         // Only the visible toast announces; the queued one is silent until
         // it is actually presented.
-        #expect(announcements == ["First"])
+        #expect(announcements.values == ["First"])
     }
 
     // MARK: - Queue / overlap behavior (#1247)
