@@ -257,6 +257,119 @@ struct YAMLIndentationFoldTests {
         })
     }
 
+    @Test("Explicit block scalar keys stay opaque")
+    func explicitBlockScalarKeyIsOpaque() async throws {
+        let text = """
+        ? |
+          fake:
+            child: true
+          [
+          ]
+        : value
+        real:
+          child: true
+        """
+        let ranges = try #require(
+            await localRanges(text: text, language: "yaml")
+        )
+
+        #expect(indentationSpans(ranges) == [
+            "1...5",
+            "7...8"
+        ])
+        #expect(bracketSpans(ranges).isEmpty)
+    }
+
+    @Test("Compact explicit scalar keys use mapping indentation")
+    func compactExplicitBlockScalarKey() async throws {
+        let text = """
+        - ? |2
+            fake:
+              child: true
+            [
+            ]
+          : value
+        - done
+        """
+        let ranges = try #require(
+            await localRanges(text: text, language: "yaml")
+        )
+
+        #expect(indentationSpans(ranges) == ["1...6"])
+        #expect(bracketSpans(ranges).isEmpty)
+    }
+
+    @Test("Explicit scalar keys may contain compact block sequences")
+    func explicitScalarKeyWithSequence() async throws {
+        let text = """
+        ? - |
+            fake:
+              child: true
+            [
+            ]
+        : value
+        real:
+          child: true
+        """
+        let ranges = try #require(
+            await localRanges(text: text, language: "yaml")
+        )
+
+        #expect(indentationSpans(ranges) == [
+            "1...5",
+            "7...8"
+        ])
+        #expect(bracketSpans(ranges).isEmpty)
+    }
+
+    @Test("Nested explicit-key scalar indentation stops at its sibling")
+    func compactExplicitScalarSequenceSibling() async throws {
+        let text = """
+        - ? - |2
+              fake:
+                child: true
+              [
+              ]
+            - next:
+                child: true
+          : value
+        - done
+        """
+        let ranges = try #require(
+            await localRanges(text: text, language: "yaml")
+        )
+
+        #expect(indentationSpans(ranges) == [
+            "1...8",
+            "6...7"
+        ])
+        #expect(bracketSpans(ranges).isEmpty)
+    }
+
+    @Test("A mapping inside an explicit key owns its scalar indentation")
+    func compactExplicitMappingScalarSibling() async throws {
+        let text = """
+        - ? key: |2
+              fake:
+                child: true
+              [
+              ]
+            sibling:
+              child: true
+          : value
+        - done
+        """
+        let ranges = try #require(
+            await localRanges(text: text, language: "yaml")
+        )
+
+        #expect(indentationSpans(ranges) == [
+            "1...8",
+            "6...7"
+        ])
+        #expect(bracketSpans(ranges).isEmpty)
+    }
+
     @Test("Folded scalar modifiers work in either valid order")
     func blockScalarModifiers() {
         let fixtures = [
@@ -428,6 +541,25 @@ struct YAMLIndentationFoldTests {
         #expect(indentationSpans(ranges) == ["4...5"])
     }
 
+    @Test("Document marker text without separation stays scalar content")
+    func documentMarkerRequiresSeparation() {
+        let text = #"""
+        value: "first
+        ---#not-a-boundary
+        fake:
+          child: true
+        ...#also-not-a-boundary
+        last"
+        real:
+          child: true
+        """#
+        let ranges = YAMLIndentationFoldCalculator.calculate(
+            text: text
+        )
+
+        #expect(indentationSpans(ranges) == ["7...8"])
+    }
+
     @Test("Directives and document boundaries never leak fold ranges")
     func multipleDocuments() {
         let text = """
@@ -471,6 +603,21 @@ struct YAMLIndentationFoldTests {
             source.character(at: range.endCharIndex - 1)
                 != ASCII.carriageReturn
         )
+    }
+
+    @Test("A colon before an attached hash stays plain scalar content")
+    func mappingColonRequiresSeparation() {
+        let text = """
+        - key:#text
+         - fake
+           next
+        - done
+        """
+        let ranges = YAMLIndentationFoldCalculator.calculate(
+            text: text
+        )
+
+        #expect(indentationSpans(ranges) == ["1...3"])
     }
 
     @Test("Malformed indentation is bounded and cannot cross a document marker")
@@ -520,6 +667,65 @@ struct YAMLIndentationFoldTests {
             ranges.count
                 <= YAMLIndentationFoldCalculator.maxActiveDepth
         )
+    }
+
+    @Test("Large scalar payloads use one contiguous lexical exclusion")
+    func largeScalarPayloadsAreCoalesced() throws {
+        let payloadLineCount = 2_048
+        let neverCancelled:
+            YAMLIndentationFoldCalculator.CancellationCheck = { false }
+        let fixtures = [
+            largeBlockScalarFixture(lineCount: payloadLineCount),
+            largePlainScalarFixture(lineCount: payloadLineCount)
+        ]
+
+        for fixture in fixtures {
+            let source = fixture.text as NSString
+            let result = YAMLIndentationFoldCalculator.analyze(
+                text: fixture.text,
+                isCancelled: neverCancelled
+            )
+            let analysis = try #require(result)
+            let payloadStart = try #require(
+                source.range(of: fixture.firstPayloadLine)
+                    .nonEmptyLocation
+            )
+            let siblingStart = try #require(
+                source.range(of: "next: true").nonEmptyLocation
+            )
+
+            #expect(analysis.lexicalSkipRanges == [
+                NSRange(
+                    location: payloadStart,
+                    length: siblingStart - payloadStart
+                )
+            ])
+            #expect(
+                indentationSpans(analysis.ranges)
+                    == fixture.expectedIndentationSpans
+            )
+            #expect(
+                FoldRangeCalculator.calculate(
+                    text: fixture.text,
+                    skipRanges: analysis.lexicalSkipRanges
+                ).isEmpty
+            )
+        }
+    }
+
+    @Test("YAML analysis stops at cooperative cancellation checkpoints")
+    func analysisHonorsCancellation() {
+        let probe = YAMLCancellationProbe(cancelOnCheck: 2)
+        let text = "root:\n"
+            + String(repeating: "  key: value\n", count: 512)
+
+        let analysis = YAMLIndentationFoldCalculator.analyze(
+            text: text,
+            isCancelled: { probe.check() }
+        )
+
+        #expect(analysis == nil)
+        #expect(probe.checkCount == 2)
     }
 
     @Test("Provider recognizes yaml, yml, and URI suffix fallback")
@@ -608,5 +814,82 @@ struct YAMLIndentationFoldTests {
             }
             return "\(range.startLine)...\(range.endLine):\(kind)"
         }
+    }
+
+    private func largeBlockScalarFixture(
+        lineCount: Int
+    ) -> ScalarFixture {
+        let firstPayloadLine = "  open {"
+        let payload = (0..<lineCount).map { index in
+            if index == 0 {
+                return firstPayloadLine
+            }
+            if index == lineCount - 1 {
+                return "  close }"
+            }
+            return "  line \(index)"
+        }.joined(separator: "\r\n")
+        return ScalarFixture(
+            text: "script: |\r\n\(payload)\r\nnext: true",
+            firstPayloadLine: firstPayloadLine,
+            expectedIndentationSpans: ["1...\(lineCount + 1)"]
+        )
+    }
+
+    private func largePlainScalarFixture(
+        lineCount: Int
+    ) -> ScalarFixture {
+        let firstPayloadLine = "  open {"
+        let payload = (0..<lineCount).map { index in
+            if index == 0 {
+                return firstPayloadLine
+            }
+            if index == lineCount - 1 {
+                return "  close }"
+            }
+            return "  line \(index)"
+        }.joined(separator: "\r\n")
+        return ScalarFixture(
+            text:
+                "description: start\r\n"
+                    + "\(payload)\r\nnext: true",
+            firstPayloadLine: firstPayloadLine,
+            expectedIndentationSpans: []
+        )
+    }
+}
+
+nonisolated private struct ScalarFixture {
+    let text: String
+    let firstPayloadLine: String
+    let expectedIndentationSpans: [String]
+}
+
+nonisolated private final class YAMLCancellationProbe:
+    @unchecked Sendable {
+
+    private let lock = NSLock()
+    private let cancelOnCheck: Int
+    private var storedCheckCount = 0
+
+    init(cancelOnCheck: Int) {
+        self.cancelOnCheck = cancelOnCheck
+    }
+
+    var checkCount: Int {
+        lock.withLock { storedCheckCount }
+    }
+
+    func check() -> Bool {
+        lock.withLock {
+            storedCheckCount += 1
+            return storedCheckCount >= cancelOnCheck
+        }
+    }
+}
+
+nonisolated private extension NSRange {
+    var nonEmptyLocation: Int? {
+        location == NSNotFound ? nil : location
     }
 }

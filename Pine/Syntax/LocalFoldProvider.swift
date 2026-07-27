@@ -74,10 +74,12 @@ nonisolated struct LocalFoldProvider: FoldRangeProviding {
                 indentationRanges = analysis.ranges
                 bracketSkipRanges = analysis.lexicalSkipRanges
             } else if isYAML {
-                let analysis = YAMLIndentationFoldCalculator.analyze(
+                guard let analysis = YAMLIndentationFoldCalculator.analyze(
                     text: text,
                     additionalSkipRanges: syntaxSkipRanges
-                )
+                ) else {
+                    return nil
+                }
                 indentationRanges = analysis.ranges
                 bracketSkipRanges = analysis.lexicalSkipRanges
             } else {
@@ -99,10 +101,13 @@ nonisolated struct LocalFoldProvider: FoldRangeProviding {
                 bracketRanges,
                 indentationRanges
             )
-            return isYAML
+            guard !Task.isCancelled else { return nil }
+            let displayRanges = isYAML
                 ? YAMLIndentationFoldCalculator
                     .canonicalizedForDisplay(combined)
                 : combined
+            guard !Task.isCancelled else { return nil }
+            return displayRanges
         }
         return await withTaskCancellationHandler {
             await task.value

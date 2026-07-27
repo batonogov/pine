@@ -20,10 +20,14 @@ import Foundation
 nonisolated enum YAMLIndentationFoldCalculator {
     static let tabWidth = 8
     static let maxActiveDepth = 500
+    private static let cancellationCharacterStride = 4_096
+    private static let cancellationLineStride = 64
+
+    typealias CancellationCheck = @Sendable () -> Bool
 
     struct Analysis: Sendable {
         let ranges: [FoldableRange]
-        /// Sorted, merged comments, quoted scalars, and block scalar bodies.
+        /// Sorted, merged comments, quoted scalars, and multiline scalars.
         /// Bracket folding skips these ranges for the same snapshot.
         let lexicalSkipRanges: [NSRange]
     }
@@ -40,6 +44,9 @@ nonisolated enum YAMLIndentationFoldCalculator {
     private struct Line {
         let start: Int
         let contentEnd: Int
+        /// Offset after the complete line terminator (`LF`, `CRLF`, or `CR`).
+        /// The final physical line ends at the source length.
+        let fullEnd: Int
         let indentEnd: Int
         let indentationColumn: Int
         let rawIsBlank: Bool
@@ -101,28 +108,46 @@ nonisolated enum YAMLIndentationFoldCalculator {
     /// used by bracket folding during the same immutable pass.
     static func analyze(
         text: String,
-        additionalSkipRanges: [NSRange] = []
-    ) -> Analysis {
+        additionalSkipRanges: [NSRange] = [],
+        isCancelled: CancellationCheck = { Task.isCancelled }
+    ) -> Analysis? {
+        guard !isCancelled() else { return nil }
         let source = text as NSString
         guard source.length > 0 else {
             return Analysis(ranges: [], lexicalSkipRanges: [])
         }
 
-        var lines = makeLines(in: source)
+        guard var lines = makeLines(
+            in: source,
+            isCancelled: isCancelled
+        ) else {
+            return nil
+        }
         var lexicalRanges: [NSRange] = []
-        parseStructure(
+        guard parseStructure(
             in: source,
             lines: &lines,
-            lexicalRanges: &lexicalRanges
-        )
+            lexicalRanges: &lexicalRanges,
+            isCancelled: isCancelled
+        ) else {
+            return nil
+        }
+        guard !isCancelled() else { return nil }
         let exclusions = normalizedRanges(
             additionalSkipRanges + lexicalRanges,
             boundedBy: source.length
         )
+        guard !isCancelled(),
+              let resolvedRanges = resolveRanges(
+                lines: lines,
+                isCancelled: isCancelled
+              ) else {
+            return nil
+        }
+        let ranges = canonicalizedForDisplay(resolvedRanges)
+        guard !isCancelled() else { return nil }
         return Analysis(
-            ranges: canonicalizedForDisplay(
-                resolveRanges(lines: lines)
-            ),
+            ranges: ranges,
             lexicalSkipRanges: exclusions
         )
     }
@@ -135,17 +160,26 @@ nonisolated enum YAMLIndentationFoldCalculator {
         analyze(
             text: text,
             additionalSkipRanges: skipRanges
-        ).ranges
+        )?.ranges ?? []
     }
 
     // MARK: - Physical lines
 
-    private static func makeLines(in source: NSString) -> [Line] {
+    private static func makeLines(
+        in source: NSString,
+        isCancelled: CancellationCheck
+    ) -> [Line]? {
         var bounds: [(start: Int, end: Int)] = []
         var lineStart = 0
         var index = 0
+        var nextCancellationCheck = cancellationCharacterStride
 
         while index < source.length {
+            if index >= nextCancellationCheck {
+                guard !isCancelled() else { return nil }
+                nextCancellationCheck =
+                    index + cancellationCharacterStride
+            }
             let character = source.character(at: index)
             if character == ASCII.carriageReturn {
                 bounds.append((lineStart, index))
@@ -166,10 +200,24 @@ nonisolated enum YAMLIndentationFoldCalculator {
         }
         bounds.append((lineStart, source.length))
 
-        return bounds.map { bound in
+        var lines: [Line] = []
+        lines.reserveCapacity(bounds.count)
+        for (boundIndex, bound) in bounds.enumerated() {
+            if boundIndex.isMultiple(
+                of: cancellationLineStride
+            ), isCancelled() {
+                return nil
+            }
             var cursor = bound.start
             var column = 0
+            var nextIndentCancellationCheck =
+                cursor + cancellationCharacterStride
             while cursor < bound.end {
+                if cursor >= nextIndentCancellationCheck {
+                    guard !isCancelled() else { return nil }
+                    nextIndentCancellationCheck =
+                        cursor + cancellationCharacterStride
+                }
                 let character = source.character(at: cursor)
                 if character == YAMLASCII.space {
                     column += 1
@@ -185,15 +233,19 @@ nonisolated enum YAMLIndentationFoldCalculator {
             }
 
             let isBlank = cursor == bound.end
-            return Line(
+            lines.append(Line(
                 start: bound.start,
                 contentEnd: bound.end,
+                fullEnd: boundIndex + 1 < bounds.count
+                    ? bounds[boundIndex + 1].start
+                    : source.length,
                 indentEnd: cursor,
                 indentationColumn: column,
                 rawIsBlank: isBlank,
                 kind: isBlank ? .blank : .code
-            )
+            ))
         }
+        return lines
     }
 
     // MARK: - Lexical and structural scan
@@ -201,8 +253,9 @@ nonisolated enum YAMLIndentationFoldCalculator {
     private static func parseStructure(
         in source: NSString,
         lines: inout [Line],
-        lexicalRanges: inout [NSRange]
-    ) {
+        lexicalRanges: inout [NSRange],
+        isCancelled: CancellationCheck
+    ) -> Bool {
         var lexicalState = LexicalState()
         var plainScalarIndentation: Int?
         var scalarContent = Array(
@@ -211,6 +264,11 @@ nonisolated enum YAMLIndentationFoldCalculator {
         )
 
         for lineIndex in lines.indices {
+            if lineIndex.isMultiple(
+                of: cancellationLineStride
+            ), isCancelled() {
+                return false
+            }
             if scalarContent[lineIndex] {
                 lines[lineIndex].kind = .continuation
                 appendWholeLineRange(
@@ -224,6 +282,10 @@ nonisolated enum YAMLIndentationFoldCalculator {
             if plainScalarIndentation != nil,
                line.rawIsBlank {
                 lines[lineIndex].kind = .blank
+                appendWholeLineRange(
+                    lines[lineIndex],
+                    to: &lexicalRanges
+                )
                 continue
             }
             if let scalarIndent = plainScalarIndentation {
@@ -257,12 +319,15 @@ nonisolated enum YAMLIndentationFoldCalculator {
             let startsInQuote = lexicalState.quote != nil
             let startsInFlow =
                 !lexicalState.flowStack.isEmpty
-            let parsed = scanLine(
+            guard let parsed = scanLine(
                 source: source,
                 line: line,
                 lexicalState: &lexicalState,
-                lexicalRanges: &lexicalRanges
-            )
+                lexicalRanges: &lexicalRanges,
+                isCancelled: isCancelled
+            ) else {
+                return false
+            }
 
             if startsInQuote || startsInFlow {
                 plainScalarIndentation = nil
@@ -289,24 +354,27 @@ nonisolated enum YAMLIndentationFoldCalculator {
             )
 
             if let blockScalar = parsed.blockScalar {
-                markBlockScalarContent(
+                guard markBlockScalarContent(
                     BlockScalarContext(
                         headerIndex: lineIndex,
                         scalarIndent:
-                            nodeIndentationColumn(
+                            blockScalarIndentationColumn(
                                 source: source,
                                 line: lines[lineIndex],
                                 mappingColon:
                                     parsed.mappingColon,
-                                sequenceMarker:
-                                    parsed.sequenceMarker
+                                markerOffset:
+                                    blockScalar.markerOffset
                             ),
                         explicitIndent:
                             blockScalar.explicitIndent,
                         lines: lines
                     ),
-                    marked: &scalarContent
-                )
+                    marked: &scalarContent,
+                    isCancelled: isCancelled
+                ) else {
+                    return false
+                }
             }
 
             plainScalarIndentation =
@@ -328,15 +396,19 @@ nonisolated enum YAMLIndentationFoldCalculator {
                 to: &lexicalRanges
             )
         }
+        return !isCancelled()
     }
 
     private static func scanLine(
         source: NSString,
         line: Line,
         lexicalState: inout LexicalState,
-        lexicalRanges: inout [NSRange]
-    ) -> ParsedLine {
+        lexicalRanges: inout [NSRange],
+        isCancelled: CancellationCheck
+    ) -> ParsedLine? {
         var cursor = line.indentEnd
+        var nextCancellationCheck =
+            cursor + cancellationCharacterStride
         var commentStart: Int?
         var mappingColon: Int?
         var hasCode = false
@@ -372,6 +444,11 @@ nonisolated enum YAMLIndentationFoldCalculator {
             : nil
 
         while cursor < line.contentEnd {
+            if cursor >= nextCancellationCheck {
+                guard !isCancelled() else { return nil }
+                nextCancellationCheck =
+                    cursor + cancellationCharacterStride
+            }
             if let activeQuote = lexicalState.quote {
                 let character = source.character(at: cursor)
                 if activeQuote.character == YAMLASCII.doubleQuote,
@@ -657,6 +734,7 @@ nonisolated enum YAMLIndentationFoldCalculator {
             return nil
         }
 
+        var isExplicitKey = false
         for propertyRange in tokenRanges.dropLast() {
             let first = source.character(
                 at: propertyRange.location
@@ -666,12 +744,20 @@ nonisolated enum YAMLIndentationFoldCalculator {
                     || first == YAMLASCII.exclamationMark
             let isCompactSequenceMarker =
                 mappingColon == nil
-                    && sequenceMarker != nil
                     && propertyRange.length == 1
                     && first == YAMLASCII.hyphen
-            guard isProperty || isCompactSequenceMarker else {
+            let isExplicitKeyMarker =
+                mappingColon == nil
+                    && propertyRange.length == 1
+                    && first == YAMLASCII.questionMark
+                    && !isExplicitKey
+            guard isProperty
+                    || isCompactSequenceMarker
+                    || isExplicitKeyMarker else {
                 return nil
             }
+            isExplicitKey = isExplicitKey
+                || isExplicitKeyMarker
         }
 
         return BlockScalarHeader(
@@ -721,28 +807,43 @@ nonisolated enum YAMLIndentationFoldCalculator {
 
     private static func markBlockScalarContent(
         _ context: BlockScalarContext,
-        marked: inout [Bool]
-    ) {
+        marked: inout [Bool],
+        isCancelled: CancellationCheck
+    ) -> Bool {
         let headerIndex = context.headerIndex
         let lines = context.lines
-        guard headerIndex + 1 < lines.count else { return }
+        guard headerIndex + 1 < lines.count else { return true }
 
         let contentIndent: Int
         if let explicit = context.explicitIndent {
             contentIndent = context.scalarIndent + explicit
         } else {
-            guard let firstContent = lines[
-                (headerIndex + 1)...
-            ].first(where: { !$0.rawIsBlank }),
-            firstContent.indentationColumn
-                > context.scalarIndent else {
-                return
+            var firstContentIndex = headerIndex + 1
+            while firstContentIndex < lines.count,
+                  lines[firstContentIndex].rawIsBlank {
+                if firstContentIndex.isMultiple(
+                    of: cancellationLineStride
+                ), isCancelled() {
+                    return false
+                }
+                firstContentIndex += 1
             }
-            contentIndent = firstContent.indentationColumn
+            guard firstContentIndex < lines.count,
+                  lines[firstContentIndex].indentationColumn
+                    > context.scalarIndent else {
+                return true
+            }
+            contentIndent =
+                lines[firstContentIndex].indentationColumn
         }
 
         var index = headerIndex + 1
         while index < lines.count {
+            if index.isMultiple(
+                of: cancellationLineStride
+            ), isCancelled() {
+                return false
+            }
             let line = lines[index]
             if line.rawIsBlank {
                 marked[index] = true
@@ -753,6 +854,7 @@ nonisolated enum YAMLIndentationFoldCalculator {
             }
             index += 1
         }
+        return true
     }
 
     // MARK: - Range resolution
@@ -801,13 +903,19 @@ nonisolated enum YAMLIndentationFoldCalculator {
     }
 
     private static func resolveRanges(
-        lines: [Line]
-    ) -> [FoldableRange] {
+        lines: [Line],
+        isCancelled: CancellationCheck
+    ) -> [FoldableRange]? {
         var awaitingBody: [HeaderCandidate] = []
         var active: [ActiveBlock] = []
         var ranges: [FoldableRange] = []
 
         for (lineIndex, line) in lines.enumerated() {
+            if lineIndex.isMultiple(
+                of: cancellationLineStride
+            ), isCancelled() {
+                return nil
+            }
             switch line.kind {
             case .blank:
                 break
@@ -881,6 +989,7 @@ nonisolated enum YAMLIndentationFoldCalculator {
             )
         }
         ranges.sort(by: foldOrder)
+        guard !isCancelled() else { return nil }
         return ranges.enumerated().compactMap { index, range in
             index == 0 || range != ranges[index - 1]
                 ? range
@@ -1009,8 +1118,6 @@ nonisolated enum YAMLIndentationFoldCalculator {
             || isHorizontalWhitespace(
                 source.character(at: start + 3)
             )
-            || source.character(at: start + 3)
-                == YAMLASCII.numberSign
     }
 
     private static func isBlockIndicator(
@@ -1038,8 +1145,6 @@ nonisolated enum YAMLIndentationFoldCalculator {
             || isHorizontalWhitespace(
                 source.character(at: location + 1)
             )
-            || source.character(at: location + 1)
-                == YAMLASCII.numberSign
     }
 
     private static func startsComment(
@@ -1222,6 +1327,67 @@ nonisolated enum YAMLIndentationFoldCalculator {
             : columns.node
     }
 
+    /// Resolves a block scalar's indentation relative to every compact block
+    /// indicator that precedes it. Unlike ordinary sequence parsing, an
+    /// explicit mapping key may introduce a nested sequence on the same line
+    /// (`- ? - |2`), so the first physical `-` is not sufficient.
+    private static func blockScalarIndentationColumn(
+        source: NSString,
+        line: Line,
+        mappingColon: Int?,
+        markerOffset: Int
+    ) -> Int {
+        let columns = blockPrefixIndentationColumns(
+            source: source,
+            line: line,
+            before: mappingColon ?? markerOffset
+        )
+        return mappingColon == nil
+            ? columns.innermostMarker
+            : columns.node
+    }
+
+    private static func blockPrefixIndentationColumns(
+        source: NSString,
+        line: Line,
+        before end: Int
+    ) -> (node: Int, innermostMarker: Int) {
+        var cursor = line.indentEnd
+        var column = line.indentationColumn
+        var innermostMarker = column
+
+        while cursor < end {
+            let character = source.character(at: cursor)
+            guard character == YAMLASCII.hyphen
+                    || character == YAMLASCII.questionMark,
+                  isBlockIndicator(
+                    character,
+                    at: cursor,
+                    source: source,
+                    lineEnd: end
+                  ) else {
+                break
+            }
+
+            innermostMarker = column
+            cursor += 1
+            column += 1
+            while cursor < end {
+                let whitespace = source.character(at: cursor)
+                guard isHorizontalWhitespace(whitespace) else {
+                    break
+                }
+                if whitespace == YAMLASCII.space {
+                    column += 1
+                } else {
+                    column += tabWidth - (column % tabWidth)
+                }
+                cursor += 1
+            }
+        }
+        return (column, innermostMarker)
+    }
+
     private static func mappingIndentationColumn(
         source: NSString,
         line: Line,
@@ -1287,7 +1453,7 @@ nonisolated enum YAMLIndentationFoldCalculator {
     ) {
         appendRange(
             from: line.start,
-            to: line.contentEnd,
+            to: line.fullEnd,
             to: &ranges
         )
     }
@@ -1298,8 +1464,18 @@ nonisolated enum YAMLIndentationFoldCalculator {
         to ranges: inout [NSRange]
     ) {
         guard end > start else { return }
-        ranges.append(
-            NSRange(location: start, length: end - start)
+        guard let last = ranges.last,
+              start <= NSMaxRange(last) else {
+            ranges.append(
+                NSRange(location: start, length: end - start)
+            )
+            return
+        }
+        let mergedStart = min(last.location, start)
+        let mergedEnd = max(NSMaxRange(last), end)
+        ranges[ranges.count - 1] = NSRange(
+            location: mergedStart,
+            length: mergedEnd - mergedStart
         )
     }
 
