@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.37.1](https://github.com/batonogov/pine/compare/v1.37.0...v1.37.1) (2026-07-27)
+
+
+### Bug Fixes
+
+* synchronize YAML fold rendering ([#1234](https://github.com/batonogov/pine/issues/1234)) ([3c021c3](https://github.com/batonogov/pine/commit/3c021c31399d8388b73d1925eba65cb486033ee7))
+
+
+### Documentation
+
+* require issues before implementation ([#1233](https://github.com/batonogov/pine/issues/1233)) ([e1770a7](https://github.com/batonogov/pine/commit/e1770a745bb59cce03641aafef8f7ed0d914b5ee))
+
 ## [1.37.0](https://github.com/batonogov/pine/compare/v1.36.0...v1.37.0) (2026-07-27)
 
 
