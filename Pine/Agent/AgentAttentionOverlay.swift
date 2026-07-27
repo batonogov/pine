@@ -16,13 +16,24 @@ import SwiftUI
 ///
 /// Built from value-type `AgentStatusSummary` snapshots (see
 /// `AgentStatusSummary.activeSummaries(in:)`) so the overlay renders without a
-/// live terminal process and stays snapshot-testable. Keyboard arrow/Enter
-/// navigation is intentionally out of scope for this first cut — rows are
-/// mouse-clickable; full keyboard-nav parity with Quick Open is tracked as a
-/// follow-up.
+/// live terminal process and stays snapshot-testable.
+///
+/// Keyboard navigation (#1245): arrow keys move the selection, Return
+/// activates the focused row (same as clicking it — pane + tab selection and
+/// dismiss), and Escape restores the previous first responder via the host's
+/// `onDismiss`. The selection is shared, testable logic in
+/// `AgentKeyboardSelection`.
 struct AgentAttentionOverlay: View {
     let summaries: [AgentStatusSummary]
     let onNavigate: (PaneID, UUID) -> Void
+    /// Called when the user dismisses the overlay without choosing a row
+    /// (Escape). The host restores the previous first responder (#1245).
+    let onDismiss: () -> Void
+
+    /// Current keyboard selection index into `ranked`. `nil` while the list is
+    /// empty; otherwise seeded to the first row so Return is operable
+    /// immediately.
+    @State private var selectedIndex: Int? = 0
 
     /// Live blocked sessions come first, then live active work. Uncertain and
     /// terminated evidence is demoted below actionable rows so stale logical

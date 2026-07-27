@@ -32,6 +32,17 @@ enum AgentActionKind: Sendable, Equatable, CaseIterable {
         case .toolCall: "wrench.and.screwdriver"
         }
     }
+
+    /// Localized, human-readable name used by the detail view and VoiceOver.
+    /// Resolved through ``Strings`` for the 9 supported languages (#1245).
+    var displayName: String {
+        switch self {
+        case .fileWrite: Strings.agentActionKindFileWrite
+        case .fileRead: Strings.agentActionKindFileRead
+        case .command: Strings.agentActionKindCommand
+        case .toolCall: Strings.agentActionKindToolCall
+        }
+    }
 }
 
 /// Lifecycle status of a single agent action.
@@ -46,12 +57,16 @@ enum AgentActionStatus: Sendable, Equatable, CaseIterable {
     case failed
 
     /// Short label for the status badge in the Activity Panel.
+    ///
+    /// Resolved through ``Strings`` so the badge, filter chips, accessibility
+    /// values, and detail view share one localized source of truth across the
+    /// 9 supported languages.
     var displayName: String {
         switch self {
-        case .pending: "Pending"
-        case .inProgress: "In progress"
-        case .completed: "Completed"
-        case .failed: "Failed"
+        case .pending: Strings.agentActionStatusPending
+        case .inProgress: Strings.agentActionStatusInProgress
+        case .completed: Strings.agentActionStatusCompleted
+        case .failed: Strings.agentActionStatusFailed
         }
     }
 }
@@ -126,6 +141,17 @@ struct AgentAction: Identifiable, Equatable, Sendable {
     let fileURL: URL?
     /// Human-readable one-line summary (file name, command text, …).
     let summary: String
+    /// Working directory the agent was operating in when the action happened,
+    /// if known. Surfaced in the Activity detail view (#1245).
+    let workingDirectory: URL?
+    /// Human-readable label for the terminal tab the action is associated
+    /// with (e.g. "claude — pane 2"), used by the "Go to Terminal" action and
+    /// the detail view. `nil` when no terminal link is available (#1245).
+    let relatedTerminalLabel: String?
+    /// Stable identifier of the terminal tab the action is associated with,
+    /// enabling keyboard "Go to Terminal" navigation without executing
+    /// anything. `nil` when the action has no terminal link (#1245).
+    let relatedTerminalID: UUID?
 
     /// Backwards-compatible single-session accessor. Returns `nil` for an
     /// ambiguous action instead of selecting one candidate as the owner.
@@ -139,6 +165,29 @@ struct AgentAction: Identifiable, Equatable, Sendable {
         attribution.unambiguousCandidate?.agentType
     }
 
+    /// Safe-to-copy text for the Activity detail view's Copy action (#1245).
+    ///
+    /// Returns only non-sensitive, already-displayed metadata (kind, summary,
+    /// status, working directory). It deliberately excludes anything not shown
+    /// in the row — never command payloads, environment values, or tokens — so
+    /// a Copy can never leak a secret the user has not already seen.
+    var copyableSummary: String {
+        var lines: [String] = []
+        lines.append(summary)
+        lines.append(Strings.agentActionDetailKindLabel + ": " + kind.displayName)
+        lines.append(Strings.agentActionDetailStatusLabel + ": " + status.displayName)
+        if let fileURL {
+            lines.append(Strings.agentActionDetailFileLabel + ": " + fileURL.path)
+        }
+        if let workingDirectory {
+            lines.append(Strings.agentActionDetailWorkingDirectoryLabel + ": " + workingDirectory.path)
+        }
+        if let relatedTerminalLabel {
+            lines.append(Strings.agentActionDetailRelatedTerminalLabel + ": " + relatedTerminalLabel)
+        }
+        return lines.joined(separator: "\n")
+    }
+
     init(
         id: UUID = UUID(),
         sessionID: UUID,
@@ -147,7 +196,10 @@ struct AgentAction: Identifiable, Equatable, Sendable {
         status: AgentActionStatus = .completed,
         timestamp: Date = Date(),
         fileURL: URL? = nil,
-        summary: String
+        summary: String,
+        workingDirectory: URL? = nil,
+        relatedTerminalLabel: String? = nil,
+        relatedTerminalID: UUID? = nil
     ) {
         self.id = id
         self.attribution = .session(
@@ -158,6 +210,9 @@ struct AgentAction: Identifiable, Equatable, Sendable {
         self.timestamp = timestamp
         self.fileURL = fileURL
         self.summary = summary
+        self.workingDirectory = workingDirectory
+        self.relatedTerminalLabel = relatedTerminalLabel
+        self.relatedTerminalID = relatedTerminalID
     }
 
     init(
@@ -167,7 +222,10 @@ struct AgentAction: Identifiable, Equatable, Sendable {
         status: AgentActionStatus = .completed,
         timestamp: Date = Date(),
         fileURL: URL? = nil,
-        summary: String
+        summary: String,
+        workingDirectory: URL? = nil,
+        relatedTerminalLabel: String? = nil,
+        relatedTerminalID: UUID? = nil
     ) {
         self.id = id
         self.attribution = attribution
@@ -176,5 +234,8 @@ struct AgentAction: Identifiable, Equatable, Sendable {
         self.timestamp = timestamp
         self.fileURL = fileURL
         self.summary = summary
+        self.workingDirectory = workingDirectory
+        self.relatedTerminalLabel = relatedTerminalLabel
+        self.relatedTerminalID = relatedTerminalID
     }
 }

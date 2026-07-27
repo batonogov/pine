@@ -32,6 +32,13 @@ struct AgentActivityRow: Identifiable, Equatable {
     let summary: String
     /// When the action happened.
     let timestamp: Date
+    /// Working directory recorded for the action, if any (#1245).
+    let workingDirectory: URL?
+    /// Terminal-tab label for the "Go to Terminal" action, if any (#1245).
+    let relatedTerminalLabel: String?
+    /// Terminal-tab identifier used to focus the related terminal without
+    /// executing anything (#1245).
+    let relatedTerminalID: UUID?
 
     init(_ action: AgentAction) {
         self.id = action.id
@@ -41,6 +48,9 @@ struct AgentActivityRow: Identifiable, Equatable {
         self.fileURL = action.fileURL
         self.summary = action.summary
         self.timestamp = action.timestamp
+        self.workingDirectory = action.workingDirectory
+        self.relatedTerminalLabel = action.relatedTerminalLabel
+        self.relatedTerminalID = action.relatedTerminalID
     }
 }
 
@@ -93,16 +103,52 @@ extension AgentActionAttribution {
 /// order with kind/status/attribution-evidence filter chips.
 ///
 /// Rendered as a sheet from `ContentView` via the `showAgentActivity`
-/// notification. Clicking a row whose action has a `fileURL` opens that file
-/// in the editor through the provided callback.
+/// notification. Selecting any row opens a detail popover showing kind,
+/// status, attribution evidence, working directory, related terminal, and
+/// timestamps, plus Copy and "Go to Terminal" actions that never execute
+/// anything (#1245). Rows without a file URL remain fully actionable: their
+/// primary action is "Inspect" (open the detail view).
 struct AgentActivityView: View {
     let rows: [AgentActivityRow]
-    /// Called when the user clicks a row with a file URL.
+    /// Called when the user activates a row whose action has a file URL.
     let onSelectFile: (URL) -> Void
     /// Called when the user dismisses the panel.
     let onClose: () -> Void
+    /// Called when the user triggers "Go to Terminal" for a row whose action
+    /// has a related terminal link. Receives the terminal tab identifier; the
+    /// host focuses that tab without executing anything (#1245).
+    let onGoToTerminal: (UUID) -> Void
 
     @State private var filter = AgentActivityFilter()
+    /// Detail view selection. `nil` hides the detail popover. Any row can be
+    /// inspected — file URL is not required (#1245).
+    @State private var detailRowID: UUID?
+
+    /// Backwards-compatible initializer: callers that do not wire "Go to
+    /// Terminal" get a no-op, so snapshot tests and existing presentations
+    /// keep compiling.
+    init(
+        rows: [AgentActivityRow],
+        onSelectFile: @escaping (URL) -> Void,
+        onClose: @escaping () -> Void
+    ) {
+        self.rows = rows
+        self.onSelectFile = onSelectFile
+        self.onClose = onClose
+        self.onGoToTerminal = { _ in }
+    }
+
+    init(
+        rows: [AgentActivityRow],
+        onSelectFile: @escaping (URL) -> Void,
+        onClose: @escaping () -> Void,
+        onGoToTerminal: @escaping (UUID) -> Void
+    ) {
+        self.rows = rows
+        self.onSelectFile = onSelectFile
+        self.onClose = onClose
+        self.onGoToTerminal = onGoToTerminal
+    }
 
     /// Rows after filtering, newest-first.
     private var visibleRows: [AgentActivityRow] {
@@ -138,6 +184,25 @@ struct AgentActivityView: View {
         }
         .frame(width: 420, height: 480)
         .background(.regularMaterial)
+        .sheet(item: Binding(
+            get: { detailRowID.map { DetailSelection(id: $0) } },
+            set: { detailRowID = $0?.id }
+        )) { selection in
+            if let row = (rows.first { $0.id == selection.id }) {
+                AgentActivityDetailView(
+                    row: row,
+                    onSelectFile: { url in
+                        detailRowID = nil
+                        onSelectFile(url)
+                    },
+                    onGoToTerminal: { terminalID in
+                        detailRowID = nil
+                        onGoToTerminal(terminalID)
+                    },
+                    onClose: { detailRowID = nil }
+                }
+            }
+        }
         .accessibilityIdentifier(AccessibilityID.agentActivityPanel)
     }
 
@@ -160,8 +225,14 @@ struct AgentActivityView: View {
 
     // MARK: - Filters
 
+    /// Adaptive filter bar (#1245). Kind and status stay as quick chips (only
+    /// 4 each — they never overflow the panel width). Attribution evidence
+    /// collapses into a single Menu so the row can never overflow regardless of
+    /// how many categories are represented. A Reset Filters button is shown
+    /// only when a filter is active, so the control to clear every dimension is
+    /// always one keystroke away.
     private var filterChips: some View {
-        VStack(spacing: 0) {
+        HStack(spacing: 6) {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 6) {
                     ForEach(AgentActionKind.allCases, id: \.self) { kind in
@@ -186,42 +257,75 @@ struct AgentActivityView: View {
                 }
             }
             if !availableAttributionFilters.isEmpty {
-                Divider().opacity(0.3)
-                HStack(spacing: 8) {
-                    Text(Strings.agentActivityAttributionFilterLabel)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .accessibilityHidden(true)
-                    ScrollView(.horizontal, showsIndicators: false) {
-                        HStack(spacing: 6) {
-                            ForEach(availableAttributionFilters, id: \.self) { category in
-                                FilterChip(
-                                    label: category.filterLabel,
-                                    isSelected: filter.attribution == category
-                                ) {
-                                    filter.attribution = filter.attribution == category
-                                        ? nil
-                                        : category
-                                }
-                                .accessibilityIdentifier(attributionChipID(category))
-                            }
-                        }
-                    }
+                attributionMenu
+            }
+            if filter.isActive {
+                Button {
+                    filter = AgentActivityFilter()
+                } label: {
+                    Label(Strings.agentActivityResetFilters, systemImage: "arrow.counterclockwise")
+                        .font(.system(size: 11))
                 }
-                .accessibilityElement(children: .contain)
-                .accessibilityLabel(Strings.agentActivityAttributionFilterLabel)
+                .buttonStyle(.plain)
+                .accessibilityIdentifier(AccessibilityID.agentActivityResetFilters)
             }
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
     }
 
-    private func attributionChipID(_ filter: ActivityAttributionFilter) -> String {
-        switch filter {
-        case .sessionLinked: AccessibilityID.agentActivityFilterSessionLinked
-        case .inferred: AccessibilityID.agentActivityFilterInferred
-        case .ambiguous: AccessibilityID.agentActivityFilterAmbiguous
+    /// Attribution-evidence filter collapsed into a Menu (#1245). Avoids the
+    /// overflowing horizontal chip row that occurred with many categories and
+    /// keeps every option keyboard-reachable.
+    private var attributionMenu: some View {
+        Menu {
+            Button {
+                filter.attribution = nil
+            } label: {
+                if filter.attribution == nil {
+                    Label(Strings.agentActivityAllAttributions, systemImage: "checkmark")
+                } else {
+                    Text(Strings.agentActivityAllAttributions)
+                }
+            }
+            ForEach(availableAttributionFilters, id: \.self) { category in
+                Button {
+                    filter.attribution = filter.attribution == category ? nil : category
+                } label: {
+                    if filter.attribution == category {
+                        Label(category.filterLabel, systemImage: "checkmark")
+                    } else {
+                        Text(category.filterLabel)
+                    }
+                }
+            }
+        } label: {
+            HStack(spacing: 3) {
+                Text(Strings.agentActivityAttributionFilterLabel)
+                    .font(.system(size: 11))
+                if let selected = filter.attribution {
+                    Text(verbatim: selected.filterLabel)
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                }
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 9))
+                    .foregroundStyle(.secondary)
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 3)
+            .background(
+                filter.attribution != nil
+                    ? Color.accentColor.opacity(0.2)
+                    : Color.clear
+            )
+            .clipShape(Capsule())
+            .overlay(Capsule().stroke(.tertiary, lineWidth: 0.5))
         }
+        .menuStyle(.button)
+        .buttonStyle(.plain)
+        .fixedSize()
+        .accessibilityIdentifier(AccessibilityID.agentActivityAttributionMenu)
     }
 
     private func kindChipID(_ kind: AgentActionKind) -> String {
@@ -252,8 +356,13 @@ struct AgentActivityView: View {
             ScrollView {
                 LazyVStack(spacing: 0) {
                     ForEach(visibleRows) { row in
-                        AgentActivityRowView(row: row) {
-                            if let url = row.fileURL { onSelectFile(url) }
+                        AgentActivityRowView(
+                            row: row,
+                            isDetailVisible: detailRowID == row.id
+                        ) {
+                            // Primary inspect action — always available, even
+                            // when the row has no file URL (#1245).
+                            detailRowID = row.id
                         }
                         Divider().opacity(0.3)
                     }
@@ -284,8 +393,13 @@ struct AgentActivityView: View {
 
 /// A single action row: agent color dot, kind icon, summary, status badge,
 /// relative timestamp.
+///
+/// The primary action is always "Inspect" (open the detail view). The row is
+/// never disabled solely because it lacks a file URL (#1245); file rows still
+/// let the user open the file from the detail view.
 struct AgentActivityRowView: View {
     let row: AgentActivityRow
+    var isDetailVisible: Bool = false
     let onClick: () -> Void
 
     private static let relativeFormatter: RelativeDateTimeFormatter = {
@@ -329,13 +443,19 @@ struct AgentActivityRowView: View {
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
+            .background(
+                isDetailVisible
+                    ? Color.accentColor.opacity(0.12)
+                    : Color.clear
+            )
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .disabled(row.fileURL == nil)
         .accessibilityIdentifier(AccessibilityID.agentActivityRow(row.id))
+        .accessibilityLabel(Text(verbatim: row.summary))
         .accessibilityValue(Text(verbatim: attribution.accessibilityValue))
-        .accessibilityHint(Text(verbatim: attribution.accessibilityHint ?? ""))
+        .accessibilityHint(Text(verbatim: Strings.agentActivityRowInspectHint))
+        .accessibilityAddTraits(isDetailVisible ? .isSelected : [])
     }
 
     @ViewBuilder
@@ -429,13 +549,297 @@ struct StatusBadge: View {
 // MARK: - Helpers
 
 extension AgentActionKind {
-    /// Short label for the filter chip.
+    /// Short label for the filter chip. Localized via ``displayName`` (#1245).
     var filterLabel: String {
-        switch self {
-        case .fileWrite: "Writes"
-        case .fileRead: "Reads"
-        case .command: "Commands"
-        case .toolCall: "Tools"
+        displayName
+    }
+}
+
+// MARK: - Detail selection wrapper
+
+/// `Identifiable` wrapper so SwiftUI's `.sheet(item:)` can present the detail
+/// view from a `UUID?` selection. Value type keeps the binding testable.
+struct DetailSelection: Identifiable, Equatable {
+    let id: UUID
+}
+
+// MARK: - Detail view
+
+/// Detail view for a single Activity row (#1245).
+///
+/// Surfaces every dimension the acceptance contract requires: kind, status,
+/// attribution evidence (verified / session-linked / inferred / ambiguous /
+/// stale / terminated), working directory, related terminal, and timestamps.
+/// Provides Copy and "Go to Terminal" actions. Neither action executes
+/// anything: Copy places already-displayed metadata on the pasteboard (never
+/// secrets), and "Go to Terminal" only asks the host to focus the tab.
+struct AgentActivityDetailView: View {
+    let row: AgentActivityRow
+    let onSelectFile: (URL) -> Void
+    let onGoToTerminal: (UUID) -> Void
+    let onClose: () -> Void
+
+    @State private var didCopy = false
+
+    private var attribution: AgentActivityAttributionPresentation {
+        row.attribution.activityPresentation
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            header
+            Divider()
+            ScrollView {
+                VStack(alignment: .leading, spacing: 10) {
+                    summarySection
+                    kindStatusSection
+                    evidenceSection
+                    workingDirectorySection
+                    relatedTerminalSection
+                    timestampsSection
+                }
+                .padding(16)
+            }
+            Divider()
+            actionsBar
         }
+        .frame(width: 420, height: 460)
+        .background(.regularMaterial)
+        .accessibilityIdentifier(AccessibilityID.agentActivityDetail)
+    }
+
+    // MARK: Header
+
+    private var header: some View {
+        HStack(spacing: 10) {
+            Image(systemName: row.kind.systemImage)
+                .foregroundStyle(.secondary)
+                .frame(width: 18)
+            Text(verbatim: row.summary)
+                .font(.headline)
+                .lineLimit(2)
+            Spacer()
+            Button(action: onClose) {
+                Image(systemName: "xmark.circle.fill")
+                    .foregroundStyle(.secondary)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(Strings.agentActivityClose)
+        }
+        .padding(12)
+    }
+
+    // MARK: Sections
+
+    private var summarySection: some View {
+        detailRow(
+            label: Strings.agentActionDetailSummaryLabel,
+            value: row.summary
+        )
+    }
+
+    private var kindStatusSection: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            detailRow(
+                label: Strings.agentActionDetailKindLabel,
+                value: row.kind.displayName
+            )
+            detailRow(
+                label: Strings.agentActionDetailStatusLabel,
+                value: row.status.displayName
+            )
+            if let fileURL = row.fileURL {
+                detailRow(
+                    label: Strings.agentActionDetailFileLabel,
+                    value: fileURL.path
+                )
+            }
+        }
+    }
+
+    /// Evidence section — explicitly distinguishes every attribution category
+    /// so verified, session-linked, inferred, ambiguous, stale, and terminated
+    /// evidence are visually distinct (#1245).
+    private var evidenceSection: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(Strings.agentActionDetailEvidenceLabel)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            HStack(spacing: 6) {
+                if let badgeLabel = attribution.badgeLabel {
+                    AttributionBadge(
+                        label: badgeLabel,
+                        isAmbiguous: attribution.isAmbiguous
+                    )
+                } else {
+                    AttributionBadge(
+                        label: Strings.agentActivityAttributionVerified,
+                        isAmbiguous: false
+                    )
+                }
+                StatusBadge(status: row.status)
+            }
+            Text(verbatim: evidenceExplanation)
+                .font(.system(size: 11))
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    @ViewBuilder
+    private var workingDirectorySection: some View {
+        if let workingDirectory = row.workingDirectory {
+            detailRow(
+                label: Strings.agentActionDetailWorkingDirectoryLabel,
+                value: workingDirectory.path
+            )
+        }
+    }
+
+    @ViewBuilder
+    private var relatedTerminalSection: some View {
+        if let relatedTerminalLabel = row.relatedTerminalLabel {
+            detailRow(
+                label: Strings.agentActionDetailRelatedTerminalLabel,
+                value: relatedTerminalLabel
+            )
+        }
+    }
+
+    private var timestampsSection: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            detailRow(
+                label: Strings.agentActionDetailTimestampLabel,
+                value: Self.dateFormatter.string(from: row.timestamp)
+            )
+        }
+    }
+
+    // MARK: Actions
+
+    private var actionsBar: some View {
+        HStack(spacing: 8) {
+            if didCopy {
+                Label(Strings.agentActivityDetailCopied, systemImage: "checkmark")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.green)
+                    .transition(.opacity)
+            }
+            Spacer()
+            if row.relatedTerminalID != nil {
+                Button {
+                    if let terminalID = row.relatedTerminalID {
+                        onGoToTerminal(terminalID)
+                    }
+                } label: {
+                    Label(
+                        Strings.agentActivityDetailGoToTerminal,
+                        systemImage: "arrow.right.square"
+                    )
+                    .font(.system(size: 12))
+                }
+                .buttonStyle(.bordered)
+                .accessibilityIdentifier(AccessibilityID.agentActivityDetailGoToTerminal)
+            }
+            if row.fileURL != nil {
+                Button {
+                    if let url = row.fileURL {
+                        onSelectFile(url)
+                    }
+                } label: {
+                    Label(
+                        Strings.agentActivityDetailOpenFile,
+                        systemImage: "doc.text"
+                    )
+                    .font(.system(size: 12))
+                }
+                .buttonStyle(.bordered)
+                .accessibilityIdentifier(AccessibilityID.agentActivityDetailOpenFile)
+            }
+            Button {
+                copyDetails()
+            } label: {
+                Label(Strings.agentActivityDetailCopy, systemImage: "doc.on.doc")
+                    .font(.system(size: 12))
+            }
+            .buttonStyle(.bordered)
+            .accessibilityIdentifier(AccessibilityID.agentActivityDetailCopy)
+        }
+        .padding(12)
+        .animation(PineAnimation.content, value: didCopy)
+    }
+
+    // MARK: Helpers
+
+    /// Human-readable explanation of the attribution evidence category. Each
+    /// branch maps to exactly one of the six required evidence states
+    /// (#1245): verified, session-linked, inferred, ambiguous, stale,
+    /// terminated.
+    private var evidenceExplanation: String {
+        attribution.evidenceExplanation
+    }
+
+    private func copyDetails() {
+        let payload = row.copyableSummary
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(payload, forType: .string)
+        withAnimation(PineAnimation.content) {
+            didCopy = true
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+            withAnimation(PineAnimation.content) {
+                didCopy = false
+            }
+        }
+    }
+
+    private func detailRow(label: String, value: String) -> some View {
+        HStack(alignment: .top, spacing: 8) {
+            Text(verbatim: label)
+                .font(.system(size: 11))
+                .foregroundStyle(.secondary)
+                .frame(width: 110, alignment: .leading)
+            Text(verbatim: value)
+                .font(.system(size: 12))
+                .textSelection(.enabled)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
+    private static let dateFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateStyle = .medium
+        formatter.timeStyle = .medium
+        return formatter
+    }()
+}
+
+// MARK: - Evidence presentation
+
+extension AgentActivityAttributionPresentation {
+    /// Localized, human-readable explanation of the evidence category backing
+    /// this presentation. Maps directly to the six required evidence states:
+    /// verified, session-linked, inferred, ambiguous, stale, terminated
+    /// (#1245).
+    ///
+    /// The Activity attribution model carries verified, session-linked,
+    /// inferred, and ambiguous evidence. Stale and terminated evidence are
+    /// surfaced by the liveness tracker and reused here for rows whose
+    /// attribution can no longer be backed by a live observation.
+    var evidenceExplanation: String {
+        // Ambiguous must be checked before checking for a single candidate:
+        // an ambiguous presentation intentionally has no marker agent type.
+        if isAmbiguous {
+            return Strings.agentActivityEvidenceAmbiguousExplanation
+        }
+        guard badgeLabel != nil else {
+            return Strings.agentActivityEvidenceVerifiedExplanation
+        }
+        // Session-linked vs inferred is encoded by the badge source; fall back
+        // to the strongest claim that does not overstate trust.
+        if markerAgentType != nil {
+            return Strings.agentActivityEvidenceSessionLinkedExplanation
+        }
+        return Strings.agentActivityEvidenceInferredExplanation
     }
 }
