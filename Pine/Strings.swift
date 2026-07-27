@@ -51,6 +51,45 @@ enum Strings {
     static let lspReset: LocalizedStringKey =
         "settings.lsp.reset"
 
+    // MARK: - Quick Terminal settings (#1243)
+
+    static let settingsQuickTerminalTab: LocalizedStringKey =
+        "settings.tab.quickTerminal"
+    static let quickTerminalSettingsTitle: LocalizedStringKey =
+        "settings.quickTerminal.title"
+    static let quickTerminalEnabled: LocalizedStringKey =
+        "settings.quickTerminal.enabled"
+    static let quickTerminalEnabledHelp: LocalizedStringKey =
+        "settings.quickTerminal.enabled.help"
+    static let quickTerminalHotkey: LocalizedStringKey =
+        "settings.quickTerminal.hotkey"
+    static let quickTerminalHotkeyHelp: LocalizedStringKey =
+        "settings.quickTerminal.hotkey.help"
+    static let quickTerminalRecordingHotkey: LocalizedStringKey =
+        "settings.quickTerminal.hotkey.recording"
+    static let quickTerminalScreenEdge: LocalizedStringKey =
+        "settings.quickTerminal.screenEdge"
+    static let quickTerminalEdgeTop: LocalizedStringKey =
+        "settings.quickTerminal.edge.top"
+    static let quickTerminalEdgeBottom: LocalizedStringKey =
+        "settings.quickTerminal.edge.bottom"
+    static let quickTerminalEdgeLeft: LocalizedStringKey =
+        "settings.quickTerminal.edge.left"
+    static let quickTerminalEdgeRight: LocalizedStringKey =
+        "settings.quickTerminal.edge.right"
+    static let quickTerminalSize: LocalizedStringKey =
+        "settings.quickTerminal.size"
+    static let quickTerminalTargetDisplay: LocalizedStringKey =
+        "settings.quickTerminal.targetDisplay"
+    static let quickTerminalDisplayActive: LocalizedStringKey =
+        "settings.quickTerminal.display.active"
+    static let quickTerminalDisplayMain: LocalizedStringKey =
+        "settings.quickTerminal.display.main"
+    static let quickTerminalHideOnFocusLoss: LocalizedStringKey =
+        "settings.quickTerminal.hideOnFocusLoss"
+    static let quickTerminalHideOnFocusLossHelp: LocalizedStringKey =
+        "settings.quickTerminal.hideOnFocusLoss.help"
+
     // MARK: - Editor
 
     static let noFileSelected: LocalizedStringKey = "editor.noFileSelected"
@@ -618,6 +657,7 @@ enum Strings {
     static let menuResetFontSize: LocalizedStringKey = "menu.resetFontSize"
     static let menuTerminal: LocalizedStringKey = "menu.terminal"
     static let menuNewTerminalTab: LocalizedStringKey = "menu.newTerminalTab"
+    static let menuQuickTerminal: LocalizedStringKey = "menu.quickTerminal"
     static let menuTogglePreview: LocalizedStringKey = "menu.togglePreview"
     static let menuView: LocalizedStringKey = "menu.view"
     static let menuGit: LocalizedStringKey = "menu.git"

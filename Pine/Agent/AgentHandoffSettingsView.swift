@@ -29,6 +29,14 @@ struct PineSettingsView: View {
                         systemImage: "lock.shield"
                     )
                 }
+
+            QuickTerminalSettingsView(settings: .shared)
+                .tabItem {
+                    Label(
+                        Strings.settingsQuickTerminalTab,
+                        systemImage: "terminal"
+                    )
+                }
         }
         .frame(width: 720, height: 540)
     }

@@ -143,4 +143,19 @@ extension GlobalHotkeyManager {
     /// `controlKey | optionKey` in Carbon bit-field, `kVK_Space` (49) keyCode.
     static var defaultQuickTerminalModifiers: UInt32 { carbonControl | carbonOption }
     static var defaultQuickTerminalKeyCode: UInt32 { UInt32(kVK_Space) }
+
+    /// Re-registers the hotkey from `QuickTerminalSettings` (or unregisters
+    /// it when disabled). Idempotent — safe to call on every settings change.
+    ///
+    /// Does **not** touch `onTrigger` — the caller owns the trigger routing
+    /// (typically `quickTerminalCoordinator.toggle()`). This method only
+    /// reflects the enabled flag + key code + modifiers.
+    @MainActor
+    func applyQuickTerminalSettings(_ settings: QuickTerminalSettings) {
+        guard settings.enabled else {
+            unregister()
+            return
+        }
+        register(keyCode: settings.keyCode, carbonModifiers: settings.modifiers)
+    }
 }

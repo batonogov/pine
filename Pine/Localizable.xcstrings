@@ -5876,6 +5876,18 @@
         }
       }
     },
+    "menu.quickTerminal": {
+      "comment": "Terminal menu command: toggle the global drop-down Quick Terminal.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Quick Terminal"
+          }
+        }
+      }
+    },
     "menu.resetFontSize": {
       "comment": "Menu command: reset editor font size to default.",
       "extractionState": "manual",
@@ -11981,6 +11993,18 @@
         }
       }
     },
+    "settings.tab.quickTerminal": {
+      "comment": "Settings tab title for the Quick Terminal preferences.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Quick Terminal"
+          }
+        }
+      }
+    },
     "settings.agentHandoff.title": {
       "extractionState": "manual",
       "localizations": {
@@ -13924,6 +13948,210 @@
           "stringUnit": {
             "state": "translated",
             "value": "语言服务器"
+          }
+        }
+      }
+    },
+    "settings.quickTerminal.title": {
+      "comment": "Title of the Quick Terminal settings tab.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Quick Terminal"
+          }
+        }
+      }
+    },
+    "settings.quickTerminal.enabled": {
+      "comment": "Toggle: enable the global Quick Terminal hotkey.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Enable Quick Terminal"
+          }
+        }
+      }
+    },
+    "settings.quickTerminal.enabled.help": {
+      "comment": "Help text under the enable toggle.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Toggle the drop-down terminal from anywhere with a system-wide keyboard shortcut."
+          }
+        }
+      }
+    },
+    "settings.quickTerminal.hotkey": {
+      "comment": "Settings label for the hotkey recorder.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Keyboard Shortcut"
+          }
+        }
+      }
+    },
+    "settings.quickTerminal.hotkey.help": {
+      "comment": "Help text under the hotkey recorder.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Click to record a new shortcut. Press Escape to cancel."
+          }
+        }
+      }
+    },
+    "settings.quickTerminal.hotkey.recording": {
+      "comment": "Label shown while the hotkey recorder is capturing input.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Press keys…"
+          }
+        }
+      }
+    },
+    "settings.quickTerminal.screenEdge": {
+      "comment": "Picker label: which screen edge the panel drops from.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Screen Edge"
+          }
+        }
+      }
+    },
+    "settings.quickTerminal.edge.top": {
+      "comment": "Screen edge option: top.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Top"
+          }
+        }
+      }
+    },
+    "settings.quickTerminal.edge.bottom": {
+      "comment": "Screen edge option: bottom.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bottom"
+          }
+        }
+      }
+    },
+    "settings.quickTerminal.edge.left": {
+      "comment": "Screen edge option: left.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Left"
+          }
+        }
+      }
+    },
+    "settings.quickTerminal.edge.right": {
+      "comment": "Screen edge option: right.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Right"
+          }
+        }
+      }
+    },
+    "settings.quickTerminal.size": {
+      "comment": "Slider label: panel size as a fraction of the screen.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Panel Size"
+          }
+        }
+      }
+    },
+    "settings.quickTerminal.targetDisplay": {
+      "comment": "Picker label: which display the panel appears on.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Display"
+          }
+        }
+      }
+    },
+    "settings.quickTerminal.display.active": {
+      "comment": "Display option: the display with the active window.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Active Display"
+          }
+        }
+      }
+    },
+    "settings.quickTerminal.display.main": {
+      "comment": "Display option: the main (menu bar) display.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Main Display"
+          }
+        }
+      }
+    },
+    "settings.quickTerminal.hideOnFocusLoss": {
+      "comment": "Toggle: hide the panel when it loses keyboard focus.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Hide When Losing Focus"
+          }
+        }
+      }
+    },
+    "settings.quickTerminal.hideOnFocusLoss.help": {
+      "comment": "Help text under the hide-on-focus-loss toggle.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Automatically hide the panel when another app becomes active."
           }
         }
       }
