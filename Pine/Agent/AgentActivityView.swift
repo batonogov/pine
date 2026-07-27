@@ -200,7 +200,7 @@ struct AgentActivityView: View {
                         onGoToTerminal(terminalID)
                     },
                     onClose: { detailRowID = nil }
-                }
+                )
             }
         }
         .accessibilityIdentifier(AccessibilityID.agentActivityPanel)
