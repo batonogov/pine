@@ -97,6 +97,7 @@ final class QuickTerminalSettings {
             // Clamp to a sane range so the panel is always usable.
             let clamped = min(max(heightFraction, 0.2), 0.8)
             if clamped != heightFraction {
+                defaults.set(clamped, forKey: Self.heightFractionKey)
                 heightFraction = clamped
                 return
             }

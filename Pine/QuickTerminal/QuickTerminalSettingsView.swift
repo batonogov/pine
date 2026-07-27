@@ -158,7 +158,7 @@ private struct QuickTerminalHotkeyRecorder: View {
             HStack {
                 Image(systemName: isRecording ? "keyboard" : "command")
                 Text(isRecording
-                     ? String(localized: Strings.quickTerminalRecordingHotkey)
+                     ? "Recording…"
                      : settings.hotkeyLabel)
                     .lineLimit(1)
             }
@@ -167,6 +167,7 @@ private struct QuickTerminalHotkeyRecorder: View {
         .buttonStyle(.bordered)
         .disabled(settings.enabled == false)
         .accessibilityIdentifier("quickTerminal.hotkeyRecorder")
+        .onDisappear { stopRecording() }
     }
 
     private func startRecording() {
