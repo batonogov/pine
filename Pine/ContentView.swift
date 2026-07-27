@@ -323,16 +323,19 @@ struct ContentView: View {
                             workingDirectory: workspace.rootURL
                         )
                     } else {
-                        // Warn before stopping tabs with foreground processes
-                        guard TabCloseHelper.confirmTerminalProcessStop(
-                            tabs: terminal.allTerminalTabs
-                        ) else { return }
-                        // Hide all terminal panes
-                        for paneID in paneManager.terminalPaneIDs {
-                            if let state = paneManager.terminalState(for: paneID) {
-                                for tab in state.terminalTabs { tab.stop() }
+                        // Warn before stopping tabs with foreground processes.
+                        // Presented as a window-scoped sheet (issue #1241).
+                        Task { @MainActor in
+                            guard await TabCloseHelper.confirmTerminalProcessStop(
+                                tabs: terminal.allTerminalTabs
+                            ) else { return }
+                            // Hide all terminal panes
+                            for paneID in paneManager.terminalPaneIDs {
+                                if let state = paneManager.terminalState(for: paneID) {
+                                    for tab in state.terminalTabs { tab.stop() }
+                                }
+                                paneManager.removePane(paneID)
                             }
-                            paneManager.removePane(paneID)
                         }
                     }
                 },

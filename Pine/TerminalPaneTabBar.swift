@@ -39,11 +39,13 @@ struct TerminalPaneTabBar: View {
     }
 
     private func closeTerminalTabWithConfirmation(_ tab: TerminalTab) {
-        guard TabCloseHelper.confirmTerminalProcessStop(tabs: [tab]) else { return }
-        terminalState.removeTab(id: tab.id)
-        // Remove the pane if no tabs remain
-        if terminalState.terminalTabs.isEmpty {
-            paneManager.removePane(paneID)
+        Task { @MainActor in
+            guard await TabCloseHelper.confirmTerminalProcessStop(tabs: [tab]) else { return }
+            terminalState.removeTab(id: tab.id)
+            // Remove the pane if no tabs remain
+            if terminalState.terminalTabs.isEmpty {
+                paneManager.removePane(paneID)
+            }
         }
     }
 
@@ -319,15 +321,17 @@ struct TerminalPaneTabBar: View {
 
             // Close terminal pane
             Button {
-                // Warn if any tab has a foreground process
-                guard TabCloseHelper.confirmTerminalProcessStop(
-                    tabs: terminalState.terminalTabs
-                ) else { return }
-                // Stop all tabs and remove pane
-                for tab in terminalState.terminalTabs {
-                    tab.stop()
+                // Warn if any tab has a foreground process (window-scoped sheet, #1241)
+                Task { @MainActor in
+                    guard await TabCloseHelper.confirmTerminalProcessStop(
+                        tabs: terminalState.terminalTabs
+                    ) else { return }
+                    // Stop all tabs and remove pane
+                    for tab in terminalState.terminalTabs {
+                        tab.stop()
+                    }
+                    paneManager.removePane(paneID)
                 }
-                paneManager.removePane(paneID)
             } label: {
                 Image(systemName: "xmark")
                     .font(.system(size: 10, weight: .semibold))

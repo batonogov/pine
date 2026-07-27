@@ -74,14 +74,16 @@ struct BranchSwitcherView: View {
             return
         }
 
-        if gitProvider.hasUncommittedChanges {
-            guard AlertTemplate.branchUncommittedChanges.runModal(
-                messageText: Strings.branchUncommittedChangesTitle,
-                informativeText: Strings.branchUncommittedChangesMessage(branch)
-            ) == .alertFirstButtonReturn else { return }
-        }
+        Task { @MainActor in
+            if gitProvider.hasUncommittedChanges {
+                let context = DialogPresenter.forKeyProject()
+                guard await AlertTemplate.branchUncommittedChanges.runSheet(
+                    on: context,
+                    messageText: Strings.branchUncommittedChangesTitle,
+                    informativeText: Strings.branchUncommittedChangesMessage(branch)
+                ) == .alertFirstButtonReturn else { return }
+            }
 
-        Task {
             let result = await gitProvider.checkoutBranchAsync(branch)
             if result.success {
                 errorMessage = ""

@@ -21,44 +21,48 @@ enum UserTaskInvocationController {
         let tabManager = projectManager.activeTabManager
         let activeTab = tabManager.activeTab
         if task.scope == .activeFile, activeTab == nil {
-            presentMissingActiveFile()
+            Task { @MainActor in presentMissingActiveFile() }
             return
         }
 
-        if task.effectiveRequireConfirmation(),
-           !presentConfirmation(for: task) {
-            return
-        }
+        Task { @MainActor in
+            if task.effectiveRequireConfirmation(),
+               !await presentConfirmation(for: task) {
+                return
+            }
 
-        let capturedTabID = activeTab?.id
-        let capturedContent = activeTab?.content
+            let capturedTabID = activeTab?.id
+            let capturedContent = activeTab?.content
 
-        UserTaskRunner.shared.run(
-            task: task,
-            fileURL: activeTab?.url,
-            projectRootURL: projectManager.workspace.rootURL,
-            fileContent: capturedContent
-        ) { outcome in
-            Task { @MainActor in
-                presentOutcome(
-                    outcome,
-                    task: task,
-                    projectManager: projectManager,
-                    capturedTabID: capturedTabID,
-                    capturedContent: capturedContent
-                )
+            UserTaskRunner.shared.run(
+                task: task,
+                fileURL: activeTab?.url,
+                projectRootURL: projectManager.workspace.rootURL,
+                fileContent: capturedContent
+            ) { outcome in
+                Task { @MainActor in
+                    presentOutcome(
+                        outcome,
+                        task: task,
+                        projectManager: projectManager,
+                        capturedTabID: capturedTabID,
+                        capturedContent: capturedContent
+                    )
+                }
             }
         }
     }
 
-    private static func presentConfirmation(for task: UserTask) -> Bool {
+    private static func presentConfirmation(for task: UserTask) async -> Bool {
+        let context = DialogPresenter.forKeyProject()
         let alert = NSAlert()
         alert.messageText = Strings.userTaskConfirmationTitle(task.label)
         alert.informativeText = Strings.userTaskConfirmationMessage(task.command)
         alert.alertStyle = .warning
         alert.addButton(withTitle: Strings.userTaskRun)
-        alert.addButton(withTitle: Strings.dialogCancel)
-        return alert.runModal() == .alertFirstButtonReturn
+        alert.addButton(withTitle: Strings.dialogCancel, role: .cancel)
+        let response = await alert.runSheet(on: context)
+        return response == .alertFirstButtonReturn
     }
 
     private static func presentOutcome(
@@ -108,20 +112,26 @@ enum UserTaskInvocationController {
     }
 
     private static func presentReplacementConflict() {
-        let alert = NSAlert()
-        alert.alertStyle = .warning
-        alert.messageText = Strings.userTaskOutputConflictTitle
-        alert.informativeText = Strings.userTaskOutputConflictMessage
-        alert.addButton(withTitle: Strings.dialogOK)
-        alert.runModal()
+        let context = DialogPresenter.forKeyProject()
+        Task { @MainActor in
+            let alert = NSAlert()
+            alert.alertStyle = .warning
+            alert.messageText = Strings.userTaskOutputConflictTitle
+            alert.informativeText = Strings.userTaskOutputConflictMessage
+            alert.addButton(withTitle: Strings.dialogOK)
+            _ = await alert.runSheet(on: context)
+        }
     }
 
     private static func presentMissingActiveFile() {
-        let alert = NSAlert()
-        alert.alertStyle = .warning
-        alert.messageText = Strings.userTaskMissingFileTitle
-        alert.informativeText = Strings.userTaskMissingFileMessage
-        alert.addButton(withTitle: Strings.dialogOK)
-        alert.runModal()
+        let context = DialogPresenter.forKeyProject()
+        Task { @MainActor in
+            let alert = NSAlert()
+            alert.alertStyle = .warning
+            alert.messageText = Strings.userTaskMissingFileTitle
+            alert.informativeText = Strings.userTaskMissingFileMessage
+            alert.addButton(withTitle: Strings.dialogOK)
+            _ = await alert.runSheet(on: context)
+        }
     }
 }

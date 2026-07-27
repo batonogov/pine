@@ -668,27 +668,39 @@ struct PaneLeafView: View {
     // MARK: - Tab close with dirty confirmation
 
     private func closeTabWithConfirmation(_ tab: EditorTab, tabManager: TabManager) {
-        TabCloseHelper.closeTab(tab, in: tabManager, gitProvider: workspace.gitProvider)
-        if tabManager.tabs.isEmpty {
+        let didClose = TabCloseHelper.closeTab(
+            tab, in: tabManager, gitProvider: workspace.gitProvider
+        )
+        if didClose && tabManager.tabs.isEmpty {
             paneManager.removePane(paneID)
         }
     }
 
     private func closeOtherTabsWithConfirmation(keeping tabID: UUID, tabManager: TabManager) {
-        TabCloseHelper.closeOtherTabs(keeping: tabID, in: tabManager, gitProvider: workspace.gitProvider)
+        Task { @MainActor in
+            _ = await TabCloseHelper.closeOtherTabs(
+                keeping: tabID, in: tabManager, gitProvider: workspace.gitProvider
+            )
+        }
     }
 
     private func closeTabsToTheRightWithConfirmation(of tabID: UUID, tabManager: TabManager) {
-        TabCloseHelper.closeTabsToTheRight(of: tabID, in: tabManager, gitProvider: workspace.gitProvider)
+        Task { @MainActor in
+            _ = await TabCloseHelper.closeTabsToTheRight(
+                of: tabID, in: tabManager, gitProvider: workspace.gitProvider
+            )
+        }
     }
 
     private func closeAllTabsWithConfirmation(tabManager: TabManager) {
-        let didClose = TabCloseHelper.closeAllTabs(
-            in: tabManager,
-            gitProvider: workspace.gitProvider
-        )
-        if didClose && tabManager.tabs.isEmpty {
-            paneManager.removePane(paneID)
+        Task { @MainActor in
+            let didClose = await TabCloseHelper.closeAllTabs(
+                in: tabManager,
+                gitProvider: workspace.gitProvider
+            )
+            if didClose && tabManager.tabs.isEmpty {
+                paneManager.removePane(paneID)
+            }
         }
     }
 }

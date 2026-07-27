@@ -319,7 +319,7 @@ final class TabManager {
     func saveActiveTab() -> Bool {
         guard let index = activeTabIndex else { return false }
         cancelAutoSave(for: tabs[index].id)
-        return saveTab(at: index)
+        return saveTabSync(at: index)
     }
 
     @discardableResult
@@ -350,8 +350,27 @@ final class TabManager {
     }
 
     @discardableResult
-    func saveTab(at index: Int) -> Bool {
+    func saveTab(at index: Int, context: DialogPresentationContext = .unscoped) {
         assert(tabs.indices.contains(index), "saveTab: index \(index) out of bounds, count \(tabs.count)")
+        do {
+            _ = try trySaveTab(at: index)
+        } catch {
+            Task { @MainActor in
+                _ = await AlertTemplate.fileOperationErrorCritical.runSheet(
+                    on: context,
+                    messageText: Strings.fileOperationErrorTitle,
+                    informativeText: error.localizedDescription
+                )
+            }
+        }
+    }
+
+    /// Synchronous save used by flows that are already inside an `inout`
+    /// scope or otherwise cannot await. Falls back to application-modal
+    /// `runModal()` for the error alert.
+    @discardableResult
+    func saveTabSync(at index: Int) -> Bool {
+        assert(tabs.indices.contains(index), "saveTabSync: index \(index) out of bounds, count \(tabs.count)")
         do {
             return try trySaveTab(at: index)
         } catch {
@@ -367,6 +386,9 @@ final class TabManager {
         for index in tabs.indices where tabs[index].isDirty { try trySaveTab(at: index) }
     }
 
+    /// Synchronous save-all. The error alert uses `runModal()` because the
+    /// callers (quit/window-close flows) run synchronously under
+    /// `applicationShouldTerminate` / `windowShouldClose`, which cannot await.
     @discardableResult
     func saveAllTabs() -> Bool {
         do { try trySaveAllTabs(); return true } catch {
@@ -608,9 +630,13 @@ final class TabManager {
     @discardableResult
     func duplicateActiveTab(projectRoot: URL? = nil) -> Bool {
         do { return try tryDuplicateActiveTab(projectRoot: projectRoot) } catch {
-            AlertTemplate.fileOperationErrorCritical.runModal(
-                messageText: Strings.fileOperationErrorTitle, informativeText: error.localizedDescription
-            )
+            Task { @MainActor in
+                _ = await AlertTemplate.fileOperationErrorCritical.runSheet(
+                    on: DialogPresenter.forKeyProject(),
+                    messageText: Strings.fileOperationErrorTitle,
+                    informativeText: error.localizedDescription
+                )
+            }
             return false
         }
     }

@@ -329,9 +329,13 @@ extension ContentView {
     }
 
     /// Shows a confirmation dialog before reverting all changes in a file.
+    /// Presented as a window-scoped sheet so it does not block other project
+    /// windows (issue #1241).
     static func confirmRevertAll(fileName: String, completion: @escaping (Bool) -> Void) {
-        DispatchQueue.main.async {
-            let response = AlertTemplate.revertAllConfirmation.runModal(
+        let context = DialogPresenter.forKeyProject()
+        Task { @MainActor in
+            let response = await AlertTemplate.revertAllConfirmation.runSheet(
+                on: context,
                 messageText: Strings.revertAllTitle,
                 informativeText: Strings.revertAllMessage(fileName)
             )
@@ -345,7 +349,12 @@ extension ContentView {
 extension ContentView {
 
     func closeTabWithConfirmation(_ tab: EditorTab) {
-        TabCloseHelper.closeTab(tab, in: activeTabManager, gitProvider: workspace.gitProvider)
+        let didClose = TabCloseHelper.closeTab(
+            tab, in: activeTabManager, gitProvider: workspace.gitProvider
+        )
+        if didClose && activeTabManager.tabs.isEmpty {
+            paneManager.removePane(paneManager.activePaneID)
+        }
     }
 
     func handleExternalChanges(_ result: TabManager.ExternalChangeResult) {
@@ -359,14 +368,19 @@ extension ContentView {
 
         if !modified.isEmpty {
             let names = Array(Set(modified.map(\.url.lastPathComponent))).sorted().joined(separator: ", ")
-            let response = AlertTemplate.externalModifyConflict.runModal(
-                messageText: Strings.externalModifyTitle,
-                informativeText: Strings.externalModifyMessage(names)
-            )
+            let context = DialogPresenter.forKeyProject()
+            Task { @MainActor [weak projectManager] in
+                let response = await AlertTemplate.externalModifyConflict.runSheet(
+                    on: context,
+                    messageText: Strings.externalModifyTitle,
+                    informativeText: Strings.externalModifyMessage(names)
+                )
 
-            if response == .alertFirstButtonReturn {
-                for conflict in modified {
-                    projectManager.reloadTabs(url: conflict.url)
+                if response == .alertFirstButtonReturn {
+                    guard let projectManager else { return }
+                    for conflict in modified {
+                        projectManager.reloadTabs(url: conflict.url)
+                    }
                 }
             }
         }
@@ -381,8 +395,16 @@ extension ContentView {
         guard !affected.isEmpty else { return }
 
         let dirtyTabs = affected.filter { $0.isDirty }
-        if !dirtyTabs.isEmpty {
-            let response = AlertTemplate.fileDeletedSaveAs.runModal(
+        guard !dirtyTabs.isEmpty else {
+            projectManager.closeTabsForDeletedFile(url: deletedURL)
+            return
+        }
+
+        let context = DialogPresenter.forKeyProject()
+        let projectManager = self.projectManager
+        Task { @MainActor in
+            let response = await AlertTemplate.fileDeletedSaveAs.runSheet(
+                on: context,
                 messageText: Strings.fileDeletedTitle,
                 informativeText: Strings.fileDeletedMessage
             )
@@ -391,11 +413,13 @@ extension ContentView {
                 for tab in dirtyTabs {
                     let panel = NSSavePanel()
                     panel.nameFieldStringValue = tab.fileName
-                    guard panel.runModal() == .OK, let saveURL = panel.url else { return }
+                    _ = panel.runSheet(on: context)
+                    guard let saveURL = panel.url else { return }
                     do {
                         try tab.content.write(to: saveURL, atomically: true, encoding: .utf8)
                     } catch {
-                        AlertTemplate.fileOperationErrorWarning.runModal(
+                        _ = await AlertTemplate.fileOperationErrorWarning.runSheet(
+                            on: context,
                             messageText: Strings.fileOperationErrorTitle,
                             informativeText: error.localizedDescription
                         )
@@ -407,9 +431,8 @@ extension ContentView {
             default:
                 return
             }
+            projectManager.closeTabsForDeletedFile(url: deletedURL)
         }
-
-        projectManager.closeTabsForDeletedFile(url: deletedURL)
     }
 }
 
