@@ -7,6 +7,78 @@ import SwiftUI
 enum Strings {
     // MARK: - Settings
 
+    static let settingsTabGeneral: LocalizedStringKey =
+        "settings.tab.general"
+    static let settingsTabTerminal: LocalizedStringKey =
+        "settings.tab.terminal"
+    static let settingsTabKeyBindings: LocalizedStringKey =
+        "settings.tab.keyBindings"
+
+    static let settingsGeneralTitle: LocalizedStringKey =
+        "settings.general.title"
+    static let settingsGeneralFormatting: LocalizedStringKey =
+        "settings.general.formatting"
+    static let settingsGeneralDisplay: LocalizedStringKey =
+        "settings.general.display"
+    static let settingsGeneralInsertFinalNewline: LocalizedStringKey =
+        "settings.general.insertFinalNewline"
+    static let settingsGeneralStripTrailingWhitespace: LocalizedStringKey =
+        "settings.general.stripTrailingWhitespace"
+    static let settingsGeneralFormatOnSave: LocalizedStringKey =
+        "settings.general.formatOnSave"
+    static let settingsGeneralSmartListContinuation: LocalizedStringKey =
+        "settings.general.smartListContinuation"
+    static let settingsGeneralWordWrap: LocalizedStringKey =
+        "settings.general.wordWrap"
+    static let settingsGeneralMinimap: LocalizedStringKey =
+        "settings.general.minimap"
+    static let settingsGeneralFontSize: LocalizedStringKey =
+        "settings.general.fontSize"
+
+    static let settingsTerminalTitle: LocalizedStringKey =
+        "settings.terminal.title"
+    static let settingsTerminalShell: LocalizedStringKey =
+        "settings.terminal.shell"
+    static let settingsTerminalShellPicker: LocalizedStringKey =
+        "settings.terminal.shellPicker"
+    static let settingsTerminalShellOther: LocalizedStringKey =
+        "settings.terminal.shellOther"
+    static let settingsTerminalShellPathPlaceholder: LocalizedStringKey =
+        "settings.terminal.shellPathPlaceholder"
+    static let settingsTerminalResolvedPrefix: LocalizedStringKey =
+        "settings.terminal.resolvedPrefix"
+    static let settingsTerminalArguments: LocalizedStringKey =
+        "settings.terminal.arguments"
+    static let settingsTerminalArgumentsHelp: LocalizedStringKey =
+        "settings.terminal.argumentsHelp"
+    static let settingsTerminalResetArgs: LocalizedStringKey =
+        "settings.terminal.resetArgs"
+    static let settingsTerminalQuickTerminal: LocalizedStringKey =
+        "settings.terminal.quickTerminal"
+    static let settingsTerminalQuickTerminalHotkey: LocalizedStringKey =
+        "settings.terminal.quickTerminalHotkey"
+    static let settingsTerminalQuickTerminalHelp: LocalizedStringKey =
+        "settings.terminal.quickTerminalHelp"
+
+    static let settingsKeyBindingsTitle: LocalizedStringKey =
+        "settings.keyBindings.title"
+    static let settingsKeyBindingsKeybindings: LocalizedStringKey =
+        "settings.keyBindings.keybindings"
+    static let settingsKeyBindingsTasks: LocalizedStringKey =
+        "settings.keyBindings.tasks"
+    static let settingsKeyBindingsOpenFile: LocalizedStringKey =
+        "settings.keyBindings.openFile"
+    static let settingsKeyBindingsReload: LocalizedStringKey =
+        "settings.keyBindings.reload"
+    static let settingsKeyBindingsEffective: LocalizedStringKey =
+        "settings.keyBindings.effective"
+    static let settingsKeyBindingsNoOverrides: LocalizedStringKey =
+        "settings.keyBindings.noOverrides"
+
+    static func settingsKeyBindingsActiveCount(_ count: Int) -> String {
+        String(localized: "settings.keyBindings.activeCount \(count)")
+    }
+
     static let settingsLanguageServersTab: LocalizedStringKey =
         "settings.tab.languageServers"
     static let settingsAgentHandoffTab: LocalizedStringKey =

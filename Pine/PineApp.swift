@@ -43,7 +43,9 @@ struct PineApp: App {
         Settings {
             PineSettingsView(
                 lspSettings: registry.lspSettings,
-                handoffSettings: .shared
+                handoffSettings: .shared,
+                shellSettings: .shared,
+                editorSettings: .shared
             )
         }
     }

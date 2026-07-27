@@ -11,27 +11,28 @@ import SwiftUI
 struct PineSettingsView: View {
     let lspSettings: LSPSettings
     let handoffSettings: AgentHandoffSettings
-    let terminalThemeSettings: TerminalThemeSettings
+    let shellSettings: ShellSettings
+    let editorSettings: EditorSettings
 
-    init(
-        lspSettings: LSPSettings,
-        handoffSettings: AgentHandoffSettings,
-        terminalThemeSettings: TerminalThemeSettings = .shared
-    ) {
-        self.lspSettings = lspSettings
-        self.handoffSettings = handoffSettings
-        self.terminalThemeSettings = terminalThemeSettings
-    }
+    /// Persists the last-selected pane across sessions (issue #337).
+    @AppStorage(Self.selectedPaneKey) private var selectedPane: SettingsPane.ID = .general
 
     var body: some View {
-        TabView {
-            TerminalSettingsView(settings: terminalThemeSettings)
-                .tabItem {
-                    Label(
-                        Strings.settingsTerminalTab,
-                        systemImage: "terminal"
-                    )
-                }
+        TabView(selection: $selectedPane) {
+            GeneralSettingsView(
+                editor: editorSettings,
+                fontSizeSettings: .shared
+            )
+            .tabItem {
+                Label(Strings.settingsTabGeneral, systemImage: "gearshape")
+            }
+            .tag(SettingsPane.ID.general)
+
+            TerminalSettingsView(shell: shellSettings)
+            .tabItem {
+                Label(Strings.settingsTabTerminal, systemImage: "terminal")
+            }
+            .tag(SettingsPane.ID.terminal)
 
             LSPSettingsView(settings: lspSettings)
                 .tabItem {
@@ -40,6 +41,7 @@ struct PineSettingsView: View {
                         systemImage: "server.rack"
                     )
                 }
+                .tag(SettingsPane.ID.languages)
 
             AgentHandoffSettingsView(settings: handoffSettings)
                 .tabItem {
@@ -48,16 +50,32 @@ struct PineSettingsView: View {
                         systemImage: "lock.shield"
                     )
                 }
+                .tag(SettingsPane.ID.agents)
 
-            QuickTerminalSettingsView(settings: .shared)
+            KeyBindingsTasksSettingsView()
                 .tabItem {
                     Label(
-                        Strings.settingsQuickTerminalTab,
-                        systemImage: "terminal"
+                        Strings.settingsTabKeyBindings,
+                        systemImage: "keyboard"
                     )
                 }
+                .tag(SettingsPane.ID.keyBindings)
         }
         .frame(width: 720, height: 540)
+    }
+
+    nonisolated static let selectedPaneKey = "settings.selectedPane"
+}
+
+/// Identifiers for the Settings scene panes (issue #337). The raw value is
+/// persisted so the last-selected pane is restored on reopen.
+enum SettingsPane {
+    enum ID: String, CaseIterable {
+        case general
+        case terminal
+        case languages
+        case agents
+        case keyBindings
     }
 }
 
