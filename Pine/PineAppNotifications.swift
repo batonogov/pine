@@ -12,8 +12,19 @@ import Foundation
 
 extension Notification.Name {
     // MARK: - File operations
+    /// Creates a new untitled editable buffer (File → New File).
+    static let newFile = Notification.Name("newFile")
+    /// Opens a single file via the open panel (File → Open…).
+    static let openFile = Notification.Name("openFile")
     static let openFolder = Notification.Name("openFolder")
+    /// Opens a recent project (File → Open Recent submenu).
+    /// userInfo: ["url": URL]
+    static let openRecentProject = Notification.Name("openRecentProject")
+    /// Clears the recent-projects menu (File → Open Recent → Clear Menu).
+    static let clearRecentProjects = Notification.Name("clearRecentProjects")
     static let closeTab = Notification.Name("closeTab")
+    /// Closes the active project window (File → Close Window).
+    static let closeWindow = Notification.Name("closeWindow")
     static let showQuickOpen = Notification.Name("showQuickOpen")
     static let showCommandPalette = Notification.Name("showCommandPalette")
     /// userInfo: ["oldURL": URL, "newURL": URL]
