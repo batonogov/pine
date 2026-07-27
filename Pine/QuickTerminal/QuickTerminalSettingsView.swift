@@ -158,7 +158,7 @@ private struct QuickTerminalHotkeyRecorder: View {
             HStack {
                 Image(systemName: isRecording ? "keyboard" : "command")
                 Text(isRecording
-                     ? Strings.quickTerminalRecordingHotkey
+                     ? String(localized: Strings.quickTerminalRecordingHotkey)
                      : settings.hotkeyLabel)
                     .lineLimit(1)
             }
