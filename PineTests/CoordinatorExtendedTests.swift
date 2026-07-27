@@ -243,6 +243,212 @@ struct CoordinatorExtendedTests {
         #expect(foldState.isFolded(range))
     }
 
+    @Test("YAML fold renders on the first click with a snapshot binding getter")
+    func handleFoldToggle_rendersSnapshotBindingImmediately() throws {
+        let text = """
+        disabled_rules:
+          - trailing_comma
+          - todo
+        opt_in_rules:
+        """
+        let initialState = FoldState()
+        var persistedState = initialState
+        let editorView = CodeEditorView(
+            text: .constant(text),
+            contentVersion: 0,
+            language: "yaml",
+            fileName: ".swiftlint.yml",
+            foldState: .init(
+                // PaneLeafView captures an EditorTab value in exactly this
+                // shape: the getter remains on the previous render's
+                // snapshot even after the setter persists the new state.
+                get: { initialState },
+                set: { persistedState = $0 }
+            )
+        )
+        let (scrollView, textView) = makeTextStack(text: text)
+        let coordinator = CodeEditorView.Coordinator(parent: editorView)
+        coordinator.scrollView = scrollView
+        coordinator.lineStartsCache = LineStartsCache(text: text)
+        textView.layoutManager?.delegate = coordinator
+
+        let lineNumberView = LineNumberView(
+            textView: textView,
+            clipView: scrollView.contentView
+        )
+        coordinator.lineNumberView = lineNumberView
+
+        let range = try #require(
+            YAMLIndentationFoldCalculator.calculate(text: text).first {
+                $0.kind == .indentation && $0.startLine == 1
+            }
+        )
+        let layoutManager = try #require(textView.layoutManager)
+        let textContainer = try #require(textView.textContainer)
+        layoutManager.ensureLayout(for: textContainer)
+
+        let hiddenCharacter = (text as NSString).range(
+            of: "trailing_comma"
+        ).location
+        var hiddenGlyph = layoutManager.glyphIndexForCharacter(
+            at: hiddenCharacter
+        )
+        #expect(
+            !layoutManager.propertyForGlyph(at: hiddenGlyph).contains(.null)
+        )
+
+        coordinator.handleFoldToggle(range)
+        layoutManager.ensureLayout(for: textContainer)
+        hiddenGlyph = layoutManager.glyphIndexForCharacter(
+            at: hiddenCharacter
+        )
+
+        #expect(persistedState.isFolded(range))
+        #expect(coordinator.renderedFoldState.isFolded(range))
+        #expect(lineNumberView.foldState.isFolded(range))
+        #expect(
+            layoutManager.propertyForGlyph(at: hiddenGlyph).contains(.null),
+            "The first click must suppress YAML body glyphs immediately"
+        )
+
+        coordinator.handleFoldToggle(range)
+        layoutManager.ensureLayout(for: textContainer)
+        hiddenGlyph = layoutManager.glyphIndexForCharacter(
+            at: hiddenCharacter
+        )
+
+        #expect(!persistedState.isFolded(range))
+        #expect(!coordinator.renderedFoldState.isFolded(range))
+        #expect(!lineNumberView.foldState.isFolded(range))
+        #expect(
+            !layoutManager.propertyForGlyph(at: hiddenGlyph).contains(.null),
+            "The second click must reveal the YAML body, not apply the first click"
+        )
+    }
+
+    @Test("A later SwiftUI fold-state update resynchronizes AppKit rendering")
+    func synchronizeFoldState_appliesExternalState() throws {
+        let text = "root:\n  child: value\nsibling: value"
+        let (coordinator, scrollView, textView) = makeCoordinator(
+            text: text,
+            language: "yaml",
+            fileName: "test.yaml"
+        )
+        textView.layoutManager?.delegate = coordinator
+        coordinator.lineStartsCache = LineStartsCache(text: text)
+        coordinator.lineNumberView = LineNumberView(
+            textView: textView,
+            clipView: scrollView.contentView
+        )
+        let layoutManager = try #require(textView.layoutManager)
+        let textContainer = try #require(textView.textContainer)
+        layoutManager.ensureLayout(for: textContainer)
+
+        let range = try #require(
+            YAMLIndentationFoldCalculator.calculate(text: text).first
+        )
+        let hiddenCharacter = (text as NSString).range(
+            of: "child"
+        ).location
+        var hiddenGlyph = layoutManager.glyphIndexForCharacter(
+            at: hiddenCharacter
+        )
+        #expect(
+            !layoutManager.propertyForGlyph(at: hiddenGlyph).contains(.null)
+        )
+        var restoredState = FoldState()
+        restoredState.fold(range)
+
+        coordinator.synchronizeFoldState(restoredState)
+        layoutManager.ensureLayout(for: textContainer)
+        hiddenGlyph = layoutManager.glyphIndexForCharacter(
+            at: hiddenCharacter
+        )
+
+        #expect(coordinator.renderedFoldState.isFolded(range))
+        #expect(coordinator.lineNumberView?.foldState.isFolded(range) == true)
+        #expect(
+            layoutManager.propertyForGlyph(at: hiddenGlyph).contains(.null)
+        )
+    }
+
+    @Test("Tab switch adopts its fold state before restoring content and scroll")
+    func prepareForViewUpdate_unfoldsBeforeTabLayout() throws {
+        let oldLines = (1...240).map { "  - old_rule_\($0)" }
+        let oldText = (["disabled_rules:"] + oldLines).joined(separator: "\n")
+        let oldRange = FoldableRange(
+            startLine: 1,
+            endLine: 241,
+            startCharIndex: 0,
+            endCharIndex: (oldText as NSString).length,
+            kind: .indentation
+        )
+        var oldState = FoldState()
+        oldState.fold(oldRange)
+
+        let oldView = CodeEditorView(
+            text: .constant(oldText),
+            contentVersion: 0,
+            language: "yaml",
+            fileName: "old.yaml",
+            foldState: .constant(oldState)
+        )
+        let (scrollView, textView) = makeTextStack(text: oldText)
+        textView.isVerticallyResizable = true
+        textView.maxSize = NSSize(
+            width: CGFloat.greatestFiniteMagnitude,
+            height: CGFloat.greatestFiniteMagnitude
+        )
+        let coordinator = CodeEditorView.Coordinator(parent: oldView)
+        coordinator.scrollView = scrollView
+        coordinator.lineStartsCache = LineStartsCache(text: oldText)
+        coordinator.syncContentVersion()
+        textView.layoutManager?.delegate = coordinator
+
+        let newLines = (1...240).map { "new_rule_\($0): enabled" }
+        let newText = newLines.joined(separator: "\n")
+        let savedOffset: CGFloat = 600
+        let newView = CodeEditorView(
+            text: .constant(newText),
+            contentVersion: 1,
+            language: "yaml",
+            fileName: "new.yaml",
+            foldState: .constant(FoldState()),
+            initialScrollOffset: savedOffset
+        )
+
+        // This is the production updateNSView order: destination state first,
+        // then the content path that synchronously lays out and restores scroll.
+        coordinator.prepareForViewUpdate(newView)
+        coordinator.updateContentIfNeeded(
+            text: newText,
+            language: "yaml",
+            fileName: "new.yaml",
+            font: font13
+        )
+
+        #expect(coordinator.parent.fileName == "new.yaml")
+        let layoutManager = try #require(textView.layoutManager)
+        let textContainer = try #require(textView.textContainer)
+        layoutManager.ensureLayout(for: textContainer)
+        let visibleCharacter = (newText as NSString).range(
+            of: "new_rule_200"
+        ).location
+        let visibleGlyph = layoutManager.glyphIndexForCharacter(
+            at: visibleCharacter
+        )
+
+        #expect(coordinator.renderedFoldState == FoldState())
+        #expect(
+            !layoutManager.propertyForGlyph(at: visibleGlyph).contains(.null),
+            "The destination document must not inherit hidden lines from the previous tab"
+        )
+        #expect(
+            scrollView.contentView.bounds.origin.y > 0,
+            "Scroll restoration must use the destination tab's unfolded layout"
+        )
+    }
+
     private func waitForFoldCalculation(
         _ coordinator: CodeEditorView.Coordinator
     ) async {

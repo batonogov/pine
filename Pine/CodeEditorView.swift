@@ -367,8 +367,9 @@ struct CodeEditorView: NSViewRepresentable {
     }
 
     func updateNSView(_ container: NSView, context: Context) {
-        // Обновляем parent, чтобы binding в coordinator был актуальным
-        context.coordinator.parent = self
+        // Adopt the new tab's fold state before content synchronization can
+        // force TextKit layout for cursor/scroll restoration.
+        context.coordinator.prepareForViewUpdate(self)
 
         guard let editorContainer = container as? EditorContainerView else { return }
 
@@ -465,7 +466,6 @@ struct CodeEditorView: NSViewRepresentable {
             lineNumberView.lineDiffs = lineDiffs
             lineNumberView.diffHunks = diffHunks
             lineNumberView.validationDiagnostics = validationDiagnostics
-            lineNumberView.foldState = foldState
         }
         if let minimapView = context.coordinator.minimapView {
             minimapView.lineDiffs = lineDiffs

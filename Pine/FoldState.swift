@@ -6,7 +6,7 @@
 import Foundation
 
 /// Управляет состоянием свёрнутых регионов кода для одного таба.
-struct FoldState {
+struct FoldState: Equatable {
     /// Текущие свёрнутые регионы.
     private(set) var foldedRanges: [FoldableRange] = []
 
