@@ -240,10 +240,10 @@ private struct SidebarFileTreeNode: View {
     private func openFile(_ disposition: SidebarFileOpenDisposition) {
         guard !isRenamingThisNode else { return }
         selection = node
-        onFileOpen(node, disposition)
         if disposition == .transientPreview {
             onKeyboardFocusRequested()
         }
+        onFileOpen(node, disposition)
     }
 
     private func loadDeferredChildrenIfNeeded() {

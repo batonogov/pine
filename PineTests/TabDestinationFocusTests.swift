@@ -519,6 +519,160 @@ struct TabDestinationFocusTests {
         #expect(editorManager.pendingFocusTabID == tab.id)
     }
 
+    @Test("Sidebar focus claim invalidates an active editor request only")
+    func sidebarClaimInvalidatesActiveEditorRequest() async throws {
+        let paneManager = PaneManager()
+        let editorPaneID = paneManager.activePaneID
+        let editorManager = try #require(paneManager.tabManager(for: editorPaneID))
+        let editorTab = EditorTab(url: URL(fileURLWithPath: "/tmp/sidebar-editor.swift"))
+        editorManager.tabs = [editorTab]
+        editorManager.activeTabID = editorTab.id
+
+        let terminalPaneID = try #require(paneManager.createTerminalPane(
+            relativeTo: editorPaneID,
+            axis: .vertical,
+            workingDirectory: nil
+        ))
+        let terminalState = try #require(paneManager.terminalState(for: terminalPaneID))
+        let terminalRequestID = try #require(terminalState.pendingFocusRequestID)
+
+        paneManager.activePaneID = editorPaneID
+        editorManager.pendingFocusTabID = editorTab.id
+        let editorRequestID = try #require(editorManager.pendingFocusRequestID)
+
+        let host = NSView(frame: NSRect(x: 0, y: 0, width: 400, height: 300))
+        let destination = FocusAcceptingTestView(frame: host.bounds)
+        let sidebarResponder = SidebarKeyboardResponderView(
+            frame: NSRect(x: 0, y: 0, width: 1, height: 1)
+        )
+        host.addSubview(destination)
+        host.addSubview(sidebarResponder)
+        let window = SidebarFocusRaceTestWindow(
+            contentRect: host.frame,
+            styleMask: [.titled],
+            backing: .buffered,
+            defer: false
+        )
+        window.contentView = host
+        window.destinationResponder = destination
+        let focusController = SidebarKeyboardFocusController()
+        focusController.attach(sidebarResponder)
+
+        let coordinator = AppKitFocusRequestCoordinator()
+        coordinator.update(
+            requestID: editorRequestID,
+            hostView: host,
+            targetView: destination,
+            canAttempt: { candidateRequestID in
+                paneManager.activePaneID == editorPaneID
+                    && editorManager.activeTabID == editorTab.id
+                    && editorManager.pendingFocusTabID == editorTab.id
+                    && editorManager.pendingFocusRequestID == candidateRequestID
+            },
+            onResult: { completedRequestID, succeeded in
+                editorManager.acknowledgeFocusRequest(
+                    requestID: completedRequestID,
+                    for: editorTab.id,
+                    succeeded: succeeded
+                )
+            }
+        )
+
+        // Leave the request pending after a real rejected attempt. The retry
+        // queued by update() would accept the destination and steal focus if
+        // clearing the model token did not invalidate canAttempt.
+        #expect(!coordinator.attemptNow())
+        #expect(window.destinationAttemptCount == 1)
+        #expect(coordinator.pendingRequestID == editorRequestID)
+
+        paneManager.cancelPendingFocusForActivePane()
+        #expect(focusController.requestFocus())
+        await nextMainQueueTurn()
+
+        #expect(editorManager.pendingFocusTabID == nil)
+        #expect(editorManager.pendingFocusRequestID == nil)
+        #expect(terminalState.pendingFocusRequestID == terminalRequestID)
+        #expect(coordinator.pendingRequestID == nil)
+        #expect(window.destinationAttemptCount == 1)
+        #expect(window.firstResponder === sidebarResponder)
+        #expect(window.firstResponder !== destination)
+    }
+
+    @Test("Sidebar focus claim invalidates an active terminal request only")
+    func sidebarClaimInvalidatesActiveTerminalRequest() async throws {
+        let paneManager = PaneManager()
+        let editorPaneID = paneManager.activePaneID
+        let editorManager = try #require(paneManager.tabManager(for: editorPaneID))
+        let editorTab = EditorTab(url: URL(fileURLWithPath: "/tmp/sidebar-editor.swift"))
+        editorManager.tabs = [editorTab]
+        editorManager.activeTabID = editorTab.id
+        editorManager.pendingFocusTabID = editorTab.id
+        let editorRequestID = try #require(editorManager.pendingFocusRequestID)
+
+        let terminalPaneID = try #require(paneManager.createTerminalPane(
+            relativeTo: editorPaneID,
+            axis: .vertical,
+            workingDirectory: nil
+        ))
+        let terminalState = try #require(paneManager.terminalState(for: terminalPaneID))
+        let terminalTab = try #require(terminalState.activeTab)
+        let terminalRequestID = try #require(terminalState.pendingFocusRequestID)
+
+        let host = NSView(frame: NSRect(x: 0, y: 0, width: 400, height: 300))
+        let destination = FocusAcceptingTestView(frame: host.bounds)
+        let sidebarResponder = SidebarKeyboardResponderView(
+            frame: NSRect(x: 0, y: 0, width: 1, height: 1)
+        )
+        host.addSubview(destination)
+        host.addSubview(sidebarResponder)
+        let window = SidebarFocusRaceTestWindow(
+            contentRect: host.frame,
+            styleMask: [.titled],
+            backing: .buffered,
+            defer: false
+        )
+        window.contentView = host
+        window.destinationResponder = destination
+        let focusController = SidebarKeyboardFocusController()
+        focusController.attach(sidebarResponder)
+
+        let coordinator = AppKitFocusRequestCoordinator()
+        coordinator.update(
+            requestID: terminalRequestID,
+            hostView: host,
+            targetView: destination,
+            canAttempt: { candidateRequestID in
+                paneManager.activePaneID == terminalPaneID
+                    && terminalState.activeTerminalID == terminalTab.id
+                    && terminalState.pendingFocusTabID == terminalTab.id
+                    && terminalState.pendingFocusRequestID == candidateRequestID
+            },
+            onResult: { completedRequestID, succeeded in
+                terminalState.acknowledgeFocusRequest(
+                    requestID: completedRequestID,
+                    for: terminalTab.id,
+                    succeeded: succeeded
+                )
+            }
+        )
+
+        #expect(!coordinator.attemptNow())
+        #expect(window.destinationAttemptCount == 1)
+        #expect(coordinator.pendingRequestID == terminalRequestID)
+
+        paneManager.cancelPendingFocusForActivePane()
+        #expect(focusController.requestFocus())
+        await nextMainQueueTurn()
+
+        #expect(terminalState.pendingFocusTabID == nil)
+        #expect(terminalState.pendingFocusRequestID == nil)
+        #expect(editorManager.pendingFocusRequestID == editorRequestID)
+        #expect(coordinator.pendingRequestID == nil)
+        #expect(window.destinationAttemptCount == 1)
+        #expect(window.firstResponder === sidebarResponder)
+        #expect(window.firstResponder !== destination)
+    }
+
     @Test("Sidebar preview preserves focus while an explicit open targets the editor")
     func sidebarOpenDispositionFocusPolicy() {
         #expect(!SidebarFileOpenDisposition.transientPreview.requestsEditorFocus)
@@ -587,6 +741,97 @@ struct TabDestinationFocusTests {
         #expect(window.firstResponder === responder)
     }
 
+    @Test("Queued implicit editor focus respects a sidebar responder claim")
+    func queuedImplicitEditorFocusRespectsSidebarClaim() async {
+        let controller = SidebarKeyboardFocusController()
+        let responder = SidebarKeyboardResponderView(
+            frame: NSRect(x: 0, y: 0, width: 1, height: 1)
+        )
+        let editor = FocusAcceptingTestView(
+            frame: NSRect(x: 0, y: 0, width: 400, height: 300)
+        )
+        let window = NSWindow(
+            contentRect: editor.frame,
+            styleMask: [.titled],
+            backing: .buffered,
+            defer: false
+        )
+        window.contentView?.addSubview(editor)
+        window.contentView?.addSubview(responder)
+        controller.attach(responder)
+
+        let tabID = UUID()
+        var attemptedInitialFocus = false
+        DispatchQueue.main.async {
+            attemptedInitialFocus = true
+            _ = CodeEditorView.attemptInitialFocus(
+                on: editor,
+                canAttempt: {
+                    SidebarKeyboardFocusPolicy.allowsEditorInitialFocus(
+                        tabID: tabID,
+                        pendingFocusTabID: nil,
+                        firstResponder: window.firstResponder
+                    )
+                }
+            )
+        }
+
+        #expect(controller.requestFocus())
+        #expect(window.firstResponder === responder)
+        await nextMainQueueTurn()
+
+        #expect(attemptedInitialFocus)
+        #expect(window.firstResponder === responder)
+        #expect(window.firstResponder !== editor)
+    }
+
+    @Test("Sidebar AppKit responder advances the FKA key-view loop")
+    func sidebarResponderAdvancesKeyViewLoop() throws {
+        let responder = SidebarKeyboardResponderView(
+            frame: NSRect(x: 0, y: 0, width: 1, height: 1)
+        )
+        let window = FocusTraversalTestWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 400, height: 300),
+            styleMask: [.titled],
+            backing: .buffered,
+            defer: false
+        )
+        window.contentView?.addSubview(responder)
+        #expect(window.makeFirstResponder(responder))
+
+        let tabEvent = try #require(NSEvent.keyEvent(
+            with: .keyDown,
+            location: .zero,
+            modifierFlags: [],
+            timestamp: 0,
+            windowNumber: window.windowNumber,
+            context: nil,
+            characters: "\t",
+            charactersIgnoringModifiers: "\t",
+            isARepeat: false,
+            keyCode: 48
+        ))
+        responder.keyDown(with: tabEvent)
+        #expect(window.nextSelectionCount == 1)
+        #expect(window.previousSelectionCount == 0)
+
+        let shiftTabEvent = try #require(NSEvent.keyEvent(
+            with: .keyDown,
+            location: .zero,
+            modifierFlags: .shift,
+            timestamp: 0,
+            windowNumber: window.windowNumber,
+            context: nil,
+            characters: "\t",
+            charactersIgnoringModifiers: "\t",
+            isARepeat: false,
+            keyCode: 48
+        ))
+        responder.keyDown(with: shiftTabEvent)
+        #expect(window.nextSelectionCount == 1)
+        #expect(window.previousSelectionCount == 1)
+    }
+
     @Test("Quick Look focus target is an explicit first responder")
     func quickLookAcceptsDestinationFocus() throws {
         let view = try #require(FocusableQuickLookPreviewView(
@@ -632,6 +877,34 @@ private final class FocusRejectingTestWindow: NSWindow {
     override func makeFirstResponder(_ responder: NSResponder?) -> Bool {
         focusAttemptCount += 1
         return false
+    }
+}
+
+private final class SidebarFocusRaceTestWindow: NSWindow {
+    weak var destinationResponder: NSResponder?
+    private(set) var destinationAttemptCount = 0
+
+    override func makeFirstResponder(_ responder: NSResponder?) -> Bool {
+        if responder === destinationResponder {
+            destinationAttemptCount += 1
+            if destinationAttemptCount == 1 {
+                return false
+            }
+        }
+        return super.makeFirstResponder(responder)
+    }
+}
+
+private final class FocusTraversalTestWindow: NSWindow {
+    private(set) var nextSelectionCount = 0
+    private(set) var previousSelectionCount = 0
+
+    override func selectNextKeyView(_ sender: Any?) {
+        nextSelectionCount += 1
+    }
+
+    override func selectPreviousKeyView(_ sender: Any?) {
+        previousSelectionCount += 1
     }
 }
 

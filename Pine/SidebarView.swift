@@ -181,6 +181,14 @@ final class SidebarKeyboardResponderView: NSView {
         if onKeyDown?(event) == true {
             return
         }
+        if event.keyCode == 48 {
+            if event.modifierFlags.contains(.shift) {
+                window?.selectPreviousKeyView(self)
+            } else {
+                window?.selectNextKeyView(self)
+            }
+            return
+        }
         super.keyDown(with: event)
     }
 }
@@ -209,12 +217,14 @@ struct SidebarView: View {
     @Binding var selectedFile: FileNode?
     let onFileOpen: (FileNode, SidebarFileOpenDisposition) -> Void
     @Environment(WorkspaceManager.self) private var workspace
+    @Environment(PaneManager.self) private var paneManager
     @Environment(ProjectRegistry.self) private var registry
     @Environment(\.openWindow) var openWindow
     @Environment(\.undoManager) private var undoManager
     @State private var editState = SidebarEditState()
     @State private var expansion = SidebarExpansionState()
     @State private var keyboardFocusController = SidebarKeyboardFocusController()
+    @FocusState private var hasSwiftUIKeyboardFocus: Bool
 
     var body: some View {
         Group {
@@ -259,7 +269,7 @@ struct SidebarView: View {
                                 selection: $selectedFile,
                                 onFileOpen: onFileOpen,
                                 onKeyboardFocusRequested: {
-                                    keyboardFocusController.requestFocus()
+                                    claimSidebarKeyboardFocus()
                                 }
                             )
                         }
@@ -274,6 +284,14 @@ struct SidebarView: View {
                         .frame(width: 1, height: 1)
                     }
                     .focusable()
+                    .focused($hasSwiftUIKeyboardFocus)
+                    .onChange(of: hasSwiftUIKeyboardFocus) { _, hasFocus in
+                        guard hasFocus else { return }
+                        // Full Keyboard Access focuses SwiftUI's host first.
+                        // Normalize that path to the AppKit responder so a
+                        // deferred editor-creation focus cannot displace it.
+                        claimSidebarKeyboardFocus()
+                    }
                     .environment(editState)
                     .environment(expansion)
                     .onChange(of: workspace.rootNodesRevision) { _, _ in
@@ -328,6 +346,12 @@ struct SidebarView: View {
                     .navigationTitle(workspace.projectName)
                     .onChange(of: editState.renamingURL) { _, newURL in
                         if newURL != nil {
+                            // Context-menu rename/new/duplicate paths do not
+                            // necessarily pass through a row focus claim.
+                            // Claim the AppKit responder before the inline
+                            // TextField takes focus so both explicit retries
+                            // and implicit editor creation are superseded.
+                            claimSidebarKeyboardFocus()
                             // Defer to avoid modifying state during view update
                             DispatchQueue.main.async {
                                 selectedFile = nil
@@ -355,6 +379,14 @@ struct SidebarView: View {
     private func openNewProject() {
         guard let url = registry.openProjectViaPanel() else { return }
         openWindow(value: url)
+    }
+
+    /// A sidebar action supersedes any older destination-focus request. The
+    /// model is invalidated before AppKit changes first responder so a queued
+    /// editor or terminal retry cannot reclaim focus on the next run loop.
+    private func claimSidebarKeyboardFocus() {
+        paneManager.cancelPendingFocusForActivePane()
+        keyboardFocusController.requestFocus()
     }
 
     /// Handles real AppKit events when the sidebar was focused by a row click.
@@ -392,6 +424,7 @@ struct SidebarView: View {
               let selected = selectedFile else {
             return false
         }
+        paneManager.cancelPendingFocusForActivePane()
         editState.startRename(for: selected)
         return true
     }
@@ -400,11 +433,8 @@ struct SidebarView: View {
         guard let selected = selectedFile, !selected.isDirectory else {
             return false
         }
+        claimSidebarKeyboardFocus()
         onFileOpen(selected, .transientPreview)
-        // Space can arrive through SwiftUI's keyboard-focus path rather than
-        // the AppKit bridge. Normalize both paths to the real sidebar
-        // responder before a newly-created preview gets initial focus.
-        keyboardFocusController.requestFocus()
         return true
     }
 }

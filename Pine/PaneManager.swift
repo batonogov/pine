@@ -1220,6 +1220,27 @@ final class PaneManager {
         globalTabSwitchOrder = result
     }
 
+    /// Invalidates a destination-focus request that predates a source control
+    /// such as the sidebar taking first responder.
+    ///
+    /// Only the active pane can currently pass the AppKit coordinators'
+    /// `canAttempt` guards. Keeping the cancellation scoped to that pane avoids
+    /// discarding unrelated restore or drag requests in background panes.
+    func cancelPendingFocusForActivePane() {
+        switch root.content(for: activePaneID) {
+        case .editor:
+            guard let manager = tabManagers[activePaneID],
+                  manager.pendingFocusTabID != nil else { return }
+            manager.pendingFocusTabID = nil
+        case .terminal:
+            guard let state = terminalStates[activePaneID],
+                  state.pendingFocusTabID != nil else { return }
+            state.pendingFocusTabID = nil
+        case nil:
+            break
+        }
+    }
+
     /// Requests usable content focus for the restored active pane. The normal
     /// bounded AppKit retry coordinator consumes this request once the
     /// destination view has entered a window.
