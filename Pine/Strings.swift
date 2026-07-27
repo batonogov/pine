@@ -419,6 +419,118 @@ enum Strings {
     static func agentActivityFileChanged(_ name: String) -> String {
         String(localized: "agentActivity.fileChanged \(name)")
     }
+    static let agentActivityResetFilters: LocalizedStringKey = "agentActivity.resetFilters"
+    static let agentActivityAllAttributions: LocalizedStringKey = "agentActivity.allAttributions"
+    static var agentActivityAttributionVerified: String {
+        String(localized: "agentActivity.attribution.verified", defaultValue: "Verified")
+    }
+    static var agentActivityDetailCopied: LocalizedStringKey { "agentActivity.detail.copied" }
+    static var agentActivityDetailCopy: LocalizedStringKey { "agentActivity.detail.copy" }
+    static var agentActivityDetailGoToTerminal: LocalizedStringKey { "agentActivity.detail.goToTerminal" }
+    static var agentActivityDetailOpenFile: LocalizedStringKey { "agentActivity.detail.openFile" }
+    static var agentActivityEvidenceAmbiguousExplanation: String {
+        String(
+            localized: "agentActivity.evidence.ambiguousExplanation",
+            defaultValue: """
+            This action could not be confidently attributed to a single agent session. \
+            Multiple active sessions could have produced it.
+            """
+        )
+    }
+    static var agentActivityEvidenceVerifiedExplanation: String {
+        String(
+            localized: "agentActivity.evidence.verifiedExplanation",
+            defaultValue: """
+            This action was verified against an active agent session through trusted process observation.
+            """
+        )
+    }
+    static var agentActivityEvidenceSessionLinkedExplanation: String {
+        String(
+            localized: "agentActivity.evidence.sessionLinkedExplanation",
+            defaultValue: """
+            This action is linked to a session by legacy activity data; it is not a verified agent event.
+            """
+        )
+    }
+    static var agentActivityEvidenceInferredExplanation: String {
+        String(
+            localized: "agentActivity.evidence.inferredExplanation",
+            defaultValue: """
+            This action was inferred from file-system timing; no verified agent event is available.
+            """
+        )
+    }
+    static var agentActivityRowInspectHint: String {
+        String(localized: "agentActivity.rowInspectHint", defaultValue: "Inspect this action")
+    }
+
+    // MARK: - Agent Action kinds, statuses & detail labels (#1245)
+    static var agentActionKindFileWrite: String {
+        String(localized: "agentAction.kind.fileWrite", defaultValue: "File write")
+    }
+    static var agentActionKindFileRead: String {
+        String(localized: "agentAction.kind.fileRead", defaultValue: "File read")
+    }
+    static var agentActionKindCommand: String {
+        String(localized: "agentAction.kind.command", defaultValue: "Command")
+    }
+    static var agentActionKindToolCall: String {
+        String(localized: "agentAction.kind.toolCall", defaultValue: "Tool call")
+    }
+    static var agentActionStatusPending: String {
+        String(localized: "agentAction.status.pending", defaultValue: "Pending")
+    }
+    static var agentActionStatusInProgress: String {
+        String(localized: "agentAction.status.inProgress", defaultValue: "In progress")
+    }
+    static var agentActionStatusCompleted: String {
+        String(localized: "agentAction.status.completed", defaultValue: "Completed")
+    }
+    static var agentActionStatusFailed: String {
+        String(localized: "agentAction.status.failed", defaultValue: "Failed")
+    }
+    static var agentActionDetailSummaryLabel: String {
+        String(localized: "agentAction.detail.summaryLabel", defaultValue: "Summary")
+    }
+    static var agentActionDetailKindLabel: String {
+        String(localized: "agentAction.detail.kindLabel", defaultValue: "Kind")
+    }
+    static var agentActionDetailStatusLabel: String {
+        String(localized: "agentAction.detail.statusLabel", defaultValue: "Status")
+    }
+    static var agentActionDetailFileLabel: String {
+        String(localized: "agentAction.detail.fileLabel", defaultValue: "File")
+    }
+    static var agentActionDetailEvidenceLabel: String {
+        String(localized: "agentAction.detail.evidenceLabel", defaultValue: "Evidence")
+    }
+    static var agentActionDetailWorkingDirectoryLabel: String {
+        String(localized: "agentAction.detail.workingDirectoryLabel", defaultValue: "Working directory")
+    }
+    static var agentActionDetailRelatedTerminalLabel: String {
+        String(localized: "agentAction.detail.relatedTerminalLabel", defaultValue: "Related terminal")
+    }
+    static var agentActionDetailTimestampLabel: String {
+        String(localized: "agentAction.detail.timestampLabel", defaultValue: "Timestamp")
+    }
+
+    // MARK: - Agent state labels (#1245)
+    static var agentStateIdle: String {
+        String(localized: "agentState.idle", defaultValue: "Idle")
+    }
+    static var agentStateThinking: String {
+        String(localized: "agentState.thinking", defaultValue: "Thinking")
+    }
+    static var agentStateExecuting: String {
+        String(localized: "agentState.executing", defaultValue: "Executing")
+    }
+    static var agentStateWaitingInput: String {
+        String(localized: "agentState.waitingInput", defaultValue: "Waiting for input")
+    }
+    static var agentStateDone: String {
+        String(localized: "agentState.done", defaultValue: "Done")
+    }
 
     // MARK: - Agent Attention overlay (#1112)
     static let agentAttentionTitle: LocalizedStringKey = "agentAttention.title"

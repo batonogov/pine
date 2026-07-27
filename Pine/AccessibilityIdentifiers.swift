@@ -198,6 +198,12 @@ nonisolated enum AccessibilityID {
     static func agentActivityRow(_ id: UUID) -> String {
         "agentActivityRow_\(id.uuidString)"
     }
+    static let agentActivityResetFilters = "agentActivityResetFilters"
+    static let agentActivityAttributionMenu = "agentActivityAttributionMenu"
+    static let agentActivityDetail = "agentActivityDetail"
+    static let agentActivityDetailCopy = "agentActivityDetailCopy"
+    static let agentActivityDetailGoToTerminal = "agentActivityDetailGoToTerminal"
+    static let agentActivityDetailOpenFile = "agentActivityDetailOpenFile"
 
     // MARK: - Agent History & Undo (#1073)
     static let agentHistoryPanel = "agentHistoryPanel"
