@@ -33,7 +33,7 @@ final class PineUserDriver: NSObject, SPUUserDriver {
 
     // MARK: - Update permission
 
-    func showUpdatePermissionRequest(
+    func show(
         _ request: SPUUpdatePermissionRequest,
         reply: @escaping (SUUpdatePermissionResponse) -> Void
     ) {
@@ -49,7 +49,7 @@ final class PineUserDriver: NSObject, SPUUserDriver {
 
     // MARK: - User-initiated check
 
-    func showUserInitiatedUpdateCheck(withCancellation cancellation: @escaping () -> Void) {
+    func showUserInitiatedUpdateCheck(cancellation: @escaping () -> Void) {
         coordinator.handleShowUserInitiatedUpdateCheck(cancellation: cancellation)
     }
 
@@ -99,7 +99,7 @@ final class PineUserDriver: NSObject, SPUUserDriver {
 
     // MARK: - Download
 
-    func showDownloadInitiated(withCancellation cancellation: @escaping () -> Void) {
+    func showDownloadInitiated(cancellation: @escaping () -> Void) {
         coordinator.handleDownloadInitiated(cancellation: cancellation)
     }
 
@@ -127,7 +127,7 @@ final class PineUserDriver: NSObject, SPUUserDriver {
 
     // MARK: - Install & relaunch
 
-    func showReadyToInstallAndRelaunch(_ reply: @escaping (SPUUserUpdateChoice) -> Void) {
+    func showReady(toInstallAndRelaunch reply: @escaping (SPUUserUpdateChoice) -> Void) {
         coordinator.handleReadyToInstallAndRelaunch(reply: reply)
     }
 
