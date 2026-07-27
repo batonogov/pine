@@ -1248,7 +1248,7 @@ enum Strings {
 
     /// 1-based pane position label, e.g. "Pane 2".
     static func panePositionLabel(_ position: Int) -> String {
-        String(localized: "pane.positionLabel \(position)", defaultValue: "Pane \(position)")
+        "Pane \(position)"
     }
 
     /// VoiceOver description for the currently highlighted row.
