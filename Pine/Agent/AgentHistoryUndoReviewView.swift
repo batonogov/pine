@@ -293,7 +293,7 @@ struct AgentHistoryUndoReviewView: View {
         VStack(alignment: .leading, spacing: 3) {
             if let sha = operation.expectedContentSHA256 {
                 identityRow(
-                    label: String(localized: Strings.agentHistoryUndoReviewExpected),
+                    label: String(localized: "agentHistory.undoReview.expected"),
                     path: operation.relativePath,
                     sha: sha,
                     byteCount: operation.expectedByteCount,
@@ -302,7 +302,7 @@ struct AgentHistoryUndoReviewView: View {
             }
             if let sha = operation.resultContentSHA256 {
                 identityRow(
-                    label: String(localized: Strings.agentHistoryUndoReviewResult),
+                    label: String(localized: "agentHistory.undoReview.result"),
                     path: operation.relativePath,
                     sha: sha,
                     byteCount: operation.resultByteCount,
@@ -527,22 +527,22 @@ extension AgentHistoryUndoPreviewOperation.Kind {
     var displayName: String {
         switch self {
         case .restoreModifiedFile:
-            String(localized: Strings.agentHistoryUndoReviewKindRestore)
+            String(localized: "agentHistory.undoReview.kind.restore")
         case .removeCreatedFile:
-            String(localized: Strings.agentHistoryUndoReviewKindRemove)
+            String(localized: "agentHistory.undoReview.kind.remove")
         case .restoreDeletedFile:
-            String(localized: Strings.agentHistoryUndoReviewKindRecreate)
+            String(localized: "agentHistory.undoReview.kind.recreate")
         }
     }
 
     var detailText: String {
         switch self {
         case .restoreModifiedFile:
-            String(localized: Strings.agentHistoryUndoReviewDetailRestore)
+            String(localized: "agentHistory.undoReview.detail.restore")
         case .removeCreatedFile:
-            String(localized: Strings.agentHistoryUndoReviewDetailRemove)
+            String(localized: "agentHistory.undoReview.detail.remove")
         case .restoreDeletedFile:
-            String(localized: Strings.agentHistoryUndoReviewDetailRecreate)
+            String(localized: "agentHistory.undoReview.detail.recreate")
         }
     }
 }
