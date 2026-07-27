@@ -205,6 +205,7 @@ Pine uses a minimal zero-dependency visual snapshot harness for SwiftUI views. R
 ## GitHub Issues
 
 When creating issues, always:
+- Create the issue before opening a branch or starting implementation. Never create an issue alongside or after its PR
 - Add appropriate labels from the repo's label set (e.g. `enhancement`, `bug`, `editor`, `UX`, `priority: high/medium/low`, etc.)
 - Use a clear, concise title
 - Include **Summary**, **Motivation**, and **Implementation ideas** sections in the body
@@ -216,7 +217,7 @@ How the maintainer works day-to-day. Documents intent and handoff conventions fo
 
 ### Prioritization
 - Work is driven by **milestones**. The next task is picked from the active milestone, prioritized by labels (`priority: high` first).
-- An issue is filed **before or alongside** implementation and always assigned to a milestone (see `## GitHub Issues`).
+- An issue is filed and assigned to a milestone **before** its branch is created or implementation begins (see `## GitHub Issues`). A PR may only be opened for an existing issue and must reference it.
 
 ### Branches & PRs
 - **One task = one short-lived branch**, named by type with no issue number: `feat/terminal-scroll`, `fix/gutter-bug`.
