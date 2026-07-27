@@ -278,6 +278,80 @@ struct TerminalMetalRendererTests {
         }
     }
 
+    @Test("Cross-pane tab move recreates Metal presentation and preserves terminal")
+    func crossPaneTabMoveRecreatesMetalPresentation() {
+        guard MTLCreateSystemDefaultDevice() != nil else { return }
+        let sourceState = TerminalPaneState()
+        let movedTab = sourceState.addTab(workingDirectory: nil)
+        let remainingTab = sourceState.addTab(workingDirectory: nil)
+        sourceState.activeTerminalID = movedTab.id
+        let destinationState = TerminalPaneState()
+        let destinationExistingTab = destinationState.addTab(workingDirectory: nil)
+
+        let source = TerminalContainerView(
+            frame: NSRect(x: 0, y: 0, width: 400, height: 300)
+        )
+        let destination = TerminalContainerView(
+            frame: NSRect(x: 400, y: 0, width: 400, height: 300)
+        )
+        source.bind(to: sourceState)
+        destination.bind(to: destinationState)
+        let root = NSView(frame: NSRect(x: 0, y: 0, width: 800, height: 300))
+        root.addSubview(source)
+        root.addSubview(destination)
+
+        let window = makeWindow(containing: root)
+        defer {
+            source.prepareForDismantle()
+            destination.prepareForDismantle()
+            movedTab.stop()
+            remainingTab.stop()
+            destinationExistingTab.stop()
+            window.contentView = nil
+        }
+        #expect(source.window === window)
+        #expect(destination.window === window)
+        #expect(movedTab.terminalView.superview === source)
+        #expect(movedTab.presentationOwner === source)
+        #expect(destinationExistingTab.terminalView.superview === destination)
+        #expect(destinationExistingTab.presentationOwner === destination)
+        guard let view = movedTab.terminalView as? PineTerminalView else {
+            Issue.record("Terminal tab does not use PineTerminalView")
+            return
+        }
+        guard view.isUsingMetalRenderer,
+              let originalMetalView = firstMetalView(in: view) else {
+            return
+        }
+        let originalTerminal = view.getTerminal()
+
+        // Mirror PaneManager's add-before-remove transfer while both pane
+        // hosts are already committed to the same window. The destination
+        // must replace only the renderer presentation, never the session.
+        destinationState.terminalTabs.append(movedTab)
+        destinationState.activeTerminalID = movedTab.id
+        sourceState.terminalTabs.removeAll { $0.id == movedTab.id }
+        sourceState.activeTerminalID = remainingTab.id
+        destination.showTab(movedTab)
+        source.showTab(remainingTab)
+
+        guard let recreatedMetalView = firstMetalView(in: view) else {
+            Issue.record("Cross-pane terminal move lost its Metal view")
+            return
+        }
+        #expect(recreatedMetalView !== originalMetalView)
+        #expect(view.getTerminal() === originalTerminal)
+        #expect(view.isUsingMetalRenderer)
+        #expect(view.superview === destination)
+        #expect(destinationState.presentationOwner === destination)
+        #expect(movedTab.presentationOwner === destination)
+        #expect(remainingTab.terminalView.superview === source)
+        #expect(sourceState.presentationOwner === source)
+        #expect(remainingTab.presentationOwner === source)
+        #expect(destinationExistingTab.terminalView.superview == nil)
+        #expect(destinationExistingTab.presentationOwner == nil)
+    }
+
     @Test("Ancestor detach and same-window reattach recreates Metal presentation")
     func ancestorDetachReattachRecreatesMetalView() {
         guard MTLCreateSystemDefaultDevice() != nil else { return }
