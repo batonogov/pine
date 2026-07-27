@@ -294,12 +294,15 @@ struct TerminalPaneTabBar: View {
 
             // Maximize / restore terminal pane
             Button {
-                withAnimation(PineAnimation.quick) {
-                    if paneManager.isMaximized {
-                        paneManager.restoreFromMaximize()
-                    } else {
-                        paneManager.maximize(paneID: paneID)
-                    }
+                // This structurally replaces the pane tree while preserving a
+                // model-owned AppKit terminal view. An animated transition
+                // keeps the outgoing and incoming representables alive at
+                // once, so both can contend for the single NSView. Swap
+                // atomically; the native terminal surface remains continuous.
+                if paneManager.isMaximized {
+                    paneManager.restoreFromMaximize()
+                } else {
+                    paneManager.maximize(paneID: paneID)
                 }
             } label: {
                 Image(systemName: paneManager.maximizedPaneID == paneID

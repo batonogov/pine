@@ -33,6 +33,10 @@ final class TerminalTests: PineUITestCase {
         app.descendants(matching: .any)["terminalTabBar"].firstMatch
     }
 
+    private var terminalSurface: XCUIElement {
+        app.descendants(matching: .any)["terminalSurface"].firstMatch
+    }
+
     private var newTerminalButton: XCUIElement {
         app.descendants(matching: .any)["newTerminalButton"].firstMatch
     }
@@ -256,6 +260,89 @@ final class TerminalTests: PineUITestCase {
             waitForExistence(restoredTab, timeout: 5),
             "Editor area (with main.swift tab) should be visible after restore"
         )
+    }
+
+    /// Repeated structural replacement must keep all model-owned AppKit
+    /// terminal surfaces inside the live SwiftUI host. Exercise both the
+    /// production renderer selection and the forced CoreGraphics fallback in
+    /// one method so the Terminal CI shard gains only one test.
+    func testRepeatedMaximizeRestoreKeepsTerminalSurfacesAttachedAcrossRenderers() throws {
+        app.launchArguments.removeAll { $0 == "--disable-metal" }
+        assertRepeatedMaximizeRestoreKeepsTerminalSurfaceAttached(renderer: "Production")
+
+        // The black-terminal family predates Metal, so relaunch with the
+        // legacy renderer under the exact same structural stress.
+        app.terminate()
+        app.launchArguments.append("--disable-metal")
+        assertRepeatedMaximizeRestoreKeepsTerminalSurfaceAttached(renderer: "CoreGraphics")
+    }
+
+    private func assertRepeatedMaximizeRestoreKeepsTerminalSurfaceAttached(renderer: String) {
+        launchAndWaitForLoad()
+        openMainSwiftFromSidebar()
+        createTerminalViaMenu()
+        let terminalNames = ["Terminal 1", "Terminal 2", "Terminal 3"]
+        XCTAssertTrue(
+            waitForExistence(terminalTab(terminalNames[0]), timeout: 10),
+            "First terminal should exist before creating stress sessions"
+        )
+        XCTAssertTrue(
+            waitForExistence(newTerminalButton, timeout: 5),
+            "New terminal button should exist"
+        )
+        for name in terminalNames.dropFirst() {
+            newTerminalButton.click()
+            XCTAssertTrue(
+                waitForExistence(terminalTab(name), timeout: 10),
+                "\(name) should exist before maximize/restore stress"
+            )
+        }
+
+        XCTAssertTrue(
+            waitForExistence(terminalSurface, timeout: 10),
+            "Terminal surface should be attached before maximize/restore stress"
+        )
+        let divider = app.descendants(matching: .any)["paneDivider"].firstMatch
+
+        for iteration in 1...12 {
+            maximizeButton.click()
+            let disappearDeadline = Date().addingTimeInterval(5)
+            while divider.exists && Date() < disappearDeadline {
+                Thread.sleep(forTimeInterval: 0.05)
+            }
+            XCTAssertFalse(
+                divider.exists,
+                "\(renderer) cycle \(iteration): divider should disappear"
+            )
+
+            let maximizedSurface = terminalSurface
+            XCTAssertTrue(
+                waitForExistence(maximizedSurface, timeout: 5),
+                "\(renderer) cycle \(iteration): terminal surface should remain attached when maximized"
+            )
+            XCTAssertGreaterThan(maximizedSurface.frame.width, 100)
+            XCTAssertGreaterThan(maximizedSurface.frame.height, 100)
+
+            maximizeButton.click()
+            XCTAssertTrue(
+                waitForExistence(divider, timeout: 5),
+                "\(renderer) cycle \(iteration): divider should return after restore"
+            )
+
+            let restoredSurface = terminalSurface
+            XCTAssertTrue(
+                waitForExistence(restoredSurface, timeout: 5),
+                "\(renderer) cycle \(iteration): terminal surface should remain attached after restore"
+            )
+            XCTAssertGreaterThan(restoredSurface.frame.width, 100)
+            XCTAssertGreaterThan(restoredSurface.frame.height, 100)
+            for name in terminalNames {
+                XCTAssertTrue(
+                    terminalTab(name).exists,
+                    "\(renderer) cycle \(iteration): \(name) session should survive"
+                )
+            }
+        }
     }
 
     /// Click hide/close button removes the terminal pane entirely.

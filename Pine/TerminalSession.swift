@@ -25,6 +25,24 @@ import os
 final class PineTerminalView: LocalProcessTerminalView {
     private var redrawBackgroundColor: CGColor?
     private var initialMetalRedrawWorkItems: [DispatchWorkItem] = []
+    #if DEBUG
+    /// Per-view seam for exercising the production CoreGraphics fallback
+    /// without mutating process-wide launch arguments or environment.
+    var metalRendererDisabledForTesting = false
+    #endif
+    /// SwiftTerm 1.15 rebuilds its nested `MTKView` only when the `NSWindow`
+    /// identity changes. Pine also reparents a terminal between AppKit hosts
+    /// inside the same project window (pane maximize/restore and tab moves).
+    /// That can leave the old `CAMetalLayer` bound to a retired presentation
+    /// host even though the window pointer is unchanged.
+    ///
+    /// TerminalContainerView owns the presentation generation because AppKit
+    /// can move either this view, the whole container, or an ancestor subtree.
+    /// Immediate-superview/window identity alone misses at least one of those
+    /// paths. Recreate only after the generation actually changes; ordinary
+    /// resize, focus, and tab hide/show keep the same renderer and glyph atlas.
+    private var presentationHostGeneration: UUID?
+    private var metalRendererNeedsRecreationOnAttach = false
     /// The attachment retry batch can finish before a slow interactive shell
     /// emits its first prompt. Re-arm it once, after the first PTY chunk that
     /// actually changes visible buffer content, so an earlier OSC title does
@@ -89,6 +107,9 @@ final class PineTerminalView: LocalProcessTerminalView {
     /// `MetalError.deviceUnavailable` is thrown; SwiftTerm keeps using
     /// CoreGraphics and Pine records the concrete failure for diagnostics.
     func enableMetalRendererIfNeeded() {
+        #if DEBUG
+        guard !metalRendererDisabledForTesting else { return }
+        #endif
         guard !Self.isMetalExplicitlyDisabled else { return }
         guard window != nil else { return }
         guard !isUsingMetalRenderer else { return }
@@ -112,6 +133,21 @@ final class PineTerminalView: LocalProcessTerminalView {
             || ProcessInfo.processInfo.environment["PINE_DISABLE_METAL"] != nil
     }
 
+    /// Binds the renderer to one committed AppKit presentation generation.
+    ///
+    /// The first binding records identity only. Later generations rebuild the
+    /// nested MTKView while preserving the Terminal, PTY, display buffer, and
+    /// scrollback. If the hierarchy is temporarily detached, the pending
+    /// rebuild runs after the next real window attachment.
+    func bindPresentationHost(generation: UUID) {
+        guard presentationHostGeneration != generation else { return }
+        if presentationHostGeneration != nil, isUsingMetalRenderer {
+            metalRendererNeedsRecreationOnAttach = true
+        }
+        presentationHostGeneration = generation
+        recreateMetalRendererAfterHostChangeIfNeeded()
+    }
+
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
         guard window != nil else {
@@ -124,6 +160,7 @@ final class PineTerminalView: LocalProcessTerminalView {
         // fires `viewDidMoveToWindow` again, but `enableMetalRendererIfNeeded`
         // is idempotent, so the second call is a cheap no-op.
         enableMetalRendererIfNeeded()
+        recreateMetalRendererAfterHostChangeIfNeeded()
 
         // `MTKView` is on-demand (`isPaused = true`) and its CAMetalLayer may
         // not have a drawable during the first display request. SwiftTerm
@@ -136,6 +173,44 @@ final class PineTerminalView: LocalProcessTerminalView {
         // cancelled on the next detach (issue #1128).
         if isUsingMetalRenderer {
             scheduleInitialMetalRedrawRetries()
+        }
+    }
+
+    /// Recreates SwiftTerm's renderer after an AppKit presentation-generation
+    /// change, including whole-container or ancestor detach/reattach inside
+    /// the same `NSWindow`.
+    ///
+    /// SwiftTerm exposes no public rebind API in 1.15, so the supported
+    /// `setUseMetal(false/true)` pair is the narrow compatibility bridge.
+    /// It replaces only the nested `MTKView` and renderer; `Terminal` and the
+    /// local process stay alive. Ordinary resize/focus/occlusion redraws never
+    /// enter this path because they do not move the view between hosts.
+    private func recreateMetalRendererAfterHostChangeIfNeeded() {
+        guard metalRendererNeedsRecreationOnAttach,
+              superview != nil,
+              window != nil else { return }
+        metalRendererNeedsRecreationOnAttach = false
+        guard isUsingMetalRenderer else { return }
+
+        do {
+            try setUseMetal(false)
+            try setUseMetal(true)
+        } catch {
+            Logger.terminal.error(
+                "SwiftTerm Metal renderer recreation after host reparent failed: \(String(describing: error), privacy: .public)"
+            )
+        }
+
+        if isUsingMetalRenderer {
+            // Reuse the bounded first-draw recovery window for the newly
+            // created CAMetalLayer. viewDidMoveToWindow may immediately
+            // schedule the same batch again; the helper cancels/restarts it,
+            // so a host transition never creates parallel retry loops.
+            scheduleInitialMetalRedrawRetries()
+        } else {
+            // Enabling Metal failed after the old renderer was removed.
+            // Repaint synchronously through the CoreGraphics fallback.
+            requestRendererDisplay()
         }
     }
 
@@ -703,15 +778,29 @@ struct TerminalContentView: NSViewRepresentable {
 
     func makeNSView(context: Context) -> TerminalContainerView {
         let container = TerminalContainerView()
-        container.terminalPaneState = terminalPaneState
+        let didRebind = container.bind(to: terminalPaneState)
         container.canAttemptFocusRequest = canAttemptFocusRequest
-        container.showTab(terminalPaneState.activeTab)
+        container.showTab(
+            terminalPaneState.activeTab,
+            forcePresentationClaim: didRebind && container.window != nil
+        )
         return container
     }
 
     func updateNSView(_ container: TerminalContainerView, context: Context) {
+        let didRebind = container.bind(to: terminalPaneState)
         container.canAttemptFocusRequest = canAttemptFocusRequest
-        container.showTab(terminalPaneState.activeTab)
+        container.showTab(
+            terminalPaneState.activeTab,
+            forcePresentationClaim: didRebind && container.window != nil
+        )
+    }
+
+    static func dismantleNSView(
+        _ container: TerminalContainerView,
+        coordinator: Coordinator
+    ) {
+        container.prepareForDismantle()
     }
 }
 
@@ -727,9 +816,23 @@ class TerminalContainerView: NSView {
     /// is not blank when it first appears. The real size replaces this in `layout()`.
     static let defaultTerminalFrame = NSRect(x: 0, y: 0, width: 800, height: 300)
 
+    /// Changes only when the actual AppKit presentation host changes. Every
+    /// active PineTerminalView binds to this token, covering direct terminal
+    /// moves, whole-container reparenting, and ancestor detach/reattach while
+    /// keeping ordinary tab switches and resizes renderer-stable.
+    private var presentationGeneration = UUID()
+    /// Full AppKit ancestry of this container, excluding the container itself.
+    /// A direct move of an ancestor within the same window leaves both this
+    /// view's immediate superview and NSWindow unchanged, but AppKit still
+    /// calls `viewDidMoveToWindow()` on descendants. Comparing the complete
+    /// chain there catches that otherwise invisible presentation-host change.
+    private var presentationAncestorChain: [ObjectIdentifier] = []
+    private var hasAttachedToWindow = false
+    private var isAttachedToWindow = false
     var terminalPaneState: TerminalPaneState?
     var canAttemptFocusRequest: ((UUID) -> Bool)?
     private var currentTabID: UUID?
+    private weak var currentTab: TerminalTab?
     let destinationFocusCoordinator = AppKitFocusRequestCoordinator()
     private let scrollInterceptor = TerminalScrollInterceptor()
     private var scrollMonitor: Any?
@@ -779,26 +882,57 @@ class TerminalContainerView: NSView {
     /// and `UITimings.Debounce.terminalRecovery`.
     private var recoveryDebouncer: Debouncer?
 
-    func showTab(_ tab: TerminalTab?) {
+    /// Associates this AppKit host with one pane state. SwiftUI can reuse an
+    /// NSViewRepresentable at the same structural position for a different
+    /// pane, so release the old pane/tab leases before switching models.
+    @discardableResult
+    func bind(to paneState: TerminalPaneState) -> Bool {
+        guard terminalPaneState !== paneState else { return false }
+        showTab(nil)
+        terminalPaneState = paneState
+        return true
+    }
+
+    func showTab(
+        _ tab: TerminalTab?,
+        forcePresentationClaim: Bool = false
+    ) {
         guard let tab else {
             // Tab cleared (terminal pane closed) — kill any in-flight
             // auto-scroll so it cannot tick against a now-detached view.
             scrollInterceptor.handleActiveTabChange()
+            releaseTabPresentationOwnershipIfNeeded()
+            releasePanePresentationOwnershipIfNeeded()
             subviews.forEach { $0.removeFromSuperview() }
             currentTabID = nil
+            currentTab = nil
             destinationFocusCoordinator.cancel()
             scrollInterceptor.terminalView = nil
             scrollInterceptor.workingDirectory = nil
             return
         }
+
+        // A structural SwiftUI transition can temporarily keep two
+        // TerminalContainerViews for the same pane alive. The newly attached
+        // host claims explicitly from viewDidMoveToWindow; ordinary
+        // update/layout passes must not let an outgoing host steal the single
+        // model-owned NSView back.
+        guard canClaimPresentation(of: tab, force: forcePresentationClaim) else {
+            suspendPresentationWhileOwnedElsewhere()
+            return
+        }
+
         let tabChanged = tab.id != currentTabID || tab.terminalView.superview !== self
         if tabChanged {
             // Auto-scroll started against the *outgoing* tab — stop it before
             // we swap the underlying terminalView so the next tick cannot
             // scroll the freshly-installed tab using stale coordinates.
             scrollInterceptor.handleActiveTabChange()
+            releaseTabPresentationOwnershipIfNeeded()
             subviews.forEach { $0.removeFromSuperview() }
             currentTabID = tab.id
+            currentTab = tab
+            tab.presentationOwner = self
             let effectiveBounds = bounds.size.width > 0 && bounds.size.height > 0
                 ? bounds : Self.defaultTerminalFrame
             tab.terminalView.frame = effectiveBounds
@@ -832,9 +966,19 @@ class TerminalContainerView: NSView {
             self.needsLayout = true
             self.needsDisplay = true
 
-            // Force a synchronous full repaint from the SwiftTerm display
-            // buffer (and raise SIGWINCH on alternate-screen TUIs so the
-            // child itself redraws — see `refreshAfterReparent` docs).
+        } else if tab.presentationOwner !== self {
+            // Repair a stale lease without touching the already-correct view
+            // hierarchy (for example after an interrupted transition).
+            currentTab = tab
+            tab.presentationOwner = self
+        }
+
+        if let pineTerminalView = tab.terminalView as? PineTerminalView {
+            pineTerminalView.bindPresentationHost(generation: presentationGeneration)
+        }
+        if tabChanged {
+            // Bind the new presentation generation before repainting so the
+            // redraw targets the replacement MTKView, not a retired layer.
             tab.refreshAfterReparent()
         }
 
@@ -862,6 +1006,93 @@ class TerminalContainerView: NSView {
                 )
             }
         )
+    }
+
+    /// Returns whether this container may present the pane without stealing
+    /// it from another live host. The lease belongs to the pane rather than
+    /// the active tab: otherwise a stale outgoing host could reclaim the next
+    /// tab when both representables observe an active-tab change.
+    ///
+    /// A force claim is reserved for a container that has just attached or
+    /// moved to a new presentation host. Detached incoming representables
+    /// cannot take the terminal away from a visible owner before SwiftUI
+    /// commits their attachment.
+    private func canClaimPresentation(
+        of tab: TerminalTab,
+        force: Bool
+    ) -> Bool {
+        guard let terminalPaneState else {
+            guard let owner = tab.presentationOwner else { return true }
+            return owner === self
+                || (window != nil && (force || owner.window == nil))
+        }
+
+        if terminalPaneState.presentationOwner === self {
+            return true
+        }
+
+        // An off-window representable is not yet a committed presentation
+        // host. It may claim an entirely unowned initial pane, but must not
+        // pull a moved tab or pane away from a live/detached predecessor.
+        if window == nil {
+            guard terminalPaneState.presentationOwner == nil,
+                  tab.presentationOwner == nil else { return false }
+            terminalPaneState.presentationOwner = self
+            return true
+        }
+
+        let displacedPaneOwner = terminalPaneState.presentationOwner
+        if let paneOwner = displacedPaneOwner,
+           paneOwner !== self,
+           !force,
+           paneOwner.window != nil {
+            return false
+        }
+
+        if let tabOwner = tab.presentationOwner,
+           tabOwner !== self,
+           !force,
+           tabOwner.window != nil,
+           tabOwner.terminalPaneState?.activeTab?.id == tab.id {
+            return false
+        }
+
+        terminalPaneState.presentationOwner = self
+        if let displacedPaneOwner, displacedPaneOwner !== self {
+            displacedPaneOwner.suspendPresentationWhileOwnedElsewhere()
+        }
+        return true
+    }
+
+    private func releaseTabPresentationOwnershipIfNeeded() {
+        guard let currentTab, currentTab.presentationOwner === self else { return }
+        currentTab.presentationOwner = nil
+    }
+
+    private func releasePanePresentationOwnershipIfNeeded() {
+        guard terminalPaneState?.presentationOwner === self else { return }
+        terminalPaneState?.presentationOwner = nil
+    }
+
+    /// Tears down event/focus plumbing in an outgoing host after another live
+    /// container has claimed the terminal. Keep `currentTabID` intact so late
+    /// update/layout callbacks remain identifiable as stale and cannot turn
+    /// into a fresh-tab claim.
+    private func suspendPresentationWhileOwnedElsewhere() {
+        scrollInterceptor.handleActiveTabChange()
+        subviews.forEach { $0.removeFromSuperview() }
+        destinationFocusCoordinator.cancel()
+        scrollInterceptor.terminalView = nil
+        scrollInterceptor.workingDirectory = nil
+        removeScrollMonitor()
+    }
+
+    /// Releases the presentation lease and AppKit resources owned by this
+    /// representable. The PTY and TerminalTab intentionally remain alive.
+    func prepareForDismantle() {
+        showTab(nil)
+        removeScrollMonitor()
+        removeWindowObservers()
     }
 
     // MARK: - Scroll event monitor for TUI mouse reporting
@@ -1048,9 +1279,48 @@ class TerminalContainerView: NSView {
     }
 
     override func removeFromSuperview() {
-        removeScrollMonitor()
-        removeWindowObservers()
+        prepareForDismantle()
         super.removeFromSuperview()
+    }
+
+    override func viewDidMoveToSuperview() {
+        super.viewDidMoveToSuperview()
+        guard superview != nil else { return }
+        let newAncestorChain = currentPresentationAncestorChain()
+        let movedDirectlyInsideWindow = isAttachedToWindow
+            && !presentationAncestorChain.isEmpty
+            && presentationAncestorChain != newAncestorChain
+        presentationAncestorChain = newAncestorChain
+        if movedDirectlyInsideWindow {
+            advancePresentationGeneration()
+        }
+        guard window != nil,
+              let activeTab = terminalPaneState?.activeTab else { return }
+        // AppKit can move an existing view directly between two parents in
+        // the same NSWindow without calling our removeFromSuperview override.
+        // viewDidMoveToWindow then sees the same observed window and returns
+        // early, so claim at the actual superview boundary as well.
+        showTab(activeTab, forcePresentationClaim: true)
+        if movedDirectlyInsideWindow {
+            // CoreGraphics also loses presentation state on this boundary.
+            // Metal recreation schedules its own frame, but the shared redraw
+            // keeps both renderer paths correct and preserves the fallback.
+            refreshActiveTerminalAfterReparent()
+        }
+    }
+
+    private func advancePresentationGeneration() {
+        presentationGeneration = UUID()
+    }
+
+    private func currentPresentationAncestorChain() -> [ObjectIdentifier] {
+        var chain: [ObjectIdentifier] = []
+        var ancestor = superview
+        while let view = ancestor {
+            chain.append(ObjectIdentifier(view))
+            ancestor = view.superview
+        }
+        return chain
     }
 
     /// Tears down every window/app-level notification observer registered in
@@ -1116,7 +1386,35 @@ class TerminalContainerView: NSView {
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
+        let isNowAttached = window != nil
+        let reattachedAfterHierarchyDetach = isNowAttached
+            && hasAttachedToWindow
+            && !isAttachedToWindow
+        let newAncestorChain = isNowAttached
+            ? currentPresentationAncestorChain()
+            : presentationAncestorChain
+        let ancestorMovedInsideWindow = isNowAttached
+            && isAttachedToWindow
+            && !presentationAncestorChain.isEmpty
+            && presentationAncestorChain != newAncestorChain
+        isAttachedToWindow = isNowAttached
+        if isNowAttached {
+            presentationAncestorChain = newAncestorChain
+            if reattachedAfterHierarchyDetach || ancestorMovedInsideWindow {
+                advancePresentationGeneration()
+            }
+            hasAttachedToWindow = true
+        }
         destinationFocusCoordinator.hostDidMoveToWindow(self)
+        if ancestorMovedInsideWindow,
+           let activeTab = terminalPaneState?.activeTab {
+            // AppKit reports a direct ancestor-subtree move with the same
+            // non-nil NSWindow. Reclaim before the same-window observer fast
+            // path below; otherwise an outgoing representable can keep the
+            // model-owned terminal view in a retired presentation subtree.
+            showTab(activeTab, forcePresentationClaim: true)
+            refreshActiveTerminalAfterReparent()
+        }
         // AppKit may call this method multiple times for the same window —
         // skip the observer dance when nothing has actually changed.
         guard window !== observedWindow else { return }
@@ -1189,6 +1487,13 @@ class TerminalContainerView: NSView {
             }
         }
         observedWindow = win
+        if let activeTab = terminalPaneState?.activeTab {
+            // This container has just become a real presentation host. It may
+            // legitimately reclaim the model-owned view from an outgoing
+            // maximize/restore container; later ordinary update/layout calls
+            // cannot steal it back while this lease remains live.
+            showTab(activeTab, forcePresentationClaim: true)
+        }
         // First repaint after attaching to the window — `displayIfNeeded`
         // inside `showTab` is a no-op when the container had no window yet,
         // so this is the first chance to actually paint the SwiftTerm view.
@@ -1300,6 +1605,15 @@ final class TerminalTab: Identifiable, Hashable {
     let stableLabel: String
     let terminalView: LocalProcessTerminalView
     fileprivate(set) var isTerminated = false
+    /// The AppKit container currently presenting `terminalView`.
+    ///
+    /// A pane maximize/restore can keep outgoing and incoming SwiftUI
+    /// representables alive in the same animation transaction. Since an
+    /// `NSView` can have only one superview, stale containers must not steal
+    /// the model-owned terminal view back from the newly attached host.
+    /// Presentation ownership is UI plumbing, not observable tab state.
+    @ObservationIgnored
+    weak var presentationOwner: TerminalContainerView?
 
     // MARK: - Agent tracking (#951)
 
@@ -1338,6 +1652,9 @@ final class TerminalTab: Identifiable, Hashable {
         self.shellSettings = shellSettings
         self.agentHandoffSettings = agentHandoffSettings
         self.terminalView = PineTerminalView(frame: TerminalContainerView.defaultTerminalFrame)
+        self.terminalView.setAccessibilityElement(true)
+        self.terminalView.setAccessibilityRole(.textArea)
+        self.terminalView.setAccessibilityIdentifier(AccessibilityID.terminalSurface)
         self.delegate = TerminalTabDelegate()
         self.delegate.tab = self
         self.terminalView.processDelegate = self.delegate
