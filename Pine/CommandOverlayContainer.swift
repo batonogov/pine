@@ -182,7 +182,8 @@ nonisolated enum GoToLineLineCountProvider {
 /// Thin router that delegates command-palette invocation to the existing
 /// invocation paths. Extracted so `CommandOverlayContainer` stays free of
 /// `ContentView` coupling.
-nonisolated enum CommandPaletteInvocationRouter {
+@MainActor
+enum CommandPaletteInvocationRouter {
     static func invoke(
         _ item: CommandPaletteItem,
         projectManager: ProjectManager
