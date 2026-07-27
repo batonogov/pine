@@ -27,7 +27,8 @@ enum UserTaskInvocationController {
 
         Task { @MainActor in
             if task.effectiveRequireConfirmation(),
-               !(await presentConfirmation(for: task)) {
+               !(await presentConfirmation(for: task))
+            {
                 return
             }
 
