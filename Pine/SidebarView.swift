@@ -5,6 +5,7 @@
 //  Created by Федор Батоногов on 09.03.2026.
 //
 
+import AppKit
 import SwiftUI
 
 // MARK: - Sidebar edit state
@@ -124,17 +125,106 @@ final class SidebarEditState {
     }
 }
 
+// MARK: - Sidebar keyboard focus
+
+/// Owns the AppKit responder used by the plain ScrollView file tree.
+///
+/// `ScrollView.focusable()` is still useful for keyboard traversal, but a
+/// mouse click on one of its gesture-driven rows does not reliably make the
+/// SwiftUI key handler first responder. Keeping a real NSView target gives
+/// row clicks the same synchronous responder semantics as NSOutlineView.
+@MainActor
+final class SidebarKeyboardFocusController {
+    private weak var responderView: SidebarKeyboardResponderView?
+
+    func attach(_ responderView: SidebarKeyboardResponderView) {
+        self.responderView = responderView
+    }
+
+    @discardableResult
+    func requestFocus() -> Bool {
+        guard let responderView, let window = responderView.window else {
+            return false
+        }
+        return window.makeFirstResponder(responderView)
+            && window.firstResponder === responderView
+    }
+}
+
+/// Prevents a newly-created preview editor from displacing the sidebar while
+/// preserving implicit initial focus for non-sidebar open paths.
+enum SidebarKeyboardFocusPolicy {
+    static func allowsEditorInitialFocus(
+        tabID: UUID,
+        pendingFocusTabID: UUID?,
+        firstResponder: NSResponder?
+    ) -> Bool {
+        pendingFocusTabID == tabID
+            || !(firstResponder is SidebarKeyboardResponderView)
+    }
+}
+
+/// Invisible responder embedded in the sidebar hierarchy.
+@MainActor
+final class SidebarKeyboardResponderView: NSView {
+    var onKeyDown: ((NSEvent) -> Bool)?
+
+    override var acceptsFirstResponder: Bool { true }
+
+    /// The responder is focused programmatically by a row click and must not
+    /// intercept pointer hit testing itself.
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        nil
+    }
+
+    override func keyDown(with event: NSEvent) {
+        if onKeyDown?(event) == true {
+            return
+        }
+        if event.keyCode == 48 {
+            if event.modifierFlags.contains(.shift) {
+                window?.selectPreviousKeyView(self)
+            } else {
+                window?.selectNextKeyView(self)
+            }
+            return
+        }
+        super.keyDown(with: event)
+    }
+}
+
+/// Keeps the AppKit responder attached to SwiftUI's sidebar lifecycle.
+struct SidebarKeyboardFocusBridge: NSViewRepresentable {
+    let controller: SidebarKeyboardFocusController
+    let onKeyDown: (NSEvent) -> Bool
+
+    func makeNSView(context: Context) -> SidebarKeyboardResponderView {
+        let view = SidebarKeyboardResponderView()
+        view.onKeyDown = onKeyDown
+        controller.attach(view)
+        return view
+    }
+
+    func updateNSView(_ nsView: SidebarKeyboardResponderView, context: Context) {
+        nsView.onKeyDown = onKeyDown
+        controller.attach(nsView)
+    }
+}
+
 // MARK: - Sidebar
 
 struct SidebarView: View {
     @Binding var selectedFile: FileNode?
     let onFileOpen: (FileNode, SidebarFileOpenDisposition) -> Void
     @Environment(WorkspaceManager.self) private var workspace
+    @Environment(PaneManager.self) private var paneManager
     @Environment(ProjectRegistry.self) private var registry
     @Environment(\.openWindow) var openWindow
     @Environment(\.undoManager) private var undoManager
     @State private var editState = SidebarEditState()
     @State private var expansion = SidebarExpansionState()
+    @State private var keyboardFocusController = SidebarKeyboardFocusController()
+    @FocusState private var hasSwiftUIKeyboardFocus: Bool
 
     var body: some View {
         Group {
@@ -177,12 +267,31 @@ struct SidebarView: View {
                                 nodes: workspace.rootNodes,
                                 treeRevision: workspace.rootNodesRevision,
                                 selection: $selectedFile,
-                                onFileOpen: onFileOpen
+                                onFileOpen: onFileOpen,
+                                onKeyboardFocusRequested: {
+                                    claimSidebarKeyboardFocus()
+                                }
                             )
                         }
                         .padding(.vertical, 4)
                     }
                     .accessibilityIdentifier("sidebar")
+                    .background(alignment: .topLeading) {
+                        SidebarKeyboardFocusBridge(
+                            controller: keyboardFocusController,
+                            onKeyDown: handleSidebarKeyDown
+                        )
+                        .frame(width: 1, height: 1)
+                    }
+                    .focusable()
+                    .focused($hasSwiftUIKeyboardFocus)
+                    .onChange(of: hasSwiftUIKeyboardFocus) { _, hasFocus in
+                        guard hasFocus else { return }
+                        // Full Keyboard Access focuses SwiftUI's host first.
+                        // Normalize that path to the AppKit responder so a
+                        // deferred editor-creation focus cannot displace it.
+                        claimSidebarKeyboardFocus()
+                    }
                     .environment(editState)
                     .environment(expansion)
                     .onChange(of: workspace.rootNodesRevision) { _, _ in
@@ -191,28 +300,13 @@ struct SidebarView: View {
                         expansion.prune(toMatch: workspace.rootNodes)
                     }
                     .onKeyPress(.return, phases: .down) { press in
-                        if press.modifiers.contains(.command),
-                           let selected = selectedFile,
-                           !selected.isDirectory {
-                            onFileOpen(selected, .permanent)
-                            return .handled
-                        }
-                        // Finder-style: Enter on a selected sidebar item starts inline rename.
-                        // No-op (and pass through) if nothing is selected or rename is already in progress.
-                        guard press.modifiers.isEmpty,
-                              editState.renamingURL == nil,
-                              let selected = selectedFile else {
-                            return .ignored
-                        }
-                        editState.startRename(for: selected)
-                        return .handled
+                        handleSidebarReturn(
+                            commandPressed: press.modifiers.contains(.command),
+                            hasAnyModifiers: !press.modifiers.isEmpty
+                        ) ? .handled : .ignored
                     }
                     .onKeyPress(.space) {
-                        guard let selected = selectedFile, !selected.isDirectory else {
-                            return .ignored
-                        }
-                        onFileOpen(selected, .transientPreview)
-                        return .handled
+                        handleSidebarSpace() ? .handled : .ignored
                     }
                     .contextMenu {
                         if let rootURL = workspace.rootURL {
@@ -252,6 +346,12 @@ struct SidebarView: View {
                     .navigationTitle(workspace.projectName)
                     .onChange(of: editState.renamingURL) { _, newURL in
                         if newURL != nil {
+                            // Context-menu rename/new/duplicate paths do not
+                            // necessarily pass through a row focus claim.
+                            // Claim the AppKit responder before the inline
+                            // TextField takes focus so both explicit retries
+                            // and implicit editor creation are superseded.
+                            claimSidebarKeyboardFocus()
                             // Defer to avoid modifying state during view update
                             DispatchQueue.main.async {
                                 selectedFile = nil
@@ -279,6 +379,63 @@ struct SidebarView: View {
     private func openNewProject() {
         guard let url = registry.openProjectViaPanel() else { return }
         openWindow(value: url)
+    }
+
+    /// A sidebar action supersedes any older destination-focus request. The
+    /// model is invalidated before AppKit changes first responder so a queued
+    /// editor or terminal retry cannot reclaim focus on the next run loop.
+    private func claimSidebarKeyboardFocus() {
+        paneManager.cancelPendingFocusForActivePane()
+        keyboardFocusController.requestFocus()
+    }
+
+    /// Handles real AppKit events when the sidebar was focused by a row click.
+    private func handleSidebarKeyDown(_ event: NSEvent) -> Bool {
+        switch event.keyCode {
+        case 36, 76: // Return and keypad Enter
+            let modifiers = event.modifierFlags.intersection([
+                .command, .option, .control, .shift
+            ])
+            return handleSidebarReturn(
+                commandPressed: modifiers.contains(.command),
+                hasAnyModifiers: !modifiers.isEmpty
+            )
+        case 49: // Space
+            return handleSidebarSpace()
+        default:
+            return false
+        }
+    }
+
+    /// Finder-style Return: rename in place. Command-Return is an explicit
+    /// open and moves focus into the editor.
+    private func handleSidebarReturn(
+        commandPressed: Bool,
+        hasAnyModifiers: Bool
+    ) -> Bool {
+        if commandPressed,
+           let selected = selectedFile,
+           !selected.isDirectory {
+            onFileOpen(selected, .permanent)
+            return true
+        }
+        guard !hasAnyModifiers,
+              editState.renamingURL == nil,
+              let selected = selectedFile else {
+            return false
+        }
+        paneManager.cancelPendingFocusForActivePane()
+        editState.startRename(for: selected)
+        return true
+    }
+
+    private func handleSidebarSpace() -> Bool {
+        guard let selected = selectedFile, !selected.isDirectory else {
+            return false
+        }
+        claimSidebarKeyboardFocus()
+        onFileOpen(selected, .transientPreview)
+        return true
     }
 }
 

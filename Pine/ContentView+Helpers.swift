@@ -113,7 +113,8 @@ extension ContentView {
     ) {
         paneManager.openFileInActiveEditor(
             url: node.url,
-            asTransientPreview: disposition == .transientPreview
+            asTransientPreview: disposition == .transientPreview,
+            requestFocus: disposition.requestsEditorFocus
         )
     }
 

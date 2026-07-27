@@ -32,17 +32,9 @@ final class SidebarRenameTests: PineUITestCase {
     /// Opens the inline rename editor for the given node via right-click →
     /// "Rename" (the `pencil` context menu item).
     ///
-    /// We intentionally do NOT use the `Enter` key path here: SwiftUI's
-    /// `.onKeyPress(.return)` handler, which wires up the Finder-style
-    /// Enter-to-rename shortcut in `SidebarView`, does not receive XCUITest
-    /// synthetic key events on macOS 26 — the same class of flake documented
-    /// for `NSEvent.addLocalMonitorForEvents` in `AGENTS.md`. Using the
-    /// context-menu trigger keeps the rest of the rename flow under real
-    /// end-to-end coverage (inline editor appears, typing, commit path,
-    /// file-system effects) while sidestepping the synthetic-event race on
-    /// the trigger itself. The Enter-key trigger is exercised by the
-    /// dedicated `testEnterTriggersRename` case below, which degrades
-    /// gracefully when the synthetic `onKeyPress` path does not fire.
+    /// Using the context-menu trigger keeps the rename commit/cancel tests
+    /// independent from the keyboard trigger. Return-to-rename itself has
+    /// strict file and folder coverage in the dedicated tests below.
     private func openRenameViaContextMenu(on nodeID: String) {
         let node = app.sidebarNodes[nodeID]
         XCTAssertTrue(waitForExistence(node, timeout: 10), "Node \(nodeID) should exist")
@@ -231,18 +223,10 @@ final class SidebarRenameTests: PineUITestCase {
         )
     }
 
-    // MARK: - Enter key trigger (best-effort due to SwiftUI onKeyPress flake)
+    // MARK: - Enter key trigger
 
     /// Verifies that pressing Enter on a selected sidebar row opens the
     /// inline rename editor — the distinctive UX of #737.
-    ///
-    /// The Enter-trigger path lives in `SidebarView`'s `.onKeyPress(.return)`
-    /// handler, which under XCUITest on macOS 26 does not reliably receive
-    /// synthetic key events (same class of flake as the Cmd+W local event
-    /// monitor documented in `AGENTS.md`). When the trigger fails to fire,
-    /// we `XCTSkip` rather than fail — the commit path itself is covered
-    /// end-to-end by the tests above, and the `startRename` logic is
-    /// covered by unit tests on `SidebarEditState`.
     func testEnterTriggersRename() throws {
         launchWithProject(projectURL)
 
@@ -256,11 +240,33 @@ final class SidebarRenameTests: PineUITestCase {
         app.typeKey(.return, modifierFlags: [])
 
         let textField = app.textFields["inlineRenameTextField"]
-        guard textField.waitForExistence(timeout: 5) else {
-            throw XCTSkip("SwiftUI onKeyPress(.return) does not receive XCUITest synthetic events on macOS 26 (see #737)")
-        }
+        XCTAssertTrue(
+            textField.waitForExistence(timeout: 5),
+            "Return on a selected file should start inline rename"
+        )
         // Inline editor is up — cancel it cleanly so we leave the UI in a
         // known state for tearDown.
+        textField.click()
+        textField.typeKey(.escape, modifierFlags: [])
+    }
+
+    func testEnterOnSelectedFolderTriggersRename() throws {
+        launchWithProject(projectURL)
+
+        let sidebar = app.scrollViews["sidebar"]
+        XCTAssertTrue(waitForExistence(sidebar, timeout: 10))
+
+        let folderNode = app.sidebarNodes["fileNode_docs"]
+        XCTAssertTrue(waitForExistence(folderNode, timeout: 5))
+        folderNode.click()
+
+        app.typeKey(.return, modifierFlags: [])
+
+        let textField = app.textFields["inlineRenameTextField"]
+        XCTAssertTrue(
+            textField.waitForExistence(timeout: 5),
+            "Return on a selected folder should start inline rename"
+        )
         textField.click()
         textField.typeKey(.escape, modifierFlags: [])
     }
