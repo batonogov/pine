@@ -286,11 +286,10 @@ struct SidebarView: View {
                     }
                     .focusable()
                     .focused($hasSwiftUIKeyboardFocus)
-                    .onGeometryChange(for: Double.self) { proxy in
-                        proxy.size.height
-                    } action: { newValue in
-                        navigation.viewportHeight = newValue
-                    }
+                    .background(GeometryReader { geo in
+                        Color.clear.onAppear { navigation.viewportHeight = geo.size.height }
+                            .onChange(of: geo.size.height) { _, h in navigation.viewportHeight = h }
+                    })
                     .onChange(of: hasSwiftUIKeyboardFocus) { _, hasFocus in
                         guard hasFocus else { return }
                         // Full Keyboard Access focuses SwiftUI's host first.
