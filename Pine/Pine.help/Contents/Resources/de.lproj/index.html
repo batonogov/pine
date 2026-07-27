@@ -4,8 +4,8 @@
 <head>
     <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
     <meta name="AppleTitle" content="io.github.batonogov.pine.help" />
-    <meta name="description" content="Erfahren Sie, wie Sie in Pine Projekte öffnen, Code bearbeiten und Bereiche, Terminals, Git und Tastaturkurzbefehle verwenden." />
-    <meta name="keywords" content="Pine, Hilfe, Editor, Projekt, Tab, Bereich, Terminal, Git, Tastaturkurzbefehle" />
+    <meta name="description" content="Erfahren Sie, wie Sie in Pine Projekte öffnen, Code bearbeiten und Bereiche, Terminals, Git, LSP-Diagnosen, Agent-Funktionen und Tastaturkurzbefehle verwenden." />
+    <meta name="keywords" content="Pine, Hilfe, Editor, Projekt, Tab, Bereich, Terminal, Git, LSP, Diagnosen, Agent, Kurzbefehle, Einstellungen, Tastenbelegung, Folding, Minimap, Suchen, Ersetzen" />
     <title>Pine-Hilfe</title>
     <link rel="stylesheet" type="text/css" href="../style.css" />
 </head>
@@ -16,40 +16,246 @@
         <h1>Pine-Hilfe</h1>
         <p class="lead">Ein fokussierter nativer Editor für Projekte, Code, Terminals und Git unter macOS.</p>
     </header>
+
+    <nav class="toc">
+        <h3>In diesem Handbuch</h3>
+        <ul>
+            <li><a href="#getting-started">Erste Schritte</a></li>
+            <li><a href="#workspace">Editor, Bereiche und Terminal</a></li>
+            <li><a href="#terminal">Terminal und Quick Terminal</a></li>
+            <li><a href="#git">Git-Integration</a></li>
+            <li><a href="#lsp">Sprachserver und Diagnosen</a></li>
+            <li><a href="#agents">Agent-Erkennung</a></li>
+            <li><a href="#settings">Einstellungen und Tastenbelegung</a></li>
+            <li><a href="#shortcuts">Tastaturkurzbefehle</a></li>
+            <li><a href="#troubleshooting">Fehlerbehebung</a></li>
+            <li><a href="#support">Weitere Hilfe benötigt?</a></li>
+        </ul>
+    </nav>
+
     <section id="getting-started">
         <h2>Erste Schritte</h2>
         <div class="steps">
-            <div class="card"><h3>1. Ordner öffnen</h3><p>Wählen Sie „Ablage“ &gt; „Ordner öffnen“ und dann den Ordner Ihres Projekts.</p></div>
-            <div class="card"><h3>2. Datei öffnen</h3><p>Wählen Sie eine Datei in der Seitenleiste oder suchen Sie mit „Schnell öffnen“ nach ihrem Namen.</p></div>
-            <div class="card"><h3>3. Arbeitsbereich anordnen</h3><p>Ziehen Sie einen Tab an den Rand des Editors, um einen Bereich zu teilen, oder auf eine andere Tableiste, um ihn zu verschieben.</p></div>
-            <div class="card"><h3>4. Weiterarbeiten</h3><p>Pine stellt Projektfenster, Editor-Tabs und die Bereichsanordnung beim nächsten Start wieder her.</p></div>
+            <div class="card">
+                <h3>1. Ordner öffnen</h3>
+                <p>Wählen Sie „Ablage“ &gt; „Ordner öffnen“ und dann den Ordner Ihres Projekts.</p>
+            </div>
+            <div class="card">
+                <h3>2. Datei öffnen</h3>
+                <p>Wählen Sie eine Datei in der Seitenleiste oder suchen Sie mit „Schnell öffnen“ nach ihrem Namen.</p>
+            </div>
+            <div class="card">
+                <h3>3. Arbeitsbereich anordnen</h3>
+                <p>Ziehen Sie einen Tab an den Rand des Editors, um einen Bereich zu teilen, oder auf eine andere Tableiste, um ihn zu verschieben.</p>
+            </div>
+            <div class="card">
+                <h3>4. Weiterarbeiten</h3>
+                <p>Pine stellt Projektfenster, Editor-Tabs und die Bereichsanordnung beim nächsten Start wieder her.</p>
+            </div>
         </div>
     </section>
+
+    <section id="workspace">
+        <h2>Editor, Bereiche und Terminal</h2>
+        <div class="feature-grid">
+            <div class="card">
+                <h3>Geteilte Bereiche</h3>
+                <p>Editor- und Terminal-Tabs können zwischen passenden Bereichen verschoben werden. Am Rand entsteht ein neuer Bereich.</p>
+            </div>
+            <div class="card">
+                <h3>Vorschau und angeheftete Tabs</h3>
+                <p>Ein Klick auf eine Datei in der Seitenleiste öffnet sie als vorübergehenden Vorschau-Tab. Doppelklicken oder Bearbeiten heftet sie an.</p>
+            </div>
+            <div class="card">
+                <h3>Suchen und Ersetzen</h3>
+                <p>Drücken Sie Cmd+F zur Suche in der Datei. Cmd+Option+F sucht und ersetzt. Projektweite Suche mit Cmd+Shift+F.</p>
+            </div>
+            <div class="card">
+                <h3>Code-Folding und Minimap</h3>
+                <p>Klicken Sie auf das Aufklappdreieck im Rand, um Codeblöcke zu falten. Die Minimap lässt sich im Darstellungs-Menü ein- und ausblenden.</p>
+            </div>
+            <div class="card">
+                <h3>Markdown-Vorschau</h3>
+                <p>Cmd+Shift+P schaltet zwischen reiner Quelle, gerenderter Ansicht und der geteilten Markdown-Vorschau um.</p>
+            </div>
+            <div class="card">
+                <h3>Symbolnavigation</h3>
+                <p>Drücken Sie Cmd+R, um zu Funktionen, Klassen und Structs in der aktuellen Datei zu springen.</p>
+            </div>
+            <div class="card">
+                <h3>Sicheres Sichern</h3>
+                <p>Geänderte Tabs werden vor dem Schließen geschützt. Automatisches Sichern und Formatieren beim Sichern finden Sie im Ablage-Menü.</p>
+            </div>
+            <div class="card">
+                <h3>Sitzung wiederherstellen</h3>
+                <p>Pine stellt Ihre Tabs, Bereichsanordnung und Cursorpositionen wieder her, wenn Sie ein Projekt erneut öffnen.</p>
+            </div>
+        </div>
+    </section>
+
+    <section id="terminal">
+        <h2>Terminal und Quick Terminal</h2>
+        <div class="feature-grid">
+            <div class="card">
+                <h3>Integriertes Terminal</h3>
+                <p>Verwenden Sie ein vollständiges Terminal neben Ihrem Code. Geöffnete Tabs behalten ihren Verlauf.</p>
+            </div>
+            <div class="card">
+                <h3>Quick Terminal</h3>
+                <p>Strg+Wahltaste+Leer blendet ein schwebendes Drop-down-Terminal über jeder Anwendung ein.</p>
+            </div>
+            <div class="card">
+                <h3>Klickbare Links</h3>
+                <p>Cmd+Klick auf Datei:Zeile-Verweise im Terminal öffnet sie im Editor. URLs werden im Systembrowser geöffnet.</p>
+            </div>
+            <div class="card">
+                <h3>TUI-Anwendungen</h3>
+                <p>Vim, htop und andere TUI-Anwendungen funktionieren nativ. oh-my-zsh und Farbthemen werden vollständig unterstützt.</p>
+            </div>
+        </div>
+    </section>
+
+    <section id="git">
+        <h2>Git-Integration</h2>
+        <div class="feature-grid">
+            <div class="card">
+                <h3>Dateistatus</h3>
+                <p>Die Seitenleiste zeigt geänderte, hinzugefügte und gelöschte Dateien mit farbigen Statusanzeigen.</p>
+            </div>
+            <div class="card">
+                <h3>Diff-Markierungen</h3>
+                <p>Hinzugefügte, geänderte und gelöschte Zeilen erscheinen als farbige Markierungen im Editor-Rand.</p>
+            </div>
+            <div class="card">
+                <h3>Branch wechseln</h3>
+                <p>Klicken Sie auf den Branchnamen in der Titelleiste oder drücken Sie Cmd+Shift+B, um zwischen lokalen Branches zu wechseln.</p>
+            </div>
+            <div class="card">
+                <h3>Blame-Ansicht</h3>
+                <p>Blenden Sie die Blame-Ansicht ein, um zeilenweise Commit-Informationen zu sehen: Hash, Autor, Zeitstempel und Nachricht.</p>
+            </div>
+        </div>
+    </section>
+
+    <section id="lsp">
+        <h2>Sprachserver und Diagnosen</h2>
+        <div class="feature-grid">
+            <div class="card">
+                <h3>Code-Intelligenz</h3>
+                <p>Pine nutzt das Language Server Protocol für Diagnosen, Vervollständigung, Hover, Gehe-zu-Definition und Umbenennen.</p>
+            </div>
+            <div class="card">
+                <h3>Server konfigurieren</h3>
+                <p>Öffnen Sie Einstellungen &gt; Sprachen, um Sprachserver-Ausführbare pro Sprache zu aktivieren, deaktivieren oder zu konfigurieren.</p>
+            </div>
+            <div class="card">
+                <h3>Probleme-Panel</h3>
+                <p>Sehen Sie alle Projektdiagnosen in einem einklappbaren Panel. Navigieren Sie mit Tastaturkurzbefehlen durch Fehler und Warnungen.</p>
+            </div>
+            <div class="card">
+                <h3>Code-Aktionen</h3>
+                <p>Klicken Sie auf die Diagnoseanzeige im Rand oder verwenden Sie das Menü, um schnelle Korrekturen und Refactorings anzuwenden.</p>
+            </div>
+        </div>
+    </section>
+
+    <section id="agents">
+        <h2>Agent-Erkennung</h2>
+        <div class="feature-grid">
+            <div class="card">
+                <h3>Agent-Erkennung</h3>
+                <p>Pine erkennt unterstützte CLI-Agenten im Terminal und zeigt deren Status mit Badges und Anzeigen an.</p>
+            </div>
+            <div class="card">
+                <h3>Aktivitäts-Panel</h3>
+                <p>Sehen Sie eine Live-Ansicht der Agent-Aktivität: geänderte Dateien, ausgeführte Befehle und aktueller Status.</p>
+            </div>
+            <div class="card">
+                <h3>Agent-Verlauf</h3>
+                <p>Überprüfen und machen Sie Agent-Änderungen rückgängig. Verifizierte Vorschauen zeigen genau, was sich ändert, bevor Sie es anwenden.</p>
+            </div>
+            <div class="card">
+                <h3>Datenschutz</h3>
+                <p>Die Übergabe von Agent-Kontext ist optional und nur lesend. Pine sendet Ihren Code oder Ihre Terminalausgabe nirgendwohin ohne Ihr Zutun.</p>
+            </div>
+        </div>
+    </section>
+
+    <section id="settings">
+        <h2>Einstellungen und Tastenbelegung</h2>
+        <div class="feature-grid">
+            <div class="card">
+                <h3>Einstellungen-Fenster</h3>
+                <p>Drücken Sie Cmd+Komma, um die Einstellungen zu öffnen. Konfigurieren Sie Editor-Standards, Terminal, Sprachserver und Agent-Datenschutz.</p>
+            </div>
+            <div class="card">
+                <h3>Eigene Tastenbelegung</h3>
+                <p>Überschreiben Sie Tastaturkurzbefehle über verwaltete Tastenbelegungsdateien. Die Befehls-Palette zeigt die aktiven Belegungen.</p>
+            </div>
+            <div class="card">
+                <h3>Befehls-Palette</h3>
+                <p>Entdecken und starten Sie Befehle über eine durchsuchbare Palette, ähnlich wie in VS Code.</p>
+            </div>
+            <div class="card">
+                <h3>Aufgaben</h3>
+                <p>Definieren Sie eigene Aufgaben, um Shell-Befehle, Formatter oder Build-Skripte über die Befehls-Palette oder das Aufgaben-Menü auszuführen.</p>
+            </div>
+        </div>
+    </section>
+
     <section id="shortcuts">
         <h2>Wichtige Kurzbefehle</h2>
         <div class="shortcut-grid">
             <div class="shortcut"><span>Ordner öffnen</span><kbd>⇧⌘O</kbd></div>
             <div class="shortcut"><span>Schnell öffnen</span><kbd>⌘P</kbd></div>
-            <div class="shortcut"><span>Symbole</span><kbd>⌘R</kbd></div>
+            <div class="shortcut"><span>In Datei suchen</span><kbd>⌘F</kbd></div>
             <div class="shortcut"><span>Im Projekt suchen</span><kbd>⇧⌘F</kbd></div>
+            <div class="shortcut"><span>Suchen und Ersetzen</span><kbd>⌥⌘F</kbd></div>
             <div class="shortcut"><span>Zu Zeile wechseln</span><kbd>⌘L</kbd></div>
+            <div class="shortcut"><span>Zu Symbol wechseln</span><kbd>⌘R</kbd></div>
             <div class="shortcut"><span>Sichern</span><kbd>⌘S</kbd></div>
             <div class="shortcut"><span>Terminal ein-/ausblenden</span><kbd>⌘`</kbd></div>
             <div class="shortcut"><span>Neuer Terminal-Tab</span><kbd>⌘T</kbd></div>
             <div class="shortcut"><span>Markdown-Vorschau</span><kbd>⇧⌘P</kbd></div>
             <div class="shortcut"><span>Git-Branch wechseln</span><kbd>⇧⌘B</kbd></div>
+            <div class="shortcut"><span>Quick Terminal</span><kbd>⌃⌥Space</kbd></div>
+            <div class="shortcut"><span>Kommentar umschalten</span><kbd>⌘/</kbd></div>
+            <div class="shortcut"><span>Minimap umschalten</span><kbd>⇧⌘M</kbd></div>
+            <div class="shortcut"><span>Nächste / vorige Änderung</span><kbd>⌃⌥↓/↑</kbd></div>
         </div>
         <p class="tip"><strong>Tipp:</strong> In den Menüs finden Sie alle verfügbaren Befehle und ihre aktuellen Kurzbefehle.</p>
     </section>
-    <section id="workspace">
-        <h2>Editor, Bereiche und Terminal</h2>
-        <div class="feature-grid">
-            <div class="card"><h3>Geteilte Bereiche</h3><p>Editor- und Terminal-Tabs können zwischen passenden Bereichen verschoben werden. Am Rand entsteht ein neuer Bereich.</p></div>
-            <div class="card"><h3>Integriertes Terminal</h3><p>Verwenden Sie ein vollständiges Terminal neben Ihrem Code. Geöffnete Tabs behalten ihren Verlauf.</p></div>
-            <div class="card"><h3>Sicheres Sichern</h3><p>Ungesicherte Tabs werden vor dem Schließen geschützt. Automatisches Sichern und Formatieren finden Sie im Ablage-Menü.</p></div>
-            <div class="card"><h3>Git-Integration</h3><p>Seitenleiste und Rand zeigen Änderungen. Mit der Branch-Auswahl wechseln Sie zwischen lokalen Branches.</p></div>
-        </div>
+
+    <section id="troubleshooting">
+        <h2>Fehlerbehebung</h2>
+        <ul class="topic-list">
+            <li>
+                <strong>Terminal zeigt einen schwarzen Bildschirm</strong>
+                <span>Pine verwendet standardmäßig einen Metal-Renderer. Bei schwarzem Bildschirm starten Sie mit gedrückter Wahltaste neu, oder führen Sie <code>defaults write io.github.batonogov.pine PINE_DISABLE_METAL -bool YES</code> aus, um auf CoreGraphics zu wechseln.</span>
+            </li>
+            <li>
+                <strong>LSP-Vervollständigung oder Diagnosen funktionieren nicht</strong>
+                <span>Öffnen Sie Einstellungen &gt; Sprachen und prüfen Sie den Pfad zur Server-Ausführbaren. Pine meldet Serverfehler in der Statusleiste.</span>
+            </li>
+            <li>
+                <strong>Große Dateien sind langsam</strong>
+                <span>Dateien über 1 MB bieten an, die Syntaxhervorhebung zu deaktivieren. Dateien über 10 MB werden fortschreitend geladen. Nutzen Sie die Minimap zur Navigation in großen Dateien.</span>
+            </li>
+            <li>
+                <strong>Formatieren beim Sichern wird nicht angewendet</strong>
+                <span>Formatieren beim Sichern erfordert, dass das Formatter-Tool (z. B. <code>terraform</code>, <code>shfmt</code>, <code>prettier</code>) in Ihrem PATH liegt. Installieren Sie es über Homebrew.</span>
+            </li>
+            <li>
+                <strong>macOS 26- oder 27-Kompatibilität</strong>
+                <span>Pine zielt auf macOS 26 (Tahoe). Bei einem plattformspezifischen Problem fügen Sie die Ausgabe von <code>sw_vers</code> und <code>xcodebuild -version</code> Ihrem Fehlerbericht hinzu.</span>
+            </li>
+            <li>
+                <strong>Agent wird nicht erkannt</strong>
+                <span>Pine erkennt unterstützte CLI-Agenten anhand des Prozessnamens. Stellen Sie sicher, dass der Agent in einem Pine-Terminal-Bereich läuft. Quick Terminal unterstützt die Agent-Erkennung noch nicht.</span>
+            </li>
+        </ul>
     </section>
+
     <section class="support" id="support">
         <h2>Weitere Hilfe benötigt?</h2>
         <p>Melden Sie ein Problem oder schlagen Sie eine Verbesserung im <a href="https://github.com/batonogov/pine/issues">Pine-Issue-Tracker</a> vor.</p>

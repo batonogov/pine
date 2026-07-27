@@ -61,10 +61,44 @@ h2 {
     letter-spacing: -0.01em;
 }
 
+h3 {
+    margin: 0 0 5px;
+    font-size: 15px;
+}
+
 p {
     margin: 8px 0;
 }
 
+/* Table of contents */
+.toc {
+    margin-bottom: 24px;
+    padding: 18px 20px;
+    border: 1px solid color-mix(in srgb, CanvasText 13%, transparent);
+    border-radius: 14px;
+    background: color-mix(in srgb, CanvasText 4%, transparent);
+}
+
+.toc ul {
+    list-style: none;
+    padding: 0;
+    margin: 8px 0 0;
+    columns: 2;
+    column-gap: 20px;
+}
+
+.toc li {
+    margin: 4px 0;
+    break-inside: avoid;
+}
+
+@media (max-width: 620px) {
+    .toc ul {
+        columns: 1;
+    }
+}
+
+/* Grid layouts */
 .steps,
 .shortcut-grid,
 .feature-grid {
@@ -130,6 +164,31 @@ kbd {
     border-left: 3px solid #0a84ff;
     border-radius: 4px 12px 12px 4px;
     background: color-mix(in srgb, #0a84ff 9%, transparent);
+}
+
+/* Topic list (for expanded sections) */
+.topic-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+}
+
+.topic-list li {
+    margin: 8px 0;
+    padding: 10px 14px;
+    border: 1px solid color-mix(in srgb, CanvasText 10%, transparent);
+    border-radius: 10px;
+}
+
+.topic-list li strong {
+    display: block;
+    margin-bottom: 3px;
+    font-size: 14px;
+}
+
+.topic-list li span {
+    color: color-mix(in srgb, CanvasText 60%, transparent);
+    font-size: 13px;
 }
 
 .support {
