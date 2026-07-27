@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.37.0](https://github.com/batonogov/pine/compare/v1.36.0...v1.37.0) (2026-07-27)
+
+
+### Features
+
+* add YAML indentation folding ([#1226](https://github.com/batonogov/pine/issues/1226)) ([582bcb9](https://github.com/batonogov/pine/commit/582bcb94572ec1cbba3d6db32ec24ca0bc4504e6))
+
+
+### Bug Fixes
+
+* restore native sidebar keyboard focus ([#1228](https://github.com/batonogov/pine/issues/1228)) ([25f1187](https://github.com/batonogov/pine/commit/25f1187e7e0ad6fa13b52596e9e29b35358dce1e))
+* **terminal:** prevent black panes after terminal reparent ([#1230](https://github.com/batonogov/pine/issues/1230)) ([24b424b](https://github.com/batonogov/pine/commit/24b424bbd0cacad90079e70dc699655e9740b909))
+
 ## [1.36.0](https://github.com/batonogov/pine/compare/v1.35.0...v1.36.0) (2026-07-26)
 
 
