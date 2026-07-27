@@ -136,6 +136,13 @@ nonisolated enum AccessibilityID {
     static let agentAttentionBell = "agentAttentionBell"
     static let agentAttentionOverlay = "agentAttentionOverlay"
 
+    // MARK: - Global Tab Switcher overlay (#1239)
+    static let globalTabSwitcherOverlay = "globalTabSwitcherOverlay"
+    static let globalTabSwitcherList = "globalTabSwitcherList"
+    static func globalTabSwitcherItem(_ title: String) -> String {
+        "globalTabSwitcherItem_\(title)"
+    }
+
     // MARK: - LSP / Problems panel (#1010)
     static let problemsIndicator = "problemsIndicator"
     static let problemsPanel = "problemsPanel"
