@@ -33,6 +33,17 @@ extension CodeEditorView {
         /// Cached foldable ranges for the current text.
         var foldableRanges: [FoldableRange] = []
 
+        /// Fold state currently used by AppKit's glyph/layout delegates.
+        ///
+        /// `PaneLeafView` builds the binding getter from an `EditorTab` value
+        /// captured during the current SwiftUI render. After the binding
+        /// setter writes a new state to `TabManager`, that captured getter
+        /// remains one render behind until `updateNSView` replaces `parent`.
+        /// Reading `parent.foldState` while invalidating layout therefore
+        /// makes the text rendering lag the gutter by one click. Keep the
+        /// state applied to AppKit synchronously in the coordinator instead.
+        private(set) var renderedFoldState: FoldState
+
         /// Snapshot adapter around Pine's bounded bracket matcher (#1008).
         private let bracketProvider = BoundedBracketProvider()
         private var bracketRevision = 0
@@ -206,6 +217,7 @@ extension CodeEditorView {
 
         init(parent: CodeEditorView) {
             self.parent = parent
+            self.renderedFoldState = parent.foldState
             self.lastLSPFoldRefreshGeneration =
                 parent.lspFoldRefreshGeneration
             // Initialize language/fileName to match the initial view,
@@ -226,6 +238,15 @@ extension CodeEditorView {
                 name: .tabReloadedFromDisk,
                 object: nil
             )
+        }
+
+        /// Adopts the latest SwiftUI value before any update path can force
+        /// TextKit layout. On a tab switch, `updateContentIfNeeded` restores
+        /// scroll position synchronously, so its layout delegate must already
+        /// use the destination tab's fold state rather than the previous one.
+        func prepareForViewUpdate(_ parent: CodeEditorView) {
+            self.parent = parent
+            synchronizeFoldState(parent.foldState)
         }
 
         /// Handles `.tabReloadedFromDisk` notification — if the URL matches
@@ -1199,8 +1220,9 @@ extension CodeEditorView {
 
         /// Handles fold toggle from gutter click.
         func handleFoldToggle(_ foldable: FoldableRange) {
-            parent.foldState.toggle(foldable)
-            applyFoldState()
+            var state = renderedFoldState
+            state.toggle(foldable)
+            commitFoldState(state)
         }
 
         /// Toggles inline diff expansion for a hunk when user clicks a gutter diff marker.
@@ -1228,8 +1250,8 @@ extension CodeEditorView {
         /// `.onReceive` path) and #1047 (which closed the AppKit
         /// `reportStateChange` path), on the one AppKit-observer path that
         /// #1051 did not audit: the keyboard-driven `.foldCode` observer.
-        /// `applyFoldState()` is deferred alongside the mutation because it
-        /// reads `parent.foldState` and must observe the just-applied change.
+        /// AppKit layout invalidation is deferred alongside the mutation so
+        /// the glyph and line-fragment delegates observe the committed state.
         ///
         /// The defer lives in ``scheduleFoldAction`` (not inline here) so the
         /// deferral contract is unit-testable — see
@@ -1257,11 +1279,11 @@ extension CodeEditorView {
             }
         }
 
-        /// Applies a fold action to `parent.foldState`. Extracted and internal
-        /// so the reentrancy deferral contract in ``handleFoldCode`` is
-        /// unit-testable (the deferral lives in the caller, the fold logic
-        /// here is the deferred body), and so the fold logic itself can be
-        /// exercised without a key window.
+        /// Applies a fold action to persistent and rendered fold state.
+        /// Extracted and internal so the reentrancy deferral contract in
+        /// ``handleFoldCode`` is unit-testable (the deferral lives in the
+        /// caller, the fold logic here is the deferred body), and so the fold
+        /// logic itself can be exercised without a key window.
         func performFoldAction(_ action: String) {
             switch action {
             case "fold":
@@ -1269,11 +1291,13 @@ extension CodeEditorView {
             case "unfold":
                 unfoldAtCursor()
             case "foldAll":
-                parent.foldState.foldAll(foldableRanges)
-                applyFoldState()
+                var state = renderedFoldState
+                state.foldAll(foldableRanges)
+                commitFoldState(state)
             case "unfoldAll":
-                parent.foldState.unfoldAll()
-                applyFoldState()
+                var state = renderedFoldState
+                state.unfoldAll()
+                commitFoldState(state)
             default:
                 break
             }
@@ -1292,12 +1316,13 @@ extension CodeEditorView {
             // Find innermost unfoldable range at cursor line
             let candidates = foldableRanges.filter {
                 cursorLine >= $0.startLine && cursorLine <= $0.endLine
-                    && !parent.foldState.isFolded($0)
+                    && !renderedFoldState.isFolded($0)
             }
             // Pick the innermost (smallest span)
             if let best = candidates.min(by: { ($0.endLine - $0.startLine) < ($1.endLine - $1.startLine) }) {
-                parent.foldState.fold(best)
-                applyFoldState()
+                var state = renderedFoldState
+                state.fold(best)
+                commitFoldState(state)
             }
         }
 
@@ -1312,20 +1337,49 @@ extension CodeEditorView {
             let cursorLine = cache.lineNumber(at: cursorLocation)
 
             // Find folded range whose startLine matches cursor line
-            if let folded = parent.foldState.foldedRanges.first(where: { $0.startLine == cursorLine }) {
-                parent.foldState.unfold(folded)
-                applyFoldState()
+            if let folded = renderedFoldState.foldedRanges.first(
+                where: { $0.startLine == cursorLine }
+            ) {
+                var state = renderedFoldState
+                state.unfold(folded)
+                commitFoldState(state)
             }
         }
 
-        /// Applies the current fold state to the layout manager and redraws.
-        private func applyFoldState() {
+        /// Synchronizes fold state supplied by a later SwiftUI render.
+        ///
+        /// Gutter/menu actions already update `renderedFoldState`
+        /// synchronously. The equality check avoids invalidating the complete
+        /// document again when that same state comes back through
+        /// `updateNSView`.
+        func synchronizeFoldState(_ state: FoldState) {
+            guard state != renderedFoldState else {
+                lineNumberView?.foldState = state
+                return
+            }
+            renderedFoldState = state
+            invalidateFoldLayout()
+        }
+
+        /// Commits a user action to both persistent SwiftUI state and the
+        /// synchronous AppKit rendering state.
+        private func commitFoldState(_ state: FoldState) {
+            // Set this before writing the binding. Its setter can trigger a
+            // synchronous updateNSView, which must already observe the state
+            // that the layout delegate will render.
+            renderedFoldState = state
+            parent.foldState = state
+            invalidateFoldLayout()
+        }
+
+        /// Invalidates glyphs/layout using `renderedFoldState` and redraws.
+        private func invalidateFoldLayout() {
             guard let sv = scrollView,
                   let textView = sv.documentView as? NSTextView,
                   let layoutManager = textView.layoutManager else { return }
 
             let fullRange = NSRange(location: 0, length: (textView.string as NSString).length)
-            lineNumberView?.foldState = parent.foldState
+            lineNumberView?.foldState = renderedFoldState
             // Invalidate glyphs so shouldGenerateGlyphs re-evaluates hidden lines,
             // then invalidate layout so shouldSetLineFragmentRect collapses heights.
             layoutManager.invalidateGlyphs(forCharacterRange: fullRange, changeInLength: 0, actualCharacterRange: nil)
@@ -1346,7 +1400,7 @@ extension CodeEditorView {
             font aFont: NSFont,
             forGlyphRange glyphRange: NSRange
         ) -> Int {
-            guard !parent.foldState.foldedRanges.isEmpty,
+            guard !renderedFoldState.foldedRanges.isEmpty,
                   let cache = lineStartsCache else { return 0 }
 
             let count = glyphRange.length
@@ -1366,7 +1420,7 @@ extension CodeEditorView {
                     isHidden = prevHidden
                 } else {
                     let line = cache.lineNumber(at: charIndex)
-                    isHidden = parent.foldState.isLineHidden(line)
+                    isHidden = renderedFoldState.isLineHidden(line)
                     prevCharIndex = charIndex
                     prevHidden = isHidden
                 }
@@ -1397,7 +1451,7 @@ extension CodeEditorView {
             in textContainer: NSTextContainer,
             forGlyphRange glyphRange: NSRange
         ) -> Bool {
-            guard !parent.foldState.foldedRanges.isEmpty else { return false }
+            guard !renderedFoldState.foldedRanges.isEmpty else { return false }
             let charRange = layoutManager.characterRange(forGlyphRange: glyphRange, actualGlyphRange: nil)
 
             // Use cached line starts for O(log n) lookup
@@ -1405,7 +1459,7 @@ extension CodeEditorView {
             let line = cache.lineNumber(at: charRange.location)
 
             // If this line is hidden (inside a folded region), collapse it to zero height
-            if parent.foldState.isLineHidden(line) {
+            if renderedFoldState.isLineHidden(line) {
                 lineFragmentRect.pointee.size.height = 0
                 lineFragmentUsedRect.pointee.size.height = 0
                 baselineOffset.pointee = 0
