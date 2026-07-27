@@ -151,7 +151,7 @@ struct CommandOverlayContainer: ViewModifier {
 /// keeping the container testable in isolation.
 nonisolated enum GoToLineLineCountProvider {
     /// The line count of the active tab in the given project.
-    static func lineCount(in projectManager: ProjectManager) -> Int {
+    @MainActor static func lineCount(in projectManager: ProjectManager) -> Int {
         guard let content = projectManager.activeTabManager.activeTab?.content
         else { return 1 }
         let ns = content as NSString
@@ -168,7 +168,7 @@ nonisolated enum GoToLineLineCountProvider {
 
     /// Routes a Go-to-Line result to the active pane's TabManager via
     /// `pendingGoToLine`, matching the previous `.sheet` wiring.
-    static func navigate(
+    @MainActor static func navigate(
         line: Int,
         column: Int?,
         in projectManager: ProjectManager
