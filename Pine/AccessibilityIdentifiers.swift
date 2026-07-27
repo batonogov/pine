@@ -98,7 +98,10 @@ nonisolated enum AccessibilityID {
     static let markdownPreviewView = "markdownPreviewView"
 
     // MARK: - Go to Line
+    /// Kept for backward compatibility with UI tests that reference the sheet
+    /// container by id. The overlay container now reuses this identifier.
     static let goToLineSheet = "goToLineSheet"
+    static let goToLineOverlay = "goToLineOverlay"
     static let goToLineField = "goToLineField"
     static let goToLineInvalidMessage = "goToLineInvalidMessage"
 

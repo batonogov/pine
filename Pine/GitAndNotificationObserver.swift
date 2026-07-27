@@ -36,7 +36,9 @@ struct GitAndNotificationObserver: ViewModifier {
     @Binding var lineDiffs: [GitLineDiff]
     @Binding var columnVisibility: NavigationSplitViewVisibility
     @Binding var isSearchPresented: Bool
-    @Binding var showGoToLine: Bool
+    /// Invoked when the Go to Line command is triggered. The presenter routes
+    /// this through the shared command-overlay router (#975).
+    var onPresentGoToLine: () -> Void
     var onRefreshLineDiffs: () -> Void
     var onRefreshBlame: () -> Void
     var onCloseTab: (EditorTab) -> Void
@@ -220,7 +222,7 @@ struct GitAndNotificationObserver: ViewModifier {
         guard controlActiveState == .key,
               activeTabManager.activeTab != nil else { return }
         DispatchQueue.main.async {
-            self.showGoToLine = true
+            self.onPresentGoToLine()
         }
     }
 

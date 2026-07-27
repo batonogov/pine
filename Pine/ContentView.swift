@@ -40,15 +40,15 @@ struct ContentView: View {
     @State var recoveryEntries: [(UUID, RecoveryEntry)] = []
     @State var showRecoveryDialog = false
     @State var isDragTargeted = false
-    @State var isQuickOpenPresented = false
-    @State var isCommandPalettePresented = false
-    @State var isSymbolNavigatorPresented = false
     @State var isBranchSwitcherPresented = false
-    @State var showGoToLine = false
     @State var isAgentActivityPresented = false
     @State var isAgentHistoryPresented = false
     /// Agent attention-list overlay (#1112).
     @State var showAgentAttention = false
+    /// Shared command-overlay router (#975). Owns the single active navigation
+    /// overlay (Quick Open / Symbol Navigator / Go to Line / Command Palette)
+    /// and captures/restores the previous AppKit first responder.
+    @State var commandOverlayRouter = CommandOverlayRouter()
     @AppStorage("minimapVisible") var isMinimapVisible = true
     @AppStorage(BlameConstants.storageKey) var isBlameVisible = true
     @AppStorage("wordWrapEnabled") var isWordWrapEnabled = true
@@ -134,34 +134,39 @@ struct ContentView: View {
             )
         }
         .overlay { agentAttentionOverlay }
-        .sheet(isPresented: $isQuickOpenPresented) {
-            QuickOpenView(isPresented: $isQuickOpenPresented)
-                .environment(projectManager)
-        }
+        // MARK: - Command overlays (#975)
+        // Quick Open, Symbol Navigator, Go to Line, and Command Palette route
+        // through a single document-scoped router so at most one overlay is
+        // active per window. The shared container renders whichever flow the
+        // router reports, replacing any prior presentation deterministically.
+        .modifier(CommandOverlayContainer(
+            router: commandOverlayRouter,
+            projectManager: projectManager
+        ))
         .onReceive(NotificationCenter.default.publisher(for: .showQuickOpen)) { _ in
             // Defer to break reentrancy (#1051): mutating @State
             // synchronously from a menu→notification callstack collides with
             // the button-action's exclusive access to SwiftUI storage →
             // exclusivity abort.
             DispatchQueue.main.async {
-                isQuickOpenPresented = true
+                commandOverlayRouter.present(.quickOpen)
             }
         }
-        .modifier(CommandPalettePresenter(
-            isPresented: $isCommandPalettePresented,
-            projectManager: projectManager,
-            isKeyWindow: controlActiveState == .key,
-            onInvoke: invokeCommandPaletteItem
-        ))
-        .sheet(isPresented: $isSymbolNavigatorPresented) {
-            SymbolNavigatorView(isPresented: $isSymbolNavigatorPresented)
-                .environment(projectManager)
+        .onReceive(NotificationCenter.default.publisher(for: .showCommandPalette)) { notification in
+            guard Self.shouldHandleTargetedCommand(
+                notificationObject: notification.object,
+                currentProject: projectManager,
+                isKeyWindow: controlActiveState == .key
+            ) else { return }
+            DispatchQueue.main.async {
+                commandOverlayRouter.present(.commandPalette)
+            }
         }
         .onReceive(NotificationCenter.default.publisher(for: .showSymbolNavigator)) { _ in
             guard activeTabManager.activeTab != nil else { return }
             // Defer to break reentrancy (#1051).
             DispatchQueue.main.async {
-                isSymbolNavigatorPresented = true
+                commandOverlayRouter.present(.symbolNavigator)
             }
         }
         .sheet(isPresented: $isBranchSwitcherPresented) {
@@ -198,20 +203,6 @@ struct ContentView: View {
                 let line = Self.lineNumber(forOffset: offset, in: tab.content)
                 activeTabManager.pendingGoToLine = line
             }
-        }
-        .sheet(isPresented: $showGoToLine) {
-            GoToLineView(
-                totalLines: totalLineCount,
-                isPresented: $showGoToLine,
-                onGoTo: { line, column in
-                    guard activeTabManager.activeTab != nil else { return }
-                    // Route through `pendingGoToLine` so the focused
-                    // `PaneLeafView` performs the navigation. `column` is
-                    // honored by the line-based protocol as the line's start.
-                    _ = column
-                    activeTabManager.pendingGoToLine = line
-                }
-            )
         }
         .modifier(AgentActivityPresenter(
             isPresented: $isAgentActivityPresented,
@@ -271,7 +262,9 @@ struct ContentView: View {
             lineDiffs: $lineDiffs,
             columnVisibility: $columnVisibility,
             isSearchPresented: $isSearchPresented,
-            showGoToLine: $showGoToLine,
+            onPresentGoToLine: {
+                commandOverlayRouter.present(.goToLine)
+            },
             onRefreshLineDiffs: { refreshLineDiffs() },
             onRefreshBlame: { refreshBlame() },
             onCloseTab: { closeTabWithConfirmation($0) },
@@ -481,21 +474,10 @@ struct ContentView: View {
     }
 
     private func invokeCommandPaletteItem(_ item: CommandPaletteItem) {
-        switch item.id {
-        case .builtIn(let command):
-            UserCommandInvocationRouter.dispatch(
-                command,
-                projectManager: projectManager
-            )
-        case .task(let id):
-            guard let task = ExtensibilityManager.shared.tasks.task(forID: id) else {
-                return
-            }
-            UserTaskInvocationController.invoke(
-                task,
-                projectManager: projectManager
-            )
-        }
+        CommandPaletteInvocationRouter.invoke(
+            item,
+            projectManager: projectManager
+        )
     }
 
     // MARK: - Subview builders
@@ -505,49 +487,6 @@ struct ContentView: View {
         PaneTreeView(node: paneManager.root)
     }
 
-}
-
-private struct CommandPalettePresenter: ViewModifier {
-    @Binding var isPresented: Bool
-    let projectManager: ProjectManager
-    let isKeyWindow: Bool
-    let onInvoke: (CommandPaletteItem) -> Void
-
-    func body(content: Content) -> some View {
-        content
-            .sheet(isPresented: $isPresented) {
-                CommandPaletteView(
-                    isPresented: $isPresented,
-                    items: CommandPaletteCatalog.makeItems(
-                        tasks: ExtensibilityManager.shared.tasks.tasks,
-                        keybindings: ExtensibilityManager.shared.keybindings,
-                        context: UserCommandInvocationRouter.context(
-                            for: projectManager
-                        )
-                    ),
-                    onInvoke: onInvoke
-                )
-            }
-            .onReceive(
-                NotificationCenter.default.publisher(
-                    for: .showCommandPalette
-                )
-            ) { notification in
-                guard ContentView.shouldHandleTargetedCommand(
-                    notificationObject: notification.object,
-                    currentProject: projectManager,
-                    isKeyWindow: isKeyWindow
-                ) else {
-                    return
-                }
-                // Notification delivery is synchronous. Defer the @State
-                // write to avoid re-entering SwiftUI storage from a
-                // menu/keybinding dispatch call stack (#1051 family).
-                DispatchQueue.main.async {
-                    isPresented = true
-                }
-            }
-    }
 }
 
 /// Keeps the Problems panel synchronized without adding more generic closure
@@ -570,7 +509,6 @@ private struct ProblemsPanelRefreshObserver: ViewModifier {
             }
     }
 }
-
 // MARK: - Preview
 
 #Preview {
