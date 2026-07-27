@@ -7,9 +7,9 @@ import Foundation
 
 /// Описание складываемого региона кода.
 nonisolated struct FoldableRange: Equatable, Sendable {
-    /// 1-based номер строки с открывающей скобкой
+    /// 1-based номер строки с заголовком или открывающей скобкой.
     let startLine: Int
-    /// 1-based номер строки с закрывающей скобкой
+    /// 1-based номер последней строки региона.
     let endLine: Int
     /// UTF-16 смещение открывающего символа
     let startCharIndex: Int
@@ -24,6 +24,9 @@ nonisolated enum FoldKind: Equatable, Sendable {
     case braces       // { }
     case brackets     // [ ]
     case parentheses  // ( )
+    /// Indentation-delimited body whose final line is content, not a closing
+    /// delimiter. Folding hides this line as well as the lines before it.
+    case indentation
 }
 
 /// Вычисляет складываемые регионы по парным скобкам.

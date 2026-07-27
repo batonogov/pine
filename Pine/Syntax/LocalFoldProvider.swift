@@ -6,18 +6,18 @@
 //
 //  One local provider owns the complete fallback result for a revision:
 //  bracket-pair folding for every language, plus indentation suites for
-//  Python (whose configured Pyright server has no foldingRange capability).
+//  Python and YAML (neither has an available foldingRange provider in Pine).
 //
 
 import Foundation
 
 /// Pine's universal local folding provider.
 ///
-/// The provider is always available. Non-Python languages retain exactly the
-/// existing bracket-pair fallback. Python keeps those bracket folds and adds
-/// declaration/control-flow suites derived from indentation. Combining the
-/// two local algorithms happens inside this single provider, so LSP/local
-/// ownership remains deterministic and provider results are never merged.
+/// The provider is always available. Python adds declaration/control-flow
+/// suites; YAML adds block mapping, sequence, and scalar ranges. Every
+/// language keeps bracket folding. Combining local algorithms happens inside
+/// this provider, so LSP/local ownership remains deterministic and provider
+/// results are never merged.
 ///
 /// Syntax extraction and all scanning run on a detached task against an
 /// immutable snapshot, so the local fallback never blocks AppKit.
@@ -60,6 +60,10 @@ nonisolated struct LocalFoldProvider: FoldRangeProviding {
             let isPython = language == "python"
                 || snapshot.uri.lowercased().hasSuffix(".py")
                 || snapshot.uri.lowercased().hasSuffix(".pyw")
+            let isYAML = language == "yaml"
+                || language == "yml"
+                || snapshot.uri.lowercased().hasSuffix(".yaml")
+                || snapshot.uri.lowercased().hasSuffix(".yml")
             let indentationRanges: [FoldableRange]
             let bracketSkipRanges: [NSRange]
             if isPython {
@@ -67,6 +71,15 @@ nonisolated struct LocalFoldProvider: FoldRangeProviding {
                     text: text,
                     additionalSkipRanges: syntaxSkipRanges
                 )
+                indentationRanges = analysis.ranges
+                bracketSkipRanges = analysis.lexicalSkipRanges
+            } else if isYAML {
+                guard let analysis = YAMLIndentationFoldCalculator.analyze(
+                    text: text,
+                    additionalSkipRanges: syntaxSkipRanges
+                ) else {
+                    return nil
+                }
                 indentationRanges = analysis.ranges
                 bracketSkipRanges = analysis.lexicalSkipRanges
             } else {
@@ -84,10 +97,17 @@ nonisolated struct LocalFoldProvider: FoldRangeProviding {
                 skipRanges: bracketSkipRanges
             )
             guard !Task.isCancelled else { return nil }
-            return Self.combinedRanges(
+            let combined = Self.combinedRanges(
                 bracketRanges,
                 indentationRanges
             )
+            guard !Task.isCancelled else { return nil }
+            let displayRanges = isYAML
+                ? YAMLIndentationFoldCalculator
+                    .canonicalizedForDisplay(combined)
+                : combined
+            guard !Task.isCancelled else { return nil }
+            return displayRanges
         }
         return await withTaskCancellationHandler {
             await task.value

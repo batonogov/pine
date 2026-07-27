@@ -54,22 +54,33 @@ struct FoldState {
     }
 
     /// Проверяет, скрыта ли строка (попадает ли она внутрь свёрнутого региона).
-    /// Строки startLine и endLine самого fold-а остаются видимыми.
+    /// Заголовок `startLine` остаётся видимым. Для скобочных регионов видима
+    /// также строка с закрывающей скобкой; indentation-регион скрывается до
+    /// своей последней строки включительно.
     /// O(1) через Set lookup.
     func isLineHidden(_ line: Int) -> Bool {
         hiddenLines.contains(line)
     }
 
     /// Количество скрытых строк при сворачивании региона.
-    /// Не зависит от текущего состояния fold — просто разница между start и end.
+    /// Не зависит от текущего состояния fold.
     func hiddenLineCount(for range: FoldableRange) -> Int {
-        max(0, range.endLine - range.startLine - 1)
+        switch range.kind {
+        case .indentation:
+            max(0, range.endLine - range.startLine)
+        case .braces, .brackets, .parentheses:
+            max(0, range.endLine - range.startLine - 1)
+        }
     }
 
     // MARK: - Private
 
     private mutating func addHiddenLines(for range: FoldableRange) {
-        for line in (range.startLine + 1)..<range.endLine {
+        let endExclusive = range.kind == .indentation
+            ? range.endLine + 1
+            : range.endLine
+        guard endExclusive > range.startLine + 1 else { return }
+        for line in (range.startLine + 1)..<endExclusive {
             hiddenLines.insert(line)
         }
     }

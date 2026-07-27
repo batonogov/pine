@@ -156,6 +156,25 @@ struct FoldStateTests {
         #expect(state.hiddenLineCount(for: makeFoldable(start: 1, end: 5)) == 3)
     }
 
+    @Test func indentationFoldIncludesItsFinalContentLine() {
+        var state = FoldState()
+        let range = FoldableRange(
+            startLine: 1,
+            endLine: 3,
+            startCharIndex: 4,
+            endCharIndex: 24,
+            kind: .indentation
+        )
+
+        state.fold(range)
+
+        #expect(!state.isLineHidden(1))
+        #expect(state.isLineHidden(2))
+        #expect(state.isLineHidden(3))
+        #expect(!state.isLineHidden(4))
+        #expect(state.hiddenLineCount(for: range) == 2)
+    }
+
     // MARK: - Adjacent folds
 
     @Test func twoAdjacentFoldsHideCorrectLines() {
