@@ -58,7 +58,7 @@ struct TerminalSettingsView: View {
                         .textFieldStyle(.roundedBorder)
                     }
 
-                    Text(Strings.settingsTerminalResolvedPrefix + shell.resolvedShellPath)
+                    (Text(Strings.settingsTerminalResolvedPrefix) + Text(verbatim: shell.resolvedShellPath))
                         .font(.caption.monospaced())
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
