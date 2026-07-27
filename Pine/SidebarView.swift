@@ -502,7 +502,7 @@ struct SidebarView: View {
             // Type-to-select: plain printable characters only.
             guard plainModifiers,
                   let first = event.characters?.first,
-                  let scalar = first.unicodeScalars.first.map({ Unicode.Scalar($0.value) }),
+                  let scalar = first.unicodeScalars.first,
                   CharacterSet.alphanumerics.contains(scalar)
             else { return false }
             handleTypedCharacters(String(first))
@@ -616,8 +616,8 @@ struct SidebarView: View {
         let rows = visibleRows
         guard !rows.isEmpty, let first = characters.first else { return }
         // Ignore modifiers that aren't part of a plain typed character.
-        let scalar = first.unicodeScalars.first.map { Unicode.Scalar($0.value) }
-        guard let scalar, CharacterSet.alphanumerics.contains(scalar) else { return }
+        guard let scalar = first.unicodeScalars.first,
+              CharacterSet.alphanumerics.contains(scalar) else { return }
         navigate(to: navigation.typeSelect(character: String(first), current: selectedFile, rows: rows))
     }
 }
