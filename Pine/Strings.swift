@@ -428,7 +428,7 @@ enum Strings {
     static var agentActivityDetailCopy: LocalizedStringKey { "agentActivity.detail.copy" }
     static var agentActivityDetailGoToTerminal: LocalizedStringKey { "agentActivity.detail.goToTerminal" }
     static var agentActivityDetailOpenFile: LocalizedStringKey { "agentActivity.detail.openFile" }
-    static var agentActivityEvidenceAmbiguousExplanation: String {
+    static var agentEvidenceAmbiguousDesc: String {
         String(
             localized: "agentActivity.evidence.ambiguousExplanation",
             defaultValue: """
@@ -437,7 +437,7 @@ enum Strings {
             """
         )
     }
-    static var agentActivityEvidenceVerifiedExplanation: String {
+    static var agentEvidenceVerifiedDesc: String {
         String(
             localized: "agentActivity.evidence.verifiedExplanation",
             defaultValue: """
@@ -445,7 +445,7 @@ enum Strings {
             """
         )
     }
-    static var agentActivityEvidenceSessionLinkedExplanation: String {
+    static var agentEvidenceLinkedDesc: String {
         String(
             localized: "agentActivity.evidence.sessionLinkedExplanation",
             defaultValue: """
@@ -453,7 +453,7 @@ enum Strings {
             """
         )
     }
-    static var agentActivityEvidenceInferredExplanation: String {
+    static var agentEvidenceInferredDesc: String {
         String(
             localized: "agentActivity.evidence.inferredExplanation",
             defaultValue: """

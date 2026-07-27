@@ -780,7 +780,7 @@ struct AgentActivityDetailView: View {
     }
 
     private func copyDetails() {
-        let payload = row.copyableSummary
+        let payload = row.summary
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(payload, forType: .string)
         withAnimation(PineAnimation.content) {
@@ -830,16 +830,16 @@ extension AgentActivityAttributionPresentation {
         // Ambiguous must be checked before checking for a single candidate:
         // an ambiguous presentation intentionally has no marker agent type.
         if isAmbiguous {
-            return Strings.agentActivityEvidenceAmbiguousExplanation
+            return Strings.agentEvidenceAmbiguousDesc
         }
         guard badgeLabel != nil else {
-            return Strings.agentActivityEvidenceVerifiedExplanation
+            return Strings.agentEvidenceVerifiedDesc
         }
         // Session-linked vs inferred is encoded by the badge source; fall back
         // to the strongest claim that does not overstate trust.
         if markerAgentType != nil {
-            return Strings.agentActivityEvidenceSessionLinkedExplanation
+            return Strings.agentEvidenceLinkedDesc
         }
-        return Strings.agentActivityEvidenceInferredExplanation
+        return Strings.agentEvidenceInferredDesc
     }
 }
