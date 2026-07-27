@@ -237,24 +237,24 @@ struct ToastManagerTests {
     func queueDrainsSequentially() async throws {
         let manager = ToastManager()
         manager.dismissDelay = 10
-        var announcements: [String] = []
+        let announcements = AnnouncementBox()
         manager.prefixesAnnouncements = false
         manager.announce = { announcements.append($0) }
 
         manager.show(ToastItem(message: "A"))
         manager.show(ToastItem(message: "B"))
         manager.show(ToastItem(message: "C"))
-        #expect(announcements == ["A"])
+        #expect(announcements.values == ["A"])
 
         manager.dismiss()
         try await Task.sleep(for: .milliseconds(500))
         #expect(manager.currentToast?.message == "B")
-        #expect(announcements == ["A", "B"])
+        #expect(announcements.values == ["A", "B"])
 
         manager.dismiss()
         try await Task.sleep(for: .milliseconds(500))
         #expect(manager.currentToast?.message == "C")
-        #expect(announcements == ["A", "B", "C"])
+        #expect(announcements.values == ["A", "B", "C"])
         #expect(manager.queueCount == 0)
     }
 
