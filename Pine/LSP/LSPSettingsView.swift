@@ -559,8 +559,7 @@ private struct LSPSettingsDraft {
 /// pick a language-server binary without typing an error-prone path. Runs on
 /// the main thread (modal), as AppKit requires. Issue #1242.
 @MainActor
-private final class ExecutablePicker: NSObject,
-    NSOpenPanelDelegate {
+private final class ExecutablePicker: NSObject {
     private let completion: (URL) -> Void
 
     init(completion: @escaping (URL) -> Void) {
