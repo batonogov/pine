@@ -182,12 +182,14 @@ nonisolated final class UserTaskRunner: @unchecked Sendable {
 
         DispatchQueue.global(qos: .userInitiated).async {
             let outcome = Self.execute(
-                command: task.command,
-                workingDirectory: workingDir,
-                stdin: stdinText,
-                timeout: timeout,
-                taskID: task.id,
-                cancelFlag: cancelFlag,
+                config: .init(
+                    command: task.command,
+                    workingDirectory: workingDir,
+                    stdin: stdinText,
+                    timeout: timeout,
+                    taskID: task.id,
+                    cancelFlag: cancelFlag
+                ),
                 onStart: {
                     DispatchQueue.main.async { progress.onStart?() }
                 }
@@ -225,13 +227,17 @@ nonisolated final class UserTaskRunner: @unchecked Sendable {
     // MARK: - Private
 
     /// Spawns the shell command and waits for it (called off the main thread).
+    struct ExecuteConfig: Sendable {
+        let command: String
+        let workingDirectory: URL?
+        let stdin: String
+        let timeout: TimeInterval
+        let taskID: String
+        let cancelFlag: UserTaskCancellationFlag
+    }
+
     private static func execute(
-        command: String,
-        workingDirectory: URL?,
-        stdin: String,
-        timeout: TimeInterval,
-        taskID: String,
-        cancelFlag: UserTaskCancellationFlag,
+        config: ExecuteConfig,
         onStart: @escaping @Sendable () -> Void
     ) -> UserTaskOutcome {
         precondition(!Thread.isMainThread, "UserTaskRunner must run off the main thread")

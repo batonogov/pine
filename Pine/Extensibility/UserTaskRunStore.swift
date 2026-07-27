@@ -91,11 +91,6 @@ final class UserTaskRunStore {
     }
 
     // MARK: - Mutation
-
-    /// Cancels an active run by id. The actual process termination is
-    /// performed by the runner via its cancellation handle; this only marks
-    /// the UI model so the row reflects the user's intent immediately.
-    func cancelRun(id: UUID) {
         guard let run = run(forID: id), run.state.isActive else { return }
         run.markCancelled()
     }
